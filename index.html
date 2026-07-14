@@ -373,11 +373,16 @@ function tileAt(wx,wy) {
 }
 function isWall(wx,wy) { return tileAt(wx,wy)===WALL; }
 
-function pushOut(ent,r) {
-  if (isWall(ent.x-r, ent.y)) ent.x = Math.floor((ent.x-r)/TILE)*TILE + TILE + r;
-  if (isWall(ent.x+r, ent.y)) ent.x = Math.floor((ent.x+r)/TILE)*TILE - r;
-  if (isWall(ent.x, ent.y-r)) ent.y = Math.floor((ent.y-r)/TILE)*TILE + TILE + r;
-  if (isWall(ent.x, ent.y+r)) ent.y = Math.floor((ent.y+r)/TILE)*TILE - r;
+// Check if moving by dx won't collide — tests 4 corners on leading edge
+function canMoveX(ent, dx, r) {
+  const nx = ent.x + dx, hr = r * 0.82;
+  return !isWall(nx + (dx>0?r:-r), ent.y - hr) &&
+         !isWall(nx + (dx>0?r:-r), ent.y + hr);
+}
+function canMoveY(ent, dy, r) {
+  const ny = ent.y + dy, hr = r * 0.82;
+  return !isWall(ent.x - hr, ny + (dy>0?r:-r)) &&
+         !isWall(ent.x + hr, ny + (dy>0?r:-r));
 }
 
 // ─────────────────────────────────────────────────────────
@@ -702,10 +707,10 @@ function update(dt) {
   if (activeTab===0) {
     const inp=inputDir();
     if (inp.len>0) {
-      player.x += inp.dx * player.speed * inp.len * dt;
-      pushOut(player, 13);
-      player.y += inp.dy * player.speed * inp.len * dt;
-      pushOut(player, 13);
+      const vx = inp.dx * player.speed * inp.len * dt;
+      const vy = inp.dy * player.speed * inp.len * dt;
+      if (canMoveX(player, vx, 12)) player.x += vx;
+      if (canMoveY(player, vy, 12)) player.y += vy;
     }
   }
 
@@ -739,8 +744,9 @@ function update(dt) {
     if (e.aggro) {
       if (dp>e.size+14) {
         const ex2=(player.x-e.x)/dp, ey2=(player.y-e.y)/dp;
-        e.x+=ex2*e.spd*dt; pushOut(e,e.size*0.6);
-        e.y+=ey2*e.spd*dt; pushOut(e,e.size*0.6);
+        const er=e.size*0.55, evx=ex2*e.spd*dt, evy=ey2*e.spd*dt;
+        if (canMoveX(e, evx, er)) e.x+=evx;
+        if (canMoveY(e, evy, er)) e.y+=evy;
       }
       e.atkTimer-=dt;
       if (dp<e.size+20 && e.atkTimer<=0) { e.atkTimer=1.4+Math.random()*0.6; hitPlayer(e.atk); }
