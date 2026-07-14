@@ -52,22 +52,56 @@ canvas { display:block; }
 .panel-body { padding:14px 16px 24px; }
 .sec-title  { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#484860; margin-bottom:8px; }
 
-/* inventory */
-.slot-box { margin-bottom:6px; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid #1c1c2c; border-radius:8px; }
-.slot-lbl  { font-size:10px; color:#484860; margin-bottom:4px; }
-.slot-row  { display:flex; align-items:center; gap:8px; }
-.slot-nm   { flex:1; font-size:12px; color:#ccc; }
-.slot-st   { font-size:10px; color:#585870; margin-top:3px; }
-.btn-sm    { font-size:10px; padding:3px 8px; border:none; border-radius:5px; cursor:pointer; color:#fff; white-space:nowrap; }
-.btn-rm    { background:#442c22; } .btn-eq { background:#1e3a2a; }
-.inv-item  { display:flex; align-items:center; gap:8px; margin-bottom:5px; padding:7px 10px; background:rgba(255,255,255,0.03); border:1px solid #181828; border-radius:7px; }
-.inv-nm    { flex:1; font-size:12px; color:#bbb; }
-.inv-st    { font-size:10px; color:#585870; }
+/* ── INVENTORY ─────────────────────────── */
+.equip-screen {
+  display:flex; gap:6px; padding:10px 10px 6px;
+  align-items:stretch;
+}
+.eq-col {
+  display:flex; flex-direction:column; gap:5px; width:58px; flex-shrink:0;
+}
+.eq-cell {
+  width:58px; height:54px; border:2px solid #1c1c2c; border-radius:8px;
+  background:rgba(255,255,255,0.02); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer;
+  transition:border-color 0.15s; flex-shrink:0; user-select:none;
+}
+.eq-cell:active { opacity:0.7; }
+.eq-cell.filled { border-color:#383858; background:rgba(255,255,255,0.06); }
+.eq-cell .cell-icon { font-size:20px; line-height:1.1; }
+.eq-cell .cell-lbl  { font-size:8px; color:#353550; margin-top:2px; text-align:center; line-height:1.1; max-width:54px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.eq-cell.filled .cell-lbl { color:#6699bb; }
+
+.char-center {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; background:rgba(255,255,255,0.02);
+  border:1px solid #1a1a28; border-radius:10px; padding:10px 6px; gap:5px;
+  min-height:280px;
+}
+.char-center .char-big   { font-size:50px; line-height:1; }
+.char-center .char-name  { font-size:13px; font-weight:bold; }
+.char-center .char-lvl   { font-size:10px; color:#555; }
+.char-center .char-stats { font-size:10px; color:#404058; text-align:center; line-height:1.9; }
+
+.inv-section { padding:0 10px 16px; }
+.inv-section .sec-title { padding:6px 0 6px; }
+.inv-grid {
+  display:grid; grid-template-columns:repeat(5,1fr); gap:5px;
+}
+.inv-cell {
+  aspect-ratio:1; border:2px solid #1c1c2c; border-radius:7px;
+  background:rgba(255,255,255,0.02); display:flex; align-items:center;
+  justify-content:center; cursor:pointer; font-size:20px;
+  transition:border-color 0.15s; user-select:none;
+}
+.inv-cell:active { opacity:0.7; }
+.inv-cell.filled { border-color:#2e2e50; background:rgba(255,255,255,0.04); }
+
 .rarity-common   { color:#aaa; }
 .rarity-uncommon { color:#6af; }
 .rarity-rare     { color:#fa4; }
 
-/* profile */
+/* ── PROFILE ──────────────────────────── */
 .prof-hero  { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
 .prof-emoji { font-size:52px; line-height:1; }
 .prof-cls   { font-size:20px; font-weight:bold; }
@@ -85,13 +119,26 @@ canvas { display:block; }
 .eq-row:last-child { border-bottom:none; }
 .eq-sl-nm   { color:#484860; font-size:11px; }
 
-/* friends */
+/* ── FRIENDS ──────────────────────────── */
 .frnd-empty { text-align:center; padding:60px 20px; }
 .frnd-icon  { font-size:4em; margin-bottom:20px; }
 
-/* map panel */
+/* ── MAP PANEL ────────────────────────── */
 #map-canvas { display:block; margin:0 auto; }
-.map-legend { display:flex; justify-content:center; gap:18px; padding:10px 16px; font-size:12px; color:#484860; }
+.map-legend { display:flex; justify-content:center; gap:18px; padding:8px 16px 4px; font-size:12px; color:#484860; }
+.floor-section { padding:0 10px 16px; }
+.floor-section .sec-title { padding:8px 0 8px; }
+.floor-grid {
+  display:grid; grid-template-columns:repeat(5,1fr); gap:5px;
+}
+.floor-btn {
+  padding:11px 4px; border:1px solid #1c1c2c; border-radius:6px;
+  text-align:center; font-size:13px; font-weight:bold; color:#3a3a58;
+  cursor:pointer; background:rgba(255,255,255,0.01);
+  transition:all 0.15s; user-select:none;
+}
+.floor-btn:active { opacity:0.7; }
+.floor-btn.active { border-color:#f90; color:#f90; background:rgba(255,153,0,0.1); }
 
 /* ── BOTTOM NAV ────────────────────────── */
 #bottom-nav {
@@ -152,11 +199,16 @@ canvas { display:block; }
     🎒 Инвентарь
     <span id="inv-count" style="font-size:11px;color:#484860;font-weight:normal;"></span>
   </div>
-  <div class="panel-body">
-    <div class="sec-title">Снаряжение</div>
-    <div id="eq-slots"></div>
-    <div class="sec-title" style="margin-top:16px">Предметы</div>
-    <div id="inv-list"></div>
+  <!-- Equipment + character preview -->
+  <div class="equip-screen">
+    <div class="eq-col" id="eq-left"></div>
+    <div class="char-center" id="char-preview"></div>
+    <div class="eq-col" id="eq-right"></div>
+  </div>
+  <!-- Inventory grid -->
+  <div class="inv-section">
+    <div class="sec-title">Предметы</div>
+    <div class="inv-grid" id="inv-grid"></div>
   </div>
 </div>
 
@@ -169,7 +221,10 @@ canvas { display:block; }
   <div class="map-legend">
     <span>🟢 Вы</span>
     <span>🔴 Враги</span>
-    <span>🟣 Выход</span>
+  </div>
+  <div class="floor-section">
+    <div class="sec-title">Выбор этажа</div>
+    <div class="floor-grid" id="floor-grid"></div>
   </div>
 </div>
 
@@ -207,7 +262,7 @@ canvas { display:block; }
 //  CONSTANTS
 // ─────────────────────────────────────────────────────────
 const TILE = 40;
-const WALL = 0, FLOOR = 1, EXIT = 2;
+const WALL = 0, FLOOR = 1;
 const NAV_H = 62;
 const JOY_R = 58, JOY_KNOB = 24;
 
@@ -229,24 +284,28 @@ const ENEMY_DEF = [
 ];
 
 const ITEM_DEF = [
-  { id:'sw1', name:'Ржавый меч',      slot:'weapon', emoji:'🗡️', atk:6,       rarity:'common' },
-  { id:'sw2', name:'Стальной меч',    slot:'weapon', emoji:'⚔️', atk:14,      rarity:'uncommon' },
-  { id:'sw3', name:'Меч дракона',     slot:'weapon', emoji:'🔥', atk:28,      rarity:'rare' },
-  { id:'bw1', name:'Деревянный лук',  slot:'weapon', emoji:'🏹', atk:5,       rarity:'common' },
-  { id:'bw2', name:'Серебряный лук',  slot:'weapon', emoji:'🏹', atk:13,      rarity:'uncommon' },
-  { id:'st1', name:'Посох мага',      slot:'weapon', emoji:'🪄', atk:7,       rarity:'common' },
-  { id:'st2', name:'Огненный посох',  slot:'weapon', emoji:'🔮', atk:18,      rarity:'uncommon' },
-  { id:'st3', name:'Посох Анубара',   slot:'weapon', emoji:'💜', atk:32,      rarity:'rare' },
-  { id:'ar1', name:'Кожаная броня',   slot:'armor',  emoji:'🥋', def:5,       rarity:'common' },
-  { id:'ar2', name:'Кольчуга',        slot:'armor',  emoji:'🛡️', def:11,      rarity:'uncommon' },
-  { id:'ar3', name:'Латы',            slot:'armor',  emoji:'⚜️', def:20,      rarity:'rare' },
-  { id:'hm1', name:'Кожаный шлем',   slot:'helmet', emoji:'⛑️', hp:25,       rarity:'common' },
-  { id:'hm2', name:'Железный шлем',  slot:'helmet', emoji:'🪖', hp:50,       rarity:'uncommon' },
-  { id:'rn1', name:'Кольцо силы',    slot:'ring',   emoji:'💍', atk:4,       rarity:'uncommon' },
-  { id:'rn2', name:'Кольцо защиты',  slot:'ring',   emoji:'💍', def:4,       rarity:'uncommon' },
-  { id:'rn3', name:'Кольцо крови',   slot:'ring',   emoji:'❤️', hp:40,atk:3, rarity:'rare' },
-  { id:'pt1', name:'Зелье лечения',  slot:'use',    emoji:'🧪', hp:60,       rarity:'common' },
-  { id:'pt2', name:'Большое зелье',  slot:'use',    emoji:'💊', hp:120,      rarity:'uncommon' },
+  { id:'sw1', name:'Ржавый меч',      slot:'weapon',  emoji:'🗡️', atk:6,        rarity:'common'   },
+  { id:'sw2', name:'Стальной меч',    slot:'weapon',  emoji:'⚔️', atk:14,       rarity:'uncommon' },
+  { id:'sw3', name:'Меч дракона',     slot:'weapon',  emoji:'🔥', atk:28,       rarity:'rare'     },
+  { id:'bw1', name:'Деревянный лук',  slot:'weapon',  emoji:'🏹', atk:5,        rarity:'common'   },
+  { id:'bw2', name:'Серебряный лук',  slot:'weapon',  emoji:'🏹', atk:13,       rarity:'uncommon' },
+  { id:'st1', name:'Посох мага',      slot:'weapon',  emoji:'🪄', atk:7,        rarity:'common'   },
+  { id:'st2', name:'Огненный посох',  slot:'weapon',  emoji:'🔮', atk:18,       rarity:'uncommon' },
+  { id:'st3', name:'Посох Анубара',   slot:'weapon',  emoji:'💜', atk:32,       rarity:'rare'     },
+  { id:'ar1', name:'Кожаная броня',   slot:'armor',   emoji:'🥋', def:5,        rarity:'common'   },
+  { id:'ar2', name:'Кольчуга',        slot:'armor',   emoji:'🛡️', def:11,       rarity:'uncommon' },
+  { id:'ar3', name:'Латы',            slot:'armor',   emoji:'⚜️', def:20,       rarity:'rare'     },
+  { id:'hm1', name:'Кожаный шлем',   slot:'helmet',  emoji:'⛑️', hp:25,        rarity:'common'   },
+  { id:'hm2', name:'Железный шлем',  slot:'helmet',  emoji:'🪖', hp:50,        rarity:'uncommon' },
+  { id:'hm3', name:'Шлем дракона',   slot:'helmet',  emoji:'🐉', hp:90,atk:4,  rarity:'rare'     },
+  { id:'rn1', name:'Кольцо силы',    slot:'ring',    emoji:'💍', atk:4,        rarity:'uncommon' },
+  { id:'rn2', name:'Кольцо защиты',  slot:'ring',    emoji:'💍', def:4,        rarity:'uncommon' },
+  { id:'rn3', name:'Кольцо крови',   slot:'ring',    emoji:'❤️', hp:40,atk:3,  rarity:'rare'     },
+  { id:'nd1', name:'Амулет силы',    slot:'pendant', emoji:'📿', atk:5,        rarity:'uncommon' },
+  { id:'nd2', name:'Амулет здоровья',slot:'pendant', emoji:'📿', hp:60,        rarity:'uncommon' },
+  { id:'nd3', name:'Амулет тьмы',    slot:'pendant', emoji:'💠', atk:8,hp:30,  rarity:'rare'     },
+  { id:'pt1', name:'Зелье лечения',  slot:'use',     emoji:'🧪', hp:60,        rarity:'common'   },
+  { id:'pt2', name:'Большое зелье',  slot:'use',     emoji:'💊', hp:120,       rarity:'uncommon' },
 ];
 
 // ─────────────────────────────────────────────────────────
@@ -256,6 +315,7 @@ let canvas, ctx, W, H;
 let state = 'select';
 let player = null, dungeon = null;
 let enemies = [], projs = [], drops = [], particles = [], dmgNums = [];
+let deadEnemies = [];
 let camera = { x:0, y:0 };
 let dungeonLvl = 1;
 let frameCount = 0, lastTs = 0;
@@ -269,15 +329,15 @@ let transTimer = 0;
 //  DUNGEON GENERATION
 // ─────────────────────────────────────────────────────────
 function generateDungeon(lvl) {
-  const DW = 52, DH = 42;
+  const DW = 72, DH = 56;
   const grid = Array.from({length:DH}, () => new Array(DW).fill(WALL));
   const rooms = [];
-  const wantRooms = Math.min(7 + lvl*2, 18);
+  const wantRooms = Math.min(20 + Math.floor(lvl / 2), 35);
   let tries = 0;
-  while (rooms.length < wantRooms && tries < 600) {
+  while (rooms.length < wantRooms && tries < 1400) {
     tries++;
-    const rw = 5 + Math.floor(Math.random()*7);
-    const rh = 4 + Math.floor(Math.random()*6);
+    const rw = 5 + Math.floor(Math.random()*9);
+    const rh = 4 + Math.floor(Math.random()*7);
     const rx = 1 + Math.floor(Math.random()*(DW-rw-2));
     const ry = 1 + Math.floor(Math.random()*(DH-rh-2));
     const ok = !rooms.some(r =>
@@ -301,24 +361,22 @@ function generateDungeon(lvl) {
     while (cy!==ty) { grid[cy][cx]=FLOOR; cy+=ty>cy?1:-1; }
   }
 
-  const last=rooms[rooms.length-1];
-  const ex=Math.floor(last.x+last.w/2), ey=Math.floor(last.y+last.h/2);
-  grid[ey][ex]=EXIT;
-
-  const sc=1+(lvl-1)*0.28;
-  const enemyList=[];
-  rooms.slice(1).forEach((room,idx) => {
-    const isBoss = idx===rooms.length-2;
+  const sc = 1 + (lvl-1)*0.28;
+  const enemyList = [];
+  rooms.slice(1).forEach((room, idx) => {
+    const isBoss = idx === rooms.length-2;
     const count = isBoss ? 1 : 2+Math.floor(Math.random()*(2+Math.floor(lvl/2)));
     for (let i=0; i<count; i++) {
       const defIdx = isBoss ? 4 : Math.min(3, Math.floor(Math.random()*(1+Math.floor(lvl/2)+1)));
-      const d=ENEMY_DEF[defIdx];
+      const d = ENEMY_DEF[defIdx];
+      const ex = (room.x+1+Math.floor(Math.random()*(room.w-2)))*TILE+TILE/2;
+      const ey = (room.y+1+Math.floor(Math.random()*(room.h-2)))*TILE+TILE/2;
       enemyList.push({
         ...d,
         maxHp: Math.floor(d.hp*sc), hp: Math.floor(d.hp*sc),
         atk:   Math.floor(d.atk*(1+(lvl-1)*0.18)),
-        x: (room.x+1+Math.floor(Math.random()*(room.w-2)))*TILE+TILE/2,
-        y: (room.y+1+Math.floor(Math.random()*(room.h-2)))*TILE+TILE/2,
+        x: ex, y: ey,
+        spawnX: ex, spawnY: ey,
         atkTimer: 1+Math.random(), hurtTimer:0,
         aggro:false, aggroR:175+Math.random()*55,
       });
@@ -336,7 +394,7 @@ function generateDungeon(lvl) {
 //  PLAYER
 // ─────────────────────────────────────────────────────────
 function makePlayer(type) {
-  const d=CHAR_DEF[type];
+  const d = CHAR_DEF[type];
   return {
     type, charDef:d,
     x:0, y:0,
@@ -346,7 +404,7 @@ function makePlayer(type) {
     lvl:1, xp:0, xpNext:100,
     gold:0, kills:0,
     atkTimer:0, hurtTimer:0,
-    equipment:{weapon:null,armor:null,helmet:null,ring:null},
+    equipment:{weapon:null,armor:null,helmet:null,ring:null,pendant:null},
     inventory:[],
   };
 }
@@ -373,7 +431,6 @@ function tileAt(wx,wy) {
 }
 function isWall(wx,wy) { return tileAt(wx,wy)===WALL; }
 
-// Check if moving by dx won't collide — tests 4 corners on leading edge
 function canMoveX(ent, dx, r) {
   const nx = ent.x + dx, hr = r * 0.82;
   return !isWall(nx + (dx>0?r:-r), ent.y - hr) &&
@@ -389,13 +446,13 @@ function canMoveY(ent, dy, r) {
 //  COMBAT
 // ─────────────────────────────────────────────────────────
 function hitEnemy(e, base) {
-  const dmg=Math.max(1, base - e.def + rnd(-3,4));
+  const dmg = Math.max(1, base - e.def + rnd(-3,4));
   e.hp-=dmg; e.hurtTimer=0.22;
   dmgNum(e.x, e.y-e.size-4, dmg, '#ff4');
 }
 
 function hitPlayer(atk) {
-  const dmg=Math.max(1, atk - player.def + rnd(-2,3));
+  const dmg = Math.max(1, atk - player.def + rnd(-2,3));
   player.hp-=dmg; player.hurtTimer=0.22;
   dmgNum(player.x, player.y-24, dmg, '#f55');
   if (player.hp<=0) { player.hp=0; state='dead'; }
@@ -403,8 +460,8 @@ function hitPlayer(atk) {
 
 function doMeleeAttack(target) {
   hitEnemy(target, player.atk);
-  swingAngle=Math.atan2(target.y-player.y, target.x-player.x);
-  swingTimer=0.18;
+  swingAngle = Math.atan2(target.y-player.y, target.x-player.x);
+  swingTimer = 0.18;
   if (player.charDef.atkType==='aoe') {
     enemies.forEach(e => {
       if (e===target||e.hp<=0) return;
@@ -416,7 +473,7 @@ function doMeleeAttack(target) {
 }
 
 function fireProj(tx,ty) {
-  const d=player.charDef, len=Math.hypot(tx-player.x,ty-player.y);
+  const d = player.charDef, len = Math.hypot(tx-player.x, ty-player.y);
   if (len<1) return;
   projs.push({ x:player.x, y:player.y, vx:(tx-player.x)/len*360, vy:(ty-player.y)/len*360, color:d.projColor, dmg:player.atk, life:1.6, size:6, isPlayer:true });
 }
@@ -425,10 +482,10 @@ function fireProj(tx,ty) {
 //  DROPS / PICKUP
 // ─────────────────────────────────────────────────────────
 function spawnDrops(e) {
-  const g=e.gold[0]+Math.floor(Math.random()*(e.gold[1]-e.gold[0]+1));
+  const g = e.gold[0]+Math.floor(Math.random()*(e.gold[1]-e.gold[0]+1));
   drops.push({type:'gold', x:e.x, y:e.y, amount:g, life:18});
   if (Math.random()<0.38) {
-    const r=Math.random();
+    const r = Math.random();
     const pool = r<0.55 ? ITEM_DEF.filter(i=>i.rarity==='common')
                : r<0.88 ? ITEM_DEF.filter(i=>i.rarity==='uncommon')
                :           ITEM_DEF.filter(i=>i.rarity==='rare');
@@ -442,7 +499,7 @@ function pickup(drop) {
     dmgNum(drop.x, drop.y-12, '+'+drop.amount+'💰', '#ff0');
     return;
   }
-  const it=drop.item;
+  const it = drop.item;
   if (it.slot==='use') {
     if (it.hp) { player.hp=Math.min(player.maxHp,player.hp+it.hp); dmgNum(player.x,player.y-26,'+'+it.hp+'♥','#4f4'); }
     return;
@@ -474,8 +531,8 @@ function gainXP(amount) {
 //  EQUIPMENT
 // ─────────────────────────────────────────────────────────
 function equipItem(idx) {
-  const it=player.inventory[idx]; if (!it) return;
-  const old=player.equipment[it.slot];
+  const it = player.inventory[idx]; if (!it) return;
+  const old = player.equipment[it.slot];
   player.equipment[it.slot]=it;
   player.inventory.splice(idx,1);
   if (old) player.inventory.push(old);
@@ -483,7 +540,7 @@ function equipItem(idx) {
 }
 
 function unequipItem(slot) {
-  const it=player.equipment[slot];
+  const it = player.equipment[slot];
   if (!it||player.inventory.length>=20) return;
   player.inventory.push(it);
   player.equipment[slot]=null;
@@ -501,34 +558,68 @@ function statStr(it) {
 // ─────────────────────────────────────────────────────────
 //  PANEL UIs
 // ─────────────────────────────────────────────────────────
+const EQ_SLOTS = [
+  {slot:'weapon',  label:'Оружие',  empty:'⚔️'},
+  {slot:'armor',   label:'Броня',   empty:'🛡️'},
+  {slot:'helmet',  label:'Шлем',    empty:'⛑️'},
+  {slot:'ring',    label:'Кольцо',  empty:'💍'},
+  {slot:'pendant', label:'Амулет',  empty:'📿'},
+];
+
 function updateInvUI() {
   if (!player) return;
-  const SLOTS={weapon:'⚔️ Оружие',armor:'🛡️ Броня',helmet:'⛑️ Шлем',ring:'💍 Кольцо'};
-  document.getElementById('eq-slots').innerHTML=Object.entries(SLOTS).map(([slot,lbl])=>{
-    const it=player.equipment[slot];
-    return `<div class="slot-box">
-      <div class="slot-lbl">${lbl}</div>
-      ${it?`<div class="slot-row"><span>${it.emoji}</span><span class="slot-nm rarity-${it.rarity}">${it.name}</span><button class="btn-sm btn-rm" onclick="unequipItem('${slot}')">↑ Снять</button></div><div class="slot-st">${statStr(it)}</div>`
-         :`<div style="font-size:11px;color:#2a2a3a;margin-top:3px">— пусто —</div>`}
+
+  // Left column: equipment slots
+  document.getElementById('eq-left').innerHTML = EQ_SLOTS.map(({slot,label,empty}) => {
+    const it = player.equipment[slot];
+    const onclick = it ? `unequipItem('${slot}')` : '';
+    return `<div class="eq-cell${it?' filled':''}" onclick="${onclick}">
+      <div class="cell-icon">${it ? it.emoji : empty}</div>
+      <div class="cell-lbl">${it ? it.name.slice(0,9) : label}</div>
     </div>`;
   }).join('');
-  const inv=player.inventory;
-  document.getElementById('inv-count').textContent=inv.length+'/20';
-  document.getElementById('inv-list').innerHTML=inv.length===0
-    ?'<div style="color:#2a2a3a;font-size:12px;padding:8px 0">Инвентарь пуст</div>'
-    :inv.map((it,i)=>`<div class="inv-item">
-        <span style="font-size:18px">${it.emoji}</span>
-        <div style="flex:1"><div class="inv-nm rarity-${it.rarity}">${it.name}</div><div class="inv-st">${statStr(it)}</div></div>
-        <button class="btn-sm btn-eq" onclick="equipItem(${i})">↓ Надеть</button>
-      </div>`).join('');
+
+  // Center: character preview
+  const p = player;
+  document.getElementById('char-preview').innerHTML = `
+    <div class="char-big">${p.charDef.emoji}</div>
+    <div class="char-name" style="color:${p.charDef.color}">${p.charDef.name}</div>
+    <div class="char-lvl">Уровень ${p.lvl}</div>
+    <div class="char-stats">
+      ♥ ${Math.ceil(p.hp)}/${p.maxHp}<br>
+      ⚔ ${p.atk} · 🛡 ${p.def}<br>
+      💰 ${p.gold} · 💀 ${p.kills}
+    </div>
+  `;
+
+  // Right column: first 5 inventory items
+  const inv = player.inventory;
+  document.getElementById('eq-right').innerHTML = Array.from({length:5}, (_,i) => {
+    const it = inv[i];
+    const onclick = it ? `equipItem(${i})` : '';
+    return `<div class="eq-cell${it?' filled':''}" onclick="${onclick}">
+      <div class="cell-icon">${it ? it.emoji : '·'}</div>
+      <div class="cell-lbl">${it ? it.name.slice(0,9) : '—'}</div>
+    </div>`;
+  }).join('');
+
+  // Count badge
+  document.getElementById('inv-count').textContent = inv.length+'/20';
+
+  // Full inventory grid (20 cells)
+  document.getElementById('inv-grid').innerHTML = Array.from({length:20}, (_,i) => {
+    const it = inv[i];
+    return `<div class="inv-cell${it?' filled':''}" onclick="${it?`equipItem(${i})`:''}" title="${it?it.name+' '+statStr(it):''}">
+      ${it ? `<span>${it.emoji}</span>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function updateProfileUI() {
   if (!player) return;
-  const p=player, d=p.charDef;
-  const pct=Math.floor(p.xp/p.xpNext*100);
-  const ESLOTS={weapon:'⚔️ Оружие',armor:'🛡️ Броня',helmet:'⛑️ Шлем',ring:'💍 Кольцо'};
-  document.getElementById('profile-body').innerHTML=`
+  const p = player, d = p.charDef;
+  const pct = Math.floor(p.xp/p.xpNext*100);
+  document.getElementById('profile-body').innerHTML = `
     <div class="prof-hero">
       <div class="prof-emoji">${d.emoji}</div>
       <div>
@@ -543,33 +634,34 @@ function updateProfileUI() {
       <div class="stat-card"><div class="stat-ic">⚔️</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Урон</div></div>
       <div class="stat-card"><div class="stat-ic">🛡️</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Броня</div></div>
       <div class="stat-card"><div class="stat-ic">💰</div><div class="stat-vl">${p.gold}</div><div class="stat-nm">Золото</div></div>
-      <div class="stat-card"><div class="stat-ic">🏰</div><div class="stat-vl">${dungeonLvl}</div><div class="stat-nm">Подземелье</div></div>
+      <div class="stat-card"><div class="stat-ic">🏰</div><div class="stat-vl">${dungeonLvl}</div><div class="stat-nm">Этаж</div></div>
       <div class="stat-card"><div class="stat-ic">💀</div><div class="stat-vl">${p.kills}</div><div class="stat-nm">Убийства</div></div>
     </div>
     <div class="sec-title">Снаряжение</div>
     <div class="equip-sum">
-      ${Object.entries(ESLOTS).map(([slot,lbl])=>{
+      ${EQ_SLOTS.map(({slot,label})=>{
         const it=p.equipment[slot];
-        return `<div class="eq-row"><span class="eq-sl-nm">${lbl}</span><span class="${it?'rarity-'+it.rarity:''}" style="font-size:12px">${it?it.emoji+' '+it.name:'—'}</span></div>`;
+        return `<div class="eq-row"><span class="eq-sl-nm">${label}</span><span class="${it?'rarity-'+it.rarity:''}" style="font-size:12px">${it?it.emoji+' '+it.name:'—'}</span></div>`;
       }).join('')}
     </div>`;
 }
 
 function drawMapPanel() {
   if (!dungeon||!player) return;
-  const mc=document.getElementById('map-canvas');
-  const panel=document.getElementById('panel-map');
-  const pw=panel.clientWidth, ph=panel.clientHeight-90;
-  mc.width=pw; mc.height=Math.max(ph,100);
-  mc.style.width=pw+'px'; mc.style.height=Math.max(ph,100)+'px';
-  const mx2=mc.getContext('2d');
-  const sc=Math.min((pw-20)/dungeon.w, (mc.height-10)/dungeon.h);
-  const ox=(pw-dungeon.w*sc)/2, oy=8;
-  mx2.fillStyle='#030308'; mx2.fillRect(0,0,pw,mc.height);
+  const mc = document.getElementById('map-canvas');
+  const panel = document.getElementById('panel-map');
+  const pw = panel.clientWidth;
+  const ph = Math.max(180, Math.floor((panel.clientHeight - 240) * 0.85));
+  mc.width=pw; mc.height=ph;
+  mc.style.width=pw+'px'; mc.style.height=ph+'px';
+  const mx2 = mc.getContext('2d');
+  const sc = Math.min((pw-20)/dungeon.w, (ph-10)/dungeon.h);
+  const ox = (pw-dungeon.w*sc)/2, oy = 8;
+  mx2.fillStyle='#030308'; mx2.fillRect(0,0,pw,ph);
   for (let ty=0;ty<dungeon.h;ty++) {
     for (let tx=0;tx<dungeon.w;tx++) {
-      const t=dungeon.grid[ty][tx]; if(t===WALL) continue;
-      mx2.fillStyle = t===EXIT ? (enemies.length===0?'#c040c0':'#601010') : '#2e2e4a';
+      const t = dungeon.grid[ty][tx]; if (t===WALL) continue;
+      mx2.fillStyle = '#2e2e4a';
       mx2.fillRect(ox+tx*sc, oy+ty*sc, Math.max(1,sc-0.5), Math.max(1,sc-0.5));
     }
   }
@@ -579,8 +671,17 @@ function drawMapPanel() {
   enemies.forEach(e=>{
     mx2.beginPath(); mx2.arc(ox+(e.x/TILE)*sc, oy+(e.y/TILE)*sc, Math.max(1.5,sc*0.5), 0, Math.PI*2); mx2.fill();
   });
-  document.getElementById('map-status').textContent=
-    enemies.length>0 ? `👾 Врагов: ${enemies.length}` : '✓ Путь открыт';
+  document.getElementById('map-status').textContent =
+    `Этаж ${dungeonLvl} · 👾 ${enemies.length}`;
+}
+
+function updateFloorUI() {
+  const grid = document.getElementById('floor-grid');
+  if (!grid) return;
+  grid.innerHTML = Array.from({length:20}, (_,i) => {
+    const n = i+1;
+    return `<div class="floor-btn${n===dungeonLvl?' active':''}" onclick="goToFloor(${n})">${n}</div>`;
+  }).join('');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -590,15 +691,14 @@ function setTab(n) {
   activeTab=n;
   document.querySelectorAll('.nav-tab').forEach((el,i)=>el.classList.toggle('active',i===n));
   document.querySelectorAll('.bpanel').forEach(p=>{ p.classList.remove('open'); });
-  // Stop joystick when leaving game tab
   if (n!==0) { joy.active=false; joy.dx=0; joy.dy=0; }
-  const pid=['','panel-inv','panel-map','panel-friends','panel-profile'][n];
+  const pid = ['','panel-inv','panel-map','panel-friends','panel-profile'][n];
   if (pid) {
-    const el=document.getElementById(pid);
+    const el = document.getElementById(pid);
     el.style.display='block';
     requestAnimationFrame(()=>{ el.classList.add('open'); });
     if (n===1) updateInvUI();
-    if (n===2) setTimeout(drawMapPanel,320); // wait for animation
+    if (n===2) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
     if (n===4) updateProfileUI();
   }
 }
@@ -615,19 +715,20 @@ function spawnAOE(x,y,r) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  INPUT  (joystick only active in game tab while playing)
+//  INPUT
 // ─────────────────────────────────────────────────────────
 function joyCenter() { return { x:W/2, y:H - NAV_H - 88 }; }
 
 function initInput() {
   window.addEventListener('keydown', e=>{ keys[e.key]=true; });
   window.addEventListener('keyup',   e=>{ keys[e.key]=false; });
-  canvas.addEventListener('touchstart', onTS, {passive:false});
-  canvas.addEventListener('touchmove',  onTM, {passive:false});
-  canvas.addEventListener('touchend',   onTE);
-  canvas.addEventListener('mousedown',  onMD);
-  window.addEventListener('mousemove',  onMM);
-  window.addEventListener('mouseup',    onMU);
+  canvas.addEventListener('touchstart',  onTS, {passive:false});
+  canvas.addEventListener('touchmove',   onTM, {passive:false});
+  canvas.addEventListener('touchend',    onTE);
+  canvas.addEventListener('touchcancel', onTC);
+  canvas.addEventListener('mousedown',   onMD);
+  window.addEventListener('mousemove',   onMM);
+  window.addEventListener('mouseup',     onMU);
   canvas.addEventListener('click', e=>{ if(state==='dead'&&activeTab===0) restartGame(); });
 }
 
@@ -636,9 +737,9 @@ function joyGuard() { return state==='playing' && activeTab===0; }
 function onTS(e) {
   e.preventDefault();
   if (!joyGuard()) return;
-  const jc=joyCenter();
+  const jc = joyCenter();
   for (const t of e.changedTouches) {
-    if (t.clientY > H - NAV_H) return; // skip nav area
+    if (t.clientY > H - NAV_H) return;
     if (!joy.active && dist(t.clientX,t.clientY,jc.x,jc.y) < JOY_R*1.9) {
       joy.active=true; joy.id=t.identifier;
       joy.sx=jc.x; joy.sy=jc.y; joy.dx=0; joy.dy=0;
@@ -654,11 +755,13 @@ function onTM(e) {
 function onTE(e) {
   for (const t of e.changedTouches)
     if (t.identifier===joy.id) { joy.active=false; joy.dx=0; joy.dy=0; }
+  if (e.touches.length===0) { joy.active=false; joy.dx=0; joy.dy=0; }
 }
+function onTC() { joy.active=false; joy.dx=0; joy.dy=0; }
 function onMD(e) {
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
-  const jc=joyCenter();
+  const jc = joyCenter();
   if (dist(e.clientX,e.clientY,jc.x,jc.y) < JOY_R*1.9) {
     joy.active=true; joy.sx=jc.x; joy.sy=jc.y; joy.dx=0; joy.dy=0;
   }
@@ -703,9 +806,9 @@ function update(dt) {
   frameCount++;
   if (transTimer>0) { transTimer-=dt; return; }
 
-  // Player movement (only when game tab active)
+  // Player movement
   if (activeTab===0) {
-    const inp=inputDir();
+    const inp = inputDir();
     if (inp.len>0) {
       const vx = inp.dx * player.speed * inp.len * dt;
       const vy = inp.dy * player.speed * inp.len * dt;
@@ -716,11 +819,6 @@ function update(dt) {
 
   if (player.hurtTimer>0) player.hurtTimer-=dt;
   if (swingTimer>0)       swingTimer-=dt;
-
-  // Check exit
-  if (tileAt(player.x,player.y)===EXIT && enemies.length===0) {
-    dungeonLvl++; transTimer=0.6; loadLevel(); return;
-  }
 
   // Auto-attack: closest enemy in range
   player.atkTimer-=dt;
@@ -735,10 +833,10 @@ function update(dt) {
   }
 
   // Enemies
-  const dead=[];
+  const dead = [];
   enemies.forEach(e=>{
     if (e.hurtTimer>0) e.hurtTimer-=dt;
-    const dp=dist(e.x,e.y,player.x,player.y);
+    const dp = dist(e.x,e.y,player.x,player.y);
     if (dp<e.aggroR) e.aggro=true;
     if (dp>e.aggroR*2.2) e.aggro=false;
     if (e.aggro) {
@@ -753,8 +851,34 @@ function update(dt) {
     }
     if (e.hp<=0) dead.push(e);
   });
-  dead.forEach(e=>{ spawnBurst(e.x,e.y,e.color,8); spawnDrops(e); gainXP(e.xp); player.kills++; });
-  enemies=enemies.filter(e=>e.hp>0);
+
+  dead.forEach(e=>{
+    spawnBurst(e.x,e.y,e.color,8);
+    spawnDrops(e);
+    gainXP(e.xp);
+    player.kills++;
+    deadEnemies.push({
+      ...e,
+      hp: e.maxHp,
+      respawnTimer: 10,
+      aggro: false,
+      hurtTimer: 0,
+      atkTimer: 1+Math.random(),
+    });
+  });
+  enemies = enemies.filter(e=>e.hp>0);
+
+  // Respawn dead enemies after 10 seconds
+  const stillDead = [];
+  deadEnemies.forEach(e=>{
+    e.respawnTimer -= dt;
+    if (e.respawnTimer<=0) {
+      enemies.push({...e, x:e.spawnX, y:e.spawnY, hp:e.maxHp, hurtTimer:0, aggro:false, atkTimer:1+Math.random()});
+    } else {
+      stillDead.push(e);
+    }
+  });
+  deadEnemies = stillDead;
 
   // Projectiles
   projs=projs.filter(p=>{
@@ -766,7 +890,10 @@ function update(dt) {
         if (hit) return true;
         if (dist(p.x,p.y,e.x,e.y)<e.size+p.size) {
           hitEnemy(e,p.dmg);
-          if (e.hp<=0){ spawnBurst(e.x,e.y,e.color,8); spawnDrops(e); gainXP(e.xp); player.kills++; }
+          if (e.hp<=0){
+            spawnBurst(e.x,e.y,e.color,8); spawnDrops(e); gainXP(e.xp); player.kills++;
+            deadEnemies.push({...e, hp:e.maxHp, respawnTimer:10, aggro:false, hurtTimer:0, atkTimer:1+Math.random()});
+          }
           hit=true; return e.hp>0;
         }
         return true;
@@ -784,7 +911,6 @@ function update(dt) {
     return true;
   });
 
-  // Particles / numbers
   particles=particles.filter(p=>{ p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt; return p.life>0; });
   dmgNums=dmgNums.filter(d=>{ d.y+=d.vy*dt; d.life-=dt; return d.life>0; });
 
@@ -807,7 +933,7 @@ function render() {
   const x1=Math.min(dungeon.w,Math.ceil((camera.x+W)/TILE)+1);
   const y1=Math.min(dungeon.h,Math.ceil((camera.y+H)/TILE)+1);
 
-  const th=Math.min(2, Math.floor((dungeonLvl-1)/3)); // 0=cave, 1=crypt, 2=hell
+  const th=Math.min(2, Math.floor((dungeonLvl-1)/4));
   const WALL_BG  =['#17172a','#181820','#28100a'];
   const WALL_HI  =['#21213a','#1e1e2a','#381512'];
   const FLOOR_BG =['#1b1b2d','#17202a','#20100a'];
@@ -815,30 +941,17 @@ function render() {
 
   for (let ty=y0;ty<y1;ty++) {
     for (let tx=x0;tx<x1;tx++) {
-      const t=dungeon.grid[ty][tx];
+      const t = dungeon.grid[ty][tx];
       const px=tx*TILE, py=ty*TILE;
       if (t===WALL) {
         ctx.fillStyle=WALL_BG[th]; ctx.fillRect(px,py,TILE,TILE);
         ctx.fillStyle=WALL_HI[th]; ctx.fillRect(px+1,py+1,TILE-2,TILE-2);
         ctx.fillStyle='rgba(0,0,0,.4)'; ctx.fillRect(px,py,TILE,2); ctx.fillRect(px,py,2,TILE);
-      } else if (t===FLOOR) {
+      } else {
         ctx.fillStyle=FLOOR_BG[th]; ctx.fillRect(px,py,TILE,TILE);
         ctx.fillStyle=FLOOR_PT[th];
         ctx.fillRect(px+1,py+1,TILE/2-1,TILE/2-1);
         ctx.fillRect(px+TILE/2+1,py+TILE/2+1,TILE/2-2,TILE/2-2);
-      } else if (t===EXIT) {
-        ctx.fillStyle=FLOOR_BG[th]; ctx.fillRect(px,py,TILE,TILE);
-        const cx2=px+TILE/2, cy2=py+TILE/2;
-        const pulse=0.75+0.25*Math.sin(frameCount*0.07);
-        const locked=enemies.length>0;
-        const g=ctx.createRadialGradient(cx2,cy2,0,cx2,cy2,TILE/2*pulse);
-        if (locked) { g.addColorStop(0,'#600'); g.addColorStop(.5,'#300'); g.addColorStop(1,'transparent'); }
-        else { g.addColorStop(0,'#fff'); g.addColorStop(.25,'#d0d'); g.addColorStop(.6,'#60f'); g.addColorStop(1,'transparent'); }
-        ctx.fillStyle=g; ctx.fillRect(px,py,TILE,TILE);
-        if (!locked) {
-          ctx.strokeStyle=`rgba(200,100,255,${0.5+0.5*pulse})`; ctx.lineWidth=2;
-          ctx.strokeRect(px+3,py+3,TILE-6,TILE-6);
-        }
       }
     }
   }
@@ -959,13 +1072,13 @@ function drawHUD() {
   ctx.fillStyle='rgba(0,0,0,.5)';
   roundRect(ctx, W-158, 8, 150, 42, 6); ctx.fill();
   ctx.fillStyle='#666'; ctx.font='11px Arial'; ctx.textAlign='right';
-  ctx.fillText('Подземелье '+dungeonLvl, W-12, 24);
+  ctx.fillText('Этаж '+dungeonLvl+' / 20', W-12, 24);
   ctx.fillStyle=alive>0?'#f88':'#8f8';
-  ctx.fillText(alive>0?'👾 Врагов: '+alive:'✓ Путь открыт!', W-12, 42);
+  ctx.fillText(alive>0?'👾 Врагов: '+alive:'✨ Всё спокойно', W-12, 42);
 }
 
 // ─────────────────────────────────────────────────────────
-//  MINI-MAP (top-right corner during game)
+//  MINI-MAP
 // ─────────────────────────────────────────────────────────
 function drawMinimap() {
   const sc=2;
@@ -976,7 +1089,7 @@ function drawMinimap() {
   for (let ty=0;ty<dungeon.h;ty++) {
     for (let tx=0;tx<dungeon.w;tx++) {
       const t=dungeon.grid[ty][tx]; if(t===WALL) continue;
-      ctx.fillStyle=t===EXIT?(enemies.length===0?'#d06fd0':'#600'):'#2e2e4a';
+      ctx.fillStyle='#2e2e4a';
       ctx.fillRect(mx+tx*sc,my+ty*sc,sc,sc);
     }
   }
@@ -1012,7 +1125,7 @@ function drawDead() {
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle='#f44'; ctx.font=`bold ${clamp(32,W*.09,54)}px Arial`; ctx.fillText('ВЫ ПОГИБЛИ',W/2,H/2-50);
   ctx.fillStyle='#777'; ctx.font=`${clamp(14,W*.04,20)}px Arial`;
-  ctx.fillText(`Подземелье ${dungeonLvl}  •  Уровень ${player.lvl}`,W/2,H/2+5);
+  ctx.fillText(`Этаж ${dungeonLvl}  •  Уровень ${player.lvl}`,W/2,H/2+5);
   ctx.fillStyle='#ff0'; ctx.fillText(`Золото: ${player.gold}  •  Убито: ${player.kills}`,W/2,H/2+38);
   ctx.fillStyle='rgba(255,255,255,.5)'; ctx.font=`${clamp(13,W*.034,17)}px Arial`;
   ctx.fillText('Нажмите, чтобы начать снова',W/2,H/2+84);
@@ -1021,6 +1134,14 @@ function drawDead() {
 // ─────────────────────────────────────────────────────────
 //  GAME FLOW
 // ─────────────────────────────────────────────────────────
+function goToFloor(n) {
+  if (n===dungeonLvl || !player) return;
+  dungeonLvl = clamp(n, 1, 20);
+  transTimer = 0.5;
+  loadLevel();
+  setTab(0);
+}
+
 function selectChar(type) {
   joy.active=false; joy.dx=0; joy.dy=0;
   document.getElementById('char-select').style.display='none';
@@ -1035,6 +1156,7 @@ function selectChar(type) {
 function loadLevel() {
   dungeon=generateDungeon(dungeonLvl);
   enemies=[...dungeon.enemies];
+  deadEnemies=[];
   projs=[]; drops=[]; particles=[]; dmgNums=[];
   player.x=dungeon.spawn.x; player.y=dungeon.spawn.y;
   if (dungeonLvl>1) player.hp=Math.min(player.maxHp, player.hp+Math.floor(player.maxHp*.25));
@@ -1050,6 +1172,7 @@ function restartGame() {
   setTab(0);
   player=null; dungeonLvl=1;
   enemies=[]; projs=[]; drops=[]; particles=[]; dmgNums=[];
+  deadEnemies=[];
   state='select';
 }
 
