@@ -308,7 +308,7 @@ function generateDungeon(lvl) {
     y: Math.floor(rooms[0].y + rooms[0].h/2) * TILE + TILE/2,
   };
 
-  return { grid, rooms, spawn, w:DW, h:DH };
+  return { grid, rooms, spawn, enemies: enemyList, w:DW, h:DH };
 }
 
 // ─────────────────────────────────────────────────────────
