@@ -374,10 +374,10 @@ function tileAt(wx,wy) {
 function isWall(wx,wy) { return tileAt(wx,wy)===WALL; }
 
 function pushOut(ent,r) {
-  if (isWall(ent.x-r, ent.y)) ent.x = Math.floor((ent.x-r)/TILE)*TILE + TILE + r + 0.5;
-  if (isWall(ent.x+r, ent.y)) ent.x = Math.ceil((ent.x+r)/TILE)*TILE - r - 0.5;
-  if (isWall(ent.x, ent.y-r)) ent.y = Math.floor((ent.y-r)/TILE)*TILE + TILE + r + 0.5;
-  if (isWall(ent.x, ent.y+r)) ent.y = Math.ceil((ent.y+r)/TILE)*TILE - r - 0.5;
+  if (isWall(ent.x-r, ent.y)) ent.x = Math.floor((ent.x-r)/TILE)*TILE + TILE + r;
+  if (isWall(ent.x+r, ent.y)) ent.x = Math.floor((ent.x+r)/TILE)*TILE - r;
+  if (isWall(ent.x, ent.y-r)) ent.y = Math.floor((ent.y-r)/TILE)*TILE + TILE + r;
+  if (isWall(ent.x, ent.y+r)) ent.y = Math.floor((ent.y+r)/TILE)*TILE - r;
 }
 
 // ─────────────────────────────────────────────────────────
