@@ -97,12 +97,13 @@ function drawMapPanel() {
   }
   mx2.fillStyle = '#00ff44';
   mx2.beginPath(); mx2.arc(ox + (player.x / TILE) * sc, oy + (player.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
+  const mapEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
   mx2.fillStyle = '#ff3322';
-  enemies.forEach(e => {
+  mapEnemies.forEach(e => {
     mx2.beginPath(); mx2.arc(ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc, Math.max(1.5, sc * 0.5), 0, Math.PI * 2); mx2.fill();
   });
   document.getElementById('map-status').textContent =
-    th.name + ' · Этаж ' + dungeonLvl + ' · 👾 ' + enemies.length;
+    th.name + ' · Этаж ' + dungeonLvl + ' · 👾 ' + mapEnemies.length;
 }
 
 function updateFloorUI() {
@@ -313,8 +314,9 @@ function drawMinimap() {
     }
   }
   ctx.fillStyle = '#0f0'; ctx.fillRect(mx + (player.x / TILE) * sc - 2, my + (player.y / TILE) * sc - 2, 4, 4);
+  const mmEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
   ctx.fillStyle = '#f00';
-  enemies.forEach(e => ctx.fillRect(mx + (e.x / TILE) * sc - 1, my + (e.y / TILE) * sc - 1, 2, 2));
+  mmEnemies.forEach(e => ctx.fillRect(mx + (e.x / TILE) * sc - 1, my + (e.y / TILE) * sc - 1, 2, 2));
 }
 
 // ─────────────────────────────────────────────────────────

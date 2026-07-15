@@ -11,3 +11,10 @@ let keys = {};
 let joy = { active: false, id: null, sx: 0, sy: 0, dx: 0, dy: 0 };
 let swingAngle = 0, swingTimer = 0;
 let transTimer = 0;
+
+// Multiplayer state
+let socket = null;
+let otherPlayers = {};   // socketId → { x, y, type, facing, hp, maxHp, username }
+let serverEnemies = [];  // authoritative enemy list when online
+let netUsername = null;
+let netRoom = null;

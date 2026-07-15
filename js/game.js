@@ -20,6 +20,9 @@ function update(dt) {
   frameCount++;
   if (transTimer > 0) { transTimer -= dt; return; }
 
+  const isOnline = !!(socket?.connected);
+  const activeEnemies = isOnline ? serverEnemies : enemies;
+
   if (activeTab === 0) {
     const inp = inputDir();
     if (inp.len > 0) {
@@ -31,6 +34,7 @@ function update(dt) {
       if (ax > ay * 0.8) player.facing = inp.dx > 0 ? 'right' : 'left';
       else               player.facing = inp.dy > 0 ? 'front' : 'back';
     }
+    if (isOnline) netSendMove();
   }
 
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
@@ -54,76 +58,95 @@ function update(dt) {
   }
 
   player.atkTimer -= dt;
-  if (player.atkTimer <= 0 && enemies.length > 0) {
+  if (player.atkTimer <= 0 && activeEnemies.length > 0) {
     let closest = null, closestD = Infinity;
-    enemies.forEach(e => { const d = dist(e.x, e.y, player.x, player.y); if (d < closestD) { closestD = d; closest = e; } });
+    activeEnemies.forEach(e => { const d = dist(e.x, e.y, player.x, player.y); if (d < closestD) { closestD = d; closest = e; } });
     if (closest && closestD < player.charDef.atkRange) {
       player.atkTimer = 1 / player.charDef.atkSpeed;
-      if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-      else doMeleeAttack(closest);
+      if (isOnline) {
+        // Visual feedback only; damage applied server-side
+        netAttack(closest.id);
+        faceTowards(closest.x, closest.y);
+        swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
+        swingTimer = 0.18;
+        player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
+        if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
+        else if (player.charDef.atkType === 'aoe') spawnAOE(player.x, player.y, player.charDef.atkRange);
+      } else {
+        if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
+        else doMeleeAttack(closest);
+      }
     }
   }
 
-  const dead = [];
-  enemies.forEach(e => {
-    if (e.hurtTimer > 0) e.hurtTimer -= dt;
-    const dp = dist(e.x, e.y, player.x, player.y);
-    if (dp < e.aggroR) e.aggro = true;
-    if (dp > e.aggroR * 2.2) e.aggro = false;
-    if (e.aggro) {
-      if (dp > e.size + 14) {
-        const ex2 = (player.x - e.x) / dp, ey2 = (player.y - e.y) / dp;
-        const er = e.size * 0.55, evx = ex2 * e.spd * dt, evy = ey2 * e.spd * dt;
-        if (canMoveX(e, evx, er)) e.x += evx;
-        if (canMoveY(e, evy, er)) e.y += evy;
-      }
-      e.atkTimer -= dt;
-      if (dp < e.size + 20 && e.atkTimer <= 0) { e.atkTimer = 1.4 + Math.random() * 0.6; hitPlayer(e.atk); }
-    }
-    if (e.hp <= 0) dead.push(e);
-  });
-
-  dead.forEach(e => {
-    spawnBurst(e.x, e.y, e.color, 8);
-    spawnDrops(e);
-    gainXP(e.xp);
-    player.kills++;
-    deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
-  });
-  enemies = enemies.filter(e => e.hp > 0);
-
-  const stillDead = [];
-  deadEnemies.forEach(e => {
-    e.respawnTimer -= dt;
-    if (e.respawnTimer <= 0) {
-      enemies.push({ ...e, x: e.spawnX, y: e.spawnY, hp: e.maxHp, hurtTimer: 0, aggro: false, atkTimer: 1 + Math.random() });
-    } else {
-      stillDead.push(e);
-    }
-  });
-  deadEnemies = stillDead;
-
-  projs = projs.filter(p => {
-    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-    if (p.life <= 0 || isWall(p.x, p.y)) return false;
-    if (p.isPlayer) {
-      let hit = false;
-      enemies = enemies.filter(e => {
-        if (hit) return true;
-        if (dist(p.x, p.y, e.x, e.y) < e.size + p.size) {
-          hitEnemy(e, p.dmg);
-          if (e.hp <= 0) {
-            spawnBurst(e.x, e.y, e.color, 8); spawnDrops(e); gainXP(e.xp); player.kills++;
-            deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
-          }
-          hit = true; return e.hp > 0;
+  if (!isOnline) {
+    const dead = [];
+    enemies.forEach(e => {
+      if (e.hurtTimer > 0) e.hurtTimer -= dt;
+      const dp = dist(e.x, e.y, player.x, player.y);
+      if (dp < e.aggroR) e.aggro = true;
+      if (dp > e.aggroR * 2.2) e.aggro = false;
+      if (e.aggro) {
+        if (dp > e.size + 14) {
+          const ex2 = (player.x - e.x) / dp, ey2 = (player.y - e.y) / dp;
+          const er = e.size * 0.55, evx = ex2 * e.spd * dt, evy = ey2 * e.spd * dt;
+          if (canMoveX(e, evx, er)) e.x += evx;
+          if (canMoveY(e, evy, er)) e.y += evy;
         }
-        return true;
-      });
-      return !hit;
-    }
-    return true;
-  });
+        e.atkTimer -= dt;
+        if (dp < e.size + 20 && e.atkTimer <= 0) { e.atkTimer = 1.4 + Math.random() * 0.6; hitPlayer(e.atk); }
+      }
+      if (e.hp <= 0) dead.push(e);
+    });
+
+    dead.forEach(e => {
+      spawnBurst(e.x, e.y, e.color, 8);
+      spawnDrops(e);
+      gainXP(e.xp);
+      player.kills++;
+      deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
+    });
+    enemies = enemies.filter(e => e.hp > 0);
+
+    const stillDead = [];
+    deadEnemies.forEach(e => {
+      e.respawnTimer -= dt;
+      if (e.respawnTimer <= 0) {
+        enemies.push({ ...e, x: e.spawnX, y: e.spawnY, hp: e.maxHp, hurtTimer: 0, aggro: false, atkTimer: 1 + Math.random() });
+      } else {
+        stillDead.push(e);
+      }
+    });
+    deadEnemies = stillDead;
+
+    projs = projs.filter(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if (p.life <= 0 || isWall(p.x, p.y)) return false;
+      if (p.isPlayer) {
+        let hit = false;
+        enemies = enemies.filter(e => {
+          if (hit) return true;
+          if (dist(p.x, p.y, e.x, e.y) < e.size + p.size) {
+            hitEnemy(e, p.dmg);
+            if (e.hp <= 0) {
+              spawnBurst(e.x, e.y, e.color, 8); spawnDrops(e); gainXP(e.xp); player.kills++;
+              deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
+            }
+            hit = true; return e.hp > 0;
+          }
+          return true;
+        });
+        return !hit;
+      }
+      return true;
+    });
+  } else {
+    // Online: advance visual projectiles (no damage check)
+    projs = projs.filter(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      return p.life > 0 && !isWall(p.x, p.y);
+    });
+  }
 
   drops = drops.filter(d => {
     d.life -= dt;
@@ -186,8 +209,9 @@ function render() {
   particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); });
   ctx.globalAlpha = 1;
 
-  // Enemies
-  enemies.forEach(e => {
+  // Enemies (authoritative source depends on online/offline mode)
+  const drawEnemyList = socket?.connected ? serverEnemies : enemies;
+  drawEnemyList.forEach(e => {
     const hurt = e.hurtTimer > 0;
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + e.size, e.size * .8, e.size * .3, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = hurt ? '#fff' : e.color; ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
@@ -205,6 +229,23 @@ function render() {
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
   });
+
+  // Other players (online only)
+  if (socket?.connected) {
+    Object.values(otherPlayers).forEach(p => {
+      if (!p.x) return;
+      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.type === 'warrior' ? '#5af' : p.type === 'archer' ? '#7e7' : p.type === 'mage' ? '#e8e' : '#aaa';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(p.username || '?', p.x, p.y - 18);
+      ctx.fillText(p.username || '?', p.x, p.y - 18);
+      const bw = 32, bh = 4, bx = p.x - bw / 2, by = p.y - 26;
+      ctx.fillStyle = '#300'; ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = '#2d2'; ctx.fillRect(bx, by, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
+    });
+  }
 
   // Projectiles
   projs.forEach(p => {
@@ -259,22 +300,35 @@ function render() {
 // ─────────────────────────────────────────────────────────
 function goToFloor(n) {
   if (n === dungeonLvl || !player) return;
-  dungeonLvl = clamp(n, 1, 20);
-  transTimer = 0.5;
-  loadLevel();
-  setTab(0);
+  if (socket?.connected) {
+    netSendChangeFloor(clamp(n, 1, 20));
+    setTab(0);
+  } else {
+    dungeonLvl = clamp(n, 1, 20);
+    transTimer = 0.5;
+    loadLevel();
+    setTab(0);
+  }
 }
 
 function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
-  document.getElementById('char-select').style.display = 'none';
-  document.getElementById('bottom-nav').style.display = 'block';
-  document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
   player = makePlayer(type);
   dungeonLvl = 1;
-  loadLevel();
-  state = 'playing';
   loadSprites(type, () => {});
+
+  if (socket?.connected) {
+    // Online: send selection, wait for gameStart from server
+    netSelectChar(type);
+  } else {
+    // Offline: start immediately
+    document.getElementById('char-select').style.display = 'none';
+    document.getElementById('bottom-nav').style.display = 'block';
+    document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
+    loadLevel();
+    state = 'playing';
+    setTab(0);
+  }
 }
 
 function loadLevel() {
@@ -297,6 +351,7 @@ function loadLevel() {
 
 function restartGame() {
   if (state !== 'dead') return;
+  serverEnemies = []; otherPlayers = {};
   // Clear floor cache so new game generates fresh maps
   Object.keys(floorCache).forEach(k => delete floorCache[k]);
   document.getElementById('char-select').style.display = 'flex';

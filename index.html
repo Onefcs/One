@@ -8,8 +8,51 @@
 </head>
 <body>
 
+<!-- Login Screen -->
+<div id="login-screen">
+  <h1>⚔ DUNGEON QUEST</h1>
+  <div class="auth-box">
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Войти</button>
+      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Регистрация</button>
+    </div>
+    <input type="text" id="auth-username" placeholder="Имя пользователя" maxlength="20" autocomplete="username">
+    <input type="password" id="auth-password" placeholder="Пароль" maxlength="30" autocomplete="current-password">
+    <div id="auth-error" class="auth-error"></div>
+    <button class="auth-btn primary" onclick="authSubmit()">Войти</button>
+    <button class="auth-btn secondary" onclick="playOffline()">Играть офлайн</button>
+  </div>
+</div>
+
+<!-- Lobby Screen -->
+<div id="lobby-screen" style="display:none">
+  <h1>⚔ DUNGEON QUEST</h1>
+  <div class="auth-box">
+    <div id="lobby-welcome" class="lobby-welcome"></div>
+    <button class="auth-btn primary" onclick="if(socket?.connected)socket.emit('createRoom')">Создать комнату</button>
+    <div class="join-row">
+      <input type="text" id="room-code-input" placeholder="Код комнаты" maxlength="6" style="text-transform:uppercase;flex:1">
+      <button class="auth-btn primary" style="width:auto;padding:0 16px" onclick="doJoinRoom()">→</button>
+    </div>
+    <div id="lobby-error" class="auth-error"></div>
+    <button class="auth-btn secondary" onclick="playOffline()">Играть соло</button>
+  </div>
+</div>
+
+<!-- Room Lobby Screen -->
+<div id="room-lobby-screen" style="display:none">
+  <h1>⚔ DUNGEON QUEST</h1>
+  <div class="auth-box">
+    <div class="room-code-label">Код комнаты</div>
+    <div id="room-code-display" class="room-code-big"></div>
+    <div id="room-players-list" class="room-players"></div>
+    <button class="auth-btn primary" onclick="startOnlineGame()">Выбрать персонажа ▶</button>
+    <button class="auth-btn secondary" onclick="leaveRoom()">← Назад</button>
+  </div>
+</div>
+
 <!-- Character Select -->
-<div id="char-select">
+<div id="char-select" style="display:none">
   <h1>⚔ DUNGEON QUEST</h1>
   <p>Выберите персонажа для прохождения подземелий</p>
   <div class="cards">
@@ -98,6 +141,8 @@
   </div>
 </nav>
 
+<!-- Socket.io client -->
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <!-- Game scripts — load order matters (dependencies first) -->
 <script src="js/constants.js"></script>
 <script src="js/utils.js"></script>
@@ -111,6 +156,7 @@
 <script src="js/combat.js"></script>
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/network.js"></script>
 <script src="js/game.js"></script>
 
 </body>
