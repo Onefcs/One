@@ -323,19 +323,23 @@ function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
   player = makePlayer(type);
   dungeonLvl = 1;
-  loadSprites(type, () => {});
 
   if (socket?.connected) {
-    // Online: send selection, wait for gameStart from server
+    // Online: send to server; sprites are loaded when gameStart arrives (see network.js)
     netSelectChar(type);
   } else {
-    // Offline: start immediately
-    document.getElementById('char-select').style.display = 'none';
-    document.getElementById('bottom-nav').style.display = 'block';
-    document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
-    loadLevel();
-    state = 'playing';
-    setTab(0);
+    // Offline: dim cards, wait for sprites + dungeon to build, then start
+    const cards = document.querySelector('.cards');
+    if (cards) { cards.style.opacity = '0.4'; cards.style.pointerEvents = 'none'; }
+    loadSprites(type, () => {
+      if (cards) { cards.style.opacity = ''; cards.style.pointerEvents = ''; }
+      document.getElementById('char-select').style.display = 'none';
+      document.getElementById('bottom-nav').style.display = 'block';
+      document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
+      loadLevel();
+      state = 'playing';
+      setTab(0);
+    });
   }
 }
 
@@ -377,9 +381,11 @@ function loadLevel() {
 function restartGame() {
   if (state !== 'dead') return;
   serverEnemies = []; otherPlayers = {};
-  // Clear floor cache so new game generates fresh maps
   Object.keys(floorCache).forEach(k => delete floorCache[k]);
+  tileCanvas = null;
   document.getElementById('char-select').style.display = 'flex';
+  const cards = document.querySelector('.cards');
+  if (cards) { cards.style.opacity = ''; cards.style.pointerEvents = ''; }
   document.getElementById('bottom-nav').style.display = 'none';
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); p.style.display = 'none'; });
   setTab(0);

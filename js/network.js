@@ -70,7 +70,9 @@ function netConnect(onReady) {
       camera.x = player.x - W / 2; camera.y = player.y - H / 2;
       clampCamera();
     }
-    _finishOnlineStart();
+    // Wait for sprites to finish loading before starting — char-select stays
+    // visible as a natural loading screen; loadSprites is instant if already cached
+    loadSprites(player?.type, _finishOnlineStart);
   });
 
   socket.on('gameState', ({ players, enemies }) => {
