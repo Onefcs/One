@@ -103,6 +103,7 @@ class Room {
         nearPlayers.push({
           id: op.socketId, username: op.username, type: op.type,
           x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
+          pvpMode: op.pvpMode || false,
         });
       });
 
@@ -135,8 +136,27 @@ class Room {
       socketId, username, type: null,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 25, def: 10,
+      pvpMode: false,
     });
     return spawn;
+  }
+
+  setPlayerPvpMode(socketId, mode) {
+    const p = this.players.get(socketId);
+    if (p) p.pvpMode = !!mode;
+  }
+
+  pvpAttack(attackerSocketId, targetSocketId) {
+    const attacker = this.players.get(attackerSocketId);
+    const target = this.players.get(targetSocketId);
+    if (!attacker || !target) return null;
+    if (!attacker.pvpMode || !target.pvpMode) return null; // both must be in pvp mode
+    if (target.hp <= 0) return null;
+    const d = Math.hypot(attacker.x - target.x, attacker.y - target.y);
+    if (d > 400) return null;
+    const dmg = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
+    target.hp = Math.max(0, target.hp - dmg);
+    return { hp: target.hp, dmg, x: target.x, y: target.y };
   }
 
   removePlayer(socketId) { this.players.delete(socketId); }

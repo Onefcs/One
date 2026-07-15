@@ -430,6 +430,113 @@ function drawPotionButton() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  TARGET BUTTON
+// ─────────────────────────────────────────────────────────
+function drawTargetButton() {
+  if (!player) return;
+  const tb = getTargetBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+  const hasTarget = !!targetId;
+
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+
+  ctx.fillStyle = hasTarget ? 'rgba(40,8,8,0.92)' : 'rgba(8,6,20,0.85)';
+  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = hasTarget ? 'rgba(255,60,60,0.9)' : 'rgba(80,60,120,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.font = `16px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🎯', tb.x, tb.y - 5);
+
+  ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = hasTarget ? '#f88' : '#888';
+  ctx.fillText('ЦЕЛЬ', tb.x, tb.y + tb.r - 3);
+
+  ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(150,150,150,0.6)';
+  ctx.fillText('[Tab]', tb.x, tb.y + tb.r + 10);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  PvP BUTTON
+// ─────────────────────────────────────────────────────────
+function drawPvpButton() {
+  if (!player) return;
+  const pb = getPvpBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  ctx.fillStyle = pvpMode ? 'rgba(60,8,8,0.94)' : 'rgba(8,6,20,0.88)';
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 8); ctx.fill();
+  ctx.strokeStyle = pvpMode ? 'rgba(255,60,60,0.85)' : 'rgba(60,120,200,0.55)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 8); ctx.stroke();
+
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = pvpMode ? '#ff7070' : '#7aaaee';
+  ctx.fillText(pvpMode ? '⚔ PvP' : '🕊 Мир', pb.x + pb.w / 2, pb.y + pb.h / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  TARGET FRAME
+// ─────────────────────────────────────────────────────────
+function drawTargetFrame() {
+  if (!targetId || !player) return;
+  const isOnline = !!(socket?.connected);
+  const activeEnemies = isOnline ? serverEnemies : enemies;
+
+  let name = '', hp = 0, maxHp = 1, color = '#f80';
+  if (targetIsPlayer && isOnline) {
+    const op = otherPlayers[targetId];
+    if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; return; }
+    name = op.username || '?';
+    hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#f77';
+  } else {
+    const e = activeEnemies.find(e => e.id === targetId);
+    if (!e || (e.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; return; }
+    name = e.name || '?';
+    hp = e.hp || 0; maxHp = e.maxHp || 1; color = e.color || '#f80';
+  }
+
+  const pb = getPvpBtnPos();
+  const bx = pb.x, by = pb.y + pb.h + 6;
+  const bw = 150, bh = 34;
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  ctx.fillStyle = 'rgba(5,3,16,0.92)';
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
+  ctx.strokeStyle = `rgba(200,60,60,0.65)`; ctx.lineWidth = 1.5;
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
+
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = color;
+  ctx.fillText('🎯 ' + name.slice(0, 16), bx + 8, by + 14);
+
+  const hbx = bx + 8, hby = by + 19, hbw = bw - 16, hbh = 9;
+  const pct = Math.max(0, Math.min(1, hp / maxHp));
+  ctx.fillStyle = 'rgba(50,10,10,0.85)';
+  roundRect(ctx, hbx, hby, hbw, hbh, 3); ctx.fill();
+  if (pct > 0) {
+    ctx.fillStyle = pct > 0.5 ? '#2d2' : pct > 0.25 ? '#da2' : '#d22';
+    roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
+  }
+  ctx.font = `bold 8px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(Math.ceil(hp) + ' / ' + maxHp, hbx + hbw / 2, hby + hbh / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  DEAD SCREEN
 // ─────────────────────────────────────────────────────────
 function drawDead() {

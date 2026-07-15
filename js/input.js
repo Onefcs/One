@@ -22,6 +22,39 @@ function getPotionBtnPos() {
   return { x: cx, y: sb.y - POTION_R - 10, r: POTION_R };
 }
 
+function getTargetBtnPos() {
+  const pb = getPotionBtnPos();
+  return { x: pb.x - POTION_R * 2 - 12, y: pb.y, r: POTION_R };
+}
+
+function getPvpBtnPos() {
+  const pad = 8, ph = 82;
+  return { x: pad, y: pad + ph + 6, w: 108, h: 24 };
+}
+
+function cycleTarget() {
+  if (!player) return;
+  const isOnline = !!(socket?.connected);
+  const activeEnemies = isOnline ? serverEnemies : enemies;
+  const candidates = [];
+  activeEnemies.forEach(e => {
+    if ((e.hp || 0) > 0)
+      candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
+  });
+  if (pvpMode && isOnline) {
+    Object.entries(otherPlayers).forEach(([id, op]) => {
+      if ((op.hp || 0) > 0 && op.x != null)
+        candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
+    });
+  }
+  candidates.sort((a, b) => a.d - b.d);
+  if (candidates.length === 0) { targetId = null; targetIsPlayer = false; return; }
+  const curIdx = candidates.findIndex(c => c.id === targetId && c.isPlayer === targetIsPlayer);
+  const next = candidates[(curIdx + 1) % candidates.length];
+  targetId = next.id;
+  targetIsPlayer = next.isPlayer;
+}
+
 function joyGuard() { return state === 'playing' && activeTab === 0; }
 
 function _checkSkillTouch(cx, cy) {
@@ -47,13 +80,35 @@ function _checkPotionTouch(cx, cy) {
   return false;
 }
 
+function _checkTargetBtnTouch(cx, cy) {
+  const tb = getTargetBtnPos();
+  if (Math.hypot(cx - tb.x, cy - tb.y) < tb.r + 6) {
+    cycleTarget();
+    return true;
+  }
+  return false;
+}
+
+function _checkPvpBtnTouch(cx, cy) {
+  const pb = getPvpBtnPos();
+  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
+    pvpMode = !pvpMode;
+    if (typeof netSetPvpMode === 'function') netSetPvpMode(pvpMode);
+    if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+    return true;
+  }
+  return false;
+}
+
 function onTS(e) {
   e.preventDefault();
   if (!joyGuard()) return;
   const jc = joyCenter();
   for (const t of e.changedTouches) {
     if (t.clientY > H - NAV_H) return;
+    if (_checkPvpBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkPotionTouch(t.clientX, t.clientY)) continue;
+    if (_checkTargetBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkSkillTouch(t.clientX, t.clientY)) continue;
     if (!joy.active && dist(t.clientX, t.clientY, jc.x, jc.y) < JOY_R * 1.9) {
       joy.active = true; joy.id = t.identifier;
@@ -80,7 +135,9 @@ function onTC() { joy.active = false; joy.dx = 0; joy.dy = 0; }
 function onMD(e) {
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
+  if (_checkPvpBtnTouch(e.clientX, e.clientY)) return;
   if (_checkPotionTouch(e.clientX, e.clientY)) return;
+  if (_checkTargetBtnTouch(e.clientX, e.clientY)) return;
   if (_checkSkillTouch(e.clientX, e.clientY)) return;
   const jc = joyCenter();
   if (dist(e.clientX, e.clientY, jc.x, jc.y) < JOY_R * 1.9) {
@@ -114,6 +171,7 @@ function initInput() {
       const map = { q:0, w:1, e:2, r:3, Q:0, W:1, E:2, R:3 };
       if (e.key in map) useSkill(map[e.key]);
       if (e.key === 'f' || e.key === 'F') usePotion();
+      if (e.key === 'Tab') { e.preventDefault(); cycleTarget(); }
     }
   });
   window.addEventListener('keyup', e => { keys[e.key] = false; });

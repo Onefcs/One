@@ -77,6 +77,7 @@ function netConnect(onReady) {
         if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
         op.hp = p.hp; op.maxHp = p.maxHp;
         op.facing = p.facing; op.username = p.username;
+        op.pvpMode = p.pvpMode || false;
         if (op.x === undefined) { op.x = p.x; op.y = p.y; }
         op.targetX = p.x; op.targetY = p.y;
       }
@@ -108,7 +109,13 @@ function netConnect(onReady) {
     } else if (otherPlayers[id]) {
       otherPlayers[id].hp = hp;
       otherPlayers[id].hurtTimer = 0.35;
+      if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     }
+  });
+
+  socket.on('pvpHit', ({ x, y, dmg }) => {
+    if (dmg) dmgNum(x, y - 24, dmg, '#f88');
+    spawnBurst(x, y, '#f44', 4);
   });
 
   socket.on('enemyHurt', ({ id, hp, dmg }) => {
@@ -121,6 +128,7 @@ function netConnect(onReady) {
   });
 
   socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color }) => {
+    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemies.find(e => e.id === id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
@@ -246,4 +254,12 @@ function netSendChangeFloor(floor) {
 
 function netSelectChar(type, savedStats) {
   if (socket?.connected) socket.emit('selectChar', { type, savedStats: savedStats || null });
+}
+
+function netPvpAttack(targetSocketId) {
+  if (socket?.connected) socket.emit('pvpAttack', { targetId: targetSocketId });
+}
+
+function netSetPvpMode(mode) {
+  if (socket?.connected) socket.emit('setPvpMode', { pvpMode: mode });
 }

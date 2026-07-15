@@ -148,6 +148,18 @@ io.on('connection', socket => {
     });
   });
 
+  socket.on('pvpAttack', ({ targetId }) => {
+    if (!currentRoom) return;
+    const result = currentRoom.pvpAttack(socket.id, targetId);
+    if (!result) return;
+    io.to(targetId).emit('playerHurt', { id: targetId, hp: result.hp });
+    socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg });
+  });
+
+  socket.on('setPvpMode', ({ pvpMode }) => {
+    if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
+  });
+
   socket.on('saveProgress', ({ stats }) => {
     if (authed) PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
   });

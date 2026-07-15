@@ -77,12 +77,20 @@ function usePotion() {
   netSaveProgress();
 }
 
-// Return direction toward nearest enemy; fall back to joystick if active
+// Return direction toward locked target or nearest enemy; fall back to joystick if active
 function nearestEnemyDir() {
   const jl = Math.hypot(joy.dx, joy.dy);
   if (jl > 0.25) return { dx: joy.dx / jl, dy: joy.dy / jl };
   const isOnline = !!(socket?.connected);
   const activeEnemies = isOnline ? serverEnemies : enemies;
+  // Prefer locked target
+  if (targetId && !targetIsPlayer) {
+    const t = activeEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
+    if (t) {
+      const len = Math.max(1, dist(t.x, t.y, player.x, player.y));
+      return { dx: (t.x - player.x) / len, dy: (t.y - player.y) / len };
+    }
+  }
   let closest = null, closestD = Infinity;
   activeEnemies.forEach(e => {
     const d = dist(e.x, e.y, player.x, player.y);

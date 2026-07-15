@@ -60,13 +60,51 @@ function update(dt) {
   }
 
   player.atkTimer -= dt;
-  if (player.atkTimer <= 0 && activeEnemies.length > 0) {
+  if (player.atkTimer <= 0) {
     let closest = null, closestD = Infinity;
-    activeEnemies.forEach(e => { const d = dist(e.x, e.y, player.x, player.y); if (d < closestD) { closestD = d; closest = e; } });
-    if (closest && closestD < player.charDef.atkRange) {
+    let closestIsPlayer = false;
+
+    // Prefer locked target
+    if (targetId && !targetIsPlayer) {
+      const t = activeEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
+      if (t) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
+    } else if (targetId && targetIsPlayer && pvpMode && isOnline) {
+      const op = otherPlayers[targetId];
+      if (op && (op.hp || 0) > 0 && op.x != null) {
+        closest = { ...op, _socketId: targetId };
+        closestD = dist(op.x, op.y, player.x, player.y);
+        closestIsPlayer = true;
+      }
+    }
+
+    // Fall back to nearest enemy
+    if (!closest) {
+      activeEnemies.forEach(e => {
+        if ((e.hp || 0) <= 0) return;
+        const d = dist(e.x, e.y, player.x, player.y);
+        if (d < closestD) { closestD = d; closest = e; closestIsPlayer = false; }
+      });
+      // In PvP mode also consider nearby players
+      if (pvpMode && isOnline) {
+        Object.entries(otherPlayers).forEach(([id, op]) => {
+          if ((op.hp || 0) <= 0 || op.x == null) return;
+          const d = dist(op.x, op.y, player.x, player.y);
+          if (d < closestD) { closestD = d; closest = { ...op, _socketId: id }; closestIsPlayer = true; }
+        });
+      }
+    }
+
+    const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
+    if (closest && closestD < atkRange) {
       player.atkTimer = 1 / player.charDef.atkSpeed;
-      if (isOnline) {
-        // Visual feedback only; damage applied server-side
+      if (closestIsPlayer) {
+        faceTowards(closest.x, closest.y);
+        swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
+        swingTimer = 0.18;
+        player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
+        netPvpAttack(closest._socketId);
+        if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
+      } else if (isOnline) {
         netAttack(closest.id);
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
@@ -101,6 +139,7 @@ function update(dt) {
     });
 
     dead.forEach(e => {
+      if (e.id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
       spawnBurst(e.x, e.y, e.color, 8);
       spawnDrops(e);
       gainXP(e.xp);
@@ -261,6 +300,17 @@ function render() {
   const drawEnemyList = socket?.connected ? serverEnemies : enemies;
   drawEnemyList.forEach(e => {
     const hurt = e.hurtTimer > 0;
+    // Selection ring
+    if (e.id === targetId && !targetIsPlayer) {
+      const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,60,60,${0.65 + 0.35 * pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 8 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + e.size, e.size * .8, e.size * .3, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = hurt ? '#fff' : e.color; ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#000';
@@ -280,8 +330,21 @@ function render() {
 
   // Other players (online only)
   if (socket?.connected) {
-    Object.values(otherPlayers).forEach(p => {
+    Object.entries(otherPlayers).forEach(([pid, p]) => {
       if (p.x == null || isNaN(p.x)) return;
+
+      // Selection ring
+      if (pid === targetId && targetIsPlayer) {
+        const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,80,80,${0.65 + 0.35 * pulse})`;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.arc(p.x, p.y, 22 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
       const usedSprite = drawOtherPlayerSprite(p);
       if (!usedSprite) {
         ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
@@ -297,7 +360,13 @@ function render() {
       ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
       ctx.strokeText(p.username || '?', p.x, nameY);
-      ctx.fillStyle = '#fff'; ctx.fillText(p.username || '?', p.x, nameY);
+      ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
+      ctx.fillText(p.username || '?', p.x, nameY);
+      // PvP badge
+      if (p.pvpMode) {
+        ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
+        ctx.fillText('⚔', p.x + bw / 2 + 2, nameY);
+      }
       ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
       ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
     });
@@ -363,11 +432,14 @@ function render() {
   ctx.restore(); // [camera]
 
   drawHUD();
+  drawPvpButton();
+  drawTargetFrame();
   drawMinimap();
   if (activeTab === 0) {
     drawJoystick();
     drawSkillButtons();
     drawPotionButton();
+    drawTargetButton();
   }
   if (state === 'dead') drawDead();
 
