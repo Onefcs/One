@@ -1,0 +1,13 @@
+let canvas, ctx, W, H;
+let state = 'select';
+let player = null, dungeon = null;
+let enemies = [], projs = [], drops = [], particles = [], dmgNums = [];
+let deadEnemies = [];
+let camera = { x: 0, y: 0 };
+let dungeonLvl = 1;
+let frameCount = 0, lastTs = 0;
+let activeTab = 0;
+let keys = {};
+let joy = { active: false, id: null, sx: 0, sy: 0, dx: 0, dy: 0 };
+let swingAngle = 0, swingTimer = 0;
+let transTimer = 0;
