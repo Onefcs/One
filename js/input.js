@@ -32,18 +32,25 @@ function getPvpBtnPos() {
   return { x: pad, y: pad + ph + 6, w: 108, h: 24 };
 }
 
+function _isOnScreen(wx, wy) {
+  const margin = 60;
+  const visW = W / ZOOM, visH = H / ZOOM;
+  return wx >= camera.x - margin && wx <= camera.x + visW + margin &&
+         wy >= camera.y - margin && wy <= camera.y + visH + margin;
+}
+
 function cycleTarget() {
   if (!player) return;
   const isOnline = !!(socket?.connected);
   const activeEnemies = isOnline ? serverEnemies : enemies;
   const candidates = [];
   activeEnemies.forEach(e => {
-    if ((e.hp || 0) > 0)
+    if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y))
       candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
   });
   if (pvpMode && isOnline) {
     Object.entries(otherPlayers).forEach(([id, op]) => {
-      if ((op.hp || 0) > 0 && op.x != null)
+      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
     });
   }
@@ -53,6 +60,29 @@ function cycleTarget() {
   const next = candidates[(curIdx + 1) % candidates.length];
   targetId = next.id;
   targetIsPlayer = next.isPlayer;
+}
+
+function _trySelectEntityAtTouch(cx, cy) {
+  if (!player || state !== 'playing') return;
+  const worldX = cx / ZOOM + camera.x;
+  const worldY = cy / ZOOM + camera.y;
+  const isOnline = !!(socket?.connected);
+  const activeEnemies = isOnline ? serverEnemies : enemies;
+  const tapR = 28;
+  let best = null, bestD = Infinity;
+  activeEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0) return;
+    const d = dist(worldX, worldY, e.x, e.y);
+    if (d < e.size + tapR && d < bestD) { bestD = d; best = { id: e.id, isPlayer: false }; }
+  });
+  if (isOnline) {
+    Object.entries(otherPlayers).forEach(([id, op]) => {
+      if ((op.hp || 0) <= 0 || op.x == null) return;
+      const d = dist(worldX, worldY, op.x, op.y);
+      if (d < 22 + tapR && d < bestD) { bestD = d; best = { id, isPlayer: true }; }
+    });
+  }
+  if (best) { targetId = best.id; targetIsPlayer = best.isPlayer; }
 }
 
 function joyGuard() { return state === 'playing' && activeTab === 0; }
@@ -110,6 +140,7 @@ function onTS(e) {
     if (_checkPotionTouch(t.clientX, t.clientY)) continue;
     if (_checkTargetBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkSkillTouch(t.clientX, t.clientY)) continue;
+    _trySelectEntityAtTouch(t.clientX, t.clientY);
     if (!joy.active && dist(t.clientX, t.clientY, jc.x, jc.y) < JOY_R * 1.9) {
       joy.active = true; joy.id = t.identifier;
       joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
@@ -139,6 +170,7 @@ function onMD(e) {
   if (_checkPotionTouch(e.clientX, e.clientY)) return;
   if (_checkTargetBtnTouch(e.clientX, e.clientY)) return;
   if (_checkSkillTouch(e.clientX, e.clientY)) return;
+  _trySelectEntityAtTouch(e.clientX, e.clientY);
   const jc = joyCenter();
   if (dist(e.clientX, e.clientY, jc.x, jc.y) < JOY_R * 1.9) {
     joy.active = true; joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
