@@ -377,8 +377,17 @@ function getInterpPos(id) {
     if (buf[i].t <= rt) lo = buf[i];
     else if (!hi) { hi = buf[i]; break; }
   }
-  if (!lo) return { x: hi.x, y: hi.y };   // no past data yet — snap to earliest
-  if (!hi) return { x: lo.x, y: lo.y };   // past end of buffer — hold last known
+  if (!lo) return { x: hi.x, y: hi.y };
+  if (!hi) {
+    // Extrapolate along last known velocity (capped at 80ms to avoid drift)
+    const prev = buf.length >= 2 ? buf[buf.length - 2] : null;
+    if (prev && lo.t > prev.t) {
+      const age = Math.min(rt - lo.t, 80);
+      const dT = lo.t - prev.t;
+      return { x: lo.x + (lo.x - prev.x) / dT * age, y: lo.y + (lo.y - prev.y) / dT * age };
+    }
+    return { x: lo.x, y: lo.y };
+  }
   const t = (rt - lo.t) / (hi.t - lo.t);
   return { x: lo.x + (hi.x - lo.x) * t, y: lo.y + (hi.y - lo.y) * t };
 }

@@ -1,6 +1,6 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
 
-const TICK_MS = 50; // 20 fps
+const TICK_MS = 33; // 30 fps
 
 class Room {
   constructor(code, io) {
