@@ -77,6 +77,23 @@ function usePotion() {
   netSaveProgress();
 }
 
+// Send attack to all server enemies within range
+function _skillAOE(r) {
+  serverEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < r) netAttack(e.id); });
+}
+
+// Send attack to enemies in joystick direction within range
+function _skillDir(dx, dy, r, arcDot) {
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = dx / len, ny = dy / len;
+  serverEnemies.forEach(e => {
+    const ex = e.x - player.x, ey = e.y - player.y;
+    const d = Math.hypot(ex, ey);
+    if (d > r || d < 1) return;
+    if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3)) netAttack(e.id);
+  });
+}
+
 function useSkill(idx) {
   if (!player || state !== 'playing') return;
   const skills = SKILL_DEF[player.type];
@@ -91,20 +108,14 @@ function useSkill(idx) {
   const activeEnemies = isOnline ? serverEnemies : enemies;
 
   if (player.type === 'warrior') {
-    if (sk.key === 'Q') { // Shield Bash — AOE near player
+    if (sk.key === 'Q') { // Shield Bash
       spawnAOE(player.x, player.y, 90);
-      if (!isOnline) {
-        activeEnemies.forEach(e => {
-          if (dist(e.x, e.y, player.x, player.y) < 90) hitEnemy(e, Math.floor(player.atk * 1.2));
-        });
-      }
+      if (isOnline) _skillAOE(90);
+      else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 90) hitEnemy(e, Math.floor(player.atk * 1.2)); });
     } else if (sk.key === 'W') { // Whirlwind
       spawnAOE(player.x, player.y, 110);
-      if (!isOnline) {
-        activeEnemies.forEach(e => {
-          if (dist(e.x, e.y, player.x, player.y) < 110) hitEnemy(e, Math.floor(player.atk * 0.8));
-        });
-      }
+      if (isOnline) _skillAOE(110);
+      else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 110) hitEnemy(e, Math.floor(player.atk * 0.8)); });
     } else if (sk.key === 'E') { // Battle Cry
       battleCryTimer = 5;
       dmgNum(player.x, player.y - 40, '⚔ Боевой клич!', '#fa0');
@@ -115,6 +126,8 @@ function useSkill(idx) {
       player.x += (dx / len) * 140;
       player.y += (dy / len) * 140;
       spawnBurst(player.x, player.y, '#5af', 8);
+      if (isOnline) _skillAOE(70);
+      else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 70) hitEnemy(e, Math.floor(player.atk * 1.5)); });
     }
   } else if (player.type === 'archer') {
     if (sk.key === 'Q') { // Multi-Shot
@@ -124,10 +137,12 @@ function useSkill(idx) {
         projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*360, vy: Math.sin(ang)*360,
           color: '#fa0', dmg: player.atk, life: 1.4, size: 6, isPlayer: true });
       });
+      if (isOnline) _skillDir(joy.dx || 1, joy.dy || 0, 210, 0.1);
     } else if (sk.key === 'W') { // Poison Arrow
       const ang = Math.atan2(joy.dy || 0, joy.dx || 1);
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*300, vy: Math.sin(ang)*300,
         color: '#4d4', dmg: player.atk * 1.5, life: 2, size: 8, isPlayer: true });
+      if (isOnline) _skillDir(joy.dx || 1, joy.dy || 0, 210, 0.5);
     } else if (sk.key === 'E') { // Dodge Roll
       dodgeTimer = 0.6;
       const dx = joy.dx || 0, dy = joy.dy || 0;
@@ -137,21 +152,19 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, '#7e7', 6);
     } else if (sk.key === 'R') { // Rain of Arrows
       spawnAOE(player.x, player.y, 160);
-      if (!isOnline) {
-        activeEnemies.forEach(e => {
-          if (dist(e.x, e.y, player.x, player.y) < 160) hitEnemy(e, Math.floor(player.atk * 1.4));
-        });
-      }
+      if (isOnline) _skillAOE(160);
+      else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 160) hitEnemy(e, Math.floor(player.atk * 1.4)); });
     }
   } else if (player.type === 'mage') {
     if (sk.key === 'Q') { // Fireball
       const ang = Math.atan2(joy.dy || 0, joy.dx || 1);
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320,
         color: '#f60', dmg: player.atk * 2, life: 2, size: 12, isPlayer: true });
+      if (isOnline) _skillDir(joy.dx || 1, joy.dy || 0, 140, 0.5);
     } else if (sk.key === 'W') { // Ice Nova
       spawnAOE(player.x, player.y, 130);
-      if (!isOnline) {
-        activeEnemies.forEach(e => {
+      if (isOnline) _skillAOE(130);
+      else activeEnemies.forEach(e => {
           if (dist(e.x, e.y, player.x, player.y) < 130) {
             hitEnemy(e, Math.floor(player.atk * 0.9));
             e.spd = (e.spd || 60) * 0.5;
