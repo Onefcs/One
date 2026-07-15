@@ -257,7 +257,7 @@ function render() {
   // Other players (online only)
   if (socket?.connected) {
     Object.values(otherPlayers).forEach(p => {
-      if (!p.x) return;
+      if (p.x == null || isNaN(p.x)) return;
       const usedSprite = drawOtherPlayerSprite(p);
       if (!usedSprite) {
         ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
