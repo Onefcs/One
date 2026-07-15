@@ -63,6 +63,7 @@ function netConnect(onReady) {
   socket.on('gameStart', ({ floor, dungeon: d }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
+    buildTileCanvas();
     projs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
@@ -137,6 +138,7 @@ function netConnect(onReady) {
   socket.on('floorChanged', ({ floor, dungeon: d }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
+    buildTileCanvas();
     projs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;

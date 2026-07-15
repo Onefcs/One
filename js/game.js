@@ -191,21 +191,10 @@ function render() {
   ctx.save(); // [camera]
   ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
 
-  const x0 = Math.max(0, Math.floor(camera.x / TILE));
-  const y0 = Math.max(0, Math.floor(camera.y / TILE));
-  const x1 = Math.min(dungeon.w, Math.ceil((camera.x + W) / TILE) + 1);
-  const y1 = Math.min(dungeon.h, Math.ceil((camera.y + H) / TILE) + 1);
-
-  ctx.save(); // [tile state isolation]
-  for (let ty = y0; ty < y1; ty++) {
-    for (let tx = x0; tx < x1; tx++) {
-      const t = dungeon.grid[ty][tx];
-      const px = tx * TILE, py = ty * TILE;
-      if (t === WALL) theme.drawWall(ctx, px, py, frameCount);
-      else            theme.drawFloor(ctx, px, py, frameCount);
-    }
+  if (tileCanvas) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tileCanvas, 0, 0);
   }
-  ctx.restore(); // [tile state isolation]
 
   // Drops
   drops.forEach(d => {
@@ -264,10 +253,12 @@ function render() {
     });
   }
 
-  // Projectiles
+  // Projectiles (faux glow via two circles — no shadowBlur GPU cost)
   projs.forEach(p => {
-    ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fillStyle = p.color;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.28; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 5, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
   });
 
   // Player
@@ -348,6 +339,22 @@ function selectChar(type) {
   }
 }
 
+function buildTileCanvas() {
+  if (!dungeon) return;
+  const th = getTheme(dungeonLvl);
+  tileCanvas = document.createElement('canvas');
+  tileCanvas.width = dungeon.w * TILE;
+  tileCanvas.height = dungeon.h * TILE;
+  const tctx = tileCanvas.getContext('2d');
+  for (let ty = 0; ty < dungeon.h; ty++) {
+    for (let tx = 0; tx < dungeon.w; tx++) {
+      const t = dungeon.grid[ty][tx];
+      if (t === WALL) th.drawWall(tctx, tx * TILE, ty * TILE, 0);
+      else            th.drawFloor(tctx, tx * TILE, ty * TILE, 0);
+    }
+  }
+}
+
 function loadLevel() {
   // Cache dungeon layout per floor so revisiting keeps the same map
   if (!floorCache[dungeonLvl]) {
@@ -364,6 +371,7 @@ function loadLevel() {
   if (dungeonLvl > 1) player.hp = Math.min(player.maxHp, player.hp + Math.floor(player.maxHp * .25));
   camera.x = player.x - W / 2; camera.y = player.y - H / 2;
   clampCamera();
+  buildTileCanvas();
 }
 
 function restartGame() {

@@ -22,3 +22,6 @@ let netRoom = null;
 // Minimap tile cache (rebuilt only on floor change)
 let minimapCache = null;
 let minimapCacheFloor = -1;
+
+// Full dungeon tile canvas (rebuilt at loadLevel / floor change)
+let tileCanvas = null;
