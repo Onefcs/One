@@ -39,8 +39,19 @@ class Room {
 
     const alivePlayers = [...this.players.values()].filter(p => p.hp > 0 && p.type);
 
+    const RESPAWN_DELAY = 12;
     this.enemies.forEach(e => {
-      if (e.hp <= 0) return;
+      if (e.hp <= 0) {
+        if (e.respawnTimer === undefined) { e.respawnTimer = RESPAWN_DELAY; return; }
+        e.respawnTimer -= dt;
+        if (e.respawnTimer <= 0) {
+          e.hp = e.maxHp;
+          e.x = e.spawnX; e.y = e.spawnY;
+          e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
+          delete e.respawnTimer;
+        }
+        return;
+      }
 
       let closest = null, closestD = Infinity;
       alivePlayers.forEach(p => {
