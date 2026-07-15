@@ -77,33 +77,42 @@ function netConnect(onReady) {
 
   socket.on('gameState', ({ players, enemies }) => {
     const myId = socket.id;
-    players.forEach(p => {
-      if (p.id !== myId) {
-        if (!otherPlayers[p.id]) {
-          otherPlayers[p.id] = { ...p }; // init at real position
-        } else {
-          const op = otherPlayers[p.id];
-          op.targetX = p.x; op.targetY = p.y;
-          op.hp = p.hp; op.maxHp = p.maxHp;
-          op.facing = p.facing; op.type = p.type; op.username = p.username;
-        }
-      }
-    });
-    const ids = new Set(players.map(p => p.id));
-    Object.keys(otherPlayers).forEach(id => { if (!ids.has(id)) delete otherPlayers[id]; });
+    const now = Date.now();
+    const cutoff = now - 600;
 
-    // Update enemy targets while preserving current render positions for interpolation
+    // Buffer other players' positions with timestamps for smooth interpolation
+    players.forEach(p => {
+      if (p.id === myId) return;
+      if (!otherPlayers[p.id]) otherPlayers[p.id] = { ...p };
+      else {
+        const op = otherPlayers[p.id];
+        op.hp = p.hp; op.maxHp = p.maxHp;
+        op.facing = p.facing; op.type = p.type; op.username = p.username;
+      }
+      if (!_posBuffers[p.id]) _posBuffers[p.id] = [];
+      _posBuffers[p.id].push({ t: now, x: p.x, y: p.y });
+      while (_posBuffers[p.id].length > 1 && _posBuffers[p.id][0].t < cutoff)
+        _posBuffers[p.id].shift();
+    });
+    const pids = new Set(players.map(p => p.id));
+    Object.keys(otherPlayers).forEach(id => {
+      if (!pids.has(id)) { delete otherPlayers[id]; delete _posBuffers[id]; }
+    });
+
+    // Buffer enemy positions with timestamps
     const incomingMap = new Map(enemies.map(e => [e.id, e]));
     serverEnemies = serverEnemies.filter(e => incomingMap.has(e.id));
+    Object.keys(_posBuffers).forEach(id => {
+      if (id.startsWith('e_') && !incomingMap.has(id)) delete _posBuffers[id];
+    });
     enemies.forEach(se => {
       const ex = serverEnemies.find(e => e.id === se.id);
-      if (ex) {
-        ex.targetX = se.x; ex.targetY = se.y;
-        ex.hp = se.hp; ex.maxHp = se.maxHp;
-        ex.hurtTimer = se.hurtTimer;
-      } else {
-        serverEnemies.push({ ...se, targetX: se.x, targetY: se.y });
-      }
+      if (ex) { ex.hp = se.hp; ex.maxHp = se.maxHp; ex.hurtTimer = se.hurtTimer; }
+      else serverEnemies.push({ ...se });
+      if (!_posBuffers[se.id]) _posBuffers[se.id] = [];
+      _posBuffers[se.id].push({ t: now, x: se.x, y: se.y });
+      while (_posBuffers[se.id].length > 1 && _posBuffers[se.id][0].t < cutoff)
+        _posBuffers[se.id].shift();
     });
   });
 
@@ -141,6 +150,7 @@ function netConnect(onReady) {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
     buildTileCanvas();
+    _posBuffers = {};
     projs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
@@ -154,6 +164,7 @@ function netConnect(onReady) {
     socket = null;
     serverEnemies = [];
     otherPlayers = {};
+    _posBuffers = {};
   });
 }
 

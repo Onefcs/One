@@ -158,20 +158,16 @@ function update(dt) {
   particles = particles.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; return p.life > 0; });
   dmgNums = dmgNums.filter(d => { d.y += d.vy * dt; d.life -= dt; return d.life > 0; });
 
-  // Smoothly interpolate online entities between 20fps server ticks → 60fps render
+  // Entity interpolation: render at (now - INTERP_DELAY) using buffered snapshots
+  // so movement is always smooth regardless of server tick rate
   if (isOnline) {
-    const lf = Math.min(1, dt * 25);
-    Object.values(otherPlayers).forEach(op => {
-      if (op.targetX !== undefined) {
-        op.x += (op.targetX - op.x) * lf;
-        op.y += (op.targetY - op.y) * lf;
-      }
+    Object.entries(otherPlayers).forEach(([id, op]) => {
+      const pos = getInterpPos(id);
+      if (pos) { op.x = pos.x; op.y = pos.y; }
     });
     serverEnemies.forEach(e => {
-      if (e.targetX !== undefined) {
-        e.x += (e.targetX - e.x) * lf;
-        e.y += (e.targetY - e.y) * lf;
-      }
+      const pos = getInterpPos(e.id);
+      if (pos) { e.x = pos.x; e.y = pos.y; }
     });
   }
 
@@ -341,6 +337,23 @@ function selectChar(type) {
       setTab(0);
     });
   }
+}
+
+// Returns the interpolated {x, y} for an entity at (now - INTERP_DELAY),
+// using two buffered snapshots to linearly interpolate between them.
+function getInterpPos(id) {
+  const buf = _posBuffers[id];
+  if (!buf || buf.length === 0) return null;
+  const rt = Date.now() - INTERP_DELAY;
+  let lo = null, hi = null;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i].t <= rt) lo = buf[i];
+    else if (!hi) { hi = buf[i]; break; }
+  }
+  if (!lo) return { x: hi.x, y: hi.y };   // no past data yet — snap to earliest
+  if (!hi) return { x: lo.x, y: lo.y };   // past end of buffer — hold last known
+  const t = (rt - lo.t) / (hi.t - lo.t);
+  return { x: lo.x + (hi.x - lo.x) * t, y: lo.y + (hi.y - lo.y) * t };
 }
 
 function buildTileCanvas() {
