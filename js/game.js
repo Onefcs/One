@@ -158,6 +158,23 @@ function update(dt) {
   particles = particles.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; return p.life > 0; });
   dmgNums = dmgNums.filter(d => { d.y += d.vy * dt; d.life -= dt; return d.life > 0; });
 
+  // Smoothly interpolate online entities between 20fps server ticks → 60fps render
+  if (isOnline) {
+    const lf = Math.min(1, dt * 25);
+    Object.values(otherPlayers).forEach(op => {
+      if (op.targetX !== undefined) {
+        op.x += (op.targetX - op.x) * lf;
+        op.y += (op.targetY - op.y) * lf;
+      }
+    });
+    serverEnemies.forEach(e => {
+      if (e.targetX !== undefined) {
+        e.x += (e.targetX - e.x) * lf;
+        e.y += (e.targetY - e.y) * lf;
+      }
+    });
+  }
+
   updateCamera(dt);
 }
 

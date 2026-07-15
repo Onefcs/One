@@ -18,3 +18,7 @@ let otherPlayers = {};   // socketId → { x, y, type, facing, hp, maxHp, userna
 let serverEnemies = [];  // authoritative enemy list when online
 let netUsername = null;
 let netRoom = null;
+
+// Minimap tile cache (rebuilt only on floor change)
+let minimapCache = null;
+let minimapCacheFloor = -1;

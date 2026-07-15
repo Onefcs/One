@@ -146,13 +146,9 @@ function drawHUD() {
 
   ctx.save();
 
-  // Panel outer glow
-  ctx.shadowBlur = 20;
-  ctx.shadowColor = 'rgba(70,35,160,0.45)';
   ctx.fillStyle = 'rgba(5,3,16,0.90)';
   roundRect(ctx, pad, pad, pw, ph, 11);
   ctx.fill();
-  ctx.shadowBlur = 0;
 
   // Border
   ctx.strokeStyle = 'rgba(75,45,145,0.60)';
@@ -301,18 +297,29 @@ function drawHUD() {
 function drawMinimap() {
   const th = getTheme(dungeonLvl);
   const sc = 2;
+
+  // Rebuild offscreen tile canvas only when floor changes — one drawImage per frame instead of 2400+ fillRects
+  if (minimapCacheFloor !== dungeonLvl || !minimapCache) {
+    minimapCacheFloor = dungeonLvl;
+    minimapCache = document.createElement('canvas');
+    minimapCache.width = dungeon.w * sc;
+    minimapCache.height = dungeon.h * sc;
+    const mctx = minimapCache.getContext('2d');
+    mctx.fillStyle = th.mmFloor;
+    for (let ty = 0; ty < dungeon.h; ty++) {
+      for (let tx = 0; tx < dungeon.w; tx++) {
+        if (dungeon.grid[ty][tx] !== WALL)
+          mctx.fillRect(tx * sc, ty * sc, sc, sc);
+      }
+    }
+  }
+
   const mmW = dungeon.w * sc, mmH = dungeon.h * sc;
   const mx = W - mmW - 10, my = 8;
   ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillRect(mx - 2, my - 2, mmW + 4, mmH + 4);
   ctx.strokeStyle = 'rgba(80,50,140,0.5)'; ctx.lineWidth = 1;
   ctx.strokeRect(mx - 2, my - 2, mmW + 4, mmH + 4);
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
-      const t = dungeon.grid[ty][tx]; if (t === WALL) continue;
-      ctx.fillStyle = th.mmFloor;
-      ctx.fillRect(mx + tx * sc, my + ty * sc, sc, sc);
-    }
-  }
+  ctx.drawImage(minimapCache, mx, my);
   ctx.fillStyle = '#0f0'; ctx.fillRect(mx + (player.x / TILE) * sc - 2, my + (player.y / TILE) * sc - 2, 4, 4);
   const mmEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
   ctx.fillStyle = '#f00';

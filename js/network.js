@@ -76,13 +76,32 @@ function netConnect(onReady) {
     const myId = socket.id;
     players.forEach(p => {
       if (p.id !== myId) {
-        if (!otherPlayers[p.id]) otherPlayers[p.id] = {};
-        Object.assign(otherPlayers[p.id], p);
+        if (!otherPlayers[p.id]) {
+          otherPlayers[p.id] = { ...p }; // init at real position
+        } else {
+          const op = otherPlayers[p.id];
+          op.targetX = p.x; op.targetY = p.y;
+          op.hp = p.hp; op.maxHp = p.maxHp;
+          op.facing = p.facing; op.type = p.type; op.username = p.username;
+        }
       }
     });
     const ids = new Set(players.map(p => p.id));
     Object.keys(otherPlayers).forEach(id => { if (!ids.has(id)) delete otherPlayers[id]; });
-    serverEnemies = enemies;
+
+    // Update enemy targets while preserving current render positions for interpolation
+    const incomingMap = new Map(enemies.map(e => [e.id, e]));
+    serverEnemies = serverEnemies.filter(e => incomingMap.has(e.id));
+    enemies.forEach(se => {
+      const ex = serverEnemies.find(e => e.id === se.id);
+      if (ex) {
+        ex.targetX = se.x; ex.targetY = se.y;
+        ex.hp = se.hp; ex.maxHp = se.maxHp;
+        ex.hurtTimer = se.hurtTimer;
+      } else {
+        serverEnemies.push({ ...se, targetX: se.x, targetY: se.y });
+      }
+    });
   });
 
   socket.on('playerHurt', ({ id, hp }) => {
