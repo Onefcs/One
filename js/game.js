@@ -332,10 +332,12 @@ function render() {
 function goToFloor(n) {
   if (n === dungeonLvl || !player) return;
   if (socket?.connected) {
+    netSaveProgress();
     netSendChangeFloor(clamp(n, 1, 20));
     setTab(0);
   } else {
     dungeonLvl = clamp(n, 1, 20);
+    netSaveProgress();
     transTimer = 0.5;
     loadLevel();
     setTab(0);
@@ -348,14 +350,15 @@ function selectChar(type) {
   dungeonLvl = 1;
 
   if (socket?.connected) {
-    // Online: send to server; sprites are loaded when gameStart arrives (see network.js)
-    netSelectChar(type);
+    const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
+    netSelectChar(type, savedStats);
   } else {
-    // Offline: dim cards, wait for sprites + dungeon to build, then start
     const cards = document.querySelector('.cards');
     if (cards) { cards.style.opacity = '0.4'; cards.style.pointerEvents = 'none'; }
+    const offlineRestore = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
     loadSprites(type, () => {
       if (cards) { cards.style.opacity = ''; cards.style.pointerEvents = ''; }
+      if (offlineRestore) { restoreFromSave(offlineRestore); _savedData = null; }
       document.getElementById('char-select').style.display = 'none';
       document.getElementById('bottom-nav').style.display = 'block';
       document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
@@ -467,6 +470,8 @@ function loop(ts) {
   update(dt); render();
   requestAnimationFrame(loop);
 }
+
+window.addEventListener('beforeunload', () => { netSaveProgress(); });
 
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');

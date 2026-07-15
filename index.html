@@ -27,6 +27,10 @@
 <!-- Character Select -->
 <div id="char-select" style="display:none">
   <h1>⚔ DUNGEON QUEST</h1>
+  <div id="char-resume" style="display:none;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px;">
+    <button id="resume-btn" class="auth-btn primary" onclick="resumeGame()" style="font-size:14px;padding:12px 28px;background:linear-gradient(135deg,#2a1a4a,#3a1a6a);border-color:#7040d0"></button>
+    <div style="color:#444;font-size:12px">— или выберите нового персонажа —</div>
+  </div>
   <p>Выберите персонажа для прохождения подземелий</p>
   <div class="cards">
     <div class="char-card" onclick="selectChar('warrior')">

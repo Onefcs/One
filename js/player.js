@@ -39,6 +39,7 @@ function gainXP(amount) {
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
     spawnBurst(player.x, player.y, '#ff0', 14);
   }
+  netSaveProgress();
 }
 
 function equipItem(idx) {
@@ -56,6 +57,22 @@ function unequipItem(slot) {
   player.inventory.push(it);
   player.equipment[slot] = null;
   recompute(); updateInvUI();
+}
+
+function restoreFromSave(data) {
+  if (!player || !data) return;
+  player.lvl      = data.lvl      || 1;
+  player.xp       = data.xp       || 0;
+  player.xpNext   = data.xpNext   || 100;
+  player.gold     = data.gold     || 0;
+  player.kills    = data.kills    || 0;
+  player.baseAtk  = data.baseAtk  || player.baseAtk;
+  player.baseDef  = data.baseDef  || player.baseDef;
+  player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
+  player.inventory  = data.inventory  || [];
+  player.equipment  = data.equipment  || { weapon: null, armor: null, helmet: null, ring: null, pendant: null };
+  recompute();
+  player.hp = player.maxHp; // начинаем каждую сессию с полным здоровьем
 }
 
 function statStr(it) {

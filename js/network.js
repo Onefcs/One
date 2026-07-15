@@ -7,6 +7,7 @@ const SERVER_URL = (() => {
 })();
 
 let _authMode = 'login';
+let _savedData = null;
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
@@ -18,10 +19,11 @@ function netConnect(onReady) {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username }) => {
+  socket.on('authOk', ({ username, savedData }) => {
     netUsername = username;
+    _savedData = savedData || null;
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('char-select').style.display = 'flex';
+    _showCharSelect(_savedData);
   });
 
   socket.on('authError', ({ message }) => { showAuthError(message); });
@@ -52,9 +54,11 @@ function netConnect(onReady) {
       camera.x = player.x - W / 2; camera.y = player.y - H / 2;
       clampCamera();
     }
-    // Wait for sprites to finish loading before starting — char-select stays
-    // visible as a natural loading screen; loadSprites is instant if already cached
-    loadSprites(player?.type, _finishOnlineStart);
+    const restore = _savedData && _savedData.type === player?.type ? _savedData : null;
+    loadSprites(player?.type, () => {
+      if (restore) { restoreFromSave(restore); _savedData = null; }
+      _finishOnlineStart();
+    });
   });
 
   socket.on('gameState', ({ players, enemies }) => {
@@ -185,7 +189,45 @@ function showAuthError(msg) {
 
 function playOffline() {
   document.getElementById('login-screen').style.display = 'none';
+  try { _savedData = JSON.parse(localStorage.getItem('dq_offline_save') || 'null'); } catch { _savedData = null; }
+  _showCharSelect(_savedData);
+}
+
+function _showCharSelect(savedData) {
+  const resumeEl = document.getElementById('char-resume');
+  const resumeBtn = document.getElementById('resume-btn');
+  if (resumeEl && resumeBtn) {
+    if (savedData && savedData.type) {
+      const d = CHAR_DEF[savedData.type];
+      resumeBtn.textContent = `▶ Продолжить: ${d ? d.emoji + ' ' + d.name : savedData.type} · Ур.${savedData.lvl || 1} · 💰${savedData.gold || 0}`;
+      resumeEl.style.display = 'flex';
+    } else {
+      resumeEl.style.display = 'none';
+    }
+  }
   document.getElementById('char-select').style.display = 'flex';
+}
+
+function resumeGame() {
+  if (_savedData && _savedData.type) selectChar(_savedData.type);
+}
+
+function netSaveProgress() {
+  if (!player || state !== 'playing') return;
+  const stats = {
+    type: player.type,
+    lvl: player.lvl, xp: player.xp, xpNext: player.xpNext,
+    gold: player.gold, kills: player.kills,
+    hp: player.hp, maxHp: player.maxHp,
+    atk: player.atk, def: player.def,
+    baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
+    inventory: player.inventory, equipment: player.equipment,
+  };
+  if (socket?.connected) {
+    socket.emit('saveProgress', { stats });
+  } else {
+    try { localStorage.setItem('dq_offline_save', JSON.stringify(stats)); } catch {}
+  }
 }
 
 function _finishOnlineStart() {
@@ -214,6 +256,6 @@ function netSendChangeFloor(floor) {
   if (socket?.connected) socket.emit('changeFloor', { floor });
 }
 
-function netSelectChar(type) {
-  if (socket?.connected) socket.emit('selectChar', { type });
+function netSelectChar(type, savedStats) {
+  if (socket?.connected) socket.emit('selectChar', { type, savedStats: savedStats || null });
 }

@@ -36,7 +36,7 @@ io.on('connection', socket => {
       const hash = await bcrypt.hash(password, 10);
       const doc = await PlayerModel.create({ username, passwordHash: hash });
       authed = doc;
-      socket.emit('authOk', { playerId: String(doc._id), username: doc.username });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
   });
 
@@ -47,11 +47,11 @@ io.on('connection', socket => {
       if (!await bcrypt.compare(password, doc.passwordHash))
         return socket.emit('authError', { message: 'Неверный пароль' });
       authed = doc;
-      socket.emit('authOk', { playerId: String(doc._id), username: doc.username });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
   });
 
-  socket.on('selectChar', ({ type }) => {
+  socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     if (!inWorld) {
       inWorld = true;
@@ -59,7 +59,7 @@ io.on('connection', socket => {
       world.addPlayer(socket.id, authed.username);
       socket.to('world').emit('playerJoined', { id: socket.id, username: authed.username });
     }
-    world.setPlayerChar(socket.id, type);
+    world.setPlayerChar(socket.id, type, savedStats || null);
     socket.to('world').emit('playerChar', { id: socket.id, type });
     const dungeonData = world.getDungeonData();
     socket.emit('gameStart', { floor: world.floor, dungeon: dungeonData });

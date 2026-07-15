@@ -86,5 +86,6 @@ function pickup(drop) {
   if (player.inventory.length < 20) {
     player.inventory.push(it);
     dmgNum(drop.x, drop.y - 12, it.name, '#4ff');
+    netSaveProgress();
   }
 }

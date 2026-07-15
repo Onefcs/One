@@ -93,13 +93,20 @@ class Room {
 
   removePlayer(socketId) { this.players.delete(socketId); }
 
-  setPlayerChar(socketId, type) {
+  setPlayerChar(socketId, type, savedStats = null) {
     const p = this.players.get(socketId);
     if (!p) return;
     const base = { warrior: [200,25,10], archer: [140,20,5], mage: [110,38,3] }[type] || [200,25,10];
     p.type = type;
-    p.hp = p.maxHp = base[0];
-    p.atk = base[1]; p.def = base[2];
+    if (savedStats) {
+      p.maxHp = savedStats.maxHp || base[0];
+      p.hp    = p.maxHp; // always start session at full HP
+      p.atk   = savedStats.atk || base[1];
+      p.def   = savedStats.def || base[2];
+    } else {
+      p.hp = p.maxHp = base[0];
+      p.atk = base[1]; p.def = base[2];
+    }
   }
 
   updatePlayerPos(socketId, x, y, facing) {
