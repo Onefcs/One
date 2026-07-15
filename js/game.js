@@ -265,13 +265,17 @@ function render() {
         ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
       }
-      const nameY = usedSprite ? p.y - 52 : p.y - 22;
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      // Name above HP bar, bar close to player
+      const bh = 4, bw = 38;
+      const barTop = usedSprite ? p.y - 46 : p.y - 20;
+      const bx = p.x - bw / 2;
+      const nameY = barTop - 4;
+      ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-      ctx.strokeText(p.username || '?', p.x, nameY); ctx.fillText(p.username || '?', p.x, nameY);
-      const bw = 32, bh = 4, bx = p.x - bw / 2, by = nameY - 8;
-      ctx.fillStyle = '#300'; ctx.fillRect(bx, by, bw, bh);
-      ctx.fillStyle = '#2d2'; ctx.fillRect(bx, by, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
+      ctx.strokeText(p.username || '?', p.x, nameY);
+      ctx.fillStyle = '#fff'; ctx.fillText(p.username || '?', p.x, nameY);
+      ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
+      ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
     });
   }
 

@@ -141,151 +141,121 @@ function setTab(n) {
 function drawHUD() {
   if (!player) return;
   const p = player;
-  const pad = 10;
-  const pw = 228, ph = 104;
+  const pad = 8;
+  const pw = 192, ph = 78;
+  const F = 'system-ui, Arial'; // readable font for canvas
 
   ctx.save();
 
-  ctx.fillStyle = 'rgba(5,3,16,0.90)';
-  roundRect(ctx, pad, pad, pw, ph, 11);
+  ctx.fillStyle = 'rgba(5,3,16,0.92)';
+  roundRect(ctx, pad, pad, pw, ph, 10);
   ctx.fill();
 
-  // Border
-  ctx.strokeStyle = 'rgba(75,45,145,0.60)';
+  ctx.strokeStyle = 'rgba(75,45,145,0.65)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, pad, pad, pw, ph, 11);
+  roundRect(ctx, pad, pad, pw, ph, 10);
   ctx.stroke();
 
-  // Top highlight streak
-  ctx.strokeStyle = 'rgba(160,120,255,0.14)';
+  ctx.strokeStyle = 'rgba(160,120,255,0.12)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(pad + 14, pad + 1.5);
-  ctx.lineTo(pad + pw - 14, pad + 1.5);
+  ctx.moveTo(pad + 12, pad + 1.5); ctx.lineTo(pad + pw - 12, pad + 1.5);
   ctx.stroke();
 
-  const bx = pad + 10, bw = pw - 20;
+  const bx = pad + 9, bw = pw - 18;
 
   // ── Character row ──
-  const cy = pad + 21;
-  ctx.font = '17px Arial';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fff';
-  ctx.fillText(p.charDef.emoji, pad + 10, cy);
+  const cy = pad + 15;
+  ctx.font = `14px ${F}`; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+  ctx.fillText(p.charDef.emoji, pad + 9, cy);
 
   ctx.fillStyle = p.charDef.color;
-  ctx.font = 'bold 12px Arial';
-  ctx.textAlign = 'left';
-  ctx.fillText(p.charDef.name, pad + 36, cy - 5);
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left';
+  ctx.fillText(p.charDef.name, pad + 30, cy - 4);
 
-  ctx.font = '9px Arial';
-  ctx.fillStyle = 'rgba(190,155,255,0.85)';
-  ctx.fillText('Ур. ' + p.lvl, pad + 36, cy + 7);
+  ctx.font = `8px ${F}`; ctx.fillStyle = 'rgba(190,155,255,0.85)';
+  ctx.fillText('Ур. ' + p.lvl, pad + 30, cy + 5);
 
-  // Floor indicator (right side of header)
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(140,110,200,0.75)';
-  ctx.font = 'bold 9px Arial';
-  ctx.fillText('Этаж ' + dungeonLvl, pad + pw - 10, cy - 5);
+  ctx.font = `bold 8px ${F}`;
+  ctx.fillText('Этаж ' + dungeonLvl, pad + pw - 8, cy - 4);
   ctx.fillStyle = 'rgba(100,80,160,0.6)';
-  ctx.font = '8px Arial';
-  ctx.fillText(getTheme(dungeonLvl).name, pad + pw - 10, cy + 7);
+  ctx.font = `7px ${F}`;
+  ctx.fillText(getTheme(dungeonLvl).name, pad + pw - 8, cy + 5);
 
   // ── HP bar ──
-  const hpy = pad + 40;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  const hpy = pad + 30;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(240,100,100,0.9)';
-  ctx.font = 'bold 8px Arial';
+  ctx.font = `bold 7px ${F}`;
   ctx.fillText('HP', bx, hpy);
 
-  const hpBarX = bx + 20, hpBarW = bw - 20, hpBarH = 11;
+  const hpBarX = bx + 17, hpBarW = bw - 17, hpBarH = 10;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
 
-  // bar bg
   ctx.fillStyle = 'rgba(45,8,8,0.88)';
-  roundRect(ctx, hpBarX, hpy - 9, hpBarW, hpBarH, 4);
-  ctx.fill();
+  roundRect(ctx, hpBarX, hpy - 8, hpBarW, hpBarH, 4); ctx.fill();
 
-  // bar fill
   if (hpPct > 0) {
     const hg = ctx.createLinearGradient(hpBarX, 0, hpBarX + hpBarW * hpPct, 0);
     if (hpPct > 0.5) { hg.addColorStop(0, '#1c8c3c'); hg.addColorStop(1, '#44ee77'); }
     else if (hpPct > 0.25) { hg.addColorStop(0, '#9c7020'); hg.addColorStop(1, '#ffcc44'); }
     else { hg.addColorStop(0, '#8c1c1c'); hg.addColorStop(1, '#ff4444'); }
     ctx.fillStyle = hg;
-    roundRect(ctx, hpBarX, hpy - 9, hpBarW * hpPct, hpBarH, 4);
-    ctx.fill();
-    // shine
+    roundRect(ctx, hpBarX, hpy - 8, hpBarW * hpPct, hpBarH, 4); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
-    roundRect(ctx, hpBarX, hpy - 9, hpBarW * hpPct, 4, 3);
-    ctx.fill();
+    roundRect(ctx, hpBarX, hpy - 8, hpBarW * hpPct, 4, 3); ctx.fill();
   }
 
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.font = 'bold 8px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `bold 7px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hpBarX + hpBarW / 2, hpy - 3);
 
   // ── XP bar ──
-  const xpy = pad + 58;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  const xpy = pad + 44;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(110,110,230,0.9)';
-  ctx.font = 'bold 8px Arial';
+  ctx.font = `bold 7px ${F}`;
   ctx.fillText('XP', bx, xpy);
 
-  const xpBarX = bx + 20, xpBarW = bw - 20, xpBarH = 7;
+  const xpBarX = bx + 17, xpBarW = bw - 17, xpBarH = 6;
   const xpPct = Math.min(1, p.xp / p.xpNext);
 
   ctx.fillStyle = 'rgba(6,6,32,0.85)';
-  roundRect(ctx, xpBarX, xpy - 6, xpBarW, xpBarH, 3);
-  ctx.fill();
+  roundRect(ctx, xpBarX, xpy - 5, xpBarW, xpBarH, 3); ctx.fill();
 
   if (xpPct > 0) {
     const xg = ctx.createLinearGradient(xpBarX, 0, xpBarX + xpBarW * xpPct, 0);
-    xg.addColorStop(0, '#2233aa');
-    xg.addColorStop(1, '#7766ff');
+    xg.addColorStop(0, '#2233aa'); xg.addColorStop(1, '#7766ff');
     ctx.fillStyle = xg;
-    roundRect(ctx, xpBarX, xpy - 6, xpBarW * xpPct, xpBarH, 3);
-    ctx.fill();
+    roundRect(ctx, xpBarX, xpy - 5, xpBarW * xpPct, xpBarH, 3); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    roundRect(ctx, xpBarX, xpy - 6, xpBarW * xpPct, 3, 2);
-    ctx.fill();
+    roundRect(ctx, xpBarX, xpy - 5, xpBarW * xpPct, 3, 2); ctx.fill();
   }
 
   ctx.fillStyle = 'rgba(170,170,255,0.65)';
-  ctx.font = '7px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.font = `6px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(p.xp + ' / ' + p.xpNext, xpBarX + xpBarW / 2, xpy - 2);
 
   // ── Stats row ──
-  const sy = pad + 88;
-
-  ctx.strokeStyle = 'rgba(55,35,100,0.45)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(bx, sy - 10); ctx.lineTo(bx + bw, sy - 10);
-  ctx.stroke();
+  const sy = pad + 65;
+  ctx.strokeStyle = 'rgba(55,35,100,0.40)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(bx, sy - 8); ctx.lineTo(bx + bw, sy - 8); ctx.stroke();
 
   const stats = [
-    { icon: '💰', val: p.gold, color: '#ffd040', xFrac: 0      },
-    { icon: '⚔',  val: p.atk,  color: '#ff8866', xFrac: 0.38   },
-    { icon: '🛡',  val: p.def,  color: '#8899ff', xFrac: 0.70   },
+    { icon: '💰', val: p.gold, color: '#ffd040', xFrac: 0    },
+    { icon: '⚔',  val: p.atk,  color: '#ff8866', xFrac: 0.38 },
+    { icon: '🛡',  val: p.def,  color: '#8899ff', xFrac: 0.70 },
   ];
 
   ctx.textBaseline = 'middle';
   stats.forEach(s => {
     const sx2 = bx + s.xFrac * bw;
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ccc';
+    ctx.font = `11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ccc';
     ctx.fillText(s.icon, sx2, sy);
-    ctx.fillStyle = s.color;
-    ctx.font = 'bold 11px Arial';
-    ctx.fillText(s.val, sx2 + 16, sy);
+    ctx.fillStyle = s.color; ctx.font = `bold 10px ${F}`;
+    ctx.fillText(s.val, sx2 + 14, sy);
   });
 
   ctx.restore();
@@ -296,7 +266,7 @@ function drawHUD() {
 // ─────────────────────────────────────────────────────────
 function drawMinimap() {
   const th = getTheme(dungeonLvl);
-  const sc = 2;
+  const sc = 1.5;
 
   // Rebuild offscreen tile canvas only when floor changes — one drawImage per frame instead of 2400+ fillRects
   if (minimapCacheFloor !== dungeonLvl || !minimapCache) {
@@ -354,10 +324,11 @@ function drawJoystick() {
 function drawDead() {
   ctx.fillStyle = 'rgba(0,0,0,.8)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#f44'; ctx.font = `bold ${clamp(32, W * .09, 54)}px Arial`; ctx.fillText('ВЫ ПОГИБЛИ', W / 2, H / 2 - 50);
-  ctx.fillStyle = '#777'; ctx.font = `${clamp(14, W * .04, 20)}px Arial`;
+  const F = 'system-ui, Arial';
+  ctx.fillStyle = '#f44'; ctx.font = `bold ${clamp(32, W * .09, 54)}px ${F}`; ctx.fillText('ВЫ ПОГИБЛИ', W / 2, H / 2 - 50);
+  ctx.fillStyle = '#777'; ctx.font = `${clamp(14, W * .04, 20)}px ${F}`;
   ctx.fillText(`${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}`, W / 2, H / 2 + 5);
   ctx.fillStyle = '#ff0'; ctx.fillText(`Золото: ${player.gold}  •  Убито: ${player.kills}`, W / 2, H / 2 + 38);
-  ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = `${clamp(13, W * .034, 17)}px Arial`;
+  ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = `${clamp(13, W * .034, 17)}px ${F}`;
   ctx.fillText('Нажмите, чтобы начать снова', W / 2, H / 2 + 84);
 }
