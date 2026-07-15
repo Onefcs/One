@@ -199,13 +199,11 @@ canvas { display:block; }
     🎒 Инвентарь
     <span id="inv-count" style="font-size:11px;color:#484860;font-weight:normal;"></span>
   </div>
-  <!-- Equipment + character preview -->
   <div class="equip-screen">
     <div class="eq-col" id="eq-left"></div>
     <div class="char-center" id="char-preview"></div>
     <div class="eq-col" id="eq-right"></div>
   </div>
-  <!-- Inventory grid -->
   <div class="inv-section">
     <div class="sec-title">Предметы</div>
     <div class="inv-grid" id="inv-grid"></div>
@@ -265,6 +263,267 @@ const TILE = 40;
 const WALL = 0, FLOOR = 1;
 const NAV_H = 62;
 const JOY_R = 58, JOY_KNOB = 24;
+
+// ─────────────────────────────────────────────────────────
+//  LOCATION THEMES  (3 floors each, 7 themes for 20 floors)
+// ─────────────────────────────────────────────────────────
+const THEMES = [
+
+  // ── 0: Лес (этажи 1-3) ──────────────────────────────
+  {
+    name:'🌲 Лес', bg:'#030a03', mmFloor:'#264418',
+    drawWall(c, px, py) {
+      c.fillStyle='#0c1a07'; c.fillRect(px,py,TILE,TILE);
+      // trunk
+      c.fillStyle='#3d2010'; c.fillRect(px+16,py+22,8,18);
+      // canopy layers
+      c.fillStyle='#1a5010'; c.beginPath(); c.arc(px+20,py+18,14,0,Math.PI*2); c.fill();
+      c.fillStyle='#246814'; c.beginPath(); c.arc(px+13,py+24,9,0,Math.PI*2); c.fill();
+                              c.beginPath(); c.arc(px+27,py+22,8,0,Math.PI*2); c.fill();
+      c.fillStyle='#2e8818'; c.beginPath(); c.arc(px+20,py+10,7,0,Math.PI*2); c.fill();
+      // dark edge
+      c.fillStyle='rgba(0,0,0,0.2)'; c.fillRect(px,py,2,TILE); c.fillRect(px,py,TILE,2);
+    },
+    drawFloor(c, px, py) {
+      c.fillStyle='#1a2e0c'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#1e3810'; c.fillRect(px+1,py+1,18,16); c.fillRect(px+22,py+22,16,15);
+      // grass tufts
+      c.fillStyle='#285a14';
+      c.fillRect(px+5,py+20,2,6); c.fillRect(px+8,py+22,2,5);
+      c.fillRect(px+22,py+8,2,5); c.fillRect(px+26,py+10,2,6);
+      c.fillRect(px+14,py+30,2,5); c.fillRect(px+17,py+28,2,6);
+      // small flower dots
+      c.fillStyle='#ffd040';
+      if ((px/TILE|0)%3===0) { c.fillRect(px+10,py+15,2,2); }
+      if ((py/TILE|0)%3===1) { c.fillRect(px+28,py+26,2,2); }
+    }
+  },
+
+  // ── 1: Пещера (этажи 4-6) ───────────────────────────
+  {
+    name:'⛏️ Пещера', bg:'#040308', mmFloor:'#28204a',
+    drawWall(c, px, py, fc) {
+      c.fillStyle='#14101e'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#1c1828'; c.fillRect(px+2,py+2,TILE-4,TILE-4);
+      // rough rock faces
+      c.fillStyle='#241e34'; c.fillRect(px+5,py+6,13,8); c.fillRect(px+21,py+22,11,8);
+      c.fillStyle='#1a1428'; c.fillRect(px+20,py+5,14,6); c.fillRect(px+4,py+25,12,9);
+      // crystal spikes (animated glow)
+      const g = 0.7 + 0.3*Math.sin(fc*0.05 + px*0.1);
+      c.fillStyle=`rgba(120,50,220,${g})`;
+      c.beginPath(); c.moveTo(px+20,py+0); c.lineTo(px+26,py+13); c.lineTo(px+14,py+13); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(px+9,py+3);  c.lineTo(px+13,py+13); c.lineTo(px+5,py+13);  c.closePath(); c.fill();
+      c.fillStyle=`rgba(180,100,255,${g*0.7})`;
+      c.beginPath(); c.moveTo(px+20,py+2); c.lineTo(px+24,py+11); c.lineTo(px+16,py+11); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(px+9,py+5);  c.lineTo(px+12,py+11); c.lineTo(px+6,py+11);  c.closePath(); c.fill();
+    },
+    drawFloor(c, px, py, fc) {
+      c.fillStyle='#0c0a14'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#100e1c'; c.fillRect(px+1,py+1,18,18); c.fillRect(px+20,py+20,18,18);
+      // faint crystal glow on floor
+      const g = 0.07 + 0.05*Math.sin(fc*0.04 + py*0.05 + px*0.03);
+      c.fillStyle=`rgba(100,40,200,${g})`;
+      c.beginPath(); c.arc(px+TILE/2,py+TILE/2,10,0,Math.PI*2); c.fill();
+    }
+  },
+
+  // ── 2: Руины (этажи 7-9) ────────────────────────────
+  {
+    name:'🏛️ Руины', bg:'#080604', mmFloor:'#382e1e',
+    drawWall(c, px, py) {
+      c.fillStyle='#221a12'; c.fillRect(px,py,TILE,TILE);
+      // stone brick rows
+      for (let r=0; r<4; r++) {
+        const off = r%2===0 ? 0 : 10;
+        c.fillStyle = r%2===0 ? '#2e2418' : '#342a1c';
+        c.fillRect(px+off+1, py+r*10+1, 18, 8);
+        if (off+20 < TILE) {
+          c.fillStyle = '#2a2016';
+          c.fillRect(px+off+21, py+r*10+1, TILE-off-22, 8);
+        }
+      }
+      c.strokeStyle='#14100a'; c.lineWidth=1;
+      for (let r=0; r<4; r++) { c.beginPath(); c.moveTo(px,py+r*10); c.lineTo(px+TILE,py+r*10); c.stroke(); }
+      // mossy crack
+      c.fillStyle='#1e3008';
+      c.fillRect(px+2,py+12,1,8); c.fillRect(px+TILE-3,py+22,1,10);
+    },
+    drawFloor(c, px, py) {
+      // checkerboard mosaic
+      c.fillStyle='#1c1610'; c.fillRect(px,py,TILE,TILE);
+      const dark = ((px/TILE|0)+(py/TILE|0))%2===0;
+      c.fillStyle = dark ? '#221c14' : '#181208';
+      c.fillRect(px+1,py+1,19,19);
+      c.fillStyle = dark ? '#181208' : '#221c14';
+      c.fillRect(px+20,py+1,19,19);
+      c.fillStyle = dark ? '#181208' : '#221c14';
+      c.fillRect(px+1,py+20,19,19);
+      c.fillStyle = dark ? '#221c14' : '#181208';
+      c.fillRect(px+20,py+20,19,19);
+      c.strokeStyle='#100c08'; c.lineWidth=1;
+      c.beginPath(); c.moveTo(px+20,py); c.lineTo(px+20,py+TILE); c.stroke();
+      c.beginPath(); c.moveTo(px,py+20); c.lineTo(px+TILE,py+20); c.stroke();
+      // occasional grass through cracks
+      if (((px/TILE|0)*7+(py/TILE|0)*13)%11===0) {
+        c.fillStyle='#2a4010'; c.fillRect(px+18,py+18,4,4);
+      }
+    }
+  },
+
+  // ── 3: Болото (этажи 10-12) ─────────────────────────
+  {
+    name:'🌿 Болото', bg:'#030802', mmFloor:'#1e3410',
+    drawWall(c, px, py, fc) {
+      c.fillStyle='#0c1807'; c.fillRect(px,py,TILE,TILE);
+      // dead tree trunk
+      c.fillStyle='#2c1e0a'; c.fillRect(px+15,py+6,10,34);
+      // side branches
+      c.fillStyle='#24180a'; c.fillRect(px+7,py+14,9,5); c.fillRect(px+24,py+20,9,5);
+      // murky water pool (animated)
+      const wave = Math.sin(fc*0.05 + px*0.08)*2|0;
+      c.fillStyle='#0c2810'; c.fillRect(px+2, py+30+wave, TILE-4, 10);
+      c.fillStyle='#0f3614'; c.fillRect(px+6, py+32+wave, 10, 6); c.fillRect(px+22,py+33+wave,8,5);
+      // moss on trunk
+      c.fillStyle='#264c0c'; c.fillRect(px+13,py+6,14,4); c.fillRect(px+2,py+2,6,4);
+    },
+    drawFloor(c, px, py, fc) {
+      c.fillStyle='#101c08'; c.fillRect(px,py,TILE,TILE);
+      const r = 0.22 + 0.08*Math.sin(fc*0.04 + px*0.05 + py*0.03);
+      c.fillStyle=`rgba(18,52,10,${r})`; c.fillRect(px+2,py+2,TILE-4,TILE-4);
+      // bubbles
+      const bk = ((px/TILE|0)*5+(py/TILE|0)*7)%9;
+      if (bk < 3) {
+        const br = 0.3 + 0.25*Math.sin(fc*0.06 + bk);
+        c.strokeStyle=`rgba(40,90,20,${br})`; c.lineWidth=1;
+        c.beginPath(); c.arc(px+8+bk*10, py+20+bk*4, 4, 0, Math.PI*2); c.stroke();
+      }
+      // lily pad
+      if (((px/TILE|0)+(py/TILE|0))%3===0) {
+        c.fillStyle='#2a5e10'; c.beginPath(); c.arc(px+TILE/2,py+TILE/2,7,0,Math.PI*2); c.fill();
+        c.fillStyle='#1e4008'; c.fillRect(px+TILE/2-1,py+TILE/2-7,2,7);
+        c.fillStyle='#ff6080'; c.beginPath(); c.arc(px+TILE/2,py+TILE/2-7,2,0,Math.PI*2); c.fill();
+      }
+    }
+  },
+
+  // ── 4: Тундра / Лёд (этажи 13-15) ──────────────────
+  {
+    name:'❄️ Тундра', bg:'#02040a', mmFloor:'#283858',
+    drawWall(c, px, py, fc) {
+      c.fillStyle='#162438'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#1e3048'; c.fillRect(px+2,py+2,TILE-4,TILE-4);
+      // ice blocks
+      c.fillStyle='#263c58'; c.fillRect(px+3,py+4,16,8); c.fillRect(px+21,py+14,15,8);
+      c.fillStyle='#304e6e'; c.fillRect(px+4,py+5,12,6); c.fillRect(px+22,py+15,11,6);
+      // snow cap
+      c.fillStyle='#c8dcf0'; c.fillRect(px+2,py+2,TILE-4,3);
+      // icicles
+      c.fillStyle='#88aacc';
+      [[5,8],[13,6],[21,9],[30,7]].forEach(([ix,ih]) => {
+        c.beginPath(); c.moveTo(px+ix,py+2); c.lineTo(px+ix+4,py+2); c.lineTo(px+ix+2,py+2+ih); c.closePath(); c.fill();
+      });
+      // shimmer
+      const sh = 0.12 + 0.1*Math.sin(fc*0.07 + px*0.09);
+      c.fillStyle=`rgba(200,230,255,${sh})`; c.fillRect(px+4,py+5,4,4);
+    },
+    drawFloor(c, px, py, fc) {
+      c.fillStyle='#0a1828'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#0e2035'; c.fillRect(px+1,py+1,TILE-2,TILE-2);
+      // ice crack lines
+      c.strokeStyle='#1e4060'; c.lineWidth=1;
+      c.beginPath(); c.moveTo(px+4,py+22); c.lineTo(px+16,py+30); c.lineTo(px+28,py+24); c.stroke();
+      c.beginPath(); c.moveTo(px+10,py+6); c.lineTo(px+20,py+14); c.stroke();
+      c.beginPath(); c.moveTo(px+30,py+10); c.lineTo(px+22,py+18); c.stroke();
+      // ice sparkle shimmer
+      const sp = 0.12 + 0.1*Math.sin(fc*0.08 + px*0.06 + py*0.04);
+      c.fillStyle=`rgba(150,210,255,${sp})`; c.fillRect(px+2,py+2,TILE-4,TILE-4);
+      // snow drifts
+      if (((px/TILE|0)+(py/TILE|0)*2)%3===0) {
+        c.fillStyle='rgba(200,230,255,0.12)'; c.fillRect(px+2,py+TILE-8,TILE-4,6);
+      }
+    }
+  },
+
+  // ── 5: Вулкан (этажи 16-18) ─────────────────────────
+  {
+    name:'🌋 Вулкан', bg:'#090100', mmFloor:'#3a1004',
+    drawWall(c, px, py, fc) {
+      c.fillStyle='#180600'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#200e04'; c.fillRect(px+2,py+2,TILE-4,TILE-4);
+      // volcanic rock faces
+      c.fillStyle='#2c1408'; c.fillRect(px+4,py+5,14,9); c.fillRect(px+20,py+18,13,8);
+      c.fillStyle='#180800'; c.fillRect(px+6,py+26,12,10); c.fillRect(px+22,py+6,12,8);
+      // lava crack (animated glow)
+      const lv = 0.6 + 0.4*Math.sin(fc*0.09 + px*0.05);
+      c.fillStyle=`rgba(255,80,0,${lv})`;
+      c.fillRect(px+2,py+13,3,15); c.fillRect(px+TILE-5,py+8,3,18);
+      c.fillStyle=`rgba(255,210,0,${lv*0.7})`;
+      c.fillRect(px+3,py+15,1,11); c.fillRect(px+TILE-4,py+10,1,14);
+      // ambient glow
+      c.fillStyle=`rgba(180,30,0,${lv*0.1})`; c.fillRect(px,py,TILE,TILE);
+    },
+    drawFloor(c, px, py, fc) {
+      c.fillStyle='#120400'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#1a0a02'; c.fillRect(px+1,py+1,18,18); c.fillRect(px+20,py+20,18,18);
+      // lava vein crack
+      const lv = 0.35 + 0.3*Math.sin(fc*0.07 + (px+py)*0.06);
+      c.strokeStyle=`rgba(220,50,0,${lv})`; c.lineWidth=2;
+      c.beginPath(); c.moveTo(px+4,py+TILE/2); c.lineTo(px+TILE/2,py+TILE/2-5); c.lineTo(px+TILE-4,py+TILE/2); c.stroke();
+      c.strokeStyle=`rgba(255,160,0,${lv*0.5})`; c.lineWidth=1;
+      c.beginPath(); c.moveTo(px+6,py+TILE/2); c.lineTo(px+TILE/2,py+TILE/2-3); c.lineTo(px+TILE-6,py+TILE/2); c.stroke();
+      // lava node
+      if (((px/TILE|0)+(py/TILE|0)*3)%4===0) {
+        c.fillStyle=`rgba(255,100,0,${lv*0.6})`; c.beginPath(); c.arc(px+TILE/2,py+TILE/2,4,0,Math.PI*2); c.fill();
+        c.fillStyle=`rgba(255,220,0,${lv*0.4})`; c.beginPath(); c.arc(px+TILE/2,py+TILE/2,2,0,Math.PI*2); c.fill();
+      }
+    }
+  },
+
+  // ── 6: Бездна (этажи 19-20) ─────────────────────────
+  {
+    name:'🌑 Бездна', bg:'#000000', mmFloor:'#1a0828',
+    drawWall(c, px, py, fc) {
+      c.fillStyle='#050008'; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle='#0a0014'; c.fillRect(px+2,py+2,TILE-4,TILE-4);
+      c.fillStyle='#140020'; c.fillRect(px+5,py+8,12,8); c.fillRect(px+22,py+22,10,8);
+      c.fillStyle='#0a001a'; c.fillRect(px+20,py+5,14,6); c.fillRect(px+4,py+26,12,8);
+      // void purple glow edges
+      const g = 0.3 + 0.25*Math.sin(fc*0.05 + py*0.04);
+      c.fillStyle=`rgba(120,0,220,${g})`;
+      c.fillRect(px,py,TILE,2); c.fillRect(px,py+TILE-2,TILE,2);
+      c.fillRect(px,py,2,TILE); c.fillRect(px+TILE-2,py,2,TILE);
+      // void eyes
+      if (((px/TILE|0)+(py/TILE|0))%4===0) {
+        c.fillStyle=`rgba(200,0,255,${g*1.3})`;
+        c.beginPath(); c.arc(px+11,py+TILE/2,3.5,0,Math.PI*2); c.fill();
+        c.beginPath(); c.arc(px+27,py+TILE/2,3.5,0,Math.PI*2); c.fill();
+        c.fillStyle=`rgba(255,200,255,${g})`;
+        c.beginPath(); c.arc(px+11,py+TILE/2,1.5,0,Math.PI*2); c.fill();
+        c.beginPath(); c.arc(px+27,py+TILE/2,1.5,0,Math.PI*2); c.fill();
+      }
+    },
+    drawFloor(c, px, py, fc) {
+      c.fillStyle='#020005'; c.fillRect(px,py,TILE,TILE);
+      // void stars
+      const seed = ((px/TILE|0)*31 + (py/TILE|0)*17) % 100;
+      if (seed < 55) {
+        const g = 0.15 + 0.15*Math.sin(fc*0.04 + seed);
+        c.fillStyle=`rgba(160,60,255,${g})`;
+        c.fillRect(px+(seed*7)%TILE, py+(seed*13)%TILE, seed%2+1, seed%2+1);
+        c.fillRect(px+(seed*11)%TILE, py+(seed*7)%TILE, 1, 1);
+        c.fillStyle=`rgba(255,180,255,${g*0.5})`;
+        c.fillRect(px+(seed*19)%TILE, py+(seed*23)%TILE, 2, 2);
+      }
+      // faint purple mist
+      const e = 0.04 + 0.03*Math.sin(fc*0.03 + px*0.02 + py*0.02);
+      c.fillStyle=`rgba(80,0,160,${e})`; c.fillRect(px,py,TILE,TILE);
+    }
+  },
+];
+
+function getTheme(lvl) {
+  return THEMES[Math.min(Math.floor((lvl-1)/3), 6)];
+}
 
 // ─────────────────────────────────────────────────────────
 //  DEFINITIONS
@@ -569,17 +828,14 @@ const EQ_SLOTS = [
 function updateInvUI() {
   if (!player) return;
 
-  // Left column: equipment slots
   document.getElementById('eq-left').innerHTML = EQ_SLOTS.map(({slot,label,empty}) => {
     const it = player.equipment[slot];
-    const onclick = it ? `unequipItem('${slot}')` : '';
-    return `<div class="eq-cell${it?' filled':''}" onclick="${onclick}">
+    return `<div class="eq-cell${it?' filled':''}" onclick="${it?`unequipItem('${slot}')`:''}" title="${it?it.name+' '+statStr(it):label}">
       <div class="cell-icon">${it ? it.emoji : empty}</div>
       <div class="cell-lbl">${it ? it.name.slice(0,9) : label}</div>
     </div>`;
   }).join('');
 
-  // Center: character preview
   const p = player;
   document.getElementById('char-preview').innerHTML = `
     <div class="char-big">${p.charDef.emoji}</div>
@@ -592,21 +848,17 @@ function updateInvUI() {
     </div>
   `;
 
-  // Right column: first 5 inventory items
   const inv = player.inventory;
   document.getElementById('eq-right').innerHTML = Array.from({length:5}, (_,i) => {
     const it = inv[i];
-    const onclick = it ? `equipItem(${i})` : '';
-    return `<div class="eq-cell${it?' filled':''}" onclick="${onclick}">
+    return `<div class="eq-cell${it?' filled':''}" onclick="${it?`equipItem(${i})`:''}" title="${it?it.name+' '+statStr(it):''}">
       <div class="cell-icon">${it ? it.emoji : '·'}</div>
       <div class="cell-lbl">${it ? it.name.slice(0,9) : '—'}</div>
     </div>`;
   }).join('');
 
-  // Count badge
   document.getElementById('inv-count').textContent = inv.length+'/20';
 
-  // Full inventory grid (20 cells)
   document.getElementById('inv-grid').innerHTML = Array.from({length:20}, (_,i) => {
     const it = inv[i];
     return `<div class="inv-cell${it?' filled':''}" onclick="${it?`equipItem(${i})`:''}" title="${it?it.name+' '+statStr(it):''}">
@@ -618,13 +870,14 @@ function updateInvUI() {
 function updateProfileUI() {
   if (!player) return;
   const p = player, d = p.charDef;
+  const th = getTheme(dungeonLvl);
   const pct = Math.floor(p.xp/p.xpNext*100);
   document.getElementById('profile-body').innerHTML = `
     <div class="prof-hero">
       <div class="prof-emoji">${d.emoji}</div>
       <div>
         <div class="prof-cls" style="color:${d.color}">${d.name}</div>
-        <div class="prof-lvl">Уровень ${p.lvl}</div>
+        <div class="prof-lvl">Уровень ${p.lvl} · ${th.name}</div>
       </div>
     </div>
     <div class="xp-lbl">Опыт: ${p.xp} / ${p.xpNext}</div>
@@ -648,6 +901,7 @@ function updateProfileUI() {
 
 function drawMapPanel() {
   if (!dungeon||!player) return;
+  const th = getTheme(dungeonLvl);
   const mc = document.getElementById('map-canvas');
   const panel = document.getElementById('panel-map');
   const pw = panel.clientWidth;
@@ -661,7 +915,7 @@ function drawMapPanel() {
   for (let ty=0;ty<dungeon.h;ty++) {
     for (let tx=0;tx<dungeon.w;tx++) {
       const t = dungeon.grid[ty][tx]; if (t===WALL) continue;
-      mx2.fillStyle = '#2e2e4a';
+      mx2.fillStyle = th.mmFloor;
       mx2.fillRect(ox+tx*sc, oy+ty*sc, Math.max(1,sc-0.5), Math.max(1,sc-0.5));
     }
   }
@@ -672,7 +926,7 @@ function drawMapPanel() {
     mx2.beginPath(); mx2.arc(ox+(e.x/TILE)*sc, oy+(e.y/TILE)*sc, Math.max(1.5,sc*0.5), 0, Math.PI*2); mx2.fill();
   });
   document.getElementById('map-status').textContent =
-    `Этаж ${dungeonLvl} · 👾 ${enemies.length}`;
+    th.name + ' · Этаж ' + dungeonLvl + ' · 👾 ' + enemies.length;
 }
 
 function updateFloorUI() {
@@ -680,7 +934,8 @@ function updateFloorUI() {
   if (!grid) return;
   grid.innerHTML = Array.from({length:20}, (_,i) => {
     const n = i+1;
-    return `<div class="floor-btn${n===dungeonLvl?' active':''}" onclick="goToFloor(${n})">${n}</div>`;
+    const th = getTheme(n);
+    return `<div class="floor-btn${n===dungeonLvl?' active':''}" onclick="goToFloor(${n})" title="${th.name}">${n}</div>`;
   }).join('');
 }
 
@@ -806,7 +1061,6 @@ function update(dt) {
   frameCount++;
   if (transTimer>0) { transTimer-=dt; return; }
 
-  // Player movement
   if (activeTab===0) {
     const inp = inputDir();
     if (inp.len>0) {
@@ -820,7 +1074,6 @@ function update(dt) {
   if (player.hurtTimer>0) player.hurtTimer-=dt;
   if (swingTimer>0)       swingTimer-=dt;
 
-  // Auto-attack: closest enemy in range
   player.atkTimer-=dt;
   if (player.atkTimer<=0 && enemies.length>0) {
     let closest=null, closestD=Infinity;
@@ -832,7 +1085,6 @@ function update(dt) {
     }
   }
 
-  // Enemies
   const dead = [];
   enemies.forEach(e=>{
     if (e.hurtTimer>0) e.hurtTimer-=dt;
@@ -857,18 +1109,10 @@ function update(dt) {
     spawnDrops(e);
     gainXP(e.xp);
     player.kills++;
-    deadEnemies.push({
-      ...e,
-      hp: e.maxHp,
-      respawnTimer: 10,
-      aggro: false,
-      hurtTimer: 0,
-      atkTimer: 1+Math.random(),
-    });
+    deadEnemies.push({...e, hp:e.maxHp, respawnTimer:10, aggro:false, hurtTimer:0, atkTimer:1+Math.random()});
   });
   enemies = enemies.filter(e=>e.hp>0);
 
-  // Respawn dead enemies after 10 seconds
   const stillDead = [];
   deadEnemies.forEach(e=>{
     e.respawnTimer -= dt;
@@ -880,7 +1124,6 @@ function update(dt) {
   });
   deadEnemies = stillDead;
 
-  // Projectiles
   projs=projs.filter(p=>{
     p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt;
     if (p.life<=0||isWall(p.x,p.y)) return false;
@@ -903,7 +1146,6 @@ function update(dt) {
     return true;
   });
 
-  // Drops
   drops=drops.filter(d=>{
     d.life-=dt;
     if (d.life<=0) return false;
@@ -922,10 +1164,12 @@ function update(dt) {
 // ─────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle='#060610'; ctx.fillRect(0,0,W,H);
+  const theme = (state==='playing'||state==='dead') && dungeon ? getTheme(dungeonLvl) : null;
+  ctx.fillStyle = theme ? theme.bg : '#060610';
+  ctx.fillRect(0,0,W,H);
   if (state==='select') return;
 
-  ctx.save();
+  ctx.save(); // [camera]
   ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
 
   const x0=Math.max(0,Math.floor(camera.x/TILE));
@@ -933,28 +1177,16 @@ function render() {
   const x1=Math.min(dungeon.w,Math.ceil((camera.x+W)/TILE)+1);
   const y1=Math.min(dungeon.h,Math.ceil((camera.y+H)/TILE)+1);
 
-  const th=Math.min(2, Math.floor((dungeonLvl-1)/4));
-  const WALL_BG  =['#17172a','#181820','#28100a'];
-  const WALL_HI  =['#21213a','#1e1e2a','#381512'];
-  const FLOOR_BG =['#1b1b2d','#17202a','#20100a'];
-  const FLOOR_PT =['#1e1e34','#1a2432','#281410'];
-
+  ctx.save(); // [tile state isolation]
   for (let ty=y0;ty<y1;ty++) {
     for (let tx=x0;tx<x1;tx++) {
       const t = dungeon.grid[ty][tx];
       const px=tx*TILE, py=ty*TILE;
-      if (t===WALL) {
-        ctx.fillStyle=WALL_BG[th]; ctx.fillRect(px,py,TILE,TILE);
-        ctx.fillStyle=WALL_HI[th]; ctx.fillRect(px+1,py+1,TILE-2,TILE-2);
-        ctx.fillStyle='rgba(0,0,0,.4)'; ctx.fillRect(px,py,TILE,2); ctx.fillRect(px,py,2,TILE);
-      } else {
-        ctx.fillStyle=FLOOR_BG[th]; ctx.fillRect(px,py,TILE,TILE);
-        ctx.fillStyle=FLOOR_PT[th];
-        ctx.fillRect(px+1,py+1,TILE/2-1,TILE/2-1);
-        ctx.fillRect(px+TILE/2+1,py+TILE/2+1,TILE/2-2,TILE/2-2);
-      }
+      if (t===WALL) theme.drawWall(ctx, px, py, frameCount);
+      else          theme.drawFloor(ctx, px, py, frameCount);
     }
   }
+  ctx.restore(); // [tile state isolation]
 
   // Drops
   drops.forEach(d=>{
@@ -1028,7 +1260,7 @@ function render() {
     ctx.strokeStyle='#000'; ctx.lineWidth=3; ctx.strokeText(d.text,d.x,d.y); ctx.fillText(d.text,d.x,d.y);
   });
   ctx.globalAlpha=1;
-  ctx.restore();
+  ctx.restore(); // [camera]
 
   drawHUD();
   drawMinimap();
@@ -1069,27 +1301,32 @@ function drawHUD() {
   ctx.fillStyle='#88f'; ctx.fillText('🛡 '+p.def, bx+132, pad+70);
 
   const alive=enemies.length;
-  ctx.fillStyle='rgba(0,0,0,.5)';
-  roundRect(ctx, W-158, 8, 150, 42, 6); ctx.fill();
-  ctx.fillStyle='#666'; ctx.font='11px Arial'; ctx.textAlign='right';
-  ctx.fillText('Этаж '+dungeonLvl+' / 20', W-12, 24);
+  const th = getTheme(dungeonLvl);
+  ctx.fillStyle='rgba(0,0,0,.55)';
+  roundRect(ctx, W-170, 6, 164, 58, 6); ctx.fill();
+  ctx.textAlign='right'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#ccc'; ctx.font='bold 12px Arial';
+  ctx.fillText(th.name, W-10, 24);
+  ctx.fillStyle='#555'; ctx.font='10px Arial';
+  ctx.fillText('Этаж '+dungeonLvl+' / 20', W-10, 38);
   ctx.fillStyle=alive>0?'#f88':'#8f8';
-  ctx.fillText(alive>0?'👾 Врагов: '+alive:'✨ Всё спокойно', W-12, 42);
+  ctx.fillText(alive>0?'👾 Врагов: '+alive:'✨ Всё спокойно', W-10, 52);
 }
 
 // ─────────────────────────────────────────────────────────
 //  MINI-MAP
 // ─────────────────────────────────────────────────────────
 function drawMinimap() {
+  const th = getTheme(dungeonLvl);
   const sc=2;
   const mmW=dungeon.w*sc, mmH=dungeon.h*sc;
-  const mx=W-mmW-10, my=58;
+  const mx=W-mmW-10, my=72;
   ctx.fillStyle='rgba(0,0,0,.72)'; ctx.fillRect(mx-1,my-1,mmW+2,mmH+2);
   ctx.strokeStyle='#1e1e30'; ctx.lineWidth=1; ctx.strokeRect(mx-1,my-1,mmW+2,mmH+2);
   for (let ty=0;ty<dungeon.h;ty++) {
     for (let tx=0;tx<dungeon.w;tx++) {
       const t=dungeon.grid[ty][tx]; if(t===WALL) continue;
-      ctx.fillStyle='#2e2e4a';
+      ctx.fillStyle=th.mmFloor;
       ctx.fillRect(mx+tx*sc,my+ty*sc,sc,sc);
     }
   }
@@ -1125,7 +1362,7 @@ function drawDead() {
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle='#f44'; ctx.font=`bold ${clamp(32,W*.09,54)}px Arial`; ctx.fillText('ВЫ ПОГИБЛИ',W/2,H/2-50);
   ctx.fillStyle='#777'; ctx.font=`${clamp(14,W*.04,20)}px Arial`;
-  ctx.fillText(`Этаж ${dungeonLvl}  •  Уровень ${player.lvl}`,W/2,H/2+5);
+  ctx.fillText(`${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}`,W/2,H/2+5);
   ctx.fillStyle='#ff0'; ctx.fillText(`Золото: ${player.gold}  •  Убито: ${player.kills}`,W/2,H/2+38);
   ctx.fillStyle='rgba(255,255,255,.5)'; ctx.font=`${clamp(13,W*.034,17)}px Arial`;
   ctx.fillText('Нажмите, чтобы начать снова',W/2,H/2+84);
