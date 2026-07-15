@@ -95,7 +95,9 @@ function update(dt) {
     }
 
     const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
-    if (closest && closestD < atkRange) {
+    if (!closest || closestD >= atkRange) {
+      player.atkTimer = 0.15; // short poll interval when nothing in range
+    } else {
       player.atkTimer = 1 / player.charDef.atkSpeed;
       if (closestIsPlayer) {
         faceTowards(closest.x, closest.y);
@@ -210,6 +212,17 @@ function update(dt) {
   if (battleCryTimer > 0) battleCryTimer -= dt;
   if (dodgeTimer > 0) dodgeTimer -= dt;
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
+
+  // Clear stale target
+  if (targetId) {
+    if (targetIsPlayer) {
+      const op = otherPlayers[targetId];
+      if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
+    } else {
+      const te = activeEnemies.find(e => e.id === targetId);
+      if (!te || (te.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
+    }
+  }
 
   // NPC proximity
   nearNpc = null;
@@ -607,6 +620,7 @@ function loadLevel() {
 
 function restartGame() {
   if (state !== 'dead') return;
+  targetId = null; targetIsPlayer = false; pvpMode = false;
   serverEnemies = []; otherPlayers = {};
   npcs = []; nearNpc = null;
   Object.keys(floorCache).forEach(k => delete floorCache[k]);

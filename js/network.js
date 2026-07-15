@@ -113,6 +113,17 @@ function netConnect(onReady) {
     }
   });
 
+  socket.on('pvpDamage', ({ dmg }) => {
+    if (!player) return;
+    if (barrierTimer > 0) { dmgNum(player.x, player.y - 24, 'БЛОК', '#88f'); return; }
+    const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
+    player.hp = Math.max(0, player.hp - actual);
+    player.hurtTimer = 0.35;
+    dmgNum(player.x, player.y - 24, actual, '#f55');
+    spawnBurst(player.x, player.y, '#f44', 5);
+    if (player.hp <= 0) { player.hp = 0; state = 'dead'; }
+  });
+
   socket.on('pvpHit', ({ x, y, dmg }) => {
     if (dmg) dmgNum(x, y - 24, dmg, '#f88');
     spawnBurst(x, y, '#f44', 4);
@@ -241,7 +252,7 @@ function netSendMove() {
   const now = Date.now();
   if (now - _lastMoveSend < 33) return;
   _lastMoveSend = now;
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
+  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp, maxHp: player.maxHp });
 }
 
 function netAttack(enemyId) {

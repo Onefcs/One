@@ -91,8 +91,8 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('playerMove', ({ x, y, facing }) => {
-    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing);
+  socket.on('playerMove', ({ x, y, facing, hp, maxHp }) => {
+    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing, hp, maxHp);
   });
 
   socket.on('attack', ({ enemyId }) => {
@@ -152,7 +152,8 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
     if (!result) return;
-    io.to(targetId).emit('playerHurt', { id: targetId, hp: result.hp });
+    // Send damage delta to target (client applies it; avoids server HP sync issues)
+    io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg });
   });
 

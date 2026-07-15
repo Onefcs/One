@@ -150,13 +150,12 @@ class Room {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
-    if (!attacker.pvpMode || !target.pvpMode) return null; // both must be in pvp mode
-    if (target.hp <= 0) return null;
+    if (!attacker.pvpMode || !target.pvpMode) return null;
     const d = Math.hypot(attacker.x - target.x, attacker.y - target.y);
-    if (d > 400) return null;
+    if (d > 500) return null;
     const dmg = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
-    target.hp = Math.max(0, target.hp - dmg);
-    return { hp: target.hp, dmg, x: target.x, y: target.y };
+    // Don't track HP server-side for PvP — client is authoritative for own HP
+    return { dmg, x: target.x, y: target.y };
   }
 
   removePlayer(socketId) { this.players.delete(socketId); }
@@ -177,9 +176,13 @@ class Room {
     }
   }
 
-  updatePlayerPos(socketId, x, y, facing) {
+  updatePlayerPos(socketId, x, y, facing, hp, maxHp) {
     const p = this.players.get(socketId);
-    if (p) { p.x = x; p.y = y; p.facing = facing; }
+    if (!p) return;
+    p.x = x; p.y = y; p.facing = facing;
+    // Trust client for HP so other players see accurate values (healing included)
+    if (hp !== undefined && hp > 0) p.hp = hp;
+    if (maxHp !== undefined && maxHp > 0) p.maxHp = maxHp;
   }
 
   attackEnemy(socketId, enemyId) {

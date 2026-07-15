@@ -495,14 +495,14 @@ function drawTargetFrame() {
   let name = '', hp = 0, maxHp = 1, color = '#f80';
   if (targetIsPlayer && isOnline) {
     const op = otherPlayers[targetId];
-    if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; return; }
+    if (!op) return; // player left AOI — don't clear targetId here, let update() do it
     name = op.username || '?';
     hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#f77';
   } else {
     const e = activeEnemies.find(e => e.id === targetId);
-    if (!e || (e.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; return; }
+    if (!e) return; // enemy not loaded yet — don't clear targetId here
     name = e.name || '?';
-    hp = e.hp || 0; maxHp = e.maxHp || 1; color = e.color || '#f80';
+    hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#f80';
   }
 
   const pb = getPvpBtnPos();
