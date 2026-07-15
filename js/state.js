@@ -26,7 +26,3 @@ let minimapCacheFloor = -1;
 // Full dungeon tile canvas (rebuilt at loadLevel / floor change)
 let tileCanvas = null;
 
-// Entity interpolation: render this many ms behind server time so we always
-// have two reference points and can interpolate perfectly between them
-const INTERP_DELAY = 60;
-let _posBuffers = {}; // entityId → [{t, x, y}, ...]

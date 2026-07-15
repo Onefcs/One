@@ -158,18 +158,15 @@ function update(dt) {
   particles = particles.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; return p.life > 0; });
   dmgNums = dmgNums.filter(d => { d.y += d.vy * dt; d.life -= dt; return d.life > 0; });
 
-  // Entity interpolation: render at (now - INTERP_DELAY) using buffered snapshots
-  // so movement is always smooth regardless of server tick rate
+  // Smooth lerp toward latest server positions (no buffer delay, no jitter)
   if (isOnline) {
+    const lk = Math.min(1, 16 * dt);
     Object.entries(otherPlayers).forEach(([id, op]) => {
-      const pos = getInterpPos(id);
-      if (pos) {
-        const prevX = op.x !== undefined ? op.x : pos.x;
-        const prevY = op.y !== undefined ? op.y : pos.y;
-        op.moving = Math.hypot(pos.x - prevX, pos.y - prevY) > 0.5;
-        op.x = pos.x; op.y = pos.y;
-      } else {
-        op.moving = false;
+      if (op.targetX !== undefined) {
+        const prevX = op.x, prevY = op.y;
+        op.x += (op.targetX - op.x) * lk;
+        op.y += (op.targetY - op.y) * lk;
+        op.moving = Math.hypot(op.x - prevX, op.y - prevY) > 0.5;
       }
       if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
       if (op.type && SPRITE_DEF[op.type]) {
@@ -189,8 +186,10 @@ function update(dt) {
       }
     });
     serverEnemies.forEach(e => {
-      const pos = getInterpPos(e.id);
-      if (pos) { e.x = pos.x; e.y = pos.y; }
+      if (e.targetX !== undefined) {
+        e.x += (e.targetX - e.x) * lk;
+        e.y += (e.targetY - e.y) * lk;
+      }
     });
   }
 
@@ -371,21 +370,6 @@ function selectChar(type) {
 
 // Returns the interpolated {x, y} for an entity at (now - INTERP_DELAY),
 // using two buffered snapshots to linearly interpolate between them.
-function getInterpPos(id) {
-  const buf = _posBuffers[id];
-  if (!buf || buf.length === 0) return null;
-  const rt = Date.now() - INTERP_DELAY;
-  let lo = null, hi = null;
-  for (let i = 0; i < buf.length; i++) {
-    if (buf[i].t <= rt) lo = buf[i];
-    else if (!hi) { hi = buf[i]; break; }
-  }
-  if (!lo) return { x: hi.x, y: hi.y };
-  if (!hi) return { x: lo.x, y: lo.y };
-  const t = (rt - lo.t) / (hi.t - lo.t);
-  return { x: lo.x + (hi.x - lo.x) * t, y: lo.y + (hi.y - lo.y) * t };
-}
-
 function getOtherPlayerAnimKey(p) {
   if ((p.hp || 1) <= 0) return 'die';
   const dir = p.facing || 'front';
