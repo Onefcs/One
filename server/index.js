@@ -18,6 +18,9 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB error:', err));
 
+// Images: cache 30 days — sprites never change between deploys
+app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
+// HTML/JS/CSS: no cache so updates are picked up immediately
 app.use(express.static(path.join(__dirname, '..')));
 
 const world = new Room('world', io);
