@@ -44,14 +44,6 @@ function doMeleeAttack(target) {
   swingAngle = Math.atan2(target.y - player.y, target.x - player.x);
   swingTimer = 0.18;
   player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
-  if (player.charDef.atkType === 'aoe') {
-    enemies.forEach(e => {
-      if (e === target || e.hp <= 0) return;
-      if (dist(e.x, e.y, player.x, player.y) < player.charDef.atkRange * 0.8)
-        hitEnemy(e, Math.floor(player.atk * 0.55));
-    });
-    spawnAOE(player.x, player.y, player.charDef.atkRange);
-  }
 }
 
 function fireProj(tx, ty) {
@@ -59,9 +51,13 @@ function fireProj(tx, ty) {
   if (len < 1) return;
   faceTowards(tx, ty);
   player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
-  projs.push({ x: player.x, y: player.y,
-    vx: (tx - player.x) / len * 360, vy: (ty - player.y) / len * 360,
-    color: d.projColor, dmg: player.atk, life: 1.6, size: 6, isPlayer: true });
+  const vx = (tx - player.x) / len * 360;
+  const vy = (ty - player.y) / len * 360;
+  const ang = Math.atan2(vy, vx);
+  const isArcher = player.type === 'archer';
+  projs.push({ x: player.x, y: player.y, vx, vy,
+    color: d.projColor, dmg: player.atk, life: 1.8, size: isArcher ? 5 : 7,
+    isPlayer: true, projType: isArcher ? 'arrow' : 'ball', angle: ang });
 }
 
 function spawnDrops(e) {

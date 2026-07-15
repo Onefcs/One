@@ -1,7 +1,7 @@
 const CHAR_DEF = {
   warrior: { name:'Воин',   emoji:'🗡️', color:'#5af', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:1.2,  atkType:'melee' },
   archer:  { name:'Лучник', emoji:'🏹', color:'#7e7', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.6,  atkType:'ranged', projColor:'#fa0' },
-  mage:    { name:'Маг',    emoji:'🔮', color:'#e8e', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:140, atkSpeed:0.85, atkType:'aoe',    projColor:'#f4f' },
+  mage:    { name:'Маг',    emoji:'🔮', color:'#e8e', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.85, atkType:'ranged', projColor:'#c8f' },
 };
 
 const ENEMY_DEF = [

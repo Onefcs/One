@@ -1,15 +1,15 @@
 const floorCache = {};
 
 function generateDungeon(lvl) {
-  const DW = 72, DH = 56;
+  const DW = 100, DH = 78;
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
   const rooms = [];
-  const wantRooms = Math.min(20 + Math.floor(lvl / 2), 35);
+  const wantRooms = Math.min(22 + Math.floor(lvl / 2), 38);
   let tries = 0;
-  while (rooms.length < wantRooms && tries < 1400) {
+  while (rooms.length < wantRooms && tries < 2000) {
     tries++;
-    const rw = 5 + Math.floor(Math.random() * 9);
-    const rh = 4 + Math.floor(Math.random() * 7);
+    const rw = 9 + Math.floor(Math.random() * 13);
+    const rh = 8 + Math.floor(Math.random() * 11);
     const rx = 1 + Math.floor(Math.random() * (DW - rw - 2));
     const ry = 1 + Math.floor(Math.random() * (DH - rh - 2));
     const ok = !rooms.some(r =>
@@ -61,6 +61,6 @@ function generateDungeon(lvl) {
       x: Math.floor(rooms[0].x + rooms[0].w / 2) * TILE + TILE / 2,
       y: Math.floor(rooms[0].y + rooms[0].h / 2) * TILE + TILE / 2,
     },
-    enemies: enemyList, w: DW, h: DH,
+    enemies: enemyList, w: DW, h: DH, wantRooms,
   };
 }

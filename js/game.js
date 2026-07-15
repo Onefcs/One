@@ -2,13 +2,15 @@
 //  CAMERA
 // ─────────────────────────────────────────────────────────
 function clampCamera() {
-  camera.x = clamp(camera.x, 0, Math.max(0, dungeon.w * TILE - W));
-  camera.y = clamp(camera.y, 0, Math.max(0, dungeon.h * TILE - H));
+  const visW = W / ZOOM, visH = H / ZOOM;
+  camera.x = clamp(camera.x, 0, Math.max(0, dungeon.w * TILE - visW));
+  camera.y = clamp(camera.y, 0, Math.max(0, dungeon.h * TILE - visH));
 }
 
 function updateCamera(dt) {
-  camera.x += (player.x - W / 2 - camera.x) * Math.min(1, 8 * dt);
-  camera.y += (player.y - H / 2 - camera.y) * Math.min(1, 8 * dt);
+  const visW = W / ZOOM, visH = H / ZOOM;
+  camera.x += (player.x - visW / 2 - camera.x) * Math.min(1, 8 * dt);
+  camera.y += (player.y - visH / 2 - camera.y) * Math.min(1, 8 * dt);
   clampCamera();
 }
 
@@ -71,7 +73,6 @@ function update(dt) {
         swingTimer = 0.18;
         player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-        else if (player.charDef.atkType === 'aoe') spawnAOE(player.x, player.y, player.charDef.atkRange);
       } else {
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
         else doMeleeAttack(closest);
@@ -226,6 +227,7 @@ function render() {
   if (state === 'select') return;
 
   ctx.save(); // [camera]
+  ctx.scale(ZOOM, ZOOM);
   ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
 
   if (tileCanvas) {
@@ -301,12 +303,32 @@ function render() {
     });
   }
 
-  // Projectiles (faux glow via two circles — no shadowBlur GPU cost)
+  // Projectiles
   projs.forEach(p => {
-    ctx.globalAlpha = 0.28; ctx.fillStyle = p.color;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 5, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1; ctx.fillStyle = p.color;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (p.projType === 'arrow') {
+      const ang = p.angle ?? Math.atan2(p.vy, p.vx);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(ang);
+      ctx.strokeStyle = p.color || '#fa0';
+      ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(9, 0); ctx.stroke();
+      ctx.fillStyle = p.color || '#fa0';
+      ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(6, -3.5); ctx.lineTo(6, 3.5); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8, -4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8,  4); ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.globalAlpha = 0.3; ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 7, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.8; ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.38, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   });
 
   // Player
@@ -323,10 +345,9 @@ function render() {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x + fdx / fl * 8, player.y + fdy / fl * 8, 3.5, 0, Math.PI * 2); ctx.fill();
     }
     if (swingTimer > 0) {
-      ctx.strokeStyle = player.charDef.atkType === 'aoe' ? 'rgba(240,100,255,.7)' : 'rgba(200,220,255,.75)';
-      ctx.lineWidth = player.charDef.atkType === 'aoe' ? 4 : 3;
-      const sr = player.charDef.atkType === 'aoe' ? player.charDef.atkRange * .65 : 34;
-      ctx.beginPath(); ctx.arc(player.x, player.y, sr, swingAngle - .7, swingAngle + .7); ctx.stroke();
+      ctx.strokeStyle = 'rgba(200,220,255,.75)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(player.x, player.y, 34, swingAngle - .7, swingAngle + .7); ctx.stroke();
     }
   }
 
@@ -506,7 +527,7 @@ function loadLevel() {
   projs = []; drops = []; particles = []; dmgNums = [];
   player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
   if (dungeonLvl > 1) player.hp = Math.min(player.maxHp, player.hp + Math.floor(player.maxHp * .25));
-  camera.x = player.x - W / 2; camera.y = player.y - H / 2;
+  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - H / (2 * ZOOM);
   clampCamera();
   buildTileCanvas();
   initNpcs();

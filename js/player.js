@@ -77,6 +77,22 @@ function usePotion() {
   netSaveProgress();
 }
 
+// Return direction toward nearest enemy; fall back to joystick if active
+function nearestEnemyDir() {
+  const jl = Math.hypot(joy.dx, joy.dy);
+  if (jl > 0.25) return { dx: joy.dx / jl, dy: joy.dy / jl };
+  const isOnline = !!(socket?.connected);
+  const activeEnemies = isOnline ? serverEnemies : enemies;
+  let closest = null, closestD = Infinity;
+  activeEnemies.forEach(e => {
+    const d = dist(e.x, e.y, player.x, player.y);
+    if (d < closestD) { closestD = d; closest = e; }
+  });
+  if (!closest) return { dx: 1, dy: 0 };
+  const len = Math.max(1, closestD);
+  return { dx: (closest.x - player.x) / len, dy: (closest.y - player.y) / len };
+}
+
 // Send attack to all server enemies within range
 function _skillAOE(r) {
   serverEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < r) netAttack(e.id); });
@@ -131,18 +147,20 @@ function useSkill(idx) {
     }
   } else if (player.type === 'archer') {
     if (sk.key === 'Q') { // Multi-Shot
-      const base = Math.atan2(joy.dy || 0, joy.dx || 1);
+      const dir = nearestEnemyDir();
+      const base = Math.atan2(dir.dy, dir.dx);
       [-0.35, 0, 0.35].forEach(off => {
         const ang = base + off;
-        projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*360, vy: Math.sin(ang)*360,
-          color: '#fa0', dmg: player.atk, life: 1.4, size: 6, isPlayer: true });
+        projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
+          color: '#fa0', dmg: player.atk, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
       });
-      if (isOnline) _skillDir(joy.dx || 1, joy.dy || 0, 210, 0.1);
+      if (isOnline) _skillDir(dir.dx, dir.dy, 220, 0.1);
     } else if (sk.key === 'W') { // Poison Arrow
-      const ang = Math.atan2(joy.dy || 0, joy.dx || 1);
-      projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*300, vy: Math.sin(ang)*300,
-        color: '#4d4', dmg: player.atk * 1.5, life: 2, size: 8, isPlayer: true });
-      if (isOnline) _skillDir(joy.dx || 1, joy.dy || 0, 210, 0.5);
+      const dir = nearestEnemyDir();
+      const ang = Math.atan2(dir.dy, dir.dx);
+      projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320,
+        color: '#4d4', dmg: player.atk * 1.5, life: 2, size: 7, isPlayer: true, projType: 'arrow', angle: ang });
+      if (isOnline) _skillDir(dir.dx, dir.dy, 220, 0.5);
     } else if (sk.key === 'E') { // Dodge Roll
       dodgeTimer = 0.6;
       const dx = joy.dx || 0, dy = joy.dy || 0;
@@ -157,10 +175,11 @@ function useSkill(idx) {
     }
   } else if (player.type === 'mage') {
     if (sk.key === 'Q') { // Fireball
-      const ang = Math.atan2(joy.dy || 0, joy.dx || 1);
-      projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320,
-        color: '#f60', dmg: player.atk * 2, life: 2, size: 12, isPlayer: true });
-      if (isOnline) _skillDir(joy.dx || 1, joy.dy || 0, 140, 0.5);
+      const dir = nearestEnemyDir();
+      const ang = Math.atan2(dir.dy, dir.dx);
+      projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
+        color: '#f60', dmg: player.atk * 2, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
+      if (isOnline) _skillDir(dir.dx, dir.dy, 160, 0.5);
     } else if (sk.key === 'W') { // Ice Nova
       spawnAOE(player.x, player.y, 130);
       if (isOnline) _skillAOE(130);
