@@ -163,7 +163,30 @@ function update(dt) {
   if (isOnline) {
     Object.entries(otherPlayers).forEach(([id, op]) => {
       const pos = getInterpPos(id);
-      if (pos) { op.x = pos.x; op.y = pos.y; }
+      if (pos) {
+        const prevX = op.x !== undefined ? op.x : pos.x;
+        const prevY = op.y !== undefined ? op.y : pos.y;
+        op.moving = Math.hypot(pos.x - prevX, pos.y - prevY) > 0.5;
+        op.x = pos.x; op.y = pos.y;
+      } else {
+        op.moving = false;
+      }
+      if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
+      if (op.type && SPRITE_DEF[op.type]) {
+        if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
+        const ak = getOtherPlayerAnimKey(op);
+        const ad = SPRITE_DEF[op.type].anims[ak];
+        if (ad) {
+          op.animTimer = (op.animTimer || 0) + dt;
+          const step = 1 / ad.fps;
+          while (op.animTimer >= step) {
+            op.animTimer -= step;
+            const maxF = (spriteCache[op.type]?.[ak] || []).length || ad.n;
+            if (ad.loop) { op.animFrame = (op.animFrame + 1) % maxF; }
+            else if (op.animFrame < maxF - 1) { op.animFrame++; }
+          }
+        }
+      }
     });
     serverEnemies.forEach(e => {
       const pos = getInterpPos(e.id);
@@ -236,14 +259,18 @@ function render() {
   if (socket?.connected) {
     Object.values(otherPlayers).forEach(p => {
       if (!p.x) return;
-      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = p.type === 'warrior' ? '#5af' : p.type === 'archer' ? '#7e7' : p.type === 'mage' ? '#e8e' : '#aaa';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+      const usedSprite = drawOtherPlayerSprite(p);
+      if (!usedSprite) {
+        ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = p.type === 'warrior' ? '#5af' : p.type === 'archer' ? '#7e7' : p.type === 'mage' ? '#e8e' : '#aaa';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+      }
+      const nameY = usedSprite ? p.y - 52 : p.y - 22;
       ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(p.username || '?', p.x, p.y - 18);
-      ctx.fillText(p.username || '?', p.x, p.y - 18);
-      const bw = 32, bh = 4, bx = p.x - bw / 2, by = p.y - 26;
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+      ctx.strokeText(p.username || '?', p.x, nameY); ctx.fillText(p.username || '?', p.x, nameY);
+      const bw = 32, bh = 4, bx = p.x - bw / 2, by = nameY - 8;
       ctx.fillStyle = '#300'; ctx.fillRect(bx, by, bw, bh);
       ctx.fillStyle = '#2d2'; ctx.fillRect(bx, by, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
     });
@@ -354,6 +381,30 @@ function getInterpPos(id) {
   if (!hi) return { x: lo.x, y: lo.y };   // past end of buffer — hold last known
   const t = (rt - lo.t) / (hi.t - lo.t);
   return { x: lo.x + (hi.x - lo.x) * t, y: lo.y + (hi.y - lo.y) * t };
+}
+
+function getOtherPlayerAnimKey(p) {
+  if ((p.hp || 1) <= 0) return 'die';
+  const dir = p.facing || 'front';
+  if ((p.hurtTimer || 0) > 0.08) return `${dir}-hurt`;
+  if (p.moving) return `${dir}-run`;
+  return `${dir}-idle`;
+}
+
+function drawOtherPlayerSprite(p) {
+  const cache = spriteCache[p.type];
+  if (!cache) return false;
+  const key = getOtherPlayerAnimKey(p);
+  const frames = cache[key];
+  if (!frames || frames.length === 0) return false;
+  const fi = Math.min(Math.floor(p.animFrame || 0), frames.length - 1);
+  const img = frames[fi];
+  if (!img || !img.complete || img.naturalWidth === 0) return false;
+  const sz = 80;
+  ctx.fillStyle = 'rgba(0,0,0,.3)';
+  ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(img, p.x - sz / 2, p.y - sz * 0.62, sz, sz);
+  return true;
 }
 
 function buildTileCanvas() {

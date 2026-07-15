@@ -1,6 +1,5 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
 
-const MAX_PLAYERS = 4;
 const TICK_MS = 50; // 20 fps
 
 class Room {
@@ -136,9 +135,6 @@ class Room {
   getPlayerList() {
     return [...this.players.values()].map(p => ({ id: p.socketId, username: p.username, type: p.type }));
   }
-
-  isFull()  { return this.players.size >= MAX_PLAYERS; }
-  isEmpty() { return this.players.size === 0; }
 
   stop() { clearInterval(this._interval); }
 }

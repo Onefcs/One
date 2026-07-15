@@ -24,33 +24,6 @@
   </div>
 </div>
 
-<!-- Lobby Screen -->
-<div id="lobby-screen" style="display:none">
-  <h1>⚔ DUNGEON QUEST</h1>
-  <div class="auth-box">
-    <div id="lobby-welcome" class="lobby-welcome"></div>
-    <button class="auth-btn primary" onclick="if(socket?.connected)socket.emit('createRoom')">Создать комнату</button>
-    <div class="join-row">
-      <input type="text" id="room-code-input" placeholder="Код комнаты" maxlength="6" style="text-transform:uppercase;flex:1">
-      <button class="auth-btn primary" style="width:auto;padding:0 16px" onclick="doJoinRoom()">→</button>
-    </div>
-    <div id="lobby-error" class="auth-error"></div>
-    <button class="auth-btn secondary" onclick="playOffline()">Играть соло</button>
-  </div>
-</div>
-
-<!-- Room Lobby Screen -->
-<div id="room-lobby-screen" style="display:none">
-  <h1>⚔ DUNGEON QUEST</h1>
-  <div class="auth-box">
-    <div class="room-code-label">Код комнаты</div>
-    <div id="room-code-display" class="room-code-big"></div>
-    <div id="room-players-list" class="room-players"></div>
-    <button class="auth-btn primary" onclick="startOnlineGame()">Выбрать персонажа ▶</button>
-    <button class="auth-btn secondary" onclick="leaveRoom()">← Назад</button>
-  </div>
-</div>
-
 <!-- Character Select -->
 <div id="char-select" style="display:none">
   <h1>⚔ DUNGEON QUEST</h1>

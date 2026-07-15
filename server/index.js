@@ -20,18 +20,12 @@ mongoose.connect(process.env.MONGODB_URI)
 
 app.use(express.static(path.join(__dirname, '..')));
 
-const rooms = new Map(); // code → Room
-
-function genCode() {
-  let code;
-  do { code = Math.random().toString(36).slice(2, 8).toUpperCase(); } while (rooms.has(code));
-  return code;
-}
+const world = new Room('world', io);
 
 io.on('connection', socket => {
   console.log('connect:', socket.id);
-  let authed = null;   // DB player doc
-  let currentRoom = null;
+  let authed = null;
+  let inWorld = false;
 
   socket.on('register', async ({ username, password }) => {
     try {
@@ -57,60 +51,43 @@ io.on('connection', socket => {
     } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
   });
 
-  socket.on('createRoom', () => {
-    if (!authed) return;
-    const code = genCode();
-    const room = new Room(code, io);
-    rooms.set(code, room);
-    currentRoom = room;
-    socket.join(code);
-    room.addPlayer(socket.id, authed.username);
-    socket.emit('roomCreated', { code });
-  });
-
-  socket.on('joinRoom', ({ code }) => {
-    if (!authed) return;
-    const room = rooms.get(code);
-    if (!room) return socket.emit('roomError', { message: 'Комната не найдена' });
-    if (room.isFull()) return socket.emit('roomError', { message: 'Комната полна (макс. 4)' });
-    currentRoom = room;
-    socket.join(code);
-    room.addPlayer(socket.id, authed.username);
-    socket.emit('roomJoined', { code, players: room.getPlayerList() });
-    socket.to(code).emit('playerJoined', { id: socket.id, username: authed.username });
-  });
-
   socket.on('selectChar', ({ type }) => {
-    if (!currentRoom) return;
-    currentRoom.setPlayerChar(socket.id, type);
-    socket.to(currentRoom.code).emit('playerChar', { id: socket.id, type });
-    const dungeonData = currentRoom.getDungeonData();
-    socket.emit('gameStart', { floor: currentRoom.floor, dungeon: dungeonData });
+    if (!authed) return;
+    if (!inWorld) {
+      inWorld = true;
+      socket.join('world');
+      world.addPlayer(socket.id, authed.username);
+      socket.to('world').emit('playerJoined', { id: socket.id, username: authed.username });
+    }
+    world.setPlayerChar(socket.id, type);
+    socket.to('world').emit('playerChar', { id: socket.id, type });
+    const dungeonData = world.getDungeonData();
+    socket.emit('gameStart', { floor: world.floor, dungeon: dungeonData });
   });
 
   socket.on('playerMove', ({ x, y, facing }) => {
-    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing);
+    if (inWorld) world.updatePlayerPos(socket.id, x, y, facing);
   });
 
   socket.on('attack', ({ enemyId }) => {
-    if (!currentRoom) return;
-    const result = currentRoom.attackEnemy(socket.id, enemyId);
+    if (!inWorld) return;
+    const result = world.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
-      io.to(currentRoom.code).emit('enemyKilled', {
+      io.to('world').emit('enemyKilled', {
         id: enemyId, xp: result.xp, gold: result.gold,
         dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
       });
     } else {
-      io.to(currentRoom.code).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
+      io.to('world').emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
     }
   });
 
   socket.on('changeFloor', ({ floor }) => {
-    if (!currentRoom) return;
-    currentRoom.changeFloor(floor);
-    const dungeonData = currentRoom.getDungeonData();
-    io.to(currentRoom.code).emit('floorChanged', { floor: currentRoom.floor, dungeon: dungeonData });
+    if (!inWorld) return;
+    world.changeFloor(floor);
+    const dungeonData = world.getDungeonData();
+    io.to('world').emit('floorChanged', { floor: world.floor, dungeon: dungeonData });
   });
 
   socket.on('saveProgress', ({ stats }) => {
@@ -119,13 +96,9 @@ io.on('connection', socket => {
 
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
-    if (!currentRoom) return;
-    currentRoom.removePlayer(socket.id);
-    io.to(currentRoom.code).emit('playerLeft', { id: socket.id });
-    if (currentRoom.isEmpty()) {
-      currentRoom.stop();
-      rooms.delete(currentRoom.code);
-    }
+    if (!inWorld) return;
+    world.removePlayer(socket.id);
+    io.to('world').emit('playerLeft', { id: socket.id });
   });
 });
 

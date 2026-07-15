@@ -7,7 +7,6 @@ const SERVER_URL = (() => {
 })();
 
 let _authMode = 'login';
-let _roomPlayers = [];
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
@@ -21,43 +20,26 @@ function netConnect(onReady) {
 
   socket.on('authOk', ({ username }) => {
     netUsername = username;
-    _showLobbyScreen(username);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('char-select').style.display = 'flex';
   });
 
   socket.on('authError', ({ message }) => { showAuthError(message); });
 
-  socket.on('roomCreated', ({ code }) => {
-    netRoom = code;
-    _roomPlayers = [{ id: socket.id, username: netUsername }];
-    _showRoomLobby(code);
-  });
-
-  socket.on('roomJoined', ({ code, players }) => {
-    netRoom = code;
-    _roomPlayers = players;
-    _showRoomLobby(code);
-  });
-
-  socket.on('roomError', ({ message }) => {
-    document.getElementById('lobby-error').textContent = message;
-  });
-
   socket.on('playerJoined', ({ id, username }) => {
-    _roomPlayers.push({ id, username });
-    _renderRoomPlayers();
-    if (!otherPlayers[id]) otherPlayers[id] = {};
+    if (!otherPlayers[id]) otherPlayers[id] = { animFrame: 0, animTimer: 0, moving: false };
     otherPlayers[id].username = username;
   });
 
   socket.on('playerLeft', ({ id }) => {
     delete otherPlayers[id];
-    _roomPlayers = _roomPlayers.filter(p => p.id !== id);
-    _renderRoomPlayers();
+    delete _posBuffers[id];
   });
 
   socket.on('playerChar', ({ id, type }) => {
-    if (!otherPlayers[id]) otherPlayers[id] = {};
+    if (!otherPlayers[id]) otherPlayers[id] = { animFrame: 0, animTimer: 0, moving: false };
     otherPlayers[id].type = type;
+    loadSprites(type, () => {});
   });
 
   socket.on('gameStart', ({ floor, dungeon: d }) => {
@@ -83,11 +65,14 @@ function netConnect(onReady) {
     // Buffer other players' positions with timestamps for smooth interpolation
     players.forEach(p => {
       if (p.id === myId) return;
-      if (!otherPlayers[p.id]) otherPlayers[p.id] = { ...p };
-      else {
+      if (!otherPlayers[p.id]) {
+        otherPlayers[p.id] = { ...p, animFrame: 0, animTimer: 0, moving: false };
+        if (p.type) loadSprites(p.type, () => {});
+      } else {
         const op = otherPlayers[p.id];
+        if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
         op.hp = p.hp; op.maxHp = p.maxHp;
-        op.facing = p.facing; op.type = p.type; op.username = p.username;
+        op.facing = p.facing; op.username = p.username;
       }
       if (!_posBuffers[p.id]) _posBuffers[p.id] = [];
       _posBuffers[p.id].push({ t: now, x: p.x, y: p.y });
@@ -121,6 +106,9 @@ function netConnect(onReady) {
       player.hp = hp;
       player.hurtTimer = 0.35;
       if (player.hp <= 0) { player.hp = 0; state = 'dead'; }
+    } else if (otherPlayers[id]) {
+      otherPlayers[id].hp = hp;
+      otherPlayers[id].hurtTimer = 0.35;
     }
   });
 
@@ -195,50 +183,9 @@ function showAuthError(msg) {
   if (el) el.textContent = msg;
 }
 
-// ── Lobby ─────────────────────────────────────────────────────
-function _showLobbyScreen(username) {
+function playOffline() {
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'flex';
-  document.getElementById('lobby-welcome').textContent = '👋 Привет, ' + username + '!';
-}
-
-function doJoinRoom() {
-  const code = (document.getElementById('room-code-input').value || '').trim().toUpperCase();
-  if (code.length !== 6) {
-    document.getElementById('lobby-error').textContent = 'Введите 6-значный код';
-    return;
-  }
-  document.getElementById('lobby-error').textContent = '';
-  socket.emit('joinRoom', { code });
-}
-
-function _showRoomLobby(code) {
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('room-lobby-screen').style.display = 'flex';
-  document.getElementById('room-code-display').textContent = code;
-  _renderRoomPlayers();
-}
-
-function _renderRoomPlayers() {
-  const el = document.getElementById('room-players-list');
-  if (!el) return;
-  el.innerHTML = _roomPlayers.map(p =>
-    `<div class="room-player">${p.username === netUsername ? '⭐ ' : '👤 '}${p.username}</div>`
-  ).join('');
-}
-
-function startOnlineGame() {
-  document.getElementById('room-lobby-screen').style.display = 'none';
   document.getElementById('char-select').style.display = 'flex';
-}
-
-function leaveRoom() {
-  if (socket) { socket.disconnect(); socket = null; }
-  netRoom = null; _roomPlayers = [];
-  serverEnemies = []; otherPlayers = {};
-  document.getElementById('room-lobby-screen').style.display = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('auth-error').textContent = '';
 }
 
 function _finishOnlineStart() {
@@ -247,12 +194,6 @@ function _finishOnlineStart() {
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   state = 'playing';
   setTab(0);
-}
-
-function playOffline() {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('char-select').style.display = 'flex';
 }
 
 // ── Move throttle ─────────────────────────────────────────────
