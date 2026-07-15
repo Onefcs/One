@@ -187,12 +187,6 @@ function showAuthError(msg) {
   if (el) el.textContent = msg;
 }
 
-function playOffline() {
-  document.getElementById('login-screen').style.display = 'none';
-  try { _savedData = JSON.parse(localStorage.getItem('dq_offline_save') || 'null'); } catch { _savedData = null; }
-  _showCharSelect(_savedData);
-}
-
 function _showCharSelect(savedData) {
   const resumeEl = document.getElementById('char-resume');
   const resumeBtn = document.getElementById('resume-btn');
@@ -223,11 +217,7 @@ function netSaveProgress() {
     baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
     inventory: player.inventory, equipment: player.equipment,
   };
-  if (socket?.connected) {
-    socket.emit('saveProgress', { stats });
-  } else {
-    try { localStorage.setItem('dq_offline_save', JSON.stringify(stats)); } catch {}
-  }
+  if (socket?.connected) socket.emit('saveProgress', { stats });
 }
 
 function _finishOnlineStart() {
