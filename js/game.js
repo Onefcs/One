@@ -158,6 +158,25 @@ function update(dt) {
   particles = particles.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; return p.life > 0; });
   dmgNums = dmgNums.filter(d => { d.y += d.vy * dt; d.life -= dt; return d.life > 0; });
 
+  // Skill timers
+  if (player.skillCooldowns) {
+    const cds = player.skillCooldowns;
+    if (cds.Q > 0) cds.Q -= dt;
+    if (cds.W > 0) cds.W -= dt;
+    if (cds.E > 0) cds.E -= dt;
+    if (cds.R > 0) cds.R -= dt;
+  }
+  if (barrierTimer > 0) barrierTimer -= dt;
+  if (battleCryTimer > 0) battleCryTimer -= dt;
+  if (dodgeTimer > 0) dodgeTimer -= dt;
+  if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
+
+  // NPC proximity
+  nearNpc = null;
+  npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
+  const talkBtn = document.getElementById('npc-talk-btn');
+  if (talkBtn) talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
+
   // Smooth lerp toward latest server positions (no buffer delay, no jitter)
   if (isOnline) {
     const lk = Math.min(1, 16 * dt);
@@ -213,6 +232,9 @@ function render() {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(tileCanvas, 0, 0);
   }
+
+  // NPCs
+  drawNpcs();
 
   // Drops
   drops.forEach(d => {
@@ -321,7 +343,11 @@ function render() {
 
   drawHUD();
   drawMinimap();
-  if (activeTab === 0) drawJoystick();
+  if (activeTab === 0) {
+    drawJoystick();
+    drawSkillButtons();
+    drawPotionButton();
+  }
   if (state === 'dead') drawDead();
 
   if (transTimer > 0) {
@@ -398,6 +424,58 @@ function drawOtherPlayerSprite(p) {
   return true;
 }
 
+// ─────────────────────────────────────────────────────────
+//  NPCs
+// ─────────────────────────────────────────────────────────
+function initNpcs() {
+  if (!dungeon) return;
+  const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
+  const offsets = [
+    { dx: -TILE * 2, dy: 0 },
+    { dx: 0,         dy: -TILE * 2 },
+    { dx: TILE * 2,  dy: 0 },
+  ];
+  npcs = NPC_DEF.map((def, i) => ({
+    ...def,
+    x: sx + offsets[i].dx,
+    y: sy + offsets[i].dy,
+  }));
+}
+
+function drawNpcs() {
+  if (!npcs.length) return;
+  const F = 'system-ui, -apple-system, Arial';
+  npcs.forEach(n => {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(n.x, n.y + 18, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Glow ring
+    const pulse = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
+    ctx.strokeStyle = n.color + Math.round(pulse * 80).toString(16).padStart(2, '0');
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(n.x, n.y, 22, 0, Math.PI * 2); ctx.stroke();
+
+    // Emoji
+    ctx.font = `28px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(n.emoji, n.x, n.y);
+
+    // Name label
+    ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+    ctx.strokeText(n.name, n.x, n.y - 26);
+    ctx.fillStyle = n.color;
+    ctx.fillText(n.name, n.x, n.y - 26);
+
+    // Dialog icon when player is near
+    if (nearNpc && nearNpc.id === n.id) {
+      const bounce = Math.sin(frameCount * 0.15) * 3;
+      ctx.font = `18px ${F}`; ctx.textBaseline = 'middle';
+      ctx.fillText('💬', n.x, n.y - 44 + bounce);
+    }
+  });
+}
+
 function buildTileCanvas() {
   if (!dungeon) return;
   const th = getTheme(dungeonLvl);
@@ -431,11 +509,13 @@ function loadLevel() {
   camera.x = player.x - W / 2; camera.y = player.y - H / 2;
   clampCamera();
   buildTileCanvas();
+  initNpcs();
 }
 
 function restartGame() {
   if (state !== 'dead') return;
   serverEnemies = []; otherPlayers = {};
+  npcs = []; nearNpc = null;
   Object.keys(floorCache).forEach(k => delete floorCache[k]);
   tileCanvas = null;
   document.getElementById('char-select').style.display = 'flex';

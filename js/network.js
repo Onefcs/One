@@ -59,6 +59,7 @@ function netConnect(onReady) {
     const restore = _savedData && _savedData.type === player?.type ? _savedData : null;
     loadSprites(player?.type, () => {
       if (restore) { restoreFromSave(restore); _savedData = null; }
+      initNpcs();
       _finishOnlineStart();
     });
   });
@@ -145,6 +146,7 @@ function netConnect(onReady) {
       camera.x = player.x - W / 2; camera.y = player.y - H / 2;
       clampCamera();
     }
+    initNpcs();
     transTimer = 0.5;
   });
 
@@ -211,6 +213,7 @@ function netSaveProgress() {
     atk: player.atk, def: player.def,
     baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
     inventory: player.inventory, equipment: player.equipment,
+    potions: player.potions || 0,
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });
 }

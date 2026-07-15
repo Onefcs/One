@@ -55,19 +55,35 @@
 
 <canvas id="canvas"></canvas>
 
+<!-- NPC Talk button (shown when near NPC) -->
+<div id="npc-talk-btn" style="display:none" onclick="openNpc(nearNpc && nearNpc.id)">💬 Поговорить</div>
+
+<!-- NPC Dialog Overlay -->
+<div id="npc-overlay" onclick="closeNpc()" style="display:none">
+  <div id="npc-dialog" onclick="event.stopPropagation()">
+    <div class="npc-hdr">
+      <span id="npc-emoji-lbl" style="font-size:28px;line-height:1"></span>
+      <div style="flex:1">
+        <div id="npc-name-lbl" class="npc-name"></div>
+        <div id="npc-desc-lbl" class="npc-subdesc"></div>
+      </div>
+      <button class="npc-close" onclick="closeNpc()">✕</button>
+    </div>
+    <div id="npc-body" class="npc-body"></div>
+  </div>
+</div>
+
 <!-- Panels -->
 <div id="panel-inv" class="bpanel">
   <div class="panel-hdr">
     🎒 Инвентарь
     <span id="inv-count" style="font-size:11px;color:#484860;font-weight:normal;"></span>
   </div>
-  <div class="equip-screen">
-    <div class="eq-col" id="eq-left"></div>
-    <div class="char-center" id="char-preview"></div>
-    <div class="eq-col" id="eq-right"></div>
-  </div>
-  <div class="inv-section">
-    <div class="sec-title">Предметы</div>
+  <div id="char-preview"></div>
+  <div class="panel-body" style="padding-top:4px">
+    <div class="sec-title">Снаряжение (нажми для снятия)</div>
+    <div class="eq-grid-5col" id="eq-grid"></div>
+    <div class="sec-title" style="margin-top:14px">Предметы (нажми для экипировки)</div>
     <div class="inv-grid" id="inv-grid"></div>
   </div>
 </div>
@@ -81,6 +97,7 @@
   <div class="map-legend">
     <span>🟢 Вы</span>
     <span>🔴 Враги</span>
+    <span>🟡 NPC</span>
   </div>
   <div class="floor-section">
     <div class="sec-title">Выбор этажа</div>
@@ -134,6 +151,7 @@
 <script src="js/ui.js"></script>
 <script src="js/network.js"></script>
 <script src="js/game.js"></script>
+<script src="js/npc.js"></script>
 
 </body>
 </html>

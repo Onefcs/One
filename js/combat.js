@@ -23,9 +23,11 @@ function hitEnemy(e, base) {
 }
 
 function hitPlayer(atk) {
+  if (barrierTimer > 0) { dmgNum(player.x, player.y - 24, 'БЛОК', '#88f'); return; }
   const dmg = Math.max(1, atk - player.def + rnd(-2, 3));
-  player.hp -= dmg; player.hurtTimer = 0.22;
-  dmgNum(player.x, player.y - 24, dmg, '#f55');
+  const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
+  player.hp -= actual; player.hurtTimer = 0.22;
+  dmgNum(player.x, player.y - 24, actual, '#f55');
   if (player.hp <= 0) { player.hp = 0; state = 'dead'; }
 }
 
@@ -38,7 +40,7 @@ function faceTowards(tx, ty) {
 
 function doMeleeAttack(target) {
   faceTowards(target.x, target.y);
-  hitEnemy(target, player.atk);
+  hitEnemy(target, player.atk * (battleCryTimer > 0 ? 1.5 : 1));
   swingAngle = Math.atan2(target.y - player.y, target.x - player.x);
   swingTimer = 0.18;
   player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
@@ -57,18 +59,45 @@ function fireProj(tx, ty) {
   if (len < 1) return;
   faceTowards(tx, ty);
   player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
-  projs.push({ x: player.x, y: player.y, vx: (tx - player.x) / len * 360, vy: (ty - player.y) / len * 360, color: d.projColor, dmg: player.atk, life: 1.6, size: 6, isPlayer: true });
+  projs.push({ x: player.x, y: player.y,
+    vx: (tx - player.x) / len * 360, vy: (ty - player.y) / len * 360,
+    color: d.projColor, dmg: player.atk, life: 1.6, size: 6, isPlayer: true });
 }
 
 function spawnDrops(e) {
-  const g = e.gold[0] + Math.floor(Math.random() * (e.gold[1] - e.gold[0] + 1));
-  drops.push({ type: 'gold', x: e.x, y: e.y, amount: g, life: 18 });
-  if (Math.random() < 0.38) {
+  // Gold: 30% base chance, scales with floor
+  const goldChance = 0.30 + (dungeonLvl - 1) * 0.015;
+  if (Math.random() < goldChance) {
+    const floorScale = 1 + (dungeonLvl - 1) * 0.3;
+    const g = Math.ceil((e.gold[0] + Math.floor(Math.random() * (e.gold[1] - e.gold[0] + 1))) * floorScale);
+    drops.push({ type: 'gold', x: e.x + rnd(-12, 12), y: e.y + rnd(-12, 12), amount: g, life: 18 });
+  }
+
+  // Item drop: 12% chance, rarity-weighted
+  if (Math.random() < 0.12) {
     const r = Math.random();
-    const pool = r < 0.55 ? ITEM_DEF.filter(i => i.rarity === 'common')
-               : r < 0.88 ? ITEM_DEF.filter(i => i.rarity === 'uncommon')
-               :              ITEM_DEF.filter(i => i.rarity === 'rare');
-    drops.push({ type: 'item', x: e.x + (Math.random() - .5) * 20, y: e.y + (Math.random() - .5) * 20, item: { ...pool[Math.floor(Math.random() * pool.length)] }, life: 35 });
+    let pool;
+    if      (r < 0.60) pool = ITEM_DEF.filter(i => i.rarity === 'common'    && i.slot !== 'use');
+    else if (r < 0.88) pool = ITEM_DEF.filter(i => i.rarity === 'uncommon'  && i.slot !== 'use');
+    else if (r < 0.975)pool = ITEM_DEF.filter(i => i.rarity === 'rare'      && i.slot !== 'use');
+    else if (r < 0.998)pool = ITEM_DEF.filter(i => i.rarity === 'epic'      && i.slot !== 'use');
+    else               pool = ITEM_DEF.filter(i => i.rarity === 'legendary' && i.slot !== 'use');
+    if (pool && pool.length > 0) {
+      const item = pool[Math.floor(Math.random() * pool.length)];
+      drops.push({ type: 'item', x: e.x + rnd(-18, 18), y: e.y + rnd(-18, 18), item: { ...item }, life: 40 });
+    }
+  }
+
+  // Craft material drop: 20% chance
+  if (Math.random() < 0.20) {
+    const r = Math.random();
+    const matPool = r < 0.55 ? CRAFT_MATS.filter(m => m.rarity === 'common')
+                  : r < 0.85 ? CRAFT_MATS.filter(m => m.rarity === 'uncommon')
+                  :              CRAFT_MATS.filter(m => m.rarity === 'rare');
+    if (matPool.length > 0) {
+      const mat = matPool[Math.floor(Math.random() * matPool.length)];
+      drops.push({ type: 'item', x: e.x + rnd(-20, 20), y: e.y + rnd(-20, 20), item: { ...mat }, life: 35 });
+    }
   }
 }
 
@@ -83,9 +112,9 @@ function pickup(drop) {
     if (it.hp) { player.hp = Math.min(player.maxHp, player.hp + it.hp); dmgNum(player.x, player.y - 26, '+' + it.hp + '♥', '#4f4'); }
     return;
   }
-  if (player.inventory.length < 20) {
+  if (player.inventory.length < 10) {
     player.inventory.push(it);
-    dmgNum(drop.x, drop.y - 12, it.name, '#4ff');
+    dmgNum(drop.x, drop.y - 12, it.name, RARITY_COLOR[it.rarity] || '#4ff');
     netSaveProgress();
   }
 }

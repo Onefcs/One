@@ -12,35 +12,154 @@ const ENEMY_DEF = [
   { name:'ДЕМОН',  color:'#f33', size:28, hp:420, atk:42, def:16, spd:60,  xp:130, gold:[25,55], isBoss:true  },
 ];
 
+const RARITY_COLOR = {
+  common:    '#aaa',
+  uncommon:  '#4af',
+  rare:      '#fa4',
+  epic:      '#c55ef5',
+  legendary: '#ff8c00',
+};
+
+const CRAFT_MATS = [
+  { id:'mat_iron',    name:'Железный слиток', emoji:'🔩', slot:'material', rarity:'common'   },
+  { id:'mat_leather', name:'Кожа',            emoji:'🟫', slot:'material', rarity:'common'   },
+  { id:'mat_gem',     name:'Самоцвет',        emoji:'💎', slot:'material', rarity:'uncommon' },
+  { id:'mat_scale',   name:'Чешуя дракона',  emoji:'🐉', slot:'material', rarity:'rare'     },
+  { id:'mat_dust',    name:'Магич. пыль',     emoji:'✨', slot:'material', rarity:'uncommon' },
+];
+
 const ITEM_DEF = [
-  { id:'sw1', name:'Ржавый меч',      slot:'weapon',  emoji:'🗡️', atk:6,        rarity:'common'   },
-  { id:'sw2', name:'Стальной меч',    slot:'weapon',  emoji:'⚔️', atk:14,       rarity:'uncommon' },
-  { id:'sw3', name:'Меч дракона',     slot:'weapon',  emoji:'🔥', atk:28,       rarity:'rare'     },
-  { id:'bw1', name:'Деревянный лук',  slot:'weapon',  emoji:'🏹', atk:5,        rarity:'common'   },
-  { id:'bw2', name:'Серебряный лук',  slot:'weapon',  emoji:'🏹', atk:13,       rarity:'uncommon' },
-  { id:'st1', name:'Посох мага',      slot:'weapon',  emoji:'🪄', atk:7,        rarity:'common'   },
-  { id:'st2', name:'Огненный посох',  slot:'weapon',  emoji:'🔮', atk:18,       rarity:'uncommon' },
-  { id:'st3', name:'Посох Анубара',   slot:'weapon',  emoji:'💜', atk:32,       rarity:'rare'     },
-  { id:'ar1', name:'Кожаная броня',   slot:'armor',   emoji:'🥋', def:5,        rarity:'common'   },
-  { id:'ar2', name:'Кольчуга',        slot:'armor',   emoji:'🛡️', def:11,       rarity:'uncommon' },
-  { id:'ar3', name:'Латы',            slot:'armor',   emoji:'⚜️', def:20,       rarity:'rare'     },
-  { id:'hm1', name:'Кожаный шлем',   slot:'helmet',  emoji:'⛑️', hp:25,        rarity:'common'   },
-  { id:'hm2', name:'Железный шлем',  slot:'helmet',  emoji:'🪖', hp:50,        rarity:'uncommon' },
-  { id:'hm3', name:'Шлем дракона',   slot:'helmet',  emoji:'🐉', hp:90,atk:4,  rarity:'rare'     },
-  { id:'rn1', name:'Кольцо силы',    slot:'ring',    emoji:'💍', atk:4,        rarity:'uncommon' },
-  { id:'rn2', name:'Кольцо защиты',  slot:'ring',    emoji:'💍', def:4,        rarity:'uncommon' },
-  { id:'rn3', name:'Кольцо крови',   slot:'ring',    emoji:'❤️', hp:40,atk:3,  rarity:'rare'     },
-  { id:'nd1', name:'Амулет силы',    slot:'pendant', emoji:'📿', atk:5,        rarity:'uncommon' },
-  { id:'nd2', name:'Амулет здоровья',slot:'pendant', emoji:'📿', hp:60,        rarity:'uncommon' },
-  { id:'nd3', name:'Амулет тьмы',    slot:'pendant', emoji:'💠', atk:8,hp:30,  rarity:'rare'     },
-  { id:'pt1', name:'Зелье лечения',  slot:'use',     emoji:'🧪', hp:60,        rarity:'common'   },
-  { id:'pt2', name:'Большое зелье',  slot:'use',     emoji:'💊', hp:120,       rarity:'uncommon' },
+  // ── Weapons ──────────────────────────────────────────────
+  { id:'sw1', name:'Ржавый меч',        slot:'weapon',  emoji:'🗡️', atk:6,         rarity:'common'   },
+  { id:'sw2', name:'Стальной меч',      slot:'weapon',  emoji:'⚔️', atk:14,        rarity:'uncommon' },
+  { id:'sw3', name:'Меч дракона',       slot:'weapon',  emoji:'🔥', atk:28,        rarity:'rare'     },
+  { id:'sw4', name:'Клинок теней',      slot:'weapon',  emoji:'🌑', atk:44,        rarity:'epic'     },
+  { id:'sw5', name:'Экскалибур',        slot:'weapon',  emoji:'⚡', atk:65,        rarity:'legendary'},
+  { id:'bw1', name:'Деревянный лук',    slot:'weapon',  emoji:'🏹', atk:5,         rarity:'common'   },
+  { id:'bw2', name:'Серебряный лук',    slot:'weapon',  emoji:'🏹', atk:13,        rarity:'uncommon' },
+  { id:'bw3', name:'Лук охотника',      slot:'weapon',  emoji:'🎯', atk:25,        rarity:'rare'     },
+  { id:'bw4', name:'Лунный лук',        slot:'weapon',  emoji:'🌙', atk:40,        rarity:'epic'     },
+  { id:'st1', name:'Посох мага',        slot:'weapon',  emoji:'🪄', atk:7,         rarity:'common'   },
+  { id:'st2', name:'Огненный посох',    slot:'weapon',  emoji:'🔮', atk:18,        rarity:'uncommon' },
+  { id:'st3', name:'Посох Анубара',     slot:'weapon',  emoji:'💜', atk:32,        rarity:'rare'     },
+  { id:'st4', name:'Посох Вечности',    slot:'weapon',  emoji:'🌟', atk:52,        rarity:'epic'     },
+  { id:'st5', name:'Скипетр богов',     slot:'weapon',  emoji:'👑', atk:72,        rarity:'legendary'},
+  // ── Offhand ───────────────────────────────────────────────
+  { id:'oh1', name:'Деревянный щит',    slot:'offhand', emoji:'🪵', def:4,         rarity:'common'   },
+  { id:'oh2', name:'Кожаный щит',       slot:'offhand', emoji:'🛡️', def:8,         rarity:'uncommon' },
+  { id:'oh3', name:'Стальной щит',      slot:'offhand', emoji:'⚜️', def:16,        rarity:'rare'     },
+  { id:'oh4', name:'Щит паладина',      slot:'offhand', emoji:'✝️', def:26,hp:30,  rarity:'epic'     },
+  { id:'oh5', name:'Щит легенды',       slot:'offhand', emoji:'🌟', def:38,hp:60,  rarity:'legendary'},
+  // ── Helmet ────────────────────────────────────────────────
+  { id:'hm1', name:'Кожаный шлем',      slot:'helmet',  emoji:'⛑️', hp:25,         rarity:'common'   },
+  { id:'hm2', name:'Железный шлем',     slot:'helmet',  emoji:'🪖', hp:50,         rarity:'uncommon' },
+  { id:'hm3', name:'Шлем дракона',      slot:'helmet',  emoji:'🐉', hp:90,atk:4,   rarity:'rare'     },
+  { id:'hm4', name:'Корона воина',      slot:'helmet',  emoji:'👑', hp:140,atk:8,  rarity:'epic'     },
+  { id:'hm5', name:'Шлем легенды',      slot:'helmet',  emoji:'⭐', hp:210,atk:12, rarity:'legendary'},
+  // ── Body ─────────────────────────────────────────────────
+  { id:'ar1', name:'Кожаная броня',     slot:'body',    emoji:'🥋', def:5,         rarity:'common'   },
+  { id:'ar2', name:'Кольчуга',          slot:'body',    emoji:'🛡️', def:11,        rarity:'uncommon' },
+  { id:'ar3', name:'Латы',              slot:'body',    emoji:'⚜️', def:20,        rarity:'rare'     },
+  { id:'ar4', name:'Броня теней',       slot:'body',    emoji:'🌑', def:33,        rarity:'epic'     },
+  { id:'ar5', name:'Доспех легенды',    slot:'body',    emoji:'✨', def:48,hp:50,  rarity:'legendary'},
+  // ── Legs ─────────────────────────────────────────────────
+  { id:'lg1', name:'Кожаные штаны',     slot:'legs',    emoji:'👖', def:3,         rarity:'common'   },
+  { id:'lg2', name:'Кольчужные штаны',  slot:'legs',    emoji:'🩱', def:7,         rarity:'uncommon' },
+  { id:'lg3', name:'Латные поножи',     slot:'legs',    emoji:'🦵', def:14,        rarity:'rare'     },
+  { id:'lg4', name:'Поножи теней',      slot:'legs',    emoji:'🌑', def:22,        rarity:'epic'     },
+  // ── Gloves ───────────────────────────────────────────────
+  { id:'gl1', name:'Кожаные перчи',     slot:'gloves',  emoji:'🧤', atk:2,         rarity:'common'   },
+  { id:'gl2', name:'Боевые перчи',      slot:'gloves',  emoji:'🥊', atk:5,         rarity:'uncommon' },
+  { id:'gl3', name:'Перчи силы',        slot:'gloves',  emoji:'💪', atk:10,        rarity:'rare'     },
+  { id:'gl4', name:'Перчи мастера',     slot:'gloves',  emoji:'🌟', atk:16,def:4,  rarity:'epic'     },
+  // ── Boots ────────────────────────────────────────────────
+  { id:'bt1', name:'Кожаные боты',      slot:'boots',   emoji:'👞', def:2,         rarity:'common'   },
+  { id:'bt2', name:'Скоростные боты',   slot:'boots',   emoji:'👟', def:4,         rarity:'uncommon' },
+  { id:'bt3', name:'Боты ветра',        slot:'boots',   emoji:'💨', def:8,atk:3,   rarity:'rare'     },
+  { id:'bt4', name:'Боты теней',        slot:'boots',   emoji:'🌑', def:14,atk:5,  rarity:'epic'     },
+  // ── Ring ─────────────────────────────────────────────────
+  { id:'rn1', name:'Кольцо силы',       slot:'ring',    emoji:'💍', atk:4,         rarity:'uncommon' },
+  { id:'rn2', name:'Кольцо защиты',     slot:'ring',    emoji:'💍', def:4,         rarity:'uncommon' },
+  { id:'rn3', name:'Кольцо крови',      slot:'ring',    emoji:'❤️', hp:40,atk:3,   rarity:'rare'     },
+  { id:'rn4', name:'Кольцо мастера',    slot:'ring',    emoji:'🌀', atk:8,def:4,   rarity:'epic'     },
+  { id:'rn5', name:'Кольцо богов',      slot:'ring',    emoji:'✨', atk:14,def:8,hp:50, rarity:'legendary'},
+  // ── Belt ─────────────────────────────────────────────────
+  { id:'bl1', name:'Кожаный пояс',      slot:'belt',    emoji:'🔶', hp:20,         rarity:'common'   },
+  { id:'bl2', name:'Пояс воина',        slot:'belt',    emoji:'🔷', hp:45,atk:3,   rarity:'uncommon' },
+  { id:'bl3', name:'Пояс силы',         slot:'belt',    emoji:'💫', hp:75,atk:6,   rarity:'rare'     },
+  { id:'bl4', name:'Пояс легенды',      slot:'belt',    emoji:'🌟', hp:120,atk:10, rarity:'epic'     },
+  // ── Pendant ──────────────────────────────────────────────
+  { id:'nd1', name:'Амулет силы',       slot:'pendant', emoji:'📿', atk:5,         rarity:'uncommon' },
+  { id:'nd2', name:'Амулет здоровья',   slot:'pendant', emoji:'📿', hp:60,         rarity:'uncommon' },
+  { id:'nd3', name:'Амулет тьмы',       slot:'pendant', emoji:'💠', atk:8,hp:30,   rarity:'rare'     },
+  { id:'nd4', name:'Амулет легенды',    slot:'pendant', emoji:'🌟', atk:16,hp:80,  rarity:'epic'     },
+  { id:'nd5', name:'Амулет богов',      slot:'pendant', emoji:'⭐', atk:24,hp:120, rarity:'legendary'},
+  // ── Potions (use-type, don't take inv slot) ───────────────
+  { id:'pt1', name:'Зелье лечения',     slot:'use',     emoji:'🧪', hp:60,         rarity:'common'   },
+  { id:'pt2', name:'Большое зелье',     slot:'use',     emoji:'💊', hp:120,        rarity:'uncommon' },
 ];
 
 const EQ_SLOTS = [
-  { slot:'weapon',  label:'Оружие',  empty:'⚔️' },
-  { slot:'armor',   label:'Броня',   empty:'🛡️' },
-  { slot:'helmet',  label:'Шлем',    empty:'⛑️' },
-  { slot:'ring',    label:'Кольцо',  empty:'💍' },
-  { slot:'pendant', label:'Амулет',  empty:'📿' },
+  { slot:'weapon',  label:'Оружие',   empty:'⚔️' },
+  { slot:'offhand', label:'Щит',      empty:'🛡️' },
+  { slot:'helmet',  label:'Шлем',     empty:'⛑️' },
+  { slot:'body',    label:'Тело',     empty:'🥋' },
+  { slot:'legs',    label:'Низ',      empty:'👖' },
+  { slot:'gloves',  label:'Перчи',    empty:'🧤' },
+  { slot:'boots',   label:'Боты',     empty:'👞' },
+  { slot:'ring',    label:'Кольцо',   empty:'💍' },
+  { slot:'belt',    label:'Пояс',     empty:'🔶' },
+  { slot:'pendant', label:'Ожерелье', empty:'📿' },
+];
+
+const SKILL_DEF = {
+  warrior: [
+    { key:'Q', name:'Щит-удар',    emoji:'🛡️', cd:8,  desc:'Оглушает врагов рядом'   },
+    { key:'W', name:'Вихрь',       emoji:'⚔️', cd:12, desc:'Удар по всем вокруг'     },
+    { key:'E', name:'Боевой клич', emoji:'📣', cd:20, desc:'+50% ATK на 5 секунд'    },
+    { key:'R', name:'Рывок',       emoji:'💨', cd:15, desc:'Прорыв через врагов'      },
+  ],
+  archer: [
+    { key:'Q', name:'Мульти-выстрел', emoji:'🏹', cd:6,  desc:'3 стрелы веером'          },
+    { key:'W', name:'Яд. стрела',     emoji:'☠️', cd:10, desc:'Урон ядом со временем'    },
+    { key:'E', name:'Кувырок',        emoji:'🌀', cd:8,  desc:'Уклонение с ускорением'   },
+    { key:'R', name:'Дождь стрел',    emoji:'🌧️', cd:20, desc:'Ливень стрел по области'  },
+  ],
+  mage: [
+    { key:'Q', name:'Огненный шар', emoji:'🔥', cd:5,  desc:'Мощный огненный снаряд'  },
+    { key:'W', name:'Ледяная нова', emoji:'❄️', cd:10, desc:'Замедляет и ранит врагов' },
+    { key:'E', name:'Барьер',       emoji:'🔮', cd:18, desc:'Щит на 4 секунды'         },
+    { key:'R', name:'Телепорт',     emoji:'⚡', cd:12, desc:'Мгновенный прыжок'        },
+  ],
+};
+
+const NPC_DEF = [
+  { id:'merchant',   name:'Торговец',  emoji:'🧙', color:'#fa0', desc:'Зелья и расходники' },
+  { id:'craftsman',  name:'Кузнец',    emoji:'⚒️',  color:'#88f', desc:'Крафт предметов'    },
+  { id:'shopkeeper', name:'Лавочник',  emoji:'🏪',  color:'#4f4', desc:'Снаряжение'         },
+];
+
+const MERCHANT_SHOP = [
+  { itemId:'pt1', name:'Зелье лечения', emoji:'🧪', price:30,  desc:'HP +60'  },
+  { itemId:'pt2', name:'Большое зелье', emoji:'💊', price:80,  desc:'HP +120' },
+];
+
+const SHOP_CATALOG = [
+  { itemId:'sw1', price:20  }, { itemId:'bw1', price:20  }, { itemId:'st1', price:20  },
+  { itemId:'ar1', price:20  }, { itemId:'hm1', price:20  },
+  { itemId:'sw2', price:60  }, { itemId:'bw2', price:60  }, { itemId:'st2', price:60  },
+  { itemId:'ar2', price:60  }, { itemId:'hm2', price:60  }, { itemId:'oh2', price:60  },
+  { itemId:'rn1', price:80  }, { itemId:'rn2', price:80  }, { itemId:'nd1', price:80  },
+  { itemId:'sw3', price:160 }, { itemId:'ar3', price:160 }, { itemId:'hm3', price:160 },
+];
+
+const CRAFT_RECIPES = [
+  { name:'Стальной меч',  resultId:'sw2', mats:[{id:'mat_iron',n:3}],                          gold:50  },
+  { name:'Кольчуга',      resultId:'ar2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:2}],   gold:80  },
+  { name:'Кожаный щит',   resultId:'oh2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:1}],   gold:50  },
+  { name:'Шлем железный', resultId:'hm2', mats:[{id:'mat_iron',n:2}],                          gold:40  },
+  { name:'Кольцо силы',   resultId:'rn1', mats:[{id:'mat_gem',n:1}],                           gold:100 },
+  { name:'Меч дракона',   resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3}],     gold:200 },
+  { name:'Посох Анубара',  resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3}],    gold:200 },
+  { name:'Амулет тьмы',   resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2}],       gold:150 },
 ];

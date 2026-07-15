@@ -1,6 +1,51 @@
-function joyCenter() { return { x: W / 2, y: H - NAV_H - 88 }; }
+const SKILL_SZ  = 54;
+const SKILL_GAP = 8;
+const POTION_R  = 26;
+
+function joyCenter() { return { x: W * 0.27, y: H - NAV_H - 88 }; }
+
+function getSkillBtnPos(idx) {
+  const sz = SKILL_SZ, gap = SKILL_GAP;
+  const rx = W - 14, by = H - NAV_H - 14;
+  const col = idx % 2;             // 0=left, 1=right
+  const row = Math.floor(idx / 2); // 0=top, 1=bottom
+  return {
+    x: rx - (1 - col) * (sz + gap) - sz,
+    y: by - (1 - row) * (sz + gap) - sz,
+    w: sz, h: sz,
+  };
+}
+
+function getPotionBtnPos() {
+  const sb = getSkillBtnPos(0);
+  const cx = sb.x + SKILL_SZ + SKILL_GAP / 2;
+  return { x: cx, y: sb.y - POTION_R - 10, r: POTION_R };
+}
 
 function joyGuard() { return state === 'playing' && activeTab === 0; }
+
+function _checkSkillTouch(cx, cy) {
+  if (!player) return false;
+  const skills = SKILL_DEF[player.type];
+  if (!skills) return false;
+  for (let i = 0; i < 4; i++) {
+    const b = getSkillBtnPos(i);
+    if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+      useSkill(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+function _checkPotionTouch(cx, cy) {
+  const pb = getPotionBtnPos();
+  if (Math.hypot(cx - pb.x, cy - pb.y) < pb.r + 6) {
+    usePotion();
+    return true;
+  }
+  return false;
+}
 
 function onTS(e) {
   e.preventDefault();
@@ -8,6 +53,8 @@ function onTS(e) {
   const jc = joyCenter();
   for (const t of e.changedTouches) {
     if (t.clientY > H - NAV_H) return;
+    if (_checkPotionTouch(t.clientX, t.clientY)) continue;
+    if (_checkSkillTouch(t.clientX, t.clientY)) continue;
     if (!joy.active && dist(t.clientX, t.clientY, jc.x, jc.y) < JOY_R * 1.9) {
       joy.active = true; joy.id = t.identifier;
       joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
@@ -33,6 +80,8 @@ function onTC() { joy.active = false; joy.dx = 0; joy.dy = 0; }
 function onMD(e) {
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
+  if (_checkPotionTouch(e.clientX, e.clientY)) return;
+  if (_checkSkillTouch(e.clientX, e.clientY)) return;
   const jc = joyCenter();
   if (dist(e.clientX, e.clientY, jc.x, jc.y) < JOY_R * 1.9) {
     joy.active = true; joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
@@ -59,8 +108,15 @@ function inputDir() {
 }
 
 function initInput() {
-  window.addEventListener('keydown', e => { keys[e.key] = true; });
-  window.addEventListener('keyup',   e => { keys[e.key] = false; });
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (state === 'playing' && activeTab === 0) {
+      const map = { q:0, w:1, e:2, r:3, Q:0, W:1, E:2, R:3 };
+      if (e.key in map) useSkill(map[e.key]);
+      if (e.key === 'f' || e.key === 'F') usePotion();
+    }
+  });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
   canvas.addEventListener('touchstart',  onTS, { passive: false });
   canvas.addEventListener('touchmove',   onTM, { passive: false });
   canvas.addEventListener('touchend',    onTE);

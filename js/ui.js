@@ -3,42 +3,44 @@
 // ─────────────────────────────────────────────────────────
 function updateInvUI() {
   if (!player) return;
+  const p = player;
+  const inv = p.inventory;
 
-  document.getElementById('eq-left').innerHTML = EQ_SLOTS.map(({ slot, label, empty }) => {
-    const it = player.equipment[slot];
-    return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `unequipItem('${slot}')` : ''}" title="${it ? it.name + ' ' + statStr(it) : label}">
+  // Equipment grid (5 columns × 2 rows)
+  document.getElementById('eq-grid').innerHTML = EQ_SLOTS.map(({ slot, label, empty }) => {
+    const it = p.equipment[slot];
+    const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
+    return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `unequipItem('${slot}')` : ''}"
+      title="${it ? it.name + ' — ' + statStr(it) : label}"
+      style="${it ? 'border-color:' + rc + '55' : ''}">
       <div class="cell-icon">${it ? it.emoji : empty}</div>
-      <div class="cell-lbl">${it ? it.name.slice(0, 9) : label}</div>
+      <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name.slice(0, 8) : label}</div>
     </div>`;
   }).join('');
 
-  const p = player;
+  // Character preview
   document.getElementById('char-preview').innerHTML = `
-    <div class="char-big">${p.charDef.emoji}</div>
-    <div class="char-name" style="color:${p.charDef.color}">${p.charDef.name}</div>
-    <div class="char-lvl">Уровень ${p.lvl}</div>
-    <div class="char-stats">
-      ♥ ${Math.ceil(p.hp)}/${p.maxHp}<br>
-      ⚔ ${p.atk} · 🛡 ${p.def}<br>
-      💰 ${p.gold} · 💀 ${p.kills}
+    <div class="inv-char-row">
+      <div style="font-size:40px;line-height:1">${p.charDef.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:bold;color:${p.charDef.color}">${p.charDef.name}</div>
+        <div style="font-size:11px;color:#555;margin-top:2px">Уровень ${p.lvl}</div>
+        <div style="font-size:11px;color:#484860;margin-top:2px">♥${Math.ceil(p.hp)}/${p.maxHp} · ⚔${p.atk} · 🛡${p.def} · 💰${p.gold}</div>
+      </div>
+      <div style="font-size:13px;color:#f96;text-align:right;font-weight:bold">🧪×${p.potions || 0}</div>
     </div>
   `;
 
-  const inv = player.inventory;
-  document.getElementById('eq-right').innerHTML = Array.from({ length: 5 }, (_, i) => {
+  // Inventory grid (10 slots)
+  document.getElementById('inv-count').textContent = inv.length + '/10';
+  document.getElementById('inv-grid').innerHTML = Array.from({ length: 10 }, (_, i) => {
     const it = inv[i];
-    return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}" title="${it ? it.name + ' ' + statStr(it) : ''}">
-      <div class="cell-icon">${it ? it.emoji : '·'}</div>
-      <div class="cell-lbl">${it ? it.name.slice(0, 9) : '—'}</div>
-    </div>`;
-  }).join('');
-
-  document.getElementById('inv-count').textContent = inv.length + '/20';
-
-  document.getElementById('inv-grid').innerHTML = Array.from({ length: 20 }, (_, i) => {
-    const it = inv[i];
-    return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}" title="${it ? it.name + ' ' + statStr(it) : ''}">
-      ${it ? `<span>${it.emoji}</span>` : ''}
+    const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
+    return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}"
+      title="${it ? it.name + ' — ' + statStr(it) : ''}"
+      style="${it ? 'border-color:' + rc + '77' : ''}">
+      ${it ? `<span style="font-size:18px;display:block;text-align:center">${it.emoji}</span>
+              <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -70,7 +72,8 @@ function updateProfileUI() {
     <div class="equip-sum">
       ${EQ_SLOTS.map(({ slot, label }) => {
         const it = p.equipment[slot];
-        return `<div class="eq-row"><span class="eq-sl-nm">${label}</span><span class="${it ? 'rarity-' + it.rarity : ''}" style="font-size:12px">${it ? it.emoji + ' ' + it.name : '—'}</span></div>`;
+        const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
+        return `<div class="eq-row"><span class="eq-sl-nm">${label}</span><span style="font-size:12px;color:${rc}">${it ? it.emoji + ' ' + it.name : '—'}</span></div>`;
       }).join('')}
     </div>`;
 }
@@ -102,6 +105,11 @@ function drawMapPanel() {
   mapEnemies.forEach(e => {
     mx2.beginPath(); mx2.arc(ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc, Math.max(1.5, sc * 0.5), 0, Math.PI * 2); mx2.fill();
   });
+  // NPC blips on map
+  mx2.fillStyle = '#ffcc00';
+  npcs.forEach(n => {
+    mx2.beginPath(); mx2.arc(ox + (n.x / TILE) * sc, oy + (n.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
+  });
   document.getElementById('map-status').textContent =
     th.name + ' · Этаж ' + dungeonLvl + ' · 👾 ' + mapEnemies.length;
 }
@@ -123,7 +131,11 @@ function setTab(n) {
   activeTab = n;
   document.querySelectorAll('.nav-tab').forEach((el, i) => el.classList.toggle('active', i === n));
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); });
-  if (n !== 0) { joy.active = false; joy.dx = 0; joy.dy = 0; }
+  if (n !== 0) {
+    joy.active = false; joy.dx = 0; joy.dy = 0;
+    const tb = document.getElementById('npc-talk-btn');
+    if (tb) tb.style.display = 'none';
+  }
   const pid = ['', 'panel-inv', 'panel-map', 'panel-friends', 'panel-profile'][n];
   if (pid) {
     const el = document.getElementById(pid);
@@ -136,66 +148,57 @@ function setTab(n) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  HUD  (redesigned game-style)
+//  HUD
 // ─────────────────────────────────────────────────────────
 function drawHUD() {
   if (!player) return;
   const p = player;
   const pad = 8;
-  const pw = 192, ph = 78;
-  const F = 'system-ui, Arial'; // readable font for canvas
+  const pw = 196, ph = 82;
+  const F = 'system-ui, -apple-system, Arial';
 
   ctx.save();
 
-  ctx.fillStyle = 'rgba(5,3,16,0.92)';
-  roundRect(ctx, pad, pad, pw, ph, 10);
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(75,45,145,0.65)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, pad, pad, pw, ph, 10);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(160,120,255,0.12)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(pad + 12, pad + 1.5); ctx.lineTo(pad + pw - 12, pad + 1.5);
-  ctx.stroke();
+  // Background
+  ctx.fillStyle = 'rgba(5,3,16,0.93)';
+  roundRect(ctx, pad, pad, pw, ph, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(75,45,145,0.7)'; ctx.lineWidth = 1.5;
+  roundRect(ctx, pad, pad, pw, ph, 10); ctx.stroke();
 
   const bx = pad + 9, bw = pw - 18;
 
   // ── Character row ──
-  const cy = pad + 15;
-  ctx.font = `14px ${F}`; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+  const cy = pad + 17;
+  ctx.font = `15px ${F}`; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
   ctx.fillText(p.charDef.emoji, pad + 9, cy);
 
   ctx.fillStyle = p.charDef.color;
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left';
-  ctx.fillText(p.charDef.name, pad + 30, cy - 4);
+  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'left';
+  ctx.fillText(p.charDef.name, pad + 32, cy - 4);
 
-  ctx.font = `8px ${F}`; ctx.fillStyle = 'rgba(190,155,255,0.85)';
-  ctx.fillText('Ур. ' + p.lvl, pad + 30, cy + 5);
+  ctx.font = `10px ${F}`; ctx.fillStyle = 'rgba(190,155,255,0.9)';
+  ctx.fillText('Ур. ' + p.lvl, pad + 32, cy + 6);
 
   ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(140,110,200,0.75)';
-  ctx.font = `bold 8px ${F}`;
+  ctx.fillStyle = 'rgba(150,120,210,0.85)';
+  ctx.font = `bold 10px ${F}`;
   ctx.fillText('Этаж ' + dungeonLvl, pad + pw - 8, cy - 4);
-  ctx.fillStyle = 'rgba(100,80,160,0.6)';
-  ctx.font = `7px ${F}`;
-  ctx.fillText(getTheme(dungeonLvl).name, pad + pw - 8, cy + 5);
+  ctx.fillStyle = 'rgba(110,90,170,0.7)';
+  ctx.font = `9px ${F}`;
+  ctx.fillText(getTheme(dungeonLvl).name, pad + pw - 8, cy + 6);
 
   // ── HP bar ──
-  const hpy = pad + 30;
+  const hpy = pad + 35;
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(240,100,100,0.9)';
-  ctx.font = `bold 7px ${F}`;
+  ctx.fillStyle = 'rgba(245,110,110,1)';
+  ctx.font = `bold 9px ${F}`;
   ctx.fillText('HP', bx, hpy);
 
-  const hpBarX = bx + 17, hpBarW = bw - 17, hpBarH = 10;
+  const hpBarX = bx + 20, hpBarW = bw - 20, hpBarH = 11;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
 
-  ctx.fillStyle = 'rgba(45,8,8,0.88)';
-  roundRect(ctx, hpBarX, hpy - 8, hpBarW, hpBarH, 4); ctx.fill();
+  ctx.fillStyle = 'rgba(45,8,8,0.9)';
+  roundRect(ctx, hpBarX, hpy - 9, hpBarW, hpBarH, 4); ctx.fill();
 
   if (hpPct > 0) {
     const hg = ctx.createLinearGradient(hpBarX, 0, hpBarX + hpBarW * hpPct, 0);
@@ -203,72 +206,83 @@ function drawHUD() {
     else if (hpPct > 0.25) { hg.addColorStop(0, '#9c7020'); hg.addColorStop(1, '#ffcc44'); }
     else { hg.addColorStop(0, '#8c1c1c'); hg.addColorStop(1, '#ff4444'); }
     ctx.fillStyle = hg;
-    roundRect(ctx, hpBarX, hpy - 8, hpBarW * hpPct, hpBarH, 4); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.14)';
-    roundRect(ctx, hpBarX, hpy - 8, hpBarW * hpPct, 4, 3); ctx.fill();
+    roundRect(ctx, hpBarX, hpy - 9, hpBarW * hpPct, hpBarH, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.13)';
+    roundRect(ctx, hpBarX, hpy - 9, hpBarW * hpPct, 4, 3); ctx.fill();
   }
 
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.font = `bold 7px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hpBarX + hpBarW / 2, hpy - 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.font = `bold 8px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(Math.ceil(p.hp) + ' / ' + p.maxHp, hpBarX + hpBarW / 2, hpy - 3.5);
 
   // ── XP bar ──
-  const xpy = pad + 44;
+  const xpy = pad + 51;
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(110,110,230,0.9)';
-  ctx.font = `bold 7px ${F}`;
+  ctx.fillStyle = 'rgba(120,120,240,0.95)';
+  ctx.font = `bold 9px ${F}`;
   ctx.fillText('XP', bx, xpy);
 
-  const xpBarX = bx + 17, xpBarW = bw - 17, xpBarH = 6;
+  const xpBarX = bx + 20, xpBarW = bw - 20, xpBarH = 7;
   const xpPct = Math.min(1, p.xp / p.xpNext);
 
-  ctx.fillStyle = 'rgba(6,6,32,0.85)';
-  roundRect(ctx, xpBarX, xpy - 5, xpBarW, xpBarH, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(6,6,32,0.88)';
+  roundRect(ctx, xpBarX, xpy - 6, xpBarW, xpBarH, 3); ctx.fill();
 
   if (xpPct > 0) {
     const xg = ctx.createLinearGradient(xpBarX, 0, xpBarX + xpBarW * xpPct, 0);
     xg.addColorStop(0, '#2233aa'); xg.addColorStop(1, '#7766ff');
     ctx.fillStyle = xg;
-    roundRect(ctx, xpBarX, xpy - 5, xpBarW * xpPct, xpBarH, 3); ctx.fill();
+    roundRect(ctx, xpBarX, xpy - 6, xpBarW * xpPct, xpBarH, 3); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    roundRect(ctx, xpBarX, xpy - 5, xpBarW * xpPct, 3, 2); ctx.fill();
+    roundRect(ctx, xpBarX, xpy - 6, xpBarW * xpPct, 3, 2); ctx.fill();
   }
 
-  ctx.fillStyle = 'rgba(170,170,255,0.65)';
-  ctx.font = `6px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(p.xp + ' / ' + p.xpNext, xpBarX + xpBarW / 2, xpy - 2);
+  ctx.fillStyle = 'rgba(180,180,255,0.75)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(p.xp + ' / ' + p.xpNext, xpBarX + xpBarW / 2, xpy - 2.5);
 
   // ── Stats row ──
-  const sy = pad + 65;
-  ctx.strokeStyle = 'rgba(55,35,100,0.40)'; ctx.lineWidth = 1;
+  const sy = pad + 71;
+  ctx.strokeStyle = 'rgba(55,35,100,0.35)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(bx, sy - 8); ctx.lineTo(bx + bw, sy - 8); ctx.stroke();
 
   const stats = [
     { icon: '💰', val: p.gold, color: '#ffd040', xFrac: 0    },
-    { icon: '⚔',  val: p.atk,  color: '#ff8866', xFrac: 0.38 },
-    { icon: '🛡',  val: p.def,  color: '#8899ff', xFrac: 0.70 },
+    { icon: '⚔',  val: p.atk,  color: '#ff9966', xFrac: 0.37 },
+    { icon: '🛡',  val: p.def,  color: '#8899ff', xFrac: 0.68 },
   ];
 
   ctx.textBaseline = 'middle';
   stats.forEach(s => {
     const sx2 = bx + s.xFrac * bw;
-    ctx.font = `11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ccc';
+    ctx.font = `12px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ccc';
     ctx.fillText(s.icon, sx2, sy);
-    ctx.fillStyle = s.color; ctx.font = `bold 10px ${F}`;
-    ctx.fillText(s.val, sx2 + 14, sy);
+    ctx.fillStyle = s.color; ctx.font = `bold 11px ${F}`;
+    ctx.fillText(s.val, sx2 + 16, sy);
   });
+
+  // Barrier / battle cry indicators
+  if (barrierTimer > 0) {
+    ctx.fillStyle = 'rgba(200,150,255,0.85)';
+    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'right';
+    ctx.fillText('🔮 ' + Math.ceil(barrierTimer) + 'с', pad + pw - 8, pad + ph - 5);
+  }
+  if (battleCryTimer > 0) {
+    ctx.fillStyle = 'rgba(255,180,0,0.85)';
+    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'right';
+    ctx.fillText('⚔ КЛИЧ ' + Math.ceil(battleCryTimer) + 'с', pad + pw - 8, pad + ph - 5);
+  }
 
   ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
-//  MINI-MAP  (raised higher since top-right overlay removed)
+//  MINI-MAP
 // ─────────────────────────────────────────────────────────
 function drawMinimap() {
   const th = getTheme(dungeonLvl);
   const sc = 1.5;
 
-  // Rebuild offscreen tile canvas only when floor changes — one drawImage per frame instead of 2400+ fillRects
   if (minimapCacheFloor !== dungeonLvl || !minimapCache) {
     minimapCacheFloor = dungeonLvl;
     minimapCache = document.createElement('canvas');
@@ -294,6 +308,9 @@ function drawMinimap() {
   const mmEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
   ctx.fillStyle = '#f00';
   mmEnemies.forEach(e => ctx.fillRect(mx + (e.x / TILE) * sc - 1, my + (e.y / TILE) * sc - 1, 2, 2));
+  // NPC blips
+  ctx.fillStyle = '#fc0';
+  npcs.forEach(n => ctx.fillRect(mx + (n.x / TILE) * sc - 2, my + (n.y / TILE) * sc - 2, 3, 3));
 }
 
 // ─────────────────────────────────────────────────────────
@@ -319,12 +336,106 @@ function drawJoystick() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  SKILL BUTTONS (LoL-style 2×2)
+// ─────────────────────────────────────────────────────────
+function drawSkillButtons() {
+  if (!player) return;
+  const skills = SKILL_DEF[player.type];
+  if (!skills) return;
+  const F = 'system-ui, -apple-system, Arial';
+
+  for (let i = 0; i < 4; i++) {
+    const sk = skills[i];
+    const b = getSkillBtnPos(i);
+    const cd = player.skillCooldowns[sk.key] || 0;
+    const ready = cd <= 0;
+    const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
+
+    ctx.save();
+    ctx.globalAlpha = ready ? 0.88 : 0.55;
+
+    // Background
+    ctx.fillStyle = isFlash ? 'rgba(255,200,50,0.35)' : 'rgba(8,6,20,0.88)';
+    roundRect(ctx, b.x, b.y, b.w, b.h, 10); ctx.fill();
+
+    ctx.strokeStyle = ready
+      ? (isFlash ? 'rgba(255,200,50,0.9)' : 'rgba(80,120,220,0.8)')
+      : 'rgba(40,40,80,0.6)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, b.x, b.y, b.w, b.h, 10); ctx.stroke();
+
+    // Cooldown overlay
+    if (!ready) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      roundRect(ctx, b.x, b.y, b.w, b.h, 10); ctx.fill();
+    }
+
+    // Emoji icon
+    ctx.globalAlpha = 1;
+    ctx.font = `22px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(sk.emoji, b.x + b.w / 2, b.y + b.h / 2 - 6);
+
+    // Key label
+    ctx.font = `bold 9px ${F}`; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = ready ? '#fff' : '#666';
+    ctx.fillText('[' + sk.key + ']', b.x + b.w / 2, b.y + b.h - 6);
+
+    // Cooldown number
+    if (!ready) {
+      ctx.font = `bold 13px ${F}`; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(Math.ceil(cd), b.x + b.w / 2, b.y + b.h / 2 - 6);
+    }
+
+    ctx.restore();
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+//  POTION BUTTON
+// ─────────────────────────────────────────────────────────
+function drawPotionButton() {
+  if (!player) return;
+  const pb = getPotionBtnPos();
+  const count = player.potions || 0;
+  const ready = count > 0 && player.hp < player.maxHp;
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+  ctx.globalAlpha = ready ? 0.88 : 0.50;
+
+  // Circle background
+  ctx.fillStyle = ready ? 'rgba(20,60,30,0.9)' : 'rgba(8,6,20,0.85)';
+  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = ready ? 'rgba(80,200,100,0.8)' : 'rgba(40,60,40,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
+
+  // Flask emoji
+  ctx.globalAlpha = 1;
+  ctx.font = `18px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🧪', pb.x, pb.y - 5);
+
+  // Count badge
+  ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = ready ? '#4f4' : '#666';
+  ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
+
+  // Key hint
+  ctx.font = `8px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(150,150,150,0.6)';
+  ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  DEAD SCREEN
 // ─────────────────────────────────────────────────────────
 function drawDead() {
   ctx.fillStyle = 'rgba(0,0,0,.8)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const F = 'system-ui, Arial';
+  const F = 'system-ui, -apple-system, Arial';
   ctx.fillStyle = '#f44'; ctx.font = `bold ${clamp(32, W * .09, 54)}px ${F}`; ctx.fillText('ВЫ ПОГИБЛИ', W / 2, H / 2 - 50);
   ctx.fillStyle = '#777'; ctx.font = `${clamp(14, W * .04, 20)}px ${F}`;
   ctx.fillText(`${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}`, W / 2, H / 2 + 5);

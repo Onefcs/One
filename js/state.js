@@ -19,10 +19,19 @@ let serverEnemies = [];  // authoritative enemy list when online
 let netUsername = null;
 let netRoom = null;
 
-// Minimap tile cache (rebuilt only on floor change)
+// Minimap tile cache
 let minimapCache = null;
 let minimapCacheFloor = -1;
 
-// Full dungeon tile canvas (rebuilt at loadLevel / floor change)
+// Full dungeon tile canvas
 let tileCanvas = null;
 
+// NPCs in current floor
+let npcs = [];
+let nearNpc = null;
+
+// Skill state
+let skillFlash = null; // { key, timer }
+let barrierTimer = 0;
+let battleCryTimer = 0;
+let dodgeTimer = 0;

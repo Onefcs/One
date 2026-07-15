@@ -90,6 +90,89 @@ canvas { display:block; }
 .char-card .tag { margin-top:6px; font-size:0.72em; padding:2px 8px; border-radius:99px; display:inline-block; }
 .warrior-c { color:#5af; } .archer-c { color:#7e7; } .mage-c { color:#e8e; }
 
+/* ── NPC TALK BUTTON ──────────────────── */
+#npc-talk-btn {
+  position:fixed; bottom:74px; left:50%; transform:translateX(-50%);
+  background:rgba(30,16,60,0.95); border:1px solid #7040d0;
+  border-radius:20px; padding:10px 22px;
+  color:#f90; font-size:14px; font-weight:bold;
+  z-index:30; cursor:pointer; user-select:none;
+  box-shadow:0 4px 20px rgba(120,60,220,0.4);
+  transition:opacity 0.15s;
+  touch-action:manipulation;
+}
+#npc-talk-btn:active { opacity:0.7; }
+
+/* ── NPC OVERLAY & DIALOG ─────────────── */
+#npc-overlay {
+  position:fixed; inset:0;
+  background:rgba(0,0,0,0.82);
+  z-index:160; align-items:flex-end; justify-content:center;
+  padding-bottom:70px;
+}
+#npc-dialog {
+  background:#0d0a1e;
+  border:1px solid rgba(100,60,200,0.5);
+  border-radius:18px;
+  width:min(380px,96vw);
+  max-height:74vh; overflow-y:auto;
+}
+.npc-hdr {
+  display:flex; align-items:center; gap:12px;
+  padding:14px 16px 12px;
+  border-bottom:1px solid #1a1a28;
+  position:sticky; top:0; background:#0d0a1e; z-index:2;
+}
+.npc-name { font-size:17px; font-weight:bold; color:#f90; }
+.npc-subdesc { font-size:11px; color:#555; margin-top:3px; }
+.npc-close {
+  margin-left:auto; background:none; border:none;
+  color:#444; font-size:22px; cursor:pointer; padding:0 4px;
+  line-height:1;
+}
+.npc-close:hover { color:#888; }
+.npc-body { padding:12px 14px 20px; }
+
+/* ── SHOP STYLES ─────────────────────── */
+.shop-gold {
+  font-size:13px; color:#888; padding:6px 0 10px;
+}
+.shop-gold b { color:#ffd040; }
+.shop-sec {
+  font-size:10px; text-transform:uppercase; letter-spacing:1px;
+  color:#484860; margin:8px 0 8px;
+}
+.shop-list { display:flex; flex-direction:column; gap:7px; }
+.shop-row {
+  display:flex; align-items:center; gap:10px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid #1a1a2e; border-radius:10px;
+  padding:9px 12px;
+}
+.shop-item-icon { font-size:22px; width:28px; text-align:center; flex-shrink:0; }
+.shop-item-info { flex:1; min-width:0; }
+.shop-item-name { font-size:13px; font-weight:600; color:#ddd; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shop-item-stat { font-size:11px; color:#555; margin-top:2px; }
+.shop-btn {
+  padding:7px 12px; border:none; border-radius:8px;
+  background:linear-gradient(135deg,#5020a0,#7030c0);
+  color:#fff; font-size:12px; font-weight:bold; cursor:pointer;
+  white-space:nowrap; flex-shrink:0;
+  transition:opacity 0.15s;
+  touch-action:manipulation;
+}
+.shop-btn:active { opacity:0.7; }
+.shop-btn.disabled { background:#1a1a28; color:#333; pointer-events:none; }
+.shop-msg {
+  background:rgba(255,80,80,0.15); border:1px solid #f44;
+  border-radius:8px; padding:8px 12px;
+  color:#f88; font-size:12px; text-align:center;
+  margin-bottom:10px;
+}
+.craft-mats-info {
+  font-size:11px; color:#484860; padding:4px 0 10px;
+}
+
 /* ── BOTTOM PANELS ─────────────────────── */
 .bpanel {
   position:fixed; left:0; right:0; bottom:62px;
@@ -110,54 +193,55 @@ canvas { display:block; }
 .panel-body { padding:14px 16px 24px; }
 .sec-title  { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#484860; margin-bottom:8px; }
 
-/* ── INVENTORY ─────────────────────────── */
-.equip-screen {
-  display:flex; gap:6px; padding:10px 10px 6px;
-  align-items:stretch;
+/* ── INVENTORY (redesigned) ─────────────── */
+.inv-char-row {
+  display:flex; align-items:center; gap:12px;
+  padding:10px 16px 10px;
+  border-bottom:1px solid #1a1a28;
+  background:rgba(255,255,255,0.02);
 }
-.eq-col {
-  display:flex; flex-direction:column; gap:5px; width:58px; flex-shrink:0;
+.eq-grid-5col {
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:5px;
 }
 .eq-cell {
-  width:58px; height:54px; border:2px solid #1c1c2c; border-radius:8px;
-  background:rgba(255,255,255,0.02); display:flex; flex-direction:column;
-  align-items:center; justify-content:center; cursor:pointer;
-  transition:border-color 0.15s; flex-shrink:0; user-select:none;
+  aspect-ratio:1; border:2px solid #1c1c2c; border-radius:8px;
+  background:rgba(255,255,255,0.02);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  cursor:pointer; transition:border-color 0.15s;
+  user-select:none; padding:2px;
 }
 .eq-cell:active { opacity:0.7; }
-.eq-cell.filled { border-color:#383858; background:rgba(255,255,255,0.06); }
-.eq-cell .cell-icon { font-size:20px; line-height:1.1; }
-.eq-cell .cell-lbl  { font-size:8px; color:#353550; margin-top:2px; text-align:center; line-height:1.1; max-width:54px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.eq-cell.filled { border-color:#2e2e50; background:rgba(255,255,255,0.05); }
+.eq-cell .cell-icon { font-size:18px; line-height:1.1; }
+.eq-cell .cell-lbl  {
+  font-size:7px; color:#353550; margin-top:2px; text-align:center;
+  line-height:1.1; max-width:100%; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; padding:0 1px;
+}
 .eq-cell.filled .cell-lbl { color:#6699bb; }
 
-.char-center {
-  flex:1; display:flex; flex-direction:column; align-items:center;
-  justify-content:center; background:rgba(255,255,255,0.02);
-  border:1px solid #1a1a28; border-radius:10px; padding:10px 6px; gap:5px;
-  min-height:280px;
-}
-.char-center .char-big   { font-size:50px; line-height:1; }
-.char-center .char-name  { font-size:13px; font-weight:bold; }
-.char-center .char-lvl   { font-size:10px; color:#555; }
-.char-center .char-stats { font-size:10px; color:#404058; text-align:center; line-height:1.9; }
-
-.inv-section { padding:0 10px 16px; }
-.inv-section .sec-title { padding:6px 0 6px; }
 .inv-grid {
   display:grid; grid-template-columns:repeat(5,1fr); gap:5px;
 }
 .inv-cell {
   aspect-ratio:1; border:2px solid #1c1c2c; border-radius:7px;
-  background:rgba(255,255,255,0.02); display:flex; align-items:center;
-  justify-content:center; cursor:pointer; font-size:20px;
-  transition:border-color 0.15s; user-select:none;
+  background:rgba(255,255,255,0.02);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  cursor:pointer; transition:border-color 0.15s;
+  user-select:none; padding:2px;
 }
 .inv-cell:active { opacity:0.7; }
 .inv-cell.filled { border-color:#2e2e50; background:rgba(255,255,255,0.04); }
 
 .rarity-common   { color:#aaa; }
-.rarity-uncommon { color:#6af; }
+.rarity-uncommon { color:#4af; }
 .rarity-rare     { color:#fa4; }
+.rarity-epic     { color:#c55ef5; }
+.rarity-legendary{ color:#ff8c00; }
 
 /* ── PROFILE ──────────────────────────── */
 .prof-hero  { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
