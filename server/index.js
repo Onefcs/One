@@ -23,12 +23,31 @@ app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge
 // HTML/JS/CSS: no cache so updates are picked up immediately
 app.use(express.static(path.join(__dirname, '..')));
 
-const world = new Room('world', io);
+// One Room per floor, created on demand, destroyed when empty
+const floorRooms = new Map();
+
+function getRoom(floor) {
+  if (!floorRooms.has(floor)) {
+    floorRooms.set(floor, new Room(floor, io));
+    console.log(`floor ${floor}: room created`);
+  }
+  return floorRooms.get(floor);
+}
+
+function releaseRoom(floor) {
+  const room = floorRooms.get(floor);
+  if (room && room.players.size === 0) {
+    room.stop();
+    floorRooms.delete(floor);
+    console.log(`floor ${floor}: room destroyed`);
+  }
+}
 
 io.on('connection', socket => {
   console.log('connect:', socket.id);
   let authed = null;
-  let inWorld = false;
+  let currentRoom = null;
+  let currentFloor = 1;
 
   socket.on('register', async ({ username, password }) => {
     try {
@@ -56,41 +75,77 @@ io.on('connection', socket => {
 
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
-    if (!inWorld) {
-      inWorld = true;
-      socket.join('world');
-      world.addPlayer(socket.id, authed.username);
-      socket.to('world').emit('playerJoined', { id: socket.id, username: authed.username });
+    if (!currentRoom) {
+      currentFloor = 1;
+      currentRoom = getRoom(1);
+      socket.join(`floor_${currentFloor}`);
+      currentRoom.addPlayer(socket.id, authed.username);
+      socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
     }
-    world.setPlayerChar(socket.id, type, savedStats || null);
-    socket.to('world').emit('playerChar', { id: socket.id, type });
-    const dungeonData = world.getDungeonData();
-    socket.emit('gameStart', { floor: world.floor, dungeon: dungeonData });
+    currentRoom.setPlayerChar(socket.id, type, savedStats || null);
+    socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
+    socket.emit('gameStart', {
+      floor: currentFloor,
+      dungeon: currentRoom.dungeonData,
+      enemies: currentRoom.enemySnapshot(),
+    });
   });
 
   socket.on('playerMove', ({ x, y, facing }) => {
-    if (inWorld) world.updatePlayerPos(socket.id, x, y, facing);
+    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing);
   });
 
   socket.on('attack', ({ enemyId }) => {
-    if (!inWorld) return;
-    const result = world.attackEnemy(socket.id, enemyId);
+    if (!currentRoom) return;
+    const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
-      io.to('world').emit('enemyKilled', {
+      io.to(`floor_${currentFloor}`).emit('enemyKilled', {
         id: enemyId, xp: result.xp, gold: result.gold,
         dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
       });
     } else {
-      io.to('world').emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
+      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
     }
   });
 
   socket.on('changeFloor', ({ floor }) => {
-    if (!inWorld) return;
-    world.changeFloor(floor);
-    const dungeonData = world.getDungeonData();
-    io.to('world').emit('floorChanged', { floor: world.floor, dungeon: dungeonData });
+    if (!currentRoom) return;
+    const newFloor = Math.max(1, Math.min(20, floor));
+    if (newFloor === currentFloor) return;
+
+    // Snapshot player state before leaving
+    const p = currentRoom.players.get(socket.id);
+
+    // Leave old floor
+    socket.leave(`floor_${currentFloor}`);
+    socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
+    currentRoom.removePlayer(socket.id);
+    releaseRoom(currentFloor);
+
+    // Join new floor
+    currentFloor = newFloor;
+    currentRoom = getRoom(newFloor);
+    socket.join(`floor_${newFloor}`);
+    currentRoom.addPlayer(socket.id, authed.username);
+
+    // Re-apply character stats (carry over HP, atk, def, maxHp)
+    if (p?.type) {
+      currentRoom.setPlayerChar(socket.id, p.type, {
+        maxHp: p.maxHp, atk: p.atk, def: p.def,
+      });
+      const np = currentRoom.players.get(socket.id);
+      if (np) np.hp = p.hp;
+    }
+
+    socket.to(`floor_${newFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
+    if (p?.type) socket.to(`floor_${newFloor}`).emit('playerChar', { id: socket.id, type: p.type });
+
+    socket.emit('floorChanged', {
+      floor: newFloor,
+      dungeon: currentRoom.dungeonData,
+      enemies: currentRoom.enemySnapshot(),
+    });
   });
 
   socket.on('saveProgress', ({ stats }) => {
@@ -99,9 +154,10 @@ io.on('connection', socket => {
 
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
-    if (!inWorld) return;
-    world.removePlayer(socket.id);
-    io.to('world').emit('playerLeft', { id: socket.id });
+    if (!currentRoom) return;
+    socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
+    currentRoom.removePlayer(socket.id);
+    releaseRoom(currentFloor);
   });
 });
 

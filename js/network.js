@@ -43,9 +43,12 @@ function netConnect(onReady) {
     loadSprites(type, () => {});
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d }) => {
+  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
+    // Populate from initial snapshot — no delta until first gameState
+    serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
+    otherPlayers = {};
     buildTileCanvas();
     projs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
@@ -77,16 +80,19 @@ function netConnect(onReady) {
         op.targetX = p.x; op.targetY = p.y;
       }
     });
+
+    // Remove players that left AOI or disconnected
     const pids = new Set(players.map(p => p.id));
     Object.keys(otherPlayers).forEach(id => { if (!pids.has(id)) delete otherPlayers[id]; });
 
-    const incomingMap = new Map(enemies.map(e => [e.id, e]));
-    serverEnemies = serverEnemies.filter(e => incomingMap.has(e.id));
+    // Delta update: only changed enemies arrive — add or update, never remove
+    // (removal happens via enemyKilled; respawn via re-add when hp > 0)
     enemies.forEach(se => {
       const ex = serverEnemies.find(e => e.id === se.id);
       if (ex) {
-        ex.hp = se.hp; ex.maxHp = se.maxHp; ex.hurtTimer = se.hurtTimer;
+        ex.hp = se.hp; ex.maxHp = se.maxHp;
         ex.targetX = se.x; ex.targetY = se.y;
+        ex.aggro = se.aggro;
       } else {
         serverEnemies.push({ ...se, targetX: se.x, targetY: se.y });
       }
@@ -108,6 +114,7 @@ function netConnect(onReady) {
     const e = serverEnemies.find(e => e.id === id);
     if (e) {
       e.hp = hp;
+      e.hurtTimer = 0.3;
       if (dmg) dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
     }
   });
@@ -126,9 +133,11 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('floorChanged', ({ floor, dungeon: d }) => {
+  socket.on('floorChanged', ({ floor, dungeon: d, enemies: initialEnemies }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
+    serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
+    otherPlayers = {};
     buildTileCanvas();
     projs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
