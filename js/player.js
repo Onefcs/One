@@ -184,13 +184,12 @@ function useSkill(idx) {
       spawnAOE(player.x, player.y, 130);
       if (isOnline) _skillAOE(130);
       else activeEnemies.forEach(e => {
-          if (dist(e.x, e.y, player.x, player.y) < 130) {
-            hitEnemy(e, Math.floor(player.atk * 0.9));
-            e.spd = (e.spd || 60) * 0.5;
-            setTimeout(() => { if (e.hp > 0) e.spd = ENEMY_DEF.find(d => d.name === e.name)?.spd || 60; }, 3000);
-          }
-        });
-      }
+        if (dist(e.x, e.y, player.x, player.y) < 130) {
+          hitEnemy(e, Math.floor(player.atk * 0.9));
+          e.spd = (e.spd || 60) * 0.5;
+          setTimeout(() => { if (e.hp > 0) e.spd = ENEMY_DEF.find(d => d.name === e.name)?.spd || 60; }, 3000);
+        }
+      });
     } else if (sk.key === 'E') { // Barrier
       barrierTimer = 4;
       dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
