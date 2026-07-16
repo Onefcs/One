@@ -1,17 +1,31 @@
 const { TILE, WALL, FLOOR, ENEMY_DEF } = require('../../shared/definitions');
 
+// Mulberry32 — fast seeded PRNG. Same seed → same dungeon every time.
+function seededRng(seed) {
+  let s = seed >>> 0;
+  return function() {
+    s += 0x6D2B79F5;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = t + Math.imul(t ^ (t >>> 7), 61 | t) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function generateDungeon(lvl) {
-  const DW = 72, DH = 56;
+  const rng = seededRng(lvl * 1337 + 777);
+
+  const DW = 96, DH = 72;
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
   const rooms = [];
-  const wantRooms = Math.min(20 + Math.floor(lvl / 2), 35);
+  const wantRooms = Math.min(22 + Math.floor(lvl / 2), 38);
+
   let tries = 0;
-  while (rooms.length < wantRooms && tries < 1400) {
+  while (rooms.length < wantRooms && tries < 2000) {
     tries++;
-    const rw = 5 + Math.floor(Math.random() * 9);
-    const rh = 4 + Math.floor(Math.random() * 7);
-    const rx = 1 + Math.floor(Math.random() * (DW - rw - 2));
-    const ry = 1 + Math.floor(Math.random() * (DH - rh - 2));
+    const rw = 10 + Math.floor(rng() * 14);   // 10-23 tiles wide (was 5-13)
+    const rh =  6 + Math.floor(rng() * 8);    //  6-13 tiles tall (was 4-10)
+    const rx = 1 + Math.floor(rng() * (DW - rw - 2));
+    const ry = 1 + Math.floor(rng() * (DH - rh - 2));
     const ok = !rooms.some(r =>
       rx < r.x + r.w + 2 && rx + rw + 2 > r.x &&
       ry < r.y + r.h + 2 && ry + rh + 2 > r.y
@@ -36,26 +50,26 @@ function generateDungeon(lvl) {
   const sc = 1 + (lvl - 1) * 0.28;
   const enemyList = [];
   let eid = 0;
+
   rooms.slice(1).forEach((room, idx) => {
     const isBoss = idx === rooms.length - 2;
-    const count = isBoss ? 1 : 2 + Math.floor(Math.random() * (2 + Math.floor(lvl / 2)));
+    const count = isBoss ? 1 : 5 + Math.floor(rng() * (4 + Math.floor(lvl / 2)));
     for (let i = 0; i < count; i++) {
       const maxEIdx = Math.min(6, 1 + Math.floor(lvl / 2));
-      const rawIdx = Math.floor(Math.random() * (maxEIdx + 1));
-      // Floor 1 (Лес): always slime so sprites are visible from start
-      const defIdx = isBoss ? 7 : (lvl === 1 ? 1 : rawIdx);
+      const rawIdx  = Math.floor(rng() * (maxEIdx + 1));
+      const defIdx  = isBoss ? 7 : (lvl === 1 ? 1 : rawIdx);
       const d = ENEMY_DEF[defIdx];
-      const ex = (room.x + 1 + Math.floor(Math.random() * (room.w - 2))) * TILE + TILE / 2;
-      const ey = (room.y + 1 + Math.floor(Math.random() * (room.h - 2))) * TILE + TILE / 2;
+      const ex = (room.x + 1 + Math.floor(rng() * (room.w - 2))) * TILE + TILE / 2;
+      const ey = (room.y + 1 + Math.floor(rng() * (room.h - 2))) * TILE + TILE / 2;
       enemyList.push({
         id: `e_${lvl}_${eid++}`,
         ...d,
         maxHp: Math.floor(d.hp * sc), hp: Math.floor(d.hp * sc),
-        atk: Math.floor(d.atk * (1 + (lvl - 1) * 0.18)),
+        atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18)),
         x: ex, y: ey,
         spawnX: ex, spawnY: ey,
-        atkTimer: 1 + Math.random(),
-        aggro: false, aggroR: 175 + Math.random() * 55,
+        atkTimer: 1 + rng(),
+        aggro: false, aggroR: 175 + rng() * 55,
       });
     }
   });
