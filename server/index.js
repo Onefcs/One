@@ -155,7 +155,7 @@ io.on('connection', socket => {
     if (!result) return;
     // Send damage delta to target (client applies it; avoids server HP sync issues)
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
-    socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg });
+    socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, targetId });
   });
 
   socket.on('setPvpMode', ({ pvpMode }) => {

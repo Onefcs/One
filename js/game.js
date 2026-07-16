@@ -36,6 +36,31 @@ function update(dt) {
       if (ax > ay * 0.8) player.facing = inp.dx > 0 ? 'right' : 'left';
       else               player.facing = inp.dy > 0 ? 'front' : 'back';
     }
+    // Push player out of enemies and other players
+    activeEnemies.forEach(e => {
+      if ((e.hp || 0) <= 0) return;
+      const minD = e.size + 12;
+      const ddx = player.x - e.x, ddy = player.y - e.y;
+      const dd = Math.hypot(ddx, ddy);
+      if (dd < minD && dd > 0.01) {
+        const p2 = (minD - dd) / dd;
+        if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
+        if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
+      }
+    });
+    if (isOnline) {
+      Object.values(otherPlayers).forEach(op => {
+        if ((op.hp || 0) <= 0 || op.x == null) return;
+        const minD = 26;
+        const ddx = player.x - op.x, ddy = player.y - op.y;
+        const dd = Math.hypot(ddx, ddy);
+        if (dd < minD && dd > 0.01) {
+          const p2 = (minD - dd) / dd;
+          if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
+          if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
+        }
+      });
+    }
     if (isOnline) netSendMove();
   }
 
@@ -241,9 +266,11 @@ function update(dt) {
         op.moving = Math.hypot(op.x - prevX, op.y - prevY) > 0.5;
       }
       if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
+      if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
       if (op.type && SPRITE_DEF[op.type]) {
         if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
         const ak = getOtherPlayerAnimKey(op);
+        if (ak !== op._prevAnimKey) { op.animFrame = 0; op.animTimer = 0; op._prevAnimKey = ak; }
         const ad = SPRITE_DEF[op.type].anims[ak];
         if (ad) {
           op.animTimer = (op.animTimer || 0) + dt;
@@ -521,6 +548,7 @@ function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
   const dir = p.facing || 'front';
   if ((p.hurtTimer || 0) > 0.08) return `${dir}-hurt`;
+  if ((p.atkAnimTimer || 0) > 0) return `${dir}-attack`;
   if (p.moving) return `${dir}-run`;
   return `${dir}-idle`;
 }

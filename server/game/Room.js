@@ -103,7 +103,7 @@ class Room {
         nearPlayers.push({
           id: op.socketId, username: op.username, type: op.type,
           x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
-          pvpMode: op.pvpMode || false,
+          pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
         });
       });
 
@@ -136,7 +136,7 @@ class Room {
       socketId, username, type: null,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 25, def: 10,
-      pvpMode: false,
+      pvpMode: false, lastAtkSeq: 0,
     });
     return spawn;
   }
@@ -155,6 +155,7 @@ class Room {
     const d = Math.hypot(attacker.x - target.x, attacker.y - target.y);
     if (d > 500) return null;
     const dmg = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
+    attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     // Don't track HP server-side for PvP — client is authoritative for own HP
     return { dmg, x: target.x, y: target.y };
   }
@@ -193,6 +194,7 @@ class Room {
     const enemy = this.enemies.find(e => e.id === enemyId && e.hp > 0);
     if (!enemy) return null;
     const dmg = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
+    attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     if (enemy.hp <= 0) {
       const g = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
