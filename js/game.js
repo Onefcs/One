@@ -78,10 +78,13 @@ function update(dt) {
     const ad = SPRITE_DEF[player.type].anims[ak];
     if (ad) {
       player.animTimer += dt;
-      const step = 1 / ad.fps;
+      const maxF = (spriteCache[player.type]?.[ak] || []).length || ad.n;
+      // Spread attack frames evenly across the full cast duration
+      const step = (!ad.loop && player.atkAnimTimer > 0 && player.castDuration > 0)
+        ? player.castDuration / maxF
+        : 1 / ad.fps;
       while (player.animTimer >= step) {
         player.animTimer -= step;
-        const maxF = (spriteCache[player.type]?.[ak] || []).length || ad.n;
         if (ad.loop) { player.animFrame = (player.animFrame + 1) % maxF; }
         else if (player.animFrame < maxF - 1) { player.animFrame++; }
       }
@@ -137,7 +140,7 @@ function update(dt) {
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
         swingTimer = 0.18;
-        player.atkAnimTimer = 1.65; player.animFrame = 0; player.animTimer = 0;
+        player.atkAnimTimer = 1.65; player.castDuration = 1.65; player.animFrame = 0; player.animTimer = 0;
         netPvpAttack(closest._socketId);
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
       } else {
@@ -145,7 +148,7 @@ function update(dt) {
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
         swingTimer = 0.18;
-        player.atkAnimTimer = 1.65; player.animFrame = 0; player.animTimer = 0;
+        player.atkAnimTimer = 1.65; player.castDuration = 1.65; player.animFrame = 0; player.animTimer = 0;
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
       }
     }
