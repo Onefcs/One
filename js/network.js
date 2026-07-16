@@ -73,7 +73,6 @@ function netConnect(onReady) {
         if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
         op.hp = p.hp; op.maxHp = p.maxHp;
         op.facing = p.facing; op.username = p.username;
-        op.pvpMode = p.pvpMode || false;
         if (op.x === undefined) { op.x = p.x; op.y = p.y; }
         op.targetX = p.x; op.targetY = p.y;
       }
@@ -257,6 +256,3 @@ function netPvpAttack(targetSocketId) {
   if (socket?.connected) socket.emit('pvpAttack', { targetId: targetSocketId });
 }
 
-function netSetPvpMode(mode) {
-  if (socket?.connected) socket.emit('setPvpMode', { pvpMode: mode });
-}

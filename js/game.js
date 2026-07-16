@@ -68,7 +68,7 @@ function update(dt) {
     if (targetId && !targetIsPlayer) {
       const t = activeEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
       if (t) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
-    } else if (targetId && targetIsPlayer && pvpMode && isOnline) {
+    } else if (targetId && targetIsPlayer && isOnline) {
       const op = otherPlayers[targetId];
       if (op && (op.hp || 0) > 0 && op.x != null) {
         closest = { ...op, _socketId: targetId };
@@ -84,8 +84,8 @@ function update(dt) {
         const d = dist(e.x, e.y, player.x, player.y);
         if (d < closestD) { closestD = d; closest = e; closestIsPlayer = false; }
       });
-      // In PvP mode also consider nearby players
-      if (pvpMode && isOnline) {
+      // Consider nearby players as auto-attack targets
+      if (isOnline) {
         Object.entries(otherPlayers).forEach(([id, op]) => {
           if ((op.hp || 0) <= 0 || op.x == null) return;
           const d = dist(op.x, op.y, player.x, player.y);
@@ -373,13 +373,8 @@ function render() {
       ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
       ctx.strokeText(p.username || '?', p.x, nameY);
-      ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
+      ctx.fillStyle = '#fff';
       ctx.fillText(p.username || '?', p.x, nameY);
-      // PvP badge
-      if (p.pvpMode) {
-        ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
-        ctx.fillText('⚔', p.x + bw / 2 + 2, nameY);
-      }
       ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
       ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
     });
@@ -445,7 +440,6 @@ function render() {
   ctx.restore(); // [camera]
 
   drawHUD();
-  drawPvpButton();
   drawTargetFrame();
   drawMinimap();
   if (activeTab === 0) {
@@ -632,7 +626,7 @@ function loadLevel() {
 
 function restartGame() {
   if (state !== 'dead') return;
-  targetId = null; targetIsPlayer = false; pvpMode = false;
+  targetId = null; targetIsPlayer = false;
   serverEnemies = []; otherPlayers = {};
   npcs = []; nearNpc = null;
   Object.keys(floorCache).forEach(k => delete floorCache[k]);
@@ -661,9 +655,10 @@ window.addEventListener('beforeunload', () => { netSaveProgress(); });
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');
   ctx = canvas.getContext('2d');
+  const app = document.getElementById('app');
   const resize = () => {
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
+    W = canvas.width = app.clientWidth;
+    H = canvas.height = app.clientHeight;
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);

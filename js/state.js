@@ -36,7 +36,6 @@ let barrierTimer = 0;
 let battleCryTimer = 0;
 let dodgeTimer = 0;
 
-// Target & PvP
+// Target
 let targetId = null;
 let targetIsPlayer = false;
-let pvpMode = false;
