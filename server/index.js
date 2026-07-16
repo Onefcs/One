@@ -136,6 +136,7 @@ io.on('connection', socket => {
       });
       const np = currentRoom.players.get(socket.id);
       if (np) np.hp = p.hp;
+      if (p.pvpMode) currentRoom.setPlayerPvpMode(socket.id, true);
     }
 
     socket.to(`floor_${newFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
@@ -155,6 +156,10 @@ io.on('connection', socket => {
     // Send damage delta to target (client applies it; avoids server HP sync issues)
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg });
+  });
+
+  socket.on('setPvpMode', ({ pvpMode }) => {
+    if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
   });
 
   socket.on('saveProgress', ({ stats }) => {

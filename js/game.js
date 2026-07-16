@@ -68,7 +68,7 @@ function update(dt) {
     if (targetId && !targetIsPlayer) {
       const t = activeEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
       if (t) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
-    } else if (targetId && targetIsPlayer && isOnline) {
+    } else if (targetId && targetIsPlayer && pvpMode && isOnline) {
       const op = otherPlayers[targetId];
       if (op && (op.hp || 0) > 0 && op.x != null) {
         closest = { ...op, _socketId: targetId };
@@ -84,10 +84,10 @@ function update(dt) {
         const d = dist(e.x, e.y, player.x, player.y);
         if (d < closestD) { closestD = d; closest = e; closestIsPlayer = false; }
       });
-      // Consider nearby players as auto-attack targets
-      if (isOnline) {
+      // In PK mode also consider nearby players
+      if (pvpMode && isOnline) {
         Object.entries(otherPlayers).forEach(([id, op]) => {
-          if ((op.hp || 0) <= 0 || op.x == null) return;
+          if ((op.hp || 0) <= 0 || op.x == null || !op.pvpMode) return;
           const d = dist(op.x, op.y, player.x, player.y);
           if (d < closestD) { closestD = d; closest = { ...op, _socketId: id }; closestIsPlayer = true; }
         });
@@ -373,8 +373,12 @@ function render() {
       ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
       ctx.strokeText(p.username || '?', p.x, nameY);
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
       ctx.fillText(p.username || '?', p.x, nameY);
+      if (p.pvpMode) {
+        ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
+        ctx.fillText('⚔', p.x + bw / 2 + 2, nameY);
+      }
       ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
       ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
     });
@@ -440,6 +444,7 @@ function render() {
   ctx.restore(); // [camera]
 
   drawHUD();
+  drawPvpButton();
   drawTargetFrame();
   drawMinimap();
   if (activeTab === 0) {
@@ -626,7 +631,7 @@ function loadLevel() {
 
 function restartGame() {
   if (state !== 'dead') return;
-  targetId = null; targetIsPlayer = false;
+  targetId = null; targetIsPlayer = false; pvpMode = false;
   serverEnemies = []; otherPlayers = {};
   npcs = []; nearNpc = null;
   Object.keys(floorCache).forEach(k => delete floorCache[k]);

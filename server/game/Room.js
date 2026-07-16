@@ -103,6 +103,7 @@ class Room {
         nearPlayers.push({
           id: op.socketId, username: op.username, type: op.type,
           x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
+          pvpMode: op.pvpMode || false,
         });
       });
 
@@ -135,14 +136,21 @@ class Room {
       socketId, username, type: null,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 25, def: 10,
+      pvpMode: false,
     });
     return spawn;
+  }
+
+  setPlayerPvpMode(socketId, mode) {
+    const p = this.players.get(socketId);
+    if (p) p.pvpMode = !!mode;
   }
 
   pvpAttack(attackerSocketId, targetSocketId) {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
+    if (!attacker.pvpMode || !target.pvpMode) return null;
     if (target.hp <= 0) return null;
     const d = Math.hypot(attacker.x - target.x, attacker.y - target.y);
     if (d > 500) return null;
@@ -158,6 +166,7 @@ class Room {
     if (!p) return;
     const base = { warrior: [200,25,10], archer: [140,20,5], mage: [110,38,3] }[type] || [200,25,10];
     p.type = type;
+    p.pvpMode = false;
     if (savedStats) {
       p.maxHp = savedStats.maxHp || base[0];
       p.hp = p.maxHp;

@@ -462,6 +462,29 @@ function drawTargetButton() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  PK / МИР BUTTON
+// ─────────────────────────────────────────────────────────
+function drawPvpButton() {
+  if (!player) return;
+  const pb = getPvpBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  ctx.fillStyle = pvpMode ? 'rgba(60,8,8,0.94)' : 'rgba(8,6,20,0.88)';
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 8); ctx.fill();
+  ctx.strokeStyle = pvpMode ? 'rgba(255,60,60,0.85)' : 'rgba(60,120,200,0.55)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 8); ctx.stroke();
+
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = pvpMode ? '#ff7070' : '#7aaaee';
+  ctx.fillText(pvpMode ? '⚔ ПК' : '🕊 Мир', pb.x + pb.w / 2, pb.y + pb.h / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  TARGET FRAME
 // ─────────────────────────────────────────────────────────
 function drawTargetFrame() {
@@ -482,7 +505,8 @@ function drawTargetFrame() {
     hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#f80';
   }
 
-  const bx = 8, by = 96;
+  const pb = getPvpBtnPos();
+  const bx = pb.x, by = pb.y + pb.h + 6;
   const bw = 150, bh = 34;
   const F = 'system-ui, -apple-system, Arial';
 

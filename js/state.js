@@ -36,6 +36,7 @@ let barrierTimer = 0;
 let battleCryTimer = 0;
 let dodgeTimer = 0;
 
-// Target
+// Target & PK mode
 let targetId = null;
 let targetIsPlayer = false;
+let pvpMode = false; // ПК режим: если true — игрок может атаковать других
