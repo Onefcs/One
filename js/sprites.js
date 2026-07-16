@@ -38,6 +38,7 @@ const ENEMY_SPRITE_DEF = {
   },
   goblin: {
     frameW: 64, frameH: 64, row: 0,
+    sharedWith: 'slime',
     sheets: {
       idle:   { src:'images/Slime/Slime1_Idle_with_shadow.png',   cols:6,  fps:8,  loop:true  },
       walk:   { src:'images/Slime/Slime1_Walk_with_shadow.png',   cols:8,  fps:10, loop:true  },
@@ -64,8 +65,9 @@ function loadEnemySprites(eid) {
 function drawEnemySprite(e, dt) {
   const def = ENEMY_SPRITE_DEF[e.eid];
   if (!def) return false;
-  if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
-  const cache = enemySpriteCache[e.eid];
+  const cacheKey = def.sharedWith || e.eid;
+  if (!enemySpriteCache[cacheKey]) loadEnemySprites(cacheKey);
+  const cache = enemySpriteCache[cacheKey];
 
   // Pick animation
   let key;
