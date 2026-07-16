@@ -695,6 +695,219 @@ function drawTargetFrame() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ATTACK BUTTON (manual)
+// ─────────────────────────────────────────────────────────
+function drawAttackButton() {
+  if (!player) return;
+  const ab = getAttackBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+  const hasTarget = !!targetId;
+  const ready = (player.atkTimer || 0) <= 0;
+
+  ctx.save();
+  const cg = ctx.createRadialGradient(ab.x - 6, ab.y - 6, 3, ab.x, ab.y, ab.r);
+  if (hasTarget && ready) {
+    cg.addColorStop(0, 'rgba(60,20,10,0.98)'); cg.addColorStop(1, 'rgba(28,8,5,0.99)');
+  } else if (!autoAttackMode) {
+    cg.addColorStop(0, 'rgba(18,14,40,0.98)'); cg.addColorStop(1, 'rgba(8,6,20,0.99)');
+  } else {
+    cg.addColorStop(0, 'rgba(12,10,28,0.90)'); cg.addColorStop(1, 'rgba(6,5,14,0.92)');
+  }
+  ctx.fillStyle = cg;
+  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
+
+  const borderColor = !autoAttackMode
+    ? (hasTarget && ready ? 'rgba(255,120,60,0.9)' : 'rgba(80,100,220,0.7)')
+    : 'rgba(50,40,90,0.45)';
+  ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
+  if (!autoAttackMode && hasTarget && ready) {
+    ctx.strokeStyle = 'rgba(255,100,50,0.15)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  ctx.globalAlpha = autoAttackMode ? 0.4 : 1;
+  const iconColor = hasTarget && ready ? '#ff9060' : (autoAttackMode ? '#404060' : '#a0b4ff');
+  drawIconCtx(ctx, 'sword', ab.x, ab.y - 5, 20, iconColor);
+
+  ctx.globalAlpha = 1;
+  ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+  ctx.fillStyle = autoAttackMode ? 'rgba(80,80,110,0.6)' : (hasTarget ? 'rgba(255,160,100,0.9)' : 'rgba(160,180,255,0.8)');
+  ctx.fillText('АТК', ab.x, ab.y + ab.r - 3);
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  AUTO / MANUAL TOGGLE
+// ─────────────────────────────────────────────────────────
+function drawAutoToggle() {
+  if (!player) return;
+  const ab = getAutoBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+  const bg = ctx.createLinearGradient(ab.x, ab.y, ab.x, ab.y + ab.h);
+  if (autoAttackMode) {
+    bg.addColorStop(0, 'rgba(10,35,15,0.95)'); bg.addColorStop(1, 'rgba(5,18,8,0.97)');
+  } else {
+    bg.addColorStop(0, 'rgba(35,15,5,0.95)'); bg.addColorStop(1, 'rgba(18,7,3,0.97)');
+  }
+  ctx.fillStyle = bg;
+  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
+
+  ctx.strokeStyle = autoAttackMode ? 'rgba(60,200,90,0.7)' : 'rgba(220,120,50,0.7)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
+
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = autoAttackMode ? '#3ef07a' : '#f09050';
+  ctx.fillText(autoAttackMode ? 'АВТО' : 'РУЧ', ab.x + ab.w / 2, ab.y + ab.h / 2);
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  PARTY BUTTON (invite / leave)
+// ─────────────────────────────────────────────────────────
+function drawPartyButton() {
+  if (!player) return;
+  const inParty = !!partyPartnerId;
+  const canInvite = !inParty && targetIsPlayer && !!targetId;
+  if (!inParty && !canInvite) return;
+
+  const pb = getPartyBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+  ctx.save();
+
+  const bg = ctx.createLinearGradient(pb.x, pb.y, pb.x, pb.y + pb.h);
+  if (inParty) {
+    bg.addColorStop(0, 'rgba(50,10,10,0.97)'); bg.addColorStop(1, 'rgba(25,5,5,0.99)');
+  } else {
+    bg.addColorStop(0, 'rgba(10,40,18,0.97)'); bg.addColorStop(1, 'rgba(5,20,9,0.99)');
+  }
+  ctx.fillStyle = bg;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = inParty ? 'rgba(220,60,60,0.8)' : 'rgba(60,200,90,0.8)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+
+  const iconName = inParty ? 'partyLeave' : 'party';
+  const color = inParty ? '#ff7070' : '#3ef07a';
+  drawIconCtx(ctx, iconName, pb.x + 14, pb.y + pb.h / 2, 12, color);
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(inParty ? 'Выйти' : 'Пати+', pb.x + 23, pb.y + pb.h / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  PARTY HUD (partner HP bar)
+// ─────────────────────────────────────────────────────────
+function drawPartyHUD() {
+  if (!partyPartnerId || !player) return;
+  const op = otherPlayers[partyPartnerId];
+  const hp = op ? (op.hp || 0) : 0;
+  const maxHp = op ? (op.maxHp || 1) : 1;
+  const name = partyPartnerName || '?';
+  const pct = Math.max(0, Math.min(1, hp / maxHp));
+
+  const pb = getPvpBtnPos();
+  const partyBtn = getPartyBtnPos();
+  const bx = partyBtn.x + partyBtn.w + 8;
+  const by = pb.y;
+  const bw = 130, bh = 26;
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+  const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
+  bg.addColorStop(0, 'rgba(8,30,14,0.97)'); bg.addColorStop(1, 'rgba(4,15,7,0.99)');
+  ctx.fillStyle = bg;
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,180,80,0.55)'; ctx.lineWidth = 1.2;
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
+
+  drawIconCtx(ctx, 'party', bx + 11, by + bh / 2, 11, '#3ef07a');
+
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#3ef07a';
+  ctx.fillText(name.slice(0, 12), bx + 20, by + 10);
+
+  const hbx = bx + 20, hby = by + 13, hbw = bw - 24, hbh = 8;
+  ctx.fillStyle = 'rgba(10,30,10,0.9)';
+  roundRect(ctx, hbx, hby, hbw, hbh, 3); ctx.fill();
+  if (pct > 0) {
+    const hg = ctx.createLinearGradient(hbx, 0, hbx + hbw, 0);
+    if (pct > 0.5) { hg.addColorStop(0, '#0c5a22'); hg.addColorStop(1, '#1ec95a'); }
+    else if (pct > 0.25) { hg.addColorStop(0, '#7a4200'); hg.addColorStop(1, '#f0921a'); }
+    else { hg.addColorStop(0, '#6b0c0c'); hg.addColorStop(1, '#e03030'); }
+    ctx.fillStyle = hg;
+    roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
+  }
+  ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  PARTY INVITE POPUP
+// ─────────────────────────────────────────────────────────
+function drawPartyInvitePopup() {
+  if (!partyInvitePending) return;
+  const inv = partyInvitePending;
+  const F = 'system-ui, -apple-system, Arial';
+  const pw = 220, ph = 76;
+  const px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+
+  const bg = ctx.createLinearGradient(px, py, px, py + ph);
+  bg.addColorStop(0, 'rgba(8,30,14,0.99)'); bg.addColorStop(1, 'rgba(4,15,8,0.99)');
+  ctx.fillStyle = bg;
+  roundRect(ctx, px, py, pw, ph, 12); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,200,90,0.75)'; ctx.lineWidth = 1.5;
+  roundRect(ctx, px, py, pw, ph, 12); ctx.stroke();
+
+  drawIconCtx(ctx, 'party', px + 20, py + 18, 16, '#3ef07a');
+  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#eee';
+  ctx.fillText('Приглашение в пати', px + 34, py + 14);
+  ctx.font = `10px ${F}`; ctx.fillStyle = '#3ef07a';
+  ctx.fillText(inv.fromName, px + 34, py + 28);
+
+  // Accept button
+  const ac = getPartyAcceptPos();
+  ctx.fillStyle = 'rgba(10,50,20,0.99)';
+  roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,200,90,0.8)'; ctx.lineWidth = 1.2;
+  roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.stroke();
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#3ef07a';
+  ctx.fillText('Принять', ac.x + ac.w / 2, ac.y + ac.h / 2);
+
+  // Decline button
+  const dc = getPartyDeclinePos();
+  ctx.fillStyle = 'rgba(40,10,10,0.99)';
+  roundRect(ctx, dc.x, dc.y, dc.w, dc.h, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,50,50,0.8)'; ctx.lineWidth = 1.2;
+  roundRect(ctx, dc.x, dc.y, dc.w, dc.h, 8); ctx.stroke();
+  ctx.fillStyle = '#ff7070';
+  ctx.fillText('Отказ', dc.x + dc.w / 2, dc.y + dc.h / 2);
+
+  // Timer bar
+  const alpha = Math.min(1, inv.timer / 3);
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = '#3ef07a';
+  roundRect(ctx, px + 8, py + ph - 6, (pw - 16) * alpha, 3, 2); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  DEAD SCREEN
 // ─────────────────────────────────────────────────────────
 function drawDead() {

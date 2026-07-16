@@ -63,6 +63,26 @@ app.use(express.static(path.join(__dirname, '..')));
 // One Room per floor, created on demand, destroyed when empty
 const floorRooms = new Map();
 
+// ── Party state ───────────────────────────────────────────────────────────────
+// partyId -> { a: socketId, b: socketId }
+const parties     = new Map();
+// socketId -> partyId
+const playerParty = new Map();
+// socketId -> current floor number (for proximity check)
+const playerFloorMap = new Map();
+
+function _dissolveParty(partyId, leaverId) {
+  const p = parties.get(partyId);
+  if (!p) return;
+  parties.delete(partyId);
+  [p.a, p.b].forEach(mid => {
+    playerParty.delete(mid);
+    if (mid !== leaverId) {
+      io.to(mid).emit('partyLeft', { reason: 'partner_left' });
+    }
+  });
+}
+
 function getRoom(floor) {
   if (!floorRooms.has(floor)) {
     floorRooms.set(floor, new Room(floor, io));
@@ -85,6 +105,7 @@ io.on('connection', socket => {
   let authed = null;
   let currentRoom = null;
   let currentFloor = 1;
+  playerFloorMap.set(socket.id, currentFloor);
 
   socket.on('register', async ({ username, password }) => {
     try {
@@ -95,6 +116,7 @@ io.on('connection', socket => {
       const hash = await bcrypt.hash(password, 10);
       const doc = await PlayerModel.create({ username, passwordHash: hash });
       authed = doc;
+      socket.data.username = doc.username;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
   });
@@ -106,6 +128,7 @@ io.on('connection', socket => {
       if (!await bcrypt.compare(password, doc.passwordHash))
         return socket.emit('authError', { message: 'Неверный пароль' });
       authed = doc;
+      socket.data.username = doc.username;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
   });
@@ -115,6 +138,7 @@ io.on('connection', socket => {
     if (!currentRoom) {
       currentFloor = 1;
       currentRoom = getRoom(1);
+      playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
       currentRoom.addPlayer(socket.id, authed.username);
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
@@ -137,10 +161,40 @@ io.on('connection', socket => {
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
-      io.to(`floor_${currentFloor}`).emit('enemyKilled', {
-        id: enemyId, xp: result.xp, gold: result.gold,
-        dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
-      });
+      const partyId = playerParty.get(socket.id);
+      const party   = partyId ? parties.get(partyId) : null;
+      const partnerId = party ? (party.a === socket.id ? party.b : party.a) : null;
+      const partnerOnFloor = partnerId && playerFloorMap.get(partnerId) === currentFloor;
+
+      if (partnerOnFloor) {
+        // Split 50/50
+        const myXp   = Math.ceil(result.xp   / 2);
+        const myGold = Math.ceil(result.gold  / 2);
+        const ptXp   = Math.floor(result.xp   / 2);
+        const ptGold = Math.floor(result.gold  / 2);
+
+        socket.emit('enemyKilled', {
+          id: enemyId, xp: myXp, gold: myGold,
+          dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
+        });
+        io.to(partnerId).emit('enemyKilled', {
+          id: enemyId, xp: ptXp, gold: ptGold,
+          ex: result.ex, ey: result.ey, color: result.color,
+        });
+        // Visual only to the rest of the floor
+        socket.to(`floor_${currentFloor}`).except([partnerId]).emit('enemyKilled', {
+          id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
+        });
+      } else {
+        // No party on same floor: attacker gets full reward, others get visual only
+        socket.emit('enemyKilled', {
+          id: enemyId, xp: result.xp, gold: result.gold,
+          dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
+        });
+        socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
+          id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
+        });
+      }
     } else {
       io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
     }
@@ -162,6 +216,7 @@ io.on('connection', socket => {
 
     // Join new floor
     currentFloor = newFloor;
+    playerFloorMap.set(socket.id, currentFloor);
     currentRoom = getRoom(newFloor);
     socket.join(`floor_${newFloor}`);
     currentRoom.addPlayer(socket.id, authed.username);
@@ -213,8 +268,49 @@ io.on('connection', socket => {
     if (authed) PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
   });
 
+  // ── Party ─────────────────────────────────────────────────────────────────
+  socket.on('partyInvite', ({ targetId }) => {
+    if (!authed || playerParty.has(socket.id)) return;
+    if (playerParty.has(targetId)) return; // target already in party
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (!targetSocket) return;
+    targetSocket.emit('partyInviteReceived', {
+      fromId: socket.id,
+      fromName: authed.username,
+    });
+  });
+
+  socket.on('partyAccept', ({ fromId }) => {
+    if (!authed || playerParty.has(socket.id)) return;
+    if (playerParty.has(fromId)) return;
+    const fromSocket = io.sockets.sockets.get(fromId);
+    if (!fromSocket) return;
+
+    const partyId = socket.id + '_' + fromId;
+    parties.set(partyId, { a: fromId, b: socket.id });
+    playerParty.set(fromId, partyId);
+    playerParty.set(socket.id, partyId);
+
+    // Notify both members
+    const fromUsername = fromSocket.data.username || fromId.slice(0, 6);
+    socket.emit('partyFormed', { partnerId: fromId, partnerName: fromUsername });
+    fromSocket.emit('partyFormed', { partnerId: socket.id, partnerName: authed.username });
+  });
+
+  socket.on('partyDecline', ({ fromId }) => {
+    // nothing to clean up since no party was formed
+  });
+
+  socket.on('partyLeave', () => {
+    const partyId = playerParty.get(socket.id);
+    if (partyId) _dissolveParty(partyId, socket.id);
+  });
+
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
+    playerFloorMap.delete(socket.id);
+    const partyId = playerParty.get(socket.id);
+    if (partyId) _dissolveParty(partyId, socket.id);
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);

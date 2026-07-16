@@ -39,3 +39,13 @@ let dodgeTimer = 0;
 let targetId = null;
 let targetIsPlayer = false;
 let pvpMode = false;
+
+// Party
+let partyPartnerId   = null;   // socket.id of partner
+let partyPartnerName = '';
+
+// Incoming invite popup { fromId, fromName, timer }
+let partyInvitePending = null;
+
+// Attack mode
+let autoAttackMode = true;
