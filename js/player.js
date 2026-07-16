@@ -17,6 +17,8 @@ function makePlayer(type) {
     inventory: [],
     potions: 3,
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
+    questIdx: 0,
+    questKills: {},
   };
 }
 
@@ -43,6 +45,7 @@ function gainXP(amount) {
     player.hp = Math.min(player.maxHp, player.hp + 35);
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
     spawnBurst(player.x, player.y, '#ff0', 14);
+    if (typeof onLevelUp === 'function') onLevelUp(player.lvl);
   }
   netSaveProgress();
 }

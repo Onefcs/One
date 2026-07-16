@@ -434,9 +434,21 @@ canvas { display:block; width:100%; height:100%; }
 .eq-row:last-child { border-bottom:none; }
 .eq-sl-nm   { color:#484860; font-size:11px; }
 
-/* ── FRIENDS ──────────────────────────── */
-.frnd-empty { text-align:center; padding:60px 20px; }
-.frnd-icon  { font-size:4em; margin-bottom:20px; }
+/* ── QUESTS ───────────────────────────── */
+.quest-item       { border-radius:10px; padding:12px 14px; margin-bottom:10px; border:1px solid #1a1a2e; }
+.quest-done       { background:rgba(40,60,40,0.35); border-color:#1e3a1e; }
+.quest-current    { background:rgba(30,25,60,0.7); border-color:#4a3a80; }
+.quest-locked     { background:rgba(15,15,25,0.4); opacity:0.5; }
+.quest-header     { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:4px; }
+.quest-title      { font-size:13px; font-weight:700; color:#ddd; }
+.quest-current .quest-title { color:#c9b8ff; }
+.quest-done .quest-title    { color:#7ab87a; }
+.quest-reward     { font-size:10px; color:#fd0; white-space:nowrap; }
+.quest-desc       { font-size:11px; color:#666; margin-bottom:6px; }
+.quest-current .quest-desc  { color:#888; }
+.quest-prog       { font-size:10px; color:#aaa; margin-top:2px; }
+.quest-bar-bg     { height:4px; background:#1a1a2e; border-radius:2px; margin-top:3px; overflow:hidden; }
+.quest-bar-fill   { height:100%; background:linear-gradient(90deg,#7c3aed,#c084fc); border-radius:2px; transition:width .3s; }
 
 /* ── MAP PANEL ────────────────────────── */
 #map-canvas { display:block; margin:0 auto; }

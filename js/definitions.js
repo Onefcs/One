@@ -5,11 +5,27 @@ const CHAR_DEF = {
 };
 
 const ENEMY_DEF = [
-  { name:'Гоблин', color:'#3a3', size:14, hp:40,  atk:8,  def:2,  spd:92,  xp:15,  gold:[1,5],   isBoss:false },
-  { name:'Скелет', color:'#bbb', size:16, hp:70,  atk:14, def:4,  spd:70,  xp:25,  gold:[3,9],   isBoss:false },
-  { name:'Орк',    color:'#964', size:20, hp:130, atk:20, def:8,  spd:56,  xp:40,  gold:[6,16],  isBoss:false },
-  { name:'Тролль', color:'#575', size:24, hp:230, atk:28, def:12, spd:40,  xp:65,  gold:[10,22], isBoss:false },
-  { name:'ДЕМОН',  color:'#f33', size:28, hp:420, atk:42, def:16, spd:60,  xp:130, gold:[25,55], isBoss:true  },
+  { eid:'mushroom', name:'Гриб',    color:'#cc6633', size:13, hp:30,  atk:6,  def:1,  spd:65,  xp:12,  gold:[1,4],   isBoss:false },
+  { eid:'slime',    name:'Слизень', color:'#44cc44', size:12, hp:35,  atk:7,  def:0,  spd:55,  xp:14,  gold:[1,4],   isBoss:false },
+  { eid:'spider',   name:'Паук',    color:'#332255', size:14, hp:50,  atk:10, def:2,  spd:110, xp:20,  gold:[2,7],   isBoss:false },
+  { eid:'goblin',   name:'Гоблин',  color:'#3a3',    size:14, hp:40,  atk:8,  def:2,  spd:92,  xp:15,  gold:[1,5],   isBoss:false },
+  { eid:'skeleton', name:'Скелет',  color:'#bbb',    size:16, hp:70,  atk:14, def:4,  spd:70,  xp:25,  gold:[3,9],   isBoss:false },
+  { eid:'orc',      name:'Орк',     color:'#964',    size:20, hp:130, atk:20, def:8,  spd:56,  xp:40,  gold:[6,16],  isBoss:false },
+  { eid:'troll',    name:'Тролль',  color:'#575',    size:24, hp:230, atk:28, def:12, spd:40,  xp:65,  gold:[10,22], isBoss:false },
+  { eid:'demon',    name:'ДЕМОН',   color:'#f33',    size:28, hp:420, atk:42, def:16, spd:60,  xp:130, gold:[25,55], isBoss:true  },
+];
+
+const QUEST_DEF = [
+  { id:'q1',  title:'Грибная охота',      desc:'Убей 10 грибов',                 type:'kill',       enemies:['Гриб'],           count:10, reward:{ xp:80,  gold:40  } },
+  { id:'q2',  title:'Первый уровень',     desc:'Достигни 3-го уровня',           type:'level',      level:3,                              reward:{ xp:0,   gold:60  } },
+  { id:'q3',  title:'Запас зелий',        desc:'Купи зелье у Торговца',          type:'buy_potion', count:1,                              reward:{ xp:50,  gold:30  } },
+  { id:'q4',  title:'Охота на гоблинов',  desc:'Убей 15 гоблинов',               type:'kill',       enemies:['Гоблин'],         count:15, reward:{ xp:120, gold:80  } },
+  { id:'q5',  title:'Ветеран',            desc:'Достигни 5-го уровня',           type:'level',      level:5,                              reward:{ xp:0,   gold:120 } },
+  { id:'q6',  title:'Двойная охота',      desc:'Убей 10 грибов и 10 слизней',   type:'kill_multi', enemies:['Гриб','Слизень'], count:10, reward:{ xp:180, gold:100 } },
+  { id:'q7',  title:'Слизнеед',           desc:'Убей 20 слизней',                type:'kill',       enemies:['Слизень'],        count:20, reward:{ xp:220, gold:130 } },
+  { id:'q8',  title:'Паукобой',           desc:'Убей 15 пауков',                 type:'kill',       enemies:['Паук'],           count:15, reward:{ xp:260, gold:150 } },
+  { id:'q9',  title:'Мастер подземелья',  desc:'Достигни 8-го уровня',           type:'level',      level:8,                              reward:{ xp:0,   gold:200 } },
+  { id:'q10', title:'Кузнечное ремесло',  desc:'Скрафти любое оружие у Кузнеца', type:'craft',                                            reward:{ xp:350, gold:250 } },
 ];
 
 const RARITY_COLOR = {
