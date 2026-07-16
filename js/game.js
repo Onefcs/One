@@ -23,7 +23,7 @@ function update(dt) {
   if (transTimer > 0) { transTimer -= dt; return; }
 
   if (activeTab === 0) {
-    if (player.atkAnimTimer <= 0.3) {
+    if (player.atkAnimTimer <= 0) {
       const inp = inputDir();
       if (inp.len > 0) {
         const vx = inp.dx * player.speed * inp.len * dt;
@@ -137,7 +137,7 @@ function update(dt) {
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
         swingTimer = 0.18;
-        player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
+        player.atkAnimTimer = 1.65; player.animFrame = 0; player.animTimer = 0;
         netPvpAttack(closest._socketId);
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
       } else {
@@ -145,7 +145,7 @@ function update(dt) {
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
         swingTimer = 0.18;
-        player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
+        player.atkAnimTimer = 1.65; player.animFrame = 0; player.animTimer = 0;
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
       }
     }
