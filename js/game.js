@@ -159,6 +159,7 @@ function update(dt) {
     const dead = [];
     enemies.forEach(e => {
       if (e.hurtTimer > 0) e.hurtTimer -= dt;
+      if (e.atkAnimTimer > 0) e.atkAnimTimer -= dt;
       const dp = dist(e.x, e.y, player.x, player.y);
       if (dp < e.aggroR) e.aggro = true;
       if (dp > e.aggroR * 2.2) e.aggro = false;
@@ -171,7 +172,11 @@ function update(dt) {
           if (canMoveY(e, evy, er)) e.y += evy;
         }
         e.atkTimer -= dt;
-        if (dp < e.size + 20 && e.atkTimer <= 0 && hasLOS(e.x, e.y, player.x, player.y)) { e.atkTimer = 1.4 + Math.random() * 0.6; hitPlayer(e.atk); }
+        if (dp < e.size + 20 && e.atkTimer <= 0 && hasLOS(e.x, e.y, player.x, player.y)) {
+          e.atkTimer = 1.4 + Math.random() * 0.6;
+          e.atkAnimTimer = 0.55;
+          hitPlayer(e.atk);
+        }
       }
       if (e.hp <= 0) dead.push(e);
     });
@@ -387,10 +392,12 @@ function render() {
       ctx.setLineDash([]);
       ctx.restore();
     }
-    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + e.size, e.size * .8, e.size * .3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = hurt ? '#fff' : e.color; ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
+    if (!drawEnemySprite(e, dt)) {
+      ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + e.size, e.size * .8, e.size * .3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = hurt ? '#fff' : e.color; ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
+    }
     if (e.isBoss) {
       ctx.strokeStyle = `rgba(255,50,50,${0.6 + 0.4 * Math.sin(frameCount * .1)})`; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 5, 0, Math.PI * 2); ctx.stroke();
@@ -587,6 +594,7 @@ function selectChar(type) {
     });
 
     // Start loading sprites early; gate opens when both sprites + server ready
+    loadEnemySprites('slime');
     loadSprites(type, csOnSpritesReady);
     netSelectChar(type, savedStats);
   } else {
@@ -600,6 +608,7 @@ function selectChar(type) {
       setTab(0);
     });
 
+    loadEnemySprites('slime');
     loadSprites(type, () => {
       if (offlineRestore) { restoreFromSave(offlineRestore); _savedData = null; }
       loadLevel();
