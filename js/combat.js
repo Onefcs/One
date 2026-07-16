@@ -101,12 +101,8 @@ function fireProj(tx, ty) {
 }
 
 function spawnDrops(e) {
-  // Gold: 30% chance, 1-3 base × 2^(floor-1)
-  if (Math.random() < 0.30) {
-    const base = 1 + Math.floor(Math.random() * 3);
-    const g = Math.round(base * Math.pow(2, dungeonLvl - 1));
-    drops.push({ type: 'gold', x: e.x + rnd(-12, 12), y: e.y + rnd(-12, 12), amount: g, life: 18 });
-  }
+  const g = calcGoldDrop(e, dungeonLvl);
+  if (g > 0) drops.push({ type: 'gold', x: e.x + rnd(-12, 12), y: e.y + rnd(-12, 12), amount: g, life: 18 });
 
   // Item drop: 12% chance, rarity-weighted
   if (Math.random() < 0.12) {

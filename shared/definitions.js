@@ -29,4 +29,11 @@ const ENEMY_DEF = [
   { eid:'demon',    name:'ДЕМОН',   color:'#f33',    size:28, hp:420, atk:42, def:16, spd:60,  xp:13, gold:[1,3], isBoss:true  },
 ];
 
-if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF };
+// Gold drop: 30% chance, scales with floor. Returns 0 if no drop.
+function calcGoldDrop(enemy, floor) {
+  if (Math.random() > 0.30) return 0;
+  const base = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
+  return Math.round(base * Math.pow(2, floor - 1));
+}
+
+if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, calcGoldDrop };
