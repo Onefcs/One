@@ -50,6 +50,7 @@ function updateProfileUI() {
   const p = player, d = p.charDef;
   const th = getTheme(dungeonLvl);
   const pct = Math.floor(p.xp / p.xpNext * 100);
+  const fmt1 = v => (v * 100).toFixed(1) + '%';
   document.getElementById('profile-body').innerHTML = `
     <div class="prof-hero">
       <div class="prof-emoji">${d.emoji}</div>
@@ -61,21 +62,39 @@ function updateProfileUI() {
     <div class="xp-lbl">Опыт: ${p.xp} / ${p.xpNext}</div>
     <div class="xp-bg"><div class="xp-fill" style="width:${pct}%"></div></div>
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-ic">♥</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">Здоровье</div></div>
-      <div class="stat-card"><div class="stat-ic">⚔️</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Урон</div></div>
-      <div class="stat-card"><div class="stat-ic">🛡️</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Броня</div></div>
-      <div class="stat-card"><div class="stat-ic">💰</div><div class="stat-vl">${p.gold}</div><div class="stat-nm">Золото</div></div>
-      <div class="stat-card"><div class="stat-ic">🏰</div><div class="stat-vl">${dungeonLvl}</div><div class="stat-nm">Этаж</div></div>
-      <div class="stat-card"><div class="stat-ic">💀</div><div class="stat-vl">${p.kills}</div><div class="stat-nm">Убийства</div></div>
-    </div>
-    <div class="sec-title">Снаряжение</div>
-    <div class="equip-sum">
-      ${EQ_SLOTS.map(({ slot, label }) => {
-        const it = p.equipment[slot];
-        const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
-        return `<div class="eq-row"><span class="eq-sl-nm">${label}</span><span style="font-size:12px;color:${rc}">${it ? it.emoji + ' ' + it.name : '—'}</span></div>`;
-      }).join('')}
+      <div class="stat-card"><div class="stat-ic">♥</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
+      <div class="stat-card"><div class="stat-ic">⚔</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Атака</div></div>
+      <div class="stat-card"><div class="stat-ic">🛡</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Защита</div></div>
+      <div class="stat-card"><div class="stat-ic">⚡</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
+      <div class="stat-card"><div class="stat-ic">💥</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
+      <div class="stat-card"><div class="stat-ic">🔥</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
+      <div class="stat-card"><div class="stat-ic">💨</div><div class="stat-vl">${fmt1(p.dodge)}</div><div class="stat-nm">Уворот</div></div>
+      <div class="stat-card"><div class="stat-ic">🎯</div><div class="stat-vl">${fmt1(p.accuracy)}</div><div class="stat-nm">Точность</div></div>
+      <div class="stat-card"><div class="stat-ic">🩸</div><div class="stat-vl">${fmt1(p.lifeSteal)}</div><div class="stat-nm">Вампиризм</div></div>
+      <div class="stat-card"><div class="stat-ic">💚</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
     </div>`;
+  updateUpgradeUI();
+}
+
+function updateUpgradeUI() {
+  if (!player) return;
+  const el = document.getElementById('upgrade-grid');
+  if (!el) return;
+  const goldLbl = document.getElementById('upg-gold-lbl');
+  if (goldLbl) goldLbl.textContent = '💰 ' + player.gold;
+  const u = player.upgrades || {};
+  el.innerHTML = Object.entries(UPGRADE_DEF).map(([key, cfg]) => {
+    const lvl  = u[key] || 0;
+    const cost = Math.floor(cfg.baseCost * Math.pow(1.4, lvl));
+    const can  = player.gold >= cost;
+    return `<div class="upg-row">
+      <div class="upg-info">
+        <span class="upg-label">${cfg.label}</span>
+        <span class="upg-meta">Ур.${lvl} · ${cfg.desc}</span>
+      </div>
+      <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">💰${cost}</button>
+    </div>`;
+  }).join('');
 }
 
 function drawMapPanel() {

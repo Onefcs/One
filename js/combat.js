@@ -33,13 +33,34 @@ function hasLOS(x1, y1, x2, y2) {
 }
 
 function hitEnemy(e, base) {
-  const dmg = Math.max(1, base - e.def + rnd(-3, 4));
+  // Accuracy check
+  if (Math.random() > (player.accuracy ?? 0.85)) {
+    dmgNum(e.x, e.y - e.size - 4, 'МИМО', '#888');
+    return;
+  }
+  let dmg = Math.max(1, base - e.def + rnd(-3, 4));
+  let isCrit = false;
+  if (Math.random() < (player.critChance || 0)) {
+    dmg = Math.floor(dmg * (player.critPower || 1.5));
+    isCrit = true;
+  }
   e.hp -= dmg; e.hurtTimer = 0.22;
-  dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
+  dmgNum(e.x, e.y - e.size - 4, dmg, isCrit ? '#fff' : '#ff4');
+  if (isCrit) spawnBurst(e.x, e.y, '#ff8', 3);
+  // Life steal
+  const ls = player.lifeSteal || 0;
+  if (ls > 0 && player.hp < player.maxHp) {
+    player.hp = Math.min(player.maxHp, player.hp + dmg * ls);
+  }
 }
 
 function hitPlayer(atk) {
   if (barrierTimer > 0) { dmgNum(player.x, player.y - 24, 'БЛОК', '#88f'); return; }
+  // Dodge check
+  if (Math.random() < (player.dodge || 0)) {
+    dmgNum(player.x, player.y - 24, 'УКЛОН', '#7ef');
+    return;
+  }
   const dmg = Math.max(1, atk - player.def + rnd(-2, 3));
   const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
   player.hp -= actual; player.hurtTimer = 0.22;
@@ -80,11 +101,10 @@ function fireProj(tx, ty) {
 }
 
 function spawnDrops(e) {
-  // Gold: 30% base chance, scales with floor
-  const goldChance = 0.30 + (dungeonLvl - 1) * 0.015;
-  if (Math.random() < goldChance) {
-    const floorScale = 1 + (dungeonLvl - 1) * 0.3;
-    const g = Math.ceil((e.gold[0] + Math.floor(Math.random() * (e.gold[1] - e.gold[0] + 1))) * floorScale);
+  // Gold: 30% chance, 1-3 base × 2^(floor-1)
+  if (Math.random() < 0.30) {
+    const base = 1 + Math.floor(Math.random() * 3);
+    const g = Math.round(base * Math.pow(2, dungeonLvl - 1));
     drops.push({ type: 'gold', x: e.x + rnd(-12, 12), y: e.y + rnd(-12, 12), amount: g, life: 18 });
   }
 
@@ -92,11 +112,11 @@ function spawnDrops(e) {
   if (Math.random() < 0.12) {
     const r = Math.random();
     let pool;
-    if      (r < 0.60) pool = ITEM_DEF.filter(i => i.rarity === 'common'    && i.slot !== 'use');
-    else if (r < 0.88) pool = ITEM_DEF.filter(i => i.rarity === 'uncommon'  && i.slot !== 'use');
-    else if (r < 0.975)pool = ITEM_DEF.filter(i => i.rarity === 'rare'      && i.slot !== 'use');
-    else if (r < 0.998)pool = ITEM_DEF.filter(i => i.rarity === 'epic'      && i.slot !== 'use');
-    else               pool = ITEM_DEF.filter(i => i.rarity === 'legendary' && i.slot !== 'use');
+    if      (r < 0.60)  pool = ITEM_DEF.filter(i => i.rarity === 'common'    && i.slot !== 'use');
+    else if (r < 0.88)  pool = ITEM_DEF.filter(i => i.rarity === 'uncommon'  && i.slot !== 'use');
+    else if (r < 0.975) pool = ITEM_DEF.filter(i => i.rarity === 'rare'      && i.slot !== 'use');
+    else if (r < 0.998) pool = ITEM_DEF.filter(i => i.rarity === 'epic'      && i.slot !== 'use');
+    else                pool = ITEM_DEF.filter(i => i.rarity === 'legendary' && i.slot !== 'use');
     if (pool && pool.length > 0) {
       const item = pool[Math.floor(Math.random() * pool.length)];
       drops.push({ type: 'item', x: e.x + rnd(-18, 18), y: e.y + rnd(-18, 18), item: { ...item }, life: 40 });

@@ -488,3 +488,34 @@ canvas { display:block; width:100%; height:100%; }
 .nav-tab.active { color:#f90; border-top-color:#f90; }
 .nav-tab .ni { font-size:19px; line-height:1; }
 .nav-tab .nl { font-size:9.5px; letter-spacing:0.2px; }
+
+/* ── UPGRADE PANEL ────────────────────── */
+.upg-section-hdr {
+  font-size:10px; text-transform:uppercase; letter-spacing:1px;
+  color:#484860; padding:10px 16px 8px;
+  border-top:1px solid #1a1a28;
+}
+.upg-section-hdr span { color:#ffd040; font-size:12px; text-transform:none; letter-spacing:0; }
+.upg-grid {
+  display:flex; flex-direction:column; gap:6px;
+  padding:0 16px 24px;
+}
+.upg-row {
+  display:flex; align-items:center; gap:10px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid #1a1a2e; border-radius:10px;
+  padding:9px 12px;
+}
+.upg-info { flex:1; min-width:0; }
+.upg-label { display:block; font-size:13px; font-weight:600; color:#ddd; }
+.upg-meta  { display:block; font-size:10px; color:#484860; margin-top:2px; }
+.upg-btn {
+  padding:7px 12px; border:none; border-radius:8px;
+  background:linear-gradient(135deg,#5020a0,#7030c0);
+  color:#fff; font-size:12px; font-weight:bold; cursor:pointer;
+  white-space:nowrap; flex-shrink:0;
+  transition:opacity 0.15s;
+  touch-action:manipulation;
+}
+.upg-btn:active { opacity:0.7; }
+.upg-btn.disabled { background:#1a1a28; color:#333; pointer-events:none; }

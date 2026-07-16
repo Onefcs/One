@@ -69,6 +69,9 @@ function update(dt) {
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
   if (swingTimer > 0)       swingTimer -= dt;
   if (player.atkAnimTimer > 0) player.atkAnimTimer -= dt;
+  // HP regen
+  if ((player.hpRegen || 0) > 0 && player.hp < player.maxHp)
+    player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
 
   // advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
@@ -130,7 +133,7 @@ function update(dt) {
         targetId = closestIsPlayer ? closest._socketId : closest.id;
         targetIsPlayer = closestIsPlayer;
       }
-      player.atkTimer = 1 / player.charDef.atkSpeed;
+      player.atkTimer = 1 / (player.atkSpeed || player.charDef.atkSpeed);
       if (closestIsPlayer) {
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
@@ -162,7 +165,8 @@ function update(dt) {
       if (e.aggro) {
         if (dp > e.size + 14) {
           const ex2 = (player.x - e.x) / dp, ey2 = (player.y - e.y) / dp;
-          const er = e.size * 0.55, evx = ex2 * e.spd * dt, evy = ey2 * e.spd * dt;
+          const eMoveSpd = (player?.speed || 150) * 1.3;
+          const er = e.size * 0.55, evx = ex2 * eMoveSpd * dt, evy = ey2 * eMoveSpd * dt;
           if (canMoveX(e, evx, er)) e.x += evx;
           if (canMoveY(e, evy, er)) e.y += evy;
         }
