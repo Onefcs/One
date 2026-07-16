@@ -148,223 +148,257 @@ function setTab(n) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  HUD
+//  UNIFIED HEADER  (player info + minimap)
 // ─────────────────────────────────────────────────────────
-function drawHUD() {
-  if (!player) return;
+function drawHeader() {
+  if (!player || !dungeon) return;
   const p = player;
-  const pad = 8;
-  const pw = 218, ph = 96;
   const F = 'system-ui, -apple-system, Arial';
 
   ctx.save();
 
-  // Panel background — dark gradient
-  const bg = ctx.createLinearGradient(pad, pad, pad, pad + ph);
-  bg.addColorStop(0, 'rgba(14,9,30,0.97)');
-  bg.addColorStop(1, 'rgba(7,5,18,0.99)');
-  ctx.fillStyle = bg;
-  roundRect(ctx, pad, pad, pw, ph, 12); ctx.fill();
+  // ── Background ────────────────────────────────────────────
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
+  bgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
+  bgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, HEADER_H);
 
-  // Outer border glow
-  ctx.strokeStyle = 'rgba(90,55,180,0.55)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, pad, pad, pw, ph, 12); ctx.stroke();
-  // Inner highlight
-  ctx.strokeStyle = 'rgba(150,100,255,0.12)'; ctx.lineWidth = 1;
-  roundRect(ctx, pad + 1.5, pad + 1.5, pw - 3, ph - 3, 11); ctx.stroke();
+  // Bottom separator glow
+  const sepGrad = ctx.createLinearGradient(0, 0, W, 0);
+  sepGrad.addColorStop(0,   'rgba(60,35,130,0)');
+  sepGrad.addColorStop(0.15,'rgba(90,55,185,0.75)');
+  sepGrad.addColorStop(0.85,'rgba(90,55,185,0.75)');
+  sepGrad.addColorStop(1,   'rgba(60,35,130,0)');
+  ctx.strokeStyle = sepGrad; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
 
-  // Avatar circle
-  const avX = pad + 27, avY = pad + 28, avR = 20;
-  const avBg = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
-  avBg.addColorStop(0, p.charDef.color + '30');
-  avBg.addColorStop(1, 'rgba(0,0,0,0.5)');
-  ctx.fillStyle = avBg;
-  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
-  // Avatar inner ring
-  ctx.strokeStyle = p.charDef.color + '44'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
-  ctx.font = `20px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(p.charDef.emoji, avX, avY + 1);
+  // ── Minimap (right side) ──────────────────────────────────
+  const mmPad = 7;
+  const mmAvailH = HEADER_H - mmPad * 2;
+  const mmAvailW = Math.min(mmAvailH * (dungeon.w / dungeon.h), W * 0.28);
+  const mmH = Math.floor(mmAvailH);
+  const mmW = Math.floor(mmAvailW);
+  const mmX = W - mmW - mmPad - 6;
+  const mmY = mmPad;
+  const mmSc = mmW / dungeon.w;
 
-  // Username + class
-  const tx0 = pad + 57;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f0eeff';
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 14), tx0, pad + 22);
-  ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'bb';
-  ctx.fillText(p.charDef.name, tx0, pad + 35);
-
-  // Level + floor (top-right)
-  const rr = pad + pw - 10;
-  ctx.textAlign = 'right';
-  ctx.font = `bold 12px ${F}`; ctx.fillStyle = 'rgba(200,170,255,0.95)';
-  ctx.fillText('Ур. ' + p.lvl, rr, pad + 22);
-  ctx.font = `9px ${F}`; ctx.fillStyle = 'rgba(130,100,200,0.75)';
-  ctx.fillText('Этаж ' + dungeonLvl, rr, pad + 35);
-
-  // Separator
-  const bx = pad + 9, bw = pw - 18;
-  ctx.strokeStyle = 'rgba(70,45,130,0.4)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(bx, pad + 42); ctx.lineTo(pad + pw - 9, pad + 42); ctx.stroke();
-
-  // HP bar
-  const hpy = pad + 57;
-  const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 8px ${F}`; ctx.fillStyle = 'rgba(255,100,100,1)';
-  ctx.fillText('HP', bx, hpy);
-
-  const hbX = bx + 20, hbW = bw - 20, hbH = 11;
-  ctx.fillStyle = 'rgba(35,10,10,0.95)';
-  roundRect(ctx, hbX, hpy - 5.5, hbW, hbH, 5); ctx.fill();
-
-  if (hpPct > 0) {
-    const hg = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-    if (hpPct > 0.5) { hg.addColorStop(0, '#0d5c28'); hg.addColorStop(0.6, '#17a84a'); hg.addColorStop(1, '#2ecc71'); }
-    else if (hpPct > 0.25) { hg.addColorStop(0, '#7a4400'); hg.addColorStop(1, '#f39c12'); }
-    else { hg.addColorStop(0, '#6b0f0f'); hg.addColorStop(1, '#e74c3c'); }
-    ctx.fillStyle = hg;
-    roundRect(ctx, hbX, hpy - 5.5, hbW * hpPct, hbH, 5); ctx.fill();
-    // Shine overlay
-    const shine = ctx.createLinearGradient(0, hpy - 5.5, 0, hpy - 1);
-    shine.addColorStop(0, 'rgba(255,255,255,0.18)');
-    shine.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
-    roundRect(ctx, hbX, hpy - 5.5, hbW * hpPct, hbH * 0.5, 5); ctx.fill();
-    // Critical HP glow
-    if (hpPct < 0.3) {
-      ctx.save();
-      ctx.shadowColor = '#e74c3c'; ctx.shadowBlur = 10;
-      ctx.strokeStyle = 'rgba(231,76,60,0.6)'; ctx.lineWidth = 1;
-      roundRect(ctx, hbX, hpy - 5.5, hbW * hpPct, hbH, 5); ctx.stroke();
-      ctx.restore();
-    }
-  }
-  ctx.font = `bold 7.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.fillText(Math.ceil(p.hp) + ' / ' + p.maxHp, hbX + hbW / 2, hpy);
-
-  // XP bar
-  const xpy = pad + 74;
-  const xpPct = Math.min(1, p.xp / p.xpNext);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 8px ${F}`; ctx.fillStyle = 'rgba(140,110,255,0.95)';
-  ctx.fillText('XP', bx, xpy);
-
-  const xbX = bx + 20, xbW = bw - 20, xbH = 7;
-  ctx.fillStyle = 'rgba(8,6,25,0.95)';
-  roundRect(ctx, xbX, xpy - 3.5, xbW, xbH, 3); ctx.fill();
-  if (xpPct > 0) {
-    const xg = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-    xg.addColorStop(0, '#180f5a'); xg.addColorStop(1, '#7c4dff');
-    ctx.fillStyle = xg;
-    roundRect(ctx, xbX, xpy - 3.5, xbW * xpPct, xbH, 3); ctx.fill();
-    const xs = ctx.createLinearGradient(0, xpy - 3.5, 0, xpy);
-    xs.addColorStop(0, 'rgba(255,255,255,0.14)'); xs.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = xs;
-    roundRect(ctx, xbX, xpy - 3.5, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
-  }
-  ctx.font = `7px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(190,165,255,0.75)';
-  ctx.fillText(p.xp + ' / ' + p.xpNext, xbX + xbW / 2, xpy);
-
-  // Stats row
-  const sy = pad + ph - 10;
-  ctx.strokeStyle = 'rgba(60,40,110,0.35)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(bx, sy - 8); ctx.lineTo(pad + pw - 9, sy - 8); ctx.stroke();
-
-  const stats = [
-    { icon: '💰', val: p.gold, color: '#f1c40f', xFrac: 0    },
-    { icon: '⚔',  val: p.atk,  color: '#e67e22', xFrac: 0.38 },
-    { icon: '🛡',  val: p.def,  color: '#5dade2', xFrac: 0.68 },
-  ];
-  ctx.textBaseline = 'middle';
-  stats.forEach(s => {
-    const sx2 = bx + s.xFrac * bw;
-    ctx.font = `11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(180,180,180,0.8)';
-    ctx.fillText(s.icon, sx2, sy);
-    ctx.fillStyle = s.color; ctx.font = `bold 11px ${F}`;
-    ctx.fillText(s.val, sx2 + 16, sy);
-  });
-
-  // Active status indicators
-  const statusX = pad + pw - 10;
-  if (barrierTimer > 0) {
-    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(180,130,255,0.95)';
-    ctx.fillText('🔮 ' + Math.ceil(barrierTimer) + 'с', statusX, sy);
-  }
-  if (battleCryTimer > 0) {
-    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255,190,30,0.95)';
-    ctx.fillText('⚔ КЛИЧ ' + Math.ceil(battleCryTimer) + 'с', statusX, sy);
-  }
-
-  ctx.restore();
-}
-
-// ─────────────────────────────────────────────────────────
-//  MINI-MAP
-// ─────────────────────────────────────────────────────────
-function drawMinimap() {
+  // Rebuild cache when floor or size changes
   const th = getTheme(dungeonLvl);
-  const sc = 1.5;
-
-  if (minimapCacheFloor !== dungeonLvl || !minimapCache) {
+  if (minimapCacheFloor !== dungeonLvl || !minimapCache ||
+      minimapCache.width !== mmW || minimapCache.height !== mmH) {
     minimapCacheFloor = dungeonLvl;
     minimapCache = document.createElement('canvas');
-    minimapCache.width = dungeon.w * sc;
-    minimapCache.height = dungeon.h * sc;
+    minimapCache.width = mmW; minimapCache.height = mmH;
     const mctx = minimapCache.getContext('2d');
     mctx.fillStyle = th.mmFloor;
     for (let ty = 0; ty < dungeon.h; ty++) {
       for (let tx = 0; tx < dungeon.w; tx++) {
-        if (dungeon.grid[ty][tx] !== WALL)
-          mctx.fillRect(tx * sc, ty * sc, sc, sc);
+        if (dungeon.grid[ty][tx] !== WALL) {
+          const px = Math.floor(tx * mmSc), py = Math.floor(ty * mmSc);
+          const pw = Math.max(1, Math.ceil(mmSc)), ph2 = Math.max(1, Math.ceil(mmSc));
+          mctx.fillRect(px, py, pw, ph2);
+        }
       }
     }
   }
 
-  const mmW = dungeon.w * sc, mmH = dungeon.h * sc;
-  const mx = W - mmW - 10, my = 8;
-  const border = 4, r = 6;
+  // Map panel border
+  const mpX = mmX - 4, mpY = mmY - 4, mpW = mmW + 8, mpH = mmH + 8;
+  ctx.fillStyle = 'rgba(5,3,16,0.92)';
+  roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.fill();
+  ctx.strokeStyle = 'rgba(70,45,155,0.6)'; ctx.lineWidth = 1;
+  roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.stroke();
+  ctx.strokeStyle = 'rgba(110,80,220,0.1)'; ctx.lineWidth = 1;
+  roundRect(ctx, mpX + 1, mpY + 1, mpW - 2, mpH - 2, 5); ctx.stroke();
 
-  // Panel background
-  ctx.fillStyle = 'rgba(8,6,20,0.92)';
-  roundRect(ctx, mx - border, my - border, mmW + border * 2, mmH + border * 2, r); ctx.fill();
-  ctx.strokeStyle = 'rgba(80,50,160,0.55)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, mx - border, my - border, mmW + border * 2, mmH + border * 2, r); ctx.stroke();
-  // Inner line
-  ctx.strokeStyle = 'rgba(120,80,220,0.12)'; ctx.lineWidth = 1;
-  roundRect(ctx, mx - border + 1, my - border + 1, mmW + border * 2 - 2, mmH + border * 2 - 2, r - 1); ctx.stroke();
-
-  // Clip to map area
+  // Clip and draw tiles
   ctx.save();
-  ctx.beginPath();
-  roundRect(ctx, mx, my, mmW, mmH, 3);
-  ctx.clip();
-  ctx.drawImage(minimapCache, mx, my);
+  ctx.beginPath(); roundRect(ctx, mmX, mmY, mmW, mmH, 3); ctx.clip();
+  ctx.drawImage(minimapCache, mmX, mmY);
+
+  // Enemy blips
+  const mmEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
+  ctx.fillStyle = 'rgba(255,45,35,0.85)';
+  mmEnemies.forEach(e => {
+    ctx.beginPath();
+    ctx.arc(mmX + (e.x / TILE) * mmSc, mmY + (e.y / TILE) * mmSc, Math.max(1, mmSc * 0.7), 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // NPC blips
+  ctx.fillStyle = 'rgba(255,200,0,0.85)';
+  npcs.forEach(n => {
+    ctx.beginPath();
+    ctx.arc(mmX + (n.x / TILE) * mmSc, mmY + (n.y / TILE) * mmSc, Math.max(1, mmSc * 0.9), 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Other player blips
+  if (socket?.connected) {
+    ctx.fillStyle = 'rgba(100,180,255,0.9)';
+    Object.values(otherPlayers).forEach(op => {
+      if (op.x == null) return;
+      ctx.beginPath();
+      ctx.arc(mmX + (op.x / TILE) * mmSc, mmY + (op.y / TILE) * mmSc, Math.max(1.5, mmSc), 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Player dot (green glow)
+  const pdx = mmX + (p.x / TILE) * mmSc, pdy = mmY + (p.y / TILE) * mmSc;
+  ctx.fillStyle = 'rgba(0,255,80,0.2)';
+  ctx.beginPath(); ctx.arc(pdx, pdy, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#00ff55';
+  ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
+
   ctx.restore();
 
-  // Player dot
-  const px2 = mx + (player.x / TILE) * sc, py2 = my + (player.y / TILE) * sc;
-  ctx.fillStyle = 'rgba(0,255,80,0.25)';
-  ctx.beginPath(); ctx.arc(px2, py2, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#00ff50';
-  ctx.beginPath(); ctx.arc(px2, py2, 2.5, 0, Math.PI * 2); ctx.fill();
+  // Floor label over map
+  ctx.font = `bold 7px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillText('Этаж ' + dungeonLvl, mmX + mmW / 2 + 1, mmY + mmH - 2);
+  ctx.fillStyle = 'rgba(160,130,255,0.9)';
+  ctx.fillText('Этаж ' + dungeonLvl, mmX + mmW / 2, mmY + mmH - 3);
 
-  const mmEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
-  ctx.fillStyle = '#ff3322';
-  mmEnemies.forEach(e => {
-    ctx.beginPath(); ctx.arc(mx + (e.x / TILE) * sc, my + (e.y / TILE) * sc, 1.5, 0, Math.PI * 2); ctx.fill();
+  // Vertical divider before map
+  ctx.strokeStyle = 'rgba(70,45,130,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(mpX - 6, 6); ctx.lineTo(mpX - 6, HEADER_H - 6); ctx.stroke();
+
+  // ── Avatar ────────────────────────────────────────────────
+  const avX = 32, avY = HEADER_H / 2, avR = 21;
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
+  // radial bg
+  const avBg = ctx.createRadialGradient(avX - 6, avY - 6, 3, avX, avY, avR);
+  avBg.addColorStop(0, p.charDef.color + '40');
+  avBg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = avBg;
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
+  // color ring
+  ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
+  // outer glow ring
+  ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(avX, avY, avR + 3.5, 0, Math.PI * 2); ctx.stroke();
+  // emoji
+  ctx.font = `21px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(p.charDef.emoji, avX, avY + 1);
+
+  // ── Info area ─────────────────────────────────────────────
+  const infoX = avX + avR + 9;
+  const infoRight = mpX - 14;
+  const infoW = infoRight - infoX;
+
+  // Name
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f0eeff';
+  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 20);
+
+  // Class · Lv · Этаж badges (right-aligned on same row)
+  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(190,160,255,0.95)';
+  ctx.fillText('Ур.' + p.lvl, infoRight, 20);
+
+  // Class name (small, second row)
+  ctx.textAlign = 'left'; ctx.font = `9px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
+  ctx.fillText(p.charDef.name, infoX, 32);
+  ctx.textAlign = 'right'; ctx.font = `9px ${F}`; ctx.fillStyle = 'rgba(120,95,195,0.8)';
+  ctx.fillText(getTheme(dungeonLvl).name, infoRight, 32);
+
+  // ── Separator ─────────────────────────────────────────────
+  ctx.strokeStyle = 'rgba(65,42,118,0.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(infoX, 37); ctx.lineTo(infoRight, 37); ctx.stroke();
+
+  // ── HP bar ────────────────────────────────────────────────
+  const hpY = 48;
+  const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 8px ${F}`; ctx.fillStyle = 'rgba(255,100,100,0.95)';
+  ctx.fillText('HP', infoX, hpY);
+
+  const hbX = infoX + 20, hbW = infoW - 20, hbH = 10;
+  ctx.fillStyle = 'rgba(35,10,10,0.92)';
+  roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
+  if (hpPct > 0) {
+    const hg = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+    if (hpPct > 0.5) { hg.addColorStop(0, '#0d5c28'); hg.addColorStop(1, '#2ecc71'); }
+    else if (hpPct > 0.25) { hg.addColorStop(0, '#7a4400'); hg.addColorStop(1, '#f39c12'); }
+    else { hg.addColorStop(0, '#6b0f0f'); hg.addColorStop(1, '#e74c3c'); }
+    ctx.fillStyle = hg;
+    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
+    const hsh = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
+    hsh.addColorStop(0, 'rgba(255,255,255,0.2)'); hsh.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hsh;
+    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
+    if (hpPct < 0.3) {
+      ctx.save(); ctx.shadowColor = '#e74c3c'; ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(231,76,60,0.55)'; ctx.lineWidth = 1;
+      roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  ctx.font = `7px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
+
+  // ── XP bar ────────────────────────────────────────────────
+  const xpY = 63;
+  const xpPct = Math.min(1, p.xp / p.xpNext);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 8px ${F}`; ctx.fillStyle = 'rgba(140,110,255,0.9)';
+  ctx.fillText('XP', infoX, xpY);
+
+  const xbX = infoX + 20, xbW = infoW - 20, xbH = 6;
+  ctx.fillStyle = 'rgba(8,6,25,0.9)';
+  roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
+  if (xpPct > 0) {
+    const xg = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
+    xg.addColorStop(0, '#180f5a'); xg.addColorStop(1, '#7c4dff');
+    ctx.fillStyle = xg;
+    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
+    const xsh = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
+    xsh.addColorStop(0, 'rgba(255,255,255,0.16)'); xsh.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = xsh;
+    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
+  }
+  ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
+  ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
+
+  // ── Stats row ─────────────────────────────────────────────
+  const stY = HEADER_H - 10;
+  ctx.strokeStyle = 'rgba(60,38,110,0.35)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(infoX, stY - 8); ctx.lineTo(infoRight, stY - 8); ctx.stroke();
+
+  const statItems = [
+    { icon: '💰', val: p.gold, color: '#f1c40f' },
+    { icon: '⚔',  val: p.atk,  color: '#e67e22' },
+    { icon: '🛡',  val: p.def,  color: '#5dade2' },
+  ];
+  const statSlotW = infoW / 3;
+  ctx.textBaseline = 'middle';
+  statItems.forEach((s, i) => {
+    const sx = infoX + i * statSlotW;
+    ctx.font = `11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(170,170,170,0.75)';
+    ctx.fillText(s.icon, sx, stY);
+    ctx.font = `bold 10px ${F}`; ctx.fillStyle = s.color;
+    ctx.fillText(s.val, sx + 16, stY);
   });
 
-  ctx.fillStyle = '#ffcc00';
-  npcs.forEach(n => {
-    ctx.beginPath(); ctx.arc(mx + (n.x / TILE) * sc, my + (n.y / TILE) * sc, 2, 0, Math.PI * 2); ctx.fill();
-  });
+  // Active status indicators
+  if (barrierTimer > 0 || battleCryTimer > 0) {
+    let stx = infoX + infoW * 0.55;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `bold 8px ${F}`;
+    if (barrierTimer > 0) {
+      ctx.fillStyle = 'rgba(180,130,255,0.95)';
+      ctx.fillText('🔮' + Math.ceil(barrierTimer) + 'с', stx, stY); stx += 40;
+    }
+    if (battleCryTimer > 0) {
+      ctx.fillStyle = 'rgba(255,190,30,0.95)';
+      ctx.fillText('⚔' + Math.ceil(battleCryTimer) + 'с', stx, stY);
+    }
+  }
+
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────

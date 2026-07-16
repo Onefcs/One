@@ -28,8 +28,7 @@ function getTargetBtnPos() {
 }
 
 function getPvpBtnPos() {
-  const pad = 8, ph = 96;
-  return { x: pad, y: pad + ph + 6, w: 80, h: 26 };
+  return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
 }
 
 function _isOnScreen(wx, wy) {
