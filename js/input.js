@@ -214,5 +214,4 @@ function initInput() {
   canvas.addEventListener('mousedown',   onMD);
   window.addEventListener('mousemove',   onMM);
   window.addEventListener('mouseup',     onMU);
-  canvas.addEventListener('click', e => { if (state === 'dead' && activeTab === 0) restartGame(); });
 }

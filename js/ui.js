@@ -540,13 +540,5 @@ function drawTargetFrame() {
 //  DEAD SCREEN
 // ─────────────────────────────────────────────────────────
 function drawDead() {
-  ctx.fillStyle = 'rgba(0,0,0,.8)'; ctx.fillRect(0, 0, W, H);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const F = 'system-ui, -apple-system, Arial';
-  ctx.fillStyle = '#f44'; ctx.font = `bold ${clamp(32, W * .09, 54)}px ${F}`; ctx.fillText('ВЫ ПОГИБЛИ', W / 2, H / 2 - 50);
-  ctx.fillStyle = '#777'; ctx.font = `${clamp(14, W * .04, 20)}px ${F}`;
-  ctx.fillText(`${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}`, W / 2, H / 2 + 5);
-  ctx.fillStyle = '#ff0'; ctx.fillText(`Золото: ${player.gold}  •  Убито: ${player.kills}`, W / 2, H / 2 + 38);
-  ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = `${clamp(13, W * .034, 17)}px ${F}`;
-  ctx.fillText('Нажмите, чтобы начать снова', W / 2, H / 2 + 84);
+  ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(0, 0, W, H);
 }
