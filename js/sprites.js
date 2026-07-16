@@ -129,7 +129,24 @@ function getSpriteAnimKey(p) {
   return `${dir}-idle`;
 }
 
-function drawSprite(p) {
+let _tintCanvas = null, _tintCtx = null;
+function _drawTinted(img, dx, dy, sz, color) {
+  if (!_tintCanvas) {
+    _tintCanvas = document.createElement('canvas');
+    _tintCanvas.width = sz; _tintCanvas.height = sz;
+    _tintCtx = _tintCanvas.getContext('2d');
+  }
+  if (_tintCanvas.width !== sz) { _tintCanvas.width = sz; _tintCanvas.height = sz; }
+  _tintCtx.clearRect(0, 0, sz, sz);
+  _tintCtx.drawImage(img, 0, 0, sz, sz);
+  _tintCtx.globalCompositeOperation = 'source-atop';
+  _tintCtx.fillStyle = color;
+  _tintCtx.fillRect(0, 0, sz, sz);
+  _tintCtx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(_tintCanvas, dx, dy, sz, sz);
+}
+
+function drawSprite(p, tint) {
   const cache = spriteCache[p.type];
   if (!cache) return false;
   const key = getSpriteAnimKey(p);
@@ -141,6 +158,7 @@ function drawSprite(p) {
   const sz = 80;
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.drawImage(img, p.x - sz / 2, p.y - sz * 0.62, sz, sz);
+  if (tint) _drawTinted(img, p.x - sz / 2, p.y - sz * 0.62, sz, tint);
+  else      ctx.drawImage(img, p.x - sz / 2, p.y - sz * 0.62, sz, sz);
   return true;
 }
