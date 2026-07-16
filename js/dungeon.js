@@ -61,7 +61,9 @@ function generateDungeon(lvl) {
     const count = isBoss ? 1 : 5 + Math.floor(r() * (5 + Math.floor(lvl / 2)));
     for (let i = 0; i < count; i++) {
       const maxEIdx = Math.min(6, 1 + Math.floor(lvl / 2));
-      const defIdx = isBoss ? 7 : Math.floor(r() * (maxEIdx + 1));
+      const rawIdx = Math.floor(r() * (maxEIdx + 1));
+      // Floor 1 (Лес): always spawn slime so sprites are visible from the start
+      const defIdx = isBoss ? 7 : (lvl === 1 ? 1 : rawIdx);
       const d = ENEMY_DEF[defIdx];
       const ex = (room.x + 1 + Math.floor(r() * (room.w - 2))) * TILE + TILE / 2;
       const ey = (room.y + 1 + Math.floor(r() * (room.h - 2))) * TILE + TILE / 2;

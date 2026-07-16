@@ -36,17 +36,7 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Slime/Slime1_Death_with_shadow.png',  cols:10, fps:8,  loop:false },
     }
   },
-  goblin: {
-    frameW: 64, frameH: 64, row: 0,
-    sharedWith: 'slime',
-    sheets: {
-      idle:   { src:'images/Slime/Slime1_Idle_with_shadow.png',   cols:6,  fps:8,  loop:true  },
-      walk:   { src:'images/Slime/Slime1_Walk_with_shadow.png',   cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Slime/Slime1_Attack_with_shadow.png', cols:10, fps:14, loop:false },
-      hurt:   { src:'images/Slime/Slime1_Hurt_with_shadow.png',   cols:5,  fps:14, loop:false },
-      death:  { src:'images/Slime/Slime1_Death_with_shadow.png',  cols:10, fps:8,  loop:false },
-    }
-  },
+  goblin: { sharedWith: 'slime' },
 };
 
 const enemySpriteCache = {};
@@ -63,11 +53,14 @@ function loadEnemySprites(eid) {
 }
 
 function drawEnemySprite(e, dt) {
-  const def = ENEMY_SPRITE_DEF[e.eid];
+  const ownDef = ENEMY_SPRITE_DEF[e.eid];
+  if (!ownDef) return false;
+  // Resolve alias: use parent def (and its cache key) for everything
+  const resolvedEid = ownDef.sharedWith || e.eid;
+  const def = ENEMY_SPRITE_DEF[resolvedEid];
   if (!def) return false;
-  const cacheKey = def.sharedWith || e.eid;
-  if (!enemySpriteCache[cacheKey]) loadEnemySprites(cacheKey);
-  const cache = enemySpriteCache[cacheKey];
+  if (!enemySpriteCache[resolvedEid]) loadEnemySprites(resolvedEid);
+  const cache = enemySpriteCache[resolvedEid];
 
   // Pick animation
   let key;
