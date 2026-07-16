@@ -89,6 +89,10 @@ function update(dt) {
         else if (player.animFrame < maxF - 1) { player.animFrame++; }
       }
     }
+  } else if (player.castDuration > 0 && player.atkAnimTimer > 0) {
+    // No sprite sheet: advance animFrame proportionally so frame-8 gate still fires
+    const elapsed = player.castDuration - player.atkAnimTimer;
+    player.animFrame = Math.floor(elapsed / player.castDuration * 10);
   }
 
   // Fire pending attack on frame 8
