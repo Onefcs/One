@@ -414,10 +414,9 @@ function render(dt) {
   });
 
   // Player
-  const phurt = player.hurtTimer > 0 && (frameCount % 6 < 3);
   {
-    const usedSprite = !phurt && drawSprite(player);
-    if (!phurt && !usedSprite) {
+    const usedSprite = drawSprite(player);
+    if (!usedSprite) {
       ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(player.x, player.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = player.charDef.color; ctx.beginPath(); ctx.arc(player.x, player.y, 14, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(player.x, player.y, 14, 0, Math.PI * 2); ctx.stroke();
@@ -426,7 +425,14 @@ function render(dt) {
       const fl = Math.hypot(fdx, fdy) || 1;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x + fdx / fl * 8, player.y + fdy / fl * 8, 3.5, 0, Math.PI * 2); ctx.fill();
     }
-    if (!phurt && swingTimer > 0) {
+    if (player.hurtTimer > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#ff2020';
+      ctx.beginPath(); ctx.arc(player.x, player.y, 22, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    if (swingTimer > 0) {
       ctx.strokeStyle = 'rgba(200,220,255,.75)';
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(player.x, player.y, 34, swingAngle - .7, swingAngle + .7); ctx.stroke();
@@ -511,7 +517,6 @@ function selectChar(type) {
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
   const dir = p.facing || 'front';
-  if ((p.hurtTimer || 0) > 0.08) return `${dir}-hurt`;
   if ((p.atkAnimTimer || 0) > 0) return `${dir}-attack`;
   if (p.moving) return `${dir}-run`;
   return `${dir}-idle`;
