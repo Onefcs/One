@@ -43,7 +43,7 @@ function fireProj(tx, ty) {
   const d = player.charDef, len = Math.hypot(tx - player.x, ty - player.y);
   if (len < 1) return;
   faceTowards(tx, ty);
-  player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
+  player.atkAnimTimer = 1.65; player.animFrame = 0; player.animTimer = 0;
   const vx = (tx - player.x) / len * 360;
   const vy = (ty - player.y) / len * 360;
   const ang = Math.atan2(vy, vx);

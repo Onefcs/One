@@ -10,9 +10,9 @@ const WALL = 0, FLOOR = 1;
 
 // ── Character definitions ─────────────────────────────────────────────────────
 const CHAR_DEF = {
-  warrior: { name:'Воин',   emoji:'🗡️', color:'#55aaff', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:0.133, atkType:'melee' },
-  archer:  { name:'Лучник', emoji:'🏹', color:'#77ee77', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:0.177, atkType:'ranged', projColor:'#ffaa00' },
-  mage:    { name:'Маг',    emoji:'🔮', color:'#ee88ee', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.093, atkType:'ranged', projColor:'#cc88ff' },
+  warrior: { name:'Воин',   emoji:'🗡️', color:'#55aaff', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:0.266, atkType:'melee' },
+  archer:  { name:'Лучник', emoji:'🏹', color:'#77ee77', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:0.354, atkType:'ranged', projColor:'#ffaa00' },
+  mage:    { name:'Маг',    emoji:'🔮', color:'#ee88ee', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.186, atkType:'ranged', projColor:'#cc88ff' },
 };
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────

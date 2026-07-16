@@ -162,7 +162,7 @@ function useSkill(idx) {
 
   player.skillCooldowns[sk.key] = sk.cd;
   skillFlash = { key: sk.key, timer: 0.4 };
-  player.atkAnimTimer = 0.45; player.animFrame = 0; player.animTimer = 0;
+  player.atkAnimTimer = 1.35; player.animFrame = 0; player.animTimer = 0;
 
   if (player.type === 'warrior') {
     if (sk.key === 'Q') { // Shield Bash
