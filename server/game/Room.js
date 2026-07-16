@@ -1,5 +1,5 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
-const { calcGoldDrop } = require('../../shared/definitions');
+const { calcGoldDrop, CHAR_DEF } = require('../../shared/definitions');
 
 const TICK_MS = 33;
 const AOI_RADIUS = 900; // px — covers screen + buffer
@@ -138,7 +138,7 @@ class Room {
     this.players.set(socketId, {
       socketId, username, type: null,
       x: spawn.x, y: spawn.y, facing: 'front',
-      hp: 200, maxHp: 200, atk: 25, def: 10,
+      hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
     });
     return spawn;
@@ -168,17 +168,24 @@ class Room {
   setPlayerChar(socketId, type, savedStats = null) {
     const p = this.players.get(socketId);
     if (!p) return;
-    const base = { warrior: [200,25,10], archer: [140,20,5], mage: [110,38,3] }[type] || [200,25,10];
+    const cd = CHAR_DEF[type];
+    if (!cd) return;
     p.type = type;
     p.pvpMode = false;
     if (savedStats) {
-      p.maxHp = savedStats.maxHp || base[0];
+      // Recalculate atk from current CHAR_DEF base to respect balance changes.
+      // Add level scaling and equipment bonuses on top.
+      const lvlBonus = ((savedStats.lvl || 1) - 1) * 3;
+      const eqAtk = Object.values(savedStats.equipment || {}).reduce((s, it) => s + (it?.atk || 0), 0);
+      const eqDef = Object.values(savedStats.equipment || {}).reduce((s, it) => s + (it?.def || 0), 0);
+      p.atk = cd.baseAtk + lvlBonus + eqAtk;
+      p.def = cd.baseDef + eqDef + Math.floor(((savedStats.lvl || 1) - 1) * 0.5);
+      p.maxHp = savedStats.maxHp || cd.baseHP;
       p.hp = p.maxHp;
-      p.atk = savedStats.atk || base[1];
-      p.def = savedStats.def || base[2];
     } else {
-      p.hp = p.maxHp = base[0];
-      p.atk = base[1]; p.def = base[2];
+      p.hp = p.maxHp = cd.baseHP;
+      p.atk = cd.baseAtk;
+      p.def = cd.baseDef;
     }
   }
 
