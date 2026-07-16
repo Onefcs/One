@@ -153,7 +153,7 @@ function setTab(n) {
 function drawHeader() {
   if (!player || !dungeon) return;
   const p = player;
-  const F = 'system-ui, -apple-system, Arial';
+  const F = 'system-ui, -apple-system, sans-serif';
 
   ctx.save();
 
@@ -174,30 +174,31 @@ function drawHeader() {
   ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
 
   // ── Minimap (right side) ──────────────────────────────────
-  const mmPad = 7;
-  const mmAvailH = HEADER_H - mmPad * 2;
-  const mmAvailW = Math.min(mmAvailH * (dungeon.w / dungeon.h), W * 0.28);
-  const mmH = Math.floor(mmAvailH);
-  const mmW = Math.floor(mmAvailW);
-  const mmX = W - mmW - mmPad - 6;
+  const mmPad = 6;
+  const mmH = HEADER_H - mmPad * 2;
+  const mmW = Math.floor(Math.min(mmH * (dungeon.w / dungeon.h), W * 0.27));
+  const mmX = W - mmW - mmPad - 4;
   const mmY = mmPad;
   const mmSc = mmW / dungeon.w;
 
-  // Rebuild cache when floor or size changes
+  // Tile cache at DPR resolution for crisp rendering
   const th = getTheme(dungeonLvl);
+  const mmCW = Math.round(mmW * DPR), mmCH = Math.round(mmH * DPR);
+  const mmCSc = mmCW / dungeon.w;
   if (minimapCacheFloor !== dungeonLvl || !minimapCache ||
-      minimapCache.width !== mmW || minimapCache.height !== mmH) {
+      minimapCache.width !== mmCW || minimapCache.height !== mmCH) {
     minimapCacheFloor = dungeonLvl;
     minimapCache = document.createElement('canvas');
-    minimapCache.width = mmW; minimapCache.height = mmH;
+    minimapCache.width = mmCW; minimapCache.height = mmCH;
     const mctx = minimapCache.getContext('2d');
     mctx.fillStyle = th.mmFloor;
     for (let ty = 0; ty < dungeon.h; ty++) {
       for (let tx = 0; tx < dungeon.w; tx++) {
         if (dungeon.grid[ty][tx] !== WALL) {
-          const px = Math.floor(tx * mmSc), py = Math.floor(ty * mmSc);
-          const pw = Math.max(1, Math.ceil(mmSc)), ph2 = Math.max(1, Math.ceil(mmSc));
-          mctx.fillRect(px, py, pw, ph2);
+          mctx.fillRect(
+            Math.floor(tx * mmCSc), Math.floor(ty * mmCSc),
+            Math.max(1, Math.ceil(mmCSc)), Math.max(1, Math.ceil(mmCSc))
+          );
         }
       }
     }
@@ -209,32 +210,27 @@ function drawHeader() {
   roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.fill();
   ctx.strokeStyle = 'rgba(70,45,155,0.6)'; ctx.lineWidth = 1;
   roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.stroke();
-  ctx.strokeStyle = 'rgba(110,80,220,0.1)'; ctx.lineWidth = 1;
-  roundRect(ctx, mpX + 1, mpY + 1, mpW - 2, mpH - 2, 5); ctx.stroke();
 
-  // Clip and draw tiles
+  // Clip, draw tiles and blips
   ctx.save();
+  ctx.imageSmoothingEnabled = false;
   ctx.beginPath(); roundRect(ctx, mmX, mmY, mmW, mmH, 3); ctx.clip();
-  ctx.drawImage(minimapCache, mmX, mmY);
+  ctx.drawImage(minimapCache, mmX, mmY, mmW, mmH);
 
-  // Enemy blips
-  const mmEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
-  ctx.fillStyle = 'rgba(255,45,35,0.85)';
+  const mmEnemies = socket?.connected ? serverEnemies : enemies;
+  ctx.fillStyle = 'rgba(255,45,35,0.9)';
   mmEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0) return;
     ctx.beginPath();
-    ctx.arc(mmX + (e.x / TILE) * mmSc, mmY + (e.y / TILE) * mmSc, Math.max(1, mmSc * 0.7), 0, Math.PI * 2);
+    ctx.arc(mmX + (e.x / TILE) * mmSc, mmY + (e.y / TILE) * mmSc, Math.max(1, mmSc * 0.8), 0, Math.PI * 2);
     ctx.fill();
   });
-
-  // NPC blips
-  ctx.fillStyle = 'rgba(255,200,0,0.85)';
+  ctx.fillStyle = 'rgba(255,200,0,0.9)';
   npcs.forEach(n => {
     ctx.beginPath();
-    ctx.arc(mmX + (n.x / TILE) * mmSc, mmY + (n.y / TILE) * mmSc, Math.max(1, mmSc * 0.9), 0, Math.PI * 2);
+    ctx.arc(mmX + (n.x / TILE) * mmSc, mmY + (n.y / TILE) * mmSc, Math.max(1, mmSc), 0, Math.PI * 2);
     ctx.fill();
   });
-
-  // Other player blips
   if (socket?.connected) {
     ctx.fillStyle = 'rgba(100,180,255,0.9)';
     Object.values(otherPlayers).forEach(op => {
@@ -244,80 +240,70 @@ function drawHeader() {
       ctx.fill();
     });
   }
-
-  // Player dot (green glow)
   const pdx = mmX + (p.x / TILE) * mmSc, pdy = mmY + (p.y / TILE) * mmSc;
-  ctx.fillStyle = 'rgba(0,255,80,0.2)';
+  ctx.fillStyle = 'rgba(0,255,80,0.25)';
   ctx.beginPath(); ctx.arc(pdx, pdy, 5, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#00ff55';
   ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
-
   ctx.restore();
 
-  // Floor label over map
-  ctx.font = `bold 7px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillText('Этаж ' + dungeonLvl, mmX + mmW / 2 + 1, mmY + mmH - 2);
-  ctx.fillStyle = 'rgba(160,130,255,0.9)';
-  ctx.fillText('Этаж ' + dungeonLvl, mmX + mmW / 2, mmY + mmH - 3);
+  // Floor label
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillText('Эт.' + dungeonLvl, mmX + mmW / 2 + 1, mmY + mmH - 2);
+  ctx.fillStyle = 'rgba(170,140,255,0.95)';
+  ctx.fillText('Эт.' + dungeonLvl, mmX + mmW / 2, mmY + mmH - 3);
 
-  // Vertical divider before map
+  // Vertical divider
   ctx.strokeStyle = 'rgba(70,45,130,0.3)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(mpX - 6, 6); ctx.lineTo(mpX - 6, HEADER_H - 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
-  const avX = 32, avY = HEADER_H / 2, avR = 21;
-  // shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  const avX = 30, avY = HEADER_H / 2, avR = 18;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
-  // radial bg
-  const avBg = ctx.createRadialGradient(avX - 6, avY - 6, 3, avX, avY, avR);
+  const avBg = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
   avBg.addColorStop(0, p.charDef.color + '40');
-  avBg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  avBg.addColorStop(1, 'rgba(0,0,0,0.6)');
   ctx.fillStyle = avBg;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
-  // color ring
   ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
-  // outer glow ring
   ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.arc(avX, avY, avR + 3.5, 0, Math.PI * 2); ctx.stroke();
-  // emoji
-  ctx.font = `21px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = `18px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(p.charDef.emoji, avX, avY + 1);
 
   // ── Info area ─────────────────────────────────────────────
   const infoX = avX + avR + 9;
-  const infoRight = mpX - 14;
+  const infoRight = mpX - 10;
   const infoW = infoRight - infoX;
 
-  // Name
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f0eeff';
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 20);
-
-  // Class · Lv · Этаж badges (right-aligned on same row)
+  // Row 1: Name + Level
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f0eeff';
+  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
   ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(190,160,255,0.95)';
-  ctx.fillText('Ур.' + p.lvl, infoRight, 20);
+  ctx.fillText('Ур.' + p.lvl, infoRight, 15);
 
-  // Class name (small, second row)
-  ctx.textAlign = 'left'; ctx.font = `9px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
-  ctx.fillText(p.charDef.name, infoX, 32);
-  ctx.textAlign = 'right'; ctx.font = `9px ${F}`; ctx.fillStyle = 'rgba(120,95,195,0.8)';
-  ctx.fillText(getTheme(dungeonLvl).name, infoRight, 32);
+  // Row 2: Class + Theme
+  ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
+  ctx.fillText(p.charDef.name, infoX, 27);
+  ctx.textAlign = 'right'; ctx.font = `10px ${F}`; ctx.fillStyle = 'rgba(120,95,195,0.85)';
+  ctx.fillText(getTheme(dungeonLvl).name, infoRight, 27);
 
-  // ── Separator ─────────────────────────────────────────────
+  // Separator
   ctx.strokeStyle = 'rgba(65,42,118,0.4)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, 37); ctx.lineTo(infoRight, 37); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
-  const hpY = 48;
+  const hpY = 42, hbH = 9;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 8px ${F}`; ctx.fillStyle = 'rgba(255,100,100,0.95)';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(255,100,100,0.95)';
   ctx.fillText('HP', infoX, hpY);
 
-  const hbX = infoX + 20, hbW = infoW - 20, hbH = 10;
+  const hbX = infoX + 22, hbW = infoW - 22;
   ctx.fillStyle = 'rgba(35,10,10,0.92)';
   roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
   if (hpPct > 0) {
@@ -332,23 +318,23 @@ function drawHeader() {
     ctx.fillStyle = hsh;
     roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
     if (hpPct < 0.3) {
-      ctx.save(); ctx.shadowColor = '#e74c3c'; ctx.shadowBlur = 8;
-      ctx.strokeStyle = 'rgba(231,76,60,0.55)'; ctx.lineWidth = 1;
+      ctx.save(); ctx.shadowColor = '#e74c3c'; ctx.shadowBlur = 7;
+      ctx.strokeStyle = 'rgba(231,76,60,0.5)'; ctx.lineWidth = 1;
       roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
       ctx.restore();
     }
   }
-  ctx.font = `7px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
 
   // ── XP bar ────────────────────────────────────────────────
-  const xpY = 63;
+  const xpY = 55, xbH = 6;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 8px ${F}`; ctx.fillStyle = 'rgba(140,110,255,0.9)';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(140,110,255,0.9)';
   ctx.fillText('XP', infoX, xpY);
 
-  const xbX = infoX + 20, xbW = infoW - 20, xbH = 6;
+  const xbX = infoX + 22, xbW = infoW - 22;
   ctx.fillStyle = 'rgba(8,6,25,0.9)';
   roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
   if (xpPct > 0) {
@@ -361,14 +347,11 @@ function drawHeader() {
     ctx.fillStyle = xsh;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
-  ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
   ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
   // ── Stats row ─────────────────────────────────────────────
-  const stY = HEADER_H - 10;
-  ctx.strokeStyle = 'rgba(60,38,110,0.35)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, stY - 8); ctx.lineTo(infoRight, stY - 8); ctx.stroke();
-
+  const stY = HEADER_H - 6;
   const statItems = [
     { icon: '💰', val: p.gold, color: '#f1c40f' },
     { icon: '⚔',  val: p.atk,  color: '#e67e22' },
@@ -380,17 +363,17 @@ function drawHeader() {
     const sx = infoX + i * statSlotW;
     ctx.font = `11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(170,170,170,0.75)';
     ctx.fillText(s.icon, sx, stY);
-    ctx.font = `bold 10px ${F}`; ctx.fillStyle = s.color;
+    ctx.font = `bold 11px ${F}`; ctx.fillStyle = s.color;
     ctx.fillText(s.val, sx + 16, stY);
   });
 
-  // Active status indicators
+  // Status effects
   if (barrierTimer > 0 || battleCryTimer > 0) {
     let stx = infoX + infoW * 0.55;
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `bold 8px ${F}`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `bold 9px ${F}`;
     if (barrierTimer > 0) {
       ctx.fillStyle = 'rgba(180,130,255,0.95)';
-      ctx.fillText('🔮' + Math.ceil(barrierTimer) + 'с', stx, stY); stx += 40;
+      ctx.fillText('🔮' + Math.ceil(barrierTimer) + 'с', stx, stY); stx += 42;
     }
     if (battleCryTimer > 0) {
       ctx.fillStyle = 'rgba(255,190,30,0.95)';

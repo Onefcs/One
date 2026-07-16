@@ -33,7 +33,7 @@ function getPvpBtnPos() {
 
 function _isOnScreen(wx, wy) {
   const margin = 60;
-  const visW = W / ZOOM, visH = H / ZOOM;
+  const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
   return wx >= camera.x - margin && wx <= camera.x + visW + margin &&
          wy >= camera.y - margin && wy <= camera.y + visH + margin;
 }
@@ -64,7 +64,7 @@ function cycleTarget() {
 function _trySelectEntityAtTouch(cx, cy) {
   if (!player || state !== 'playing') return;
   const worldX = cx / ZOOM + camera.x;
-  const worldY = cy / ZOOM + camera.y;
+  const worldY = (cy - HEADER_H) / ZOOM + camera.y;
   const isOnline = !!(socket?.connected);
   const activeEnemies = isOnline ? serverEnemies : enemies;
   const tapR = 28;
