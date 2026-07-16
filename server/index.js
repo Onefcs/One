@@ -64,23 +64,41 @@ app.use(express.static(path.join(__dirname, '..')));
 const floorRooms = new Map();
 
 // ── Party state ───────────────────────────────────────────────────────────────
-// partyId -> { a: socketId, b: socketId }
+// partyId -> Map<socketId, username>  (up to 5 members)
 const parties     = new Map();
 // socketId -> partyId
 const playerParty = new Map();
 // socketId -> current floor number (for proximity check)
 const playerFloorMap = new Map();
 
-function _dissolveParty(partyId, leaverId) {
-  const p = parties.get(partyId);
-  if (!p) return;
-  parties.delete(partyId);
-  [p.a, p.b].forEach(mid => {
-    playerParty.delete(mid);
-    if (mid !== leaverId) {
-      io.to(mid).emit('partyLeft', { reason: 'partner_left' });
-    }
-  });
+// Remove leaverId from their party; notify remaining members.
+// If only 1 member remains the party dissolves entirely.
+function _removeFromParty(partyId, leaverId) {
+  const members = parties.get(partyId);
+  if (!members) return;
+
+  const leaverName = members.get(leaverId) || leaverId.slice(0, 6);
+  members.delete(leaverId);
+  playerParty.delete(leaverId);
+
+  const remaining = [];
+  members.forEach((name, id) => remaining.push({ id, name }));
+
+  if (remaining.length <= 1) {
+    // Party fully dissolves
+    parties.delete(partyId);
+    remaining.forEach(m => {
+      playerParty.delete(m.id);
+      io.to(m.id).emit('partyLeft', { leftName: leaverName });
+    });
+  } else {
+    // Party shrinks; send notification then updated list to each remaining member
+    remaining.forEach(m => {
+      io.to(m.id).emit('partyLeft', { leftName: leaverName });
+      const othersForM = remaining.filter(r => r.id !== m.id);
+      io.to(m.id).emit('partyUpdated', { members: othersForM });
+    });
+  }
 }
 
 function getRoom(floor) {
@@ -161,28 +179,34 @@ io.on('connection', socket => {
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
-      const partyId = playerParty.get(socket.id);
-      const party   = partyId ? parties.get(partyId) : null;
-      const partnerId = party ? (party.a === socket.id ? party.b : party.a) : null;
-      const partnerOnFloor = partnerId && playerFloorMap.get(partnerId) === currentFloor;
+      const partyId    = playerParty.get(socket.id);
+      const partyMap   = partyId ? parties.get(partyId) : null;
 
-      if (partnerOnFloor) {
-        // Split 50/50
-        const myXp   = Math.ceil(result.xp   / 2);
-        const myGold = Math.ceil(result.gold  / 2);
-        const ptXp   = Math.floor(result.xp   / 2);
-        const ptGold = Math.floor(result.gold  / 2);
+      // Party members on the same floor (excluding attacker)
+      const memberIds = [];
+      if (partyMap) {
+        partyMap.forEach((_, mid) => {
+          if (mid !== socket.id && playerFloorMap.get(mid) === currentFloor) memberIds.push(mid);
+        });
+      }
+
+      if (memberIds.length > 0) {
+        const totalMembers = memberIds.length + 1;
+        const xpShare   = result.xp   / totalMembers;
+        const goldShare = result.gold  / totalMembers;
 
         socket.emit('enemyKilled', {
-          id: enemyId, xp: myXp, gold: myGold,
+          id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
         });
-        io.to(partnerId).emit('enemyKilled', {
-          id: enemyId, xp: ptXp, gold: ptGold,
-          ex: result.ex, ey: result.ey, color: result.color,
+        memberIds.forEach(mid => {
+          io.to(mid).emit('enemyKilled', {
+            id: enemyId, xp: xpShare, gold: goldShare,
+            ex: result.ex, ey: result.ey, color: result.color,
+          });
         });
         // Visual only to the rest of the floor
-        socket.to(`floor_${currentFloor}`).except([partnerId]).emit('enemyKilled', {
+        socket.to(`floor_${currentFloor}`).except(memberIds).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
         });
       } else {
@@ -270,47 +294,66 @@ io.on('connection', socket => {
 
   // ── Party ─────────────────────────────────────────────────────────────────
   socket.on('partyInvite', ({ targetId }) => {
-    if (!authed || playerParty.has(socket.id)) return;
-    if (playerParty.has(targetId)) return; // target already in party
+    if (!authed) return;
+    // Target must not already be in a party
+    if (playerParty.has(targetId)) return;
+    // Inviter's party must not be full (max 5)
+    const inviterPartyId = playerParty.get(socket.id);
+    if (inviterPartyId) {
+      const inviterParty = parties.get(inviterPartyId);
+      if (inviterParty && inviterParty.size >= 5) return;
+    }
     const targetSocket = io.sockets.sockets.get(targetId);
     if (!targetSocket) return;
-    targetSocket.emit('partyInviteReceived', {
-      fromId: socket.id,
-      fromName: authed.username,
-    });
+    targetSocket.emit('partyInviteReceived', { fromId: socket.id, fromName: authed.username });
   });
 
   socket.on('partyAccept', ({ fromId }) => {
     if (!authed || playerParty.has(socket.id)) return;
-    if (playerParty.has(fromId)) return;
     const fromSocket = io.sockets.sockets.get(fromId);
     if (!fromSocket) return;
 
-    const partyId = socket.id + '_' + fromId;
-    parties.set(partyId, { a: fromId, b: socket.id });
-    playerParty.set(fromId, partyId);
-    playerParty.set(socket.id, partyId);
+    const fromPartyId = playerParty.get(fromId);
+    let partyId, partyMap;
 
-    // Notify both members
-    const fromUsername = fromSocket.data.username || fromId.slice(0, 6);
-    socket.emit('partyFormed', { partnerId: fromId, partnerName: fromUsername });
-    fromSocket.emit('partyFormed', { partnerId: socket.id, partnerName: authed.username });
+    if (fromPartyId) {
+      // Join inviter's existing party
+      partyMap = parties.get(fromPartyId);
+      if (!partyMap || partyMap.size >= 5) return;
+      partyId = fromPartyId;
+      partyMap.set(socket.id, authed.username);
+      playerParty.set(socket.id, partyId);
+    } else {
+      // Create new party
+      partyId = fromId + '_' + socket.id;
+      partyMap = new Map();
+      partyMap.set(fromId, fromSocket.data.username || fromId.slice(0, 6));
+      partyMap.set(socket.id, authed.username);
+      parties.set(partyId, partyMap);
+      playerParty.set(fromId, partyId);
+      playerParty.set(socket.id, partyId);
+    }
+
+    // Emit partyUpdated to each member with the list of OTHER members
+    partyMap.forEach((_, mid) => {
+      const others = [];
+      partyMap.forEach((name, oid) => { if (oid !== mid) others.push({ id: oid, name }); });
+      io.to(mid).emit('partyUpdated', { members: others });
+    });
   });
 
-  socket.on('partyDecline', ({ fromId }) => {
-    // nothing to clean up since no party was formed
-  });
+  socket.on('partyDecline', () => { /* no cleanup needed */ });
 
   socket.on('partyLeave', () => {
     const partyId = playerParty.get(socket.id);
-    if (partyId) _dissolveParty(partyId, socket.id);
+    if (partyId) _removeFromParty(partyId, socket.id);
   });
 
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
-    if (partyId) _dissolveParty(partyId, socket.id);
+    if (partyId) _removeFromParty(partyId, socket.id);
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);

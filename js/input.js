@@ -155,7 +155,7 @@ function _checkPartyBtnTouch(cx, cy) {
   if (!player) return false;
   const pb = getPartyBtnPos();
   if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
-    if (partyPartnerId) {
+    if (partyMembers.length > 0) {
       if (typeof netPartyLeave === 'function') netPartyLeave();
     } else if (targetIsPlayer && targetId) {
       if (typeof netPartyInvite === 'function') netPartyInvite(targetId);

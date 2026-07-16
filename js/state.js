@@ -40,9 +40,8 @@ let targetId = null;
 let targetIsPlayer = false;
 let pvpMode = false;
 
-// Party
-let partyPartnerId   = null;   // socket.id of partner
-let partyPartnerName = '';
+// Party — array of { id, name } for all OTHER members
+let partyMembers = [];
 
 // Incoming invite popup { fromId, fromName, timer }
 let partyInvitePending = null;

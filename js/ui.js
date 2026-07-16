@@ -770,7 +770,7 @@ function drawAutoToggle() {
 // ─────────────────────────────────────────────────────────
 function drawPartyButton() {
   if (!player) return;
-  const inParty = !!partyPartnerId;
+  const inParty = partyMembers.length > 0;
   const canInvite = !inParty && targetIsPlayer && !!targetId;
   if (!inParty && !canInvite) return;
 
@@ -802,53 +802,56 @@ function drawPartyButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  PARTY HUD (partner HP bar)
+//  PARTY HUD (all member HP bars)
 // ─────────────────────────────────────────────────────────
 function drawPartyHUD() {
-  if (!partyPartnerId || !player) return;
-  const op = otherPlayers[partyPartnerId];
-  const hp = op ? (op.hp || 0) : 0;
-  const maxHp = op ? (op.maxHp || 1) : 1;
-  const name = partyPartnerName || '?';
-  const pct = Math.max(0, Math.min(1, hp / maxHp));
-
-  const pb = getPvpBtnPos();
-  const partyBtn = getPartyBtnPos();
-  const bx = partyBtn.x + partyBtn.w + 8;
-  const by = pb.y;
-  const bw = 130, bh = 26;
+  if (!partyMembers.length || !player) return;
   const F = 'system-ui, -apple-system, Arial';
+  const bw = 130, bh = 26, gap = 4;
+  const partyBtn = getPartyBtnPos();
+  const pb = getPvpBtnPos();
+  const startX = partyBtn.x + partyBtn.w + 8;
+  const startY = pb.y;
 
-  ctx.save();
-  const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
-  bg.addColorStop(0, 'rgba(8,30,14,0.97)'); bg.addColorStop(1, 'rgba(4,15,7,0.99)');
-  ctx.fillStyle = bg;
-  roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
-  ctx.strokeStyle = 'rgba(60,180,80,0.55)'; ctx.lineWidth = 1.2;
-  roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
+  partyMembers.forEach((member, i) => {
+    const op = otherPlayers[member.id];
+    const hp = op ? (op.hp || 0) : 0;
+    const maxHp = op ? (op.maxHp || 1) : 1;
+    const pct = Math.max(0, Math.min(1, hp / maxHp));
+    const bx = startX;
+    const by = startY + i * (bh + gap);
 
-  drawIconCtx(ctx, 'party', bx + 11, by + bh / 2, 11, '#3ef07a');
+    ctx.save();
+    const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
+    bg.addColorStop(0, 'rgba(8,30,14,0.97)'); bg.addColorStop(1, 'rgba(4,15,7,0.99)');
+    ctx.fillStyle = bg;
+    roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
+    ctx.strokeStyle = 'rgba(60,180,80,0.55)'; ctx.lineWidth = 1.2;
+    roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
 
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#3ef07a';
-  ctx.fillText(name.slice(0, 12), bx + 20, by + 10);
+    drawIconCtx(ctx, 'party', bx + 11, by + bh / 2, 11, '#3ef07a');
 
-  const hbx = bx + 20, hby = by + 13, hbw = bw - 24, hbh = 8;
-  ctx.fillStyle = 'rgba(10,30,10,0.9)';
-  roundRect(ctx, hbx, hby, hbw, hbh, 3); ctx.fill();
-  if (pct > 0) {
-    const hg = ctx.createLinearGradient(hbx, 0, hbx + hbw, 0);
-    if (pct > 0.5) { hg.addColorStop(0, '#0c5a22'); hg.addColorStop(1, '#1ec95a'); }
-    else if (pct > 0.25) { hg.addColorStop(0, '#7a4200'); hg.addColorStop(1, '#f0921a'); }
-    else { hg.addColorStop(0, '#6b0c0c'); hg.addColorStop(1, '#e03030'); }
-    ctx.fillStyle = hg;
-    roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
-  }
-  ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
+    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#3ef07a';
+    ctx.fillText((member.name || '?').slice(0, 12), bx + 20, by + 10);
 
-  ctx.restore();
+    const hbx = bx + 20, hby = by + 13, hbw = bw - 24, hbh = 8;
+    ctx.fillStyle = 'rgba(10,30,10,0.9)';
+    roundRect(ctx, hbx, hby, hbw, hbh, 3); ctx.fill();
+    if (pct > 0) {
+      const hg = ctx.createLinearGradient(hbx, 0, hbx + hbw, 0);
+      if (pct > 0.5) { hg.addColorStop(0, '#0c5a22'); hg.addColorStop(1, '#1ec95a'); }
+      else if (pct > 0.25) { hg.addColorStop(0, '#7a4200'); hg.addColorStop(1, '#f0921a'); }
+      else { hg.addColorStop(0, '#6b0c0c'); hg.addColorStop(1, '#e03030'); }
+      ctx.fillStyle = hg;
+      roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
+    }
+    ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
+
+    ctx.restore();
+  });
 }
 
 // ─────────────────────────────────────────────────────────
