@@ -25,32 +25,95 @@
 
 <!-- Character Select -->
 <div id="char-select" style="display:none">
-  <h1>⚔ DUNGEON QUEST</h1>
-  <div id="char-resume" style="display:none;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px;">
-    <button id="resume-btn" class="auth-btn primary" onclick="resumeGame()" style="font-size:14px;padding:12px 28px;background:linear-gradient(135deg,#2a1a4a,#3a1a6a);border-color:#7040d0"></button>
-    <div style="color:#444;font-size:12px">— или выберите нового персонажа —</div>
+
+  <div class="cs-wrap">
+    <div class="cs-header">
+      <div class="cs-title">⚔ DUNGEON QUEST</div>
+      <div class="cs-sub">Выберите персонажа</div>
+    </div>
+
+    <div class="cs-cards">
+
+      <!-- WARRIOR -->
+      <div class="cs-card cs-warrior">
+        <canvas class="cs-canvas" id="cs-canvas-warrior" width="120" height="120"></canvas>
+        <div class="cs-name warrior-c">Воин</div>
+        <div class="cs-type">⚔ Ближний бой · Новичок</div>
+        <div class="cs-stats">
+          <div class="cs-stat"><span class="cs-sv">200</span><span class="cs-sl">HP</span></div>
+          <div class="cs-stat"><span class="cs-sv">25</span><span class="cs-sl">ATK</span></div>
+          <div class="cs-stat"><span class="cs-sv">10</span><span class="cs-sl">DEF</span></div>
+          <div class="cs-stat"><span class="cs-sv">145</span><span class="cs-sl">СПД</span></div>
+        </div>
+        <div class="cs-sep"></div>
+        <div class="cs-skills">
+          <div class="cs-sk"><b class="cs-key">Q</b><span>🛡️</span><div class="cs-si"><div class="cs-sn">Щит-удар</div><div class="cs-sd">Оглушает врагов рядом</div></div></div>
+          <div class="cs-sk"><b class="cs-key">W</b><span>⚔️</span><div class="cs-si"><div class="cs-sn">Вихрь</div><div class="cs-sd">Удар по всем вокруг</div></div></div>
+          <div class="cs-sk"><b class="cs-key">E</b><span>📣</span><div class="cs-si"><div class="cs-sn">Боевой клич</div><div class="cs-sd">+50% ATK на 5 секунд</div></div></div>
+          <div class="cs-sk"><b class="cs-key">R</b><span>💨</span><div class="cs-si"><div class="cs-sn">Рывок</div><div class="cs-sd">Прорыв через врагов</div></div></div>
+        </div>
+        <button class="cs-btn cs-btn-warrior" id="cs-btn-warrior" onclick="selectChar('warrior')">Создать персонажа</button>
+      </div>
+
+      <!-- ARCHER -->
+      <div class="cs-card cs-archer">
+        <canvas class="cs-canvas" id="cs-canvas-archer" width="120" height="120"></canvas>
+        <div class="cs-name archer-c">Лучник</div>
+        <div class="cs-type">🏹 Дальний бой · Ловкий</div>
+        <div class="cs-stats">
+          <div class="cs-stat"><span class="cs-sv">140</span><span class="cs-sl">HP</span></div>
+          <div class="cs-stat"><span class="cs-sv">20</span><span class="cs-sl">ATK</span></div>
+          <div class="cs-stat"><span class="cs-sv">5</span><span class="cs-sl">DEF</span></div>
+          <div class="cs-stat"><span class="cs-sv">175</span><span class="cs-sl">СПД</span></div>
+        </div>
+        <div class="cs-sep"></div>
+        <div class="cs-skills">
+          <div class="cs-sk"><b class="cs-key">Q</b><span>🏹</span><div class="cs-si"><div class="cs-sn">Мульти-выстрел</div><div class="cs-sd">3 стрелы веером</div></div></div>
+          <div class="cs-sk"><b class="cs-key">W</b><span>☠️</span><div class="cs-si"><div class="cs-sn">Яд. стрела</div><div class="cs-sd">Урон ядом со временем</div></div></div>
+          <div class="cs-sk"><b class="cs-key">E</b><span>🌀</span><div class="cs-si"><div class="cs-sn">Кувырок</div><div class="cs-sd">Уклонение с ускорением</div></div></div>
+          <div class="cs-sk"><b class="cs-key">R</b><span>🌧️</span><div class="cs-si"><div class="cs-sn">Дождь стрел</div><div class="cs-sd">Ливень стрел по области</div></div></div>
+        </div>
+        <button class="cs-btn cs-btn-archer" id="cs-btn-archer" onclick="selectChar('archer')">Создать персонажа</button>
+      </div>
+
+      <!-- MAGE -->
+      <div class="cs-card cs-mage">
+        <canvas class="cs-canvas" id="cs-canvas-mage" width="120" height="120"></canvas>
+        <div class="cs-name mage-c">Маг</div>
+        <div class="cs-type">🔮 Магия · Сложно</div>
+        <div class="cs-stats">
+          <div class="cs-stat"><span class="cs-sv">110</span><span class="cs-sl">HP</span></div>
+          <div class="cs-stat"><span class="cs-sv">38</span><span class="cs-sl">ATK</span></div>
+          <div class="cs-stat"><span class="cs-sv">3</span><span class="cs-sl">DEF</span></div>
+          <div class="cs-stat"><span class="cs-sv">155</span><span class="cs-sl">СПД</span></div>
+        </div>
+        <div class="cs-sep"></div>
+        <div class="cs-skills">
+          <div class="cs-sk"><b class="cs-key">Q</b><span>🔥</span><div class="cs-si"><div class="cs-sn">Огненный шар</div><div class="cs-sd">Мощный огненный снаряд</div></div></div>
+          <div class="cs-sk"><b class="cs-key">W</b><span>❄️</span><div class="cs-si"><div class="cs-sn">Ледяная нова</div><div class="cs-sd">Замедляет и ранит врагов</div></div></div>
+          <div class="cs-sk"><b class="cs-key">E</b><span>🔮</span><div class="cs-si"><div class="cs-sn">Барьер</div><div class="cs-sd">Щит на 4 секунды</div></div></div>
+          <div class="cs-sk"><b class="cs-key">R</b><span>⚡</span><div class="cs-si"><div class="cs-sn">Телепорт</div><div class="cs-sd">Мгновенный прыжок</div></div></div>
+        </div>
+        <button class="cs-btn cs-btn-mage" id="cs-btn-mage" onclick="selectChar('mage')">Создать персонажа</button>
+      </div>
+
+    </div>
   </div>
-  <p>Выберите персонажа для прохождения подземелий</p>
-  <div class="cards">
-    <div class="char-card" onclick="selectChar('warrior')">
-      <div class="icon">🗡️</div>
-      <h3 class="warrior-c">Воин</h3>
-      <p>HP: 200 · ATK: 25<br>DEF: 10<br>Ближний бой</p>
-      <span class="tag warrior-c" style="background:rgba(85,170,255,.1)">Новичок</span>
-    </div>
-    <div class="char-card" onclick="selectChar('archer')">
-      <div class="icon">🏹</div>
-      <h3 class="archer-c">Лучник</h3>
-      <p>HP: 140 · ATK: 20<br>DEF: 5<br>Дальний бой</p>
-      <span class="tag archer-c" style="background:rgba(119,238,119,.1)">Ловкий</span>
-    </div>
-    <div class="char-card" onclick="selectChar('mage')">
-      <div class="icon">🔮</div>
-      <h3 class="mage-c">Маг</h3>
-      <p>HP: 110 · ATK: 38<br>DEF: 3<br>Урон по области</p>
-      <span class="tag mage-c" style="background:rgba(238,136,238,.1)">Сложно</span>
+
+  <!-- Loading overlay: shown after character picked, hidden when game ready -->
+  <div id="cs-loading" style="display:none">
+    <div class="csl-box">
+      <div class="csl-emoji" id="csl-emoji">🔮</div>
+      <div class="csl-name"  id="csl-name">Маг</div>
+      <div class="csl-dots">
+        <div class="csl-dot"></div>
+        <div class="csl-dot"></div>
+        <div class="csl-dot"></div>
+      </div>
+      <div class="csl-status" id="csl-status">Загрузка...</div>
     </div>
   </div>
+
 </div>
 
 <canvas id="canvas"></canvas>
@@ -149,6 +212,7 @@
 <script src="js/combat.js"></script>
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/charselect.js"></script>
 <script src="js/network.js"></script>
 <script src="js/game.js"></script>
 <script src="js/npc.js"></script>

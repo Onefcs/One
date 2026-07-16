@@ -46,7 +46,6 @@ function netConnect(onReady) {
   socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
-    // Populate from initial snapshot — no delta until first gameState
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     otherPlayers = {};
     buildTileCanvas();
@@ -57,11 +56,8 @@ function netConnect(onReady) {
       clampCamera();
     }
     const restore = _savedData && _savedData.type === player?.type ? _savedData : null;
-    loadSprites(player?.type, () => {
-      if (restore) { restoreFromSave(restore); _savedData = null; }
-      initNpcs();
-      _finishOnlineStart();
-    });
+    if (restore) { restoreFromSave(restore); _savedData = null; }
+    csOnServerReady();
   });
 
   socket.on('gameState', ({ players, enemies }) => {
@@ -208,23 +204,9 @@ function showAuthError(msg) {
 }
 
 function _showCharSelect(savedData) {
-  const resumeEl = document.getElementById('char-resume');
-  const resumeBtn = document.getElementById('resume-btn');
-  if (resumeEl && resumeBtn) {
-    if (savedData && savedData.type) {
-      const d = CHAR_DEF[savedData.type];
-      resumeBtn.textContent = `▶ Продолжить: ${d ? d.emoji + ' ' + d.name : savedData.type} · Ур.${savedData.lvl || 1} · 💰${savedData.gold || 0}`;
-      resumeEl.style.display = 'flex';
-    } else {
-      resumeEl.style.display = 'none';
-    }
-  }
-  document.getElementById('char-select').style.display = 'flex';
+  csShow(savedData);
 }
 
-function resumeGame() {
-  if (_savedData && _savedData.type) selectChar(_savedData.type);
-}
 
 function netSaveProgress() {
   if (!player || state !== 'playing') return;
@@ -242,7 +224,7 @@ function netSaveProgress() {
 }
 
 function _finishOnlineStart() {
-  document.getElementById('char-select').style.display = 'none';
+  csHide();
   document.getElementById('bottom-nav').style.display = 'block';
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   state = 'playing';
