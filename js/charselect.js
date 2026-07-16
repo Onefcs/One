@@ -3,9 +3,24 @@
 let _csRAF = null;
 let _csState = {}; // { type: { frame, timer } }
 
+function _csUpdateStats() {
+  ['warrior', 'archer', 'mage'].forEach(type => {
+    const card = document.querySelector('.cs-' + type);
+    if (!card) return;
+    const cd = CHAR_DEF[type];
+    const vals = card.querySelectorAll('.cs-sv');
+    if (vals[0]) vals[0].textContent = cd.baseHP;
+    if (vals[1]) vals[1].textContent = cd.baseAtk;
+    if (vals[2]) vals[2].textContent = cd.baseDef;
+    if (vals[3]) vals[3].textContent = cd.speed;
+  });
+}
+
 function csShow(savedData) {
   const el = document.getElementById('char-select');
   if (!el) return;
+
+  _csUpdateStats();
 
   // Update each button: resume or create
   ['warrior', 'archer', 'mage'].forEach(type => {
