@@ -76,6 +76,10 @@ function netConnect(onReady) {
         op.pvpMode = p.pvpMode || false;
         if (op.x === undefined) { op.x = p.x; op.y = p.y; }
         op.targetX = p.x; op.targetY = p.y;
+        if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
+          op.atkSeq = p.atkSeq;
+          op.atkAnimTimer = 0.55; op.animFrame = 0; op.animTimer = 0;
+        }
       }
     });
 
@@ -124,9 +128,13 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('pvpHit', ({ x, y, dmg }) => {
+  socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId }) => {
     if (dmg) dmgNum(x, y - 24, dmg, '#f88');
     spawnBurst(x, y, '#f44', 4);
+    if (hitTargetId && otherPlayers[hitTargetId]) {
+      otherPlayers[hitTargetId].hp = Math.max(0, (otherPlayers[hitTargetId].hp || 0) - dmg);
+      otherPlayers[hitTargetId].hurtTimer = 0.35;
+    }
   });
 
   socket.on('enemyHurt', ({ id, hp, dmg }) => {
