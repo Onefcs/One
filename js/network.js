@@ -159,7 +159,8 @@ function netConnect(onReady) {
     if (xp && player) gainXP(xp);
     if (gold && player) {
       player.gold += gold;
-      dmgNum(px, py - 36, '+' + gold + 'g', '#ff0');
+      const g = gold % 1 === 0 ? gold : +gold.toFixed(1);
+      dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
     }
   });
 
@@ -189,22 +190,22 @@ function netConnect(onReady) {
   });
 
   socket.on('partyInviteReceived', ({ fromId, fromName }) => {
-    if (partyPartnerId) return; // already in party
+    if (partyMembers.length > 0) return; // already in party
     partyInvitePending = { fromId, fromName, timer: 15 };
   });
 
-  socket.on('partyFormed', ({ partnerId, partnerName }) => {
-    partyPartnerId   = partnerId;
-    partyPartnerName = partnerName;
+  // Server sends full updated member list (excluding self) on every party change
+  socket.on('partyUpdated', ({ members }) => {
+    partyMembers = members; // [{ id, name }]
     partyInvitePending = null;
-    if (player) dmgNum(player.x, player.y - 30, 'Пати создана!', '#3ef07a');
+    if (player && partyMembers.length > 0)
+      dmgNum(player.x, player.y - 30, 'Пати: ' + partyMembers.length + ' чел.', '#3ef07a');
   });
 
-  socket.on('partyLeft', ({ reason }) => {
-    if (partyPartnerId && player)
-      dmgNum(player.x, player.y - 30, partyPartnerName + ' покинул пати', '#fa0');
-    partyPartnerId   = null;
-    partyPartnerName = '';
+  socket.on('partyLeft', ({ leftName }) => {
+    if (leftName && player)
+      dmgNum(player.x, player.y - 30, leftName + ' покинул пати', '#fa0');
+    partyMembers = [];
   });
 
   socket.on('disconnect', () => {
@@ -212,8 +213,7 @@ function netConnect(onReady) {
     serverEnemies = [];
     otherPlayers = {};
     otherProjs = [];
-    partyPartnerId   = null;
-    partyPartnerName = '';
+    partyMembers = [];
     partyInvitePending = null;
   });
 }
@@ -232,8 +232,7 @@ function netPartyDecline(fromId) {
 }
 function netPartyLeave() {
   if (socket?.connected) socket.emit('partyLeave');
-  partyPartnerId   = null;
-  partyPartnerName = '';
+  partyMembers = [];
 }
 
 // ── Auth ──────────────────────────────────────────────────────
