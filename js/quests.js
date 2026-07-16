@@ -109,14 +109,39 @@ function onLevelUp(lvl) {
   if (activeTab === 3) updateQuestUI();
 }
 
-// ── Canvas quest tracker (bottom-left overlay) ────────────
+// ── Canvas quest tracker (below minimap, top-right) ───────
 function drawQuestTracker() {
   const q = getCurrentQuest();
+  if (!player || !dungeon) return;
+
+  // Mirror minimap position from drawHeader
+  const mmPad = 6;
+  const mmH = HEADER_H - mmPad * 2;
+  const mmW = Math.floor(Math.min(mmH * (dungeon.w / dungeon.h), W * 0.27));
+  const mmX = W - mmW - mmPad - 4;
+  const panelX = mmX - 4;
+  const panelW = mmW + 8;
+
+  // Quest notif banner (centered)
+  if (questNotif) {
+    ctx.save();
+    const alpha = Math.min(1, questNotif.timer, 3.5 - questNotif.timer + 0.5);
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.fillStyle = 'rgba(20,16,50,0.95)';
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 130, HEADER_H + 10, 260, 32, 8);
+    ctx.fill();
+    ctx.font = 'bold 13px system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#fd0';
+    ctx.fillText(questNotif.title, W / 2, HEADER_H + 31);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   if (!q) return;
 
-  const pad = 10, lineH = 15;
   let lines = [];
-
   if (q.type === 'kill') {
     const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
     lines.push(done + '/' + q.count + ' ' + q.enemies.join(', '));
@@ -132,43 +157,30 @@ function drawQuestTracker() {
     lines.push('Скрафтить оружие');
   }
 
-  const trackerW = 160, trackerH = pad * 2 + lineH + lines.length * lineH;
-  const tx = 8, ty = H - NAV_H - trackerH - 8;
+  const pad = 7, lineH = 14;
+  const panelH = pad * 2 + lineH + lines.length * lineH + 2;
+  const py = HEADER_H + 4;
 
   ctx.save();
-  ctx.globalAlpha = 0.82;
-  ctx.fillStyle = 'rgba(8,5,20,0.92)';
-  ctx.beginPath();
-  ctx.roundRect(tx, ty, trackerW, trackerH, 7);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(6,4,16,0.90)';
+  ctx.strokeStyle = 'rgba(70,45,155,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(panelX, py, panelW, panelH, 5);
+  ctx.fill(); ctx.stroke();
 
-  ctx.font = 'bold 10px system-ui, Arial';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = 'bold 9px system-ui, Arial';
   ctx.fillStyle = '#fd0';
-  ctx.fillText('📋 ' + q.title, tx + pad, ty + pad + 10);
+  // Truncate title to fit panel
+  const titleMax = Math.floor((panelW - pad * 2) / 5.5);
+  const titleStr = ('📋 ' + q.title).slice(0, titleMax);
+  ctx.fillText(titleStr, panelX + pad, py + pad + 9);
 
-  ctx.font = '9px system-ui, Arial';
-  ctx.fillStyle = '#ccc';
+  ctx.font = '8px system-ui, Arial';
+  ctx.fillStyle = '#bbb';
   lines.forEach((ln, i) => {
-    ctx.fillText(ln, tx + pad, ty + pad + lineH + (i + 1) * lineH - 2);
+    ctx.fillText(ln, panelX + pad, py + pad + lineH + (i + 1) * lineH);
   });
-
-  // notif banner
-  if (questNotif) {
-    const alpha = Math.min(1, questNotif.timer, 3.5 - questNotif.timer + 0.5);
-    ctx.globalAlpha = Math.max(0, alpha);
-    ctx.fillStyle = 'rgba(20,16,50,0.95)';
-    ctx.beginPath();
-    ctx.roundRect(W / 2 - 120, HEADER_H + 12, 240, 32, 8);
-    ctx.fill();
-    ctx.font = 'bold 13px system-ui, Arial';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fd0';
-    ctx.fillText(questNotif.title, W / 2, HEADER_H + 33);
-    ctx.globalAlpha = 1;
-  }
 
   ctx.restore();
 }
@@ -198,7 +210,7 @@ function updateQuestUI() {
             <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
         }).join('');
       } else if (q.type === 'level') {
-        const pct = Math.min(100, Math.round(player.lvl / q.level * 100));
+        const pct = Math.min(100, Math.round(player.lvl / (q.level || 1) * 100));
         progHtml = `<div class="quest-prog">Уровень ${player.lvl}/${q.level}
           <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
       } else if (q.type === 'buy_potion') {

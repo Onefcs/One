@@ -16,16 +16,16 @@ const ENEMY_DEF = [
 ];
 
 const QUEST_DEF = [
-  { id:'q1',  title:'Грибная охота',      desc:'Убей 10 грибов',                 type:'kill',       enemies:['Гриб'],           count:10, reward:{ xp:80,  gold:40  } },
-  { id:'q2',  title:'Первый уровень',     desc:'Достигни 3-го уровня',           type:'level',      level:3,                              reward:{ xp:0,   gold:60  } },
-  { id:'q3',  title:'Запас зелий',        desc:'Купи зелье у Торговца',          type:'buy_potion', count:1,                              reward:{ xp:50,  gold:30  } },
-  { id:'q4',  title:'Охота на гоблинов',  desc:'Убей 15 гоблинов',               type:'kill',       enemies:['Гоблин'],         count:15, reward:{ xp:120, gold:80  } },
-  { id:'q5',  title:'Ветеран',            desc:'Достигни 5-го уровня',           type:'level',      level:5,                              reward:{ xp:0,   gold:120 } },
-  { id:'q6',  title:'Двойная охота',      desc:'Убей 10 грибов и 10 слизней',   type:'kill_multi', enemies:['Гриб','Слизень'], count:10, reward:{ xp:180, gold:100 } },
-  { id:'q7',  title:'Слизнеед',           desc:'Убей 20 слизней',                type:'kill',       enemies:['Слизень'],        count:20, reward:{ xp:220, gold:130 } },
-  { id:'q8',  title:'Паукобой',           desc:'Убей 15 пауков',                 type:'kill',       enemies:['Паук'],           count:15, reward:{ xp:260, gold:150 } },
-  { id:'q9',  title:'Мастер подземелья',  desc:'Достигни 8-го уровня',           type:'level',      level:8,                              reward:{ xp:0,   gold:200 } },
-  { id:'q10', title:'Кузнечное ремесло',  desc:'Скрафти любое оружие у Кузнеца', type:'craft',                                            reward:{ xp:350, gold:250 } },
+  { id:'q1',  title:'Охота на грибы',   desc:'Убей 8 грибов',                    type:'kill',       enemies:['Гриб'],            count:8,  reward:{ xp:80,   gold:40  } },
+  { id:'q2',  title:'Слизнеед',         desc:'Убей 8 слизней',                   type:'kill',       enemies:['Слизень'],         count:8,  reward:{ xp:100,  gold:50  } },
+  { id:'q3',  title:'Паукобой',         desc:'Убей 8 пауков',                    type:'kill',       enemies:['Паук'],            count:8,  reward:{ xp:130,  gold:65  } },
+  { id:'q4',  title:'Гоблинский налёт', desc:'Убей 12 гоблинов',                 type:'kill',       enemies:['Гоблин'],          count:12, reward:{ xp:180,  gold:90  } },
+  { id:'q5',  title:'Костяная стража',  desc:'Убей 10 скелетов',                 type:'kill',       enemies:['Скелет'],          count:10, reward:{ xp:240,  gold:120 } },
+  { id:'q6',  title:'Двойная угроза',   desc:'Убей 8 гоблинов и 8 скелетов',    type:'kill_multi', enemies:['Гоблин','Скелет'], count:8,  reward:{ xp:320,  gold:160 } },
+  { id:'q7',  title:'Охота на орков',   desc:'Убей 6 орков',                     type:'kill',       enemies:['Орк'],             count:6,  reward:{ xp:400,  gold:200 } },
+  { id:'q8',  title:'Тролли у ворот',   desc:'Убей 4 тролля',                    type:'kill',       enemies:['Тролль'],          count:4,  reward:{ xp:500,  gold:250 } },
+  { id:'q9',  title:'Истребитель орд',  desc:'Убей 5 орков и 5 троллей',         type:'kill_multi', enemies:['Орк','Тролль'],    count:5,  reward:{ xp:650,  gold:320 } },
+  { id:'q10', title:'Победи Демона',    desc:'Убей демона-босса подземелья',     type:'kill',       enemies:['ДЕМОН'],           count:1,  reward:{ xp:1200, gold:700 } },
 ];
 
 const RARITY_COLOR = {
