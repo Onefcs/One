@@ -467,9 +467,9 @@ function render() {
 
   // Player
   const phurt = player.hurtTimer > 0 && (frameCount % 6 < 3);
-  if (!phurt) {
-    const usedSprite = drawSprite(player);
-    if (!usedSprite) {
+  {
+    const usedSprite = !phurt && drawSprite(player);
+    if (!phurt && !usedSprite) {
       ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(player.x, player.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = player.charDef.color; ctx.beginPath(); ctx.arc(player.x, player.y, 14, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(player.x, player.y, 14, 0, Math.PI * 2); ctx.stroke();
@@ -478,10 +478,37 @@ function render() {
       const fl = Math.hypot(fdx, fdy) || 1;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x + fdx / fl * 8, player.y + fdy / fl * 8, 3.5, 0, Math.PI * 2); ctx.fill();
     }
-    if (swingTimer > 0) {
+    if (!phurt && swingTimer > 0) {
       ctx.strokeStyle = 'rgba(200,220,255,.75)';
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(player.x, player.y, 34, swingAngle - .7, swingAngle + .7); ctx.stroke();
+    }
+
+    // Name + HP bar above player
+    const barTop = usedSprite ? player.y - 46 : player.y - 28;
+    const bw = 44, bh = 4, bx2 = player.x - bw / 2;
+    const nameY = barTop - 4;
+    const hpPct = Math.max(0, Math.min(1, player.hp / player.maxHp));
+    const displayName = (netUsername || player.charDef.name).slice(0, 16);
+
+    ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+    ctx.strokeText(displayName, player.x, nameY);
+    ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
+    ctx.fillText(displayName, player.x, nameY);
+    if (pvpMode) {
+      ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
+      ctx.fillText('⚔', player.x + bw / 2 + 2, nameY);
+    }
+
+    ctx.fillStyle = 'rgba(30,0,0,0.75)'; ctx.fillRect(bx2, barTop, bw, bh);
+    if (hpPct > 0) {
+      const hg = ctx.createLinearGradient(bx2, 0, bx2 + bw, 0);
+      if (hpPct > 0.5) { hg.addColorStop(0, '#0d7a2e'); hg.addColorStop(1, '#2ecc71'); }
+      else if (hpPct > 0.25) { hg.addColorStop(0, '#8c5500'); hg.addColorStop(1, '#f39c12'); }
+      else { hg.addColorStop(0, '#7b1010'); hg.addColorStop(1, '#e74c3c'); }
+      ctx.fillStyle = hg;
+      ctx.fillRect(bx2, barTop, bw * hpPct, bh);
     }
   }
 
