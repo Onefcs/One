@@ -35,7 +35,11 @@ function csShow(savedData) {
 function csHide() {
   _csStopAnim();
   const el = document.getElementById('char-select');
-  if (el) el.style.display = 'none';
+  if (el) {
+    el.style.display = 'none';
+    const cards = el.querySelector('.cs-cards');
+    if (cards) cards.style.display = '';
+  }
 }
 
 function _csStartAnim() {
