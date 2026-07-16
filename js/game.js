@@ -486,20 +486,32 @@ function selectChar(type) {
 
   if (socket?.connected) {
     const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
+
+    csStartLoading(type, () => {
+      initNpcs();
+      _finishOnlineStart();
+    });
+
+    // Start loading sprites early; gate opens when both sprites + server ready
+    loadSprites(type, csOnSpritesReady);
     netSelectChar(type, savedStats);
   } else {
-    const cards = document.querySelector('.cards');
-    if (cards) { cards.style.opacity = '0.4'; cards.style.pointerEvents = 'none'; }
     const offlineRestore = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
-    loadSprites(type, () => {
-      if (cards) { cards.style.opacity = ''; cards.style.pointerEvents = ''; }
-      if (offlineRestore) { restoreFromSave(offlineRestore); _savedData = null; }
-      document.getElementById('char-select').style.display = 'none';
+
+    csStartLoading(type, () => {
+      csHide();
       document.getElementById('bottom-nav').style.display = 'block';
       document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
-      loadLevel();
       state = 'playing';
       setTab(0);
+    });
+
+    loadSprites(type, () => {
+      if (offlineRestore) { restoreFromSave(offlineRestore); _savedData = null; }
+      loadLevel();
+      // Offline has no server, mark both conditions ready
+      csOnSpritesReady();
+      csOnServerReady();
     });
   }
 }
@@ -625,9 +637,6 @@ function restartGame() {
   npcs = []; nearNpc = null;
   Object.keys(floorCache).forEach(k => delete floorCache[k]);
   tileCanvas = null;
-  document.getElementById('char-select').style.display = 'flex';
-  const cards = document.querySelector('.cards');
-  if (cards) { cards.style.opacity = ''; cards.style.pointerEvents = ''; }
   document.getElementById('bottom-nav').style.display = 'none';
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); p.style.display = 'none'; });
   setTab(0);
@@ -635,6 +644,7 @@ function restartGame() {
   enemies = []; projs = []; drops = []; particles = []; dmgNums = [];
   deadEnemies = [];
   state = 'select';
+  csShow(null);
 }
 
 // ─────────────────────────────────────────────────────────
