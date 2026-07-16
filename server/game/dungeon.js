@@ -1,6 +1,5 @@
 const { TILE, WALL, FLOOR, ENEMY_DEF } = require('../../shared/definitions');
 
-// Mulberry32 — fast seeded PRNG. Same seed → same dungeon every time.
 function seededRng(seed) {
   let s = seed >>> 0;
   return function() {
@@ -13,40 +12,117 @@ function seededRng(seed) {
 
 function generateDungeon(lvl) {
   const rng = seededRng(lvl * 1337 + 777);
-
-  const DW = 96, DH = 72;
+  const DW = 100, DH = 76;
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
+
   const rooms = [];
-  const wantRooms = Math.min(22 + Math.floor(lvl / 2), 38);
+  const wantRooms = Math.min(20 + Math.floor(lvl / 2), 34);
+
+  function inBounds(gx, gy) { return gx >= 0 && gx < DW && gy >= 0 && gy < DH; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function overlaps(bx1, by1, bx2, by2) {
+    return rooms.some(r => bx1 < r.bx2 && bx2 > r.bx1 && by1 < r.by2 && by2 > r.by1);
+  }
 
   let tries = 0;
-  while (rooms.length < wantRooms && tries < 2000) {
+  while (rooms.length < wantRooms && tries < 3000) {
     tries++;
-    const rw = 10 + Math.floor(rng() * 14);   // 10-23 tiles wide (was 5-13)
-    const rh =  6 + Math.floor(rng() * 8);    //  6-13 tiles tall (was 4-10)
-    const rx = 1 + Math.floor(rng() * (DW - rw - 2));
-    const ry = 1 + Math.floor(rng() * (DH - rh - 2));
-    const ok = !rooms.some(r =>
-      rx < r.x + r.w + 2 && rx + rw + 2 > r.x &&
-      ry < r.y + r.h + 2 && ry + rh + 2 > r.y
-    );
-    if (ok) rooms.push({ x: rx, y: ry, w: rw, h: rh });
+    const shape = rng();
+
+    if (shape < 0.35) {
+      // ── Beveled rectangle ─────────────────────────────────────
+      const w = 10 + Math.floor(rng() * 14);
+      const h =  6 + Math.floor(rng() * 8);
+      const x =  1 + Math.floor(rng() * (DW - w - 2));
+      const y =  1 + Math.floor(rng() * (DH - h - 2));
+      const bevel = Math.floor(rng() * 4);
+      if (overlaps(x-1, y-1, x+w+1, y+h+1)) continue;
+      rooms.push({
+        bx1: x-1, by1: y-1, bx2: x+w+1, by2: y+h+1,
+        cx: x + Math.floor(w/2), cy: y + Math.floor(h/2),
+        paint() {
+          for (let gy = y; gy < y+h; gy++)
+            for (let gx = x; gx < x+w; gx++) {
+              const ddx = Math.min(gx-x, x+w-1-gx);
+              const ddy = Math.min(gy-y, y+h-1-gy);
+              if (ddx + ddy >= bevel) paintFloor(gx, gy);
+            }
+        },
+      });
+
+    } else if (shape < 0.55) {
+      // ── Oval ──────────────────────────────────────────────────
+      const rx = 5 + Math.floor(rng() * 8);
+      const ry = 4 + Math.floor(rng() * 6);
+      const cx = rx + 1 + Math.floor(rng() * (DW - 2*rx - 2));
+      const cy = ry + 1 + Math.floor(rng() * (DH - 2*ry - 2));
+      if (overlaps(cx-rx-1, cy-ry-1, cx+rx+1, cy+ry+1)) continue;
+      rooms.push({
+        bx1: cx-rx-1, by1: cy-ry-1, bx2: cx+rx+1, by2: cy+ry+1,
+        cx, cy,
+        paint() {
+          for (let gy = cy-ry; gy <= cy+ry; gy++)
+            for (let gx = cx-rx; gx <= cx+rx; gx++) {
+              const nx = (gx-cx)/rx, ny = (gy-cy)/ry;
+              if (nx*nx + ny*ny <= 1) paintFloor(gx, gy);
+            }
+        },
+      });
+
+    } else if (shape < 0.75) {
+      // ── L-shape (two rectangles) ───────────────────────────────
+      const aw = 8 + Math.floor(rng() * 10), ah = 5 + Math.floor(rng() * 6);
+      const bw = 5 + Math.floor(rng() * 8), bh = 5 + Math.floor(rng() * 6);
+      const flip = rng() > 0.5;
+      const rx = 1 + Math.floor(rng() * (DW - aw - 2));
+      const ry = 1 + Math.floor(rng() * (DH - ah - bh - 2));
+      const bx = flip ? rx + aw - bw : rx;
+      const by = ry + ah;
+      if (bx < 1 || bx+bw >= DW-1 || by+bh >= DH-1) continue;
+      const minX = Math.min(rx, bx), maxX = Math.max(rx+aw, bx+bw);
+      if (overlaps(minX-1, ry-1, maxX+1, by+bh+1)) continue;
+      rooms.push({
+        bx1: minX-1, by1: ry-1, bx2: maxX+1, by2: by+bh+1,
+        cx: Math.floor((minX+maxX)/2), cy: Math.floor((ry+by+bh)/2),
+        paint() {
+          for (let gy = ry; gy < ry+ah; gy++) for (let gx = rx; gx < rx+aw; gx++) paintFloor(gx, gy);
+          for (let gy = by; gy < by+bh; gy++) for (let gx = bx; gx < bx+bw; gx++) paintFloor(gx, gy);
+        },
+      });
+
+    } else {
+      // ── Cross / plus ───────────────────────────────────────────
+      const hLen = 7 + Math.floor(rng() * 8), hH = 2 + Math.floor(rng() * 3);
+      const vLen = 7 + Math.floor(rng() * 8), vW = 2 + Math.floor(rng() * 3);
+      const cx = hLen+1 + Math.floor(rng() * (DW - 2*hLen - 2));
+      const cy = vLen+1 + Math.floor(rng() * (DH - 2*vLen - 2));
+      if (cx-hLen < 1 || cx+hLen >= DW-1 || cy-vLen < 1 || cy+vLen >= DH-1) continue;
+      if (overlaps(cx-hLen-1, cy-vLen-1, cx+hLen+1, cy+vLen+1)) continue;
+      rooms.push({
+        bx1: cx-hLen-1, by1: cy-vLen-1, bx2: cx+hLen+1, by2: cy+vLen+1,
+        cx, cy,
+        paint() {
+          for (let gy = cy-hH; gy <= cy+hH; gy++) for (let gx = cx-hLen; gx <= cx+hLen; gx++) paintFloor(gx, gy);
+          for (let gy = cy-vLen; gy <= cy+vLen; gy++) for (let gx = cx-vW; gx <= cx+vW; gx++) paintFloor(gx, gy);
+        },
+      });
+    }
   }
 
-  rooms.forEach(r => {
-    for (let y = r.y; y < r.y + r.h; y++)
-      for (let x = r.x; x < r.x + r.w; x++)
-        grid[y][x] = FLOOR;
-  });
+  // Paint all rooms
+  rooms.forEach(r => r.paint());
 
+  // Connect rooms with corridors of width 2–3 tiles
   for (let i = 1; i < rooms.length; i++) {
-    const a = rooms[i - 1], b = rooms[i];
-    let cx = Math.floor(a.x + a.w / 2), cy = Math.floor(a.y + a.h / 2);
-    const tx = Math.floor(b.x + b.w / 2), ty = Math.floor(b.y + b.h / 2);
-    while (cx !== tx) { grid[cy][cx] = FLOOR; cx += tx > cx ? 1 : -1; }
-    while (cy !== ty) { grid[cy][cx] = FLOOR; cy += ty > cy ? 1 : -1; }
+    const a = rooms[i-1], b = rooms[i];
+    let cx = a.cx, cy = a.cy;
+    const tx = b.cx, ty = b.cy;
+    const cw = 1 + Math.floor(rng() * 2);
+    while (cx !== tx) { for (let d = -cw; d <= cw; d++) paintFloor(cx, cy+d); cx += tx > cx ? 1 : -1; }
+    while (cy !== ty) { for (let d = -cw; d <= cw; d++) paintFloor(cx+d, cy); cy += ty > cy ? 1 : -1; }
   }
 
+  // Spawn enemies — find a valid floor tile inside each room's bounding box
   const sc = 1 + (lvl - 1) * 0.28;
   const enemyList = [];
   let eid = 0;
@@ -54,22 +130,30 @@ function generateDungeon(lvl) {
   rooms.slice(1).forEach((room, idx) => {
     const isBoss = idx === rooms.length - 2;
     const count = isBoss ? 1 : 5 + Math.floor(rng() * (4 + Math.floor(lvl / 2)));
+    const bw = room.bx2 - room.bx1, bh = room.by2 - room.by1;
+
     for (let i = 0; i < count; i++) {
       const maxEIdx = Math.min(6, 1 + Math.floor(lvl / 2));
       const rawIdx  = Math.floor(rng() * (maxEIdx + 1));
       const defIdx  = isBoss ? 7 : (lvl === 1 ? 1 : rawIdx);
       const d = ENEMY_DEF[defIdx];
-      const ex = (room.x + 1 + Math.floor(rng() * (room.w - 2))) * TILE + TILE / 2;
-      const ey = (room.y + 1 + Math.floor(rng() * (room.h - 2))) * TILE + TILE / 2;
+
+      let ex = room.cx * TILE + TILE/2, ey = room.cy * TILE + TILE/2;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const gx = Math.floor(room.bx1 + 1 + rng() * (bw - 2));
+        const gy = Math.floor(room.by1 + 1 + rng() * (bh - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) {
+          ex = gx * TILE + TILE/2; ey = gy * TILE + TILE/2; break;
+        }
+      }
+
       enemyList.push({
         id: `e_${lvl}_${eid++}`,
         ...d,
         maxHp: Math.floor(d.hp * sc), hp: Math.floor(d.hp * sc),
         atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18)),
-        x: ex, y: ey,
-        spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(),
-        aggro: false, aggroR: 175 + rng() * 55,
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
       });
     }
   });
@@ -77,8 +161,8 @@ function generateDungeon(lvl) {
   return {
     grid, rooms, w: DW, h: DH,
     spawn: {
-      x: Math.floor(rooms[0].x + rooms[0].w / 2) * TILE + TILE / 2,
-      y: Math.floor(rooms[0].y + rooms[0].h / 2) * TILE + TILE / 2,
+      x: rooms[0].cx * TILE + TILE/2,
+      y: rooms[0].cy * TILE + TILE/2,
     },
     enemies: enemyList,
   };
