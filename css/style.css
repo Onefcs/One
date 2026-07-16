@@ -1,10 +1,21 @@
 * { margin:0; padding:0; box-sizing:border-box; touch-action:none; -webkit-tap-highlight-color:transparent; }
-body { background:#000; overflow:hidden; font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; }
-canvas { display:block; }
+body {
+  background:#111; overflow:hidden;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  display:flex; justify-content:center; align-items:flex-start;
+}
+#app {
+  position:relative;
+  width:100%; max-width:430px;
+  height:100dvh; height:100vh;
+  overflow:hidden; background:#000;
+  flex-shrink:0;
+}
+canvas { display:block; width:100%; height:100%; }
 
 /* ── LOGIN / LOBBY SCREENS ─────────────── */
 #login-screen, #lobby-screen, #room-lobby-screen {
-  position:fixed; inset:0;
+  position:absolute; inset:0;
   background:radial-gradient(ellipse at center,#1a0a2e 0%,#0a0612 100%);
   display:flex; flex-direction:column;
   align-items:center; justify-content:center;
@@ -69,17 +80,18 @@ canvas { display:block; }
 
 /* ── CHARACTER SELECT ─────────────────── */
 #char-select {
-  position:fixed; inset:0;
+  position:absolute; inset:0;
   background:radial-gradient(ellipse at 50% 20%,#160828 0%,#070212 100%);
   display:flex; flex-direction:column;
   align-items:center; color:#fff; z-index:100;
   overflow-y:auto; -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
 }
 .cs-wrap {
   display:flex; flex-direction:column; align-items:center;
-  width:100%; min-height:100%; padding:20px 12px 40px;
+  width:100%; min-height:100%; padding:16px 8px 24px;
 }
-.cs-header { text-align:center; padding-bottom:22px; flex-shrink:0; }
+.cs-header { text-align:center; padding-bottom:14px; flex-shrink:0; }
 .cs-title {
   font-size:clamp(1.6em,5vw,2.4em); color:#f90;
   text-shadow:0 0 24px rgba(255,153,0,.35);
@@ -87,17 +99,17 @@ canvas { display:block; }
 }
 .cs-sub { color:#554; font-size:11px; margin-top:8px; letter-spacing:2px; text-transform:uppercase; }
 
-/* Cards grid */
+/* Cards grid — 3 in one row, compact */
 .cs-cards {
-  display:flex; gap:14px; flex-wrap:wrap;
-  justify-content:center; width:100%; max-width:920px;
+  display:flex; gap:8px; flex-wrap:nowrap;
+  justify-content:stretch; width:100%; padding:0 6px;
 }
 .cs-card {
   background:rgba(255,255,255,.04);
   border:1.5px solid rgba(255,255,255,.07);
-  border-radius:20px; padding:20px 16px 16px;
-  display:flex; flex-direction:column; align-items:center; gap:8px;
-  width:clamp(220px,30vw,265px); flex-shrink:0;
+  border-radius:16px; padding:12px 8px 12px;
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+  flex:1; min-width:0;
   transition:border-color .25s,box-shadow .25s;
   position:relative; overflow:hidden;
 }
@@ -114,56 +126,56 @@ canvas { display:block; }
 
 /* Canvas preview */
 .cs-canvas {
-  display:block; width:110px; height:110px;
+  display:block; width:80px; height:80px;
   image-rendering:pixelated; image-rendering:crisp-edges;
 }
 
 /* Name / type */
-.cs-name { font-size:20px; font-weight:800; letter-spacing:1px; margin-top:2px; }
-.cs-type { font-size:11px; color:#555; letter-spacing:.5px; }
+.cs-name { font-size:14px; font-weight:800; letter-spacing:.5px; margin-top:2px; }
+.cs-type { font-size:9px; color:#555; letter-spacing:.3px; text-align:center; }
 
 /* Stats */
 .cs-stats {
-  display:flex; gap:6px; margin:4px 0 2px;
+  display:flex; gap:3px; margin:2px 0 1px;
   flex-wrap:wrap; justify-content:center;
 }
 .cs-stat {
   display:flex; flex-direction:column; align-items:center;
   background:rgba(255,255,255,.04);
   border:1px solid rgba(255,255,255,.06);
-  border-radius:8px; padding:5px 8px; min-width:44px;
+  border-radius:6px; padding:3px 4px; flex:1; min-width:0;
 }
-.cs-sv { font-size:15px; font-weight:700; color:#ccc; line-height:1; }
-.cs-sl { font-size:8px; color:#444; letter-spacing:1px; margin-top:3px; }
+.cs-sv { font-size:12px; font-weight:700; color:#ccc; line-height:1; }
+.cs-sl { font-size:7px; color:#444; letter-spacing:.5px; margin-top:2px; }
 
 .cs-sep { width:100%; height:1px; background:rgba(255,255,255,.05); margin:2px 0; }
 
 /* Skills */
-.cs-skills { display:flex; flex-direction:column; gap:4px; width:100%; }
+.cs-skills { display:grid; grid-template-columns:1fr 1fr; gap:3px; width:100%; }
 .cs-sk {
-  display:flex; align-items:center; gap:7px;
-  padding:5px 7px; border-radius:7px;
+  display:flex; align-items:center; gap:3px;
+  padding:4px 5px; border-radius:6px;
   background:rgba(255,255,255,.025);
 }
 .cs-key {
-  font-size:9px; font-weight:700; color:#555; font-style:normal;
+  font-size:8px; font-weight:700; color:#555; font-style:normal;
   background:rgba(255,255,255,.07);
   border:1px solid rgba(255,255,255,.1);
-  border-radius:4px; width:17px; height:17px;
+  border-radius:3px; width:14px; height:14px; line-height:14px;
   display:flex; align-items:center; justify-content:center; flex-shrink:0;
 }
-.cs-sk > span { font-size:14px; width:18px; text-align:center; flex-shrink:0; }
-.cs-si { flex:1; min-width:0; }
-.cs-sn { font-size:11px; font-weight:600; color:#bbb; }
-.cs-sd { font-size:9.5px; color:#444; margin-top:1px; }
+.cs-sk > span { font-size:13px; flex-shrink:0; }
+.cs-si { display:none; }
+.cs-sn { font-size:10px; font-weight:600; color:#bbb; }
+.cs-sd { font-size:9px; color:#444; margin-top:1px; }
 
 /* Buttons */
 .cs-btn {
-  margin-top:8px; width:100%; padding:12px 8px;
-  border:none; border-radius:11px;
-  font-size:13px; font-weight:700; cursor:pointer;
+  margin-top:6px; width:100%; padding:10px 4px;
+  border:none; border-radius:10px;
+  font-size:11px; font-weight:700; cursor:pointer;
   transition:all .15s; user-select:none; touch-action:manipulation;
-  letter-spacing:.3px;
+  letter-spacing:.2px;
 }
 .cs-btn-warrior { background:linear-gradient(135deg,#1e3a6e,#2a5aba); color:#9cd; box-shadow:0 4px 16px rgba(42,90,186,.25); }
 .cs-btn-archer  { background:linear-gradient(135deg,#1a4a1a,#2a7a2a); color:#9e9; box-shadow:0 4px 16px rgba(42,122,42,.25); }
@@ -179,7 +191,7 @@ canvas { display:block; }
 
 /* Loading overlay */
 #cs-loading {
-  position:fixed; inset:0;
+  position:absolute; inset:0;
   background:radial-gradient(ellipse at 50% 40%,#160828 0%,#050110 100%);
   display:flex; align-items:center; justify-content:center; z-index:110;
 }
@@ -213,7 +225,7 @@ canvas { display:block; }
 
 /* ── NPC TALK BUTTON ──────────────────── */
 #npc-talk-btn {
-  position:fixed; bottom:74px; left:50%; transform:translateX(-50%);
+  position:absolute; bottom:74px; left:50%; transform:translateX(-50%);
   background:rgba(30,16,60,0.95); border:1px solid #7040d0;
   border-radius:20px; padding:10px 22px;
   color:#f90; font-size:14px; font-weight:bold;
@@ -226,7 +238,7 @@ canvas { display:block; }
 
 /* ── NPC OVERLAY & DIALOG ─────────────── */
 #npc-overlay {
-  position:fixed; inset:0;
+  position:absolute; inset:0;
   background:rgba(0,0,0,0.82);
   z-index:160; align-items:flex-end; justify-content:center;
   padding-bottom:70px;
@@ -296,7 +308,7 @@ canvas { display:block; }
 
 /* ── BOTTOM PANELS ─────────────────────── */
 .bpanel {
-  position:fixed; left:0; right:0; bottom:62px;
+  position:absolute; left:0; right:0; bottom:62px;
   height:0; overflow:hidden;
   background:#08080f;
   border-top:1px solid #1e1e30;
@@ -304,7 +316,7 @@ canvas { display:block; }
   transition:height 0.28s cubic-bezier(.4,0,.2,1);
   display:none;
 }
-.bpanel.open { height:calc(100dvh - 62px); overflow-y:auto; }
+.bpanel.open { height:calc(100% - 62px); overflow-y:auto; }
 .panel-hdr {
   padding:13px 16px 10px; border-bottom:1px solid #1a1a28;
   font-size:15px; font-weight:bold; color:#ddd;
@@ -405,7 +417,7 @@ canvas { display:block; }
 
 /* ── BOTTOM NAV ────────────────────────── */
 #bottom-nav {
-  position:fixed; bottom:0; left:0; right:0; height:62px;
+  position:absolute; bottom:0; left:0; right:0; height:62px;
   background:rgba(6,6,14,0.97);
   border-top:1px solid #1e1e30;
   z-index:50; display:none;

@@ -27,11 +27,6 @@ function getTargetBtnPos() {
   return { x: pb.x - POTION_R * 2 - 12, y: pb.y, r: POTION_R };
 }
 
-function getPvpBtnPos() {
-  const pad = 8, ph = 82;
-  return { x: pad, y: pad + ph + 6, w: 108, h: 24 };
-}
-
 function _isOnScreen(wx, wy) {
   const margin = 60;
   const visW = W / ZOOM, visH = H / ZOOM;
@@ -48,7 +43,7 @@ function cycleTarget() {
     if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y))
       candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
   });
-  if (pvpMode && isOnline) {
+  if (isOnline) {
     Object.entries(otherPlayers).forEach(([id, op]) => {
       if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
@@ -119,24 +114,12 @@ function _checkTargetBtnTouch(cx, cy) {
   return false;
 }
 
-function _checkPvpBtnTouch(cx, cy) {
-  const pb = getPvpBtnPos();
-  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
-    pvpMode = !pvpMode;
-    if (typeof netSetPvpMode === 'function') netSetPvpMode(pvpMode);
-    if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
-    return true;
-  }
-  return false;
-}
-
 function onTS(e) {
   e.preventDefault();
   if (!joyGuard()) return;
   const jc = joyCenter();
   for (const t of e.changedTouches) {
     if (t.clientY > H - NAV_H) return;
-    if (_checkPvpBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkPotionTouch(t.clientX, t.clientY)) continue;
     if (_checkTargetBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkSkillTouch(t.clientX, t.clientY)) continue;
@@ -166,7 +149,6 @@ function onTC() { joy.active = false; joy.dx = 0; joy.dy = 0; }
 function onMD(e) {
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
-  if (_checkPvpBtnTouch(e.clientX, e.clientY)) return;
   if (_checkPotionTouch(e.clientX, e.clientY)) return;
   if (_checkTargetBtnTouch(e.clientX, e.clientY)) return;
   if (_checkSkillTouch(e.clientX, e.clientY)) return;
