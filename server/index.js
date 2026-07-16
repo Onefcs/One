@@ -162,6 +162,16 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
   });
 
+  socket.on('spawnProj', data => {
+    if (!currentRoom) return;
+    socket.to(`floor_${currentFloor}`).emit('spawnProj', data);
+  });
+
+  socket.on('spawnAoe', data => {
+    if (!currentRoom) return;
+    socket.to(`floor_${currentFloor}`).emit('spawnAoe', data);
+  });
+
   socket.on('saveProgress', ({ stats }) => {
     if (authed) PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
   });

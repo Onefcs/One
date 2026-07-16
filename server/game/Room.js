@@ -150,7 +150,7 @@ class Room {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
-    if (!attacker.pvpMode || !target.pvpMode) return null;
+    if (!attacker.pvpMode) return null;
     if (target.hp <= 0) return null;
     const d = Math.hypot(attacker.x - target.x, attacker.y - target.y);
     if (d > 500) return null;
