@@ -6,7 +6,7 @@ function openNpc(npcId) {
   const def = NPC_DEF.find(n => n.id === npcId);
   if (!def) return;
 
-  document.getElementById('npc-emoji-lbl').textContent = def.emoji;
+  document.getElementById('npc-emoji-lbl').innerHTML = iconHTML(def.icon, 32, def.color);
   document.getElementById('npc-name-lbl').textContent  = def.name;
   document.getElementById('npc-desc-lbl').textContent  = def.desc;
   document.getElementById('npc-body').innerHTML = _buildNpcBody(npcId);
@@ -28,16 +28,16 @@ function _buildNpcBody(npcId) {
 // ── Merchant ────────────────────────────────────────────
 function _merchantBody() {
   const p = player;
-  let html = `<div class="shop-gold">💰 Золото: <b>${p.gold}</b> · 🧪 Зелий: <b>${p.potions}/5</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · ${iconHTML('potion',16,'#3ef07a')} Зелий: <b>${p.potions}/5</b></div>`;
   html += '<div class="shop-sec">Зелья</div><div class="shop-list">';
   MERCHANT_SHOP.forEach((entry, idx) => {
     const canBuy = p.gold >= entry.price && (p.potions || 0) < 5;
     html += `<div class="shop-row">
-      <span class="shop-item-icon">${entry.emoji}</span>
+      <span class="shop-item-icon">${iconHTML(entry.icon, 22)}</span>
       <span class="shop-item-name">${entry.name}</span>
       <span class="shop-item-stat">${entry.desc}</span>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx})">
-        ${entry.price}💰
+        ${entry.price}${iconHTML('coin',14,'#f1c40f')}
       </button>
     </div>`;
   });
@@ -60,7 +60,7 @@ function buyPotion(idx) {
 // ── Craftsman ───────────────────────────────────────────
 function _craftsmanBody() {
   const p = player;
-  let html = `<div class="shop-gold">💰 Золото: <b>${p.gold}</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b></div>`;
   html += '<div class="shop-sec">Рецепты крафта</div>';
   html += '<div class="craft-mats-info">Материалы в инвентаре: ' + _listMats() + '</div>';
   html += '<div class="shop-list">';
@@ -72,13 +72,13 @@ function _craftsmanBody() {
     const matsStr = recipe.mats.map(m => {
       const mat = CRAFT_MATS.find(c => c.id === m.id);
       const has = p.inventory.filter(i => i.id === m.id).length;
-      return `${mat ? mat.emoji : '?'}×${m.n}(${has})`;
+      return `${mat ? iconHTML(mat.icon, 14) : '?'}×${m.n}(${has})`;
     }).join(' ');
     html += `<div class="shop-row">
-      <span class="shop-item-icon">${result.emoji}</span>
+      <span class="shop-item-icon">${iconHTML(result.icon, 22, rc)}</span>
       <div class="shop-item-info">
         <div class="shop-item-name" style="color:${rc}">${result.name}</div>
-        <div class="shop-item-stat">${matsStr} · ${recipe.gold}💰</div>
+        <div class="shop-item-stat">${matsStr} · ${recipe.gold}${iconHTML('coin',12,'#f1c40f')}</div>
       </div>
       <button class="shop-btn${canCraft ? '' : ' disabled'}" onclick="craftItem(${idx})">Создать</button>
     </div>`;
@@ -88,13 +88,12 @@ function _craftsmanBody() {
 }
 
 function _listMats() {
-  const counts = {};
+  const parts = [];
   CRAFT_MATS.forEach(m => {
     const n = player.inventory.filter(i => i.id === m.id).length;
-    if (n > 0) counts[m.emoji] = n;
+    if (n > 0) parts.push(iconHTML(m.icon, 14) + '×' + n);
   });
-  const str = Object.entries(counts).map(([e, n]) => `${e}×${n}`).join(' ');
-  return str || 'нет';
+  return parts.join(' ') || 'нет';
 }
 
 function _canCraft(recipe) {
@@ -127,7 +126,7 @@ function craftItem(idx) {
 // ── Shopkeeper ──────────────────────────────────────────
 function _shopkeeperBody() {
   const p = player;
-  let html = `<div class="shop-gold">💰 Золото: <b>${p.gold}</b> · Инвентарь: <b>${p.inventory.length}/10</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${p.inventory.length}/10</b></div>`;
   html += '<div class="shop-sec">Товары</div><div class="shop-list">';
   SHOP_CATALOG.forEach(entry => {
     const item = ITEM_DEF.find(i => i.id === entry.itemId);
@@ -136,13 +135,13 @@ function _shopkeeperBody() {
     const canBuy = p.gold >= entry.price && p.inventory.length < 10;
     const stats = statStr(item);
     html += `<div class="shop-row">
-      <span class="shop-item-icon">${item.emoji}</span>
+      <span class="shop-item-icon">${iconHTML(item.icon, 22, rc)}</span>
       <div class="shop-item-info">
         <div class="shop-item-name" style="color:${rc}">${item.name}</div>
         <div class="shop-item-stat">${stats}</div>
       </div>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyShopItem('${entry.itemId}',${entry.price})">
-        ${entry.price}💰
+        ${entry.price}${iconHTML('coin',14,'#f1c40f')}
       </button>
     </div>`;
   });

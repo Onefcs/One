@@ -15,6 +15,7 @@ const BUNDLE_FILES = [
   'js/constants.js',
   'js/utils.js',
   'js/state.js',
+  'js/icons.js',
   'js/themes.js',
   'js/definitions.js',
   'js/sprites.js',
