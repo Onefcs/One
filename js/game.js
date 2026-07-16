@@ -2,13 +2,13 @@
 //  CAMERA
 // ─────────────────────────────────────────────────────────
 function clampCamera() {
-  const visW = W / ZOOM, visH = H / ZOOM;
+  const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
   camera.x = clamp(camera.x, 0, Math.max(0, dungeon.w * TILE - visW));
   camera.y = clamp(camera.y, 0, Math.max(0, dungeon.h * TILE - visH));
 }
 
 function updateCamera(dt) {
-  const visW = W / ZOOM, visH = H / ZOOM;
+  const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
   camera.x += (player.x - visW / 2 - camera.x) * Math.min(1, 8 * dt);
   camera.y += (player.y - visH / 2 - camera.y) * Math.min(1, 8 * dt);
   clampCamera();
@@ -325,6 +325,7 @@ function update(dt) {
 //  RENDER
 // ─────────────────────────────────────────────────────────
 function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const theme = (state === 'playing' || state === 'dead') && dungeon ? getTheme(dungeonLvl) : null;
   ctx.fillStyle = theme ? theme.bg : '#060610';
@@ -332,6 +333,8 @@ function render() {
   if (state === 'select') return;
 
   ctx.save(); // [camera]
+  ctx.beginPath(); ctx.rect(0, HEADER_H, W, H - HEADER_H); ctx.clip();
+  ctx.translate(0, HEADER_H);
   ctx.scale(ZOOM, ZOOM);
   ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
 
@@ -703,7 +706,7 @@ function loadLevel() {
   projs = []; drops = []; particles = []; dmgNums = [];
   player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
   if (dungeonLvl > 1) player.hp = Math.min(player.maxHp, player.hp + Math.floor(player.maxHp * .25));
-  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - H / (2 * ZOOM);
+  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
   clampCamera();
   buildTileCanvas();
   initNpcs();
@@ -732,7 +735,7 @@ function respawnPlayer() {
   player.hurtTimer = 0;
   player.atkTimer = 0.5;
   if (dungeon) { player.x = dungeon.spawn.x; player.y = dungeon.spawn.y; }
-  camera.x = player.x - W / 2; camera.y = player.y - H / 2;
+  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
   clampCamera();
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
@@ -776,8 +779,14 @@ window.addEventListener('load', () => {
   ctx = canvas.getContext('2d');
   const app = document.getElementById('app');
   const resize = () => {
-    W = canvas.width = app.clientWidth;
-    H = canvas.height = app.clientHeight;
+    DPR = window.devicePixelRatio || 1;
+    W = app.clientWidth;
+    H = app.clientHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);

@@ -1,4 +1,4 @@
-let canvas, ctx, W, H;
+let canvas, ctx, W, H, DPR = 1;
 let state = 'select';
 let player = null, dungeon = null;
 let enemies = [], projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [];
