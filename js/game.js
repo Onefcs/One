@@ -63,31 +63,6 @@ function update(dt) {
         }
       });
     }
-    // Push player out of enemies and other players
-    activeEnemies.forEach(e => {
-      if ((e.hp || 0) <= 0) return;
-      const minD = e.size + 12;
-      const ddx = player.x - e.x, ddy = player.y - e.y;
-      const dd = Math.hypot(ddx, ddy);
-      if (dd < minD && dd > 0.01) {
-        const p2 = (minD - dd) / dd;
-        if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-        if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-      }
-    });
-    if (isOnline) {
-      Object.values(otherPlayers).forEach(op => {
-        if ((op.hp || 0) <= 0 || op.x == null) return;
-        const minD = 26;
-        const ddx = player.x - op.x, ddy = player.y - op.y;
-        const dd = Math.hypot(ddx, ddy);
-        if (dd < minD && dd > 0.01) {
-          const p2 = (minD - dd) / dd;
-          if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-          if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-        }
-      });
-    }
     if (isOnline) netSendMove();
   }
 
@@ -240,14 +215,29 @@ function update(dt) {
       return true;
     });
   } else {
-    // Online: advance visual projectiles (no damage check)
+    // Online: advance projectiles with visual hit detection
     projs = projs.filter(p => {
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      return p.life > 0 && !isWall(p.x, p.y);
+      if (p.life <= 0 || isWall(p.x, p.y)) return false;
+      if (p.isPlayer) {
+        const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
+        if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
+        if (pvpMode) {
+          const hitP = Object.values(otherPlayers).find(op => (op.hp || 0) > 0 && op.x != null && dist(p.x, p.y, op.x, op.y) < 18 + p.size);
+          if (hitP) { spawnBurst(p.x, p.y, p.color, 5); return false; }
+        }
+      }
+      return true;
     });
     otherProjs = otherProjs.filter(p => {
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      return p.life > 0 && !isWall(p.x, p.y);
+      if (p.life <= 0 || isWall(p.x, p.y)) return false;
+      const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
+      if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
+      if (player && state === 'playing' && dist(p.x, p.y, player.x, player.y) < 14 + p.size) {
+        spawnBurst(p.x, p.y, p.color, 5); return false;
+      }
+      return true;
     });
   }
 
@@ -693,8 +683,42 @@ function loadLevel() {
   initNpcs();
 }
 
+function playerDie() {
+  state = 'dead';
+  const modal = document.getElementById('death-modal');
+  if (!modal) return;
+  const xpLoss = Math.floor((player?.xp || 0) * 0.05);
+  const info = document.getElementById('death-info');
+  if (info && player) {
+    info.innerHTML =
+      `${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}<br>` +
+      `💰 ${player.gold} золота · ⚔ ${player.kills} убито` +
+      (xpLoss > 0 ? `<br><span style="color:#c66">−${xpLoss} XP при возрождении</span>` : '');
+  }
+  modal.style.display = 'flex';
+}
+
+function respawnPlayer() {
+  if (!player || state !== 'dead') return;
+  const xpLoss = Math.floor(player.xp * 0.05);
+  player.xp = Math.max(0, player.xp - xpLoss);
+  player.hp = player.maxHp;
+  player.hurtTimer = 0;
+  player.atkTimer = 0.5;
+  if (dungeon) { player.x = dungeon.spawn.x; player.y = dungeon.spawn.y; }
+  camera.x = player.x - W / 2; camera.y = player.y - H / 2;
+  clampCamera();
+  state = 'playing';
+  document.getElementById('death-modal').style.display = 'none';
+  if (xpLoss > 0) dmgNum(player.x, player.y - 30, `−${xpLoss} XP`, '#a88');
+  if (socket?.connected)
+    socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp, maxHp: player.maxHp });
+  netSaveProgress();
+}
+
 function restartGame() {
   if (state !== 'dead') return;
+  document.getElementById('death-modal').style.display = 'none';
   targetId = null; targetIsPlayer = false; pvpMode = false;
   serverEnemies = []; otherPlayers = {};
   npcs = []; nearNpc = null;

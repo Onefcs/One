@@ -105,7 +105,7 @@ function netConnect(onReady) {
     if (player && id === socket.id) {
       player.hp = hp;
       player.hurtTimer = 0.35;
-      if (player.hp <= 0) { player.hp = 0; state = 'dead'; }
+      if (player.hp <= 0) { player.hp = 0; playerDie(); }
     } else if (otherPlayers[id]) {
       otherPlayers[id].hp = hp;
       otherPlayers[id].hurtTimer = 0.35;
@@ -123,8 +123,8 @@ function netConnect(onReady) {
     spawnBurst(player.x, player.y, '#f44', 5);
     if (player.hp <= 0) {
       player.hp = 0;
-      state = 'dead';
       socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: 0, maxHp: player.maxHp });
+      playerDie();
     }
   });
 

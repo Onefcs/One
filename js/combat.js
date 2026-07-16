@@ -28,7 +28,7 @@ function hitPlayer(atk) {
   const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
   player.hp -= actual; player.hurtTimer = 0.22;
   dmgNum(player.x, player.y - 24, actual, '#f55');
-  if (player.hp <= 0) { player.hp = 0; state = 'dead'; }
+  if (player.hp <= 0) { player.hp = 0; playerDie(); }
 }
 
 function faceTowards(tx, ty) {

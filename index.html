@@ -198,6 +198,17 @@
   </div>
 </nav>
 
+<!-- Death Modal -->
+<div id="death-modal" style="display:none">
+  <div class="death-panel">
+    <div class="death-title">☠ ВЫ ПОГИБЛИ</div>
+    <div class="death-info" id="death-info"></div>
+    <button class="death-btn-respawn" onclick="respawnPlayer()">⚡ Возродиться</button>
+    <div class="death-xp-note">−5% опыта при возрождении</div>
+    <button class="death-btn-exit" onclick="restartGame()">↩ В меню</button>
+  </div>
+</div>
+
 </div><!-- #app -->
 
 <!-- Socket.io client -->
