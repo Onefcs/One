@@ -136,6 +136,7 @@ io.on('connection', socket => {
       });
       const np = currentRoom.players.get(socket.id);
       if (np) np.hp = p.hp;
+      if (p.pvpMode) currentRoom.setPlayerPvpMode(socket.id, true);
     }
 
     socket.to(`floor_${newFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });

@@ -507,7 +507,7 @@ function selectChar(type) {
 // Returns the interpolated {x, y} for an entity at (now - INTERP_DELAY),
 // using two buffered snapshots to linearly interpolate between them.
 function getOtherPlayerAnimKey(p) {
-  if ((p.hp || 1) <= 0) return 'die';
+  if ((p.hp ?? 1) <= 0) return 'die';
   const dir = p.facing || 'front';
   if ((p.hurtTimer || 0) > 0.08) return `${dir}-hurt`;
   if (p.moving) return `${dir}-run`;
