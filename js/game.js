@@ -587,11 +587,62 @@ function buildTileCanvas() {
   tileCanvas.width = dungeon.w * TILE;
   tileCanvas.height = dungeon.h * TILE;
   const tctx = tileCanvas.getContext('2d');
+
+  function isFloor(tx, ty) {
+    return tx >= 0 && tx < dungeon.w && ty >= 0 && ty < dungeon.h
+      && dungeon.grid[ty][tx] === FLOOR;
+  }
+
+  // Pass 1: solid wall base color everywhere
+  tctx.fillStyle = th.wallBase || '#050505';
+  tctx.fillRect(0, 0, dungeon.w * TILE, dungeon.h * TILE);
+
+  // Pass 2: draw floor tiles
+  for (let ty = 0; ty < dungeon.h; ty++)
+    for (let tx = 0; tx < dungeon.w; tx++)
+      if (dungeon.grid[ty][tx] === FLOOR)
+        th.drawFloor(tctx, tx * TILE, ty * TILE, 0);
+
+  // Pass 3: draw wall decorations only on tiles adjacent to floor
+  for (let ty = 0; ty < dungeon.h; ty++)
+    for (let tx = 0; tx < dungeon.w; tx++)
+      if (dungeon.grid[ty][tx] === WALL) {
+        const nb = {
+          top: isFloor(tx, ty - 1), bottom: isFloor(tx, ty + 1),
+          left: isFloor(tx - 1, ty), right: isFloor(tx + 1, ty),
+          tl: isFloor(tx - 1, ty - 1), tr: isFloor(tx + 1, ty - 1),
+          bl: isFloor(tx - 1, ty + 1), br: isFloor(tx + 1, ty + 1),
+        };
+        if (nb.top || nb.bottom || nb.left || nb.right || nb.tl || nb.tr || nb.bl || nb.br)
+          th.drawWall(tctx, tx * TILE, ty * TILE, 0, nb);
+      }
+
+  // Pass 4: soft shadow on floor tiles at wall edges (universal)
+  const sd = 11;
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
-      const t = dungeon.grid[ty][tx];
-      if (t === WALL) th.drawWall(tctx, tx * TILE, ty * TILE, 0);
-      else            th.drawFloor(tctx, tx * TILE, ty * TILE, 0);
+      if (dungeon.grid[ty][tx] !== FLOOR) continue;
+      const x = tx * TILE, y = ty * TILE;
+      if (!isFloor(tx, ty - 1)) {
+        const g = tctx.createLinearGradient(0, y, 0, y + sd);
+        g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        tctx.fillStyle = g; tctx.fillRect(x, y, TILE, sd);
+      }
+      if (!isFloor(tx, ty + 1)) {
+        const g = tctx.createLinearGradient(0, y + TILE - sd, 0, y + TILE);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.4)');
+        tctx.fillStyle = g; tctx.fillRect(x, y + TILE - sd, TILE, sd);
+      }
+      if (!isFloor(tx - 1, ty)) {
+        const g = tctx.createLinearGradient(x, 0, x + sd, 0);
+        g.addColorStop(0, 'rgba(0,0,0,0.4)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        tctx.fillStyle = g; tctx.fillRect(x, y, sd, TILE);
+      }
+      if (!isFloor(tx + 1, ty)) {
+        const g = tctx.createLinearGradient(x + TILE - sd, 0, x + TILE, 0);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.4)');
+        tctx.fillStyle = g; tctx.fillRect(x + TILE - sd, y, sd, TILE);
+      }
     }
   }
 }
