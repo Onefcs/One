@@ -106,11 +106,11 @@ function netConnect(onReady) {
   socket.on('playerHurt', ({ id, hp }) => {
     if (player && id === socket.id) {
       player.hp = hp;
-      player.hurtTimer = 0.35;
+      player.hurtTimer = 0.1;
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
     } else if (otherPlayers[id]) {
       otherPlayers[id].hp = hp;
-      otherPlayers[id].hurtTimer = 0.35;
+      otherPlayers[id].hurtTimer = 0.1;
       if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     }
   });
@@ -120,7 +120,7 @@ function netConnect(onReady) {
     if (barrierTimer > 0) { dmgNum(player.x, player.y - 24, 'БЛОК', '#88f'); return; }
     const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
     player.hp = Math.max(0, player.hp - actual);
-    player.hurtTimer = 0.35;
+    player.hurtTimer = 0.1;
     dmgNum(player.x, player.y - 24, actual, '#f55');
     spawnBurst(player.x, player.y, '#f44', 5);
     if (player.hp <= 0) {
@@ -135,7 +135,7 @@ function netConnect(onReady) {
     spawnBurst(x, y, '#f44', 4);
     if (hitTargetId && otherPlayers[hitTargetId]) {
       otherPlayers[hitTargetId].hp = Math.max(0, (otherPlayers[hitTargetId].hp || 0) - dmg);
-      otherPlayers[hitTargetId].hurtTimer = 0.35;
+      otherPlayers[hitTargetId].hurtTimer = 0.1;
     }
   });
 

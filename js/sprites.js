@@ -123,7 +123,6 @@ function loadSprites(charType, onDone) {
 function getSpriteAnimKey(p) {
   if (state === 'dead') return 'die';
   const dir = p.facing || 'front';
-  if (p.hurtTimer > 0.08)  return `${dir}-hurt`;
   if (p.atkAnimTimer > 0)  return `${dir}-attack`;
   const inp = inputDir();
   if (inp.len > 0.05)      return `${dir}-run`;
