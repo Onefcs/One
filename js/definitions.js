@@ -1,7 +1,7 @@
 const CHAR_DEF = {
-  warrior: { name:'Воин',   emoji:'🗡️', color:'#5af', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:1.2,  atkType:'melee' },
-  archer:  { name:'Лучник', emoji:'🏹', color:'#7e7', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.6,  atkType:'ranged', projColor:'#fa0' },
-  mage:    { name:'Маг',    emoji:'🔮', color:'#e8e', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.85, atkType:'ranged', projColor:'#c8f' },
+  warrior: { name:'Воин',   emoji:'🗡️', color:'#55aaff', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:1.2,  atkType:'melee' },
+  archer:  { name:'Лучник', emoji:'🏹', color:'#77ee77', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.6,  atkType:'ranged', projColor:'#ffaa00' },
+  mage:    { name:'Маг',    emoji:'🔮', color:'#ee88ee', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.85, atkType:'ranged', projColor:'#cc88ff' },
 };
 
 const ENEMY_DEF = [
@@ -134,9 +134,9 @@ const SKILL_DEF = {
 };
 
 const NPC_DEF = [
-  { id:'merchant',   name:'Торговец',  emoji:'🧙', color:'#fa0', desc:'Зелья и расходники' },
-  { id:'craftsman',  name:'Кузнец',    emoji:'⚒️',  color:'#88f', desc:'Крафт предметов'    },
-  { id:'shopkeeper', name:'Лавочник',  emoji:'🏪',  color:'#4f4', desc:'Снаряжение'         },
+  { id:'merchant',   name:'Торговец',  emoji:'🧙', color:'#ffaa00', desc:'Зелья и расходники' },
+  { id:'craftsman',  name:'Кузнец',    emoji:'⚒️',  color:'#8888ff', desc:'Крафт предметов'    },
+  { id:'shopkeeper', name:'Лавочник',  emoji:'🏪',  color:'#44ff44', desc:'Снаряжение'         },
 ];
 
 const MERCHANT_SHOP = [
