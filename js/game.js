@@ -523,10 +523,9 @@ function render() {
   ctx.globalAlpha = 1;
   ctx.restore(); // [camera]
 
-  drawHUD();
+  drawHeader();
   drawPvpButton();
   drawTargetFrame();
-  drawMinimap();
   if (activeTab === 0) {
     drawJoystick();
     drawSkillButtons();
