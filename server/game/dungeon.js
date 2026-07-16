@@ -1,17 +1,4 @@
-const TILE = 40;
-const WALL = 0, FLOOR = 1;
-
-// Must stay in sync with client js/definitions.js ENEMY_DEF
-const ENEMY_DEF = [
-  { eid:'mushroom', name:'Гриб',    color:'#cc6633', size:13, hp:30,  atk:6,  def:1,  spd:65,  xp:1,  gold:[1,3], isBoss:false },
-  { eid:'slime',    name:'Слизень', color:'#44cc44', size:12, hp:35,  atk:7,  def:0,  spd:55,  xp:1,  gold:[1,3], isBoss:false },
-  { eid:'spider',   name:'Паук',    color:'#332255', size:14, hp:50,  atk:10, def:2,  spd:110, xp:2,  gold:[1,3], isBoss:false },
-  { eid:'goblin',   name:'Гоблин',  color:'#3a3',    size:14, hp:40,  atk:8,  def:2,  spd:92,  xp:2,  gold:[1,3], isBoss:false },
-  { eid:'skeleton', name:'Скелет',  color:'#bbb',    size:16, hp:70,  atk:14, def:4,  spd:70,  xp:3,  gold:[1,3], isBoss:false },
-  { eid:'orc',      name:'Орк',     color:'#964',    size:20, hp:130, atk:20, def:8,  spd:56,  xp:4,  gold:[1,3], isBoss:false },
-  { eid:'troll',    name:'Тролль',  color:'#575',    size:24, hp:230, atk:28, def:12, spd:40,  xp:7,  gold:[1,3], isBoss:false },
-  { eid:'demon',    name:'ДЕМОН',   color:'#f33',    size:28, hp:420, atk:42, def:16, spd:60,  xp:13, gold:[1,3], isBoss:true  },
-];
+const { TILE, WALL, FLOOR, ENEMY_DEF } = require('../../shared/definitions');
 
 function generateDungeon(lvl) {
   const DW = 72, DH = 56;
