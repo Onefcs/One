@@ -336,7 +336,7 @@ function update(dt) {
 // ─────────────────────────────────────────────────────────
 //  RENDER
 // ─────────────────────────────────────────────────────────
-function render() {
+function render(dt) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const theme = (state === 'playing' || state === 'dead') && dungeon ? getTheme(dungeonLvl) : null;
@@ -790,7 +790,7 @@ function restartGame() {
 // ─────────────────────────────────────────────────────────
 function loop(ts) {
   const dt = Math.min((ts - lastTs) / 1000, .05); lastTs = ts;
-  update(dt); render();
+  update(dt); render(dt);
   requestAnimationFrame(loop);
 }
 
