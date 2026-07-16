@@ -1,4 +1,5 @@
 const floorCache = {};
+let _eid = 1;
 
 function generateDungeon(lvl) {
   const DW = 100, DH = 78;
@@ -39,12 +40,14 @@ function generateDungeon(lvl) {
     const isBoss = idx === rooms.length - 2;
     const count = isBoss ? 1 : 2 + Math.floor(Math.random() * (2 + Math.floor(lvl / 2)));
     for (let i = 0; i < count; i++) {
-      const defIdx = isBoss ? 4 : Math.min(3, Math.floor(Math.random() * (1 + Math.floor(lvl / 2) + 1)));
+      const maxEIdx = Math.min(6, 1 + Math.floor(lvl / 2));
+      const defIdx = isBoss ? 7 : Math.floor(Math.random() * (maxEIdx + 1));
       const d = ENEMY_DEF[defIdx];
       const ex = (room.x + 1 + Math.floor(Math.random() * (room.w - 2))) * TILE + TILE / 2;
       const ey = (room.y + 1 + Math.floor(Math.random() * (room.h - 2))) * TILE + TILE / 2;
       enemyList.push({
         ...d,
+        id: _eid++,
         maxHp: Math.floor(d.hp * sc), hp: Math.floor(d.hp * sc),
         atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18)),
         x: ex, y: ey,

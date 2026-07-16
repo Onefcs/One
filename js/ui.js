@@ -136,13 +136,14 @@ function setTab(n) {
     const tb = document.getElementById('npc-talk-btn');
     if (tb) tb.style.display = 'none';
   }
-  const pid = ['', 'panel-inv', 'panel-map', 'panel-friends', 'panel-profile'][n];
+  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-profile'][n];
   if (pid) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); });
     if (n === 1) updateInvUI();
     if (n === 2) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
+    if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4) updateProfileUI();
   }
 }

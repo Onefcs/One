@@ -52,6 +52,7 @@ function buyPotion(idx) {
   if (player.gold < entry.price)  { _shopMsg('Мало золота!'); return; }
   player.gold -= entry.price;
   player.potions = (player.potions || 0) + 1;
+  if (typeof onBuyPotion === 'function') onBuyPotion();
   netSaveProgress();
   openNpc('merchant');
 }
@@ -118,6 +119,7 @@ function craftItem(idx) {
   });
   player.gold -= recipe.gold;
   player.inventory.push({ ...result });
+  if (result.slot === 'weapon' && typeof onCraftWeapon === 'function') onCraftWeapon();
   netSaveProgress();
   openNpc('craftsman');
 }

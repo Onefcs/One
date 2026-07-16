@@ -178,6 +178,7 @@ function update(dt) {
       spawnDrops(e);
       gainXP(e.xp);
       player.kills++;
+      if (typeof onEnemyKill === 'function') onEnemyKill(e.name);
       deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
     });
     enemies = enemies.filter(e => e.hp > 0);
@@ -204,6 +205,7 @@ function update(dt) {
             hitEnemy(e, p.dmg);
             if (e.hp <= 0) {
               spawnBurst(e.x, e.y, e.color, 8); spawnDrops(e); gainXP(e.xp); player.kills++;
+              if (typeof onEnemyKill === 'function') onEnemyKill(e.name);
               deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
             }
             hit = true; return e.hp > 0;
@@ -263,6 +265,7 @@ function update(dt) {
   if (battleCryTimer > 0) battleCryTimer -= dt;
   if (dodgeTimer > 0) dodgeTimer -= dt;
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
+  if (typeof tickQuestNotif === 'function') tickQuestNotif(dt);
 
   // Clear stale target
   if (targetId) {
@@ -395,6 +398,11 @@ function render() {
     const pct = e.hp / e.maxHp;
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
+    // Name label above HP bar
+    ctx.font = e.isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = e.isBoss ? '#f88' : '#ddd';
+    ctx.fillText(e.name, e.x, by - 2);
   });
 
   // Other players (online only)
@@ -527,6 +535,7 @@ function render() {
   ctx.restore(); // [camera]
 
   drawHeader();
+  if (activeTab === 0 && typeof drawQuestTracker === 'function') drawQuestTracker();
   drawPvpButton();
   drawTargetFrame();
   if (activeTab === 0) {
