@@ -222,7 +222,18 @@ function showAuthError(msg) {
 }
 
 function _showCharSelect(savedData) {
-  csShow(savedData);
+  if (savedData && savedData.type) {
+    // Character already exists — skip selection screen, go straight to loading
+    const el = document.getElementById('char-select');
+    if (el) {
+      el.style.display = 'flex';
+      const cards = el.querySelector('.cs-cards');
+      if (cards) cards.style.display = 'none';
+    }
+    selectChar(savedData.type);
+  } else {
+    csShow(savedData);
+  }
 }
 
 
