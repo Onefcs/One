@@ -1,7 +1,7 @@
 const CHAR_DEF = {
-  warrior: { name:'Воин',   emoji:'🗡️', color:'#55aaff', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:0.40, atkType:'melee' },
-  archer:  { name:'Лучник', emoji:'🏹', color:'#77ee77', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:0.53, atkType:'ranged', projColor:'#ffaa00' },
-  mage:    { name:'Маг',    emoji:'🔮', color:'#ee88ee', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.28, atkType:'ranged', projColor:'#cc88ff' },
+  warrior: { name:'Воин',   emoji:'🗡️', color:'#55aaff', baseHP:200, baseAtk:25, baseDef:10, speed:145, atkRange:58,  atkSpeed:0.133, atkType:'melee' },
+  archer:  { name:'Лучник', emoji:'🏹', color:'#77ee77', baseHP:140, baseAtk:20, baseDef:5,  speed:175, atkRange:210, atkSpeed:0.177, atkType:'ranged', projColor:'#ffaa00' },
+  mage:    { name:'Маг',    emoji:'🔮', color:'#ee88ee', baseHP:110, baseAtk:38, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.093, atkType:'ranged', projColor:'#cc88ff' },
 };
 
 const ENEMY_DEF = [
@@ -19,7 +19,7 @@ const UPGRADE_DEF = {
   atk:        { label:'⚔ Атака',        baseCost:30,  desc:'+3 ATK'       },
   def:        { label:'🛡 Защита',       baseCost:30,  desc:'+2 DEF'       },
   hp:         { label:'♥ Здоровье',      baseCost:25,  desc:'+25 MaxHP'    },
-  atkSpeed:   { label:'⚡ Скор. атаки',  baseCost:50,  desc:'+0.04 уд/с'  },
+  atkSpeed:   { label:'⚡ Скор. атаки',  baseCost:50,  desc:'+0.05 уд/с'  },
   critChance: { label:'💥 Шанс крита',  baseCost:60,  desc:'+2.5%'        },
   critPower:  { label:'🔥 Сила крита',  baseCost:60,  desc:'+15%'         },
   dodge:      { label:'💨 Уворот',       baseCost:80,  desc:'+2.5%'        },

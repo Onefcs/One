@@ -44,7 +44,7 @@ function recompute() {
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
-  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.04;
+  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
   player.dodge      = Math.min(0.65, lvl * 0.003 + (u.dodge     || 0) * 0.025);
