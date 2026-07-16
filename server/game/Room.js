@@ -151,6 +151,7 @@ class Room {
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
     if (!attacker.pvpMode || !target.pvpMode) return null;
+    if (target.hp <= 0) return null;
     const d = Math.hypot(attacker.x - target.x, attacker.y - target.y);
     if (d > 500) return null;
     const dmg = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
@@ -165,6 +166,7 @@ class Room {
     if (!p) return;
     const base = { warrior: [200,25,10], archer: [140,20,5], mage: [110,38,3] }[type] || [200,25,10];
     p.type = type;
+    p.pvpMode = false;
     if (savedStats) {
       p.maxHp = savedStats.maxHp || base[0];
       p.hp = p.maxHp;
@@ -181,7 +183,7 @@ class Room {
     if (!p) return;
     p.x = x; p.y = y; p.facing = facing;
     // Trust client for HP so other players see accurate values (healing included)
-    if (hp !== undefined && hp > 0) p.hp = hp;
+    if (hp !== undefined && hp >= 0) p.hp = hp;
     if (maxHp !== undefined && maxHp > 0) p.maxHp = maxHp;
   }
 
