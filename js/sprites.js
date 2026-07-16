@@ -35,7 +35,17 @@ const ENEMY_SPRITE_DEF = {
       hurt:   { src:'images/Slime/Slime1_Hurt_with_shadow.png',   cols:5,  fps:14, loop:false },
       death:  { src:'images/Slime/Slime1_Death_with_shadow.png',  cols:10, fps:8,  loop:false },
     }
-  }
+  },
+  goblin: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Slime/Slime1_Idle_with_shadow.png',   cols:6,  fps:8,  loop:true  },
+      walk:   { src:'images/Slime/Slime1_Walk_with_shadow.png',   cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Slime/Slime1_Attack_with_shadow.png', cols:10, fps:14, loop:false },
+      hurt:   { src:'images/Slime/Slime1_Hurt_with_shadow.png',   cols:5,  fps:14, loop:false },
+      death:  { src:'images/Slime/Slime1_Death_with_shadow.png',  cols:10, fps:8,  loop:false },
+    }
+  },
 };
 
 const enemySpriteCache = {};
