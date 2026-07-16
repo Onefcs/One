@@ -594,7 +594,7 @@ function selectChar(type) {
     });
 
     // Start loading sprites early; gate opens when both sprites + server ready
-    loadEnemySprites('slime');
+    loadEnemySprites('slime'); loadEnemySprites('goblin');
     loadSprites(type, csOnSpritesReady);
     netSelectChar(type, savedStats);
   } else {
@@ -608,7 +608,7 @@ function selectChar(type) {
       setTab(0);
     });
 
-    loadEnemySprites('slime');
+    loadEnemySprites('slime'); loadEnemySprites('goblin');
     loadSprites(type, () => {
       if (offlineRestore) { restoreFromSave(offlineRestore); _savedData = null; }
       loadLevel();
