@@ -58,8 +58,8 @@ function checkQuestComplete() {
 }
 
 function showQuestComplete(q) {
-  questNotif = { title: '✅ ' + q.title, timer: 3.5 };
-  dmgNum(player.x, player.y - 54, '📋 Квест выполнен!', '#fd0');
+  questNotif = { title: '✓ ' + q.title, timer: 3.5 };
+  dmgNum(player.x, player.y - 54, 'Квест выполнен!', '#fd0');
   spawnBurst(player.x, player.y, '#fd0', 12);
 }
 
@@ -173,7 +173,7 @@ function drawQuestTracker() {
   ctx.fillStyle = '#fd0';
   // Truncate title to fit panel
   const titleMax = Math.floor((panelW - pad * 2) / 5.5);
-  const titleStr = ('📋 ' + q.title).slice(0, titleMax);
+  const titleStr = q.title.slice(0, titleMax);
   ctx.fillText(titleStr, panelX + pad, py + pad + 9);
 
   ctx.font = '8px system-ui, Arial';
@@ -221,11 +221,17 @@ function updateQuestUI() {
       }
     }
 
-    const rewardStr = [q.reward.xp > 0 ? `⭐${q.reward.xp} опыта` : '', `💰${q.reward.gold}`].filter(Boolean).join(' · ');
+    const rewardStr = [
+      q.reward.xp > 0 ? iconHTML('star',12,'#f1c40f') + q.reward.xp + ' опыта' : '',
+      iconHTML('coin',12,'#f1c40f') + q.reward.gold,
+    ].filter(Boolean).join(' · ');
+    const statusIcon = isDone
+      ? iconHTML('hpPlus', 14, '#2ecc71')
+      : isCur ? iconHTML('star', 14, '#fd0') : iconHTML('skull', 14, '#555');
 
     return `<div class="${cls}">
       <div class="quest-header">
-        <span class="quest-title">${isDone ? '✅' : isCur ? '🔸' : '🔒'} ${q.title}</span>
+        <span class="quest-title">${statusIcon} ${q.title}</span>
         <span class="quest-reward">${rewardStr}</span>
       </div>
       <div class="quest-desc">${q.desc}</div>

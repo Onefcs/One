@@ -7,13 +7,13 @@ function updateInvUI() {
   const inv = p.inventory;
 
   // Equipment grid (5 columns × 2 rows)
-  document.getElementById('eq-grid').innerHTML = EQ_SLOTS.map(({ slot, label, empty }) => {
+  document.getElementById('eq-grid').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }) => {
     const it = p.equipment[slot];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
     return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `unequipItem('${slot}')` : ''}"
       title="${it ? it.name + ' — ' + statStr(it) : label}"
       style="${it ? 'border-color:' + rc + '55' : ''}">
-      <div class="cell-icon">${it ? it.emoji : empty}</div>
+      <div class="cell-icon">${it ? iconHTML(it.icon, 22, rc) : iconHTML(emptyIcon, 22, '#505070')}</div>
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name.slice(0, 8) : label}</div>
     </div>`;
   }).join('');
@@ -21,13 +21,18 @@ function updateInvUI() {
   // Character preview
   document.getElementById('char-preview').innerHTML = `
     <div class="inv-char-row">
-      <div style="font-size:40px;line-height:1">${p.charDef.emoji}</div>
+      <div style="line-height:1">${iconHTML(p.charDef.icon, 40, p.charDef.color)}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:bold;color:${p.charDef.color}">${p.charDef.name}</div>
         <div style="font-size:11px;color:#555;margin-top:2px">Уровень ${p.lvl}</div>
-        <div style="font-size:11px;color:#484860;margin-top:2px">♥${Math.ceil(p.hp)}/${p.maxHp} · ⚔${p.atk} · 🛡${p.def} · 💰${p.gold}</div>
+        <div style="font-size:11px;color:#484860;margin-top:2px;display:flex;align-items:center;gap:3px">
+          ${iconHTML('heart',11,'#e74c3c')}${Math.ceil(p.hp)}/${p.maxHp} ·
+          ${iconHTML('sword',11,'#e67e22')}${p.atk} ·
+          ${iconHTML('shield',11,'#5dade2')}${p.def} ·
+          ${iconHTML('coin',11,'#f1c40f')}${p.gold}
+        </div>
       </div>
-      <div style="font-size:13px;color:#f96;text-align:right;font-weight:bold">🧪×${p.potions || 0}</div>
+      <div style="color:#f96;text-align:right;font-weight:bold;display:flex;align-items:center;gap:2px">${iconHTML('potion',16,'#3ef07a')}×${p.potions || 0}</div>
     </div>
   `;
 
@@ -39,7 +44,7 @@ function updateInvUI() {
     return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}"
       title="${it ? it.name + ' — ' + statStr(it) : ''}"
       style="${it ? 'border-color:' + rc + '77' : ''}">
-      ${it ? `<span style="font-size:18px;display:block;text-align:center">${it.emoji}</span>
+      ${it ? `<div style="display:flex;justify-content:center;align-items:center">${iconHTML(it.icon,18,rc)}</div>
               <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>` : ''}
     </div>`;
   }).join('');
@@ -53,7 +58,7 @@ function updateProfileUI() {
   const fmt1 = v => (v * 100).toFixed(1) + '%';
   document.getElementById('profile-body').innerHTML = `
     <div class="prof-hero">
-      <div class="prof-emoji">${d.emoji}</div>
+      <div class="prof-emoji">${iconHTML(d.icon, 40, d.color)}</div>
       <div>
         <div class="prof-cls" style="color:${d.color}">${d.name}</div>
         <div class="prof-lvl">Уровень ${p.lvl} · ${th.name}</div>
@@ -62,16 +67,16 @@ function updateProfileUI() {
     <div class="xp-lbl">Опыт: ${p.xp} / ${p.xpNext}</div>
     <div class="xp-bg"><div class="xp-fill" style="width:${pct}%"></div></div>
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-ic">♥</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
-      <div class="stat-card"><div class="stat-ic">⚔</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Атака</div></div>
-      <div class="stat-card"><div class="stat-ic">🛡</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Защита</div></div>
-      <div class="stat-card"><div class="stat-ic">⚡</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
-      <div class="stat-card"><div class="stat-ic">💥</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
-      <div class="stat-card"><div class="stat-ic">🔥</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
-      <div class="stat-card"><div class="stat-ic">💨</div><div class="stat-vl">${fmt1(p.dodge)}</div><div class="stat-nm">Уворот</div></div>
-      <div class="stat-card"><div class="stat-ic">🎯</div><div class="stat-vl">${fmt1(p.accuracy)}</div><div class="stat-nm">Точность</div></div>
-      <div class="stat-card"><div class="stat-ic">🩸</div><div class="stat-vl">${fmt1(p.lifeSteal)}</div><div class="stat-nm">Вампиризм</div></div>
-      <div class="stat-card"><div class="stat-ic">💚</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('heart',14,'#e74c3c')}</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('sword',14,'#e67e22')}</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Атака</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('shield',14,'#5dade2')}</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Защита</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#f1c40f')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#e67e22')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('wind',14,'#95a5a6')}</div><div class="stat-vl">${fmt1(p.dodge)}</div><div class="stat-nm">Уворот</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('crosshair',14,'#3498db')}</div><div class="stat-vl">${fmt1(p.accuracy)}</div><div class="stat-nm">Точность</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('drop',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.lifeSteal)}</div><div class="stat-nm">Вампиризм</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#2ecc71')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
     </div>`;
   updateUpgradeUI();
 }
@@ -81,7 +86,7 @@ function updateUpgradeUI() {
   const el = document.getElementById('upgrade-grid');
   if (!el) return;
   const goldLbl = document.getElementById('upg-gold-lbl');
-  if (goldLbl) goldLbl.textContent = '💰 ' + player.gold;
+  if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#f1c40f') + ' ' + player.gold;
   const u = player.upgrades || {};
   el.innerHTML = Object.entries(UPGRADE_DEF).map(([key, cfg]) => {
     const lvl  = u[key] || 0;
@@ -89,10 +94,10 @@ function updateUpgradeUI() {
     const can  = player.gold >= cost;
     return `<div class="upg-row">
       <div class="upg-info">
-        <span class="upg-label">${cfg.label}</span>
+        <span class="upg-label">${iconHTML(cfg.icon, 14, '#9090bb')} ${cfg.label}</span>
         <span class="upg-meta">Ур.${lvl} · ${cfg.desc}</span>
       </div>
-      <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">💰${cost}</button>
+      <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">${iconHTML('coin',12,'#f1c40f')}${cost}</button>
     </div>`;
   }).join('');
 }
@@ -130,7 +135,7 @@ function drawMapPanel() {
     mx2.beginPath(); mx2.arc(ox + (n.x / TILE) * sc, oy + (n.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
   });
   document.getElementById('map-status').textContent =
-    th.name + ' · Этаж ' + dungeonLvl + ' · 👾 ' + mapEnemies.length;
+    th.name + ' · Этаж ' + dungeonLvl + ' · Враги: ' + mapEnemies.length;
 }
 
 function updateFloorUI() {
@@ -291,8 +296,7 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
   ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
-  ctx.font = `18px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(p.charDef.emoji, avX, avY + 1);
+  drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 20, p.charDef.color);
 
   // ── Info area ─────────────────────────────────────────────
   const infoX = avX + avR + 9;
@@ -373,17 +377,16 @@ function drawHeader() {
   // ── Stats row ─────────────────────────────────────────────
   const stY = HEADER_H - 6;
   const statItems = [
-    { icon: '💰', val: p.gold, color: '#f1c40f' },
-    { icon: '⚔',  val: p.atk,  color: '#e67e22' },
-    { icon: '🛡',  val: p.def,  color: '#5dade2' },
+    { icon: 'coin',   val: p.gold, color: '#f1c40f' },
+    { icon: 'sword',  val: p.atk,  color: '#e67e22' },
+    { icon: 'shield', val: p.def,  color: '#5dade2' },
   ];
   const statSlotW = infoW / 3;
   ctx.textBaseline = 'middle';
   statItems.forEach((s, i) => {
     const sx = infoX + i * statSlotW;
-    ctx.font = `11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(170,170,170,0.75)';
-    ctx.fillText(s.icon, sx, stY);
-    ctx.font = `bold 11px ${F}`; ctx.fillStyle = s.color;
+    drawIconCtx(ctx, s.icon, sx + 6, stY, 12, s.color);
+    ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = s.color;
     ctx.fillText(s.val, sx + 16, stY);
   });
 
@@ -392,12 +395,14 @@ function drawHeader() {
     let stx = infoX + infoW * 0.55;
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `bold 9px ${F}`;
     if (barrierTimer > 0) {
+      drawIconCtx(ctx, 'barrier', stx + 5, stY, 11, 'rgba(180,130,255,0.95)');
       ctx.fillStyle = 'rgba(180,130,255,0.95)';
-      ctx.fillText('🔮' + Math.ceil(barrierTimer) + 'с', stx, stY); stx += 42;
+      ctx.fillText(Math.ceil(barrierTimer) + 'с', stx + 14, stY); stx += 38;
     }
     if (battleCryTimer > 0) {
+      drawIconCtx(ctx, 'battleCry', stx + 5, stY, 11, 'rgba(255,190,30,0.95)');
       ctx.fillStyle = 'rgba(255,190,30,0.95)';
-      ctx.fillText('⚔' + Math.ceil(battleCryTimer) + 'с', stx, stY);
+      ctx.fillText(Math.ceil(battleCryTimer) + 'с', stx + 14, stY);
     }
   }
 
@@ -483,10 +488,9 @@ function drawSkillButtons() {
       roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.fill();
     }
 
-    // Emoji
+    // Icon
     ctx.globalAlpha = ready ? 1 : 0.45;
-    ctx.font = `24px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(sk.emoji, cx, cy - 7);
+    drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#b0c4ff' : '#606080');
 
     // Key badge
     ctx.globalAlpha = 1;
@@ -533,8 +537,7 @@ function drawPotionButton() {
   }
 
   ctx.globalAlpha = ready ? 1 : 0.45;
-  ctx.font = `18px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🧪', pb.x, pb.y - 5);
+  drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, ready ? '#3ef07a' : '#606080');
 
   ctx.globalAlpha = 1;
   ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
@@ -572,8 +575,7 @@ function drawTargetButton() {
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  ctx.font = `16px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🎯', tb.x, tb.y - 5);
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y - 5, 16, hasTarget ? '#ff8888' : '#8880aa');
 
   ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = hasTarget ? 'rgba(255,140,140,0.9)' : 'rgba(130,120,170,0.7)';
@@ -615,9 +617,12 @@ function drawPvpButton() {
     roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
   }
 
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = pvpMode ? '#ff7070' : 'rgba(130,170,240,0.9)';
-  ctx.fillText(pvpMode ? '⚔ ПК' : '🕊 Мир', pb.x + pb.w / 2, pb.y + pb.h / 2);
+  const pvpLabel = pvpMode ? 'ПК' : 'Мир';
+  const pvpColor = pvpMode ? '#ff7070' : 'rgba(130,170,240,0.9)';
+  drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = pvpColor;
+  ctx.fillText(pvpLabel, pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
 
   ctx.restore();
 }
@@ -662,9 +667,10 @@ function drawTargetFrame() {
   ctx.strokeStyle = 'rgba(220,80,80,0.1)'; ctx.lineWidth = 1;
   roundRect(ctx, bx + 1.5, by + 1.5, bw - 3, bh - 3, 8); ctx.stroke();
 
+  drawIconCtx(ctx, 'crosshair', bx + 14, by + 10, 10, color);
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = color;
-  ctx.fillText('🎯 ' + name.slice(0, 16), bx + 8, by + 15);
+  ctx.fillText(name.slice(0, 16), bx + 22, by + 15);
 
   const hbx = bx + 8, hby = by + 20, hbw = bw - 16, hbh = 10;
   ctx.fillStyle = 'rgba(40,10,10,0.9)';

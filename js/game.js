@@ -299,8 +299,7 @@ function render(dt) {
       ctx.fillStyle = '#a80'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(d.amount + 'g', d.x, d.y + bob);
     } else {
-      ctx.font = '20px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(d.item.emoji, d.x, d.y + bob);
+      drawIconCtx(ctx, d.item.icon, d.x, d.y + bob, 20, '#ccc');
     }
     ctx.restore();
   });
@@ -378,8 +377,7 @@ function render(dt) {
     ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
     ctx.fillText(p.username || '?', p.x, nameY);
     if (p.pvpMode) {
-      ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
-      ctx.fillText('⚔', p.x + bw / 2 + 2, nameY);
+      drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, nameY - 3, 9, '#f55');
     }
     ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
     ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
@@ -445,8 +443,7 @@ function render(dt) {
     ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
     ctx.fillText(displayName, player.x, nameY);
     if (pvpMode) {
-      ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
-      ctx.fillText('⚔', player.x + bw / 2 + 2, nameY);
+      drawIconCtx(ctx, 'pvpOn', player.x + bw / 2 + 8, nameY - 3, 9, '#f55');
     }
 
     ctx.fillStyle = 'rgba(30,0,0,0.75)'; ctx.fillRect(bx2, barTop, bw, bh);
@@ -563,8 +560,7 @@ function drawNpcs() {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(n.x, n.y, 22, 0, Math.PI * 2); ctx.stroke();
 
-    ctx.font = `28px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(n.emoji, n.x, n.y);
+    drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
 
     ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
@@ -574,8 +570,7 @@ function drawNpcs() {
 
     if (nearNpc && nearNpc.id === n.id) {
       const bounce = Math.sin(frameCount * 0.15) * 3;
-      ctx.font = `18px ${F}`; ctx.textBaseline = 'middle';
-      ctx.fillText('💬', n.x, n.y - 44 + bounce);
+      drawIconCtx(ctx, 'chat', n.x, n.y - 44 + bounce, 18, '#fff');
     }
   });
 }
@@ -656,7 +651,7 @@ function playerDie() {
   if (info && player) {
     info.innerHTML =
       `${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}<br>` +
-      `💰 ${player.gold} золота · ⚔ ${player.kills} убито` +
+      `${player.gold} золота · ${player.kills} убито` +
       (xpLoss > 0 ? `<br><span style="color:#c66">−${xpLoss} XP при возрождении</span>` : '');
   }
   modal.style.display = 'flex';

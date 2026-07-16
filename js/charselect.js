@@ -27,7 +27,7 @@ function csShow(savedData) {
     const btn = document.getElementById('cs-btn-' + type);
     if (!btn) return;
     if (savedData && savedData.type === type) {
-      btn.textContent = '▶ Продолжить · Ур.' + (savedData.lvl || 1) + ' · 💰' + (savedData.gold || 0);
+      btn.textContent = '▶ Продолжить · Ур.' + (savedData.lvl || 1) + ' · ' + (savedData.gold || 0) + 'g';
       btn.classList.add('cs-resume');
     } else {
       btn.textContent = 'Создать персонажа';
@@ -124,10 +124,7 @@ function _csDrawFrame(type, dt) {
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
-  ctx.font = (r * 0.95) + 'px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(def.emoji, cx, cy - bob + 2);
+  drawIconCtx(ctx, def.icon, cx, cy - bob + 2, r * 1.8, def.color);
 }
 
 // ── Loading gate: game starts only when sprites + server BOTH ready ──
@@ -147,7 +144,7 @@ function csStartLoading(type, onReady) {
 
   const emojiEl = document.getElementById('csl-emoji');
   const nameEl  = document.getElementById('csl-name');
-  if (emojiEl) emojiEl.textContent = def.emoji;
+  if (emojiEl) emojiEl.innerHTML = iconHTML(def.icon, 60, def.color);
   if (nameEl)  nameEl.textContent  = def.name;
 
   csSetStatus('Загрузка спрайтов...');
