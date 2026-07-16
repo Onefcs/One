@@ -68,6 +68,10 @@ function update(dt) {
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
   if (swingTimer > 0)       swingTimer -= dt;
   if (player.atkAnimTimer > 0) player.atkAnimTimer -= dt;
+  if (partyInvitePending) {
+    partyInvitePending.timer -= dt;
+    if (partyInvitePending.timer <= 0) partyInvitePending = null;
+  }
   // HP regen
   if ((player.hpRegen || 0) > 0 && player.hp < player.maxHp)
     player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
@@ -110,8 +114,8 @@ function update(dt) {
   }
   if (player.atkAnimTimer <= 0) { player.pendingAttack = null; player.attackFired = false; }
 
-  // Auto-attack
-  player.atkTimer -= dt;
+  // Auto-attack (skip timer decrement in manual mode)
+  if (autoAttackMode) player.atkTimer -= dt;
   if (player.atkTimer <= 0) {
     let closest = null, closestD = Infinity;
     let closestIsPlayer = false;
@@ -475,13 +479,18 @@ function render(dt) {
   drawHeader();
   if (activeTab === 0 && typeof drawQuestTracker === 'function') drawQuestTracker();
   drawPvpButton();
+  drawPartyButton();
+  drawPartyHUD();
   drawTargetFrame();
   if (activeTab === 0) {
     drawJoystick();
     drawSkillButtons();
     drawPotionButton();
     drawTargetButton();
+    drawAttackButton();
+    drawAutoToggle();
   }
+  drawPartyInvitePopup();
   if (state === 'dead') drawDead();
 
   if (transTimer > 0) {

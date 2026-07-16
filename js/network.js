@@ -159,7 +159,7 @@ function netConnect(onReady) {
     if (xp && player) gainXP(xp);
     if (gold && player) {
       player.gold += gold;
-      dmgNum(px, py - 36, '+' + gold + '💰', '#ff0');
+      dmgNum(px, py - 36, '+' + gold + 'g', '#ff0');
     }
   });
 
@@ -188,12 +188,52 @@ function netConnect(onReady) {
     spawnBurst(x, y, '#f4f', 6);
   });
 
+  socket.on('partyInviteReceived', ({ fromId, fromName }) => {
+    if (partyPartnerId) return; // already in party
+    partyInvitePending = { fromId, fromName, timer: 15 };
+  });
+
+  socket.on('partyFormed', ({ partnerId, partnerName }) => {
+    partyPartnerId   = partnerId;
+    partyPartnerName = partnerName;
+    partyInvitePending = null;
+    if (player) dmgNum(player.x, player.y - 30, 'Пати создана!', '#3ef07a');
+  });
+
+  socket.on('partyLeft', ({ reason }) => {
+    if (partyPartnerId && player)
+      dmgNum(player.x, player.y - 30, partyPartnerName + ' покинул пати', '#fa0');
+    partyPartnerId   = null;
+    partyPartnerName = '';
+  });
+
   socket.on('disconnect', () => {
     socket = null;
     serverEnemies = [];
     otherPlayers = {};
     otherProjs = [];
+    partyPartnerId   = null;
+    partyPartnerName = '';
+    partyInvitePending = null;
   });
+}
+
+// ── Party helpers ─────────────────────────────────────────
+function netPartyInvite(targetId) {
+  if (socket?.connected) socket.emit('partyInvite', { targetId });
+}
+function netPartyAccept(fromId) {
+  if (socket?.connected) socket.emit('partyAccept', { fromId });
+  partyInvitePending = null;
+}
+function netPartyDecline(fromId) {
+  if (socket?.connected) socket.emit('partyDecline', { fromId });
+  partyInvitePending = null;
+}
+function netPartyLeave() {
+  if (socket?.connected) socket.emit('partyLeave');
+  partyPartnerId   = null;
+  partyPartnerName = '';
 }
 
 // ── Auth ──────────────────────────────────────────────────────

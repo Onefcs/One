@@ -31,6 +31,28 @@ function getPvpBtnPos() {
   return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
 }
 
+function getPartyBtnPos() {
+  return { x: 92, y: HEADER_H + 6, w: 80, h: 26 };
+}
+
+function getAttackBtnPos() {
+  const sz = SKILL_SZ, gap = SKILL_GAP;
+  const r = 30;
+  const gridLeft = W - 14 - 2 * sz - gap; // x of leftmost skill column
+  const gridCenterY = H - NAV_H - 14 - sz - gap / 2; // center Y of 2x2 grid
+  return { x: gridLeft - gap - r - 4, y: gridCenterY, r };
+}
+
+function getAutoBtnPos() {
+  const ab = getAttackBtnPos();
+  const w = 52, h = 20;
+  return { x: ab.x - w / 2, y: ab.y - ab.r - 6 - h, w, h };
+}
+
+// Invite accept/decline buttons (for popup)
+function getPartyAcceptPos()  { return { x: W / 2 - 68, y: H / 2 + 18, w: 58, h: 26 }; }
+function getPartyDeclinePos() { return { x: W / 2 + 10, y: H / 2 + 18, w: 58, h: 26 }; }
+
 function _isOnScreen(wx, wy) {
   const margin = 60;
   const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
@@ -129,13 +151,64 @@ function _checkPvpBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkPartyBtnTouch(cx, cy) {
+  if (!player) return false;
+  const pb = getPartyBtnPos();
+  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
+    if (partyPartnerId) {
+      if (typeof netPartyLeave === 'function') netPartyLeave();
+    } else if (targetIsPlayer && targetId) {
+      if (typeof netPartyInvite === 'function') netPartyInvite(targetId);
+    }
+    return true;
+  }
+  return false;
+}
+
+function _checkPartyInviteTouch(cx, cy) {
+  if (!partyInvitePending) return false;
+  const ac = getPartyAcceptPos(), dc = getPartyDeclinePos();
+  if (cx >= ac.x && cx <= ac.x + ac.w && cy >= ac.y && cy <= ac.y + ac.h) {
+    if (typeof netPartyAccept === 'function') netPartyAccept(partyInvitePending.fromId);
+    return true;
+  }
+  if (cx >= dc.x && cx <= dc.x + dc.w && cy >= dc.y && cy <= dc.y + dc.h) {
+    if (typeof netPartyDecline === 'function') netPartyDecline(partyInvitePending.fromId);
+    return true;
+  }
+  return false;
+}
+
+function _checkAttackBtnTouch(cx, cy) {
+  if (!player) return false;
+  const ab = getAttackBtnPos();
+  if (Math.hypot(cx - ab.x, cy - ab.y) < ab.r + 8) {
+    player.atkTimer = -1; // force attack on next frame
+    return true;
+  }
+  return false;
+}
+
+function _checkAutoBtnTouch(cx, cy) {
+  const ab = getAutoBtnPos();
+  if (cx >= ab.x && cx <= ab.x + ab.w && cy >= ab.y && cy <= ab.y + ab.h) {
+    autoAttackMode = !autoAttackMode;
+    return true;
+  }
+  return false;
+}
+
 function onTS(e) {
   e.preventDefault();
   if (!joyGuard()) return;
   const jc = joyCenter();
   for (const t of e.changedTouches) {
     if (t.clientY > H - NAV_H) return;
+    if (_checkPartyInviteTouch(t.clientX, t.clientY)) continue;
     if (_checkPvpBtnTouch(t.clientX, t.clientY)) continue;
+    if (_checkPartyBtnTouch(t.clientX, t.clientY)) continue;
+    if (_checkAutoBtnTouch(t.clientX, t.clientY)) continue;
+    if (_checkAttackBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkPotionTouch(t.clientX, t.clientY)) continue;
     if (_checkTargetBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkSkillTouch(t.clientX, t.clientY)) continue;
@@ -165,7 +238,11 @@ function onTC() { joy.active = false; joy.dx = 0; joy.dy = 0; }
 function onMD(e) {
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
+  if (_checkPartyInviteTouch(e.clientX, e.clientY)) return;
   if (_checkPvpBtnTouch(e.clientX, e.clientY)) return;
+  if (_checkPartyBtnTouch(e.clientX, e.clientY)) return;
+  if (_checkAutoBtnTouch(e.clientX, e.clientY)) return;
+  if (_checkAttackBtnTouch(e.clientX, e.clientY)) return;
   if (_checkPotionTouch(e.clientX, e.clientY)) return;
   if (_checkTargetBtnTouch(e.clientX, e.clientY)) return;
   if (_checkSkillTouch(e.clientX, e.clientY)) return;
