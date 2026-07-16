@@ -1,4 +1,6 @@
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -6,6 +8,31 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const PlayerModel = require('./models/Player');
 const Room = require('./game/Room');
+
+const ROOT = path.join(__dirname, '..');
+const BUNDLE_FILES = [
+  'shared/definitions.js',
+  'js/constants.js',
+  'js/utils.js',
+  'js/state.js',
+  'js/themes.js',
+  'js/definitions.js',
+  'js/sprites.js',
+  'js/dungeon.js',
+  'js/particles.js',
+  'js/player.js',
+  'js/combat.js',
+  'js/input.js',
+  'js/ui.js',
+  'js/charselect.js',
+  'js/network.js',
+  'js/quests.js',
+  'js/game.js',
+  'js/npc.js',
+].map(f => path.join(ROOT, f));
+
+const jsBundle = BUNDLE_FILES.map(f => fs.readFileSync(f, 'utf8')).join('\n;\n');
+const jsBundleEtag = `"${crypto.createHash('sha1').update(jsBundle).digest('hex').slice(0, 8)}"`;
 
 const app = express();
 const server = http.createServer(app);
@@ -20,7 +47,17 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // Images: cache 30 days — sprites never change between deploys
 app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
-// HTML/JS/CSS: no cache so updates are picked up immediately
+
+// Single JS bundle — ETag changes on every server restart (bundle rebuilt on startup)
+app.get('/bundle.js', (req, res) => {
+  if (req.headers['if-none-match'] === jsBundleEtag) return res.status(304).end();
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('ETag', jsBundleEtag);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(jsBundle);
+});
+
+// HTML/CSS: no cache so updates are picked up immediately
 app.use(express.static(path.join(__dirname, '..')));
 
 // One Room per floor, created on demand, destroyed when empty

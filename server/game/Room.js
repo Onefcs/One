@@ -1,4 +1,5 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
+const { calcGoldDrop } = require('../../shared/definitions');
 
 const TICK_MS = 33;
 const AOI_RADIUS = 900; // px — covers screen + buffer
@@ -199,7 +200,7 @@ class Room {
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     if (enemy.hp <= 0) {
-      const g = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
+      const g = calcGoldDrop(enemy, this.floor);
       return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color };
     }
     return { killed: false, hp: enemy.hp, dmg };

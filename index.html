@@ -207,26 +207,8 @@
 
 <!-- Socket.io client -->
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<!-- Shared definitions — single source of truth for server and client -->
-<script src="shared/definitions.js?v=27"></script>
-<!-- Game scripts — load order matters (dependencies first) -->
-<script src="js/constants.js?v=27"></script>
-<script src="js/utils.js?v=27"></script>
-<script src="js/state.js?v=27"></script>
-<script src="js/themes.js?v=27"></script>
-<script src="js/definitions.js?v=27"></script>
-<script src="js/sprites.js?v=27"></script>
-<script src="js/dungeon.js?v=27"></script>
-<script src="js/particles.js?v=27"></script>
-<script src="js/player.js?v=27"></script>
-<script src="js/combat.js?v=27"></script>
-<script src="js/input.js?v=27"></script>
-<script src="js/ui.js?v=27"></script>
-<script src="js/charselect.js?v=27"></script>
-<script src="js/network.js?v=27"></script>
-<script src="js/quests.js?v=27"></script>
-<script src="js/game.js?v=27"></script>
-<script src="js/npc.js?v=27"></script>
+<!-- All game scripts in one bundle — ETag cache-busts on server restart -->
+<script src="/bundle.js"></script>
 
 </body>
 </html>
