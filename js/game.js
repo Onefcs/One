@@ -63,31 +63,6 @@ function update(dt) {
         }
       });
     }
-    // Push player out of enemies and other players
-    activeEnemies.forEach(e => {
-      if ((e.hp || 0) <= 0) return;
-      const minD = e.size + 12;
-      const ddx = player.x - e.x, ddy = player.y - e.y;
-      const dd = Math.hypot(ddx, ddy);
-      if (dd < minD && dd > 0.01) {
-        const p2 = (minD - dd) / dd;
-        if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-        if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-      }
-    });
-    if (isOnline) {
-      Object.values(otherPlayers).forEach(op => {
-        if ((op.hp || 0) <= 0 || op.x == null) return;
-        const minD = 26;
-        const ddx = player.x - op.x, ddy = player.y - op.y;
-        const dd = Math.hypot(ddx, ddy);
-        if (dd < minD && dd > 0.01) {
-          const p2 = (minD - dd) / dd;
-          if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-          if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-        }
-      });
-    }
     if (isOnline) netSendMove();
   }
 
