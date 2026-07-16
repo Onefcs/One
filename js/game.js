@@ -91,6 +91,21 @@ function update(dt) {
     }
   }
 
+  // Fire pending attack on frame 8
+  if (player.pendingAttack && !player.attackFired && player.animFrame >= 8) {
+    const pa = player.pendingAttack;
+    player.attackFired = true;
+    swingTimer = 0.18;
+    if (pa.isPlayer) {
+      netPvpAttack(pa.socketId);
+      if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+    } else {
+      netAttack(pa.id);
+      if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+    }
+  }
+  if (player.atkAnimTimer <= 0) { player.pendingAttack = null; player.attackFired = false; }
+
   // Auto-attack
   player.atkTimer -= dt;
   if (player.atkTimer <= 0) {
@@ -136,21 +151,13 @@ function update(dt) {
         targetIsPlayer = closestIsPlayer;
       }
       player.atkTimer = 1 / (player.atkSpeed || player.charDef.atkSpeed);
-      if (closestIsPlayer) {
-        faceTowards(closest.x, closest.y);
-        swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
-        swingTimer = 0.18;
-        player.atkAnimTimer = 1.65; player.castDuration = 1.65; player.animFrame = 0; player.animTimer = 0;
-        netPvpAttack(closest._socketId);
-        if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-      } else {
-        netAttack(closest.id);
-        faceTowards(closest.x, closest.y);
-        swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
-        swingTimer = 0.18;
-        player.atkAnimTimer = 1.65; player.castDuration = 1.65; player.animFrame = 0; player.animTimer = 0;
-        if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-      }
+      faceTowards(closest.x, closest.y);
+      swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
+      player.atkAnimTimer = 0.825; player.castDuration = 0.825; player.animFrame = 0; player.animTimer = 0;
+      player.pendingAttack = closestIsPlayer
+        ? { isPlayer: true, socketId: closest._socketId, x: closest.x, y: closest.y }
+        : { isPlayer: false, id: closest.id, x: closest.x, y: closest.y };
+      player.attackFired = false;
     }
   }
 

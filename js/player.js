@@ -10,6 +10,7 @@ function makePlayer(type) {
     gold: 0, kills: 0,
     atkTimer: 0, hurtTimer: 0,
     facing: 'front', atkAnimTimer: 0, castDuration: 0, animFrame: 0, animTimer: 0,
+    pendingAttack: null, attackFired: false,
     equipment: {
       weapon:null, offhand:null, helmet:null, body:null, legs:null,
       gloves:null, boots:null, ring:null, belt:null, pendant:null,
@@ -162,7 +163,7 @@ function useSkill(idx) {
 
   player.skillCooldowns[sk.key] = sk.cd;
   skillFlash = { key: sk.key, timer: 0.4 };
-  player.atkAnimTimer = 1.35; player.castDuration = 1.35; player.animFrame = 0; player.animTimer = 0;
+  player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
   if (player.type === 'warrior') {
     if (sk.key === 'Q') { // Shield Bash
