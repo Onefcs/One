@@ -18,7 +18,6 @@ const BUNDLE_FILES = [
   'js/themes.js',
   'js/definitions.js',
   'js/sprites.js',
-  'js/dungeon.js',
   'js/particles.js',
   'js/player.js',
   'js/combat.js',

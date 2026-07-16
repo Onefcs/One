@@ -32,55 +32,11 @@ function hasLOS(x1, y1, x2, y2) {
   return true;
 }
 
-function hitEnemy(e, base) {
-  // Accuracy check
-  if (Math.random() > (player.accuracy ?? 0.85)) {
-    dmgNum(e.x, e.y - e.size - 4, 'МИМО', '#888');
-    return;
-  }
-  let dmg = Math.max(1, base - e.def + rnd(-3, 4));
-  let isCrit = false;
-  if (Math.random() < (player.critChance || 0)) {
-    dmg = Math.floor(dmg * (player.critPower || 1.5));
-    isCrit = true;
-  }
-  e.hp -= dmg; e.hurtTimer = 0.22;
-  dmgNum(e.x, e.y - e.size - 4, dmg, isCrit ? '#fff' : '#ff4');
-  if (isCrit) spawnBurst(e.x, e.y, '#ff8', 3);
-  // Life steal
-  const ls = player.lifeSteal || 0;
-  if (ls > 0 && player.hp < player.maxHp) {
-    player.hp = Math.min(player.maxHp, player.hp + dmg * ls);
-  }
-}
-
-function hitPlayer(atk) {
-  if (barrierTimer > 0) { dmgNum(player.x, player.y - 24, 'БЛОК', '#88f'); return; }
-  // Dodge check
-  if (Math.random() < (player.dodge || 0)) {
-    dmgNum(player.x, player.y - 24, 'УКЛОН', '#7ef');
-    return;
-  }
-  const dmg = Math.max(1, atk - player.def + rnd(-2, 3));
-  const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
-  player.hp -= actual; player.hurtTimer = 0.22;
-  dmgNum(player.x, player.y - 24, actual, '#f55');
-  if (player.hp <= 0) { player.hp = 0; playerDie(); }
-}
-
 function faceTowards(tx, ty) {
   const dx = tx - player.x, dy = ty - player.y;
   const ax = Math.abs(dx), ay = Math.abs(dy);
   if (ax > ay * 0.8) player.facing = dx > 0 ? 'right' : 'left';
   else               player.facing = dy > 0 ? 'front' : 'back';
-}
-
-function doMeleeAttack(target) {
-  faceTowards(target.x, target.y);
-  hitEnemy(target, player.atk * (battleCryTimer > 0 ? 1.5 : 1));
-  swingAngle = Math.atan2(target.y - player.y, target.x - player.x);
-  swingTimer = 0.18;
-  player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
 }
 
 function fireProj(tx, ty) {
@@ -98,38 +54,6 @@ function fireProj(tx, ty) {
   projs.push(proj);
   netSpawnProj({ x: proj.x, y: proj.y, vx, vy, color: d.projColor,
     size: proj.size, projType: proj.projType, angle: ang, life: 1.8 });
-}
-
-function spawnDrops(e) {
-  const g = calcGoldDrop(e, dungeonLvl);
-  if (g > 0) drops.push({ type: 'gold', x: e.x + rnd(-12, 12), y: e.y + rnd(-12, 12), amount: g, life: 18 });
-
-  // Item drop: 12% chance, rarity-weighted
-  if (Math.random() < 0.12) {
-    const r = Math.random();
-    let pool;
-    if      (r < 0.60)  pool = ITEM_DEF.filter(i => i.rarity === 'common'    && i.slot !== 'use');
-    else if (r < 0.88)  pool = ITEM_DEF.filter(i => i.rarity === 'uncommon'  && i.slot !== 'use');
-    else if (r < 0.975) pool = ITEM_DEF.filter(i => i.rarity === 'rare'      && i.slot !== 'use');
-    else if (r < 0.998) pool = ITEM_DEF.filter(i => i.rarity === 'epic'      && i.slot !== 'use');
-    else                pool = ITEM_DEF.filter(i => i.rarity === 'legendary' && i.slot !== 'use');
-    if (pool && pool.length > 0) {
-      const item = pool[Math.floor(Math.random() * pool.length)];
-      drops.push({ type: 'item', x: e.x + rnd(-18, 18), y: e.y + rnd(-18, 18), item: { ...item }, life: 40 });
-    }
-  }
-
-  // Craft material drop: 20% chance
-  if (Math.random() < 0.20) {
-    const r = Math.random();
-    const matPool = r < 0.55 ? CRAFT_MATS.filter(m => m.rarity === 'common')
-                  : r < 0.85 ? CRAFT_MATS.filter(m => m.rarity === 'uncommon')
-                  :              CRAFT_MATS.filter(m => m.rarity === 'rare');
-    if (matPool.length > 0) {
-      const mat = matPool[Math.floor(Math.random() * matPool.length)];
-      drops.push({ type: 'item', x: e.x + rnd(-20, 20), y: e.y + rnd(-20, 20), item: { ...mat }, life: 35 });
-    }
-  }
 }
 
 function pickup(drop) {

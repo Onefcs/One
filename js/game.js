@@ -22,9 +22,6 @@ function update(dt) {
   frameCount++;
   if (transTimer > 0) { transTimer -= dt; return; }
 
-  const isOnline = !!(socket?.connected);
-  const activeEnemies = isOnline ? serverEnemies : enemies;
-
   if (activeTab === 0) {
     if (player.atkAnimTimer <= 0.3) {
       const inp = inputDir();
@@ -38,8 +35,9 @@ function update(dt) {
         else               player.facing = inp.dy > 0 ? 'front' : 'back';
       }
     }
-    // Push player out of enemies and other players
-    activeEnemies.forEach(e => {
+
+    // Push player out of enemies
+    serverEnemies.forEach(e => {
       if ((e.hp || 0) <= 0) return;
       const minD = e.size + 12;
       const ddx = player.x - e.x, ddy = player.y - e.y;
@@ -50,20 +48,21 @@ function update(dt) {
         if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
       }
     });
-    if (isOnline) {
-      Object.values(otherPlayers).forEach(op => {
-        if ((op.hp || 0) <= 0 || op.x == null) return;
-        const minD = 26;
-        const ddx = player.x - op.x, ddy = player.y - op.y;
-        const dd = Math.hypot(ddx, ddy);
-        if (dd < minD && dd > 0.01) {
-          const p2 = (minD - dd) / dd;
-          if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-          if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-        }
-      });
-    }
-    if (isOnline) netSendMove();
+
+    // Push player out of other players
+    Object.values(otherPlayers).forEach(op => {
+      if ((op.hp || 0) <= 0 || op.x == null) return;
+      const minD = 26;
+      const ddx = player.x - op.x, ddy = player.y - op.y;
+      const dd = Math.hypot(ddx, ddy);
+      if (dd < minD && dd > 0.01) {
+        const p2 = (minD - dd) / dd;
+        if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
+        if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
+      }
+    });
+
+    netSendMove();
   }
 
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
@@ -73,7 +72,7 @@ function update(dt) {
   if ((player.hpRegen || 0) > 0 && player.hp < player.maxHp)
     player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
 
-  // advance sprite animation frame
+  // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
     const ak = getSpriteAnimKey(player);
     const ad = SPRITE_DEF[player.type].anims[ak];
@@ -89,6 +88,7 @@ function update(dt) {
     }
   }
 
+  // Auto-attack
   player.atkTimer -= dt;
   if (player.atkTimer <= 0) {
     let closest = null, closestD = Infinity;
@@ -96,9 +96,9 @@ function update(dt) {
 
     // Prefer locked target
     if (targetId && !targetIsPlayer) {
-      const t = activeEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
+      const t = serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
       if (t) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
-    } else if (targetId && targetIsPlayer && pvpMode && isOnline) {
+    } else if (targetId && targetIsPlayer && pvpMode) {
       const op = otherPlayers[targetId];
       if (op && (op.hp || 0) > 0 && op.x != null) {
         closest = { ...op, _socketId: targetId };
@@ -109,13 +109,13 @@ function update(dt) {
 
     // Fall back to nearest enemy
     if (!closest) {
-      activeEnemies.forEach(e => {
+      serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
         const d = dist(e.x, e.y, player.x, player.y);
         if (d < closestD) { closestD = d; closest = e; closestIsPlayer = false; }
       });
       // In PK mode also consider nearby players
-      if (pvpMode && isOnline) {
+      if (pvpMode) {
         Object.entries(otherPlayers).forEach(([id, op]) => {
           if ((op.hp || 0) <= 0 || op.x == null) return;
           const d = dist(op.x, op.y, player.x, player.y);
@@ -126,9 +126,8 @@ function update(dt) {
 
     const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
     if (!closest || closestD >= atkRange || !hasLOS(player.x, player.y, closest.x, closest.y)) {
-      player.atkTimer = 0.15; // short poll interval when nothing in range / no LOS
+      player.atkTimer = 0.15;
     } else {
-      // Auto-set target to whatever is being attacked
       if (!targetId) {
         targetId = closestIsPlayer ? closest._socketId : closest.id;
         targetIsPlayer = closestIsPlayer;
@@ -141,116 +140,41 @@ function update(dt) {
         player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
         netPvpAttack(closest._socketId);
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-      } else if (isOnline) {
+      } else {
         netAttack(closest.id);
         faceTowards(closest.x, closest.y);
         swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
         swingTimer = 0.18;
         player.atkAnimTimer = 0.55; player.animFrame = 0; player.animTimer = 0;
         if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-      } else {
-        if (player.charDef.atkType === 'ranged') fireProj(closest.x, closest.y);
-        else doMeleeAttack(closest);
       }
     }
   }
 
-  if (!isOnline) {
-    const dead = [];
-    enemies.forEach(e => {
-      if (e.hurtTimer > 0) e.hurtTimer -= dt;
-      if (e.atkAnimTimer > 0) e.atkAnimTimer -= dt;
-      const dp = dist(e.x, e.y, player.x, player.y);
-      if (dp < e.aggroR) e.aggro = true;
-      if (dp > e.aggroR * 2.2) e.aggro = false;
-      if (e.aggro) {
-        if (dp > e.size + 14) {
-          const ex2 = (player.x - e.x) / dp, ey2 = (player.y - e.y) / dp;
-          const eMoveSpd = (player?.speed || 150) * 1.3;
-          const er = e.size * 0.55, evx = ex2 * eMoveSpd * dt, evy = ey2 * eMoveSpd * dt;
-          if (canMoveX(e, evx, er)) e.x += evx;
-          if (canMoveY(e, evy, er)) e.y += evy;
-        }
-        e.atkTimer -= dt;
-        if (dp < e.size + 20 && e.atkTimer <= 0 && hasLOS(e.x, e.y, player.x, player.y)) {
-          e.atkTimer = 1.4 + Math.random() * 0.6;
-          e.atkAnimTimer = 0.55;
-          hitPlayer(e.atk);
-        }
-      }
-      if (e.hp <= 0) dead.push(e);
-    });
-
-    dead.forEach(e => {
-      if (e.id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
-      spawnBurst(e.x, e.y, e.color, 8);
-      spawnDrops(e);
-      gainXP(e.xp);
-      player.kills++;
-      if (typeof onEnemyKill === 'function') onEnemyKill(e.name);
-      deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
-    });
-    enemies = enemies.filter(e => e.hp > 0);
-
-    const stillDead = [];
-    deadEnemies.forEach(e => {
-      e.respawnTimer -= dt;
-      if (e.respawnTimer <= 0) {
-        enemies.push({ ...e, x: e.spawnX, y: e.spawnY, hp: e.maxHp, hurtTimer: 0, aggro: false, atkTimer: 1 + Math.random() });
-      } else {
-        stillDead.push(e);
-      }
-    });
-    deadEnemies = stillDead;
-
-    projs = projs.filter(p => {
-      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      if (p.life <= 0 || isWall(p.x, p.y)) return false;
-      if (p.isPlayer) {
-        let hit = false;
-        enemies = enemies.filter(e => {
-          if (hit) return true;
-          if (dist(p.x, p.y, e.x, e.y) < e.size + p.size) {
-            hitEnemy(e, p.dmg);
-            if (e.hp <= 0) {
-              spawnBurst(e.x, e.y, e.color, 8); spawnDrops(e); gainXP(e.xp); player.kills++;
-              if (typeof onEnemyKill === 'function') onEnemyKill(e.name);
-              deadEnemies.push({ ...e, hp: e.maxHp, respawnTimer: 10, aggro: false, hurtTimer: 0, atkTimer: 1 + Math.random() });
-            }
-            hit = true; return e.hp > 0;
-          }
-          return true;
-        });
-        return !hit;
-      }
-      return true;
-    });
-  } else {
-    // Online: advance projectiles with visual hit detection
-    projs = projs.filter(p => {
-      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      if (p.life <= 0 || isWall(p.x, p.y)) return false;
-      if (p.isPlayer) {
-        const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
-        if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
-        if (pvpMode) {
-          const hitP = Object.values(otherPlayers).find(op => (op.hp || 0) > 0 && op.x != null && dist(p.x, p.y, op.x, op.y) < 18 + p.size);
-          if (hitP) { spawnBurst(p.x, p.y, p.color, 5); return false; }
-        }
-      }
-      return true;
-    });
-    otherProjs = otherProjs.filter(p => {
-      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-      if (p.life <= 0 || isWall(p.x, p.y)) return false;
+  // Advance projectiles — visual only; server is authoritative for hit detection
+  projs = projs.filter(p => {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    if (p.life <= 0 || isWall(p.x, p.y)) return false;
+    if (p.isPlayer) {
       const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
       if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
-      if (player && state === 'playing' && dist(p.x, p.y, player.x, player.y) < 14 + p.size) {
-        spawnBurst(p.x, p.y, p.color, 5); return false;
+      if (pvpMode) {
+        const hitP = Object.values(otherPlayers).find(op => (op.hp || 0) > 0 && op.x != null && dist(p.x, p.y, op.x, op.y) < 18 + p.size);
+        if (hitP) { spawnBurst(p.x, p.y, p.color, 5); return false; }
       }
-      return true;
-    });
-  }
+    }
+    return true;
+  });
+  otherProjs = otherProjs.filter(p => {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    if (p.life <= 0 || isWall(p.x, p.y)) return false;
+    const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
+    if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
+    if (player && state === 'playing' && dist(p.x, p.y, player.x, player.y) < 14 + p.size) {
+      spawnBurst(p.x, p.y, p.color, 5); return false;
+    }
+    return true;
+  });
 
   drops = drops.filter(d => {
     d.life -= dt;
@@ -282,7 +206,7 @@ function update(dt) {
       const op = otherPlayers[targetId];
       if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
     } else {
-      const te = activeEnemies.find(e => e.id === targetId);
+      const te = serverEnemies.find(e => e.id === targetId);
       if (!te || (te.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
     }
   }
@@ -293,42 +217,40 @@ function update(dt) {
   const talkBtn = document.getElementById('npc-talk-btn');
   if (talkBtn) talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
-  // Smooth lerp toward latest server positions (no buffer delay, no jitter)
-  if (isOnline) {
-    const lk = Math.min(1, 16 * dt);
-    Object.entries(otherPlayers).forEach(([id, op]) => {
-      if (op.targetX !== undefined) {
-        const prevX = op.x, prevY = op.y;
-        op.x += (op.targetX - op.x) * lk;
-        op.y += (op.targetY - op.y) * lk;
-        op.moving = Math.hypot(op.x - prevX, op.y - prevY) > 0.5;
-      }
-      if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
-      if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
-      if (op.type && SPRITE_DEF[op.type]) {
-        if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
-        const ak = getOtherPlayerAnimKey(op);
-        if (ak !== op._prevAnimKey) { op.animFrame = 0; op.animTimer = 0; op._prevAnimKey = ak; }
-        const ad = SPRITE_DEF[op.type].anims[ak];
-        if (ad) {
-          op.animTimer = (op.animTimer || 0) + dt;
-          const step = 1 / ad.fps;
-          while (op.animTimer >= step) {
-            op.animTimer -= step;
-            const maxF = (spriteCache[op.type]?.[ak] || []).length || ad.n;
-            if (ad.loop) { op.animFrame = (op.animFrame + 1) % maxF; }
-            else if (op.animFrame < maxF - 1) { op.animFrame++; }
-          }
+  // Smooth lerp toward latest server positions
+  const lk = Math.min(1, 16 * dt);
+  Object.entries(otherPlayers).forEach(([id, op]) => {
+    if (op.targetX !== undefined) {
+      const prevX = op.x, prevY = op.y;
+      op.x += (op.targetX - op.x) * lk;
+      op.y += (op.targetY - op.y) * lk;
+      op.moving = Math.hypot(op.x - prevX, op.y - prevY) > 0.5;
+    }
+    if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
+    if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
+    if (op.type && SPRITE_DEF[op.type]) {
+      if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
+      const ak = getOtherPlayerAnimKey(op);
+      if (ak !== op._prevAnimKey) { op.animFrame = 0; op.animTimer = 0; op._prevAnimKey = ak; }
+      const ad = SPRITE_DEF[op.type].anims[ak];
+      if (ad) {
+        op.animTimer = (op.animTimer || 0) + dt;
+        const step = 1 / ad.fps;
+        while (op.animTimer >= step) {
+          op.animTimer -= step;
+          const maxF = (spriteCache[op.type]?.[ak] || []).length || ad.n;
+          if (ad.loop) { op.animFrame = (op.animFrame + 1) % maxF; }
+          else if (op.animFrame < maxF - 1) { op.animFrame++; }
         }
       }
-    });
-    serverEnemies.forEach(e => {
-      if (e.targetX !== undefined) {
-        e.x += (e.targetX - e.x) * lk;
-        e.y += (e.targetY - e.y) * lk;
-      }
-    });
-  }
+    }
+  });
+  serverEnemies.forEach(e => {
+    if (e.targetX !== undefined) {
+      e.x += (e.targetX - e.x) * lk;
+      e.y += (e.targetY - e.y) * lk;
+    }
+  });
 
   updateCamera(dt);
 }
@@ -377,9 +299,8 @@ function render(dt) {
   particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); });
   ctx.globalAlpha = 1;
 
-  // Enemies (authoritative source depends on online/offline mode)
-  const drawEnemyList = socket?.connected ? serverEnemies : enemies;
-  drawEnemyList.forEach(e => {
+  // Enemies
+  serverEnemies.forEach(e => {
     const hurt = e.hurtTimer > 0;
     // Selection ring
     if (e.id === targetId && !targetIsPlayer) {
@@ -409,55 +330,50 @@ function render(dt) {
     const pct = e.hp / e.maxHp;
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
-    // Name label above HP bar
     ctx.font = e.isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = e.isBoss ? '#f88' : '#ddd';
     ctx.fillText(e.name, e.x, by - 2);
   });
 
-  // Other players (online only)
-  if (socket?.connected) {
-    Object.entries(otherPlayers).forEach(([pid, p]) => {
-      if (p.x == null || isNaN(p.x)) return;
+  // Other players
+  Object.entries(otherPlayers).forEach(([pid, p]) => {
+    if (p.x == null || isNaN(p.x)) return;
 
-      // Selection ring
-      if (pid === targetId && targetIsPlayer) {
-        const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
-        ctx.save();
-        ctx.strokeStyle = `rgba(255,80,80,${0.65 + 0.35 * pulse})`;
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath(); ctx.arc(p.x, p.y, 22 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
-      }
+    if (pid === targetId && targetIsPlayer) {
+      const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,80,80,${0.65 + 0.35 * pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 22 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
 
-      const usedSprite = drawOtherPlayerSprite(p);
-      if (!usedSprite) {
-        ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = p.type === 'warrior' ? '#5af' : p.type === 'archer' ? '#7e7' : p.type === 'mage' ? '#e8e' : '#aaa';
-        ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
-      }
-      // Name above HP bar, bar close to player
-      const bh = 4, bw = 38;
-      const barTop = usedSprite ? p.y - 46 : p.y - 20;
-      const bx = p.x - bw / 2;
-      const nameY = barTop - 4;
-      ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-      ctx.strokeText(p.username || '?', p.x, nameY);
-      ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
-      ctx.fillText(p.username || '?', p.x, nameY);
-      if (p.pvpMode) {
-        ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
-        ctx.fillText('⚔', p.x + bw / 2 + 2, nameY);
-      }
-      ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
-      ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
-    });
-  }
+    const usedSprite = drawOtherPlayerSprite(p);
+    if (!usedSprite) {
+      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.type === 'warrior' ? '#5af' : p.type === 'archer' ? '#7e7' : p.type === 'mage' ? '#e8e' : '#aaa';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    const bh = 4, bw = 38;
+    const barTop = usedSprite ? p.y - 46 : p.y - 20;
+    const bx = p.x - bw / 2;
+    const nameY = barTop - 4;
+    ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+    ctx.strokeText(p.username || '?', p.x, nameY);
+    ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
+    ctx.fillText(p.username || '?', p.x, nameY);
+    if (p.pvpMode) {
+      ctx.font = '9px system-ui, Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#f55';
+      ctx.fillText('⚔', p.x + bw / 2 + 2, nameY);
+    }
+    ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
+    ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
+  });
 
   // Projectiles (local + other players')
   [...projs, ...otherProjs].forEach(p => {
@@ -506,7 +422,6 @@ function render(dt) {
       ctx.beginPath(); ctx.arc(player.x, player.y, 34, swingAngle - .7, swingAngle + .7); ctx.stroke();
     }
 
-    // Name + HP bar above player
     const barTop = usedSprite ? player.y - 46 : player.y - 28;
     const bw = 44, bh = 4, bx2 = player.x - bw / 2;
     const nameY = barTop - 4;
@@ -567,60 +482,22 @@ function render(dt) {
 // ─────────────────────────────────────────────────────────
 function goToFloor(n) {
   if (n === dungeonLvl || !player) return;
-  if (socket?.connected) {
-    netSaveProgress();
-    netSendChangeFloor(clamp(n, 1, 20));
-    setTab(0);
-  } else {
-    dungeonLvl = clamp(n, 1, 20);
-    netSaveProgress();
-    transTimer = 0.5;
-    loadLevel();
-    setTab(0);
-  }
+  netSaveProgress();
+  netSendChangeFloor(clamp(n, 1, 20));
+  setTab(0);
 }
 
 function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
   player = makePlayer(type);
   dungeonLvl = 1;
-
-  if (socket?.connected) {
-    const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
-
-    csStartLoading(type, () => {
-      initNpcs();
-      _finishOnlineStart();
-    });
-
-    // Start loading sprites early; gate opens when both sprites + server ready
-    loadEnemySprites('slime');
-    loadSprites(type, csOnSpritesReady);
-    netSelectChar(type, savedStats);
-  } else {
-    const offlineRestore = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
-
-    csStartLoading(type, () => {
-      csHide();
-      document.getElementById('bottom-nav').style.display = 'block';
-      document.querySelectorAll('.bpanel').forEach(p => { p.style.display = 'block'; });
-      state = 'playing';
-      setTab(0);
-    });
-
-    loadEnemySprites('slime');
-    loadSprites(type, () => {
-      if (offlineRestore) { restoreFromSave(offlineRestore); _savedData = null; }
-      loadLevel();
-      // Offline has no server, mark both conditions ready
-      csOnSpritesReady();
-      csOnServerReady();
-    });
-  }
+  const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
+  csStartLoading(type, () => { initNpcs(); _finishOnlineStart(); });
+  loadEnemySprites('slime');
+  loadSprites(type, csOnSpritesReady);
+  netSelectChar(type, savedStats);
 }
 
-// Returns the interpolated {x, y} for an entity at (now - INTERP_DELAY),
-// using two buffered snapshots to linearly interpolate between them.
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
   const dir = p.facing || 'front';
@@ -668,28 +545,23 @@ function drawNpcs() {
   if (!npcs.length) return;
   const F = 'system-ui, -apple-system, Arial';
   npcs.forEach(n => {
-    // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(n.x, n.y + 18, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
 
-    // Glow ring
     const pulse = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
     ctx.strokeStyle = n.color + Math.round(pulse * 80).toString(16).padStart(2, '0');
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(n.x, n.y, 22, 0, Math.PI * 2); ctx.stroke();
 
-    // Emoji
     ctx.font = `28px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(n.emoji, n.x, n.y);
 
-    // Name label
     ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
     ctx.strokeText(n.name, n.x, n.y - 26);
     ctx.fillStyle = n.color;
     ctx.fillText(n.name, n.x, n.y - 26);
 
-    // Dialog icon when player is near
     if (nearNpc && nearNpc.id === n.id) {
       const bounce = Math.sin(frameCount * 0.15) * 3;
       ctx.font = `18px ${F}`; ctx.textBaseline = 'middle';
@@ -712,26 +584,6 @@ function buildTileCanvas() {
       else            th.drawFloor(tctx, tx * TILE, ty * TILE, 0);
     }
   }
-}
-
-function loadLevel() {
-  // Cache dungeon layout per floor so revisiting keeps the same map
-  if (!floorCache[dungeonLvl]) {
-    floorCache[dungeonLvl] = generateDungeon(dungeonLvl);
-  }
-  dungeon = floorCache[dungeonLvl];
-  // Reset enemies to fresh state (full HP, original positions)
-  enemies = dungeon.enemies.map(e => ({
-    ...e, hp: e.maxHp, hurtTimer: 0, aggro: false, atkTimer: 1 + Math.random()
-  }));
-  deadEnemies = [];
-  projs = []; drops = []; particles = []; dmgNums = [];
-  player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
-  if (dungeonLvl > 1) player.hp = Math.min(player.maxHp, player.hp + Math.floor(player.maxHp * .25));
-  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
-  clampCamera();
-  buildTileCanvas();
-  initNpcs();
 }
 
 function playerDie() {
@@ -762,8 +614,7 @@ function respawnPlayer() {
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
   if (xpLoss > 0) dmgNum(player.x, player.y - 30, `−${xpLoss} XP`, '#a88');
-  if (socket?.connected)
-    socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp, maxHp: player.maxHp });
+  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp, maxHp: player.maxHp });
   netSaveProgress();
 }
 
@@ -773,14 +624,12 @@ function restartGame() {
   targetId = null; targetIsPlayer = false; pvpMode = false;
   serverEnemies = []; otherPlayers = {};
   npcs = []; nearNpc = null;
-  Object.keys(floorCache).forEach(k => delete floorCache[k]);
   tileCanvas = null;
   document.getElementById('bottom-nav').style.display = 'none';
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); p.style.display = 'none'; });
   setTab(0);
   player = null; dungeonLvl = 1;
-  enemies = []; projs = []; drops = []; particles = []; dmgNums = [];
-  deadEnemies = [];
+  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
   state = 'select';
   csShow(null);
 }

@@ -1,8 +1,7 @@
 let canvas, ctx, W, H, DPR = 1;
 let state = 'select';
 let player = null, dungeon = null;
-let enemies = [], projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [];
-let deadEnemies = [];
+let projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [];
 let camera = { x: 0, y: 0 };
 let dungeonLvl = 1;
 let frameCount = 0, lastTs = 0;
@@ -15,7 +14,7 @@ let transTimer = 0;
 // Multiplayer state
 let socket = null;
 let otherPlayers = {};   // socketId → { x, y, type, facing, hp, maxHp, username }
-let serverEnemies = [];  // authoritative enemy list when online
+let serverEnemies = [];  // authoritative enemy list (server-driven)
 let netUsername = null;
 let netRoom = null;
 
@@ -39,4 +38,4 @@ let dodgeTimer = 0;
 // Target & PK mode
 let targetId = null;
 let targetIsPlayer = false;
-let pvpMode = false; // ПК режим: если true — игрок может атаковать других
+let pvpMode = false;
