@@ -28,8 +28,9 @@ class Room {
     return this.enemies
       .filter(e => e.hp > 0)
       .map(e => ({
-        id: e.id, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+        id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
         name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+        hurtTimer: e.hurtTimer || 0, atkAnimTimer: e.atkAnimTimer || 0,
       }));
   }
 
@@ -116,8 +117,9 @@ class Room {
         const hpChanged = e.hp !== e._shp;
         if (!moved && !hpChanged) return;
         nearEnemies.push({
-          id: e.id, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+          id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
           name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+          hurtTimer: e.hurtTimer || 0, atkAnimTimer: e.atkAnimTimer || 0,
         });
       });
 
