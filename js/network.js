@@ -49,7 +49,7 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     otherPlayers = {};
     buildTileCanvas();
-    projs = []; drops = []; particles = []; dmgNums = [];
+    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
       camera.x = player.x - W / 2; camera.y = player.y - H / 2;
@@ -167,7 +167,7 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     otherPlayers = {};
     buildTileCanvas();
-    projs = []; drops = []; particles = []; dmgNums = [];
+    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
       camera.x = player.x - W / 2; camera.y = player.y - H / 2;
@@ -177,10 +177,20 @@ function netConnect(onReady) {
     transTimer = 0.5;
   });
 
+  socket.on('spawnProj', data => {
+    otherProjs.push({ ...data });
+  });
+
+  socket.on('spawnAoe', ({ x, y }) => {
+    spawnAOE(x, y);
+    spawnBurst(x, y, '#f4f', 6);
+  });
+
   socket.on('disconnect', () => {
     socket = null;
     serverEnemies = [];
     otherPlayers = {};
+    otherProjs = [];
   });
 }
 
@@ -267,5 +277,13 @@ function netPvpAttack(targetSocketId) {
 
 function netSetPvpMode(mode) {
   if (socket?.connected) socket.emit('setPvpMode', { pvpMode: mode });
+}
+
+function netSpawnProj(proj) {
+  if (socket?.connected) socket.emit('spawnProj', proj);
+}
+
+function netSpawnAoe(x, y) {
+  if (socket?.connected) socket.emit('spawnAoe', { x, y });
 }
 

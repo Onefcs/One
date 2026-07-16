@@ -50,7 +50,7 @@ function cycleTarget() {
   });
   if (pvpMode && isOnline) {
     Object.entries(otherPlayers).forEach(([id, op]) => {
-      if ((op.hp || 0) > 0 && op.x != null && op.pvpMode && _isOnScreen(op.x, op.y))
+      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
     });
   }

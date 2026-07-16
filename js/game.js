@@ -26,15 +26,17 @@ function update(dt) {
   const activeEnemies = isOnline ? serverEnemies : enemies;
 
   if (activeTab === 0) {
-    const inp = inputDir();
-    if (inp.len > 0) {
-      const vx = inp.dx * player.speed * inp.len * dt;
-      const vy = inp.dy * player.speed * inp.len * dt;
-      if (canMoveX(player, vx, 12)) player.x += vx;
-      if (canMoveY(player, vy, 12)) player.y += vy;
-      const ax = Math.abs(inp.dx), ay = Math.abs(inp.dy);
-      if (ax > ay * 0.8) player.facing = inp.dx > 0 ? 'right' : 'left';
-      else               player.facing = inp.dy > 0 ? 'front' : 'back';
+    if (player.atkAnimTimer <= 0.3) {
+      const inp = inputDir();
+      if (inp.len > 0) {
+        const vx = inp.dx * player.speed * inp.len * dt;
+        const vy = inp.dy * player.speed * inp.len * dt;
+        if (canMoveX(player, vx, 12)) player.x += vx;
+        if (canMoveY(player, vy, 12)) player.y += vy;
+        const ax = Math.abs(inp.dx), ay = Math.abs(inp.dy);
+        if (ax > ay * 0.8) player.facing = inp.dx > 0 ? 'right' : 'left';
+        else               player.facing = inp.dy > 0 ? 'front' : 'back';
+      }
     }
     // Push player out of enemies and other players
     activeEnemies.forEach(e => {
@@ -112,7 +114,7 @@ function update(dt) {
       // In PK mode also consider nearby players
       if (pvpMode && isOnline) {
         Object.entries(otherPlayers).forEach(([id, op]) => {
-          if ((op.hp || 0) <= 0 || op.x == null || !op.pvpMode) return;
+          if ((op.hp || 0) <= 0 || op.x == null) return;
           const d = dist(op.x, op.y, player.x, player.y);
           if (d < closestD) { closestD = d; closest = { ...op, _socketId: id }; closestIsPlayer = true; }
         });
@@ -123,6 +125,11 @@ function update(dt) {
     if (!closest || closestD >= atkRange) {
       player.atkTimer = 0.15; // short poll interval when nothing in range
     } else {
+      // Auto-set target to whatever is being attacked
+      if (!targetId) {
+        targetId = closestIsPlayer ? closest._socketId : closest.id;
+        targetIsPlayer = closestIsPlayer;
+      }
       player.atkTimer = 1 / player.charDef.atkSpeed;
       if (closestIsPlayer) {
         faceTowards(closest.x, closest.y);
@@ -210,6 +217,10 @@ function update(dt) {
   } else {
     // Online: advance visual projectiles (no damage check)
     projs = projs.filter(p => {
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      return p.life > 0 && !isWall(p.x, p.y);
+    });
+    otherProjs = otherProjs.filter(p => {
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       return p.life > 0 && !isWall(p.x, p.y);
     });
@@ -411,8 +422,8 @@ function render() {
     });
   }
 
-  // Projectiles
-  projs.forEach(p => {
+  // Projectiles (local + other players')
+  [...projs, ...otherProjs].forEach(p => {
     ctx.globalAlpha = 1;
     if (p.projType === 'arrow') {
       const ang = p.angle ?? Math.atan2(p.vy, p.vx);

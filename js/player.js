@@ -127,6 +127,7 @@ function useSkill(idx) {
 
   player.skillCooldowns[sk.key] = sk.cd;
   skillFlash = { key: sk.key, timer: 0.4 };
+  player.atkAnimTimer = 0.45; player.animFrame = 0; player.animTimer = 0;
 
   const isOnline = !!(socket?.connected);
   const activeEnemies = isOnline ? serverEnemies : enemies;
@@ -134,11 +135,11 @@ function useSkill(idx) {
   if (player.type === 'warrior') {
     if (sk.key === 'Q') { // Shield Bash
       spawnAOE(player.x, player.y, 90);
-      if (isOnline) _skillAOE(90);
+      if (isOnline) { _skillAOE(90); netSpawnAoe(player.x, player.y); }
       else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 90) hitEnemy(e, Math.floor(player.atk * 1.2)); });
     } else if (sk.key === 'W') { // Whirlwind
       spawnAOE(player.x, player.y, 110);
-      if (isOnline) _skillAOE(110);
+      if (isOnline) { _skillAOE(110); netSpawnAoe(player.x, player.y); }
       else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 110) hitEnemy(e, Math.floor(player.atk * 0.8)); });
     } else if (sk.key === 'E') { // Battle Cry
       battleCryTimer = 5;
@@ -159,8 +160,10 @@ function useSkill(idx) {
       const base = Math.atan2(dir.dy, dir.dx);
       [-0.35, 0, 0.35].forEach(off => {
         const ang = base + off;
-        projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
-          color: '#fa0', dmg: player.atk, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
+        const p = { x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
+          color: '#fa0', dmg: player.atk, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
+        projs.push(p);
+        if (isOnline) netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#fa0', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
       });
       if (isOnline) _skillDir(dir.dx, dir.dy, 220, 0.1);
     } else if (sk.key === 'W') { // Poison Arrow
@@ -168,7 +171,7 @@ function useSkill(idx) {
       const ang = Math.atan2(dir.dy, dir.dx);
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320,
         color: '#4d4', dmg: player.atk * 1.5, life: 2, size: 7, isPlayer: true, projType: 'arrow', angle: ang });
-      if (isOnline) _skillDir(dir.dx, dir.dy, 220, 0.5);
+      if (isOnline) { _skillDir(dir.dx, dir.dy, 220, 0.5); netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320, color: '#4d4', size: 7, projType: 'arrow', angle: ang, life: 2 }); }
     } else if (sk.key === 'E') { // Dodge Roll
       dodgeTimer = 0.6;
       const dx = joy.dx || 0, dy = joy.dy || 0;
@@ -178,7 +181,7 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, '#7e7', 6);
     } else if (sk.key === 'R') { // Rain of Arrows
       spawnAOE(player.x, player.y, 160);
-      if (isOnline) _skillAOE(160);
+      if (isOnline) { _skillAOE(160); netSpawnAoe(player.x, player.y); }
       else activeEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < 160) hitEnemy(e, Math.floor(player.atk * 1.4)); });
     }
   } else if (player.type === 'mage') {
@@ -187,10 +190,10 @@ function useSkill(idx) {
       const ang = Math.atan2(dir.dy, dir.dx);
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
         color: '#f60', dmg: player.atk * 2, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
-      if (isOnline) _skillDir(dir.dx, dir.dy, 160, 0.5);
+      if (isOnline) { _skillDir(dir.dx, dir.dy, 160, 0.5); netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: '#f60', size: 11, projType: 'ball', angle: ang, life: 2 }); }
     } else if (sk.key === 'W') { // Ice Nova
       spawnAOE(player.x, player.y, 130);
-      if (isOnline) _skillAOE(130);
+      if (isOnline) { _skillAOE(130); netSpawnAoe(player.x, player.y); }
       else activeEnemies.forEach(e => {
         if (dist(e.x, e.y, player.x, player.y) < 130) {
           hitEnemy(e, Math.floor(player.atk * 0.9));

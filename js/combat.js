@@ -55,9 +55,12 @@ function fireProj(tx, ty) {
   const vy = (ty - player.y) / len * 360;
   const ang = Math.atan2(vy, vx);
   const isArcher = player.type === 'archer';
-  projs.push({ x: player.x, y: player.y, vx, vy,
+  const proj = { x: player.x, y: player.y, vx, vy,
     color: d.projColor, dmg: player.atk, life: 1.8, size: isArcher ? 5 : 7,
-    isPlayer: true, projType: isArcher ? 'arrow' : 'ball', angle: ang });
+    isPlayer: true, projType: isArcher ? 'arrow' : 'ball', angle: ang };
+  projs.push(proj);
+  netSpawnProj({ x: proj.x, y: proj.y, vx, vy, color: d.projColor,
+    size: proj.size, projType: proj.projType, angle: ang, life: 1.8 });
 }
 
 function spawnDrops(e) {
