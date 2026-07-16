@@ -2,15 +2,15 @@ const floorCache = {};
 let _eid = 1;
 
 function generateDungeon(lvl) {
-  const DW = 130, DH = 96;
+  const DW = 100, DH = 78;
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
   const rooms = [];
-  const wantRooms = Math.min(14 + Math.floor(lvl / 2), 24);
+  const wantRooms = Math.min(18 + Math.floor(lvl / 2), 32);
   let tries = 0;
   while (rooms.length < wantRooms && tries < 3000) {
     tries++;
-    const rw = 16 + Math.floor(Math.random() * 18);
-    const rh = 13 + Math.floor(Math.random() * 14);
+    const rw = 12 + Math.floor(Math.random() * 14);
+    const rh = 10 + Math.floor(Math.random() * 11);
     const rx = 1 + Math.floor(Math.random() * (DW - rw - 2));
     const ry = 1 + Math.floor(Math.random() * (DH - rh - 2));
     const ok = !rooms.some(r =>
