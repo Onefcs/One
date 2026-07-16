@@ -6,14 +6,30 @@ function tileAt(wx, wy) {
 function isWall(wx, wy) { return tileAt(wx, wy) === WALL; }
 
 function canMoveX(ent, dx, r) {
-  const nx = ent.x + dx, hr = r * 0.82;
+  const nx = ent.x + dx;
+  if (!dungeon || nx - r < 0 || nx + r > dungeon.w * TILE) return false;
+  const hr = r * 0.82;
   return !isWall(nx + (dx > 0 ? r : -r), ent.y - hr) &&
          !isWall(nx + (dx > 0 ? r : -r), ent.y + hr);
 }
 function canMoveY(ent, dy, r) {
-  const ny = ent.y + dy, hr = r * 0.82;
+  const ny = ent.y + dy;
+  if (!dungeon || ny - r < 0 || ny + r > dungeon.h * TILE) return false;
+  const hr = r * 0.82;
   return !isWall(ent.x - hr, ny + (dy > 0 ? r : -r)) &&
          !isWall(ent.x + hr, ny + (dy > 0 ? r : -r));
+}
+
+function hasLOS(x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return true;
+  const steps = Math.ceil(len / (TILE * 0.45));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (isWall(x1 + dx * t, y1 + dy * t)) return false;
+  }
+  return true;
 }
 
 function hitEnemy(e, base) {

@@ -122,8 +122,8 @@ function update(dt) {
     }
 
     const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
-    if (!closest || closestD >= atkRange) {
-      player.atkTimer = 0.15; // short poll interval when nothing in range
+    if (!closest || closestD >= atkRange || !hasLOS(player.x, player.y, closest.x, closest.y)) {
+      player.atkTimer = 0.15; // short poll interval when nothing in range / no LOS
     } else {
       // Auto-set target to whatever is being attacked
       if (!targetId) {
@@ -167,7 +167,7 @@ function update(dt) {
           if (canMoveY(e, evy, er)) e.y += evy;
         }
         e.atkTimer -= dt;
-        if (dp < e.size + 20 && e.atkTimer <= 0) { e.atkTimer = 1.4 + Math.random() * 0.6; hitPlayer(e.atk); }
+        if (dp < e.size + 20 && e.atkTimer <= 0 && hasLOS(e.x, e.y, player.x, player.y)) { e.atkTimer = 1.4 + Math.random() * 0.6; hitPlayer(e.atk); }
       }
       if (e.hp <= 0) dead.push(e);
     });
