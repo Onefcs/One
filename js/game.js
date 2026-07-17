@@ -1,6 +1,82 @@
 // Cached DOM elements (set once after DOMContentLoaded)
 let _talkBtn = null;
 
+// ─── Performance overlay ───────────────────────────────────
+let _perfShow = false;          // toggle with triple-tap top-left corner
+let _perfTapCount = 0, _perfTapTs = 0;
+// Rolling 60-frame buffer for frame times (ms)
+const _FT_BUF = new Float32Array(60);
+let _ftIdx = 0, _ftFull = false;
+// Rolling max frame time — highlights spikes
+let _ftWorstMs = 0, _ftWorstDecay = 0;
+
+function _perfToggleTap(cx, cy) {
+  if (cx > 80 || cy > 80) return; // only top-left corner
+  const now = performance.now();
+  if (now - _perfTapTs > 800) _perfTapCount = 0;
+  _perfTapTs = now;
+  if (++_perfTapCount >= 3) { _perfShow = !_perfShow; _perfTapCount = 0; }
+}
+
+function _drawPerf(frameMs) {
+  // Store frame time
+  _FT_BUF[_ftIdx] = frameMs;
+  _ftIdx = (_ftIdx + 1) % 60;
+  if (_ftIdx === 0) _ftFull = true;
+  const samples = _ftFull ? 60 : _ftIdx || 1;
+  let sum = 0, maxFt = 0;
+  for (let i = 0; i < samples; i++) {
+    sum += _FT_BUF[i];
+    if (_FT_BUF[i] > maxFt) maxFt = _FT_BUF[i];
+  }
+  const avgMs = sum / samples;
+  const fps = avgMs > 0 ? Math.round(1000 / avgMs) : 0;
+  // Decay worst-case slowly
+  if (maxFt > _ftWorstMs) { _ftWorstMs = maxFt; _ftWorstDecay = 180; }
+  else if (--_ftWorstDecay <= 0) { _ftWorstMs = maxFt; }
+
+  if (!_perfShow) return;
+
+  // Mini frame-time bar graph (60 bars)
+  const bw = 2, bh = 40, bx0 = 8, by0 = 55;
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(bx0 - 2, by0 - bh - 2, samples * bw + 4, bh + 4 + 52);
+
+  const _oldest = _ftFull ? _ftIdx : 0;
+  for (let i = 0; i < samples; i++) {
+    const ft = _FT_BUF[(_oldest + i) % 60];
+    const h = Math.min(bh, ft / 33.3 * bh);
+    ctx.fillStyle = ft > 25 ? '#f55' : ft > 16.7 ? '#fa0' : '#4d4';
+    ctx.fillRect(bx0 + i * bw, by0 - h, bw - 1, h);
+  }
+  // 60fps line
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(bx0 - 2, by0 - bh * (16.7 / 33.3), samples * bw + 4, 1);
+
+  // Text stats
+  const mem = performance.memory;
+  const lines = [
+    `FPS  ${fps}`,
+    `avg  ${avgMs.toFixed(1)}ms`,
+    `max  ${_ftWorstMs.toFixed(1)}ms`,
+    `prt  ${particles.length}`,
+    `enm  ${serverEnemies.length}`,
+    `opl  ${otherPlayers.size}`,
+    `drp  ${drops.length}`,
+    mem ? `mem  ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
+  ];
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  const ty0 = by0 + 6;
+  lines.forEach((ln, i) => {
+    if (!ln) return;
+    ctx.fillStyle = '#000';
+    ctx.fillText(ln, bx0 + 1, ty0 + i * 14 + 1);
+    ctx.fillStyle = i === 0 ? (fps < 40 ? '#f55' : fps < 55 ? '#fa0' : '#4f4') : '#ddd';
+    ctx.fillText(ln, bx0, ty0 + i * 14);
+  });
+}
+
 // Offscreen UI canvas — all UI is rendered here at 30fps, then blitted in one draw call per frame
 let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
 
@@ -806,9 +882,12 @@ function restartGame() {
 // ─────────────────────────────────────────────────────────
 //  LOOP
 // ─────────────────────────────────────────────────────────
+let _loopTs = 0;
 function loop(ts) {
+  const frameMs = ts - _loopTs; _loopTs = ts;
   const dt = Math.min((ts - lastTs) / 1000, .05); lastTs = ts;
   update(dt); render(dt);
+  _drawPerf(frameMs);
   requestAnimationFrame(loop);
 }
 

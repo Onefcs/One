@@ -221,6 +221,7 @@ function _checkAutoBtnTouch(cx, cy) {
 
 function onTS(e) {
   e.preventDefault();
+  for (const t of e.changedTouches) _perfToggleTap(t.clientX, t.clientY);
   if (!joyGuard()) return;
   const jc = joyCenter();
   for (const t of e.changedTouches) {
@@ -258,6 +259,7 @@ function onTE(e) {
 function onTC() { joy.active = false; joy.dx = 0; joy.dy = 0; }
 
 function onMD(e) {
+  _perfToggleTap(e.clientX, e.clientY);
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
   if (_checkPartyInviteTouch(e.clientX, e.clientY)) return;
