@@ -769,8 +769,9 @@ function drawAutoToggle() {
 function drawPartyButton() {
   if (!player) return;
   const inParty = partyMembers.length > 0;
-  const canInvite = !inParty && targetIsPlayer && !!targetId;
-  if (!inParty && !canInvite) return;
+  if (inParty) return; // leave button is in party HUD
+  const canInvite = targetIsPlayer && !!targetId;
+  if (!canInvite) return;
 
   const pb = getPartyBtnPos();
   const F = 'system-ui, -apple-system, Arial';
@@ -808,7 +809,7 @@ function drawPartyHUD() {
   const bw = 130, bh = 26, gap = 4;
   const pvpBtn = getPvpBtnPos();
   const startX = pvpBtn.x;
-  const startY = pvpBtn.y + pvpBtn.h + gap;
+  const startY = HEADER_H + 56; // below target frame (HEADER_H+6+42+8)
 
   partyMembers.forEach((member, i) => {
     const op = otherPlayers[member.id];
