@@ -178,6 +178,10 @@ function setTab(n) {
 let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
 let _hpGradGreen = null, _hpGradOrange = null, _hpGradRed = null;
 let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null, _hdrGradH = 0;
+// Avatar bg gradient (re-created only when character color changes)
+let _avBgGrad = null, _avBgColor = '';
+// All button + target-frame gradients — rebuilt when null (set null on resize)
+let _uiBtnGrads = null;
 
 function drawHeader() {
   if (!player || !dungeon) return;
@@ -190,6 +194,7 @@ function drawHeader() {
   if (!_hdrBgGrad || _hdrGradW !== W) {
     _hdrGradW = W;
     _hpGradGreen = null; // invalidate dependent bar gradients
+    _avBgGrad = null;    // also invalidate avatar bg on resize
     _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
     _hdrBgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
     _hdrBgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
@@ -301,10 +306,13 @@ function drawHeader() {
   const avX = 30, avY = HEADER_H / 2, avR = 18;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
-  const avBg = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
-  avBg.addColorStop(0, p.charDef.color + '40');
-  avBg.addColorStop(1, 'rgba(0,0,0,0.6)');
-  ctx.fillStyle = avBg;
+  if (!_avBgGrad || _avBgColor !== p.charDef.color) {
+    _avBgGrad = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
+    _avBgGrad.addColorStop(0, p.charDef.color + '40');
+    _avBgGrad.addColorStop(1, 'rgba(0,0,0,0.6)');
+    _avBgColor = p.charDef.color;
+  }
+  ctx.fillStyle = _avBgGrad;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
@@ -530,10 +538,72 @@ function drawSkillButtons() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  CACHED BUTTON GRADIENTS  (rebuilt only on resize / first call)
+// ─────────────────────────────────────────────────────────
+function _buildUiBtnGrads() {
+  const pb  = getPotionBtnPos();
+  const tb  = getTargetBtnPos();
+  const ab  = getAttackBtnPos();
+  const aab = getAutoBtnPos();
+  const pvp = getPvpBtnPos();
+  const pty = getPartyBtnPos();
+  const tfW = 160, tfH = 42;
+  const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
+  const hbX = tfX + 8, hbW = tfW - 16, hbY = tfY + 20;
+
+  const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
+  pg0.addColorStop(0,'rgba(16,12,32,0.98)'); pg0.addColorStop(1,'rgba(8,6,18,0.99)');
+  const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
+  pg1.addColorStop(0,'rgba(20,70,35,0.98)'); pg1.addColorStop(1,'rgba(8,30,15,0.99)');
+
+  const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
+  tg0.addColorStop(0,'rgba(16,12,32,0.98)'); tg0.addColorStop(1,'rgba(8,6,18,0.99)');
+  const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
+  tg1.addColorStop(0,'rgba(55,10,10,0.98)'); tg1.addColorStop(1,'rgba(25,5,5,0.99)');
+
+  const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
+  pvg0.addColorStop(0,'rgba(16,12,32,0.97)'); pvg0.addColorStop(1,'rgba(8,6,18,0.99)');
+  const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
+  pvg1.addColorStop(0,'rgba(70,10,10,0.98)'); pvg1.addColorStop(1,'rgba(35,5,5,0.99)');
+
+  const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
+  ptg0.addColorStop(0,'rgba(10,40,18,0.97)'); ptg0.addColorStop(1,'rgba(5,20,9,0.99)');
+  const ptg1 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
+  ptg1.addColorStop(0,'rgba(50,10,10,0.97)'); ptg1.addColorStop(1,'rgba(25,5,5,0.99)');
+
+  const ag0 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
+  ag0.addColorStop(0,'rgba(12,10,28,0.90)'); ag0.addColorStop(1,'rgba(6,5,14,0.92)');
+  const ag1 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
+  ag1.addColorStop(0,'rgba(60,20,10,0.98)'); ag1.addColorStop(1,'rgba(28,8,5,0.99)');
+  const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
+  ag2.addColorStop(0,'rgba(18,14,40,0.98)'); ag2.addColorStop(1,'rgba(8,6,20,0.99)');
+
+  const aag0 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
+  aag0.addColorStop(0,'rgba(35,15,5,0.95)'); aag0.addColorStop(1,'rgba(18,7,3,0.97)');
+  const aag1 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
+  aag1.addColorStop(0,'rgba(10,35,15,0.95)'); aag1.addColorStop(1,'rgba(5,18,8,0.97)');
+
+  const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
+  tfBg.addColorStop(0,'rgba(14,9,28,0.97)'); tfBg.addColorStop(1,'rgba(7,5,16,0.99)');
+  const hpHi = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
+  hpHi.addColorStop(0,'#0c5a22'); hpHi.addColorStop(1,'#1ec95a');
+  const hpMid = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
+  hpMid.addColorStop(0,'#7a4200'); hpMid.addColorStop(1,'#f0921a');
+  const hpLo = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
+  hpLo.addColorStop(0,'#6b0c0c'); hpLo.addColorStop(1,'#e03030');
+  const tfShine = ctx.createLinearGradient(0, hbY, 0, hbY+4);
+  tfShine.addColorStop(0,'rgba(255,255,255,0.15)'); tfShine.addColorStop(1,'rgba(255,255,255,0)');
+
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+                  tfBg, hpHi, hpMid, hpLo, tfShine };
+}
+
+// ─────────────────────────────────────────────────────────
 //  POTION BUTTON
 // ─────────────────────────────────────────────────────────
 function drawPotionButton() {
   if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   const pb = getPotionBtnPos();
   const count = player.potions || 0;
   const ready = count > 0 && player.hp < player.maxHp;
@@ -541,11 +611,8 @@ function drawPotionButton() {
 
   ctx.save();
 
-  // Circle background
-  const cg = ctx.createRadialGradient(pb.x - 5, pb.y - 5, 2, pb.x, pb.y, pb.r);
-  if (ready) { cg.addColorStop(0, 'rgba(20,70,35,0.98)'); cg.addColorStop(1, 'rgba(8,30,15,0.99)'); }
-  else        { cg.addColorStop(0, 'rgba(16,12,32,0.98)'); cg.addColorStop(1, 'rgba(8,6,18,0.99)'); }
-  ctx.fillStyle = cg;
+  // Circle background (cached gradient)
+  ctx.fillStyle = ready ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
 
   ctx.strokeStyle = ready ? 'rgba(60,200,90,0.75)' : 'rgba(50,40,90,0.6)';
@@ -575,16 +642,14 @@ function drawPotionButton() {
 // ─────────────────────────────────────────────────────────
 function drawTargetButton() {
   if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   const tb = getTargetBtnPos();
   const F = 'system-ui, -apple-system, Arial';
   const hasTarget = !!targetId;
 
   ctx.save();
 
-  const cg = ctx.createRadialGradient(tb.x - 4, tb.y - 4, 2, tb.x, tb.y, tb.r);
-  if (hasTarget) { cg.addColorStop(0, 'rgba(55,10,10,0.98)'); cg.addColorStop(1, 'rgba(25,5,5,0.99)'); }
-  else           { cg.addColorStop(0, 'rgba(16,12,32,0.98)'); cg.addColorStop(1, 'rgba(8,6,18,0.99)'); }
-  ctx.fillStyle = cg;
+  ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
   ctx.strokeStyle = hasTarget ? 'rgba(255,60,60,0.85)' : 'rgba(70,55,120,0.6)';
@@ -612,20 +677,13 @@ function drawTargetButton() {
 // ─────────────────────────────────────────────────────────
 function drawPvpButton() {
   if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   const pb = getPvpBtnPos();
   const F = 'system-ui, -apple-system, Arial';
 
   ctx.save();
 
-  const bg = ctx.createLinearGradient(pb.x, pb.y, pb.x, pb.y + pb.h);
-  if (pvpMode) {
-    bg.addColorStop(0, 'rgba(70,10,10,0.98)');
-    bg.addColorStop(1, 'rgba(35,5,5,0.99)');
-  } else {
-    bg.addColorStop(0, 'rgba(16,12,32,0.97)');
-    bg.addColorStop(1, 'rgba(8,6,18,0.99)');
-  }
-  ctx.fillStyle = bg;
+  ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
   ctx.strokeStyle = pvpMode ? 'rgba(240,60,60,0.85)' : 'rgba(70,100,210,0.55)';
@@ -674,12 +732,10 @@ function drawTargetFrame() {
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
 
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
 
-  const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
-  bg.addColorStop(0, 'rgba(14,9,28,0.97)');
-  bg.addColorStop(1, 'rgba(7,5,16,0.99)');
-  ctx.fillStyle = bg;
+  ctx.fillStyle = _uiBtnGrads.tfBg;
   roundRect(ctx, bx, by, bw, bh, 9); ctx.fill();
 
   ctx.strokeStyle = 'rgba(200,55,55,0.6)'; ctx.lineWidth = 1.5;
@@ -696,15 +752,9 @@ function drawTargetFrame() {
   ctx.fillStyle = 'rgba(40,10,10,0.9)';
   roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
   if (pct > 0) {
-    const hg = ctx.createLinearGradient(hbx, 0, hbx + hbw, 0);
-    if (pct > 0.5) { hg.addColorStop(0, '#0c5a22'); hg.addColorStop(1, '#1ec95a'); }
-    else if (pct > 0.25) { hg.addColorStop(0, '#7a4200'); hg.addColorStop(1, '#f0921a'); }
-    else { hg.addColorStop(0, '#6b0c0c'); hg.addColorStop(1, '#e03030'); }
-    ctx.fillStyle = hg;
+    ctx.fillStyle = pct > 0.5 ? _uiBtnGrads.hpHi : (pct > 0.25 ? _uiBtnGrads.hpMid : _uiBtnGrads.hpLo);
     roundRect(ctx, hbx, hby, hbw * pct, hbh, 4); ctx.fill();
-    const shine = ctx.createLinearGradient(0, hby, 0, hby + 4);
-    shine.addColorStop(0, 'rgba(255,255,255,0.15)'); shine.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
+    ctx.fillStyle = _uiBtnGrads.tfShine;
     roundRect(ctx, hbx, hby, hbw * pct, hbh * 0.45, 4); ctx.fill();
   }
   ctx.font = `bold 7.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -724,16 +774,9 @@ function drawAttackButton() {
   const hasTarget = !!targetId;
   const ready = (player.atkTimer || 0) <= 0;
 
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
-  const cg = ctx.createRadialGradient(ab.x - 6, ab.y - 6, 3, ab.x, ab.y, ab.r);
-  if (hasTarget && ready) {
-    cg.addColorStop(0, 'rgba(60,20,10,0.98)'); cg.addColorStop(1, 'rgba(28,8,5,0.99)');
-  } else if (!autoAttackMode) {
-    cg.addColorStop(0, 'rgba(18,14,40,0.98)'); cg.addColorStop(1, 'rgba(8,6,20,0.99)');
-  } else {
-    cg.addColorStop(0, 'rgba(12,10,28,0.90)'); cg.addColorStop(1, 'rgba(6,5,14,0.92)');
-  }
-  ctx.fillStyle = cg;
+  ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
 
   const borderColor = !autoAttackMode
@@ -765,14 +808,9 @@ function drawAutoToggle() {
   const ab = getAutoBtnPos();
   const F = 'system-ui, -apple-system, Arial';
 
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
-  const bg = ctx.createLinearGradient(ab.x, ab.y, ab.x, ab.y + ab.h);
-  if (autoAttackMode) {
-    bg.addColorStop(0, 'rgba(10,35,15,0.95)'); bg.addColorStop(1, 'rgba(5,18,8,0.97)');
-  } else {
-    bg.addColorStop(0, 'rgba(35,15,5,0.95)'); bg.addColorStop(1, 'rgba(18,7,3,0.97)');
-  }
-  ctx.fillStyle = bg;
+  ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
   roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
 
   ctx.strokeStyle = autoAttackMode ? 'rgba(60,200,90,0.7)' : 'rgba(220,120,50,0.7)';
@@ -797,15 +835,10 @@ function drawPartyButton() {
 
   const pb = getPartyBtnPos();
   const F = 'system-ui, -apple-system, Arial';
+  if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
 
-  const bg = ctx.createLinearGradient(pb.x, pb.y, pb.x, pb.y + pb.h);
-  if (inParty) {
-    bg.addColorStop(0, 'rgba(50,10,10,0.97)'); bg.addColorStop(1, 'rgba(25,5,5,0.99)');
-  } else {
-    bg.addColorStop(0, 'rgba(10,40,18,0.97)'); bg.addColorStop(1, 'rgba(5,20,9,0.99)');
-  }
-  ctx.fillStyle = bg;
+  ctx.fillStyle = inParty ? _uiBtnGrads.ptg1 : _uiBtnGrads.ptg0;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
   ctx.strokeStyle = inParty ? 'rgba(220,60,60,0.8)' : 'rgba(60,200,90,0.8)';

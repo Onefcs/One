@@ -938,6 +938,7 @@ window.addEventListener('load', () => {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     _uiCanvas = null;           // force UI canvas recreation at new size
     _skillBtnGradCache = null;  // force skill button gradient rebuild
+    _uiBtnGrads = null;         // force button gradient rebuild
     updateJoyCenter();          // recompute cached joystick center
     if (dungeon) clampCamera();
   };
