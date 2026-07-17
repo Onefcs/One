@@ -1,3 +1,6 @@
+// Cached DOM elements (set once after DOMContentLoaded)
+let _talkBtn = null;
+
 // ─────────────────────────────────────────────────────────
 //  CAMERA
 // ─────────────────────────────────────────────────────────
@@ -123,8 +126,8 @@ function update(dt) {
 
     // Prefer locked target
     if (targetId && !targetIsPlayer) {
-      const t = serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
-      if (t) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
+      const t = serverEnemiesMap.get(targetId);
+      if (t && (t.hp || 0) > 0) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
     } else if (targetId && targetIsPlayer && pvpMode) {
       const op = otherPlayers[targetId];
       if (op && (op.hp || 0) > 0 && op.x != null) {
@@ -174,56 +177,86 @@ function update(dt) {
   }
 
   // Advance projectiles — visual only; server is authoritative for hit detection
-  projs = projs.filter(p => {
-    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-    if (p.life <= 0 || isWall(p.x, p.y)) return false;
-    if (p.isPlayer) {
-      const ps = p.size;
-      const hitE = serverEnemies.find(e => {
-        if ((e.hp || 0) <= 0) return false;
-        const r = e.size + ps, dx = p.x - e.x, dy = p.y - e.y;
-        return dx * dx + dy * dy < r * r;
-      });
-      if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
-      if (pvpMode) {
-        const hitP = Object.values(otherPlayers).find(op => {
-          if ((op.hp || 0) <= 0 || op.x == null) return false;
-          const r = 18 + ps, dx = p.x - op.x, dy = p.y - op.y;
-          return dx * dx + dy * dy < r * r;
-        });
-        if (hitP) { spawnBurst(p.x, p.y, p.color, 5); return false; }
+  {
+    let j = 0;
+    for (let i = 0; i < projs.length; i++) {
+      const p = projs[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if (p.life <= 0 || isWall(p.x, p.y)) continue;
+      if (p.isPlayer) {
+        const ps = p.size; let hit = false;
+        for (let k = 0; k < serverEnemies.length; k++) {
+          const e = serverEnemies[k];
+          if ((e.hp || 0) <= 0) continue;
+          const r = e.size + ps, ex = p.x - e.x, ey = p.y - e.y;
+          if (ex * ex + ey * ey < r * r) { hit = true; break; }
+        }
+        if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
+        if (pvpMode) {
+          const ops = Object.values(otherPlayers);
+          for (let k = 0; k < ops.length; k++) {
+            const op = ops[k];
+            if ((op.hp || 0) <= 0 || op.x == null) continue;
+            const r = 18 + ps, ex = p.x - op.x, ey = p.y - op.y;
+            if (ex * ex + ey * ey < r * r) { hit = true; break; }
+          }
+          if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
+        }
       }
+      projs[j++] = projs[i];
     }
-    return true;
-  });
-  otherProjs = otherProjs.filter(p => {
-    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-    if (p.life <= 0 || isWall(p.x, p.y)) return false;
-    const ps = p.size;
-    const hitE = serverEnemies.find(e => {
-      if ((e.hp || 0) <= 0) return false;
-      const r = e.size + ps, dx = p.x - e.x, dy = p.y - e.y;
-      return dx * dx + dy * dy < r * r;
-    });
-    if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
-    if (player && state === 'playing') {
-      const r = 14 + ps, dx = p.x - player.x, dy = p.y - player.y;
-      if (dx * dx + dy * dy < r * r) { spawnBurst(p.x, p.y, p.color, 5); return false; }
+    projs.length = j;
+  }
+  {
+    let j = 0;
+    for (let i = 0; i < otherProjs.length; i++) {
+      const p = otherProjs[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if (p.life <= 0 || isWall(p.x, p.y)) continue;
+      const ps = p.size; let hit = false;
+      for (let k = 0; k < serverEnemies.length; k++) {
+        const e = serverEnemies[k];
+        if ((e.hp || 0) <= 0) continue;
+        const r = e.size + ps, ex = p.x - e.x, ey = p.y - e.y;
+        if (ex * ex + ey * ey < r * r) { hit = true; break; }
+      }
+      if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
+      if (player && state === 'playing') {
+        const r = 14 + ps, ex = p.x - player.x, ey = p.y - player.y;
+        if (ex * ex + ey * ey < r * r) { spawnBurst(p.x, p.y, p.color, 5); continue; }
+      }
+      otherProjs[j++] = otherProjs[i];
     }
-    return true;
-  });
+    otherProjs.length = j;
+  }
 
-  drops = drops.filter(d => {
-    d.life -= dt;
-    if (d.life <= 0) return false;
-    if (dist(player.x, player.y, d.x, d.y) < 30) { pickup(d); return false; }
-    return true;
-  });
+  {
+    let j = 0;
+    for (let i = 0; i < drops.length; i++) {
+      const d = drops[i]; d.life -= dt;
+      if (d.life <= 0) continue;
+      if (dist(player.x, player.y, d.x, d.y) < 30) { pickup(d); continue; }
+      drops[j++] = drops[i];
+    }
+    drops.length = j;
+  }
 
-  particles = particles.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; return p.life > 0; });
-  if (particles.length > 200) particles.length = 200;
-  dmgNums = dmgNums.filter(d => { d.y += d.vy * dt; d.life -= dt; return d.life > 0; });
-  if (dmgNums.length > 40) dmgNums.length = 40;
+  {
+    let j = 0;
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if (p.life > 0) particles[j++] = particles[i];
+    }
+    particles.length = Math.min(j, 200);
+  }
+  {
+    let j = 0;
+    for (let i = 0; i < dmgNums.length; i++) {
+      const d = dmgNums[i]; d.y += d.vy * dt; d.life -= dt;
+      if (d.life > 0) dmgNums[j++] = dmgNums[i];
+    }
+    dmgNums.length = Math.min(j, 40);
+  }
 
   // Skill timers
   if (player.skillCooldowns) {
@@ -245,7 +278,7 @@ function update(dt) {
       const op = otherPlayers[targetId];
       if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
     } else {
-      const te = serverEnemies.find(e => e.id === targetId);
+      const te = serverEnemiesMap.get(targetId);
       if (!te || (te.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
     }
   }
@@ -253,8 +286,7 @@ function update(dt) {
   // NPC proximity
   nearNpc = null;
   npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
-  const talkBtn = document.getElementById('npc-talk-btn');
-  if (talkBtn) talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
+  if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
   // Smooth lerp toward latest server positions
   const lk = Math.min(1, 16 * dt);
@@ -297,6 +329,33 @@ function update(dt) {
 // ─────────────────────────────────────────────────────────
 //  RENDER
 // ─────────────────────────────────────────────────────────
+function _drawProj(p) {
+  ctx.globalAlpha = 1;
+  if (p.projType === 'arrow') {
+    const ang = p.angle ?? Math.atan2(p.vy, p.vx);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(ang);
+    ctx.strokeStyle = p.color || '#fa0';
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(9, 0); ctx.stroke();
+    ctx.fillStyle = p.color || '#fa0';
+    ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(6, -3.5); ctx.lineTo(6, 3.5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8, -4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8,  4); ctx.stroke();
+    ctx.restore();
+  } else {
+    ctx.globalAlpha = 0.3; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 7, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.8; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.38, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
 function render(dt) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -415,32 +474,6 @@ function render(dt) {
   });
 
   // Projectiles (local + other players') — two loops avoid array allocation each frame
-  const _drawProj = p => {
-    ctx.globalAlpha = 1;
-    if (p.projType === 'arrow') {
-      const ang = p.angle ?? Math.atan2(p.vy, p.vx);
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(ang);
-      ctx.strokeStyle = p.color || '#fa0';
-      ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(9, 0); ctx.stroke();
-      ctx.fillStyle = p.color || '#fa0';
-      ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(6, -3.5); ctx.lineTo(6, 3.5); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8, -4); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8,  4); ctx.stroke();
-      ctx.restore();
-    } else {
-      ctx.globalAlpha = 0.3; ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 7, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 0.8; ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.38, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  };
   projs.forEach(_drawProj);
   otherProjs.forEach(_drawProj);
 
@@ -494,8 +527,7 @@ function render(dt) {
   dmgNums.forEach(d => {
     ctx.globalAlpha = Math.min(1, d.life * 1.5);
     ctx.fillStyle = d.color;
-    const fs = isNaN(d.text) ? 12 : 15;
-    ctx.font = `bold ${fs}px Arial`; ctx.textAlign = 'center';
+    ctx.font = `bold ${d.fontSize}px Arial`; ctx.textAlign = 'center';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(d.text, d.x, d.y); ctx.fillText(d.text, d.x, d.y);
   });
   ctx.globalAlpha = 1;
@@ -755,6 +787,7 @@ window.addEventListener('load', () => {
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);
+  _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
   requestAnimationFrame(ts => { lastTs = ts; requestAnimationFrame(loop); });
 });

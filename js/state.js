@@ -14,7 +14,8 @@ let transTimer = 0;
 // Multiplayer state
 let socket = null;
 let otherPlayers = {};   // socketId → { x, y, type, facing, hp, maxHp, username }
-let serverEnemies = [];  // authoritative enemy list (server-driven)
+let serverEnemies = [];     // authoritative enemy list (server-driven)
+let serverEnemiesMap = new Map(); // id → enemy for O(1) lookup
 let netUsername = null;
 let netRoom = null;
 
