@@ -403,9 +403,11 @@ function update(dt) {
     }
   });
   serverEnemies.forEach(e => {
+    if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
+    if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if (e.targetX !== undefined) {
-      e.x += (e.targetX - e.x) * lk;
-      e.y += (e.targetY - e.y) * lk;
+      const dx = e.targetX - e.x, dy = e.targetY - e.y;
+      if (dx * dx + dy * dy > 0.01) { e.x += dx * lk; e.y += dy * lk; }
     }
   });
 
@@ -472,11 +474,17 @@ function _drawProj(p) {
   }
 }
 
+// Cached per-frame view bounds — updated once at the top of render(), read by _isOnScreen
+let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
 function render(dt) {
   // Precompute per-frame trig — used in multiple places below
   const _pulse    = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
   const _bossGlow = 0.6 + 0.4 * Math.sin(frameCount * 0.10);
   const _dropSin  = Math.sin(frameCount * 0.09);
+  // Cache view bounds so _isOnScreen() avoids divisions on every call
+  const _vM = 60;
+  _vL = camera.x - _vM; _vR = camera.x + W / ZOOM + _vM;
+  _vT = camera.y - _vM; _vB = camera.y + (H - HEADER_H) / ZOOM + _vM;
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
