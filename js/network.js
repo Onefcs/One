@@ -85,7 +85,8 @@ function netConnect(onReady) {
     });
 
     // Remove players that left AOI or disconnected
-    const pids = new Set(players.map(p => p.id));
+    const pids = new Set();
+    for (let i = 0; i < players.length; i++) pids.add(players[i].id);
     otherPlayers.forEach((_, id) => { if (!pids.has(id)) otherPlayers.delete(id); });
 
     // Delta update: only changed enemies arrive — add or update, never remove

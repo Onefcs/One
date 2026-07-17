@@ -2,7 +2,10 @@ const SKILL_SZ  = 54;
 const SKILL_GAP = 8;
 const POTION_R  = 26;
 
-function joyCenter() { return { x: W * 0.27, y: H - NAV_H - 88 }; }
+// Cached joystick center — recomputed only on resize via updateJoyCenter()
+const _joyCenter = { x: 0, y: 0 };
+function joyCenter() { return _joyCenter; }
+function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 88; }
 
 function getSkillBtnPos(idx) {
   const sz = SKILL_SZ, gap = SKILL_GAP;
@@ -282,6 +285,8 @@ function setJoy(cx, cy) {
   else { joy.dx = dx / JOY_R; joy.dy = dy / JOY_R; }
 }
 
+// Pre-allocated return value — callers must consume before next call
+const _inputDirResult = { dx: 0, dy: 0, len: 0 };
 function inputDir() {
   let dx = joy.dx, dy = joy.dy;
   if (keys['ArrowLeft']  || keys['a']) dx -= 1;
@@ -289,7 +294,12 @@ function inputDir() {
   if (keys['ArrowUp']    || keys['w']) dy -= 1;
   if (keys['ArrowDown']  || keys['s']) dy += 1;
   const l = Math.hypot(dx, dy);
-  return l > 0.01 ? { dx: dx / l, dy: dy / l, len: Math.min(1, l) } : { dx: 0, dy: 0, len: 0 };
+  if (l > 0.01) {
+    _inputDirResult.dx = dx / l; _inputDirResult.dy = dy / l; _inputDirResult.len = Math.min(1, l);
+  } else {
+    _inputDirResult.dx = 0; _inputDirResult.dy = 0; _inputDirResult.len = 0;
+  }
+  return _inputDirResult;
 }
 
 function initInput() {

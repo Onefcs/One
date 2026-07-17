@@ -429,6 +429,7 @@ function drawHeader() {
 // ─────────────────────────────────────────────────────────
 //  JOYSTICK
 // ─────────────────────────────────────────────────────────
+let _joyKnobGrad = null, _joyKnobGradKx = null, _joyKnobGradKy = null;
 function drawJoystick() {
   const jc = joyCenter();
   ctx.globalAlpha = 0.52;
@@ -440,9 +441,13 @@ function drawJoystick() {
   ctx.moveTo(jc.x, jc.y - JOY_R); ctx.lineTo(jc.x, jc.y + JOY_R);
   ctx.stroke();
   const kx = jc.x + joy.dx * JOY_R, ky = jc.y + joy.dy * JOY_R;
-  const kg = ctx.createRadialGradient(kx - JOY_KNOB * .3, ky - JOY_KNOB * .3, 0, kx, ky, JOY_KNOB);
-  kg.addColorStop(0, 'rgba(210,210,255,.95)'); kg.addColorStop(1, 'rgba(80,80,180,.7)');
-  ctx.fillStyle = kg; ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
+  // Recreate gradient only when knob position actually changes
+  if (_joyKnobGrad === null || kx !== _joyKnobGradKx || ky !== _joyKnobGradKy) {
+    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .3, ky - JOY_KNOB * .3, 0, kx, ky, JOY_KNOB);
+    _joyKnobGrad.addColorStop(0, 'rgba(210,210,255,.95)'); _joyKnobGrad.addColorStop(1, 'rgba(80,80,180,.7)');
+    _joyKnobGradKx = kx; _joyKnobGradKy = ky;
+  }
+  ctx.fillStyle = _joyKnobGrad; ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.stroke();
   ctx.globalAlpha = 1;
@@ -451,11 +456,28 @@ function drawJoystick() {
 // ─────────────────────────────────────────────────────────
 //  SKILL BUTTONS (2×2 grid)
 // ─────────────────────────────────────────────────────────
+// Gradient cache: 4 buttons × 3 states (flash / ready / cooldown)
+// Invalidated on resize via _skillBtnGradCache = null in game.js
+let _skillBtnGradCache = null;
+function _buildSkillBtnGrads() {
+  _skillBtnGradCache = Array.from({ length: 4 }, (_, i) => {
+    const b = getSkillBtnPos(i);
+    const flash = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    flash.addColorStop(0, 'rgba(80,60,10,0.97)'); flash.addColorStop(1, 'rgba(40,30,5,0.99)');
+    const ready = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    ready.addColorStop(0, 'rgba(18,14,40,0.97)'); ready.addColorStop(1, 'rgba(8,6,20,0.99)');
+    const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    cd.addColorStop(0, 'rgba(10,8,22,0.97)'); cd.addColorStop(1, 'rgba(5,4,12,0.99)');
+    return { flash, ready, cd };
+  });
+}
+
+const _F_SKILL = 'system-ui, -apple-system, Arial';
 function drawSkillButtons() {
   if (!player) return;
   const skills = SKILL_DEF[player.type];
   if (!skills) return;
-  const F = 'system-ui, -apple-system, Arial';
+  if (!_skillBtnGradCache) _buildSkillBtnGrads();
 
   for (let i = 0; i < 4; i++) {
     const sk = skills[i];
@@ -464,33 +486,15 @@ function drawSkillButtons() {
     const ready = cd <= 0;
     const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const grads = _skillBtnGradCache[i];
 
-    ctx.save();
-
-    // Background gradient
-    const bgG = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    if (isFlash) {
-      bgG.addColorStop(0, 'rgba(80,60,10,0.97)');
-      bgG.addColorStop(1, 'rgba(40,30,5,0.99)');
-    } else if (ready) {
-      bgG.addColorStop(0, 'rgba(18,14,40,0.97)');
-      bgG.addColorStop(1, 'rgba(8,6,20,0.99)');
-    } else {
-      bgG.addColorStop(0, 'rgba(10,8,22,0.97)');
-      bgG.addColorStop(1, 'rgba(5,4,12,0.99)');
-    }
-    ctx.fillStyle = bgG;
+    // Background gradient (cached)
+    ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
     roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.fill();
 
     // Border
     ctx.lineWidth = 1.5;
-    if (isFlash) {
-      ctx.strokeStyle = 'rgba(255,200,50,0.95)';
-    } else if (ready) {
-      ctx.strokeStyle = 'rgba(75,110,220,0.7)';
-    } else {
-      ctx.strokeStyle = 'rgba(35,30,65,0.7)';
-    }
+    ctx.strokeStyle = isFlash ? 'rgba(255,200,50,0.95)' : ready ? 'rgba(75,110,220,0.7)' : 'rgba(35,30,65,0.7)';
     roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.stroke();
 
     // Inner glow line when ready
@@ -511,18 +515,17 @@ function drawSkillButtons() {
 
     // Key badge
     ctx.globalAlpha = 1;
-    ctx.font = `bold 9px ${F}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+    ctx.font = `bold 9px ${_F_SKILL}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
     ctx.fillStyle = ready ? 'rgba(200,210,255,0.85)' : 'rgba(80,80,100,0.7)';
     ctx.fillText(sk.key, cx, b.y + b.h - 6);
 
     // Cooldown overlay number
     if (!ready) {
-      ctx.font = `bold 14px ${F}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle';
       ctx.fillStyle = '#fff';
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy - 7);
     }
-
-    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -659,7 +662,7 @@ function drawTargetFrame() {
     name = op.username || '?';
     hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#ff8888';
   } else {
-    const e = activeEnemies.find(e => e.id === targetId);
+    const e = serverEnemiesMap.get(targetId);
     if (!e) return;
     name = e.name || '?';
     hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#f80';
