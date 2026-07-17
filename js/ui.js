@@ -176,6 +176,8 @@ function setTab(n) {
 //  UNIFIED HEADER  (player info + minimap)
 // ─────────────────────────────────────────────────────────
 let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
+let _hpGradGreen = null, _hpGradOrange = null, _hpGradRed = null;
+let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null, _hdrGradH = 0;
 
 function drawHeader() {
   if (!player || !dungeon) return;
@@ -187,6 +189,7 @@ function drawHeader() {
   // ── Background (cached gradient — same every frame) ───────
   if (!_hdrBgGrad || _hdrGradW !== W) {
     _hdrGradW = W;
+    _hpGradGreen = null; // invalidate dependent bar gradients
     _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
     _hdrBgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
     _hdrBgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
@@ -248,27 +251,33 @@ function drawHeader() {
   ctx.drawImage(minimapCache, mmX, mmY, mmW, mmH);
 
   const mmEnemies = socket?.connected ? serverEnemies : enemies;
+  const _mmR = Math.max(1, mmSc * 0.8);
   ctx.fillStyle = 'rgba(255,45,35,0.9)';
+  ctx.beginPath();
   mmEnemies.forEach(e => {
     if ((e.hp || 0) <= 0) return;
-    ctx.beginPath();
-    ctx.arc(mmX + (e.x / TILE) * mmSc, mmY + (e.y / TILE) * mmSc, Math.max(1, mmSc * 0.8), 0, Math.PI * 2);
-    ctx.fill();
+    const ex = mmX + (e.x / TILE) * mmSc, ey = mmY + (e.y / TILE) * mmSc;
+    ctx.moveTo(ex + _mmR, ey); ctx.arc(ex, ey, _mmR, 0, Math.PI * 2);
   });
+  ctx.fill();
+  const _mmRn = Math.max(1, mmSc);
   ctx.fillStyle = 'rgba(255,200,0,0.9)';
+  ctx.beginPath();
   npcs.forEach(n => {
-    ctx.beginPath();
-    ctx.arc(mmX + (n.x / TILE) * mmSc, mmY + (n.y / TILE) * mmSc, Math.max(1, mmSc), 0, Math.PI * 2);
-    ctx.fill();
+    const nx = mmX + (n.x / TILE) * mmSc, ny = mmY + (n.y / TILE) * mmSc;
+    ctx.moveTo(nx + _mmRn, ny); ctx.arc(nx, ny, _mmRn, 0, Math.PI * 2);
   });
+  ctx.fill();
   if (socket?.connected) {
+    const _mmRop = Math.max(1.5, mmSc);
     ctx.fillStyle = 'rgba(100,180,255,0.9)';
+    ctx.beginPath();
     Object.values(otherPlayers).forEach(op => {
       if (op.x == null) return;
-      ctx.beginPath();
-      ctx.arc(mmX + (op.x / TILE) * mmSc, mmY + (op.y / TILE) * mmSc, Math.max(1.5, mmSc), 0, Math.PI * 2);
-      ctx.fill();
+      const ox = mmX + (op.x / TILE) * mmSc, oy = mmY + (op.y / TILE) * mmSc;
+      ctx.moveTo(ox + _mmRop, oy); ctx.arc(ox, oy, _mmRop, 0, Math.PI * 2);
     });
+    ctx.fill();
   }
   const pdx = mmX + (p.x / TILE) * mmSc, pdy = mmY + (p.y / TILE) * mmSc;
   ctx.fillStyle = 'rgba(0,255,80,0.25)';
@@ -348,21 +357,24 @@ function drawHeader() {
   ctx.fillStyle = 'rgba(35,10,10,0.92)';
   roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
   if (hpPct > 0) {
-    const hg = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-    if (hpPct > 0.5) { hg.addColorStop(0, '#0d5c28'); hg.addColorStop(1, '#2ecc71'); }
-    else if (hpPct > 0.25) { hg.addColorStop(0, '#7a4400'); hg.addColorStop(1, '#f39c12'); }
-    else { hg.addColorStop(0, '#6b0f0f'); hg.addColorStop(1, '#e74c3c'); }
-    ctx.fillStyle = hg;
+    // Cache horizontal HP gradients — only depend on bar X/W, not HP amount
+    if (!_hpGradGreen || _hdrGradW !== W) {
+      _hpGradGreen  = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      _hpGradGreen.addColorStop(0, '#0d5c28'); _hpGradGreen.addColorStop(1, '#2ecc71');
+      _hpGradOrange = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      _hpGradOrange.addColorStop(0, '#7a4400'); _hpGradOrange.addColorStop(1, '#f39c12');
+      _hpGradRed    = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      _hpGradRed.addColorStop(0, '#6b0f0f'); _hpGradRed.addColorStop(1, '#e74c3c');
+      _hpShineGrad  = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
+      _hpShineGrad.addColorStop(0, 'rgba(255,255,255,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    }
+    ctx.fillStyle = hpPct > 0.5 ? _hpGradGreen : hpPct > 0.25 ? _hpGradOrange : _hpGradRed;
     roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
-    const hsh = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
-    hsh.addColorStop(0, 'rgba(255,255,255,0.2)'); hsh.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = hsh;
+    ctx.fillStyle = _hpShineGrad;
     roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
     if (hpPct < 0.3) {
-      ctx.save(); ctx.shadowColor = '#e74c3c'; ctx.shadowBlur = 7;
-      ctx.strokeStyle = 'rgba(231,76,60,0.5)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(231,76,60,0.6)'; ctx.lineWidth = 1.5;
       roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
-      ctx.restore();
     }
   }
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.9)';
@@ -379,13 +391,15 @@ function drawHeader() {
   ctx.fillStyle = 'rgba(8,6,25,0.9)';
   roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
   if (xpPct > 0) {
-    const xg = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-    xg.addColorStop(0, '#180f5a'); xg.addColorStop(1, '#7c4dff');
-    ctx.fillStyle = xg;
+    if (!_xpGrad || _hdrGradW !== W) {
+      _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
+      _xpGrad.addColorStop(0, '#180f5a'); _xpGrad.addColorStop(1, '#7c4dff');
+      _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
+      _xpShineGrad.addColorStop(0, 'rgba(255,255,255,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    }
+    ctx.fillStyle = _xpGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
-    const xsh = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
-    xsh.addColorStop(0, 'rgba(255,255,255,0.16)'); xsh.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = xsh;
+    ctx.fillStyle = _xpShineGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';

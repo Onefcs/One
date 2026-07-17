@@ -1,5 +1,6 @@
 function dmgNum(x, y, text, color) {
-  dmgNums.push({ x, y, text: String(text), color, life: 1.1, vy: -52 });
+  const t = String(text);
+  dmgNums.push({ x, y, text: t, color, life: 1.1, vy: -52, fontSize: isNaN(t) ? 12 : 15 });
 }
 
 function spawnBurst(x, y, color, n) {

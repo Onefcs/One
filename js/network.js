@@ -47,6 +47,7 @@ function netConnect(onReady) {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
+    serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = {};
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
@@ -90,7 +91,7 @@ function netConnect(onReady) {
     // Delta update: only changed enemies arrive — add or update, never remove
     // (removal happens via enemyKilled; respawn via re-add when hp > 0)
     enemies.forEach(se => {
-      const ex = serverEnemies.find(e => e.id === se.id);
+      const ex = serverEnemiesMap.get(se.id);
       if (ex) {
         ex.hp = se.hp; ex.maxHp = se.maxHp;
         ex.targetX = se.x; ex.targetY = se.y;
@@ -98,7 +99,9 @@ function netConnect(onReady) {
         if (se.hurtTimer > (ex.hurtTimer || 0)) ex.hurtTimer = se.hurtTimer;
         if (se.atkAnimTimer > (ex.atkAnimTimer || 0)) ex.atkAnimTimer = se.atkAnimTimer;
       } else {
-        serverEnemies.push({ ...se, targetX: se.x, targetY: se.y });
+        const newE = { ...se, targetX: se.x, targetY: se.y };
+        serverEnemies.push(newE);
+        serverEnemiesMap.set(se.id, newE);
       }
     });
   });
@@ -140,7 +143,7 @@ function netConnect(onReady) {
   });
 
   socket.on('enemyHurt', ({ id, hp, dmg }) => {
-    const e = serverEnemies.find(e => e.id === id);
+    const e = serverEnemiesMap.get(id);
     if (e) {
       e.hp = hp;
       e.hurtTimer = 0.3;
@@ -150,12 +153,17 @@ function netConnect(onReady) {
 
   socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
-    const e = serverEnemies.find(e => e.id === id);
+    const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
     if (dmg) dmgNum(px, py - 20, dmg, '#ff4');
     spawnBurst(px, py, color || '#f80', 8);
-    serverEnemies = serverEnemies.filter(e => e.id !== id);
+    serverEnemiesMap.delete(id);
+    let j = 0;
+    for (let i = 0; i < serverEnemies.length; i++) {
+      if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
+    }
+    serverEnemies.length = j;
     if (xp && player) { gainXP(xp); spawnLootDrop(px, py); }
     if (gold && player) {
       player.gold += gold;
@@ -168,6 +176,7 @@ function netConnect(onReady) {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
+    serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = {};
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
