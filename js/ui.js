@@ -37,8 +37,8 @@ function updateInvUI() {
   `;
 
   // Inventory grid (10 slots)
-  document.getElementById('inv-count').textContent = inv.length + '/10';
-  document.getElementById('inv-grid').innerHTML = Array.from({ length: 10 }, (_, i) => {
+  document.getElementById('inv-count').textContent = inv.length + '/50';
+  document.getElementById('inv-grid').innerHTML = Array.from({ length: 50 }, (_, i) => {
     const it = inv[i];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
     return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}"
@@ -310,11 +310,23 @@ function drawHeader() {
   ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(190,160,255,0.95)';
   ctx.fillText('Ур.' + p.lvl, infoRight, 15);
 
-  // Row 2: Class + Theme
+  // Row 2: Class name + inline stats (gold / atk / def)
   ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
   ctx.fillText(p.charDef.name, infoX, 27);
-  ctx.textAlign = 'right'; ctx.font = `10px ${F}`; ctx.fillStyle = 'rgba(120,95,195,0.85)';
-  ctx.fillText(getTheme(dungeonLvl).name, infoRight, 27);
+  const statItemsH = [
+    { icon: 'coin',   val: p.gold, color: '#f1c40f' },
+    { icon: 'sword',  val: p.atk,  color: '#e67e22' },
+    { icon: 'shield', val: p.def,  color: '#5dade2' },
+  ];
+  let stxH = infoX + ctx.measureText(p.charDef.name).width + 10;
+  ctx.textBaseline = 'middle';
+  statItemsH.forEach(s => {
+    drawIconCtx(ctx, s.icon, stxH + 5, 24, 11, s.color);
+    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = s.color;
+    ctx.fillText(s.val, stxH + 13, 24);
+    stxH += 38;
+  });
+  ctx.textBaseline = 'alphabetic';
 
   // Separator
   ctx.strokeStyle = 'rgba(65,42,118,0.4)'; ctx.lineWidth = 1;
@@ -374,22 +386,8 @@ function drawHeader() {
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
   ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
-  // ── Stats row ─────────────────────────────────────────────
+  // ── Status effects row ────────────────────────────────────
   const stY = HEADER_H - 6;
-  const statItems = [
-    { icon: 'coin',   val: p.gold, color: '#f1c40f' },
-    { icon: 'sword',  val: p.atk,  color: '#e67e22' },
-    { icon: 'shield', val: p.def,  color: '#5dade2' },
-  ];
-  const statSlotW = infoW / 3;
-  ctx.textBaseline = 'middle';
-  statItems.forEach((s, i) => {
-    const sx = infoX + i * statSlotW;
-    drawIconCtx(ctx, s.icon, sx + 6, stY, 12, s.color);
-    ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = s.color;
-    ctx.fillText(s.val, sx + 16, stY);
-  });
-
   // Status effects
   if (barrierTimer > 0 || battleCryTimer > 0) {
     let stx = infoX + infoW * 0.55;
@@ -648,9 +646,9 @@ function drawTargetFrame() {
     hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#f80';
   }
 
-  const pb = getPvpBtnPos();
-  const bx = pb.x, by = pb.y + pb.h + 8;
-  const bw = 155, bh = 38;
+  const bw = 160, bh = 42;
+  const bx = W / 2 - bw / 2;
+  const by = H - NAV_H - bh - 6;
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
 
@@ -808,10 +806,9 @@ function drawPartyHUD() {
   if (!partyMembers.length || !player) return;
   const F = 'system-ui, -apple-system, Arial';
   const bw = 130, bh = 26, gap = 4;
-  const partyBtn = getPartyBtnPos();
-  const pb = getPvpBtnPos();
-  const startX = partyBtn.x + partyBtn.w + 8;
-  const startY = pb.y;
+  const pvpBtn = getPvpBtnPos();
+  const startX = pvpBtn.x;
+  const startY = pvpBtn.y + pvpBtn.h + gap;
 
   partyMembers.forEach((member, i) => {
     const op = otherPlayers[member.id];

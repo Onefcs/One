@@ -65,9 +65,31 @@ function pickup(drop) {
     if (it.hp) { player.hp = Math.min(player.maxHp, player.hp + it.hp); dmgNum(player.x, player.y - 26, '+' + it.hp + '♥', '#4f4'); }
     return;
   }
-  if (player.inventory.length < 10) {
+  if (player.inventory.length < 50) {
     player.inventory.push(it);
     dmgNum(drop.x, drop.y - 12, it.name, RARITY_COLOR[it.rarity] || '#4ff');
     netSaveProgress();
   }
+}
+
+function spawnLootDrop(x, y) {
+  const r = Math.random();
+  if (r < 0.15) {
+    // 15% chance: craft material
+    const mat = CRAFT_MATS[Math.floor(Math.random() * CRAFT_MATS.length)];
+    drops.push({ x, y, item: { ...mat }, type: 'item', life: 25 });
+  } else if (r < 0.32) {
+    // 17% chance: equipment item scaled to floor
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    const maxRarityIdx = Math.min(4, Math.max(0, Math.floor((dungeonLvl - 1) / 4)));
+    const pool = ITEM_DEF.filter(it =>
+      it.slot !== 'use' && it.slot !== 'material' &&
+      rarities.indexOf(it.rarity) <= maxRarityIdx + 1
+    );
+    if (pool.length > 0) {
+      const item = pool[Math.floor(Math.random() * pool.length)];
+      drops.push({ x, y, item: { ...item }, type: 'item', life: 25 });
+    }
+  }
+  // 68%: no drop
 }

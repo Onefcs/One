@@ -16,15 +16,17 @@ function getSkillBtnPos(idx) {
   };
 }
 
+// Potion and Target are now stacked ABOVE the 2×2 skill grid
 function getPotionBtnPos() {
-  const sb = getSkillBtnPos(0);
-  const cx = sb.x + SKILL_SZ + SKILL_GAP / 2;
-  return { x: cx, y: sb.y - POTION_R - 10, r: POTION_R };
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
+  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
+  return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
 }
 
 function getTargetBtnPos() {
-  const pb = getPotionBtnPos();
-  return { x: pb.x - POTION_R * 2 - 12, y: pb.y, r: POTION_R };
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
+  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
+  return { x: W - 14 - sz - gap - sz / 2, y: gridTop - gap - r, r };
 }
 
 function getPvpBtnPos() {
@@ -35,18 +37,18 @@ function getPartyBtnPos() {
   return { x: 92, y: HEADER_H + 6, w: 80, h: 26 };
 }
 
+// ATK and AUTO are above the potion/target row
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP;
-  const r = 30;
-  const gridLeft = W - 14 - 2 * sz - gap; // x of leftmost skill column
-  const gridCenterY = H - NAV_H - 14 - sz - gap / 2; // center Y of 2x2 grid
-  return { x: gridLeft - gap - r - 4, y: gridCenterY, r };
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
+  const pb = getPotionBtnPos();
+  return { x: W - 14 - sz / 2, y: pb.y - pb.r - gap - r, r };
 }
 
 function getAutoBtnPos() {
+  const sz = SKILL_SZ, gap = SKILL_GAP;
   const ab = getAttackBtnPos();
-  const w = 52, h = 20;
-  return { x: ab.x - w / 2, y: ab.y - ab.r - 6 - h, w, h };
+  const w = 52, h = 22;
+  return { x: W - 14 - sz - gap - sz / 2 - w / 2, y: ab.y - h / 2, w, h };
 }
 
 // Invite accept/decline buttons (for popup)

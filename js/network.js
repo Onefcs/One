@@ -156,7 +156,7 @@ function netConnect(onReady) {
     if (dmg) dmgNum(px, py - 20, dmg, '#ff4');
     spawnBurst(px, py, color || '#f80', 8);
     serverEnemies = serverEnemies.filter(e => e.id !== id);
-    if (xp && player) gainXP(xp);
+    if (xp && player) { gainXP(xp); spawnLootDrop(px, py); }
     if (gold && player) {
       player.gold += gold;
       const g = gold % 1 === 0 ? gold : +gold.toFixed(1);
