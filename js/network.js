@@ -29,17 +29,17 @@ function netConnect(onReady) {
   socket.on('authError', ({ message }) => { showAuthError(message); });
 
   socket.on('playerJoined', ({ id, username }) => {
-    if (!otherPlayers[id]) otherPlayers[id] = { animFrame: 0, animTimer: 0, moving: false };
-    otherPlayers[id].username = username;
+    if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
+    otherPlayers.get(id).username = username;
   });
 
   socket.on('playerLeft', ({ id }) => {
-    delete otherPlayers[id];
+    otherPlayers.delete(id);
   });
 
   socket.on('playerChar', ({ id, type }) => {
-    if (!otherPlayers[id]) otherPlayers[id] = { animFrame: 0, animTimer: 0, moving: false };
-    otherPlayers[id].type = type;
+    if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
+    otherPlayers.get(id).type = type;
     loadSprites(type, () => {});
   });
 
@@ -48,7 +48,7 @@ function netConnect(onReady) {
     dungeon = { ...d, enemies: [] };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
-    otherPlayers = {};
+    otherPlayers = new Map();
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
@@ -66,11 +66,11 @@ function netConnect(onReady) {
 
     players.forEach(p => {
       if (p.id === myId) return;
-      if (!otherPlayers[p.id]) {
-        otherPlayers[p.id] = { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false };
+      if (!otherPlayers.has(p.id)) {
+        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false });
         if (p.type) loadSprites(p.type, () => {});
       } else {
-        const op = otherPlayers[p.id];
+        const op = otherPlayers.get(p.id);
         if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
         op.hp = p.hp; op.maxHp = p.maxHp;
         op.facing = p.facing; op.username = p.username;
@@ -86,7 +86,7 @@ function netConnect(onReady) {
 
     // Remove players that left AOI or disconnected
     const pids = new Set(players.map(p => p.id));
-    Object.keys(otherPlayers).forEach(id => { if (!pids.has(id)) delete otherPlayers[id]; });
+    otherPlayers.forEach((_, id) => { if (!pids.has(id)) otherPlayers.delete(id); });
 
     // Delta update: only changed enemies arrive — add or update, never remove
     // (removal happens via enemyKilled; respawn via re-add when hp > 0)
@@ -111,10 +111,13 @@ function netConnect(onReady) {
       player.hp = hp;
       player.hurtTimer = 0.1;
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
-    } else if (otherPlayers[id]) {
-      otherPlayers[id].hp = hp;
-      otherPlayers[id].hurtTimer = 0.1;
-      if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+    } else {
+      const op = otherPlayers.get(id);
+      if (op) {
+        op.hp = hp;
+        op.hurtTimer = 0.1;
+        if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+      }
     }
   });
 
@@ -138,8 +141,8 @@ function netConnect(onReady) {
   socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId }) => {
     if (dmg) dmgNum(x, y - 24, dmg, '#f88');
     spawnBurst(x, y, '#f44', 4);
-    if (hitTargetId && otherPlayers[hitTargetId])
-      otherPlayers[hitTargetId].hurtTimer = 0.1;
+    const _hitOp = hitTargetId ? otherPlayers.get(hitTargetId) : null;
+    if (_hitOp) _hitOp.hurtTimer = 0.1;
   });
 
   socket.on('enemyHurt', ({ id, hp, dmg }) => {
@@ -177,7 +180,7 @@ function netConnect(onReady) {
     dungeon = { ...d, enemies: [] };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
-    otherPlayers = {};
+    otherPlayers = new Map();
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
@@ -220,7 +223,7 @@ function netConnect(onReady) {
   socket.on('disconnect', () => {
     socket = null;
     serverEnemies = [];
-    otherPlayers = {};
+    otherPlayers = new Map();
     otherProjs = [];
     partyMembers = [];
     partyInvitePending = null;

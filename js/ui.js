@@ -272,7 +272,7 @@ function drawHeader() {
     const _mmRop = Math.max(1.5, mmSc);
     ctx.fillStyle = 'rgba(100,180,255,0.9)';
     ctx.beginPath();
-    Object.values(otherPlayers).forEach(op => {
+    otherPlayers.forEach(op => {
       if (op.x == null) return;
       const ox = mmX + (op.x / TILE) * mmSc, oy = mmY + (op.y / TILE) * mmSc;
       ctx.moveTo(ox + _mmRop, oy); ctx.arc(ox, oy, _mmRop, 0, Math.PI * 2);
@@ -654,7 +654,7 @@ function drawTargetFrame() {
 
   let name = '', hp = 0, maxHp = 1, color = '#f80';
   if (targetIsPlayer && isOnline) {
-    const op = otherPlayers[targetId];
+    const op = otherPlayers.get(targetId);
     if (!op) return;
     name = op.username || '?';
     hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#ff8888';
@@ -831,7 +831,7 @@ function drawPartyHUD() {
   const startY = HEADER_H + 56; // below target frame (HEADER_H+6+42+8)
 
   partyMembers.forEach((member, i) => {
-    const op = otherPlayers[member.id];
+    const op = otherPlayers.get(member.id);
     const hp = op ? (op.hp || 0) : 0;
     const maxHp = op ? (op.maxHp || 1) : 1;
     const pct = Math.max(0, Math.min(1, hp / maxHp));
