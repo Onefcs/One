@@ -7,6 +7,9 @@ let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
 // Reusable dash arrays — declared once, never reallocated
 const _DASH = [6, 4];
 const _NO_DASH = [];
+// Damage-number fonts — only two possible sizes, precompute to avoid template literals
+const _FONT_DMGNUM = 'bold 15px Arial';
+const _FONT_DMGTXT = 'bold 12px Arial';
 
 // ─────────────────────────────────────────────────────────
 //  CAMERA
@@ -65,6 +68,7 @@ function update(dt) {
       if ((op.hp || 0) <= 0 || op.x == null) return;
       const minD = 26;
       const ddx = player.x - op.x, ddy = player.y - op.y;
+      if (ddx * ddx + ddy * ddy >= minD * minD) return; // squared fast-reject avoids Math.hypot
       const dd = Math.hypot(ddx, ddy);
       if (dd < minD && dd > 0.01) {
         const p2 = (minD - dd) / dd;
@@ -240,7 +244,8 @@ function update(dt) {
     for (let i = 0; i < drops.length; i++) {
       const d = drops[i]; d.life -= dt;
       if (d.life <= 0) continue;
-      if (dist(player.x, player.y, d.x, d.y) < 30) { pickup(d); continue; }
+      const _ddx = d.x - player.x, _ddy = d.y - player.y;
+      if (_ddx * _ddx + _ddy * _ddy < 900) { pickup(d); continue; }
       drops[j++] = drops[i];
     }
     drops.length = j;
@@ -572,7 +577,7 @@ function render(dt) {
   dmgNums.forEach(d => {
     ctx.globalAlpha = Math.min(1, d.life * 1.5);
     ctx.fillStyle = d.color;
-    ctx.font = `bold ${d.fontSize}px Arial`; ctx.textAlign = 'center';
+    ctx.font = d.fontSize === 15 ? _FONT_DMGNUM : _FONT_DMGTXT; ctx.textAlign = 'center';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(d.text, d.x, d.y); ctx.fillText(d.text, d.x, d.y);
   });
   ctx.globalAlpha = 1;
@@ -656,27 +661,28 @@ function initNpcs() {
 
 function drawNpcs() {
   if (!npcs.length) return;
-  const F = 'system-ui, -apple-system, Arial';
+  // Precompute per-frame values once — not per NPC
+  const _nPulse   = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
+  const _nHex     = Math.round(_nPulse * 80).toString(16).padStart(2, '0');
+  const _nBounce  = Math.sin(frameCount * 0.15) * 3;
+  const _nFont    = 'bold 10px system-ui, -apple-system, Arial';
   npcs.forEach(n => {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(n.x, n.y + 18, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
 
-    const pulse = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
-    ctx.strokeStyle = n.color + Math.round(pulse * 80).toString(16).padStart(2, '0');
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = n.color + _nHex; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(n.x, n.y, 22, 0, Math.PI * 2); ctx.stroke();
 
     drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
 
-    ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
+    ctx.font = _nFont; ctx.textBaseline = 'alphabetic';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
     ctx.strokeText(n.name, n.x, n.y - 26);
     ctx.fillStyle = n.color;
     ctx.fillText(n.name, n.x, n.y - 26);
 
     if (nearNpc && nearNpc.id === n.id) {
-      const bounce = Math.sin(frameCount * 0.15) * 3;
-      drawIconCtx(ctx, 'chat', n.x, n.y - 44 + bounce, 18, '#fff');
+      drawIconCtx(ctx, 'chat', n.x, n.y - 44 + _nBounce, 18, '#fff');
     }
   });
 }
@@ -821,7 +827,9 @@ window.addEventListener('load', () => {
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    _uiCanvas = null; // force UI canvas recreation at new size
+    _uiCanvas = null;           // force UI canvas recreation at new size
+    _skillBtnGradCache = null;  // force skill button gradient rebuild
+    updateJoyCenter();          // recompute cached joystick center
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);
