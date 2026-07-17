@@ -378,25 +378,39 @@ function render(dt) {
   // NPCs
   drawNpcs();
 
-  // Drops
+  // Drops — no save/restore per drop; state is set fresh each iteration
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 9px Arial';
   drops.forEach(d => {
-    ctx.save(); ctx.globalAlpha = Math.min(1, d.life * 1.5) * (0.85 + 0.15 * Math.sin(frameCount * .12));
+    ctx.globalAlpha = Math.min(1, d.life * 1.5) * (0.85 + 0.15 * Math.sin(frameCount * .12));
     const bob = Math.sin(frameCount * .09) * 3;
     if (d.type === 'gold') {
       ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(d.x, d.y + bob, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#a80'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(d.amount + 'g', d.x, d.y + bob);
+      ctx.fillStyle = '#a80'; ctx.fillText(d.amount + 'g', d.x, d.y + bob);
     } else {
       drawIconCtx(ctx, d.item.icon, d.x, d.y + bob, 20, '#ccc');
     }
-    ctx.restore();
   });
 
-  // Particles
-  particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); });
+  // Particles — sort by color, then batch-fill per group (1 fill() per color, not per particle)
+  if (particles.length) {
+    particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
+    let i = 0;
+    while (i < particles.length) {
+      const col = particles[i].color;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = Math.max(0, particles[i].life);
+      ctx.beginPath();
+      while (i < particles.length && particles[i].color === col) {
+        const p = particles[i++];
+        ctx.moveTo(p.x + p.size, p.y); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+  }
   ctx.globalAlpha = 1;
 
   // Enemies
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return; // viewport cull
     const hurt = e.hurtTimer > 0;
@@ -429,7 +443,6 @@ function render(dt) {
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
     ctx.font = e.isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = e.isBoss ? '#f88' : '#ddd';
     ctx.fillText(e.name, e.x, by - 2);
   });
@@ -740,7 +753,8 @@ function respawnPlayer() {
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
   if (xpLoss > 0) dmgNum(player.x, player.y - 30, `−${xpLoss} XP`, '#a88');
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp, maxHp: player.maxHp });
+  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
+  if (socket?.connected) socket.emit('respawn');
   netSaveProgress();
 }
 
