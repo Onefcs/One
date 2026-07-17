@@ -41,8 +41,9 @@ function update(dt) {
       if ((e.hp || 0) <= 0) return;
       const minD = e.size + 12;
       const ddx = player.x - e.x, ddy = player.y - e.y;
+      if (ddx * ddx + ddy * ddy >= minD * minD) return; // squared-dist fast reject
       const dd = Math.hypot(ddx, ddy);
-      if (dd < minD && dd > 0.01) {
+      if (dd > 0.01) {
         const p2 = (minD - dd) / dd;
         if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
         if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
@@ -133,21 +134,24 @@ function update(dt) {
       }
     }
 
-    // Fall back to nearest enemy
+    // Fall back to nearest enemy using squared distance (avoids sqrt per candidate)
     if (!closest) {
+      let closestD2 = Infinity;
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
-        const d = dist(e.x, e.y, player.x, player.y);
-        if (d < closestD) { closestD = d; closest = e; closestIsPlayer = false; }
+        const dx = e.x - player.x, dy = e.y - player.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < closestD2) { closestD2 = d2; closest = e; closestIsPlayer = false; }
       });
-      // In PK mode also consider nearby players
       if (pvpMode) {
         Object.entries(otherPlayers).forEach(([id, op]) => {
           if ((op.hp || 0) <= 0 || op.x == null) return;
-          const d = dist(op.x, op.y, player.x, player.y);
-          if (d < closestD) { closestD = d; closest = { ...op, _socketId: id }; closestIsPlayer = true; }
+          const dx = op.x - player.x, dy = op.y - player.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < closestD2) { closestD2 = d2; closest = { ...op, _socketId: id }; closestIsPlayer = true; }
         });
       }
+      if (closest) closestD = Math.sqrt(closestD2);
     }
 
     const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
@@ -174,10 +178,19 @@ function update(dt) {
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (p.life <= 0 || isWall(p.x, p.y)) return false;
     if (p.isPlayer) {
-      const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
+      const ps = p.size;
+      const hitE = serverEnemies.find(e => {
+        if ((e.hp || 0) <= 0) return false;
+        const r = e.size + ps, dx = p.x - e.x, dy = p.y - e.y;
+        return dx * dx + dy * dy < r * r;
+      });
       if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
       if (pvpMode) {
-        const hitP = Object.values(otherPlayers).find(op => (op.hp || 0) > 0 && op.x != null && dist(p.x, p.y, op.x, op.y) < 18 + p.size);
+        const hitP = Object.values(otherPlayers).find(op => {
+          if ((op.hp || 0) <= 0 || op.x == null) return false;
+          const r = 18 + ps, dx = p.x - op.x, dy = p.y - op.y;
+          return dx * dx + dy * dy < r * r;
+        });
         if (hitP) { spawnBurst(p.x, p.y, p.color, 5); return false; }
       }
     }
@@ -186,10 +199,16 @@ function update(dt) {
   otherProjs = otherProjs.filter(p => {
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (p.life <= 0 || isWall(p.x, p.y)) return false;
-    const hitE = serverEnemies.find(e => (e.hp || 0) > 0 && dist(p.x, p.y, e.x, e.y) < e.size + p.size);
+    const ps = p.size;
+    const hitE = serverEnemies.find(e => {
+      if ((e.hp || 0) <= 0) return false;
+      const r = e.size + ps, dx = p.x - e.x, dy = p.y - e.y;
+      return dx * dx + dy * dy < r * r;
+    });
     if (hitE) { spawnBurst(p.x, p.y, p.color, 5); return false; }
-    if (player && state === 'playing' && dist(p.x, p.y, player.x, player.y) < 14 + p.size) {
-      spawnBurst(p.x, p.y, p.color, 5); return false;
+    if (player && state === 'playing') {
+      const r = 14 + ps, dx = p.x - player.x, dy = p.y - player.y;
+      if (dx * dx + dy * dy < r * r) { spawnBurst(p.x, p.y, p.color, 5); return false; }
     }
     return true;
   });
@@ -202,7 +221,9 @@ function update(dt) {
   });
 
   particles = particles.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; return p.life > 0; });
+  if (particles.length > 200) particles.length = 200;
   dmgNums = dmgNums.filter(d => { d.y += d.vy * dt; d.life -= dt; return d.life > 0; });
+  if (dmgNums.length > 40) dmgNums.length = 40;
 
   // Skill timers
   if (player.skillCooldowns) {
@@ -318,6 +339,7 @@ function render(dt) {
 
   // Enemies
   serverEnemies.forEach(e => {
+    if (!_isOnScreen(e.x, e.y)) return; // viewport cull
     const hurt = e.hurtTimer > 0;
     // Selection ring
     if (e.id === targetId && !targetIsPlayer) {
@@ -356,6 +378,7 @@ function render(dt) {
   // Other players
   Object.entries(otherPlayers).forEach(([pid, p]) => {
     if (p.x == null || isNaN(p.x)) return;
+    if (!_isOnScreen(p.x, p.y)) return; // viewport cull
 
     if (pid === targetId && targetIsPlayer) {
       const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
@@ -391,8 +414,8 @@ function render(dt) {
     ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
   });
 
-  // Projectiles (local + other players')
-  [...projs, ...otherProjs].forEach(p => {
+  // Projectiles (local + other players') — two loops avoid array allocation each frame
+  const _drawProj = p => {
     ctx.globalAlpha = 1;
     if (p.projType === 'arrow') {
       const ang = p.angle ?? Math.atan2(p.vy, p.vx);
@@ -417,7 +440,9 @@ function render(dt) {
       ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.38, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
     }
-  });
+  };
+  projs.forEach(_drawProj);
+  otherProjs.forEach(_drawProj);
 
   // Player
   {

@@ -175,6 +175,8 @@ function setTab(n) {
 // ─────────────────────────────────────────────────────────
 //  UNIFIED HEADER  (player info + minimap)
 // ─────────────────────────────────────────────────────────
+let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
+
 function drawHeader() {
   if (!player || !dungeon) return;
   const p = player;
@@ -182,20 +184,23 @@ function drawHeader() {
 
   ctx.save();
 
-  // ── Background ────────────────────────────────────────────
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
-  bgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
-  bgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
-  ctx.fillStyle = bgGrad;
+  // ── Background (cached gradient — same every frame) ───────
+  if (!_hdrBgGrad || _hdrGradW !== W) {
+    _hdrGradW = W;
+    _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
+    _hdrBgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
+    _hdrBgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
+    _hdrSepGrad = ctx.createLinearGradient(0, 0, W, 0);
+    _hdrSepGrad.addColorStop(0,   'rgba(60,35,130,0)');
+    _hdrSepGrad.addColorStop(0.15,'rgba(90,55,185,0.75)');
+    _hdrSepGrad.addColorStop(0.85,'rgba(90,55,185,0.75)');
+    _hdrSepGrad.addColorStop(1,   'rgba(60,35,130,0)');
+  }
+  ctx.fillStyle = _hdrBgGrad;
   ctx.fillRect(0, 0, W, HEADER_H);
 
   // Bottom separator glow
-  const sepGrad = ctx.createLinearGradient(0, 0, W, 0);
-  sepGrad.addColorStop(0,   'rgba(60,35,130,0)');
-  sepGrad.addColorStop(0.15,'rgba(90,55,185,0.75)');
-  sepGrad.addColorStop(0.85,'rgba(90,55,185,0.75)');
-  sepGrad.addColorStop(1,   'rgba(60,35,130,0)');
-  ctx.strokeStyle = sepGrad; ctx.lineWidth = 1;
+  ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
 
   // ── Minimap (right side) ──────────────────────────────────
