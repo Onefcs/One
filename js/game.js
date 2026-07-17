@@ -77,8 +77,11 @@ function _drawPerf(frameMs) {
   });
 }
 
-// Offscreen UI canvas — rebuilt every 3 frames (~20fps), blitted every frame
-let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
+// Offscreen UI canvas — rebuilt on wall-clock schedule (~20fps), blitted every frame
+let _uiCanvas = null, _uiCtx = null, _uiLastMs = 0;
+
+// Reusable sentinel for pvp closest-target — avoids per-frame object spread
+const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
 
 // Visible enemy count (set each render frame, read by _drawPerf)
 let _visEnm = 0;
@@ -103,8 +106,8 @@ function clampCamera() {
 
 function updateCamera(dt) {
   const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
-  camera.x += (player.x - visW / 2 - camera.x) * Math.min(1, 8 * dt);
-  camera.y += (player.y - visH / 2 - camera.y) * Math.min(1, 8 * dt);
+  camera.x += (player.x - visW / 2 - camera.x) * Math.min(1, 5 * dt);
+  camera.y += (player.y - visH / 2 - camera.y) * Math.min(1, 5 * dt);
   clampCamera();
 }
 
@@ -223,7 +226,8 @@ function update(dt) {
     } else if (targetId && targetIsPlayer && pvpMode) {
       const op = otherPlayers.get(targetId);
       if (op && (op.hp || 0) > 0 && op.x != null) {
-        closest = { ...op, _socketId: targetId };
+        _pvpSentinel._socketId = targetId; _pvpSentinel.x = op.x; _pvpSentinel.y = op.y;
+        closest = _pvpSentinel;
         closestD = dist(op.x, op.y, player.x, player.y);
         closestIsPlayer = true;
       }
@@ -243,7 +247,7 @@ function update(dt) {
           if ((op.hp || 0) <= 0 || op.x == null) return;
           const dx = op.x - player.x, dy = op.y - player.y;
           const d2 = dx * dx + dy * dy;
-          if (d2 < closestD2) { closestD2 = d2; closest = { ...op, _socketId: id }; closestIsPlayer = true; }
+          if (d2 < closestD2) { closestD2 = d2; _pvpSentinel._socketId = id; _pvpSentinel.x = op.x; _pvpSentinel.y = op.y; closest = _pvpSentinel; closestIsPlayer = true; }
         });
       }
       if (closest) closestD = Math.sqrt(closestD2);
@@ -487,7 +491,7 @@ function _drawProj(p) {
 
 // Cached per-frame view bounds — updated once at the top of render(), read by _isOnScreen
 let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
-function render(dt) {
+function render(dt, ts) {
   // Precompute per-frame trig — used in multiple places below
   const _pulse    = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
   const _bossGlow = 0.6 + 0.4 * Math.sin(frameCount * 0.10);
@@ -686,10 +690,9 @@ function render(dt) {
   ctx.globalAlpha = 1;
   ctx.restore(); // [camera]
 
-  // UI — blit from offscreen canvas (rebuilt every 3rd frame = ~20fps HUD)
+  // UI — blit from offscreen canvas (time-based rebuild ~20fps, decoupled from frame rate)
   ctx.globalAlpha = 1;
-  if (++_uiFrame >= 3) _uiFrame = 0;
-  if (!_uiCanvas || _uiFrame === 0) _renderUI();
+  if (!_uiCanvas || ts - _uiLastMs >= 50) { _uiLastMs = ts; _renderUI(); }
   ctx.drawImage(_uiCanvas, 0, 0, _uiCanvas.width, _uiCanvas.height, 0, 0, W, H);
   // Joystick drawn directly at full 60fps — knob tracks live touch position
   if (activeTab === 0) drawJoystick();
@@ -769,15 +772,15 @@ function drawNpcs() {
   if (!npcs.length) return;
   // Precompute per-frame values once — not per NPC
   const _nPulse   = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
-  const _nHex     = Math.round(_nPulse * 80).toString(16).padStart(2, '0');
   const _nBounce  = Math.sin(frameCount * 0.15) * 3;
   const _nFont    = 'bold 10px system-ui, -apple-system, Arial';
   npcs.forEach(n => {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(n.x, n.y + 18, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
 
-    ctx.strokeStyle = n.color + _nHex; ctx.lineWidth = 2;
+    ctx.globalAlpha = _nPulse; ctx.strokeStyle = n.color; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(n.x, n.y, 22, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
 
     drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
 
@@ -915,8 +918,8 @@ function restartGame() {
 let _loopTs = 0;
 function loop(ts) {
   const frameMs = ts - _loopTs; _loopTs = ts;
-  const dt = Math.min((ts - lastTs) / 1000, .05); lastTs = ts;
-  update(dt); render(dt);
+  const dt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
+  update(dt); render(dt, ts);
   _drawPerf(frameMs);
   requestAnimationFrame(loop);
 }

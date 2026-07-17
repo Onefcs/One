@@ -182,6 +182,8 @@ let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null, _hdrGradH = 0;
 let _avBgGrad = null, _avBgColor = '';
 // All button + target-frame gradients — rebuilt when null (set null on resize)
 let _uiBtnGrads = null;
+// Cached character name text width (measureText is expensive; name never changes mid-session)
+let _hdrNameW = 0, _hdrNameStr = '';
 
 function drawHeader() {
   if (!player || !dungeon) return;
@@ -195,6 +197,7 @@ function drawHeader() {
     _hdrGradW = W;
     _hpGradGreen = null; // invalidate dependent bar gradients
     _avBgGrad = null;    // also invalidate avatar bg on resize
+    _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
     _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
     _hdrBgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
     _hdrBgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
@@ -340,7 +343,11 @@ function drawHeader() {
     { icon: 'sword',  val: p.atk,  color: '#e67e22' },
     { icon: 'shield', val: p.def,  color: '#5dade2' },
   ];
-  let stxH = infoX + ctx.measureText(p.charDef.name).width + 10;
+  if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
+    _hdrNameStr = p.charDef.name;
+    _hdrNameW = ctx.measureText(p.charDef.name).width;
+  }
+  let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
   statItemsH.forEach(s => {
     drawIconCtx(ctx, s.icon, stxH + 5, 24, 11, s.color);
@@ -476,7 +483,7 @@ function _buildSkillBtnGrads() {
     ready.addColorStop(0, 'rgba(18,14,40,0.97)'); ready.addColorStop(1, 'rgba(8,6,20,0.99)');
     const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
     cd.addColorStop(0, 'rgba(10,8,22,0.97)'); cd.addColorStop(1, 'rgba(5,4,12,0.99)');
-    return { flash, ready, cd };
+    return { flash, ready, cd, x: b.x, y: b.y, w: b.w, h: b.h };
   });
 }
 
@@ -489,12 +496,12 @@ function drawSkillButtons() {
 
   for (let i = 0; i < 4; i++) {
     const sk = skills[i];
-    const b = getSkillBtnPos(i);
+    const grads = _skillBtnGradCache[i];
+    const b = grads; // positions cached inside grads
     const cd = player.skillCooldowns[sk.key] || 0;
     const ready = cd <= 0;
     const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-    const grads = _skillBtnGradCache[i];
 
     // Background gradient (cached)
     ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
@@ -594,8 +601,10 @@ function _buildUiBtnGrads() {
   const tfShine = ctx.createLinearGradient(0, hbY, 0, hbY+4);
   tfShine.addColorStop(0,'rgba(255,255,255,0.15)'); tfShine.addColorStop(1,'rgba(255,255,255,0)');
 
+  // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
-                  tfBg, hpHi, hpMid, hpLo, tfShine };
+                  tfBg, hpHi, hpMid, hpLo, tfShine,
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -604,7 +613,7 @@ function _buildUiBtnGrads() {
 function drawPotionButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
-  const pb = getPotionBtnPos();
+  const pb = _uiBtnGrads.potBtn;
   const count = player.potions || 0;
   const ready = count > 0 && player.hp < player.maxHp;
   const F = 'system-ui, -apple-system, Arial';
@@ -643,7 +652,7 @@ function drawPotionButton() {
 function drawTargetButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
-  const tb = getTargetBtnPos();
+  const tb = _uiBtnGrads.tgtBtn;
   const F = 'system-ui, -apple-system, Arial';
   const hasTarget = !!targetId;
 
@@ -678,7 +687,7 @@ function drawTargetButton() {
 function drawPvpButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
-  const pb = getPvpBtnPos();
+  const pb = _uiBtnGrads.pvpBtn;
   const F = 'system-ui, -apple-system, Arial';
 
   ctx.save();
@@ -769,12 +778,12 @@ function drawTargetFrame() {
 // ─────────────────────────────────────────────────────────
 function drawAttackButton() {
   if (!player) return;
-  const ab = getAttackBtnPos();
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const ab = _uiBtnGrads.atkBtn;
   const F = 'system-ui, -apple-system, Arial';
   const hasTarget = !!targetId;
   const ready = (player.atkTimer || 0) <= 0;
 
-  if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
   ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
@@ -805,10 +814,9 @@ function drawAttackButton() {
 // ─────────────────────────────────────────────────────────
 function drawAutoToggle() {
   if (!player) return;
-  const ab = getAutoBtnPos();
-  const F = 'system-ui, -apple-system, Arial';
-
   if (!_uiBtnGrads) _buildUiBtnGrads();
+  const ab = _uiBtnGrads.autoBtn;
+  const F = 'system-ui, -apple-system, Arial';
   ctx.save();
   ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
   roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
@@ -833,9 +841,9 @@ function drawPartyButton() {
   const canInvite = targetIsPlayer && !!targetId;
   if (!canInvite) return;
 
-  const pb = getPartyBtnPos();
-  const F = 'system-ui, -apple-system, Arial';
   if (!_uiBtnGrads) _buildUiBtnGrads();
+  const pb = _uiBtnGrads.ptyBtn;
+  const F = 'system-ui, -apple-system, Arial';
   ctx.save();
 
   ctx.fillStyle = inParty ? _uiBtnGrads.ptg1 : _uiBtnGrads.ptg0;
