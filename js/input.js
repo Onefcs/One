@@ -67,10 +67,7 @@ function getPartyAcceptPos()  { return { x: W / 2 - 68, y: H / 2 + 18, w: 58, h:
 function getPartyDeclinePos() { return { x: W / 2 + 10, y: H / 2 + 18, w: 58, h: 26 }; }
 
 function _isOnScreen(wx, wy) {
-  const margin = 60;
-  const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
-  return wx >= camera.x - margin && wx <= camera.x + visW + margin &&
-         wy >= camera.y - margin && wy <= camera.y + visH + margin;
+  return wx >= _vL && wx <= _vR && wy >= _vT && wy <= _vB;
 }
 
 function cycleTarget() {
