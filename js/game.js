@@ -77,7 +77,7 @@ function _drawPerf(frameMs) {
   });
 }
 
-// Offscreen UI canvas — all UI is rendered here at 30fps, then blitted in one draw call per frame
+// Offscreen UI canvas — rebuilt every 3 frames (~20fps), blitted every frame
 let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
 
 // Visible enemy count (set each render frame, read by _drawPerf)
@@ -513,7 +513,13 @@ function render(dt) {
 
   if (tileCanvas) {
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(tileCanvas, 0, 0);
+    // Draw only the visible slice — avoids reading the full (2000-3000px) tile canvas each frame
+    const _tcSx = Math.max(0, Math.floor(camera.x));
+    const _tcSy = Math.max(0, Math.floor(camera.y));
+    const _tcSw = Math.min(tileCanvas.width  - _tcSx, Math.ceil(W  / ZOOM) + 2);
+    const _tcSh = Math.min(tileCanvas.height - _tcSy, Math.ceil((H - HEADER_H) / ZOOM) + 2);
+    if (_tcSw > 0 && _tcSh > 0)
+      ctx.drawImage(tileCanvas, _tcSx, _tcSy, _tcSw, _tcSh, _tcSx, _tcSy, _tcSw, _tcSh);
   }
 
   // NPCs
@@ -681,10 +687,10 @@ function render(dt) {
   ctx.globalAlpha = 1;
   ctx.restore(); // [camera]
 
-  // UI — blit from offscreen canvas (rebuilt only every other frame = 30fps HUD)
+  // UI — blit from offscreen canvas (rebuilt every 3rd frame = ~20fps HUD)
   ctx.globalAlpha = 1;
-  _uiFrame++;
-  if (!_uiCanvas || (_uiFrame & 1) === 0) _renderUI();
+  if (++_uiFrame >= 3) _uiFrame = 0;
+  if (!_uiCanvas || _uiFrame === 0) _renderUI();
   ctx.drawImage(_uiCanvas, 0, 0, _uiCanvas.width, _uiCanvas.height, 0, 0, W, H);
   // Joystick drawn directly at full 60fps — knob tracks live touch position
   if (activeTab === 0) drawJoystick();
