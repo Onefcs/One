@@ -218,10 +218,16 @@ function update(dt) {
       swingTimer = 0.18;
       if (pa.isPlayer) {
         netPvpAttack(pa.socketId);
-        if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+        if (player.charDef.atkType === 'ranged') {
+          const _op = otherPlayers.get(pa.socketId);
+          fireProj(_op?.x ?? pa.x, _op?.y ?? pa.y);
+        }
       } else {
         netAttack(pa.id);
-        if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+        if (player.charDef.atkType === 'ranged') {
+          const _e = serverEnemiesMap.get(pa.id);
+          fireProj(_e?.x ?? pa.x, _e?.y ?? pa.y);
+        }
       }
     }
   }
