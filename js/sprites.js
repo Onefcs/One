@@ -202,6 +202,47 @@ const spriteCache = {};
 // rather than firing onDone as soon as the cache object exists.
 const _spriteLoadPromises = {};
 
+// Player sheets ship at up to 3360×2880 (~37MB decoded RGBA apiece, ~13 sheets
+// per character) but the character renders at 80 world-px × ZOOM(0.75) × DPR —
+// at most ~240 device px tall. Keeping the full-res decoded bitmaps resident
+// costs hundreds of MB; mobile browsers respond by discarding decoded image
+// data under memory pressure and silently re-decoding on the next drawImage,
+// which froze the main thread for 100-300ms exactly when the animation
+// switched sheets (i.e. while moving / turning). Fix: rasterize each sheet
+// once, at gameplay size, into a canvas — canvases stay rasterized and are
+// never re-decoded — and drop the reference to the huge Image so GC can
+// reclaim the decoded bitmap.
+const _SPRITE_CELL_H = Math.max(120, Math.min(240,
+  Math.ceil(80 * (typeof ZOOM !== 'undefined' ? ZOOM : 1) * (window.devicePixelRatio || 1))));
+
+function _rasterizeSheet(img, ad, def) {
+  const scale = _SPRITE_CELL_H / def.frameH;
+  const cw = Math.ceil(def.frameW * scale), ch = _SPRITE_CELL_H;
+  const rows = Math.ceil(ad.n / ad.cols);
+  const cv = document.createElement('canvas');
+  cv.width = cw * ad.cols; cv.height = ch * rows;
+  const c = cv.getContext('2d');
+  // Per-frame integer cells (not one whole-sheet scaled blit) so frames never
+  // bleed into each other through bilinear filtering at fractional borders.
+  for (let i = 0; i < ad.n; i++) {
+    const col = i % ad.cols, row = Math.floor(i / ad.cols);
+    c.drawImage(img, col * def.frameW, row * def.frameH, def.frameW, def.frameH,
+      col * cw, row * ch, cw, ch);
+  }
+  // Draw code reads frame size off the cache entry so canvas and Image
+  // entries stay interchangeable.
+  cv.frameW = cw; cv.frameH = ch;
+  return cv;
+}
+
+// A cache entry is drawable if it's a rasterized canvas, or an Image that
+// finished loading (the fallback while rasterization is still pending).
+function _sheetReady(entry) {
+  if (!entry) return false;
+  if (entry.naturalWidth !== undefined) return entry.complete && entry.naturalWidth > 0;
+  return true; // canvas
+}
+
 // Char-select shows 5 idle previews at once — only the 'front-idle' frame is
 // ever drawn there, so only load+decode that one sheet per unpicked character.
 // Eagerly decoding all 13 sheets × 5 characters (some up to 3360×2880px) at
@@ -218,7 +259,13 @@ function loadSpritePreviewFrame(charType, onDone) {
   if (cache['front-idle']) { onDone(); return; }
   const img = new Image();
   img.src = def.anims['front-idle'].src;
-  img.onload = () => _warmUpImage(img, onDone);
+  img.onload = () => {
+    const raster = () => {
+      cache['front-idle'] = _rasterizeSheet(img, def.anims['front-idle'], def);
+      onDone();
+    };
+    if (img.decode) img.decode().then(raster, raster); else raster();
+  };
   img.onerror = onDone;
   cache['front-idle'] = img;
 }
@@ -235,15 +282,21 @@ function loadSprites(charType, onDone) {
   _spriteLoadPromises[charType] = new Promise(res => { resolveReady = res; });
   function tick() { if (++done >= total) resolveReady(); }
   keys.forEach(key => {
-    // Reuse the char-select preview frame instead of re-fetching/re-decoding it.
     const existing = cache[key];
+    // Already rasterized (char-select preview) — nothing left to do.
+    if (existing && existing.naturalWidth === undefined) { tick(); return; }
+    const applyRaster = (img) => {
+      const raster = () => { cache[key] = _rasterizeSheet(img, def.anims[key], def); tick(); };
+      if (img.decode) img.decode().then(raster, raster); else raster();
+    };
+    // Preview Image loaded but not yet rasterized — rasterize it in place.
     if (existing && existing.complete && existing.naturalWidth > 0) {
-      _warmUpImage(existing, tick);
+      applyRaster(existing);
       return;
     }
     const img = new Image();
     img.src = def.anims[key].src;
-    img.onload = () => _warmUpImage(img, tick);
+    img.onload = () => applyRaster(img);
     img.onerror = tick;
     cache[key] = img;
   });
@@ -286,20 +339,21 @@ function drawSprite(p, tint) {
   const key = getSpriteAnimKey(p);
   const ad = def.anims[key];
   const img = cache[key];
-  if (!ad || !img || !img.complete || img.naturalWidth === 0) return false;
+  if (!ad || !_sheetReady(img)) return false;
 
+  const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
   const fi = Math.min(Math.floor(p.animFrame), ad.n - 1);
-  const sx = (fi % ad.cols) * def.frameW;
-  const sy = Math.floor(fi / ad.cols) * def.frameH;
+  const sx = (fi % ad.cols) * fw;
+  const sy = Math.floor(fi / ad.cols) * fh;
 
   const dh = 80;
-  const dw = dh * def.frameW / def.frameH;
+  const dw = dh * fw / fh;
   const dx = Math.round(p.x - dw / 2);
   const dy = Math.round(p.y - dh * 0.62);
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  if (tint) _drawTinted(img, def.frameW, def.frameH, sx, sy, dx, dy, dw, dh, tint);
-  else      ctx.drawImage(img, sx, sy, def.frameW, def.frameH, dx, dy, dw, dh);
+  if (tint) _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, tint);
+  else      ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
 }

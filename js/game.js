@@ -742,15 +742,16 @@ function drawOtherPlayerSprite(p) {
   const key = getOtherPlayerAnimKey(p);
   const ad = def.anims[key];
   const img = cache[key];
-  if (!ad || !img || !img.complete || img.naturalWidth === 0) return false;
+  if (!ad || !_sheetReady(img)) return false;
+  const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
   const fi = Math.min(Math.floor(p.animFrame || 0), ad.n - 1);
-  const sx = (fi % ad.cols) * def.frameW;
-  const sy = Math.floor(fi / ad.cols) * def.frameH;
-  const dh = 80, dw = dh * def.frameW / def.frameH;
+  const sx = (fi % ad.cols) * fw;
+  const sy = Math.floor(fi / ad.cols) * fh;
+  const dh = 80, dw = dh * fw / fh;
   const dx = Math.round(p.x - dw / 2), dy = Math.round(p.y - dh * 0.62);
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.drawImage(img, sx, sy, def.frameW, def.frameH, dx, dy, dw, dh);
+  ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
 }
 

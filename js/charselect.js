@@ -97,11 +97,12 @@ function _csDrawFrame(type, dt) {
   }
 
   const img = spriteCache[type]?.['front-idle'];
-  if (img?.complete && img.naturalWidth > 0 && animDef) {
+  if (img && _sheetReady(img) && animDef) {
     const def = SPRITE_DEF[type];
+    const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
     const col = s.frame % animDef.cols;
     const row = Math.floor(s.frame / animDef.cols);
-    ctx.drawImage(img, col * def.frameW, row * def.frameH, def.frameW, def.frameH, 0, 0, W, H);
+    ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, W, H);
     return;
   }
 
