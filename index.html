@@ -98,6 +98,48 @@
         <button class="cs-btn cs-btn-mage" id="cs-btn-mage" onclick="selectChar('mage')">Создать персонажа</button>
       </div>
 
+      <!-- PRIEST -->
+      <div class="cs-card cs-priest">
+        <canvas class="cs-canvas" id="cs-canvas-priest" width="120" height="120"></canvas>
+        <div class="cs-name priest-c">Жрец</div>
+        <div class="cs-type"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z"/></svg> Поддержка · Целитель</div>
+        <div class="cs-stats">
+          <div class="cs-stat"><span class="cs-sv">160</span><span class="cs-sl">HP</span></div>
+          <div class="cs-stat"><span class="cs-sv">3</span><span class="cs-sl">ATK</span></div>
+          <div class="cs-stat"><span class="cs-sv">7</span><span class="cs-sl">DEF</span></div>
+          <div class="cs-stat"><span class="cs-sv">148</span><span class="cs-sl">СПД</span></div>
+        </div>
+        <div class="cs-sep"></div>
+        <div class="cs-skills">
+          <div class="cs-sk"><b class="cs-key">Q</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg></span><div class="cs-si"><div class="cs-sn">Исцеление</div><div class="cs-sd">Восстанавливает HP</div></div></div>
+          <div class="cs-sk"><b class="cs-key">W</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span><div class="cs-si"><div class="cs-sn">Святой свет</div><div class="cs-sd">Урон нежити вокруг</div></div></div>
+          <div class="cs-sk"><b class="cs-key">E</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L3 8v7c0 5 3.5 8.3 9 10 5.5-1.7 9-5 9-10V8L12 3z"/></svg></span><div class="cs-si"><div class="cs-sn">Щит веры</div><div class="cs-sd">Снижает урон на 4 сек</div></div></div>
+          <div class="cs-sk"><b class="cs-key">R</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z"/></svg></span><div class="cs-si"><div class="cs-sn">Молитва</div><div class="cs-sd">Исцеляет всю группу</div></div></div>
+        </div>
+        <button class="cs-btn cs-btn-priest" id="cs-btn-priest" onclick="selectChar('priest')">Создать персонажа</button>
+      </div>
+
+      <!-- ASSASIN -->
+      <div class="cs-card cs-assasin">
+        <canvas class="cs-canvas" id="cs-canvas-assasin" width="120" height="120"></canvas>
+        <div class="cs-name assasin-c">Ассасин</div>
+        <div class="cs-type"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg> Ближний бой · Убийца</div>
+        <div class="cs-stats">
+          <div class="cs-stat"><span class="cs-sv">120</span><span class="cs-sl">HP</span></div>
+          <div class="cs-stat"><span class="cs-sv">9</span><span class="cs-sl">ATK</span></div>
+          <div class="cs-stat"><span class="cs-sv">2</span><span class="cs-sl">DEF</span></div>
+          <div class="cs-stat"><span class="cs-sv">205</span><span class="cs-sl">СПД</span></div>
+        </div>
+        <div class="cs-sep"></div>
+        <div class="cs-skills">
+          <div class="cs-sk"><b class="cs-key">Q</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5L3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><line x1="19" y1="21" x2="21" y2="19"/></svg></span><div class="cs-si"><div class="cs-sn">Удар тени</div><div class="cs-sd">Рывок + удар ×1.5</div></div></div>
+          <div class="cs-sk"><b class="cs-key">W</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span><div class="cs-si"><div class="cs-sn">Дым. шашка</div><div class="cs-sd">Замедляет врагов</div></div></div>
+          <div class="cs-sk"><b class="cs-key">E</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c4.97 0 9 4.03 9 9"/><polyline points="21,3 21,12 12,12"/><path d="M12 21C7.03 21 3 16.97 3 12"/></svg></span><div class="cs-si"><div class="cs-sn">Уклон</div><div class="cs-sd">Быстрое уклонение</div></div></div>
+          <div class="cs-sk"><b class="cs-key">R</b><span><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg></span><div class="cs-si"><div class="cs-sn">Смерть. удар</div><div class="cs-sd">×3 ATK по цели</div></div></div>
+        </div>
+        <button class="cs-btn cs-btn-assasin" id="cs-btn-assasin" onclick="selectChar('assasin')">Создать персонажа</button>
+      </div>
+
     </div>
   </div>
 

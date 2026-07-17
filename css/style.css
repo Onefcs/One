@@ -101,17 +101,17 @@ canvas { display:block; width:100%; height:100%; }
 }
 .cs-sub { color:#554; font-size:11px; margin-top:8px; letter-spacing:2px; text-transform:uppercase; }
 
-/* Cards grid — 3 in one row, compact */
+/* Cards grid — 5 chars, wrap into 3+2 rows */
 .cs-cards {
-  display:flex; gap:8px; flex-wrap:nowrap;
-  justify-content:stretch; width:100%; padding:0 6px;
+  display:flex; gap:8px; flex-wrap:wrap;
+  justify-content:center; width:100%; padding:0 6px;
 }
 .cs-card {
   background:rgba(255,255,255,.04);
   border:1.5px solid rgba(255,255,255,.07);
   border-radius:16px; padding:12px 8px 12px;
   display:flex; flex-direction:column; align-items:center; gap:5px;
-  flex:1; min-width:0;
+  flex:1 1 calc(33.333% - 10px); min-width:90px; max-width:calc(50% - 8px);
   transition:border-color .25s,box-shadow .25s;
   position:relative; overflow:hidden;
 }
@@ -121,6 +121,8 @@ canvas { display:block; width:100%; height:100%; }
 .cs-warrior::before { background:linear-gradient(90deg,#5af,#48f); }
 .cs-archer::before  { background:linear-gradient(90deg,#7e7,#5d5); }
 .cs-mage::before    { background:linear-gradient(90deg,#e8e,#c6c); }
+.cs-priest::before  { background:linear-gradient(90deg,#fe4,#fc0); }
+.cs-assasin::before { background:linear-gradient(90deg,#b5f,#96d); }
 .cs-card:hover {
   border-color:rgba(255,255,255,.18);
   box-shadow:0 8px 32px rgba(0,0,0,.5);
@@ -182,6 +184,8 @@ canvas { display:block; width:100%; height:100%; }
 .cs-btn-warrior { background:linear-gradient(135deg,#1e3a6e,#2a5aba); color:#9cd; box-shadow:0 4px 16px rgba(42,90,186,.25); }
 .cs-btn-archer  { background:linear-gradient(135deg,#1a4a1a,#2a7a2a); color:#9e9; box-shadow:0 4px 16px rgba(42,122,42,.25); }
 .cs-btn-mage    { background:linear-gradient(135deg,#4a1a7a,#7a2aba); color:#daf; box-shadow:0 4px 16px rgba(122,42,186,.25); }
+.cs-btn-priest  { background:linear-gradient(135deg,#4a3a00,#8a7000); color:#fe4; box-shadow:0 4px 16px rgba(200,160,0,.25); }
+.cs-btn-assasin { background:linear-gradient(135deg,#2a0a4a,#6a2a9a); color:#c8f; box-shadow:0 4px 16px rgba(100,40,160,.25); }
 .cs-btn:hover  { opacity:.88; transform:translateY(-1px); }
 .cs-btn:active { transform:scale(.98); opacity:.75; }
 .cs-btn.cs-resume {
@@ -223,7 +227,7 @@ canvas { display:block; width:100%; height:100%; }
 }
 .csl-status { font-size:12px; color:#444; letter-spacing:2px; text-transform:uppercase; }
 
-.warrior-c { color:#5af; } .archer-c { color:#7e7; } .mage-c { color:#e8e; }
+.warrior-c { color:#5af; } .archer-c { color:#7e7; } .mage-c { color:#e8e; } .priest-c { color:#fe4; } .assasin-c { color:#b5f; }
 
 /* ── NPC TALK BUTTON ──────────────────── */
 #npc-talk-btn {

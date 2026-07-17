@@ -242,6 +242,52 @@ function useSkill(idx) {
         spawnBurst(player.x, player.y, '#f4f', 6);
       }
     }
+  } else if (player.type === 'priest') {
+    if (sk.key === 'Q') { // Heal self
+      const heal = Math.round(player.maxHp * 0.2 + player.atk * 5);
+      player.hp = Math.min(player.maxHp, player.hp + heal);
+      dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#ff4');
+      spawnBurst(player.x, player.y, '#ff4', 8);
+    } else if (sk.key === 'W') { // Holy Light — AoE divine damage
+      spawnAOE(player.x, player.y, 120);
+      _skillAOE(120); netSpawnAoe(player.x, player.y);
+      dmgNum(player.x, player.y - 40, '✨ Свет!', '#ff4');
+    } else if (sk.key === 'E') { // Shield of Faith — damage reduction
+      barrierTimer = 4;
+      dmgNum(player.x, player.y - 40, '🛡 Щит!', '#ff4');
+      spawnBurst(player.x, player.y, '#ff4', 8);
+    } else if (sk.key === 'R') { // Prayer — heal self + burst
+      const heal = Math.round(player.maxHp * 0.35 + player.atk * 8);
+      player.hp = Math.min(player.maxHp, player.hp + heal);
+      dmgNum(player.x, player.y - 50, '+' + heal + '♥ Молитва!', '#ff4');
+      spawnBurst(player.x, player.y, '#ff4', 14);
+    }
+  } else if (player.type === 'assasin') {
+    if (sk.key === 'Q') { // Shadow Strike — dash + strong hit
+      const dir = nearestEnemyDir();
+      const len = Math.hypot(dir.dx, dir.dy) || 1;
+      player.x += (dir.dx / len) * 80;
+      player.y += (dir.dy / len) * 80;
+      spawnBurst(player.x, player.y, '#a5f', 6);
+      spawnAOE(player.x, player.y, 60);
+      _skillAOE(60);
+    } else if (sk.key === 'W') { // Smoke Bomb — AoE slow
+      spawnAOE(player.x, player.y, 100);
+      _skillAOE(100); netSpawnAoe(player.x, player.y);
+      dmgNum(player.x, player.y - 40, '💨 Дым!', '#a5f');
+    } else if (sk.key === 'E') { // Dodge roll
+      dodgeTimer = 0.7;
+      const dx = joy.dx || 0, dy = joy.dy || 0;
+      const len = Math.hypot(dx, dy) || 1;
+      player.x += (dx / len) * 100;
+      player.y += (dy / len) * 100;
+      spawnBurst(player.x, player.y, '#a5f', 6);
+    } else if (sk.key === 'R') { // Death Strike — massive damage
+      spawnAOE(player.x, player.y, 70);
+      _skillAOE(70); netSpawnAoe(player.x, player.y);
+      dmgNum(player.x, player.y - 50, '💀 Удар!', '#f0f');
+      spawnBurst(player.x, player.y, '#f0f', 10);
+    }
   }
 }
 
