@@ -233,16 +233,18 @@ function drawHeader() {
     minimapCache.width = mmCW; minimapCache.height = mmCH;
     const mctx = minimapCache.getContext('2d');
     mctx.fillStyle = th.mmFloor;
+    mctx.beginPath();
     for (let ty = 0; ty < dungeon.h; ty++) {
       for (let tx = 0; tx < dungeon.w; tx++) {
         if (dungeon.grid[ty][tx] !== WALL) {
-          mctx.fillRect(
+          mctx.rect(
             Math.floor(tx * mmCSc), Math.floor(ty * mmCSc),
             Math.max(1, Math.ceil(mmCSc)), Math.max(1, Math.ceil(mmCSc))
           );
         }
       }
     }
+    mctx.fill();
   }
 
   // Map panel border

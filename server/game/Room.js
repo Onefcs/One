@@ -18,8 +18,10 @@ class Room {
     }));
     // O(1) enemy lookup for attack handler
     this._enemyMap = new Map(this.enemies.map(e => [e.id, e]));
-    // Reusable buffer — avoids spread+filter allocation every tick
+    // Reusable buffers — avoids array allocation every tick
     this._alivePlayers = [];
+    this._nearPlayersBuf = [];
+    this._nearEnemiesBuf = [];
     this._lastTick = Date.now();
     this._interval = setInterval(() => this._tick(), TICK_MS);
   }
@@ -51,9 +53,11 @@ class Room {
     this._lastTick = now;
     if (this.players.size === 0) return;
 
-    // Rebuild alive-players buffer without allocation (reuse array)
+    // Rebuild alive-players buffer without allocation (reuse arrays)
     const alivePlayers = this._alivePlayers;
     alivePlayers.length = 0;
+    const nearPlayers = this._nearPlayersBuf;
+    const nearEnemies = this._nearEnemiesBuf;
     this.players.forEach(p => { if (p.hp > 0 && p.type) alivePlayers.push(p); });
 
     // Enemy AI + respawn
@@ -106,10 +110,12 @@ class Room {
       }
     });
 
-    // Per-player emit: AOI filter + delta for enemies
+    // Per-player emit: AOI filter + delta for enemies (reuse buffers — emit serializes synchronously)
     this.players.forEach(p => {
+      nearPlayers.length = 0;
+      nearEnemies.length = 0;
+
       // Other players within AOI — squared dist avoids sqrt per pair
-      const nearPlayers = [];
       this.players.forEach(op => {
         if (op.socketId === p.socketId) return;
         const dx = op.x - p.x, dy = op.y - p.y;
@@ -122,7 +128,6 @@ class Room {
       });
 
       // Enemies within AOI that moved or changed HP — Math.abs instead of hypot for moved-check
-      const nearEnemies = [];
       this.enemies.forEach(e => {
         if (e.hp <= 0) return;
         const dx = e.x - p.x, dy = e.y - p.y;
