@@ -33,6 +33,14 @@ function getPvpBtnPos() {
   return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
 }
 
+function getPartyLeaveBtnPos() {
+  const bh = 26, gap = 4;
+  const pvpBtn = getPvpBtnPos();
+  const startY = pvpBtn.y + pvpBtn.h + gap;
+  const count = (typeof partyMembers !== 'undefined') ? partyMembers.length : 0;
+  return { x: pvpBtn.x, y: startY + count * (bh + gap), w: 80, h: 22 };
+}
+
 function getPartyBtnPos() {
   return { x: 92, y: HEADER_H + 6, w: 80, h: 26 };
 }
@@ -153,6 +161,16 @@ function _checkPvpBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkPartyLeaveBtnTouch(cx, cy) {
+  if (!partyMembers || partyMembers.length === 0) return false;
+  const lb = getPartyLeaveBtnPos();
+  if (cx >= lb.x && cx <= lb.x + lb.w && cy >= lb.y && cy <= lb.y + lb.h) {
+    if (typeof netPartyLeave === 'function') netPartyLeave();
+    return true;
+  }
+  return false;
+}
+
 function _checkPartyBtnTouch(cx, cy) {
   if (!player) return false;
   const pb = getPartyBtnPos();
@@ -207,6 +225,7 @@ function onTS(e) {
   for (const t of e.changedTouches) {
     if (t.clientY > H - NAV_H) return;
     if (_checkPartyInviteTouch(t.clientX, t.clientY)) continue;
+    if (_checkPartyLeaveBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkPvpBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkPartyBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkAutoBtnTouch(t.clientX, t.clientY)) continue;
@@ -241,6 +260,7 @@ function onMD(e) {
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
   if (_checkPartyInviteTouch(e.clientX, e.clientY)) return;
+  if (_checkPartyLeaveBtnTouch(e.clientX, e.clientY)) return;
   if (_checkPvpBtnTouch(e.clientX, e.clientY)) return;
   if (_checkPartyBtnTouch(e.clientX, e.clientY)) return;
   if (_checkAutoBtnTouch(e.clientX, e.clientY)) return;

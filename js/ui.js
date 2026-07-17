@@ -648,7 +648,7 @@ function drawTargetFrame() {
 
   const bw = 160, bh = 42;
   const bx = W / 2 - bw / 2;
-  const by = H - NAV_H - bh - 6;
+  const by = HEADER_H + 6;
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
 
@@ -849,6 +849,21 @@ function drawPartyHUD() {
 
     ctx.restore();
   });
+
+  // Leave party button below member list
+  const lb = getPartyLeaveBtnPos();
+  ctx.save();
+  const lbg = ctx.createLinearGradient(lb.x, lb.y, lb.x, lb.y + lb.h);
+  lbg.addColorStop(0, 'rgba(50,10,10,0.97)'); lbg.addColorStop(1, 'rgba(25,5,5,0.99)');
+  ctx.fillStyle = lbg;
+  roundRect(ctx, lb.x, lb.y, lb.w, lb.h, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(220,60,60,0.75)'; ctx.lineWidth = 1.2;
+  roundRect(ctx, lb.x, lb.y, lb.w, lb.h, 7); ctx.stroke();
+  drawIconCtx(ctx, 'partyLeave', lb.x + 13, lb.y + lb.h / 2, 10, '#ff7070');
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ff7070';
+  ctx.fillText('Выйти', lb.x + 22, lb.y + lb.h / 2);
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
