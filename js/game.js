@@ -60,7 +60,7 @@ function _drawPerf(frameMs) {
     `avg  ${avgMs.toFixed(1)}ms`,
     `max  ${_ftWorstMs.toFixed(1)}ms`,
     `prt  ${particles.length}`,
-    `enm  ${serverEnemies.length}`,
+    `enm  ${_visEnm}/${serverEnemies.length}`,
     `opl  ${otherPlayers.size}`,
     `drp  ${drops.length}`,
     mem ? `mem  ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
@@ -79,6 +79,11 @@ function _drawPerf(frameMs) {
 
 // Offscreen UI canvas — all UI is rendered here at 30fps, then blitted in one draw call per frame
 let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
+
+// Visible enemy count (set each render frame, read by _drawPerf)
+let _visEnm = 0;
+// Squared lerp radius: enemies beyond this snap to target (they're off-screen anyway)
+const _LERP_R2 = 700 * 700;
 
 // Reusable dash arrays — declared once, never reallocated
 const _DASH = [6, 4];
@@ -407,7 +412,14 @@ function update(dt) {
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if (e.targetX !== undefined) {
       const dx = e.targetX - e.x, dy = e.targetY - e.y;
-      if (dx * dx + dy * dy > 0.01) { e.x += dx * lk; e.y += dy * lk; }
+      if (dx * dx + dy * dy > 0.01) {
+        const ex = e.x - player.x, ey = e.y - player.y;
+        if (ex * ex + ey * ey < _LERP_R2) {
+          e.x += dx * lk; e.y += dy * lk; // smooth lerp for nearby enemies
+        } else {
+          e.x = e.targetX; e.y = e.targetY; // instant snap — off-screen anyway
+        }
+      }
     }
   });
 
@@ -540,9 +552,11 @@ function render(dt) {
   ctx.globalAlpha = 1;
 
   // Enemies
+  _visEnm = 0;
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return; // viewport cull
+    _visEnm++;
     const hurt = e.hurtTimer > 0;
     // Selection ring
     if (e.id === targetId && !targetIsPlayer) {
