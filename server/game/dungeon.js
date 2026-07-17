@@ -129,7 +129,7 @@ function generateDungeon(lvl) {
 
   rooms.slice(1).forEach((room, idx) => {
     const isBoss = idx === rooms.length - 2;
-    const count = isBoss ? 1 : 5 + Math.floor(rng() * (4 + Math.floor(lvl / 2)));
+    const count = isBoss ? 1 : 2 + Math.floor(rng() * (2 + Math.floor(lvl / 3)));
     const bw = room.bx2 - room.bx1, bh = room.by2 - room.by1;
 
     for (let i = 0; i < count; i++) {
