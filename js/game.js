@@ -261,10 +261,12 @@ function update(dt) {
         targetId = closestIsPlayer ? closest._socketId : closest.id;
         targetIsPlayer = closestIsPlayer;
       }
-      player.atkTimer = 1 / (player.atkSpeed || player.charDef.atkSpeed);
+      const _as = player.atkSpeed || player.charDef.atkSpeed;
+      player.atkTimer = 1 / _as;
       faceTowards(closest.x, closest.y);
       swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
-      player.atkAnimTimer = 0.825; player.castDuration = 0.825; player.animFrame = 0; player.animTimer = 0;
+      const _animDur = Math.min(0.825, 1 / _as);
+      player.atkAnimTimer = _animDur; player.castDuration = _animDur; player.animFrame = 0; player.animTimer = 0;
       player.pendingAttack = closestIsPlayer
         ? { isPlayer: true, socketId: closest._socketId, x: closest.x, y: closest.y }
         : { isPlayer: false, id: closest.id, x: closest.x, y: closest.y };
