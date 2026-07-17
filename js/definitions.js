@@ -145,6 +145,18 @@ const SKILL_DEF = {
     { key:'E', name:'Барьер',       icon:'barrier',  cd:18, desc:'Щит на 4 секунды'         },
     { key:'R', name:'Телепорт',     icon:'teleport', cd:12, desc:'Мгновенный прыжок'        },
   ],
+  priest: [
+    { key:'Q', name:'Исцеление',   icon:'heal',      cd:8,  desc:'Восстанавливает HP'       },
+    { key:'W', name:'Святой свет', icon:'holyLight', cd:6,  desc:'Урон нежити вокруг'       },
+    { key:'E', name:'Щит веры',    icon:'barrier',   cd:18, desc:'Снижает урон на 4 сек'    },
+    { key:'R', name:'Молитва',     icon:'prayer',    cd:25, desc:'Исцеляет всю группу'      },
+  ],
+  assasin: [
+    { key:'Q', name:'Удар тени',   icon:'shadowStrike', cd:5,  desc:'Рывок + удар ×1.5'    },
+    { key:'W', name:'Дым. шашка',  icon:'smokeBomb',    cd:12, desc:'Замедляет врагов'      },
+    { key:'E', name:'Уклон',       icon:'roll',         cd:8,  desc:'Быстрое уклонение'     },
+    { key:'R', name:'Смерть. удар',icon:'deathStrike',  cd:25, desc:'×3 ATK по цели'        },
+  ],
 };
 
 const NPC_DEF = [

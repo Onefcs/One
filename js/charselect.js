@@ -1,10 +1,12 @@
 // ── Character Select: idle animation + loading gate ──────────
 
+const _CS_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin'];
+
 let _csRAF = null;
-let _csState = {}; // { type: { frame, timer } }
+let _csState = {};
 
 function _csUpdateStats() {
-  ['warrior', 'archer', 'mage'].forEach(type => {
+  _CS_TYPES.forEach(type => {
     const card = document.querySelector('.cs-' + type);
     if (!card) return;
     const cd = CHAR_DEF[type];
@@ -22,8 +24,7 @@ function csShow(savedData) {
 
   _csUpdateStats();
 
-  // Update each button: resume or create
-  ['warrior', 'archer', 'mage'].forEach(type => {
+  _CS_TYPES.forEach(type => {
     const btn = document.getElementById('cs-btn-' + type);
     if (!btn) return;
     if (savedData && savedData.type === type) {
@@ -39,8 +40,7 @@ function csShow(savedData) {
   const loadEl = document.getElementById('cs-loading');
   if (loadEl) loadEl.style.display = 'none';
 
-  // Pre-load sprites for all classes so previews can animate immediately
-  ['warrior', 'archer', 'mage'].forEach(type => {
+  _CS_TYPES.forEach(type => {
     if (SPRITE_DEF[type]) loadSprites(type, () => {});
   });
 
@@ -59,7 +59,7 @@ function csHide() {
 
 function _csStartAnim() {
   if (_csRAF) return;
-  ['warrior', 'archer', 'mage'].forEach(t => {
+  _CS_TYPES.forEach(t => {
     if (!_csState[t]) _csState[t] = { frame: 0, timer: 0 };
   });
   let last = performance.now();
@@ -68,7 +68,7 @@ function _csStartAnim() {
     if (!el || el.style.display === 'none') { _csRAF = null; return; }
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
-    ['warrior', 'archer', 'mage'].forEach(t => _csDrawFrame(t, dt));
+    _CS_TYPES.forEach(t => _csDrawFrame(t, dt));
     _csRAF = requestAnimationFrame(tick);
   }
   _csRAF = requestAnimationFrame(tick);
@@ -87,26 +87,26 @@ function _csDrawFrame(type, dt) {
 
   const s = _csState[type];
   const fps = 7;
+  const animDef = SPRITE_DEF[type]?.anims['front-idle'];
+  const totalFrames = animDef ? animDef.n : 16;
+
   s.timer += dt;
-  if (s.timer >= 1 / fps) {
+  while (s.timer >= 1 / fps) {
     s.timer -= 1 / fps;
-    const fr = spriteCache[type]?.['front-idle'];
-    s.frame = (s.frame + 1) % (fr?.length || 8);
+    s.frame = (s.frame + 1) % totalFrames;
   }
 
-  const def = CHAR_DEF[type];
-  const frames = spriteCache[type]?.['front-idle'];
-
-  if (frames?.length) {
-    const fi = Math.min(Math.floor(s.frame), frames.length - 1);
-    const img = frames[fi];
-    if (img?.complete && img.naturalWidth > 0) {
-      ctx.drawImage(img, 0, 0, W, H);
-      return;
-    }
+  const img = spriteCache[type]?.['front-idle'];
+  if (img?.complete && img.naturalWidth > 0 && animDef) {
+    const def = SPRITE_DEF[type];
+    const col = s.frame % animDef.cols;
+    const row = Math.floor(s.frame / animDef.cols);
+    ctx.drawImage(img, col * def.frameW, row * def.frameH, def.frameW, def.frameH, 0, 0, W, H);
+    return;
   }
 
   // Fallback: animated circle with bob + emoji
+  const def = CHAR_DEF[type];
   const cx = W / 2, cy = H / 2;
   const r = Math.min(W, H) * 0.3;
   const bob = Math.sin(s.frame * 0.45) * 3;

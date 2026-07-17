@@ -1,26 +1,94 @@
 const SPRITE_DEF = {
-  mage: {
-    base: 'images/Mage/',
+  warrior: {
+    frameW: 840, frameH: 720,
     anims: {
-      'front-idle':   { folder:'Front - Idle',      prefix:'Front - Idle_',      n:16, fps:7,  loop:true  },
-      'back-idle':    { folder:'Back - Idle',        prefix:'Back - Idle_',       n:16, fps:7,  loop:true  },
-      'left-idle':    { folder:'Left - Idle',        prefix:'Left - Idle_',       n:16, fps:7,  loop:true  },
-      'right-idle':   { folder:'Right - Idle',       prefix:'Right - Idle_',      n:16, fps:7,  loop:true  },
-      'front-run':    { folder:'Front - Running',    prefix:'Front - Running_',   n:12, fps:12, loop:true  },
-      'back-run':     { folder:'Back - Running',     prefix:'Back - Running_',    n:12, fps:12, loop:true  },
-      'left-run':     { folder:'Left - Running',     prefix:'Left - Running_',    n:12, fps:12, loop:true  },
-      'right-run':    { folder:'Right - Running',    prefix:'Right - Running_',   n:12, fps:12, loop:true  },
-      'front-attack': { folder:'Front - Attacking',  prefix:'Front - Attacking_', n:10, fps:14, loop:false },
-      'back-attack':  { folder:'Back - Attacking',   prefix:'Back - Attacking_',  n:10, fps:14, loop:false },
-      'left-attack':  { folder:'Left - Attacking',   prefix:'Left - Attacking_',  n:10, fps:14, loop:false },
-      'right-attack': { folder:'Right - Attacking',  prefix:'Right - Attacking_', n:10, fps:14, loop:false },
-      'front-hurt':   { folder:'Front - Hurt',       prefix:'Front - Hurt_',      n:10, fps:14, loop:false },
-      'back-hurt':    { folder:'Back - Hurt',        prefix:'Back - Hurt_',       n:10, fps:14, loop:false },
-      'left-hurt':    { folder:'Left - Hurt',        prefix:'Left - Hurt_',       n:10, fps:14, loop:false },
-      'right-hurt':   { folder:'Right - Hurt',       prefix:'Right - Hurt_',      n:10, fps:14, loop:false },
-      'die':          { folder:'Dying',              prefix:'Dying_',             n:10, fps:8,  loop:false },
+      'front-idle':   { src:'images/Warrior/Front - Idle.png',      cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Warrior/Back - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Warrior/Left - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Warrior/Right - Idle.png',       cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'front-run':    { src:'images/Warrior/Front - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'back-run':     { src:'images/Warrior/Back - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'left-run':     { src:'images/Warrior/Left - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'right-run':    { src:'images/Warrior/Right - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'front-attack': { src:'images/Warrior/Front - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'back-attack':  { src:'images/Warrior/Back - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'left-attack':  { src:'images/Warrior/Left - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'right-attack': { src:'images/Warrior/Right - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'die':          { src:'images/Warrior/Dying.png',              cols:5, rows:2, n:10, fps:8,  loop:false },
     }
-  }
+  },
+  archer: {
+    frameW: 480, frameH: 480,
+    anims: {
+      'front-idle':   { src:'images/Archer/Front - Idle.png',      cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Archer/Back - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Archer/Left - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Archer/Right - Idle.png',       cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'front-run':    { src:'images/Archer/Front - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'back-run':     { src:'images/Archer/Back - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'left-run':     { src:'images/Archer/Left - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'right-run':    { src:'images/Archer/Right - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'front-attack': { src:'images/Archer/Front - Shooting.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'back-attack':  { src:'images/Archer/Back - Shooting.png',    cols:5, rows:2, n:10, fps:14, loop:false },
+      'left-attack':  { src:'images/Archer/Left - Shooting.png',    cols:5, rows:2, n:10, fps:14, loop:false },
+      'right-attack': { src:'images/Archer/Right - Shooting.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'die':          { src:'images/Archer/Dying.png',              cols:5, rows:2, n:10, fps:8,  loop:false },
+    }
+  },
+  mage: {
+    frameW: 480, frameH: 480,
+    anims: {
+      'front-idle':   { src:'images/Mage/Front - Idle.png',      cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Mage/Back - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Mage/Left - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Mage/Right - Idle.png',       cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'front-run':    { src:'images/Mage/Front - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'back-run':     { src:'images/Mage/Back - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'left-run':     { src:'images/Mage/Left - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'right-run':    { src:'images/Mage/Right - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'front-attack': { src:'images/Mage/Front - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'back-attack':  { src:'images/Mage/Back - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'left-attack':  { src:'images/Mage/Left - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'right-attack': { src:'images/Mage/Right - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'die':          { src:'images/Mage/Dying.png',              cols:5, rows:2, n:10, fps:8,  loop:false },
+    }
+  },
+  priest: {
+    frameW: 480, frameH: 480,
+    anims: {
+      'front-idle':   { src:'images/Priest/Front - Idle.png',      cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Priest/Back - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Priest/Left - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Priest/Right - Idle.png',       cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'front-run':    { src:'images/Priest/Front - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'back-run':     { src:'images/Priest/Back - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'left-run':     { src:'images/Priest/Left - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'right-run':    { src:'images/Priest/Right - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'front-attack': { src:'images/Priest/Front - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'back-attack':  { src:'images/Priest/Back - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'left-attack':  { src:'images/Priest/Left - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'right-attack': { src:'images/Priest/Right - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'die':          { src:'images/Priest/Dying.png',              cols:5, rows:2, n:10, fps:8,  loop:false },
+    }
+  },
+  assasin: {
+    frameW: 480, frameH: 480,
+    anims: {
+      'front-idle':   { src:'images/Assasin/Front - Idle.png',      cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Assasin/Back - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Assasin/Left - Idle.png',        cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Assasin/Right - Idle.png',       cols:4, rows:4, n:16, fps:7,  loop:true  },
+      'front-run':    { src:'images/Assasin/Front - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'back-run':     { src:'images/Assasin/Back - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'left-run':     { src:'images/Assasin/Left - Running.png',     cols:4, rows:3, n:12, fps:12, loop:true  },
+      'right-run':    { src:'images/Assasin/Right - Running.png',    cols:4, rows:3, n:12, fps:12, loop:true  },
+      'front-attack': { src:'images/Assasin/Front - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'back-attack':  { src:'images/Assasin/Back - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'left-attack':  { src:'images/Assasin/Left - Attacking.png',   cols:5, rows:2, n:10, fps:14, loop:false },
+      'right-attack': { src:'images/Assasin/Right - Attacking.png',  cols:5, rows:2, n:10, fps:14, loop:false },
+      'die':          { src:'images/Assasin/Dying.png',              cols:5, rows:2, n:10, fps:8,  loop:false },
+    }
+  },
 };
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
@@ -55,16 +123,14 @@ function loadEnemySprites(eid) {
 function drawEnemySprite(e, dt) {
   const ownDef = ENEMY_SPRITE_DEF[e.eid];
   if (!ownDef) return false;
-  // Resolve alias: use parent def (and its cache key) for everything
   const resolvedEid = ownDef.sharedWith || e.eid;
   const def = ENEMY_SPRITE_DEF[resolvedEid];
   if (!def) return false;
   if (!enemySpriteCache[resolvedEid]) loadEnemySprites(resolvedEid);
   const cache = enemySpriteCache[resolvedEid];
 
-  // Pick animation
   let key;
-  if (e.hp <= 0)             key = 'death';
+  if (e.hp <= 0)               key = 'death';
   else if (e.hurtTimer > 0.05) key = 'hurt';
   else if (e.atkAnimTimer > 0) key = 'attack';
   else if (e.aggro)            key = 'walk';
@@ -74,10 +140,8 @@ function drawEnemySprite(e, dt) {
   const img = cache[key];
   if (!img || !img.complete || img.naturalWidth === 0) return false;
 
-  // Reset anim on state change
   if (e._animKey !== key) { e._animKey = key; e._animFrame = 0; e._animTimer = 0; }
 
-  // Advance frame
   e._animTimer += dt || 0;
   const fd = 1 / sh.fps;
   while (e._animTimer >= fd) {
@@ -96,6 +160,8 @@ function drawEnemySprite(e, dt) {
   return true;
 }
 
+// ── PLAYER SPRITE SHEETS ────────────────────────────────────────────────────
+
 const spriteCache = {};
 
 function loadSprites(charType, onDone) {
@@ -104,18 +170,13 @@ function loadSprites(charType, onDone) {
   if (spriteCache[charType]) { onDone(); return; }
   spriteCache[charType] = {};
   const keys = Object.keys(def.anims);
-  let total = 0, done = 0;
+  let total = keys.length, done = 0;
   function tick() { if (++done >= total) onDone(); }
   keys.forEach(key => {
-    const a = def.anims[key];
-    spriteCache[charType][key] = [];
-    for (let i = 0; i < a.n; i++) {
-      total++;
-      const img = new Image();
-      img.src = `${def.base}${encodeURIComponent(a.folder)}/${encodeURIComponent(a.prefix + String(i).padStart(3, '0'))}.png`;
-      img.onload = img.onerror = tick;
-      spriteCache[charType][key].push(img);
-    }
+    const img = new Image();
+    img.src = def.anims[key].src;
+    img.onload = img.onerror = tick;
+    spriteCache[charType][key] = img;
   });
   if (total === 0) onDone();
 }
@@ -130,35 +191,45 @@ function getSpriteAnimKey(p) {
 }
 
 let _tintCanvas = null, _tintCtx = null;
-function _drawTinted(img, dx, dy, sz, color) {
+function _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, color) {
   if (!_tintCanvas) {
     _tintCanvas = document.createElement('canvas');
-    _tintCanvas.width = sz; _tintCanvas.height = sz;
     _tintCtx = _tintCanvas.getContext('2d');
   }
-  if (_tintCanvas.width !== sz) { _tintCanvas.width = sz; _tintCanvas.height = sz; }
-  _tintCtx.clearRect(0, 0, sz, sz);
-  _tintCtx.drawImage(img, 0, 0, sz, sz);
+  const iw = Math.round(dw), ih = Math.round(dh);
+  if (_tintCanvas.width !== iw || _tintCanvas.height !== ih) {
+    _tintCanvas.width = iw; _tintCanvas.height = ih;
+  }
+  _tintCtx.clearRect(0, 0, iw, ih);
+  _tintCtx.drawImage(img, sx, sy, fw, fh, 0, 0, iw, ih);
   _tintCtx.globalCompositeOperation = 'source-atop';
   _tintCtx.fillStyle = color;
-  _tintCtx.fillRect(0, 0, sz, sz);
+  _tintCtx.fillRect(0, 0, iw, ih);
   _tintCtx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(_tintCanvas, dx, dy, sz, sz);
+  ctx.drawImage(_tintCanvas, dx, dy, iw, ih);
 }
 
 function drawSprite(p, tint) {
+  const def = SPRITE_DEF[p.type];
   const cache = spriteCache[p.type];
-  if (!cache) return false;
+  if (!def || !cache) return false;
   const key = getSpriteAnimKey(p);
-  const frames = cache[key];
-  if (!frames || frames.length === 0) return false;
-  const fi = Math.min(Math.floor(p.animFrame), frames.length - 1);
-  const img = frames[fi];
-  if (!img || !img.complete || img.naturalWidth === 0) return false;
-  const sz = 80;
+  const ad = def.anims[key];
+  const img = cache[key];
+  if (!ad || !img || !img.complete || img.naturalWidth === 0) return false;
+
+  const fi = Math.min(Math.floor(p.animFrame), ad.n - 1);
+  const sx = (fi % ad.cols) * def.frameW;
+  const sy = Math.floor(fi / ad.cols) * def.frameH;
+
+  const dh = 80;
+  const dw = dh * def.frameW / def.frameH;
+  const dx = Math.round(p.x - dw / 2);
+  const dy = Math.round(p.y - dh * 0.62);
+
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  if (tint) _drawTinted(img, p.x - sz / 2, p.y - sz * 0.62, sz, tint);
-  else      ctx.drawImage(img, p.x - sz / 2, p.y - sz * 0.62, sz, sz);
+  if (tint) _drawTinted(img, def.frameW, def.frameH, sx, sy, dx, dy, dw, dh, tint);
+  else      ctx.drawImage(img, sx, sy, def.frameW, def.frameH, dx, dy, dw, dh);
   return true;
 }

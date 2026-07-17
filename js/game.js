@@ -178,7 +178,7 @@ function update(dt) {
     const ad = SPRITE_DEF[player.type].anims[ak];
     if (ad) {
       player.animTimer += dt;
-      const maxF = (spriteCache[player.type]?.[ak] || []).length || ad.n;
+      const maxF = ad.n;
       // Spread attack frames evenly across the full cast duration
       const step = (!ad.loop && player.atkAnimTimer > 0 && player.castDuration > 0)
         ? player.castDuration / maxF
@@ -400,9 +400,8 @@ function update(dt) {
         const step = 1 / ad.fps;
         while (op.animTimer >= step) {
           op.animTimer -= step;
-          const maxF = (spriteCache[op.type]?.[ak] || []).length || ad.n;
-          if (ad.loop) { op.animFrame = (op.animFrame + 1) % maxF; }
-          else if (op.animFrame < maxF - 1) { op.animFrame++; }
+          if (ad.loop) { op.animFrame = (op.animFrame + 1) % ad.n; }
+          else if (op.animFrame < ad.n - 1) { op.animFrame++; }
         }
       }
     }
@@ -611,7 +610,7 @@ function render(dt) {
     const usedSprite = drawOtherPlayerSprite(p);
     if (!usedSprite) {
       ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = p.type === 'warrior' ? '#5af' : p.type === 'archer' ? '#7e7' : p.type === 'mage' ? '#e8e' : '#aaa';
+      ctx.fillStyle = (CHAR_DEF[p.type]?.color) || '#aaa';
       ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
     }
@@ -730,18 +729,21 @@ function getOtherPlayerAnimKey(p) {
 }
 
 function drawOtherPlayerSprite(p) {
+  const def = SPRITE_DEF[p.type];
   const cache = spriteCache[p.type];
-  if (!cache) return false;
+  if (!def || !cache) return false;
   const key = getOtherPlayerAnimKey(p);
-  const frames = cache[key];
-  if (!frames || frames.length === 0) return false;
-  const fi = Math.min(Math.floor(p.animFrame || 0), frames.length - 1);
-  const img = frames[fi];
-  if (!img || !img.complete || img.naturalWidth === 0) return false;
-  const sz = 80;
+  const ad = def.anims[key];
+  const img = cache[key];
+  if (!ad || !img || !img.complete || img.naturalWidth === 0) return false;
+  const fi = Math.min(Math.floor(p.animFrame || 0), ad.n - 1);
+  const sx = (fi % ad.cols) * def.frameW;
+  const sy = Math.floor(fi / ad.cols) * def.frameH;
+  const dh = 80, dw = dh * def.frameW / def.frameH;
+  const dx = Math.round(p.x - dw / 2), dy = Math.round(p.y - dh * 0.62);
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.drawImage(img, p.x - sz / 2, p.y - sz * 0.62, sz, sz);
+  ctx.drawImage(img, sx, sy, def.frameW, def.frameH, dx, dy, dw, dh);
   return true;
 }
 
