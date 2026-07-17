@@ -210,6 +210,12 @@ class Room {
     p.hp = Math.min(p.maxHp, p.hp + amount);
   }
 
+  respawnPlayer(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return;
+    p.hp = p.maxHp;
+  }
+
   updatePlayerStats(socketId, { atk, def, maxHp }) {
     const p = this.players.get(socketId);
     if (!p) return;

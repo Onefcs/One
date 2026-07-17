@@ -289,6 +289,10 @@ io.on('connection', socket => {
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, targetId });
   });
 
+  socket.on('respawn', () => {
+    if (currentRoom) currentRoom.respawnPlayer(socket.id);
+  });
+
   socket.on('setPvpMode', ({ pvpMode }) => {
     if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
   });
