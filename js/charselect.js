@@ -41,7 +41,7 @@ function csShow(savedData) {
   if (loadEl) loadEl.style.display = 'none';
 
   _CS_TYPES.forEach(type => {
-    if (SPRITE_DEF[type]) loadSprites(type, () => {});
+    if (SPRITE_DEF[type]) loadSpritePreviewFrame(type);
   });
 
   _csStartAnim();

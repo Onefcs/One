@@ -107,17 +107,51 @@ const ENEMY_SPRITE_DEF = {
   goblin: { sharedWith: 'slime' },
 };
 
-const enemySpriteCache = {};
+// Warm up an already-loaded image so the canvas 2D pipeline never has to
+// decode/rasterize it lazily on the first real drawImage() call. decode()
+// alone isn't reliable enough here — under the load of many concurrent large
+// sheets it can silently reject (falling back to a no-op), and even on
+// success it doesn't always warm the same raster cache canvas drawing uses.
+// Actually drawing one pixel into a throwaway canvas forces genuine
+// rasterization through the exact code path the game canvas will use.
+let _warmCanvas = null, _warmCtx = null;
+function _warmUpImage(img, onDone) {
+  function draw() {
+    if (!_warmCanvas) { _warmCanvas = document.createElement('canvas'); _warmCanvas.width = _warmCanvas.height = 1; _warmCtx = _warmCanvas.getContext('2d'); }
+    try { _warmCtx.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1); } catch (e) { /* ignore */ }
+    onDone();
+  }
+  if (img.decode) img.decode().then(draw, draw);
+  else draw();
+}
 
-function loadEnemySprites(eid) {
+const enemySpriteCache = {};
+// eid -> Promise resolved once every sheet for that enemy is loaded AND decoded.
+// Callers may ask for the same eid again while a load is still in flight (e.g.
+// the loading-screen gate and drawEnemySprite's own lazy-load both do) — chain
+// onto the existing promise instead of firing onDone before decode finishes.
+const _enemySpriteLoadPromises = {};
+
+function loadEnemySprites(eid, onDone) {
+  onDone = onDone || function () {};
   const def = ENEMY_SPRITE_DEF[eid];
-  if (!def || enemySpriteCache[eid]) return;
+  if (!def) { onDone(); return; }
+  if (_enemySpriteLoadPromises[eid]) { _enemySpriteLoadPromises[eid].then(onDone); return; }
   enemySpriteCache[eid] = {};
-  Object.keys(def.sheets).forEach(key => {
+  const keys = Object.keys(def.sheets);
+  let total = keys.length, done = 0;
+  let resolveReady;
+  _enemySpriteLoadPromises[eid] = new Promise(res => { resolveReady = res; });
+  function tick() { if (++done >= total) resolveReady(); }
+  keys.forEach(key => {
     const img = new Image();
     img.src = def.sheets[key].src;
+    img.onload = () => _warmUpImage(img, tick);
+    img.onerror = tick;
     enemySpriteCache[eid][key] = img;
   });
+  if (total === 0) resolveReady();
+  _enemySpriteLoadPromises[eid].then(onDone);
 }
 
 function drawEnemySprite(e, dt) {
@@ -163,22 +197,58 @@ function drawEnemySprite(e, dt) {
 // ── PLAYER SPRITE SHEETS ────────────────────────────────────────────────────
 
 const spriteCache = {};
+// charType -> Promise resolved once every frame is loaded AND decoded — see
+// _enemySpriteLoadPromises for why concurrent callers must chain onto it
+// rather than firing onDone as soon as the cache object exists.
+const _spriteLoadPromises = {};
+
+// Char-select shows 5 idle previews at once — only the 'front-idle' frame is
+// ever drawn there, so only load+decode that one sheet per unpicked character.
+// Eagerly decoding all 13 sheets × 5 characters (some up to 3360×2880px) at
+// once was overwhelming the browser's image-decode pipeline: decode() calls
+// started silently rejecting under the load, leaving bitmaps un-warmed, which
+// then forced a synchronous decode-on-draw (a 100-300ms freeze) the first
+// time the chosen character's run/attack animation was drawn mid-game.
+function loadSpritePreviewFrame(charType, onDone) {
+  onDone = onDone || function () {};
+  const def = SPRITE_DEF[charType];
+  if (!def) { onDone(); return; }
+  spriteCache[charType] = spriteCache[charType] || {};
+  const cache = spriteCache[charType];
+  if (cache['front-idle']) { onDone(); return; }
+  const img = new Image();
+  img.src = def.anims['front-idle'].src;
+  img.onload = () => _warmUpImage(img, onDone);
+  img.onerror = onDone;
+  cache['front-idle'] = img;
+}
 
 function loadSprites(charType, onDone) {
   const def = SPRITE_DEF[charType];
   if (!def) { onDone(); return; }
-  if (spriteCache[charType]) { onDone(); return; }
-  spriteCache[charType] = {};
+  if (_spriteLoadPromises[charType]) { _spriteLoadPromises[charType].then(onDone); return; }
+  spriteCache[charType] = spriteCache[charType] || {};
+  const cache = spriteCache[charType];
   const keys = Object.keys(def.anims);
   let total = keys.length, done = 0;
-  function tick() { if (++done >= total) onDone(); }
+  let resolveReady;
+  _spriteLoadPromises[charType] = new Promise(res => { resolveReady = res; });
+  function tick() { if (++done >= total) resolveReady(); }
   keys.forEach(key => {
+    // Reuse the char-select preview frame instead of re-fetching/re-decoding it.
+    const existing = cache[key];
+    if (existing && existing.complete && existing.naturalWidth > 0) {
+      _warmUpImage(existing, tick);
+      return;
+    }
     const img = new Image();
     img.src = def.anims[key].src;
-    img.onload = img.onerror = tick;
-    spriteCache[charType][key] = img;
+    img.onload = () => _warmUpImage(img, tick);
+    img.onerror = tick;
+    cache[key] = img;
   });
-  if (total === 0) onDone();
+  if (total === 0) resolveReady();
+  _spriteLoadPromises[charType].then(onDone);
 }
 
 function getSpriteAnimKey(p) {
