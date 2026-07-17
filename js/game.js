@@ -4,6 +4,10 @@ let _talkBtn = null;
 // Offscreen UI canvas — all UI is rendered here at 30fps, then blitted in one draw call per frame
 let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
 
+// Reusable dash arrays — declared once, never reallocated
+const _DASH = [6, 4];
+const _NO_DASH = [];
+
 // ─────────────────────────────────────────────────────────
 //  CAMERA
 // ─────────────────────────────────────────────────────────
@@ -57,7 +61,7 @@ function update(dt) {
     });
 
     // Push player out of other players
-    Object.values(otherPlayers).forEach(op => {
+    otherPlayers.forEach(op => {
       if ((op.hp || 0) <= 0 || op.x == null) return;
       const minD = 26;
       const ddx = player.x - op.x, ddy = player.y - op.y;
@@ -132,7 +136,7 @@ function update(dt) {
       const t = serverEnemiesMap.get(targetId);
       if (t && (t.hp || 0) > 0) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
     } else if (targetId && targetIsPlayer && pvpMode) {
-      const op = otherPlayers[targetId];
+      const op = otherPlayers.get(targetId);
       if (op && (op.hp || 0) > 0 && op.x != null) {
         closest = { ...op, _socketId: targetId };
         closestD = dist(op.x, op.y, player.x, player.y);
@@ -150,7 +154,7 @@ function update(dt) {
         if (d2 < closestD2) { closestD2 = d2; closest = e; closestIsPlayer = false; }
       });
       if (pvpMode) {
-        Object.entries(otherPlayers).forEach(([id, op]) => {
+        otherPlayers.forEach((op, id) => {
           if ((op.hp || 0) <= 0 || op.x == null) return;
           const dx = op.x - player.x, dy = op.y - player.y;
           const d2 = dx * dx + dy * dy;
@@ -196,9 +200,7 @@ function update(dt) {
         }
         if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
         if (pvpMode) {
-          const ops = Object.values(otherPlayers);
-          for (let k = 0; k < ops.length; k++) {
-            const op = ops[k];
+          for (const op of otherPlayers.values()) {
             if ((op.hp || 0) <= 0 || op.x == null) continue;
             const r = 18 + ps, ex = p.x - op.x, ey = p.y - op.y;
             if (ex * ex + ey * ey < r * r) { hit = true; break; }
@@ -278,7 +280,7 @@ function update(dt) {
   // Clear stale target
   if (targetId) {
     if (targetIsPlayer) {
-      const op = otherPlayers[targetId];
+      const op = otherPlayers.get(targetId);
       if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
     } else {
       const te = serverEnemiesMap.get(targetId);
@@ -293,7 +295,7 @@ function update(dt) {
 
   // Smooth lerp toward latest server positions
   const lk = Math.min(1, 25 * dt);
-  Object.entries(otherPlayers).forEach(([id, op]) => {
+  otherPlayers.forEach((op, id) => {
     if (op.targetX !== undefined) {
       const prevX = op.x, prevY = op.y;
       op.x += (op.targetX - op.x) * lk;
@@ -390,6 +392,11 @@ function _drawProj(p) {
 }
 
 function render(dt) {
+  // Precompute per-frame trig — used in multiple places below
+  const _pulse    = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
+  const _bossGlow = 0.6 + 0.4 * Math.sin(frameCount * 0.10);
+  const _dropSin  = Math.sin(frameCount * 0.09);
+
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const theme = (state === 'playing' || state === 'dead') && dungeon ? getTheme(dungeonLvl) : null;
@@ -413,9 +420,10 @@ function render(dt) {
 
   // Drops — no save/restore per drop; state is set fresh each iteration
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 9px Arial';
+  const _dropBob = _dropSin * 3;
   drops.forEach(d => {
-    ctx.globalAlpha = Math.min(1, d.life * 1.5) * (0.85 + 0.15 * Math.sin(frameCount * .12));
-    const bob = Math.sin(frameCount * .09) * 3;
+    ctx.globalAlpha = Math.min(1, d.life * 1.5) * (0.85 + 0.15 * _dropSin);
+    const bob = _dropBob;
     if (d.type === 'gold') {
       ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(d.x, d.y + bob, 9, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#a80'; ctx.fillText(d.amount + 'g', d.x, d.y + bob);
@@ -449,14 +457,11 @@ function render(dt) {
     const hurt = e.hurtTimer > 0;
     // Selection ring
     if (e.id === targetId && !targetIsPlayer) {
-      const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
-      ctx.save();
-      ctx.strokeStyle = `rgba(255,60,60,${0.65 + 0.35 * pulse})`;
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 8 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
+      ctx.globalAlpha = 0.65 + 0.35 * _pulse;
+      ctx.strokeStyle = '#ff3c3c'; ctx.lineWidth = 2.5;
+      ctx.setLineDash(_DASH);
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 8 + _pulse * 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash(_NO_DASH); ctx.globalAlpha = 1;
     }
     if (!drawEnemySprite(e, dt)) {
       ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + e.size, e.size * .8, e.size * .3, 0, 0, Math.PI * 2); ctx.fill();
@@ -465,8 +470,9 @@ function render(dt) {
       ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
     }
     if (e.isBoss) {
-      ctx.strokeStyle = `rgba(255,50,50,${0.6 + 0.4 * Math.sin(frameCount * .1)})`; ctx.lineWidth = 3;
+      ctx.globalAlpha = _bossGlow; ctx.strokeStyle = '#ff3232'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.fillStyle = '#f44'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.fillText('БОСС', e.x, e.y - e.size - 16);
     }
@@ -481,19 +487,16 @@ function render(dt) {
   });
 
   // Other players
-  Object.entries(otherPlayers).forEach(([pid, p]) => {
+  otherPlayers.forEach((p, pid) => {
     if (p.x == null || isNaN(p.x)) return;
     if (!_isOnScreen(p.x, p.y)) return; // viewport cull
 
     if (pid === targetId && targetIsPlayer) {
-      const pulse = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
-      ctx.save();
-      ctx.strokeStyle = `rgba(255,80,80,${0.65 + 0.35 * pulse})`;
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath(); ctx.arc(p.x, p.y, 22 + pulse * 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
+      ctx.globalAlpha = 0.65 + 0.35 * _pulse;
+      ctx.strokeStyle = '#ff5050'; ctx.lineWidth = 2.5;
+      ctx.setLineDash(_DASH);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 22 + _pulse * 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash(_NO_DASH); ctx.globalAlpha = 1;
     }
 
     const usedSprite = drawOtherPlayerSprite(p);
@@ -782,7 +785,7 @@ function restartGame() {
   if (state !== 'dead') return;
   document.getElementById('death-modal').style.display = 'none';
   targetId = null; targetIsPlayer = false; pvpMode = false;
-  serverEnemies = []; otherPlayers = {};
+  serverEnemies = []; otherPlayers = new Map();
   npcs = []; nearNpc = null;
   tileCanvas = null;
   document.getElementById('bottom-nav').style.display = 'none';

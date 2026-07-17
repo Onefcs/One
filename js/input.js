@@ -80,7 +80,7 @@ function cycleTarget() {
       candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
   });
   if (pvpMode && isOnline) {
-    Object.entries(otherPlayers).forEach(([id, op]) => {
+    otherPlayers.forEach((op, id) => {
       if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
     });
@@ -107,7 +107,7 @@ function _trySelectEntityAtTouch(cx, cy) {
     if (d < e.size + tapR && d < bestD) { bestD = d; best = { id: e.id, isPlayer: false }; }
   });
   if (isOnline) {
-    Object.entries(otherPlayers).forEach(([id, op]) => {
+    otherPlayers.forEach((op, id) => {
       if ((op.hp || 0) <= 0 || op.x == null) return;
       const d = dist(worldX, worldY, op.x, op.y);
       if (d < 22 + tapR && d < bestD) { bestD = d; best = { id, isPlayer: true }; }
