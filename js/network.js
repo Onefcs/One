@@ -117,26 +117,26 @@ function netConnect(onReady) {
 
   socket.on('pvpDamage', ({ dmg }) => {
     if (!player || state !== 'playing') return;
-    if (barrierTimer > 0) { dmgNum(player.x, player.y - 24, 'БЛОК', '#88f'); return; }
-    const actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
-    player.hp = Math.max(0, player.hp - actual);
-    player.hurtTimer = 0.1;
-    dmgNum(player.x, player.y - 24, actual, '#f55');
-    spawnBurst(player.x, player.y, '#f44', 5);
-    if (player.hp <= 0) {
-      player.hp = 0;
-      socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: 0, maxHp: player.maxHp });
-      playerDie();
+    let actual = 0;
+    if (barrierTimer > 0) {
+      dmgNum(player.x, player.y - 24, 'БЛОК', '#88f');
+    } else {
+      actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
+      player.hp = Math.max(0, player.hp - actual);
+      player.hurtTimer = 0.1;
+      dmgNum(player.x, player.y - 24, actual, '#f55');
+      spawnBurst(player.x, player.y, '#f44', 5);
+      if (player.hp <= 0 && state === 'playing') { player.hp = 0; playerDie(); }
     }
+    // Report actual damage taken so server can track authoritative HP
+    socket.emit('pvpDamageTaken', { actual });
   });
 
   socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId }) => {
     if (dmg) dmgNum(x, y - 24, dmg, '#f88');
     spawnBurst(x, y, '#f44', 4);
-    if (hitTargetId && otherPlayers[hitTargetId]) {
-      otherPlayers[hitTargetId].hp = Math.max(0, (otherPlayers[hitTargetId].hp || 0) - dmg);
+    if (hitTargetId && otherPlayers[hitTargetId])
       otherPlayers[hitTargetId].hurtTimer = 0.1;
-    }
   });
 
   socket.on('enemyHurt', ({ id, hp, dmg }) => {
@@ -308,7 +308,15 @@ function netSendMove() {
   const now = Date.now();
   if (now - _lastMoveSend < 33) return;
   _lastMoveSend = now;
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp, maxHp: player.maxHp });
+  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
+}
+
+function netUsePotion(amount) {
+  if (socket?.connected) socket.emit('usePotion', { amount });
+}
+
+function netStatsUpdate(atk, def, maxHp) {
+  if (socket?.connected) socket.emit('statsUpdate', { atk, def, maxHp });
 }
 
 function netAttack(enemyId) {
