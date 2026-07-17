@@ -107,9 +107,11 @@ function netConnect(onReady) {
     });
   });
 
-  socket.on('playerHurt', ({ id, hp }) => {
+  socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
-      player.hp = hp;
+      // Apply damage as a delta so client-side HP regen isn't reverted.
+      // Fall back to the server's absolute value only when dmg is unavailable.
+      player.hp = (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
       player.hurtTimer = 0.1;
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
     } else {
@@ -302,6 +304,7 @@ function netSaveProgress() {
     baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
     inventory: player.inventory, equipment: player.equipment,
     potions: player.potions || 0,
+    upgrades: player.upgrades || {},
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });
 }
@@ -321,7 +324,7 @@ function netSendMove() {
   const now = Date.now();
   if (now - _lastMoveSend < 33) return;
   _lastMoveSend = now;
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
+  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
 }
 
 function netUsePotion(amount) {

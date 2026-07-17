@@ -170,8 +170,10 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('playerMove', ({ x, y, facing }) => {
-    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing);
+  socket.on('playerMove', ({ x, y, facing, hp }) => {
+    if (!currentRoom) return;
+    currentRoom.updatePlayerPos(socket.id, x, y, facing);
+    if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
   });
 
   socket.on('usePotion', ({ amount }) => {

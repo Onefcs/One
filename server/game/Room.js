@@ -209,6 +209,13 @@ class Room {
     p.x = x; p.y = y; p.facing = facing;
   }
 
+  syncPlayerHp(socketId, clientHp) {
+    const p = this.players.get(socketId);
+    if (!p || p.hp <= 0) return;
+    // Trust client HP for regen tracking; clamp to [0, maxHp]
+    p.hp = Math.min(p.maxHp, Math.max(0, clientHp));
+  }
+
   healPlayer(socketId, amount) {
     const p = this.players.get(socketId);
     if (!p || p.hp <= 0) return;
