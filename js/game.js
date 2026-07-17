@@ -167,6 +167,15 @@ function update(dt) {
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
   if (swingTimer > 0)       swingTimer -= dt;
   if (player.atkAnimTimer > 0) player.atkAnimTimer -= dt;
+
+  // Cancel attack animation immediately if target already dead
+  if (player.pendingAttack && !player.attackFired && player.atkAnimTimer > 0) {
+    const _pa = player.pendingAttack;
+    const _alive = _pa.isPlayer
+      ? (otherPlayers.get(_pa.socketId)?.hp || 0) > 0
+      : (serverEnemiesMap.get(_pa.id)?.hp || 0) > 0;
+    if (!_alive) { player.atkAnimTimer = 0; player.pendingAttack = null; player.attackFired = false; }
+  }
   if (partyInvitePending) {
     partyInvitePending.timer -= dt;
     if (partyInvitePending.timer <= 0) partyInvitePending = null;
