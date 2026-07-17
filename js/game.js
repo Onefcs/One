@@ -1,6 +1,9 @@
 // Cached DOM elements (set once after DOMContentLoaded)
 let _talkBtn = null;
 
+// Offscreen UI canvas — all UI is rendered here at 30fps, then blitted in one draw call per frame
+let _uiCanvas = null, _uiCtx = null, _uiFrame = 0;
+
 // ─────────────────────────────────────────────────────────
 //  CAMERA
 // ─────────────────────────────────────────────────────────
@@ -289,7 +292,7 @@ function update(dt) {
   if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
   // Smooth lerp toward latest server positions
-  const lk = Math.min(1, 16 * dt);
+  const lk = Math.min(1, 25 * dt);
   Object.entries(otherPlayers).forEach(([id, op]) => {
     if (op.targetX !== undefined) {
       const prevX = op.x, prevY = op.y;
@@ -329,6 +332,36 @@ function update(dt) {
 // ─────────────────────────────────────────────────────────
 //  RENDER
 // ─────────────────────────────────────────────────────────
+
+// Render all HUD/UI elements to an offscreen canvas (reused every other frame)
+function _renderUI() {
+  const cw = Math.round(W * DPR), ch = Math.round(H * DPR);
+  if (!_uiCanvas || _uiCanvas.width !== cw || _uiCanvas.height !== ch) {
+    _uiCanvas = document.createElement('canvas');
+    _uiCanvas.width = cw; _uiCanvas.height = ch;
+    _uiCtx = _uiCanvas.getContext('2d');
+  }
+  _uiCtx.clearRect(0, 0, cw, ch);
+  _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const _c = ctx; ctx = _uiCtx;
+  drawHeader();
+  if (activeTab === 0 && typeof drawQuestTracker === 'function') drawQuestTracker();
+  drawPvpButton();
+  drawPartyButton();
+  drawPartyHUD();
+  drawTargetFrame();
+  if (activeTab === 0) {
+    drawSkillButtons();
+    drawPotionButton();
+    drawTargetButton();
+    drawAttackButton();
+    drawAutoToggle();
+  }
+  drawPartyInvitePopup();
+  if (state === 'dead') drawDead();
+  ctx = _c;
+}
+
 function _drawProj(p) {
   ctx.globalAlpha = 1;
   if (p.projType === 'arrow') {
@@ -527,11 +560,7 @@ function render(dt) {
 
     ctx.fillStyle = 'rgba(30,0,0,0.75)'; ctx.fillRect(bx2, barTop, bw, bh);
     if (hpPct > 0) {
-      const hg = ctx.createLinearGradient(bx2, 0, bx2 + bw, 0);
-      if (hpPct > 0.5) { hg.addColorStop(0, '#0d7a2e'); hg.addColorStop(1, '#2ecc71'); }
-      else if (hpPct > 0.25) { hg.addColorStop(0, '#8c5500'); hg.addColorStop(1, '#f39c12'); }
-      else { hg.addColorStop(0, '#7b1010'); hg.addColorStop(1, '#e74c3c'); }
-      ctx.fillStyle = hg;
+      ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
       ctx.fillRect(bx2, barTop, bw * hpPct, bh);
     }
   }
@@ -546,22 +575,13 @@ function render(dt) {
   ctx.globalAlpha = 1;
   ctx.restore(); // [camera]
 
-  drawHeader();
-  if (activeTab === 0 && typeof drawQuestTracker === 'function') drawQuestTracker();
-  drawPvpButton();
-  drawPartyButton();
-  drawPartyHUD();
-  drawTargetFrame();
-  if (activeTab === 0) {
-    drawJoystick();
-    drawSkillButtons();
-    drawPotionButton();
-    drawTargetButton();
-    drawAttackButton();
-    drawAutoToggle();
-  }
-  drawPartyInvitePopup();
-  if (state === 'dead') drawDead();
+  // UI — blit from offscreen canvas (rebuilt only every other frame = 30fps HUD)
+  ctx.globalAlpha = 1;
+  _uiFrame++;
+  if (!_uiCanvas || (_uiFrame & 1) === 0) _renderUI();
+  ctx.drawImage(_uiCanvas, 0, 0, _uiCanvas.width, _uiCanvas.height, 0, 0, W, H);
+  // Joystick drawn directly at full 60fps — knob tracks live touch position
+  if (activeTab === 0) drawJoystick();
 
   if (transTimer > 0) {
     ctx.fillStyle = `rgba(180,120,255,${Math.min(1, transTimer * 3)})`; ctx.fillRect(0, 0, W, H);
@@ -798,6 +818,7 @@ window.addEventListener('load', () => {
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    _uiCanvas = null; // force UI canvas recreation at new size
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);
