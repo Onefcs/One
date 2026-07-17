@@ -170,8 +170,23 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('playerMove', ({ x, y, facing, hp, maxHp }) => {
-    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing, hp, maxHp);
+  socket.on('playerMove', ({ x, y, facing }) => {
+    if (currentRoom) currentRoom.updatePlayerPos(socket.id, x, y, facing);
+  });
+
+  socket.on('usePotion', ({ amount }) => {
+    if (currentRoom) currentRoom.healPlayer(socket.id, Math.min(amount || 60, 200));
+  });
+
+  socket.on('statsUpdate', ({ atk, def, maxHp }) => {
+    if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp });
+  });
+
+  socket.on('pvpDamageTaken', ({ actual }) => {
+    if (!currentRoom) return;
+    const newHp = currentRoom.applyPvpDamage(socket.id, Math.max(0, Math.min(actual, 9999)));
+    if (newHp !== null && newHp <= 0)
+      io.to(socket.id).emit('playerHurt', { id: socket.id, hp: 0 });
   });
 
   socket.on('attack', ({ enemyId }) => {

@@ -42,6 +42,7 @@ function recompute() {
   });
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
+  if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h);
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
@@ -113,6 +114,7 @@ function usePotion() {
   player.hp = Math.min(player.maxHp, player.hp + heal);
   dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
   spawnBurst(player.x, player.y, '#4f4', 5);
+  if (typeof netUsePotion === 'function') netUsePotion(heal);
   netSaveProgress();
 }
 

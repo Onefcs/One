@@ -198,12 +198,31 @@ class Room {
     }
   }
 
-  updatePlayerPos(socketId, x, y, facing, hp, maxHp) {
+  updatePlayerPos(socketId, x, y, facing) {
     const p = this.players.get(socketId);
     if (!p) return;
     p.x = x; p.y = y; p.facing = facing;
-    if (hp !== undefined && hp >= 0) p.hp = hp;
-    if (maxHp !== undefined && maxHp > 0) p.maxHp = maxHp;
+  }
+
+  healPlayer(socketId, amount) {
+    const p = this.players.get(socketId);
+    if (!p || p.hp <= 0) return;
+    p.hp = Math.min(p.maxHp, p.hp + amount);
+  }
+
+  updatePlayerStats(socketId, { atk, def, maxHp }) {
+    const p = this.players.get(socketId);
+    if (!p) return;
+    if (atk  >  0) p.atk  = atk;
+    if (def  >= 0) p.def  = def;
+    if (maxHp > 0) { p.hp = Math.min(p.hp, maxHp); p.maxHp = maxHp; }
+  }
+
+  applyPvpDamage(socketId, actual) {
+    const p = this.players.get(socketId);
+    if (!p || p.hp <= 0) return null;
+    p.hp = Math.max(0, p.hp - actual);
+    return p.hp;
   }
 
   attackEnemy(socketId, enemyId) {
