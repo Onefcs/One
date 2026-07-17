@@ -202,13 +202,18 @@ function update(dt) {
   if (player.pendingAttack && !player.attackFired && player.animFrame >= 8) {
     const pa = player.pendingAttack;
     player.attackFired = true;
-    swingTimer = 0.18;
-    if (pa.isPlayer) {
-      netPvpAttack(pa.socketId);
-      if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
-    } else {
-      netAttack(pa.id);
-      if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+    const targetAlive = pa.isPlayer
+      ? (otherPlayers.get(pa.socketId)?.hp || 0) > 0
+      : (serverEnemiesMap.get(pa.id)?.hp || 0) > 0;
+    if (targetAlive) {
+      swingTimer = 0.18;
+      if (pa.isPlayer) {
+        netPvpAttack(pa.socketId);
+        if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+      } else {
+        netAttack(pa.id);
+        if (player.charDef.atkType === 'ranged') fireProj(pa.x, pa.y);
+      }
     }
   }
   if (player.atkAnimTimer <= 0) { player.pendingAttack = null; player.attackFired = false; }
