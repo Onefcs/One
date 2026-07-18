@@ -459,19 +459,26 @@ function update(dt) {
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
     if (e.hp <= 0) return;
 
-    // Client-side AI — mirrors server Room._tick so position is driven at 60fps,
-    // independent of when network packets arrive.
+    // Find closest player — self + visible others, mirrors server "closest player" logic
+    let closestTgt = player, closestDp = dist(e.x, e.y, player.x, player.y);
+    otherPlayers.forEach(op => {
+      if ((op.hp || 0) <= 0 || op.x == null) return;
+      const d = dist(e.x, e.y, op.x, op.y);
+      if (d < closestDp) { closestDp = d; closestTgt = op; }
+    });
+
+    // Client-side AI — mirrors server Room._tick so position is driven at 60fps
     const aggroR = e.aggroR || 175;
     const spd    = e.spd    || 70;
     const sz     = e.size   || 16;
-    const dp     = dist(e.x, e.y, player.x, player.y);
+    const dp     = closestDp;
 
     if (dp < aggroR) e.aggro = true;
     if (dp > aggroR * 2.2) e.aggro = false;
 
     if (e.aggro && dp > sz + 14) {
-      const nx = (player.x - e.x) / dp;
-      const ny = (player.y - e.y) / dp;
+      const nx = (closestTgt.x - e.x) / dp;
+      const ny = (closestTgt.y - e.y) / dp;
       if (Math.abs(nx) >= Math.abs(ny)) e._facing = nx > 0 ? 'right' : 'left';
       else                              e._facing = ny > 0 ? 'down'  : 'up';
       const er  = sz * 0.55;
@@ -482,10 +489,10 @@ function update(dt) {
       e._moveTimer = 0.2;
     }
 
-    // Gentle server correction — absorbs cumulative drift without jitter
+    // Gentle server correction — soft nudge only; no hard snap that could jitter
     if (e.targetX !== undefined) {
       const err = Math.hypot(e.targetX - e.x, e.targetY - e.y);
-      const k = err > 60 ? 0.35 : err > 8 ? 0.06 : 0;
+      const k = err > 150 ? 0.2 : err > 10 ? 0.04 : 0;
       if (k > 0) { e.x += (e.targetX - e.x) * k; e.y += (e.targetY - e.y) * k; }
     }
   });
