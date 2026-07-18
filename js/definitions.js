@@ -186,7 +186,7 @@ const CRAFT_RECIPES = [
   { name:'Кожаный щит',   resultId:'oh2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:1},{id:'boss_stone',n:20}],   gold:50  },
   { name:'Шлем железный', resultId:'hm2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                          gold:40  },
   { name:'Кольцо силы',   resultId:'rn1', mats:[{id:'mat_gem',n:1},{id:'boss_stone',n:20}],                           gold:100 },
-  { name:'Меч дракона',   resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3}],     gold:200 },
-  { name:'Посох Анубара',  resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3}],    gold:200 },
-  { name:'Амулет тьмы',   resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2}],       gold:150 },
+  { name:'Меч дракона',   resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],  gold:200 },
+  { name:'Посох Анубара',  resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3},{id:'boss_stone',n:60}], gold:200 },
+  { name:'Амулет тьмы',   resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2},{id:'boss_stone',n:60}],   gold:150 },
 ];

@@ -207,9 +207,9 @@ io.on('connection', socket => {
         });
       }
 
-      // Boss stone drop: 1% chance on floors 1-3, quantity 1-3
-      const bossStone = (result.isBoss && currentFloor <= 3 && Math.random() < 0.01)
-        ? (1 + Math.floor(Math.random() * 3)) : 0;
+      // Boss stone: 100% drop, quantity = floor + 0..2 (floor 1→1-3, floor 2→2-4, ...)
+      const bossStone = result.isBoss
+        ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
 
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
