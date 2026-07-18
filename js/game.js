@@ -35,8 +35,6 @@ function _drawPerf(frameMs) {
   if (maxFt > _ftWorstMs) { _ftWorstMs = maxFt; _ftWorstDecay = 180; }
   else if (--_ftWorstDecay <= 0) { _ftWorstMs = maxFt; }
 
-  if (window._adaptCheck) window._adaptCheck(avgMs);
-
   if (!_perfShow) return;
 
   // Mini frame-time bar graph (60 bars)
@@ -1209,25 +1207,18 @@ window.addEventListener('beforeunload', () => { netSaveProgress(); });
 
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');
-  canvas.style.willChange = 'transform';
-  ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+  ctx = canvas.getContext('2d', { alpha: false });
   const app = document.getElementById('app');
-
-  // Adaptive DPR — start at device DPR (capped at 2); if FPS stays below
-  // 45 for 120 consecutive frames (~4s), halve DPR to reduce GPU compositing.
-  let _adaptDprBase = Math.min(window.devicePixelRatio || 1, 2);
-  let _adaptLowCount = 0;
-  const _ADAPT_THRESHOLD = 120;
+  const _isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   const resize = () => {
-    DPR = _adaptDprBase;
+    DPR = _isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     W = app.clientWidth;
     H = app.clientHeight;
     canvas.width = Math.round(W * DPR);
     canvas.height = Math.round(H * DPR);
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
-    ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     _uiCanvas = null;           // force UI canvas recreation at new size
     _skillBtnGradCache = null;  // force skill button gradient rebuild
@@ -1236,22 +1227,6 @@ window.addEventListener('load', () => {
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);
-
-  // Check FPS every frame; if consistently low, reduce DPR
-  const _adaptCheck = (avgMs) => {
-    if (avgMs <= 0) return;
-    const fps = 1000 / avgMs;
-    if (fps < 45) {
-      if (++_adaptLowCount >= _ADAPT_THRESHOLD && _adaptDprBase > 1) {
-        _adaptDprBase = Math.max(1, _adaptDprBase * 0.7);
-        _adaptLowCount = 0;
-        resize();
-      }
-    } else {
-      _adaptLowCount = 0;
-    }
-  };
-  window._adaptCheck = _adaptCheck;
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
   requestAnimationFrame(ts => { lastTs = ts; requestAnimationFrame(loop); });
