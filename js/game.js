@@ -134,9 +134,19 @@ function update(dt) {
         const vy = inp.dy * player.speed * inp.len * dt;
         if (canMoveX(player, vx, 12)) player.x += vx;
         if (canMoveY(player, vy, 12)) player.y += vy;
+        // Hysteresis on the facing axis: near-diagonal joystick input hovers
+        // around a fixed threshold, flipping facing (and restarting the run
+        // animation) every frame. Once an axis owns the facing, the other
+        // axis must clearly dominate (×1.25) to take it over; flips within
+        // the same axis (left↔right, front↔back) stay immediate.
         const ax = Math.abs(inp.dx), ay = Math.abs(inp.dy);
-        if (ax > ay * 0.8) player.facing = inp.dx > 0 ? 'right' : 'left';
-        else               player.facing = inp.dy > 0 ? 'front' : 'back';
+        if (player.facing === 'left' || player.facing === 'right') {
+          if (ay > ax * 1.25)  player.facing = inp.dy > 0 ? 'front' : 'back';
+          else if (ax > 0)     player.facing = inp.dx > 0 ? 'right' : 'left';
+        } else {
+          if (ax > ay * 1.25)  player.facing = inp.dx > 0 ? 'right' : 'left';
+          else if (ay > 0)     player.facing = inp.dy > 0 ? 'front' : 'back';
+        }
       }
     }
 
