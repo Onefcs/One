@@ -171,16 +171,6 @@ const SHOP_CATALOG = [
 ];
 
 const CRAFT_RECIPES = [
-  // ── Common ────────────────────────────────────────────────
-  { name:'Ржавый нож',     resultId:'sw1', mats:[{id:'mat_iron',n:1}],                           gold:5  },
-  { name:'Ржавый топор',   resultId:'tw1', mats:[{id:'mat_iron',n:1}],                           gold:5  },
-  { name:'Деревянный лук', resultId:'bw1', mats:[{id:'mat_leather',n:2}],                        gold:5  },
-  { name:'Посох новичка',  resultId:'st1', mats:[{id:'mat_iron',n:1},{id:'mat_leather',n:1}],    gold:5  },
-  { name:'Кожаный шлем',  resultId:'hm1', mats:[{id:'mat_leather',n:2}],                         gold:5  },
-  { name:'Кожаная броня',  resultId:'ar1', mats:[{id:'mat_leather',n:3}],                         gold:8  },
-  { name:'Кожаные перчи',  resultId:'gl1', mats:[{id:'mat_leather',n:1}],                         gold:3  },
-  { name:'Кожаные боты',   resultId:'bt1', mats:[{id:'mat_leather',n:1}],                         gold:3  },
-  { name:'Пояс силы',      resultId:'nd1', mats:[{id:'mat_iron',n:1},{id:'mat_leather',n:1}],    gold:5  },
   // ── Uncommon ─────────────────────────────────────────────
   { name:'Стальной нож',   resultId:'sw2', mats:[{id:'mat_iron',n:3},{id:'boss_stone',n:20}],                        gold:50  },
   { name:'Стальной топор', resultId:'tw2', mats:[{id:'mat_iron',n:3},{id:'boss_stone',n:20}],                        gold:50  },
@@ -189,4 +179,33 @@ const CRAFT_RECIPES = [
   { name:'Железный шлем',  resultId:'hm2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
   { name:'Железная броня', resultId:'ar2', mats:[{id:'mat_iron',n:3},{id:'mat_leather',n:2},{id:'boss_stone',n:20}], gold:80  },
   { name:'Кольцо силы',    resultId:'rn1', mats:[{id:'mat_gem',n:1},{id:'boss_stone',n:20}],                         gold:100 },
+  // ── Rare (boss_stone ×60) ────────────────────────────────
+  { name:'Нож дракона',      resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],   gold:200 },
+  { name:'Топор дракона',    resultId:'tw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],   gold:200 },
+  { name:'Лук охотника',     resultId:'bw3', mats:[{id:'mat_scale',n:2},{id:'mat_leather',n:3},{id:'boss_stone',n:60}],gold:200 },
+  { name:'Посох охотника',   resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3},{id:'boss_stone',n:60}],   gold:200 },
+  { name:'Пояс тьмы',        resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2},{id:'boss_stone',n:60}],    gold:150 },
+  { name:'Кольцо крови',     resultId:'rn3', mats:[{id:'mat_gem',n:2},{id:'boss_stone',n:60}],                         gold:150 },
+  // ── Epic (boss_stone ×100) ───────────────────────────────
+  { name:'Нож теней',        resultId:'sw4', mats:[{id:'mat_scale',n:3},{id:'mat_dust',n:3},{id:'boss_stone',n:100}],  gold:500 },
+  { name:'Топор теней',      resultId:'tw4', mats:[{id:'mat_scale',n:3},{id:'mat_dust',n:3},{id:'boss_stone',n:100}],  gold:500 },
+  { name:'Лунный лук',       resultId:'bw4', mats:[{id:'mat_scale',n:3},{id:'mat_leather',n:3},{id:'boss_stone',n:100}],gold:500},
+  { name:'Посох Героя',      resultId:'st4', mats:[{id:'mat_scale',n:3},{id:'mat_dust',n:4},{id:'boss_stone',n:100}],  gold:500 },
+  { name:'Корона героя',     resultId:'hm4', mats:[{id:'mat_scale',n:2},{id:'mat_gem',n:2},{id:'boss_stone',n:100}],   gold:400 },
+  { name:'Доспех героя',     resultId:'ar4', mats:[{id:'mat_scale',n:3},{id:'mat_leather',n:3},{id:'boss_stone',n:100}],gold:500},
+  { name:'Перчатки героя',   resultId:'gl4', mats:[{id:'mat_scale',n:2},{id:'mat_leather',n:1},{id:'boss_stone',n:100}],gold:350},
+  { name:'Боты героя',       resultId:'bt4', mats:[{id:'mat_scale',n:2},{id:'mat_leather',n:2},{id:'boss_stone',n:100}],gold:350},
+  { name:'Кольцо героя',     resultId:'rn4', mats:[{id:'mat_gem',n:3},{id:'mat_dust',n:2},{id:'boss_stone',n:100}],    gold:400 },
+  { name:'Пояс героя',       resultId:'nd4', mats:[{id:'mat_gem',n:3},{id:'mat_dust',n:3},{id:'boss_stone',n:100}],    gold:400 },
+  // ── Legendary (boss_stone ×300) ──────────────────────────
+  { name:'Нож героя',        resultId:'sw5', mats:[{id:'mat_scale',n:5},{id:'mat_dust',n:5},{id:'boss_stone',n:300}],  gold:1500},
+  { name:'Топор героя',      resultId:'tw5', mats:[{id:'mat_scale',n:5},{id:'mat_dust',n:5},{id:'boss_stone',n:300}],  gold:1500},
+  { name:'Лук героя',        resultId:'bw5', mats:[{id:'mat_scale',n:5},{id:'mat_leather',n:4},{id:'boss_stone',n:300}],gold:1500},
+  { name:'Посох Легенды',    resultId:'st5', mats:[{id:'mat_scale',n:5},{id:'mat_dust',n:6},{id:'boss_stone',n:300}],  gold:1500},
+  { name:'Шлем легенды',     resultId:'hm5', mats:[{id:'mat_scale',n:4},{id:'mat_gem',n:3},{id:'boss_stone',n:300}],   gold:1200},
+  { name:'Доспех легенды',   resultId:'ar5', mats:[{id:'mat_scale',n:5},{id:'mat_leather',n:4},{id:'boss_stone',n:300}],gold:1500},
+  { name:'Перчатки легенды', resultId:'gl5', mats:[{id:'mat_scale',n:3},{id:'mat_gem',n:2},{id:'boss_stone',n:300}],   gold:1200},
+  { name:'Боты легенды',     resultId:'bt5', mats:[{id:'mat_scale',n:3},{id:'mat_leather',n:3},{id:'boss_stone',n:300}],gold:1200},
+  { name:'Кольцо легенды',   resultId:'rn5', mats:[{id:'mat_gem',n:5},{id:'mat_dust',n:4},{id:'boss_stone',n:300}],    gold:1500},
+  { name:'Пояс легенды',     resultId:'nd5', mats:[{id:'mat_gem',n:5},{id:'mat_dust',n:5},{id:'boss_stone',n:300}],    gold:1500},
 ];
