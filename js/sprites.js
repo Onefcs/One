@@ -289,29 +289,15 @@ function drawEnemySprite(e, dt) {
   if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
   const cache = enemySpriteCache[e.eid];
 
-  // Facing + moving with hysteresis — prevents per-frame oscillation at threshold boundary
-  if (e.targetX !== undefined) {
-    const mdx = e.targetX - e.x, mdy = e.targetY - e.y;
-    const adx = Math.abs(mdx), ady = Math.abs(mdy);
-    const dist = adx + ady;
-    // Hysteresis: start moving when dist>6, stop when dist<2
-    if (e._moving === undefined) e._moving = false;
-    e._moving = e._moving ? dist >= 2 : dist > 6;
-    // Only update direction when clearly moving
-    if (dist > 6) {
-      if (adx >= ady) e._facing = mdx > 0 ? 'right' : 'left';
-      else             e._facing = mdy > 0 ? 'down'  : 'up';
-    }
-  }
   if (!e._facing) e._facing = 'down';
   const FACING_ROW = { down: 0, up: 1, left: 2, right: 3 };
 
   let key;
-  if (e.hp <= 0)                 key = 'death';
-  else if (e.hurtTimer > 0.05)   key = def.sheets['hurt'] ? 'hurt' : 'idle';
-  else if (e.atkAnimTimer > 0)   key = 'attack';
-  else if (e.aggro && e._moving) key = 'walk';
-  else                           key = 'idle';
+  if (e.hp <= 0)                           key = 'death';
+  else if (e.hurtTimer > 0.05)             key = def.sheets['hurt'] ? 'hurt' : 'idle';
+  else if (e.atkAnimTimer > 0)             key = 'attack';
+  else if (e.aggro && (e._moveTimer || 0) > 0) key = 'walk';
+  else                                     key = 'idle';
 
   const sh = def.sheets[key];
   const img = cache[key];

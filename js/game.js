@@ -456,6 +456,7 @@ function update(dt) {
   serverEnemies.forEach(e => {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
+    if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if (e.targetX !== undefined) {
       const dx = e.targetX - e.x, dy = e.targetY - e.y;
       const d2 = dx * dx + dy * dy;
