@@ -85,8 +85,6 @@ const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
 
 // Visible enemy count (set each render frame, read by _drawPerf)
 let _visEnm = 0;
-// Squared lerp radius: enemies beyond this snap to target (they're off-screen anyway)
-const _LERP_R2 = 700 * 700;
 
 // Reusable dash arrays — declared once, never reallocated
 const _DASH = [6, 4];
@@ -454,24 +452,25 @@ function update(dt) {
     }
   });
   let _corpseExpired = false;
+  const _nowMs = performance.now();
   serverEnemies.forEach(e => {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
-    if (e.targetX !== undefined) {
-      const dx = e.targetX - e.x, dy = e.targetY - e.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 > 1) {
-        const ex = e.x - player.x, ey = e.y - player.y;
-        if (ex * ex + ey * ey < _LERP_R2) {
-          e.x += dx * lk; e.y += dy * lk; // smooth lerp for nearby enemies
-        } else {
-          e.x = e.targetX; e.y = e.targetY; // instant snap — off-screen anyway
-        }
-      } else if (d2 < 0.25) {
-        e.x = e.targetX; e.y = e.targetY;  // snap exactly within 0.5px
-      }
+    // Snapshot interpolation: render 100ms in the past, walking linearly
+    // between the two latest server positions. Constant velocity between
+    // ticks — no accelerate/stall pulsing, and up to ~50ms of network
+    // jitter is absorbed by the delay buffer instead of tugging the sprite.
+    if (e._tt !== undefined) {
+      const rt = _nowMs - 100;
+      const span = e._tt - e._pt;
+      let a = span > 0 ? (rt - e._pt) / span : 1;
+      if (a < 0) a = 0; else if (a > 1) a = 1;
+      e.x = e._px + (e.targetX - e._px) * a;
+      e.y = e._py + (e.targetY - e._py) * a;
+    } else if (e.targetX !== undefined) {
+      e.x = e.targetX; e.y = e.targetY; // no snapshot pair yet — snap
     }
   });
   if (_corpseExpired) {
