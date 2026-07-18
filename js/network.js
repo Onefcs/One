@@ -8,6 +8,11 @@ const SERVER_URL = (() => {
 
 let _savedData = null;
 
+// Snapshot interpolation — offset between server Date.now() and client Date.now()
+let _svrTimeOffset = 0;
+const _INTERP_MS   = 50;  // render other players 50ms in the past (2 server ticks)
+const _SNAP_MAX    = 8;   // keep last 8 snapshots per player (~200ms)
+
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
   if (socket && socket.connected) { if (onReady) onReady(); return; }
@@ -66,10 +71,18 @@ function netConnect(onReady) {
     const _gs0 = performance.now();
     const myId = socket.id;
 
+    // Track server↔client clock offset with a smoothed EMA
+    const _localNow = Date.now();
+    _svrTimeOffset = _svrTimeOffset === 0
+      ? (t - _localNow)
+      : _svrTimeOffset * 0.9 + (t - _localNow) * 0.1;
+
     players.forEach(p => {
       if (p.id === myId) return;
       if (!otherPlayers.has(p.id)) {
-        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false });
+        const op = { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false,
+                     _buf: [{ x: p.x, y: p.y, t }] };
+        otherPlayers.set(p.id, op);
         if (p.type) loadSprites(p.type, () => {});
       } else {
         const op = otherPlayers.get(p.id);
@@ -78,7 +91,11 @@ function netConnect(onReady) {
         op.facing = p.facing; op.username = p.username;
         op.pvpMode = p.pvpMode || false;
         if (op.x === undefined) { op.x = p.x; op.y = p.y; }
-        op.targetX = p.x; op.targetY = p.y;
+        // Push snapshot into ring buffer
+        if (!op._buf) op._buf = [];
+        op._buf.push({ x: p.x, y: p.y, t });
+        if (op._buf.length > _SNAP_MAX) op._buf.shift();
+        op.targetX = p.x; op.targetY = p.y; // kept for fallback
         if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
           op.atkSeq = p.atkSeq;
           op.atkAnimTimer = 0.55; op.animFrame = 0; op.animTimer = 0;

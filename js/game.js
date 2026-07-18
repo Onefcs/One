@@ -447,13 +447,32 @@ function update(dt) {
   npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
   if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
-  // Smooth lerp toward latest server positions (factor tuned for 40 tps tick rate)
-  const lk = Math.min(1, 40 * dt);
+  // Snapshot interpolation — render other players at (serverNow - INTERP_MS),
+  // interpolating between two buffered snapshots for perfectly smooth motion.
+  const _renderT = Date.now() + _svrTimeOffset - _INTERP_MS;
   otherPlayers.forEach((op, id) => {
-    if (op.targetX !== undefined) {
+    const buf = op._buf;
+    if (buf && buf.length >= 2) {
+      // Find the pair of snapshots bracketing _renderT
+      let i = buf.length - 2;
+      while (i > 0 && buf[i].t > _renderT) i--;
+      const s0 = buf[i], s1 = buf[i + 1];
+      const span = s1.t - s0.t;
       const prevX = op.x, prevY = op.y;
-      op.x += (op.targetX - op.x) * lk;
-      op.y += (op.targetY - op.y) * lk;
+      if (span < 1) {
+        op.x = s1.x; op.y = s1.y;
+      } else {
+        const alpha = Math.max(0, Math.min(1, (_renderT - s0.t) / span));
+        op.x = s0.x + (s1.x - s0.x) * alpha;
+        op.y = s0.y + (s1.y - s0.y) * alpha;
+      }
+      const _mdx = op.x - prevX, _mdy = op.y - prevY;
+      op.moving = _mdx * _mdx + _mdy * _mdy > 0.1;
+    } else if (op.targetX !== undefined) {
+      // Fallback lerp until buffer fills (first 1-2 packets after join)
+      const prevX = op.x, prevY = op.y;
+      op.x += (op.targetX - op.x) * Math.min(1, 40 * dt);
+      op.y += (op.targetY - op.y) * Math.min(1, 40 * dt);
       const _mdx = op.x - prevX, _mdy = op.y - prevY;
       op.moving = _mdx * _mdx + _mdy * _mdy > 0.25;
     }
