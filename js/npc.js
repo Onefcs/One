@@ -76,22 +76,69 @@ function _craftsmanBody() {
     if (!result) return;
     const rc = RARITY_COLOR[result.rarity] || '#aaa';
     const canCraft = _canCraft(recipe) && p.gold >= recipe.gold && p.inventory.length < 50;
-    const matsStr = recipe.mats.map(m => {
-      const mat = CRAFT_MATS.find(c => c.id === m.id);
-      const has = p.inventory.filter(i => i.id === m.id).length;
-      return `${mat ? iconHTML(mat.icon, 14) : '?'}×${m.n}(${has})`;
-    }).join(' ');
-    html += `<div class="shop-row">
+    const stats = statStr(result);
+    html += `<div class="shop-row craft-row-clickable${canCraft ? ' craft-can' : ''}" onclick="openCraftModal(${idx})">
       <span class="shop-item-icon">${_itemIcon(result, 28)}</span>
       <div class="shop-item-info">
         <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${result.name}</div>
-        <div class="shop-item-stat">${matsStr} · ${recipe.gold}${iconHTML('coin',12,'#f1c40f')}</div>
+        <div class="shop-item-stat">${stats}</div>
       </div>
-      <button class="shop-btn${canCraft ? '' : ' disabled'}" onclick="craftItem(${idx})">Создать</button>
+      <span class="craft-arrow">›</span>
     </div>`;
   });
   html += '</div>';
   return html;
+}
+
+function openCraftModal(idx) {
+  const recipe = CRAFT_RECIPES[idx];
+  if (!recipe) return;
+  const result = ITEM_DEF.find(i => i.id === recipe.resultId);
+  if (!result) return;
+  const p = player;
+  const rc = RARITY_COLOR[result.rarity] || '#aaa';
+  const canCraft = _canCraft(recipe) && p.gold >= recipe.gold && p.inventory.length < 50;
+  const stats = statStr(result);
+
+  const matsHtml = recipe.mats.map(m => {
+    const mat = CRAFT_MATS.find(c => c.id === m.id);
+    const has = p.inventory.filter(i => i.id === m.id).length;
+    const enough = has >= m.n;
+    return `<div class="cmod-mat${enough ? '' : ' cmod-mat-lack'}">
+      <span class="cmod-mat-icon">${mat ? iconHTML(mat.icon, 18) : '?'}</span>
+      <span class="cmod-mat-name">${mat ? mat.name : m.id}</span>
+      <span class="cmod-mat-count">${has}/${m.n}</span>
+    </div>`;
+  }).join('');
+
+  closeCraftModal();
+  const div = document.createElement('div');
+  div.id = 'craft-modal-ov';
+  div.className = 'cmod-overlay';
+  div.onclick = closeCraftModal;
+  div.innerHTML = `<div class="cmod-box" onclick="event.stopPropagation()">
+    <div class="cmod-hdr">
+      <span class="cmod-icon">${_itemIcon(result, 40)}</span>
+      <div class="cmod-title" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${result.name}</div>
+      <button class="npc-close" onclick="closeCraftModal()">✕</button>
+    </div>
+    <div class="cmod-stats">${stats || '—'}</div>
+    <div class="cmod-sec">Материалы</div>
+    <div class="cmod-mats">${matsHtml}</div>
+    <div class="cmod-gold">${iconHTML('coin',14,'#f1c40f')} Стоимость: <b>${recipe.gold}</b></div>
+    <button class="shop-btn cmod-craft-btn${canCraft ? '' : ' disabled'}" onclick="craftFromModal(${idx})">Создать</button>
+  </div>`;
+  document.getElementById('app').appendChild(div);
+}
+
+function closeCraftModal() {
+  const el = document.getElementById('craft-modal-ov');
+  if (el) el.remove();
+}
+
+function craftFromModal(idx) {
+  closeCraftModal();
+  craftItem(idx);
 }
 
 function _listMats() {

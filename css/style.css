@@ -414,6 +414,50 @@ canvas { display:block; width:100%; height:100%; }
 .craft-mats-info {
   font-size:11px; color:#484860; padding:4px 0 10px;
 }
+.craft-row-clickable { cursor:pointer; transition:background 0.15s; }
+.craft-row-clickable:active { background:rgba(255,255,255,0.07); }
+.craft-arrow { color:#333; font-size:20px; flex-shrink:0; line-height:1; }
+.craft-can .craft-arrow { color:#7040c0; }
+
+/* ── CRAFT ITEM MODAL ──────────────────── */
+.cmod-overlay {
+  position:absolute; inset:0; z-index:170;
+  background:rgba(0,0,0,0.65);
+  display:flex; align-items:center; justify-content:center;
+}
+.cmod-box {
+  background:#0d0a1e;
+  border:1px solid rgba(100,60,200,0.5);
+  border-radius:16px;
+  width:min(310px,92vw);
+  padding:16px;
+  display:flex; flex-direction:column; gap:12px;
+}
+.cmod-hdr { display:flex; align-items:center; gap:10px; }
+.cmod-icon { flex-shrink:0; }
+.cmod-title { flex:1; font-size:15px; font-weight:bold; color:#ddd; line-height:1.2; }
+.cmod-stats {
+  font-size:13px; color:#aaa;
+  background:rgba(255,255,255,0.04);
+  border-radius:8px; padding:8px 10px;
+  min-height:28px;
+}
+.cmod-sec {
+  font-size:10px; text-transform:uppercase; letter-spacing:1px;
+  color:#484860; margin-bottom:-4px;
+}
+.cmod-mats { display:flex; flex-direction:column; gap:7px; }
+.cmod-mat {
+  display:flex; align-items:center; gap:8px;
+  font-size:12px; color:#aaa;
+}
+.cmod-mat-icon { width:22px; text-align:center; flex-shrink:0; }
+.cmod-mat-name { flex:1; }
+.cmod-mat-count { font-weight:bold; color:#3ef07a; }
+.cmod-mat-lack .cmod-mat-count { color:#f66; }
+.cmod-gold { font-size:12px; color:#666; }
+.cmod-gold b { color:#ffd040; }
+.cmod-craft-btn { width:100%; padding:10px; font-size:14px; }
 
 /* ── BOTTOM PANELS ─────────────────────── */
 .bpanel {
