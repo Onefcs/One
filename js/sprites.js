@@ -313,7 +313,7 @@ function drawEnemySprite(e, dt) {
   const { frameW, frameH, row } = def;
   const sx = e._animFrame * frameW;
   const sy = row * frameH;
-  const ds = e.size * 4.5;
+  const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
   // Float position + bilinear filtering — see drawSprite for rationale
   ctx.drawImage(img, sx, sy, frameW, frameH,
     e.x - ds * 0.5, e.y - ds * 0.80,

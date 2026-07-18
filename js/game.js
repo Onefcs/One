@@ -644,14 +644,15 @@ function render(dt, ts) {
       ctx.fillStyle = '#000';
       ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
     }
+    const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
+    const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.80 - 8;
     if (e.isBoss) {
       ctx.globalAlpha = _bossGlow; ctx.strokeStyle = '#ff3232'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 5, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#f44'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText('БОСС', e.x, e.y - e.size - 16);
+      ctx.fillText('БОСС', e.x, by - 14);
     }
-    const bw = e.size * 2.6, bh = 5, bx = e.x - bw / 2, by = e.y - e.size - 13;
     ctx.fillStyle = '#400'; ctx.fillRect(bx, by, bw, bh);
     const pct = e.hp / e.maxHp;
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
