@@ -9,6 +9,8 @@ const _FT_BUF = new Float32Array(60);
 let _ftIdx = 0, _ftFull = false;
 // Rolling max frame time — highlights spikes
 let _ftWorstMs = 0, _ftWorstDecay = 0;
+// Adaptive quality tier — auto-degrades when FPS stays below 30 for ~3s
+let _qualityTier = 0, _lowFpsFrames = 0;
 
 function _perfToggleTap(cx, cy) {
   if (cx > 80 || cy > 80) return; // only top-left corner
@@ -31,6 +33,9 @@ function _drawPerf(frameMs) {
   }
   const avgMs = sum / samples;
   const fps = avgMs > 0 ? Math.round(1000 / avgMs) : 0;
+  // Adaptive quality: drop to tier 1 when FPS stays < 30 for ~3s; recover when FPS > 50
+  if (fps < 30) { if (++_lowFpsFrames > 180) _qualityTier = 1; }
+  else if (fps > 50) { _lowFpsFrames = Math.max(0, _lowFpsFrames - 2); if (_lowFpsFrames === 0) _qualityTier = 0; }
   // Decay worst-case slowly
   if (maxFt > _ftWorstMs) { _ftWorstMs = maxFt; _ftWorstDecay = 180; }
   else if (--_ftWorstDecay <= 0) { _ftWorstMs = maxFt; }
@@ -66,6 +71,7 @@ function _drawPerf(frameMs) {
     `rnd  ${_profRender.toFixed(1)}ms`,
     `skt  ${_profSocketEvtsSnap}e ${_profSocketMsSnap.toFixed(1)}ms`,
     `dpr  ${DPR.toFixed(2)}`,
+    `qlty ${_qualityTier}`,
     `drp  ${drops.length}`,
     mem ? `mem  ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
   ];
@@ -87,6 +93,10 @@ let _uiOverlay, _uiCtx = null, _uiLastMs = 0;
 let _lastCamX = 0, _lastCamY = 0;
 // Player sprite state and previous name label bounds for 60fps name tracking
 let _lastPlayerUsedSprite = false, _prevPlayerNameBounds = null;
+// measureText cache for player name label — avoids per-frame call when name unchanged
+let _prevDisplayName = '', _cachedNameTw = 0;
+// Enemy name label cache — pre-rendered text canvases keyed by `name|isBoss`
+const _enemyNameLabels = new Map();
 
 // Reusable sentinel for pvp closest-target — avoids per-frame object spread
 const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
@@ -404,7 +414,7 @@ function update(dt) {
       const d = dmgNums[i]; d.y += d.vy * dt; d.life -= dt;
       if (d.life > 0) dmgNums[j++] = dmgNums[i];
     }
-    dmgNums.length = Math.min(j, 40);
+    dmgNums.length = Math.min(j, _qualityTier > 0 ? 20 : 40);
   }
 
   // Skill timers
@@ -550,11 +560,12 @@ function _drawPlayerNameOnUI() {
     ctx.clearRect(b.x, b.y, b.w, b.h);
   }
   ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  if (displayName !== _prevDisplayName) { _cachedNameTw = ctx.measureText(displayName).width; _prevDisplayName = displayName; }
+  const tw = _cachedNameTw;
   ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
   ctx.strokeText(displayName, sx, sy);
   ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
   ctx.fillText(displayName, sx, sy);
-  const tw = ctx.measureText(displayName).width;
   _prevPlayerNameBounds = { x: sx - tw / 2 - 6, y: sy - 14, w: tw + 12, h: 18 };
   if (pvpMode) {
     drawIconCtx(_uiCtx, 'pvpOn', sx + 22 + 8, sy - 3, 9, '#f55');
@@ -690,7 +701,8 @@ function render(dt, ts) {
 
   // Particles — sort by color, then batch-fill per group (1 fill() per color, not per particle)
   if (particles.length) {
-    particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
+    if (_qualityTier > 0 && particles.length > 120) particles.length = 120;
+    if (particles.length > 1) particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
     let i = 0;
     while (i < particles.length) {
       const col = particles[i].color;
@@ -741,9 +753,8 @@ function render(dt, ts) {
     const pct = e.hp / e.maxHp;
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
-    ctx.font = e.isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
-    ctx.fillStyle = e.isBoss ? '#f88' : '#ddd';
-    ctx.fillText(e.name, e.x, by - 2);
+    const _nl = _getEnemyNameLabel(e.name, e.isBoss);
+    ctx.drawImage(_nl, Math.round(e.x - _nl.width / 2), Math.round(by - _nl.height - 1));
   });
 
   // Other players
@@ -895,6 +906,26 @@ function _buildPlayerNameCanvas(p) {
   return cv;
 }
 
+function _getEnemyNameLabel(name, isBoss) {
+  const key = `${name}|${isBoss}`;
+  let cv = _enemyNameLabels.get(key);
+  if (cv) return cv;
+  const font = isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
+  const tmp = document.createElement('canvas').getContext('2d');
+  tmp.font = font;
+  const tw = Math.ceil(tmp.measureText(name).width);
+  cv = document.createElement('canvas');
+  cv.width = tw + 8; cv.height = 13;
+  const c = cv.getContext('2d');
+  c.font = font; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.strokeStyle = '#000'; c.lineWidth = 2.5;
+  c.strokeText(name, cv.width / 2, 12);
+  c.fillStyle = isBoss ? '#f88' : '#ddd';
+  c.fillText(name, cv.width / 2, 12);
+  _enemyNameLabels.set(key, cv);
+  return cv;
+}
+
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
   const dir = p.facing || 'front';
@@ -997,7 +1028,18 @@ function drawNpcs() {
     ctx.drawImage(cc.ring, n.x - cc.rw / 2, n.y - cc.rw / 2, cc.rw, cc.rw);
     ctx.globalAlpha = 1;
     ctx.drawImage(cc.cv, n.x - cc.cx, n.y - cc.cy, cc.w, cc.h);
-    drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
+    if (!cc.iconBaked) {
+      const _img = _iconImgCache[`${n.icon}|${n.color}|56`]; // 56 = Math.ceil(28*2)
+      if (_img && _img.complete && _img.naturalWidth > 0) {
+        const _ic = cc.cv.getContext('2d');
+        _ic.save(); _ic.scale(_NPC_RES, _NPC_RES);
+        _ic.drawImage(_img, cc.cx - 14, cc.cy - 14, 28, 28);
+        _ic.restore();
+        cc.iconBaked = true;
+      } else {
+        drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
+      }
+    }
     if (nearNpc && nearNpc.id === n.id) {
       drawIconCtx(ctx, 'chat', n.x, n.y - 44 + _nBounce, 18, '#fff');
     }
@@ -1248,6 +1290,7 @@ window.addEventListener('load', () => {
     _uiCtx = _uiOverlay.getContext('2d');
     _skillBtnGradCache = null;  // force skill button gradient rebuild
     _uiBtnGrads = null;         // force button gradient rebuild
+    _partyHpGrads = null;       // force party HP gradient rebuild
     updateJoyCenter();          // recompute cached joystick center
     if (dungeon) clampCamera();
   };

@@ -1095,6 +1095,8 @@ function drawPartyButton() {
 // ─────────────────────────────────────────────────────────
 //  PARTY HUD (all member HP bars)
 // ─────────────────────────────────────────────────────────
+let _partyHpGrads = null; // cached {hi,mid,lo,hbx,ctx} — invalidated on resize
+
 function drawPartyHUD() {
   if (!partyMembers.length || !player) return;
   const F = 'system-ui, -apple-system, Arial';
@@ -1102,6 +1104,18 @@ function drawPartyHUD() {
   const pvpBtn = getPvpBtnPos();
   const startX = pvpBtn.x;
   const startY = HEADER_H + 56; // below target frame (HEADER_H+6+42+8)
+
+  // Cache the three HP bar gradients (position fixed, only depends on startX)
+  const _hbx = startX + 20, _hbw = 130 - 24;
+  if (!_partyHpGrads || _partyHpGrads.hbx !== _hbx || _partyHpGrads.c !== ctx) {
+    const _gh = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
+    _gh.addColorStop(0, '#0c5a22'); _gh.addColorStop(1, '#1ec95a');
+    const _gm = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
+    _gm.addColorStop(0, '#7a4200'); _gm.addColorStop(1, '#f0921a');
+    const _gl = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
+    _gl.addColorStop(0, '#6b0c0c'); _gl.addColorStop(1, '#e03030');
+    _partyHpGrads = { hi: _gh, mid: _gm, lo: _gl, hbx: _hbx, c: ctx };
+  }
 
   partyMembers.forEach((member, i) => {
     const op = otherPlayers.get(member.id);
@@ -1129,11 +1143,7 @@ function drawPartyHUD() {
     ctx.fillStyle = 'rgba(10,30,10,0.9)';
     roundRect(ctx, hbx, hby, hbw, hbh, 3); ctx.fill();
     if (pct > 0) {
-      const hg = ctx.createLinearGradient(hbx, 0, hbx + hbw, 0);
-      if (pct > 0.5) { hg.addColorStop(0, '#0c5a22'); hg.addColorStop(1, '#1ec95a'); }
-      else if (pct > 0.25) { hg.addColorStop(0, '#7a4200'); hg.addColorStop(1, '#f0921a'); }
-      else { hg.addColorStop(0, '#6b0c0c'); hg.addColorStop(1, '#e03030'); }
-      ctx.fillStyle = hg;
+      ctx.fillStyle = pct > 0.5 ? _partyHpGrads.hi : pct > 0.25 ? _partyHpGrads.mid : _partyHpGrads.lo;
       roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
     }
     ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
