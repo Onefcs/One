@@ -5,9 +5,30 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
 const PlayerModel = require('./models/Player');
 const Room = require('./game/Room');
+
+// Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
+const _TG_TOKEN = process.env.TG_BOT_TOKEN || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
+let _tgBotUsername = process.env.TG_BOT_USERNAME || '';
+
+function verifyTelegramAuth(data) {
+  const { hash, ...rest } = data;
+  if (!hash) return false;
+  const checkStr = Object.keys(rest).sort().map(k => `${k}=${rest[k]}`).join('\n');
+  const secret = crypto.createHash('sha256').update(_TG_TOKEN).digest();
+  const computed = crypto.createHmac('sha256', secret).update(checkStr).digest('hex');
+  if (computed !== hash) return false;
+  if (Date.now() / 1000 - Number(data.auth_date) > 86400) return false;
+  return true;
+}
+
+if (!_tgBotUsername) {
+  fetch(`https://api.telegram.org/bot${_TG_TOKEN}/getMe`)
+    .then(r => r.json())
+    .then(d => { if (d.ok) { _tgBotUsername = d.result.username; console.log('TG bot:', _tgBotUsername); } })
+    .catch(err => console.error('Could not fetch TG bot username:', err));
+}
 
 const ROOT = path.join(__dirname, '..');
 const BUNDLE_FILES = [
@@ -59,6 +80,18 @@ app.get('/bundle.js', (req, res) => {
 
 // HTML/CSS: no cache so updates are picked up immediately
 app.use(express.static(path.join(__dirname, '..')));
+
+app.get('/tg-botname', (req, res) => {
+  if (_tgBotUsername) return res.json({ username: _tgBotUsername });
+  // Retry fetch once in case startup request is still in-flight
+  fetch(`https://api.telegram.org/bot${_TG_TOKEN}/getMe`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) { _tgBotUsername = d.result.username; res.json({ username: _tgBotUsername }); }
+      else res.status(503).json({ error: 'bot not resolved' });
+    })
+    .catch(() => res.status(503).json({ error: 'bot not resolved' }));
+});
 
 // One Room per floor, created on demand, destroyed when empty
 const floorRooms = new Map();
@@ -125,30 +158,21 @@ io.on('connection', socket => {
   let currentFloor = 1;
   playerFloorMap.set(socket.id, currentFloor);
 
-  socket.on('register', async ({ username, password }) => {
+  socket.on('loginTelegram', async (data) => {
     try {
-      if (!username || username.length < 2 || !password || password.length < 4)
-        return socket.emit('authError', { message: 'Имя ≥2 символа, пароль ≥4 символа' });
-      if (await PlayerModel.findOne({ username }))
-        return socket.emit('authError', { message: 'Имя уже занято' });
-      const hash = await bcrypt.hash(password, 10);
-      const doc = await PlayerModel.create({ username, passwordHash: hash });
+      if (!verifyTelegramAuth(data))
+        return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
+      const telegramId = String(data.id);
+      const username = data.username || data.first_name || `tg_${telegramId}`;
+      let doc = await PlayerModel.findOne({ telegramId });
+      if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
       socket.data.username = doc.username;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
-    } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
-  });
-
-  socket.on('login', async ({ username, password }) => {
-    try {
-      const doc = await PlayerModel.findOne({ username });
-      if (!doc) return socket.emit('authError', { message: 'Пользователь не найден' });
-      if (!await bcrypt.compare(password, doc.passwordHash))
-        return socket.emit('authError', { message: 'Неверный пароль' });
-      authed = doc;
-      socket.data.username = doc.username;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
-    } catch { socket.emit('authError', { message: 'Ошибка сервера' }); }
+    } catch (err) {
+      console.error('loginTelegram:', err);
+      socket.emit('authError', { message: 'Ошибка сервера' });
+    }
   });
 
   socket.on('selectChar', ({ type, savedStats }) => {

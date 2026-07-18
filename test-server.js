@@ -36,6 +36,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 app.use('/images', express.static(path.join(ROOT, 'images'), { maxAge: '30d' }));
+// Stub: test server doesn't verify Telegram; bot username returned for widget init
+app.get('/tg-botname', (req, res) => res.json({ username: 'TestBotDev' }));
 app.get('/bundle.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('ETag', jsBundleEtag);
@@ -63,9 +65,8 @@ io.on('connection', socket => {
   let currentRoom = null, currentFloor = 1;
   const username = 'TestPlayer_' + socket.id.slice(0,4);
 
-  // Stub auth - auto-accept
-  socket.on('register', () => socket.emit('authOk', { username, savedData: null }));
-  socket.on('login', () => socket.emit('authOk', { username, savedData: null }));
+  // Stub auth - auto-accept any loginTelegram (no signature check in test mode)
+  socket.on('loginTelegram', () => socket.emit('authOk', { username, savedData: null }));
 
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!currentRoom) {

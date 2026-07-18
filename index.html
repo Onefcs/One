@@ -13,14 +13,13 @@
 <div id="login-screen">
   <h1><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M14.5 17.5L3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><line x1="19" y1="21" x2="21" y2="19"/></svg>DUNGEON QUEST</h1>
   <div class="auth-box">
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Войти</button>
-      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Регистрация</button>
+    <div class="tg-auth-title">Войдите через Telegram</div>
+    <div id="tg-auth-loading" class="tg-auth-loading">
+      <div class="tg-spinner"></div>
+      <span>Загрузка...</span>
     </div>
-    <input type="text" id="auth-username" placeholder="Имя пользователя" maxlength="20" autocomplete="username">
-    <input type="password" id="auth-password" placeholder="Пароль" maxlength="30" autocomplete="current-password">
+    <div id="tg-widget-container" style="display:none;justify-content:center;"></div>
     <div id="auth-error" class="auth-error"></div>
-    <button class="auth-btn primary" onclick="authSubmit()">Войти</button>
   </div>
 </div>
 

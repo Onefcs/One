@@ -6,11 +6,12 @@ const SERVER_URL = (() => {
     : 'https://one-production-ae10.up.railway.app';
 })();
 
-let _authMode = 'login';
 let _savedData = null;
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
+  if (socket && socket.connected) { if (onReady) onReady(); return; }
+  if (socket) { socket.disconnect(); socket = null; }
   socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
 
   socket.on('connect', () => { if (onReady) onReady(); });
@@ -331,30 +332,52 @@ function netPartyLeave() {
 }
 
 // ── Auth ──────────────────────────────────────────────────────
-function switchAuthTab(mode) {
-  _authMode = mode;
-  document.getElementById('tab-login').classList.toggle('active', mode === 'login');
-  document.getElementById('tab-register').classList.toggle('active', mode === 'register');
-  const btn = document.querySelector('#login-screen .auth-btn.primary');
-  if (btn) btn.textContent = mode === 'login' ? 'Войти' : 'Зарегистрироваться';
-  document.getElementById('auth-error').textContent = '';
-}
-
-function authSubmit() {
-  const username = document.getElementById('auth-username').value.trim();
-  const password = document.getElementById('auth-password').value;
-  if (!username || !password) { showAuthError('Заполните все поля'); return; }
-  document.getElementById('auth-error').textContent = '';
-  if (!socket || !socket.connected) {
-    netConnect(() => socket.emit(_authMode, { username, password }));
-  } else {
-    socket.emit(_authMode, { username, password });
-  }
-}
-
 function showAuthError(msg) {
   const el = document.getElementById('auth-error');
   if (el) el.textContent = msg;
+}
+
+// Called by the Telegram Login Widget iframe when the user authenticates
+window.onTelegramAuth = function(user) {
+  showAuthError('Вход...');
+  if (!socket || !socket.connected) {
+    netConnect(() => socket.emit('loginTelegram', user));
+  } else {
+    socket.emit('loginTelegram', user);
+  }
+};
+
+function _initTelegramWidget() {
+  netConnect(); // establish socket early so it's ready when the user clicks
+  fetch('/tg-botname')
+    .then(r => r.json())
+    .then(({ username }) => {
+      if (!username) throw new Error('no username');
+      const loading   = document.getElementById('tg-auth-loading');
+      const container = document.getElementById('tg-widget-container');
+      if (!container) return;
+
+      // The widget script reads the sibling div's data-* attributes
+      const tgDiv = document.createElement('div');
+      tgDiv.setAttribute('data-telegram-login', username);
+      tgDiv.setAttribute('data-size', 'large');
+      tgDiv.setAttribute('data-radius', '8');
+      tgDiv.setAttribute('data-onauth', 'onTelegramAuth(user)');
+      tgDiv.setAttribute('data-request-access', 'write');
+      container.appendChild(tgDiv);
+
+      const script = document.createElement('script');
+      script.async = true;
+      script.src = 'https://telegram.org/js/telegram-widget.js?22';
+      container.appendChild(script);
+
+      if (loading) loading.style.display = 'none';
+      container.style.display = 'flex';
+    })
+    .catch(() => {
+      const loading = document.getElementById('tg-auth-loading');
+      if (loading) { loading.innerHTML = '<span>Ошибка загрузки виджета.<br>Обновите страницу.</span>'; }
+    });
 }
 
 function _showCharSelect(savedData) {
@@ -475,4 +498,7 @@ function netSpawnProj(proj) {
 function netSpawnAoe(x, y) {
   if (socket?.connected) socket.emit('spawnAoe', { x, y });
 }
+
+// Init Telegram widget on page load (bundle runs at end of <body>)
+_initTelegramWidget();
 
