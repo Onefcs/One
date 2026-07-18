@@ -322,7 +322,7 @@ function drawEnemySprite(e, dt) {
     }
   }
   if (!e._facing) e._facing = 'down';
-  const FACING_ROW = { down: 0, left: 1, right: 2, up: 3 };
+  const FACING_ROW = { down: 0, left: 1, up: 2, right: 3 };
 
   const { frameW, frameH } = def;
   const sx = e._animFrame * frameW;
