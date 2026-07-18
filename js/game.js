@@ -111,10 +111,13 @@ function updateCamera(dt) {
   const factor = Math.min(1, 8 * dt); // slightly faster tracking reduces perceived lag
   camera.x += (tx - camera.x) * factor;
   camera.y += (ty - camera.y) * factor;
-  // Snap to pixel when close enough — prevents float oscillation around
-  // a half-pixel boundary which causes the background to jitter 1px
-  if (Math.abs(tx - camera.x) < 0.5) camera.x = Math.round(camera.x);
-  if (Math.abs(ty - camera.y) < 0.5) camera.y = Math.round(camera.y);
+  // Once within a device pixel of the target, lock onto it exactly —
+  // prevents float oscillation around a rounding boundary when standing
+  // still (during steady running the lerp trails at a constant offset,
+  // so the player already holds a fixed screen position).
+  const _devPx = 1 / (ZOOM * DPR);
+  if (Math.abs(tx - camera.x) < _devPx) camera.x = tx;
+  if (Math.abs(ty - camera.y) < _devPx) camera.y = ty;
   clampCamera();
 }
 
@@ -537,13 +540,15 @@ function render(dt, ts) {
   const _bossGlow = 0.6 + 0.4 * Math.sin(frameCount * 0.10);
   const _dropSin  = Math.sin(frameCount * 0.09);
 
-  // Pixel-lock the camera once per frame — both the ctx.translate AND the
-  // tile-canvas slice coordinates must use the exact same integer value,
-  // otherwise rounding drift between Math.round and Math.floor creates a
-  // 1-px jump every time the camera crosses a 0.5-pixel boundary (visible
-  // as micro-jitter on the tile background).
-  const _camX = Math.round(camera.x);
-  const _camY = Math.round(camera.y);
+  // Pixel-lock the camera once per frame — to the DEVICE pixel grid, not
+  // whole world pixels. At ZOOM 0.75 × DPR 2 one world px = 1.5 device px,
+  // so world-integer rounding lands between device pixels: the background
+  // scroll steps by 1.5 px and sprite-vs-camera rounding phases drift,
+  // both visible as micro-jitter. Rounding camera.x*ZOOM*DPR to an integer
+  // makes every world-grid-snapped draw land exactly on device pixels.
+  const _grid = ZOOM * DPR;
+  const _camX = Math.round(camera.x * _grid) / _grid;
+  const _camY = Math.round(camera.y * _grid) / _grid;
 
   // Cache view bounds so _isOnScreen() avoids divisions on every call
   const _vM = 60;
@@ -565,14 +570,23 @@ function render(dt, ts) {
 
   if (tileCanvas) {
     ctx.imageSmoothingEnabled = false;
-    // Draw only the visible slice — same _camX/_camY as the translate above
-    const _tcSx = Math.max(0, _camX);
-    const _tcSy = Math.max(0, _camY);
+    // Draw only the visible slice; source rect is drawn back at the same
+    // world coords (identity mapping), so the fractional camera is handled
+    // entirely by the transform — flooring here only picks the region.
+    const _tcSx = Math.max(0, Math.floor(_camX));
+    const _tcSy = Math.max(0, Math.floor(_camY));
     const _tcSw = Math.min(tileCanvas.width  - _tcSx, Math.ceil(W  / ZOOM) + 2);
     const _tcSh = Math.min(tileCanvas.height - _tcSy, Math.ceil((H - HEADER_H) / ZOOM) + 2);
     if (_tcSw > 0 && _tcSh > 0)
       ctx.drawImage(tileCanvas, _tcSx, _tcSy, _tcSw, _tcSh, _tcSx, _tcSy, _tcSw, _tcSh);
   }
+  // Moving art (sprites, drops, icons) draws at FLOAT positions with
+  // bilinear filtering. Snapping movers to any pixel grid can't be smooth
+  // here: the camera scrolls 3-4 device px per frame, so the rounding phase
+  // sweeps a full pixel every couple of frames and snapped positions flip
+  // ±1 px — the exact micro-jitter this replaces. Sub-pixel filtering costs
+  // half a pixel of softness and gives perfectly even motion.
+  ctx.imageSmoothingEnabled = true;
 
   // NPCs
   drawNpcs();
@@ -796,8 +810,10 @@ function drawOtherPlayerSprite(p) {
   const fi = Math.min(Math.floor(p.animFrame || 0), ad.n - 1);
   const sx = (fi % ad.cols) * fw;
   const sy = Math.floor(fi / ad.cols) * fh;
-  const dh = 80, dw = Math.round(dh * fw / fh);
-  const dx = Math.round(p.x - dw / 2), dy = Math.round(p.y - dh * 0.62);
+  // Float position + bilinear filtering — see drawSprite for rationale
+  const dh = 80, dw = dh * fw / fh;
+  const dx = p.x - dw / 2;
+  const dy = p.y - dh * 0.62;
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
   ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);

@@ -188,8 +188,9 @@ function drawEnemySprite(e, dt) {
   const sx = e._animFrame * frameW;
   const sy = row * frameH;
   const ds = e.size * 4.5;
+  // Float position + bilinear filtering — see drawSprite for rationale
   ctx.drawImage(img, sx, sy, frameW, frameH,
-    Math.round(e.x - ds * 0.5), Math.round(e.y - ds * 0.80),
+    e.x - ds * 0.5, e.y - ds * 0.80,
     ds, ds);
   return true;
 }
@@ -347,9 +348,16 @@ function drawSprite(p, tint) {
   const sy = Math.floor(fi / ad.cols) * fh;
 
   const dh = 80;
-  const dw = Math.round(dh * fw / fh);
-  const dx = Math.round(p.x - dw / 2);
-  const dy = Math.round(p.y - dh * 0.62);
+  // Exact ratio, NOT rounded: at DPR 2 the rasterized cell (e.g. 140×120)
+  // maps 1:1 onto device pixels only when dw×ZOOM×DPR === cell width;
+  // rounding dw to a whole world px rescales 140→139.5 device px and makes
+  // columns shimmer during animation.
+  const dw = dh * fw / fh;
+  // Float position on purpose — sub-pixel rendering with bilinear filtering
+  // (enabled in render() after the tile blit) is what makes motion smooth;
+  // any per-frame rounding here brings back ±1 px flicker while running.
+  const dx = p.x - dw / 2;
+  const dy = p.y - dh * 0.62;
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
