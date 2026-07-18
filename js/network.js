@@ -95,6 +95,15 @@ function netConnect(onReady) {
       const ex = serverEnemiesMap.get(se.id);
       if (ex) {
         ex.hp = se.hp; ex.maxHp = se.maxHp;
+        // Compute facing + move signal from server position delta (not client lerp)
+        const sdx = se.x - (ex.targetX ?? ex.x);
+        const sdy = se.y - (ex.targetY ?? ex.y);
+        const sdist = Math.abs(sdx) + Math.abs(sdy);
+        if (sdist > 0.3) {
+          ex._moveTimer = 0.35;
+          if (Math.abs(sdx) >= Math.abs(sdy)) ex._facing = sdx > 0 ? 'right' : 'left';
+          else                                  ex._facing = sdy > 0 ? 'down'  : 'up';
+        }
         ex.targetX = se.x; ex.targetY = se.y;
         ex.aggro = se.aggro;
         if (se.hurtTimer > (ex.hurtTimer || 0)) ex.hurtTimer = se.hurtTimer;
