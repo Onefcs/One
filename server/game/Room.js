@@ -103,6 +103,7 @@ class Room {
         if (closestD < e.size + 20 && e.atkTimer <= 0) {
           e.atkTimer = 1.4 + Math.random() * 0.6;
           e.atkAnimTimer = 0.9;
+          e._atkPulse = true;
           const dmg = Math.max(1, e.atk - (closest.def || 0));
           closest.hp = Math.max(0, closest.hp - dmg);
           this.io.to(closest.socketId).emit('playerHurt', {
@@ -140,7 +141,7 @@ class Room {
         nearEnemies.push({
           id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
           name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
-          atkAnimTimer: e.atkAnimTimer > 0 ? e.atkAnimTimer : 0,
+          atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
         });
       });
 
@@ -149,7 +150,7 @@ class Room {
 
     // Update delta markers after all per-player emits
     this.enemies.forEach(e => {
-      if (e.hp > 0) { e._sx = e.x; e._sy = e.y; e._shp = e.hp; }
+      if (e.hp > 0) { e._sx = e.x; e._sy = e.y; e._shp = e.hp; e._atkPulse = false; }
     });
   }
 

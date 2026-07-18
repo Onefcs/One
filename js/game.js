@@ -458,13 +458,16 @@ function update(dt) {
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if (e.targetX !== undefined) {
       const dx = e.targetX - e.x, dy = e.targetY - e.y;
-      if (dx * dx + dy * dy > 0.01) {
+      const d2 = dx * dx + dy * dy;
+      if (d2 > 1) {
         const ex = e.x - player.x, ey = e.y - player.y;
         if (ex * ex + ey * ey < _LERP_R2) {
           e.x += dx * lk; e.y += dy * lk; // smooth lerp for nearby enemies
         } else {
           e.x = e.targetX; e.y = e.targetY; // instant snap — off-screen anyway
         }
+      } else if (d2 < 0.25) {
+        e.x = e.targetX; e.y = e.targetY;  // snap exactly within 0.5px
       }
     }
   });

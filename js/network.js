@@ -98,7 +98,7 @@ function netConnect(onReady) {
         ex.targetX = se.x; ex.targetY = se.y;
         ex.aggro = se.aggro;
         if (se.hurtTimer > (ex.hurtTimer || 0)) ex.hurtTimer = se.hurtTimer;
-        if (se.atkAnimTimer > (ex.atkAnimTimer || 0)) ex.atkAnimTimer = se.atkAnimTimer;
+        if (se.atkAnimTimer > 0) ex.atkAnimTimer = se.atkAnimTimer;
       } else {
         const newE = { ...se, targetX: se.x, targetY: se.y };
         serverEnemies.push(newE);
