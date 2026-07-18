@@ -839,6 +839,16 @@ function selectChar(type) {
   netSelectChar(type, savedStats);
 }
 
+// Pre-rendered player shadow (rx=13,ry=5 ellipse) — replaces per-frame ctx.ellipse+fill
+const _playerShadow = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = 32; cv.height = 14;
+  const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(0,0,0,.3)';
+  c.beginPath(); c.ellipse(16, 7, 13, 5, 0, 0, Math.PI * 2); c.fill();
+  return cv;
+})();
+
 function _buildPlayerNameCanvas(p) {
   const uname = p.username || '?';
   const pvp = !!p.pvpMode;
@@ -883,8 +893,7 @@ function drawOtherPlayerSprite(p) {
   const dh = 80, dw = dh * fw / fh;
   const dx = p.x - dw / 2;
   const dy = p.y - dh * 0.62;
-  ctx.fillStyle = 'rgba(0,0,0,.3)';
-  ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(_playerShadow, p.x - 16, p.y + 11);
   ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
 }

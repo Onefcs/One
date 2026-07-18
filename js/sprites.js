@@ -371,12 +371,12 @@ function _rasterizeSheet(img, ad, def) {
   return cv;
 }
 
-// A cache entry is drawable if it's a rasterized canvas, or an Image that
-// finished loading (the fallback while rasterization is still pending).
+// A cache entry is drawable only after rasterization (canvas). Raw Images are
+// never used for drawing — even a loaded Image can be 3360×2880px (warrior),
+// and downsampling it per frame at 6× on mobile GPU costs 20ms+.
 function _sheetReady(entry) {
   if (!entry) return false;
-  if (entry.naturalWidth !== undefined) return entry.complete && entry.naturalWidth > 0;
-  return true; // canvas
+  return entry.naturalWidth === undefined; // true only for rasterized canvas
 }
 
 // Char-select shows 5 idle previews at once — only the 'front-idle' frame is
