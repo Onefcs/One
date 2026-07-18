@@ -335,6 +335,24 @@ function netConnect(onReady) {
     _addChatMsg(username, text);
   });
 
+  socket.on('chatHistory', (msgs) => {
+    if (!Array.isArray(msgs)) return;
+    const el = document.getElementById('chat-msgs');
+    if (!el) return;
+    el.innerHTML = '';
+    _chatMsgs.length = 0;
+    msgs.forEach(({ username, text, time }) => {
+      _chatMsgs.push({ username, text, time });
+      const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
+      const isMe = myName && username === myName;
+      const row = document.createElement('div');
+      row.className = 'chat-row';
+      row.innerHTML = `<div class="chat-row-hdr"><span class="chat-name${isMe ? ' is-me' : ''}">${_escHtml(username)}</span><span class="chat-time">${time}</span></div><div class="chat-text">${_escHtml(text)}</div>`;
+      el.appendChild(row);
+    });
+    el.scrollTop = el.scrollHeight;
+  });
+
   socket.on('disconnect', () => {
     socket = null;
     serverEnemies = [];
