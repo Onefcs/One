@@ -141,15 +141,34 @@ function drawMapPanel() {
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
+  const rarityNames  = ['Common','Uncommon','Rare','Epic','Legendary'];
+  const rarityColors = ['#aaa','#4af','#fa4','#c55ef5','#ff8c00'];
   grid.innerHTML = Array.from({ length: 20 }, (_, i) => {
-    const n = i + 1;
-    const th = getTheme(n);
-    return `<div class="floor-btn${n === dungeonLvl ? ' active' : ''}" onclick="goToFloor(${n})" title="${th.name}">${n}</div>`;
+    const n   = i + 1;
+    const th  = getTheme(n);
+    const cur = n === dungeonLvl;
+    const maxEIdx    = Math.min(6, 1 + Math.floor(n / 2));
+    const enemyNames = ENEMY_DEF.slice(0, maxEIdx + 1).map(e => e.name).join(', ');
+    const maxRarIdx  = Math.min(4, Math.max(0, Math.floor((n - 1) / 4)));
+    const dropRar    = rarityNames[Math.min(maxRarIdx + 1, 4)];
+    const dropColor  = rarityColors[Math.min(maxRarIdx + 1, 4)];
+    return `
+      <div class="floor-item${cur ? ' active' : ''}">
+        <div class="floor-item-left" onclick="goToFloor(${n})">
+          <div class="floor-item-row1">
+            <span class="floor-item-num">Этаж ${n}</span>
+            <span class="floor-item-loc">${th.name}</span>
+            ${cur ? '<span class="floor-item-cur">ВЫ ЗДЕСЬ</span>' : ''}
+          </div>
+          <div class="floor-item-brief">${enemyNames}, ДЕМОН · до <span style="color:${dropColor}">${dropRar}</span></div>
+        </div>
+        <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
+      </div>`;
   }).join('');
 }
 
-function showFloorInfo() {
-  const floor = dungeonLvl || 1;
+function showFloorInfo(floor) {
+  floor = floor || dungeonLvl || 1;
   const maxEIdx = Math.min(6, 1 + Math.floor(floor / 2));
   const sc      = 1 + (floor - 1) * 0.28;
   const atkSc   = 1 + (floor - 1) * 0.18;

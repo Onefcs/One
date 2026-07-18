@@ -544,17 +544,42 @@ canvas { display:block; width:100%; height:100%; }
 .map-legend { display:flex; justify-content:center; gap:18px; padding:8px 16px 4px; font-size:12px; color:#484860; }
 .floor-section { padding:0 10px 16px; }
 .floor-section .sec-title { padding:8px 0 8px; }
-.floor-grid {
-  display:grid; grid-template-columns:repeat(5,1fr); gap:5px;
+.floor-list { display:flex; flex-direction:column; gap:5px; }
+.floor-item {
+  display:flex; align-items:center; gap:8px;
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06);
+  border-radius:10px; padding:10px 10px 10px 12px;
+  transition:border-color .15s,background .15s;
 }
-.floor-btn {
-  padding:11px 4px; border:1px solid #1c1c2c; border-radius:6px;
-  text-align:center; font-size:13px; font-weight:bold; color:#3a3a58;
-  cursor:pointer; background:rgba(255,255,255,0.01);
-  transition:all 0.15s; user-select:none;
+.floor-item.active {
+  border-color:rgba(255,153,0,.35); background:rgba(255,153,0,.06);
 }
-.floor-btn:active { opacity:0.7; }
-.floor-btn.active { border-color:#f90; color:#f90; background:rgba(255,153,0,0.1); }
+.floor-item-left {
+  flex:1; min-width:0; cursor:pointer;
+}
+.floor-item-left:active { opacity:.7; }
+.floor-item-row1 {
+  display:flex; align-items:center; gap:6px; margin-bottom:3px;
+}
+.floor-item-num {
+  font-size:11px; font-weight:700; color:#555; flex-shrink:0;
+}
+.floor-item-cur {
+  font-size:9px; color:#f90; background:rgba(255,153,0,.15);
+  border:1px solid rgba(255,153,0,.3); border-radius:4px;
+  padding:1px 5px; letter-spacing:.5px;
+}
+.floor-item-loc { font-size:13px; font-weight:700; color:#bbb; }
+.floor-item-brief { font-size:10px; color:#3a3a55; margin-top:1px; }
+.floor-item-btn {
+  flex-shrink:0; padding:6px 10px;
+  border:1px solid rgba(255,255,255,.1); border-radius:7px;
+  background:rgba(255,255,255,.05); color:#668;
+  font-size:11px; font-weight:600; cursor:pointer;
+  transition:background .15s,color .15s; touch-action:manipulation;
+}
+.floor-item-btn:hover  { background:rgba(255,255,255,.1); color:#aac; }
+.floor-item-btn:active { opacity:.7; }
 
 /* ── BOTTOM NAV ────────────────────────── */
 #bottom-nav {
