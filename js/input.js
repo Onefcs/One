@@ -201,7 +201,7 @@ function _checkAttackBtnTouch(cx, cy) {
   if (!player) return false;
   const ab = getAttackBtnPos();
   if (Math.hypot(cx - ab.x, cy - ab.y) < ab.r + 8) {
-    player.atkTimer = -1; // force attack on next frame
+    if ((player.atkAnimTimer || 0) <= 0) player.atkTimer = -1; // ignore while animation is playing
     return true;
   }
   return false;

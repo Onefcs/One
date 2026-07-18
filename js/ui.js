@@ -899,11 +899,22 @@ function drawAttackButton() {
   const ab = _uiBtnGrads.atkBtn;
   const F = 'system-ui, -apple-system, Arial';
   const hasTarget = !!targetId;
-  const ready = (player.atkTimer || 0) <= 0;
+  const animBusy = (player.atkAnimTimer || 0) > 0;
+  const ready = (player.atkTimer || 0) <= 0 && !animBusy;
 
   ctx.save();
   ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
+
+  // cooldown arc overlay while attack animation is playing
+  if (animBusy && player.castDuration > 0) {
+    const frac = (player.atkAnimTimer || 0) / player.castDuration;
+    ctx.strokeStyle = 'rgba(255,80,40,0.55)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(ab.x, ab.y, ab.r - 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+    ctx.stroke();
+  }
 
   const borderColor = !autoAttackMode
     ? (hasTarget && ready ? 'rgba(255,120,60,0.9)' : 'rgba(80,100,220,0.7)')
@@ -915,7 +926,7 @@ function drawAttackButton() {
     ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  ctx.globalAlpha = autoAttackMode ? 0.4 : 1;
+  ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
   const iconColor = hasTarget && ready ? '#ff9060' : (autoAttackMode ? '#404060' : '#a0b4ff');
   drawIconCtx(ctx, 'sword', ab.x, ab.y - 5, 20, iconColor);
 
