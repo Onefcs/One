@@ -83,6 +83,10 @@ function _drawPerf(frameMs) {
 
 // UI overlay canvas (separate DOM element at native DPR) — rebuilt ~20fps
 let _uiOverlay, _uiCtx = null, _uiLastMs = 0;
+// Camera position cached for UI overlay coordinate conversion
+let _lastCamX = 0, _lastCamY = 0;
+// Player sprite state and previous name label bounds for 60fps name tracking
+let _lastPlayerUsedSprite = false, _prevPlayerNameBounds = null;
 
 // Reusable sentinel for pvp closest-target — avoids per-frame object spread
 const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
@@ -532,11 +536,39 @@ function update(dt) {
 //  RENDER
 // ─────────────────────────────────────────────────────────
 
+// Draw the player's name label at 60fps on the UI canvas using screen coords,
+// clearing only the label's bounding box each frame so no ghosting occurs.
+function _drawPlayerNameOnUI() {
+  const barTop = _lastPlayerUsedSprite ? player.y - 46 : player.y - 28;
+  const nameY = barTop - 4;
+  const sx = (player.x - _lastCamX) * ZOOM;
+  const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
+  const displayName = (netUsername || player.charDef.name).slice(0, 16);
+  const _c = ctx; ctx = _uiCtx;
+  if (_prevPlayerNameBounds) {
+    const b = _prevPlayerNameBounds;
+    ctx.clearRect(b.x, b.y, b.w, b.h);
+  }
+  ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeText(displayName, sx, sy);
+  ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
+  ctx.fillText(displayName, sx, sy);
+  const tw = ctx.measureText(displayName).width;
+  _prevPlayerNameBounds = { x: sx - tw / 2 - 6, y: sy - 14, w: tw + 12, h: 18 };
+  if (pvpMode) {
+    drawIconCtx(_uiCtx, 'pvpOn', sx + 22 + 8, sy - 3, 9, '#f55');
+    _prevPlayerNameBounds.w += 26;
+  }
+  ctx = _c;
+}
+
 // Render all HUD/UI elements to the overlay canvas at native DPR (~20fps)
 function _renderUI() {
   if (!_uiCtx) return;
   const uiDPR = window.devicePixelRatio || 1;
   _uiCtx.clearRect(0, 0, _uiOverlay.width, _uiOverlay.height);
+  _prevPlayerNameBounds = null; // cleared by the full wipe above
   _uiCtx.setTransform(uiDPR, 0, 0, uiDPR, 0, 0);
   const _c = ctx; ctx = _uiCtx;
   drawHeader();
@@ -599,8 +631,8 @@ function render(dt, ts) {
   // both visible as micro-jitter. Rounding camera.x*ZOOM*DPR to an integer
   // makes every world-grid-snapped draw land exactly on device pixels.
   const _grid = ZOOM * DPR;
-  const _camX = Math.round(camera.x * _grid) / _grid;
-  const _camY = Math.round(camera.y * _grid) / _grid;
+  const _camX = _lastCamX = Math.round(camera.x * _grid) / _grid;
+  const _camY = _lastCamY = Math.round(camera.y * _grid) / _grid;
 
   // Cache view bounds so _isOnScreen() avoids divisions on every call
   const _vM = 60;
@@ -757,7 +789,7 @@ function render(dt, ts) {
   // Player
   {
     const hurtTint = player.hurtTimer > 0 ? 'rgba(255,40,40,0.55)' : null;
-    const usedSprite = drawSprite(player, hurtTint);
+    const usedSprite = _lastPlayerUsedSprite = drawSprite(player, hurtTint);
     if (!usedSprite) {
       ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(player.x, player.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = hurtTint ? '#ff4444' : player.charDef.color;
@@ -776,18 +808,7 @@ function render(dt, ts) {
 
     const barTop = usedSprite ? player.y - 46 : player.y - 28;
     const bw = 44, bh = 4, bx2 = player.x - bw / 2;
-    const nameY = barTop - 4;
     const hpPct = Math.max(0, Math.min(1, player.hp / player.maxHp));
-    const displayName = (netUsername || player.charDef.name).slice(0, 16);
-
-    ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-    ctx.strokeText(displayName, player.x, nameY);
-    ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
-    ctx.fillText(displayName, player.x, nameY);
-    if (pvpMode) {
-      drawIconCtx(ctx, 'pvpOn', player.x + bw / 2 + 8, nameY - 3, 9, '#f55');
-    }
 
     ctx.fillStyle = 'rgba(30,0,0,0.75)'; ctx.fillRect(bx2, barTop, bw, bh);
     if (hpPct > 0) {
@@ -809,6 +830,8 @@ function render(dt, ts) {
   // UI overlay — rendered to separate canvas at native DPR (~20fps), no blit needed
   ctx.globalAlpha = 1;
   if (_uiCtx && ts - _uiLastMs >= 50) { _uiLastMs = ts; _renderUI(); }
+  // Player name drawn at 60fps on UI canvas so it tracks movement without lag
+  if (_uiCtx && player && dungeon) _drawPlayerNameOnUI();
   // Joystick drawn directly at full 60fps — knob tracks live touch position
   if (activeTab === 0) drawJoystick();
 
@@ -1194,7 +1217,9 @@ function loop(ts) {
   _profRender = _t2 - _t1;
   _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
   _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
-  _drawPerf(frameMs);
+  // Draw perf overlay on UI canvas so it's always on top and at native DPR
+  if (_uiCtx) { const _c = ctx; ctx = _uiCtx; _drawPerf(frameMs); ctx = _c; }
+  else { _drawPerf(frameMs); }
   requestAnimationFrame(loop);
 }
 
