@@ -447,32 +447,32 @@ function update(dt) {
   npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
   if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
-  // Dead reckoning + server correction (same principle as enemy AI)
+  // Snapshot interpolation — render others at (serverNow - INTERP_MS)
+  // Always between two known positions → no prediction errors, perfectly linear
+  const _renderT = _svrTimeOffset !== null
+    ? Date.now() + _svrTimeOffset - _INTERP_MS
+    : 0;
   otherPlayers.forEach((op, id) => {
+    const buf = op._buf;
     const prevX = op.x, prevY = op.y;
-
-    // Extrapolate using last-derived velocity
-    if (op._vx !== undefined) {
-      op.x += op._vx * dt;
-      op.y += op._vy * dt;
-    }
-
-    // Server correction: small nudge toward authoritative position each frame
-    if (op.targetX !== undefined) {
-      const cedx = op.targetX - op.x, cedy = op.targetY - op.y;
-      const err2 = cedx * cedx + cedy * cedy;
-      if (err2 > 400 * 400) {
-        // Large jump (floor change / respawn) — snap instantly
-        op.x = op.targetX; op.y = op.targetY;
-        op._vx = 0; op._vy = 0;
-      } else if (err2 > 9) {
-        // Small drift — gentle nudge (same coefficients as enemy correction)
-        const k = err2 > 150 * 150 ? 0.2 : 0.05;
-        op.x += cedx * k;
-        op.y += cedy * k;
+    if (buf && buf.length >= 2 && _renderT > 0) {
+      // Walk back to find the two snapshots that bracket _renderT
+      let i = buf.length - 2;
+      while (i > 0 && buf[i].t > _renderT) i--;
+      const s0 = buf[i], s1 = buf[i + 1];
+      const span = s1.t - s0.t;
+      if (span < 1) {
+        op.x = s1.x; op.y = s1.y;
+      } else {
+        const a = Math.max(0, Math.min(1, (_renderT - s0.t) / span));
+        op.x = s0.x + (s1.x - s0.x) * a;
+        op.y = s0.y + (s1.y - s0.y) * a;
       }
+    } else if (op.targetX !== undefined) {
+      // Fallback: lerp until 2 snapshots accumulate (~50ms after join)
+      op.x += (op.targetX - op.x) * Math.min(1, 40 * dt);
+      op.y += (op.targetY - op.y) * Math.min(1, 40 * dt);
     }
-
     const _mdx = op.x - prevX, _mdy = op.y - prevY;
     op.moving = _mdx * _mdx + _mdy * _mdy > 0.1;
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;

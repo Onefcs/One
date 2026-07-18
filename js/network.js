@@ -8,8 +8,10 @@ const SERVER_URL = (() => {
 
 let _savedData = null;
 
-// Dead-reckoning clock sync (unused value kept for perf display)
-let _svrTimeOffset = 0;
+// Snapshot interpolation state
+let _svrTimeOffset = null; // null = not yet calibrated
+const _INTERP_MS  = 75;   // render others 75ms in the past (3 server ticks)
+const _SNAP_MAX   = 10;   // ~250ms of buffer
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
@@ -69,11 +71,15 @@ function netConnect(onReady) {
     const _gs0 = performance.now();
     const myId = socket.id;
 
+    // Calibrate server↔client clock once, then keep EMA
+    if (_svrTimeOffset === null) _svrTimeOffset = t - Date.now();
+    else _svrTimeOffset = _svrTimeOffset * 0.95 + (t - Date.now()) * 0.05;
+
     players.forEach(p => {
       if (p.id === myId) return;
       if (!otherPlayers.has(p.id)) {
         otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
-          _vx: 0, _vy: 0, _prevSnap: { x: p.x, y: p.y, t },
+          _buf: [{ x: p.x, y: p.y, t }],
           animFrame: 0, animTimer: 0, moving: false });
         if (p.type) loadSprites(p.type, () => {});
       } else {
@@ -84,19 +90,10 @@ function netConnect(onReady) {
         op.pvpMode = p.pvpMode || false;
         if (op.x === undefined) { op.x = p.x; op.y = p.y; }
 
-        // Dead-reckoning velocity: derive from consecutive server positions
-        const ps = op._prevSnap;
-        if (ps) {
-          const dtS = (t - ps.t) / 1000;
-          if (dtS > 0.001) {
-            const rvx = (p.x - ps.x) / dtS;
-            const rvy = (p.y - ps.y) / dtS;
-            // EMA smoothing to damp jitter from uneven packet timing
-            op._vx = op._vx * 0.4 + rvx * 0.6;
-            op._vy = op._vy * 0.4 + rvy * 0.6;
-          }
-        }
-        op._prevSnap = { x: p.x, y: p.y, t };
+        // Snapshot ring buffer
+        if (!op._buf) op._buf = [];
+        op._buf.push({ x: p.x, y: p.y, t });
+        if (op._buf.length > _SNAP_MAX) op._buf.shift();
         op.targetX = p.x; op.targetY = p.y;
 
         if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
