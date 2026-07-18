@@ -106,8 +106,28 @@ function netConnect(onReady) {
         }
         ex.targetX = se.x; ex.targetY = se.y;
         ex.aggro = se.aggro;
-        if (se.hurtTimer > (ex.hurtTimer || 0)) ex.hurtTimer = se.hurtTimer;
-        if (se.atkAnimTimer > 0) ex.atkAnimTimer = se.atkAnimTimer;
+        // (hurtTimer arrives via the enemyHurt event, not gameState)
+        if (se.atkAnimTimer > 0) {
+          ex.atkAnimTimer = se.atkAnimTimer;
+          ex._atkDone = false;
+          // Face the victim — the server always strikes the closest player,
+          // so reconstruct that choice client-side (self + visible others)
+          let tx, ty, best = Infinity;
+          if (player && player.hp > 0) {
+            best = (player.x - se.x) ** 2 + (player.y - se.y) ** 2;
+            tx = player.x; ty = player.y;
+          }
+          otherPlayers.forEach(op => {
+            if (op.x == null || (op.hp || 0) <= 0) return;
+            const d2 = (op.x - se.x) ** 2 + (op.y - se.y) ** 2;
+            if (d2 < best) { best = d2; tx = op.x; ty = op.y; }
+          });
+          if (tx !== undefined) {
+            const fdx = tx - se.x, fdy = ty - se.y;
+            if (Math.abs(fdx) >= Math.abs(fdy)) ex._facing = fdx > 0 ? 'right' : 'left';
+            else                                ex._facing = fdy > 0 ? 'down'  : 'up';
+          }
+        }
       } else {
         const newE = { ...se, targetX: se.x, targetY: se.y };
         serverEnemies.push(newE);
@@ -173,12 +193,22 @@ function netConnect(onReady) {
     const py = ey ?? (e ? e.y : player?.y ?? 0);
     if (dmg) dmgNum(px, py - 20, dmg, '#ff4');
     spawnBurst(px, py, color || '#f80', 8);
-    serverEnemiesMap.delete(id);
-    let j = 0;
-    for (let i = 0; i < serverEnemies.length; i++) {
-      if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
+    const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
+    if (dd) {
+      // Keep the corpse just long enough to play the death animation;
+      // game.js removes it when _deathTimer expires. All targeting/collision
+      // loops skip hp <= 0, so the corpse is inert.
+      e.hp = 0;
+      e.atkAnimTimer = 0; e.hurtTimer = 0; e._moveTimer = 0;
+      e._deathTimer = dd.cols / dd.fps + 0.1;
+    } else {
+      serverEnemiesMap.delete(id);
+      let j = 0;
+      for (let i = 0; i < serverEnemies.length; i++) {
+        if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
+      }
+      serverEnemies.length = j;
     }
-    serverEnemies.length = j;
     if (xp && player) gainXP(xp);
     if (gotLoot && player) applyLootToInventory();
     if (bossStone && player) {

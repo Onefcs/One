@@ -453,10 +453,12 @@ function update(dt) {
       }
     }
   });
+  let _corpseExpired = false;
   serverEnemies.forEach(e => {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
+    if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
     if (e.targetX !== undefined) {
       const dx = e.targetX - e.x, dy = e.targetY - e.y;
       const d2 = dx * dx + dy * dy;
@@ -472,6 +474,15 @@ function update(dt) {
       }
     }
   });
+  if (_corpseExpired) {
+    let j = 0;
+    for (let i = 0; i < serverEnemies.length; i++) {
+      const e = serverEnemies[i];
+      if (e._deathTimer !== undefined && e._deathTimer <= 0) { serverEnemiesMap.delete(e.id); continue; }
+      serverEnemies[j++] = e;
+    }
+    serverEnemies.length = j;
+  }
 
   updateCamera(dt);
 }
@@ -648,6 +659,7 @@ function render(dt, ts) {
       ctx.fillStyle = '#000';
       ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
     }
+    if (e.hp <= 0) return; // corpse playing its death animation — no bars/name/ring
     const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
     const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.80 - 8;
     if (e.isBoss) {

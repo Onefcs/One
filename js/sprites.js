@@ -92,7 +92,7 @@ const SPRITE_DEF = {
 };
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
-// 64×64 frames, single row used (row 0). Golems use 128×128 frames.
+// 64×64 frames (golems 128×128), 4 directional rows: 0=down 1=up 2=left 3=right.
 const ENEMY_SPRITE_DEF = {
   // ── Floor 1: Goblins ────────────────────────────────────────────────────
   goblin_guard: {
@@ -283,6 +283,9 @@ function loadEnemySprites(eid, onDone) {
   _enemySpriteLoadPromises[eid].then(onDone);
 }
 
+// Sheet rows are uniform across all enemy sheets: 0=down 1=up 2=left 3=right
+const ENEMY_FACING_ROW = { down: 0, up: 1, left: 2, right: 3 };
+
 function drawEnemySprite(e, dt) {
   const def = ENEMY_SPRITE_DEF[e.eid];
   if (!def) return false;
@@ -290,14 +293,12 @@ function drawEnemySprite(e, dt) {
   const cache = enemySpriteCache[e.eid];
 
   if (!e._facing) e._facing = 'down';
-  const FACING_ROW = { down: 0, up: 1, left: 2, right: 3 };
 
   let key;
-  if (e.hp <= 0)                           key = 'death';
-  else if (e.hurtTimer > 0.05)             key = def.sheets['hurt'] ? 'hurt' : 'idle';
-  else if (e.atkAnimTimer > 0)             key = 'attack';
+  if (e.hp <= 0)                               key = 'death';
+  else if (e.atkAnimTimer > 0 && !e._atkDone)  key = 'attack';
   else if (e.aggro && (e._moveTimer || 0) > 0) key = 'walk';
-  else                                     key = 'idle';
+  else                                         key = 'idle';
 
   const sh = def.sheets[key];
   const img = cache[key];
@@ -310,12 +311,17 @@ function drawEnemySprite(e, dt) {
   while (e._animTimer >= fd) {
     e._animTimer -= fd;
     e._animFrame++;
-    if (e._animFrame >= sh.cols) e._animFrame = sh.loop ? 0 : sh.cols - 1;
+    if (e._animFrame >= sh.cols) {
+      e._animFrame = sh.loop ? 0 : sh.cols - 1;
+      // Swing played through — drop to idle instead of freezing on the last
+      // frame for the rest of the server's 0.9s attack window
+      if (!sh.loop && key === 'attack') e._atkDone = true;
+    }
   }
 
   const { frameW, frameH } = def;
   const sx = e._animFrame * frameW;
-  const sy = FACING_ROW[e._facing] * frameH;
+  const sy = ENEMY_FACING_ROW[e._facing] * frameH;
   const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
   // Float position + bilinear filtering — see drawSprite for rationale
   ctx.drawImage(img, sx, sy, frameW, frameH,
