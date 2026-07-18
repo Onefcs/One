@@ -87,14 +87,24 @@
 <canvas id="canvas"></canvas>
 <canvas id="ui-canvas" style="position:absolute;inset:0;pointer-events:none;"></canvas>
 
-<!-- Chat overlay (shown during gameplay) -->
-<div id="chat-overlay" style="display:none">
-  <div id="chat-msgs"></div>
-  <div id="chat-input-row" style="display:none">
-    <input id="chat-input" type="text" maxlength="100" placeholder="Сообщение..." autocomplete="off">
-    <button id="chat-send-btn" onclick="_chatSend()">→</button>
+<!-- Chat -->
+<button id="chat-btn" onclick="_chatOpen()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <span id="chat-badge"></span>
+</button>
+<div id="chat-panel">
+  <div class="cp-hdr">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="#c8a0ff" stroke-width="2" fill="none" style="flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span class="cp-title">Чат</span>
+    <button class="cp-close" onclick="_chatClose()">✕</button>
   </div>
-  <button id="chat-btn" onclick="_chatToggle()">💬</button>
+  <div id="chat-msgs"></div>
+  <div class="cp-foot">
+    <input id="chat-input" type="text" maxlength="100" placeholder="Сообщение..." autocomplete="off" inputmode="text">
+    <button id="chat-send-btn" onclick="_chatSend()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
+    </button>
+  </div>
 </div>
 
 <!-- NPC Talk button (shown when near NPC) -->
@@ -229,67 +239,109 @@
 </div><!-- #app -->
 
 <style>
-#chat-overlay {
-  position:absolute; bottom:70px; left:8px; width:min(340px, calc(100vw - 16px));
-  z-index:60; pointer-events:none;
-  display:flex; flex-direction:column; gap:4px;
+#chat-btn {
+  position:absolute; bottom:72px; left:10px; z-index:62;
+  pointer-events:all; touch-action:manipulation;
+  width:42px; height:42px; border-radius:50%;
+  background:rgba(10,5,25,0.88); border:1px solid rgba(140,90,255,0.4);
+  color:#c8a0ff; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 12px rgba(0,0,0,0.45);
 }
+#chat-btn:active { opacity:0.75; }
+#chat-badge {
+  position:absolute; top:-4px; right:-4px;
+  background:#e74c3c; color:#fff;
+  font-size:9px; font-weight:700; line-height:1;
+  min-width:17px; height:17px; border-radius:9px;
+  display:none; align-items:center; justify-content:center;
+  padding:0 3px; border:1.5px solid #0a0515;
+}
+#chat-panel {
+  position:absolute; left:0; right:0; bottom:62px;
+  height:min(360px,56vh);
+  background:rgba(7,5,16,0.97);
+  border-top:1px solid rgba(90,50,180,0.45);
+  display:flex; flex-direction:column;
+  z-index:62; pointer-events:all;
+  transform:translateY(100%);
+  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+#chat-panel.open { transform:translateY(0); }
+#chat-panel, #chat-panel * { touch-action:pan-y; }
+#chat-panel .cp-foot, #chat-panel .cp-foot * { touch-action:manipulation; }
+.cp-hdr {
+  display:flex; align-items:center; gap:8px; padding:10px 14px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  background:rgba(12,8,28,0.99); flex-shrink:0;
+}
+.cp-title { flex:1; font-size:14px; font-weight:700; color:#c8a0ff; }
+.cp-close {
+  background:none; border:none; color:#555; font-size:20px;
+  cursor:pointer; padding:0 2px; line-height:1; touch-action:manipulation;
+}
+.cp-close:active { color:#aaa; }
 #chat-msgs {
-  display:flex; flex-direction:column; gap:2px;
-  max-height:120px; overflow-y:auto; overflow-x:hidden;
+  flex:1; overflow-y:auto; padding:10px 12px;
+  display:flex; flex-direction:column; gap:8px;
+  -webkit-overflow-scrolling:touch;
 }
-.chat-row {
-  background:rgba(0,0,0,0.65); border-radius:6px;
-  padding:3px 7px; font-size:12px; line-height:1.4;
-  color:#ddd; word-break:break-word;
-  opacity:1; transition:opacity 0.4s;
-  pointer-events:none;
-}
-.chat-name { color:#f90; font-weight:700; }
-#chat-input-row {
-  display:flex; gap:4px; pointer-events:all;
+.chat-row { display:flex; flex-direction:column; gap:1px; }
+.chat-row-hdr { display:flex; align-items:baseline; gap:6px; }
+.chat-name { font-size:11px; font-weight:700; color:#f90; }
+.chat-name.is-me { color:#3ef07a; }
+.chat-time { font-size:10px; color:#3a3a5a; }
+.chat-text { font-size:13px; color:#ccc; line-height:1.45; word-break:break-word; }
+.cp-foot {
+  display:flex; gap:8px; padding:8px 10px;
+  border-top:1px solid rgba(255,255,255,0.06);
+  background:rgba(10,6,22,0.99); flex-shrink:0;
+  align-items:center;
 }
 #chat-input {
-  flex:1; padding:6px 10px; border:1px solid #333;
-  border-radius:8px; background:rgba(10,10,20,0.92);
-  color:#eee; font-size:13px; outline:none;
+  flex:1; padding:8px 14px;
+  border:1px solid rgba(100,60,200,0.4); border-radius:22px;
+  background:rgba(255,255,255,0.05); color:#eee;
+  font-size:14px; outline:none; touch-action:manipulation;
 }
+#chat-input::placeholder { color:#383858; }
 #chat-send-btn {
-  padding:6px 12px; border:none; border-radius:8px;
-  background:#f90; color:#000; font-weight:bold; cursor:pointer;
-}
-#chat-btn {
-  pointer-events:all; align-self:flex-start;
-  background:rgba(0,0,0,0.65); border:1px solid #333;
-  border-radius:50%; width:34px; height:34px;
-  font-size:16px; cursor:pointer; color:#fff;
+  width:38px; height:38px; flex-shrink:0; border:none; border-radius:50%;
+  background:linear-gradient(135deg,#5020a0,#7030c0);
+  color:#fff; cursor:pointer; touch-action:manipulation;
   display:flex; align-items:center; justify-content:center;
 }
+#chat-send-btn:active { opacity:0.75; }
 </style>
 <script>
-function _chatToggle() {
-  const row = document.getElementById('chat-input-row');
-  const inp = document.getElementById('chat-input');
-  const visible = row.style.display !== 'none';
-  row.style.display = visible ? 'none' : 'flex';
-  if (!visible) { inp.value = ''; inp.focus(); }
+let _chatUnread = 0;
+function _chatOpen() {
+  _chatUnread = 0;
+  const badge = document.getElementById('chat-badge');
+  if (badge) badge.style.display = 'none';
+  const panel = document.getElementById('chat-panel');
+  if (panel) {
+    panel.classList.add('open');
+    const msgs = document.getElementById('chat-msgs');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  }
+  setTimeout(() => { const i = document.getElementById('chat-input'); if (i) i.focus(); }, 300);
+}
+function _chatClose() {
+  const panel = document.getElementById('chat-panel');
+  if (panel) panel.classList.remove('open');
 }
 function _chatSend() {
   const inp = document.getElementById('chat-input');
   const txt = inp.value.trim();
   if (txt && typeof netChat === 'function') netChat(txt);
   inp.value = '';
-  document.getElementById('chat-input-row').style.display = 'none';
+  inp.focus();
 }
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const row = document.getElementById('chat-input-row');
-    if (row && row.style.display !== 'none') { _chatSend(); e.preventDefault(); }
-  }
-  if (e.key === 'Escape') {
-    const row = document.getElementById('chat-input-row');
-    if (row) row.style.display = 'none';
-  }
+  const panel = document.getElementById('chat-panel');
+  if (e.key === 'Enter' && panel && panel.classList.contains('open')) { _chatSend(); e.preventDefault(); }
+  if (e.key === 'Escape') _chatClose();
 });
 </script>
 <!-- Telegram Mini App SDK (available when opened inside Telegram) -->

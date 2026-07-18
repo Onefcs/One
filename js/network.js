@@ -342,8 +342,10 @@ function netConnect(onReady) {
     otherProjs = [];
     partyMembers = [];
     partyInvitePending = null;
-    const chatEl = document.getElementById('chat-overlay');
-    if (chatEl) chatEl.style.display = 'none';
+    const chatBtn = document.getElementById('chat-btn');
+    if (chatBtn) chatBtn.style.display = 'none';
+    const chatPanel = document.getElementById('chat-panel');
+    if (chatPanel) chatPanel.classList.remove('open');
   });
 }
 
@@ -470,17 +472,33 @@ function netChat(text) {
 
 const _chatMsgs = [];
 function _addChatMsg(username, text) {
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  _chatMsgs.push({ username, text, time });
+  if (_chatMsgs.length > 30) _chatMsgs.shift();
+
   const el = document.getElementById('chat-msgs');
   if (!el) return;
+
+  const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
+  const isMe = myName && username === myName;
+
   const row = document.createElement('div');
   row.className = 'chat-row';
-  row.innerHTML = `<span class="chat-name">${_escHtml(username)}</span><span class="chat-text"> ${_escHtml(text)}</span>`;
+  row.innerHTML = `<div class="chat-row-hdr"><span class="chat-name${isMe ? ' is-me' : ''}">${_escHtml(username)}</span><span class="chat-time">${time}</span></div><div class="chat-text">${_escHtml(text)}</div>`;
   el.appendChild(row);
-  // Keep last 20 messages in DOM
-  while (el.children.length > 20) el.removeChild(el.firstChild);
+  while (el.children.length > 30) el.removeChild(el.firstChild);
   el.scrollTop = el.scrollHeight;
-  // Auto-hide after 6s
-  setTimeout(() => { row.style.opacity = '0'; setTimeout(() => row.remove(), 400); }, 6000);
+
+  const panel = document.getElementById('chat-panel');
+  if (!panel || !panel.classList.contains('open')) {
+    if (typeof _chatUnread !== 'undefined') _chatUnread++;
+    const badge = document.getElementById('chat-badge');
+    if (badge) {
+      badge.textContent = (_chatUnread || 0) > 9 ? '9+' : String(_chatUnread || 1);
+      badge.style.display = 'flex';
+    }
+  }
 }
 
 function _escHtml(s) {
@@ -491,8 +509,8 @@ function _finishOnlineStart() {
   csHide();
   document.getElementById('bottom-nav').style.display = 'block';
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
-  const chatEl = document.getElementById('chat-overlay');
-  if (chatEl) chatEl.style.display = 'flex';
+  const chatBtn = document.getElementById('chat-btn');
+  if (chatBtn) chatBtn.style.display = 'flex';
   state = 'playing';
   setTab(0);
 }
