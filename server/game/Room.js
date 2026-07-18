@@ -145,7 +145,9 @@ class Room {
         });
       });
 
-      this.io.to(p.socketId).emit('gameState', { players: nearPlayers, enemies: nearEnemies });
+      // t: server tick timestamp — the client uses real tick spacing (setInterval
+      // drifts 45-60ms) to time snapshot playback at true velocity
+      this.io.to(p.socketId).emit('gameState', { players: nearPlayers, enemies: nearEnemies, t: now });
     });
 
     // Update delta markers after all per-player emits

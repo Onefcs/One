@@ -61,7 +61,7 @@ function netConnect(onReady) {
     csOnServerReady();
   });
 
-  socket.on('gameState', ({ players, enemies }) => {
+  socket.on('gameState', ({ players, enemies, t }) => {
     const myId = socket.id;
 
     players.forEach(p => {
@@ -101,19 +101,28 @@ function netConnect(onReady) {
         const sdist = Math.abs(sdx) + Math.abs(sdy);
         if (sdist > 0.3) {
           ex._moveTimer = 0.35;
-          if (Math.abs(sdx) >= Math.abs(sdy)) ex._facing = sdx > 0 ? 'right' : 'left';
-          else                                  ex._facing = sdy > 0 ? 'down'  : 'up';
+          // Facing with axis hysteresis: on diagonal paths |dx|≈|dy|, so a
+          // plain >= comparison flip-flops left/down every tick — keep the
+          // current axis unless the other is clearly (1.4x) dominant
+          const ax = Math.abs(sdx), ay = Math.abs(sdy);
+          let useX;
+          if (ax > ay * 1.4)      useX = true;
+          else if (ay > ax * 1.4) useX = false;
+          else useX = ex._facing === 'left' || ex._facing === 'right';
+          if (useX) ex._facing = sdx > 0 ? 'right' : 'left';
+          else      ex._facing = sdy > 0 ? 'down'  : 'up';
         }
         ex.targetX = se.x; ex.targetY = se.y;
         // De-jittered snapshot queue (played back in game.js). Socket delivery
-        // is bursty — several 50ms server ticks can arrive nearly at once —
-        // so reconstruct the server's uniform tick clock instead of using raw
-        // arrival times: each snapshot is stamped previous+50ms, kept within
-        // ±60ms of real arrival so the clock can't drift.
+        // is bursty — several server ticks can arrive nearly at once — so
+        // rebuild the server's tick clock: advance by the REAL tick spacing
+        // (packet t deltas; setInterval drifts 45-60ms), kept within ±60ms of
+        // real arrival so the clock can't drift.
         const _n = performance.now();
-        let _qt = ex._qt !== undefined ? ex._qt + 50 : _n;
+        const _step = (t && ex._st) ? Math.min(150, Math.max(15, t - ex._st)) : 50;
+        let _qt = ex._qt !== undefined ? ex._qt + _step : _n;
         if (_qt < _n - 60) _qt = _n - 60; else if (_qt > _n + 60) _qt = _n + 60;
-        ex._qt = _qt;
+        ex._qt = _qt; ex._st = t;
         (ex._q || (ex._q = [])).push({ x: se.x, y: se.y, t: _qt });
         if (ex._q.length > 12) ex._q.splice(0, ex._q.length - 12);
         ex.aggro = se.aggro;
@@ -140,7 +149,7 @@ function netConnect(onReady) {
           }
         }
       } else {
-        const newE = { ...se, targetX: se.x, targetY: se.y };
+        const newE = { ...se, targetX: se.x, targetY: se.y, _st: t };
         serverEnemies.push(newE);
         serverEnemiesMap.set(se.id, newE);
       }
