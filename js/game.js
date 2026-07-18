@@ -431,7 +431,8 @@ function update(dt) {
       const prevX = op.x, prevY = op.y;
       op.x += (op.targetX - op.x) * lk;
       op.y += (op.targetY - op.y) * lk;
-      op.moving = Math.hypot(op.x - prevX, op.y - prevY) > 0.5;
+      const _mdx = op.x - prevX, _mdy = op.y - prevY;
+      op.moving = _mdx * _mdx + _mdy * _mdy > 0.25;
     }
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
     if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
@@ -732,14 +733,14 @@ function render(dt, ts) {
     const bh = 4, bw = 38;
     const barTop = usedSprite ? p.y - 46 : p.y - 20;
     const bx = p.x - bw / 2;
-    const nameY = barTop - 4;
-    ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-    ctx.strokeText(p.username || '?', p.x, nameY);
-    ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
-    ctx.fillText(p.username || '?', p.x, nameY);
+    // Pre-rendered name canvas — rebuilt only when username or pvpMode changes
+    if (!p._nameCanvas || p._nameCanvas._u !== (p.username || '?') || p._nameCanvas._pvp !== !!p.pvpMode) {
+      p._nameCanvas = _buildPlayerNameCanvas(p);
+    }
+    const nc = p._nameCanvas;
+    ctx.drawImage(nc, Math.round(p.x - nc.width / 2), Math.round(barTop - nc.height - 2));
     if (p.pvpMode) {
-      drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, nameY - 3, 9, '#f55');
+      drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, barTop - nc.height / 2 - 2, 9, '#f55');
     }
     ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
     ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
@@ -836,6 +837,26 @@ function selectChar(type) {
   _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
   loadSprites(type, _onSpriteSetReady);
   netSelectChar(type, savedStats);
+}
+
+function _buildPlayerNameCanvas(p) {
+  const uname = p.username || '?';
+  const pvp = !!p.pvpMode;
+  const tmp = document.createElement('canvas').getContext('2d');
+  tmp.font = 'bold 10px system-ui, Arial';
+  const tw = tmp.measureText(uname).width;
+  const cw = Math.ceil(tw + 10), ch = 16;
+  const cv = document.createElement('canvas');
+  cv.width = cw; cv.height = ch;
+  const c = cv.getContext('2d');
+  c.font = 'bold 10px system-ui, Arial';
+  c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.strokeStyle = '#000'; c.lineWidth = 3;
+  c.strokeText(uname, cw / 2, ch - 2);
+  c.fillStyle = pvp ? '#f99' : '#fff';
+  c.fillText(uname, cw / 2, ch - 2);
+  cv._u = uname; cv._pvp = pvp;
+  return cv;
 }
 
 function getOtherPlayerAnimKey(p) {

@@ -113,18 +113,6 @@ function netConnect(onReady) {
           else      ex._facing = sdy > 0 ? 'down'  : 'up';
         }
         ex.targetX = se.x; ex.targetY = se.y;
-        // De-jittered snapshot queue (played back in game.js). Socket delivery
-        // is bursty — several server ticks can arrive nearly at once — so
-        // rebuild the server's tick clock: advance by the REAL tick spacing
-        // (packet t deltas; setInterval drifts 45-60ms), kept within ±60ms of
-        // real arrival so the clock can't drift.
-        const _n = performance.now();
-        const _step = (t && ex._st) ? Math.min(150, Math.max(15, t - ex._st)) : 50;
-        let _qt = ex._qt !== undefined ? ex._qt + _step : _n;
-        if (_qt < _n - 60) _qt = _n - 60; else if (_qt > _n + 60) _qt = _n + 60;
-        ex._qt = _qt; ex._st = t;
-        (ex._q || (ex._q = [])).push({ x: se.x, y: se.y, t: _qt });
-        if (ex._q.length > 12) ex._q.splice(0, ex._q.length - 12);
         ex.aggro = se.aggro;
         if (se.aggroR) ex.aggroR = se.aggroR;
         if (se.spd)    ex.spd    = se.spd;
