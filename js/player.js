@@ -12,8 +12,7 @@ function makePlayer(type) {
     facing: 'front', atkAnimTimer: 0, castDuration: 0, animFrame: 0, animTimer: 0,
     pendingAttack: null, attackFired: false,
     equipment: {
-      weapon:null, offhand:null, helmet:null, body:null, legs:null,
-      gloves:null, boots:null, ring:null, belt:null, pendant:null,
+      weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null,
     },
     inventory: [],
     potionBag: { pt1: 3, pt2: 0 },
@@ -35,24 +34,30 @@ function recompute() {
   let a = player.baseAtk + (u.atk || 0) * 3;
   let d = player.baseDef + (u.def || 0) * 2;
   let h = player.baseMaxHp + (u.hp || 0) * 25;
+  let extraCrit = 0, extraLS = 0, extraAS = 0, hpPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
-    if (it.atk) a += it.atk;
-    if (it.def) d += it.def;
-    if (it.hp)  h += it.hp;
+    if (it.atk)       a += it.atk;
+    if (it.def)       d += it.def;
+    if (it.hp)        h += it.hp;
+    if (it.critChance) extraCrit += it.critChance;
+    if (it.lifeSteal)  extraLS   += it.lifeSteal;
+    if (it.atkSpeed)   extraAS   += it.atkSpeed;
+    if (it.hpPct)      hpPct     += it.hpPct;
   });
+  h = Math.floor(h * (1 + hpPct));
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h);
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
-  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05;
-  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025);
+  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
+  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
   player.dodge      = Math.min(0.65, lvl * 0.003 + (u.dodge     || 0) * 0.025);
   player.accuracy   = Math.min(1.00, 0.85 + lvl * 0.004 + (u.accuracy  || 0) * 0.02);
-  player.lifeSteal  = Math.min(0.45, (u.lifeSteal  || 0) * 0.025);
+  player.lifeSteal  = Math.min(0.45, (u.lifeSteal  || 0) * 0.025 + extraLS);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5;
 }
 
@@ -321,17 +326,22 @@ function restoreFromSave(data) {
   if (rawEq.armor && !rawEq.body) rawEq.body = rawEq.armor;
   delete rawEq.armor;
 
-  const blank = { weapon:null, offhand:null, helmet:null, body:null, legs:null,
-                  gloves:null, boots:null, ring:null, belt:null, pendant:null };
-  player.equipment = { ...blank, ...rawEq };
+  const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null };
+  // strip removed slots from old saves
+  const { offhand:_, legs:__, pendant:___, ...cleanEq } = rawEq;
+  player.equipment = { ...blank, ...cleanEq };
   recompute();
   player.hp = player.maxHp;
 }
 
 function statStr(it) {
   const p = [];
-  if (it.atk) p.push('ATK+' + it.atk);
-  if (it.def) p.push('DEF+' + it.def);
-  if (it.hp)  p.push('HP+' + it.hp);
+  if (it.atk)       p.push('ATK+' + it.atk);
+  if (it.def)       p.push('DEF+' + it.def);
+  if (it.hp)        p.push('HP+' + it.hp);
+  if (it.critChance) p.push('Крит+' + (it.critChance * 100).toFixed(0) + '%');
+  if (it.lifeSteal)  p.push('Вамп+' + (it.lifeSteal  * 100).toFixed(0) + '%');
+  if (it.atkSpeed)   p.push('Скор+' + (it.atkSpeed   * 100).toFixed(0) + '%');
+  if (it.hpPct)      p.push('HP+' +  (it.hpPct       * 100).toFixed(0) + '%макс');
   return p.join('  ');
 }

@@ -1,6 +1,16 @@
 // ─────────────────────────────────────────────────────────
 //  PANEL UIs
 // ─────────────────────────────────────────────────────────
+function _itemIcon(it, size) {
+  if (it && it.img) {
+    const rc = RARITY_COLOR[it.rarity] || '#aaa';
+    return `<img src="${it.img}" width="${size}" height="${size}"
+      style="image-rendering:pixelated;border-radius:3px;outline:1.5px solid ${rc}44;"
+      onerror="this.style.display='none'">`;
+  }
+  const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '#505070';
+  return iconHTML((it && it.icon) || 'weapon', size, rc);
+}
 function updateInvUI() {
   if (!player) return;
   const p = player;
@@ -13,7 +23,7 @@ function updateInvUI() {
     return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `unequipItem('${slot}')` : ''}"
       title="${it ? it.name + ' — ' + statStr(it) : label}"
       style="${it ? 'border-color:' + rc + '55' : ''}">
-      <div class="cell-icon">${it ? iconHTML(it.icon, 22, rc) : iconHTML(emptyIcon, 22, '#505070')}</div>
+      <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#505070')}</div>
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name.slice(0, 8) : label}</div>
     </div>`;
   }).join('');
@@ -61,7 +71,7 @@ function updateInvUI() {
     return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}"
       title="${it ? it.name + ' — ' + statStr(it) : ''}"
       style="${it ? 'border-color:' + rc + '77' : ''}">
-      ${it ? `<div style="display:flex;justify-content:center;align-items:center">${iconHTML(it.icon,18,rc)}</div>
+      ${it ? `<div style="display:flex;justify-content:center;align-items:center">${_itemIcon(it, 24)}</div>
               <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>` : ''}
     </div>`;
   }).join('');
