@@ -85,6 +85,9 @@ const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
 
 // Visible enemy count (set each render frame, read by _drawPerf)
 let _visEnm = 0;
+// eid -> server walk speed (px/s) — drives client-side fixed-speed pursuit
+const _ENEMY_SPD = {};
+ENEMY_DEF.forEach(d => { _ENEMY_SPD[d.eid] = d.spd; });
 
 // Reusable dash arrays — declared once, never reallocated
 const _DASH = [6, 4];
@@ -452,25 +455,24 @@ function update(dt) {
     }
   });
   let _corpseExpired = false;
-  const _nowMs = performance.now();
   serverEnemies.forEach(e => {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
-    // Snapshot interpolation: render 100ms in the past, walking linearly
-    // between the two latest server positions. Constant velocity between
-    // ticks — no accelerate/stall pulsing, and up to ~50ms of network
-    // jitter is absorbed by the delay buffer instead of tugging the sprite.
-    if (e._tt !== undefined) {
-      const rt = _nowMs - 100;
-      const span = e._tt - e._pt;
-      let a = span > 0 ? (rt - e._pt) / span : 1;
-      if (a < 0) a = 0; else if (a > 1) a = 1;
-      e.x = e._px + (e.targetX - e._px) * a;
-      e.y = e._py + (e.targetY - e._py) * a;
-    } else if (e.targetX !== undefined) {
-      e.x = e.targetX; e.y = e.targetY; // no snapshot pair yet — snap
+    // Fixed-speed pursuit (Rucoy/Warspear style): walk toward the latest
+    // server position at the monster's own speed, slightly faster when
+    // behind. Packet arrival timing never affects velocity — motion is
+    // constant and strictly forward, so no pulsing and no backward tug.
+    if (e.targetX !== undefined) {
+      const dx = e.targetX - e.x, dy = e.targetY - e.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 200) { e.x = e.targetX; e.y = e.targetY; }  // way off — teleport
+      else if (d > 0.4) {
+        const step = (_ENEMY_SPD[e.eid] || 80) * (d > 14 ? 1.5 : 1.15) * dt;
+        if (step >= d) { e.x = e.targetX; e.y = e.targetY; }
+        else { const k = step / d; e.x += dx * k; e.y += dy * k; }
+      }
     }
   });
   if (_corpseExpired) {

@@ -104,11 +104,6 @@ function netConnect(onReady) {
           if (Math.abs(sdx) >= Math.abs(sdy)) ex._facing = sdx > 0 ? 'right' : 'left';
           else                                  ex._facing = sdy > 0 ? 'down'  : 'up';
         }
-        // Snapshot pair for delayed interpolation (see game.js): render walks
-        // linearly from (_px,_py)@_pt toward (targetX,targetY)@_tt
-        ex._px = ex.targetX ?? se.x; ex._py = ex.targetY ?? se.y;
-        ex._pt = ex._tt ?? performance.now();
-        ex._tt = performance.now();
         ex.targetX = se.x; ex.targetY = se.y;
         ex.aggro = se.aggro;
         // (hurtTimer arrives via the enemyHurt event, not gameState)
