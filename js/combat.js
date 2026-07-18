@@ -72,24 +72,27 @@ function pickup(drop) {
   }
 }
 
-function spawnLootDrop(x, y) {
+function applyLootToInventory() {
+  if (!player) return;
   const r = Math.random();
+  let item = null;
   if (r < 0.15) {
-    // 15% chance: craft material
-    const mat = CRAFT_MATS[Math.floor(Math.random() * CRAFT_MATS.length)];
-    drops.push({ x, y, item: { ...mat }, type: 'item', life: 25 });
+    // 15%: craft material (exclude boss_stone — that's boss-only)
+    const mats = CRAFT_MATS.filter(m => m.id !== 'boss_stone');
+    item = { ...mats[Math.floor(Math.random() * mats.length)] };
   } else if (r < 0.32) {
-    // 17% chance: equipment item scaled to floor
+    // 17%: equipment scaled to floor
     const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
     const maxRarityIdx = Math.min(4, Math.max(0, Math.floor((dungeonLvl - 1) / 4)));
     const pool = ITEM_DEF.filter(it =>
       it.slot !== 'use' && it.slot !== 'material' &&
       rarities.indexOf(it.rarity) <= maxRarityIdx + 1
     );
-    if (pool.length > 0) {
-      const item = pool[Math.floor(Math.random() * pool.length)];
-      drops.push({ x, y, item: { ...item }, type: 'item', life: 25 });
-    }
+    if (pool.length > 0) item = { ...pool[Math.floor(Math.random() * pool.length)] };
   }
   // 68%: no drop
+  if (!item || player.inventory.length >= 50) return;
+  player.inventory.push(item);
+  dmgNum(player.x, player.y - 36, '+ ' + item.name, RARITY_COLOR[item.rarity] || '#4ff');
+  netSaveProgress();
 }

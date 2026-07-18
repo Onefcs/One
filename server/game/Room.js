@@ -63,7 +63,7 @@ class Room {
     // Enemy AI + respawn
     this.enemies.forEach(e => {
       if (e.hp <= 0) {
-        if (e.respawnTimer === undefined) { e.respawnTimer = 12; return; }
+        if (e.respawnTimer === undefined) { e.respawnTimer = e.isBoss ? 3600 : 12; return; }
         e.respawnTimer -= dt;
         if (e.respawnTimer <= 0) {
           e.hp = e.maxHp;
@@ -253,7 +253,7 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss };
     }
     return { killed: false, hp: enemy.hp, dmg };
   }

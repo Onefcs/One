@@ -207,19 +207,31 @@ io.on('connection', socket => {
         });
       }
 
+      // Boss stone drop: 1% chance on floors 1-3, quantity 1-3
+      const bossStone = (result.isBoss && currentFloor <= 3 && Math.random() < 0.01)
+        ? (1 + Math.floor(Math.random() * 3)) : 0;
+
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare   = result.xp   / totalMembers;
         const goldShare = result.gold  / totalMembers;
 
+        // Random loot recipient among party + attacker
+        const allIds = [socket.id, ...memberIds];
+        const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
+
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
+          gotLoot: lootWinnerId === socket.id,
+          bossStone: lootWinnerId === socket.id ? bossStone : 0,
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
+            gotLoot: lootWinnerId === mid,
+            bossStone: lootWinnerId === mid ? bossStone : 0,
           });
         });
         // Visual only to the rest of the floor
@@ -227,10 +239,11 @@ io.on('connection', socket => {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
         });
       } else {
-        // No party on same floor: attacker gets full reward, others get visual only
+        // No party: attacker gets full reward and loot
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
+          gotLoot: true, bossStone,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,

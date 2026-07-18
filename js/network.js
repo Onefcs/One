@@ -157,7 +157,7 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color, gotLoot, bossStone }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -170,7 +170,17 @@ function netConnect(onReady) {
       if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
     }
     serverEnemies.length = j;
-    if (xp && player) { gainXP(xp); spawnLootDrop(px, py); }
+    if (xp && player) gainXP(xp);
+    if (gotLoot && player) applyLootToInventory();
+    if (bossStone && player) {
+      const stone = CRAFT_MATS.find(m => m.id === 'boss_stone');
+      if (stone) {
+        for (let i = 0; i < bossStone && player.inventory.length < 50; i++)
+          player.inventory.push({ ...stone });
+        dmgNum(px, py - 52, '+' + bossStone + '× Камень Босса', '#aaf');
+        netSaveProgress();
+      }
+    }
     if (gold && player) {
       player.gold += gold;
       const g = gold % 1 === 0 ? gold : +gold.toFixed(1);

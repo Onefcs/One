@@ -28,11 +28,12 @@ const ENEMY_DEF = [
   { eid:'skeleton', name:'Скелет',  color:'#bbb',    size:16, hp:70,  atk:14, def:4,  spd:70,  xp:3,  gold:[1,3], isBoss:false },
   { eid:'orc',      name:'Орк',     color:'#964',    size:20, hp:130, atk:20, def:8,  spd:56,  xp:4,  gold:[1,3], isBoss:false },
   { eid:'troll',    name:'Тролль',  color:'#575',    size:24, hp:230, atk:28, def:12, spd:40,  xp:7,  gold:[1,3], isBoss:false },
-  { eid:'demon',    name:'ДЕМОН',   color:'#f33',    size:28, hp:420, atk:42, def:16, spd:60,  xp:13, gold:[1,3], isBoss:true  },
+  { eid:'demon',    name:'ДЕМОН',   color:'#f33',    size:28, hp:420, atk:42, def:16, spd:60,  xp:50, gold:[50,50], isBoss:true  },
 ];
 
 // Gold drop: 30% chance, scales with floor. Returns 0 if no drop.
 function calcGoldDrop(enemy, floor) {
+  if (enemy.isBoss) return 50;
   if (Math.random() > 0.30) return 0;
   const base = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
   return Math.round(base * Math.pow(2, floor - 1));

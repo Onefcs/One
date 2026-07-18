@@ -40,6 +40,7 @@ const CRAFT_MATS = [
   { id:'mat_gem',     name:'Самоцвет',        icon:'mat_gem',     slot:'material', rarity:'uncommon' },
   { id:'mat_scale',   name:'Чешуя дракона',   icon:'mat_scale',   slot:'material', rarity:'rare'     },
   { id:'mat_dust',    name:'Магич. пыль',     icon:'mat_dust',    slot:'material', rarity:'uncommon' },
+  { id:'boss_stone',  name:'Камень Босса',    icon:'mat_gem',     slot:'material', rarity:'uncommon' },
 ];
 
 const ITEM_DEF = [
@@ -108,6 +109,8 @@ const ITEM_DEF = [
   { id:'nd3', name:'Амулет тьмы',       slot:'pendant', icon:'pendant', atk:8,hp:30,   rarity:'rare'     },
   { id:'nd4', name:'Амулет легенды',    slot:'pendant', icon:'pendant', atk:16,hp:80,  rarity:'epic'     },
   { id:'nd5', name:'Амулет богов',      slot:'pendant', icon:'pendant', atk:24,hp:120, rarity:'legendary'},
+  // ── Boss crafted ──────────────────────────────────────────
+  { id:'demon_seal', name:'Печать Демона', slot:'ring', icon:'ring', atk:25, def:12, hp:80, rarity:'legendary' },
   // ── Potions (use-type, don't take inv slot) ───────────────
   { id:'pt1', name:'Зелье лечения',     slot:'use',     icon:'potion',  hp:60,         rarity:'common'   },
   { id:'pt2', name:'Большое зелье',     slot:'use',     icon:'potion',  hp:120,        rarity:'uncommon' },
@@ -188,4 +191,5 @@ const CRAFT_RECIPES = [
   { name:'Меч дракона',   resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3}],     gold:200 },
   { name:'Посох Анубара',  resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3}],    gold:200 },
   { name:'Амулет тьмы',   resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2}],       gold:150 },
+  { name:'Печать Демона', resultId:'demon_seal', mats:[{id:'boss_stone',n:20}],                gold:0   },
 ];
