@@ -13,7 +13,7 @@ class Room {
     this._dungeon = generateDungeon(floor);
     this.enemies = this._dungeon.enemies.map(e => ({
       ...e, hp: e.maxHp, aggro: false,
-      atkTimer: 1 + Math.random(), hurtTimer: 0,
+      atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
       _sx: e.x, _sy: e.y, _shp: e.maxHp,
     }));
     // O(1) enemy lookup for attack handler
@@ -98,9 +98,11 @@ class Room {
           if (!this._isWall(e.x + evx, e.y)) e.x += evx;
           if (!this._isWall(e.x, e.y + evy)) e.y += evy;
         }
+        if (e.atkAnimTimer > 0) e.atkAnimTimer -= dt;
         e.atkTimer -= dt;
         if (closestD < e.size + 20 && e.atkTimer <= 0) {
           e.atkTimer = 1.4 + Math.random() * 0.6;
+          e.atkAnimTimer = 0.9;
           const dmg = Math.max(1, e.atk - (closest.def || 0));
           closest.hp = Math.max(0, closest.hp - dmg);
           this.io.to(closest.socketId).emit('playerHurt', {
@@ -138,6 +140,7 @@ class Room {
         nearEnemies.push({
           id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
           name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+          atkAnimTimer: e.atkAnimTimer > 0 ? e.atkAnimTimer : 0,
         });
       });
 

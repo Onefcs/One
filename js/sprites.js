@@ -290,10 +290,12 @@ function drawEnemySprite(e, dt) {
   const cache = enemySpriteCache[e.eid];
 
   let key;
+  const moving = e.targetX !== undefined &&
+                 (Math.abs(e.targetX - e.x) > 3 || Math.abs(e.targetY - e.y) > 3);
   if (e.hp <= 0)               key = 'death';
   else if (e.hurtTimer > 0.05) key = def.sheets['hurt'] ? 'hurt' : 'idle';
   else if (e.atkAnimTimer > 0) key = 'attack';
-  else if (e.aggro)            key = def.sheets['walk'] ? 'walk' : 'idle';
+  else if (e.aggro && moving)  key = 'walk';
   else                         key = 'idle';
 
   const sh = def.sheets[key];
