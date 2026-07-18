@@ -810,42 +810,69 @@ function initNpcs() {
     x: sx + offsets[i].dx,
     y: sy + offsets[i].dy,
   }));
+  _npcCache = null;
+}
+
+// NPC visuals are static (shadow + icon + name) except a pulsing aura ring —
+// profiling showed the per-frame path fills / strokeText here cost ~1.1ms per
+// frame (half the entire render budget). Pre-render each NPC once into an
+// offscreen canvas and blit two images per frame instead; the ring lives on
+// its own layer so its pulse is just globalAlpha at draw time.
+let _npcCache = null;
+const _NPC_RES = 2; // supersample so the ZOOM×DPR upscale stays crisp
+
+function _buildNpcCache() {
+  _npcCache = npcs.map(n => {
+    const w = 96, h = 84, cx = 48, cy = 44; // world-px box, NPC center at (cx,cy)
+    const cv = document.createElement('canvas');
+    cv.width = w * _NPC_RES; cv.height = h * _NPC_RES;
+    const c = cv.getContext('2d');
+    c.scale(_NPC_RES, _NPC_RES);
+    c.fillStyle = 'rgba(0,0,0,0.3)';
+    c.beginPath(); c.ellipse(cx, cy + 18, 14, 5, 0, 0, Math.PI * 2); c.fill();
+    // NOTE: the icon is NOT baked in — drawIconCtx's SVG image loads async and
+    // would bake in empty on the first frame; it's blitted per-frame below.
+    c.font = 'bold 10px system-ui, -apple-system, Arial';
+    c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+    c.strokeStyle = '#000'; c.lineWidth = 3;
+    c.strokeText(n.name, cx, cy - 26);
+    c.fillStyle = n.color;
+    c.fillText(n.name, cx, cy - 26);
+
+    const rw = 52; // ring box: r=22 + lineWidth + margin
+    const ring = document.createElement('canvas');
+    ring.width = rw * _NPC_RES; ring.height = rw * _NPC_RES;
+    const rc = ring.getContext('2d');
+    rc.scale(_NPC_RES, _NPC_RES);
+    rc.strokeStyle = n.color; rc.lineWidth = 2;
+    rc.beginPath(); rc.arc(rw / 2, rw / 2, 22, 0, Math.PI * 2); rc.stroke();
+
+    return { cv, ring, w, h, cx, cy, rw };
+  });
 }
 
 function drawNpcs() {
   if (!npcs.length) return;
-  // Precompute per-frame values once — not per NPC
-  const _nPulse   = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
-  const _nBounce  = Math.sin(frameCount * 0.15) * 3;
-  const _nFont    = 'bold 10px system-ui, -apple-system, Arial';
-
-  // Shadow ellipses all share the same style — batch into one path/fill() call
-  // instead of one beginPath()+fill() per NPC. Alternating fillStyle between
-  // this shadow color and each NPC's own color (for the ring/text below) on
-  // every single shape forces a paint-state flush per call; measured at
-  // ~0.34ms per tiny 14×5px ellipse — over 200x the cost of a batched fill.
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.beginPath();
-  npcs.forEach(n => { ctx.moveTo(n.x + 14, n.y + 18); ctx.ellipse(n.x, n.y + 18, 14, 5, 0, 0, Math.PI * 2); });
-  ctx.fill();
-
-  npcs.forEach(n => {
-    ctx.globalAlpha = _nPulse; ctx.strokeStyle = n.color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(n.x, n.y, 22, 0, Math.PI * 2); ctx.stroke();
+  if (!_npcCache || _npcCache.length !== npcs.length) _buildNpcCache();
+  const _nPulse  = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
+  const _nBounce = Math.sin(frameCount * 0.15) * 3;
+  const _smooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true; // supersampled cache needs filtering
+  for (let i = 0; i < npcs.length; i++) {
+    const n = npcs[i];
+    // NPCs cluster at spawn — skip entirely when off-screen
+    if (n.x < _vL || n.x > _vR || n.y < _vT || n.y > _vB) continue;
+    const cc = _npcCache[i];
+    ctx.globalAlpha = _nPulse;
+    ctx.drawImage(cc.ring, n.x - cc.rw / 2, n.y - cc.rw / 2, cc.rw, cc.rw);
     ctx.globalAlpha = 1;
-
+    ctx.drawImage(cc.cv, n.x - cc.cx, n.y - cc.cy, cc.w, cc.h);
     drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
-
-    ctx.font = _nFont; ctx.textBaseline = 'alphabetic';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-    ctx.strokeText(n.name, n.x, n.y - 26);
-    ctx.fillStyle = n.color;
-    ctx.fillText(n.name, n.x, n.y - 26);
-
     if (nearNpc && nearNpc.id === n.id) {
       drawIconCtx(ctx, 'chat', n.x, n.y - 44 + _nBounce, 18, '#fff');
     }
-  });
+  }
+  ctx.imageSmoothingEnabled = _smooth;
 }
 
 function buildTileCanvas() {
@@ -1063,7 +1090,11 @@ window.addEventListener('load', () => {
   ctx = canvas.getContext('2d');
   const app = document.getElementById('app');
   const resize = () => {
-    DPR = window.devicePixelRatio || 1;
+    // Cap the canvas backing-store density at 2×. On DPR-3 phones an uncapped
+    // canvas is 2.25× more pixels to rasterize and composite EVERY frame —
+    // the single biggest cause of FPS drops on mobile. World art is upscaled
+    // from TILE-res anyway, so beyond 2× there is no visible quality gain.
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = app.clientWidth;
     H = app.clientHeight;
     canvas.width = Math.round(W * DPR);
