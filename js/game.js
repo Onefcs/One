@@ -35,12 +35,14 @@ function _drawPerf(frameMs) {
   if (maxFt > _ftWorstMs) { _ftWorstMs = maxFt; _ftWorstDecay = 180; }
   else if (--_ftWorstDecay <= 0) { _ftWorstMs = maxFt; }
 
+  if (window._adaptCheck) window._adaptCheck(avgMs);
+
   if (!_perfShow) return;
 
   // Mini frame-time bar graph (60 bars)
   const bw = 2, bh = 40, bx0 = 8, by0 = 55;
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillRect(bx0 - 2, by0 - bh - 2, samples * bw + 4, bh + 4 + 110);
+  ctx.fillRect(bx0 - 2, by0 - bh - 2, samples * bw + 4, bh + 4 + 130);
 
   const _oldest = _ftFull ? _ftIdx : 0;
   for (let i = 0; i < samples; i++) {
@@ -65,6 +67,7 @@ function _drawPerf(frameMs) {
     `upd  ${_profUpdate.toFixed(1)}ms`,
     `rnd  ${_profRender.toFixed(1)}ms`,
     `skt  ${_profSocketEvtsSnap}e ${_profSocketMsSnap.toFixed(1)}ms`,
+    `dpr  ${DPR.toFixed(2)}`,
     `drp  ${drops.length}`,
     mem ? `mem  ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
   ];
@@ -611,7 +614,6 @@ function render(dt, ts) {
   _vT = _camY - _vM; _vB = _camY + (H - HEADER_H) / ZOOM + _vM;
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.clearRect(0, 0, W, H);
   const theme = (state === 'playing' || state === 'dead') && dungeon ? getTheme(dungeonLvl) : null;
   ctx.fillStyle = theme ? theme.bg : '#060610';
   ctx.fillRect(0, 0, W, H);
@@ -1207,20 +1209,25 @@ window.addEventListener('beforeunload', () => { netSaveProgress(); });
 
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');
-  ctx = canvas.getContext('2d');
+  canvas.style.willChange = 'transform';
+  ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   const app = document.getElementById('app');
+
+  // Adaptive DPR — start at device DPR (capped at 2); if FPS stays below
+  // 45 for 120 consecutive frames (~4s), halve DPR to reduce GPU compositing.
+  let _adaptDprBase = Math.min(window.devicePixelRatio || 1, 2);
+  let _adaptLowCount = 0;
+  const _ADAPT_THRESHOLD = 120;
+
   const resize = () => {
-    // Cap the canvas backing-store density at 2×. On DPR-3 phones an uncapped
-    // canvas is 2.25× more pixels to rasterize and composite EVERY frame —
-    // the single biggest cause of FPS drops on mobile. World art is upscaled
-    // from TILE-res anyway, so beyond 2× there is no visible quality gain.
-    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    DPR = _adaptDprBase;
     W = app.clientWidth;
     H = app.clientHeight;
     canvas.width = Math.round(W * DPR);
     canvas.height = Math.round(H * DPR);
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
+    ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     _uiCanvas = null;           // force UI canvas recreation at new size
     _skillBtnGradCache = null;  // force skill button gradient rebuild
@@ -1229,6 +1236,22 @@ window.addEventListener('load', () => {
     if (dungeon) clampCamera();
   };
   resize(); window.addEventListener('resize', resize);
+
+  // Check FPS every frame; if consistently low, reduce DPR
+  const _adaptCheck = (avgMs) => {
+    if (avgMs <= 0) return;
+    const fps = 1000 / avgMs;
+    if (fps < 45) {
+      if (++_adaptLowCount >= _ADAPT_THRESHOLD && _adaptDprBase > 1) {
+        _adaptDprBase = Math.max(1, _adaptDprBase * 0.7);
+        _adaptLowCount = 0;
+        resize();
+      }
+    } else {
+      _adaptLowCount = 0;
+    }
+  };
+  window._adaptCheck = _adaptCheck;
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
   requestAnimationFrame(ts => { lastTs = ts; requestAnimationFrame(loop); });
