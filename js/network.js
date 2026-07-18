@@ -10,7 +10,7 @@ let _savedData = null;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
-const _INTERP_MS  = 75;   // render others 75ms in the past (3 server ticks)
+const _INTERP_MS  = 50;   // render others 50ms in the past (2 server ticks)
 const _SNAP_MAX   = 10;   // ~250ms of buffer
 
 // ── Socket setup ──────────────────────────────────────────────
