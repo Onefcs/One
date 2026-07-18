@@ -62,7 +62,7 @@ function _drawPerf(frameMs) {
   const mem = performance.memory;
   const lines = [
     `FPS  ${fps}`,
-    `ping ${_pingMs >= 0 ? _pingMs + 'ms' : '...'}`,
+    `ping ${_pingMs >= 0 ? _pingMs + 'ms' : '...'} ${socket?.io?.engine?.transport?.name === 'websocket' ? 'ws' : socket?.io?.engine?.transport?.name ?? ''}`,
     `avg  ${avgMs.toFixed(1)}ms`,
     `max  ${_ftWorstMs.toFixed(1)}ms`,
     `prt  ${particles.length}`,

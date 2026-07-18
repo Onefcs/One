@@ -21,7 +21,10 @@ let _pingTimer = null;
 function netConnect(onReady) {
   if (socket && socket.connected) { if (onReady) onReady(); return; }
   if (socket) { socket.disconnect(); socket = null; }
-  socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
+  socket = io(SERVER_URL, {
+    transports: ['websocket'],  // skip polling — polling adds 200-400ms per packet
+    upgrade: false,
+  });
 
   socket.on('connect', () => {
     if (onReady) onReady();

@@ -80,7 +80,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
+  transports: ['websocket'],   // force WebSocket only — no polling overhead
   pingTimeout: 20000,
+  pingInterval: 10000,
 });
 
 mongoose.connect(process.env.MONGODB_URI)
