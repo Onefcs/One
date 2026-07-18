@@ -238,6 +238,79 @@ canvas { display:block; width:100%; height:100%; }
 
 .warrior-c { color:#5af; } .archer-c { color:#7e7; } .mage-c { color:#e8e; } .priest-c { color:#fe4; } .assasin-c { color:#b5f; }
 
+/* ── FLOOR INFO BUTTON ────────────────── */
+.floor-info-btn {
+  display:block; width:calc(100% - 24px); margin:10px 12px 4px;
+  padding:10px; border:1px solid rgba(255,255,255,.1);
+  border-radius:10px; background:rgba(255,255,255,.04);
+  color:#88aacc; font-size:13px; font-weight:600;
+  cursor:pointer; transition:background .15s,color .15s;
+  touch-action:manipulation;
+}
+.floor-info-btn:hover  { background:rgba(255,255,255,.09); color:#aaccff; }
+.floor-info-btn:active { background:rgba(255,255,255,.05); }
+
+/* ── FLOOR INFO MODAL ─────────────────── */
+#floor-info-modal {
+  position:absolute; inset:0; z-index:200;
+  background:rgba(0,0,0,.75); backdrop-filter:blur(4px);
+  display:flex; align-items:flex-end; justify-content:center;
+}
+#floor-info-panel {
+  width:100%; max-height:88vh;
+  background:#0d0818; border-radius:18px 18px 0 0;
+  border-top:1px solid rgba(255,255,255,.1);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.fi-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px 10px; border-bottom:1px solid rgba(255,255,255,.07);
+  flex-shrink:0;
+}
+.fi-title { font-size:16px; font-weight:800; color:#f90; letter-spacing:.5px; }
+.fi-close {
+  width:28px; height:28px; border:none; border-radius:50%;
+  background:rgba(255,255,255,.08); color:#888;
+  font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+.fi-body {
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:10px 12px 24px; display:flex; flex-direction:column; gap:10px;
+}
+.fi-monster {
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.07);
+  border-radius:12px; padding:12px;
+}
+.fi-boss {
+  background:rgba(255,40,40,.05); border-color:rgba(255,80,80,.2);
+}
+.fi-mhdr {
+  display:flex; align-items:center; gap:8px; margin-bottom:8px;
+}
+.fi-mname { font-size:15px; font-weight:800; }
+.fi-boss-tag {
+  font-size:9px; font-weight:700; color:#f55; letter-spacing:1px;
+  background:rgba(255,60,60,.15); border:1px solid rgba(255,60,60,.3);
+  border-radius:4px; padding:2px 6px;
+}
+.fi-mstats {
+  display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;
+}
+.fi-mstats span {
+  font-size:11px; color:#555;
+  background:rgba(255,255,255,.04); border-radius:6px; padding:3px 7px;
+}
+.fi-mstats b { color:#aaa; }
+.fi-drops-hdr { font-size:9px; color:#333; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:5px; }
+.fi-drops { display:flex; flex-direction:column; gap:3px; }
+.fi-drop {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:11px; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04);
+}
+.fi-drop:last-child { border-bottom:none; }
+.fi-drop-lbl { color:#444; }
+.fi-drop-val { color:#888; font-weight:600; }
+
 /* ── NPC TALK BUTTON ──────────────────── */
 #npc-talk-btn {
   position:absolute; bottom:74px; left:50%; transform:translateX(-50%);

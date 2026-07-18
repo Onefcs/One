@@ -135,6 +135,18 @@
     <div class="sec-title">Выбор этажа</div>
     <div class="floor-grid" id="floor-grid"></div>
   </div>
+  <button class="floor-info-btn" onclick="showFloorInfo()">Информация об этаже</button>
+</div>
+
+<!-- Floor Info Modal -->
+<div id="floor-info-modal" style="display:none" onclick="closeFloorInfo()">
+  <div id="floor-info-panel" onclick="event.stopPropagation()">
+    <div class="fi-hdr">
+      <span class="fi-title">Этаж 1 — Монстры</span>
+      <button class="fi-close" onclick="closeFloorInfo()">✕</button>
+    </div>
+    <div id="floor-info-body" class="fi-body"></div>
+  </div>
 </div>
 
 <div id="panel-quests" class="bpanel">
