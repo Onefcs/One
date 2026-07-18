@@ -119,15 +119,13 @@ app.get('/tg-botname', (req, res) => {
 // One Room per floor, created on demand, destroyed when empty
 const floorRooms = new Map();
 
-// Per-floor chat history (last 30 messages each)
-const floorChatHistory = new Map();
-function _recordChat(floor, username, text) {
+// Global chat history (last 30 messages across all floors)
+const globalChatHistory = [];
+function _recordChat(username, text) {
   const now = new Date();
   const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-  if (!floorChatHistory.has(floor)) floorChatHistory.set(floor, []);
-  const hist = floorChatHistory.get(floor);
-  hist.push({ username, text, time });
-  if (hist.length > 30) hist.shift();
+  globalChatHistory.push({ username, text, time });
+  if (globalChatHistory.length > 30) globalChatHistory.shift();
 }
 
 // ── Party state ───────────────────────────────────────────────────────────────
@@ -258,8 +256,7 @@ io.on('connection', socket => {
       socket.join(`floor_${currentFloor}`);
       currentRoom.addPlayer(socket.id, authed.username);
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
-      const hist = floorChatHistory.get(currentFloor);
-      if (hist && hist.length) socket.emit('chatHistory', hist);
+      if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
     }
     currentRoom.setPlayerChar(socket.id, type, savedStats || null);
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
@@ -374,8 +371,7 @@ io.on('connection', socket => {
     currentRoom = getRoom(newFloor);
     socket.join(`floor_${newFloor}`);
     currentRoom.addPlayer(socket.id, authed.username);
-    const newFloorHist = floorChatHistory.get(newFloor);
-    if (newFloorHist && newFloorHist.length) socket.emit('chatHistory', newFloorHist);
+    if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
 
     // Carry over character stats directly — avoids recalculation from partial data
     if (p?.type) {
@@ -446,8 +442,8 @@ io.on('connection', socket => {
     if (!authed || !text || typeof text !== 'string') return;
     const msg = text.trim().slice(0, 100);
     if (!msg) return;
-    _recordChat(currentFloor, authed.username, msg);
-    io.to(`floor_${currentFloor}`).emit('chatMsg', { username: authed.username, text: msg });
+    _recordChat(authed.username, msg);
+    io.emit('chatMsg', { username: authed.username, text: msg });
   });
 
   socket.on('saveProgress', ({ stats }) => {
