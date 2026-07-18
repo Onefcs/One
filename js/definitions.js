@@ -177,7 +177,11 @@ const CRAFT_RECIPES = [
   { name:'Серебряный лук', resultId:'bw2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:2},{id:'boss_stone',n:20}], gold:60  },
   { name:'Посох бойца',    resultId:'st2', mats:[{id:'mat_iron',n:2},{id:'mat_dust',n:1},{id:'boss_stone',n:20}],    gold:60  },
   { name:'Железный шлем',  resultId:'hm2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
-  { name:'Железная броня', resultId:'ar2', mats:[{id:'mat_iron',n:3},{id:'mat_leather',n:2},{id:'boss_stone',n:20}], gold:80  },
+  { name:'Железная броня',  resultId:'ar2', mats:[{id:'mat_iron',n:3},{id:'mat_leather',n:2},{id:'boss_stone',n:20}], gold:80  },
+  { name:'Железные перчи', resultId:'gl2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
+  { name:'Железные боты',  resultId:'bt2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
+  { name:'Кольцо защиты',  resultId:'rn2', mats:[{id:'mat_gem',n:1},{id:'boss_stone',n:20}],                         gold:80  },
+  { name:'Пояс здоровья',  resultId:'nd2', mats:[{id:'mat_leather',n:2},{id:'boss_stone',n:20}],                     gold:70  },
   // ── Rare (boss_stone ×60) ────────────────────────────────
   { name:'Нож дракона',      resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],   gold:200 },
   { name:'Топор дракона',    resultId:'tw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],   gold:200 },
