@@ -325,7 +325,7 @@ function drawEnemySprite(e, dt) {
   const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
   // Float position + bilinear filtering — see drawSprite for rationale
   ctx.drawImage(img, sx, sy, frameW, frameH,
-    e.x - ds * 0.5, e.y - ds * 0.80,
+    e.x - ds * 0.5, e.y - ds * 0.55,
     ds, ds);
   return true;
 }
@@ -496,7 +496,12 @@ function drawSprite(p, tint) {
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  if (tint) _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, tint);
-  else      ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
+  ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
+  if (tint) {
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.globalAlpha = 1;
+  }
   return true;
 }

@@ -763,7 +763,7 @@ function render(dt, ts) {
     }
     if (e.hp <= 0) return; // corpse playing its death animation — no bars/name/ring
     const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
-    const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.80 - 8;
+    const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.55 - 8;
     if (e.isBoss) {
       ctx.globalAlpha = _bossGlow; ctx.strokeStyle = '#ff3232'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 5, 0, Math.PI * 2); ctx.stroke();
@@ -776,7 +776,7 @@ function render(dt, ts) {
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
     const _nl = _getEnemyNameLabel(e.name, e.isBoss);
-    ctx.drawImage(_nl, Math.round(e.x - _nl.width / 2), Math.round(by - _nl.height - 1));
+    ctx.drawImage(_nl, Math.round(e.x - _nl._lw / 2), Math.round(by - _nl._lh - 1), _nl._lw, _nl._lh);
   });
 
   // Other players
@@ -807,7 +807,7 @@ function render(dt, ts) {
       p._nameCanvas = _buildPlayerNameCanvas(p);
     }
     const nc = p._nameCanvas;
-    ctx.drawImage(nc, Math.round(p.x - nc.width / 2), Math.round(barTop - nc.height - 2));
+    ctx.drawImage(nc, Math.round(p.x - nc._lw / 2), Math.round(barTop - nc._lh - 2), nc._lw, nc._lh);
     if (p.pvpMode) {
       drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, barTop - nc.height / 2 - 2, 9, '#f55');
     }
@@ -911,20 +911,22 @@ const _playerShadow = (() => {
 function _buildPlayerNameCanvas(p) {
   const uname = p.username || '?';
   const pvp = !!p.pvpMode;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const tmp = document.createElement('canvas').getContext('2d');
   tmp.font = 'bold 10px system-ui, Arial';
   const tw = tmp.measureText(uname).width;
-  const cw = Math.ceil(tw + 10), ch = 16;
+  const lw = Math.ceil(tw + 10), lh = 16;
   const cv = document.createElement('canvas');
-  cv.width = cw; cv.height = ch;
+  cv.width = Math.ceil(lw * dpr); cv.height = Math.ceil(lh * dpr);
   const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
   c.font = 'bold 10px system-ui, Arial';
   c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   c.strokeStyle = '#000'; c.lineWidth = 3;
-  c.strokeText(uname, cw / 2, ch - 2);
+  c.strokeText(uname, lw / 2, lh - 2);
   c.fillStyle = pvp ? '#f99' : '#fff';
-  c.fillText(uname, cw / 2, ch - 2);
-  cv._u = uname; cv._pvp = pvp;
+  c.fillText(uname, lw / 2, lh - 2);
+  cv._u = uname; cv._pvp = pvp; cv._lw = lw; cv._lh = lh;
   return cv;
 }
 
@@ -933,17 +935,21 @@ function _getEnemyNameLabel(name, isBoss) {
   let cv = _enemyNameLabels.get(key);
   if (cv) return cv;
   const font = isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const tmp = document.createElement('canvas').getContext('2d');
   tmp.font = font;
   const tw = Math.ceil(tmp.measureText(name).width);
+  const lw = tw + 8, lh = 13;
   cv = document.createElement('canvas');
-  cv.width = tw + 8; cv.height = 13;
+  cv.width = Math.ceil(lw * dpr); cv.height = Math.ceil(lh * dpr);
   const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
   c.font = font; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   c.strokeStyle = '#000'; c.lineWidth = 2.5;
-  c.strokeText(name, cv.width / 2, 12);
+  c.strokeText(name, lw / 2, lh - 1);
   c.fillStyle = isBoss ? '#f88' : '#ddd';
-  c.fillText(name, cv.width / 2, 12);
+  c.fillText(name, lw / 2, lh - 1);
+  cv._lw = lw; cv._lh = lh;
   _enemyNameLabels.set(key, cv);
   return cv;
 }
