@@ -96,7 +96,7 @@ const SPRITE_DEF = {
 const ENEMY_SPRITE_DEF = {
   // ── Floor 1: Goblins ────────────────────────────────────────────────────
   goblin_guard: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Goblin 1/Idle0_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/Goblin 1/Run0_with_shadow.png',    cols:8, fps:12, loop:true  },
@@ -105,7 +105,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   goblin_warrior: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Goblin2/Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/Goblin2/Run_with_shadow.png',    cols:8, fps:12, loop:true  },
@@ -114,7 +114,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   goblin_boss: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/GoblinBoss/Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/GoblinBoss/Run_with_shadow.png',    cols:8, fps:12, loop:true  },
@@ -124,7 +124,7 @@ const ENEMY_SPRITE_DEF = {
   },
   // ── Floor 2: Skeletons ──────────────────────────────────────────────────
   skel_warrior: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Skeleton1/Skeleton1_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/Skeleton1/Skeleton1_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
@@ -133,7 +133,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   skel_barbarian: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Skeleton2/Skeleton2_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/Skeleton2/Skeleton2_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
@@ -142,7 +142,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   skel_boss: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/SkeletonBoss/Skeleton3_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/SkeletonBoss/Skeleton3_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
@@ -152,7 +152,7 @@ const ENEMY_SPRITE_DEF = {
   },
   // ── Floor 3: Mushrooms ──────────────────────────────────────────────────
   mush_guard: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Mushroom1/Mushroom2_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/Mushroom1/Mushroom2_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
@@ -161,7 +161,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   mush_warrior: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Mushroom2/Mushroom1_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/Mushroom2/Mushroom1_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
@@ -170,7 +170,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   mush_boss: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/MushroomBoss/Mushroom3_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
       walk:   { src:'images/Monster/MushroomBoss/Mushroom3_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
@@ -180,7 +180,7 @@ const ENEMY_SPRITE_DEF = {
   },
   // ── Floor 4: Ghosts ─────────────────────────────────────────────────────
   ghost_warrior: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Ghost1/Ghost1_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
       walk:   { src:'images/Monster/Ghost1/Ghost1_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
@@ -189,7 +189,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   ghost_guard: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/Ghost2/Ghost2_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
       walk:   { src:'images/Monster/Ghost2/Ghost2_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
@@ -198,7 +198,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   ghost_boss: {
-    frameW: 64, frameH: 64, row: 0,
+    frameW: 64, frameH: 64,
     sheets: {
       idle:   { src:'images/Monster/GhostBoss/Ghost3_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
       walk:   { src:'images/Monster/GhostBoss/Ghost3_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
@@ -208,7 +208,7 @@ const ENEMY_SPRITE_DEF = {
   },
   // ── Floor 5: Golems ─────────────────────────────────────────────────────
   golem_warrior: {
-    frameW: 128, frameH: 128, row: 0,
+    frameW: 128, frameH: 128,
     sheets: {
       idle:   { src:'images/Monster/Golem 1/Golem1_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
       walk:   { src:'images/Monster/Golem 1/Golem1_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
@@ -217,7 +217,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   golem_guard: {
-    frameW: 128, frameH: 128, row: 0,
+    frameW: 128, frameH: 128,
     sheets: {
       idle:   { src:'images/Monster/Golem2/Golem2_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
       walk:   { src:'images/Monster/Golem2/Golem2_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
@@ -226,7 +226,7 @@ const ENEMY_SPRITE_DEF = {
     }
   },
   golem_boss: {
-    frameW: 128, frameH: 128, row: 0,
+    frameW: 128, frameH: 128,
     sheets: {
       idle:   { src:'images/Monster/Golem3/Golem3_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
       walk:   { src:'images/Monster/Golem3/Golem3_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
@@ -310,27 +310,26 @@ function drawEnemySprite(e, dt) {
     if (e._animFrame >= sh.cols) e._animFrame = sh.loop ? 0 : sh.cols - 1;
   }
 
-  // Update facing from movement vector; only flip on clear horizontal movement
+  // Determine facing from movement vector (row layout: 0=up, 1=left, 2=right, 3=down)
   if (e.targetX !== undefined) {
-    const mdx = e.targetX - e.x;
-    if (Math.abs(mdx) > 1) e._facing = mdx < 0 ? 'left' : 'right';
+    const mdx = e.targetX - e.x, mdy = e.targetY - e.y;
+    const adx = Math.abs(mdx), ady = Math.abs(mdy);
+    if (adx > 1 || ady > 1) {
+      if (adx >= ady) e._facing = mdx > 0 ? 'right' : 'left';
+      else             e._facing = mdy > 0 ? 'down'  : 'up';
+    }
   }
-  if (!e._facing) e._facing = 'right';
+  if (!e._facing) e._facing = 'down';
+  const FACING_ROW = { up: 0, left: 1, right: 2, down: 3 };
 
-  const { frameW, frameH, row } = def;
+  const { frameW, frameH } = def;
   const sx = e._animFrame * frameW;
-  const sy = row * frameH;
+  const sy = FACING_ROW[e._facing] * frameH;
   const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
-  const dx = e.x - ds * 0.5, dy = e.y - ds * 0.80;
   // Float position + bilinear filtering — see drawSprite for rationale
-  if (e._facing === 'left') {
-    ctx.save();
-    ctx.transform(-1, 0, 0, 1, 2 * e.x, 0); // flip horizontally around e.x
-    ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, ds, ds);
-    ctx.restore();
-  } else {
-    ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, ds, ds);
-  }
+  ctx.drawImage(img, sx, sy, frameW, frameH,
+    e.x - ds * 0.5, e.y - ds * 0.80,
+    ds, ds);
   return true;
 }
 
