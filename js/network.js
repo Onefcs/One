@@ -8,10 +8,8 @@ const SERVER_URL = (() => {
 
 let _savedData = null;
 
-// Snapshot interpolation — offset between server Date.now() and client Date.now()
+// Dead-reckoning clock sync (unused value kept for perf display)
 let _svrTimeOffset = 0;
-const _INTERP_MS   = 50;  // render other players 50ms in the past (2 server ticks)
-const _SNAP_MAX    = 8;   // keep last 8 snapshots per player (~200ms)
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
@@ -71,18 +69,12 @@ function netConnect(onReady) {
     const _gs0 = performance.now();
     const myId = socket.id;
 
-    // Track server↔client clock offset with a smoothed EMA
-    const _localNow = Date.now();
-    _svrTimeOffset = _svrTimeOffset === 0
-      ? (t - _localNow)
-      : _svrTimeOffset * 0.9 + (t - _localNow) * 0.1;
-
     players.forEach(p => {
       if (p.id === myId) return;
       if (!otherPlayers.has(p.id)) {
-        const op = { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false,
-                     _buf: [{ x: p.x, y: p.y, t }] };
-        otherPlayers.set(p.id, op);
+        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
+          _vx: 0, _vy: 0, _prevSnap: { x: p.x, y: p.y, t },
+          animFrame: 0, animTimer: 0, moving: false });
         if (p.type) loadSprites(p.type, () => {});
       } else {
         const op = otherPlayers.get(p.id);
@@ -91,11 +83,22 @@ function netConnect(onReady) {
         op.facing = p.facing; op.username = p.username;
         op.pvpMode = p.pvpMode || false;
         if (op.x === undefined) { op.x = p.x; op.y = p.y; }
-        // Push snapshot into ring buffer
-        if (!op._buf) op._buf = [];
-        op._buf.push({ x: p.x, y: p.y, t });
-        if (op._buf.length > _SNAP_MAX) op._buf.shift();
-        op.targetX = p.x; op.targetY = p.y; // kept for fallback
+
+        // Dead-reckoning velocity: derive from consecutive server positions
+        const ps = op._prevSnap;
+        if (ps) {
+          const dtS = (t - ps.t) / 1000;
+          if (dtS > 0.001) {
+            const rvx = (p.x - ps.x) / dtS;
+            const rvy = (p.y - ps.y) / dtS;
+            // EMA smoothing to damp jitter from uneven packet timing
+            op._vx = op._vx * 0.4 + rvx * 0.6;
+            op._vy = op._vy * 0.4 + rvy * 0.6;
+          }
+        }
+        op._prevSnap = { x: p.x, y: p.y, t };
+        op.targetX = p.x; op.targetY = p.y;
+
         if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
           op.atkSeq = p.atkSeq;
           op.atkAnimTimer = 0.55; op.animFrame = 0; op.animTimer = 0;
