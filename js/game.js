@@ -459,19 +459,24 @@ function update(dt) {
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
     if (e.hp <= 0) return;
 
-    // Find closest player — self + visible others, mirrors server "closest player" logic
-    let closestTgt = player, closestDp = dist(e.x, e.y, player.x, player.y);
+    // Skip full AI for enemies outside local AOI — server corrects position on entry
+    const _epdx = player.x - e.x, _epdy = player.y - e.y;
+    const _epd2 = _epdx * _epdx + _epdy * _epdy;
+    if (_epd2 > 1100 * 1100) return;
+
+    // Find closest player — squared dist avoids sqrts in comparison loop
+    let closestD2 = _epd2, closestTgt = player;
     otherPlayers.forEach(op => {
       if ((op.hp || 0) <= 0 || op.x == null) return;
-      const d = dist(e.x, e.y, op.x, op.y);
-      if (d < closestDp) { closestDp = d; closestTgt = op; }
+      const ddx = op.x - e.x, ddy = op.y - e.y;
+      const d2 = ddx * ddx + ddy * ddy;
+      if (d2 < closestD2) { closestD2 = d2; closestTgt = op; }
     });
+    const dp = Math.sqrt(closestD2); // single sqrt per in-AOI enemy
 
-    // Client-side AI — mirrors server Room._tick so position is driven at 60fps
     const aggroR = e.aggroR || 175;
     const spd    = e.spd    || 70;
     const sz     = e.size   || 16;
-    const dp     = closestDp;
 
     if (dp < aggroR) e.aggro = true;
     if (dp > aggroR * 2.2) e.aggro = false;
@@ -489,11 +494,15 @@ function update(dt) {
       e._moveTimer = 0.2;
     }
 
-    // Gentle server correction — soft nudge only; no hard snap that could jitter
+    // Server correction — squared fast-reject avoids sqrt when error < 10px
     if (e.targetX !== undefined) {
-      const err = Math.hypot(e.targetX - e.x, e.targetY - e.y);
-      const k = err > 150 ? 0.2 : err > 10 ? 0.04 : 0;
-      if (k > 0) { e.x += (e.targetX - e.x) * k; e.y += (e.targetY - e.y) * k; }
+      const cedx = e.targetX - e.x, cedy = e.targetY - e.y;
+      const err2 = cedx * cedx + cedy * cedy;
+      if (err2 > 100) {
+        const err = Math.sqrt(err2);
+        const k = err > 150 ? 0.2 : 0.04;
+        e.x += cedx * k; e.y += cedy * k;
+      }
     }
   });
   if (_corpseExpired) {
