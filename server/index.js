@@ -208,11 +208,8 @@ io.on('connection', socket => {
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
       socket.data.username = doc.username;
-<<<<<<< HEAD
-=======
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
->>>>>>> claude/untitled-7omhdr
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
