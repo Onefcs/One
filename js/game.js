@@ -85,9 +85,6 @@ const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
 
 // Visible enemy count (set each render frame, read by _drawPerf)
 let _visEnm = 0;
-// eid -> server walk speed (px/s) — drives client-side fixed-speed pursuit
-const _ENEMY_SPD = {};
-ENEMY_DEF.forEach(d => { _ENEMY_SPD[d.eid] = d.spd; });
 
 // Reusable dash arrays — declared once, never reallocated
 const _DASH = [6, 4];
@@ -455,23 +452,26 @@ function update(dt) {
     }
   });
   let _corpseExpired = false;
+  const _nowMs = performance.now();
   serverEnemies.forEach(e => {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
-    // Fixed-speed pursuit (Rucoy/Warspear style): walk toward the latest
-    // server position at the monster's own speed, slightly faster when
-    // behind. Packet arrival timing never affects velocity — motion is
-    // constant and strictly forward, so no pulsing and no backward tug.
-    if (e.targetX !== undefined) {
-      const dx = e.targetX - e.x, dy = e.targetY - e.y;
-      const d = Math.hypot(dx, dy);
-      if (d > 200) { e.x = e.targetX; e.y = e.targetY; }  // way off — teleport
-      else if (d > 0.4) {
-        const step = (_ENEMY_SPD[e.eid] || 80) * (d > 14 ? 1.5 : 1.15) * dt;
-        if (step >= d) { e.x = e.targetX; e.y = e.targetY; }
-        else { const k = step / d; e.x += dx * k; e.y += dy * k; }
+    // Play the de-jittered snapshot queue 110ms in the past. The queue's
+    // timestamps are uniform 50ms server ticks (rebuilt in network.js), so
+    // playback is constant-velocity no matter how unevenly packets arrive.
+    const q = e._q;
+    if (q && q.length) {
+      const rt = _nowMs - 110;
+      while (q.length > 1 && q[1].t <= rt) q.shift();
+      const s0 = q[0], s1 = q[1];
+      if (!s1) { e.x = s0.x; e.y = s0.y; }        // caught up — hold newest
+      else {
+        let f = (rt - s0.t) / (s1.t - s0.t);
+        if (f < 0) f = 0; else if (f > 1) f = 1;
+        e.x = s0.x + (s1.x - s0.x) * f;
+        e.y = s0.y + (s1.y - s0.y) * f;
       }
     }
   });

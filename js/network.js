@@ -105,6 +105,17 @@ function netConnect(onReady) {
           else                                  ex._facing = sdy > 0 ? 'down'  : 'up';
         }
         ex.targetX = se.x; ex.targetY = se.y;
+        // De-jittered snapshot queue (played back in game.js). Socket delivery
+        // is bursty — several 50ms server ticks can arrive nearly at once —
+        // so reconstruct the server's uniform tick clock instead of using raw
+        // arrival times: each snapshot is stamped previous+50ms, kept within
+        // ±60ms of real arrival so the clock can't drift.
+        const _n = performance.now();
+        let _qt = ex._qt !== undefined ? ex._qt + 50 : _n;
+        if (_qt < _n - 60) _qt = _n - 60; else if (_qt > _n + 60) _qt = _n + 60;
+        ex._qt = _qt;
+        (ex._q || (ex._q = [])).push({ x: se.x, y: se.y, t: _qt });
+        if (ex._q.length > 12) ex._q.splice(0, ex._q.length - 12);
         ex.aggro = se.aggro;
         // (hurtTimer arrives via the enemyHurt event, not gameState)
         if (se.atkAnimTimer > 0) {
