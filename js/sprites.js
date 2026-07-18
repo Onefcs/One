@@ -92,19 +92,148 @@ const SPRITE_DEF = {
 };
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
-// All sheets: 64×64 frames, 4 identical rows (slime is symmetric — row 0 used)
+// 64×64 frames, single row used (row 0). Golems use 128×128 frames.
 const ENEMY_SPRITE_DEF = {
-  slime: {
+  // ── Floor 1: Goblins ────────────────────────────────────────────────────
+  goblin_guard: {
     frameW: 64, frameH: 64, row: 0,
     sheets: {
-      idle:   { src:'images/Slime/Slime1_Idle_with_shadow.png',   cols:6,  fps:8,  loop:true  },
-      walk:   { src:'images/Slime/Slime1_Walk_with_shadow.png',   cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Slime/Slime1_Attack_with_shadow.png', cols:10, fps:14, loop:false },
-      hurt:   { src:'images/Slime/Slime1_Hurt_with_shadow.png',   cols:5,  fps:14, loop:false },
-      death:  { src:'images/Slime/Slime1_Death_with_shadow.png',  cols:10, fps:8,  loop:false },
+      idle:   { src:'images/Monster/Goblin 1/Idle0_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Goblin 1/Run0_with_shadow.png',    cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster/Goblin 1/Attack0_with_shadow.png', cols:5, fps:14, loop:false },
+      death:  { src:'images/Monster/Goblin 1/Death0_with_shadow.png',  cols:6, fps:8,  loop:false },
     }
   },
-  goblin: { sharedWith: 'slime' },
+  goblin_warrior: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Goblin2/Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Goblin2/Run_with_shadow.png',    cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster/Goblin2/Attack_with_shadow.png', cols:5, fps:14, loop:false },
+      death:  { src:'images/Monster/Goblin2/Death_with_shadow.png',  cols:6, fps:8,  loop:false },
+    }
+  },
+  goblin_boss: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/GoblinBoss/Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/GoblinBoss/Run_with_shadow.png',    cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster/GoblinBoss/Attack_with_shadow.png', cols:5, fps:14, loop:false },
+      death:  { src:'images/Monster/GoblinBoss/Death_with_shadow.png',  cols:6, fps:8,  loop:false },
+    }
+  },
+  // ── Floor 2: Skeletons ──────────────────────────────────────────────────
+  skel_warrior: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Skeleton1/Skeleton1_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Skeleton1/Skeleton1_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster/Skeleton1/Skeleton1_Attack_with_shadow.png', cols:9, fps:14, loop:false },
+      death:  { src:'images/Monster/Skeleton1/Skeleton1_Death_with_shadow.png',  cols:6, fps:8,  loop:false },
+    }
+  },
+  skel_barbarian: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Skeleton2/Skeleton2_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Skeleton2/Skeleton2_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster/Skeleton2/Skeleton2_Attack_with_shadow.png', cols:9, fps:14, loop:false },
+      death:  { src:'images/Monster/Skeleton2/Skeleton2_Death_with_shadow.png',  cols:6, fps:8,  loop:false },
+    }
+  },
+  skel_boss: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/SkeletonBoss/Skeleton3_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/SkeletonBoss/Skeleton3_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster/SkeletonBoss/Skeleton3_Attack_with_shadow.png', cols:9, fps:14, loop:false },
+      death:  { src:'images/Monster/SkeletonBoss/Skeleton3_Death_with_shadow.png',  cols:6, fps:8,  loop:false },
+    }
+  },
+  // ── Floor 3: Mushrooms ──────────────────────────────────────────────────
+  mush_guard: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Mushroom1/Mushroom2_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Mushroom1/Mushroom2_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
+      attack: { src:'images/Monster/Mushroom1/Mushroom2_Attack_with_shadow.png', cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster/Mushroom1/Mushroom2_Death_with_shadow.png',  cols:9, fps:8,  loop:false },
+    }
+  },
+  mush_warrior: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Mushroom2/Mushroom1_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Mushroom2/Mushroom1_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
+      attack: { src:'images/Monster/Mushroom2/Mushroom1_Attack_with_shadow.png', cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster/Mushroom2/Mushroom1_Death_with_shadow.png',  cols:9, fps:8,  loop:false },
+    }
+  },
+  mush_boss: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/MushroomBoss/Mushroom3_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster/MushroomBoss/Mushroom3_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
+      attack: { src:'images/Monster/MushroomBoss/Mushroom3_Attack_with_shadow.png', cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster/MushroomBoss/Mushroom3_Death_with_shadow.png',  cols:9, fps:8,  loop:false },
+    }
+  },
+  // ── Floor 4: Ghosts ─────────────────────────────────────────────────────
+  ghost_warrior: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Ghost1/Ghost1_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Ghost1/Ghost1_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
+      attack: { src:'images/Monster/Ghost1/Ghost1_Attack_with_shadow.png', cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster/Ghost1/Ghost1_Death_with_shadow.png',  cols:9,  fps:8,  loop:false },
+    }
+  },
+  ghost_guard: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Ghost2/Ghost2_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster/Ghost2/Ghost2_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
+      attack: { src:'images/Monster/Ghost2/Ghost2_Attack_with_shadow.png', cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster/Ghost2/Ghost2_Death_with_shadow.png',  cols:9,  fps:8,  loop:false },
+    }
+  },
+  ghost_boss: {
+    frameW: 64, frameH: 64, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/GhostBoss/Ghost3_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster/GhostBoss/Ghost3_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
+      attack: { src:'images/Monster/GhostBoss/Ghost3_Attack_with_shadow.png', cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster/GhostBoss/Ghost3_Death_with_shadow.png',  cols:9,  fps:8,  loop:false },
+    }
+  },
+  // ── Floor 5: Golems ─────────────────────────────────────────────────────
+  golem_warrior: {
+    frameW: 128, frameH: 128, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Golem 1/Golem1_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
+      walk:   { src:'images/Monster/Golem 1/Golem1_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
+      attack: { src:'images/Monster/Golem 1/Golem1_Attack_with_shadow.png', cols:9, fps:12, loop:false },
+      death:  { src:'images/Monster/Golem 1/Golem1_Death_with_shadow.png',  cols:8, fps:7,  loop:false },
+    }
+  },
+  golem_guard: {
+    frameW: 128, frameH: 128, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Golem2/Golem2_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
+      walk:   { src:'images/Monster/Golem2/Golem2_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
+      attack: { src:'images/Monster/Golem2/Golem2_Attack_with_shadow.png', cols:9, fps:12, loop:false },
+      death:  { src:'images/Monster/Golem2/Golem2_Death_with_shadow.png',  cols:8, fps:7,  loop:false },
+    }
+  },
+  golem_boss: {
+    frameW: 128, frameH: 128, row: 0,
+    sheets: {
+      idle:   { src:'images/Monster/Golem3/Golem3_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
+      walk:   { src:'images/Monster/Golem3/Golem3_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
+      attack: { src:'images/Monster/Golem3/Golem3_Attack_with_shadow.png', cols:9, fps:12, loop:false },
+      death:  { src:'images/Monster/Golem3/Golem3_Death_with_shadow.png',  cols:8, fps:7,  loop:false },
+    }
+  },
 };
 
 // Warm up an already-loaded image so the canvas 2D pipeline never has to
@@ -135,7 +264,7 @@ const _enemySpriteLoadPromises = {};
 function loadEnemySprites(eid, onDone) {
   onDone = onDone || function () {};
   const def = ENEMY_SPRITE_DEF[eid];
-  if (!def) { onDone(); return; }
+  if (!def || !def.sheets) { onDone(); return; }
   if (_enemySpriteLoadPromises[eid]) { _enemySpriteLoadPromises[eid].then(onDone); return; }
   enemySpriteCache[eid] = {};
   const keys = Object.keys(def.sheets);
@@ -155,19 +284,16 @@ function loadEnemySprites(eid, onDone) {
 }
 
 function drawEnemySprite(e, dt) {
-  const ownDef = ENEMY_SPRITE_DEF[e.eid];
-  if (!ownDef) return false;
-  const resolvedEid = ownDef.sharedWith || e.eid;
-  const def = ENEMY_SPRITE_DEF[resolvedEid];
+  const def = ENEMY_SPRITE_DEF[e.eid];
   if (!def) return false;
-  if (!enemySpriteCache[resolvedEid]) loadEnemySprites(resolvedEid);
-  const cache = enemySpriteCache[resolvedEid];
+  if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
+  const cache = enemySpriteCache[e.eid];
 
   let key;
   if (e.hp <= 0)               key = 'death';
-  else if (e.hurtTimer > 0.05) key = 'hurt';
+  else if (e.hurtTimer > 0.05) key = def.sheets['hurt'] ? 'hurt' : 'idle';
   else if (e.atkAnimTimer > 0) key = 'attack';
-  else if (e.aggro)            key = 'walk';
+  else if (e.aggro)            key = def.sheets['walk'] ? 'walk' : 'idle';
   else                         key = 'idle';
 
   const sh = def.sheets[key];
