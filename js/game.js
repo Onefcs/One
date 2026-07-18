@@ -447,8 +447,8 @@ function update(dt) {
   npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
   if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
-  // Smooth lerp toward latest server positions
-  const lk = Math.min(1, 25 * dt);
+  // Smooth lerp toward latest server positions (factor tuned for 40 tps tick rate)
+  const lk = Math.min(1, 40 * dt);
   otherPlayers.forEach((op, id) => {
     if (op.targetX !== undefined) {
       const prevX = op.x, prevY = op.y;

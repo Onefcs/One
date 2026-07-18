@@ -1,7 +1,7 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF } = require('../../shared/definitions');
 
-const TICK_MS   = 50;              // 20 ticks/sec — client interpolation smooths the motion
+const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const AOI_RADIUS = 900;
 const AOI_R2    = AOI_RADIUS * AOI_RADIUS; // squared — avoids sqrt in AOI check
 

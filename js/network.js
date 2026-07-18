@@ -435,7 +435,7 @@ let _lastMoveSend = 0;
 function netSendMove() {
   if (!socket?.connected || !player) return;
   const now = Date.now();
-  if (now - _lastMoveSend < 33) return;
+  if (now - _lastMoveSend < 16) return;
   _lastMoveSend = now;
   socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
 }
