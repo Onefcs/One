@@ -106,8 +106,15 @@ function clampCamera() {
 
 function updateCamera(dt) {
   const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
-  camera.x += (player.x - visW / 2 - camera.x) * Math.min(1, 5 * dt);
-  camera.y += (player.y - visH / 2 - camera.y) * Math.min(1, 5 * dt);
+  const tx = player.x - visW / 2;
+  const ty = player.y - visH / 2;
+  const factor = Math.min(1, 8 * dt); // slightly faster tracking reduces perceived lag
+  camera.x += (tx - camera.x) * factor;
+  camera.y += (ty - camera.y) * factor;
+  // Snap to pixel when close enough — prevents float oscillation around
+  // a half-pixel boundary which causes the background to jitter 1px
+  if (Math.abs(tx - camera.x) < 0.5) camera.x = Math.round(camera.x);
+  if (Math.abs(ty - camera.y) < 0.5) camera.y = Math.round(camera.y);
   clampCamera();
 }
 
@@ -518,10 +525,19 @@ function render(dt, ts) {
   const _pulse    = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
   const _bossGlow = 0.6 + 0.4 * Math.sin(frameCount * 0.10);
   const _dropSin  = Math.sin(frameCount * 0.09);
+
+  // Pixel-lock the camera once per frame — both the ctx.translate AND the
+  // tile-canvas slice coordinates must use the exact same integer value,
+  // otherwise rounding drift between Math.round and Math.floor creates a
+  // 1-px jump every time the camera crosses a 0.5-pixel boundary (visible
+  // as micro-jitter on the tile background).
+  const _camX = Math.round(camera.x);
+  const _camY = Math.round(camera.y);
+
   // Cache view bounds so _isOnScreen() avoids divisions on every call
   const _vM = 60;
-  _vL = camera.x - _vM; _vR = camera.x + W / ZOOM + _vM;
-  _vT = camera.y - _vM; _vB = camera.y + (H - HEADER_H) / ZOOM + _vM;
+  _vL = _camX - _vM; _vR = _camX + W / ZOOM + _vM;
+  _vT = _camY - _vM; _vB = _camY + (H - HEADER_H) / ZOOM + _vM;
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -534,13 +550,13 @@ function render(dt, ts) {
   ctx.beginPath(); ctx.rect(0, HEADER_H, W, H - HEADER_H); ctx.clip();
   ctx.translate(0, HEADER_H);
   ctx.scale(ZOOM, ZOOM);
-  ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
+  ctx.translate(-_camX, -_camY);
 
   if (tileCanvas) {
     ctx.imageSmoothingEnabled = false;
-    // Draw only the visible slice — avoids reading the full (2000-3000px) tile canvas each frame
-    const _tcSx = Math.max(0, Math.floor(camera.x));
-    const _tcSy = Math.max(0, Math.floor(camera.y));
+    // Draw only the visible slice — same _camX/_camY as the translate above
+    const _tcSx = Math.max(0, _camX);
+    const _tcSy = Math.max(0, _camY);
     const _tcSw = Math.min(tileCanvas.width  - _tcSx, Math.ceil(W  / ZOOM) + 2);
     const _tcSh = Math.min(tileCanvas.height - _tcSy, Math.ceil((H - HEADER_H) / ZOOM) + 2);
     if (_tcSw > 0 && _tcSh > 0)
