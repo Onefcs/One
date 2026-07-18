@@ -109,8 +109,6 @@ const ITEM_DEF = [
   { id:'nd3', name:'Амулет тьмы',       slot:'pendant', icon:'pendant', atk:8,hp:30,   rarity:'rare'     },
   { id:'nd4', name:'Амулет легенды',    slot:'pendant', icon:'pendant', atk:16,hp:80,  rarity:'epic'     },
   { id:'nd5', name:'Амулет богов',      slot:'pendant', icon:'pendant', atk:24,hp:120, rarity:'legendary'},
-  // ── Boss crafted ──────────────────────────────────────────
-  { id:'demon_seal', name:'Печать Демона', slot:'ring', icon:'ring', atk:25, def:12, hp:80, rarity:'legendary' },
   // ── Potions (use-type, don't take inv slot) ───────────────
   { id:'pt1', name:'Зелье лечения',     slot:'use',     icon:'potion',  hp:60,         rarity:'common'   },
   { id:'pt2', name:'Большое зелье',     slot:'use',     icon:'potion',  hp:120,        rarity:'uncommon' },
@@ -183,13 +181,12 @@ const SHOP_CATALOG = [
 ];
 
 const CRAFT_RECIPES = [
-  { name:'Стальной меч',  resultId:'sw2', mats:[{id:'mat_iron',n:3}],                          gold:50  },
-  { name:'Кольчуга',      resultId:'ar2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:2}],   gold:80  },
-  { name:'Кожаный щит',   resultId:'oh2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:1}],   gold:50  },
-  { name:'Шлем железный', resultId:'hm2', mats:[{id:'mat_iron',n:2}],                          gold:40  },
-  { name:'Кольцо силы',   resultId:'rn1', mats:[{id:'mat_gem',n:1}],                           gold:100 },
+  { name:'Стальной меч',  resultId:'sw2', mats:[{id:'mat_iron',n:3},{id:'boss_stone',n:20}],                          gold:50  },
+  { name:'Кольчуга',      resultId:'ar2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:2},{id:'boss_stone',n:20}],   gold:80  },
+  { name:'Кожаный щит',   resultId:'oh2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:1},{id:'boss_stone',n:20}],   gold:50  },
+  { name:'Шлем железный', resultId:'hm2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                          gold:40  },
+  { name:'Кольцо силы',   resultId:'rn1', mats:[{id:'mat_gem',n:1},{id:'boss_stone',n:20}],                           gold:100 },
   { name:'Меч дракона',   resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3}],     gold:200 },
   { name:'Посох Анубара',  resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3}],    gold:200 },
   { name:'Амулет тьмы',   resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2}],       gold:150 },
-  { name:'Печать Демона', resultId:'demon_seal', mats:[{id:'boss_stone',n:20}],                gold:0   },
 ];
