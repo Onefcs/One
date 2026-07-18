@@ -115,8 +115,28 @@
   <div class="panel-body" style="padding-top:4px">
     <div class="sec-title">Снаряжение (нажми для снятия)</div>
     <div class="eq-grid-5col" id="eq-grid"></div>
+    <div class="sec-title" style="margin-top:14px">Зелья (нажми для использования)</div>
+    <div class="pt-shelf" id="potion-shelf"></div>
     <div class="sec-title" style="margin-top:14px">Предметы (нажми для экипировки)</div>
     <div class="inv-grid" id="inv-grid"></div>
+  </div>
+</div>
+
+<!-- Potion action modal -->
+<div id="pt-modal" onclick="closePotionModal()" style="display:none;position:absolute;inset:0;z-index:210;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:flex-end;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="width:100%;background:#0d0818;border-radius:18px 18px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 18px 32px;">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+      <span id="pt-modal-icon"></span>
+      <div>
+        <div id="pt-modal-name" style="font-size:16px;font-weight:800;color:#3ef07a;"></div>
+        <div id="pt-modal-stat" style="font-size:12px;color:#7080a0;margin-top:3px;"></div>
+      </div>
+      <button onclick="closePotionModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;font-size:13px;cursor:pointer;">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button id="pt-modal-use" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#1a3a1a,#2a5a2a);color:#3ef07a;font-size:15px;font-weight:700;cursor:pointer;">Использовать</button>
+      <button id="pt-modal-hud" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#1a1a3a,#2a2a5a);color:#a0b4ff;font-size:15px;font-weight:700;cursor:pointer;">В HUD</button>
+    </div>
   </div>
 </div>
 

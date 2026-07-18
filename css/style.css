@@ -455,6 +455,30 @@ canvas { display:block; width:100%; height:100%; }
 .panel-body { padding:14px 16px 24px; }
 .sec-title  { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#484860; margin-bottom:8px; }
 
+/* ── POTION SHELF ──────────────────────────── */
+.pt-shelf {
+  display:flex; gap:10px; flex-wrap:wrap; margin-bottom:4px;
+}
+.pt-cell {
+  position:relative; flex:1; min-width:100px;
+  background:rgba(255,255,255,0.03); border:2px solid rgba(255,255,255,0.07);
+  border-radius:12px; padding:10px 8px 8px; text-align:center;
+  cursor:pointer; user-select:none; transition:border-color 0.15s, background 0.15s;
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+}
+.pt-cell:active { opacity:0.7; }
+.pt-cell.pt-hud { border-color:rgba(62,240,122,0.4); background:rgba(62,240,122,0.05); }
+.pt-cell-name { font-size:10px; color:#8090a0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.pt-cell-cnt  { font-size:13px; font-weight:800; color:#3ef07a; }
+.pt-cell-cnt.pt-zero { color:#404060; }
+.pt-hud-badge {
+  position:absolute; top:4px; right:6px;
+  font-size:7px; font-weight:800; letter-spacing:.5px;
+  color:#3ef07a; text-transform:uppercase;
+}
+/* disable button styling inside modal when disabled */
+#pt-modal-use:disabled, #pt-modal-hud:disabled { opacity:0.4; pointer-events:none; }
+
 /* ── INVENTORY (redesigned) ─────────────── */
 .inv-char-row {
   display:flex; align-items:center; gap:12px;

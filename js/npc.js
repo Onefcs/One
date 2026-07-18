@@ -28,14 +28,19 @@ function _buildNpcBody(npcId) {
 // ── Merchant ────────────────────────────────────────────
 function _merchantBody() {
   const p = player;
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · ${iconHTML('potion',16,'#3ef07a')} Зелий: <b>${p.potions}/5</b></div>`;
+  const bag = p.potionBag || {};
+  const total = (bag.pt1 || 0) + (bag.pt2 || 0);
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · ${iconHTML('potion',16,'#3ef07a')} Зелий: <b>${total}/999</b></div>`;
   html += '<div class="shop-sec">Зелья</div><div class="shop-list">';
   MERCHANT_SHOP.forEach((entry, idx) => {
-    const canBuy = p.gold >= entry.price && (p.potions || 0) < 5;
+    const cur = bag[entry.itemId] || 0;
+    const canBuy = p.gold >= entry.price && cur < 999;
     html += `<div class="shop-row">
       <span class="shop-item-icon">${iconHTML(entry.icon, 22)}</span>
-      <span class="shop-item-name">${entry.name}</span>
-      <span class="shop-item-stat">${entry.desc}</span>
+      <div class="shop-item-info">
+        <span class="shop-item-name">${entry.name}</span>
+        <span class="shop-item-stat">${entry.desc} · <b style="color:#3ef07a">×${cur}</b></span>
+      </div>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx})">
         ${entry.price}${iconHTML('coin',14,'#f1c40f')}
       </button>
@@ -48,10 +53,12 @@ function _merchantBody() {
 function buyPotion(idx) {
   const entry = MERCHANT_SHOP[idx];
   if (!entry || !player) return;
-  if ((player.potions || 0) >= 5) { _shopMsg('Максимум 5 зелий!'); return; }
-  if (player.gold < entry.price)  { _shopMsg('Мало золота!'); return; }
+  if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
+  const cur = player.potionBag[entry.itemId] || 0;
+  if (cur >= 999)              { _shopMsg('Максимум 999 зелий!'); return; }
+  if (player.gold < entry.price) { _shopMsg('Мало золота!'); return; }
   player.gold -= entry.price;
-  player.potions = (player.potions || 0) + 1;
+  player.potionBag[entry.itemId] = cur + 1;
   if (typeof onBuyPotion === 'function') onBuyPotion();
   netSaveProgress();
   openNpc('merchant');

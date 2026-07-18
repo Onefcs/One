@@ -16,7 +16,8 @@ function makePlayer(type) {
       gloves:null, boots:null, ring:null, belt:null, pendant:null,
     },
     inventory: [],
-    potions: 3,
+    potionBag: { pt1: 3, pt2: 0 },
+    hudPotion: 'pt1',
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
     questIdx: 0,
     questKills: {},
@@ -107,14 +108,18 @@ function unequipItem(slot) {
 
 function usePotion() {
   if (!player || state !== 'playing') return;
-  if (player.potions <= 0) return;
+  const bag = player.potionBag || {};
+  const type = player.hudPotion || 'pt1';
+  if ((bag[type] || 0) <= 0) return;
   if (player.hp >= player.maxHp) return;
-  player.potions--;
-  const heal = 60;
+  bag[type]--;
+  const def = ITEM_DEF.find(i => i.id === type);
+  const heal = (def && def.hp) || 60;
   player.hp = Math.min(player.maxHp, player.hp + heal);
   dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
   spawnBurst(player.x, player.y, '#4f4', 5);
   if (typeof netUsePotion === 'function') netUsePotion(heal);
+  if (typeof updateInvUI === 'function') updateInvUI();
   netSaveProgress();
 }
 
@@ -298,7 +303,13 @@ function restoreFromSave(data) {
   player.xpNext   = data.xpNext   || 100;
   player.gold     = data.gold     || 0;
   player.kills    = data.kills    || 0;
-  player.potions  = data.potions  ?? 3;
+  // migrate old integer potions save → potionBag
+  if (data.potionBag) {
+    player.potionBag = { pt1: 0, pt2: 0, ...data.potionBag };
+  } else {
+    player.potionBag = { pt1: data.potions ?? 3, pt2: 0 };
+  }
+  player.hudPotion = data.hudPotion || 'pt1';
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;

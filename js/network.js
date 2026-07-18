@@ -313,7 +313,8 @@ function netSaveProgress() {
     atk: player.atk, def: player.def,
     baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
     inventory: player.inventory, equipment: player.equipment,
-    potions: player.potions || 0,
+    potionBag: player.potionBag || { pt1: 0, pt2: 0 },
+    hudPotion: player.hudPotion || 'pt1',
     upgrades: player.upgrades || {},
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });

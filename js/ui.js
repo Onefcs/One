@@ -32,11 +32,28 @@ function updateInvUI() {
           ${iconHTML('coin',11,'#f1c40f')}${p.gold}
         </div>
       </div>
-      <div style="color:#f96;text-align:right;font-weight:bold;display:flex;align-items:center;gap:2px">${iconHTML('potion',16,'#3ef07a')}×${p.potions || 0}</div>
+      <div style="color:#f96;text-align:right;font-weight:bold;display:flex;align-items:center;gap:2px">${iconHTML('potion',16,'#3ef07a')}×${((p.potionBag||{}).pt1||0) + ((p.potionBag||{}).pt2||0)}</div>
     </div>
   `;
 
-  // Inventory grid (10 slots)
+  // Potion section
+  const bag = p.potionBag || {};
+  const hudPt = p.hudPotion || 'pt1';
+  const ptEl = document.getElementById('potion-shelf');
+  if (ptEl) {
+    ptEl.innerHTML = ITEM_DEF.filter(d => d.slot === 'use').map(def => {
+      const cnt = bag[def.id] || 0;
+      const isHud = def.id === hudPt;
+      return `<div class="pt-cell${isHud ? ' pt-hud' : ''}" onclick="openPotionModal('${def.id}')" title="${def.name} — HP+${def.hp}">
+        ${iconHTML(def.icon, 22, isHud ? '#3ef07a' : '#8090a0')}
+        <div class="pt-cell-name">${def.name.slice(0, 10)}</div>
+        <div class="pt-cell-cnt${cnt > 0 ? '' : ' pt-zero'}">×${cnt}</div>
+        ${isHud ? '<div class="pt-hud-badge">HUD</div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // Inventory grid
   document.getElementById('inv-count').textContent = inv.length + '/50';
   document.getElementById('inv-grid').innerHTML = Array.from({ length: 50 }, (_, i) => {
     const it = inv[i];
@@ -48,6 +65,56 @@ function updateInvUI() {
               <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>` : ''}
     </div>`;
   }).join('');
+}
+
+// ─────────────────────────────────────────────────────────
+//  POTION MODAL
+// ─────────────────────────────────────────────────────────
+function openPotionModal(itemId) {
+  if (!player) return;
+  const def = ITEM_DEF.find(d => d.id === itemId);
+  if (!def) return;
+  const bag = player.potionBag || {};
+  const cnt = bag[itemId] || 0;
+  const isHud = player.hudPotion === itemId;
+  const canUse = cnt > 0 && player.hp < player.maxHp;
+
+  document.getElementById('pt-modal-icon').innerHTML = iconHTML(def.icon, 36, '#3ef07a');
+  document.getElementById('pt-modal-name').textContent = def.name;
+  document.getElementById('pt-modal-stat').textContent = `HP +${def.hp}  ·  ×${cnt} в наличии`;
+  document.getElementById('pt-modal-use').disabled = !canUse;
+  document.getElementById('pt-modal-use').onclick = () => { usePotionById(itemId); closePotionModal(); };
+  const hudBtn = document.getElementById('pt-modal-hud');
+  hudBtn.textContent = isHud ? '✓ В HUD (выбрано)' : 'В HUD';
+  hudBtn.disabled = isHud;
+  hudBtn.onclick = () => { setHudPotion(itemId); closePotionModal(); };
+  document.getElementById('pt-modal').style.display = 'flex';
+}
+
+function closePotionModal() {
+  document.getElementById('pt-modal').style.display = 'none';
+}
+
+function usePotionById(itemId) {
+  if (!player || state !== 'playing') return;
+  const bag = player.potionBag || {};
+  if ((bag[itemId] || 0) <= 0 || player.hp >= player.maxHp) return;
+  bag[itemId]--;
+  const def = ITEM_DEF.find(d => d.id === itemId);
+  const heal = (def && def.hp) || 60;
+  player.hp = Math.min(player.maxHp, player.hp + heal);
+  dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
+  spawnBurst(player.x, player.y, '#4f4', 5);
+  if (typeof netUsePotion === 'function') netUsePotion(heal);
+  updateInvUI();
+  netSaveProgress();
+}
+
+function setHudPotion(itemId) {
+  if (!player) return;
+  player.hudPotion = itemId;
+  updateInvUI();
+  netSaveProgress();
 }
 
 function updateProfileUI() {
@@ -731,7 +798,9 @@ function drawPotionButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const pb = _uiBtnGrads.potBtn;
-  const count = player.potions || 0;
+  const bag = player.potionBag || {};
+  const hudPt = player.hudPotion || 'pt1';
+  const count = bag[hudPt] || 0;
   const ready = count > 0 && player.hp < player.maxHp;
   const F = 'system-ui, -apple-system, Arial';
 
