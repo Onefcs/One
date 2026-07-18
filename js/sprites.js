@@ -347,7 +347,7 @@ function drawSprite(p, tint) {
   const sy = Math.floor(fi / ad.cols) * fh;
 
   const dh = 80;
-  const dw = dh * fw / fh;
+  const dw = Math.round(dh * fw / fh);
   const dx = Math.round(p.x - dw / 2);
   const dy = Math.round(p.y - dh * 0.62);
 

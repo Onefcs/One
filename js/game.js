@@ -194,6 +194,7 @@ function update(dt) {
   // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
     const ak = getSpriteAnimKey(player);
+    if (ak !== player._lastAnimKey) { player._lastAnimKey = ak; player.animFrame = 0; player.animTimer = 0; }
     const ad = SPRITE_DEF[player.type].anims[ak];
     if (ad) {
       player.animTimer += dt;
@@ -785,7 +786,7 @@ function drawOtherPlayerSprite(p) {
   const fi = Math.min(Math.floor(p.animFrame || 0), ad.n - 1);
   const sx = (fi % ad.cols) * fw;
   const sy = Math.floor(fi / ad.cols) * fh;
-  const dh = 80, dw = dh * fw / fh;
+  const dh = 80, dw = Math.round(dh * fw / fh);
   const dx = Math.round(p.x - dw / 2), dy = Math.round(p.y - dh * 0.62);
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
