@@ -126,6 +126,8 @@ function netConnect(onReady) {
         (ex._q || (ex._q = [])).push({ x: se.x, y: se.y, t: _qt });
         if (ex._q.length > 12) ex._q.splice(0, ex._q.length - 12);
         ex.aggro = se.aggro;
+        if (se.aggroR) ex.aggroR = se.aggroR;
+        if (se.spd)    ex.spd    = se.spd;
         // (hurtTimer arrives via the enemyHurt event, not gameState)
         if (se.atkAnimTimer > 0) {
           ex.atkAnimTimer = se.atkAnimTimer;

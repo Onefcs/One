@@ -452,27 +452,41 @@ function update(dt) {
     }
   });
   let _corpseExpired = false;
-  const _nowMs = performance.now();
   serverEnemies.forEach(e => {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
-    // Play the de-jittered snapshot queue 110ms in the past. The queue's
-    // timestamps are uniform 50ms server ticks (rebuilt in network.js), so
-    // playback is constant-velocity no matter how unevenly packets arrive.
-    const q = e._q;
-    if (q && q.length) {
-      const rt = _nowMs - 110;
-      while (q.length > 1 && q[1].t <= rt) q.shift();
-      const s0 = q[0], s1 = q[1];
-      if (!s1) { e.x = s0.x; e.y = s0.y; }        // caught up — hold newest
-      else {
-        let f = (rt - s0.t) / (s1.t - s0.t);
-        if (f < 0) f = 0; else if (f > 1) f = 1;
-        e.x = s0.x + (s1.x - s0.x) * f;
-        e.y = s0.y + (s1.y - s0.y) * f;
-      }
+    if (e.hp <= 0) return;
+
+    // Client-side AI — mirrors server Room._tick so position is driven at 60fps,
+    // independent of when network packets arrive.
+    const aggroR = e.aggroR || 175;
+    const spd    = e.spd    || 70;
+    const sz     = e.size   || 16;
+    const dp     = dist(e.x, e.y, player.x, player.y);
+
+    if (dp < aggroR) e.aggro = true;
+    if (dp > aggroR * 2.2) e.aggro = false;
+
+    if (e.aggro && dp > sz + 14) {
+      const nx = (player.x - e.x) / dp;
+      const ny = (player.y - e.y) / dp;
+      if (Math.abs(nx) >= Math.abs(ny)) e._facing = nx > 0 ? 'right' : 'left';
+      else                              e._facing = ny > 0 ? 'down'  : 'up';
+      const er  = sz * 0.55;
+      const evx = nx * spd * dt;
+      const evy = ny * spd * dt;
+      if (canMoveX(e, evx, er)) e.x += evx;
+      if (canMoveY(e, evy, er)) e.y += evy;
+      e._moveTimer = 0.2;
+    }
+
+    // Gentle server correction — absorbs cumulative drift without jitter
+    if (e.targetX !== undefined) {
+      const err = Math.hypot(e.targetX - e.x, e.targetY - e.y);
+      const k = err > 60 ? 0.35 : err > 8 ? 0.06 : 0;
+      if (k > 0) { e.x += (e.targetX - e.x) * k; e.y += (e.targetY - e.y) * k; }
     }
   });
   if (_corpseExpired) {

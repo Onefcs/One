@@ -37,6 +37,7 @@ class Room {
       .map(e => ({
         id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
         name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+        aggroR: e.aggroR, spd: e.spd,
       }));
   }
 
@@ -141,6 +142,7 @@ class Room {
         nearEnemies.push({
           id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
           name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+          aggroR: e.aggroR, spd: e.spd,
           atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
         });
       });
