@@ -138,14 +138,150 @@ function drawMapPanel() {
     th.name + ' · Этаж ' + dungeonLvl + ' · Враги: ' + mapEnemies.length;
 }
 
+function _floorEnemyNames(n) {
+  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  if (FLOOR_ENEMIES[n]) {
+    const fe = FLOOR_ENEMIES[n];
+    const names = fe.pool.map(eid => (eMap.get(eid) || {}).name || eid);
+    const boss  = (eMap.get(fe.boss) || {}).name || fe.boss;
+    return [...names, boss].join(', ');
+  }
+  return 'Орк, Тролль, ДЕМОН';
+}
+
+function _floorEnemyPool(n) {
+  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  if (FLOOR_ENEMIES[n]) {
+    const fe = FLOOR_ENEMIES[n];
+    const regular = fe.pool.map(eid => eMap.get(eid)).filter(Boolean);
+    const boss    = eMap.get(fe.boss);
+    return { regular, boss };
+  }
+  return {
+    regular: ENEMY_DEF.filter(e => e.eid === 'orc' || e.eid === 'troll'),
+    boss:    ENEMY_DEF.find(e => e.eid === 'demon'),
+  };
+}
+
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
+  const rarityNames  = ['Common','Uncommon','Rare','Epic','Legendary'];
+  const rarityColors = ['#aaa','#4af','#fa4','#c55ef5','#ff8c00'];
   grid.innerHTML = Array.from({ length: 20 }, (_, i) => {
-    const n = i + 1;
-    const th = getTheme(n);
-    return `<div class="floor-btn${n === dungeonLvl ? ' active' : ''}" onclick="goToFloor(${n})" title="${th.name}">${n}</div>`;
+    const n   = i + 1;
+    const th  = getTheme(n);
+    const cur = n === dungeonLvl;
+    const enemyNames = _floorEnemyNames(n);
+    const maxRarIdx  = Math.min(4, Math.max(0, Math.floor((n - 1) / 4)));
+    const dropRar    = rarityNames[Math.min(maxRarIdx + 1, 4)];
+    const dropColor  = rarityColors[Math.min(maxRarIdx + 1, 4)];
+    return `
+      <div class="floor-item${cur ? ' active' : ''}">
+        <div class="floor-item-left" onclick="goToFloor(${n})">
+          <div class="floor-item-row1">
+            <span class="floor-item-num">Этаж ${n}</span>
+            <span class="floor-item-loc">${th.name}</span>
+            ${cur ? '<span class="floor-item-cur">ВЫ ЗДЕСЬ</span>' : ''}
+          </div>
+          <div class="floor-item-brief">${enemyNames} · до <span style="color:${dropColor}">${dropRar}</span></div>
+        </div>
+        <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
+      </div>`;
   }).join('');
+}
+
+function showFloorInfo(floor) {
+  floor = floor || dungeonLvl || 1;
+  const sc    = 1 + (floor - 1) * 0.28;
+  const atkSc = 1 + (floor - 1) * 0.18;
+
+  const rarityNames  = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
+  const rarityColors = ['#aaa',   '#4af',      '#fa4', '#c55ef5', '#ff8c00'];
+  const maxRarIdx    = Math.min(4, Math.max(0, Math.floor((floor - 1) / 4)));
+  const dropRarName  = rarityNames[Math.min(maxRarIdx + 1, 4)];
+  const dropRarColor = rarityColors[Math.min(maxRarIdx + 1, 4)];
+
+  const { regular: regularPool, boss } = _floorEnemyPool(floor);
+  const allEnemies = boss ? [...regularPool, boss] : regularPool;
+
+  const html = allEnemies.map(e => {
+    const isBoss = !!e.isBoss;
+    const hp     = Math.floor(e.hp  * sc);
+    const atk    = Math.floor(e.atk * atkSc);
+
+    // Gold drop text
+    let goldText;
+    if (isBoss) {
+      const g = e.gold || [50, 50];
+      const gText = g[0] === g[1] ? `${g[0]}g` : `${g[0]}–${g[1]}g`;
+      goldText = `<span style="color:#ff0">${gText} (100%)</span>`;
+    } else {
+      const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1));
+      const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1));
+      goldText = `${gMin}–${gMax}g <span style="color:#555">(30%)</span>`;
+    }
+
+    // XP text
+    const xpColor = isBoss ? '#0f0' : '#8f8';
+
+    // Boss stone text
+    const stoneRow = isBoss
+      ? `<div class="fi-drop">
+           <span class="fi-drop-lbl">Камень Босса</span>
+           <span class="fi-drop-val" style="color:#aaf">${floor}–${floor + 2} шт. <span style="color:#555">(100%)</span></span>
+         </div>`
+      : '';
+
+    // Regular item drop rows
+    const itemRows = !isBoss ? `
+      <div class="fi-drop">
+        <span class="fi-drop-lbl">Предмет</span>
+        <span class="fi-drop-val">до <span style="color:${dropRarColor}">${dropRarName}</span> <span style="color:#555">(17%)</span></span>
+      </div>
+      <div class="fi-drop">
+        <span class="fi-drop-lbl">Матер. для крафта</span>
+        <span class="fi-drop-val" style="color:#888">случайный <span style="color:#555">(15%)</span></span>
+      </div>` : '';
+
+    return `
+      <div class="fi-monster${isBoss ? ' fi-boss' : ''}">
+        <div class="fi-mhdr">
+          <span class="fi-mname" style="color:${e.color}">${e.name}</span>
+          ${isBoss ? '<span class="fi-boss-tag">БОСС</span>' : ''}
+        </div>
+        <div class="fi-mstats">
+          <span>HP <b>${hp}</b></span>
+          <span>ATK <b>${atk}</b></span>
+          <span>DEF <b>${e.def}</b></span>
+          <span>СПД <b>${e.spd}</b></span>
+        </div>
+        <div class="fi-drops-hdr">Дроп</div>
+        <div class="fi-drops">
+          <div class="fi-drop">
+            <span class="fi-drop-lbl">Опыт</span>
+            <span class="fi-drop-val" style="color:${xpColor}">${e.xp} XP ${isBoss ? '<span style="color:#555">(100%)</span>' : ''}</span>
+          </div>
+          <div class="fi-drop">
+            <span class="fi-drop-lbl">Золото</span>
+            <span class="fi-drop-val">${goldText}</span>
+          </div>
+          ${stoneRow}
+          ${itemRows}
+        </div>
+      </div>`;
+  }).join('');
+
+  const modal = document.getElementById('floor-info-modal');
+  if (!modal) return;
+  modal.querySelector('.fi-title').textContent = `Этаж ${floor} — монстры`;
+  document.getElementById('floor-info-body').innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function closeFloorInfo() {
+  const modal = document.getElementById('floor-info-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 // ─────────────────────────────────────────────────────────

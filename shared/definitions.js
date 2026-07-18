@@ -18,24 +18,52 @@ const CHAR_DEF = {
 };
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
-// Index order matters: client dungeon uses index for maxEIdx scaling per floor.
-// Floor 1 → indices 0-1 (mushroom, slime); floor 5 → indices 0-3 (+ goblin); etc.
+// Floors 1-5 use FLOOR_ENEMIES map; floors 6+ use orc/troll/demon.
 const ENEMY_DEF = [
-  { eid:'mushroom', name:'Гриб',    color:'#cc6633', size:13, hp:30,  atk:6,  def:1,  spd:65,  xp:1,  gold:[1,3], isBoss:false },
-  { eid:'slime',    name:'Слизень', color:'#44cc44', size:12, hp:35,  atk:7,  def:0,  spd:55,  xp:1,  gold:[1,3], isBoss:false },
-  { eid:'spider',   name:'Паук',    color:'#332255', size:14, hp:50,  atk:10, def:2,  spd:110, xp:2,  gold:[1,3], isBoss:false },
-  { eid:'goblin',   name:'Гоблин',  color:'#3a3',    size:14, hp:40,  atk:8,  def:2,  spd:92,  xp:2,  gold:[1,3], isBoss:false },
-  { eid:'skeleton', name:'Скелет',  color:'#bbb',    size:16, hp:70,  atk:14, def:4,  spd:70,  xp:3,  gold:[1,3], isBoss:false },
-  { eid:'orc',      name:'Орк',     color:'#964',    size:20, hp:130, atk:20, def:8,  spd:56,  xp:4,  gold:[1,3], isBoss:false },
-  { eid:'troll',    name:'Тролль',  color:'#575',    size:24, hp:230, atk:28, def:12, spd:40,  xp:7,  gold:[1,3], isBoss:false },
-  { eid:'demon',    name:'ДЕМОН',   color:'#f33',    size:28, hp:420, atk:42, def:16, spd:60,  xp:13, gold:[1,3], isBoss:true  },
+  // Floor 1 — Goblins
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:45,  atk:9,   def:1,  spd:80,  xp:2,  gold:[1,3],   isBoss:false },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:55,  atk:12,  def:2,  spd:92,  xp:3,  gold:[1,3],   isBoss:false },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:200, atk:25,  def:5,  spd:65,  xp:20, gold:[15,25], isBoss:true  },
+  // Floor 2 — Skeletons
+  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:75,  atk:16,  def:3,  spd:70,  xp:4,  gold:[1,3],   isBoss:false },
+  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:90,  atk:20,  def:4,  spd:75,  xp:5,  gold:[1,3],   isBoss:false },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:350, atk:40,  def:8,  spd:55,  xp:30, gold:[20,35], isBoss:true  },
+  // Floor 3 — Mushrooms
+  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:110, atk:22,  def:5,  spd:60,  xp:6,  gold:[1,3],   isBoss:false },
+  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:130, atk:28,  def:6,  spd:65,  xp:7,  gold:[1,3],   isBoss:false },
+  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:500, atk:55,  def:12, spd:45,  xp:45, gold:[30,50], isBoss:true  },
+  // Floor 4 — Ghosts
+  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:150, atk:35,  def:7,  spd:110, xp:8,  gold:[1,3],   isBoss:false },
+  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:130, atk:30,  def:6,  spd:120, xp:7,  gold:[1,3],   isBoss:false },
+  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:700, atk:70,  def:15, spd:85,  xp:60, gold:[40,65], isBoss:true  },
+  // Floor 5 — Golems
+  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:200, atk:45,  def:10, spd:50,  xp:10, gold:[1,3],   isBoss:false },
+  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:180, atk:40,  def:12, spd:55,  xp:9,  gold:[1,3],   isBoss:false },
+  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1000,atk:100, def:20, spd:40,  xp:80, gold:[55,80], isBoss:true  },
+  // Floors 6+ — legacy enemies
+  { eid:'orc',    name:'Орк',    color:'#964', size:20, hp:130, atk:20, def:8,  spd:56, xp:4,  gold:[1,3],   isBoss:false },
+  { eid:'troll',  name:'Тролль', color:'#575', size:24, hp:230, atk:28, def:12, spd:40, xp:7,  gold:[1,3],   isBoss:false },
+  { eid:'demon',  name:'ДЕМОН',  color:'#f33', size:28, hp:420, atk:42, def:16, spd:60, xp:50, gold:[50,50], isBoss:true  },
 ];
 
-// Gold drop: 30% chance, scales with floor. Returns 0 if no drop.
+// Per-floor enemy pools for floors 1-5
+const FLOOR_ENEMIES = {
+  1: { pool: ['goblin_guard', 'goblin_warrior'], boss: 'goblin_boss'   },
+  2: { pool: ['skel_warrior', 'skel_barbarian'], boss: 'skel_boss'     },
+  3: { pool: ['mush_guard',   'mush_warrior'],   boss: 'mush_boss'     },
+  4: { pool: ['ghost_warrior','ghost_guard'],     boss: 'ghost_boss'    },
+  5: { pool: ['golem_warrior','golem_guard'],     boss: 'golem_boss'    },
+};
+
+// Gold drop: 30% chance for regular enemies, 100% for bosses. Scales with floor.
 function calcGoldDrop(enemy, floor) {
+  if (enemy.isBoss) {
+    const g = enemy.gold || [50, 50];
+    return g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1));
+  }
   if (Math.random() > 0.30) return 0;
   const base = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
   return Math.round(base * Math.pow(2, floor - 1));
 }
 
-if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, calcGoldDrop };
+if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop };

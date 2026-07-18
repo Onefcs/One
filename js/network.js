@@ -193,6 +193,11 @@ function netConnect(onReady) {
     }
     initNpcs();
     transTimer = 0.5;
+    // Preload sprites for enemies on this floor to avoid mid-game hitches
+    const fe = FLOOR_ENEMIES && FLOOR_ENEMIES[floor];
+    if (fe) {
+      (fe.pool || []).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
+    }
   });
 
   socket.on('spawnProj', data => {

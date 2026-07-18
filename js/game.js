@@ -740,11 +740,11 @@ function selectChar(type) {
   dungeonLvl = 1;
   const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
   csStartLoading(type, () => { initNpcs(); _finishOnlineStart(); });
-  // Gate the loading screen on BOTH player and enemy sprites being decoded —
-  // otherwise the first monster walk/attack animation mid-game would still hitch.
-  let _spritesPending = 2;
+  // Gate the loading screen on BOTH player and floor-1 enemy sprites being decoded.
+  const _floor1Eids = (FLOOR_ENEMIES[1]?.pool || []).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);
+  let _spritesPending = 1 + _floor1Eids.length;
   const _onSpriteSetReady = () => { if (--_spritesPending === 0) csOnSpritesReady(); };
-  loadEnemySprites('slime', _onSpriteSetReady);
+  _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
   loadSprites(type, _onSpriteSetReady);
   netSelectChar(type, savedStats);
 }

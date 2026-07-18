@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -127,16 +127,25 @@ function generateDungeon(lvl) {
   const enemyList = [];
   let eid = 0;
 
+  const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  function _pickEnemy(rng, isBoss) {
+    if (FLOOR_ENEMIES[lvl]) {
+      const fe = FLOOR_ENEMIES[lvl];
+      const eid = isBoss ? fe.boss : fe.pool[Math.floor(rng() * fe.pool.length)];
+      return _enemyByEid.get(eid);
+    }
+    if (isBoss) return _enemyByEid.get('demon');
+    const pool = ['orc', 'troll'];
+    return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
+  }
+
   rooms.slice(1).forEach((room, idx) => {
     const isBoss = idx === rooms.length - 2;
     const count = isBoss ? 1 : 2 + Math.floor(rng() * (2 + Math.floor(lvl / 3)));
     const bw = room.bx2 - room.bx1, bh = room.by2 - room.by1;
 
     for (let i = 0; i < count; i++) {
-      const maxEIdx = Math.min(6, 1 + Math.floor(lvl / 2));
-      const rawIdx  = Math.floor(rng() * (maxEIdx + 1));
-      const defIdx  = isBoss ? 7 : (lvl === 1 ? 1 : rawIdx);
-      const d = ENEMY_DEF[defIdx];
+      const d = _pickEnemy(rng, isBoss);
 
       let ex = room.cx * TILE + TILE/2, ey = room.cy * TILE + TILE/2;
       for (let attempt = 0; attempt < 30; attempt++) {
