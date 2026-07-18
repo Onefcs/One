@@ -80,7 +80,7 @@ function _craftsmanBody() {
     html += `<div class="shop-row craft-row-clickable${canCraft ? ' craft-can' : ''}" onclick="openCraftModal(${idx})">
       <span class="shop-item-icon">${_itemIcon(result, 28)}</span>
       <div class="shop-item-info">
-        <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${result.name}</div>
+        <div class="shop-item-name" style="color:${rc}">${result.name}</div>
         <div class="shop-item-stat">${stats}</div>
       </div>
       <span class="craft-arrow">›</span>
@@ -119,7 +119,7 @@ function openCraftModal(idx) {
   div.innerHTML = `<div class="cmod-box" onclick="event.stopPropagation()">
     <div class="cmod-hdr">
       <span class="cmod-icon">${_itemIcon(result, 40)}</span>
-      <div class="cmod-title" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${result.name}</div>
+      <div class="cmod-title" style="color:${rc}">${result.name}</div>
       <button class="npc-close" onclick="closeCraftModal()">✕</button>
     </div>
     <div class="cmod-stats">${stats || '—'}</div>

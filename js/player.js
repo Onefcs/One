@@ -29,6 +29,17 @@ function makePlayer(type) {
   };
 }
 
+// Returns per-level enhance bonus for one stat unit
+function _enhBonusAt(it, levels) {
+  if (!levels) return {};
+  const b = {};
+  if (it.atk) b.atk = Math.max(1, Math.ceil(it.atk * 0.10)) * levels;
+  if (it.def) b.def = Math.max(1, Math.ceil(it.def * 0.10)) * levels;
+  if (it.hp)  b.hp  = Math.max(5, Math.ceil(it.hp  * 0.10)) * levels;
+  return b;
+}
+function _enhBonus(it) { return _enhBonusAt(it, it.enhance || 0); }
+
 function recompute() {
   const u = player.upgrades || {};
   let a = player.baseAtk + (u.atk || 0) * 3;
@@ -37,9 +48,10 @@ function recompute() {
   let extraCrit = 0, extraLS = 0, extraAS = 0, hpPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
-    if (it.atk)       a += it.atk;
-    if (it.def)       d += it.def;
-    if (it.hp)        h += it.hp;
+    const eb = _enhBonus(it);
+    a += (it.atk || 0) + (eb.atk || 0);
+    d += (it.def || 0) + (eb.def || 0);
+    h += (it.hp  || 0) + (eb.hp  || 0);
     if (it.critChance) extraCrit += it.critChance;
     if (it.lifeSteal)  extraLS   += it.lifeSteal;
     if (it.atkSpeed)   extraAS   += it.atkSpeed;

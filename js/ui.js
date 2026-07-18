@@ -68,11 +68,14 @@ function updateInvUI() {
   document.getElementById('inv-grid').innerHTML = Array.from({ length: 50 }, (_, i) => {
     const it = inv[i];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
-    return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${it ? `equipItem(${i})` : ''}"
-      title="${it ? it.name + ' — ' + statStr(it) : ''}"
-      style="${it ? 'border-color:' + rc + '77' : ''}">
+    const enh = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#ffd700;font-weight:bold">+${it.enhance}</span>` : '';
+    const clickable = it && it.slot !== 'material' && it.slot !== 'use';
+    return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${clickable ? `openInvItemModal(${i})` : ''}"
+      title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : ''}"
+      style="${it ? 'border-color:' + rc + '77;position:relative' : ''}">
       ${it ? `<div style="display:flex;justify-content:center;align-items:center">${_itemIcon(it, 24)}</div>
-              <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>` : ''}
+              <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>
+              ${enh}` : ''}
     </div>`;
   }).join('');
 }
@@ -1223,6 +1226,113 @@ function drawPartyInvitePopup() {
   ctx.globalAlpha = 1;
 
   ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  INVENTORY ITEM MODAL
+// ─────────────────────────────────────────────────────────
+const _ENH_RARITY_COST = { common:40, uncommon:70, rare:120, epic:200, legendary:350 };
+const _ENH_MAX = 10;
+const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс' };
+
+function openInvItemModal(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!it || it.slot === 'material' || it.slot === 'use') return;
+
+  const rc    = RARITY_COLOR[it.rarity] || '#aaa';
+  const enh   = it.enhance || 0;
+  const eb    = _enhBonus(it);
+  const next1 = _enhBonusAt(it, 1);
+
+  // Stats display with enhance bonus highlighted
+  const statRows = [];
+  if (it.atk || eb.atk) {
+    const base = it.atk || 0;
+    const total = base + (eb.atk || 0);
+    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#ffd700">(+${eb.atk})</span>` : ''}`);
+  }
+  if (it.def || eb.def) {
+    const total = (it.def || 0) + (eb.def || 0);
+    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#ffd700">(+${eb.def})</span>` : ''}`);
+  }
+  if (it.hp || eb.hp) {
+    const total = (it.hp || 0) + (eb.hp || 0);
+    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#ffd700">(+${eb.hp})</span>` : ''}`);
+  }
+  if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
+  if (it.lifeSteal)  statRows.push(`Вамп <b>${(it.lifeSteal*100).toFixed(0)}%</b>`);
+  if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
+  if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
+
+  // Next enhance preview
+  const canEnh = enh < _ENH_MAX;
+  const enhCost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
+  const canAfford = player.gold >= enhCost;
+  const nextParts = [];
+  if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
+  if (next1.def) nextParts.push(`+${next1.def} DEF`);
+  if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
+
+  const enhBlock = canEnh
+    ? `<div class="imod-enh-block">
+        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#ffd700">+${enh+1}</span></div>
+        ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
+        <div class="imod-enh-cost">${iconHTML('coin',12,'#f1c40f')} ${enhCost} золота</div>
+      </div>`
+    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#ffd700">✦ Максимальная заточка</div></div>`;
+
+  closeInvItemModal();
+  const ov = document.createElement('div');
+  ov.id = 'inv-item-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closeInvItemModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()">
+    <div class="imod-hdr">
+      <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#ffd700">+${enh}</span>` : ''}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot}</div>
+      </div>
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
+    ${enhBlock}
+    <div class="imod-btns">
+      <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">Надеть</button>
+      ${canEnh ? `<button class="imod-btn imod-sharpen${canAfford ? '' : ' disabled'}" onclick="enhanceItem(${idx})">${iconHTML('lightning',13,'#ffd700')} Заточить +${enh+1}</button>` : ''}
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function closeInvItemModal() {
+  const el = document.getElementById('inv-item-modal-ov');
+  if (el) el.remove();
+}
+
+function equipFromModal(idx) {
+  closeInvItemModal();
+  equipItem(idx);
+}
+
+function enhanceItem(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!it) return;
+  const enh = it.enhance || 0;
+  if (enh >= _ENH_MAX) return;
+  const cost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
+  if (player.gold < cost) {
+    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
+    return;
+  }
+  player.gold -= cost;
+  it.enhance = enh + 1;
+  recompute();
+  netSaveProgress();
+  openInvItemModal(idx);
 }
 
 // ─────────────────────────────────────────────────────────
