@@ -334,7 +334,7 @@ function restoreFromSave(data) {
   const { offhand:_, legs:__, pendant:___, ...cleanEq } = rawEq;
   player.equipment = { ...blank, ...cleanEq };
   recompute();
-  player.hp = player.maxHp;
+  player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }
 
 function statStr(it) {

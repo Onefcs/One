@@ -400,6 +400,7 @@ function netSaveProgress() {
   if (!player || state !== 'playing') return;
   const stats = {
     type: player.type,
+    floor: dungeonLvl || 1,
     lvl: player.lvl, xp: player.xp, xpNext: player.xpNext,
     gold: player.gold, kills: player.kills,
     hp: player.hp, maxHp: player.maxHp,
