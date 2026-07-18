@@ -40,7 +40,7 @@ function _drawPerf(frameMs) {
   // Mini frame-time bar graph (60 bars)
   const bw = 2, bh = 40, bx0 = 8, by0 = 55;
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillRect(bx0 - 2, by0 - bh - 2, samples * bw + 4, bh + 4 + 52);
+  ctx.fillRect(bx0 - 2, by0 - bh - 2, samples * bw + 4, bh + 4 + 110);
 
   const _oldest = _ftFull ? _ftIdx : 0;
   for (let i = 0; i < samples; i++) {
@@ -62,6 +62,9 @@ function _drawPerf(frameMs) {
     `prt  ${particles.length}`,
     `enm  ${_visEnm}/${serverEnemies.length}`,
     `opl  ${otherPlayers.size}`,
+    `upd  ${_profUpdate.toFixed(1)}ms`,
+    `rnd  ${_profRender.toFixed(1)}ms`,
+    `skt  ${_profSocketEvtsSnap}e ${_profSocketMsSnap.toFixed(1)}ms`,
     `drp  ${drops.length}`,
     mem ? `mem  ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
   ];
@@ -85,6 +88,11 @@ const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
 
 // Visible enemy count (set each render frame, read by _drawPerf)
 let _visEnm = 0;
+
+// Profiling breakdown — measures update vs render vs socket processing
+let _profUpdate = 0, _profRender = 0;
+let _profSocketEvts = 0, _profSocketMs = 0;
+let _profSocketEvtsSnap = 0, _profSocketMsSnap = 0;
 
 // Reusable dash arrays — declared once, never reallocated
 const _DASH = [6, 4];
@@ -1182,7 +1190,15 @@ let _loopTs = 0;
 function loop(ts) {
   const frameMs = ts - _loopTs; _loopTs = ts;
   const dt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
-  update(dt); render(dt, ts);
+  const _t0 = performance.now();
+  update(dt);
+  const _t1 = performance.now();
+  render(dt, ts);
+  const _t2 = performance.now();
+  _profUpdate = _t1 - _t0;
+  _profRender = _t2 - _t1;
+  _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
+  _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
   _drawPerf(frameMs);
   requestAnimationFrame(loop);
 }

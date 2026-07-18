@@ -62,6 +62,7 @@ function netConnect(onReady) {
   });
 
   socket.on('gameState', ({ players, enemies, t }) => {
+    const _gs0 = performance.now();
     const myId = socket.id;
 
     players.forEach(p => {
@@ -144,6 +145,8 @@ function netConnect(onReady) {
         serverEnemiesMap.set(se.id, newE);
       }
     });
+    _profSocketEvts++;
+    _profSocketMs += performance.now() - _gs0;
   });
 
   socket.on('playerHurt', ({ id, hp, dmg }) => {
