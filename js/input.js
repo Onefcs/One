@@ -5,7 +5,13 @@ const POTION_R  = 26;
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
 function joyCenter() { return _joyCenter; }
-function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 88; }
+function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 130; }
+
+function _inJoyZone(cx, cy) {
+  const jc = joyCenter();
+  return cx < W * 0.5 && cy > H * 0.45 && cy < H - NAV_H &&
+         dist(cx, cy, jc.x, jc.y) < JOY_R * 1.35;
+}
 
 function getSkillBtnPos(idx) {
   const sz = SKILL_SZ, gap = SKILL_GAP;
@@ -233,7 +239,7 @@ function onTS(e) {
     if (_checkTargetBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkSkillTouch(t.clientX, t.clientY)) continue;
     _trySelectEntityAtTouch(t.clientX, t.clientY);
-    if (!joy.active && dist(t.clientX, t.clientY, jc.x, jc.y) < JOY_R * 1.9) {
+    if (!joy.active && _inJoyZone(t.clientX, t.clientY)) {
       joy.active = true; joy.id = t.identifier;
       joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
     }
@@ -269,8 +275,7 @@ function onMD(e) {
   if (_checkTargetBtnTouch(e.clientX, e.clientY)) return;
   if (_checkSkillTouch(e.clientX, e.clientY)) return;
   _trySelectEntityAtTouch(e.clientX, e.clientY);
-  const jc = joyCenter();
-  if (dist(e.clientX, e.clientY, jc.x, jc.y) < JOY_R * 1.9) {
+  if (_inJoyZone(e.clientX, e.clientY)) {
     joy.active = true; joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
   }
 }
