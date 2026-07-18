@@ -435,9 +435,10 @@ function drawHeader() {
   const mmY = mmPad;
   const mmSc = mmW / dungeon.w;
 
-  // Tile cache at DPR resolution for crisp rendering
+  // Tile cache at native DPR for crisp rendering (independent of game DPR)
   const th = getTheme(dungeonLvl);
-  const mmCW = Math.round(mmW * DPR), mmCH = Math.round(mmH * DPR);
+  const _mmDPR = window.devicePixelRatio || 1;
+  const mmCW = Math.round(mmW * _mmDPR), mmCH = Math.round(mmH * _mmDPR);
   const mmCSc = mmCW / dungeon.w;
   if (minimapCacheFloor !== dungeonLvl || !minimapCache ||
       minimapCache.width !== mmCW || minimapCache.height !== mmCH) {
