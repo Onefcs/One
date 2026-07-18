@@ -82,7 +82,7 @@ function _craftsmanBody() {
       return `${mat ? iconHTML(mat.icon, 14) : '?'}×${m.n}(${has})`;
     }).join(' ');
     html += `<div class="shop-row">
-      <span class="shop-item-icon">${iconHTML(result.icon, 22, rc)}</span>
+      <span class="shop-item-icon">${_itemIcon(result, 28)}</span>
       <div class="shop-item-info">
         <div class="shop-item-name" style="color:${rc}">${result.name}</div>
         <div class="shop-item-stat">${matsStr} · ${recipe.gold}${iconHTML('coin',12,'#f1c40f')}</div>
@@ -142,7 +142,7 @@ function _shopkeeperBody() {
     const canBuy = p.gold >= entry.price && p.inventory.length < 10;
     const stats = statStr(item);
     html += `<div class="shop-row">
-      <span class="shop-item-icon">${iconHTML(item.icon, 22, rc)}</span>
+      <span class="shop-item-icon">${_itemIcon(item, 28)}</span>
       <div class="shop-item-info">
         <div class="shop-item-name" style="color:${rc}">${item.name}</div>
         <div class="shop-item-stat">${stats}</div>
