@@ -244,7 +244,7 @@ function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
   const rarityNames  = ['Common','Uncommon','Rare','Epic','Legendary'];
-  const rarityColors = ['#aaa','#4af','#fa4','#c55ef5','#ff8c00'];
+  const rarityColors = ['#aaa','#3ef07a','#55aaff','#c55ef5','#ffd700'];
   grid.innerHTML = Array.from({ length: 20 }, (_, i) => {
     const n   = i + 1;
     const th  = getTheme(n);
@@ -274,7 +274,7 @@ function showFloorInfo(floor) {
   const atkSc = 1 + (floor - 1) * 0.18;
 
   const rarityNames  = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
-  const rarityColors = ['#aaa',   '#4af',      '#fa4', '#c55ef5', '#ff8c00'];
+  const rarityColors = ['#aaa',   '#3ef07a',   '#55aaff', '#c55ef5', '#ffd700'];
   const maxRarIdx    = Math.min(4, Math.max(0, Math.floor((floor - 1) / 4)));
   const dropRarName  = rarityNames[Math.min(maxRarIdx + 1, 4)];
   const dropRarColor = rarityColors[Math.min(maxRarIdx + 1, 4)];

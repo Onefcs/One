@@ -84,7 +84,7 @@ function _craftsmanBody() {
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_itemIcon(result, 28)}</span>
       <div class="shop-item-info">
-        <div class="shop-item-name" style="color:${rc}">${result.name}</div>
+        <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${result.name}</div>
         <div class="shop-item-stat">${matsStr} · ${recipe.gold}${iconHTML('coin',12,'#f1c40f')}</div>
       </div>
       <button class="shop-btn${canCraft ? '' : ' disabled'}" onclick="craftItem(${idx})">Создать</button>
@@ -144,7 +144,7 @@ function _shopkeeperBody() {
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_itemIcon(item, 28)}</span>
       <div class="shop-item-info">
-        <div class="shop-item-name" style="color:${rc}">${item.name}</div>
+        <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${item.name}</div>
         <div class="shop-item-stat">${stats}</div>
       </div>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyShopItem('${entry.itemId}',${entry.price})">
