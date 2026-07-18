@@ -1,6 +1,27 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF } = require('../../shared/definitions');
 
+// Replicates client recompute() formula — single source of truth for server stats
+function computeStats(sd, cd) {
+  const u = sd.upgrades || {};
+  const baseAtk   = sd.baseAtk   ?? cd.baseAtk;
+  const baseDef   = sd.baseDef   ?? cd.baseDef;
+  const baseMaxHp = sd.baseMaxHp ?? cd.baseHP;
+  let eqAtk = 0, eqDef = 0, eqHp = 0, hpPct = 0;
+  Object.values(sd.equipment || {}).forEach(it => {
+    if (!it) return;
+    eqAtk  += it.atk   || 0;
+    eqDef  += it.def   || 0;
+    eqHp   += it.hp    || 0;
+    hpPct  += it.hpPct || 0;
+  });
+  return {
+    atk:   baseAtk   + (u.atk || 0) * 3 + eqAtk,
+    def:   baseDef   + (u.def || 0) * 2 + eqDef,
+    maxHp: Math.floor((baseMaxHp + (u.hp || 0) * 25 + eqHp) * (1 + hpPct)),
+  };
+}
+
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const AOI_RADIUS = 900;
 const AOI_R2    = AOI_RADIUS * AOI_RADIUS; // squared — avoids sqrt in AOI check
@@ -197,13 +218,11 @@ class Room {
     p.type = type;
     p.pvpMode = false;
     if (savedStats) {
-      const lvlBonus = ((savedStats.lvl || 1) - 1) * 3;
-      const eqAtk = Object.values(savedStats.equipment || {}).reduce((s, it) => s + (it?.atk || 0), 0);
-      const eqDef = Object.values(savedStats.equipment || {}).reduce((s, it) => s + (it?.def || 0), 0);
-      p.atk = cd.baseAtk + lvlBonus + eqAtk;
-      p.def = cd.baseDef + eqDef + Math.floor(((savedStats.lvl || 1) - 1) * 0.5);
-      p.maxHp = savedStats.maxHp || cd.baseHP;
-      p.hp = p.maxHp;
+      const s = computeStats(savedStats, cd);
+      p.atk   = s.atk;
+      p.def   = s.def;
+      p.maxHp = s.maxHp;
+      p.hp    = (savedStats.hp && savedStats.hp > 0) ? Math.min(savedStats.hp, p.maxHp) : p.maxHp;
     } else {
       p.hp = p.maxHp = cd.baseHP;
       p.atk = cd.baseAtk;
@@ -241,9 +260,14 @@ class Room {
   updatePlayerStats(socketId, { atk, def, maxHp }) {
     const p = this.players.get(socketId);
     if (!p) return;
-    if (atk  >  0) p.atk  = Math.min(atk, 9999);
-    if (def  >= 0) p.def  = Math.min(def, 9999);
-    if (maxHp > 0) { const h = Math.min(maxHp, 99999); p.hp = Math.min(p.hp, h); p.maxHp = h; }
+    // Cap at 1.5× current server value — blocks console-injection hacks while
+    // allowing legitimate growth from level-ups and upgrades during a session
+    if (atk  >  0) p.atk  = Math.min(atk,  p.atk  * 1.5 + 100, 9999);
+    if (def  >= 0) p.def  = Math.min(def,  p.def  * 1.5 + 100, 9999);
+    if (maxHp > 0) {
+      const cap = Math.min(maxHp, p.maxHp * 1.5 + 500, 99999);
+      p.hp = Math.min(p.hp, cap); p.maxHp = cap;
+    }
   }
 
   applyPvpDamage(socketId, actual) {

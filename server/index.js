@@ -179,7 +179,22 @@ io.on('connection', socket => {
   let authed = null;
   let currentRoom = null;
   let currentFloor = 1;
+  let _lastStats = null;
+  let _autoSaveInterval = null;
   playerFloorMap.set(socket.id, currentFloor);
+
+  function _startAutosave() {
+    if (_autoSaveInterval) clearInterval(_autoSaveInterval);
+    _autoSaveInterval = setInterval(() => {
+      if (!authed || !_lastStats) return;
+      const saveData = { ..._lastStats, floor: currentFloor };
+      if (currentRoom) {
+        const p = currentRoom.players.get(socket.id);
+        if (p && p.hp > 0) saveData.hp = p.hp;
+      }
+      PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData }).catch(() => {});
+    }, 60000);
+  }
 
   socket.on('_ping', t0 => socket.emit('_pong', t0));
 
@@ -193,6 +208,11 @@ io.on('connection', socket => {
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
       socket.data.username = doc.username;
+<<<<<<< HEAD
+=======
+      if (doc.savedData) _lastStats = doc.savedData;
+      _startAutosave();
+>>>>>>> claude/untitled-7omhdr
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
@@ -210,6 +230,8 @@ io.on('connection', socket => {
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
       socket.data.username = doc.username;
+      if (doc.savedData) _lastStats = doc.savedData;
+      _startAutosave();
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
     } catch (err) {
       console.error('loginTelegram:', err);
@@ -219,9 +241,11 @@ io.on('connection', socket => {
 
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
+    if (savedStats) _lastStats = savedStats;
     if (!currentRoom) {
-      currentFloor = 1;
-      currentRoom = getRoom(1);
+      const savedFloor = (savedStats?.floor > 1) ? Math.max(1, Math.min(20, savedStats.floor)) : 1;
+      currentFloor = savedFloor;
+      currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
       currentRoom.addPlayer(socket.id, authed.username);
@@ -341,14 +365,17 @@ io.on('connection', socket => {
     socket.join(`floor_${newFloor}`);
     currentRoom.addPlayer(socket.id, authed.username);
 
-    // Re-apply character stats (carry over HP, atk, def, maxHp)
+    // Carry over character stats directly — avoids recalculation from partial data
     if (p?.type) {
-      currentRoom.setPlayerChar(socket.id, p.type, {
-        maxHp: p.maxHp, atk: p.atk, def: p.def,
-      });
       const np = currentRoom.players.get(socket.id);
-      if (np) np.hp = p.hp;
-      if (p.pvpMode) currentRoom.setPlayerPvpMode(socket.id, true);
+      if (np) {
+        np.type   = p.type;
+        np.atk    = p.atk;
+        np.def    = p.def;
+        np.maxHp  = p.maxHp;
+        np.hp     = p.hp;
+        np.pvpMode = p.pvpMode || false;
+      }
     }
 
     socket.to(`floor_${newFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
@@ -411,7 +438,10 @@ io.on('connection', socket => {
   });
 
   socket.on('saveProgress', ({ stats }) => {
-    if (authed) PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
+    if (authed) {
+      _lastStats = stats;
+      PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
+    }
   });
 
   // ── Party ─────────────────────────────────────────────────────────────────
@@ -473,6 +503,7 @@ io.on('connection', socket => {
 
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
+    if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);
