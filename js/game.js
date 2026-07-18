@@ -1115,7 +1115,7 @@ function respawnPlayer() {
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
   if (xpLoss > 0) dmgNum(player.x, player.y - 30, `−${xpLoss} XP`, '#a88');
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
+  socket?.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
   if (socket?.connected) socket.emit('respawn');
   netSaveProgress();
 }

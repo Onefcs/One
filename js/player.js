@@ -105,7 +105,7 @@ function equipItem(idx) {
 
 function unequipItem(slot) {
   const it = player.equipment[slot];
-  if (!it || player.inventory.length >= 10) return;
+  if (!it || player.inventory.length >= 50) return;
   player.inventory.push(it);
   player.equipment[slot] = null;
   recompute(); updateInvUI();
@@ -266,11 +266,12 @@ function useSkill(idx) {
       barrierTimer = 4;
       dmgNum(player.x, player.y - 40, '🛡 Щит!', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 8);
-    } else if (sk.key === 'R') { // Prayer — heal self + burst
+    } else if (sk.key === 'R') { // Prayer — heal self + group
       const heal = Math.round(player.maxHp * 0.35 + player.atk * 8);
       player.hp = Math.min(player.maxHp, player.hp + heal);
       dmgNum(player.x, player.y - 50, '+' + heal + '♥ Молитва!', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 14);
+      if (typeof netHealParty === 'function') netHealParty(Math.round(heal * 0.5));
     }
   } else if (player.type === 'assasin') {
     if (sk.key === 'Q') { // Shadow Strike — dash + strong hit
@@ -280,7 +281,7 @@ function useSkill(idx) {
       player.y += (dir.dy / len) * 80;
       spawnBurst(player.x, player.y, '#a5f', 6);
       spawnAOE(player.x, player.y, 60);
-      _skillAOE(60);
+      _skillAOE(60); netSpawnAoe(player.x, player.y);
     } else if (sk.key === 'W') { // Smoke Bomb — AoE slow
       spawnAOE(player.x, player.y, 100);
       _skillAOE(100); netSpawnAoe(player.x, player.y);
@@ -320,6 +321,8 @@ function restoreFromSave(data) {
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
   player.inventory  = data.inventory || [];
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, dodge:0, accuracy:0, lifeSteal:0, hpRegen:0 };
+  player.questIdx  = data.questIdx  || 0;
+  player.questKills = data.questKills || {};
 
   // Migrate old save: armor → body
   const rawEq = data.equipment || {};

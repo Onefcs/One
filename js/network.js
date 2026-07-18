@@ -296,7 +296,18 @@ function netConnect(onReady) {
   socket.on('partyLeft', ({ leftName }) => {
     if (leftName && player)
       dmgNum(player.x, player.y - 30, leftName + ' покинул пати', '#fa0');
-    partyMembers = [];
+    // partyUpdated (or disconnect) will clear the member list; don't wipe here
+  });
+
+  socket.on('healPartyMember', ({ amount }) => {
+    if (!player || state !== 'playing') return;
+    player.hp = Math.min(player.maxHp, player.hp + amount);
+    dmgNum(player.x, player.y - 38, '+' + amount + '♥ Молитва союзника!', '#ff4');
+    spawnBurst(player.x, player.y, '#ff4', 6);
+  });
+
+  socket.on('chatMsg', ({ username, text }) => {
+    _addChatMsg(username, text);
   });
 
   socket.on('disconnect', () => {
@@ -306,6 +317,8 @@ function netConnect(onReady) {
     otherProjs = [];
     partyMembers = [];
     partyInvitePending = null;
+    const chatEl = document.getElementById('chat-overlay');
+    if (chatEl) chatEl.style.display = 'none';
   });
 }
 
@@ -382,14 +395,46 @@ function netSaveProgress() {
     potionBag: player.potionBag || { pt1: 0, pt2: 0 },
     hudPotion: player.hudPotion || 'pt1',
     upgrades: player.upgrades || {},
+    questIdx: player.questIdx || 0,
+    questKills: player.questKills || {},
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });
+}
+
+function netHealParty(amount) {
+  if (socket?.connected) socket.emit('healParty', { amount: Math.max(0, Math.min(amount, 9999)) });
+}
+
+function netChat(text) {
+  if (!text || !text.trim() || !socket?.connected) return;
+  socket.emit('chat', { text: text.trim().slice(0, 100) });
+}
+
+const _chatMsgs = [];
+function _addChatMsg(username, text) {
+  const el = document.getElementById('chat-msgs');
+  if (!el) return;
+  const row = document.createElement('div');
+  row.className = 'chat-row';
+  row.innerHTML = `<span class="chat-name">${_escHtml(username)}</span><span class="chat-text"> ${_escHtml(text)}</span>`;
+  el.appendChild(row);
+  // Keep last 20 messages in DOM
+  while (el.children.length > 20) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+  // Auto-hide after 6s
+  setTimeout(() => { row.style.opacity = '0'; setTimeout(() => row.remove(), 400); }, 6000);
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function _finishOnlineStart() {
   csHide();
   document.getElementById('bottom-nav').style.display = 'block';
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
+  const chatEl = document.getElementById('chat-overlay');
+  if (chatEl) chatEl.style.display = 'flex';
   state = 'playing';
   setTab(0);
 }

@@ -322,6 +322,28 @@ io.on('connection', socket => {
     socket.to(`floor_${currentFloor}`).emit('spawnAoe', data);
   });
 
+  socket.on('healParty', ({ amount }) => {
+    if (!authed || !currentRoom) return;
+    const healAmt = Math.max(0, Math.min(Math.floor(amount), 9999));
+    const partyId = playerParty.get(socket.id);
+    if (!partyId) return;
+    const partyMap = parties.get(partyId);
+    if (!partyMap) return;
+    partyMap.forEach((_, mid) => {
+      if (mid === socket.id) return;
+      if (playerFloorMap.get(mid) !== currentFloor) return;
+      if (currentRoom.healPartyMember(mid, healAmt))
+        io.to(mid).emit('healPartyMember', { amount: healAmt });
+    });
+  });
+
+  socket.on('chat', ({ text }) => {
+    if (!authed || !text || typeof text !== 'string') return;
+    const msg = text.trim().slice(0, 100);
+    if (!msg) return;
+    io.to(`floor_${currentFloor}`).emit('chatMsg', { username: authed.username, text: msg });
+  });
+
   socket.on('saveProgress', ({ stats }) => {
     if (authed) PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
   });

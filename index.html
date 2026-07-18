@@ -87,6 +87,16 @@
 
 <canvas id="canvas"></canvas>
 
+<!-- Chat overlay (shown during gameplay) -->
+<div id="chat-overlay" style="display:none">
+  <div id="chat-msgs"></div>
+  <div id="chat-input-row" style="display:none">
+    <input id="chat-input" type="text" maxlength="100" placeholder="Сообщение..." autocomplete="off">
+    <button id="chat-send-btn" onclick="_chatSend()">→</button>
+  </div>
+  <button id="chat-btn" onclick="_chatToggle()">💬</button>
+</div>
+
 <!-- NPC Talk button (shown when near NPC) -->
 <div id="npc-talk-btn" style="display:none" onclick="openNpc(nearNpc && nearNpc.id)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Поговорить</div>
 
@@ -218,6 +228,70 @@
 
 </div><!-- #app -->
 
+<style>
+#chat-overlay {
+  position:absolute; bottom:70px; left:8px; width:min(340px, calc(100vw - 16px));
+  z-index:60; pointer-events:none;
+  display:flex; flex-direction:column; gap:4px;
+}
+#chat-msgs {
+  display:flex; flex-direction:column; gap:2px;
+  max-height:120px; overflow-y:auto; overflow-x:hidden;
+}
+.chat-row {
+  background:rgba(0,0,0,0.65); border-radius:6px;
+  padding:3px 7px; font-size:12px; line-height:1.4;
+  color:#ddd; word-break:break-word;
+  opacity:1; transition:opacity 0.4s;
+  pointer-events:none;
+}
+.chat-name { color:#f90; font-weight:700; }
+#chat-input-row {
+  display:flex; gap:4px; pointer-events:all;
+}
+#chat-input {
+  flex:1; padding:6px 10px; border:1px solid #333;
+  border-radius:8px; background:rgba(10,10,20,0.92);
+  color:#eee; font-size:13px; outline:none;
+}
+#chat-send-btn {
+  padding:6px 12px; border:none; border-radius:8px;
+  background:#f90; color:#000; font-weight:bold; cursor:pointer;
+}
+#chat-btn {
+  pointer-events:all; align-self:flex-start;
+  background:rgba(0,0,0,0.65); border:1px solid #333;
+  border-radius:50%; width:34px; height:34px;
+  font-size:16px; cursor:pointer; color:#fff;
+  display:flex; align-items:center; justify-content:center;
+}
+</style>
+<script>
+function _chatToggle() {
+  const row = document.getElementById('chat-input-row');
+  const inp = document.getElementById('chat-input');
+  const visible = row.style.display !== 'none';
+  row.style.display = visible ? 'none' : 'flex';
+  if (!visible) { inp.value = ''; inp.focus(); }
+}
+function _chatSend() {
+  const inp = document.getElementById('chat-input');
+  const txt = inp.value.trim();
+  if (txt && typeof netChat === 'function') netChat(txt);
+  inp.value = '';
+  document.getElementById('chat-input-row').style.display = 'none';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const row = document.getElementById('chat-input-row');
+    if (row && row.style.display !== 'none') { _chatSend(); e.preventDefault(); }
+  }
+  if (e.key === 'Escape') {
+    const row = document.getElementById('chat-input-row');
+    if (row) row.style.display = 'none';
+  }
+});
+</script>
 <!-- Socket.io client -->
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <!-- All game scripts in one bundle — ETag cache-busts on server restart -->

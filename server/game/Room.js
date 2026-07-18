@@ -234,14 +234,16 @@ class Room {
     const p = this.players.get(socketId);
     if (!p) return;
     p.hp = p.maxHp;
+    p.x = this._dungeon.spawn.x;
+    p.y = this._dungeon.spawn.y;
   }
 
   updatePlayerStats(socketId, { atk, def, maxHp }) {
     const p = this.players.get(socketId);
     if (!p) return;
-    if (atk  >  0) p.atk  = atk;
-    if (def  >= 0) p.def  = def;
-    if (maxHp > 0) { p.hp = Math.min(p.hp, maxHp); p.maxHp = maxHp; }
+    if (atk  >  0) p.atk  = Math.min(atk, 9999);
+    if (def  >= 0) p.def  = Math.min(def, 9999);
+    if (maxHp > 0) { const h = Math.min(maxHp, 99999); p.hp = Math.min(p.hp, h); p.maxHp = h; }
   }
 
   applyPvpDamage(socketId, actual) {
@@ -254,8 +256,15 @@ class Room {
   attackEnemy(socketId, enemyId) {
     const attacker = this.players.get(socketId);
     if (!attacker) return null;
+    // Rate-limit: max one server hit every 150ms
+    const now = Date.now();
+    if (now - (attacker._lastAtk || 0) < 150) return null;
+    attacker._lastAtk = now;
     const enemy = this._enemyMap.get(enemyId); // O(1) Map lookup
     if (!enemy || enemy.hp <= 0) return null;
+    // Range check: must be within 350px (generous for AoE skills)
+    const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
+    if (rdx * rdx + rdy * rdy > 350 * 350) return null;
     const dmg = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
@@ -264,6 +273,13 @@ class Room {
       return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss };
     }
     return { killed: false, hp: enemy.hp, dmg };
+  }
+
+  healPartyMember(socketId, amount) {
+    const p = this.players.get(socketId);
+    if (!p || p.hp <= 0) return false;
+    p.hp = Math.min(p.maxHp, p.hp + amount);
+    return true;
   }
 
   stop() { clearInterval(this._interval); }

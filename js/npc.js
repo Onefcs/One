@@ -75,7 +75,7 @@ function _craftsmanBody() {
     const result = ITEM_DEF.find(i => i.id === recipe.resultId);
     if (!result) return;
     const rc = RARITY_COLOR[result.rarity] || '#aaa';
-    const canCraft = _canCraft(recipe) && p.gold >= recipe.gold && p.inventory.length < 10;
+    const canCraft = _canCraft(recipe) && p.gold >= recipe.gold && p.inventory.length < 50;
     const matsStr = recipe.mats.map(m => {
       const mat = CRAFT_MATS.find(c => c.id === m.id);
       const has = p.inventory.filter(i => i.id === m.id).length;
@@ -112,7 +112,7 @@ function craftItem(idx) {
   if (!recipe || !player) return;
   if (!_canCraft(recipe))              { _shopMsg('Недостаточно материалов!'); return; }
   if (player.gold < recipe.gold)       { _shopMsg('Мало золота!'); return; }
-  if (player.inventory.length >= 10)   { _shopMsg('Инвентарь полон!'); return; }
+  if (player.inventory.length >= 50)   { _shopMsg('Инвентарь полон!'); return; }
   const result = ITEM_DEF.find(i => i.id === recipe.resultId);
   if (!result) return;
 
@@ -133,13 +133,13 @@ function craftItem(idx) {
 // ── Shopkeeper ──────────────────────────────────────────
 function _shopkeeperBody() {
   const p = player;
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${p.inventory.length}/10</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${p.inventory.length}/50</b></div>`;
   html += '<div class="shop-sec">Товары</div><div class="shop-list">';
   SHOP_CATALOG.forEach(entry => {
     const item = ITEM_DEF.find(i => i.id === entry.itemId);
     if (!item) return;
     const rc = RARITY_COLOR[item.rarity] || '#aaa';
-    const canBuy = p.gold >= entry.price && p.inventory.length < 10;
+    const canBuy = p.gold >= entry.price && p.inventory.length < 50;
     const stats = statStr(item);
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_itemIcon(item, 28)}</span>
@@ -161,7 +161,7 @@ function buyShopItem(itemId, price) {
   const item = ITEM_DEF.find(i => i.id === itemId);
   if (!item) return;
   if (player.gold < price)           { _shopMsg('Мало золота!'); return; }
-  if (player.inventory.length >= 10) { _shopMsg('Инвентарь полон!'); return; }
+  if (player.inventory.length >= 50) { _shopMsg('Инвентарь полон!'); return; }
   player.gold -= price;
   player.inventory.push({ ...item });
   netSaveProgress();
