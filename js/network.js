@@ -13,13 +13,26 @@ let _svrTimeOffset = null; // null = not yet calibrated
 const _INTERP_MS  = 50;   // render others 50ms in the past (2 server ticks)
 const _SNAP_MAX   = 10;   // ~250ms of buffer
 
+// RTT ping measurement — updated every 2s, read by perf overlay
+let _pingMs = -1;
+let _pingTimer = null;
+
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
   if (socket && socket.connected) { if (onReady) onReady(); return; }
   if (socket) { socket.disconnect(); socket = null; }
   socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
 
-  socket.on('connect', () => { if (onReady) onReady(); });
+  socket.on('connect', () => {
+    if (onReady) onReady();
+    // Start RTT ping loop
+    if (_pingTimer) clearInterval(_pingTimer);
+    _pingTimer = setInterval(() => {
+      if (socket?.connected) socket.volatile.emit('_ping', Date.now());
+    }, 2000);
+  });
+
+  socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
 
   socket.on('connect_error', () => {
     showAuthError('Нет соединения с сервером');

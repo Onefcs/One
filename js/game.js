@@ -62,6 +62,7 @@ function _drawPerf(frameMs) {
   const mem = performance.memory;
   const lines = [
     `FPS  ${fps}`,
+    `ping ${_pingMs >= 0 ? _pingMs + 'ms' : '...'}`,
     `avg  ${avgMs.toFixed(1)}ms`,
     `max  ${_ftWorstMs.toFixed(1)}ms`,
     `prt  ${particles.length}`,
@@ -82,7 +83,10 @@ function _drawPerf(frameMs) {
     if (!ln) return;
     ctx.fillStyle = '#000';
     ctx.fillText(ln, bx0 + 1, ty0 + i * 14 + 1);
-    ctx.fillStyle = i === 0 ? (fps < 40 ? '#f55' : fps < 55 ? '#fa0' : '#4f4') : '#ddd';
+    let col = '#ddd';
+    if (i === 0) col = fps < 40 ? '#f55' : fps < 55 ? '#fa0' : '#4f4';
+    else if (i === 1 && _pingMs >= 0) col = _pingMs > 150 ? '#f55' : _pingMs > 80 ? '#fa0' : '#4f4';
+    ctx.fillStyle = col;
     ctx.fillText(ln, bx0, ty0 + i * 14);
   });
 }

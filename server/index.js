@@ -179,6 +179,8 @@ io.on('connection', socket => {
   let currentFloor = 1;
   playerFloorMap.set(socket.id, currentFloor);
 
+  socket.on('_ping', t0 => socket.emit('_pong', t0));
+
   socket.on('loginTelegramWebApp', async ({ initData }) => {
     try {
       const user = verifyTelegramWebApp(initData);
