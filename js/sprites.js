@@ -310,14 +310,27 @@ function drawEnemySprite(e, dt) {
     if (e._animFrame >= sh.cols) e._animFrame = sh.loop ? 0 : sh.cols - 1;
   }
 
+  // Update facing from movement vector; only flip on clear horizontal movement
+  if (e.targetX !== undefined) {
+    const mdx = e.targetX - e.x;
+    if (Math.abs(mdx) > 1) e._facing = mdx < 0 ? 'left' : 'right';
+  }
+  if (!e._facing) e._facing = 'right';
+
   const { frameW, frameH, row } = def;
   const sx = e._animFrame * frameW;
   const sy = row * frameH;
   const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
+  const dx = e.x - ds * 0.5, dy = e.y - ds * 0.80;
   // Float position + bilinear filtering — see drawSprite for rationale
-  ctx.drawImage(img, sx, sy, frameW, frameH,
-    e.x - ds * 0.5, e.y - ds * 0.80,
-    ds, ds);
+  if (e._facing === 'left') {
+    ctx.save();
+    ctx.transform(-1, 0, 0, 1, 2 * e.x, 0); // flip horizontally around e.x
+    ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, ds, ds);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, ds, ds);
+  }
   return true;
 }
 
