@@ -496,12 +496,7 @@ function drawSprite(p, tint) {
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
-  if (tint) {
-    ctx.globalAlpha = 0.45;
-    ctx.fillStyle = '#ff3333';
-    ctx.fillRect(dx, dy, dw, dh);
-    ctx.globalAlpha = 1;
-  }
+  if (tint) _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, tint);
+  else      ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
 }

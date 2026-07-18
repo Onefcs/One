@@ -802,8 +802,9 @@ function render(dt, ts) {
     const bh = 4, bw = 38;
     const barTop = usedSprite ? p.y - 46 : p.y - 20;
     const bx = p.x - bw / 2;
-    // Pre-rendered name canvas — rebuilt only when username or pvpMode changes
-    if (!p._nameCanvas || p._nameCanvas._u !== (p.username || '?') || p._nameCanvas._pvp !== !!p.pvpMode) {
+    // Pre-rendered name canvas — rebuilt when username, pvpMode, or render scale changes
+    const _ns = Math.max(1, Math.ceil(DPR * ZOOM));
+    if (!p._nameCanvas || p._nameCanvas._u !== (p.username || '?') || p._nameCanvas._pvp !== !!p.pvpMode || p._nameCanvas._scale !== _ns) {
       p._nameCanvas = _buildPlayerNameCanvas(p);
     }
     const nc = p._nameCanvas;
@@ -911,39 +912,39 @@ const _playerShadow = (() => {
 function _buildPlayerNameCanvas(p) {
   const uname = p.username || '?';
   const pvp = !!p.pvpMode;
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const scale = Math.max(1, Math.ceil(DPR * ZOOM));
   const tmp = document.createElement('canvas').getContext('2d');
   tmp.font = 'bold 10px system-ui, Arial';
   const tw = tmp.measureText(uname).width;
   const lw = Math.ceil(tw + 10), lh = 16;
   const cv = document.createElement('canvas');
-  cv.width = Math.ceil(lw * dpr); cv.height = Math.ceil(lh * dpr);
+  cv.width = Math.ceil(lw * scale); cv.height = Math.ceil(lh * scale);
   const c = cv.getContext('2d');
-  c.scale(dpr, dpr);
+  c.scale(scale, scale);
   c.font = 'bold 10px system-ui, Arial';
   c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   c.strokeStyle = '#000'; c.lineWidth = 3;
   c.strokeText(uname, lw / 2, lh - 2);
   c.fillStyle = pvp ? '#f99' : '#fff';
   c.fillText(uname, lw / 2, lh - 2);
-  cv._u = uname; cv._pvp = pvp; cv._lw = lw; cv._lh = lh;
+  cv._u = uname; cv._pvp = pvp; cv._lw = lw; cv._lh = lh; cv._scale = scale;
   return cv;
 }
 
 function _getEnemyNameLabel(name, isBoss) {
-  const key = `${name}|${isBoss}`;
+  const scale = Math.max(1, Math.ceil(DPR * ZOOM));
+  const key = `${name}|${isBoss}|${scale}`;
   let cv = _enemyNameLabels.get(key);
   if (cv) return cv;
   const font = isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const tmp = document.createElement('canvas').getContext('2d');
   tmp.font = font;
   const tw = Math.ceil(tmp.measureText(name).width);
   const lw = tw + 8, lh = 13;
   cv = document.createElement('canvas');
-  cv.width = Math.ceil(lw * dpr); cv.height = Math.ceil(lh * dpr);
+  cv.width = Math.ceil(lw * scale); cv.height = Math.ceil(lh * scale);
   const c = cv.getContext('2d');
-  c.scale(dpr, dpr);
+  c.scale(scale, scale);
   c.font = font; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   c.strokeStyle = '#000'; c.lineWidth = 2.5;
   c.strokeText(name, lw / 2, lh - 1);
