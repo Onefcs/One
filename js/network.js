@@ -348,7 +348,20 @@ window.onTelegramAuth = function(user) {
 };
 
 function _initTelegramWidget() {
-  netConnect(); // establish socket early so it's ready when the user clicks
+  const twa = window.Telegram?.WebApp;
+
+  // Running inside Telegram Mini App — initData already has the signed user info
+  if (twa && twa.initData) {
+    twa.ready();
+    twa.expand();
+    const loading = document.getElementById('tg-auth-loading');
+    if (loading) loading.innerHTML = '<div class="tg-spinner"></div><span>Авторизация...</span>';
+    netConnect(() => socket.emit('loginTelegramWebApp', { initData: twa.initData }));
+    return;
+  }
+
+  // Regular browser — show the Telegram Login Widget button
+  netConnect();
   fetch('/tg-botname')
     .then(r => r.json())
     .then(({ username }) => {
@@ -371,7 +384,7 @@ function _initTelegramWidget() {
       if (loading) loading.style.display = 'none';
       container.style.display = 'flex';
     })
-    .catch(err => {
+    .catch(() => {
       const loading = document.getElementById('tg-auth-loading');
       if (loading) loading.innerHTML = '<span style="color:#f66">Ошибка загрузки.<br>Обновите страницу.</span>';
     });

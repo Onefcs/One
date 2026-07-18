@@ -12,6 +12,7 @@ const Room = require('./game/Room');
 const _TG_TOKEN = process.env.TG_BOT_TOKEN || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
 let _tgBotUsername = process.env.TG_BOT_USERNAME || '';
 
+// Login Widget verification (browser button)
 function verifyTelegramAuth(data) {
   const { hash, ...rest } = data;
   if (!hash) return false;
@@ -21,6 +22,26 @@ function verifyTelegramAuth(data) {
   if (computed !== hash) return false;
   if (Date.now() / 1000 - Number(data.auth_date) > 86400) return false;
   return true;
+}
+
+// Mini App verification (opened inside Telegram app) — different secret derivation
+function verifyTelegramWebApp(initData) {
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    if (!hash) return null;
+    params.delete('hash');
+    const checkStr = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(_TG_TOKEN).digest();
+    const computed = crypto.createHmac('sha256', secret).update(checkStr).digest('hex');
+    if (computed !== hash) return null;
+    if (Date.now() / 1000 - Number(params.get('auth_date')) > 86400) return null;
+    const userStr = params.get('user');
+    return userStr ? JSON.parse(userStr) : null;
+  } catch { return null; }
 }
 
 if (!_tgBotUsername) {
@@ -157,6 +178,23 @@ io.on('connection', socket => {
   let currentRoom = null;
   let currentFloor = 1;
   playerFloorMap.set(socket.id, currentFloor);
+
+  socket.on('loginTelegramWebApp', async ({ initData }) => {
+    try {
+      const user = verifyTelegramWebApp(initData);
+      if (!user) return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
+      const telegramId = String(user.id);
+      const username = user.username || user.first_name || `tg_${telegramId}`;
+      let doc = await PlayerModel.findOne({ telegramId });
+      if (!doc) doc = await PlayerModel.create({ telegramId, username });
+      authed = doc;
+      socket.data.username = doc.username;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
+    } catch (err) {
+      console.error('loginTelegramWebApp:', err);
+      socket.emit('authError', { message: 'Ошибка сервера' });
+    }
+  });
 
   socket.on('loginTelegram', async (data) => {
     try {

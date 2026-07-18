@@ -65,8 +65,9 @@ io.on('connection', socket => {
   let currentRoom = null, currentFloor = 1;
   const username = 'TestPlayer_' + socket.id.slice(0,4);
 
-  // Stub auth - auto-accept any loginTelegram (no signature check in test mode)
+  // Stub auth - auto-accept (no signature check in test mode)
   socket.on('loginTelegram', () => socket.emit('authOk', { username, savedData: null }));
+  socket.on('loginTelegramWebApp', () => socket.emit('authOk', { username, savedData: null }));
 
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!currentRoom) {
