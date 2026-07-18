@@ -1028,18 +1028,7 @@ function drawNpcs() {
     ctx.drawImage(cc.ring, n.x - cc.rw / 2, n.y - cc.rw / 2, cc.rw, cc.rw);
     ctx.globalAlpha = 1;
     ctx.drawImage(cc.cv, n.x - cc.cx, n.y - cc.cy, cc.w, cc.h);
-    if (!cc.iconBaked) {
-      const _img = _iconImgCache[`${n.icon}|${n.color}|56`]; // 56 = Math.ceil(28*2)
-      if (_img && _img.complete && _img.naturalWidth > 0) {
-        const _ic = cc.cv.getContext('2d');
-        _ic.save(); _ic.scale(_NPC_RES, _NPC_RES);
-        _ic.drawImage(_img, cc.cx - 14, cc.cy - 14, 28, 28);
-        _ic.restore();
-        cc.iconBaked = true;
-      } else {
-        drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
-      }
-    }
+    drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
     if (nearNpc && nearNpc.id === n.id) {
       drawIconCtx(ctx, 'chat', n.x, n.y - 44 + _nBounce, 18, '#fff');
     }
