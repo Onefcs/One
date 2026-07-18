@@ -906,7 +906,21 @@ function buildTileCanvas() {
     }
   }
 
-  // Pass 6: seeded random crack/detail lines on floor tiles
+  // Pass 6: wall face decorations — lanterns, skulls, chains, etc.
+  if (th.drawWallDecor) {
+    for (let ty = 0; ty < dungeon.h; ty++) {
+      for (let tx = 0; tx < dungeon.w; tx++) {
+        if (dungeon.grid[ty][tx] !== WALL) continue;
+        if (!isFloor(tx, ty + 1)) continue;
+        const h = ((tx * 37) ^ (ty * 53)) & 0xff;
+        tctx.save();
+        th.drawWallDecor(tctx, tx * TILE, ty * TILE, h);
+        tctx.restore();
+      }
+    }
+  }
+
+  // Pass 8: seeded random crack/detail lines on floor tiles
   // — adds life without the per-tile noise of the old approach.
   const seed = dungeonLvl * 1234;
   function rng(n) { const v = Math.sin(seed + n) * 43758.5453; return v - Math.floor(v); }
@@ -934,7 +948,7 @@ function buildTileCanvas() {
   }
   tctx.globalAlpha = 1;
 
-  // Pass 7: soft shadow on floor tiles at wall edges
+  // Pass 9: soft shadow on floor tiles at wall edges
   const sd = 11;
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
