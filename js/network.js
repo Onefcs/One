@@ -254,7 +254,7 @@ function netConnect(onReady) {
     if (e) {
       e.hp = hp;
       e.hurtTimer = 0.3;
-      if (dmg) dmgNum(e.x, e.y - e.size - 4, isCrit ? `${dmg}!` : dmg, isCrit ? '#ff8c00' : '#ff4');
+      if (dmg) { if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4'); }
     }
   });
 
@@ -274,7 +274,7 @@ function netConnect(onReady) {
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
-    if (dmg) dmgNum(px, py - 20, isCrit ? `${dmg}!` : dmg, isCrit ? '#ff8c00' : '#ff4');
+    if (dmg) { if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4'); }
     spawnBurst(px, py, color || '#f80', 8);
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
     if (dd) {

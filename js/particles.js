@@ -1,6 +1,6 @@
-function dmgNum(x, y, text, color) {
+function dmgNum(x, y, text, color, fontSize) {
   const t = String(text);
-  dmgNums.push({ x, y, text: t, color, life: 1.1, vy: -52, fontSize: isNaN(t) ? 12 : 15 });
+  dmgNums.push({ x, y, text: t, color, life: 1.1, vy: -52, fontSize: fontSize || (isNaN(t) ? 12 : 15) });
 }
 
 // Set when new particles arrive — render() sorts by color only then.

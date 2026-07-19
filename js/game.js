@@ -119,6 +119,7 @@ const _NO_DASH = [];
 // Damage-number fonts — only two possible sizes, precompute to avoid template literals
 const _FONT_DMGNUM = 'bold 15px Arial';
 const _FONT_DMGTXT = 'bold 12px Arial';
+const _FONT_CRIT   = 'bold 19px Arial';
 
 // ─────────────────────────────────────────────────────────
 //  CAMERA
@@ -927,7 +928,7 @@ function render(dt, ts) {
   dmgNums.forEach(d => {
     ctx.globalAlpha = Math.min(1, d.life * 1.5);
     ctx.fillStyle = d.color;
-    ctx.font = d.fontSize === 15 ? _FONT_DMGNUM : _FONT_DMGTXT; ctx.textAlign = 'center';
+    ctx.font = d.fontSize === 19 ? _FONT_CRIT : d.fontSize === 15 ? _FONT_DMGNUM : _FONT_DMGTXT; ctx.textAlign = 'center';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(d.text, d.x, d.y); ctx.fillText(d.text, d.x, d.y);
   });
   ctx.globalAlpha = 1;
