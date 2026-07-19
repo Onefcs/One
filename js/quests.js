@@ -29,9 +29,12 @@ function getQuestProgress(q) {
 function isQuestComplete(q) {
   if (!player || !q) return false;
   if (q.type === 'kill') {
-    return q.enemies.every(name => (player.questKills[name] || 0) >= q.count);
+    // Sum kills across all enemy types in the pool (matches progress display)
+    const done = q.enemies.reduce((s, name) => s + (player.questKills[name] || 0), 0);
+    return done >= q.count;
   }
   if (q.type === 'kill_multi') {
+    // Each enemy type must individually reach the count
     return q.enemies.every(name => (player.questKills[name] || 0) >= q.count);
   }
   if (q.type === 'level') return player.lvl >= q.level;
