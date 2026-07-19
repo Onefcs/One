@@ -202,8 +202,6 @@ function _skillBonusDesc(type, level) {
   switch (type) {
     case 'damage':   return `+${level}% к урону`;
     case 'buff':     return `+${level}с. действия`;
-    case 'barrier':  return `+${(level * 0.2).toFixed(1)}с.`;
-    case 'invis':    return `+${(level * 0.2).toFixed(1)}с. невидимости`;
     case 'heal':     return `+${level}% к лечению`;
     case 'mobility': return `+${level * 10}px дальность`;
     default:         return null;
@@ -214,8 +212,6 @@ function _skillBonusTypeLabel(type) {
   switch (type) {
     case 'damage':   return '+1%/ур. урон';
     case 'buff':     return '+1с/ур. действие';
-    case 'barrier':  return '+0.2с/ур. защита';
-    case 'invis':    return '+0.2с/ур. невидимость';
     case 'heal':     return '+1%/ур. лечение';
     case 'mobility': return '+10px/ур. дальность';
     default:         return '';

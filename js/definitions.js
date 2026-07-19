@@ -189,44 +189,44 @@ const EQ_SLOTS = [
 const SKILL_DEF = {
   warrior: [
     { key:'Q', name:'Щит-удар',    icon:'shieldBash', cd:18, desc:'×2 урон по цели + стан 3 сек' },
-    { key:'W', name:'Вихрь',       icon:'whirlwind',  cd:12, desc:'Удар по всем вокруг'           },
-    { key:'E', name:'Боевой клич', icon:'battleCry',  cd:20, desc:'+20% ATK на 5 секунд'          },
-    { key:'R', name:'Рывок',       icon:'dash',       cd:15, desc:'Прорыв через врагов'            },
+    { key:'W', name:'Вихрь',       icon:'whirlwind',  cd:12, desc:'АОЕ урон, радиус 110'          },
+    { key:'E', name:'Боевой клич', icon:'battleCry',  cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'R', name:'Рывок',       icon:'dash',       cd:15, desc:'Рывок 140px'                   },
   ],
   archer: [
-    { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   cd:6,  desc:'3 стрелы веером'              },
-    { key:'W', name:'Комбо стрела',   icon:'poisonArrow', cd:10, desc:'3 стрелы в цель'              },
-    { key:'E', name:'Кувырок',        icon:'roll',        cd:8,  desc:'Уклонение с ускорением'       },
+    { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
+    { key:'W', name:'Комбо стрела',   icon:'poisonArrow', cd:10, desc:'3 стрелы ×1 урон'             },
+    { key:'E', name:'Прыжок',         icon:'roll',        cd:8,  desc:'Рывок 80px'                   },
     { key:'R', name:'Скорость атаки', icon:'arrowRain',   cd:20, desc:'×2 скорость атаки на 5 сек'   },
   ],
   mage: [
     { key:'Q', name:'Огненный шар', icon:'fireball', cd:5,  desc:'Снаряд ×2 урона'               },
-    { key:'W', name:'Ледяная нова', icon:'iceNova',  cd:10, desc:'АОЕ урон + заморозка 3 сек'     },
-    { key:'E', name:'Барьер',       icon:'barrier',  cd:18, desc:'Блокирует весь урон 3 сек'      },
-    { key:'R', name:'Телепорт',     icon:'teleport', cd:12, desc:'Мгновенный прыжок'              },
+    { key:'W', name:'Ледяная нова', icon:'iceNova',  cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
+    { key:'E', name:'Барьер',       icon:'barrier',  cd:18, desc:'Защита +50% на 3 сек'           },
+    { key:'R', name:'Телепорт',     icon:'teleport', cd:12, desc:'Рывок 180px по направлению'     },
   ],
   priest: [
-    { key:'Q', name:'Исцеление',  icon:'heal',      cd:8,  desc:'+20% HP + ATK×5'                },
-    { key:'W', name:'Оцепенение', icon:'holyLight', cd:15, desc:'Стан ближайшей цели 3 сек'       },
-    { key:'E', name:'Щит веры',   icon:'barrier',   cd:18, desc:'+50% DEF себе и пати 4 сек'      },
-    { key:'R', name:'Молитва',    icon:'prayer',    cd:25, desc:'+10% HP себе и пати'              },
+    { key:'Q', name:'Исцеление',  icon:'heal',      cd:8,  desc:'+20% maxHP'                      },
+    { key:'W', name:'Оцепенение', icon:'holyLight', cd:15, desc:'Удерживает цель на месте 3 сек'  },
+    { key:'E', name:'Щит веры',   icon:'barrier',   cd:18, desc:'+50% защита себе и пати 4 сек'   },
+    { key:'R', name:'Молитва',    icon:'prayer',    cd:25, desc:'+10% maxHP себе и +10% пати'      },
   ],
   assasin: [
-    { key:'Q', name:'Удар тени',   icon:'shadowStrike', cd:5,  desc:'Рывок + АОЕ удар'           },
-    { key:'W', name:'Дым. шашка',  icon:'smokeBomb',    cd:12, desc:'АОЕ урон + замедление 3 сек' },
+    { key:'Q', name:'Удар тени',   icon:'shadowStrike', cd:5,  desc:'Рывок 80px к врагу'          },
+    { key:'W', name:'Дым. шашка',  icon:'smokeBomb',    cd:12, desc:'АОЕ урон 100 + замедление'   },
     { key:'E', name:'Невидимость', icon:'roll',         cd:20, desc:'Невидим для врагов 4 сек'    },
-    { key:'R', name:'Смерть. удар',icon:'deathStrike',  cd:25, desc:'×4 ATK по ближайшей цели'    },
+    { key:'R', name:'Смерть. удар',icon:'deathStrike',  cd:25, desc:'×4 удар по одной цели'       },
   ],
 };
 
 // Bonus category for each skill key per class
 // damage → +1% per level  |  buff → +1s duration  |  barrier → +0.2s  |  invis → +0.2s  |  heal → +1%  |  mobility → +10px range
 const SKILL_BONUS_TYPE = {
-  warrior: { Q: 'damage',   W: 'damage',  E: 'buff',    R: 'damage'   },
-  archer:  { Q: 'damage',   W: 'damage',  E: 'barrier', R: 'buff'     },
-  mage:    { Q: 'damage',   W: 'damage',  E: 'barrier', R: 'mobility' },
-  priest:  { Q: 'heal',     W: 'buff',    E: 'buff',    R: 'heal'     },
-  assasin: { Q: 'damage',   W: 'damage',  E: 'invis',   R: 'damage'   },
+  warrior: { Q: 'damage', W: 'damage', E: 'buff',     R: 'damage'   },
+  archer:  { Q: 'damage', W: 'damage', E: 'buff',     R: 'buff'     },
+  mage:    { Q: 'damage', W: 'damage', E: 'buff',     R: 'mobility' },
+  priest:  { Q: 'heal',   W: 'buff',   E: 'buff',     R: 'heal'     },
+  assasin: { Q: 'damage', W: 'damage', E: 'buff',     R: 'damage'   },
 };
 
 const NPC_DEF = [

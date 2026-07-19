@@ -329,13 +329,11 @@ function useSkill(idx) {
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
       dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#fa0');
       spawnBurst(player.x, player.y, '#fa0', 10);
-    } else if (sk.key === 'R') { // Charge — dash + AOE 70
+    } else if (sk.key === 'R') { // Charge — dash 140px
       const dx = joy.dx || 1, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
       _dashTo(player.x + (dx / len) * 140, player.y + (dy / len) * 140);
       spawnBurst(player.x, player.y, '#5af', 8);
-      spawnAOE(player.x, player.y, 70);
-      _skillAOEMult(70, _skillDmgMult('R')); netSpawnAoe(player.x, player.y);
     }
   } else if (player.type === 'archer') {
     if (sk.key === 'Q') { // Multi-Shot — 3 arrows fan
@@ -364,8 +362,8 @@ function useSkill(idx) {
         }, delayMs);
       });
       _skillDirMult(dir.dx, dir.dy, 240, 0.5, dmgMult);
-    } else if (sk.key === 'E') { // Dodge Roll (+0.2s per level)
-      dodgeTimer = 0.6 + _skillBarrierSec('E');
+    } else if (sk.key === 'E') { // Jump — dash 80px (+1s per level)
+      dodgeTimer = 0.6 + _skillBuffSec('E');
       const dx = joy.dx || 0, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
       _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
@@ -396,8 +394,10 @@ function useSkill(idx) {
       if (slowIds.length) netSkillSlow(slowIds, 3);
       dmgNum(player.x, player.y - 40, '❄ Заморозка!', '#8ef');
       spawnBurst(player.x, player.y, '#8ef', 12);
-    } else if (sk.key === 'E') { // Barrier — block all damage 3s (+0.2s per level)
-      barrierTimer = 3 + _skillBarrierSec('E');
+    } else if (sk.key === 'E') { // Barrier — +50% DEF for 3s (+1s per level)
+      barrierTimer = 3 + _skillBuffSec('E');
+      player.def = Math.floor(player.def * 1.5);
+      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
       dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
       spawnBurst(player.x, player.y, '#e8e', 8);
     } else if (sk.key === 'R') { // Teleport (+10px per level)
@@ -413,8 +413,8 @@ function useSkill(idx) {
       }
     }
   } else if (player.type === 'priest') {
-    if (sk.key === 'Q') { // Heal self (+1% per level)
-      const heal = Math.round((player.maxHp * 0.2 + player.atk * 5) * _skillHealMult('Q'));
+    if (sk.key === 'Q') { // Heal self — +20% maxHP (+1% per level)
+      const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('Q'));
       player.hp = Math.min(player.maxHp, player.hp + heal);
       dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 8);
@@ -436,24 +436,21 @@ function useSkill(idx) {
       if (typeof netFaithShield === 'function') netFaithShield(faithShieldTimer);
       dmgNum(player.x, player.y - 40, '🛡 Щит веры!', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 10);
-    } else if (sk.key === 'R') { // Prayer — +10% HP self + party (+1% per level)
-      const healPct = 0.10 * _skillHealMult('R');
-      const healSelf = Math.round(player.maxHp * healPct);
+    } else if (sk.key === 'R') { // Prayer — +10% maxHP self + party (+1% per level)
+      const healSelf = Math.round(player.maxHp * 0.10 * _skillHealMult('R'));
       player.hp = Math.min(player.maxHp, player.hp + healSelf);
       dmgNum(player.x, player.y - 50, '+' + healSelf + '♥ Молитва!', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 14);
       if (typeof netHealParty === 'function') {
-        netHealParty(Math.round(player.maxHp * healPct));
+        netHealParty(Math.round(player.maxHp * 0.10 * _skillHealMult('R')));
       }
     }
   } else if (player.type === 'assasin') {
-    if (sk.key === 'Q') { // Shadow Strike — dash + AOE 60
+    if (sk.key === 'Q') { // Shadow Strike — dash 80px toward enemy
       const dir = nearestEnemyDir();
       const len = Math.hypot(dir.dx, dir.dy) || 1;
       _dashTo(player.x + (dir.dx / len) * 80, player.y + (dir.dy / len) * 80);
       spawnBurst(player.x, player.y, '#a5f', 6);
-      spawnAOE(player.x, player.y, 60);
-      _skillAOEMult(60, _skillDmgMult('Q')); netSpawnAoe(player.x, player.y);
     } else if (sk.key === 'W') { // Smoke Bomb — AOE 100 + slow 3s
       spawnAOE(player.x, player.y, 100);
       _skillAOEMult(100, _skillDmgMult('W')); netSpawnAoe(player.x, player.y);
@@ -465,8 +462,8 @@ function useSkill(idx) {
       if (slowIds.length) netSkillSlow(slowIds, 3);
       dmgNum(player.x, player.y - 40, '💨 Дым!', '#a5f');
       spawnBurst(player.x, player.y, '#a5f', 8);
-    } else if (sk.key === 'E') { // Invisibility 4s (+0.2s per level)
-      invisTimer = 4 + _skillInvisSec('E');
+    } else if (sk.key === 'E') { // Invisibility 4s (+1s per level)
+      invisTimer = 4 + _skillBuffSec('E');
       if (typeof netPlayerInvis === 'function') netPlayerInvis(true);
       dmgNum(player.x, player.y - 40, '👁 Невидимость!', '#a5f');
       spawnBurst(player.x, player.y, '#a5f', 6);

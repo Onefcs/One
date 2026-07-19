@@ -445,7 +445,7 @@ function update(dt) {
     if (cds.E > 0) cds.E -= dt;
     if (cds.R > 0) cds.R -= dt;
   }
-  if (barrierTimer > 0) barrierTimer -= dt;
+  if (barrierTimer > 0) { barrierTimer -= dt; if (barrierTimer <= 0) { barrierTimer = 0; recompute(); } }
   if (battleCryTimer > 0) { battleCryTimer -= dt; if (battleCryTimer <= 0) { battleCryTimer = 0; recompute(); } }
   if (dodgeTimer > 0) dodgeTimer -= dt;
   if (atkSpeedTimer > 0) { atkSpeedTimer -= dt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }

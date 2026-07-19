@@ -205,11 +205,6 @@ function netConnect(onReady) {
   socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
       if (typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) return;
-      if (barrierTimer > 0) {
-        dmgNum(player.x, player.y - 24, 'БЛОК', '#88f');
-        spawnBurst(player.x, player.y, '#88f', 5);
-        return;
-      }
       player.hp = (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
       player.hurtTimer = 0.1;
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
@@ -235,9 +230,7 @@ function netConnect(onReady) {
   socket.on('pvpDamage', ({ dmg }) => {
     if (!player || state !== 'playing') return;
     let actual = 0;
-    if (barrierTimer > 0) {
-      dmgNum(player.x, player.y - 24, 'БЛОК', '#88f');
-    } else {
+    {
       actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
       player.hp = Math.max(0, player.hp - actual);
       player.hurtTimer = 0.1;
@@ -524,11 +517,6 @@ function netConnect(onReady) {
 
   socket.on('raidPlayerHurt', ({ hp, dmg }) => {
     if (!player || state !== 'playing') return;
-    if (barrierTimer > 0) {
-      dmgNum(player.x, player.y - 24, 'БЛОК', '#88f');
-      spawnBurst(player.x, player.y, '#88f', 5);
-      return;
-    }
     player.hp = Math.max(0, hp);
     player.hurtTimer = 0.1;
     if (dmg) dmgNum(player.x, player.y - 24, dmg, '#f55');
