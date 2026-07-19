@@ -762,6 +762,9 @@ canvas { display:block; width:100%; height:100%; }
 .clan-lv-num       { width:30px; flex-shrink:0; font-weight:700; }
 .clan-lv-name      { flex:1; }
 .clan-lv-bonus     { font-size:10px; opacity:0.8; white-space:nowrap; }
+.inv-tabs          { display:flex; border-bottom:1px solid rgba(255,255,255,0.07); margin-bottom:4px; }
+.inv-tab           { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#555; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
+.inv-tab.active    { color:#60a5fa; border-bottom-color:#3b82f6; }
 .clan-tabs         { display:flex; border-bottom:1px solid rgba(255,255,255,0.07); margin-bottom:12px; }
 .clan-tab          { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#555; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
 .clan-tab.active   { color:#c084fc; border-bottom-color:#7c3aed; }

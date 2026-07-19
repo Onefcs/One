@@ -128,17 +128,30 @@
 <!-- Panels -->
 <div id="panel-inv" class="bpanel">
   <div class="panel-hdr">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><path d="M4 20V10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Инвентарь
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>Персонаж
     <span id="inv-count" style="font-size:11px;color:#484860;font-weight:normal;"></span>
   </div>
-  <div id="char-preview"></div>
-  <div class="panel-body" style="padding-top:4px">
-    <div class="sec-title">Снаряжение (нажми для снятия)</div>
-    <div class="eq-grid-5col" id="eq-grid"></div>
-    <div class="sec-title" style="margin-top:14px">Зелья (нажми для использования)</div>
-    <div class="pt-shelf" id="potion-shelf"></div>
-    <div class="sec-title" style="margin-top:14px">Предметы (нажми для экипировки)</div>
-    <div class="inv-grid" id="inv-grid"></div>
+  <div class="inv-tabs">
+    <div class="inv-tab active" id="inv-tab-0" onclick="setInvTab(0)">Инвентарь</div>
+    <div class="inv-tab" id="inv-tab-1" onclick="setInvTab(1)">Улучшения</div>
+  </div>
+  <!-- Inventory sub-tab -->
+  <div id="inv-tab-content-0">
+    <div id="char-preview"></div>
+    <div class="panel-body" style="padding-top:4px">
+      <div class="sec-title">Снаряжение (нажми для снятия)</div>
+      <div class="eq-grid-5col" id="eq-grid"></div>
+      <div class="sec-title" style="margin-top:14px">Зелья (нажми для использования)</div>
+      <div class="pt-shelf" id="potion-shelf"></div>
+      <div class="sec-title" style="margin-top:14px">Предметы (нажми для экипировки)</div>
+      <div class="inv-grid" id="inv-grid"></div>
+    </div>
+  </div>
+  <!-- Upgrades sub-tab -->
+  <div id="inv-tab-content-1" style="display:none">
+    <div class="panel-body" id="profile-body"></div>
+    <div class="upg-section-hdr">Улучшения · <span id="upg-gold-lbl"></span></div>
+    <div id="upgrade-grid" class="upg-grid"></div>
   </div>
 </div>
 
@@ -193,12 +206,6 @@
   <div class="panel-body" id="quest-list"></div>
 </div>
 
-<div id="panel-profile" class="bpanel">
-  <div class="panel-hdr"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>Улучшить</div>
-  <div class="panel-body" id="profile-body"></div>
-  <div class="upg-section-hdr">Улучшения · <span id="upg-gold-lbl"></span></div>
-  <div id="upgrade-grid" class="upg-grid"></div>
-</div>
 
 <div id="panel-clans" class="bpanel">
   <div class="panel-hdr">
@@ -215,8 +222,8 @@
       <div class="nl">Игра</div>
     </div>
     <div class="nav-tab" onclick="setTab(1)">
-      <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
-      <div class="nl">Инвентарь</div>
+      <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+      <div class="nl">Персонаж</div>
     </div>
     <div class="nav-tab" onclick="setTab(2)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="3,6 9,3 15,6 21,3 21,18 15,21 9,18 3,21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg></div>
@@ -227,10 +234,6 @@
       <div class="nl">Квесты</div>
     </div>
     <div class="nav-tab" onclick="setTab(4)">
-      <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></div>
-      <div class="nl">Улучшить</div>
-    </div>
-    <div class="nav-tab" onclick="setTab(5)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
       <div class="nl">Кланы</div>
     </div>

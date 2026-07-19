@@ -415,6 +415,16 @@ function closeFloorInfo() {
 // ─────────────────────────────────────────────────────────
 //  TAB MANAGEMENT
 // ─────────────────────────────────────────────────────────
+let _invTab = 0;
+function setInvTab(n) {
+  _invTab = n;
+  document.querySelectorAll('.inv-tab').forEach((el, i) => el.classList.toggle('active', i === n));
+  document.getElementById('inv-tab-content-0').style.display = n === 0 ? '' : 'none';
+  document.getElementById('inv-tab-content-1').style.display = n === 1 ? '' : 'none';
+  if (n === 0) updateInvUI();
+  if (n === 1) updateProfileUI();
+}
+
 function setTab(n) {
   activeTab = n;
   document.querySelectorAll('.nav-tab').forEach((el, i) => el.classList.toggle('active', i === n));
@@ -424,16 +434,15 @@ function setTab(n) {
     const tb = document.getElementById('npc-talk-btn');
     if (tb) tb.style.display = 'none';
   }
-  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-profile', 'panel-clans'][n];
+  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-clans'][n];
   if (pid) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); });
-    if (n === 1) updateInvUI();
+    if (n === 1) { _invTab === 1 ? updateProfileUI() : updateInvUI(); }
     if (n === 2) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
-    if (n === 4) updateProfileUI();
-    if (n === 5 && typeof updateClanUI === 'function') updateClanUI();
+    if (n === 4 && typeof updateClanUI === 'function') updateClanUI();
   }
 }
 
