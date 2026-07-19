@@ -104,6 +104,38 @@ function clanIconSVG(id, size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" style="image-rendering:pixelated;display:block">${rects.join('')}</svg>`;
 }
 
+// ── Offscreen clan tag canvas (cached, invalidated on clan change) ────────────
+let _clanTagCanvas = null, _clanTagKey = null;
+function getClanTagCanvas() {
+  if (!clanData || !clanData.name) return null;
+  const key = (clanData.icon || 1) + '|' + clanData.name;
+  if (_clanTagCanvas && _clanTagKey === key) return _clanTagCanvas;
+
+  const iconPx = 1, iconSz = 8 * iconPx, gap = 3;
+  // Measure text width using a throwaway canvas
+  const tmp = document.createElement('canvas');
+  const tc = tmp.getContext('2d');
+  tc.font = 'bold 9px system-ui, Arial';
+  const ctw = tc.measureText(clanData.name).width;
+  const w = Math.ceil(iconSz + gap + ctw) + 4;
+  const h = 10;
+
+  const oc = document.createElement('canvas');
+  oc.width = w; oc.height = h;
+  const c = oc.getContext('2d');
+  c.textBaseline = 'middle';
+  drawClanIconOnCtx(c, clanData.icon, iconSz / 2, h / 2, iconPx);
+  c.font = 'bold 9px system-ui, Arial';
+  c.strokeStyle = '#000'; c.lineWidth = 2; c.textAlign = 'left';
+  c.strokeText(clanData.name, iconSz + gap, h / 2);
+  c.fillStyle = '#f93';
+  c.fillText(clanData.name, iconSz + gap, h / 2);
+
+  _clanTagCanvas = oc;
+  _clanTagKey = key;
+  return _clanTagCanvas;
+}
+
 // ── Active clan bonuses (cumulative at current level) ─────
 function getClanBonus() {
   if (!clanData) return { gold: 0, xp: 0, atk: 0 };
@@ -115,7 +147,7 @@ function getClanBonus() {
 let _clanView = 'main';      // 'main' | 'create' | 'search' | 'icon-pick'
 let _clanNewName = '';
 let _clanNewIcon = 1;
-let _clanSearchResults = [];
+let _clanSearchResults = null;   // null = loading, [] = empty result
 
 function updateClanUI() {
   const el = document.getElementById('clan-body');
@@ -146,7 +178,7 @@ function _renderNoClan(el) {
 
 // ── Create clan screen ────────────────────────────────────
 function _clanGoCreate() { _clanView = 'create'; _clanNewName = ''; _clanNewIcon = 1; updateClanUI(); }
-function _clanGoSearch()  { _clanView = 'search'; _clanSearchResults = []; updateClanUI(); }
+function _clanGoSearch()  { _clanView = 'search'; _clanSearchResults = null; updateClanUI(); netClanSearch(''); }
 function _clanGoMain()    { _clanView = 'main'; updateClanUI(); }
 
 function _renderCreate(el) {
@@ -195,7 +227,13 @@ function _clanSubmitCreate() {
 
 // ── Search screen ─────────────────────────────────────────
 function _renderSearch(el) {
-  const results = _clanSearchResults.map(c => `
+  let results;
+  if (_clanSearchResults === null) {
+    results = '<div class="clan-nores">Загрузка...</div>';
+  } else if (_clanSearchResults.length === 0) {
+    results = '<div class="clan-nores">Кланы не найдены</div>';
+  } else {
+    results = _clanSearchResults.map(c => `
     <div class="clan-result">
       <div class="clan-result-icon">${clanIconSVG(c.icon, 36)}</div>
       <div class="clan-result-info">
@@ -203,7 +241,8 @@ function _renderSearch(el) {
         <div class="clan-result-meta">Ур. ${c.level} · ${c.members} участников</div>
       </div>
       <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">Вступить</button>
-    </div>`).join('') || '<div class="clan-nores">Кланы не найдены</div>';
+    </div>`).join('');
+  }
 
   el.innerHTML = `
     <div class="clan-form">
@@ -341,6 +380,7 @@ function _esc(s) {
 function onClanData(data) {
   const prevLevel = clanData ? clanData.level : null;
   clanData = data;
+  _clanTagCanvas = null; _clanTagKey = null;
   if (data && prevLevel !== null && data.level > prevLevel) {
     showClanLevelUp(data.level);
   }

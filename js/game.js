@@ -600,33 +600,16 @@ function _drawPlayerNameOnUI() {
   if (displayName !== _prevDisplayName) { _cachedNameTw = ctx.measureText(displayName).width; _prevDisplayName = displayName; }
   const tw = _cachedNameTw;
 
-  // ── Clan tag above character name ──────────────────────
+  // ── Clan tag above character name (single drawImage — no flicker) ──────────
   let boundsTopY = sy - 14;
   let boundsMaxW = tw + 12;
-  if (typeof clanData !== 'undefined' && clanData && clanData.name) {
-    const clanSy = sy - 13;         // baseline for clan name text
-    const iconPx = 1;               // each pixel = 1 CSS px → 8px icon
-    const iconSz = 8 * iconPx;
-    ctx.font = 'bold 9px system-ui, Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const ctw = ctx.measureText(clanData.name).width;
-    const gap = 3;
-    const totalW = iconSz + gap + ctw;
-    const iconCx = sx - totalW / 2 + iconSz / 2;
-    const textX  = sx - totalW / 2 + iconSz + gap;
-
-    if (typeof drawClanIconOnCtx === 'function')
-      drawClanIconOnCtx(ctx, clanData.icon, iconCx, clanSy - 3, iconPx);
-
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-    ctx.textAlign = 'left';
-    ctx.strokeText(clanData.name, textX, clanSy);
-    ctx.fillStyle = '#f93';
-    ctx.fillText(clanData.name, textX, clanSy);
-    ctx.textAlign = 'center';
-
-    boundsTopY  = clanSy - 10;
-    boundsMaxW  = Math.max(boundsMaxW, totalW + 12);
+  const _tagCanvas = typeof getClanTagCanvas === 'function' ? getClanTagCanvas() : null;
+  if (_tagCanvas) {
+    const tagX = Math.round(sx - _tagCanvas.width / 2);
+    const tagY = Math.round(sy - 13 - _tagCanvas.height);
+    ctx.drawImage(_tagCanvas, tagX, tagY);
+    boundsTopY = tagY - 2;
+    boundsMaxW = Math.max(boundsMaxW, _tagCanvas.width + 4);
   }
 
   // ── Character name ─────────────────────────────────────
