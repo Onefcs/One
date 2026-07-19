@@ -154,16 +154,28 @@ function recompute() {
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5;
 }
 
+function getAvailableSkillPoints() {
+  const total = (player.lvl || 1) * 3;
+  const spent = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
+  return total - spent;
+}
+
 function upgradeStats(key) {
   if (!player || !UPGRADE_DEF[key]) return;
   const u = player.upgrades;
-  const cost = Math.floor(UPGRADE_DEF[key].baseCost * Math.pow(1.4, u[key] || 0));
+  const lvl = u[key] || 0;
+  const cost = 300 * (lvl + 1);
+  const availSP = getAvailableSkillPoints();
   if (player.gold < cost) {
     dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
     return;
   }
+  if (availSP < 1) {
+    dmgNum(player.x, player.y - 30, 'Мало очков навыка!', '#f88');
+    return;
+  }
   player.gold -= cost;
-  u[key] = (u[key] || 0) + 1;
+  u[key] = lvl + 1;
   recompute();
   netSaveProgress();
   if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
@@ -180,6 +192,7 @@ function gainXP(amount) {
     recompute();
     player.hp = Math.min(player.maxHp, player.hp + 35);
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
+    dmgNum(player.x, player.y - 54, '+3 очка навыка', '#a0f0a0');
     spawnBurst(player.x, player.y, '#ff0', 14);
     if (typeof onLevelUp === 'function') onLevelUp(player.lvl);
   }

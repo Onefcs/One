@@ -176,17 +176,24 @@ function updateUpgradeUI() {
   if (!el) return;
   const goldLbl = document.getElementById('upg-gold-lbl');
   if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#f1c40f') + ' ' + player.gold;
+  const totalSP = (player.lvl || 1) * 3;
+  const spentSP = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
+  const availSP = totalSP - spentSP;
+  const spLbl = document.getElementById('upg-sp-lbl');
+  if (spLbl) spLbl.textContent = `Очки навыка: ${availSP} / ${totalSP}`;
   const u = player.upgrades || {};
   el.innerHTML = Object.entries(UPGRADE_DEF).map(([key, cfg]) => {
     const lvl  = u[key] || 0;
-    const cost = Math.floor(cfg.baseCost * Math.pow(1.4, lvl));
-    const can  = player.gold >= cost;
+    const cost = 300 * (lvl + 1);
+    const can  = player.gold >= cost && availSP >= 1;
     return `<div class="upg-row">
       <div class="upg-info">
         <span class="upg-label">${iconHTML(cfg.icon, 14, '#9090bb')} ${cfg.label}</span>
         <span class="upg-meta">Ур.${lvl} · ${cfg.desc}</span>
       </div>
-      <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">${iconHTML('coin',12,'#f1c40f')}${cost}</button>
+      <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">
+        ${iconHTML('coin',12,'#f1c40f')}${cost} + 1 ОН
+      </button>
     </div>`;
   }).join('');
 }
