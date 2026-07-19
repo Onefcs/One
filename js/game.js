@@ -725,27 +725,14 @@ function render(dt, ts) {
   ctx.imageSmoothingEnabled = true;
   if (dungeon && dungeon.grid) drawTileChunks(_camX, _camY);
 
-  // Safe zone overlay
+  // Safe zone overlay — world-space coords (camera transform already applied)
   if (dungeon && dungeon.safeZone) {
     const sz = dungeon.safeZone;
-    const sx1 = (sz.x1 - _camX) * ZOOM, sy1 = (sz.y1 - _camY) * ZOOM + HEADER_H;
-    const szW  = (sz.x2 - sz.x1) * ZOOM, szH = (sz.y2 - sz.y1) * ZOOM;
-    ctx.fillStyle = 'rgba(60,220,100,0.07)';
-    ctx.fillRect(sx1, sy1, szW, szH);
-    ctx.strokeStyle = 'rgba(60,220,100,0.25)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sx1, sy1, szW, szH);
-    // HUD label when player is inside
-    if (player && inSafeZone(player.x, player.y)) {
-      ctx.font = 'bold 11px system-ui, Arial';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      const lbl = '🛡 Безопасная зона · реген HP';
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      const lw = ctx.measureText(lbl).width;
-      ctx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
-      ctx.fillStyle = '#4de87a';
-      ctx.fillText(lbl, W / 2, HEADER_H + 20);
-    }
+    ctx.fillStyle = 'rgba(60,220,100,0.08)';
+    ctx.fillRect(sz.x1, sz.y1, sz.x2 - sz.x1, sz.y2 - sz.y1);
+    ctx.strokeStyle = 'rgba(60,220,100,0.35)';
+    ctx.lineWidth = 3 / ZOOM;
+    ctx.strokeRect(sz.x1, sz.y1, sz.x2 - sz.x1, sz.y2 - sz.y1);
   }
 
   // NPCs
@@ -911,6 +898,18 @@ function render(dt, ts) {
   });
   ctx.globalAlpha = 1;
   ctx.restore(); // [camera]
+
+  // Safe zone HUD label — screen-space
+  if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
+    const lbl = '🛡 Безопасная зона · реген HP';
+    ctx.font = 'bold 11px system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const lw = ctx.measureText(lbl).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
+    ctx.fillStyle = '#4de87a';
+    ctx.fillText(lbl, W / 2, HEADER_H + 20);
+  }
 
   // UI overlay — rendered to separate canvas at native DPR (~20fps), no blit needed
   ctx.globalAlpha = 1;
