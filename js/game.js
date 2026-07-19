@@ -133,19 +133,21 @@ function updateCamera(dt) {
   const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
   const tx = player.x - visW / 2;
   const ty = player.y - visH / 2;
-  // Exponential form is frame-rate independent: at fluctuating fps a linear
-  // 8*dt factor makes the camera correct faster/slower per-frame, which reads
-  // as rubber-banding — this keeps the smoothing constant in wall-clock time.
-  const factor = 1 - Math.exp(-8 * dt);
-  camera.x += (tx - camera.x) * factor;
-  camera.y += (ty - camera.y) * factor;
-  // Once within a device pixel of the target, lock onto it exactly —
-  // prevents float oscillation around a rounding boundary when standing
-  // still (during steady running the lerp trails at a constant offset,
-  // so the player already holds a fixed screen position).
+  // Velocity-matched follow. A lerp toward the target trails the player by
+  // speed/k while running, and frame-time noise makes that trail length
+  // fluctuate — visible as the player wobbling ±1px on screen every uneven
+  // frame. Instead, decay the camera→target OFFSET in error space: the
+  // camera then moves 1:1 with the player at all times (zero relative
+  // wobble), while a large offset (teleport, charge, respawn nearby) still
+  // glides down smoothly. Once within a device pixel the offset snaps to 0.
+  let ox = camera.x - tx, oy = camera.y - ty;
+  const decay = Math.exp(-6 * dt);
+  ox *= decay; oy *= decay;
   const _devPx = 1 / (ZOOM * DPR);
-  if (Math.abs(tx - camera.x) < _devPx) camera.x = tx;
-  if (Math.abs(ty - camera.y) < _devPx) camera.y = ty;
+  if (Math.abs(ox) < _devPx) ox = 0;
+  if (Math.abs(oy) < _devPx) oy = 0;
+  camera.x = tx + ox;
+  camera.y = ty + oy;
   clampCamera();
 }
 
