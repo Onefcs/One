@@ -612,7 +612,7 @@ function _renderUI() {
   _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const _c = ctx; ctx = _uiCtx;
   drawHeader();
-  if (activeTab === 0 && typeof drawQuestTracker === 'function') drawQuestTracker();
+  if (typeof drawQuestNotif === 'function') drawQuestNotif();
   drawPvpButton();
   drawPartyButton();
   drawPartyHUD();

@@ -256,7 +256,14 @@ function netConnect(onReady) {
       }
       serverEnemies.length = j;
     }
-    if (xp && player) gainXP(xp);
+    if (xp && player) {
+      player.kills++;
+      gainXP(xp);
+    }
+    if (eid && player && typeof onEnemyKill === 'function') {
+      const _eDef = ENEMY_DEF.find(e => e.eid === eid);
+      if (_eDef) onEnemyKill(_eDef.name);
+    }
     if (gotLoot && player) applyLootToInventory(eid);
     if (bossStone && player) {
       const stone = CRAFT_MATS.find(m => m.id === 'boss_stone');

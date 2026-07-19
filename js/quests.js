@@ -109,6 +109,23 @@ function onLevelUp(lvl) {
   if (activeTab === 3) updateQuestUI();
 }
 
+function drawQuestNotif() {
+  if (!questNotif || !player || !dungeon) return;
+  ctx.save();
+  const alpha = Math.min(1, questNotif.timer, 3.5 - questNotif.timer + 0.5);
+  ctx.globalAlpha = Math.max(0, alpha);
+  ctx.fillStyle = 'rgba(20,16,50,0.95)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 130, HEADER_H + 10, 260, 32, 8);
+  ctx.fill();
+  ctx.font = 'bold 13px system-ui, Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#fd0';
+  ctx.fillText(questNotif.title, W / 2, HEADER_H + 31);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 // ── Canvas quest tracker (below minimap, top-right) ───────
 function drawQuestTracker() {
   const q = getCurrentQuest();
