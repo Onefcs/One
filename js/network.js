@@ -41,9 +41,10 @@ function netConnect(onReady) {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData }) => {
+  socket.on('authOk', ({ username, savedData, clanInfo }) => {
     netUsername = username;
     _savedData = savedData || null;
+    if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     document.getElementById('login-screen').style.display = 'none';
     _showCharSelect(_savedData);
   });
@@ -275,7 +276,9 @@ function netConnect(onReady) {
     }
     if (xp && player) {
       player.kills++;
-      gainXP(xp);
+      const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
+      const _xpFinal = _cb && _cb.xp > 0 ? Math.round(xp * (1 + _cb.xp / 100)) : xp;
+      gainXP(_xpFinal);
     }
     if (eid && player && typeof onEnemyKill === 'function') {
       const _eDef = ENEMY_DEF.find(e => e.eid === eid);
@@ -296,10 +299,14 @@ function netConnect(onReady) {
       }
     }
     if (gold && player) {
-      player.gold += gold;
-      const g = gold % 1 === 0 ? gold : +gold.toFixed(1);
+      const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
+      const _goldFinal = _cb && _cb.gold > 0 ? Math.round(gold * (1 + _cb.gold / 100)) : gold;
+      player.gold += _goldFinal;
+      const g = _goldFinal % 1 === 0 ? _goldFinal : +_goldFinal.toFixed(1);
       dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
     }
+    // Notify server for clan XP (1 kill = 1 clan point)
+    if (xp && player && clanData) socket.emit('clanKill');
   });
 
   socket.on('floorChanged', ({ floor, dungeon: d, enemies: initialEnemies }) => {
@@ -382,6 +389,17 @@ function netConnect(onReady) {
     el.scrollTop = el.scrollHeight;
   });
 
+  // ── Clan listeners ────────────────────────────────────────
+  socket.on('clanData', data => {
+    if (typeof onClanData === 'function') onClanData(data);
+  });
+  socket.on('clanError', ({ msg }) => {
+    if (typeof onClanError === 'function') onClanError(msg);
+  });
+  socket.on('clanSearchResults', results => {
+    if (typeof onClanSearchResults === 'function') onClanSearchResults(results);
+  });
+
   socket.on('disconnect', () => {
     socket = null;
     serverEnemies = [];
@@ -389,6 +407,7 @@ function netConnect(onReady) {
     otherProjs = [];
     partyMembers = [];
     partyInvitePending = null;
+    clanData = null;
     const chatBtn = document.getElementById('chat-btn');
     if (chatBtn) chatBtn.style.display = 'none';
     const chatPanel = document.getElementById('chat-panel');
@@ -411,6 +430,36 @@ function netPartyDecline(fromId) {
 function netPartyLeave() {
   if (socket?.connected) socket.emit('partyLeave');
   partyMembers = [];
+}
+
+// ── Clan helpers ──────────────────────────────────────────────
+function netClanCreate(name, icon) {
+  if (socket?.connected) socket.emit('clanCreate', { name, icon });
+}
+function netClanApply(clanId) {
+  if (socket?.connected) socket.emit('clanApply', { clanId });
+}
+function netClanApprove(telegramId) {
+  if (socket?.connected) socket.emit('clanApprove', { telegramId });
+}
+function netClanDecline(telegramId) {
+  if (socket?.connected) socket.emit('clanDecline', { telegramId });
+}
+function netClanKick(telegramId) {
+  if (socket?.connected) socket.emit('clanKick', { telegramId });
+}
+function netClanLeave() {
+  if (socket?.connected) socket.emit('clanLeave');
+  clanData = null;
+  updateClanUI();
+}
+function netClanDisband() {
+  if (socket?.connected) socket.emit('clanDisband');
+  clanData = null;
+  updateClanUI();
+}
+function netClanSearch(query) {
+  if (socket?.connected) socket.emit('clanSearch', { query: (query || '').slice(0, 20) });
 }
 
 // ── Auth ──────────────────────────────────────────────────────

@@ -46,3 +46,6 @@ let partyInvitePending = null;
 
 // Attack mode
 let autoAttackMode = true;
+
+// Clan state (null = not in a clan)
+let clanData = null;

@@ -425,7 +425,7 @@ function setTab(n) {
     const tb = document.getElementById('npc-talk-btn');
     if (tb) tb.style.display = 'none';
   }
-  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-profile'][n];
+  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-profile', 'panel-clans'][n];
   if (pid) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
@@ -434,6 +434,7 @@ function setTab(n) {
     if (n === 2) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4) updateProfileUI();
+    if (n === 5 && typeof updateClanUI === 'function') updateClanUI();
   }
 }
 

@@ -6,6 +6,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const PlayerModel = require('./models/Player');
+const ClanModel   = require('./models/Clan');
 const Room = require('./game/Room');
 
 // Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
@@ -70,6 +71,7 @@ const BUNDLE_FILES = [
   'js/charselect.js',
   'js/network.js',
   'js/quests.js',
+  'js/clans.js',
   'js/game.js',
   'js/npc.js',
 ].map(f => path.join(ROOT, f));
@@ -218,9 +220,18 @@ io.on('connection', socket => {
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
       socket.data.username = doc.username;
+      socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
+      const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
+      const _clanInfo = _clan ? {
+        _id: _clan._id, name: _clan.name, icon: _clan.icon, level: _clan.level, xp: _clan.xp,
+        members: _clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role })),
+        applications: _clan.members.find(m => m.telegramId === telegramId)?.role === 'leader'
+          ? _clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
+        myRole: _clan.members.find(m => m.telegramId === telegramId)?.role || null,
+      } : null;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -237,9 +248,18 @@ io.on('connection', socket => {
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
       socket.data.username = doc.username;
+      socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null });
+      const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
+      const _clanInfo = _clan ? {
+        _id: _clan._id, name: _clan.name, icon: _clan.icon, level: _clan.level, xp: _clan.xp,
+        members: _clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role })),
+        applications: _clan.members.find(m => m.telegramId === telegramId)?.role === 'leader'
+          ? _clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
+        myRole: _clan.members.find(m => m.telegramId === telegramId)?.role || null,
+      } : null;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -508,6 +528,161 @@ io.on('connection', socket => {
   socket.on('partyLeave', () => {
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);
+  });
+
+  // ── Clan handlers ─────────────────────────────────────────────
+  async function _clanDataFor(clan, telegramId) {
+    const myRole = clan.members.find(m => m.telegramId === telegramId)?.role || null;
+    return {
+      _id:          clan._id,
+      name:         clan.name,
+      icon:         clan.icon,
+      level:        clan.level,
+      xp:           clan.xp,
+      members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role })),
+      applications: myRole === 'leader' ? clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
+      myRole,
+    };
+  }
+
+  async function _notifyClan(clan) {
+    for (const m of clan.members) {
+      // Find active socket for this member by iterating connected sockets
+      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      if (target) target.emit('clanData', await _clanDataFor(clan, m.telegramId));
+    }
+  }
+
+  socket.on('clanCreate', async ({ name, icon }) => {
+    if (!authed) return;
+    const n = (name || '').trim().slice(0, 10);
+    if (!n) return socket.emit('clanError', { msg: 'Введите название' });
+    if (typeof icon !== 'number' || icon < 1 || icon > 30) return socket.emit('clanError', { msg: 'Неверная иконка' });
+    const existing = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (existing) return socket.emit('clanError', { msg: 'Вы уже в клане' });
+    try {
+      const clan = await ClanModel.create({
+        name: n, icon,
+        members: [{ telegramId: authed.telegramId, username: authed.username, role: 'leader' }],
+      });
+      socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+    } catch (e) {
+      if (e.code === 11000) socket.emit('clanError', { msg: 'Название занято' });
+      else socket.emit('clanError', { msg: 'Ошибка создания' });
+    }
+  });
+
+  socket.on('clanSearch', async ({ query }) => {
+    if (!authed) return;
+    const q = (query || '').trim();
+    const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
+    const clans = await ClanModel.find(filter).sort({ level: -1, xp: -1 }).limit(20).catch(() => []);
+    socket.emit('clanSearchResults', clans.map(c => ({
+      _id: c._id, name: c.name, icon: c.icon, level: c.level, members: c.members.length,
+    })));
+  });
+
+  socket.on('clanApply', async ({ clanId }) => {
+    if (!authed) return;
+    const inClan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (inClan) return socket.emit('clanError', { msg: 'Вы уже в клане' });
+    const clan = await ClanModel.findById(clanId).catch(() => null);
+    if (!clan) return socket.emit('clanError', { msg: 'Клан не найден' });
+    if (clan.applications.find(a => a.telegramId === authed.telegramId)) return;
+    clan.applications.push({ telegramId: authed.telegramId, username: authed.username });
+    await clan.save().catch(() => {});
+    socket.emit('clanError', { msg: '✓ Заявка отправлена' });
+    await _notifyClan(clan);
+  });
+
+  socket.on('clanApprove', async ({ telegramId }) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    const app = clan.applications.find(a => a.telegramId === telegramId);
+    if (!app) return;
+    clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
+    clan.members.push({ telegramId: app.telegramId, username: app.username, role: 'member' });
+    await clan.save().catch(() => {});
+    await _notifyClan(clan);
+  });
+
+  socket.on('clanDecline', async ({ telegramId }) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
+    await clan.save().catch(() => {});
+    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+  });
+
+  socket.on('clanKick', async ({ telegramId }) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    if (telegramId === authed.telegramId) return;
+    clan.members = clan.members.filter(m => m.telegramId !== telegramId);
+    await clan.save().catch(() => {});
+    await _notifyClan(clan);
+    // Notify kicked player
+    const kicked = [...io.sockets.sockets.values()].find(s => s.data.telegramId === telegramId);
+    if (kicked) kicked.emit('clanData', null);
+  });
+
+  socket.on('clanLeave', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    const myEntry = clan.members.find(m => m.telegramId === authed.telegramId);
+    if (!myEntry) return;
+    if (myEntry.role === 'leader') {
+      // Promote next member or disband
+      const others = clan.members.filter(m => m.telegramId !== authed.telegramId);
+      if (others.length > 0) {
+        others[0].role = 'leader';
+        clan.members = others;
+        await clan.save().catch(() => {});
+        await _notifyClan(clan);
+      } else {
+        await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
+      }
+    } else {
+      clan.members = clan.members.filter(m => m.telegramId !== authed.telegramId);
+      await clan.save().catch(() => {});
+      await _notifyClan(clan);
+    }
+    socket.emit('clanData', null);
+  });
+
+  socket.on('clanDisband', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    // Notify all members first
+    for (const m of clan.members) {
+      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      if (target) target.emit('clanData', null);
+    }
+    await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
+  });
+
+  // 1 kill = 1 clan XP point
+  socket.on('clanKill', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan || clan.level >= 10) return;
+    clan.xp += 1;
+    // Check level up
+    const LEVELS = [0,500,1500,4000,10000,25000,60000,150000,350000,800000];
+    const nextLvl = clan.level < 10 ? LEVELS[clan.level] : Infinity;
+    if (clan.xp >= nextLvl) clan.level = Math.min(10, clan.level + 1);
+    await clan.save().catch(() => {});
+    // Only notify the killer (avoid DB load per kill for all members)
+    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
   });
 
   socket.on('disconnect', () => {

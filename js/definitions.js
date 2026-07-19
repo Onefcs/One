@@ -1,5 +1,20 @@
 // CHAR_DEF, ENEMY_DEF, TILE, WALL, FLOOR → shared/definitions.js
 
+// ── Clan levels & cumulative bonuses ──────────────────────────
+// Each level's bonus is the CUMULATIVE total at that level (not the increment)
+const CLAN_LEVELS = [
+  { lvl:1,  xpReq:0,      bonus:{ gold:0,  xp:0,  atk:0  }, label:'Новообразованный' },
+  { lvl:2,  xpReq:500,    bonus:{ gold:5,  xp:0,  atk:0  }, label:'Слаженный'        },
+  { lvl:3,  xpReq:1500,   bonus:{ gold:5,  xp:5,  atk:0  }, label:'Сплочённый'       },
+  { lvl:4,  xpReq:4000,   bonus:{ gold:10, xp:5,  atk:0  }, label:'Опытный'          },
+  { lvl:5,  xpReq:10000,  bonus:{ gold:10, xp:5,  atk:5  }, label:'Именитый'         },
+  { lvl:6,  xpReq:25000,  bonus:{ gold:10, xp:10, atk:5  }, label:'Прославленный'    },
+  { lvl:7,  xpReq:60000,  bonus:{ gold:15, xp:10, atk:5  }, label:'Легендарный'      },
+  { lvl:8,  xpReq:150000, bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
+  { lvl:9,  xpReq:350000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
+  { lvl:10, xpReq:800000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
+];
+
 const UPGRADE_DEF = {
   atk:        { label:'Атака',       icon:'sword',      baseCost:30,  desc:'+3 ATK'       },
   def:        { label:'Защита',      icon:'shield',     baseCost:30,  desc:'+2 DEF'       },
