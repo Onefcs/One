@@ -358,8 +358,8 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.healPlayer(socket.id, Math.min(amount || 60, 200));
   });
 
-  socket.on('statsUpdate', ({ atk, def, maxHp }) => {
-    if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp });
+  socket.on('statsUpdate', ({ atk, def, maxHp, critChance, critPower }) => {
+    if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp, critChance, critPower });
   });
 
   socket.on('pvpDamageTaken', ({ actual }) => {
@@ -402,7 +402,7 @@ io.on('connection', socket => {
 
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
-          dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
+          dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: lootWinnerId === socket.id, eid: result.eid,
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
@@ -426,7 +426,7 @@ io.on('connection', socket => {
         // No party: attacker gets full reward and loot
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
-          dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
+          dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: true, eid: result.eid, bossStone, normStone, blessStone,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
@@ -434,7 +434,7 @@ io.on('connection', socket => {
         });
       }
     } else {
-      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
+      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
     }
   });
 
@@ -445,7 +445,7 @@ io.on('connection', socket => {
       if (!rr) return;
       const cp = currentRoom?.players.get(socket.id);
       const targetEnemy = rr._enemyMap.get(enemyId);
-      const result = rr.skillAttackEnemy(socket.id, enemyId, cp?.atk || 10, multiplier);
+      const result = rr.skillAttackEnemy(socket.id, enemyId, cp?.atk || 10, multiplier, cp?.critChance || 0.05, cp?.critPower || 1.5);
       if (!result) return;
       if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));
       if (result.killed) {
@@ -483,7 +483,7 @@ io.on('connection', socket => {
         const allIds = [socket.id, ...memberIds];
         const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
         socket.emit('enemyKilled', {
-          id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg,
+          id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: lootWinnerId === socket.id, eid: result.eid,
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
@@ -501,14 +501,14 @@ io.on('connection', socket => {
         socket.to(`floor_${currentFloor}`).except(memberIds).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       } else {
         socket.emit('enemyKilled', {
-          id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg,
+          id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: true, eid: result.eid, bossStone, normStone, blessStone,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       }
     } else {
-      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
+      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
     }
   });
 
@@ -592,7 +592,7 @@ io.on('connection', socket => {
     if (!result) return;
     // Send damage delta to target (client applies it; avoids server HP sync issues)
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
-    socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, targetId });
+    socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
   });
 
   socket.on('respawn', () => {
@@ -959,7 +959,7 @@ io.on('connection', socket => {
     if (!rr) return;
     const cp = currentRoom?.players.get(socket.id);
     const targetEnemy = rr._enemyMap.get(enemyId);
-    const result = rr.attackEnemy(socket.id, enemyId, cp?.atk || 10);
+    const result = rr.attackEnemy(socket.id, enemyId, cp?.atk || 10, cp?.critChance || 0.05, cp?.critPower || 1.5);
     if (!result) return;
     // Broadcast attacker animation to all members
     if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));

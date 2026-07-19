@@ -145,25 +145,29 @@ class RaidRoom {
         spd: e.spd, aggroR: 350 }));
   }
 
-  attackEnemy(socketId, enemyId, playerAtk) {
+  attackEnemy(socketId, enemyId, playerAtk, critChance, critPower) {
     const e = this._enemyMap.get(enemyId);
     if (!e || e.hp <= 0) return null;
-    const dmg = Math.max(1, playerAtk - (e.def || 0));
+    const base = Math.max(1, playerAtk - (e.def || 0));
+    const isCrit = Math.random() < (critChance || 0);
+    const dmg = isCrit ? Math.floor(base * (critPower || 1.5)) : base;
     e.hp = Math.max(0, e.hp - dmg);
     e._shp = -1;
     if (e.hp <= 0) return { killed: true, eid: e.eid, ex: e.x, ey: e.y, isBoss: e.isBoss };
-    return { killed: false, hp: e.hp, dmg };
+    return { killed: false, hp: e.hp, dmg, isCrit };
   }
 
-  skillAttackEnemy(socketId, enemyId, playerAtk, multiplier) {
+  skillAttackEnemy(socketId, enemyId, playerAtk, multiplier, critChance, critPower) {
     const e = this._enemyMap.get(enemyId);
     if (!e || e.hp <= 0) return null;
     const mult = Math.max(1, Math.min(multiplier || 1, 10));
-    const dmg = Math.max(1, Math.floor((playerAtk - (e.def || 0)) * mult));
+    const base = Math.max(1, Math.floor((playerAtk - (e.def || 0)) * mult));
+    const isCrit = Math.random() < (critChance || 0);
+    const dmg = isCrit ? Math.floor(base * (critPower || 1.5)) : base;
     e.hp = Math.max(0, e.hp - dmg);
     e._shp = -1;
     if (e.hp <= 0) return { killed: true, eid: e.eid, ex: e.x, ey: e.y, isBoss: e.isBoss };
-    return { killed: false, hp: e.hp, dmg };
+    return { killed: false, hp: e.hp, dmg, isCrit };
   }
 
   applySkillEffect(enemyId, type, duration) {

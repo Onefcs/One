@@ -249,12 +249,12 @@ function netConnect(onReady) {
     if (_hitOp) _hitOp.hurtTimer = 0.1;
   });
 
-  socket.on('enemyHurt', ({ id, hp, dmg }) => {
+  socket.on('enemyHurt', ({ id, hp, dmg, isCrit }) => {
     const e = serverEnemiesMap.get(id);
     if (e) {
       e.hp = hp;
       e.hurtTimer = 0.3;
-      if (dmg) dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
+      if (dmg) dmgNum(e.x, e.y - e.size - 4, isCrit ? `${dmg}!` : dmg, isCrit ? '#ff8c00' : '#ff4');
     }
   });
 
@@ -269,12 +269,12 @@ function netConnect(onReady) {
     netSaveProgress();
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color, gotLoot, eid, bossStone, normStone, blessStone }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, bossStone, normStone, blessStone }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
-    if (dmg) dmgNum(px, py - 20, dmg, '#ff4');
+    if (dmg) dmgNum(px, py - 20, isCrit ? `${dmg}!` : dmg, isCrit ? '#ff8c00' : '#ff4');
     spawnBurst(px, py, color || '#f80', 8);
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
     if (dd) {
@@ -859,8 +859,8 @@ function netUsePotion(amount) {
   if (socket?.connected) socket.emit('usePotion', { amount });
 }
 
-function netStatsUpdate(atk, def, maxHp) {
-  if (socket?.connected) socket.emit('statsUpdate', { atk, def, maxHp });
+function netStatsUpdate(atk, def, maxHp, critChance, critPower) {
+  if (socket?.connected) socket.emit('statsUpdate', { atk, def, maxHp, critChance, critPower });
 }
 
 function netAttack(enemyId) {

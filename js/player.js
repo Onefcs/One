@@ -144,13 +144,13 @@ function recompute() {
   h = Math.floor(h * (1 + hpPct));
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
-  if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h);
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
+  if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5;
 }
 

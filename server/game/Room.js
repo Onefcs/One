@@ -8,19 +8,28 @@ function computeStats(sd, cd) {
   const baseAtk   = sd.baseAtk   ?? cd.baseAtk;
   const baseDef   = sd.baseDef   ?? cd.baseDef;
   const baseMaxHp = sd.baseMaxHp ?? cd.baseHP;
-  let eqAtk = 0, eqDef = 0, eqHp = 0, hpPct = 0;
+  let eqAtk = 0, eqDef = 0, eqHp = 0, hpPct = 0, extraCrit = 0;
   Object.values(sd.equipment || {}).forEach(it => {
     if (!it) return;
     eqAtk  += it.atk   || 0;
     eqDef  += it.def   || 0;
     eqHp   += it.hp    || 0;
     hpPct  += it.hpPct || 0;
+    if (it.critChance) extraCrit += it.critChance;
   });
+  const lvl = (sd.lvl || 1) - 1;
   return {
-    atk:   baseAtk   + (u.atk || 0) * 3 + eqAtk,
-    def:   baseDef   + (u.def || 0) * 2 + eqDef,
-    maxHp: Math.floor((baseMaxHp + (u.hp || 0) * 25 + eqHp) * (1 + hpPct)),
+    atk:       baseAtk   + (u.atk || 0) * 3 + eqAtk,
+    def:       baseDef   + (u.def || 0) * 2 + eqDef,
+    maxHp:     Math.floor((baseMaxHp + (u.hp || 0) * 25 + eqHp) * (1 + hpPct)),
+    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit),
+    critPower:  1.5 + lvl * 0.015 + (u.critPower || 0) * 0.15,
   };
+}
+
+function _critDmg(base, critChance, critPower) {
+  const isCrit = Math.random() < (critChance || 0);
+  return { dmg: isCrit ? Math.floor(base * (critPower || 1.5)) : base, isCrit };
 }
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
@@ -314,9 +323,10 @@ class Room {
     if (target.hp <= 0) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 500 * 500) return null;
-    const dmg = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
+    const base = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
+    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
-    return { dmg, x: target.x, y: target.y };
+    return { dmg, isCrit, x: target.x, y: target.y };
   }
 
   removePlayer(socketId) {
@@ -335,9 +345,11 @@ class Room {
     p._profileRev++;
     if (savedStats) {
       const s = computeStats(savedStats, cd);
-      p.atk   = s.atk;
-      p.def   = s.def;
-      p.maxHp = s.maxHp;
+      p.atk        = s.atk;
+      p.def        = s.def;
+      p.maxHp      = s.maxHp;
+      p.critChance = s.critChance;
+      p.critPower  = s.critPower;
       p.hp    = (savedStats.hp && savedStats.hp > 0) ? Math.min(savedStats.hp, p.maxHp) : p.maxHp;
       p.lvl   = savedStats.lvl || 1;
     } else {
@@ -374,7 +386,7 @@ class Room {
     p.y = this._dungeon.spawn.y;
   }
 
-  updatePlayerStats(socketId, { atk, def, maxHp }) {
+  updatePlayerStats(socketId, { atk, def, maxHp, critChance, critPower }) {
     const p = this.players.get(socketId);
     if (!p) return;
     // Cap at 1.5× current server value — blocks console-injection hacks while
@@ -386,6 +398,8 @@ class Room {
       p.hp = Math.min(p.hp, cap);
       if (p.maxHp !== cap) { p.maxHp = cap; p._profileRev++; }
     }
+    if (critChance !== undefined) p.critChance = Math.min(0.80, Math.max(0, critChance));
+    if (critPower  !== undefined) p.critPower  = Math.min(10,   Math.max(1, critPower));
   }
 
   applyPvpDamage(socketId, actual) {
@@ -407,15 +421,16 @@ class Room {
     // Range check: must be within 350px (generous for AoE skills)
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     if (rdx * rdx + rdy * rdy > 350 * 350) return null;
-    const dmg = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
+    const base = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
+    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
     }
-    return { killed: false, hp: enemy.hp, dmg };
+    return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
 
   skillAttackEnemy(socketId, enemyId, multiplier) {
@@ -426,14 +441,15 @@ class Room {
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     if (rdx * rdx + rdy * rdy > 600 * 600) return null;
     const mult = Math.max(1, Math.min(multiplier || 1, 10));
-    const dmg = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
+    const base = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
+    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
     }
-    return { killed: false, hp: enemy.hp, dmg };
+    return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
 
   applySkillEffect(enemyId, type, duration) {
