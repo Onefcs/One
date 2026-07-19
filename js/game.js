@@ -1298,7 +1298,7 @@ window.addEventListener('load', () => {
   _uiOverlay = document.getElementById('ui-canvas');
   const app = document.getElementById('app');
   const resize = () => {
-    DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = app.clientWidth;
     H = app.clientHeight;
     canvas.width = Math.round(W * DPR);
