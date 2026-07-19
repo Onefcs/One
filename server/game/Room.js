@@ -242,6 +242,7 @@ class Room {
               id: op.socketId, seq: op._seq, username: op.username, type: op.type,
               x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
               pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
+              clanName: op.clanName || null, clanIcon: op.clanIcon || null,
             });
           } else {
             nearPlayers.push({
@@ -295,19 +296,26 @@ class Room {
     });
   }
 
-  addPlayer(socketId, username) {
+  addPlayer(socketId, username, clanName, clanIcon) {
     const spawn = this._dungeon.spawn;
     this.players.set(socketId, {
       socketId, username, type: null,
+      clanName: clanName || null, clanIcon: clanIcon || null,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
-      // Delta-protocol state: which players/enemies this recipient has seen
-      // (and at which profile revision), so static fields go out only once
       _known: new Map(), _knownE: new Map(),
       _profileRev: 1, _seq: ++this._pSeq,
     });
     return spawn;
+  }
+
+  setPlayerClan(socketId, clanName, clanIcon) {
+    const p = this.players.get(socketId);
+    if (!p) return;
+    p.clanName = clanName || null;
+    p.clanIcon = clanIcon || null;
+    p._profileRev++;
   }
 
   setPlayerPvpMode(socketId, mode) {
