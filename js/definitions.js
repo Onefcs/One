@@ -64,6 +64,8 @@ const CRAFT_MATS = [
   { id:'recr',  name:'Рецепт редкий',   img:'/images/material/recr.png',  slot:'recipe',   rarity:'rare'      },
   { id:'rece',  name:'Рецепт эпичный',  img:'/images/material/rece.png',  slot:'recipe',   rarity:'epic'      },
   { id:'recl',  name:'Рецепт легенд.',  img:'/images/material/recl.png',  slot:'recipe',   rarity:'legendary' },
+  // ── Boss stone (от боссов) ───────────────────────────────────
+  { id:'boss_stone', name:'Камень Босса', img:'/images/material/bstone.png', slot:'material', rarity:'legendary' },
 ];
 
 const ITEM_DEF = [
