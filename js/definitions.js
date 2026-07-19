@@ -22,8 +22,6 @@ const UPGRADE_DEF = {
   atkSpeed:   { label:'Скор. атаки', icon:'lightning',  baseCost:50,  desc:'+0.05 уд/с'  },
   critChance: { label:'Шанс крита',  icon:'star',       baseCost:60,  desc:'+2.5%'        },
   critPower:  { label:'Сила крита',  icon:'flame',      baseCost:60,  desc:'+15%'         },
-  dodge:      { label:'Уворот',      icon:'wind',       baseCost:80,  desc:'+2.5%'        },
-  accuracy:   { label:'Точность',    icon:'crosshair',  baseCost:50,  desc:'+2%'          },
   lifeSteal:  { label:'Вампиризм',   icon:'drop',       baseCost:100, desc:'+2.5%'        },
   hpRegen:    { label:'Реген HP',    icon:'hpPlus',     baseCost:80,  desc:'+0.5/сек'     },
 };
@@ -345,7 +343,7 @@ const MAT_UPGRADE_RECIPES = [
 function calcBM(p) {
   if (!p) return 0;
   const upg = p.upgrades || {};
-  const extras = ((upg.critChance || 0) + (upg.critPower || 0) + (upg.dodge || 0) +
-    (upg.accuracy || 0) + (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
+  const extras = ((upg.critChance || 0) + (upg.critPower || 0) +
+    (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
   return Math.round((p.level || 1) * 50 + (p.atk || 0) * 5 + (p.def || 0) * 3 + (p.maxHp || 100) * 0.5 + extras);
 }

@@ -165,8 +165,6 @@ function updateProfileUI() {
       <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#f1c40f')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#e67e22')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('wind',14,'#95a5a6')}</div><div class="stat-vl">${fmt1(p.dodge)}</div><div class="stat-nm">Уворот</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('crosshair',14,'#3498db')}</div><div class="stat-vl">${fmt1(p.accuracy)}</div><div class="stat-nm">Точность</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('drop',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.lifeSteal)}</div><div class="stat-nm">Вампиризм</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#2ecc71')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
     </div>`;

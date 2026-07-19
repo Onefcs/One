@@ -127,8 +127,8 @@ const floorRooms = new Map();
 function calcBM(s) {
   if (!s) return 0;
   const upg = s.upgrades || {};
-  const extras = ((upg.critChance || 0) + (upg.critPower || 0) + (upg.dodge || 0) +
-    (upg.accuracy || 0) + (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
+  const extras = ((upg.critChance || 0) + (upg.critPower || 0) +
+    (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
   return Math.round((s.level || 1) * 50 + (s.atk || 0) * 5 + (s.def || 0) * 3 + (s.maxHp || 100) * 0.5 + extras);
 }
 

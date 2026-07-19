@@ -231,7 +231,7 @@ function netConnect(onReady) {
     if (!player || state !== 'playing') return;
     let actual = 0;
     {
-      actual = Math.max(1, Math.floor(dmg * (dodgeTimer > 0 ? 0.3 : 1)));
+      actual = Math.max(1, Math.floor(dmg));
       player.hp = Math.max(0, player.hp - actual);
       player.hurtTimer = 0.1;
       dmgNum(player.x, player.y - 24, actual, '#f55');

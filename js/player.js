@@ -63,11 +63,10 @@ function makePlayer(type) {
     skillXp: { Q:0, W:0, E:0, R:0 },
     questIdx: 0,
     questKills: {},
-    upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, dodge:0, accuracy:0, lifeSteal:0, hpRegen:0 },
+    upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, lifeSteal:0, hpRegen:0 },
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
     critChance: 0.05, critPower: 1.5,
-    dodge: 0, accuracy: 0.85,
     lifeSteal: 0, hpRegen: 0,
   };
 }
@@ -153,8 +152,6 @@ function recompute() {
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
-  player.dodge      = Math.min(0.65, lvl * 0.003 + (u.dodge     || 0) * 0.025);
-  player.accuracy   = Math.min(1.00, 0.85 + lvl * 0.004 + (u.accuracy  || 0) * 0.02);
   player.lifeSteal  = Math.min(0.45, (u.lifeSteal  || 0) * 0.025 + extraLS);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5;
 }
@@ -517,7 +514,7 @@ function restoreFromSave(data) {
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
   player.inventory  = _migrateInventory(data.inventory || []);
-  player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, dodge:0, accuracy:0, lifeSteal:0, hpRegen:0 };
+  player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, lifeSteal:0, hpRegen:0 };
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
 
