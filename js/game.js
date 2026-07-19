@@ -579,7 +579,7 @@ function update(dt) {
 // Draw the player's name label at 60fps on the UI canvas using screen coords,
 // clearing only the label's bounding box each frame so no ghosting occurs.
 function _drawPlayerNameOnUI() {
-  const barTop = _lastPlayerUsedSprite ? player.y - 46 : player.y - 28;
+  const barTop = _lastPlayerUsedSprite ? player.y - 39 : player.y - 28;
   const nameY = barTop - 4;
   const sx = (player.x - _lastCamX) * ZOOM;
   const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
@@ -730,7 +730,7 @@ function render(dt, ts) {
 
   // Particles — sort by color, then batch-fill per group (1 fill() per color, not per particle)
   if (particles.length) {
-    if (_qualityTier > 0 && particles.length > 120) particles.length = 120;
+    if (_qualityTier > 0 && particles.length > 80) particles.length = 80;
     if (particles.length > 1) particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
     let i = 0;
     while (i < particles.length) {
@@ -769,7 +769,7 @@ function render(dt, ts) {
       ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
     }
     if (e.hp <= 0) return; // corpse playing its death animation — no bars/name/ring
-    const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
+    const ds = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
     const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.55 - 8;
     if (e.isBoss) {
       ctx.globalAlpha = _bossGlow; ctx.strokeStyle = '#ff3232'; ctx.lineWidth = 3;
@@ -807,7 +807,7 @@ function render(dt, ts) {
       ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
     }
     const bh = 4, bw = 38;
-    const barTop = usedSprite ? p.y - 46 : p.y - 20;
+    const barTop = usedSprite ? p.y - 39 : p.y - 20;
     const bx = p.x - bw / 2;
     // Pre-rendered name canvas — rebuilt when username, pvpMode, or render scale changes
     const _ns = Math.max(1, Math.ceil(DPR * ZOOM));
@@ -847,7 +847,7 @@ function render(dt, ts) {
       ctx.beginPath(); ctx.arc(player.x, player.y, 34, swingAngle - .7, swingAngle + .7); ctx.stroke();
     }
 
-    const barTop = usedSprite ? player.y - 46 : player.y - 28;
+    const barTop = usedSprite ? player.y - 39 : player.y - 28;
     const bw = 44, bh = 4, bx2 = player.x - bw / 2;
     const hpPct = Math.max(0, Math.min(1, player.hp / player.maxHp));
 
@@ -983,10 +983,10 @@ function drawOtherPlayerSprite(p) {
   const sx = (fi % ad.cols) * fw;
   const sy = Math.floor(fi / ad.cols) * fh;
   // Float position + bilinear filtering — see drawSprite for rationale
-  const dh = 80, dw = dh * fw / fh;
+  const dh = 68, dw = dh * fw / fh;
   const dx = p.x - dw / 2;
   const dy = p.y - dh * 0.62;
-  ctx.drawImage(_playerShadow, p.x - 16, p.y + 11);
+  ctx.drawImage(_playerShadow, p.x - 16, p.y + 9);
   ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
 }

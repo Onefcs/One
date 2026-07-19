@@ -322,7 +322,7 @@ function drawEnemySprite(e, dt) {
   const { frameW, frameH } = def;
   const sx = e._animFrame * frameW;
   const sy = ENEMY_FACING_ROW[e._facing] * frameH;
-  const ds = e.isBoss ? e.size * 4.5 : e.size * 6.75;
+  const ds = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
   // Float position + bilinear filtering — see drawSprite for rationale
   ctx.drawImage(img, sx, sy, frameW, frameH,
     e.x - ds * 0.5, e.y - ds * 0.55,
@@ -500,20 +500,13 @@ function drawSprite(p, tint) {
   const sx = (fi % ad.cols) * fw;
   const sy = Math.floor(fi / ad.cols) * fh;
 
-  const dh = 80;
-  // Exact ratio, NOT rounded: at DPR 2 the rasterized cell (e.g. 140×120)
-  // maps 1:1 onto device pixels only when dw×ZOOM×DPR === cell width;
-  // rounding dw to a whole world px rescales 140→139.5 device px and makes
-  // columns shimmer during animation.
+  const dh = 68;
+  // Exact ratio, NOT rounded — see original comment above
   const dw = dh * fw / fh;
-  // Float position on purpose — sub-pixel rendering with bilinear filtering
-  // (enabled in render() after the tile blit) is what makes motion smooth;
-  // any per-frame rounding here brings back ±1 px flicker while running.
   const dx = p.x - dw / 2;
   const dy = p.y - dh * 0.62;
 
-  ctx.fillStyle = 'rgba(0,0,0,.3)';
-  ctx.beginPath(); ctx.ellipse(p.x, p.y + 18, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.drawImage(_playerShadow, p.x - 16, p.y + 9);
   if (tint) _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, tint);
   else      ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
