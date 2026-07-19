@@ -435,6 +435,16 @@ function showFloorInfo(floor) {
   const { regular: regularPool, boss } = _floorEnemyPool(floor);
   const allEnemies = boss ? [...regularPool, boss] : regularPool;
 
+  // Multipliers matching actual game logic
+  const goldBonus = (floor >= 2 && floor <= 5) ? 3 : 1;
+  const fMult     = (floor >= 1 && floor <= 5) ? floor : 1;
+  function _fmtPct(base) {
+    const v = base * fMult;
+    if (v >= 1)    return v.toFixed(1).replace(/\.0$/, '') + '%';
+    if (v >= 0.1)  return v.toFixed(2).replace(/\.?0+$/, '') + '%';
+    return v.toFixed(3).replace(/\.?0+$/, '') + '%';
+  }
+
   const html = allEnemies.map(e => {
     const isBoss = !!e.isBoss;
     const hp     = Math.floor(e.hp  * sc);
@@ -444,15 +454,17 @@ function showFloorInfo(floor) {
     let goldText;
     if (isBoss) {
       const g = e.gold || [50, 50];
-      const gText = g[0] === g[1] ? `${g[0]}g` : `${g[0]}–${g[1]}g`;
+      const gMin = Math.round(g[0] * goldBonus), gMax = Math.round(g[1] * goldBonus);
+      const gText = gMin === gMax ? `${gMin}g` : `${gMin}–${gMax}g`;
       goldText = `<span style="color:#ff0">${gText}</span>`;
     } else {
-      const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1));
-      const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1));
-      goldText = `${gMin}–${gMax}g`;
+      const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1) * goldBonus);
+      const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1) * goldBonus);
+      goldText = `${gMin}–${gMax}g · 30%`;
     }
 
-    // XP text
+    // XP text (×3 on floors 2-5)
+    const xpFinal = (floor >= 2 && floor <= 5) ? e.xp * 3 : e.xp;
     const xpColor = isBoss ? '#0f0' : '#8f8';
 
     // Boss stone row
@@ -479,17 +491,18 @@ function showFloorInfo(floor) {
     let matSection = '';
     if (!isBoss && typeof _matIcon === 'function') {
       const matDrops = [];
+      const matPct = _fmtPct(5);
       if (e.eType === 'warrior') {
-        matDrops.push({ id:'bonec', chance:'5%'     });
-        matDrops.push({ id:'coalc', chance:'5%'     });
+        matDrops.push({ id:'bonec', chance: matPct });
+        matDrops.push({ id:'coalc', chance: matPct });
       } else if (e.eType === 'guard') {
-        matDrops.push({ id:'orec',  chance:'5%'     });
-        matDrops.push({ id:'skinc', chance:'5%'     });
+        matDrops.push({ id:'orec',  chance: matPct });
+        matDrops.push({ id:'skinc', chance: matPct });
       }
-      matDrops.push({ id:'recu', chance:'0.1%'   });
-      matDrops.push({ id:'recr', chance:'0.05%'  });
-      matDrops.push({ id:'rece', chance:'0.02%'  });
-      matDrops.push({ id:'recl', chance:'0.001%' });
+      matDrops.push({ id:'recu', chance: _fmtPct(0.1)   });
+      matDrops.push({ id:'recr', chance: _fmtPct(0.05)  });
+      matDrops.push({ id:'rece', chance: _fmtPct(0.02)  });
+      matDrops.push({ id:'recl', chance: _fmtPct(0.001) });
 
       const rows = matDrops.map(d => {
         const mat = CRAFT_MATS.find(m => m.id === d.id);
@@ -522,7 +535,7 @@ function showFloorInfo(floor) {
         <div class="fi-drops">
           <div class="fi-drop">
             <span class="fi-drop-lbl">Опыт</span>
-            <span class="fi-drop-val" style="color:${xpColor}">${e.xp} XP</span>
+            <span class="fi-drop-val" style="color:${xpColor}">${xpFinal} XP</span>
           </div>
           <div class="fi-drop">
             <span class="fi-drop-lbl">Золото</span>

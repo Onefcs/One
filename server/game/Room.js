@@ -436,7 +436,8 @@ class Room {
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+      const xpFinal = (this.floor >= 2 && this.floor <= 5) ? enemy.xp * 3 : enemy.xp;
+      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
@@ -455,7 +456,8 @@ class Room {
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+      const xpFinal = (this.floor >= 2 && this.floor <= 5) ? enemy.xp * 3 : enemy.xp;
+      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
