@@ -339,11 +339,22 @@ function showFloorInfo(floor) {
     const xpColor = isBoss ? '#0f0' : '#8f8';
 
     // Boss stone row
+    const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
     const stoneRow = isBoss
       ? `<div class="fi-drop">
-           <span class="fi-drop-icon">${typeof _matIcon === 'function' ? _matIcon(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16) : ''}</span>
+           <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16)}</span>
            <span class="fi-drop-lbl" style="color:#aaf">Камень Босса</span>
            <span class="fi-drop-val" style="color:#aaf">&times;${floor}–${floor + 2} · 100%</span>
+         </div>
+         <div class="fi-drop">
+           <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16)}</span>
+           <span class="fi-drop-lbl" style="color:#fa8">Камень обычной заточки</span>
+           <span class="fi-drop-val" style="color:#fa8">&times;1 · <b style="color:#fa8">10%</b></span>
+         </div>
+         <div class="fi-drop">
+           <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16)}</span>
+           <span class="fi-drop-lbl" style="color:#88f">Камень безопасной заточки</span>
+           <span class="fi-drop-val" style="color:#88f">&times;1 · <b style="color:#88f">1%</b></span>
          </div>`
       : '';
 
