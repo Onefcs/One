@@ -607,10 +607,9 @@ function _drawPlayerNameOnUI() {
 // Render all HUD/UI elements to the overlay canvas at native DPR (~20fps)
 function _renderUI() {
   if (!_uiCtx) return;
-  const uiDPR = window.devicePixelRatio || 1;
   _uiCtx.clearRect(0, 0, _uiOverlay.width, _uiOverlay.height);
   _prevPlayerNameBounds = null; // cleared by the full wipe above
-  _uiCtx.setTransform(uiDPR, 0, 0, uiDPR, 0, 0);
+  _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const _c = ctx; ctx = _uiCtx;
   drawHeader();
   if (activeTab === 0 && typeof drawQuestTracker === 'function') drawQuestTracker();
@@ -1298,10 +1297,8 @@ window.addEventListener('load', () => {
   ctx = canvas.getContext('2d', { alpha: false });
   _uiOverlay = document.getElementById('ui-canvas');
   const app = document.getElementById('app');
-  const _isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-
   const resize = () => {
-    DPR = _isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    DPR = window.devicePixelRatio || 1;
     W = app.clientWidth;
     H = app.clientHeight;
     canvas.width = Math.round(W * DPR);
@@ -1309,10 +1306,8 @@ window.addEventListener('load', () => {
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    // UI overlay: always native DPR for crisp header and labels
-    const uiDPR = window.devicePixelRatio || 1;
-    _uiOverlay.width = Math.round(W * uiDPR);
-    _uiOverlay.height = Math.round(H * uiDPR);
+    _uiOverlay.width = Math.round(W * DPR);
+    _uiOverlay.height = Math.round(H * DPR);
     _uiCtx = _uiOverlay.getContext('2d');
     _skillBtnGradCache = null;  // force skill button gradient rebuild
     _uiBtnGrads = null;         // force button gradient rebuild
