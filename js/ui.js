@@ -38,8 +38,7 @@ function updateInvUI() {
         <div style="font-size:11px;color:#999;margin-top:2px">Уровень ${p.lvl}</div>
         <div style="font-size:11px;color:#484860;margin-top:2px;display:flex;align-items:center;gap:3px">
           ${iconHTML('heart',11,'#e74c3c')}${Math.ceil(p.hp)}/${p.maxHp} ·
-          ${iconHTML('sword',11,'#e67e22')}${p.atk} ·
-          ${iconHTML('shield',11,'#5dade2')}${p.def} ·
+          <span style="color:#f93;font-weight:700">БМ ${typeof calcBM==='function'?calcBM(p):0}</span> ·
           ${iconHTML('coin',11,'#f1c40f')}${p.gold}
         </div>
       </div>
