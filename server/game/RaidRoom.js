@@ -15,10 +15,11 @@ function _makeGrid() {
 }
 
 class RaidRoom {
-  constructor(raidId, io, memberIds) {
+  constructor(raidId, io, memberIds, onEnd) {
     this.raidId    = raidId;
     this.io        = io;
     this.memberIds = [...memberIds];
+    this.onEnd     = onEnd || null;
     this.players   = new Map();
     this.enemies   = [];
     this._enemyMap = new Map();
@@ -229,24 +230,26 @@ class RaidRoom {
   _complete() {
     this.state = 'complete';
     this._stop();
-    const n = Math.max(1, this.memberIds.length);
+    const mids = [...this.memberIds];
+    const n = Math.max(1, mids.length);
     const goldEach = Math.floor(500 / n);
     const xpEach   = Math.floor(500 / n);
     const roll = Math.random();
     const weaponRarity = roll < 0.05 ? 'uncommon' : roll < 0.35 ? 'common' : null;
-    const winner = weaponRarity
-      ? this.memberIds[Math.floor(Math.random() * n)]
-      : null;
-    this.memberIds.forEach(id => this.io.to(id).emit('raidComplete', {
+    const winner = weaponRarity ? mids[Math.floor(Math.random() * n)] : null;
+    mids.forEach(id => this.io.to(id).emit('raidComplete', {
       gold: goldEach, xp: xpEach,
       weaponRarity: winner === id ? weaponRarity : null,
     }));
+    if (this.onEnd) this.onEnd(mids);
   }
 
   _fail() {
     this.state = 'failed';
     this._stop();
-    this.memberIds.forEach(id => this.io.to(id).emit('raidFailed', {}));
+    const mids = [...this.memberIds];
+    mids.forEach(id => this.io.to(id).emit('raidFailed', {}));
+    if (this.onEnd) this.onEnd(mids);
   }
 }
 

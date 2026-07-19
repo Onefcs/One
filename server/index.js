@@ -185,16 +185,25 @@ function _cleanupLobby(socketId) {
   }
 }
 
-function _cleanupRaid(socketId) {
-  const rId = playerRaid.get(socketId);
-  if (!rId) return;
+function _cleanupRaidPlayer(socketId) {
   playerRaid.delete(socketId);
-  // Clear _inRaid flag on floor room player
   const fl = playerFloorMap.get(socketId);
   if (fl !== undefined) {
     const fr = floorRooms.get(fl);
-    if (fr) { const p = fr.players.get(socketId); if (p) p._inRaid = false; }
+    if (fr) {
+      const p = fr.players.get(socketId);
+      if (p) {
+        p._inRaid = false;
+        p._knownE.clear(); // force full enemy refresh on next gameState
+      }
+    }
   }
+}
+
+function _cleanupRaid(socketId) {
+  const rId = playerRaid.get(socketId);
+  if (!rId) return;
+  _cleanupRaidPlayer(socketId);
   const rr = raidRooms.get(rId);
   if (rr) {
     rr.removePlayer(socketId);
@@ -806,7 +815,10 @@ io.on('connection', socket => {
     raidLobbies.delete(lobbyId);
     memberIds.forEach(mid => playerLobby.delete(mid));
     const raidId = 'raid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    const raidRoom = new RaidRoom(raidId, io, memberIds);
+    const raidRoom = new RaidRoom(raidId, io, memberIds, (mids) => {
+      mids.forEach(mid => _cleanupRaidPlayer(mid));
+      raidRooms.delete(raidId);
+    });
     raidRooms.set(raidId, raidRoom);
     for (const mid of memberIds) {
       playerRaid.set(mid, raidId);
