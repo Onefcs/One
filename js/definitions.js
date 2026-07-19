@@ -22,7 +22,6 @@ const UPGRADE_DEF = {
   atkSpeed:   { label:'Скор. атаки', icon:'lightning',  baseCost:50,  desc:'+0.05 уд/с'  },
   critChance: { label:'Шанс крита',  icon:'star',       baseCost:60,  desc:'+2.5%'        },
   critPower:  { label:'Сила крита',  icon:'flame',      baseCost:60,  desc:'+15%'         },
-  lifeSteal:  { label:'Вампиризм',   icon:'drop',       baseCost:100, desc:'+2.5%'        },
   hpRegen:    { label:'Реген HP',    icon:'hpPlus',     baseCost:80,  desc:'+0.5/сек'     },
 };
 
@@ -114,13 +113,13 @@ const ITEM_DEF = [
   { id:'sw2', name:'Стальной нож',     slot:'weapon', img:'/images/wep/uk.png', atk:14,                           rarity:'uncommon' },
   { id:'sw3', name:'Нож дракона',      slot:'weapon', img:'/images/wep/rk.png', atk:23, critChance:0.05,          rarity:'rare'     },
   { id:'sw4', name:'Нож теней',        slot:'weapon', img:'/images/wep/ek.png', atk:44, critChance:0.10,          rarity:'epic'     },
-  { id:'sw5', name:'Нож героя',        slot:'weapon', img:'/images/wep/lk.png', atk:65, critChance:0.25, lifeSteal:0.05, rarity:'legendary'},
+  { id:'sw5', name:'Нож героя',        slot:'weapon', img:'/images/wep/lk.png', atk:65, critChance:0.25, rarity:'legendary'},
   // ── Warrior axes ─────────────────────────────────────────
   { id:'tw1', name:'Ржавый топор',     slot:'weapon', img:'/images/wep/ct.png', atk:5,                            rarity:'common'   },
   { id:'tw2', name:'Стальной топор',   slot:'weapon', img:'/images/wep/ut.png', atk:15,                           rarity:'uncommon' },
-  { id:'tw3', name:'Топор дракона',    slot:'weapon', img:'/images/wep/rt.png', atk:23, lifeSteal:0.02,           rarity:'rare'     },
-  { id:'tw4', name:'Топор теней',      slot:'weapon', img:'/images/wep/et.png', atk:44, lifeSteal:0.05,           rarity:'epic'     },
-  { id:'tw5', name:'Топор героя',      slot:'weapon', img:'/images/wep/lt.png', atk:65, lifeSteal:0.08,           rarity:'legendary'},
+  { id:'tw3', name:'Топор дракона',    slot:'weapon', img:'/images/wep/rt.png', atk:23,                           rarity:'rare'     },
+  { id:'tw4', name:'Топор теней',      slot:'weapon', img:'/images/wep/et.png', atk:44,                           rarity:'epic'     },
+  { id:'tw5', name:'Топор героя',      slot:'weapon', img:'/images/wep/lt.png', atk:65,                           rarity:'legendary'},
   // ── Archer bows ──────────────────────────────────────────
   { id:'bw1', name:'Деревянный лук',   slot:'weapon', img:'/images/wep/cb.png', atk:8,                            rarity:'common'   },
   { id:'bw2', name:'Серебряный лук',   slot:'weapon', img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,            rarity:'uncommon' },
@@ -344,6 +343,6 @@ function calcBM(p) {
   if (!p) return 0;
   const upg = p.upgrades || {};
   const extras = ((upg.critChance || 0) + (upg.critPower || 0) +
-    (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
+    (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
   return Math.round((p.level || 1) * 50 + (p.atk || 0) * 5 + (p.def || 0) * 3 + (p.maxHp || 100) * 0.5 + extras);
 }

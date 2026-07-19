@@ -63,11 +63,11 @@ function makePlayer(type) {
     skillXp: { Q:0, W:0, E:0, R:0 },
     questIdx: 0,
     questKills: {},
-    upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, lifeSteal:0, hpRegen:0 },
+    upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
     critChance: 0.05, critPower: 1.5,
-    lifeSteal: 0, hpRegen: 0,
+    hpRegen: 0,
   };
 }
 
@@ -130,7 +130,7 @@ function recompute() {
   let a = player.baseAtk + (u.atk || 0) * 3;
   let d = player.baseDef + (u.def || 0) * 2;
   let h = player.baseMaxHp + (u.hp || 0) * 25;
-  let extraCrit = 0, extraLS = 0, extraAS = 0, hpPct = 0;
+  let extraCrit = 0, extraAS = 0, hpPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
     const eb = _enhBonus(it);
@@ -138,7 +138,6 @@ function recompute() {
     d += (it.def || 0) + (eb.def || 0);
     h += (it.hp  || 0) + (eb.hp  || 0);
     if (it.critChance) extraCrit += it.critChance;
-    if (it.lifeSteal)  extraLS   += it.lifeSteal;
     if (it.atkSpeed)   extraAS   += it.atkSpeed;
     if (it.hpPct)      hpPct     += it.hpPct;
   });
@@ -152,7 +151,6 @@ function recompute() {
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
-  player.lifeSteal  = Math.min(0.45, (u.lifeSteal  || 0) * 0.025 + extraLS);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5;
 }
 
@@ -514,7 +512,7 @@ function restoreFromSave(data) {
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
   player.inventory  = _migrateInventory(data.inventory || []);
-  player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, lifeSteal:0, hpRegen:0 };
+  player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
 
@@ -539,7 +537,6 @@ function statStr(it) {
   if (it.def)       p.push('DEF+' + it.def);
   if (it.hp)        p.push('HP+' + it.hp);
   if (it.critChance) p.push('Крит+' + (it.critChance * 100).toFixed(0) + '%');
-  if (it.lifeSteal)  p.push('Вамп+' + (it.lifeSteal  * 100).toFixed(0) + '%');
   if (it.atkSpeed)   p.push('Скор+' + (it.atkSpeed   * 100).toFixed(0) + '%');
   if (it.hpPct)      p.push('HP+' +  (it.hpPct       * 100).toFixed(0) + '%макс');
   return p.join('  ');

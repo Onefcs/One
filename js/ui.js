@@ -165,7 +165,6 @@ function updateProfileUI() {
       <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#f1c40f')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#e67e22')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('drop',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.lifeSteal)}</div><div class="stat-nm">Вампиризм</div></div>
       <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#2ecc71')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
     </div>`;
   updateUpgradeUI();
@@ -1582,7 +1581,6 @@ function openInvItemModal(idx) {
     statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#ffd700">(+${eb.hp})</span>` : ''}`);
   }
   if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
-  if (it.lifeSteal)  statRows.push(`Вамп <b>${(it.lifeSteal*100).toFixed(0)}%</b>`);
   if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
 
@@ -1698,7 +1696,6 @@ function openEqItemModal(slot) {
     statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#ffd700">(+${eb.hp})</span>` : ''}`);
   }
   if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
-  if (it.lifeSteal)  statRows.push(`Вамп <b>${(it.lifeSteal*100).toFixed(0)}%</b>`);
   if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
 
