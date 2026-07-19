@@ -968,6 +968,8 @@ function enterRaidMode(data) {
   inRaid = true;
   _normalDungeon    = dungeon;
   _normalDungeonLvl = dungeonLvl;
+  _normalPlayerX    = player?.x ?? null;
+  _normalPlayerY    = player?.y ?? null;
   dungeon = { ...data.dungeon, enemies: [] };
   if (player) {
     player.x = data.dungeon.spawn.x;
@@ -989,7 +991,15 @@ function exitRaidMode() {
     dungeon = _normalDungeon;
     dungeonLvl = _normalDungeonLvl;
     _normalDungeon = null;
+    if (player) {
+      player.x = _normalPlayerX ?? dungeon.spawn.x;
+      player.y = _normalPlayerY ?? dungeon.spawn.y;
+      camera.x = player.x - W / (2 * ZOOM);
+      camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+      clampCamera();
+    }
   }
+  _normalPlayerX = null; _normalPlayerY = null;
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
   serverEnemies.length = 0; serverEnemiesMap.clear();
   otherPlayers = new Map();
@@ -1311,6 +1321,7 @@ function playerDie() {
 
 function respawnPlayer() {
   if (!player || state !== 'dead') return;
+  if (inRaid) exitRaidMode();
   const xpLoss = Math.floor(player.xp * 0.05);
   player.xp = Math.max(0, player.xp - xpLoss);
   player.hp = player.maxHp;

@@ -414,27 +414,41 @@ function netConnect(onReady) {
 
   socket.on('raidState', ({ enemies, players, wave }) => {
     if (!inRaid) return;
-    // Merge enemy list — preserve client-side animation timers
+    // Merge enemy list — preserve ALL client-side animation state
     const prevMap = new Map(serverEnemies.map(e => [e.id, e]));
     serverEnemies.length = 0;
     serverEnemiesMap.clear();
     (enemies || []).forEach(se => {
       const prev = prevMap.get(se.id);
       const e = { ...se, targetX: se.x, targetY: se.y };
-      if (prev) { e.hurtTimer = prev.hurtTimer || 0; e.atkAnimTimer = prev.atkAnimTimer || 0; }
+      if (prev) {
+        e.hurtTimer   = prev.hurtTimer   || 0;
+        e.atkAnimTimer = prev.atkAnimTimer || 0;
+        e._animFrame  = prev._animFrame  || 0;
+        e._animTimer  = prev._animTimer  || 0;
+        e._animKey    = prev._animKey;
+        e._atkDone    = prev._atkDone    || false;
+        e._moveTimer  = prev._moveTimer  || 0;
+        e._facing     = prev._facing     || 'down';
+      }
       serverEnemies.push(e);
       serverEnemiesMap.set(se.id, e);
     });
-    // Update other raid players
+    // Update other raid players — use targetX/Y only so lerp detects movement
     const myId = socket.id;
     (players || []).forEach(p => {
       if (p.id === myId) return;
       if (!otherPlayers.has(p.id)) {
-        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false });
+        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false, facing: 'down' });
         if (p.type) loadSprites(p.type, () => {});
       } else {
         const op = otherPlayers.get(p.id);
-        op.x = p.x; op.y = p.y; op.hp = p.hp; op.maxHp = p.maxHp;
+        const dx = p.x - op.targetX, dy = p.y - op.targetY;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          if (Math.abs(dx) >= Math.abs(dy)) op.facing = dx > 0 ? 'right' : 'left';
+          else op.facing = dy > 0 ? 'down' : 'up';
+        }
+        op.hp = p.hp; op.maxHp = p.maxHp;
         if (p.username !== undefined) op.username = p.username;
         if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
         op.targetX = p.x; op.targetY = p.y;
@@ -516,7 +530,7 @@ function netConnect(onReady) {
 
   socket.on('raidEnemyAtk', ({ enemyId, targetId: tgtId }) => {
     const e = serverEnemiesMap.get(enemyId);
-    if (e) { e.atkAnimTimer = 0.45; }
+    if (e) { e.atkAnimTimer = 0.45; e._atkDone = false; }
   });
 
   socket.on('raidPlayerAtk', ({ playerId, tx, ty }) => {

@@ -54,6 +54,8 @@ let clanData = null;
 let inRaid = false;
 let _normalDungeon = null;
 let _normalDungeonLvl = 1;
+let _normalPlayerX = null;
+let _normalPlayerY = null;
 let _raidWaveNotif = null; // { text, timer }
 
 // Raid lobby state
