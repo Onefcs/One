@@ -125,7 +125,7 @@ function _craftsmanItemsTab() {
     entries.forEach(({ rec, idx, item }) => {
       const canCraft = player.inventory.length < 50 &&
         rec.mats.every(m => player.inventory.filter(i => i.id === m.id).length >= m.n);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
       </div>`;
@@ -225,7 +225,7 @@ function _craftsmanMatsTab() {
       const have = player.inventory.filter(i => i.id === recipe.from).length;
       const canCraft = have >= recipe.count && player.inventory.length < 50;
       const rc = RARITY_COLOR[toMat.rarity] || '#aaa';
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${toMat.name.split(' ').slice(1).join(' ') || toMat.name}</div>
       </div>`;
