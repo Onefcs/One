@@ -23,9 +23,6 @@ let netRoom = null;
 let minimapCache = null;
 let minimapCacheFloor = -1;
 
-// Full dungeon tile canvas
-let tileCanvas = null;
-
 // NPCs in current floor
 let npcs = [];
 let nearNpc = null;

@@ -704,17 +704,7 @@ function render(dt, ts) {
   // positions. The tile art is flat color fills (no 1px features), so the
   // sub-pixel blend costs no visible sharpness, and motion is perfectly even.
   ctx.imageSmoothingEnabled = true;
-  if (tileCanvas) {
-    // Draw only the visible slice; source rect is drawn back at the same
-    // world coords (identity mapping), so the fractional camera is handled
-    // entirely by the transform — flooring here only picks the region.
-    const _tcSx = Math.max(0, Math.floor(_camX) - 1);
-    const _tcSy = Math.max(0, Math.floor(_camY) - 1);
-    const _tcSw = Math.min(tileCanvas.width  - _tcSx, Math.ceil(W  / ZOOM) + 4);
-    const _tcSh = Math.min(tileCanvas.height - _tcSy, Math.ceil((H - HEADER_H) / ZOOM) + 4);
-    if (_tcSw > 0 && _tcSh > 0)
-      ctx.drawImage(tileCanvas, _tcSx, _tcSy, _tcSw, _tcSh, _tcSx, _tcSy, _tcSw, _tcSh);
-  }
+  if (dungeon && dungeon.grid) drawTileChunks(_camX, _camY);
 
   // NPCs
   drawNpcs();
@@ -1084,64 +1074,109 @@ function drawNpcs() {
   ctx.imageSmoothingEnabled = _smooth;
 }
 
+// ── Tile chunks ────────────────────────────────────────────
+// The map used to pre-render into ONE huge canvas (up to ~3200×2400,
+// ~30MB as a GPU texture). Mobile GPUs evict textures that big under
+// memory pressure and re-upload them mid-scroll — the whole background
+// visibly hitched. Instead the map renders as lazy 8×8-tile chunks
+// (320×320px, ~400KB each): only visible chunks are drawn (~12/frame),
+// each texture is small enough to stay resident, and a chunk builds in
+// well under a millisecond the first time it scrolls into view.
+const _CHUNK_T  = 8;                 // tiles per chunk side
+const _CHUNK_PX = _CHUNK_T * TILE;   // 320 world px
+const _CHUNK_G  = 2;                 // gutter so bilinear edges sample real content
+const _CHUNK_MAX = 96;               // cache cap (~38MB worst case, oldest evicted)
+const _tileChunks = new Map();       // "cx,cy" -> canvas
+
 function buildTileCanvas() {
-  if (!dungeon) return;
+  // Name kept for callers (floor change) — now just resets the chunk cache
+  _tileChunks.clear();
+}
+
+function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
-  tileCanvas = document.createElement('canvas');
-  tileCanvas.width  = dungeon.w * TILE;
-  tileCanvas.height = dungeon.h * TILE;
-  const tctx = tileCanvas.getContext('2d');
+  const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = _CHUNK_PX + _CHUNK_G * 2;
+  const c = cv.getContext('2d');
+  c.translate(_CHUNK_G - x0, _CHUNK_G - y0);
 
   function isFloor(tx, ty) {
     return tx >= 0 && tx < dungeon.w && ty >= 0 && ty < dungeon.h
       && dungeon.grid[ty][tx] === FLOOR;
   }
 
-  // NOTE: no 1px features anywhere in this canvas. It is blitted at
-  // ZOOM 0.75 with nearest-neighbor sampling, which drops every 4th pixel
-  // row — any 1px line renders inconsistently (thick/thin/missing).
-  // Only multi-pixel solid fills survive that scaling cleanly.
+  // Tile range: chunk + 1-tile ring so gutter pixels and neighbor-dependent
+  // passes (cliff faces, shadows) render identically to adjacent chunks
+  const tx0 = Math.max(0, cx * _CHUNK_T - 1);
+  const ty0 = Math.max(0, cy * _CHUNK_T - 1);
+  const tx1 = Math.min(dungeon.w - 1, (cx + 1) * _CHUNK_T);
+  const ty1 = Math.min(dungeon.h - 1, (cy + 1) * _CHUNK_T);
 
-  // 1. Solid wall fill
-  tctx.fillStyle = th.wallColor;
-  tctx.fillRect(0, 0, dungeon.w * TILE, dungeon.h * TILE);
+  // NOTE: no 1px features — flat multi-pixel fills only, so the bilinear
+  // blit at ZOOM 0.75 stays clean (thin lines would render unevenly).
 
-  // 2. Floor — subtle checkerboard (tile = 40px → scales to whole device px)
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
+  // 1. Wall base fill
+  c.fillStyle = th.wallColor;
+  c.fillRect(x0 - _CHUNK_G, y0 - _CHUNK_G, cv.width, cv.height);
+
+  // 2. Floor — subtle checkerboard
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      tctx.fillStyle = (tx + ty) % 2 === 0 ? th.floorA : th.floorB;
-      tctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+      c.fillStyle = (tx + ty) % 2 === 0 ? th.floorA : th.floorB;
+      c.fillRect(tx * TILE, ty * TILE, TILE, TILE);
     }
   }
 
-  // 3. Wall "cliff face" — lighter strip at the bottom of wall tiles that
-  //    border floor below (top-down depth cue)
-  tctx.fillStyle = th.wallEdge;
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
+  // 3. Wall "cliff face" strip above floor (top-down depth cue)
+  c.fillStyle = th.wallEdge;
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      tctx.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 8);
+      c.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 8);
     }
   }
 
-  // 4. Shadow cast onto floor from walls above / beside
-  tctx.fillStyle = 'rgba(0,0,0,0.4)';
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
+  // 4. Shadows cast onto floor from walls above / beside
+  c.fillStyle = 'rgba(0,0,0,0.4)';
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      const x = tx * TILE, y = ty * TILE;
-      if (!isFloor(tx, ty - 1)) tctx.fillRect(x, y, TILE, 6);
+      if (!isFloor(tx, ty - 1)) c.fillRect(tx * TILE, ty * TILE, TILE, 6);
     }
   }
-  tctx.fillStyle = 'rgba(0,0,0,0.2)';
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
+  c.fillStyle = 'rgba(0,0,0,0.2)';
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
-      if (!isFloor(tx - 1, ty)) tctx.fillRect(x, y, 4, TILE);
-      if (!isFloor(tx + 1, ty)) tctx.fillRect(x + TILE - 4, y, 4, TILE);
+      if (!isFloor(tx - 1, ty)) c.fillRect(x, y, 4, TILE);
+      if (!isFloor(tx + 1, ty)) c.fillRect(x + TILE - 4, y, 4, TILE);
+    }
+  }
+  return cv;
+}
+
+function drawTileChunks(camX, camY) {
+  const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
+  const maxCy = Math.ceil(dungeon.h * TILE / _CHUNK_PX) - 1;
+  const c0x = Math.max(0, Math.floor(camX / _CHUNK_PX));
+  const c0y = Math.max(0, Math.floor(camY / _CHUNK_PX));
+  const c1x = Math.min(maxCx, Math.floor((camX + W / ZOOM) / _CHUNK_PX));
+  const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX));
+  for (let cy = c0y; cy <= c1y; cy++) {
+    for (let cx = c0x; cx <= c1x; cx++) {
+      const key = cx + ',' + cy;
+      let cv = _tileChunks.get(key);
+      if (!cv) {
+        cv = _buildChunk(cx, cy);
+        if (_tileChunks.size >= _CHUNK_MAX)
+          _tileChunks.delete(_tileChunks.keys().next().value);
+        _tileChunks.set(key, cv);
+      }
+      ctx.drawImage(cv, cx * _CHUNK_PX - _CHUNK_G, cy * _CHUNK_PX - _CHUNK_G);
     }
   }
 }
@@ -1185,7 +1220,7 @@ function restartGame() {
   targetId = null; targetIsPlayer = false; pvpMode = false;
   serverEnemies = []; otherPlayers = new Map();
   npcs = []; nearNpc = null;
-  tileCanvas = null;
+  _tileChunks.clear();
   document.getElementById('bottom-nav').style.display = 'none';
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); p.style.display = 'none'; });
   setTab(0);
