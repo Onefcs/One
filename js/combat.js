@@ -85,22 +85,25 @@ function applyLootToInventory(eid) {
     saved = true;
   }
 
+  // Drop multiplier: floor N gives ×N chance (floor 1 = ×1, floor 2 = ×2, …, floor 5 = ×5)
+  const _fMult = (typeof dungeonLvl !== 'undefined' && dungeonLvl >= 1 && dungeonLvl <= 5) ? dungeonLvl : 1;
+
   // Recipe drop (all non-boss enemies)
   if (eType && eType !== 'boss') {
     const r = Math.random();
-    if      (r < 0.00001)  _addMat('recl', 52);
-    else if (r < 0.00021)  _addMat('rece', 52);
-    else if (r < 0.00071)  _addMat('recr', 52);
-    else if (r < 0.00171)  _addMat('recu', 52);
+    if      (r < 0.00001 * _fMult)  _addMat('recl', 52);
+    else if (r < 0.00021 * _fMult)  _addMat('rece', 52);
+    else if (r < 0.00071 * _fMult)  _addMat('recr', 52);
+    else if (r < 0.00171 * _fMult)  _addMat('recu', 52);
   }
 
-  // Material drops by enemy type (5% each, 1 piece)
+  // Material drops by enemy type (5% base, scaled by floor)
   if (eType === 'warrior') {
-    if (Math.random() < 0.05) _addMat('bonec', 36);
-    if (Math.random() < 0.05) _addMat('coalc', 48);
+    if (Math.random() < 0.05 * _fMult) _addMat('bonec', 36);
+    if (Math.random() < 0.05 * _fMult) _addMat('coalc', 48);
   } else if (eType === 'guard') {
-    if (Math.random() < 0.05) _addMat('orec',  36);
-    if (Math.random() < 0.05) _addMat('skinc', 48);
+    if (Math.random() < 0.05 * _fMult) _addMat('orec',  36);
+    if (Math.random() < 0.05 * _fMult) _addMat('skinc', 48);
   }
 
   if (saved) netSaveProgress();

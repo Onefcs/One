@@ -56,14 +56,16 @@ const FLOOR_ENEMIES = {
 };
 
 // Gold drop: 30% chance for regular enemies, 100% for bosses. Scales with floor.
+// Floors 2-5 receive a ×3 gold bonus on top of the base scaling.
 function calcGoldDrop(enemy, floor) {
+  const floorBonus = (floor >= 2 && floor <= 5) ? 3 : 1;
   if (enemy.isBoss) {
     const g = enemy.gold || [50, 50];
-    return g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1));
+    return Math.round((g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1))) * floorBonus);
   }
   if (Math.random() > 0.30) return 0;
   const base = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
-  return Math.round(base * Math.pow(2, floor - 1));
+  return Math.round(base * Math.pow(2, floor - 1) * floorBonus);
 }
 
 // Minimum player level to enter each floor (index = floor number)
