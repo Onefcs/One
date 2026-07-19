@@ -29,7 +29,7 @@ const QUEST_DEF = [
   { id:'f1q12', floor:1, title:'Мясник',            desc:'Убей 100 Гоблин страж',     type:'kill',         enemies:['Гоблин страж'],   count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q13', floor:1, title:'Берсерк',           desc:'Убей 100 Гоблин воин',      type:'kill',         enemies:['Гоблин воин'],    count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q14', floor:1, title:'В гильдию!',        desc:'Вступи в гильдию',          type:'join_guild',                               reward:{ xp:500,  gold:250 } },
-  { id:'f1q15', floor:1, title:'Следующий уровень', desc:'Перейди на этаж 2',         type:'goto_floor',   floor:2,                    reward:{ xp:600,  gold:300 } },
+  { id:'f1q15', floor:1, title:'Следующий уровень', desc:'Перейди на этаж 2',         type:'goto_floor',   targetFloor:2,              reward:{ xp:600,  gold:300 } },
 
   // ── Этаж 2 · Скелеты (квесты 16-30) · награда ×2 ───────
   { id:'f2q1',  floor:2, title:'Первая кровь II',   desc:'Убей 10 Скелет воин',       type:'kill',         enemies:['Скелет воин'],    count:10,  reward:{ xp:100,  gold:50  } },
@@ -46,7 +46,7 @@ const QUEST_DEF = [
   { id:'f2q12', floor:2, title:'Мясник II',         desc:'Убей 100 Скелет варвар',    type:'kill',         enemies:['Скелет варвар'],  count:100, reward:{ xp:900,  gold:450 } },
   { id:'f2q13', floor:2, title:'Берсерк II',        desc:'Убей 100 Скелет воин',      type:'kill',         enemies:['Скелет воин'],    count:100, reward:{ xp:900,  gold:450 } },
   { id:'f2q14', floor:2, title:'Почётный член',     desc:'Повысь ранг в гильдии',     type:'join_guild',                               reward:{ xp:1000, gold:500 } },
-  { id:'f2q15', floor:2, title:'Вглубь тьмы',      desc:'Перейди на этаж 3',         type:'goto_floor',   floor:3,                    reward:{ xp:1200, gold:600 } },
+  { id:'f2q15', floor:2, title:'Вглубь тьмы',      desc:'Перейди на этаж 3',         type:'goto_floor',   targetFloor:3,              reward:{ xp:1200, gold:600 } },
 ];
 
 const RARITY_COLOR = {

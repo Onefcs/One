@@ -25,7 +25,7 @@ function getQuestProgress(q) {
   if (q.type === 'craft')         return { done: player.questKills['_craft'] || 0, total: 1 };
   if (q.type === 'dungeon_clear') return { done: player.questKills['_dungeon_' + q.floor] || 0, total: q.count };
   if (q.type === 'join_guild')    return { done: player.questKills['_guild'] || 0, total: 1 };
-  if (q.type === 'goto_floor')    return { done: player.questKills['_floor_' + q.floor] || 0, total: 1 };
+  if (q.type === 'goto_floor')    return { done: player.questKills['_floor_' + q.targetFloor] || 0, total: 1 };
   return {};
 }
 
@@ -41,7 +41,7 @@ function isQuestComplete(q) {
   if (q.type === 'craft')         return (player.questKills['_craft'] || 0) >= 1;
   if (q.type === 'dungeon_clear') return (player.questKills['_dungeon_' + q.floor] || 0) >= q.count;
   if (q.type === 'join_guild')    return (player.questKills['_guild'] || 0) >= 1;
-  if (q.type === 'goto_floor')    return (player.questKills['_floor_' + q.floor] || 0) >= 1;
+  if (q.type === 'goto_floor')    return (player.questKills['_floor_' + q.targetFloor] || 0) >= 1;
   return false;
 }
 
@@ -136,7 +136,7 @@ function onGotoFloor(floor) {
   const key = '_floor_' + floor;
   player.questKills[key] = 1;
   const q = getCurrentQuest();
-  if (q && q.type === 'goto_floor' && q.floor === floor) {
+  if (q && q.type === 'goto_floor' && q.targetFloor === floor) {
     checkQuestComplete();
     if (activeTab === 3) updateQuestUI();
   }
@@ -284,7 +284,7 @@ function _questProgHtml(q, isCur) {
     return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#1a3a6a,#2a5aaa)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
   }
   if (q.type === 'goto_floor') {
-    return `<div class="quest-prog">Перейди на этаж ${q.floor} через Карту</div>`;
+    return `<div class="quest-prog">Перейди на этаж ${q.targetFloor} через Карту</div>`;
   }
   if (q.type === 'craft') {
     return `<div class="quest-prog">Зайди к кузнецу</div>`;
@@ -308,8 +308,7 @@ function updateQuestUI() {
     const floorLocked = player.questIdx < firstIdx;
 
     if (floorLocked) {
-      const prevFloor = floorNum - 1;
-      html += `<div class="quest-floor-teaser">🔒 Откроется на ${prevFloor} этаже · ещё ${floorQuests.length} квестов</div>`;
+      html += `<div class="quest-floor-teaser">🔒 Откроется на ${floorNum} этаже · ещё ${floorQuests.length} квестов</div>`;
       return;
     }
 
