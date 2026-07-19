@@ -202,6 +202,27 @@ function nearestEnemyDir() {
   return { dx: (closest.x - player.x) / len, dy: (closest.y - player.y) / len };
 }
 
+// Move player toward (tx, ty) in small steps, stopping before hitting a wall.
+// Radius 12 matches normal movement collision.
+function _dashTo(tx, ty) {
+  const dx = tx - player.x, dy = ty - player.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1) return;
+  const nx = dx / d, ny = dy / d;
+  const R = 12, STEP = 8;
+  let safeX = player.x, safeY = player.y;
+  for (let s = STEP; s <= d + STEP; s += STEP) {
+    const cx = player.x + nx * Math.min(s, d);
+    const cy = player.y + ny * Math.min(s, d);
+    // Check center + forward edge + two side edges
+    if (isWall(cx + nx * R, cy + ny * R) ||
+        isWall(cx - ny * R, cy + nx * R) ||
+        isWall(cx + ny * R, cy - nx * R)) break;
+    safeX = cx; safeY = cy;
+  }
+  player.x = safeX; player.y = safeY;
+}
+
 // Send attack to all server enemies within range
 function _skillAOE(r) {
   serverEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < r) netAttack(e.id); });
@@ -244,8 +265,7 @@ function useSkill(idx) {
     } else if (sk.key === 'R') { // Charge
       const dx = joy.dx || 1, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
-      player.x += (dx / len) * 140;
-      player.y += (dy / len) * 140;
+      _dashTo(player.x + (dx / len) * 140, player.y + (dy / len) * 140);
       spawnBurst(player.x, player.y, '#5af', 8);
       _skillAOE(70);
     }
@@ -272,8 +292,7 @@ function useSkill(idx) {
       dodgeTimer = 0.6;
       const dx = joy.dx || 0, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
-      player.x += (dx / len) * 80;
-      player.y += (dy / len) * 80;
+      _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
       spawnBurst(player.x, player.y, '#7e7', 6);
     } else if (sk.key === 'R') { // Rain of Arrows
       spawnAOE(player.x, player.y, 160);
@@ -330,8 +349,7 @@ function useSkill(idx) {
     if (sk.key === 'Q') { // Shadow Strike — dash + strong hit
       const dir = nearestEnemyDir();
       const len = Math.hypot(dir.dx, dir.dy) || 1;
-      player.x += (dir.dx / len) * 80;
-      player.y += (dir.dy / len) * 80;
+      _dashTo(player.x + (dir.dx / len) * 80, player.y + (dir.dy / len) * 80);
       spawnBurst(player.x, player.y, '#a5f', 6);
       spawnAOE(player.x, player.y, 60);
       _skillAOE(60); netSpawnAoe(player.x, player.y);
@@ -343,8 +361,7 @@ function useSkill(idx) {
       dodgeTimer = 0.7;
       const dx = joy.dx || 0, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
-      player.x += (dx / len) * 100;
-      player.y += (dy / len) * 100;
+      _dashTo(player.x + (dx / len) * 100, player.y + (dy / len) * 100);
       spawnBurst(player.x, player.y, '#a5f', 6);
     } else if (sk.key === 'R') { // Death Strike — massive damage
       spawnAOE(player.x, player.y, 70);

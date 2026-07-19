@@ -277,7 +277,7 @@ function updateFloorUI() {
   if (!grid) return;
   const rarityNames  = ['Common','Uncommon','Rare','Epic','Legendary'];
   const rarityColors = ['#aaa','#3ef07a','#55aaff','#c55ef5','#ffd700'];
-  grid.innerHTML = Array.from({ length: 20 }, (_, i) => {
+  grid.innerHTML = Array.from({ length: 5 }, (_, i) => {
     const n   = i + 1;
     const th  = getTheme(n);
     const cur = n === dungeonLvl;
@@ -294,7 +294,8 @@ function updateFloorUI() {
         </div>
         <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
       </div>`;
-  }).join('');
+  }).join('') +
+  `<div style="text-align:center;padding:16px 0 4px;color:#4a4060;font-size:13px;font-style:italic;letter-spacing:0.03em;">✦ Скоро новые локации ✦</div>`;
 }
 
 function showFloorInfo(floor) {
