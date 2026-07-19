@@ -321,10 +321,42 @@ function showFloorInfo(floor) {
     // Boss stone row
     const stoneRow = isBoss
       ? `<div class="fi-drop">
-           <span class="fi-drop-lbl">Камень Босса</span>
-           <span class="fi-drop-val" style="color:#aaf">${floor}–${floor + 2} шт.</span>
+           <span class="fi-drop-icon">${typeof _matIcon === 'function' ? _matIcon(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16) : ''}</span>
+           <span class="fi-drop-lbl" style="color:#aaf">Камень Босса</span>
+           <span class="fi-drop-val" style="color:#aaf">&times;${floor}–${floor + 2} · 100%</span>
          </div>`
       : '';
+
+    // Material drop rows for non-boss
+    let matSection = '';
+    if (!isBoss && typeof _matIcon === 'function') {
+      const matDrops = [];
+      if (e.eType === 'warrior') {
+        matDrops.push({ id:'bonec', chance:'5%'     });
+        matDrops.push({ id:'coalc', chance:'5%'     });
+      } else if (e.eType === 'guard') {
+        matDrops.push({ id:'orec',  chance:'5%'     });
+        matDrops.push({ id:'skinc', chance:'5%'     });
+      }
+      matDrops.push({ id:'recu', chance:'0.1%'   });
+      matDrops.push({ id:'recr', chance:'0.05%'  });
+      matDrops.push({ id:'rece', chance:'0.02%'  });
+      matDrops.push({ id:'recl', chance:'0.001%' });
+
+      const rows = matDrops.map(d => {
+        const mat = CRAFT_MATS.find(m => m.id === d.id);
+        if (!mat) return '';
+        const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aaa';
+        return `<div class="fi-drop">
+          <span class="fi-drop-icon">${_matIcon(mat, 16)}</span>
+          <span class="fi-drop-lbl" style="color:${rc}">${mat.name}</span>
+          <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${d.chance}</b></span>
+        </div>`;
+      }).join('');
+
+      matSection = `<div class="fi-drops-hdr" style="margin-top:8px">Материалы</div>
+        <div class="fi-drops">${rows}</div>`;
+    }
 
     return `
       <div class="fi-monster${isBoss ? ' fi-boss' : ''}">
@@ -350,6 +382,7 @@ function showFloorInfo(floor) {
           </div>
           ${stoneRow}
         </div>
+        ${matSection}
       </div>`;
   }).join('');
 

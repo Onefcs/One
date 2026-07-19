@@ -290,8 +290,9 @@ canvas { display:block; width:100%; height:100%; }
   font-size:11px; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04);
 }
 .fi-drop:last-child { border-bottom:none; }
-.fi-drop-lbl { color:#aaa; }
+.fi-drop-lbl { color:#aaa; flex:1; }
 .fi-drop-val { color:#ccc; font-weight:600; }
+.fi-drop-icon { width:20px; flex-shrink:0; display:flex; align-items:center; margin-right:4px; }
 
 /* ── NPC TALK BUTTON ──────────────────── */
 #npc-talk-btn {
