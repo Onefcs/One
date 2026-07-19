@@ -158,6 +158,13 @@ class Room {
         }
       }
 
+      // Safe zone: enemy entered spawn room → teleport back to spawn
+      if (this._inSafeZone(e.x, e.y)) {
+        e.x = e.spawnX; e.y = e.spawnY;
+        e.aggro = false;
+        e._shp = -1;
+      }
+
       // Leash: too far from spawn → full HP reset back to spawn
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
       if (ldx * ldx + ldy * ldy > LEASH_R2) {
