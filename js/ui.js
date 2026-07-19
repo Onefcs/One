@@ -180,7 +180,7 @@ function updateUpgradeUI() {
   const spentSP = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
   const availSP = totalSP - spentSP;
   const spLbl = document.getElementById('upg-sp-lbl');
-  if (spLbl) spLbl.textContent = `Очки навыка: ${availSP} / ${totalSP}`;
+  if (spLbl) spLbl.textContent = `Очки навыка: ${availSP}`;
   const u = player.upgrades || {};
   el.innerHTML = Object.entries(UPGRADE_DEF).map(([key, cfg]) => {
     const lvl  = u[key] || 0;
