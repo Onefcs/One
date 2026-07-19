@@ -442,11 +442,11 @@ canvas { display:block; width:100%; height:100%; }
   display:flex; flex-direction:column; align-items:center; gap:3px;
   padding:6px 4px; border-radius:8px; border:1px solid #1a1a30;
   background:rgba(255,255,255,0.03); cursor:pointer;
-  transition:background 0.15s, border-color 0.15s;
+  transition:background 0.15s;
   touch-action:manipulation;
 }
 .craft-item-cell:active { background:rgba(255,255,255,0.08); }
-.craft-item-cell.craftable { background:rgba(80,32,160,0.12); }
+.craft-item-cell.craftable { background:rgba(60,200,60,0.07); border-color:#2a3a2a; }
 .craft-item-cell img { outline:none; }
 .craft-item-cell-icon { line-height:1; }
 .craft-item-cell-name {

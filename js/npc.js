@@ -104,29 +104,28 @@ function _craftsmanBody() {
 }
 
 function _craftsmanItemsTab() {
-  const RARITY_ORDER = { common:0, uncommon:1, rare:2, epic:3, legendary:4 };
-  const GROUPS = [
-    { label:'Оружие',      slots:['weapon']                        },
-    { label:'Броня',       slots:['helmet','body','gloves','boots'] },
-    { label:'Аксессуары',  slots:['ring','belt']                   },
+  const RARITIES = [
+    { key:'common',    label:'Обычные'    },
+    { key:'uncommon',  label:'Необычные'  },
+    { key:'rare',      label:'Редкие'     },
+    { key:'epic',      label:'Эпические'  },
+    { key:'legendary', label:'Легендарные'},
   ];
 
   let html = '<div class="craft-mats-info">Инвентарь: ' + _listMats() + '</div>';
 
-  GROUPS.forEach(g => {
+  RARITIES.forEach(r => {
     const entries = ITEM_CRAFT_RECIPES
       .map((rec, idx) => ({ rec, idx, item: ITEM_DEF.find(i => i.id === rec.itemId) }))
-      .filter(({ item }) => item && g.slots.includes(item.slot))
-      .sort((a, b) => (RARITY_ORDER[a.item.rarity] || 0) - (RARITY_ORDER[b.item.rarity] || 0));
+      .filter(({ item }) => item && item.rarity === r.key);
     if (!entries.length) return;
 
-    html += `<div class="craft-group-hdr">${g.label}</div><div class="craft-items-grid">`;
+    const rc = RARITY_COLOR[r.key] || '#aaa';
+    html += `<div class="craft-group-hdr" style="color:${rc}">${r.label}</div><div class="craft-items-grid">`;
     entries.forEach(({ rec, idx, item }) => {
-      const rc = RARITY_COLOR[item.rarity] || '#aaa';
       const canCraft = player.inventory.length < 50 &&
         rec.mats.every(m => player.inventory.filter(i => i.id === m.id).length >= m.n);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}"
-        onclick="openCraftModal(${idx})" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})">
         <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
       </div>`;
@@ -226,10 +225,9 @@ function _craftsmanMatsTab() {
       const have = player.inventory.filter(i => i.id === recipe.from).length;
       const canCraft = have >= recipe.count && player.inventory.length < 50;
       const rc = RARITY_COLOR[toMat.rarity] || '#aaa';
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}"
-        onclick="openMatModal(${idx})" style="border-color:${rc}66">
-        <div class="craft-item-cell-icon">${_matIcon(fromMat, 32)}</div>
-        <div class="craft-item-cell-name" style="color:${rc}">→ ${RARITY_SHORT[toMat.rarity] || ''}</div>
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})">
+        <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${toMat.name.split(' ').slice(1).join(' ') || toMat.name}</div>
       </div>`;
     });
     html += '</div>';
