@@ -1089,23 +1089,15 @@ function buildTileCanvas() {
   tctx.fillStyle = th.wallColor;
   tctx.fillRect(0, 0, dungeon.w * TILE, dungeon.h * TILE);
 
-  // Pass 2: subtle masonry pattern across the whole canvas —
-  // horizontal brick rows every 10 px + staggered vertical joints.
-  // These are drawn before floor tiles so they only show on wall areas.
-  tctx.strokeStyle = th.wallEdge;
-  tctx.lineWidth   = 1;
-  tctx.globalAlpha = 0.22;
-  const bH = 10; // brick row height in pixels
-  for (let row = 0; row <= dungeon.h * TILE; row += bH) {
-    const rowNum = (row / bH) | 0;
-    const off    = (rowNum % 2 === 0 ? 0 : (TILE >> 1));
-    tctx.beginPath();
-    tctx.moveTo(0, row); tctx.lineTo(dungeon.w * TILE, row);
-    tctx.stroke();
-    for (let col = off % TILE; col <= dungeon.w * TILE; col += TILE) {
-      tctx.beginPath();
-      tctx.moveTo(col, row); tctx.lineTo(col, row + bH);
-      tctx.stroke();
+  // Pass 2: simple wall edge tint (batched single-path instead of per-line strokes)
+  tctx.fillStyle = th.wallEdge;
+  tctx.globalAlpha = 0.15;
+  for (let ty = 0; ty < dungeon.h; ty++) {
+    for (let tx = 0; tx < dungeon.w; tx++) {
+      if (dungeon.grid[ty][tx] !== WALL) continue;
+      const x = tx * TILE, y = ty * TILE;
+      tctx.fillRect(x, y, TILE, 1);
+      tctx.fillRect(x, y, 1, TILE);
     }
   }
   tctx.globalAlpha = 1;
@@ -1130,24 +1122,19 @@ function buildTileCanvas() {
     }
   }
 
-  // Pass 5: wall top-edge highlight — classic RPG "3-D depth" effect.
-  // Where a wall tile has a floor tile directly below, paint the bottom
-  // strip of the wall tile with a bright-to-transparent gradient so it
-  // looks like you're viewing the lit top face of a 3-D wall.
+  // Pass 5: wall top-edge highlight — simple solid strip (no gradient)
+  tctx.globalAlpha = th.wallHighlight;
+  tctx.fillStyle = '#ffffff';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      const x = tx * TILE, y = ty * TILE;
-      const g = tctx.createLinearGradient(0, y + TILE - 7, 0, y + TILE);
-      g.addColorStop(0, 'rgba(255,255,255,0)');
-      g.addColorStop(1, `rgba(255,255,255,${th.wallHighlight})`);
-      tctx.fillStyle = g;
-      tctx.fillRect(x, y + TILE - 7, TILE, 7);
+      tctx.fillRect(tx * TILE, ty * TILE + TILE - 3, TILE, 3);
     }
   }
+  tctx.globalAlpha = 1;
 
-  // Pass 6: wall face decorations — lanterns, skulls, chains, etc.
+  // Pass 6: wall decorations (kept — runs once at floor load)
   if (th.drawWallDecor) {
     for (let ty = 0; ty < dungeon.h; ty++) {
       for (let tx = 0; tx < dungeon.w; tx++) {
@@ -1161,60 +1148,23 @@ function buildTileCanvas() {
     }
   }
 
-  // Pass 8: seeded random crack/detail lines on floor tiles
-  // — adds life without the per-tile noise of the old approach.
-  const seed = dungeonLvl * 1234;
-  function rng(n) { const v = Math.sin(seed + n) * 43758.5453; return v - Math.floor(v); }
-
-  const floorTiles = [];
-  for (let ty = 0; ty < dungeon.h; ty++)
-    for (let tx = 0; tx < dungeon.w; tx++)
-      if (dungeon.grid[ty][tx] === FLOOR) floorTiles.push([tx, ty]);
-
-  tctx.strokeStyle = th.crackColor;
-  tctx.lineWidth   = 1;
-  const detailCount = Math.floor(floorTiles.length * 0.09);
-  for (let i = 0; i < detailCount; i++) {
-    const idx = Math.floor(rng(i * 7 + 1) * floorTiles.length);
-    const [fx, fy] = floorTiles[idx];
-    const ox = fx * TILE + 4 + rng(i * 7 + 5) * (TILE - 8);
-    const oy = fy * TILE + 4 + rng(i * 7 + 6) * (TILE - 8);
-    const len = 5 + rng(i * 7 + 2) * 14;
-    const ang = rng(i * 7 + 3) * Math.PI;
-    tctx.globalAlpha = th.crackAlpha * (0.5 + rng(i * 7 + 4) * 0.5);
-    tctx.beginPath();
-    tctx.moveTo(ox, oy);
-    tctx.lineTo(ox + Math.cos(ang) * len, oy + Math.sin(ang) * len);
-    tctx.stroke();
-  }
-  tctx.globalAlpha = 1;
-
-  // Pass 9: soft shadow on floor tiles at wall edges
-  const sd = 11;
+  // Pass 7: wall-edge shadow on floor tiles — flat darkened strip (no gradients)
+  tctx.fillStyle = 'rgba(0,0,0,0.35)';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
-      if (!isFloor(tx, ty - 1)) {
-        const g = tctx.createLinearGradient(0, y, 0, y + sd);
-        g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-        tctx.fillStyle = g; tctx.fillRect(x, y, TILE, sd);
-      }
-      if (!isFloor(tx, ty + 1)) {
-        const g = tctx.createLinearGradient(0, y + TILE - sd, 0, y + TILE);
-        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.4)');
-        tctx.fillStyle = g; tctx.fillRect(x, y + TILE - sd, TILE, sd);
-      }
-      if (!isFloor(tx - 1, ty)) {
-        const g = tctx.createLinearGradient(x, 0, x + sd, 0);
-        g.addColorStop(0, 'rgba(0,0,0,0.4)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-        tctx.fillStyle = g; tctx.fillRect(x, y, sd, TILE);
-      }
-      if (!isFloor(tx + 1, ty)) {
-        const g = tctx.createLinearGradient(x + TILE - sd, 0, x + TILE, 0);
-        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.4)');
-        tctx.fillStyle = g; tctx.fillRect(x + TILE - sd, y, sd, TILE);
-      }
+      if (!isFloor(tx, ty - 1)) tctx.fillRect(x, y, TILE, 5);
+      if (!isFloor(tx - 1, ty)) tctx.fillRect(x, y, 5, TILE);
+    }
+  }
+  tctx.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let ty = 0; ty < dungeon.h; ty++) {
+    for (let tx = 0; tx < dungeon.w; tx++) {
+      if (dungeon.grid[ty][tx] !== FLOOR) continue;
+      const x = tx * TILE, y = ty * TILE;
+      if (!isFloor(tx, ty + 1)) tctx.fillRect(x, y + TILE - 5, TILE, 5);
+      if (!isFloor(tx + 1, ty)) tctx.fillRect(x + TILE - 5, y, 5, TILE);
     }
   }
 }
