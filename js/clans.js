@@ -148,6 +148,7 @@ let _clanView = 'main';      // 'main' | 'create' | 'search' | 'icon-pick'
 let _clanNewName = '';
 let _clanNewIcon = 1;
 let _clanSearchResults = null;   // null = loading, [] = empty result
+let _clanHomeTab = 0;            // 0=клан, 1=участники, 2=навыки
 
 function updateClanUI() {
   const el = document.getElementById('clan-body');
@@ -262,6 +263,8 @@ function _clanDoSearch() {
 }
 
 // ── Clan home screen ──────────────────────────────────────
+function _setClanHomeTab(n) { _clanHomeTab = n; updateClanUI(); }
+
 function _renderClanHome(el) {
   const c = clanData;
   const lvlDef = CLAN_LEVELS[(c.level || 1) - 1];
@@ -269,8 +272,8 @@ function _renderClanHome(el) {
   const xpPct = nextDef ? Math.min(100, Math.round((c.xp - lvlDef.xpReq) / (nextDef.xpReq - lvlDef.xpReq) * 100)) : 100;
   const bonus = getClanBonus();
   const isLeader = c.myRole === 'leader';
+  const myBM = typeof calcBM === 'function' && player ? calcBM(player) : 0;
 
-  // Bonus display
   const bonusLines = [];
   if (bonus.gold > 0) bonusLines.push(`+${bonus.gold}% золото`);
   if (bonus.xp   > 0) bonusLines.push(`+${bonus.xp}% опыт`);
@@ -279,44 +282,90 @@ function _renderClanHome(el) {
     ? bonusLines.map(l => `<span class="clan-bonus-tag">${l}</span>`).join('')
     : '<span class="clan-bonus-tag clan-bonus-none">бонусов пока нет</span>';
 
-  // Members list
-  const membersHtml = (c.members || []).map(m => {
-    const roleIcon = m.role === 'leader' ? '👑' : '⚔️';
-    const kickBtn = isLeader && m.role !== 'leader'
-      ? `<button class="clan-btn-sm clan-btn-danger" onclick="netClanKick('${m.telegramId}')">Исключить</button>`
-      : '';
-    return `<div class="clan-member">
-      <span class="clan-member-role">${roleIcon}</span>
-      <span class="clan-member-name">${_esc(m.username)}</span>
-      ${kickBtn}
-    </div>`;
-  }).join('');
+  const tabs = ['Клан', 'Участники', 'Навыки'];
+  const tabHtml = tabs.map((t, i) =>
+    `<div class="clan-tab${_clanHomeTab === i ? ' active' : ''}" onclick="_setClanHomeTab(${i})">${t}</div>`
+  ).join('');
 
-  // Applications (leader only)
-  let appsHtml = '';
-  if (isLeader && c.applications && c.applications.length > 0) {
-    appsHtml = `<div class="clan-section-hdr">Заявки (${c.applications.length})</div>` +
-      c.applications.map(a => `
-        <div class="clan-member">
-          <span class="clan-member-name">⌛ ${_esc(a.username)}</span>
-          <button class="clan-btn-sm" onclick="netClanApprove('${a.telegramId}')">Принять</button>
-          <button class="clan-btn-sm clan-btn-danger" onclick="netClanDecline('${a.telegramId}')">Отказать</button>
-        </div>`).join('');
+  let bodyHtml = '';
+  if (_clanHomeTab === 0) {
+    // ── Клан tab: info + XP bar + leave/disband ────────────
+    bodyHtml = `
+      <div class="clan-xp-block">
+        <div class="clan-xp-label">
+          Очки клана: ${c.xp.toLocaleString()}
+          ${nextDef ? `· до ур.${c.level+1}: ${(nextDef.xpReq - c.xp).toLocaleString()}` : '· Макс. уровень'}
+        </div>
+        <div class="clan-xp-bar-bg"><div class="clan-xp-bar-fill" style="width:${xpPct}%"></div></div>
+      </div>
+      <div class="clan-bonus-row" style="margin-bottom:14px">${bonusHtml}</div>
+      ${myBM ? `<div class="clan-my-bm">Ваша БМ: <span>${myBM.toLocaleString()}</span></div>` : ''}
+      <div style="margin-top:16px">
+        ${isLeader
+          ? `<button class="clan-btn clan-btn-danger" onclick="_clanConfirmDisband()">Расформировать</button>`
+          : `<button class="clan-btn clan-btn-leave" onclick="_clanConfirmLeave()">Покинуть клан</button>`}
+      </div>`;
+  } else if (_clanHomeTab === 1) {
+    // ── Участники tab ──────────────────────────────────────
+    const membersHtml = (c.members || [])
+      .slice().sort((a, b) => (b.bm || 0) - (a.bm || 0))
+      .map(m => {
+        const roleIcon = m.role === 'leader' ? '👑' : '⚔️';
+        const kickBtn = isLeader && m.role !== 'leader'
+          ? `<button class="clan-btn-sm clan-btn-danger" onclick="netClanKick('${m.telegramId}')">Исключить</button>`
+          : '';
+        return `<div class="clan-member">
+          <span class="clan-member-role">${roleIcon}</span>
+          <span class="clan-member-name">${_esc(m.username)}</span>
+          ${m.bm ? `<span class="clan-member-bm">БМ ${m.bm.toLocaleString()}</span>` : ''}
+          ${kickBtn}
+        </div>`;
+      }).join('');
+
+    let appsHtml = '';
+    if (isLeader && c.applications && c.applications.length > 0) {
+      appsHtml = `<div class="clan-section-hdr" style="margin-top:14px">Заявки (${c.applications.length})</div>` +
+        c.applications.map(a => `
+          <div class="clan-member">
+            <span class="clan-member-name">⌛ ${_esc(a.username)}</span>
+            <button class="clan-btn-sm" onclick="netClanApprove('${a.telegramId}')">Принять</button>
+            <button class="clan-btn-sm clan-btn-danger" onclick="netClanDecline('${a.telegramId}')">Отказать</button>
+          </div>`).join('');
+    }
+    bodyHtml = `
+      <div class="clan-section-hdr">Участники (${(c.members||[]).length}) · по БМ</div>
+      ${membersHtml}
+      ${appsHtml}`;
+  } else {
+    // ── Навыки tab: perk tree by level ────────────────────
+    const PERKS_RU = [
+      { lvl:2,  icon:'💰', label:'Золото', desc:'+5% к золоту с врагов'   },
+      { lvl:3,  icon:'⚡', label:'Опыт',   desc:'+5% к опыту с врагов'    },
+      { lvl:4,  icon:'💰', label:'Золото', desc:'+10% к золоту суммарно'  },
+      { lvl:5,  icon:'⚔️', label:'Атака',  desc:'+5% к атаке участников'  },
+      { lvl:6,  icon:'⚡', label:'Опыт',   desc:'+10% к опыту суммарно'   },
+      { lvl:7,  icon:'💰', label:'Золото', desc:'+15% к золоту суммарно'  },
+      { lvl:8,  icon:'⚔️', label:'Атака',  desc:'+10% к атаке суммарно'   },
+      { lvl:9,  icon:'⚡', label:'Опыт',   desc:'+15% к опыту суммарно'   },
+      { lvl:10, icon:'💰', label:'Золото', desc:'+20% к золоту'            },
+      { lvl:10, icon:'⚡', label:'Опыт',   desc:'+20% к опыту'             },
+      { lvl:10, icon:'⚔️', label:'Атака',  desc:'+15% к атаке'             },
+    ];
+    const perksHtml = PERKS_RU.map(pk => {
+      const unlocked = c.level >= pk.lvl;
+      const cls = unlocked ? 'clan-perk unlocked' : 'clan-perk locked';
+      return `<div class="${cls}">
+        <div class="clan-perk-icon">${pk.icon}</div>
+        <div class="clan-perk-body">
+          <div class="clan-perk-name">${pk.label} <span class="clan-perk-lvl">Ур.${pk.lvl}</span></div>
+          <div class="clan-perk-desc">${pk.desc}</div>
+        </div>
+      </div>`;
+    }).join('');
+    bodyHtml = `
+      <div class="clan-section-hdr">Бонусы клана по уровням</div>
+      <div class="clan-perks">${perksHtml}</div>`;
   }
-
-  // Level progress row for all levels
-  const levelsHtml = CLAN_LEVELS.map(lv => {
-    const active = lv.lvl === c.level;
-    const done   = lv.lvl < c.level;
-    const cls    = done ? 'clan-lv-done' : active ? 'clan-lv-active' : 'clan-lv-locked';
-    const b = lv.bonus;
-    const bStr = [b.gold?`+${b.gold}%G`:'', b.xp?`+${b.xp}%X`:'', b.atk?`+${b.atk}%A`:''].filter(Boolean).join(' ') || '—';
-    return `<div class="clan-lv-row ${cls}">
-      <span class="clan-lv-num">Ур.${lv.lvl}</span>
-      <span class="clan-lv-name">${lv.label}</span>
-      <span class="clan-lv-bonus">${bStr}</span>
-    </div>`;
-  }).join('');
 
   el.innerHTML = `
     <div class="clan-home">
@@ -325,30 +374,10 @@ function _renderClanHome(el) {
         <div class="clan-hdr-info">
           <div class="clan-hdr-name">${_esc(c.name)}</div>
           <div class="clan-hdr-level">${lvlDef.label} · Ур. ${c.level}/10</div>
-          <div class="clan-bonus-row">${bonusHtml}</div>
         </div>
       </div>
-
-      <div class="clan-xp-block">
-        <div class="clan-xp-label">
-          Очки клана: ${c.xp.toLocaleString()}
-          ${nextDef ? `· до ур.${c.level+1}: ${(nextDef.xpReq - c.xp).toLocaleString()}` : '· Макс. уровень'}
-        </div>
-        <div class="clan-xp-bar-bg"><div class="clan-xp-bar-fill" style="width:${xpPct}%"></div></div>
-      </div>
-
-      <div class="clan-section-hdr">Участники (${(c.members||[]).length})</div>
-      ${membersHtml}
-      ${appsHtml}
-
-      <div class="clan-section-hdr" style="margin-top:12px">Уровни клана</div>
-      <div class="clan-levels">${levelsHtml}</div>
-
-      <div style="margin-top:16px;display:flex;gap:8px">
-        ${isLeader
-          ? `<button class="clan-btn clan-btn-danger" onclick="_clanConfirmDisband()">Расформировать</button>`
-          : `<button class="clan-btn clan-btn-leave" onclick="_clanConfirmLeave()">Покинуть клан</button>`}
-      </div>
+      <div class="clan-tabs">${tabHtml}</div>
+      ${bodyHtml}
     </div>`;
 }
 

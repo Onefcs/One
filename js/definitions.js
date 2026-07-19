@@ -325,3 +325,12 @@ const MAT_UPGRADE_RECIPES = [
   { from:'recr',  to:'rece',  count:20, chance:0.30 },
   { from:'rece',  to:'recl',  count:20, chance:0.30 },
 ];
+
+// Battle Power — reflects the player's overall combat strength
+function calcBM(p) {
+  if (!p) return 0;
+  const upg = p.upgrades || {};
+  const extras = ((upg.critChance || 0) + (upg.critPower || 0) + (upg.dodge || 0) +
+    (upg.accuracy || 0) + (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
+  return Math.round((p.level || 1) * 50 + (p.atk || 0) * 5 + (p.def || 0) * 3 + (p.maxHp || 100) * 0.5 + extras);
+}

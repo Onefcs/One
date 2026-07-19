@@ -122,6 +122,15 @@ app.get('/tg-botname', (req, res) => {
 // One Room per floor, created on demand, destroyed when empty
 const floorRooms = new Map();
 
+// ── Battle Power (БМ) formula ─────────────────────────────────────────────────
+function calcBM(s) {
+  if (!s) return 0;
+  const upg = s.upgrades || {};
+  const extras = ((upg.critChance || 0) + (upg.critPower || 0) + (upg.dodge || 0) +
+    (upg.accuracy || 0) + (upg.lifeSteal || 0) + (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
+  return Math.round((s.level || 1) * 50 + (s.atk || 0) * 5 + (s.def || 0) * 3 + (s.maxHp || 100) * 0.5 + extras);
+}
+
 // Global chat history (last 30 messages across all floors)
 const globalChatHistory = [];
 function _recordChat(username, text) {
@@ -224,13 +233,7 @@ io.on('connection', socket => {
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
-      const _clanInfo = _clan ? {
-        _id: _clan._id, name: _clan.name, icon: _clan.icon, level: _clan.level, xp: _clan.xp,
-        members: _clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role })),
-        applications: _clan.members.find(m => m.telegramId === telegramId)?.role === 'leader'
-          ? _clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
-        myRole: _clan.members.find(m => m.telegramId === telegramId)?.role || null,
-      } : null;
+      const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
@@ -252,13 +255,7 @@ io.on('connection', socket => {
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
-      const _clanInfo = _clan ? {
-        _id: _clan._id, name: _clan.name, icon: _clan.icon, level: _clan.level, xp: _clan.xp,
-        members: _clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role })),
-        applications: _clan.members.find(m => m.telegramId === telegramId)?.role === 'leader'
-          ? _clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
-        myRole: _clan.members.find(m => m.telegramId === telegramId)?.role || null,
-      } : null;
+      const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
     } catch (err) {
       console.error('loginTelegram:', err);
@@ -469,7 +466,8 @@ io.on('connection', socket => {
   socket.on('saveProgress', ({ stats }) => {
     if (authed) {
       _lastStats = stats;
-      PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats }).catch(() => {});
+      const bm = calcBM(stats);
+      PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats, bm }).catch(() => {});
     }
   });
 
@@ -533,13 +531,17 @@ io.on('connection', socket => {
   // ── Clan handlers ─────────────────────────────────────────────
   async function _clanDataFor(clan, telegramId) {
     const myRole = clan.members.find(m => m.telegramId === telegramId)?.role || null;
+    const memberIds = clan.members.map(m => m.telegramId);
+    const playerDocs = await PlayerModel.find({ telegramId: { $in: memberIds } }, { telegramId: 1, bm: 1 }).lean().catch(() => []);
+    const bmMap = {};
+    playerDocs.forEach(d => { bmMap[d.telegramId] = d.bm || 0; });
     return {
       _id:          clan._id,
       name:         clan.name,
       icon:         clan.icon,
       level:        clan.level,
       xp:           clan.xp,
-      members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role })),
+      members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role, bm: bmMap[m.telegramId] || 0 })),
       applications: myRole === 'leader' ? clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
       myRole,
     };
