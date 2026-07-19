@@ -71,7 +71,7 @@ function _matIcon(mat, size) {
   if (!mat) return '?';
   if (mat.img) {
     const rc = RARITY_COLOR[mat.rarity] || '#aaa';
-    return `<img src="${mat.img}" width="${size}" height="${size}" style="image-rendering:pixelated;vertical-align:middle;border-radius:2px;outline:1px solid ${rc}66">`;
+    return `<img src="${mat.img}" width="${size}" height="${size}" style="image-rendering:pixelated;vertical-align:middle;border-radius:2px;">`;
   }
   return iconHTML(mat.icon || '', size);
 }

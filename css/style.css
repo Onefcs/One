@@ -447,7 +447,6 @@ canvas { display:block; width:100%; height:100%; }
 }
 .craft-item-cell:active { background:rgba(255,255,255,0.08); }
 .craft-item-cell.craftable { background:rgba(60,200,60,0.07); }
-.craft-item-cell img { outline:none !important; }
 .craft-item-cell-icon { line-height:1; }
 .craft-item-cell-name {
   font-size:8px; font-weight:600; text-align:center;

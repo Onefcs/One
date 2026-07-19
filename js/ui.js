@@ -3,9 +3,8 @@
 // ─────────────────────────────────────────────────────────
 function _itemIcon(it, size) {
   if (it && it.img) {
-    const rc = RARITY_COLOR[it.rarity] || '#aaa';
     return `<img src="${it.img}" width="${size}" height="${size}"
-      style="image-rendering:pixelated;border-radius:3px;outline:1.5px solid ${rc}44;"
+      style="image-rendering:pixelated;border-radius:3px;"
       onerror="this.style.display='none'">`;
   }
   const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '#505070';
