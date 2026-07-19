@@ -10,7 +10,7 @@ let _savedData = null;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
-const _INTERP_MS  = 35;   // render others 35ms in the past (~1.5 server ticks)
+const _INTERP_MS  = 65;   // render others 65ms in the past (~1.3 player-cast intervals at 20Hz)
 const _SNAP_MAX   = 10;   // ~250ms of buffer
 
 // RTT ping measurement — updated every 2s, read by perf overlay
@@ -91,45 +91,53 @@ function netConnect(onReady) {
     if (_svrTimeOffset === null) _svrTimeOffset = t - Date.now();
     else _svrTimeOffset = _svrTimeOffset * 0.95 + (t - Date.now()) * 0.05;
 
-    players.forEach(p => {
-      if (p.id === myId) return;
-      if (!otherPlayers.has(p.id)) {
-        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
-          _buf: [{ x: p.x, y: p.y, t }],
-          animFrame: 0, animTimer: 0, moving: false });
-        if (p.type) loadSprites(p.type, () => {});
-      } else {
-        const op = otherPlayers.get(p.id);
-        if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
-        op.hp = p.hp; op.maxHp = p.maxHp;
-        op.facing = p.facing; op.username = p.username;
-        op.pvpMode = p.pvpMode || false;
-        if (op.x === undefined) { op.x = p.x; op.y = p.y; }
+    // Players arrive only every other tick (20Hz) — packets without a
+    // players field must not touch (or prune) the player map.
+    // Entries come in two shapes: full (first sight / profile change) with
+    // username/type/maxHp/pvpMode, or slim {id,x,y,facing,hp,atkSeq}.
+    if (players) {
+      players.forEach(p => {
+        if (p.id === myId) return;
+        if (!otherPlayers.has(p.id)) {
+          otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
+            _buf: [{ x: p.x, y: p.y, t }],
+            animFrame: 0, animTimer: 0, moving: false });
+          if (p.type) loadSprites(p.type, () => {});
+        } else {
+          const op = otherPlayers.get(p.id);
+          if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
+          if (p.username !== undefined) op.username = p.username;
+          if (p.maxHp    !== undefined) op.maxHp    = p.maxHp;
+          if (p.pvpMode  !== undefined) op.pvpMode  = p.pvpMode || false;
+          op.hp = p.hp; op.facing = p.facing;
+          if (op.x === undefined) { op.x = p.x; op.y = p.y; }
 
-        // Snapshot ring buffer
-        if (!op._buf) op._buf = [];
-        op._buf.push({ x: p.x, y: p.y, t });
-        if (op._buf.length > _SNAP_MAX) op._buf.shift();
-        op.targetX = p.x; op.targetY = p.y;
+          // Snapshot ring buffer
+          if (!op._buf) op._buf = [];
+          op._buf.push({ x: p.x, y: p.y, t });
+          if (op._buf.length > _SNAP_MAX) op._buf.shift();
+          op.targetX = p.x; op.targetY = p.y;
 
-        if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
-          op.atkSeq = p.atkSeq;
-          op.atkAnimTimer = 0.55; op.animFrame = 0; op.animTimer = 0;
+          if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
+            op.atkSeq = p.atkSeq;
+            op.atkAnimTimer = 0.55; op.animFrame = 0; op.animTimer = 0;
+          }
         }
-      }
-    });
+      });
 
-    // Remove players that left AOI or disconnected
-    const pids = new Set();
-    for (let i = 0; i < players.length; i++) pids.add(players[i].id);
-    otherPlayers.forEach((_, id) => { if (!pids.has(id)) otherPlayers.delete(id); });
+      // Remove players that left AOI or disconnected
+      const pids = new Set();
+      for (let i = 0; i < players.length; i++) pids.add(players[i].id);
+      otherPlayers.forEach((_, id) => { if (!pids.has(id)) otherPlayers.delete(id); });
+    }
 
     // Delta update: only changed enemies arrive — add or update, never remove
     // (removal happens via enemyKilled; respawn via re-add when hp > 0)
     enemies.forEach(se => {
       const ex = serverEnemiesMap.get(se.id);
       if (ex) {
-        ex.hp = se.hp; ex.maxHp = se.maxHp;
+        ex.hp = se.hp;
+        if (se.maxHp !== undefined) ex.maxHp = se.maxHp;
         // Compute facing + move signal from server position delta (not client lerp)
         const sdx = se.x - (ex.targetX ?? ex.x);
         const sdy = se.y - (ex.targetY ?? ex.y);
@@ -174,6 +182,9 @@ function netConnect(onReady) {
           }
         }
       } else {
+        // Slim entry for an enemy we don't know — skip; the server's periodic
+        // full refresh (every ~2s) will deliver the complete record shortly
+        if (se.eid === undefined) return;
         const newE = { ...se, targetX: se.x, targetY: se.y, _st: t };
         serverEnemies.push(newE);
         serverEnemiesMap.set(se.id, newE);

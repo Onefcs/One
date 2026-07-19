@@ -26,6 +26,15 @@ const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait
 const AOI_RADIUS = 900;
 const AOI_R2    = AOI_RADIUS * AOI_RADIUS; // squared — avoids sqrt in AOI check
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
+// Players render on a ~700px-wide viewport — 600px AOI covers everything visible
+// with margin, at 2.25× less area than the 900px enemy AOI.
+const PLAYER_AOI_R2 = 600 * 600;
+// At most this many other players per packet (screen fits ~15). Bounds the
+// N² blowup when hundreds of players stack in one spot.
+const PLAYER_CAP = 20;
+// Every N casts an entry goes out full even if the recipient "knows" it —
+// self-heals any client/server known-state divergence within ~2s.
+const FULL_REFRESH_TICKS = 80;
 
 class Room {
   constructor(floor, io) {
@@ -44,6 +53,10 @@ class Room {
     this._alivePlayers = [];
     this._nearPlayersBuf = [];
     this._nearEnemiesBuf = [];
+    this._candBuf = [];
+    this._tickNo = 0;
+    this._pSeq = 0;
+    this.enemies.forEach((e, i) => { e._idx = i; });
     this._lastTick = Date.now();
     this._interval = setInterval(() => this._tick(), TICK_MS);
   }
@@ -145,42 +158,94 @@ class Room {
       }
     });
 
-    // Per-player emit: AOI filter + delta for enemies (reuse buffers — emit serializes synchronously)
+    // Per-player emit: AOI filter + delta (reuse buffers — emit serializes synchronously).
+    // Bandwidth protocol:
+    //  - players are broadcast every OTHER tick (20Hz; client interpolates)
+    //  - static fields (username/type/maxHp/pvpMode) go out only on first
+    //    sight, on profile change (_profileRev), or on periodic refresh;
+    //    otherwise a slim {id,x,y,facing,hp,atkSeq} entry is sent
+    //  - at most PLAYER_CAP nearest players per packet
+    //  - enemies keep 40Hz change-delta, but static fields (name/color/size/…)
+    //    are likewise sent only on first sight / periodic refresh
+    const castId = ++this._tickNo;
+    const castPlayers = (castId & 1) === 0;
+    const cand = this._candBuf;
+
     this.players.forEach(p => {
-      nearPlayers.length = 0;
       nearEnemies.length = 0;
+      let playersOut = null;
 
-      // Other players within AOI — squared dist avoids sqrt per pair
-      this.players.forEach(op => {
-        if (op.socketId === p.socketId) return;
-        const dx = op.x - p.x, dy = op.y - p.y;
-        if (dx * dx + dy * dy > AOI_R2) return;
-        nearPlayers.push({
-          id: op.socketId, username: op.username, type: op.type,
-          x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
-          pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
+      if (castPlayers) {
+        nearPlayers.length = 0;
+        cand.length = 0;
+        this.players.forEach(op => {
+          if (op.socketId === p.socketId) return;
+          const dx = op.x - p.x, dy = op.y - p.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > PLAYER_AOI_R2) return;
+          cand.push({ op, d2 });
         });
-      });
+        if (cand.length > PLAYER_CAP) {
+          cand.sort((a, b) => a.d2 - b.d2);
+          cand.length = PLAYER_CAP;
+        }
+        for (let i = 0; i < cand.length; i++) {
+          const op = cand[i].op;
+          const k = p._known.get(op.socketId);
+          const full = !k || k.rev !== op._profileRev || k.seen !== castId - 2 ||
+            ((castId >> 1) + op._seq) % FULL_REFRESH_TICKS === 0;
+          if (full) {
+            nearPlayers.push({
+              id: op.socketId, username: op.username, type: op.type,
+              x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
+              pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
+            });
+          } else {
+            nearPlayers.push({
+              id: op.socketId, x: op.x, y: op.y, facing: op.facing,
+              hp: op.hp, atkSeq: op.lastAtkSeq || 0,
+            });
+          }
+          if (k) { k.rev = op._profileRev; k.seen = castId; }
+          else p._known.set(op.socketId, { rev: op._profileRev, seen: castId });
+        }
+        playersOut = nearPlayers;
+      }
 
-      // Enemies within AOI that moved or changed HP — Math.abs instead of hypot for moved-check
+      // Enemies within AOI — Math.abs instead of hypot for moved-check
       this.enemies.forEach(e => {
         if (e.hp <= 0) return;
         const dx = e.x - p.x, dy = e.y - p.y;
         if (dx * dx + dy * dy > AOI_R2) return;
+        const k = p._knownE.get(e.id);
+        const fresh = !k || k.seen !== castId - 1 ||
+          (castId + e._idx) % FULL_REFRESH_TICKS === 0;
+        if (k) k.seen = castId; else p._knownE.set(e.id, { seen: castId });
         const moved = e.aggro || Math.abs(e.x - e._sx) > 0.5 || Math.abs(e.y - e._sy) > 0.5;
         const hpChanged = e.hp !== e._shp;
-        if (!moved && !hpChanged) return;
-        nearEnemies.push({
-          id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
-          name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
-          aggroR: e.aggroR, spd: e.spd,
-          atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
-        });
+        if (!moved && !hpChanged && !fresh) return;
+        if (fresh) {
+          nearEnemies.push({
+            id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+            name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+            aggroR: e.aggroR, spd: e.spd,
+            atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
+          });
+        } else {
+          nearEnemies.push({
+            id: e.id, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
+            atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
+          });
+        }
       });
 
       // t: server tick timestamp — the client uses real tick spacing (setInterval
       // drifts 45-60ms) to time snapshot playback at true velocity
-      this.io.to(p.socketId).emit('gameState', { players: nearPlayers, enemies: nearEnemies, t: now });
+      if (playersOut) {
+        this.io.to(p.socketId).emit('gameState', { players: playersOut, enemies: nearEnemies, t: now });
+      } else {
+        this.io.to(p.socketId).emit('gameState', { enemies: nearEnemies, t: now });
+      }
     });
 
     // Update delta markers after all per-player emits
@@ -196,13 +261,17 @@ class Room {
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
+      // Delta-protocol state: which players/enemies this recipient has seen
+      // (and at which profile revision), so static fields go out only once
+      _known: new Map(), _knownE: new Map(),
+      _profileRev: 1, _seq: ++this._pSeq,
     });
     return spawn;
   }
 
   setPlayerPvpMode(socketId, mode) {
     const p = this.players.get(socketId);
-    if (p) p.pvpMode = !!mode;
+    if (p && p.pvpMode !== !!mode) { p.pvpMode = !!mode; p._profileRev++; }
   }
 
   pvpAttack(attackerSocketId, targetSocketId) {
@@ -218,7 +287,11 @@ class Room {
     return { dmg, x: target.x, y: target.y };
   }
 
-  removePlayer(socketId) { this.players.delete(socketId); }
+  removePlayer(socketId) {
+    this.players.delete(socketId);
+    // Drop stale known-state so a returning player is treated as unseen
+    this.players.forEach(p => p._known.delete(socketId));
+  }
 
   setPlayerChar(socketId, type, savedStats = null) {
     const p = this.players.get(socketId);
@@ -227,6 +300,7 @@ class Room {
     if (!cd) return;
     p.type = type;
     p.pvpMode = false;
+    p._profileRev++;
     if (savedStats) {
       const s = computeStats(savedStats, cd);
       p.atk   = s.atk;
@@ -276,7 +350,8 @@ class Room {
     if (def  >= 0) p.def  = Math.min(def,  p.def  * 1.5 + 100, 9999);
     if (maxHp > 0) {
       const cap = Math.min(maxHp, p.maxHp * 1.5 + 500, 99999);
-      p.hp = Math.min(p.hp, cap); p.maxHp = cap;
+      p.hp = Math.min(p.hp, cap);
+      if (p.maxHp !== cap) { p.maxHp = cap; p._profileRev++; }
     }
   }
 
