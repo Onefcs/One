@@ -25,7 +25,7 @@ function updateInvUI() {
       title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
       style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
       <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#505070')}</div>
-      <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name.slice(0, 8) : label}</div>
+      <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
       ${enhBadge}
     </div>`;
   }).join('');
@@ -58,7 +58,7 @@ function updateInvUI() {
       const isHud = def.id === hudPt;
       return `<div class="pt-cell${isHud ? ' pt-hud' : ''}" onclick="openPotionModal('${def.id}')" title="${def.name} — HP+${def.hp}">
         ${iconHTML(def.icon, 22, isHud ? '#3ef07a' : '#8090a0')}
-        <div class="pt-cell-name">${def.name.slice(0, 10)}</div>
+        <div class="pt-cell-name">${def.name}</div>
         <div class="pt-cell-cnt${cnt > 0 ? '' : ' pt-zero'}">×${cnt}</div>
         ${isHud ? '<div class="pt-hud-badge">HUD</div>' : ''}
       </div>`;
@@ -91,7 +91,7 @@ function updateInvUI() {
       title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}"
       style="border-color:${rc}77;position:relative">
       <div style="display:flex;justify-content:center;align-items:center">${_itemIcon(it, 24)}</div>
-      <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>
+      <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:normal;word-break:break-word;line-height:1.2">${it.name}</div>
       ${enh}${cntBadge}
     </div>`;
   }).join('');

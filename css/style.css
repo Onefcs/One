@@ -539,7 +539,7 @@ canvas { display:block; width:100%; height:100%; }
 }
 .pt-cell:active { opacity:0.7; }
 .pt-cell.pt-hud { border-color:rgba(62,240,122,0.4); background:rgba(62,240,122,0.05); }
-.pt-cell-name { font-size:10px; color:#8090a0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.pt-cell-name { font-size:10px; color:#8090a0; white-space:normal; word-break:break-word; overflow:hidden; max-width:100%; text-align:center; }
 .pt-cell-cnt  { font-size:13px; font-weight:800; color:#3ef07a; }
 .pt-cell-cnt.pt-zero { color:#404060; }
 .pt-hud-badge {
@@ -575,8 +575,8 @@ canvas { display:block; width:100%; height:100%; }
 .eq-cell .cell-icon { font-size:18px; line-height:1.1; }
 .eq-cell .cell-lbl  {
   font-size:7px; color:#353550; margin-top:2px; text-align:center;
-  line-height:1.1; max-width:100%; overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; padding:0 1px;
+  line-height:1.2; max-width:100%; overflow:hidden;
+  white-space:normal; word-break:break-word; padding:0 1px;
 }
 .eq-cell.filled .cell-lbl { color:#6699bb; }
 
