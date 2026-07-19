@@ -253,7 +253,18 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color, gotLoot, eid, bossStone }) => {
+  function _addStoneToInv(stoneId, qty, px, py) {
+    const def = CRAFT_MATS.find(m => m.id === stoneId);
+    if (!def || !player) return;
+    const ex2 = player.inventory.find(i => i.id === stoneId);
+    if (ex2) { ex2.qty = (ex2.qty || 1) + qty; }
+    else { player.inventory.push({ ...def, qty }); }
+    const label = stoneId === 'bless_stone' ? 'Безоп. камень' : 'Камень заточки';
+    dmgNum(px, py - 52, `+${qty}× ${label}`, stoneId === 'bless_stone' ? '#88f' : '#fa8');
+    netSaveProgress();
+  }
+
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, ex, ey, color, gotLoot, eid, bossStone, normStone, blessStone }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -300,6 +311,8 @@ function netConnect(onReady) {
         netSaveProgress();
       }
     }
+    if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py);
+    if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 16);
     if (gold && player) {
       const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
       const _goldFinal = _cb && _cb.gold > 0 ? Math.round(gold * (1 + _cb.gold / 100)) : gold;
@@ -506,7 +519,7 @@ function netConnect(onReady) {
     if (player.hp <= 0) { player.hp = 0; if (typeof playerDie === 'function') playerDie(); }
   });
 
-  socket.on('raidEnemyKilled', ({ id, ex, ey, isBoss }) => {
+  socket.on('raidEnemyKilled', ({ id, ex, ey, isBoss, normStone, blessStone }) => {
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
@@ -517,6 +530,8 @@ function netConnect(onReady) {
       if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
     }
     serverEnemies.length = j;
+    if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py);
+    if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 16);
   });
 
   socket.on('raidEnemyHurt', ({ id, hp, dmg }) => {

@@ -1409,7 +1409,26 @@ function drawPartyInvitePopup() {
 //  INVENTORY ITEM MODAL
 // ─────────────────────────────────────────────────────────
 const _ENH_RARITY_COST = { common:40, uncommon:70, rare:120, epic:200, legendary:350 };
-const _ENH_MAX = 10;
+const _ENH_MAX = 15;
+function _enhSuccessRate(enh) { return Math.max(10, 100 - enh * 10); }
+function _enhStoneQty(stoneId) {
+  if (!player) return 0;
+  const s = player.inventory.find(i => i.id === stoneId);
+  return s ? (s.qty || 1) : 0;
+}
+function _enhStonesBlock(actionFn, param) {
+  const normQty  = _enhStoneQty('norm_stone');
+  const blessQty = _enhStoneQty('bless_stone');
+  const p = JSON.stringify(param);
+  return `<div class="imod-enh-stones">
+    <button class="imod-enh-stone-btn${normQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'norm')" title="При неудаче вещь сгорит">
+      <img src="/images/norm.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">Обычный (${normQty})
+    </button>
+    <button class="imod-enh-stone-btn imod-enh-stone-bless${blessQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'bless')" title="При неудаче вещь останется">
+      <img src="/images/bless.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">Безопасный (${blessQty})
+    </button>
+  </div>`;
+}
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
 const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', use:'Расходник', material:'Материал', recipe:'Рецепт' };
 
@@ -1445,18 +1464,19 @@ function openInvItemModal(idx) {
 
   // Next enhance preview
   const canEnh = enh < _ENH_MAX;
-  const enhCost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
-  const canAfford = player.gold >= enhCost;
   const nextParts = [];
   if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
   if (next1.def) nextParts.push(`+${next1.def} DEF`);
   if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
 
+  const rate = _enhSuccessRate(enh);
+  const rateColor = rate >= 80 ? '#4f4' : rate >= 50 ? '#ff0' : rate >= 30 ? '#f80' : '#f44';
   const enhBlock = canEnh
     ? `<div class="imod-enh-block">
         <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#ffd700">+${enh+1}</span></div>
         ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
-        <div class="imod-enh-cost">${iconHTML('coin',12,'#f1c40f')} ${enhCost} золота</div>
+        <div class="imod-enh-chance">Шанс: <b style="color:${rateColor}">${rate}%</b></div>
+        ${_enhStonesBlock('enhanceItem', idx)}
       </div>`
     : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#ffd700">✦ Максимальная заточка</div></div>`;
 
@@ -1478,7 +1498,6 @@ function openInvItemModal(idx) {
     ${enhBlock}
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">Надеть</button>
-      ${canEnh ? `<button class="imod-btn imod-sharpen${canAfford ? '' : ' disabled'}" onclick="enhanceItem(${idx})">${iconHTML('lightning',13,'#ffd700')} Заточить +${enh+1}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -1494,22 +1513,41 @@ function equipFromModal(idx) {
   equipItem(idx);
 }
 
-function enhanceItem(idx) {
+function enhanceItem(idx, stoneType) {
   if (!player) return;
   const it = player.inventory[idx];
   if (!it) return;
   const enh = it.enhance || 0;
   if (enh >= _ENH_MAX) return;
-  const cost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
-  if (player.gold < cost) {
-    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
-    return;
+
+  const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
+  let stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
+  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f88'); return; }
+
+  const stoneItem = player.inventory[stoneIdx];
+  if ((stoneItem.qty || 1) <= 1) {
+    player.inventory.splice(stoneIdx, 1);
+    if (stoneIdx < idx) idx--;
+  } else {
+    stoneItem.qty--;
   }
-  player.gold -= cost;
-  it.enhance = enh + 1;
-  recompute();
-  netSaveProgress();
-  openInvItemModal(idx);
+
+  const success = Math.random() * 100 < _enhSuccessRate(enh);
+  if (success) {
+    it.enhance = enh + 1;
+    recompute(); netSaveProgress();
+    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#ffd700');
+    openInvItemModal(idx);
+  } else if (stoneType === 'bless') {
+    recompute(); netSaveProgress();
+    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f88');
+    openInvItemModal(idx);
+  } else {
+    player.inventory.splice(idx, 1);
+    recompute(); netSaveProgress();
+    closeInvItemModal();
+    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#f44');
+  }
 }
 
 function openEqItemModal(slot) {
@@ -1541,18 +1579,19 @@ function openEqItemModal(slot) {
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
 
   const canEnh = enh < _ENH_MAX;
-  const enhCost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
-  const canAfford = player.gold >= enhCost;
   const nextParts = [];
   if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
   if (next1.def) nextParts.push(`+${next1.def} DEF`);
   if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
 
+  const rate2 = _enhSuccessRate(enh);
+  const rateColor2 = rate2 >= 80 ? '#4f4' : rate2 >= 50 ? '#ff0' : rate2 >= 30 ? '#f80' : '#f44';
   const enhBlock = canEnh
     ? `<div class="imod-enh-block">
         <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#ffd700">+${enh+1}</span></div>
         ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
-        <div class="imod-enh-cost">${iconHTML('coin',12,'#f1c40f')} ${enhCost} золота</div>
+        <div class="imod-enh-chance">Шанс: <b style="color:${rateColor2}">${rate2}%</b></div>
+        ${_enhStonesBlock('enhanceEqItem', slot)}
       </div>`
     : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#ffd700">✦ Максимальная заточка</div></div>`;
 
@@ -1574,7 +1613,6 @@ function openEqItemModal(slot) {
     ${enhBlock}
     <div class="imod-btns">
       <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#3a1a1a,#6a2a2a);color:#ff9999" onclick="unequipFromModal('${slot}')">Снять</button>
-      ${canEnh ? `<button class="imod-btn imod-sharpen${canAfford ? '' : ' disabled'}" onclick="enhanceEqItem('${slot}')">${iconHTML('lightning',13,'#ffd700')} Заточить +${enh+1}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -1585,22 +1623,37 @@ function unequipFromModal(slot) {
   unequipItem(slot);
 }
 
-function enhanceEqItem(slot) {
+function enhanceEqItem(slot, stoneType) {
   if (!player) return;
   const it = player.equipment[slot];
   if (!it) return;
   const enh = it.enhance || 0;
   if (enh >= _ENH_MAX) return;
-  const cost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
-  if (player.gold < cost) {
-    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
-    return;
+
+  const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
+  const stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
+  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f88'); return; }
+
+  const stoneItem = player.inventory[stoneIdx];
+  if ((stoneItem.qty || 1) <= 1) { player.inventory.splice(stoneIdx, 1); }
+  else { stoneItem.qty--; }
+
+  const success = Math.random() * 100 < _enhSuccessRate(enh);
+  if (success) {
+    it.enhance = enh + 1;
+    recompute(); netSaveProgress();
+    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#ffd700');
+    openEqItemModal(slot);
+  } else if (stoneType === 'bless') {
+    recompute(); netSaveProgress();
+    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f88');
+    openEqItemModal(slot);
+  } else {
+    player.equipment[slot] = null;
+    recompute(); netSaveProgress();
+    closeInvItemModal();
+    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#f44');
   }
-  player.gold -= cost;
-  it.enhance = enh + 1;
-  recompute();
-  netSaveProgress();
-  openEqItemModal(slot);
 }
 
 // ─────────────────────────────────────────────────────────

@@ -104,7 +104,10 @@ const CRAFT_MATS = [
   { id:'rece',  name:'Рецепт эпичный',  img:'/images/material/rece.png',  slot:'recipe',   rarity:'epic'      },
   { id:'recl',  name:'Рецепт легенд.',  img:'/images/material/recl.png',  slot:'recipe',   rarity:'legendary' },
   // ── Boss stone (от боссов) ───────────────────────────────────
-  { id:'boss_stone', name:'Камень Босса', img:'/images/material/bstone.png', slot:'material', rarity:'legendary' },
+  { id:'boss_stone',  name:'Камень Босса',            img:'/images/material/bstone.png', slot:'material', rarity:'legendary' },
+  // ── Enchant stones ───────────────────────────────────────────
+  { id:'norm_stone',  name:'Камень обычной заточки',  img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
+  { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'   },
 ];
 
 const ITEM_DEF = [

@@ -388,6 +388,8 @@ io.on('connection', socket => {
 
       const bossStone = result.isBoss
         ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
+      const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
+      const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
 
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -403,13 +405,17 @@ io.on('connection', socket => {
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: lootWinnerId === socket.id, eid: result.eid,
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
+          normStone:  lootWinnerId === socket.id ? normStone  : 0,
+          blessStone: lootWinnerId === socket.id ? blessStone : 0,
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
             gotLoot: lootWinnerId === mid, eid: result.eid,
-            bossStone: lootWinnerId === mid ? bossStone : 0,
+            bossStone:  lootWinnerId === mid ? bossStone  : 0,
+            normStone:  lootWinnerId === mid ? normStone  : 0,
+            blessStone: lootWinnerId === mid ? blessStone : 0,
           });
         });
         // Visual only to the rest of the floor
@@ -421,7 +427,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, bossStone,
+          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
@@ -855,8 +861,12 @@ io.on('connection', socket => {
     // Broadcast attacker animation to all members
     if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));
     if (result.killed) {
+      const rNorm  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
+      const rBless = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyKilled', {
         id: enemyId, ex: result.ex, ey: result.ey, isBoss: result.isBoss,
+        normStone:  mid === socket.id ? rNorm  : 0,
+        blessStone: mid === socket.id ? rBless : 0,
       }));
     } else {
       rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', {
