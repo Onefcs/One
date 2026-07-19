@@ -72,27 +72,38 @@ function pickup(drop) {
   }
 }
 
-function applyLootToInventory() {
+function applyLootToInventory(eid) {
   if (!player) return;
-  const r = Math.random();
-  let item = null;
-  if (r < 0.15) {
-    // 15%: craft material (exclude boss_stone — that's boss-only)
-    const mats = CRAFT_MATS.filter(m => m.id !== 'boss_stone');
-    item = { ...mats[Math.floor(Math.random() * mats.length)] };
-  } else if (r < 0.32) {
-    // 17%: equipment scaled to floor
-    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-    const maxRarityIdx = Math.min(4, Math.max(0, Math.floor((dungeonLvl - 1) / 4)));
-    const pool = ITEM_DEF.filter(it =>
-      it.slot !== 'use' && it.slot !== 'material' &&
-      rarities.indexOf(it.rarity) <= maxRarityIdx + 1
-    );
-    if (pool.length > 0) item = { ...pool[Math.floor(Math.random() * pool.length)] };
+  const eDef = typeof ENEMY_DEF !== 'undefined' ? ENEMY_DEF.find(e => e.eid === eid) : null;
+  const eType = eDef ? eDef.eType : null;
+  let saved = false;
+
+  function _addMat(id, yOff) {
+    if (player.inventory.length >= 50) return;
+    const mat = CRAFT_MATS.find(m => m.id === id);
+    if (!mat) return;
+    player.inventory.push({ ...mat });
+    dmgNum(player.x, player.y - yOff, '+ ' + mat.name, RARITY_COLOR[mat.rarity] || '#aaa');
+    saved = true;
   }
-  // 68%: no drop
-  if (!item || player.inventory.length >= 50) return;
-  player.inventory.push(item);
-  dmgNum(player.x, player.y - 36, '+ ' + item.name, RARITY_COLOR[item.rarity] || '#4ff');
-  netSaveProgress();
+
+  // Recipe drop (all non-boss enemies)
+  if (eType && eType !== 'boss') {
+    const r = Math.random();
+    if      (r < 0.00001)  _addMat('recl', 52);
+    else if (r < 0.00021)  _addMat('rece', 52);
+    else if (r < 0.00071)  _addMat('recr', 52);
+    else if (r < 0.00171)  _addMat('recu', 52);
+  }
+
+  // Material drops by enemy type (5% each, 1 piece)
+  if (eType === 'warrior') {
+    if (Math.random() < 0.05) _addMat('bonec', 36);
+    if (Math.random() < 0.05) _addMat('coalc', 48);
+  } else if (eType === 'guard') {
+    if (Math.random() < 0.05) _addMat('orec',  36);
+    if (Math.random() < 0.05) _addMat('skinc', 48);
+  }
+
+  if (saved) netSaveProgress();
 }

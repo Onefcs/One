@@ -35,12 +35,35 @@ const RARITY_COLOR = {
 };
 
 const CRAFT_MATS = [
-  { id:'mat_iron',    name:'Железный слиток', icon:'mat_iron',    slot:'material', rarity:'common'   },
-  { id:'mat_leather', name:'Кожа',            icon:'mat_leather', slot:'material', rarity:'common'   },
-  { id:'mat_gem',     name:'Самоцвет',        icon:'mat_gem',     slot:'material', rarity:'uncommon' },
-  { id:'mat_scale',   name:'Чешуя дракона',   icon:'mat_scale',   slot:'material', rarity:'rare'     },
-  { id:'mat_dust',    name:'Магич. пыль',     icon:'mat_dust',    slot:'material', rarity:'uncommon' },
-  { id:'boss_stone',  name:'Камень Босса',    icon:'mat_gem',     slot:'material', rarity:'uncommon' },
+  // ── Bone (от воинов) ────────────────────────────────────
+  { id:'bonec', name:'Кость',           img:'/images/material/bonec.png', slot:'material', rarity:'common'    },
+  { id:'boneu', name:'Кость необычная', img:'/images/material/boneu.png', slot:'material', rarity:'uncommon'  },
+  { id:'boner', name:'Кость редкая',    img:'/images/material/boner.png', slot:'material', rarity:'rare'      },
+  { id:'bonee', name:'Кость эпичная',   img:'/images/material/bonee.png', slot:'material', rarity:'epic'      },
+  { id:'bonel', name:'Кость легенд.',   img:'/images/material/bonel.png', slot:'material', rarity:'legendary' },
+  // ── Coal (от воинов) ────────────────────────────────────
+  { id:'coalc', name:'Уголь',           img:'/images/material/coalc.png', slot:'material', rarity:'common'    },
+  { id:'coalu', name:'Уголь необычный', img:'/images/material/coalu.png', slot:'material', rarity:'uncommon'  },
+  { id:'coalr', name:'Уголь редкий',    img:'/images/material/coalr.png', slot:'material', rarity:'rare'      },
+  { id:'coale', name:'Уголь эпичный',   img:'/images/material/coale.png', slot:'material', rarity:'epic'      },
+  { id:'coall', name:'Уголь легенд.',   img:'/images/material/coall.png', slot:'material', rarity:'legendary' },
+  // ── Ore (от стражей) ────────────────────────────────────
+  { id:'orec',  name:'Руда',            img:'/images/material/orec.png',  slot:'material', rarity:'common'    },
+  { id:'oreu',  name:'Руда необычная',  img:'/images/material/oreu.png',  slot:'material', rarity:'uncommon'  },
+  { id:'orer',  name:'Руда редкая',     img:'/images/material/orer.png',  slot:'material', rarity:'rare'      },
+  { id:'oree',  name:'Руда эпичная',    img:'/images/material/oree.png',  slot:'material', rarity:'epic'      },
+  { id:'orel',  name:'Руда легенд.',    img:'/images/material/orel.png',  slot:'material', rarity:'legendary' },
+  // ── Skin (от стражей) ───────────────────────────────────
+  { id:'skinc', name:'Шкура',           img:'/images/material/skinc.png', slot:'material', rarity:'common'    },
+  { id:'skinu', name:'Шкура необычная', img:'/images/material/skinu.png', slot:'material', rarity:'uncommon'  },
+  { id:'skinr', name:'Шкура редкая',    img:'/images/material/skinr.png', slot:'material', rarity:'rare'      },
+  { id:'skine', name:'Шкура эпичная',   img:'/images/material/skine.png', slot:'material', rarity:'epic'      },
+  { id:'skinl', name:'Шкура легенд.',   img:'/images/material/skinl.png', slot:'material', rarity:'legendary' },
+  // ── Recipes (от всех) ───────────────────────────────────
+  { id:'recu',  name:'Рецепт необычный',img:'/images/material/recu.png',  slot:'recipe',   rarity:'uncommon'  },
+  { id:'recr',  name:'Рецепт редкий',   img:'/images/material/recr.png',  slot:'recipe',   rarity:'rare'      },
+  { id:'rece',  name:'Рецепт эпичный',  img:'/images/material/rece.png',  slot:'recipe',   rarity:'epic'      },
+  { id:'recl',  name:'Рецепт легенд.',  img:'/images/material/recl.png',  slot:'recipe',   rarity:'legendary' },
 ];
 
 const ITEM_DEF = [
@@ -170,49 +193,38 @@ const SHOP_CATALOG = [
   { itemId:'rn1', price:30 }, { itemId:'nd1', price:30 },
 ];
 
-const CRAFT_RECIPES = [
-  // ── Uncommon ─────────────────────────────────────────────
-  { name:'Стальной нож',   resultId:'sw2', mats:[{id:'mat_iron',n:3},{id:'boss_stone',n:20}],                        gold:50  },
-  { name:'Стальной топор', resultId:'tw2', mats:[{id:'mat_iron',n:3},{id:'boss_stone',n:20}],                        gold:50  },
-  { name:'Серебряный лук', resultId:'bw2', mats:[{id:'mat_iron',n:2},{id:'mat_leather',n:2},{id:'boss_stone',n:20}], gold:60  },
-  { name:'Посох бойца',    resultId:'st2', mats:[{id:'mat_iron',n:2},{id:'mat_dust',n:1},{id:'boss_stone',n:20}],    gold:60  },
-  { name:'Железный шлем',  resultId:'hm2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
-  { name:'Железная броня',  resultId:'ar2', mats:[{id:'mat_iron',n:3},{id:'mat_leather',n:2},{id:'boss_stone',n:20}], gold:80  },
-  { name:'Железные перчи', resultId:'gl2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
-  { name:'Железные боты',  resultId:'bt2', mats:[{id:'mat_iron',n:2},{id:'boss_stone',n:20}],                        gold:40  },
-  { name:'Кольцо защиты',  resultId:'rn2', mats:[{id:'mat_gem',n:1},{id:'boss_stone',n:20}],                         gold:80  },
-  { name:'Пояс здоровья',  resultId:'nd2', mats:[{id:'mat_leather',n:2},{id:'boss_stone',n:20}],                     gold:70  },
-  // ── Rare (boss_stone ×60) ────────────────────────────────
-  { name:'Нож дракона',      resultId:'sw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],   gold:200 },
-  { name:'Топор дракона',    resultId:'tw3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'boss_stone',n:60}],   gold:200 },
-  { name:'Лук охотника',     resultId:'bw3', mats:[{id:'mat_scale',n:2},{id:'mat_leather',n:3},{id:'boss_stone',n:60}],gold:200 },
-  { name:'Посох охотника',   resultId:'st3', mats:[{id:'mat_scale',n:2},{id:'mat_dust',n:3},{id:'boss_stone',n:60}],   gold:200 },
-  { name:'Платиновый шлем',  resultId:'hm3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:2},{id:'boss_stone',n:60}],               gold:160 },
-  { name:'Платиновая броня', resultId:'ar3', mats:[{id:'mat_scale',n:2},{id:'mat_iron',n:3},{id:'mat_leather',n:2},{id:'boss_stone',n:60}], gold:200 },
-  { name:'Платиновые перчи', resultId:'gl3', mats:[{id:'mat_scale',n:1},{id:'mat_iron',n:2},{id:'boss_stone',n:60}],               gold:150 },
-  { name:'Платиновые боты',  resultId:'bt3', mats:[{id:'mat_scale',n:1},{id:'mat_iron',n:2},{id:'boss_stone',n:60}],               gold:150 },
-  { name:'Пояс тьмы',        resultId:'nd3', mats:[{id:'mat_gem',n:2},{id:'mat_dust',n:2},{id:'boss_stone',n:60}],                 gold:150 },
-  { name:'Кольцо крови',     resultId:'rn3', mats:[{id:'mat_gem',n:2},{id:'boss_stone',n:60}],                                     gold:150 },
-  // ── Epic (boss_stone ×100) ───────────────────────────────
-  { name:'Нож теней',        resultId:'sw4', mats:[{id:'mat_scale',n:3},{id:'mat_dust',n:3},{id:'boss_stone',n:100}],  gold:500 },
-  { name:'Топор теней',      resultId:'tw4', mats:[{id:'mat_scale',n:3},{id:'mat_dust',n:3},{id:'boss_stone',n:100}],  gold:500 },
-  { name:'Лунный лук',       resultId:'bw4', mats:[{id:'mat_scale',n:3},{id:'mat_leather',n:3},{id:'boss_stone',n:100}],gold:500},
-  { name:'Посох Героя',      resultId:'st4', mats:[{id:'mat_scale',n:3},{id:'mat_dust',n:4},{id:'boss_stone',n:100}],  gold:500 },
-  { name:'Корона героя',     resultId:'hm4', mats:[{id:'mat_scale',n:2},{id:'mat_gem',n:2},{id:'boss_stone',n:100}],   gold:400 },
-  { name:'Доспех героя',     resultId:'ar4', mats:[{id:'mat_scale',n:3},{id:'mat_leather',n:3},{id:'boss_stone',n:100}],gold:500},
-  { name:'Перчатки героя',   resultId:'gl4', mats:[{id:'mat_scale',n:2},{id:'mat_leather',n:1},{id:'boss_stone',n:100}],gold:350},
-  { name:'Боты героя',       resultId:'bt4', mats:[{id:'mat_scale',n:2},{id:'mat_leather',n:2},{id:'boss_stone',n:100}],gold:350},
-  { name:'Кольцо героя',     resultId:'rn4', mats:[{id:'mat_gem',n:3},{id:'mat_dust',n:2},{id:'boss_stone',n:100}],    gold:400 },
-  { name:'Пояс героя',       resultId:'nd4', mats:[{id:'mat_gem',n:3},{id:'mat_dust',n:3},{id:'boss_stone',n:100}],    gold:400 },
-  // ── Legendary (boss_stone ×300) ──────────────────────────
-  { name:'Нож героя',        resultId:'sw5', mats:[{id:'mat_scale',n:5},{id:'mat_dust',n:5},{id:'boss_stone',n:300}],  gold:1500},
-  { name:'Топор героя',      resultId:'tw5', mats:[{id:'mat_scale',n:5},{id:'mat_dust',n:5},{id:'boss_stone',n:300}],  gold:1500},
-  { name:'Лук героя',        resultId:'bw5', mats:[{id:'mat_scale',n:5},{id:'mat_leather',n:4},{id:'boss_stone',n:300}],gold:1500},
-  { name:'Посох Легенды',    resultId:'st5', mats:[{id:'mat_scale',n:5},{id:'mat_dust',n:6},{id:'boss_stone',n:300}],  gold:1500},
-  { name:'Шлем легенды',     resultId:'hm5', mats:[{id:'mat_scale',n:4},{id:'mat_gem',n:3},{id:'boss_stone',n:300}],   gold:1200},
-  { name:'Доспех легенды',   resultId:'ar5', mats:[{id:'mat_scale',n:5},{id:'mat_leather',n:4},{id:'boss_stone',n:300}],gold:1500},
-  { name:'Перчатки легенды', resultId:'gl5', mats:[{id:'mat_scale',n:3},{id:'mat_gem',n:2},{id:'boss_stone',n:300}],   gold:1200},
-  { name:'Боты легенды',     resultId:'bt5', mats:[{id:'mat_scale',n:3},{id:'mat_leather',n:3},{id:'boss_stone',n:300}],gold:1200},
-  { name:'Кольцо легенды',   resultId:'rn5', mats:[{id:'mat_gem',n:5},{id:'mat_dust',n:4},{id:'boss_stone',n:300}],    gold:1500},
-  { name:'Пояс легенды',     resultId:'nd5', mats:[{id:'mat_gem',n:5},{id:'mat_dust',n:5},{id:'boss_stone',n:300}],    gold:1500},
+// Tier-based item crafting: 30 mats of rarity + 10 recipes → random item (30% chance)
+const ITEM_CRAFT_TIERS = [
+  { rarity:'uncommon',  matCount:30, recipeId:'recu', recipeCount:10, chance:0.30 },
+  { rarity:'rare',      matCount:30, recipeId:'recr', recipeCount:10, chance:0.30 },
+  { rarity:'epic',      matCount:30, recipeId:'rece', recipeCount:10, chance:0.30 },
+  { rarity:'legendary', matCount:30, recipeId:'recl', recipeCount:10, chance:0.30 },
+];
+
+// Material upgrade: 20 of lower rarity → 1 of higher rarity (30% chance)
+const MAT_UPGRADE_RECIPES = [
+  // Bone
+  { from:'bonec', to:'boneu', count:20, chance:0.30 },
+  { from:'boneu', to:'boner', count:20, chance:0.30 },
+  { from:'boner', to:'bonee', count:20, chance:0.30 },
+  { from:'bonee', to:'bonel', count:20, chance:0.30 },
+  // Coal
+  { from:'coalc', to:'coalu', count:20, chance:0.30 },
+  { from:'coalu', to:'coalr', count:20, chance:0.30 },
+  { from:'coalr', to:'coale', count:20, chance:0.30 },
+  { from:'coale', to:'coall', count:20, chance:0.30 },
+  // Ore
+  { from:'orec',  to:'oreu',  count:20, chance:0.30 },
+  { from:'oreu',  to:'orer',  count:20, chance:0.30 },
+  { from:'orer',  to:'oree',  count:20, chance:0.30 },
+  { from:'oree',  to:'orel',  count:20, chance:0.30 },
+  // Skin
+  { from:'skinc', to:'skinu', count:20, chance:0.30 },
+  { from:'skinu', to:'skinr', count:20, chance:0.30 },
+  { from:'skinr', to:'skine', count:20, chance:0.30 },
+  { from:'skine', to:'skinl', count:20, chance:0.30 },
+  // Recipes
+  { from:'recu',  to:'recr',  count:20, chance:0.30 },
+  { from:'recr',  to:'rece',  count:20, chance:0.30 },
+  { from:'rece',  to:'recl',  count:20, chance:0.30 },
 ];

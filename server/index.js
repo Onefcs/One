@@ -304,10 +304,6 @@ io.on('connection', socket => {
         });
       }
 
-      // Boss stone: 100% drop, quantity = floor + 0..2 (floor 1→1-3, floor 2→2-4, ...)
-      const bossStone = result.isBoss
-        ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
-
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare   = result.xp   / totalMembers;
@@ -320,15 +316,13 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === socket.id,
-          bossStone: lootWinnerId === socket.id ? bossStone : 0,
+          gotLoot: lootWinnerId === socket.id, eid: result.eid,
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
-            gotLoot: lootWinnerId === mid,
-            bossStone: lootWinnerId === mid ? bossStone : 0,
+            gotLoot: lootWinnerId === mid, eid: result.eid,
           });
         });
         // Visual only to the rest of the floor
@@ -340,7 +334,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, bossStone,
+          gotLoot: true, eid: result.eid,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,

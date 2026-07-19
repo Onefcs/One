@@ -1246,7 +1246,7 @@ function drawPartyInvitePopup() {
 const _ENH_RARITY_COST = { common:40, uncommon:70, rare:120, epic:200, legendary:350 };
 const _ENH_MAX = 10;
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
-const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс' };
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', use:'Расходник', material:'Материал', recipe:'Рецепт' };
 
 function openInvItemModal(idx) {
   if (!player) return;

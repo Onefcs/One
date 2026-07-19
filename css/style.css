@@ -417,6 +417,22 @@ canvas { display:block; width:100%; height:100%; }
 .craft-row-clickable { cursor:pointer; transition:background 0.15s; }
 .craft-row-clickable:active { background:rgba(255,255,255,0.07); }
 .craft-arrow { color:#333; font-size:20px; flex-shrink:0; line-height:1; }
+.craft-tabs {
+  display:flex; gap:6px; margin:8px 0 10px;
+}
+.craft-tab {
+  flex:1; padding:7px 0; border:1px solid #2a2a40; border-radius:8px;
+  background:#0e0e1a; color:#777; font-size:12px; font-weight:600;
+  cursor:pointer; transition:all 0.15s; touch-action:manipulation;
+}
+.craft-tab.active {
+  background:linear-gradient(135deg,#5020a0,#7030c0);
+  color:#fff; border-color:#7030c0;
+}
+.craft-group-hdr {
+  font-size:10px; text-transform:uppercase; letter-spacing:1px;
+  color:#484860; margin:10px 0 5px; padding-left:2px;
+}
 .craft-can .craft-arrow { color:#7040c0; }
 
 /* ── CRAFT ITEM MODAL ──────────────────── */
