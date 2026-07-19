@@ -104,35 +104,101 @@ function _craftsmanBody() {
 }
 
 function _craftsmanItemsTab() {
-  const RARITY_LABEL = { uncommon:'Необычные', rare:'Редкие', epic:'Эпические', legendary:'Легендарные' };
-  const matIds = id => CRAFT_MATS.filter(m => m.slot === 'material' && m.rarity === id).map(m => m.id);
+  const GROUPS = [
+    { label:'Оружие',      slots:['weapon']                       },
+    { label:'Броня',       slots:['helmet','body','gloves','boots'] },
+    { label:'Аксессуары',  slots:['ring','belt']                  },
+  ];
 
   let html = '<div class="craft-mats-info">Инвентарь: ' + _listMats() + '</div>';
-  html += '<div class="shop-list">';
 
-  ITEM_CRAFT_TIERS.forEach((tier, idx) => {
-    const rc = RARITY_COLOR[tier.rarity] || '#aaa';
-    const mIds = matIds(tier.rarity);
-    const matHave = player.inventory.filter(i => mIds.includes(i.id)).length;
-    const recHave = player.inventory.filter(i => i.id === tier.recipeId).length;
-    const recMat  = CRAFT_MATS.find(m => m.id === tier.recipeId);
-    const canCraft = matHave >= tier.matCount && recHave >= tier.recipeCount && player.inventory.length < 50;
-
-    html += `<div class="shop-row craft-tier-row">
-      <div class="shop-item-info" style="flex:1;min-width:0">
-        <div class="shop-item-name" style="color:${rc}">${RARITY_LABEL[tier.rarity] || tier.rarity} предмет</div>
-        <div class="shop-item-stat">
-          Матер.: <b style="color:${matHave>=tier.matCount?'#4f4':'#f44'}">${matHave}/${tier.matCount}</b> ·
-          Рецепт: <b style="color:${recHave>=tier.recipeCount?'#4f4':'#f44'}">${recHave}/${tier.recipeCount}</b> ·
-          Шанс 30%
-        </div>
-      </div>
-      <button class="shop-btn${canCraft?'':' disabled'}" onclick="craftItemByTier(${idx})">Крафт</button>
-    </div>`;
+  GROUPS.forEach(g => {
+    html += `<div class="craft-group-hdr">${g.label}</div><div class="craft-items-grid">`;
+    ITEM_CRAFT_RECIPES.forEach((rec, idx) => {
+      const item = ITEM_DEF.find(i => i.id === rec.itemId);
+      if (!item || !g.slots.includes(item.slot)) return;
+      const rc = RARITY_COLOR[item.rarity] || '#aaa';
+      const canCraft = player.inventory.length < 50 &&
+        rec.mats.every(m => player.inventory.filter(i => i.id === m.id).length >= m.n);
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}"
+        onclick="openCraftModal(${idx})"
+        style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
+      </div>`;
+    });
+    html += '</div>';
   });
 
-  html += '</div>';
   return html;
+}
+
+function openCraftModal(idx) {
+  const rec = ITEM_CRAFT_RECIPES[idx];
+  if (!rec || !player) return;
+  const item = ITEM_DEF.find(i => i.id === rec.itemId);
+  if (!item) return;
+  const rc = RARITY_COLOR[item.rarity] || '#aaa';
+
+  const matsHtml = rec.mats.map(m => {
+    const matDef = CRAFT_MATS.find(c => c.id === m.id);
+    const have = player.inventory.filter(i => i.id === m.id).length;
+    const ok = have >= m.n;
+    return `<div class="craft-req-row">
+      <span class="craft-req-icon">${matDef ? _matIcon(matDef, 20) : m.id}</span>
+      <span class="craft-req-name">${matDef ? matDef.name : m.id}</span>
+      <span class="craft-req-count" style="color:${ok ? '#4f4' : '#f44'}">${have}/${m.n}</span>
+    </div>`;
+  }).join('');
+
+  const canCraft = player.inventory.length < 50 &&
+    rec.mats.every(m => player.inventory.filter(i => i.id === m.id).length >= m.n);
+  const stats = statStr(item);
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('items')">← Назад</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-icon">${_itemIcon(item, 52)}</div>
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${item.name}</div>
+        <div class="craft-detail-stats">${stats || '—'}</div>
+      </div>
+    </div>
+    <div class="craft-reqs-title">Требуется:</div>
+    <div class="craft-reqs-list">${matsHtml}</div>
+    <div class="craft-chance-row">Шанс успеха: <b style="color:#ffd040">${Math.round(rec.chance * 100)}%</b></div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">Крафтить</button>
+  `;
+}
+
+function craftSpecificItem(idx) {
+  const rec = ITEM_CRAFT_RECIPES[idx];
+  if (!rec || !player) return;
+
+  for (const m of rec.mats) {
+    if (player.inventory.filter(i => i.id === m.id).length < m.n) {
+      _shopMsg('Недостаточно материалов!'); return;
+    }
+  }
+  if (player.inventory.length >= 50) { _shopMsg('Инвентарь полон!'); return; }
+
+  for (const m of rec.mats) {
+    let need = m.n;
+    player.inventory = player.inventory.filter(i => {
+      if (i.id === m.id && need > 0) { need--; return false; }
+      return true;
+    });
+  }
+
+  const item = ITEM_DEF.find(i => i.id === rec.itemId);
+  if (Math.random() < rec.chance) {
+    player.inventory.push({ ...item });
+    _shopMsg('✓ Создано: ' + item.name);
+  } else {
+    _shopMsg('Провал! Материалы потеряны.');
+  }
+  netSaveProgress();
+  openCraftModal(idx);
 }
 
 function _craftsmanMatsTab() {
@@ -172,42 +238,6 @@ function _craftsmanMatsTab() {
   return html;
 }
 
-function craftItemByTier(idx) {
-  const tier = ITEM_CRAFT_TIERS[idx];
-  if (!tier || !player) return;
-  const mIds = CRAFT_MATS.filter(m => m.slot === 'material' && m.rarity === tier.rarity).map(m => m.id);
-  const matHave = player.inventory.filter(i => mIds.includes(i.id)).length;
-  const recHave = player.inventory.filter(i => i.id === tier.recipeId).length;
-  if (matHave < tier.matCount)       { _shopMsg('Недостаточно материалов!'); return; }
-  if (recHave < tier.recipeCount)    { _shopMsg('Недостаточно рецептов!'); return; }
-  if (player.inventory.length >= 50) { _shopMsg('Инвентарь полон!'); return; }
-
-  // Consume mats
-  let matNeed = tier.matCount;
-  player.inventory = player.inventory.filter(i => {
-    if (mIds.includes(i.id) && matNeed > 0) { matNeed--; return false; }
-    return true;
-  });
-  // Consume recipes
-  let recNeed = tier.recipeCount;
-  player.inventory = player.inventory.filter(i => {
-    if (i.id === tier.recipeId && recNeed > 0) { recNeed--; return false; }
-    return true;
-  });
-
-  if (Math.random() < tier.chance) {
-    const pool = ITEM_DEF.filter(i => i.rarity === tier.rarity && i.slot !== 'use' && i.slot !== 'material');
-    if (pool.length > 0) {
-      const item = { ...pool[Math.floor(Math.random() * pool.length)] };
-      player.inventory.push(item);
-      _shopMsg('✓ Создано: ' + item.name);
-    }
-  } else {
-    _shopMsg('Провал! Материалы потеряны.');
-  }
-  netSaveProgress();
-  openNpc('craftsman');
-}
 
 function craftMatUpgrade(idx) {
   const recipe = MAT_UPGRADE_RECIPES[idx];

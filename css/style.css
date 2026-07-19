@@ -434,6 +434,57 @@ canvas { display:block; width:100%; height:100%; }
   color:#484860; margin:10px 0 5px; padding-left:2px;
 }
 .craft-can .craft-arrow { color:#7040c0; }
+/* ── Craft item grid ─────────────────────────── */
+.craft-items-grid {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:4px;
+}
+.craft-item-cell {
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:6px 4px; border-radius:8px; border:1px solid #1a1a30;
+  background:rgba(255,255,255,0.03); cursor:pointer;
+  transition:background 0.15s, border-color 0.15s;
+  touch-action:manipulation;
+}
+.craft-item-cell:active { background:rgba(255,255,255,0.08); }
+.craft-item-cell.craftable { background:rgba(80,32,160,0.12); }
+.craft-item-cell-icon { line-height:1; }
+.craft-item-cell-name {
+  font-size:8px; font-weight:600; text-align:center;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  width:100%; max-width:60px;
+}
+/* ── Craft detail modal (inside npc-body) ────── */
+.craft-back-btn {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:5px 10px; margin-bottom:12px;
+  border:1px solid #2a2a40; border-radius:7px;
+  background:#0e0e1a; color:#888; font-size:12px;
+  cursor:pointer; touch-action:manipulation;
+}
+.craft-back-btn:active { opacity:0.7; }
+.craft-detail-header {
+  display:flex; align-items:center; gap:12px; margin-bottom:14px;
+}
+.craft-detail-icon { flex-shrink:0; }
+.craft-detail-name { font-size:15px; font-weight:700; margin-bottom:4px; }
+.craft-detail-stats { font-size:11px; color:#888; }
+.craft-reqs-title {
+  font-size:10px; text-transform:uppercase; letter-spacing:1px;
+  color:#484860; margin-bottom:8px;
+}
+.craft-reqs-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+.craft-req-row {
+  display:flex; align-items:center; gap:8px;
+  padding:5px 8px; background:rgba(255,255,255,0.03);
+  border:1px solid #1a1a30; border-radius:7px;
+}
+.craft-req-icon { flex-shrink:0; line-height:1; }
+.craft-req-name { flex:1; font-size:11px; color:#bbb; }
+.craft-req-count { font-size:12px; font-weight:700; flex-shrink:0; }
+.craft-chance-row {
+  font-size:12px; color:#999; text-align:center; margin-bottom:10px;
+}
+.craft-do-btn { width:100%; text-align:center; padding:10px; font-size:13px; }
 
 /* ── CRAFT ITEM MODAL ──────────────────── */
 .cmod-overlay {

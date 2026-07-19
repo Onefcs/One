@@ -195,12 +195,69 @@ const SHOP_CATALOG = [
   { itemId:'rn1', price:30 }, { itemId:'nd1', price:30 },
 ];
 
-// Tier-based item crafting: 30 mats of rarity + 10 recipes → random item (30% chance)
-const ITEM_CRAFT_TIERS = [
-  { rarity:'uncommon',  matCount:30, recipeId:'recu', recipeCount:10, chance:0.30 },
-  { rarity:'rare',      matCount:30, recipeId:'recr', recipeCount:10, chance:0.30 },
-  { rarity:'epic',      matCount:30, recipeId:'rece', recipeCount:10, chance:0.30 },
-  { rarity:'legendary', matCount:30, recipeId:'recl', recipeCount:10, chance:0.30 },
+// Specific item crafting recipes
+// Weapons use bone+coal; Armor uses ore+skin; Accessories use bone+ore
+const ITEM_CRAFT_RECIPES = [
+  // ── Assassin knives (bone + coal) ────────────────────────
+  { itemId:'sw1', mats:[{id:'bonec',n:5},{id:'coalc',n:5}],                                                chance:0.80 },
+  { itemId:'sw2', mats:[{id:'boneu',n:10},{id:'coalu',n:10},{id:'recu',n:3}],                              chance:0.60 },
+  { itemId:'sw3', mats:[{id:'boner',n:15},{id:'coalr',n:15},{id:'recr',n:5}],                              chance:0.50 },
+  { itemId:'sw4', mats:[{id:'bonee',n:20},{id:'coale',n:20},{id:'rece',n:8}],                              chance:0.40 },
+  { itemId:'sw5', mats:[{id:'bonel',n:25},{id:'coall',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],       chance:0.30 },
+  // ── Warrior axes (bone + coal) ────────────────────────────
+  { itemId:'tw1', mats:[{id:'bonec',n:5},{id:'coalc',n:5}],                                                chance:0.80 },
+  { itemId:'tw2', mats:[{id:'boneu',n:10},{id:'coalu',n:10},{id:'recu',n:3}],                              chance:0.60 },
+  { itemId:'tw3', mats:[{id:'boner',n:15},{id:'coalr',n:15},{id:'recr',n:5}],                              chance:0.50 },
+  { itemId:'tw4', mats:[{id:'bonee',n:20},{id:'coale',n:20},{id:'rece',n:8}],                              chance:0.40 },
+  { itemId:'tw5', mats:[{id:'bonel',n:25},{id:'coall',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],       chance:0.30 },
+  // ── Archer bows (bone + coal) ─────────────────────────────
+  { itemId:'bw1', mats:[{id:'bonec',n:5},{id:'coalc',n:5}],                                                chance:0.80 },
+  { itemId:'bw2', mats:[{id:'boneu',n:10},{id:'coalu',n:10},{id:'recu',n:3}],                              chance:0.60 },
+  { itemId:'bw3', mats:[{id:'boner',n:15},{id:'coalr',n:15},{id:'recr',n:5}],                              chance:0.50 },
+  { itemId:'bw4', mats:[{id:'bonee',n:20},{id:'coale',n:20},{id:'rece',n:8}],                              chance:0.40 },
+  { itemId:'bw5', mats:[{id:'bonel',n:25},{id:'coall',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],       chance:0.30 },
+  // ── Staves (bone + coal) ──────────────────────────────────
+  { itemId:'st1', mats:[{id:'bonec',n:5},{id:'coalc',n:5}],                                                chance:0.80 },
+  { itemId:'st2', mats:[{id:'boneu',n:10},{id:'coalu',n:10},{id:'recu',n:3}],                              chance:0.60 },
+  { itemId:'st3', mats:[{id:'boner',n:15},{id:'coalr',n:15},{id:'recr',n:5}],                              chance:0.50 },
+  { itemId:'st4', mats:[{id:'bonee',n:20},{id:'coale',n:20},{id:'rece',n:8}],                              chance:0.40 },
+  { itemId:'st5', mats:[{id:'bonel',n:25},{id:'coall',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],       chance:0.30 },
+  // ── Helmets (ore + skin) ──────────────────────────────────
+  { itemId:'hm1', mats:[{id:'orec',n:5},{id:'skinc',n:5}],                                                 chance:0.80 },
+  { itemId:'hm2', mats:[{id:'oreu',n:10},{id:'skinu',n:10},{id:'recu',n:3}],                               chance:0.60 },
+  { itemId:'hm3', mats:[{id:'orer',n:15},{id:'skinr',n:15},{id:'recr',n:5}],                               chance:0.50 },
+  { itemId:'hm4', mats:[{id:'oree',n:20},{id:'skine',n:20},{id:'rece',n:8}],                               chance:0.40 },
+  { itemId:'hm5', mats:[{id:'orel',n:25},{id:'skinl',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],        chance:0.30 },
+  // ── Body armor (ore + skin) ───────────────────────────────
+  { itemId:'ar1', mats:[{id:'orec',n:5},{id:'skinc',n:5}],                                                 chance:0.80 },
+  { itemId:'ar2', mats:[{id:'oreu',n:10},{id:'skinu',n:10},{id:'recu',n:3}],                               chance:0.60 },
+  { itemId:'ar3', mats:[{id:'orer',n:15},{id:'skinr',n:15},{id:'recr',n:5}],                               chance:0.50 },
+  { itemId:'ar4', mats:[{id:'oree',n:20},{id:'skine',n:20},{id:'rece',n:8}],                               chance:0.40 },
+  { itemId:'ar5', mats:[{id:'orel',n:25},{id:'skinl',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],        chance:0.30 },
+  // ── Gloves (ore + skin) ───────────────────────────────────
+  { itemId:'gl1', mats:[{id:'orec',n:5},{id:'skinc',n:5}],                                                 chance:0.80 },
+  { itemId:'gl2', mats:[{id:'oreu',n:10},{id:'skinu',n:10},{id:'recu',n:3}],                               chance:0.60 },
+  { itemId:'gl3', mats:[{id:'orer',n:15},{id:'skinr',n:15},{id:'recr',n:5}],                               chance:0.50 },
+  { itemId:'gl4', mats:[{id:'oree',n:20},{id:'skine',n:20},{id:'rece',n:8}],                               chance:0.40 },
+  { itemId:'gl5', mats:[{id:'orel',n:25},{id:'skinl',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],        chance:0.30 },
+  // ── Boots (ore + skin) ────────────────────────────────────
+  { itemId:'bt1', mats:[{id:'orec',n:5},{id:'skinc',n:5}],                                                 chance:0.80 },
+  { itemId:'bt2', mats:[{id:'oreu',n:10},{id:'skinu',n:10},{id:'recu',n:3}],                               chance:0.60 },
+  { itemId:'bt3', mats:[{id:'orer',n:15},{id:'skinr',n:15},{id:'recr',n:5}],                               chance:0.50 },
+  { itemId:'bt4', mats:[{id:'oree',n:20},{id:'skine',n:20},{id:'rece',n:8}],                               chance:0.40 },
+  { itemId:'bt5', mats:[{id:'orel',n:25},{id:'skinl',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],        chance:0.30 },
+  // ── Rings (bone + ore) ────────────────────────────────────
+  { itemId:'rn1', mats:[{id:'bonec',n:5},{id:'orec',n:5}],                                                 chance:0.80 },
+  { itemId:'rn2', mats:[{id:'boneu',n:10},{id:'oreu',n:10},{id:'recu',n:3}],                               chance:0.60 },
+  { itemId:'rn3', mats:[{id:'boner',n:15},{id:'orer',n:15},{id:'recr',n:5}],                               chance:0.50 },
+  { itemId:'rn4', mats:[{id:'bonee',n:20},{id:'oree',n:20},{id:'rece',n:8}],                               chance:0.40 },
+  { itemId:'rn5', mats:[{id:'bonel',n:25},{id:'orel',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],        chance:0.30 },
+  // ── Belts (bone + ore) ────────────────────────────────────
+  { itemId:'nd1', mats:[{id:'bonec',n:5},{id:'orec',n:5}],                                                 chance:0.80 },
+  { itemId:'nd2', mats:[{id:'boneu',n:10},{id:'oreu',n:10},{id:'recu',n:3}],                               chance:0.60 },
+  { itemId:'nd3', mats:[{id:'boner',n:15},{id:'orer',n:15},{id:'recr',n:5}],                               chance:0.50 },
+  { itemId:'nd4', mats:[{id:'bonee',n:20},{id:'oree',n:20},{id:'rece',n:8}],                               chance:0.40 },
+  { itemId:'nd5', mats:[{id:'bonel',n:25},{id:'orel',n:25},{id:'recl',n:10},{id:'boss_stone',n:5}],        chance:0.30 },
 ];
 
 // Material upgrade: 20 of lower rarity → 1 of higher rarity (30% chance)
