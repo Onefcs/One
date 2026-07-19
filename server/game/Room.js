@@ -135,12 +135,17 @@ class Room {
         return;
       }
 
-      // Find closest alive player not in safe zone and not in raid
+      // Tick CC timers
+      if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
+      if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
+
+      // Find closest alive player not in safe zone, not in raid, not invisible
       let closest = null, closestD2 = Infinity;
       for (let i = 0; i < alivePlayers.length; i++) {
         const p = alivePlayers[i];
         if (this._inSafeZone(p.x, p.y)) continue;
         if (p._inRaid) continue;
+        if (p._invis) continue;
         const dx = p.x - e.x, dy = p.y - e.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = p; }
@@ -155,9 +160,10 @@ class Room {
 
       if (e.aggro) {
         if (closestD > e.size + 14) {
+          const spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
           const nx = (closest.x - e.x) / closestD;
           const ny = (closest.y - e.y) / closestD;
-          const evx = nx * e.spd * dt, evy = ny * e.spd * dt;
+          const evx = nx * e.spd * spdMult * dt, evy = ny * e.spd * spdMult * dt;
           if (!this._isWall(e.x + evx, e.y)) e.x += evx;
           if (!this._isWall(e.x, e.y + evy)) e.y += evy;
         }
@@ -409,6 +415,35 @@ class Room {
       return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
     }
     return { killed: false, hp: enemy.hp, dmg };
+  }
+
+  skillAttackEnemy(socketId, enemyId, multiplier) {
+    const attacker = this.players.get(socketId);
+    if (!attacker) return null;
+    const enemy = this._enemyMap.get(enemyId);
+    if (!enemy || enemy.hp <= 0) return null;
+    const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
+    if (rdx * rdx + rdy * rdy > 600 * 600) return null;
+    const mult = Math.max(1, Math.min(multiplier || 1, 10));
+    const dmg = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
+    enemy.hp = Math.max(0, enemy.hp - dmg);
+    enemy.aggro = true;
+    if (enemy.hp <= 0) {
+      const g = calcGoldDrop(enemy, this.floor);
+      return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+    }
+    return { killed: false, hp: enemy.hp, dmg };
+  }
+
+  applySkillEffect(enemyId, type, duration) {
+    const enemy = this._enemyMap.get(enemyId);
+    if (!enemy || enemy.hp <= 0) return;
+    if (type === 'stun') enemy.stunTimer = Math.min(duration, 6);
+    else if (type === 'slow') enemy.slowTimer = Math.min(duration, 6);
+  }
+
+  applySkillEffectMany(enemyIds, type, duration) {
+    for (const id of enemyIds) this.applySkillEffect(id, type, duration);
   }
 
   healPartyMember(socketId, amount) {

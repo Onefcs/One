@@ -202,6 +202,17 @@ function nearestEnemyDir() {
   return { dx: (closest.x - player.x) / len, dy: (closest.y - player.y) / len };
 }
 
+function nearestEnemy() {
+  let closest = null, closestD2 = Infinity;
+  serverEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0) return;
+    const dx = e.x - player.x, dy = e.y - player.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < closestD2) { closestD2 = d2; closest = e; }
+  });
+  return closest;
+}
+
 // Move player toward (tx, ty) in small steps, stopping before hitting a wall.
 // Radius 12 matches normal movement collision.
 function _dashTo(tx, ty) {
@@ -252,25 +263,36 @@ function useSkill(idx) {
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
   if (player.type === 'warrior') {
-    if (sk.key === 'Q') { // Shield Bash
-      spawnAOE(player.x, player.y, 90);
-      _skillAOE(90); netSpawnAoe(player.x, player.y);
-    } else if (sk.key === 'W') { // Whirlwind
+    if (sk.key === 'Q') { // Shield Bash — ×2 single target + stun 3s
+      const tgt = nearestEnemy();
+      if (tgt) {
+        spawnAOE(tgt.x, tgt.y, 50);
+        netSkillAttack(tgt.id, 2);
+        tgt.stunTimer = 3;
+        netSkillStun(tgt.id, 3);
+        faceTowards(tgt.x, tgt.y);
+      }
+      spawnBurst(player.x, player.y, '#8af', 8);
+      dmgNum(player.x, player.y - 40, '🛡 Щит-удар!', '#8af');
+    } else if (sk.key === 'W') { // Whirlwind — AOE 110
       spawnAOE(player.x, player.y, 110);
       _skillAOE(110); netSpawnAoe(player.x, player.y);
-    } else if (sk.key === 'E') { // Battle Cry
+    } else if (sk.key === 'E') { // Battle Cry — +20% ATK 5s
       battleCryTimer = 5;
-      dmgNum(player.x, player.y - 40, '⚔ Боевой клич!', '#fa0');
+      player.atk = Math.floor(player.atk * 1.20);
+      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#fa0');
       spawnBurst(player.x, player.y, '#fa0', 10);
-    } else if (sk.key === 'R') { // Charge
+    } else if (sk.key === 'R') { // Charge — dash + AOE 70
       const dx = joy.dx || 1, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
       _dashTo(player.x + (dx / len) * 140, player.y + (dy / len) * 140);
       spawnBurst(player.x, player.y, '#5af', 8);
-      _skillAOE(70);
+      spawnAOE(player.x, player.y, 70);
+      _skillAOE(70); netSpawnAoe(player.x, player.y);
     }
   } else if (player.type === 'archer') {
-    if (sk.key === 'Q') { // Multi-Shot
+    if (sk.key === 'Q') { // Multi-Shot — 3 arrows fan
       const dir = nearestEnemyDir();
       const base = Math.atan2(dir.dy, dir.dx);
       [-0.35, 0, 0.35].forEach(off => {
@@ -281,36 +303,52 @@ function useSkill(idx) {
         netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#fa0', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
       });
       _skillDir(dir.dx, dir.dy, 220, 0.1);
-    } else if (sk.key === 'W') { // Poison Arrow
+    } else if (sk.key === 'W') { // Combo Arrow — 3 arrows toward target
       const dir = nearestEnemyDir();
       const ang = Math.atan2(dir.dy, dir.dx);
-      projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320,
-        color: '#4d4', dmg: player.atk * 1.5, life: 2, size: 7, isPlayer: true, projType: 'arrow', angle: ang });
-      _skillDir(dir.dx, dir.dy, 220, 0.5);
-      netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*320, vy: Math.sin(ang)*320, color: '#4d4', size: 7, projType: 'arrow', angle: ang, life: 2 });
+      [0, 80, 160].forEach(delayMs => {
+        setTimeout(() => {
+          if (!player) return;
+          projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
+            color: '#fa8', dmg: player.atk, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
+          netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
+            color: '#fa8', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
+        }, delayMs);
+      });
+      _skillDir(dir.dx, dir.dy, 240, 0.5);
     } else if (sk.key === 'E') { // Dodge Roll
       dodgeTimer = 0.6;
       const dx = joy.dx || 0, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
       _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
       spawnBurst(player.x, player.y, '#7e7', 6);
-    } else if (sk.key === 'R') { // Rain of Arrows
-      spawnAOE(player.x, player.y, 160);
-      _skillAOE(160); netSpawnAoe(player.x, player.y);
+    } else if (sk.key === 'R') { // Attack Speed ×2 for 5s
+      atkSpeedTimer = 5;
+      player.atkSpeed = (player.atkSpeed || player.charDef.atkSpeed) * 2;
+      dmgNum(player.x, player.y - 40, '⚡ Скорость!', '#7ef');
+      spawnBurst(player.x, player.y, '#7ef', 8);
     }
   } else if (player.type === 'mage') {
-    if (sk.key === 'Q') { // Fireball
+    if (sk.key === 'Q') { // Fireball — ×2 damage
       const dir = nearestEnemyDir();
       const ang = Math.atan2(dir.dy, dir.dx);
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
         color: '#f60', dmg: player.atk * 2, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
       _skillDir(dir.dx, dir.dy, 160, 0.5);
       netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
-    } else if (sk.key === 'W') { // Ice Nova
+    } else if (sk.key === 'W') { // Ice Nova — AOE + slow 3s
       spawnAOE(player.x, player.y, 130);
       _skillAOE(130); netSpawnAoe(player.x, player.y);
-    } else if (sk.key === 'E') { // Barrier
-      barrierTimer = 4;
+      const slowIds = [];
+      serverEnemies.forEach(e => {
+        if ((e.hp || 0) <= 0) return;
+        if (dist(e.x, e.y, player.x, player.y) < 130) { e.slowTimer = 3; slowIds.push(e.id); }
+      });
+      if (slowIds.length) netSkillSlow(slowIds, 3);
+      dmgNum(player.x, player.y - 40, '❄ Заморозка!', '#8ef');
+      spawnBurst(player.x, player.y, '#8ef', 12);
+    } else if (sk.key === 'E') { // Barrier — block all damage 3s
+      barrierTimer = 3;
       dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
       spawnBurst(player.x, player.y, '#e8e', 8);
     } else if (sk.key === 'R') { // Teleport
@@ -330,43 +368,65 @@ function useSkill(idx) {
       player.hp = Math.min(player.maxHp, player.hp + heal);
       dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 8);
-    } else if (sk.key === 'W') { // Holy Light — AoE divine damage
-      spawnAOE(player.x, player.y, 120);
-      _skillAOE(120); netSpawnAoe(player.x, player.y);
-      dmgNum(player.x, player.y - 40, '✨ Свет!', '#ff4');
-    } else if (sk.key === 'E') { // Shield of Faith — damage reduction
-      barrierTimer = 4;
-      dmgNum(player.x, player.y - 40, '🛡 Щит!', '#ff4');
+    } else if (sk.key === 'W') { // Оцепенение — stun nearest target 3s
+      const tgt = nearestEnemy();
+      if (tgt) {
+        spawnAOE(tgt.x, tgt.y, 40);
+        tgt.stunTimer = 3;
+        netSkillStun(tgt.id, 3);
+        faceTowards(tgt.x, tgt.y);
+      }
       spawnBurst(player.x, player.y, '#ff4', 8);
-    } else if (sk.key === 'R') { // Prayer — heal self + group
-      const heal = Math.round(player.maxHp * 0.35 + player.atk * 8);
-      player.hp = Math.min(player.maxHp, player.hp + heal);
-      dmgNum(player.x, player.y - 50, '+' + heal + '♥ Молитва!', '#ff4');
+      dmgNum(player.x, player.y - 40, '✨ Оцепенение!', '#ff4');
+    } else if (sk.key === 'E') { // Shield of Faith — +50% DEF self + party 4s
+      faithShieldTimer = 4;
+      player.def = Math.floor(player.def * 1.5);
+      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      if (typeof netFaithShield === 'function') netFaithShield(4);
+      dmgNum(player.x, player.y - 40, '🛡 Щит веры!', '#ff4');
+      spawnBurst(player.x, player.y, '#ff4', 10);
+    } else if (sk.key === 'R') { // Prayer — +10% HP self + party
+      const healSelf = Math.round(player.maxHp * 0.10);
+      player.hp = Math.min(player.maxHp, player.hp + healSelf);
+      dmgNum(player.x, player.y - 50, '+' + healSelf + '♥ Молитва!', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 14);
-      if (typeof netHealParty === 'function') netHealParty(Math.round(heal * 0.5));
+      if (typeof netHealParty === 'function') {
+        const healParty = Math.round(player.maxHp * 0.10);
+        netHealParty(healParty);
+      }
     }
   } else if (player.type === 'assasin') {
-    if (sk.key === 'Q') { // Shadow Strike — dash + strong hit
+    if (sk.key === 'Q') { // Shadow Strike — dash + AOE 60
       const dir = nearestEnemyDir();
       const len = Math.hypot(dir.dx, dir.dy) || 1;
       _dashTo(player.x + (dir.dx / len) * 80, player.y + (dir.dy / len) * 80);
       spawnBurst(player.x, player.y, '#a5f', 6);
       spawnAOE(player.x, player.y, 60);
       _skillAOE(60); netSpawnAoe(player.x, player.y);
-    } else if (sk.key === 'W') { // Smoke Bomb — AoE slow
+    } else if (sk.key === 'W') { // Smoke Bomb — AOE 100 + slow 3s
       spawnAOE(player.x, player.y, 100);
       _skillAOE(100); netSpawnAoe(player.x, player.y);
+      const slowIds = [];
+      serverEnemies.forEach(e => {
+        if ((e.hp || 0) <= 0) return;
+        if (dist(e.x, e.y, player.x, player.y) < 100) { e.slowTimer = 3; slowIds.push(e.id); }
+      });
+      if (slowIds.length) netSkillSlow(slowIds, 3);
       dmgNum(player.x, player.y - 40, '💨 Дым!', '#a5f');
-    } else if (sk.key === 'E') { // Dodge roll
-      dodgeTimer = 0.7;
-      const dx = joy.dx || 0, dy = joy.dy || 0;
-      const len = Math.hypot(dx, dy) || 1;
-      _dashTo(player.x + (dx / len) * 100, player.y + (dy / len) * 100);
+      spawnBurst(player.x, player.y, '#a5f', 8);
+    } else if (sk.key === 'E') { // Invisibility 4s
+      invisTimer = 4;
+      if (typeof netPlayerInvis === 'function') netPlayerInvis(true);
+      dmgNum(player.x, player.y - 40, '👁 Невидимость!', '#a5f');
       spawnBurst(player.x, player.y, '#a5f', 6);
-    } else if (sk.key === 'R') { // Death Strike — massive damage
-      spawnAOE(player.x, player.y, 70);
-      _skillAOE(70); netSpawnAoe(player.x, player.y);
-      dmgNum(player.x, player.y - 50, '💀 Удар!', '#f0f');
+    } else if (sk.key === 'R') { // Death Strike — ×4 nearest target
+      const tgt = nearestEnemy();
+      if (tgt) {
+        netSkillAttack(tgt.id, 4);
+        faceTowards(tgt.x, tgt.y);
+        spawnAOE(tgt.x, tgt.y, 40);
+      }
+      dmgNum(player.x, player.y - 50, '💀 ×4 Удар!', '#f0f');
       spawnBurst(player.x, player.y, '#f0f', 10);
     }
   }

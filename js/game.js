@@ -446,8 +446,11 @@ function update(dt) {
     if (cds.R > 0) cds.R -= dt;
   }
   if (barrierTimer > 0) barrierTimer -= dt;
-  if (battleCryTimer > 0) battleCryTimer -= dt;
+  if (battleCryTimer > 0) { battleCryTimer -= dt; if (battleCryTimer <= 0) { battleCryTimer = 0; recompute(); } }
   if (dodgeTimer > 0) dodgeTimer -= dt;
+  if (atkSpeedTimer > 0) { atkSpeedTimer -= dt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }
+  if (faithShieldTimer > 0) { faithShieldTimer -= dt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
+  if (invisTimer > 0) { invisTimer -= dt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
   if (typeof tickQuestNotif === 'function') tickQuestNotif(dt);
 
@@ -519,6 +522,8 @@ function update(dt) {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
+    if ((e.stunTimer || 0) > 0) e.stunTimer -= dt;
+    if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
     if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
     if (e.hp <= 0) return;
 
@@ -797,6 +802,17 @@ function render(dt, ts) {
       ctx.fillStyle = '#000';
       ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
     }
+    // Status effect overlays
+    if ((e.slowTimer || 0) > 0) {
+      ctx.globalAlpha = 0.28; ctx.fillStyle = '#4af';
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    if ((e.stunTimer || 0) > 0) {
+      ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff8';
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     if (e.hp <= 0) return; // corpse playing its death animation — no bars/name/ring
     const ds = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
     const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.55 - 8;
@@ -866,6 +882,8 @@ function render(dt, ts) {
 
   // Player
   {
+    const _invis = invisTimer > 0;
+    if (_invis) ctx.globalAlpha = 0.35;
     const hurtTint = player.hurtTimer > 0 ? 'rgba(255,40,40,0.55)' : null;
     const usedSprite = _lastPlayerUsedSprite = drawSprite(player, hurtTint);
     if (!usedSprite) {
@@ -893,6 +911,7 @@ function render(dt, ts) {
       ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
       ctx.fillRect(bx2, barTop, bw * hpPct, bh);
     }
+    if (_invis) ctx.globalAlpha = 1;
   }
 
   // Damage numbers

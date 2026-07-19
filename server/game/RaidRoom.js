@@ -155,6 +155,28 @@ class RaidRoom {
     return { killed: false, hp: e.hp, dmg };
   }
 
+  skillAttackEnemy(socketId, enemyId, playerAtk, multiplier) {
+    const e = this._enemyMap.get(enemyId);
+    if (!e || e.hp <= 0) return null;
+    const mult = Math.max(1, Math.min(multiplier || 1, 10));
+    const dmg = Math.max(1, Math.floor((playerAtk - (e.def || 0)) * mult));
+    e.hp = Math.max(0, e.hp - dmg);
+    e._shp = -1;
+    if (e.hp <= 0) return { killed: true, eid: e.eid, ex: e.x, ey: e.y, isBoss: e.isBoss };
+    return { killed: false, hp: e.hp, dmg };
+  }
+
+  applySkillEffect(enemyId, type, duration) {
+    const e = this._enemyMap.get(enemyId);
+    if (!e || e.hp <= 0) return;
+    if (type === 'stun') e.stunTimer = Math.min(duration, 6);
+    else if (type === 'slow') e.slowTimer = Math.min(duration, 6);
+  }
+
+  applySkillEffectMany(enemyIds, type, duration) {
+    for (const id of enemyIds) this.applySkillEffect(id, type, duration);
+  }
+
   _tick() {
     const now = Date.now();
     const dt  = Math.min((now - this._lastTick) / 1000, 0.1);
@@ -183,6 +205,8 @@ class RaidRoom {
 
     this.enemies.forEach(e => {
       if (e.hp <= 0) return;
+      if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
+      if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
       let closest = null, closestD2 = Infinity;
       for (const p of alivePlayers) {
         const dx = p.x - e.x, dy = p.y - e.y;
@@ -191,9 +215,10 @@ class RaidRoom {
       }
       if (!closest) return;
       const dist = Math.sqrt(closestD2);
+      const spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
       if (dist > e.size + 14) {
-        e.x += (closest.x - e.x) / dist * e.spd * dt;
-        e.y += (closest.y - e.y) / dist * e.spd * dt;
+        e.x += (closest.x - e.x) / dist * e.spd * spdMult * dt;
+        e.y += (closest.y - e.y) / dist * e.spd * spdMult * dt;
         e.x = Math.max(TILE / 2, Math.min(MAP_PX - TILE / 2, e.x));
         e.y = Math.max(TILE / 2, Math.min(MAP_PX - TILE / 2, e.y));
       }

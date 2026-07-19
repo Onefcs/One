@@ -205,8 +205,11 @@ function netConnect(onReady) {
   socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
       if (typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) return;
-      // Apply damage as a delta so client-side HP regen isn't reverted.
-      // Fall back to the server's absolute value only when dmg is unavailable.
+      if (barrierTimer > 0) {
+        dmgNum(player.x, player.y - 24, 'БЛОК', '#88f');
+        spawnBurst(player.x, player.y, '#88f', 5);
+        return;
+      }
       player.hp = (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
       player.hurtTimer = 0.1;
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
@@ -218,6 +221,15 @@ function netConnect(onReady) {
         if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
       }
     }
+  });
+
+  socket.on('faithShieldBuff', ({ duration }) => {
+    if (!player) return;
+    faithShieldTimer = duration;
+    player.def = Math.floor(player.def * 1.5);
+    if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+    dmgNum(player.x, player.y - 40, '🛡 Щит веры!', '#ff4');
+    spawnBurst(player.x, player.y, '#ff4', 8);
   });
 
   socket.on('pvpDamage', ({ dmg }) => {
@@ -512,6 +524,11 @@ function netConnect(onReady) {
 
   socket.on('raidPlayerHurt', ({ hp, dmg }) => {
     if (!player || state !== 'playing') return;
+    if (barrierTimer > 0) {
+      dmgNum(player.x, player.y - 24, 'БЛОК', '#88f');
+      spawnBurst(player.x, player.y, '#88f', 5);
+      return;
+    }
     player.hp = Math.max(0, hp);
     player.hurtTimer = 0.1;
     if (dmg) dmgNum(player.x, player.y - 24, dmg, '#f55');
@@ -766,6 +783,21 @@ function netSaveProgressNow() {
 function netHealParty(amount) {
   if (socket?.connected) socket.emit('healParty', { amount: Math.max(0, Math.min(amount, 9999)) });
 }
+function netSkillAttack(enemyId, multiplier) {
+  if (socket?.connected) socket.emit('skillAttack', { enemyId, multiplier });
+}
+function netSkillStun(enemyId, duration) {
+  if (socket?.connected && enemyId) socket.emit('skillEffect', { enemyId, type: 'stun', duration });
+}
+function netSkillSlow(enemyIds, duration) {
+  if (socket?.connected && enemyIds && enemyIds.length) socket.emit('skillEffect', { enemyIds, type: 'slow', duration });
+}
+function netPlayerInvis(invis) {
+  if (socket?.connected) socket.emit('playerInvis', { invis: !!invis });
+}
+function netFaithShield(duration) {
+  if (socket?.connected) socket.emit('faithShield', { duration });
+}
 
 function netChat(text) {
   if (!text || !text.trim() || !socket?.connected) return;
@@ -844,6 +876,7 @@ function netStatsUpdate(atk, def, maxHp) {
 function netAttack(enemyId) {
   if (!socket?.connected) return;
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
+  if (invisTimer > 0) { invisTimer = 0; socket.emit('playerInvis', { invis: false }); }
   if (inRaid) { socket.emit('raidAttack', { enemyId }); return; }
   socket.emit('attack', { enemyId });
 }

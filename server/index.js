@@ -438,6 +438,109 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on('skillAttack', ({ enemyId, multiplier }) => {
+    const rId = playerRaid.get(socket.id);
+    if (rId) {
+      const rr = raidRooms.get(rId);
+      if (!rr) return;
+      const cp = currentRoom?.players.get(socket.id);
+      const targetEnemy = rr._enemyMap.get(enemyId);
+      const result = rr.skillAttackEnemy(socket.id, enemyId, cp?.atk || 10, multiplier);
+      if (!result) return;
+      if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));
+      if (result.killed) {
+        const rNorm  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
+        const rBless = result.isBoss && Math.random() < 0.01 ? 1 : 0;
+        rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyKilled', {
+          id: enemyId, ex: result.ex, ey: result.ey, isBoss: result.isBoss,
+          normStone:  mid === socket.id ? rNorm  : 0,
+          blessStone: mid === socket.id ? rBless : 0,
+        }));
+      } else {
+        rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg }));
+      }
+      return;
+    }
+    if (!currentRoom) return;
+    if (currentRoom.isPlayerInSafeZone(socket.id)) return;
+    const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
+    if (!result) return;
+    if (result.killed) {
+      const partyId    = playerParty.get(socket.id);
+      const partyMap   = partyId ? parties.get(partyId) : null;
+      const memberIds  = [];
+      if (partyMap) {
+        partyMap.forEach((_, mid) => {
+          if (mid !== socket.id && playerFloorMap.get(mid) === currentFloor) memberIds.push(mid);
+        });
+      }
+      const bossStone  = result.isBoss ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
+      const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
+      const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
+      if (memberIds.length > 0) {
+        const totalMembers = memberIds.length + 1;
+        const xpShare = result.xp / totalMembers, goldShare = result.gold / totalMembers;
+        const allIds = [socket.id, ...memberIds];
+        const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
+        socket.emit('enemyKilled', {
+          id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg,
+          ex: result.ex, ey: result.ey, color: result.color,
+          gotLoot: lootWinnerId === socket.id, eid: result.eid,
+          bossStone: lootWinnerId === socket.id ? bossStone : 0,
+          normStone:  lootWinnerId === socket.id ? normStone  : 0,
+          blessStone: lootWinnerId === socket.id ? blessStone : 0,
+        });
+        memberIds.forEach(mid => io.to(mid).emit('enemyKilled', {
+          id: enemyId, xp: xpShare, gold: goldShare,
+          ex: result.ex, ey: result.ey, color: result.color,
+          gotLoot: lootWinnerId === mid, eid: result.eid,
+          bossStone:  lootWinnerId === mid ? bossStone  : 0,
+          normStone:  lootWinnerId === mid ? normStone  : 0,
+          blessStone: lootWinnerId === mid ? blessStone : 0,
+        }));
+        socket.to(`floor_${currentFloor}`).except(memberIds).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+      } else {
+        socket.emit('enemyKilled', {
+          id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg,
+          ex: result.ex, ey: result.ey, color: result.color,
+          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone,
+        });
+        socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+      }
+    } else {
+      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg });
+    }
+  });
+
+  socket.on('skillEffect', ({ enemyId, enemyIds, type, duration }) => {
+    const rId = playerRaid.get(socket.id);
+    if (rId) {
+      const rr = raidRooms.get(rId);
+      if (!rr) return;
+      if (enemyId) rr.applySkillEffect(enemyId, type, duration);
+      if (enemyIds) rr.applySkillEffectMany(enemyIds, type, duration);
+      return;
+    }
+    if (!currentRoom) return;
+    if (enemyId) currentRoom.applySkillEffect(enemyId, type, duration);
+    if (enemyIds) currentRoom.applySkillEffectMany(enemyIds, type, duration);
+  });
+
+  socket.on('playerInvis', ({ invis }) => {
+    if (!currentRoom) return;
+    const p = currentRoom.players.get(socket.id);
+    if (p) p._invis = !!invis;
+  });
+
+  socket.on('faithShield', ({ duration }) => {
+    const partyId = playerParty.get(socket.id);
+    const partyMap = partyId ? parties.get(partyId) : null;
+    if (!partyMap) return;
+    partyMap.forEach((_, mid) => {
+      if (mid !== socket.id) io.to(mid).emit('faithShieldBuff', { duration });
+    });
+  });
+
   socket.on('changeFloor', ({ floor }) => {
     if (!currentRoom) return;
     const newFloor = Math.max(1, Math.min(20, floor));

@@ -32,6 +32,9 @@ let skillFlash = null; // { key, timer }
 let barrierTimer = 0;
 let battleCryTimer = 0;
 let dodgeTimer = 0;
+let atkSpeedTimer = 0;
+let faithShieldTimer = 0;
+let invisTimer = 0;
 
 // Target & PK mode
 let targetId = null;
