@@ -135,11 +135,12 @@ class Room {
         return;
       }
 
-      // Find closest alive player not in safe zone
+      // Find closest alive player not in safe zone and not in raid
       let closest = null, closestD2 = Infinity;
       for (let i = 0; i < alivePlayers.length; i++) {
         const p = alivePlayers[i];
         if (this._inSafeZone(p.x, p.y)) continue;
+        if (p._inRaid) continue;
         const dx = p.x - e.x, dy = p.y - e.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = p; }

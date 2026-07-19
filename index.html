@@ -178,15 +178,44 @@
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><polygon points="3,6 9,3 15,6 21,3 21,18 15,21 9,18 3,21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>Карта подземелья
     <span id="map-status" style="font-size:11px;font-weight:normal;color:#666;"></span>
   </div>
-  <canvas id="map-canvas"></canvas>
-  <div class="map-legend">
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00ff44;vertical-align:middle;margin-right:3px"></span>Вы</span>
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3322;vertical-align:middle;margin-right:3px"></span>Враги</span>
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffcc00;vertical-align:middle;margin-right:3px"></span>NPC</span>
+  <div class="map-tabs">
+    <div class="map-tab active" id="map-tab-0" onclick="setMapTab(0)">Мир</div>
+    <div class="map-tab" id="map-tab-1" onclick="setMapTab(1)">Подземелье</div>
   </div>
-  <div class="floor-section">
-    <div class="sec-title">Выбор этажа</div>
-    <div class="floor-list" id="floor-grid"></div>
+  <!-- Мир tab -->
+  <div id="map-tab-content-0">
+    <canvas id="map-canvas"></canvas>
+    <div class="map-legend">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00ff44;vertical-align:middle;margin-right:3px"></span>Вы</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3322;vertical-align:middle;margin-right:3px"></span>Враги</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffcc00;vertical-align:middle;margin-right:3px"></span>NPC</span>
+    </div>
+    <div class="floor-section">
+      <div class="sec-title">Выбор этажа</div>
+      <div class="floor-list" id="floor-grid"></div>
+    </div>
+  </div>
+  <!-- Подземелье tab -->
+  <div id="map-tab-content-1" style="display:none">
+    <div class="panel-body" id="raid-panel-body"></div>
+  </div>
+</div>
+
+<!-- Raid result modals -->
+<div id="raid-complete-modal" style="display:none;position:absolute;inset:0;z-index:300;background:rgba(0,0,0,.8);align-items:center;justify-content:center;">
+  <div style="background:#0d0818;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:28px 24px;max-width:320px;width:90%;text-align:center;">
+    <div style="font-size:28px;margin-bottom:8px">🏆</div>
+    <div style="font-size:18px;font-weight:800;color:#3ef07a;margin-bottom:16px">Подземелье пройдено!</div>
+    <div id="raid-reward-body" style="font-size:13px;color:#bbb;line-height:1.8;margin-bottom:20px"></div>
+    <button onclick="document.getElementById('raid-complete-modal').style.display='none'" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#1a3a1a,#2a5a2a);color:#3ef07a;font-size:15px;font-weight:700;cursor:pointer;">Отлично!</button>
+  </div>
+</div>
+<div id="raid-failed-modal" style="display:none;position:absolute;inset:0;z-index:300;background:rgba(0,0,0,.8);align-items:center;justify-content:center;">
+  <div style="background:#0d0818;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:28px 24px;max-width:320px;width:90%;text-align:center;">
+    <div style="font-size:28px;margin-bottom:8px">💀</div>
+    <div style="font-size:18px;font-weight:800;color:#e74c3c;margin-bottom:16px">Пати погибла</div>
+    <div style="font-size:13px;color:#888;margin-bottom:20px">Все игроки пати погибли в подземелье.</div>
+    <button onclick="document.getElementById('raid-failed-modal').style.display='none'" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#3a1a1a,#5a2a2a);color:#e74c3c;font-size:15px;font-weight:700;cursor:pointer;">Закрыть</button>
   </div>
 </div>
 

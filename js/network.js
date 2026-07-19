@@ -86,6 +86,7 @@ function netConnect(onReady) {
   });
 
   socket.on('gameState', (data) => {
+    if (inRaid) return; // raid uses raidState updates, not floor gameState
     const _gs0 = performance.now();
     // Binary packet (ArrayBuffer / typed view) — decode via shared codec;
     // plain-object fallback kept for a server running older code
@@ -401,8 +402,119 @@ function netConnect(onReady) {
     if (typeof onClanSearchResults === 'function') onClanSearchResults(results);
   });
 
+  // ── Raid listeners ────────────────────────────────────────
+  socket.on('raidError', ({ msg }) => {
+    if (player && typeof dmgNum === 'function')
+      dmgNum(player.x, player.y - 38, msg, '#f93');
+  });
+
+  socket.on('raidStart', (data) => {
+    if (typeof enterRaidMode === 'function') enterRaidMode(data);
+  });
+
+  socket.on('raidState', ({ enemies, players, wave }) => {
+    if (!inRaid) return;
+    // Full enemy list replace (raid sends snapshots, not deltas)
+    serverEnemies.length = 0;
+    serverEnemiesMap.clear();
+    (enemies || []).forEach(se => {
+      const e = { ...se, targetX: se.x, targetY: se.y };
+      serverEnemies.push(e);
+      serverEnemiesMap.set(se.id, e);
+    });
+    // Update other raid players
+    const myId = socket.id;
+    (players || []).forEach(p => {
+      if (p.id === myId) return;
+      if (!otherPlayers.has(p.id)) {
+        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false });
+        if (p.type) loadSprites(p.type, () => {});
+      } else {
+        const op = otherPlayers.get(p.id);
+        op.x = p.x; op.y = p.y; op.hp = p.hp; op.maxHp = p.maxHp;
+        if (p.username !== undefined) op.username = p.username;
+        if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
+        op.targetX = p.x; op.targetY = p.y;
+      }
+    });
+  });
+
+  socket.on('raidWave', ({ wave, totalWaves, isBoss, enemies }) => {
+    if (!inRaid) return;
+    serverEnemies.length = 0;
+    serverEnemiesMap.clear();
+    (enemies || []).forEach(se => {
+      const e = { ...se, targetX: se.x, targetY: se.y };
+      serverEnemies.push(e);
+      serverEnemiesMap.set(se.id, e);
+    });
+    const txt = isBoss ? '⚔️ ФИНАЛЬНЫЙ БОСС!' : `Волна ${wave} / ${totalWaves}`;
+    _raidWaveNotif = { text: txt, timer: 3.5 };
+  });
+
+  socket.on('raidComplete', ({ gold, xp, weaponRarity }) => {
+    if (player) {
+      player.gold = (player.gold || 0) + gold;
+      if (typeof gainXP === 'function') gainXP(xp);
+      // Apply weapon drop if player was the lucky winner
+      if (weaponRarity && typeof CRAFT_MATS !== 'undefined') {
+        const weapons = CRAFT_MATS.filter(m => m.slot === 'weapon' && m.rarity === weaponRarity);
+        if (weapons.length) {
+          const w = weapons[Math.floor(Math.random() * weapons.length)];
+          if (typeof addToInventory === 'function') addToInventory({ ...w });
+          if (typeof showRaidComplete === 'function')
+            showRaidComplete({ gold, xp, weaponName: w.name, weaponRarity });
+          if (typeof netSaveProgress === 'function') netSaveProgress();
+          if (typeof exitRaidMode === 'function') exitRaidMode();
+          return;
+        }
+      }
+    }
+    if (typeof exitRaidMode === 'function') exitRaidMode();
+    if (typeof showRaidComplete === 'function') showRaidComplete({ gold, xp, weaponName: null, weaponRarity: null });
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+  });
+
+  socket.on('raidFailed', () => {
+    if (typeof exitRaidMode === 'function') exitRaidMode();
+    if (typeof showRaidFailed === 'function') showRaidFailed();
+  });
+
+  socket.on('raidPlayerHurt', ({ hp, dmg }) => {
+    if (!player || state !== 'playing') return;
+    player.hp = Math.max(0, hp);
+    player.hurtTimer = 0.1;
+    if (dmg) dmgNum(player.x, player.y - 24, dmg, '#f55');
+    spawnBurst(player.x, player.y, '#f44', 4);
+    if (player.hp <= 0) { player.hp = 0; if (typeof playerDie === 'function') playerDie(); }
+  });
+
+  socket.on('raidEnemyKilled', ({ id, ex, ey, isBoss }) => {
+    const e = serverEnemiesMap.get(id);
+    const px = ex ?? (e ? e.x : player?.x ?? 0);
+    const py = ey ?? (e ? e.y : player?.y ?? 0);
+    spawnBurst(px, py, isBoss ? '#ff3333' : '#f80', isBoss ? 14 : 8);
+    serverEnemiesMap.delete(id);
+    let j = 0;
+    for (let i = 0; i < serverEnemies.length; i++) {
+      if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
+    }
+    serverEnemies.length = j;
+  });
+
+  socket.on('raidEnemyHurt', ({ id, hp, dmg }) => {
+    const e = serverEnemiesMap.get(id);
+    if (e) {
+      e.hp = hp;
+      e.hurtTimer = 0.3;
+      if (dmg) dmgNum(e.x, e.y - (e.size || 16) - 4, dmg, '#ff4');
+    }
+  });
+
   socket.on('disconnect', () => {
     socket = null;
+    inRaid = false;
+    _raidWaveNotif = null;
     serverEnemies = [];
     otherPlayers = new Map();
     otherProjs = [];
@@ -644,7 +756,11 @@ function netSendMove() {
   // extra emits cost JSON serialization + radio wakeups on mobile.
   if (now - _lastMoveSend < 25) return;
   _lastMoveSend = now;
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
+  if (inRaid) {
+    socket.emit('raidMove', { x: player.x, y: player.y, hp: player.hp });
+  } else {
+    socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
+  }
 }
 
 function netUsePotion(amount) {
@@ -658,6 +774,7 @@ function netStatsUpdate(atk, def, maxHp) {
 function netAttack(enemyId) {
   if (!socket?.connected) return;
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
+  if (inRaid) { socket.emit('raidAttack', { enemyId }); return; }
   socket.emit('attack', { enemyId });
 }
 
@@ -683,6 +800,15 @@ function netSpawnProj(proj) {
 
 function netSpawnAoe(x, y) {
   if (socket?.connected) socket.emit('spawnAoe', { x, y });
+}
+
+function netEnterRaid() {
+  if (socket?.connected) socket.emit('enterRaid', { dungeonId: 1 });
+}
+
+function netLeaveRaid() {
+  if (socket?.connected) socket.emit('leaveRaid');
+  inRaid = false;
 }
 
 // Init Telegram widget on page load (bundle runs at end of <body>)

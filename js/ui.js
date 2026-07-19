@@ -274,27 +274,34 @@ function _floorEnemyPool(n) {
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
-  const rarityNames  = ['Common','Uncommon','Rare','Epic','Legendary'];
-  const rarityColors = ['#aaa','#3ef07a','#55aaff','#c55ef5','#ffd700'];
+  const plvl = player?.lvl || 1;
   grid.innerHTML = Array.from({ length: 5 }, (_, i) => {
     const n   = i + 1;
     const th  = getTheme(n);
     const cur = n === dungeonLvl;
+    const req = (typeof FLOOR_UNLOCK_LEVEL !== 'undefined') ? (FLOOR_UNLOCK_LEVEL[n] || 0) : 0;
+    const locked = plvl < req;
     const enemyNames = _floorEnemyNames(n);
     return `
-      <div class="floor-item${cur ? ' active' : ''}">
-        <div class="floor-item-left" onclick="goToFloor(${n})">
+      <div class="floor-item${cur ? ' active' : ''}${locked ? ' floor-locked' : ''}">
+        <div class="floor-item-left" onclick="${locked ? `showFloorLock(${n},${req})` : `goToFloor(${n})`}">
           <div class="floor-item-row1">
-            <span class="floor-item-num">Этаж ${n}</span>
+            <span class="floor-item-num">${locked ? '🔒 ' : ''}Этаж ${n}</span>
             <span class="floor-item-loc">${th.name}</span>
             ${cur ? '<span class="floor-item-cur">ВЫ ЗДЕСЬ</span>' : ''}
+            ${locked ? `<span class="floor-item-lock-req">Ур. ${req}</span>` : ''}
           </div>
           <div class="floor-item-brief">${enemyNames}</div>
         </div>
-        <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
+        <button class="floor-item-btn" onclick="${locked ? `showFloorLock(${n},${req})` : `showFloorInfo(${n})`}">Инфо</button>
       </div>`;
-  }).join('') +
-  `<div style="text-align:center;padding:16px 0 4px;color:#4a4060;font-size:13px;font-style:italic;letter-spacing:0.03em;">✦ Скоро новые локации ✦</div>`;
+  }).join('');
+}
+
+function showFloorLock(n, req) {
+  if (typeof dmgNum === 'function' && player) {
+    dmgNum(player.x, player.y - 38, `🔒 Нужен уровень ${req}`, '#f93');
+  }
 }
 
 function showFloorInfo(floor) {
@@ -412,10 +419,76 @@ function closeFloorInfo() {
   if (modal) modal.style.display = 'none';
 }
 
+function updateRaidPanelUI() {
+  const body = document.getElementById('raid-panel-body');
+  if (!body) return;
+  const plvl = player?.lvl || 1;
+  const partySize = (partyMembers?.length || 0) + 1;
+  const lvlOk    = plvl >= 3;
+  const partyOk  = partySize >= 2;
+  const canEnter = lvlOk && partyOk && !inRaid;
+  const RARITY_COL = { common: '#aaa', uncommon: '#3ef07a' };
+
+  body.innerHTML = `
+    <div class="raid-dungeon-card">
+      <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
+      <div class="raid-dungeon-desc">Волны монстров с 4 сторон · 7 волн · Финальный босс</div>
+      <div class="raid-dungeon-req">
+        ${lvlOk ? '✅' : '🔒'} Уровень 3 &nbsp;|&nbsp; ${partyOk ? '✅' : '🔒'} Пати 2–5 игроков
+      </div>
+      <div class="raid-dungeon-rewards">
+        <span>💰 500 голд</span>
+        <span>⭐ 500 опыт</span>
+        <span style="color:${RARITY_COL.common}">30% Common оружие</span>
+        <span style="color:${RARITY_COL.uncommon}">5% Uncommon оружие</span>
+      </div>
+    </div>
+    <div class="raid-party-info">
+      ${partyOk
+        ? `<div style="color:#888;font-size:12px;margin-bottom:8px">Пати: ${partySize} / 5</div>
+           ${partyMembers.map(m => `<div class="raid-member">👤 ${m.name}</div>`).join('')}`
+        : `<div class="raid-hint">Пригласи союзника в пати чтобы войти</div>`}
+    </div>
+    <button class="raid-enter-btn${canEnter ? '' : ' disabled'}" onclick="${canEnter ? 'onEnterRaidClick()' : ''}">
+      ${inRaid ? '⚔️ В бою...' : 'Войти в подземелье'}
+    </button>
+  `;
+}
+
+function onEnterRaidClick() {
+  if (typeof netEnterRaid === 'function') netEnterRaid();
+}
+
+function showRaidComplete({ gold, xp, weaponName, weaponRarity }) {
+  const RARITY_COL = { common: '#aaa', uncommon: '#3ef07a' };
+  document.getElementById('raid-reward-body').innerHTML =
+    `<div>💰 +${gold} голда</div>` +
+    `<div>⭐ +${xp} опыта</div>` +
+    (weaponName
+      ? `<div style="margin-top:6px;color:${RARITY_COL[weaponRarity] || '#aaa'}">🗡 ${weaponName}</div>`
+      : '');
+  document.getElementById('raid-complete-modal').style.display = 'flex';
+}
+
+function showRaidFailed() {
+  document.getElementById('raid-failed-modal').style.display = 'flex';
+}
+
 // ─────────────────────────────────────────────────────────
 //  TAB MANAGEMENT
 // ─────────────────────────────────────────────────────────
 let _invTab = 0;
+let _mapTab = 0;
+
+function setMapTab(n) {
+  _mapTab = n;
+  document.querySelectorAll('.map-tab').forEach((el, i) => el.classList.toggle('active', i === n));
+  document.getElementById('map-tab-content-0').style.display = n === 0 ? '' : 'none';
+  document.getElementById('map-tab-content-1').style.display = n === 1 ? '' : 'none';
+  if (n === 0) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
+  if (n === 1) updateRaidPanelUI();
+}
+
 function setInvTab(n) {
   _invTab = n;
   document.querySelectorAll('.inv-tab').forEach((el, i) => el.classList.toggle('active', i === n));
@@ -440,7 +513,7 @@ function setTab(n) {
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); });
     if (n === 1) { _invTab === 1 ? updateProfileUI() : updateInvUI(); }
-    if (n === 2) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
+    if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') updateClanUI();
   }

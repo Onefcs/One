@@ -66,4 +66,7 @@ function calcGoldDrop(enemy, floor) {
   return Math.round(base * Math.pow(2, floor - 1));
 }
 
-if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop };
+// Minimum player level to enter each floor (index = floor number)
+const FLOOR_UNLOCK_LEVEL = [0, 0, 5, 15, 30, 50];
+
+if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL };

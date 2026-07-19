@@ -49,3 +49,9 @@ let autoAttackMode = true;
 
 // Clan state (null = not in a clan)
 let clanData = null;
+
+// Raid state
+let inRaid = false;
+let _normalDungeon = null;
+let _normalDungeonLvl = 1;
+let _raidWaveNotif = null; // { text, timer }
