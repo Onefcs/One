@@ -20,11 +20,13 @@ function updateInvUI() {
   document.getElementById('eq-grid').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }) => {
     const it = p.equipment[slot];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
-    return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `unequipItem('${slot}')` : ''}"
-      title="${it ? it.name + ' — ' + statStr(it) : label}"
-      style="${it ? 'border-color:' + rc + '55' : ''}">
+    const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#ffd700;font-weight:bold">+${it.enhance}</span>` : '';
+    return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `openEqItemModal('${slot}')` : ''}"
+      title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
+      style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
       <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#505070')}</div>
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name.slice(0, 8) : label}</div>
+      ${enhBadge}
     </div>`;
   }).join('');
 
@@ -63,19 +65,34 @@ function updateInvUI() {
     }).join('');
   }
 
-  // Inventory grid
+  // Inventory grid — materials stack by id
   document.getElementById('inv-count').textContent = inv.length + '/50';
+  const _matMap = {};
+  const _displayInv = [];
+  inv.forEach((it, idx) => {
+    if (it.slot === 'material') {
+      if (!_matMap[it.id]) { _matMap[it.id] = { it, count: 0 }; }
+      _matMap[it.id].count++;
+    } else {
+      _displayInv.push({ it, idx });
+    }
+  });
+  Object.values(_matMap).forEach(m => _displayInv.push({ it: m.it, count: m.count }));
+
   document.getElementById('inv-grid').innerHTML = Array.from({ length: 50 }, (_, i) => {
-    const it = inv[i];
-    const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
-    const enh = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#ffd700;font-weight:bold">+${it.enhance}</span>` : '';
-    const clickable = it && it.slot !== 'material' && it.slot !== 'use';
-    return `<div class="inv-cell${it ? ' filled' : ''}" onclick="${clickable ? `openInvItemModal(${i})` : ''}"
-      title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : ''}"
-      style="${it ? 'border-color:' + rc + '77;position:relative' : ''}">
-      ${it ? `<div style="display:flex;justify-content:center;align-items:center">${_itemIcon(it, 24)}</div>
-              <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>
-              ${enh}` : ''}
+    const entry = _displayInv[i];
+    if (!entry) return `<div class="inv-cell"></div>`;
+    const { it, idx, count } = entry;
+    const rc = RARITY_COLOR[it.rarity] || '#aaa';
+    const enh = it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#ffd700;font-weight:bold">+${it.enhance}</span>` : '';
+    const cntBadge = count ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#aee;font-weight:bold">×${count}</span>` : '';
+    const clickable = idx !== undefined;
+    return `<div class="inv-cell filled" onclick="${clickable ? `openInvItemModal(${idx})` : ''}"
+      title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}"
+      style="border-color:${rc}77;position:relative">
+      <div style="display:flex;justify-content:center;align-items:center">${_itemIcon(it, 24)}</div>
+      <div style="font-size:7px;color:${rc};text-align:center;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${it.name.slice(0,8)}</div>
+      ${enh}${cntBadge}
     </div>`;
   }).join('');
 }
@@ -1333,6 +1350,97 @@ function enhanceItem(idx) {
   recompute();
   netSaveProgress();
   openInvItemModal(idx);
+}
+
+function openEqItemModal(slot) {
+  if (!player) return;
+  const it = player.equipment[slot];
+  if (!it) return;
+
+  const rc   = RARITY_COLOR[it.rarity] || '#aaa';
+  const enh  = it.enhance || 0;
+  const eb   = _enhBonus(it);
+  const next1 = _enhBonusAt(it, 1);
+
+  const statRows = [];
+  if (it.atk || eb.atk) {
+    const total = (it.atk || 0) + (eb.atk || 0);
+    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#ffd700">(+${eb.atk})</span>` : ''}`);
+  }
+  if (it.def || eb.def) {
+    const total = (it.def || 0) + (eb.def || 0);
+    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#ffd700">(+${eb.def})</span>` : ''}`);
+  }
+  if (it.hp || eb.hp) {
+    const total = (it.hp || 0) + (eb.hp || 0);
+    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#ffd700">(+${eb.hp})</span>` : ''}`);
+  }
+  if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
+  if (it.lifeSteal)  statRows.push(`Вамп <b>${(it.lifeSteal*100).toFixed(0)}%</b>`);
+  if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
+  if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
+
+  const canEnh = enh < _ENH_MAX;
+  const enhCost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
+  const canAfford = player.gold >= enhCost;
+  const nextParts = [];
+  if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
+  if (next1.def) nextParts.push(`+${next1.def} DEF`);
+  if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
+
+  const enhBlock = canEnh
+    ? `<div class="imod-enh-block">
+        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#ffd700">+${enh+1}</span></div>
+        ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
+        <div class="imod-enh-cost">${iconHTML('coin',12,'#f1c40f')} ${enhCost} золота</div>
+      </div>`
+    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#ffd700">✦ Максимальная заточка</div></div>`;
+
+  closeInvItemModal();
+  const ov = document.createElement('div');
+  ov.id = 'inv-item-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closeInvItemModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()">
+    <div class="imod-hdr">
+      <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#ffd700">+${enh}</span>` : ''}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot} · <span style="color:#7ab8ff">Надето</span></div>
+      </div>
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
+    ${enhBlock}
+    <div class="imod-btns">
+      <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#3a1a1a,#6a2a2a);color:#ff9999" onclick="unequipFromModal('${slot}')">Снять</button>
+      ${canEnh ? `<button class="imod-btn imod-sharpen${canAfford ? '' : ' disabled'}" onclick="enhanceEqItem('${slot}')">${iconHTML('lightning',13,'#ffd700')} Заточить +${enh+1}</button>` : ''}
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function unequipFromModal(slot) {
+  closeInvItemModal();
+  unequipItem(slot);
+}
+
+function enhanceEqItem(slot) {
+  if (!player) return;
+  const it = player.equipment[slot];
+  if (!it) return;
+  const enh = it.enhance || 0;
+  if (enh >= _ENH_MAX) return;
+  const cost = Math.floor((_ENH_RARITY_COST[it.rarity] || 40) * Math.pow(1.5, enh));
+  if (player.gold < cost) {
+    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
+    return;
+  }
+  player.gold -= cost;
+  it.enhance = enh + 1;
+  recompute();
+  netSaveProgress();
+  openEqItemModal(slot);
 }
 
 // ─────────────────────────────────────────────────────────
