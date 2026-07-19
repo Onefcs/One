@@ -241,6 +241,9 @@ function update(dt) {
   // HP regen
   if ((player.hpRegen || 0) > 0 && player.hp < player.maxHp)
     player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
+  // Safe zone regen: +1 HP/sec
+  if (inSafeZone(player.x, player.y) && player.hp < player.maxHp)
+    player.hp = Math.min(player.maxHp, player.hp + dt);
 
   // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
@@ -722,6 +725,29 @@ function render(dt, ts) {
   ctx.imageSmoothingEnabled = true;
   if (dungeon && dungeon.grid) drawTileChunks(_camX, _camY);
 
+  // Safe zone overlay
+  if (dungeon && dungeon.safeZone) {
+    const sz = dungeon.safeZone;
+    const sx1 = (sz.x1 - _camX) * ZOOM, sy1 = (sz.y1 - _camY) * ZOOM + HEADER_H;
+    const szW  = (sz.x2 - sz.x1) * ZOOM, szH = (sz.y2 - sz.y1) * ZOOM;
+    ctx.fillStyle = 'rgba(60,220,100,0.07)';
+    ctx.fillRect(sx1, sy1, szW, szH);
+    ctx.strokeStyle = 'rgba(60,220,100,0.25)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx1, sy1, szW, szH);
+    // HUD label when player is inside
+    if (player && inSafeZone(player.x, player.y)) {
+      ctx.font = 'bold 11px system-ui, Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      const lbl = '🛡 Безопасная зона · реген HP';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      const lw = ctx.measureText(lbl).width;
+      ctx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
+      ctx.fillStyle = '#4de87a';
+      ctx.fillText(lbl, W / 2, HEADER_H + 20);
+    }
+  }
+
   // NPCs
   drawNpcs();
 
@@ -1009,6 +1035,15 @@ function drawOtherPlayerSprite(p) {
   ctx.drawImage(_playerShadow, p.x - 16, p.y + 9);
   ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
   return true;
+}
+
+// ─────────────────────────────────────────────────────────
+//  SAFE ZONE
+// ─────────────────────────────────────────────────────────
+function inSafeZone(px, py) {
+  if (!dungeon || !dungeon.safeZone) return false;
+  const sz = dungeon.safeZone;
+  return px >= sz.x1 && px <= sz.x2 && py >= sz.y1 && py <= sz.y2;
 }
 
 // ─────────────────────────────────────────────────────────

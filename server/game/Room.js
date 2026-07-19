@@ -62,7 +62,17 @@ class Room {
 
   get dungeonData() {
     const d = this._dungeon;
-    return { grid: d.grid, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h };
+    return { grid: d.grid, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone };
+  }
+
+  _inSafeZone(x, y) {
+    const sz = this._dungeon.safeZone;
+    return x >= sz.x1 && x <= sz.x2 && y >= sz.y1 && y <= sz.y2;
+  }
+
+  isPlayerInSafeZone(socketId) {
+    const p = this.players.get(socketId);
+    return p ? this._inSafeZone(p.x, p.y) : false;
   }
 
   enemySnapshot() {
@@ -110,10 +120,11 @@ class Room {
         return;
       }
 
-      // Find closest alive player — squared dist comparison, one sqrt on winner
+      // Find closest alive player not in safe zone
       let closest = null, closestD2 = Infinity;
       for (let i = 0; i < alivePlayers.length; i++) {
         const p = alivePlayers[i];
+        if (this._inSafeZone(p.x, p.y)) continue;
         const dx = p.x - e.x, dy = p.y - e.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = p; }

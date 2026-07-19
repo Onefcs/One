@@ -174,6 +174,12 @@ function generateDungeon(lvl) {
       x: rooms[0].cx * TILE + TILE/2,
       y: rooms[0].cy * TILE + TILE/2,
     },
+    safeZone: {
+      x1: rooms[0].bx1 * TILE,
+      y1: rooms[0].by1 * TILE,
+      x2: rooms[0].bx2 * TILE,
+      y2: rooms[0].by2 * TILE,
+    },
     enemies: enemyList,
   };
 }

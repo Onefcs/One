@@ -68,7 +68,7 @@ function netConnect(onReady) {
 
   socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies }) => {
     dungeonLvl = floor;
-    dungeon = { ...d, enemies: [] };
+    dungeon = { ...d, enemies: [], safeZone: d.safeZone || null };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
@@ -203,6 +203,7 @@ function netConnect(onReady) {
 
   socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
+      if (typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) return;
       // Apply damage as a delta so client-side HP regen isn't reverted.
       // Fall back to the server's absolute value only when dmg is unavailable.
       player.hp = (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
@@ -655,7 +656,9 @@ function netStatsUpdate(atk, def, maxHp) {
 }
 
 function netAttack(enemyId) {
-  if (socket?.connected) socket.emit('attack', { enemyId });
+  if (!socket?.connected) return;
+  if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
+  socket.emit('attack', { enemyId });
 }
 
 function netSendChangeFloor(floor) {

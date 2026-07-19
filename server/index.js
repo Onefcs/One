@@ -308,6 +308,7 @@ io.on('connection', socket => {
 
   socket.on('attack', ({ enemyId }) => {
     if (!currentRoom) return;
+    if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
