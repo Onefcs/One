@@ -194,6 +194,123 @@ function updateUpgradeUI() {
   }).join('');
 }
 
+// ─────────────────────────────────────────────────────────
+//  SKILL UPGRADE UI
+// ─────────────────────────────────────────────────────────
+function _skillBonusDesc(type, level) {
+  if (level <= 0) return null;
+  switch (type) {
+    case 'damage':   return `+${level}% к урону`;
+    case 'buff':     return `+${level}с. действия`;
+    case 'barrier':  return `+${(level * 0.2).toFixed(1)}с.`;
+    case 'invis':    return `+${(level * 0.2).toFixed(1)}с. невидимости`;
+    case 'heal':     return `+${level}% к лечению`;
+    case 'mobility': return `+${level * 10}px дальность`;
+    default:         return null;
+  }
+}
+
+function _skillBonusTypeLabel(type) {
+  switch (type) {
+    case 'damage':   return '+1%/ур. урон';
+    case 'buff':     return '+1с/ур. действие';
+    case 'barrier':  return '+0.2с/ур. защита';
+    case 'invis':    return '+0.2с/ур. невидимость';
+    case 'heal':     return '+1%/ур. лечение';
+    case 'mobility': return '+10px/ур. дальность';
+    default:         return '';
+  }
+}
+
+function updateSkillsUI() {
+  if (!player) return;
+  const el = document.getElementById('skill-upgrade-panel');
+  if (!el) return;
+  const skills = SKILL_DEF[player.type];
+  if (!skills) { el.innerHTML = '<div style="padding:16px;color:#556;text-align:center">Выберите персонажа</div>'; return; }
+  const bonusTypes = (SKILL_BONUS_TYPE || {})[player.type] || {};
+  const sl = player.skillLevels || {};
+  const sx = player.skillXp || {};
+
+  const UPGRADE_COST = 100;
+  const canAfford = player.gold >= UPGRADE_COST;
+
+  el.innerHTML = `
+    <div class="skill-upg-header">
+      <span>${iconHTML('coin', 13, '#f1c40f')} <span id="skill-gold-lbl">${player.gold}</span> золота</span>
+      <span class="skill-upg-hint">100 зол. · 50% шанс · +5 опыта</span>
+    </div>
+    ${skills.map(sk => {
+      const level = sl[sk.key] || 0;
+      const xp    = sx[sk.key] || 0;
+      const maxed = level >= 10;
+      const xpReq = typeof skillXpRequired === 'function' ? skillXpRequired(level) : Math.round(100 * Math.pow(1.5, level));
+      const xpPct = maxed ? 100 : Math.min(100, Math.round(xp / xpReq * 100));
+      const bonusType = bonusTypes[sk.key] || 'damage';
+      const bonusNow  = _skillBonusDesc(bonusType, level);
+      const bonusNext = maxed ? null : _skillBonusDesc(bonusType, level + 1);
+
+      const dots = Array.from({ length: 10 }, (_, i) =>
+        `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
+      ).join('');
+
+      return `<div class="skill-upg-card">
+        <div class="skill-upg-top">
+          <div class="skill-upg-icon">${iconHTML(sk.icon, 26, level > 0 ? '#f1c40f' : '#556')}</div>
+          <div class="skill-upg-info">
+            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${maxed ? ' МАКС' : ' Ур.' + level}</span></div>
+            <div class="skill-upg-desc">${sk.desc}</div>
+            <div class="skill-upg-type">${_skillBonusTypeLabel(bonusType)}</div>
+          </div>
+        </div>
+        <div class="sk-dots">${dots}</div>
+        ${!maxed ? `
+        <div class="sk-xp-row">
+          <div class="sk-xp-bar-bg"><div class="sk-xp-bar-fill" style="width:${xpPct}%"></div></div>
+          <span class="sk-xp-lbl">${xp} / ${xpReq} опыта</span>
+        </div>` : ''}
+        <div class="sk-bonus-row">
+          ${bonusNow ? `<span class="sk-bonus-now">${bonusNow}</span>` : ''}
+          ${bonusNext && !maxed ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
+        </div>
+        <button class="skill-upg-btn${maxed ? ' disabled' : (!canAfford ? ' disabled' : '')}"
+          onclick="${maxed ? '' : `upgradeSkill('${sk.key}')`}">
+          ${maxed ? 'Максимум' : iconHTML('coin', 12, '#f1c40f') + ' 100 · Прокачать'}
+        </button>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function upgradeSkill(key) {
+  if (!player) return;
+  const cost = 100;
+  if (player.gold < cost) { dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88'); return; }
+  const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
+  const sx = player.skillXp    || (player.skillXp    = { Q:0, W:0, E:0, R:0 });
+  const lvl = sl[key] || 0;
+  if (lvl >= 10) return;
+
+  player.gold -= cost;
+  const xpReq = typeof skillXpRequired === 'function' ? skillXpRequired(lvl) : Math.round(100 * Math.pow(1.5, lvl));
+  if (Math.random() < 0.5) {
+    sx[key] = (sx[key] || 0) + 5;
+    if (sx[key] >= xpReq) {
+      sx[key] = 0;
+      sl[key] = lvl + 1;
+      spawnBurst(player.x, player.y, '#fa0', 10);
+      dmgNum(player.x, player.y - 42, '↑ Навык +' + sl[key] + ' ур.!', '#fa0');
+    } else {
+      dmgNum(player.x, player.y - 36, '+5 опыта навыка', '#7ef');
+    }
+  } else {
+    dmgNum(player.x, player.y - 36, 'Неудача...', '#f44');
+  }
+  netSaveProgress();
+  updateSkillsUI();
+  document.getElementById('skill-gold-lbl') && (document.getElementById('skill-gold-lbl').textContent = player.gold);
+}
+
 function drawMapPanel() {
   if (!dungeon || !player) return;
   const th = getTheme(dungeonLvl);
@@ -541,8 +658,10 @@ function setInvTab(n) {
   document.querySelectorAll('.inv-tab').forEach((el, i) => el.classList.toggle('active', i === n));
   document.getElementById('inv-tab-content-0').style.display = n === 0 ? '' : 'none';
   document.getElementById('inv-tab-content-1').style.display = n === 1 ? '' : 'none';
+  document.getElementById('inv-tab-content-2').style.display = n === 2 ? '' : 'none';
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
+  if (n === 2) updateSkillsUI();
 }
 
 function setTab(n) {
@@ -559,7 +678,7 @@ function setTab(n) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); });
-    if (n === 1) { _invTab === 1 ? updateProfileUI() : updateInvUI(); }
+    if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) updateSkillsUI(); else updateInvUI(); }
     if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') updateClanUI();

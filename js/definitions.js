@@ -219,6 +219,16 @@ const SKILL_DEF = {
   ],
 };
 
+// Bonus category for each skill key per class
+// damage → +1% per level  |  buff → +1s duration  |  barrier → +0.2s  |  invis → +0.2s  |  heal → +1%  |  mobility → +10px range
+const SKILL_BONUS_TYPE = {
+  warrior: { Q: 'damage',   W: 'damage',  E: 'buff',    R: 'damage'   },
+  archer:  { Q: 'damage',   W: 'damage',  E: 'barrier', R: 'buff'     },
+  mage:    { Q: 'damage',   W: 'damage',  E: 'barrier', R: 'mobility' },
+  priest:  { Q: 'heal',     W: 'buff',    E: 'buff',    R: 'heal'     },
+  assasin: { Q: 'damage',   W: 'damage',  E: 'invis',   R: 'damage'   },
+};
+
 const NPC_DEF = [
   { id:'merchant',   name:'Торговец', icon:'merchant',   color:'#ffaa00', desc:'Зелья и расходники' },
   { id:'craftsman',  name:'Кузнец',   icon:'craftsman',  color:'#8888ff', desc:'Крафт предметов'    },

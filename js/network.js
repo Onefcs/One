@@ -753,6 +753,8 @@ function _emitSaveProgress() {
     upgrades: player.upgrades || {},
     questIdx: player.questIdx || 0,
     questKills: player.questKills || {},
+    skillLevels: player.skillLevels || {},
+    skillXp: player.skillXp || {},
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });
 }
