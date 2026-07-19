@@ -1085,72 +1085,57 @@ function buildTileCanvas() {
       && dungeon.grid[ty][tx] === FLOOR;
   }
 
-  // Pass 1: fill entire canvas with wall base color
+  // 1. Solid wall fill
   tctx.fillStyle = th.wallColor;
   tctx.fillRect(0, 0, dungeon.w * TILE, dungeon.h * TILE);
 
-  // Pass 2: simple wall edge tint (batched single-path instead of per-line strokes)
-  tctx.fillStyle = th.wallEdge;
-  tctx.globalAlpha = 0.15;
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
-      if (dungeon.grid[ty][tx] !== WALL) continue;
-      const x = tx * TILE, y = ty * TILE;
-      tctx.fillRect(x, y, TILE, 1);
-      tctx.fillRect(x, y, 1, TILE);
-    }
-  }
-  tctx.globalAlpha = 1;
-
-  // Pass 3: fill floor tiles with a subtle checkerboard shade
+  // 2. Solid floor fill
+  tctx.fillStyle = th.floorA;
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      tctx.fillStyle = (tx + ty) % 2 === 0 ? th.floorA : th.floorB;
       tctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
     }
   }
 
-  // Pass 4: 1-px grout lines between floor tiles (top + left edges only)
-  tctx.fillStyle = th.grout;
+  // 3. Wall "cliff face" — where wall is above floor, draw a lighter strip
+  //    at the bottom of the wall tile to give depth (top-down dungeon style)
+  tctx.fillStyle = th.wallEdge;
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
-      if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      const x = tx * TILE, y = ty * TILE;
-      tctx.fillRect(x, y, TILE, 1);
-      tctx.fillRect(x, y, 1, TILE);
+      if (dungeon.grid[ty][tx] !== WALL) continue;
+      if (!isFloor(tx, ty + 1)) continue;
+      tctx.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 8);
     }
   }
-
-  // Pass 5: wall top-edge highlight — simple solid strip (no gradient)
-  tctx.globalAlpha = th.wallHighlight;
+  // Highlight line at the very bottom edge of the cliff
+  tctx.globalAlpha = th.wallHighlight * 1.5;
   tctx.fillStyle = '#ffffff';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      tctx.fillRect(tx * TILE, ty * TILE + TILE - 3, TILE, 3);
+      tctx.fillRect(tx * TILE, ty * TILE + TILE - 1, TILE, 1);
     }
   }
   tctx.globalAlpha = 1;
 
-  // Pass 6: wall-edge shadow on floor tiles — flat darkened strip
-  tctx.fillStyle = 'rgba(0,0,0,0.35)';
+  // 4. Shadow cast onto floor from adjacent walls (inner shadow)
+  tctx.fillStyle = 'rgba(0,0,0,0.4)';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
-      if (!isFloor(tx, ty - 1)) tctx.fillRect(x, y, TILE, 5);
-      if (!isFloor(tx - 1, ty)) tctx.fillRect(x, y, 5, TILE);
+      if (!isFloor(tx, ty - 1)) tctx.fillRect(x, y, TILE, 6);
     }
   }
-  tctx.fillStyle = 'rgba(0,0,0,0.25)';
+  tctx.fillStyle = 'rgba(0,0,0,0.2)';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
-      if (!isFloor(tx, ty + 1)) tctx.fillRect(x, y + TILE - 5, TILE, 5);
-      if (!isFloor(tx + 1, ty)) tctx.fillRect(x + TILE - 5, y, 5, TILE);
+      if (!isFloor(tx - 1, ty)) tctx.fillRect(x, y, 4, TILE);
+      if (!isFloor(tx + 1, ty)) tctx.fillRect(x + TILE - 4, y, 4, TILE);
     }
   }
 }
