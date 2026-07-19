@@ -870,6 +870,35 @@ function render(dt, ts) {
   ctx.globalAlpha = 1;
   ctx.restore(); // [camera]
 
+  // Safe zone HUD label — screen-space
+  if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
+    const lbl = '🛡 Безопасная зона · реген HP';
+    ctx.font = 'bold 11px system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const lw = ctx.measureText(lbl).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
+    ctx.fillStyle = '#4de87a';
+    ctx.fillText(lbl, W / 2, HEADER_H + 20);
+  }
+
+  // Raid wave notification — screen-space banner
+  if (_raidWaveNotif && _raidWaveNotif.timer > 0) {
+    _raidWaveNotif.timer -= dt;
+    const alpha = Math.min(1, _raidWaveNotif.timer * 2);
+    ctx.globalAlpha = alpha;
+    const lbl = _raidWaveNotif.text;
+    ctx.font = 'bold 20px system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const lw = ctx.measureText(lbl).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(W / 2 - lw / 2 - 14, H / 2 - 40, lw + 28, 34);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(lbl, W / 2, H / 2 - 12);
+    ctx.globalAlpha = 1;
+    if (_raidWaveNotif.timer <= 0) _raidWaveNotif = null;
+  }
+
   // UI overlay — rendered to separate canvas at native DPR (~20fps), no blit needed
   ctx.globalAlpha = 1;
   if (_uiCtx && ts - _uiLastMs >= 50) { _uiLastMs = ts; _renderUI(); }
@@ -888,11 +917,49 @@ function render(dt, ts) {
 // ─────────────────────────────────────────────────────────
 function goToFloor(n) {
   if (n === dungeonLvl || !player) return;
+  const req = (typeof FLOOR_UNLOCK_LEVEL !== 'undefined') ? (FLOOR_UNLOCK_LEVEL[n] || 0) : 0;
+  if (req > 0 && player.lvl < req) {
+    if (typeof showFloorLock === 'function') showFloorLock(n, req);
+    return;
+  }
   if (n > dungeonLvl) onDungeonClear(dungeonLvl);
   onGotoFloor(n);
   netSaveProgressNow();
   netSendChangeFloor(clamp(n, 1, 20));
   setTab(0);
+}
+
+function enterRaidMode(data) {
+  inRaid = true;
+  _normalDungeon    = dungeon;
+  _normalDungeonLvl = dungeonLvl;
+  dungeon = { ...data.dungeon, enemies: [] };
+  if (player) {
+    player.x = data.dungeon.spawn.x;
+    player.y = data.dungeon.spawn.y;
+    camera.x = player.x - W / (2 * ZOOM);
+    camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+    clampCamera();
+  }
+  if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  serverEnemies.length = 0; serverEnemiesMap.clear();
+  otherPlayers = new Map();
+  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
+  setTab(0);
+}
+
+function exitRaidMode() {
+  inRaid = false;
+  if (_normalDungeon) {
+    dungeon = _normalDungeon;
+    dungeonLvl = _normalDungeonLvl;
+    _normalDungeon = null;
+  }
+  if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  serverEnemies.length = 0; serverEnemiesMap.clear();
+  otherPlayers = new Map();
+  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
+  _raidWaveNotif = null;
 }
 
 function selectChar(type) {

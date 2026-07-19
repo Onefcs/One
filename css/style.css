@@ -748,6 +748,26 @@ canvas { display:block; width:100%; height:100%; }
 }
 .floor-item-btn:hover  { background:rgba(255,255,255,.1); color:#aac; }
 .floor-item-btn:active { opacity:.7; }
+.floor-item.floor-locked { opacity: 0.6; }
+.floor-item-lock-req { font-size:9px; color:#f93; background:rgba(255,153,0,.12); border-radius:4px; padding:1px 5px; }
+
+/* ── MAP TABS ──────────────────────────── */
+.map-tabs { display:flex; border-bottom:1px solid rgba(255,255,255,0.07); margin-bottom:8px; }
+.map-tab  { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#555; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
+.map-tab.active { color:#60a5fa; border-bottom-color:#3b82f6; }
+
+/* ── RAID UI ──────────────────────────── */
+.raid-dungeon-card { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:14px; margin-bottom:12px; }
+.raid-dungeon-name { font-size:16px; font-weight:700; color:#fff; margin-bottom:5px; }
+.raid-dungeon-desc { font-size:11px; color:#888; margin-bottom:8px; }
+.raid-dungeon-req  { font-size:12px; color:#aaa; margin-bottom:8px; }
+.raid-dungeon-rewards { display:flex; flex-wrap:wrap; gap:6px; font-size:11px; }
+.raid-dungeon-rewards span { background:rgba(255,255,255,.05); border-radius:6px; padding:2px 8px; color:#bbb; }
+.raid-party-info { margin-bottom:12px; }
+.raid-member { font-size:12px; color:#bbb; padding:3px 0; }
+.raid-hint   { font-size:12px; color:#666; font-style:italic; }
+.raid-enter-btn { width:100%; padding:12px; background:#3b82f6; color:#fff; font-size:14px; font-weight:700; border:none; border-radius:10px; cursor:pointer; touch-action:manipulation; }
+.raid-enter-btn.disabled { background:#333; color:#666; cursor:default; }
 
 /* ── BOTTOM NAV ────────────────────────── */
 #bottom-nav {

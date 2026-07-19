@@ -49,6 +49,9 @@ const QUEST_DEF = [
   { id:'f2q15', floor:2, title:'Вглубь тьмы',      desc:'Перейди на этаж 3',         type:'goto_floor',   floor:3,                    reward:{ xp:1200, gold:600 } },
 ];
 
+// Minimum player level to unlock each floor (index = floor number)
+const FLOOR_UNLOCK_LEVEL = [0, 0, 5, 15, 30, 50];
+
 const RARITY_COLOR = {
   common:    '#aaa',
   uncommon:  '#3ef07a',

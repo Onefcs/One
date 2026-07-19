@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const PlayerModel = require('./models/Player');
 const Room = require('./game/Room');
+const { RaidRoom } = require('./game/RaidRoom');
 
 // Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
 const _TG_TOKEN = process.env.TG_BOT_TOKEN || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
@@ -136,6 +137,29 @@ const parties     = new Map();
 const playerParty = new Map();
 // socketId -> current floor number (for proximity check)
 const playerFloorMap = new Map();
+
+// ── Raid state ────────────────────────────────────────────────────────────────
+// raidId -> RaidRoom
+const raidRooms  = new Map();
+// socketId -> raidId
+const playerRaid = new Map();
+
+function _cleanupRaid(socketId) {
+  const rId = playerRaid.get(socketId);
+  if (!rId) return;
+  playerRaid.delete(socketId);
+  // Clear _inRaid flag on floor room player
+  const fl = playerFloorMap.get(socketId);
+  if (fl !== undefined) {
+    const fr = floorRooms.get(fl);
+    if (fr) { const p = fr.players.get(socketId); if (p) p._inRaid = false; }
+  }
+  const rr = raidRooms.get(rId);
+  if (rr) {
+    rr.removePlayer(socketId);
+    if (rr.memberIds.length === 0) { rr._stop(); raidRooms.delete(rId); }
+  }
+}
 
 // Remove leaverId from their party; notify remaining members.
 // If only 1 member remains the party dissolves entirely.
@@ -510,9 +534,234 @@ io.on('connection', socket => {
     if (partyId) _removeFromParty(partyId, socket.id);
   });
 
+  // ── Clan handlers ─────────────────────────────────────────────
+  async function _clanDataFor(clan, telegramId) {
+    const myRole = clan.members.find(m => m.telegramId === telegramId)?.role || null;
+    const memberIds = clan.members.map(m => m.telegramId);
+    const playerDocs = await PlayerModel.find({ telegramId: { $in: memberIds } }, { telegramId: 1, bm: 1 }).lean().catch(() => []);
+    const bmMap = {};
+    playerDocs.forEach(d => { bmMap[d.telegramId] = d.bm || 0; });
+    return {
+      _id:          clan._id,
+      name:         clan.name,
+      icon:         clan.icon,
+      level:        clan.level,
+      xp:           clan.xp,
+      members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role, bm: bmMap[m.telegramId] || 0 })),
+      applications: myRole === 'leader' ? clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
+      myRole,
+    };
+  }
+
+  async function _notifyClan(clan) {
+    for (const m of clan.members) {
+      // Find active socket for this member by iterating connected sockets
+      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      if (target) target.emit('clanData', await _clanDataFor(clan, m.telegramId));
+    }
+  }
+
+  socket.on('clanCreate', async ({ name, icon }) => {
+    if (!authed) return;
+    const n = (name || '').trim().slice(0, 10);
+    if (!n) return socket.emit('clanError', { msg: 'Введите название' });
+    if (typeof icon !== 'number' || icon < 1 || icon > 30) return socket.emit('clanError', { msg: 'Неверная иконка' });
+    const existing = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (existing) return socket.emit('clanError', { msg: 'Вы уже в клане' });
+    try {
+      const clan = await ClanModel.create({
+        name: n, icon,
+        members: [{ telegramId: authed.telegramId, username: authed.username, role: 'leader' }],
+      });
+      socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+    } catch (e) {
+      if (e.code === 11000) socket.emit('clanError', { msg: 'Название занято' });
+      else socket.emit('clanError', { msg: 'Ошибка создания' });
+    }
+  });
+
+  socket.on('clanSearch', async ({ query }) => {
+    if (!authed) return;
+    const q = (query || '').trim();
+    const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
+    const clans = await ClanModel.find(filter).sort({ level: -1, xp: -1 }).limit(20).catch(() => []);
+    socket.emit('clanSearchResults', clans.map(c => ({
+      _id: c._id, name: c.name, icon: c.icon, level: c.level, members: c.members.length,
+    })));
+  });
+
+  socket.on('clanApply', async ({ clanId }) => {
+    if (!authed) return;
+    const inClan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (inClan) return socket.emit('clanError', { msg: 'Вы уже в клане' });
+    const clan = await ClanModel.findById(clanId).catch(() => null);
+    if (!clan) return socket.emit('clanError', { msg: 'Клан не найден' });
+    if (clan.applications.find(a => a.telegramId === authed.telegramId)) return;
+    clan.applications.push({ telegramId: authed.telegramId, username: authed.username });
+    await clan.save().catch(() => {});
+    socket.emit('clanError', { msg: '✓ Заявка отправлена' });
+    await _notifyClan(clan);
+  });
+
+  socket.on('clanApprove', async ({ telegramId }) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    const app = clan.applications.find(a => a.telegramId === telegramId);
+    if (!app) return;
+    clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
+    clan.members.push({ telegramId: app.telegramId, username: app.username, role: 'member' });
+    await clan.save().catch(() => {});
+    await _notifyClan(clan);
+  });
+
+  socket.on('clanDecline', async ({ telegramId }) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
+    await clan.save().catch(() => {});
+    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+  });
+
+  socket.on('clanKick', async ({ telegramId }) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    if (telegramId === authed.telegramId) return;
+    clan.members = clan.members.filter(m => m.telegramId !== telegramId);
+    await clan.save().catch(() => {});
+    await _notifyClan(clan);
+    // Notify kicked player
+    const kicked = [...io.sockets.sockets.values()].find(s => s.data.telegramId === telegramId);
+    if (kicked) kicked.emit('clanData', null);
+  });
+
+  socket.on('clanLeave', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    const myEntry = clan.members.find(m => m.telegramId === authed.telegramId);
+    if (!myEntry) return;
+    if (myEntry.role === 'leader') {
+      // Promote next member or disband
+      const others = clan.members.filter(m => m.telegramId !== authed.telegramId);
+      if (others.length > 0) {
+        others[0].role = 'leader';
+        clan.members = others;
+        await clan.save().catch(() => {});
+        await _notifyClan(clan);
+      } else {
+        await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
+      }
+    } else {
+      clan.members = clan.members.filter(m => m.telegramId !== authed.telegramId);
+      await clan.save().catch(() => {});
+      await _notifyClan(clan);
+    }
+    socket.emit('clanData', null);
+  });
+
+  socket.on('clanDisband', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    // Notify all members first
+    for (const m of clan.members) {
+      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      if (target) target.emit('clanData', null);
+    }
+    await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
+  });
+
+  // 1 kill = 1 clan XP point
+  socket.on('clanKill', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan || clan.level >= 10) return;
+    clan.xp += 1;
+    // Check level up
+    const LEVELS = [0,500,1500,4000,10000,25000,60000,150000,350000,800000];
+    const nextLvl = clan.level < 10 ? LEVELS[clan.level] : Infinity;
+    if (clan.xp >= nextLvl) clan.level = Math.min(10, clan.level + 1);
+    await clan.save().catch(() => {});
+    // Only notify the killer (avoid DB load per kill for all members)
+    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+  });
+
+  // ── Raid ───────────────────────────────────────────────────────────────────
+  socket.on('enterRaid', ({ dungeonId }) => {
+    if (!authed) return;
+    const partyId = playerParty.get(socket.id);
+    if (!partyId) return socket.emit('raidError', { msg: 'Нужна пати минимум 2 игрока' });
+    const partyMap = parties.get(partyId);
+    if (!partyMap || partyMap.size < 2) return socket.emit('raidError', { msg: 'Нужна пати минимум 2 игрока' });
+
+    // Check no member is already in a raid
+    const memberIds = [...partyMap.keys()];
+    for (const mid of memberIds) {
+      if (playerRaid.has(mid)) return socket.emit('raidError', { msg: 'Пати уже в подземелье' });
+    }
+
+    // Check initiator level
+    const cp = currentRoom?.players.get(socket.id);
+    if (!cp || (cp.lvl || 1) < 3) return socket.emit('raidError', { msg: 'Нужен 3 уровень' });
+
+    const raidId = 'raid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const raidRoom = new RaidRoom(raidId, io, memberIds);
+    raidRooms.set(raidId, raidRoom);
+
+    for (const mid of memberIds) {
+      playerRaid.set(mid, raidId);
+      const mfl = playerFloorMap.get(mid);
+      const mRoom = mfl !== undefined ? floorRooms.get(mfl) : null;
+      const mp = mRoom?.players.get(mid);
+      if (mp) {
+        mp._inRaid = true;
+        raidRoom.addPlayer(mid, { maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type, username: mp.username || partyMap.get(mid) || '' });
+      } else {
+        raidRoom.addPlayer(mid, { maxHp: 100, atk: 10, def: 0, type: 'warrior', username: partyMap.get(mid) || '' });
+      }
+      io.to(mid).emit('raidStart', { raidId, dungeon: raidRoom.dungeonData });
+    }
+
+    raidRoom.start();
+  });
+
+  socket.on('raidMove', ({ x, y, hp }) => {
+    const rId = playerRaid.get(socket.id);
+    const rr  = rId ? raidRooms.get(rId) : null;
+    if (rr) rr.updatePlayerPos(socket.id, x, y, hp);
+  });
+
+  socket.on('raidAttack', ({ enemyId }) => {
+    const rId = playerRaid.get(socket.id);
+    const rr  = rId ? raidRooms.get(rId) : null;
+    if (!rr) return;
+    const cp = currentRoom?.players.get(socket.id);
+    const result = rr.attackEnemy(socket.id, enemyId, cp?.atk || 10);
+    if (!result) return;
+    if (result.killed) {
+      rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyKilled', {
+        id: enemyId, ex: result.ex, ey: result.ey, isBoss: result.isBoss,
+      }));
+    } else {
+      rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', {
+        id: enemyId, hp: result.hp, dmg: result.dmg,
+      }));
+    }
+  });
+
+  socket.on('leaveRaid', () => { _cleanupRaid(socket.id); });
+
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
+    _cleanupRaid(socket.id);
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);
