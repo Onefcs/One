@@ -133,6 +133,14 @@ class Room {
           });
         }
       }
+
+      // Leash: if enemy left its spawn room, teleport back to spawn with full HP
+      if (e.x < e.leashX1 || e.x > e.leashX2 || e.y < e.leashY1 || e.y > e.leashY2) {
+        e.hp = e.maxHp;
+        e.x = e.spawnX; e.y = e.spawnY;
+        e.aggro = false;
+        e._shp = -1;
+      }
     });
 
     // Per-player emit: AOI filter + delta for enemies (reuse buffers — emit serializes synchronously)
@@ -292,6 +300,7 @@ class Room {
     const dmg = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
+    enemy.aggro = true;
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
       return { killed: true, xp: enemy.xp, gold: g, dmg, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss };

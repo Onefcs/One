@@ -499,11 +499,20 @@ function drawHeader() {
   ctx.fillStyle = 'rgba(255,45,35,0.9)';
   ctx.beginPath();
   mmEnemies.forEach(e => {
-    if ((e.hp || 0) <= 0) return;
+    if ((e.hp || 0) <= 0 || e.isBoss) return;
     const ex = mmX + (e.x / TILE) * mmSc, ey = mmY + (e.y / TILE) * mmSc;
     ctx.moveTo(ex + _mmR, ey); ctx.arc(ex, ey, _mmR, 0, Math.PI * 2);
   });
   ctx.fill();
+  // Boss skull icon on minimap
+  const _bossIconSz = Math.max(8, Math.round(mmSc * 4));
+  ctx.font = `${_bossIconSz}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  mmEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0 || !e.isBoss) return;
+    const ex = mmX + (e.x / TILE) * mmSc, ey = mmY + (e.y / TILE) * mmSc;
+    ctx.fillText('💀', ex, ey);
+  });
   const _mmRn = Math.max(1, mmSc);
   ctx.fillStyle = 'rgba(255,200,0,0.9)';
   ctx.beginPath();
