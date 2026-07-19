@@ -449,12 +449,21 @@ function getSpriteAnimKey(p) {
   return `${dir}-idle`;
 }
 
+const _tintCache = new WeakMap();
 function _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, color) {
-  ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = color;
-  ctx.fillRect(dx, dy, dw, dh);
-  ctx.globalAlpha = 1;
+  let tinted = _tintCache.get(img);
+  if (!tinted) {
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    const c = cv.getContext('2d');
+    c.drawImage(img, 0, 0);
+    c.globalCompositeOperation = 'source-atop';
+    c.globalAlpha = 0.55;
+    c.fillStyle = color;
+    c.fillRect(0, 0, cv.width, cv.height);
+    _tintCache.set(img, tinted = cv);
+  }
+  ctx.drawImage(tinted, sx, sy, fw, fh, dx, dy, dw, dh);
 }
 
 function drawSprite(p, tint) {
