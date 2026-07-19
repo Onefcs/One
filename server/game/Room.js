@@ -25,6 +25,7 @@ function computeStats(sd, cd) {
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const AOI_RADIUS = 900;
 const AOI_R2    = AOI_RADIUS * AOI_RADIUS; // squared — avoids sqrt in AOI check
+const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
 
 class Room {
   constructor(floor, io) {
@@ -134,8 +135,9 @@ class Room {
         }
       }
 
-      // Leash: if enemy left its spawn room, teleport back to spawn with full HP
-      if (e.x < e.leashX1 || e.x > e.leashX2 || e.y < e.leashY1 || e.y > e.leashY2) {
+      // Leash: too far from spawn → full HP reset back to spawn
+      const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
+      if (ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;

@@ -164,8 +164,6 @@ function generateDungeon(lvl) {
         atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18)),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
-        leashX1: room.bx1 * TILE, leashY1: room.by1 * TILE,
-        leashX2: room.bx2 * TILE, leashY2: room.by2 * TILE,
       });
     }
   });
