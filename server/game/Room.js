@@ -332,7 +332,7 @@ class Room {
       p.def   = s.def;
       p.maxHp = s.maxHp;
       p.hp    = (savedStats.hp && savedStats.hp > 0) ? Math.min(savedStats.hp, p.maxHp) : p.maxHp;
-      p.lvl   = savedStats.level || 1;
+      p.lvl   = savedStats.lvl || 1;
     } else {
       p.hp = p.maxHp = cd.baseHP;
       p.atk = cd.baseAtk;
