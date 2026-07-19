@@ -422,41 +422,77 @@ function closeFloorInfo() {
 function updateRaidPanelUI() {
   const body = document.getElementById('raid-panel-body');
   if (!body) return;
-  const plvl = player?.lvl || 1;
-  const partySize = (partyMembers?.length || 0) + 1;
-  const lvlOk    = plvl >= 3;
-  const partyOk  = partySize >= 2;
-  const canEnter = lvlOk && partyOk && !inRaid;
   const RARITY_COL = { common: '#aaa', uncommon: '#3ef07a' };
+  const plvl = player?.lvl || 1;
+  const lvlOk = plvl >= 3;
 
-  body.innerHTML = `
-    <div class="raid-dungeon-card">
+  if (inRaid) {
+    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">⚔️ Вы в бою...</div>`;
+    return;
+  }
+
+  // Inside a lobby
+  if (_myLobbyId) {
+    const memberRows = (_myLobbyMembers || []).map(m =>
+      `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
+        <span>👤 ${m.name}</span>
+        <span style="color:#999;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
+      </div>`).join('');
+    const canStart = _isLobbyCreator && (_myLobbyMembers?.length || 0) >= 2;
+    body.innerHTML = `
+      <div class="raid-dungeon-card">
+        <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
+        <div style="font-size:12px;color:#888;margin-bottom:8px">Ваша группа · ${_myLobbyMembers?.length || 1} / 5</div>
+        <div style="margin-bottom:10px">${memberRows}</div>
+        ${_isLobbyCreator
+          ? `<div class="raid-hint" style="margin-bottom:8px">Вы — создатель · ждите игроков или начните</div>
+             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartLobby()' : ''}">Начать рейд</button>`
+          : `<div class="raid-hint">Ожидание старта от создателя...</div>`}
+      </div>
+      <button onclick="netLeaveLobby();updateRaidPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(255,60,60,.12);color:#f55;border:1px solid rgba(255,60,60,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
+    `;
+    return;
+  }
+
+  // Lobby list
+  const dungeonCard = `
+    <div class="raid-dungeon-card" style="margin-bottom:10px">
       <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
-      <div class="raid-dungeon-desc">Волны монстров с 4 сторон · 7 волн · Финальный босс</div>
-      <div class="raid-dungeon-req">
-        ${lvlOk ? '✅' : '🔒'} Уровень 3 &nbsp;|&nbsp; ${partyOk ? '✅' : '🔒'} Пати 2–5 игроков
-      </div>
+      <div class="raid-dungeon-desc">Волны монстров · 7 волн · Финальный босс</div>
       <div class="raid-dungeon-rewards">
-        <span>💰 500 голд</span>
-        <span>⭐ 500 опыт</span>
-        <span style="color:${RARITY_COL.common}">30% Common оружие</span>
-        <span style="color:${RARITY_COL.uncommon}">5% Uncommon оружие</span>
+        <span>💰 500 голд</span><span>⭐ 500 опыт</span>
+        <span style="color:${RARITY_COL.common}">30% Common</span>
+        <span style="color:${RARITY_COL.uncommon}">5% Uncommon</span>
       </div>
-    </div>
-    <div class="raid-party-info">
-      ${partyOk
-        ? `<div style="color:#888;font-size:12px;margin-bottom:8px">Пати: ${partySize} / 5</div>
-           ${partyMembers.map(m => `<div class="raid-member">👤 ${m.name}</div>`).join('')}`
-        : `<div class="raid-hint">Пригласи союзника в пати чтобы войти</div>`}
-    </div>
-    <button class="raid-enter-btn${canEnter ? '' : ' disabled'}" onclick="${canEnter ? 'onEnterRaidClick()' : ''}">
-      ${inRaid ? '⚔️ В бою...' : 'Войти в подземелье'}
-    </button>
-  `;
-}
+    </div>`;
 
-function onEnterRaidClick() {
-  if (typeof netEnterRaid === 'function') netEnterRaid();
+  const createBtn = lvlOk
+    ? `<button class="raid-enter-btn" onclick="netCreateLobby(1);netGetLobbyList()" style="margin-bottom:12px">Создать группу</button>`
+    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">🔒 Нужен уровень 3</button>`;
+
+  const lobbies = _raidLobbyList || [];
+  let lobbyListHtml = '';
+  if (lobbies.length === 0) {
+    lobbyListHtml = `<div class="raid-hint">Нет открытых групп. Создайте свою!</div>`;
+  } else {
+    lobbyListHtml = lobbies.map(lb => {
+      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#888">Ур.${m.lvl}</span> ${m.name}`).join(', ');
+      const full = (lb.members?.length || 0) >= 5;
+      return `
+        <div class="raid-dungeon-card" style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:13px;font-weight:700;color:#fff">${lb.creatorName}</span>
+            <span style="font-size:11px;color:#888">${lb.members?.length || 1} / 5</span>
+          </div>
+          <div style="font-size:11px;color:#999;margin-bottom:8px">${mList}</div>
+          <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinLobby('${lb.id}')`}">${full ? 'Полная' : 'Войти'}</button>
+        </div>`;
+    }).join('');
+  }
+
+  body.innerHTML = dungeonCard + createBtn +
+    `<div style="font-size:12px;color:#666;margin-bottom:6px">Открытые группы <button onclick="netGetLobbyList()" style="background:none;border:none;color:#60a5fa;font-size:11px;cursor:pointer">обновить</button></div>` +
+    lobbyListHtml;
 }
 
 function showRaidComplete({ gold, xp, weaponName, weaponRarity }) {
@@ -486,7 +522,7 @@ function setMapTab(n) {
   document.getElementById('map-tab-content-0').style.display = n === 0 ? '' : 'none';
   document.getElementById('map-tab-content-1').style.display = n === 1 ? '' : 'none';
   if (n === 0) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
-  if (n === 1) updateRaidPanelUI();
+  if (n === 1) { updateRaidPanelUI(); if (typeof netGetLobbyList === 'function') netGetLobbyList(); }
 }
 
 function setInvTab(n) {

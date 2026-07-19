@@ -497,6 +497,7 @@ function update(dt) {
     op.moving = _mdx * _mdx + _mdy * _mdy > 0.1;
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
     if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
+    if ((op._swingTimer || 0) > 0) op._swingTimer -= dt;
     if (op.type && SPRITE_DEF[op.type]) {
       if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
       const ak = getOtherPlayerAnimKey(op);
@@ -830,6 +831,11 @@ function render(dt, ts) {
       ctx.setLineDash(_NO_DASH); ctx.globalAlpha = 1;
     }
 
+    if ((p._swingTimer || 0) > 0) {
+      ctx.strokeStyle = 'rgba(200,220,255,.65)'; ctx.lineWidth = 2.5;
+      const sa = p._swingAngle || 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 30, sa - .65, sa + .65); ctx.stroke();
+    }
     const usedSprite = drawOtherPlayerSprite(p);
     if (!usedSprite) {
       ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();

@@ -414,11 +414,14 @@ function netConnect(onReady) {
 
   socket.on('raidState', ({ enemies, players, wave }) => {
     if (!inRaid) return;
-    // Full enemy list replace (raid sends snapshots, not deltas)
+    // Merge enemy list — preserve client-side animation timers
+    const prevMap = new Map(serverEnemies.map(e => [e.id, e]));
     serverEnemies.length = 0;
     serverEnemiesMap.clear();
     (enemies || []).forEach(se => {
+      const prev = prevMap.get(se.id);
       const e = { ...se, targetX: se.x, targetY: se.y };
+      if (prev) { e.hurtTimer = prev.hurtTimer || 0; e.atkAnimTimer = prev.atkAnimTimer || 0; }
       serverEnemies.push(e);
       serverEnemiesMap.set(se.id, e);
     });
@@ -509,6 +512,44 @@ function netConnect(onReady) {
       e.hurtTimer = 0.3;
       if (dmg) dmgNum(e.x, e.y - (e.size || 16) - 4, dmg, '#ff4');
     }
+  });
+
+  socket.on('raidEnemyAtk', ({ enemyId, targetId: tgtId }) => {
+    const e = serverEnemiesMap.get(enemyId);
+    if (e) { e.atkAnimTimer = 0.45; }
+  });
+
+  socket.on('raidPlayerAtk', ({ playerId, tx, ty }) => {
+    if (playerId === socket.id) return;
+    const op = otherPlayers.get(playerId);
+    if (op) {
+      op.atkAnimTimer = 0.45; op.castDuration = 0.45;
+      op._swingAngle = Math.atan2(ty - op.y, tx - op.x);
+      op._swingTimer = 0.18;
+    }
+  });
+
+  // ── Raid lobby events ───────────────────────────────────────────────────
+  socket.on('lobbyList', ({ lobbies }) => {
+    _raidLobbyList = lobbies || [];
+    if (typeof updateRaidPanelUI === 'function') updateRaidPanelUI();
+  });
+
+  socket.on('lobbyJoined', ({ lobbyId, isCreator, members }) => {
+    _myLobbyId = lobbyId;
+    _isLobbyCreator = isCreator;
+    _myLobbyMembers = members || [];
+    if (typeof updateRaidPanelUI === 'function') updateRaidPanelUI();
+  });
+
+  socket.on('lobbyLeft', ({ reason } = {}) => {
+    _myLobbyId = null; _isLobbyCreator = false; _myLobbyMembers = [];
+    if (typeof updateRaidPanelUI === 'function') updateRaidPanelUI();
+    if (reason === 'disbanded') dmgNum(player?.x || 0, (player?.y || 0) - 30, 'Группа распущена', '#f93');
+  });
+
+  socket.on('lobbyError', ({ msg }) => {
+    if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 30, msg, '#f55');
   });
 
   socket.on('disconnect', () => {
@@ -805,10 +846,26 @@ function netSpawnAoe(x, y) {
 function netEnterRaid() {
   if (socket?.connected) socket.emit('enterRaid', { dungeonId: 1 });
 }
-
 function netLeaveRaid() {
   if (socket?.connected) socket.emit('leaveRaid');
   inRaid = false;
+}
+
+function netCreateLobby(dungeonId) {
+  if (socket?.connected) socket.emit('createRaidLobby', { dungeonId: dungeonId || 1 });
+}
+function netJoinLobby(lobbyId) {
+  if (socket?.connected) socket.emit('joinRaidLobby', { lobbyId });
+}
+function netLeaveLobby() {
+  if (socket?.connected) socket.emit('leaveRaidLobby');
+  _myLobbyId = null; _isLobbyCreator = false; _myLobbyMembers = [];
+}
+function netStartLobby() {
+  if (socket?.connected) socket.emit('startRaidLobby');
+}
+function netGetLobbyList() {
+  if (socket?.connected) socket.emit('getLobbyList');
 }
 
 // Init Telegram widget on page load (bundle runs at end of <body>)

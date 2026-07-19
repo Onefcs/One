@@ -155,6 +155,36 @@ const raidRooms  = new Map();
 // socketId -> raidId
 const playerRaid = new Map();
 
+// ── Raid lobby state ─────────────────────────────────────────────────────────
+// lobbyId -> { id, creatorId, creatorName, dungeonId, members: Map<sid, {name, bm, lvl}> }
+const raidLobbies = new Map();
+// socketId -> lobbyId
+const playerLobby = new Map();
+
+function _lobbyBroadcast() {
+  const list = [...raidLobbies.values()].map(lb => ({
+    id: lb.id, creatorName: lb.creatorName, dungeonId: lb.dungeonId,
+    members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
+  }));
+  io.emit('lobbyList', { lobbies: list });
+}
+
+function _cleanupLobby(socketId) {
+  const lobbyId = playerLobby.get(socketId);
+  if (!lobbyId) return;
+  const lb = raidLobbies.get(lobbyId);
+  if (!lb) { playerLobby.delete(socketId); return; }
+  lb.members.delete(socketId);
+  playerLobby.delete(socketId);
+  if (lb.members.size === 0 || lb.creatorId === socketId) {
+    lb.members.forEach((_, mid) => { playerLobby.delete(mid); io.to(mid).emit('lobbyLeft', { reason: 'disbanded' }); });
+    raidLobbies.delete(lobbyId);
+    _lobbyBroadcast();
+  } else {
+    _lobbyBroadcast();
+  }
+}
+
 function _cleanupRaid(socketId) {
   const rId = playerRaid.get(socketId);
   if (!rId) return;
@@ -713,27 +743,71 @@ io.on('connection', socket => {
   });
 
   // ── Raid ───────────────────────────────────────────────────────────────────
-  socket.on('enterRaid', ({ dungeonId }) => {
+  // ── Raid lobbies ──────────────────────────────────────────────────────────
+  socket.on('getLobbyList', () => {
+    const list = [...raidLobbies.values()].map(lb => ({
+      id: lb.id, creatorName: lb.creatorName, dungeonId: lb.dungeonId,
+      members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
+    }));
+    socket.emit('lobbyList', { lobbies: list });
+  });
+
+  socket.on('createRaidLobby', ({ dungeonId }) => {
     if (!authed) return;
-    const partyId = playerParty.get(socket.id);
-    if (!partyId) return socket.emit('raidError', { msg: 'Нужна пати минимум 2 игрока' });
-    const partyMap = parties.get(partyId);
-    if (!partyMap || partyMap.size < 2) return socket.emit('raidError', { msg: 'Нужна пати минимум 2 игрока' });
-
-    // Check no member is already in a raid
-    const memberIds = [...partyMap.keys()];
-    for (const mid of memberIds) {
-      if (playerRaid.has(mid)) return socket.emit('raidError', { msg: 'Пати уже в подземелье' });
-    }
-
-    // Check initiator level
+    if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
+    if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
     const cp = currentRoom?.players.get(socket.id);
-    if (!cp || (cp.lvl || 1) < 3) return socket.emit('raidError', { msg: 'Нужен 3 уровень' });
+    if (!cp || (cp.lvl || 1) < 3) return socket.emit('lobbyError', { msg: 'Нужен 3 уровень' });
+    const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
+    const lobbyId = 'lb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
+    const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
+      dungeonId: dungeonId || 1,
+      members: new Map([[socket.id, { name: authed.username, bm, lvl: cp.lvl || 1 }]]) };
+    raidLobbies.set(lobbyId, lb);
+    playerLobby.set(socket.id, lobbyId);
+    socket.emit('lobbyJoined', { lobbyId, isCreator: true,
+      members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })) });
+    _lobbyBroadcast();
+  });
 
+  socket.on('joinRaidLobby', ({ lobbyId }) => {
+    if (!authed) return;
+    const lb = raidLobbies.get(lobbyId);
+    if (!lb) return socket.emit('lobbyError', { msg: 'Группа не найдена' });
+    if (lb.members.size >= 5) return socket.emit('lobbyError', { msg: 'Группа полна (5/5)' });
+    if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
+    if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
+    const cp = currentRoom?.players.get(socket.id);
+    const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
+    lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
+    playerLobby.set(socket.id, lobbyId);
+    const memberList = [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl }));
+    lb.members.forEach((_, mid) => io.to(mid).emit('lobbyJoined', { lobbyId, isCreator: mid === lb.creatorId, members: memberList }));
+    _lobbyBroadcast();
+  });
+
+  socket.on('leaveRaidLobby', () => {
+    if (!playerLobby.has(socket.id)) return;
+    _cleanupLobby(socket.id);
+    socket.emit('lobbyLeft', {});
+    _lobbyBroadcast();
+  });
+
+  socket.on('startRaidLobby', () => {
+    if (!authed) return;
+    const lobbyId = playerLobby.get(socket.id);
+    const lb = raidLobbies.get(lobbyId);
+    if (!lb || lb.creatorId !== socket.id) return socket.emit('lobbyError', { msg: 'Вы не создатель группы' });
+    if (lb.members.size < 2) return socket.emit('lobbyError', { msg: 'Нужно минимум 2 игрока' });
+    const memberIds = [...lb.members.keys()];
+    for (const mid of memberIds) {
+      if (playerRaid.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то уже в рейде' });
+    }
+    raidLobbies.delete(lobbyId);
+    memberIds.forEach(mid => playerLobby.delete(mid));
     const raidId = 'raid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const raidRoom = new RaidRoom(raidId, io, memberIds);
     raidRooms.set(raidId, raidRoom);
-
     for (const mid of memberIds) {
       playerRaid.set(mid, raidId);
       const mfl = playerFloorMap.get(mid);
@@ -741,16 +815,17 @@ io.on('connection', socket => {
       const mp = mRoom?.players.get(mid);
       if (mp) {
         mp._inRaid = true;
-        raidRoom.addPlayer(mid, { maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type, username: mp.username || partyMap.get(mid) || '' });
+        raidRoom.addPlayer(mid, { maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type, username: mp.username || lb.members.get(mid)?.name || '' });
       } else {
-        raidRoom.addPlayer(mid, { maxHp: 100, atk: 10, def: 0, type: 'warrior', username: partyMap.get(mid) || '' });
+        raidRoom.addPlayer(mid, { maxHp: 100, atk: 10, def: 0, type: 'warrior', username: lb.members.get(mid)?.name || '' });
       }
       io.to(mid).emit('raidStart', { raidId, dungeon: raidRoom.dungeonData });
     }
-
     raidRoom.start();
+    _lobbyBroadcast();
   });
 
+  // ── Raid game ─────────────────────────────────────────────────────────────
   socket.on('raidMove', ({ x, y, hp }) => {
     const rId = playerRaid.get(socket.id);
     const rr  = rId ? raidRooms.get(rId) : null;
@@ -762,8 +837,11 @@ io.on('connection', socket => {
     const rr  = rId ? raidRooms.get(rId) : null;
     if (!rr) return;
     const cp = currentRoom?.players.get(socket.id);
+    const targetEnemy = rr._enemyMap.get(enemyId);
     const result = rr.attackEnemy(socket.id, enemyId, cp?.atk || 10);
     if (!result) return;
+    // Broadcast attacker animation to all members
+    if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));
     if (result.killed) {
       rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyKilled', {
         id: enemyId, ex: result.ex, ey: result.ey, isBoss: result.isBoss,
@@ -781,6 +859,7 @@ io.on('connection', socket => {
     console.log('disconnect:', socket.id);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     _cleanupRaid(socket.id);
+    _cleanupLobby(socket.id);
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);

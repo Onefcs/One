@@ -129,7 +129,7 @@ class RaidRoom {
       def:   def.def || 0,
       spd:   def.spd,
       isBoss,
-      x, y, aggro: false,
+      x, y, aggro: true,
       atkTimer: 1 + Math.random(),
       _shp: -1,
     };
@@ -188,10 +188,8 @@ class RaidRoom {
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = p; }
       }
-      if (!closest) { e.aggro = false; return; }
+      if (!closest) return;
       const dist = Math.sqrt(closestD2);
-      if (dist < 350) e.aggro = true;
-      if (!e.aggro) return;
       if (dist > e.size + 14) {
         e.x += (closest.x - e.x) / dist * e.spd * dt;
         e.y += (closest.y - e.y) / dist * e.spd * dt;
@@ -203,6 +201,7 @@ class RaidRoom {
         e.atkTimer = 1.4 + Math.random() * 0.6;
         const dmg = Math.max(1, e.atk - (closest.def || 0));
         closest.hp = Math.max(0, closest.hp - dmg);
+        this.memberIds.forEach(id => this.io.to(id).emit('raidEnemyAtk', { enemyId: e.id, targetId: closest.socketId }));
         this.io.to(closest.socketId).emit('raidPlayerHurt', { hp: closest.hp, dmg });
         if (closest.hp <= 0) {
           const stillAlive = alivePlayers.filter(p => p.hp > 0);

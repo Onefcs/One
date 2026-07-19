@@ -55,3 +55,9 @@ let inRaid = false;
 let _normalDungeon = null;
 let _normalDungeonLvl = 1;
 let _raidWaveNotif = null; // { text, timer }
+
+// Raid lobby state
+let _raidLobbyList = [];     // [{ id, creatorName, dungeonId, members: [{id,name,bm,lvl}] }]
+let _myLobbyId    = null;
+let _isLobbyCreator = false;
+let _myLobbyMembers = [];    // [{id,name,bm,lvl}]
