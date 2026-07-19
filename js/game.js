@@ -1095,11 +1095,16 @@ function buildTileCanvas() {
       && dungeon.grid[ty][tx] === FLOOR;
   }
 
+  // NOTE: no 1px features anywhere in this canvas. It is blitted at
+  // ZOOM 0.75 with nearest-neighbor sampling, which drops every 4th pixel
+  // row — any 1px line renders inconsistently (thick/thin/missing).
+  // Only multi-pixel solid fills survive that scaling cleanly.
+
   // 1. Solid wall fill
   tctx.fillStyle = th.wallColor;
   tctx.fillRect(0, 0, dungeon.w * TILE, dungeon.h * TILE);
 
-  // 2. Floor tiles — subtle checkerboard
+  // 2. Floor — subtle checkerboard (tile = 40px → scales to whole device px)
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -1107,19 +1112,9 @@ function buildTileCanvas() {
       tctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
     }
   }
-  // Floor grout lines (1px top + left edges)
-  tctx.fillStyle = th.grout;
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
-      if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      const x = tx * TILE, y = ty * TILE;
-      tctx.fillRect(x, y, TILE, 1);
-      tctx.fillRect(x, y, 1, TILE);
-    }
-  }
 
-  // 3. Wall "cliff face" — where wall is above floor, draw a lighter strip
-  //    at the bottom of the wall tile to give depth (top-down dungeon style)
+  // 3. Wall "cliff face" — lighter strip at the bottom of wall tiles that
+  //    border floor below (top-down depth cue)
   tctx.fillStyle = th.wallEdge;
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
@@ -1128,19 +1123,8 @@ function buildTileCanvas() {
       tctx.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 8);
     }
   }
-  // Highlight line at the very bottom edge of the cliff
-  tctx.globalAlpha = th.wallHighlight * 1.5;
-  tctx.fillStyle = '#ffffff';
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
-      if (dungeon.grid[ty][tx] !== WALL) continue;
-      if (!isFloor(tx, ty + 1)) continue;
-      tctx.fillRect(tx * TILE, ty * TILE + TILE - 1, TILE, 1);
-    }
-  }
-  tctx.globalAlpha = 1;
 
-  // 4. Shadow cast onto floor from adjacent walls (inner shadow)
+  // 4. Shadow cast onto floor from walls above / beside
   tctx.fillStyle = 'rgba(0,0,0,0.4)';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
