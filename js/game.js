@@ -888,6 +888,8 @@ function render(dt, ts) {
 // ─────────────────────────────────────────────────────────
 function goToFloor(n) {
   if (n === dungeonLvl || !player) return;
+  if (n > dungeonLvl) onDungeonClear(dungeonLvl);
+  onGotoFloor(n);
   netSaveProgressNow();
   netSendChangeFloor(clamp(n, 1, 20));
   setTab(0);

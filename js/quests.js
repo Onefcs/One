@@ -20,26 +20,28 @@ function getQuestProgress(q) {
       return o;
     }, {});
   }
-  if (q.type === 'level') return { done: player.lvl, total: q.level };
-  if (q.type === 'buy_potion') return { done: player.questKills['_potion'] || 0, total: q.count };
-  if (q.type === 'craft') return { done: player.questKills['_craft'] || 0, total: 1 };
+  if (q.type === 'level')         return { done: player.lvl, total: q.level };
+  if (q.type === 'buy_potion')    return { done: player.questKills['_potion'] || 0, total: q.count };
+  if (q.type === 'craft')         return { done: player.questKills['_craft'] || 0, total: 1 };
+  if (q.type === 'dungeon_clear') return { done: player.questKills['_dungeon_' + q.floor] || 0, total: q.count };
+  if (q.type === 'join_guild')    return { done: player.questKills['_guild'] || 0, total: 1 };
+  if (q.type === 'goto_floor')    return { done: player.questKills['_floor_' + q.floor] || 0, total: 1 };
   return {};
 }
 
 function isQuestComplete(q) {
   if (!player || !q) return false;
   if (q.type === 'kill') {
-    // Sum kills across all enemy types in the pool (matches progress display)
     const done = q.enemies.reduce((s, name) => s + (player.questKills[name] || 0), 0);
     return done >= q.count;
   }
-  if (q.type === 'kill_multi') {
-    // Each enemy type must individually reach the count
-    return q.enemies.every(name => (player.questKills[name] || 0) >= q.count);
-  }
-  if (q.type === 'level') return player.lvl >= q.level;
-  if (q.type === 'buy_potion') return (player.questKills['_potion'] || 0) >= q.count;
-  if (q.type === 'craft') return (player.questKills['_craft'] || 0) >= 1;
+  if (q.type === 'kill_multi')    return q.enemies.every(name => (player.questKills[name] || 0) >= q.count);
+  if (q.type === 'level')         return player.lvl >= q.level;
+  if (q.type === 'buy_potion')    return (player.questKills['_potion'] || 0) >= q.count;
+  if (q.type === 'craft')         return (player.questKills['_craft'] || 0) >= 1;
+  if (q.type === 'dungeon_clear') return (player.questKills['_dungeon_' + q.floor] || 0) >= q.count;
+  if (q.type === 'join_guild')    return (player.questKills['_guild'] || 0) >= 1;
+  if (q.type === 'goto_floor')    return (player.questKills['_floor_' + q.floor] || 0) >= 1;
   return false;
 }
 
@@ -116,6 +118,38 @@ function onLevelUp(lvl) {
   if (!q || q.type !== 'level') return;
   checkQuestComplete();
   if (activeTab === 3) updateQuestUI();
+}
+
+function onDungeonClear(floor) {
+  if (!player) return;
+  const key = '_dungeon_' + floor;
+  player.questKills[key] = (player.questKills[key] || 0) + 1;
+  const q = getCurrentQuest();
+  if (q && q.type === 'dungeon_clear' && q.floor === floor) {
+    checkQuestComplete();
+    if (activeTab === 3) updateQuestUI();
+  }
+}
+
+function onGotoFloor(floor) {
+  if (!player) return;
+  const key = '_floor_' + floor;
+  player.questKills[key] = 1;
+  const q = getCurrentQuest();
+  if (q && q.type === 'goto_floor' && q.floor === floor) {
+    checkQuestComplete();
+    if (activeTab === 3) updateQuestUI();
+  }
+}
+
+function onJoinGuild() {
+  if (!player) return;
+  player.questKills['_guild'] = 1;
+  const q = getCurrentQuest();
+  if (q && q.type === 'join_guild') {
+    checkQuestComplete();
+    if (activeTab === 3) updateQuestUI();
+  }
 }
 
 function drawQuestNotif() {
@@ -212,59 +246,98 @@ function drawQuestTracker() {
 }
 
 // ── HTML quest panel ──────────────────────────────────────
+function _questProgHtml(q, isCur) {
+  if (!isCur) return '';
+  const complete = isQuestComplete(q);
+  if (complete) return `<button class="quest-claim-btn" onclick="claimQuest()">Забрать награду</button>`;
+
+  if (q.type === 'kill') {
+    const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
+    const pct  = Math.min(100, Math.round(done / q.count * 100));
+    return `<div class="quest-prog">${done}/${q.count}
+      <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
+  }
+  if (q.type === 'kill_multi') {
+    return q.enemies.map(name => {
+      const done = player.questKills[name] || 0;
+      const pct  = Math.min(100, Math.round(done / q.count * 100));
+      return `<div class="quest-prog">${name}: ${done}/${q.count}
+        <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
+    }).join('');
+  }
+  if (q.type === 'level') {
+    const pct = Math.min(100, Math.round(player.lvl / (q.level || 1) * 100));
+    return `<div class="quest-prog">Уровень ${player.lvl}/${q.level}
+      <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
+  }
+  if (q.type === 'buy_potion') {
+    const done = player.questKills['_potion'] || 0;
+    return `<div class="quest-prog">${done}/${q.count} куплено
+      <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100,Math.round(done/q.count*100))}%"></div></div></div>`;
+  }
+  if (q.type === 'dungeon_clear') {
+    const done = player.questKills['_dungeon_' + q.floor] || 0;
+    return `<div class="quest-prog">${done}/${q.count} раз
+      <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100,Math.round(done/q.count*100))}%"></div></div></div>`;
+  }
+  if (q.type === 'join_guild') {
+    return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#1a3a6a,#2a5aaa)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
+  }
+  if (q.type === 'goto_floor') {
+    return `<div class="quest-prog">Перейди на этаж ${q.floor} через Карту</div>`;
+  }
+  if (q.type === 'craft') {
+    return `<div class="quest-prog">Зайди к кузнецу</div>`;
+  }
+  return '';
+}
+
 function updateQuestUI() {
   const el = document.getElementById('quest-list');
   if (!el || !player) return;
 
-  el.innerHTML = QUEST_DEF.map((q, i) => {
-    const isDone = i < player.questIdx;
-    const isCur  = i === player.questIdx;
-    const cls    = isDone ? 'quest-item quest-done' : isCur ? 'quest-item quest-current' : 'quest-item quest-locked';
+  // Group quests by floor
+  const floors = [...new Set(QUEST_DEF.map(q => q.floor || 1))].sort((a, b) => a - b);
+  let html = '';
 
-    let progHtml = '';
-    if (isCur) {
-      const complete = isQuestComplete(q);
-      if (complete) {
-        progHtml = `<button class="quest-claim-btn" onclick="claimQuest()">Забрать награду</button>`;
-      } else if (q.type === 'kill') {
-        const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
-        const pct  = Math.min(100, Math.round(done / q.count * 100));
-        progHtml = `<div class="quest-prog">${done}/${q.count}
-          <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
-      } else if (q.type === 'kill_multi') {
-        progHtml = q.enemies.map(name => {
-          const done = player.questKills[name] || 0;
-          const pct  = Math.min(100, Math.round(done / q.count * 100));
-          return `<div class="quest-prog">${name}: ${done}/${q.count}
-            <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
-        }).join('');
-      } else if (q.type === 'level') {
-        const pct = Math.min(100, Math.round(player.lvl / (q.level || 1) * 100));
-        progHtml = `<div class="quest-prog">Уровень ${player.lvl}/${q.level}
-          <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
-      } else if (q.type === 'buy_potion') {
-        const done = player.questKills['_potion'] || 0;
-        progHtml = `<div class="quest-prog">${done}/${q.count} куплено</div>`;
-      } else if (q.type === 'craft') {
-        progHtml = `<div class="quest-prog">Зайди к кузнецу</div>`;
-      }
+  floors.forEach(floorNum => {
+    const floorQuests = QUEST_DEF.map((q, i) => ({ q, i })).filter(({ q }) => (q.floor || 1) === floorNum);
+    const firstIdx    = floorQuests[0].i;
+    const lastIdx     = floorQuests[floorQuests.length - 1].i;
+    // Floor section is locked if player hasn't reached its first quest yet
+    const floorLocked = player.questIdx < firstIdx;
+
+    if (floorLocked) {
+      const prevFloor = floorNum - 1;
+      html += `<div class="quest-floor-teaser">🔒 Откроется на ${prevFloor} этаже · ещё ${floorQuests.length} квестов</div>`;
+      return;
     }
 
-    const rewardStr = [
-      q.reward.xp > 0 ? iconHTML('star',12,'#f1c40f') + q.reward.xp + ' опыта' : '',
-      iconHTML('coin',12,'#f1c40f') + q.reward.gold,
-    ].filter(Boolean).join(' · ');
-    const statusIcon = isDone
-      ? iconHTML('hpPlus', 14, '#2ecc71')
-      : isCur ? iconHTML('star', 14, '#fd0') : iconHTML('skull', 14, '#555');
+    const doneCnt = Math.min(player.questIdx - firstIdx, floorQuests.length);
+    html += `<div class="quest-floor-hdr">Этаж ${floorNum} · <span style="color:#888;font-weight:normal">${doneCnt}/${floorQuests.length} выполнено</span></div>`;
 
-    return `<div class="${cls}">
-      <div class="quest-header">
-        <span class="quest-title">${statusIcon} ${q.title}</span>
-        <span class="quest-reward">${rewardStr}</span>
-      </div>
-      <div class="quest-desc">${q.desc}</div>
-      ${progHtml}
-    </div>`;
-  }).join('');
+    floorQuests.forEach(({ q, i }) => {
+      const isDone = i < player.questIdx;
+      const isCur  = i === player.questIdx;
+      const cls    = isDone ? 'quest-item quest-done' : isCur ? 'quest-item quest-current' : 'quest-item quest-locked';
+      const rewardStr = [
+        q.reward.xp > 0 ? iconHTML('star',12,'#f1c40f') + q.reward.xp + ' XP' : '',
+        iconHTML('coin',12,'#f1c40f') + q.reward.gold,
+      ].filter(Boolean).join(' · ');
+      const statusIcon = isDone
+        ? iconHTML('hpPlus', 14, '#2ecc71')
+        : isCur ? iconHTML('star', 14, '#fd0') : iconHTML('skull', 14, '#555');
+
+      html += `<div class="${cls}">
+        <div class="quest-header">
+          <span class="quest-title">${statusIcon} ${q.title}</span>
+          <span class="quest-reward">${rewardStr}</span>
+        </div>
+        <div class="quest-desc">${q.desc}</div>
+        ${_questProgHtml(q, isCur)}
+      </div>`;
+    });
+  });
+
+  el.innerHTML = html;
 }
