@@ -470,7 +470,7 @@ function _showCharSelect(savedData) {
 }
 
 
-function netSaveProgress() {
+function _emitSaveProgress() {
   if (!player || state !== 'playing') return;
   const stats = {
     type: player.type,
@@ -488,6 +488,29 @@ function netSaveProgress() {
     questKills: player.questKills || {},
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });
+}
+
+// Debounced save — serializing the full inventory + equipment on every kill
+// and pickup caused frame spikes mid-combat. Coalesce into at most one emit
+// per 2s (trailing edge); netSaveProgressNow() flushes immediately for
+// floor changes and page unload where the save must not be lost.
+let _saveTimer = null, _lastSaveMs = 0;
+function netSaveProgress() {
+  if (!player || state !== 'playing') return;
+  const now = Date.now();
+  if (now - _lastSaveMs >= 2000) { _lastSaveMs = now; _emitSaveProgress(); return; }
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    _lastSaveMs = Date.now();
+    _emitSaveProgress();
+  }, 2000 - (now - _lastSaveMs));
+}
+
+function netSaveProgressNow() {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  _lastSaveMs = Date.now();
+  _emitSaveProgress();
 }
 
 function netHealParty(amount) {
@@ -549,7 +572,9 @@ let _lastMoveSend = 0;
 function netSendMove() {
   if (!socket?.connected || !player) return;
   const now = Date.now();
-  if (now - _lastMoveSend < 16) return;
+  // Server ticks at 25ms (40Hz) — sending faster than that is pure waste:
+  // extra emits cost JSON serialization + radio wakeups on mobile.
+  if (now - _lastMoveSend < 25) return;
   _lastMoveSend = now;
   socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
 }

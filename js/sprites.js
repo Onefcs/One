@@ -351,6 +351,26 @@ const _spriteLoadPromises = {};
 const _SPRITE_CELL_H = Math.max(120, Math.min(240,
   Math.ceil(80 * (typeof ZOOM !== 'undefined' ? ZOOM : 1) * (window.devicePixelRatio || 1))));
 
+// Rasterizing one 3360×2880 sheet costs 10-50ms of main-thread time; when a
+// character's sheets all come from HTTP cache their decodes resolve nearly
+// simultaneously and 13 back-to-back rasterizations freeze the game for a
+// beat — visible as a stutter the moment another player enters the screen.
+// Serialize them: one sheet per macrotask so the game loop breathes between.
+const _rasterQueue = [];
+let _rasterPumping = false;
+function _queueRaster(job) {
+  _rasterQueue.push(job);
+  if (_rasterPumping) return;
+  _rasterPumping = true;
+  const pump = () => {
+    const j = _rasterQueue.shift();
+    if (j) j();
+    if (_rasterQueue.length) setTimeout(pump, 0);
+    else _rasterPumping = false;
+  };
+  setTimeout(pump, 0);
+}
+
 function _rasterizeSheet(img, ad, def) {
   const scale = _SPRITE_CELL_H / def.frameH;
   const cw = Math.ceil(def.frameW * scale), ch = _SPRITE_CELL_H;
@@ -422,7 +442,9 @@ function loadSprites(charType, onDone) {
     // Already rasterized (char-select preview) — nothing left to do.
     if (existing && existing.naturalWidth === undefined) { tick(); return; }
     const applyRaster = (img) => {
-      const raster = () => { cache[key] = _rasterizeSheet(img, def.anims[key], def); tick(); };
+      const raster = () => _queueRaster(() => {
+        cache[key] = _rasterizeSheet(img, def.anims[key], def); tick();
+      });
       if (img.decode) img.decode().then(raster, raster); else raster();
     };
     // Preview Image loaded but not yet rasterized — rasterize it in place.

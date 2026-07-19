@@ -133,7 +133,10 @@ function updateCamera(dt) {
   const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
   const tx = player.x - visW / 2;
   const ty = player.y - visH / 2;
-  const factor = Math.min(1, 8 * dt); // slightly faster tracking reduces perceived lag
+  // Exponential form is frame-rate independent: at fluctuating fps a linear
+  // 8*dt factor makes the camera correct faster/slower per-frame, which reads
+  // as rubber-banding — this keeps the smoothing constant in wall-clock time.
+  const factor = 1 - Math.exp(-8 * dt);
   camera.x += (tx - camera.x) * factor;
   camera.y += (ty - camera.y) * factor;
   // Once within a device pixel of the target, lock onto it exactly —
@@ -426,7 +429,7 @@ function update(dt) {
       const d = dmgNums[i]; d.y += d.vy * dt; d.life -= dt;
       if (d.life > 0) dmgNums[j++] = dmgNums[i];
     }
-    dmgNums.length = Math.min(j, _qualityTier > 0 ? 20 : 40);
+    dmgNums.length = Math.min(j, _qualityTier > 0 ? 14 : 28);
   }
 
   // Skill timers
@@ -548,13 +551,14 @@ function update(dt) {
       e._moveTimer = 0.2;
     }
 
-    // Server correction — squared fast-reject avoids sqrt when error < 10px
+    // Server correction — squared fast-reject avoids sqrt when error < 10px.
+    // Exponential (frame-rate independent) pull: constant-time correction
+    // whether the device runs at 30 or 60fps, so no visible speed-up jerks.
     if (e.targetX !== undefined) {
       const cedx = e.targetX - e.x, cedy = e.targetY - e.y;
       const err2 = cedx * cedx + cedy * cedy;
       if (err2 > 100) {
-        const err = Math.sqrt(err2);
-        const k = err > 150 ? 0.2 : 0.04;
+        const k = 1 - Math.exp(-(err2 > 150 * 150 ? 13 : 2.5) * dt);
         e.x += cedx * k; e.y += cedy * k;
       }
     }
@@ -731,7 +735,11 @@ function render(dt, ts) {
   // Particles — sort by color, then batch-fill per group (1 fill() per color, not per particle)
   if (particles.length) {
     if (_qualityTier > 0 && particles.length > 80) particles.length = 80;
-    if (particles.length > 1) particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
+    // Sort only when new particles were spawned — compaction keeps order
+    if (_particlesDirty) {
+      if (particles.length > 1) particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
+      _particlesDirty = false;
+    }
     let i = 0;
     while (i < particles.length) {
       const col = particles[i].color;
@@ -886,7 +894,7 @@ function render(dt, ts) {
 // ─────────────────────────────────────────────────────────
 function goToFloor(n) {
   if (n === dungeonLvl || !player) return;
-  netSaveProgress();
+  netSaveProgressNow();
   netSendChangeFloor(clamp(n, 1, 20));
   setTab(0);
 }
@@ -1221,7 +1229,12 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-window.addEventListener('beforeunload', () => { netSaveProgress(); });
+window.addEventListener('beforeunload', () => { netSaveProgressNow(); });
+// Mobile browsers rarely fire beforeunload — flush the save when the app
+// goes to background (tab switch, screen lock, app switcher)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') netSaveProgressNow();
+});
 
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');
