@@ -1315,5 +1315,5 @@ window.addEventListener('load', () => {
   resize(); window.addEventListener('resize', resize);
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
-  requestAnimationFrame(ts => { lastTs = ts; requestAnimationFrame(loop); });
+  requestAnimationFrame(ts => { lastTs = ts; _loopTs = ts; requestAnimationFrame(loop); });
 });
