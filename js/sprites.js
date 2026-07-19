@@ -449,23 +449,12 @@ function getSpriteAnimKey(p) {
   return `${dir}-idle`;
 }
 
-let _tintCanvas = null, _tintCtx = null;
 function _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, color) {
-  if (!_tintCanvas) {
-    _tintCanvas = document.createElement('canvas');
-    _tintCtx = _tintCanvas.getContext('2d');
-  }
-  const iw = Math.round(dw), ih = Math.round(dh);
-  if (_tintCanvas.width !== iw || _tintCanvas.height !== ih) {
-    _tintCanvas.width = iw; _tintCanvas.height = ih;
-  }
-  _tintCtx.clearRect(0, 0, iw, ih);
-  _tintCtx.drawImage(img, sx, sy, fw, fh, 0, 0, iw, ih);
-  _tintCtx.globalCompositeOperation = 'source-atop';
-  _tintCtx.fillStyle = color;
-  _tintCtx.fillRect(0, 0, iw, ih);
-  _tintCtx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(_tintCanvas, dx, dy, iw, ih);
+  ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = color;
+  ctx.fillRect(dx, dy, dw, dh);
+  ctx.globalAlpha = 1;
 }
 
 function drawSprite(p, tint) {
