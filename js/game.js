@@ -178,7 +178,9 @@ function update(dt) {
       }
     }
 
-    // Push player out of enemies
+    // Push player out of enemies — record position first so we can compensate the
+    // camera immediately after, preventing push-back from showing as screen jitter
+    const _prePushX = player.x, _prePushY = player.y;
     serverEnemies.forEach(e => {
       if ((e.hp || 0) <= 0) return;
       const minD = e.size + 12;
@@ -205,6 +207,12 @@ function update(dt) {
         if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
       }
     });
+
+    // Absorb push-back into camera immediately — without this the camera
+    // lerps at 13% per frame while the player can move 5-15px in a single
+    // push step, making the character visibly jump on screen
+    camera.x += player.x - _prePushX;
+    camera.y += player.y - _prePushY;
 
     netSendMove();
   }
@@ -895,7 +903,7 @@ function selectChar(type) {
   let _spritesPending = 1 + _floor1Eids.length;
   const _onSpriteSetReady = () => { if (--_spritesPending === 0) csOnSpritesReady(); };
   _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
-  loadSprites(type, _onSpriteSetReady);
+  loadSprites(type, () => { prewarmTintCache(type); _onSpriteSetReady(); });
   netSelectChar(type, savedStats);
 }
 

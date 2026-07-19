@@ -450,6 +450,26 @@ function getSpriteAnimKey(p) {
 }
 
 const _tintCache = new WeakMap();
+
+// Pre-create tinted canvases for all sheets of a character right after sprites
+// load, so the first hurt mid-combat doesn't stall to build them on demand.
+function prewarmTintCache(charType) {
+  const cache = spriteCache[charType];
+  if (!cache) return;
+  Object.values(cache).forEach(img => {
+    if (!_sheetReady(img) || _tintCache.has(img)) return;
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    const c = cv.getContext('2d');
+    c.drawImage(img, 0, 0);
+    c.globalCompositeOperation = 'source-atop';
+    c.globalAlpha = 0.55;
+    c.fillStyle = 'rgba(255,40,40,0.55)';
+    c.fillRect(0, 0, cv.width, cv.height);
+    _tintCache.set(img, cv);
+  });
+}
+
 function _drawTinted(img, fw, fh, sx, sy, dx, dy, dw, dh, color) {
   let tinted = _tintCache.get(img);
   if (!tinted) {
