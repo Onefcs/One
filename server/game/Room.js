@@ -105,6 +105,22 @@ class Room {
     const nearEnemies = this._nearEnemiesBuf;
     this.players.forEach(p => { if (p.hp > 0 && p.type) alivePlayers.push(p); });
 
+    // Detect players entering the safe zone — on entry, reset all enemies to spawn
+    let anyEnteredSafeZone = false;
+    this.players.forEach(p => {
+      const nowIn = this._inSafeZone(p.x, p.y);
+      if (nowIn && !p._wasInSafeZone) anyEnteredSafeZone = true;
+      p._wasInSafeZone = nowIn;
+    });
+    if (anyEnteredSafeZone) {
+      this.enemies.forEach(e => {
+        if (e.hp <= 0) return;
+        e.x = e.spawnX; e.y = e.spawnY;
+        e.aggro = false;
+        e._shp = -1;
+      });
+    }
+
     // Enemy AI + respawn
     this.enemies.forEach(e => {
       if (e.hp <= 0) {
@@ -156,13 +172,6 @@ class Room {
             id: closest.socketId, hp: closest.hp, dmg,
           });
         }
-      }
-
-      // Safe zone: enemy entered spawn room → teleport back to spawn
-      if (this._inSafeZone(e.x, e.y)) {
-        e.x = e.spawnX; e.y = e.spawnY;
-        e.aggro = false;
-        e._shp = -1;
       }
 
       // Leash: too far from spawn → full HP reset back to spawn
