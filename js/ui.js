@@ -65,18 +65,15 @@ function updateInvUI() {
   }
 
   // Inventory grid — materials stack by id
-  document.getElementById('inv-count').textContent = inv.length + '/50';
-  const _matMap = {};
+  document.getElementById('inv-count').textContent = invSlotCount() + '/50';
   const _displayInv = [];
   inv.forEach((it, idx) => {
-    if (it.slot === 'material') {
-      if (!_matMap[it.id]) { _matMap[it.id] = { it, count: 0 }; }
-      _matMap[it.id].count++;
+    if (_isStackable(it)) {
+      _displayInv.push({ it, idx, count: it.qty || 1 });
     } else {
       _displayInv.push({ it, idx });
     }
   });
-  Object.values(_matMap).forEach(m => _displayInv.push({ it: m.it, count: m.count }));
 
   document.getElementById('inv-grid').innerHTML = Array.from({ length: 50 }, (_, i) => {
     const entry = _displayInv[i];
@@ -1283,7 +1280,7 @@ const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Брон
 function openInvItemModal(idx) {
   if (!player) return;
   const it = player.inventory[idx];
-  if (!it || it.slot === 'material' || it.slot === 'use') return;
+  if (!it || _isStackable(it) || it.slot === 'use') return;
 
   const rc    = RARITY_COLOR[it.rarity] || '#aaa';
   const enh   = it.enhance || 0;

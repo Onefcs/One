@@ -1,3 +1,44 @@
+function _isStackable(it) { return it.slot === 'material' || it.slot === 'recipe'; }
+
+function invSlotCount() {
+  return player.inventory.length;
+}
+
+function invHasSpace() {
+  return invSlotCount() < 50;
+}
+
+function addToInventory(it) {
+  if (_isStackable(it)) {
+    const existing = player.inventory.find(i => i.id === it.id);
+    if (existing) { existing.qty = (existing.qty || 1) + 1; return true; }
+  }
+  if (!invHasSpace()) return false;
+  if (_isStackable(it)) {
+    player.inventory.push({ ...it, qty: 1 });
+  } else {
+    player.inventory.push(it);
+  }
+  return true;
+}
+
+function removeFromInventory(id, n) {
+  const item = player.inventory.find(i => i.id === id);
+  if (!item) return false;
+  const qty = item.qty || 1;
+  if (qty <= n) {
+    player.inventory.splice(player.inventory.indexOf(item), 1);
+  } else {
+    item.qty = qty - n;
+  }
+  return true;
+}
+
+function countMaterial(id) {
+  const item = player.inventory.find(i => i.id === id);
+  return item ? (item.qty || 1) : 0;
+}
+
 function makePlayer(type) {
   const d = CHAR_DEF[type];
   return {
@@ -107,7 +148,7 @@ function gainXP(amount) {
 
 function equipItem(idx) {
   const it = player.inventory[idx]; if (!it) return;
-  if (it.slot === 'material' || it.slot === 'use') return;
+  if (_isStackable(it) || it.slot === 'use') return;
   const old = player.equipment[it.slot];
   player.equipment[it.slot] = it;
   player.inventory.splice(idx, 1);
@@ -117,7 +158,7 @@ function equipItem(idx) {
 
 function unequipItem(slot) {
   const it = player.equipment[slot];
-  if (!it || player.inventory.length >= 50) return;
+  if (!it || !invHasSpace()) return;
   player.inventory.push(it);
   player.equipment[slot] = null;
   recompute(); updateInvUI();
@@ -314,6 +355,25 @@ function useSkill(idx) {
   }
 }
 
+function _migrateInventory(inv) {
+  const stacked = [];
+  const matMap = {};
+  inv.forEach(it => {
+    if (_isStackable(it)) {
+      if (matMap[it.id]) {
+        matMap[it.id].qty = (matMap[it.id].qty || 1) + (it.qty || 1);
+      } else {
+        const entry = { ...it, qty: it.qty || 1 };
+        matMap[it.id] = entry;
+        stacked.push(entry);
+      }
+    } else {
+      stacked.push(it);
+    }
+  });
+  return stacked;
+}
+
 function restoreFromSave(data) {
   if (!player || !data) return;
   player.lvl      = data.lvl      || 1;
@@ -331,7 +391,7 @@ function restoreFromSave(data) {
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
-  player.inventory  = data.inventory || [];
+  player.inventory  = _migrateInventory(data.inventory || []);
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, dodge:0, accuracy:0, lifeSteal:0, hpRegen:0 };
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};

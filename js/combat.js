@@ -65,8 +65,7 @@ function pickup(drop) {
     if (it.hp) { player.hp = Math.min(player.maxHp, player.hp + it.hp); dmgNum(player.x, player.y - 26, '+' + it.hp + '♥', '#4f4'); }
     return;
   }
-  if (player.inventory.length < 50) {
-    player.inventory.push(it);
+  if (addToInventory(it)) {
     dmgNum(drop.x, drop.y - 12, it.name, RARITY_COLOR[it.rarity] || '#4ff');
     netSaveProgress();
   }
@@ -79,10 +78,9 @@ function applyLootToInventory(eid) {
   let saved = false;
 
   function _addMat(id, yOff) {
-    if (player.inventory.length >= 50) return;
     const mat = CRAFT_MATS.find(m => m.id === id);
     if (!mat) return;
-    player.inventory.push({ ...mat });
+    if (!addToInventory({ ...mat })) return;
     dmgNum(player.x, player.y - yOff, '+ ' + mat.name, RARITY_COLOR[mat.rarity] || '#aaa');
     saved = true;
   }

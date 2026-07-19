@@ -79,7 +79,7 @@ function _matIcon(mat, size) {
 function _listMats() {
   const parts = [];
   CRAFT_MATS.forEach(m => {
-    const n = player.inventory.filter(i => i.id === m.id).length;
+    const n = countMaterial(m.id);
     if (n > 0) parts.push(_matIcon(m, 14) + '<span style="font-size:10px">×' + n + '</span>');
   });
   return parts.join(' ') || 'нет';
@@ -123,8 +123,8 @@ function _craftsmanItemsTab() {
     const rc = RARITY_COLOR[r.key] || '#aaa';
     html += `<div class="craft-group-hdr" style="color:${rc}">${r.label}</div><div class="craft-items-grid">`;
     entries.forEach(({ rec, idx, item }) => {
-      const canCraft = player.inventory.length < 50 &&
-        rec.mats.every(m => player.inventory.filter(i => i.id === m.id).length >= m.n);
+      const canCraft = invHasSpace() &&
+        rec.mats.every(m => countMaterial(m.id) >= m.n);
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
@@ -145,7 +145,7 @@ function openCraftModal(idx) {
 
   const matsHtml = rec.mats.map(m => {
     const matDef = CRAFT_MATS.find(c => c.id === m.id);
-    const have = player.inventory.filter(i => i.id === m.id).length;
+    const have = countMaterial(m.id);
     const ok = have >= m.n;
     return `<div class="craft-req-row">
       <span class="craft-req-icon">${matDef ? _matIcon(matDef, 20) : m.id}</span>
@@ -154,8 +154,8 @@ function openCraftModal(idx) {
     </div>`;
   }).join('');
 
-  const canCraft = player.inventory.length < 50 &&
-    rec.mats.every(m => player.inventory.filter(i => i.id === m.id).length >= m.n);
+  const canCraft = invHasSpace() &&
+    rec.mats.every(m => countMaterial(m.id) >= m.n);
   const stats = statStr(item);
 
   document.getElementById('npc-body').innerHTML = `
@@ -179,23 +179,19 @@ function craftSpecificItem(idx) {
   if (!rec || !player) return;
 
   for (const m of rec.mats) {
-    if (player.inventory.filter(i => i.id === m.id).length < m.n) {
+    if (countMaterial(m.id) < m.n) {
       _shopMsg('Недостаточно материалов!'); return;
     }
   }
-  if (player.inventory.length >= 50) { _shopMsg('Инвентарь полон!'); return; }
+  if (!invHasSpace()) { _shopMsg('Инвентарь полон!'); return; }
 
   for (const m of rec.mats) {
-    let need = m.n;
-    player.inventory = player.inventory.filter(i => {
-      if (i.id === m.id && need > 0) { need--; return false; }
-      return true;
-    });
+    removeFromInventory(m.id, m.n);
   }
 
   const item = ITEM_DEF.find(i => i.id === rec.itemId);
   if (Math.random() < rec.chance) {
-    player.inventory.push({ ...item });
+    addToInventory({ ...item });
     _shopMsg('✓ Создано: ' + item.name);
   } else {
     _shopMsg('Провал! Материалы потеряны.');
@@ -222,8 +218,8 @@ function _craftsmanMatsTab() {
       const fromMat = CRAFT_MATS.find(m => m.id === recipe.from);
       const toMat   = CRAFT_MATS.find(m => m.id === recipe.to);
       if (!fromMat || !toMat) return;
-      const have = player.inventory.filter(i => i.id === recipe.from).length;
-      const canCraft = have >= recipe.count && player.inventory.length < 50;
+      const have = countMaterial(recipe.from);
+      const canCraft = have >= recipe.count && invHasSpace();
       const rc = RARITY_COLOR[toMat.rarity] || '#aaa';
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
@@ -243,9 +239,9 @@ function openMatModal(idx) {
   const toMat   = CRAFT_MATS.find(m => m.id === recipe.to);
   if (!fromMat || !toMat) return;
 
-  const have = player.inventory.filter(i => i.id === recipe.from).length;
+  const have = countMaterial(recipe.from);
   const ok = have >= recipe.count;
-  const canCraft = ok && player.inventory.length < 50;
+  const canCraft = ok && invHasSpace();
   const rcTo = RARITY_COLOR[toMat.rarity] || '#aaa';
 
   document.getElementById('npc-body').innerHTML = `
@@ -274,20 +270,16 @@ function openMatModal(idx) {
 function craftMatUpgrade(idx) {
   const recipe = MAT_UPGRADE_RECIPES[idx];
   if (!recipe || !player) return;
-  const fromHave = player.inventory.filter(i => i.id === recipe.from).length;
-  if (fromHave < recipe.count)       { _shopMsg('Недостаточно материалов!'); return; }
-  if (player.inventory.length >= 50) { _shopMsg('Инвентарь полон!'); return; }
+  const fromHave = countMaterial(recipe.from);
+  if (fromHave < recipe.count)  { _shopMsg('Недостаточно материалов!'); return; }
+  if (!invHasSpace())           { _shopMsg('Инвентарь полон!'); return; }
 
-  let needed = recipe.count;
-  player.inventory = player.inventory.filter(i => {
-    if (i.id === recipe.from && needed > 0) { needed--; return false; }
-    return true;
-  });
+  removeFromInventory(recipe.from, recipe.count);
 
   if (Math.random() < recipe.chance) {
     const mat = CRAFT_MATS.find(m => m.id === recipe.to);
     if (mat) {
-      player.inventory.push({ ...mat });
+      addToInventory({ ...mat });
       _shopMsg('✓ Получено: ' + mat.name);
     }
   } else {
@@ -300,13 +292,13 @@ function craftMatUpgrade(idx) {
 // ── Shopkeeper ──────────────────────────────────────────
 function _shopkeeperBody() {
   const p = player;
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${p.inventory.length}/50</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${invSlotCount()}/50</b></div>`;
   html += '<div class="shop-sec">Товары</div><div class="shop-list">';
   SHOP_CATALOG.forEach(entry => {
     const item = ITEM_DEF.find(i => i.id === entry.itemId);
     if (!item) return;
     const rc = RARITY_COLOR[item.rarity] || '#aaa';
-    const canBuy = p.gold >= entry.price && p.inventory.length < 50;
+    const canBuy = p.gold >= entry.price && invHasSpace();
     const stats = statStr(item);
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_itemIcon(item, 28)}</span>
@@ -327,10 +319,10 @@ function buyShopItem(itemId, price) {
   if (!player) return;
   const item = ITEM_DEF.find(i => i.id === itemId);
   if (!item) return;
-  if (player.gold < price)           { _shopMsg('Мало золота!'); return; }
-  if (player.inventory.length >= 50) { _shopMsg('Инвентарь полон!'); return; }
+  if (player.gold < price)  { _shopMsg('Мало золота!'); return; }
+  if (!invHasSpace())       { _shopMsg('Инвентарь полон!'); return; }
   player.gold -= price;
-  player.inventory.push({ ...item });
+  addToInventory({ ...item });
   netSaveProgress();
   openNpc('shopkeeper');
 }

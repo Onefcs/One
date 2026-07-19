@@ -261,8 +261,12 @@ function netConnect(onReady) {
     if (bossStone && player) {
       const stone = CRAFT_MATS.find(m => m.id === 'boss_stone');
       if (stone) {
-        for (let i = 0; i < bossStone && player.inventory.length < 50; i++)
-          player.inventory.push({ ...stone });
+        const existing = player.inventory.find(i => i.id === 'boss_stone');
+        if (existing) {
+          existing.qty = (existing.qty || 1) + bossStone;
+        } else {
+          player.inventory.push({ ...stone, qty: bossStone });
+        }
         dmgNum(px, py - 52, '+' + bossStone + '× Камень Босса', '#aaf');
         netSaveProgress();
       }
