@@ -105,21 +105,20 @@ class Room {
     const nearEnemies = this._nearEnemiesBuf;
     this.players.forEach(p => { if (p.hp > 0 && p.type) alivePlayers.push(p); });
 
-    // Detect players entering the safe zone — on entry, reset all enemies to spawn
-    let anyEnteredSafeZone = false;
+    // Detect players entering the safe zone — reset only enemies chasing that player
     this.players.forEach(p => {
       const nowIn = this._inSafeZone(p.x, p.y);
-      if (nowIn && !p._wasInSafeZone) anyEnteredSafeZone = true;
+      if (nowIn && !p._wasInSafeZone) {
+        this.enemies.forEach(e => {
+          if (e.hp <= 0 || e._targetId !== p.socketId) return;
+          e.x = e.spawnX; e.y = e.spawnY;
+          e.aggro = false;
+          e._targetId = null;
+          e._shp = -1;
+        });
+      }
       p._wasInSafeZone = nowIn;
     });
-    if (anyEnteredSafeZone) {
-      this.enemies.forEach(e => {
-        if (e.hp <= 0) return;
-        e.x = e.spawnX; e.y = e.spawnY;
-        e.aggro = false;
-        e._shp = -1;
-      });
-    }
 
     // Enemy AI + respawn
     this.enemies.forEach(e => {
@@ -145,7 +144,8 @@ class Room {
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = p; }
       }
-      if (!closest) return;
+      if (!closest) { e._targetId = null; return; }
+      e._targetId = closest.socketId;
 
       const closestD = Math.sqrt(closestD2);
 
