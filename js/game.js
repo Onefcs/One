@@ -664,21 +664,24 @@ function _drawProj(p) {
 
 // Cached per-frame view bounds — updated once at the top of render(), read by _isOnScreen
 let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
+let _nowMs = 0; // render timestamp, read by drawNpcs for time-based pulses
 function render(dt, ts) {
-  // Precompute per-frame trig — used in multiple places below
-  const _pulse    = 0.5 + 0.5 * Math.sin(frameCount * 0.15);
-  const _bossGlow = 0.6 + 0.4 * Math.sin(frameCount * 0.10);
-  const _dropSin  = Math.sin(frameCount * 0.09);
+  _nowMs = ts;
+  // Precompute per-frame trig — time-based (not frameCount) so cosmetic
+  // pulse speeds stay constant when fps fluctuates
+  const _pulse    = 0.5 + 0.5 * Math.sin(ts * 0.009);
+  const _bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
+  const _dropSin  = Math.sin(ts * 0.0054);
 
-  // Pixel-lock the camera once per frame — to the DEVICE pixel grid, not
-  // whole world pixels. At ZOOM 0.75 × DPR 2 one world px = 1.5 device px,
-  // so world-integer rounding lands between device pixels: the background
-  // scroll steps by 1.5 px and sprite-vs-camera rounding phases drift,
-  // both visible as micro-jitter. Rounding camera.x*ZOOM*DPR to an integer
-  // makes every world-grid-snapped draw land exactly on device pixels.
-  const _grid = ZOOM * DPR;
-  const _camX = _lastCamX = Math.round(camera.x * _grid) / _grid;
-  const _camY = _lastCamY = Math.round(camera.y * _grid) / _grid;
+  // CONTINUOUS camera — no pixel snapping. The camera moves 1:1 with the
+  // player (velocity-matched follow), so the player's screen position is an
+  // exact constant while running. Snapping the camera to any pixel grid
+  // reintroduces a ±0.5 device px rounding residual on the player — the very
+  // micro-jitter it was meant to fix — because the player draws at float
+  // coords. Instead everything samples sub-pixel with bilinear filtering:
+  // the background scrolls continuously and the tracked player is rock-solid.
+  const _camX = _lastCamX = camera.x;
+  const _camY = _lastCamY = camera.y;
 
   // Cache view bounds so _isOnScreen() avoids divisions on every call
   const _vM = 60;
@@ -697,25 +700,21 @@ function render(dt, ts) {
   ctx.scale(ZOOM, ZOOM);
   ctx.translate(-_camX, -_camY);
 
+  // Everything — tiles included — samples with bilinear filtering at float
+  // positions. The tile art is flat color fills (no 1px features), so the
+  // sub-pixel blend costs no visible sharpness, and motion is perfectly even.
+  ctx.imageSmoothingEnabled = true;
   if (tileCanvas) {
-    ctx.imageSmoothingEnabled = false;
     // Draw only the visible slice; source rect is drawn back at the same
     // world coords (identity mapping), so the fractional camera is handled
     // entirely by the transform — flooring here only picks the region.
-    const _tcSx = Math.max(0, Math.floor(_camX));
-    const _tcSy = Math.max(0, Math.floor(_camY));
-    const _tcSw = Math.min(tileCanvas.width  - _tcSx, Math.ceil(W  / ZOOM) + 2);
-    const _tcSh = Math.min(tileCanvas.height - _tcSy, Math.ceil((H - HEADER_H) / ZOOM) + 2);
+    const _tcSx = Math.max(0, Math.floor(_camX) - 1);
+    const _tcSy = Math.max(0, Math.floor(_camY) - 1);
+    const _tcSw = Math.min(tileCanvas.width  - _tcSx, Math.ceil(W  / ZOOM) + 4);
+    const _tcSh = Math.min(tileCanvas.height - _tcSy, Math.ceil((H - HEADER_H) / ZOOM) + 4);
     if (_tcSw > 0 && _tcSh > 0)
       ctx.drawImage(tileCanvas, _tcSx, _tcSy, _tcSw, _tcSh, _tcSx, _tcSy, _tcSw, _tcSh);
   }
-  // Moving art (sprites, drops, icons) draws at FLOAT positions with
-  // bilinear filtering. Snapping movers to any pixel grid can't be smooth
-  // here: the camera scrolls 3-4 device px per frame, so the rounding phase
-  // sweeps a full pixel every couple of frames and snapped positions flip
-  // ±1 px — the exact micro-jitter this replaces. Sub-pixel filtering costs
-  // half a pixel of softness and gives perfectly even motion.
-  ctx.imageSmoothingEnabled = true;
 
   // NPCs
   drawNpcs();
@@ -792,8 +791,11 @@ function render(dt, ts) {
     const pct = e.hp / e.maxHp;
     ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
     ctx.fillRect(bx, by, bw * pct, bh);
+    // Float position — rounding per frame makes the label step ±1px against
+    // the smoothly-moving sprite; the label canvas is supersampled so the
+    // bilinear draw stays readable.
     const _nl = _getEnemyNameLabel(e.name, e.isBoss);
-    ctx.drawImage(_nl, Math.round(e.x - _nl._lw / 2), Math.round(by - _nl._lh - 1), _nl._lw, _nl._lh);
+    ctx.drawImage(_nl, e.x - _nl._lw / 2, by - _nl._lh - 1, _nl._lw, _nl._lh);
   });
 
   // Other players
@@ -825,7 +827,7 @@ function render(dt, ts) {
       p._nameCanvas = _buildPlayerNameCanvas(p);
     }
     const nc = p._nameCanvas;
-    ctx.drawImage(nc, Math.round(p.x - nc._lw / 2), Math.round(barTop - nc._lh - 2), nc._lw, nc._lh);
+    ctx.drawImage(nc, p.x - nc._lw / 2, barTop - nc._lh - 2, nc._lw, nc._lh);
     if (p.pvpMode) {
       drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, barTop - nc.height / 2 - 2, 9, '#f55');
     }
@@ -1061,8 +1063,8 @@ function _buildNpcCache() {
 function drawNpcs() {
   if (!npcs.length) return;
   if (!_npcCache || _npcCache.length !== npcs.length) _buildNpcCache();
-  const _nPulse  = 0.7 + 0.3 * Math.sin(frameCount * 0.08);
-  const _nBounce = Math.sin(frameCount * 0.15) * 3;
+  const _nPulse  = 0.7 + 0.3 * Math.sin(_nowMs * 0.0048);
+  const _nBounce = Math.sin(_nowMs * 0.009) * 3;
   const _smooth = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = true; // supersampled cache needs filtering
   for (let i = 0; i < npcs.length; i++) {
