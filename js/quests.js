@@ -45,16 +45,22 @@ function checkQuestComplete() {
   const q = getCurrentQuest();
   if (!q) return;
   if (isQuestComplete(q)) {
-    // Grant rewards
-    if (q.reward.xp > 0) gainXP(q.reward.xp);
-    player.gold += q.reward.gold;
-    showQuestComplete(q);
-    // Advance
-    player.questIdx++;
-    player.questKills = {};
-    netSaveProgress();
+    // Quest is done — just refresh UI so the claim button appears
     if (activeTab === 3) updateQuestUI();
   }
+}
+
+function claimQuest() {
+  if (!player) return;
+  const q = getCurrentQuest();
+  if (!q || !isQuestComplete(q)) return;
+  if (q.reward.xp > 0) gainXP(q.reward.xp);
+  player.gold += q.reward.gold;
+  showQuestComplete(q);
+  player.questIdx++;
+  player.questKills = {};
+  netSaveProgress();
+  updateQuestUI();
 }
 
 function showQuestComplete(q) {
@@ -214,7 +220,10 @@ function updateQuestUI() {
 
     let progHtml = '';
     if (isCur) {
-      if (q.type === 'kill') {
+      const complete = isQuestComplete(q);
+      if (complete) {
+        progHtml = `<button class="quest-claim-btn" onclick="claimQuest()">Забрать награду</button>`;
+      } else if (q.type === 'kill') {
         const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
         const pct  = Math.min(100, Math.round(done / q.count * 100));
         progHtml = `<div class="quest-prog">${done}/${q.count}
