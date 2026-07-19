@@ -615,23 +615,24 @@ function drawHeader() {
   // Row 2: Class name + inline stats (gold / atk / def)
   ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
   ctx.fillText(p.charDef.name, infoX, 27);
-  const statItemsH = [
-    { icon: 'coin',   val: p.gold, color: '#f1c40f' },
-    { icon: 'sword',  val: p.atk,  color: '#e67e22' },
-    { icon: 'shield', val: p.def,  color: '#5dade2' },
-  ];
   if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
     _hdrNameStr = p.charDef.name;
     _hdrNameW = ctx.measureText(p.charDef.name).width;
   }
   let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
-  statItemsH.forEach(s => {
-    drawIconCtx(ctx, s.icon, stxH + 5, 24, 11, s.color);
-    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = s.color;
-    ctx.fillText(s.val, stxH + 13, 24);
-    stxH += 38;
-  });
+  // БМ label + value
+  const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9933';
+  ctx.fillText('БМ', stxH, 24);
+  const _bmLabelW = ctx.measureText('БМ').width;
+  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#ff9933';
+  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
+  stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
+  // Gold
+  drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#f1c40f');
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#f1c40f';
+  ctx.fillText(p.gold, stxH + 13, 24);
   ctx.textBaseline = 'alphabetic';
 
   // Separator
