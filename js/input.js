@@ -1,6 +1,7 @@
 const SKILL_SZ  = 54;
 const SKILL_GAP = 8;
 const POTION_R  = 26;
+const BUFF_BAR_H = 24; // height of the buff/debuff strip below the header
 
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
@@ -39,19 +40,19 @@ function getTargetBtnPos() {
 }
 
 function getPvpBtnPos() {
-  return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
+  return { x: 8, y: HEADER_H + BUFF_BAR_H + 6, w: 80, h: 26 };
 }
 
 function getPartyLeaveBtnPos() {
   const bh = 26, gap = 4;
   const pvpBtn = getPvpBtnPos();
-  const startY = HEADER_H + 56;
+  const startY = HEADER_H + BUFF_BAR_H + 56;
   const count = (typeof partyMembers !== 'undefined') ? partyMembers.length : 0;
   return { x: pvpBtn.x, y: startY + count * (bh + gap), w: 80, h: 22 };
 }
 
 function getPartyBtnPos() {
-  return { x: 92, y: HEADER_H + 6, w: 80, h: 26 };
+  return { x: 92, y: HEADER_H + BUFF_BAR_H + 6, w: 80, h: 26 };
 }
 
 // ATK and AUTO are above the potion/target row

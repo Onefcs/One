@@ -654,6 +654,7 @@ function _renderUI() {
   const _c = ctx; ctx = _uiCtx;
   drawHeader();
   if (typeof drawQuestNotif === 'function') drawQuestNotif();
+  drawBuffBar();
   drawPvpButton();
   drawPartyButton();
   drawPartyHUD();

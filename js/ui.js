@@ -959,23 +959,7 @@ function drawHeader() {
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
   ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
-  // ── Status effects row ────────────────────────────────────
-  const stY = HEADER_H - 6;
-  // Status effects
-  if (barrierTimer > 0 || battleCryTimer > 0) {
-    let stx = infoX + infoW * 0.55;
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `bold 9px ${F}`;
-    if (barrierTimer > 0) {
-      drawIconCtx(ctx, 'barrier', stx + 5, stY, 11, 'rgba(180,130,255,0.95)');
-      ctx.fillStyle = 'rgba(180,130,255,0.95)';
-      ctx.fillText(Math.ceil(barrierTimer) + 'с', stx + 14, stY); stx += 38;
-    }
-    if (battleCryTimer > 0) {
-      drawIconCtx(ctx, 'battleCry', stx + 5, stY, 11, 'rgba(255,190,30,0.95)');
-      ctx.fillStyle = 'rgba(255,190,30,0.95)';
-      ctx.fillText(Math.ceil(battleCryTimer) + 'с', stx + 14, stY);
-    }
-  }
+
 
   ctx.restore();
 }
@@ -1223,6 +1207,52 @@ function drawTargetButton() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  BUFF / DEBUFF BAR  (below header)
+// ─────────────────────────────────────────────────────────
+function drawBuffBar() {
+  if (!player) return;
+  const F = 'system-ui, -apple-system, Arial';
+  const _activeBuffs = [
+    { timer: barrierTimer,     icon: 'barrier',   color: '#b082ff' },
+    { timer: battleCryTimer,   icon: 'battleCry', color: '#ffc81e' },
+    { timer: atkSpeedTimer,    icon: 'wind',      color: '#2ee8ff' },
+    { timer: faithShieldTimer, icon: 'shield',    color: '#ffee44' },
+    { timer: invisTimer,       icon: 'teleport',  color: '#aaddff' },
+    { timer: dodgeTimer,       icon: 'dash',      color: '#44ff88' },
+  ].filter(b => b.timer > 0);
+
+  if (!_activeBuffs.length) return;
+
+  const chipH = 20, chipY = HEADER_H + 2, gap = 4;
+  let bx = 8;
+
+  ctx.save();
+  ctx.font = `bold 9px ${F}`;
+  for (const b of _activeBuffs) {
+    const txt = Math.ceil(b.timer) + 'с';
+    const tw = ctx.measureText(txt).width;
+    const chipW = Math.ceil(22 + tw + 8);
+
+    ctx.fillStyle = 'rgba(4,2,12,0.80)';
+    roundRect(ctx, bx, chipY, chipW, chipH, 5); ctx.fill();
+
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = b.color; ctx.lineWidth = 1;
+    roundRect(ctx, bx, chipY, chipW, chipH, 5); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    drawIconCtx(ctx, b.icon, bx + 10, chipY + chipH / 2, 10, b.color);
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = b.color;
+    ctx.fillText(txt, bx + 20, chipY + chipH / 2);
+
+    bx += chipW + gap;
+  }
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  PK / МИР BUTTON
 // ─────────────────────────────────────────────────────────
 function drawPvpButton() {
@@ -1426,7 +1456,7 @@ function drawPartyHUD() {
   const bw = 130, bh = 26, gap = 4;
   const pvpBtn = getPvpBtnPos();
   const startX = pvpBtn.x;
-  const startY = HEADER_H + 56; // below target frame (HEADER_H+6+42+8)
+  const startY = HEADER_H + BUFF_BAR_H + 56;
 
   // Cache the three HP bar gradients (position fixed, only depends on startX)
   const _hbx = startX + 20, _hbw = 130 - 24;
