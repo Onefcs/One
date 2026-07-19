@@ -74,6 +74,23 @@ const _ICONS = [
 ['__EE____','_EEEE___','EEMEEEE_','_MMMMM__','__MMMM__','___MM___','___EE___','___EE___'],
 ];
 
+// Draw pixel-art clan icon directly onto a canvas 2D context
+// cx/cy = center of the 8×8 icon, px = pixel size in CSS px
+function drawClanIconOnCtx(c, iconId, cx, cy, px) {
+  const icon = _ICONS[((iconId || 1) - 1) % _ICONS.length];
+  const p = px || 1;
+  const ox = Math.round(cx - 4 * p);
+  const oy = Math.round(cy - 4 * p);
+  icon.forEach((row, y) => {
+    [...row].forEach((ch, x) => {
+      const col = _CP[ch];
+      if (!col) return;
+      c.fillStyle = col;
+      c.fillRect(ox + x * p, oy + y * p, p, p);
+    });
+  });
+}
+
 function clanIconSVG(id, size) {
   const icon = _ICONS[(id - 1) % _ICONS.length];
   const sz = size || 40;
