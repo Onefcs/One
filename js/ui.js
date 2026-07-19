@@ -36,7 +36,7 @@ function updateInvUI() {
       <div style="line-height:1">${iconHTML(p.charDef.icon, 40, p.charDef.color)}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:bold;color:${p.charDef.color}">${p.charDef.name}</div>
-        <div style="font-size:11px;color:#555;margin-top:2px">Уровень ${p.lvl}</div>
+        <div style="font-size:11px;color:#999;margin-top:2px">Уровень ${p.lvl}</div>
         <div style="font-size:11px;color:#484860;margin-top:2px;display:flex;align-items:center;gap:3px">
           ${iconHTML('heart',11,'#e74c3c')}${Math.ceil(p.hp)}/${p.maxHp} ·
           ${iconHTML('sword',11,'#e67e22')}${p.atk} ·
@@ -270,9 +270,6 @@ function updateFloorUI() {
     const th  = getTheme(n);
     const cur = n === dungeonLvl;
     const enemyNames = _floorEnemyNames(n);
-    const maxRarIdx  = Math.min(4, Math.max(0, Math.floor((n - 1) / 4)));
-    const dropRar    = rarityNames[Math.min(maxRarIdx + 1, 4)];
-    const dropColor  = rarityColors[Math.min(maxRarIdx + 1, 4)];
     return `
       <div class="floor-item${cur ? ' active' : ''}">
         <div class="floor-item-left" onclick="goToFloor(${n})">
@@ -281,7 +278,7 @@ function updateFloorUI() {
             <span class="floor-item-loc">${th.name}</span>
             ${cur ? '<span class="floor-item-cur">ВЫ ЗДЕСЬ</span>' : ''}
           </div>
-          <div class="floor-item-brief">${enemyNames} · до <span style="color:${dropColor}">${dropRar}</span></div>
+          <div class="floor-item-brief">${enemyNames}</div>
         </div>
         <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
       </div>`;
@@ -312,34 +309,23 @@ function showFloorInfo(floor) {
     if (isBoss) {
       const g = e.gold || [50, 50];
       const gText = g[0] === g[1] ? `${g[0]}g` : `${g[0]}–${g[1]}g`;
-      goldText = `<span style="color:#ff0">${gText} (100%)</span>`;
+      goldText = `<span style="color:#ff0">${gText}</span>`;
     } else {
       const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1));
       const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1));
-      goldText = `${gMin}–${gMax}g <span style="color:#555">(30%)</span>`;
+      goldText = `${gMin}–${gMax}g`;
     }
 
     // XP text
     const xpColor = isBoss ? '#0f0' : '#8f8';
 
-    // Boss stone text
+    // Boss stone row
     const stoneRow = isBoss
       ? `<div class="fi-drop">
            <span class="fi-drop-lbl">Камень Босса</span>
-           <span class="fi-drop-val" style="color:#aaf">${floor}–${floor + 2} шт. <span style="color:#555">(100%)</span></span>
+           <span class="fi-drop-val" style="color:#aaf">${floor}–${floor + 2} шт.</span>
          </div>`
       : '';
-
-    // Regular item drop rows
-    const itemRows = !isBoss ? `
-      <div class="fi-drop">
-        <span class="fi-drop-lbl">Предмет</span>
-        <span class="fi-drop-val">до <span style="color:${dropRarColor}">${dropRarName}</span> <span style="color:#555">(17%)</span></span>
-      </div>
-      <div class="fi-drop">
-        <span class="fi-drop-lbl">Матер. для крафта</span>
-        <span class="fi-drop-val" style="color:#888">случайный <span style="color:#555">(15%)</span></span>
-      </div>` : '';
 
     return `
       <div class="fi-monster${isBoss ? ' fi-boss' : ''}">
@@ -357,21 +343,21 @@ function showFloorInfo(floor) {
         <div class="fi-drops">
           <div class="fi-drop">
             <span class="fi-drop-lbl">Опыт</span>
-            <span class="fi-drop-val" style="color:${xpColor}">${e.xp} XP ${isBoss ? '<span style="color:#555">(100%)</span>' : ''}</span>
+            <span class="fi-drop-val" style="color:${xpColor}">${e.xp} XP</span>
           </div>
           <div class="fi-drop">
             <span class="fi-drop-lbl">Золото</span>
             <span class="fi-drop-val">${goldText}</span>
           </div>
           ${stoneRow}
-          ${itemRows}
         </div>
       </div>`;
   }).join('');
 
   const modal = document.getElementById('floor-info-modal');
   if (!modal) return;
-  modal.querySelector('.fi-title').textContent = `Этаж ${floor} — монстры`;
+  const _fiTh = getTheme(floor);
+  modal.querySelector('.fi-title').textContent = _fiTh.name;
   document.getElementById('floor-info-body').innerHTML = html;
   modal.style.display = 'flex';
 }
