@@ -1089,12 +1089,22 @@ function buildTileCanvas() {
   tctx.fillStyle = th.wallColor;
   tctx.fillRect(0, 0, dungeon.w * TILE, dungeon.h * TILE);
 
-  // 2. Solid floor fill
-  tctx.fillStyle = th.floorA;
+  // 2. Floor tiles — subtle checkerboard
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
+      tctx.fillStyle = (tx + ty) % 2 === 0 ? th.floorA : th.floorB;
       tctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+    }
+  }
+  // Floor grout lines (1px top + left edges)
+  tctx.fillStyle = th.grout;
+  for (let ty = 0; ty < dungeon.h; ty++) {
+    for (let tx = 0; tx < dungeon.w; tx++) {
+      if (dungeon.grid[ty][tx] !== FLOOR) continue;
+      const x = tx * TILE, y = ty * TILE;
+      tctx.fillRect(x, y, TILE, 1);
+      tctx.fillRect(x, y, 1, TILE);
     }
   }
 
