@@ -1,5 +1,6 @@
 const { generateDungeon, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF } = require('../../shared/definitions');
+const { encodeGameState } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server stats
 function computeStats(sd, cd) {
@@ -196,13 +197,13 @@ class Room {
             ((castId >> 1) + op._seq) % FULL_REFRESH_TICKS === 0;
           if (full) {
             nearPlayers.push({
-              id: op.socketId, username: op.username, type: op.type,
+              id: op.socketId, seq: op._seq, username: op.username, type: op.type,
               x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
               pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
             });
           } else {
             nearPlayers.push({
-              id: op.socketId, x: op.x, y: op.y, facing: op.facing,
+              id: op.socketId, seq: op._seq, x: op.x, y: op.y, facing: op.facing,
               hp: op.hp, atkSeq: op.lastAtkSeq || 0,
             });
           }
@@ -226,26 +227,23 @@ class Room {
         if (!moved && !hpChanged && !fresh) return;
         if (fresh) {
           nearEnemies.push({
-            id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+            id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
             name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
             aggroR: e.aggroR, spd: e.spd,
             atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
           });
         } else {
           nearEnemies.push({
-            id: e.id, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
+            id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
             atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
           });
         }
       });
 
       // t: server tick timestamp — the client uses real tick spacing (setInterval
-      // drifts 45-60ms) to time snapshot playback at true velocity
-      if (playersOut) {
-        this.io.to(p.socketId).emit('gameState', { players: playersOut, enemies: nearEnemies, t: now });
-      } else {
-        this.io.to(p.socketId).emit('gameState', { enemies: nearEnemies, t: now });
-      }
+      // drifts 45-60ms) to time snapshot playback at true velocity.
+      // Payload is a binary ArrayBuffer — see shared/netcodec.js
+      this.io.to(p.socketId).emit('gameState', encodeGameState(playersOut, nearEnemies, now));
     });
 
     // Update delta markers after all per-player emits

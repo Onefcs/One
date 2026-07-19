@@ -54,6 +54,7 @@ if (!_tgBotUsername) {
 const ROOT = path.join(__dirname, '..');
 const BUNDLE_FILES = [
   'shared/definitions.js',
+  'shared/netcodec.js',
   'js/constants.js',
   'js/utils.js',
   'js/state.js',

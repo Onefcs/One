@@ -71,6 +71,7 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
+    resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
@@ -83,8 +84,13 @@ function netConnect(onReady) {
     csOnServerReady();
   });
 
-  socket.on('gameState', ({ players, enemies, t }) => {
+  socket.on('gameState', (data) => {
     const _gs0 = performance.now();
+    // Binary packet (ArrayBuffer / typed view) — decode via shared codec;
+    // plain-object fallback kept for a server running older code
+    const _st = (data instanceof ArrayBuffer || ArrayBuffer.isView(data))
+      ? decodeGameState(data) : data;
+    const players = _st.players, enemies = _st.enemies, t = _st.t;
     const myId = socket.id;
 
     // Calibrate server↔client clock once, then keep EMA
@@ -302,6 +308,7 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
+    resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
     if (player) {
