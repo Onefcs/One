@@ -24,8 +24,6 @@ function computeStats(sd, cd) {
 }
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
-const AOI_RADIUS = 900;
-const AOI_R2    = AOI_RADIUS * AOI_RADIUS; // squared — avoids sqrt in AOI check
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
 // Players render on a ~700px-wide viewport — 600px AOI covers everything visible
 // with margin, at 2.25× less area than the 900px enemy AOI.
@@ -213,11 +211,12 @@ class Room {
         playersOut = nearPlayers;
       }
 
-      // Enemies within AOI — Math.abs instead of hypot for moved-check
+      // All alive enemies dungeon-wide (not AOI-limited) — minimap/map need
+      // full, always-current coverage regardless of player position; the
+      // delta protocol below already keeps idle far-away enemies near-free.
+      // Math.abs instead of hypot for moved-check.
       this.enemies.forEach(e => {
         if (e.hp <= 0) return;
-        const dx = e.x - p.x, dy = e.y - p.y;
-        if (dx * dx + dy * dy > AOI_R2) return;
         const k = p._knownE.get(e.id);
         const fresh = !k || k.seen !== castId - 1 ||
           (castId + e._idx) % FULL_REFRESH_TICKS === 0;

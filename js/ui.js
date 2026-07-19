@@ -218,17 +218,33 @@ function drawMapPanel() {
   mx2.fillStyle = '#00ff44';
   mx2.beginPath(); mx2.arc(ox + (player.x / TILE) * sc, oy + (player.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
   const mapEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
+  const aliveEnemies = mapEnemies.filter(e => (e.hp || 0) > 0);
   mx2.fillStyle = '#ff3322';
-  mapEnemies.forEach(e => {
-    mx2.beginPath(); mx2.arc(ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc, Math.max(1.5, sc * 0.5), 0, Math.PI * 2); mx2.fill();
+  mx2.beginPath();
+  aliveEnemies.forEach(e => {
+    if (e.isBoss) return;
+    mx2.moveTo(ox + (e.x / TILE) * sc + Math.max(1.5, sc * 0.5), oy + (e.y / TILE) * sc);
+    mx2.arc(ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc, Math.max(1.5, sc * 0.5), 0, Math.PI * 2);
+  });
+  mx2.fill();
+  // Boss skull icon on map
+  const _bossIconSz = Math.max(10, Math.round(sc * 4));
+  mx2.font = `${_bossIconSz}px serif`;
+  mx2.textAlign = 'center'; mx2.textBaseline = 'middle';
+  aliveEnemies.forEach(e => {
+    if (!e.isBoss) return;
+    mx2.fillText('💀', ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc);
   });
   // NPC blips on map
   mx2.fillStyle = '#ffcc00';
+  mx2.beginPath();
   npcs.forEach(n => {
-    mx2.beginPath(); mx2.arc(ox + (n.x / TILE) * sc, oy + (n.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
+    mx2.moveTo(ox + (n.x / TILE) * sc + Math.max(2, sc * 0.7), oy + (n.y / TILE) * sc);
+    mx2.arc(ox + (n.x / TILE) * sc, oy + (n.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2);
   });
+  mx2.fill();
   document.getElementById('map-status').textContent =
-    th.name + ' · Этаж ' + dungeonLvl + ' · Враги: ' + mapEnemies.length;
+    th.name + ' · Этаж ' + dungeonLvl + ' · Враги: ' + aliveEnemies.length;
 }
 
 function _floorEnemyNames(n) {
