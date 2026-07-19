@@ -129,6 +129,7 @@ class Room {
           e.hp = e.maxHp;
           e.x = e.spawnX; e.y = e.spawnY;
           e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
+          e.stunTimer = 0; e.slowTimer = 0;
           e._shp = -1;
           delete e.respawnTimer;
         }

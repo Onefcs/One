@@ -549,14 +549,23 @@ function update(dt) {
     if (dp < aggroR) e.aggro = true;
     if (dp > aggroR * 2.2) e.aggro = false;
 
+    if ((e.stunTimer || 0) > 0) {
+      if (e.targetX !== undefined) {
+        const cedx = e.targetX - e.x, cedy = e.targetY - e.y;
+        const err2 = cedx * cedx + cedy * cedy;
+        if (err2 > 100) { const k = 1 - Math.exp(-2.5 * dt); e.x += cedx * k; e.y += cedy * k; }
+      }
+      return;
+    }
     if (e.aggro && dp > sz + 14) {
       const nx = (closestTgt.x - e.x) / dp;
       const ny = (closestTgt.y - e.y) / dp;
       if (Math.abs(nx) >= Math.abs(ny)) e._facing = nx > 0 ? 'right' : 'left';
       else                              e._facing = ny > 0 ? 'down'  : 'up';
       const er  = sz * 0.55;
-      const evx = nx * spd * dt;
-      const evy = ny * spd * dt;
+      const spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
+      const evx = nx * spd * spdMult * dt;
+      const evy = ny * spd * spdMult * dt;
       if (canMoveX(e, evx, er)) e.x += evx;
       if (canMoveY(e, evy, er)) e.y += evy;
       e._moveTimer = 0.2;
