@@ -265,6 +265,8 @@ io.on('connection', socket => {
   let currentFloor = 1;
   let _lastStats = null;
   let _autoSaveInterval = null;
+  let _myClanName = null;
+  let _myClanIcon = null;
   playerFloorMap.set(socket.id, currentFloor);
 
   function _startAutosave() {
@@ -297,6 +299,8 @@ io.on('connection', socket => {
       _startAutosave();
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
+      _myClanName = _clanInfo ? _clanInfo.name : null;
+      _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
@@ -319,6 +323,8 @@ io.on('connection', socket => {
       _startAutosave();
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
+      _myClanName = _clanInfo ? _clanInfo.name : null;
+      _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
     } catch (err) {
       console.error('loginTelegram:', err);
@@ -335,7 +341,7 @@ io.on('connection', socket => {
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
-      currentRoom.addPlayer(socket.id, authed.username);
+      currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon);
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
       if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
     }
@@ -740,7 +746,11 @@ io.on('connection', socket => {
         name: n, icon,
         members: [{ telegramId: authed.telegramId, username: authed.username, role: 'leader' }],
       });
-      socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+      const _cd = await _clanDataFor(clan, authed.telegramId);
+      socket.emit('clanData', _cd);
+      _myClanName = _cd ? _cd.name : null;
+      _myClanIcon = _cd ? _cd.icon : null;
+      currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
     } catch (e) {
       if (e.code === 11000) socket.emit('clanError', { msg: 'Название занято' });
       else socket.emit('clanError', { msg: 'Ошибка создания' });
@@ -790,7 +800,11 @@ io.on('connection', socket => {
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
     clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
     await clan.save().catch(() => {});
-    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+    const _cdDecl = await _clanDataFor(clan, authed.telegramId);
+    socket.emit('clanData', _cdDecl);
+    _myClanName = _cdDecl ? _cdDecl.name : null;
+    _myClanIcon = _cdDecl ? _cdDecl.icon : null;
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
   });
 
   socket.on('clanKick', async ({ telegramId }) => {
@@ -804,7 +818,12 @@ io.on('connection', socket => {
     await _notifyClan(clan);
     // Notify kicked player
     const kicked = [...io.sockets.sockets.values()].find(s => s.data.telegramId === telegramId);
-    if (kicked) kicked.emit('clanData', null);
+    if (kicked) {
+      kicked.emit('clanData', null);
+      const _kFloor = playerFloorMap.get(kicked.id);
+      const _kRoom = _kFloor !== undefined ? floorRooms.get(_kFloor) : null;
+      if (_kRoom) _kRoom.setPlayerClan(kicked.id, null, null);
+    }
   });
 
   socket.on('clanLeave', async () => {
@@ -830,6 +849,9 @@ io.on('connection', socket => {
       await _notifyClan(clan);
     }
     socket.emit('clanData', null);
+    _myClanName = null;
+    _myClanIcon = null;
+    currentRoom?.setPlayerClan(socket.id, null, null);
   });
 
   socket.on('clanDisband', async () => {
@@ -837,10 +859,15 @@ io.on('connection', socket => {
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
-    // Notify all members first
+    // Notify all members first and clear their room clan state
     for (const m of clan.members) {
       const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
-      if (target) target.emit('clanData', null);
+      if (target) {
+        target.emit('clanData', null);
+        const _tFloor = playerFloorMap.get(target.id);
+        const _tRoom = _tFloor !== undefined ? floorRooms.get(_tFloor) : null;
+        if (_tRoom) _tRoom.setPlayerClan(target.id, null, null);
+      }
     }
     await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
   });
@@ -857,7 +884,11 @@ io.on('connection', socket => {
     if (clan.xp >= nextLvl) clan.level = Math.min(10, clan.level + 1);
     await clan.save().catch(() => {});
     // Only notify the killer (avoid DB load per kill for all members)
-    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+    const _cdKill = await _clanDataFor(clan, authed.telegramId);
+    socket.emit('clanData', _cdKill);
+    _myClanName = _cdKill ? _cdKill.name : null;
+    _myClanIcon = _cdKill ? _cdKill.icon : null;
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
   });
 
   // ── Raid ───────────────────────────────────────────────────────────────────

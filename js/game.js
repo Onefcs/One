@@ -879,6 +879,14 @@ function render(dt, ts) {
     }
     const nc = p._nameCanvas;
     ctx.drawImage(nc, p.x - nc._lw / 2, barTop - nc._lh - 2, nc._lw, nc._lh);
+    if (p.clanName) {
+      const _ckey = (p.clanName || '') + '|' + (p.clanIcon || 1);
+      if (!p._clanTagCanvas || p._clanTagCanvas._key !== _ckey) {
+        p._clanTagCanvas = _buildOtherPlayerClanTag(p.clanName, p.clanIcon || 1);
+      }
+      const ct = p._clanTagCanvas;
+      ctx.drawImage(ct, Math.round(p.x - ct.width / 2), Math.round(barTop - nc._lh - 2 - ct.height - 1), ct.width, ct.height);
+    }
     if (p.pvpMode) {
       drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, barTop - nc.height / 2 - 2, 9, '#f55');
     }
@@ -1060,6 +1068,27 @@ const _playerShadow = (() => {
   c.beginPath(); c.ellipse(16, 7, 13, 5, 0, 0, Math.PI * 2); c.fill();
   return cv;
 })();
+
+function _buildOtherPlayerClanTag(clanName, clanIcon) {
+  const iconPx = 1, iconSz = 16 * iconPx, gap = 3;
+  const tmp = document.createElement('canvas').getContext('2d');
+  tmp.font = 'bold 9px system-ui, Arial';
+  const ctw = tmp.measureText(clanName).width;
+  const w = Math.ceil(iconSz + gap + ctw) + 4;
+  const h = 10;
+  const oc = document.createElement('canvas');
+  oc.width = w; oc.height = h;
+  const c = oc.getContext('2d');
+  c.textBaseline = 'middle';
+  if (typeof drawClanIconOnCtx === 'function') drawClanIconOnCtx(c, clanIcon, iconSz / 2, h / 2, iconPx);
+  c.font = 'bold 9px system-ui, Arial';
+  c.strokeStyle = '#000'; c.lineWidth = 2; c.textAlign = 'left';
+  c.strokeText(clanName, iconSz + gap, h / 2);
+  c.fillStyle = '#f93';
+  c.fillText(clanName, iconSz + gap, h / 2);
+  oc._key = clanName + '|' + clanIcon;
+  return oc;
+}
 
 function _buildPlayerNameCanvas(p) {
   const uname = p.username || '?';

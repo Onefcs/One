@@ -115,6 +115,8 @@ function netConnect(onReady) {
           const op = otherPlayers.get(p.id);
           if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
           if (p.username !== undefined) op.username = p.username;
+          if (p.clanName !== undefined && op.clanName !== p.clanName) { op.clanName = p.clanName; op._clanTagCanvas = null; }
+          if (p.clanIcon !== undefined && op.clanIcon !== p.clanIcon) { op.clanIcon = p.clanIcon; op._clanTagCanvas = null; }
           if (p.maxHp    !== undefined) op.maxHp    = p.maxHp;
           if (p.pvpMode  !== undefined) op.pvpMode  = p.pvpMode || false;
           op.hp = p.hp; op.facing = p.facing;
