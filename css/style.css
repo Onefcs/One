@@ -440,14 +440,13 @@ canvas { display:block; width:100%; height:100%; }
 }
 .craft-item-cell {
   display:flex; flex-direction:column; align-items:center; gap:3px;
-  padding:6px 4px; border-radius:8px; border:1px solid #1a1a30;
+  padding:6px 4px; border-radius:8px; border:none;
   background:rgba(255,255,255,0.03); cursor:pointer;
   transition:background 0.15s;
   touch-action:manipulation;
 }
 .craft-item-cell:active { background:rgba(255,255,255,0.08); }
-.craft-item-cell.craftable { background:rgba(60,200,60,0.07); border-color:#2a3a2a; }
-.craft-item-cell img { outline:none; }
+.craft-item-cell.craftable { background:rgba(60,200,60,0.07); }
 .craft-item-cell-icon { line-height:1; }
 .craft-item-cell-name {
   font-size:8px; font-weight:600; text-align:center;
