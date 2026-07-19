@@ -14,16 +14,39 @@ const UPGRADE_DEF = {
 };
 
 const QUEST_DEF = [
-  { id:'q1',  title:'Гоблинский налёт', desc:'Убей 12 гоблинов',                               type:'kill',       enemies:['Гоблин страж','Гоблин воин'],          count:12, reward:{ xp:80,   gold:40  } },
-  { id:'q2',  title:'Костяная стража',  desc:'Убей 10 скелетов',                               type:'kill',       enemies:['Скелет воин','Скелет варвар'],         count:10, reward:{ xp:100,  gold:50  } },
-  { id:'q3',  title:'Охота на грибы',   desc:'Убей 8 грибов',                                  type:'kill',       enemies:['Гриб страж','Гриб воин'],              count:8,  reward:{ xp:130,  gold:65  } },
-  { id:'q4',  title:'Тени в темноте',   desc:'Убей 8 теней',                                   type:'kill',       enemies:['Тень воин','Тень страж'],              count:8,  reward:{ xp:180,  gold:90  } },
-  { id:'q5',  title:'Каменный великан', desc:'Убей 6 големов',                                 type:'kill',       enemies:['Голем воин','Голем страж'],            count:6,  reward:{ xp:240,  gold:120 } },
-  { id:'q6',  title:'Двойная угроза',   desc:'Убей 8 гоблинов и 8 скелетов',                  type:'kill_multi', enemies:['Гоблин страж','Скелет воин'],          count:8,  reward:{ xp:320,  gold:160 } },
-  { id:'q7',  title:'Охота на орков',   desc:'Убей 6 орков',                                   type:'kill',       enemies:['Орк'],                                 count:6,  reward:{ xp:400,  gold:200 } },
-  { id:'q8',  title:'Тролли у ворот',   desc:'Убей 4 тролля',                                  type:'kill',       enemies:['Тролль'],                              count:4,  reward:{ xp:500,  gold:250 } },
-  { id:'q9',  title:'Истребитель орд',  desc:'Убей 5 орков и 5 троллей',                       type:'kill_multi', enemies:['Орк','Тролль'],                        count:5,  reward:{ xp:650,  gold:320 } },
-  { id:'q10', title:'Победи Демона',    desc:'Убей демона-босса подземелья',                   type:'kill',       enemies:['ДЕМОН'],                               count:1,  reward:{ xp:1200, gold:700 } },
+  // ── Этаж 1 · Гоблины (квесты 1-15) ─────────────────────
+  { id:'f1q1',  floor:1, title:'Первая кровь',      desc:'Убей 10 Гоблин воин',       type:'kill',         enemies:['Гоблин воин'],    count:10,  reward:{ xp:50,   gold:25  } },
+  { id:'f1q2',  floor:1, title:'Страж падёт',       desc:'Убей 10 Гоблин страж',      type:'kill',         enemies:['Гоблин страж'],   count:10,  reward:{ xp:50,   gold:25  } },
+  { id:'f1q3',  floor:1, title:'Торговля',          desc:'Купи 10 зелий',             type:'buy_potion',                               count:10,  reward:{ xp:60,   gold:30  } },
+  { id:'f1q4',  floor:1, title:'Охотник',           desc:'Убей 30 Гоблин воин',       type:'kill',         enemies:['Гоблин воин'],    count:30,  reward:{ xp:120,  gold:60  } },
+  { id:'f1q5',  floor:1, title:'Каратель',          desc:'Убей 30 Гоблин страж',      type:'kill',         enemies:['Гоблин страж'],   count:30,  reward:{ xp:120,  gold:60  } },
+  { id:'f1q6',  floor:1, title:'Опытный боец',      desc:'Достигни 3 уровня',         type:'level',        level:3,                    reward:{ xp:150,  gold:75  } },
+  { id:'f1q7',  floor:1, title:'Истребитель',       desc:'Убей 50 Гоблин воин',       type:'kill',         enemies:['Гоблин воин'],    count:50,  reward:{ xp:200,  gold:100 } },
+  { id:'f1q8',  floor:1, title:'Гроза стражей',     desc:'Убей 50 Гоблин страж',      type:'kill',         enemies:['Гоблин страж'],   count:50,  reward:{ xp:200,  gold:100 } },
+  { id:'f1q9',  floor:1, title:'Убийца боссов',     desc:'Убей Босса гоблинов',       type:'kill',         enemies:['Босс гоблинов'],  count:1,   reward:{ xp:300,  gold:150 } },
+  { id:'f1q10', floor:1, title:'Ветеран',           desc:'Достигни 5 уровня',         type:'level',        level:5,                    reward:{ xp:350,  gold:175 } },
+  { id:'f1q11', floor:1, title:'Покоритель',        desc:'Пройди подземелье 1 раз',   type:'dungeon_clear',floor:1,  count:1,           reward:{ xp:400,  gold:200 } },
+  { id:'f1q12', floor:1, title:'Мясник',            desc:'Убей 100 Гоблин страж',     type:'kill',         enemies:['Гоблин страж'],   count:100, reward:{ xp:450,  gold:225 } },
+  { id:'f1q13', floor:1, title:'Берсерк',           desc:'Убей 100 Гоблин воин',      type:'kill',         enemies:['Гоблин воин'],    count:100, reward:{ xp:450,  gold:225 } },
+  { id:'f1q14', floor:1, title:'В гильдию!',        desc:'Вступи в гильдию',          type:'join_guild',                               reward:{ xp:500,  gold:250 } },
+  { id:'f1q15', floor:1, title:'Следующий уровень', desc:'Перейди на этаж 2',         type:'goto_floor',   floor:2,                    reward:{ xp:600,  gold:300 } },
+
+  // ── Этаж 2 · Скелеты (квесты 16-30) · награда ×2 ───────
+  { id:'f2q1',  floor:2, title:'Первая кровь II',   desc:'Убей 10 Скелет воин',       type:'kill',         enemies:['Скелет воин'],    count:10,  reward:{ xp:100,  gold:50  } },
+  { id:'f2q2',  floor:2, title:'Страж падёт II',    desc:'Убей 10 Скелет варвар',     type:'kill',         enemies:['Скелет варвар'],  count:10,  reward:{ xp:100,  gold:50  } },
+  { id:'f2q3',  floor:2, title:'Торговля II',       desc:'Купи 10 зелий',             type:'buy_potion',                               count:10,  reward:{ xp:120,  gold:60  } },
+  { id:'f2q4',  floor:2, title:'Охотник II',        desc:'Убей 30 Скелет воин',       type:'kill',         enemies:['Скелет воин'],    count:30,  reward:{ xp:240,  gold:120 } },
+  { id:'f2q5',  floor:2, title:'Каратель II',       desc:'Убей 30 Скелет варвар',     type:'kill',         enemies:['Скелет варвар'],  count:30,  reward:{ xp:240,  gold:120 } },
+  { id:'f2q6',  floor:2, title:'Опытный боец II',   desc:'Достигни 7 уровня',         type:'level',        level:7,                    reward:{ xp:300,  gold:150 } },
+  { id:'f2q7',  floor:2, title:'Истребитель II',    desc:'Убей 50 Скелет воин',       type:'kill',         enemies:['Скелет воин'],    count:50,  reward:{ xp:400,  gold:200 } },
+  { id:'f2q8',  floor:2, title:'Гроза стражей II',  desc:'Убей 50 Скелет варвар',     type:'kill',         enemies:['Скелет варвар'],  count:50,  reward:{ xp:400,  gold:200 } },
+  { id:'f2q9',  floor:2, title:'Убийца боссов II',  desc:'Убей Босса скелетов',       type:'kill',         enemies:['Босс скелетов'],  count:1,   reward:{ xp:600,  gold:300 } },
+  { id:'f2q10', floor:2, title:'Ветеран II',        desc:'Достигни 10 уровня',        type:'level',        level:10,                   reward:{ xp:700,  gold:350 } },
+  { id:'f2q11', floor:2, title:'Покоритель II',     desc:'Пройди подземелье 2 раза',  type:'dungeon_clear',floor:2,  count:2,           reward:{ xp:800,  gold:400 } },
+  { id:'f2q12', floor:2, title:'Мясник II',         desc:'Убей 100 Скелет варвар',    type:'kill',         enemies:['Скелет варвар'],  count:100, reward:{ xp:900,  gold:450 } },
+  { id:'f2q13', floor:2, title:'Берсерк II',        desc:'Убей 100 Скелет воин',      type:'kill',         enemies:['Скелет воин'],    count:100, reward:{ xp:900,  gold:450 } },
+  { id:'f2q14', floor:2, title:'Почётный член',     desc:'Повысь ранг в гильдии',     type:'join_guild',                               reward:{ xp:1000, gold:500 } },
+  { id:'f2q15', floor:2, title:'Вглубь тьмы',      desc:'Перейди на этаж 3',         type:'goto_floor',   floor:3,                    reward:{ xp:1200, gold:600 } },
 ];
 
 const RARITY_COLOR = {
