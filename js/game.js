@@ -1134,21 +1134,7 @@ function buildTileCanvas() {
   }
   tctx.globalAlpha = 1;
 
-  // Pass 6: wall decorations (kept — runs once at floor load)
-  if (th.drawWallDecor) {
-    for (let ty = 0; ty < dungeon.h; ty++) {
-      for (let tx = 0; tx < dungeon.w; tx++) {
-        if (dungeon.grid[ty][tx] !== WALL) continue;
-        if (!isFloor(tx, ty + 1)) continue;
-        const h = ((tx * 37) ^ (ty * 53)) & 0xff;
-        tctx.save();
-        th.drawWallDecor(tctx, tx * TILE, ty * TILE, h);
-        tctx.restore();
-      }
-    }
-  }
-
-  // Pass 7: wall-edge shadow on floor tiles — flat darkened strip (no gradients)
+  // Pass 6: wall-edge shadow on floor tiles — flat darkened strip
   tctx.fillStyle = 'rgba(0,0,0,0.35)';
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
