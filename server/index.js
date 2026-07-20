@@ -159,29 +159,34 @@ async function _handleBotMessage(msg) {
 
   const parts = text.trim().split(' ');
   const param = parts[1] || '';
+  const username = msg.from.username || msg.from.first_name || `tg_${fromId}`;
 
-  // /start ref_TELEGRAMID
+  // /start ref_TELEGRAMID — register referral immediately on first bot interaction
   if (param.startsWith('ref_')) {
     const referrerId = param.slice(4);
-    if (referrerId === fromId) return; // can't refer yourself
-
-    const newPlayer = await PlayerModel.findOne({ telegramId: fromId });
-    if (newPlayer && !newPlayer.referredBy) {
-      newPlayer.referredBy = referrerId;
-      await newPlayer.save();
+    if (referrerId !== fromId) {
+      let player = await PlayerModel.findOne({ telegramId: fromId });
+      if (!player) {
+        // Create player record right away so referral is saved before first login
+        player = await PlayerModel.create({ telegramId: fromId, username, referredBy: referrerId });
+      } else if (!player.referredBy) {
+        player.referredBy = referrerId;
+        await player.save();
+      }
       // Notify referrer if online
-      io.to(`tg_${referrerId}`).emit('friendJoined', {
-        username: msg.from.username || msg.from.first_name || `tg_${fromId}`,
-      });
+      io.to(`tg_${referrerId}`).emit('friendJoined', { username });
     }
   }
 
-  // Always send welcome/game link
-  const gameUrl = process.env.GAME_URL || 'https://t.me/' + (_tgBotUsername || 'game');
+  // Send welcome message with game button
+  const gameUrl = process.env.GAME_URL || '';
+  const button = gameUrl
+    ? { text: '🎮 Играть', web_app: { url: gameUrl } }
+    : { text: '🎮 Открыть игру', url: `https://t.me/${_tgBotUsername || 'game'}` };
   await tgApi('sendMessage', {
     chat_id: fromId,
-    text: `Добро пожаловать в игру! Нажмите кнопку ниже чтобы играть.`,
-    reply_markup: { inline_keyboard: [[{ text: '🎮 Играть', url: gameUrl }]] },
+    text: '👋 Добро пожаловать!\n\nНажмите кнопку ниже чтобы начать играть.',
+    reply_markup: { inline_keyboard: [[button]] },
   }).catch(() => {});
 }
 
