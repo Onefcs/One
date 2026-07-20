@@ -495,6 +495,8 @@ function _updateEnemies(dt, pulse, bossGlow) {
   const seen = new Set();
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return;
+    // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
+    if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
     _visEnm++;
     seen.add(e.id);
     const obj = _getEnemy(e.id);

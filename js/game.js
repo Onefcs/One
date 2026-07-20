@@ -846,11 +846,16 @@ function render(dt, ts) {
     pixiClearWorld();
   }
 
-  // ── Screen-space overlays on _uiCtx ──────────────────────
-  // (ctx === _uiCtx after migration; use _uiCtx directly to be explicit)
+  // ── UI canvas — cleared every frame so layers don't accumulate ──────────────
+  _uiCtx.clearRect(0, 0, _uiOverlay.width, _uiOverlay.height);
   _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  // Safe zone HUD label
+  // HUD panels — every frame (world is GPU now so CPU budget allows 60fps HUD)
+  _renderUI();
+  if (player && dungeon) _drawPlayerNameOnUI();
+  if (activeTab === 0) drawJoystick();
+
+  // Safe zone HUD label (on top of HUD)
   if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
     const lbl = '🛡 Безопасная зона · реген HP';
     _uiCtx.font = 'bold 11px system-ui, Arial';
@@ -870,7 +875,6 @@ function render(dt, ts) {
     _uiCtx.font = 'bold 20px system-ui, Arial';
     _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
     const lw = _uiCtx.measureText(lbl).width;
-    _uiCtx.clearRect(W / 2 - lw / 2 - 16, H / 2 - 42, lw + 32, 38);
     _uiCtx.globalAlpha = alpha;
     _uiCtx.fillStyle = 'rgba(0,0,0,0.65)';
     _uiCtx.fillRect(W / 2 - lw / 2 - 14, H / 2 - 40, lw + 28, 34);
@@ -880,16 +884,11 @@ function render(dt, ts) {
     if (_raidWaveNotif.timer <= 0) _raidWaveNotif = null;
   }
 
-  // Transition flash
+  // Transition flash (topmost layer)
   if (transTimer > 0) {
     _uiCtx.fillStyle = `rgba(180,120,255,${Math.min(1, transTimer * 3)})`;
     _uiCtx.fillRect(0, 0, W, H);
   }
-
-  // ── HUD / joystick ────────────────────────────────────────
-  if (_uiCtx && ts - _uiLastMs >= 50) { _uiLastMs = ts; _renderUI(); }
-  if (_uiCtx && player && dungeon) _drawPlayerNameOnUI();
-  if (activeTab === 0) drawJoystick();
 }
 
 // ─────────────────────────────────────────────────────────
