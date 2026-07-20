@@ -728,10 +728,12 @@ function _initTelegramWidget() {
       const splashContent = loginScreen.querySelector('.splash-content');
       if (splashContent) {
         splashContent.innerHTML = `
-          <div class="splash-emblem" style="margin-bottom:32px;">
+          <div class="splash-emblem" style="margin-bottom:24px;">
             <img src="/images/nexum-coin.png" width="160" height="160" alt="Nexum" style="border-radius:50%;display:block;">
           </div>
-          <div style="font-size:13px;color:#7c3aed;line-height:1.8;">Доступно только<br>в Telegram</div>
+          <div class="splash-title">NEXUM</div>
+          <div class="splash-sub">MMORPG</div>
+          <div style="margin-top:28px;font-size:13px;color:#7c3aed;line-height:1.8;">Доступно только<br>в Telegram</div>
           <a href="${link}" style="margin-top:20px;display:inline-flex;align-items:center;gap:9px;background:#229ED9;color:#fff;padding:13px 26px;border-radius:14px;font-size:15px;font-weight:600;text-decoration:none;pointer-events:auto;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.737 13.33l-2.963-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.834.949z"/></svg>
             Открыть в Telegram
