@@ -152,6 +152,19 @@ function updateCamera(dt) {
   clampCamera();
 }
 
+// Returns the room (from dungeon.rooms) that contains world-pixel point (wx,wy),
+// or null if the point is in a corridor or no room data exists.
+function _getRoomAt(wx, wy) {
+  if (!dungeon || !dungeon.rooms) return null;
+  const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+  for (let i = 0; i < dungeon.rooms.length; i++) {
+    const r = dungeon.rooms[i];
+    if (!r.size) continue; // old-format rooms without size field
+    if (tx >= r.x && tx < r.x + r.size && ty >= r.y && ty < r.y + r.size) return r;
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────
 //  UPDATE
 // ─────────────────────────────────────────────────────────
@@ -379,9 +392,16 @@ function update(dt) {
 
     // Fall back to nearest enemy using squared distance (avoids sqrt per candidate)
     if (!closest) {
+      const _pRoom = _getRoomAt(player.x, player.y);
       let closestD2 = Infinity;
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
+        // When player is inside a room, only target enemies in that same room
+        if (_pRoom) {
+          const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);
+          if (etx < _pRoom.x || etx >= _pRoom.x + _pRoom.size ||
+              ety < _pRoom.y || ety >= _pRoom.y + _pRoom.size) return;
+        }
         const dx = e.x - player.x, dy = e.y - player.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = e; closestIsPlayer = false; }
@@ -395,6 +415,21 @@ function update(dt) {
         });
       }
       if (closest) closestD = Math.sqrt(closestD2);
+    }
+
+    // If locked target is in a different room, release it so chase stops
+    if (targetId && !targetIsPlayer) {
+      const _pRoom = _getRoomAt(player.x, player.y);
+      if (_pRoom) {
+        const _lt = serverEnemiesMap.get(targetId);
+        if (_lt && (_lt.hp || 0) > 0) {
+          const etx = Math.floor(_lt.x / TILE), ety = Math.floor(_lt.y / TILE);
+          if (etx < _pRoom.x || etx >= _pRoom.x + _pRoom.size ||
+              ety < _pRoom.y || ety >= _pRoom.y + _pRoom.size) {
+            targetId = null; targetIsPlayer = false;
+          }
+        }
+      }
     }
 
     const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
