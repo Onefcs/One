@@ -2110,6 +2110,122 @@ function _renderRatingBody() {
   }
 }
 
+// ─────────────────────────────────────────────────────────
+//  VIP PANEL
+// ─────────────────────────────────────────────────────────
+
+function _positionVipBtn() {
+  const ratingBtn = document.getElementById('rating-btn');
+  const vipBtn    = document.getElementById('vip-btn');
+  if (!vipBtn || !ratingBtn) return;
+  const rTop = parseFloat(ratingBtn.style.top) || 0;
+  vipBtn.style.top       = (rTop + 26 + 5) + 'px';
+  vipBtn.style.left      = ratingBtn.style.left;
+  vipBtn.style.width     = ratingBtn.style.width;
+  vipBtn.style.right     = 'auto';
+  vipBtn.style.transform = 'none';
+}
+
+function showVipBtn() {
+  const btn = document.getElementById('vip-btn');
+  if (btn) { btn.style.display = 'flex'; _positionVipBtn(); }
+}
+
+function openVipPanel() {
+  const panel = document.getElementById('vip-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  renderVipPanel();
+}
+
+function closeVipPanel() {
+  const panel = document.getElementById('vip-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function renderVipPanel() {
+  const el = document.getElementById('vip-body');
+  if (!el) return;
+  const vip       = window._vipData || { level: 0, deposited: 0, pending: [] };
+  const level     = vip.level     || 0;
+  const deposited = vip.deposited || 0;
+  const pending   = vip.pending   || [];
+  const bonuses   = typeof VIP_BONUSES    !== 'undefined' ? VIP_BONUSES    : null;
+  const thresholds= typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500];
+  const bon       = bonuses ? (bonuses[level] || bonuses[0]) : { xp:0, gold:0, drop:0 };
+
+  let progressHtml = '';
+  if (level < 10) {
+    const needed = thresholds[level + 1] || 1;
+    const pct    = Math.min(100, (deposited / needed) * 100).toFixed(1);
+    progressHtml = `
+      <div class="vip-progress-wrap">
+        <div class="vip-progress-label">
+          <span>До VIP ${level + 1}</span>
+          <span>${deposited.toFixed ? deposited.toFixed(2) : deposited} / ${needed} GRAM</span>
+        </div>
+        <div class="vip-progress-bar"><div class="vip-progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  } else {
+    progressHtml = `<div class="vip-max-badge">👑 Максимальный VIP достигнут!</div>`;
+  }
+
+  el.innerHTML = `
+    <div class="vip-level-badge">VIP ${level}</div>
+    ${progressHtml}
+    <div class="vip-bonuses">
+      <div class="vip-bonus-item ${bon.xp   > 0 ? '' : 'vip-bonus-dim'}">⚡ +${bon.xp}% XP</div>
+      <div class="vip-bonus-item ${bon.gold > 0 ? '' : 'vip-bonus-dim'}">💰 +${bon.gold}% Золото</div>
+      <div class="vip-bonus-item ${bon.drop > 0 ? '' : 'vip-bonus-dim'}">🎁 +${bon.drop}% Дроп</div>
+    </div>
+    <div class="vip-section-title">Уровни VIP</div>
+    <div class="vip-levels">${_renderVipLevels(level, pending, bonuses, thresholds)}</div>
+  `;
+}
+
+function _renderVipLevels(curLevel, pending, bonuses, thresholds) {
+  let html = '';
+  for (let lvl = 1; lvl <= 10; lvl++) {
+    const b         = bonuses ? (bonuses[lvl] || { xp:0, gold:0, drop:0 }) : { xp:0, gold:0, drop:0 };
+    const isPending = pending.includes(lvl);
+    const isDone    = curLevel >= lvl && !isPending;
+    const cls       = isPending ? 'vip-card vip-card-pending' : isDone ? 'vip-card vip-card-done' : 'vip-card vip-card-locked';
+    const badge     = isPending ? '🎁' : isDone ? '✓' : lvl;
+    const bonHtml   = [
+      b.xp   > 0 ? `<span>+${b.xp}% XP</span>`     : '',
+      b.gold > 0 ? `<span>+${b.gold}% Золото</span>` : '',
+      b.drop > 0 ? `<span>+${b.drop}% Дроп</span>`   : '',
+    ].join('');
+    html += `
+      <div class="${cls}">
+        <div class="vip-card-head">
+          <div class="vip-card-badge">${badge}</div>
+          <div class="vip-card-title">VIP ${lvl}</div>
+          <div class="vip-card-gram">${thresholds[lvl]} GRAM</div>
+        </div>
+        ${bonHtml ? `<div class="vip-card-bonuses">${bonHtml}</div>` : ''}
+        ${_vipItemDesc(lvl)}
+        ${isPending ? `<button class="vip-claim-btn" onclick="netClaimVipRewards()">Забрать награду</button>` : ''}
+      </div>`;
+  }
+  return html;
+}
+
+function _vipItemDesc(lvl) {
+  const rows = {
+    3:  '<span class="vip-item-chip vip-chip-rare">2× Безоп. камень</span>',
+    4:  '<span class="vip-item-chip vip-chip-rare">5× Безоп. камень</span> <span class="vip-item-chip">10× Все баффы</span>',
+    5:  '<span class="vip-item-chip vip-chip-rare">7× Безоп. камень</span> <span class="vip-item-chip">10× Все баффы</span>',
+    6:  '<span class="vip-item-chip vip-chip-uncommon">Оружие +8 Необычн.</span> <span class="vip-item-chip vip-chip-rare">7× Безоп.</span> <span class="vip-item-chip">10× Баффы</span>',
+    7:  '<span class="vip-item-chip vip-chip-rare">Оружие +8 Редкое</span> <span class="vip-item-chip">20× Обычн. камень</span> <span class="vip-item-chip vip-chip-rare">10× Безоп.</span> <span class="vip-item-chip vip-chip-gold">10 000 Золота</span>',
+    8:  '<span class="vip-item-chip vip-chip-epic">Оружие +1 Эпик</span> <span class="vip-item-chip">50× Баффы</span> <span class="vip-item-chip">50× Обычн.</span> <span class="vip-item-chip vip-chip-rare">30× Безоп.</span> <span class="vip-item-chip vip-chip-gold">20 000 Золота</span>',
+    9:  '<span class="vip-item-chip vip-chip-epic">Оружие +8 Эпик</span> <span class="vip-item-chip">80× Баффы</span> <span class="vip-item-chip">70× Обычн.</span> <span class="vip-item-chip vip-chip-rare">30× Безоп.</span>',
+    10: '<span class="vip-item-chip vip-chip-legendary">Оружие Легенд.</span> <span class="vip-item-chip">100× Баффы</span> <span class="vip-item-chip">100× Обычн.</span> <span class="vip-item-chip vip-chip-rare">100× Безоп.</span>',
+  };
+  const d = rows[lvl];
+  return d ? `<div class="vip-items-row">${d}</div>` : '';
+}
+
 let _gramTxList = [];
 let _refFriendsList = [];
 

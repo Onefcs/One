@@ -10,6 +10,7 @@ const ClanModel   = require('./models/Clan');
 const GramTxModel = require('./models/GramTx');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
+const { VIP_THRESHOLDS, VIP_BONUSES } = require('../shared/definitions');
 
 // Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
 const _TG_TOKEN    = process.env.TG_BOT_TOKEN    || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
@@ -22,6 +23,77 @@ const _gramBalanceCache = new Map();
 
 // Single-session enforcement: telegramId → socket.id of the active session
 const activeSessions = new Map();
+
+// ── VIP item data (server-side subset of js/definitions.js) ──────────────────
+const _VIP_WEAPONS = {
+  assasin: {
+    uncommon:  { id:'sw2', name:'Стальной нож',   slot:'weapon', img:'/images/wep/uk.png', atk:14,                       rarity:'uncommon' },
+    rare:      { id:'sw3', name:'Нож дракона',    slot:'weapon', img:'/images/wep/rk.png', atk:23, critChance:0.05,       rarity:'rare'     },
+    epic:      { id:'sw4', name:'Нож теней',      slot:'weapon', img:'/images/wep/ek.png', atk:44, critChance:0.10,       rarity:'epic'     },
+    legendary: { id:'sw5', name:'Нож героя',      slot:'weapon', img:'/images/wep/lk.png', atk:65, critChance:0.25,       rarity:'legendary'},
+  },
+  warrior: {
+    uncommon:  { id:'tw2', name:'Стальной топор', slot:'weapon', img:'/images/wep/ut.png', atk:15,                       rarity:'uncommon' },
+    rare:      { id:'tw3', name:'Топор дракона',  slot:'weapon', img:'/images/wep/rt.png', atk:23,                       rarity:'rare'     },
+    epic:      { id:'tw4', name:'Топор теней',    slot:'weapon', img:'/images/wep/et.png', atk:44,                       rarity:'epic'     },
+    legendary: { id:'tw5', name:'Топор героя',    slot:'weapon', img:'/images/wep/lt.png', atk:65,                       rarity:'legendary'},
+  },
+  archer: {
+    uncommon:  { id:'bw2', name:'Серебряный лук', slot:'weapon', img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,         rarity:'uncommon' },
+    rare:      { id:'bw3', name:'Лук охотника',   slot:'weapon', img:'/images/wep/rb.png', atk:28, atkSpeed:0.05,         rarity:'rare'     },
+    epic:      { id:'bw4', name:'Лунный лук',     slot:'weapon', img:'/images/wep/eb.png', atk:60, atkSpeed:0.10,         rarity:'epic'     },
+    legendary: { id:'bw5', name:'Лук героя',      slot:'weapon', img:'/images/wep/lb.png', atk:100,atkSpeed:0.15,critChance:0.10,rarity:'legendary'},
+  },
+};
+_VIP_WEAPONS.mage = {
+  uncommon:  { id:'st2', name:'Посох бойца',    slot:'weapon', img:'/images/wep/us.png', atk:17,              rarity:'uncommon' },
+  rare:      { id:'st3', name:'Посох охотника', slot:'weapon', img:'/images/wep/rs.png', atk:30, hpPct:0.05,  rarity:'rare'     },
+  epic:      { id:'st4', name:'Посох Героя',    slot:'weapon', img:'/images/wep/es.png', atk:60, hpPct:0.10,  rarity:'epic'     },
+  legendary: { id:'st5', name:'Посох Легенды',  slot:'weapon', img:'/images/wep/ls.png', atk:100,hpPct:0.15,  rarity:'legendary'},
+};
+_VIP_WEAPONS.priest = _VIP_WEAPONS.mage;
+
+const _VIP_BP = [
+  { id:'bp_hp',       name:'Зелье здоровья',  slot:'buff_potion', img:'/images/potion/hp.png',       rarity:'uncommon', buffType:'hp',       buffDur:1800 },
+  { id:'bp_exp',      name:'Зелье опыта',      slot:'buff_potion', img:'/images/potion/exp.png',      rarity:'uncommon', buffType:'exp',      buffDur:1800 },
+  { id:'bp_gold',     name:'Зелье золота',     slot:'buff_potion', img:'/images/potion/gold.png',     rarity:'uncommon', buffType:'gold',     buffDur:1800 },
+  { id:'bp_regen',    name:'Зелье регена',     slot:'buff_potion', img:'/images/potion/regen.png',    rarity:'uncommon', buffType:'regen',    buffDur:1800 },
+  { id:'bp_atkspeed', name:'Зелье скорости',   slot:'buff_potion', img:'/images/potion/atkspeed.png', rarity:'uncommon', buffType:'atkspeed', buffDur:1800 },
+  { id:'bp_atk',      name:'Зелье атаки',      slot:'buff_potion', img:'/images/potion/atk.png',      rarity:'uncommon', buffType:'atk',      buffDur:1800 },
+];
+
+const _STONE_DEFS = {
+  norm_stone:  { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
+  bless_stone: { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'     },
+};
+
+function _vipLevelItems(vipLevel, charClass) {
+  const wepMap = _VIP_WEAPONS[charClass] || _VIP_WEAPONS.warrior;
+  const items = [];
+  function addStone(id, qty) { if (qty > 0) items.push({ ..._STONE_DEFS[id], qty }); }
+  function addBP(qty)        { _VIP_BP.forEach(bp => items.push({ ...bp, qty })); }
+  function addWep(rarity, enhance) {
+    const w = wepMap[rarity]; if (w) items.push({ ...w, enhance: enhance || 0, qty: 1 });
+  }
+  switch (vipLevel) {
+    case 3:  addStone('bless_stone', 2); break;
+    case 4:  addStone('bless_stone', 5); addBP(10); break;
+    case 5:  addStone('bless_stone', 7); addBP(10); break;
+    case 6:  addWep('uncommon', 8); addStone('bless_stone', 7); addBP(10); break;
+    case 7:  addWep('rare', 8); addStone('norm_stone', 20); addStone('bless_stone', 10); break;
+    case 8:  addWep('epic', 1); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); break;
+    case 9:  addWep('epic', 8); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); break;
+    case 10: addWep('legendary', 0); addBP(100); addStone('norm_stone', 100); addStone('bless_stone', 100); break;
+    default: break;
+  }
+  return items;
+}
+
+function _vipGoldReward(vipLevel) {
+  if (vipLevel === 7) return 10000;
+  if (vipLevel === 8) return 20000;
+  return 0;
+}
 
 // ── Telegram helpers ──────────────────────────────────────────────────────────
 function tgApi(method, body) {
@@ -101,11 +173,35 @@ async function _handleAdminCallback(cq) {
       const saved = doc.savedData || {};
       const newBal = (saved.gramBalance || 0) + tx.amount;
       saved.gramBalance = newBal;
+      // VIP level-up on confirmed deposit
+      if (confirmed && tx.type === 'deposit') {
+        let _vipLvl = saved.vipLevel || 0;
+        let _vipDep = saved.vipDeposited || 0;
+        const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
+        if (_vipLvl < 10) {
+          _vipDep += tx.amount;
+          while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
+            _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
+            _vipLvl++;
+            _vipPend.push(_vipLvl);
+          }
+          saved.vipLevel     = _vipLvl;
+          saved.vipDeposited = _vipDep;
+          saved.vipPending   = _vipPend;
+        }
+      }
       doc.savedData = saved;
       doc.markModified('savedData');
       await doc.save();
       _gramBalanceCache.set(tx.telegramId, newBal);
       io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
+      if (confirmed && tx.type === 'deposit') {
+        io.to(`tg_${tx.telegramId}`).emit('vipUpdate', {
+          level:     saved.vipLevel     || 0,
+          deposited: saved.vipDeposited || 0,
+          pending:   saved.vipPending   || [],
+        });
+      }
 
       // 5% referral bonus on confirmed deposit
       if (confirmed && tx.type === 'deposit' && doc.referredBy) {
@@ -499,7 +595,8 @@ io.on('connection', socket => {
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId) });
+      socket.data.vipLevel = doc.savedData?.vipLevel || 0;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] } });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -536,7 +633,8 @@ io.on('connection', socket => {
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId) });
+      socket.data.vipLevel = doc.savedData?.vipLevel || 0;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] } });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -665,6 +763,44 @@ io.on('connection', socket => {
     } catch (err) { console.error('getRating:', err); }
   });
 
+  socket.on('claimVipRewards', async () => {
+    if (!authed) return;
+    try {
+      const doc = await PlayerModel.findById(authed._id);
+      if (!doc) return;
+      const saved = doc.savedData || {};
+      const pending = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
+      if (!pending.length) return;
+      const charClass = saved.type || 'warrior';
+      const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
+      let goldReward = 0;
+      for (const vipLvl of pending) {
+        const items = _vipLevelItems(vipLvl, charClass);
+        for (const item of items) {
+          if (item.slot === 'weapon') {
+            inv.push({ ...item });
+          } else {
+            const ex = inv.find(i => i.id === item.id);
+            if (ex) ex.qty = (ex.qty || 1) + (item.qty || 1);
+            else inv.push({ ...item });
+          }
+        }
+        goldReward += _vipGoldReward(vipLvl);
+      }
+      if (goldReward > 0) saved.gold = (saved.gold || 0) + goldReward;
+      saved.inventory  = inv;
+      saved.vipPending = [];
+      doc.savedData = saved;
+      doc.markModified('savedData');
+      await doc.save();
+      if (_lastStats) {
+        _lastStats.inventory = inv;
+        if (goldReward > 0) _lastStats.gold = saved.gold;
+      }
+      socket.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
+    } catch (err) { console.error('claimVipRewards:', err); }
+  });
+
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     if (savedStats) _lastStats = savedStats;
@@ -729,6 +865,9 @@ io.on('connection', socket => {
         ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
+      const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
+      if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
+      if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
 
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -816,6 +955,9 @@ io.on('connection', socket => {
       const bossStone  = result.isBoss ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
+      const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
+      if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
+      if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = result.xp / totalMembers, goldShare = result.gold / totalMembers;

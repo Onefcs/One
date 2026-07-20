@@ -43,7 +43,7 @@ function netConnect(onReady) {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink }) => {
+  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink, vipData }) => {
     netUsername = username;
     _savedData = savedData || null;
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
@@ -51,6 +51,7 @@ function netConnect(onReady) {
     window._gramBalance = gramBalance || 0;
     window._gramWallet  = gramWallet  || '';
     window._refLink     = refLink     || '';
+    window._vipData     = vipData     || { level: 0, deposited: 0, pending: [] };
     const _ls = document.getElementById('login-screen');
     if (_ls) {
       _ls.classList.add('splash-out');
@@ -358,7 +359,13 @@ function netConnect(onReady) {
       const _eDef = ENEMY_DEF.find(e => e.eid === eid);
       if (_eDef) onEnemyKill(_eDef.name);
     }
-    if (gotLoot && player) applyLootToInventory(eid);
+    if (gotLoot && player) {
+      applyLootToInventory(eid);
+      // VIP drop bonus: extra loot roll proportional to drop%
+      const _vipDrop = (window._vipData?.level > 0 && typeof VIP_BONUSES !== 'undefined')
+        ? (VIP_BONUSES[window._vipData.level] || VIP_BONUSES[0]).drop : 0;
+      if (_vipDrop > 0 && Math.random() * 100 < _vipDrop) applyLootToInventory(eid);
+    }
     if (bossStone && player) {
       const stone = CRAFT_MATS.find(m => m.id === 'boss_stone');
       if (stone) {
@@ -884,6 +891,7 @@ function _finishOnlineStart() {
   const chatBtn = document.getElementById('chat-btn');
   if (chatBtn) chatBtn.style.display = 'flex';
   if (typeof showRatingBtn === 'function') showRatingBtn();
+  if (typeof showVipBtn === 'function') showVipBtn();
   state = 'playing';
   setTab(0);
 }
@@ -1035,6 +1043,27 @@ function _initGramHandlers(s) {
   s.on('ratingData', ({ tab, rows }) => {
     if (typeof onRatingData === 'function') onRatingData(tab, rows);
   });
+  s.on('vipUpdate', (data) => {
+    window._vipData = data;
+    if (typeof renderVipPanel === 'function') {
+      const panel = document.getElementById('vip-panel');
+      if (panel && panel.style.display !== 'none') renderVipPanel();
+    }
+  });
+  s.on('vipRewardsClaimed', ({ newInventory, goldAdded, vipPending }) => {
+    if (window._vipData) window._vipData.pending = vipPending || [];
+    if (player && newInventory) player.inventory = newInventory;
+    if (player && goldAdded > 0) {
+      player.gold = (player.gold || 0) + goldAdded;
+      if (player.x !== undefined) dmgNum(player.x, player.y - 40, '+' + goldAdded + 'g VIP', '#ffd700');
+    }
+    if (typeof renderVipPanel === 'function') renderVipPanel();
+    netSaveProgressNow();
+  });
+}
+
+function netClaimVipRewards() {
+  if (socket?.connected) socket.emit('claimVipRewards');
 }
 
 // Init Telegram widget on page load (bundle runs at end of <body>)

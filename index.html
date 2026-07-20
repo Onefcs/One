@@ -97,6 +97,9 @@
   Рейтинг
 </button>
 
+<!-- VIP button (below rating button) -->
+<button id="vip-btn" onclick="openVipPanel()" style="display:none">💎 VIP</button>
+
 <!-- Rating overlay panel -->
 <div id="rating-panel" style="display:none">
   <div class="rating-header">
@@ -110,6 +113,15 @@
     <button class="rating-tab" id="rtab-clans" onclick="switchRatingTab('clans')">Кланы</button>
   </div>
   <div id="rating-body" class="rating-body"></div>
+</div>
+
+<!-- VIP overlay panel -->
+<div id="vip-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title">💎 VIP Система</div>
+    <button class="vip-close" onclick="closeVipPanel()">✕</button>
+  </div>
+  <div id="vip-body" class="vip-body"></div>
 </div>
 
 <!-- Chat -->

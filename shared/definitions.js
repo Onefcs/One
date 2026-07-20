@@ -71,4 +71,23 @@ function calcGoldDrop(enemy, floor) {
 // Minimum player level to enter each floor (index = floor number)
 const FLOOR_UNLOCK_LEVEL = [0, 0, 5, 15, 30, 50];
 
-if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL };
+// ── VIP System ────────────────────────────────────────────────────────────────
+// GRAM threshold to reach THIS level (counter resets after each level-up)
+const VIP_THRESHOLDS = [0, 1, 5, 10, 25, 50, 100, 150, 200, 300, 500];
+
+// Cumulative permanent bonuses at each VIP level (index = level)
+const VIP_BONUSES = [
+  { xp:0,   gold:0,   drop:0   }, // 0 – no VIP
+  { xp:5,   gold:0,   drop:0   }, // VIP 1
+  { xp:5,   gold:5,   drop:0   }, // VIP 2
+  { xp:10,  gold:10,  drop:0   }, // VIP 3
+  { xp:20,  gold:20,  drop:0   }, // VIP 4
+  { xp:35,  gold:35,  drop:10  }, // VIP 5
+  { xp:50,  gold:50,  drop:20  }, // VIP 6
+  { xp:60,  gold:60,  drop:25  }, // VIP 7
+  { xp:75,  gold:75,  drop:30  }, // VIP 8
+  { xp:90,  gold:90,  drop:40  }, // VIP 9
+  { xp:100, gold:100, drop:100 }, // VIP 10
+];
+
+if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL, VIP_THRESHOLDS, VIP_BONUSES };
