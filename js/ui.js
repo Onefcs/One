@@ -2006,15 +2006,14 @@ let _ratingData = { players: null, clans: null };
 function _positionRatingBtn() {
   const btn = document.getElementById('rating-btn');
   if (!btn) return;
-  // Place it just to the left of the minimap area; approximate from canvas width
+  // Position below the minimap, aligned to the right edge
   const mmPad = 6;
   const mmH = HEADER_H - mmPad * 2;
   const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.27));
   const mmX = W - mmW - mmPad - 4;
-  const mpX = mmX - 4;
-  const btnW = 32, btnH = 32;
-  btn.style.top  = (HEADER_H / 2 - btnH / 2) + 'px';
-  btn.style.left = (mpX - btnW - 8) + 'px';
+  btn.style.top   = (HEADER_H + 6) + 'px';
+  btn.style.left  = mmX + 'px';
+  btn.style.width = (mmW + 8) + 'px';
   btn.style.right = 'auto';
   btn.style.transform = 'none';
 }
