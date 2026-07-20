@@ -302,7 +302,9 @@ app.get('/tg-botname', (req, res) => {
     .catch(() => res.status(503).json({ error: 'bot not resolved' }));
 });
 
-// One Room per floor, created on demand, destroyed when empty
+// One permanent Room per floor — pre-created at startup, never destroyed.
+// All players on the same floor share one world (no sub-instances, no capacity limit).
+const MAX_FLOOR = 20;
 const floorRooms = new Map();
 
 // ── Battle Power (БМ) formula ─────────────────────────────────────────────────
@@ -424,21 +426,16 @@ function _removeFromParty(partyId, leaverId) {
 }
 
 function getRoom(floor) {
-  if (!floorRooms.has(floor)) {
-    floorRooms.set(floor, new Room(floor, io));
-    console.log(`floor ${floor}: room created`);
-  }
-  return floorRooms.get(floor);
+  return floorRooms.get(Math.max(1, Math.min(MAX_FLOOR, floor)));
 }
 
-function releaseRoom(floor) {
-  const room = floorRooms.get(floor);
-  if (room && room.players.size === 0) {
-    room.stop();
-    floorRooms.delete(floor);
-    console.log(`floor ${floor}: room destroyed`);
+// Pre-create all floor rooms at startup
+mongoose.connection.once('open', () => {
+  for (let f = 1; f <= MAX_FLOOR; f++) {
+    floorRooms.set(f, new Room(f, io));
+    console.log(`floor ${f}: room ready`);
   }
-}
+});
 
 io.on('connection', socket => {
   console.log('connect:', socket.id);
@@ -874,7 +871,6 @@ io.on('connection', socket => {
     socket.leave(`floor_${currentFloor}`);
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);
-    releaseRoom(currentFloor);
 
     // Join new floor
     currentFloor = newFloor;
@@ -1358,7 +1354,6 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);
-    releaseRoom(currentFloor);
   });
 });
 
