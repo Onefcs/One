@@ -1997,6 +1997,112 @@ function drawDead() {
 // ─────────────────────────────────────────────────────────
 //  GRAM WALLET (Profile tab)
 // ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  RATING PANEL
+// ─────────────────────────────────────────────────────────
+let _ratingTab = 'players';
+let _ratingData = { players: null, clans: null };
+
+function _positionRatingBtn() {
+  const btn = document.getElementById('rating-btn');
+  if (!btn) return;
+  // Place it just to the left of the minimap area; approximate from canvas width
+  const mmPad = 6;
+  const mmH = HEADER_H - mmPad * 2;
+  const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.27));
+  const mmX = W - mmW - mmPad - 4;
+  const mpX = mmX - 4;
+  const btnW = 32, btnH = 32;
+  btn.style.top  = (HEADER_H / 2 - btnH / 2) + 'px';
+  btn.style.left = (mpX - btnW - 8) + 'px';
+  btn.style.right = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showRatingBtn() {
+  const btn = document.getElementById('rating-btn');
+  if (btn) { btn.style.display = 'flex'; _positionRatingBtn(); }
+}
+
+function openRatingPanel() {
+  const panel = document.getElementById('rating-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  switchRatingTab(_ratingTab);
+}
+
+function closeRatingPanel() {
+  const panel = document.getElementById('rating-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function switchRatingTab(tab) {
+  _ratingTab = tab;
+  document.querySelectorAll('.rating-tab').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('rtab-' + tab);
+  if (btn) btn.classList.add('active');
+  _renderRatingBody();
+  if (typeof netGetRating === 'function') netGetRating(tab);
+}
+
+function onRatingData(tab, rows) {
+  _ratingData[tab] = rows;
+  if (_ratingTab === tab) _renderRatingBody();
+}
+
+function _renderRatingBody() {
+  const el = document.getElementById('rating-body');
+  if (!el) return;
+  const rows = _ratingData[_ratingTab];
+  if (!rows) {
+    el.innerHTML = '<div class="rating-loading">Загрузка...</div>';
+    return;
+  }
+  if (!rows.length) {
+    el.innerHTML = '<div class="rating-empty">Нет данных</div>';
+    return;
+  }
+
+  if (_ratingTab === 'players') {
+    const myUsername = typeof netUsername !== 'undefined' ? netUsername : '';
+    el.innerHTML = rows.map((r, i) => {
+      const rankCls = i === 0 ? 'rating-rank-1' : i === 1 ? 'rating-rank-2' : i === 2 ? 'rating-rank-3' : '';
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+      const isMe = r.username === myUsername;
+      const init = (r.username || '?')[0].toUpperCase();
+      return `<div class="rating-row${isMe ? ' rating-me' : ''}">
+        <div class="rating-rank ${rankCls}">${medal}</div>
+        <div class="rating-avatar">${init}</div>
+        <div style="flex:1;min-width:0">
+          <div class="rating-name">@${r.username}</div>
+          <div class="rating-sub">Ур. ${r.level || 1}</div>
+        </div>
+        <div class="rating-bm">
+          <div class="rating-bm-val">${(r.bm || 0).toLocaleString()}</div>
+          <div class="rating-bm-lbl">БМ</div>
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    el.innerHTML = rows.map((r, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+      const rankCls = i === 0 ? 'rating-rank-1' : i === 1 ? 'rating-rank-2' : i === 2 ? 'rating-rank-3' : '';
+      return `<div class="rating-row">
+        <div class="rating-rank ${rankCls}">${medal}</div>
+        <div class="rating-clan-icon">${typeof clanIconSVG === 'function' ? clanIconSVG(r.icon || 1, 22) : '🛡'}</div>
+        <div style="flex:1;min-width:0">
+          <div class="rating-name">${r.name}</div>
+          <div class="rating-sub">${r.memberCount} участн.</div>
+        </div>
+        <div class="rating-bm">
+          <div class="rating-bm-val">${(r.totalBm || 0).toLocaleString()}</div>
+          <div class="rating-bm-lbl">БМ</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
 let _gramTxList = [];
 let _refFriendsList = [];
 

@@ -1214,3 +1214,178 @@ canvas { display:block; width:100%; height:100%; }
 .ref-friend-name { flex: 1; font-size: 14px; color: #d0e0ff; }
 .ref-friend-bonus { font-size: 12px; color: #4ecb71; font-weight: 600; }
 .ref-empty { text-align: center; padding: 30px 0; color: #556688; font-size: 13px; }
+
+/* ── Rating button ────────────────────────────────────────────────────────── */
+#rating-btn {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  transform: translateX(-100%);
+  /* positioned by JS after minimap width is known; fallback: */
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(255,210,60,.12);
+  border: 1px solid rgba(255,210,60,.3);
+  border-radius: 8px;
+  color: #ffd23c;
+  cursor: pointer;
+  z-index: 50;
+}
+#rating-btn:active { background: rgba(255,210,60,.25); }
+
+/* ── Rating panel overlay ─────────────────────────────────────────────────── */
+#rating-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: rgba(6,3,16,.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rating-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px 0;
+  flex-shrink: 0;
+}
+.rating-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffd23c;
+}
+.rating-close {
+  background: rgba(255,255,255,.08);
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rating-tabs {
+  display: flex;
+  gap: 0;
+  margin: 12px 16px 0;
+  background: rgba(0,0,0,.3);
+  border-radius: 10px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+.rating-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #8899bb;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.rating-tab.active {
+  background: rgba(255,210,60,.15);
+  color: #ffd23c;
+}
+.rating-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 20px;
+}
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.05);
+}
+.rating-row.rating-me {
+  background: rgba(255,210,60,.08);
+  border-color: rgba(255,210,60,.25);
+}
+.rating-rank {
+  font-size: 13px;
+  font-weight: 800;
+  color: #556688;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.rating-rank-1 { color: #ffd700; }
+.rating-rank-2 { color: #c0c0c0; }
+.rating-rank-3 { color: #cd7f32; }
+.rating-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,#2a3a5a,#1a2a4a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #7eb8ff;
+  flex-shrink: 0;
+}
+.rating-clan-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg,#2a1a4a,#1a0a3a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.rating-name {
+  flex: 1;
+  font-size: 14px;
+  color: #d0e0ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rating-sub {
+  font-size: 11px;
+  color: #6677aa;
+  margin-top: 2px;
+}
+.rating-bm {
+  text-align: right;
+  flex-shrink: 0;
+}
+.rating-bm-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffd23c;
+}
+.rating-bm-lbl {
+  font-size: 10px;
+  color: #6677aa;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.rating-empty {
+  text-align: center;
+  color: #446;
+  padding: 40px 0;
+  font-size: 13px;
+}
+.rating-loading {
+  text-align: center;
+  color: #556;
+  padding: 40px 0;
+  font-size: 13px;
+}

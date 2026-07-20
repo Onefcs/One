@@ -595,6 +595,40 @@ io.on('connection', socket => {
     } catch (err) { console.error('getReferrals:', err); }
   });
 
+  socket.on('getRating', async ({ tab }) => {
+    try {
+      if (tab === 'players') {
+        const players = await PlayerModel.find({ bm: { $gt: 0 } }, 'username bm savedData')
+          .sort({ bm: -1 }).limit(50).lean();
+        const rows = players.map(p => ({
+          username: p.username,
+          bm: p.bm || 0,
+          level: p.savedData?.level || 1,
+        }));
+        socket.emit('ratingData', { tab: 'players', rows });
+      } else {
+        const clans = await ClanModel.find({}, 'name icon members').lean();
+        const clanBm = [];
+        for (const clan of clans) {
+          if (!clan.members?.length) continue;
+          const ids = clan.members.map(m => m.telegramId);
+          const result = await PlayerModel.aggregate([
+            { $match: { telegramId: { $in: ids } } },
+            { $group: { _id: null, total: { $sum: '$bm' } } },
+          ]);
+          clanBm.push({
+            name: clan.name,
+            icon: clan.icon,
+            memberCount: clan.members.length,
+            totalBm: result[0]?.total || 0,
+          });
+        }
+        clanBm.sort((a, b) => b.totalBm - a.totalBm);
+        socket.emit('ratingData', { tab: 'clans', rows: clanBm.slice(0, 50) });
+      }
+    } catch (err) { console.error('getRating:', err); }
+  });
+
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     if (savedStats) _lastStats = savedStats;

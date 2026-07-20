@@ -877,6 +877,7 @@ function _finishOnlineStart() {
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   const chatBtn = document.getElementById('chat-btn');
   if (chatBtn) chatBtn.style.display = 'flex';
+  if (typeof showRatingBtn === 'function') showRatingBtn();
   state = 'playing';
   setTab(0);
 }
@@ -991,6 +992,10 @@ function netGetReferrals() {
   if (socket?.connected) socket.emit('getReferrals');
 }
 
+function netGetRating(tab) {
+  if (socket?.connected) socket.emit('getRating', { tab });
+}
+
 // Incoming GRAM events
 function _initGramHandlers(s) {
   s.on('gramTxCreated', ({ tx, newBalance }) => {
@@ -1020,6 +1025,9 @@ function _initGramHandlers(s) {
   s.on('refBonusReceived', (data) => {
     window._gramBalance = (window._gramBalance || 0) + data.bonus;
     if (typeof onRefBonusReceived === 'function') onRefBonusReceived(data);
+  });
+  s.on('ratingData', ({ tab, rows }) => {
+    if (typeof onRatingData === 'function') onRatingData(tab, rows);
   });
 }
 
