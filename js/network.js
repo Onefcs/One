@@ -231,6 +231,7 @@ function netConnect(onReady) {
 
   socket.on('pvpDamage', ({ dmg }) => {
     if (!player || state !== 'playing') return;
+    if (typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) return;
     let actual = 0;
     {
       actual = Math.max(1, Math.floor(dmg));
@@ -914,15 +915,21 @@ function netSelectChar(type, savedStats) {
 }
 
 function netPvpAttack(targetSocketId) {
-  if (socket?.connected) socket.emit('pvpAttack', { targetId: targetSocketId });
+  if (!socket?.connected) return;
+  if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
+  socket.emit('pvpAttack', { targetId: targetSocketId });
 }
 
 function netPvpSkillAttack(targetId, multiplier) {
-  if (socket?.connected) socket.emit('pvpSkillAttack', { targetId, multiplier });
+  if (!socket?.connected) return;
+  if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
+  socket.emit('pvpSkillAttack', { targetId, multiplier });
 }
 
 function netPvpSkillCC(targetId, type, duration) {
-  if (socket?.connected) socket.emit('pvpSkillCC', { targetId, type, duration });
+  if (!socket?.connected) return;
+  if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
+  socket.emit('pvpSkillCC', { targetId, type, duration });
 }
 
 function netSetPvpMode(mode) {

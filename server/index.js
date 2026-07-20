@@ -614,8 +614,10 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     const attacker = currentRoom.players.get(socket.id);
     if (!attacker || !attacker.pvpMode) return;
+    if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const target = currentRoom.players.get(targetId);
     if (!target || target.hp <= 0) return;
+    if (currentRoom.isPlayerInSafeZone(targetId)) return;
     const dur = Math.max(0, Math.min(duration, 6));
     io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration: dur });
   });

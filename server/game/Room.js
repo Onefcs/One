@@ -329,6 +329,8 @@ class Room {
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
     if (target.hp <= 0) return null;
+    if (this._inSafeZone(attacker.x, attacker.y)) return null;
+    if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 500 * 500) return null;
     const base = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
@@ -343,6 +345,8 @@ class Room {
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
     if (target.hp <= 0) return null;
+    if (this._inSafeZone(attacker.x, attacker.y)) return null;
+    if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 600 * 600) return null;
     const mult = Math.max(1, Math.min(10, multiplier || 1));
