@@ -1518,9 +1518,16 @@ canvas { display:block; width:100%; height:100%; }
 }
 .vip-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   padding: 12px 16px 24px;
 }
+/* Restore pointer events inside the panel so scroll gestures work over images */
+#vip-panel * { pointer-events: auto; }
 .vip-level-badge {
   text-align: center;
   font-size: 28px;
@@ -1649,22 +1656,39 @@ canvas { display:block; width:100%; height:100%; }
 .vip-items-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
   margin-bottom: 8px;
 }
-.vip-item-chip {
-  font-size: 10px;
-  border-radius: 5px;
-  padding: 2px 6px;
-  background: rgba(255,255,255,.07);
-  color: #99aabb;
+.vip-ri {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255,255,255,.05);
   border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  padding: 6px 7px 5px;
+  min-width: 44px;
 }
-.vip-chip-uncommon { color: #3ef07a; border-color: rgba(62,240,122,.3); background: rgba(62,240,122,.08); }
-.vip-chip-rare     { color: #55aaff; border-color: rgba(85,170,255,.3); background: rgba(85,170,255,.08); }
-.vip-chip-epic     { color: #c55ef5; border-color: rgba(197,94,245,.3); background: rgba(197,94,245,.08); }
-.vip-chip-legendary{ color: #ffd700; border-color: rgba(255,215,0,.3);  background: rgba(255,215,0,.08);  }
-.vip-chip-gold     { color: #ffd700; border-color: rgba(255,215,0,.3);  background: rgba(255,215,0,.08);  }
+.vip-ri-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  display: block;
+}
+.vip-ri-label {
+  font-size: 9px;
+  color: #99aabb;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1;
+}
+.vip-ri-uncommon { border-color: rgba(62,240,122,.35);  background: rgba(62,240,122,.07);  }
+.vip-ri-rare     { border-color: rgba(85,170,255,.35);  background: rgba(85,170,255,.07);  }
+.vip-ri-epic     { border-color: rgba(197,94,245,.35);  background: rgba(197,94,245,.07);  }
+.vip-ri-legendary{ border-color: rgba(255,215,0,.4);    background: rgba(255,215,0,.08);   }
+.vip-ri-gold     { border-color: rgba(255,215,0,.35);   background: rgba(255,215,0,.07);   }
 .vip-claim-btn {
   width: 100%;
   padding: 9px 0;

@@ -2212,15 +2212,32 @@ function _renderVipLevels(curLevel, pending, bonuses, thresholds) {
 }
 
 function _vipItemDesc(lvl) {
+  const wepSfx = { assasin:'k', warrior:'t', archer:'b', mage:'s', priest:'s' }[player?.type] || 't';
+  const wepPfx = { uncommon:'u', rare:'r', epic:'e', legendary:'l' };
+
+  function ri(img, label, cls) {
+    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+  }
+  function wep(rarity, enhance) {
+    return ri(`/images/wep/${wepPfx[rarity]}${wepSfx}.png`, enhance ? `+${enhance}` : '★', rarity);
+  }
+  function bless(qty) { return ri('/images/bless.png',       `×${qty}`, 'rare');   }
+  function norm(qty)  { return ri('/images/norm.png',        `×${qty}`, 'uncommon'); }
+  function gold(amt)  { return ri('/images/nexum-coin.png',  `${(amt/1000).toFixed(0)}k`, 'gold'); }
+  function pots(qty) {
+    return ['hp','exp','gold','regen','atkspeed','atk']
+      .map(p => ri(`/images/potion/${p}.png`, `×${qty}`, '')).join('');
+  }
+
   const rows = {
-    3:  '<span class="vip-item-chip vip-chip-rare">2× Безоп. камень</span>',
-    4:  '<span class="vip-item-chip vip-chip-rare">5× Безоп. камень</span> <span class="vip-item-chip">10× Все баффы</span>',
-    5:  '<span class="vip-item-chip vip-chip-rare">7× Безоп. камень</span> <span class="vip-item-chip">10× Все баффы</span>',
-    6:  '<span class="vip-item-chip vip-chip-uncommon">Оружие +8 Необычн.</span> <span class="vip-item-chip vip-chip-rare">7× Безоп.</span> <span class="vip-item-chip">10× Баффы</span>',
-    7:  '<span class="vip-item-chip vip-chip-rare">Оружие +8 Редкое</span> <span class="vip-item-chip">20× Обычн. камень</span> <span class="vip-item-chip vip-chip-rare">10× Безоп.</span> <span class="vip-item-chip vip-chip-gold">10 000 Золота</span>',
-    8:  '<span class="vip-item-chip vip-chip-epic">Оружие +1 Эпик</span> <span class="vip-item-chip">50× Баффы</span> <span class="vip-item-chip">50× Обычн.</span> <span class="vip-item-chip vip-chip-rare">30× Безоп.</span> <span class="vip-item-chip vip-chip-gold">20 000 Золота</span>',
-    9:  '<span class="vip-item-chip vip-chip-epic">Оружие +8 Эпик</span> <span class="vip-item-chip">80× Баффы</span> <span class="vip-item-chip">70× Обычн.</span> <span class="vip-item-chip vip-chip-rare">30× Безоп.</span>',
-    10: '<span class="vip-item-chip vip-chip-legendary">Оружие Легенд.</span> <span class="vip-item-chip">100× Баффы</span> <span class="vip-item-chip">100× Обычн.</span> <span class="vip-item-chip vip-chip-rare">100× Безоп.</span>',
+    3:  bless(2),
+    4:  bless(5) + pots(10),
+    5:  bless(7) + pots(10),
+    6:  wep('uncommon', 8) + bless(7) + pots(10),
+    7:  wep('rare', 8) + norm(20) + bless(10) + gold(10000),
+    8:  wep('epic', 1) + pots(50) + norm(50) + bless(30) + gold(20000),
+    9:  wep('epic', 8) + pots(80) + norm(70) + bless(30),
+    10: wep('legendary', 0) + pots(100) + norm(100) + bless(100),
   };
   const d = rows[lvl];
   return d ? `<div class="vip-items-row">${d}</div>` : '';
