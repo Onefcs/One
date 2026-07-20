@@ -56,8 +56,10 @@ function fireProj(tx, ty) {
 
 function pickup(drop) {
   if (drop.type === 'gold') {
-    player.gold += drop.amount;
-    dmgNum(drop.x, drop.y - 12, '+' + drop.amount + '💰', '#ff0');
+    let amount = drop.amount;
+    if ((player.buffs || {}).gold > 0) amount *= 2;
+    player.gold += amount;
+    dmgNum(drop.x, drop.y - 12, '+' + amount + '💰', '#ff0');
     return;
   }
   const it = drop.item;
@@ -95,6 +97,18 @@ function applyLootToInventory(eid) {
     else if (r < 0.00021 * _fMult)  _addMat('rece', 52);
     else if (r < 0.00071 * _fMult)  _addMat('recr', 52);
     else if (r < 0.00171 * _fMult)  _addMat('recu', 52);
+  }
+
+  // Buff potion drop
+  const _buffPotIds = ['bp_hp','bp_exp','bp_gold','bp_regen','bp_atkspeed','bp_atk'];
+  const _bpChance = eType === 'boss' ? 0.03 : 0.005;
+  if (Math.random() < _bpChance * _fMult) {
+    const bpId = _buffPotIds[Math.floor(Math.random() * _buffPotIds.length)];
+    const bpDef = typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bpId) : null;
+    if (bpDef && addToInventory({ ...bpDef })) {
+      dmgNum(player.x, player.y - 52, '+ ' + bpDef.name, '#f0c040');
+      saved = true;
+    }
   }
 
   if (saved) netSaveProgress();

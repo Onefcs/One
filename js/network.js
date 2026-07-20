@@ -772,6 +772,8 @@ function _emitSaveProgress() {
     inventory: player.inventory, equipment: player.equipment,
     potionBag: player.potionBag || { pt1: 0, pt2: 0 },
     hudPotion: player.hudPotion || 'pt1',
+    buffs: player.buffs || {},
+    autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0.5,
     upgrades: player.upgrades || {},
     questIdx: player.questIdx || 0,
     questKills: player.questKills || {},

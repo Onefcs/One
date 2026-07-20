@@ -142,7 +142,8 @@ function _checkSkillTouch(cx, cy) {
 function _checkPotionTouch(cx, cy) {
   const pb = getPotionBtnPos();
   if (Math.hypot(cx - pb.x, cy - pb.y) < pb.r + 6) {
-    usePotion();
+    if (typeof openHpPicker === 'function') openHpPicker();
+    else usePotion();
     return true;
   }
   return false;

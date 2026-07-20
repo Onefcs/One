@@ -243,6 +243,35 @@ function update(dt) {
   // HP regen
   if ((player.hpRegen || 0) > 0 && player.hp < player.maxHp)
     player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
+
+  // Potion cooldown tick
+  if ((player.potCd || 0) > 0) player.potCd = Math.max(0, player.potCd - dt);
+
+  // Buff timers tick
+  const _buffs = player.buffs || (player.buffs = {});
+  let _buffChanged = false;
+  for (const btype of Object.keys(_buffs)) {
+    if (_buffs[btype] > 0) {
+      _buffs[btype] -= dt;
+      if (_buffs[btype] <= 0) {
+        _buffs[btype] = 0;
+        _buffChanged = true;
+        // auto-reapply if more in inventory
+        const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
+        if (bdef && countMaterial(bdef.id) > 0) {
+          useBuffPotion(bdef.id);
+          _buffChanged = false;
+        }
+      }
+    }
+  }
+  if (_buffChanged) { recompute(); if (typeof updateInvUI === 'function') updateInvUI(); }
+
+  // Auto-use HP potion
+  const _autoPct = player.autoHpPct || 0;
+  if (_autoPct > 0 && player.potCd <= 0 && player.hp < player.maxHp * _autoPct) {
+    usePotion();
+  }
   // Safe zone regen: +1 HP/sec; auto-disable PvP on entry
   if (inSafeZone(player.x, player.y)) {
     if (player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + dt);

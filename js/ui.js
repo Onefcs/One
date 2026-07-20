@@ -30,6 +30,10 @@ function updateInvUI() {
   }).join('');
 
   // Character preview
+  const _bag = p.potionBag || {};
+  const _hudPtDef = ITEM_DEF.find(d => d.id === (p.hudPotion || 'pt1'));
+  const _hudCount = _bag[p.hudPotion || 'pt1'] || 0;
+  const _activeBufCount = Object.values(p.buffs || {}).filter(v => v > 0).length;
   document.getElementById('char-preview').innerHTML = `
     <div class="inv-char-row">
       <div style="line-height:1">${iconHTML(p.charDef.icon, 40, p.charDef.color)}</div>
@@ -42,26 +46,17 @@ function updateInvUI() {
           ${iconHTML('coin',11,'#f1c40f')}${p.gold}
         </div>
       </div>
-      <div style="color:#f96;text-align:right;font-weight:bold;display:flex;align-items:center;gap:2px">${iconHTML('potion',16,'#3ef07a')}×${((p.potionBag||{}).pt1||0) + ((p.potionBag||{}).pt2||0)}</div>
+      <div onclick="openHpPicker()" style="color:#4f4;text-align:right;font-weight:bold;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
+        ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="20" height="20" style="image-rendering:pixelated">` : iconHTML('potion',20,'#3ef07a')}
+        <span style="font-size:10px">×${_hudCount}</span>
+        ${_activeBufCount > 0 ? `<span style="font-size:9px;color:#f0c040">${_activeBufCount} бафф</span>` : ''}
+      </div>
     </div>
   `;
 
-  // Potion section
-  const bag = p.potionBag || {};
-  const hudPt = p.hudPotion || 'pt1';
+  // Potion shelf hidden — HP potions managed via HUD picker
   const ptEl = document.getElementById('potion-shelf');
-  if (ptEl) {
-    ptEl.innerHTML = ITEM_DEF.filter(d => d.slot === 'use').map(def => {
-      const cnt = bag[def.id] || 0;
-      const isHud = def.id === hudPt;
-      return `<div class="pt-cell${isHud ? ' pt-hud' : ''}" onclick="openPotionModal('${def.id}')" title="${def.name} — HP+${def.hp}">
-        ${iconHTML(def.icon, 22, isHud ? '#3ef07a' : '#8090a0')}
-        <div class="pt-cell-name">${def.name}</div>
-        <div class="pt-cell-cnt${cnt > 0 ? '' : ' pt-zero'}">×${cnt}</div>
-        ${isHud ? '<div class="pt-hud-badge">HUD</div>' : ''}
-      </div>`;
-    }).join('');
-  }
+  if (ptEl) ptEl.innerHTML = '';
 
   // Inventory grid — materials stack by id
   document.getElementById('inv-count').textContent = invSlotCount() + '/50';
@@ -93,41 +88,93 @@ function updateInvUI() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  POTION MODAL
+//  HP PICKER MODAL
 // ─────────────────────────────────────────────────────────
-function openPotionModal(itemId) {
+function openHpPicker() {
   if (!player) return;
-  const def = ITEM_DEF.find(d => d.id === itemId);
-  if (!def) return;
-  const bag = player.potionBag || {};
-  const cnt = bag[itemId] || 0;
-  const isHud = player.hudPotion === itemId;
-  const canUse = cnt > 0 && player.hp < player.maxHp;
+  const existing = document.getElementById('hp-picker-ov');
+  if (existing) existing.remove();
 
-  document.getElementById('pt-modal-icon').innerHTML = iconHTML(def.icon, 36, '#3ef07a');
-  document.getElementById('pt-modal-name').textContent = def.name;
-  document.getElementById('pt-modal-stat').textContent = `HP +${def.hp}  ·  ×${cnt} в наличии`;
-  document.getElementById('pt-modal-use').disabled = !canUse;
-  document.getElementById('pt-modal-use').onclick = () => { usePotionById(itemId); closePotionModal(); };
-  const hudBtn = document.getElementById('pt-modal-hud');
-  hudBtn.textContent = isHud ? '✓ В HUD (выбрано)' : 'В HUD';
-  hudBtn.disabled = isHud;
-  hudBtn.onclick = () => { setHudPotion(itemId); closePotionModal(); };
-  document.getElementById('pt-modal').style.display = 'flex';
+  const bag = player.potionBag || {};
+  const hudPt = player.hudPotion || 'pt1';
+  const autoThresholds = [0, 0.3, 0.5, 0.7];
+  const autoLabels = ['ВЫКЛ', '30%', '50%', '70%'];
+  const curAuto = player.autoHpPct || 0;
+
+  const hpPots = ITEM_DEF.filter(d => d.slot === 'use');
+  const potCells = hpPots.map(def => {
+    const cnt = bag[def.id] || 0;
+    const isHud = def.id === hudPt;
+    const imgEl = def.img
+      ? `<img src="${def.img}" width="28" height="28" style="image-rendering:pixelated;display:block;margin:0 auto 2px">`
+      : iconHTML(def.icon || 'potion', 28, isHud ? '#3ef07a' : '#8090a0');
+    return `<div onclick="setHudPotion('${def.id}');openHpPicker()" style="
+      flex:1;padding:10px 6px;border-radius:10px;text-align:center;cursor:pointer;
+      border:2px solid ${isHud ? '#3ef07a' : 'rgba(255,255,255,0.1)'};
+      background:${isHud ? 'rgba(60,240,120,0.12)' : 'rgba(255,255,255,0.04)'};
+    ">
+      ${imgEl}
+      <div style="font-size:10px;color:${isHud ? '#3ef07a' : '#888'};font-weight:${isHud?'700':'400'}">${def.name}</div>
+      <div style="font-size:11px;color:#4f4;margin-top:2px">×${cnt}</div>
+      <div style="font-size:9px;color:#666">HP+${def.hp} · откат 4с</div>
+      ${isHud ? '<div style="font-size:9px;color:#3ef07a;font-weight:700;margin-top:2px">✓ В HUD</div>' : ''}
+    </div>`;
+  }).join('');
+
+  const autoRows = autoThresholds.map((v, i) => {
+    const isActive = Math.abs(curAuto - v) < 0.01;
+    return `<button onclick="setAutoHpPct(${v})" style="
+      flex:1;padding:8px 4px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
+      background:${isActive ? '#1a3a2a' : 'rgba(255,255,255,0.06)'};
+      color:${isActive ? '#3ef07a' : '#888'};
+      border:1px solid ${isActive ? '#3ef07a44' : 'transparent'};
+    ">${autoLabels[i]}</button>`;
+  }).join('');
+
+  const ov = document.createElement('div');
+  ov.id = 'hp-picker-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#0d0818;border-radius:18px 18px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:18px 16px 30px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:800;color:#3ef07a">Зелья лечения</div>
+      <button onclick="document.getElementById('hp-picker-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;font-size:13px;cursor:pointer;">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:16px">${potCells}</div>
+    <div style="font-size:11px;color:#666;margin-bottom:8px">Авто-использование при HP &lt;</div>
+    <div style="display:flex;gap:8px">${autoRows}</div>
+    <button onclick="usePotion();document.getElementById('hp-picker-ov').remove()" style="
+      width:100%;margin-top:14px;padding:12px;border:none;border-radius:12px;
+      background:linear-gradient(135deg,#1a3a1a,#2a5a2a);color:#3ef07a;font-size:15px;font-weight:700;cursor:pointer;
+    ">Использовать</button>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function setAutoHpPct(pct) {
+  if (!player) return;
+  player.autoHpPct = pct;
+  netSaveProgress();
+  openHpPicker();
 }
 
 function closePotionModal() {
-  document.getElementById('pt-modal').style.display = 'none';
+  const el = document.getElementById('hp-picker-ov');
+  if (el) el.remove();
+  const el2 = document.getElementById('pt-modal');
+  if (el2) el2.style.display = 'none';
 }
 
 function usePotionById(itemId) {
   if (!player || state !== 'playing') return;
+  if ((player.potCd || 0) > 0) return;
   const bag = player.potionBag || {};
   if ((bag[itemId] || 0) <= 0 || player.hp >= player.maxHp) return;
   bag[itemId]--;
   const def = ITEM_DEF.find(d => d.id === itemId);
-  const heal = (def && def.hp) || 60;
+  const heal = (def && def.hp) || 20;
   player.hp = Math.min(player.maxHp, player.hp + heal);
+  player.potCd = 4;
   dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
   spawnBurst(player.x, player.y, '#4f4', 5);
   if (typeof netUsePotion === 'function') netUsePotion(heal);
@@ -1133,6 +1180,17 @@ function _buildUiBtnGrads() {
 // ─────────────────────────────────────────────────────────
 //  POTION BUTTON
 // ─────────────────────────────────────────────────────────
+const _potImgCache = {};
+function _getPotImg(src) {
+  if (!src) return null;
+  if (!_potImgCache[src]) {
+    const img = new Image();
+    img.src = src;
+    _potImgCache[src] = img;
+  }
+  return _potImgCache[src];
+}
+
 function drawPotionButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
@@ -1141,32 +1199,51 @@ function drawPotionButton() {
   const hudPt = player.hudPotion || 'pt1';
   const count = bag[hudPt] || 0;
   const ready = count > 0 && player.hp < player.maxHp;
+  const cd = player.potCd || 0;
   const F = 'system-ui, -apple-system, Arial';
 
   ctx.save();
 
   // Circle background (cached gradient)
-  ctx.fillStyle = ready ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
+  ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = ready ? 'rgba(60,200,90,0.75)' : 'rgba(50,40,90,0.6)';
+  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(60,200,90,0.75)' : 'rgba(50,40,90,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
-  if (ready) {
+  if (ready && cd <= 0) {
     ctx.strokeStyle = 'rgba(80,220,110,0.15)'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  ctx.globalAlpha = ready ? 1 : 0.45;
-  drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, ready ? '#3ef07a' : '#606080');
+  // Draw PNG image or fallback SVG icon
+  const hudDef = ITEM_DEF.find(d => d.id === hudPt);
+  ctx.globalAlpha = ready && cd <= 0 ? 1 : 0.45;
+  if (hudDef && hudDef.img) {
+    const img = _getPotImg(hudDef.img);
+    if (img && img.complete && img.naturalWidth > 0) {
+      const is = 22;
+      ctx.drawImage(img, pb.x - is / 2, pb.y - is / 2 - 5, is, is);
+    } else {
+      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, '#606080');
+    }
+  } else {
+    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, ready && cd <= 0 ? '#3ef07a' : '#606080');
+  }
 
   ctx.globalAlpha = 1;
   ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = ready ? '#3ef07a' : 'rgba(100,100,130,0.7)';
+  ctx.fillStyle = ready && cd <= 0 ? '#3ef07a' : 'rgba(100,100,130,0.7)';
   ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
 
-  ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(120,120,150,0.55)';
-  ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
+  // Show cooldown if active
+  if (cd > 0) {
+    ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f88';
+    ctx.fillText(cd.toFixed(1) + 'с', pb.x, pb.y + pb.r + 10);
+  } else {
+    ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(120,120,150,0.55)';
+    ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
+  }
 
   ctx.restore();
 }
@@ -1603,12 +1680,46 @@ function _enhStonesBlock(actionFn, param) {
   </div>`;
 }
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
-const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', use:'Расходник', material:'Материал', recipe:'Рецепт' };
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления' };
 
 function openInvItemModal(idx) {
   if (!player) return;
   const it = player.inventory[idx];
-  if (!it || _isStackable(it) || it.slot === 'use') return;
+  if (!it) return;
+
+  // Buff potion — show use modal
+  if (it.slot === 'buff_potion') {
+    closeInvItemModal();
+    const btype = it.buffType;
+    const active = btype && ((player.buffs || {})[btype] || 0) > 0;
+    const remaining = active ? Math.ceil((player.buffs[btype] || 0) / 60) : 0;
+    const qty = it.qty || 1;
+    const ov = document.createElement('div');
+    ov.id = 'inv-item-modal-ov';
+    ov.className = 'imod-overlay';
+    ov.onclick = closeInvItemModal;
+    ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
+      <div class="imod-hdr">
+        <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
+        <div class="imod-title-block">
+          <div class="imod-name" style="color:#f0c040">${it.name}</div>
+          <div class="imod-sub"><span style="color:#f0c040">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · Зелье усиления · ×${qty}</div>
+        </div>
+        <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+      </div>
+      <div class="imod-stats">${it.buffDesc || ''}</div>
+      ${active ? `<div style="padding:8px 12px;background:rgba(240,192,64,0.1);border-radius:8px;color:#f0c040;font-size:12px;text-align:center">✓ Активно · осталось ~${remaining} мин</div>` : ''}
+      <div class="imod-btns">
+        <button class="imod-btn imod-equip${active ? ' disabled' : ''}" onclick="${active ? '' : `useBuffPotion('${it.id}');closeInvItemModal()`}">
+          ${active ? 'Уже активно' : 'Использовать'}
+        </button>
+      </div>
+    </div>`;
+    document.getElementById('app').appendChild(ov);
+    return;
+  }
+
+  if (_isStackable(it) || it.slot === 'use') return;
 
   const rc    = RARITY_COLOR[it.rarity] || '#aaa';
   const enh   = it.enhance || 0;

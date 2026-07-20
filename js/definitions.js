@@ -144,9 +144,16 @@ const ITEM_DEF = [
   { id:'nd3', name:'Пояс тьмы',        slot:'belt',   img:'/images/acs/rp.png', atk:8,  hp:30,  rarity:'rare'     },
   { id:'nd4', name:'Пояс героя',       slot:'belt',   img:'/images/acs/ep.png', atk:16, hp:80,  rarity:'epic'     },
   { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:24, hp:120, rarity:'legendary'},
-  // ── Potions ───────────────────────────────────────────────
-  { id:'pt1', name:'Зелье лечения',    slot:'use',    icon:'potion',             hp:60,           rarity:'common'   },
-  { id:'pt2', name:'Большое зелье',    slot:'use',    icon:'potion',             hp:120,          rarity:'uncommon' },
+  // ── HP Potions ────────────────────────────────────────────
+  { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
+  { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:50, rarity:'uncommon' },
+  // ── Buff Potions ──────────────────────────────────────────
+  { id:'bp_hp',       name:'Зелье здоровья',   slot:'buff_potion', img:'/images/potion/hp.png',       rarity:'uncommon', buffType:'hp',       buffDur:1800, buffDesc:'+10% HP на 30 мин'            },
+  { id:'bp_exp',      name:'Зелье опыта',       slot:'buff_potion', img:'/images/potion/exp.png',      rarity:'uncommon', buffType:'exp',      buffDur:1800, buffDesc:'×2 опыт на 30 мин'            },
+  { id:'bp_gold',     name:'Зелье золота',      slot:'buff_potion', img:'/images/potion/gold.png',     rarity:'uncommon', buffType:'gold',     buffDur:1800, buffDesc:'×2 золото на 30 мин'          },
+  { id:'bp_regen',    name:'Зелье регена',      slot:'buff_potion', img:'/images/potion/regen.png',    rarity:'uncommon', buffType:'regen',    buffDur:1800, buffDesc:'+2 HP/сек на 30 мин'          },
+  { id:'bp_atkspeed', name:'Зелье скорости',    slot:'buff_potion', img:'/images/potion/atkspeed.png', rarity:'uncommon', buffType:'atkspeed', buffDur:1800, buffDesc:'+20% скорость атаки на 30 мин' },
+  { id:'bp_atk',      name:'Зелье атаки',       slot:'buff_potion', img:'/images/potion/atk.png',      rarity:'uncommon', buffType:'atk',      buffDur:1800, buffDesc:'+20% атаки на 30 мин'         },
 ];
 
 const EQ_SLOTS = [
@@ -209,8 +216,14 @@ const NPC_DEF = [
 ];
 
 const MERCHANT_SHOP = [
-  { itemId:'pt1', name:'Зелье лечения', icon:'potion', price:30,  desc:'HP +60'  },
-  { itemId:'pt2', name:'Большое зелье', icon:'potion', price:80,  desc:'HP +120' },
+  { itemId:'pt1',       name:'Малое зелье',     img:'/images/potion/smallhp.png', price:5,    desc:'HP +20'                    },
+  { itemId:'pt2',       name:'Большое зелье',   img:'/images/potion/bighp.png',   price:30,   desc:'HP +50'                    },
+  { itemId:'bp_hp',       name:'Зелье здоровья',   img:'/images/potion/hp.png',       price:1000, desc:'+10% HP 30мин'             },
+  { itemId:'bp_exp',      name:'Зелье опыта',       img:'/images/potion/exp.png',      price:1000, desc:'×2 опыт 30мин'             },
+  { itemId:'bp_gold',     name:'Зелье золота',      img:'/images/potion/gold.png',     price:1000, desc:'×2 золото 30мин'           },
+  { itemId:'bp_regen',    name:'Зелье регена',      img:'/images/potion/regen.png',    price:1000, desc:'+2 HP/сек 30мин'           },
+  { itemId:'bp_atkspeed', name:'Зелье скорости',    img:'/images/potion/atkspeed.png', price:1000, desc:'+20% скор. атаки 30мин'   },
+  { itemId:'bp_atk',      name:'Зелье атаки',       img:'/images/potion/atk.png',      price:1000, desc:'+20% атаки 30мин'          },
 ];
 
 const SHOP_CATALOG = [

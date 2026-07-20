@@ -1,4 +1,4 @@
-function _isStackable(it) { return it.slot === 'material' || it.slot === 'recipe'; }
+function _isStackable(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion'; }
 
 function invSlotCount() {
   return player.inventory.length;
@@ -74,6 +74,9 @@ function makePlayer(type) {
     inventory: [],
     potionBag: { pt1: 3, pt2: 0 },
     hudPotion: 'pt1',
+    buffs: {},
+    potCd: 0,
+    autoHpPct: 0.5,
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
     skillLevels: { Q:0, W:0, E:0, R:0 },
     skillXp: { Q:0, W:0, E:0, R:0 },
@@ -152,6 +155,13 @@ function recompute() {
     if (it.hpPct)      hpPct     += it.hpPct;
   });
   h = Math.floor(h * (1 + hpPct));
+
+  // Buff potion bonuses
+  const buffs = player.buffs || {};
+  if (buffs.hp        > 0) h = Math.floor(h * 1.10);
+  if (buffs.atk       > 0) a = Math.floor(a * 1.20);
+  if (buffs.atkspeed  > 0) extraAS += (player.charDef.atkSpeed || 0) * 0.20;
+
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
 
@@ -161,7 +171,7 @@ function recompute() {
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
-  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5;
+  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5 + (buffs.regen > 0 ? 2 : 0);
 }
 
 function getAvailableSkillPoints() {
@@ -193,6 +203,7 @@ function upgradeStats(key) {
 }
 
 function gainXP(amount) {
+  if ((player.buffs || {}).exp > 0) amount *= 2;
   player.xp += amount;
   while (player.xp >= player.xpNext) {
     player.xp -= player.xpNext;
@@ -229,17 +240,40 @@ function unequipItem(slot) {
 
 function usePotion() {
   if (!player || state !== 'playing') return;
+  if ((player.potCd || 0) > 0) return;
   const bag = player.potionBag || {};
   const type = player.hudPotion || 'pt1';
   if ((bag[type] || 0) <= 0) return;
   if (player.hp >= player.maxHp) return;
   bag[type]--;
   const def = ITEM_DEF.find(i => i.id === type);
-  const heal = (def && def.hp) || 60;
+  const heal = (def && def.hp) || 20;
   player.hp = Math.min(player.maxHp, player.hp + heal);
+  player.potCd = 4;
   dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
   spawnBurst(player.x, player.y, '#4f4', 5);
   if (typeof netUsePotion === 'function') netUsePotion(heal);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  netSaveProgress();
+}
+
+function useBuffPotion(id) {
+  if (!player || state !== 'playing') return;
+  const def = ITEM_DEF.find(d => d.id === id);
+  if (!def || def.slot !== 'buff_potion') return;
+  const buffs = player.buffs || (player.buffs = {});
+  const btype = def.buffType;
+  // 30-min cooldown per buff type
+  if ((buffs[btype] || 0) > 0) {
+    dmgNum(player.x, player.y - 26, 'Уже активно!', '#f88');
+    return;
+  }
+  if (!removeFromInventory(id, 1)) return;
+  buffs[btype] = def.buffDur || 1800;
+  recompute();
+  if (player.hp > player.maxHp) player.hp = player.maxHp;
+  dmgNum(player.x, player.y - 30, def.name + '!', '#f0c040');
+  spawnBurst(player.x, player.y, '#f0c040', 6);
   if (typeof updateInvUI === 'function') updateInvUI();
   netSaveProgress();
 }
@@ -641,7 +675,10 @@ function restoreFromSave(data) {
   } else {
     player.potionBag = { pt1: data.potions ?? 3, pt2: 0 };
   }
-  player.hudPotion = data.hudPotion || 'pt1';
+  player.hudPotion  = data.hudPotion  || 'pt1';
+  player.buffs      = data.buffs      || {};
+  player.potCd      = 0;
+  player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0.5;
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
