@@ -696,56 +696,50 @@ function showAuthError(msg) {
   if (el) el.textContent = msg;
 }
 
-// Called by the Telegram Login Widget iframe when the user authenticates
-window.onTelegramAuth = function(user) {
-  showAuthError('Вход...');
-  if (!socket || !socket.connected) {
-    netConnect(() => socket.emit('loginTelegram', user));
-  } else {
-    socket.emit('loginTelegram', user);
-  }
-};
+
 
 function _initTelegramWidget() {
   const twa = window.Telegram?.WebApp;
 
-  // Running inside Telegram Mini App — initData already has the signed user info
   if (twa && twa.initData) {
+    // Full Telegram Mini App setup
     twa.ready();
     twa.expand();
+    twa.disableVerticalSwipes?.();
+    twa.setHeaderColor?.('#000000');
+    twa.setBackgroundColor?.('#000000');
+    twa.lockOrientation?.();
+
     const loading = document.getElementById('tg-auth-loading');
     if (loading) loading.innerHTML = '<div class="tg-spinner"></div><span>Авторизация...</span>';
     netConnect(() => socket.emit('loginTelegramWebApp', { initData: twa.initData }));
     return;
   }
 
-  // Regular browser — show the Telegram Login Widget button
-  netConnect();
+  // Opened outside Telegram — show a "play in Telegram" screen
+  const loginScreen = document.getElementById('login-screen');
+  if (!loginScreen) return;
   fetch('/tg-botname')
     .then(r => r.json())
     .then(({ username }) => {
-      if (!username) throw new Error('no username');
-      const loading   = document.getElementById('tg-auth-loading');
-      const container = document.getElementById('tg-widget-container');
-      if (!container) return;
-
-      // Telegram reads data-* from the <script> tag itself, then replaces it with an iframe
-      const script = document.createElement('script');
-      script.async = true;
-      script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', username);
-      script.setAttribute('data-size', 'large');
-      script.setAttribute('data-radius', '8');
-      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-      script.setAttribute('data-request-access', 'write');
-      container.appendChild(script);
-
-      if (loading) loading.style.display = 'none';
-      container.style.display = 'flex';
+      const link = username ? `https://t.me/${username}` : 'https://t.me';
+      loginScreen.innerHTML = `
+        <div style="text-align:center;padding:40px 28px;display:flex;flex-direction:column;align-items:center;gap:20px;">
+          <div style="font-size:72px;line-height:1;">⚔️</div>
+          <div style="font-size:22px;font-weight:700;color:#f90;letter-spacing:1px;">DUNGEON QUEST</div>
+          <div style="font-size:14px;color:#aaa;line-height:1.7;">
+            Игра доступна только<br>как Telegram Mini App
+          </div>
+          <a href="${link}" style="display:inline-flex;align-items:center;gap:10px;background:#229ED9;color:#fff;padding:14px 28px;border-radius:14px;font-size:16px;font-weight:600;text-decoration:none;pointer-events:auto;margin-top:8px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.737 13.33l-2.963-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.834.949l-.42-.72z"/></svg>
+            Открыть в Telegram
+          </a>
+        </div>
+      `;
     })
     .catch(() => {
       const loading = document.getElementById('tg-auth-loading');
-      if (loading) loading.innerHTML = '<span style="color:#f66">Ошибка загрузки.<br>Обновите страницу.</span>';
+      if (loading) loading.innerHTML = '<div style="color:#aaa;font-size:14px;">Откройте игру в Telegram</div>';
     });
 }
 
