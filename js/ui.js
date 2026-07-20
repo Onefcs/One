@@ -1006,78 +1006,6 @@ function drawHeader() {
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
   ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
-  // Thin divider between XP bar and buff row
-  ctx.strokeStyle = 'rgba(65,42,118,0.25)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, 63); ctx.lineTo(infoRight, 63); ctx.stroke();
-
-  // ── Buff / Debuff row ─────────────────────────────────────
-  // Collect all active effects
-  const _chips = [];
-
-  // Potion buffs from player.buffs
-  const _pbuffs = p.buffs || {};
-  for (const [btype, rem] of Object.entries(_pbuffs)) {
-    if (rem <= 0) continue;
-    const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
-    if (!bdef) continue;
-    const mins = Math.ceil(rem / 60);
-    const secs = Math.ceil(rem);
-    _chips.push({ kind: 'pot', img: bdef.img, label: secs < 60 ? secs + 'с' : mins + 'м', color: '#f0c040' });
-  }
-
-  // Skill buffs
-  const _skillBuffs = [
-    { timer: typeof barrierTimer    !== 'undefined' ? barrierTimer    : 0, icon: 'barrier',   color: '#b082ff', label: null },
-    { timer: typeof battleCryTimer  !== 'undefined' ? battleCryTimer  : 0, icon: 'battleCry', color: '#ffc81e', label: null },
-    { timer: typeof atkSpeedTimer   !== 'undefined' ? atkSpeedTimer   : 0, icon: 'lightning', color: '#2ee8ff', label: null },
-    { timer: typeof faithShieldTimer!== 'undefined' ? faithShieldTimer: 0, icon: 'shield',    color: '#ffee44', label: null },
-    { timer: typeof invisTimer      !== 'undefined' ? invisTimer      : 0, icon: 'teleport',  color: '#aaddff', label: null },
-    { timer: typeof dodgeTimer      !== 'undefined' ? dodgeTimer      : 0, icon: 'dash',      color: '#44ff88', label: null },
-  ];
-  for (const b of _skillBuffs) {
-    if (b.timer > 0) _chips.push({ kind: 'icon', icon: b.icon, label: Math.ceil(b.timer) + 'с', color: b.color });
-  }
-
-  // Debuffs
-  if ((p.slowTimer || 0) > 0)   _chips.push({ kind: 'icon', icon: 'wind',    label: Math.ceil(p.slowTimer)   + 'с', color: '#88ccff', debuff: true });
-  if ((p.stunTimer || 0) > 0)   _chips.push({ kind: 'icon', icon: 'holyLight', label: Math.ceil(p.stunTimer) + 'с', color: '#ff8844', debuff: true });
-  if ((p.freezeTimer || 0) > 0) _chips.push({ kind: 'icon', icon: 'iceNova', label: Math.ceil(p.freezeTimer) + 'с', color: '#66ddff', debuff: true });
-
-  if (_chips.length > 0) {
-    const chipH = 13, chipY = 70, gap = 2;
-    let bx = infoX;
-    ctx.font = `bold 7px ${F}`;
-    for (const chip of _chips) {
-      const tw = ctx.measureText(chip.label).width;
-      const hasImg = chip.kind === 'pot' && chip.img;
-      const iconW = hasImg ? 12 : 10;
-      const chipW = Math.ceil(iconW + 3 + tw + 4);
-
-      ctx.fillStyle = chip.debuff ? 'rgba(30,5,5,0.82)' : 'rgba(4,2,12,0.82)';
-      roundRect(ctx, bx, chipY, chipW, chipH, 3); ctx.fill();
-      ctx.globalAlpha = 0.6;
-      ctx.strokeStyle = chip.color; ctx.lineWidth = 0.8;
-      roundRect(ctx, bx, chipY, chipW, chipH, 3); ctx.stroke();
-      ctx.globalAlpha = 1;
-
-      if (hasImg) {
-        const img = _getPotImg(chip.img);
-        if (img && img.complete && img.naturalWidth > 0) {
-          ctx.drawImage(img, bx + 1, chipY + 1, 11, 11);
-        }
-      } else {
-        drawIconCtx(ctx, chip.icon, bx + iconW / 2 + 1, chipY + chipH / 2, 8, chip.color);
-      }
-
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = chip.color;
-      ctx.fillText(chip.label, bx + iconW + 3, chipY + chipH / 2);
-
-      bx += chipW + gap;
-      if (bx > infoRight - 6) break;
-    }
-  }
-
   ctx.restore();
 }
 
@@ -1353,7 +1281,89 @@ function drawTargetButton() {
   ctx.restore();
 }
 
-// drawBuffBar removed — buff/debuff chips now rendered inside drawHeader()
+// ─────────────────────────────────────────────────────────
+//  BUFF / DEBUFF STRIP  (bottom-left, right of chat button)
+// ─────────────────────────────────────────────────────────
+function drawBuffStrip() {
+  if (!player) return;
+  const p = player;
+  const F = 'system-ui, -apple-system, Arial';
+
+  // Collect active buffs / debuffs
+  const chips = [];
+
+  // Potion buffs
+  const pbuffs = p.buffs || {};
+  for (const [btype, rem] of Object.entries(pbuffs)) {
+    if (rem <= 0) continue;
+    const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
+    if (!bdef) continue;
+    const secs = Math.ceil(rem);
+    chips.push({ kind:'pot', img: bdef.img, label: secs < 60 ? secs + 'с' : Math.ceil(rem/60) + 'м', color:'#f0c040' });
+  }
+
+  // Skill buffs
+  const skillBuffs = [
+    { t: typeof barrierTimer     !== 'undefined' ? barrierTimer     : 0, icon:'barrier',   color:'#b082ff' },
+    { t: typeof battleCryTimer   !== 'undefined' ? battleCryTimer   : 0, icon:'battleCry', color:'#ffc81e' },
+    { t: typeof atkSpeedTimer    !== 'undefined' ? atkSpeedTimer    : 0, icon:'lightning', color:'#2ee8ff' },
+    { t: typeof faithShieldTimer !== 'undefined' ? faithShieldTimer : 0, icon:'shield',    color:'#ffee44' },
+    { t: typeof invisTimer       !== 'undefined' ? invisTimer       : 0, icon:'teleport',  color:'#aaddff' },
+    { t: typeof dodgeTimer       !== 'undefined' ? dodgeTimer       : 0, icon:'dash',      color:'#44ff88' },
+  ];
+  for (const b of skillBuffs) {
+    if (b.t > 0) chips.push({ kind:'icon', icon: b.icon, label: Math.ceil(b.t) + 'с', color: b.color });
+  }
+
+  // Debuffs
+  if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + 'с', color:'#88ccff', debuff:true });
+  if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + 'с', color:'#ff8844', debuff:true });
+  if ((p.freezeTimer || 0) > 0) chips.push({ kind:'icon', icon:'iceNova',   label: Math.ceil(p.freezeTimer) + 'с', color:'#66ddff', debuff:true });
+
+  if (!chips.length) return;
+
+  // Position: right of chat button (chat-btn: left:10, bottom:72, size:42)
+  const chipH = 14, gap = 3;
+  const chipCY = H - 72 - 21; // center Y of chat button
+  const chipY  = chipCY - chipH / 2;
+  let bx = 10 + 42 + 6; // start X right of chat button
+
+  ctx.save();
+  ctx.font = `bold 8px ${F}`;
+
+  for (const chip of chips) {
+    const tw = ctx.measureText(chip.label).width;
+    const hasImg = chip.kind === 'pot' && chip.img;
+    const iconW = hasImg ? 12 : 11;
+    const chipW = Math.ceil(2 + iconW + 2 + tw + 4);
+
+    if (bx + chipW > W - 10) break;
+
+    ctx.fillStyle = chip.debuff ? 'rgba(30,5,5,0.85)' : 'rgba(4,2,14,0.85)';
+    roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.fill();
+    ctx.globalAlpha = 0.65;
+    ctx.strokeStyle = chip.color; ctx.lineWidth = 0.8;
+    roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    if (hasImg) {
+      const img = _getPotImg(chip.img);
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, bx + 2, chipY + 1, 12, 12);
+      }
+    } else {
+      drawIconCtx(ctx, chip.icon, bx + 2 + iconW / 2, chipCY, 9, chip.color);
+    }
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = chip.color;
+    ctx.fillText(chip.label, bx + 2 + iconW + 2, chipCY);
+
+    bx += chipW + gap;
+  }
+
+  ctx.restore();
+}
 
 // ─────────────────────────────────────────────────────────
 //  PK / МИР BUTTON

@@ -710,6 +710,7 @@ function _renderUI() {
   drawHeader();
   if (typeof drawQuestNotif === 'function') drawQuestNotif();
   drawPvpButton();
+  drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();
   drawTargetFrame();
