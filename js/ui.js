@@ -303,7 +303,7 @@ function updateSkillsUI() {
 
       return `<div class="skill-upg-card">
         <div class="skill-upg-top">
-          <div class="skill-upg-icon">${iconHTML(sk.icon, 26, level > 0 ? '#f1c40f' : '#556')}</div>
+          <div class="skill-upg-icon">${sk.img ? `<img src="${sk.img}" width="26" height="26" style="image-rendering:pixelated;border-radius:4px;opacity:${level > 0 ? 1 : 0.4}">` : iconHTML(sk.icon, 26, level > 0 ? '#f1c40f' : '#556')}</div>
           <div class="skill-upg-info">
             <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${maxed ? ' МАКС' : ' Ур.' + level}</span></div>
             <div class="skill-upg-desc">${sk.desc}</div>
@@ -1092,9 +1092,19 @@ function drawSkillButtons() {
       roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.fill();
     }
 
-    // Icon
+    // Icon — prefer PNG, fall back to SVG icon
     ctx.globalAlpha = ready ? 1 : 0.45;
-    drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#b0c4ff' : '#606080');
+    if (sk.img) {
+      const img = _getPotImg(sk.img);
+      if (img && img.complete && img.naturalWidth > 0) {
+        const is = 30;
+        ctx.drawImage(img, cx - is / 2, cy - 7 - is / 2, is, is);
+      } else {
+        drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#b0c4ff' : '#606080');
+      }
+    } else {
+      drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#b0c4ff' : '#606080');
+    }
 
     // Key badge
     ctx.globalAlpha = 1;

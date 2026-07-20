@@ -32,7 +32,9 @@ function _csBuildSkills(type) {
   if (!skills) { list.innerHTML = ''; return; }
   list.innerHTML = skills.map(sk => `
     <div class="cs-skill">
-      <div class="cs-skill-key">${sk.key}</div>
+      ${sk.img
+        ? `<img src="${sk.img}" width="32" height="32" style="image-rendering:pixelated;border-radius:6px;flex-shrink:0">`
+        : `<div class="cs-skill-key">${sk.key}</div>`}
       <div class="cs-skill-body">
         <div class="cs-skill-name">${sk.name}</div>
         <div class="cs-skill-desc">${sk.desc}</div>
