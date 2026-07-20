@@ -243,9 +243,16 @@ function update(dt) {
   // HP regen
   if ((player.hpRegen || 0) > 0 && player.hp < player.maxHp)
     player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
-  // Safe zone regen: +1 HP/sec
-  if (inSafeZone(player.x, player.y) && player.hp < player.maxHp)
-    player.hp = Math.min(player.maxHp, player.hp + dt);
+  // Safe zone regen: +1 HP/sec; auto-disable PvP on entry
+  if (inSafeZone(player.x, player.y)) {
+    if (player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + dt);
+    if (pvpMode) {
+      pvpMode = false;
+      if (typeof netSetPvpMode === 'function') netSetPvpMode(false);
+      if (targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+      dmgNum(player.x, player.y - 40, 'ПК режим выключен', '#7cf');
+    }
+  }
 
   // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {

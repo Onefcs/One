@@ -160,6 +160,10 @@ function _checkTargetBtnTouch(cx, cy) {
 function _checkPvpBtnTouch(cx, cy) {
   const pb = getPvpBtnPos();
   if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
+    if (!pvpMode && typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) {
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, 'Нельзя в безопасной зоне', '#f88');
+      return true;
+    }
     pvpMode = !pvpMode;
     if (typeof netSetPvpMode === 'function') netSetPvpMode(pvpMode);
     if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
