@@ -1322,44 +1322,45 @@ function drawBuffStrip() {
 
   if (!chips.length) return;
 
-  // Position: right of chat button (chat-btn: left:10, bottom:72, size:42)
-  const chipH = 14, gap = 3;
-  const chipCY = H - 72 - 21; // center Y of chat button
-  const chipY  = chipCY - chipH / 2;
-  let bx = 10 + 42 + 6; // start X right of chat button
+  // 2-column icon grid stacked vertically above the chat button
+  // Chat button CSS: left:10, bottom:72px, size:42×42
+  const SZ = 22, GAP = 3, COLS = 2;
+  const chatBtnTop = H - 72 - 42;   // top edge of chat button
+  const gridX = 10;
+  const gridBottom = chatBtnTop - GAP;
+  const F2 = 'system-ui, -apple-system, Arial';
 
   ctx.save();
-  ctx.font = `bold 8px ${F}`;
 
-  for (const chip of chips) {
-    const tw = ctx.measureText(chip.label).width;
-    const hasImg = chip.kind === 'pot' && chip.img;
-    const iconW = hasImg ? 12 : 11;
-    const chipW = Math.ceil(2 + iconW + 2 + tw + 4);
+  for (let i = 0; i < chips.length; i++) {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const cx = gridX + col * (SZ + GAP);
+    const cy = gridBottom - row * (SZ + GAP) - SZ;
+    const chip = chips[i];
 
-    if (bx + chipW > W - 10) break;
-
-    ctx.fillStyle = chip.debuff ? 'rgba(30,5,5,0.85)' : 'rgba(4,2,14,0.85)';
-    roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.fill();
-    ctx.globalAlpha = 0.65;
-    ctx.strokeStyle = chip.color; ctx.lineWidth = 0.8;
-    roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.stroke();
+    // Background cell
+    ctx.fillStyle = chip.debuff ? 'rgba(40,5,5,0.90)' : 'rgba(8,4,22,0.90)';
+    roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.fill();
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
+    roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.stroke();
     ctx.globalAlpha = 1;
 
-    if (hasImg) {
+    // Icon (upper portion of cell)
+    const iconCX = cx + SZ / 2, iconCY = cy + SZ / 2 - 3;
+    if (chip.kind === 'pot' && chip.img) {
       const img = _getPotImg(chip.img);
-      if (img && img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, bx + 2, chipY + 1, 12, 12);
-      }
+      if (img && img.complete && img.naturalWidth > 0)
+        ctx.drawImage(img, cx + 3, cy + 2, 16, 13);
     } else {
-      drawIconCtx(ctx, chip.icon, bx + 2 + iconW / 2, chipCY, 9, chip.color);
+      drawIconCtx(ctx, chip.icon, iconCX, iconCY, 11, chip.color);
     }
 
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    // Time label at bottom of cell
+    ctx.font = `bold 6px ${F2}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = chip.color;
-    ctx.fillText(chip.label, bx + 2 + iconW + 2, chipCY);
-
-    bx += chipW + gap;
+    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 2);
   }
 
   ctx.restore();
