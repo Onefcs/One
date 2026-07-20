@@ -35,16 +35,21 @@ function netConnect(onReady) {
     }, 2000);
   });
 
+  _initGramHandlers(socket);
+
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
 
   socket.on('connect_error', () => {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, clanInfo }) => {
+  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet }) => {
     netUsername = username;
     _savedData = savedData || null;
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
+    // Store GRAM info globally
+    window._gramBalance = gramBalance || 0;
+    window._gramWallet  = gramWallet  || '';
     document.getElementById('login-screen').style.display = 'none';
     _showCharSelect(_savedData);
   });
@@ -968,6 +973,39 @@ function netStartLobby() {
 }
 function netGetLobbyList() {
   if (socket?.connected) socket.emit('getLobbyList');
+}
+
+// ── GRAM wallet ───────────────────────────────────────────────────────────────
+function netGramDeposit(amount, memo) {
+  if (socket?.connected) socket.emit('gramDepositRequest', { amount, memo });
+}
+function netGramWithdraw(amount, address) {
+  if (socket?.connected) socket.emit('gramWithdrawRequest', { amount, address });
+}
+function netGramHistory() {
+  if (socket?.connected) socket.emit('gramGetHistory');
+}
+
+// Incoming GRAM events
+function _initGramHandlers(s) {
+  s.on('gramTxCreated', ({ tx, newBalance }) => {
+    if (newBalance != null) window._gramBalance = newBalance;
+    if (typeof onGramTxCreated === 'function') onGramTxCreated(tx);
+  });
+  s.on('gramTxUpdate', ({ id, status }) => {
+    if (typeof onGramTxUpdate === 'function') onGramTxUpdate(id, status);
+  });
+  s.on('gramBalanceUpdate', ({ balance }) => {
+    window._gramBalance = balance;
+    if (player) player.gramBalance = balance;
+    if (activeTab === 5) updateGramUI();
+  });
+  s.on('gramHistory', ({ txs }) => {
+    if (typeof onGramHistory === 'function') onGramHistory(txs);
+  });
+  s.on('gramError', ({ msg }) => {
+    if (typeof _gramMsg === 'function') _gramMsg(msg, 'err');
+  });
 }
 
 // Init Telegram widget on page load (bundle runs at end of <body>)

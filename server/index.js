@@ -7,12 +7,135 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const PlayerModel = require('./models/Player');
 const ClanModel   = require('./models/Clan');
+const GramTxModel = require('./models/GramTx');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
 
 // Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
-const _TG_TOKEN = process.env.TG_BOT_TOKEN || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
-let _tgBotUsername = process.env.TG_BOT_USERNAME || '';
+const _TG_TOKEN    = process.env.TG_BOT_TOKEN    || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
+const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram chat ID
+const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
+let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
+
+// ── Telegram helpers ──────────────────────────────────────────────────────────
+function tgApi(method, body) {
+  return fetch(`https://api.telegram.org/bot${_TG_TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => r.json()).catch(() => ({ ok: false }));
+}
+
+// Admin notification with approve/reject buttons
+async function notifyAdminGram(tx) {
+  if (!TG_ADMIN_ID) return;
+  const isDeposit = tx.type === 'deposit';
+  const header = isDeposit ? '💰 <b>Заявка на пополнение</b>' : '📤 <b>Заявка на вывод</b>';
+  const lines = [
+    header,
+    `👤 ${tx.username} (<code>${tx.telegramId}</code>)`,
+    `💎 ${tx.amount} GRAM`,
+    isDeposit
+      ? `🏷 Мемо: <code>${tx.memo}</code>`
+      : `📬 Адрес: <code>${tx.address}</code>`,
+    `🆔 <code>${tx._id}</code>`,
+  ];
+  const res = await tgApi('sendMessage', {
+    chat_id: TG_ADMIN_ID,
+    text: lines.join('\n'),
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [[
+      { text: '✅ Подтвердить', callback_data: `gram_ok:${tx._id}` },
+      { text: '❌ Отклонить',   callback_data: `gram_no:${tx._id}` },
+    ]]},
+  });
+  if (res.ok) {
+    tx.adminMsgId = res.result.message_id;
+    await tx.save();
+  }
+}
+
+// Telegram long-polling for callback_query (admin button clicks)
+let _tgOffset = 0;
+async function _pollTg() {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${_TG_TOKEN}/getUpdates?offset=${_tgOffset}&timeout=20&allowed_updates=${encodeURIComponent('["callback_query"]')}`
+    );
+    const data = await res.json();
+    if (data.ok) {
+      for (const upd of data.result) {
+        _tgOffset = upd.update_id + 1;
+        if (upd.callback_query) _handleAdminCallback(upd.callback_query).catch(() => {});
+      }
+    }
+  } catch { /* ignore network errors */ }
+  setTimeout(_pollTg, 500);
+}
+
+async function _handleAdminCallback(cq) {
+  const [action, txId] = (cq.data || '').split(':');
+  if (!txId || !['gram_ok', 'gram_no'].includes(action)) return;
+
+  await tgApi('answerCallbackQuery', { callback_query_id: cq.id });
+
+  const tx = await GramTxModel.findById(txId);
+  if (!tx || tx.status !== 'pending') {
+    await tgApi('sendMessage', { chat_id: cq.message.chat.id, text: '⚠️ Уже обработано' });
+    return;
+  }
+
+  const confirmed = action === 'gram_ok';
+  tx.status = confirmed ? 'confirmed' : 'rejected';
+
+  if (confirmed && tx.type === 'deposit') {
+    // Credit balance
+    const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
+    if (doc) {
+      const saved = doc.savedData || {};
+      saved.gramBalance = (saved.gramBalance || 0) + tx.amount;
+      doc.savedData = saved;
+      doc.markModified('savedData');
+      await doc.save();
+      io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: saved.gramBalance });
+    }
+  }
+
+  if (!confirmed && tx.type === 'withdraw') {
+    // Refund balance
+    const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
+    if (doc) {
+      const saved = doc.savedData || {};
+      saved.gramBalance = (saved.gramBalance || 0) + tx.amount;
+      doc.savedData = saved;
+      doc.markModified('savedData');
+      await doc.save();
+      io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: saved.gramBalance });
+    }
+  }
+
+  await tx.save();
+  io.to(`tg_${tx.telegramId}`).emit('gramTxUpdate', { id: tx._id.toString(), status: tx.status });
+
+  const label = confirmed ? '✅ Подтверждено' : '❌ Отклонено';
+  await tgApi('editMessageReplyMarkup', {
+    chat_id: cq.message.chat.id,
+    message_id: cq.message.message_id,
+    reply_markup: { inline_keyboard: [[{ text: label, callback_data: 'done' }]] },
+  });
+}
+
+function _txData(tx) {
+  return {
+    id: tx._id.toString(),
+    type: tx.type,
+    amount: tx.amount,
+    address: tx.address || '',
+    memo: tx.memo || '',
+    status: tx.status,
+    createdAt: tx.createdAt,
+  };
+}
 
 // Login Widget verification (browser button)
 function verifyTelegramAuth(data) {
@@ -297,11 +420,13 @@ io.on('connection', socket => {
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
+      socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
+      const gramBalance = doc.savedData?.gramBalance || 0;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance, gramWallet: GRAM_WALLET });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -321,15 +446,68 @@ io.on('connection', socket => {
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
       _startAutosave();
+      socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo });
+      const gramBalance = doc.savedData?.gramBalance || 0;
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance, gramWallet: GRAM_WALLET });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
     }
+  });
+
+  // ── GRAM wallet ───────────────────────────────────────────────────────────
+  socket.on('gramDepositRequest', async ({ amount, memo }) => {
+    if (!authed || !amount || amount < 1) return;
+    try {
+      const tx = await GramTxModel.create({
+        telegramId: authed.telegramId,
+        username:   authed.username,
+        type: 'deposit',
+        amount: Number(amount),
+        memo: String(memo || authed.telegramId),
+      });
+      socket.emit('gramTxCreated', { tx: _txData(tx) });
+      notifyAdminGram(tx).catch(() => {});
+    } catch (err) { console.error('gramDepositRequest:', err); }
+  });
+
+  socket.on('gramWithdrawRequest', async ({ amount, address }) => {
+    if (!authed || !amount || amount < 10 || !address) return;
+    try {
+      const doc = await PlayerModel.findById(authed._id);
+      const bal = doc?.savedData?.gramBalance || 0;
+      if (amount > bal) return socket.emit('gramError', { msg: 'Недостаточно средств' });
+
+      // Deduct immediately — refunded on rejection
+      const saved = doc.savedData || {};
+      saved.gramBalance = bal - amount;
+      doc.savedData = saved;
+      doc.markModified('savedData');
+      await doc.save();
+
+      const tx = await GramTxModel.create({
+        telegramId: authed.telegramId,
+        username:   authed.username,
+        type: 'withdraw',
+        amount: Number(amount),
+        address: String(address),
+      });
+      socket.emit('gramTxCreated', { tx: _txData(tx), newBalance: saved.gramBalance });
+      notifyAdminGram(tx).catch(() => {});
+    } catch (err) { console.error('gramWithdrawRequest:', err); }
+  });
+
+  socket.on('gramGetHistory', async () => {
+    if (!authed) return;
+    try {
+      const txs = await GramTxModel.find({ telegramId: authed.telegramId })
+        .sort({ createdAt: -1 }).limit(30).lean();
+      socket.emit('gramHistory', { txs: txs.map(_txData) });
+    } catch (err) { console.error('gramGetHistory:', err); }
   });
 
   socket.on('selectChar', ({ type, savedStats }) => {
@@ -1048,4 +1226,7 @@ io.on('connection', socket => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Server on port ${PORT}`);
+  _pollTg(); // start Telegram callback polling
+});
