@@ -465,6 +465,8 @@ function update(dt) {
       const p = projs[i];
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || isWall(p.x, p.y)) continue;
+      // Cancel projectile early if its locked target is already dead
+      if (p.enemyId && (serverEnemiesMap.get(p.enemyId)?.hp || 0) <= 0) continue;
       if (p.isPlayer) {
         const ps = p.size; let hit = false; let hitEnemy = null;
         for (let k = 0; k < serverEnemies.length; k++) {
