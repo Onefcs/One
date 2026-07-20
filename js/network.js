@@ -729,10 +729,15 @@ function _initTelegramWidget() {
       if (splashContent) {
         splashContent.innerHTML = `
           <div class="splash-emblem" style="margin-bottom:24px;">
-            <svg width="64" height="64" viewBox="0 0 72 72" fill="none">
-              <polygon points="36,4 42,28 68,28 47,44 55,68 36,52 17,68 25,44 4,28 30,28" fill="none" stroke="#c084fc" stroke-width="2.5" stroke-linejoin="round" opacity="0.7"/>
-              <circle cx="36" cy="36" r="10" fill="none" stroke="#e879f9" stroke-width="2" opacity="0.9"/>
-              <circle cx="36" cy="36" r="4" fill="#e879f9"/>
+            <svg width="70" height="70" viewBox="0 0 80 80" fill="none">
+              <line x1="18" y1="66" x2="54" y2="18" stroke="#c084fc" stroke-width="4" stroke-linecap="round"/>
+              <path d="M54,18 C58,10 68,8 69,16 C70,24 62,28 54,26 Z" fill="#a855f7" stroke="#e879f9" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M54,18 C50,14 46,10 50,6 C54,4 58,10 54,18 Z" fill="#7c3aed" stroke="#c084fc" stroke-width="1"/>
+              <circle cx="17" cy="67" r="3.5" fill="#7c3aed" stroke="#c084fc" stroke-width="1.5"/>
+              <line x1="62" y1="66" x2="26" y2="18" stroke="#c084fc" stroke-width="4" stroke-linecap="round"/>
+              <path d="M26,18 C22,10 12,8 11,16 C10,24 18,28 26,26 Z" fill="#a855f7" stroke="#e879f9" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M26,18 C30,14 34,10 30,6 C26,4 22,10 26,18 Z" fill="#7c3aed" stroke="#c084fc" stroke-width="1"/>
+              <circle cx="63" cy="67" r="3.5" fill="#7c3aed" stroke="#c084fc" stroke-width="1.5"/>
             </svg>
           </div>
           <div class="splash-title">NEXUM</div>
