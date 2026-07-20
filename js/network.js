@@ -66,7 +66,10 @@ function netConnect(onReady) {
     showAuthError(msg);
     const _ls = document.getElementById('login-screen');
     if (_ls) { _ls.style.display = ''; _ls.classList.remove('splash-out'); }
-    setTimeout(() => location.reload(), 3000);
+    setTimeout(() => {
+      if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
+      else location.reload();
+    }, 2000);
   });
 
   socket.on('playerJoined', ({ id, username }) => {
