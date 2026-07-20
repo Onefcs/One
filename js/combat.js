@@ -97,14 +97,5 @@ function applyLootToInventory(eid) {
     else if (r < 0.00171 * _fMult)  _addMat('recu', 52);
   }
 
-  // Material drops by enemy type (5% base, scaled by floor)
-  if (eType === 'warrior') {
-    if (Math.random() < 0.05 * _fMult) _addMat('bonec', 36);
-    if (Math.random() < 0.05 * _fMult) _addMat('coalc', 48);
-  } else if (eType === 'guard') {
-    if (Math.random() < 0.05 * _fMult) _addMat('orec',  36);
-    if (Math.random() < 0.05 * _fMult) _addMat('skinc', 48);
-  }
-
   if (saved) netSaveProgress();
 }

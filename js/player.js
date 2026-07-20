@@ -39,6 +39,22 @@ function countMaterial(id) {
   return item ? (item.qty || 1) : 0;
 }
 
+function countEnhancedItem(id, minEnh) {
+  return player.inventory.filter(i => i.id === id && (i.enhance || 0) >= minEnh).length;
+}
+
+function removeEnhancedItem(id, n, minEnh) {
+  let removed = 0;
+  for (let i = player.inventory.length - 1; i >= 0 && removed < n; i--) {
+    const it = player.inventory[i];
+    if (it.id === id && (it.enhance || 0) >= minEnh) {
+      player.inventory.splice(i, 1);
+      removed++;
+    }
+  }
+  return removed >= n;
+}
+
 function makePlayer(type) {
   const d = CHAR_DEF[type];
   return {
