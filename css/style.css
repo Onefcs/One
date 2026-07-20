@@ -982,3 +982,97 @@ canvas { display:block; width:100%; height:100%; }
 .skill-upg-btn.disabled {
   background:#1a1a28; color:#333; pointer-events:none;
 }
+
+/* ── GRAM Wallet (Profile tab) ──────────────────────────────── */
+.gram-balance-card {
+  background: linear-gradient(135deg, #0a0a1e, #12103a);
+  border: 1px solid rgba(100,160,255,0.2);
+  border-radius: 16px;
+  padding: 22px 20px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.gram-balance-label {
+  font-size: 12px;
+  color: #606080;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.gram-balance-amount {
+  font-size: 34px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+.gram-unit {
+  font-size: 16px;
+  font-weight: 600;
+  color: #5090ff;
+  vertical-align: middle;
+}
+.gram-section {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.gram-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c0d0ff;
+  margin-bottom: 12px;
+}
+.gram-input-row {
+  display: flex;
+  gap: 8px;
+}
+.gram-input {
+  flex: 1;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 10px 13px;
+  color: #e0e8ff;
+  font-size: 14px;
+  outline: none;
+  -webkit-appearance: none;
+}
+.gram-input:focus { border-color: rgba(80,144,255,0.5); }
+.gram-input-addr { font-size: 12px; font-family: monospace; letter-spacing: 0.3px; }
+.gram-btn {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+  transition: opacity 0.15s;
+}
+.gram-btn:active { opacity: 0.7; }
+.gram-btn-green {
+  background: linear-gradient(135deg, #1a3a1a, #2a6a2a);
+  color: #3ef07a;
+}
+.gram-btn-orange {
+  background: linear-gradient(135deg, #3a2000, #6a3800);
+  color: #f0a040;
+}
+.gram-hint {
+  font-size: 11px;
+  color: #404060;
+  margin-top: 8px;
+}
+.gram-msg {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 6px;
+}
+.gram-msg-err { background: rgba(200,40,40,0.15); color: #f88; border: 1px solid rgba(200,40,40,0.3); }
+.gram-msg-ok  { background: rgba(40,200,80,0.12);  color: #4f8; border: 1px solid rgba(40,200,80,0.3); }

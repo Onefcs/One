@@ -733,7 +733,7 @@ function setTab(n) {
     const tb = document.getElementById('npc-talk-btn');
     if (tb) tb.style.display = 'none';
   }
-  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-clans'][n];
+  const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-clans', 'panel-profile'][n];
   if (pid) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
@@ -742,6 +742,7 @@ function setTab(n) {
     if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') updateClanUI();
+    if (n === 5) updateGramUI();
   }
 }
 
@@ -1991,4 +1992,83 @@ function enhanceEqItem(slot, stoneType) {
 // ─────────────────────────────────────────────────────────
 function drawDead() {
   ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(0, 0, W, H);
+}
+
+// ─────────────────────────────────────────────────────────
+//  GRAM WALLET (Profile tab)
+// ─────────────────────────────────────────────────────────
+function updateGramUI() {
+  const el = document.getElementById('gram-body');
+  if (!el) return;
+  const balance = (player && player.gramBalance != null) ? player.gramBalance : 0;
+
+  el.innerHTML = `
+    <div class="gram-balance-card">
+      <div class="gram-balance-label">Баланс GRAM</div>
+      <div class="gram-balance-amount"><span id="gram-balance-val">${balance.toFixed(2)}</span> <span class="gram-unit">GRAM</span></div>
+    </div>
+
+    <div class="gram-section">
+      <div class="gram-section-title">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="#3ef07a" stroke-width="2" fill="none" style="vertical-align:middle;margin-right:5px"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Пополнить
+      </div>
+      <div class="gram-input-row">
+        <input id="gram-dep-amount" type="number" min="1" step="0.01" placeholder="Сумма GRAM" class="gram-input">
+        <button class="gram-btn gram-btn-green" onclick="gramDeposit()">Пополнить</button>
+      </div>
+      <div class="gram-hint">Минимум: 1 GRAM · Комиссия: 0%</div>
+    </div>
+
+    <div class="gram-section">
+      <div class="gram-section-title">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="#f0a040" stroke-width="2" fill="none" style="vertical-align:middle;margin-right:5px"><path d="M12 2v20M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Вывести
+      </div>
+      <div class="gram-input-row">
+        <input id="gram-wd-amount" type="number" min="1" step="0.01" placeholder="Сумма GRAM" class="gram-input">
+      </div>
+      <div class="gram-input-row" style="margin-top:8px">
+        <input id="gram-wd-addr" type="text" placeholder="TON-адрес кошелька" class="gram-input gram-input-addr">
+      </div>
+      <button class="gram-btn gram-btn-orange" style="width:100%;margin-top:10px" onclick="gramWithdraw()">Вывести</button>
+      <div class="gram-hint">Минимум: 10 GRAM · Комиссия: сеть TON</div>
+    </div>
+
+    <div id="gram-msg" class="gram-msg" style="display:none"></div>
+  `;
+}
+
+function gramDeposit() {
+  const amount = parseFloat(document.getElementById('gram-dep-amount').value);
+  if (!amount || amount < 1) { _gramMsg('Введите сумму от 1 GRAM', 'err'); return; }
+  if (typeof netGramDeposit === 'function') {
+    netGramDeposit(amount);
+  } else {
+    _gramMsg('Пополнение временно недоступно', 'err');
+  }
+}
+
+function gramWithdraw() {
+  const amount = parseFloat(document.getElementById('gram-wd-amount').value);
+  const addr   = (document.getElementById('gram-wd-addr').value || '').trim();
+  if (!amount || amount < 10) { _gramMsg('Минимальный вывод: 10 GRAM', 'err'); return; }
+  if (!addr) { _gramMsg('Введите TON-адрес кошелька', 'err'); return; }
+  const balance = (player && player.gramBalance != null) ? player.gramBalance : 0;
+  if (amount > balance) { _gramMsg('Недостаточно средств', 'err'); return; }
+  if (typeof netGramWithdraw === 'function') {
+    netGramWithdraw(amount, addr);
+  } else {
+    _gramMsg('Вывод временно недоступен', 'err');
+  }
+}
+
+function _gramMsg(text, type) {
+  const el = document.getElementById('gram-msg');
+  if (!el) return;
+  el.textContent = text;
+  el.style.display = 'block';
+  el.className = 'gram-msg ' + (type === 'err' ? 'gram-msg-err' : 'gram-msg-ok');
+  clearTimeout(_gramMsg._t);
+  _gramMsg._t = setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
 }
