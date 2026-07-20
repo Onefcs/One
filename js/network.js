@@ -728,21 +728,10 @@ function _initTelegramWidget() {
       const splashContent = loginScreen.querySelector('.splash-content');
       if (splashContent) {
         splashContent.innerHTML = `
-          <div class="splash-emblem" style="margin-bottom:24px;">
-            <svg width="70" height="70" viewBox="0 0 80 80" fill="none">
-              <line x1="18" y1="66" x2="54" y2="18" stroke="#c084fc" stroke-width="4" stroke-linecap="round"/>
-              <path d="M54,18 C58,10 68,8 69,16 C70,24 62,28 54,26 Z" fill="#a855f7" stroke="#e879f9" stroke-width="1.5" stroke-linejoin="round"/>
-              <path d="M54,18 C50,14 46,10 50,6 C54,4 58,10 54,18 Z" fill="#7c3aed" stroke="#c084fc" stroke-width="1"/>
-              <circle cx="17" cy="67" r="3.5" fill="#7c3aed" stroke="#c084fc" stroke-width="1.5"/>
-              <line x1="62" y1="66" x2="26" y2="18" stroke="#c084fc" stroke-width="4" stroke-linecap="round"/>
-              <path d="M26,18 C22,10 12,8 11,16 C10,24 18,28 26,26 Z" fill="#a855f7" stroke="#e879f9" stroke-width="1.5" stroke-linejoin="round"/>
-              <path d="M26,18 C30,14 34,10 30,6 C26,4 22,10 26,18 Z" fill="#7c3aed" stroke="#c084fc" stroke-width="1"/>
-              <circle cx="63" cy="67" r="3.5" fill="#7c3aed" stroke="#c084fc" stroke-width="1.5"/>
-            </svg>
+          <div class="splash-emblem" style="margin-bottom:32px;">
+            <img src="/images/nexum-coin.png" width="160" height="160" alt="Nexum" style="border-radius:50%;display:block;">
           </div>
-          <div class="splash-title">NEXUM</div>
-          <div class="splash-sub">MMORPG</div>
-          <div style="margin-top:40px;font-size:13px;color:#7c3aed;line-height:1.8;">Доступно только<br>в Telegram</div>
+          <div style="font-size:13px;color:#7c3aed;line-height:1.8;">Доступно только<br>в Telegram</div>
           <a href="${link}" style="margin-top:20px;display:inline-flex;align-items:center;gap:9px;background:#229ED9;color:#fff;padding:13px 26px;border-radius:14px;font-size:15px;font-weight:600;text-decoration:none;pointer-events:auto;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.737 13.33l-2.963-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.834.949z"/></svg>
             Открыть в Telegram
