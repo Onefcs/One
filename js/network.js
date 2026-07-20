@@ -51,7 +51,11 @@ function netConnect(onReady) {
     window._gramBalance = gramBalance || 0;
     window._gramWallet  = gramWallet  || '';
     window._refLink     = refLink     || '';
-    document.getElementById('login-screen').style.display = 'none';
+    const _ls = document.getElementById('login-screen');
+    if (_ls) {
+      _ls.classList.add('splash-out');
+      setTimeout(() => { _ls.style.display = 'none'; }, 420);
+    }
     _showCharSelect(_savedData);
   });
 
@@ -710,37 +714,38 @@ function _initTelegramWidget() {
     twa.setBackgroundColor?.('#000000');
     twa.lockOrientation?.();
 
-    const loading = document.getElementById('tg-auth-loading');
-    if (loading) loading.innerHTML = '<div class="tg-spinner"></div><span>Авторизация...</span>';
     netConnect(() => socket.emit('loginTelegramWebApp', { initData: twa.initData }));
     return;
   }
 
-  // Opened outside Telegram — show a "play in Telegram" screen
+  // Opened outside Telegram — overlay a "play in Telegram" prompt over the splash
   const loginScreen = document.getElementById('login-screen');
   if (!loginScreen) return;
   fetch('/tg-botname')
     .then(r => r.json())
     .then(({ username }) => {
       const link = username ? `https://t.me/${username}` : 'https://t.me';
-      loginScreen.innerHTML = `
-        <div style="text-align:center;padding:40px 28px;display:flex;flex-direction:column;align-items:center;gap:20px;">
-          <div style="font-size:72px;line-height:1;">⚔️</div>
-          <div style="font-size:22px;font-weight:700;color:#f90;letter-spacing:1px;">DUNGEON QUEST</div>
-          <div style="font-size:14px;color:#aaa;line-height:1.7;">
-            Игра доступна только<br>как Telegram Mini App
+      const splashContent = loginScreen.querySelector('.splash-content');
+      if (splashContent) {
+        splashContent.innerHTML = `
+          <div class="splash-emblem" style="margin-bottom:24px;">
+            <svg width="64" height="64" viewBox="0 0 72 72" fill="none">
+              <polygon points="36,4 42,28 68,28 47,44 55,68 36,52 17,68 25,44 4,28 30,28" fill="none" stroke="#c084fc" stroke-width="2.5" stroke-linejoin="round" opacity="0.7"/>
+              <circle cx="36" cy="36" r="10" fill="none" stroke="#e879f9" stroke-width="2" opacity="0.9"/>
+              <circle cx="36" cy="36" r="4" fill="#e879f9"/>
+            </svg>
           </div>
-          <a href="${link}" style="display:inline-flex;align-items:center;gap:10px;background:#229ED9;color:#fff;padding:14px 28px;border-radius:14px;font-size:16px;font-weight:600;text-decoration:none;pointer-events:auto;margin-top:8px;">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.737 13.33l-2.963-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.834.949l-.42-.72z"/></svg>
+          <div class="splash-title">NEXUM</div>
+          <div class="splash-sub">MMORPG</div>
+          <div style="margin-top:40px;font-size:13px;color:#7c3aed;line-height:1.8;">Доступно только<br>в Telegram</div>
+          <a href="${link}" style="margin-top:20px;display:inline-flex;align-items:center;gap:9px;background:#229ED9;color:#fff;padding:13px 26px;border-radius:14px;font-size:15px;font-weight:600;text-decoration:none;pointer-events:auto;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.737 13.33l-2.963-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.834.949z"/></svg>
             Открыть в Telegram
           </a>
-        </div>
-      `;
+        `;
+      }
     })
-    .catch(() => {
-      const loading = document.getElementById('tg-auth-loading');
-      if (loading) loading.innerHTML = '<div style="color:#aaa;font-size:14px;">Откройте игру в Telegram</div>';
-    });
+    .catch(() => { /* keep the splash as-is */ });
 }
 
 function _showCharSelect(savedData) {
