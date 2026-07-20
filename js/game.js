@@ -827,314 +827,69 @@ function _drawProj(p) {
 
 // Cached per-frame view bounds — updated once at the top of render(), read by _isOnScreen
 let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
-let _nowMs = 0; // render timestamp, read by drawNpcs for time-based pulses
+let _nowMs = 0;
 function render(dt, ts) {
   _nowMs = ts;
-  // Precompute per-frame trig — time-based (not frameCount) so cosmetic
-  // pulse speeds stay constant when fps fluctuates
-  const _pulse    = 0.5 + 0.5 * Math.sin(ts * 0.009);
-  const _bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
-  const _dropSin  = Math.sin(ts * 0.0054);
-
-  // CONTINUOUS camera — no pixel snapping. The camera moves 1:1 with the
-  // player (velocity-matched follow), so the player's screen position is an
-  // exact constant while running. Snapping the camera to any pixel grid
-  // reintroduces a ±0.5 device px rounding residual on the player — the very
-  // micro-jitter it was meant to fix — because the player draws at float
-  // coords. Instead everything samples sub-pixel with bilinear filtering:
-  // the background scrolls continuously and the tracked player is rock-solid.
   const _camX = _lastCamX = camera.x;
   const _camY = _lastCamY = camera.y;
-
-  // Cache view bounds so _isOnScreen() avoids divisions on every call
   const _vM = 60;
   _vL = _camX - _vM; _vR = _camX + W / ZOOM + _vM;
   _vT = _camY - _vM; _vB = _camY + (H - HEADER_H) / ZOOM + _vM;
 
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const theme = (state === 'playing' || state === 'dead') && dungeon ? getTheme(dungeonLvl) : null;
-  ctx.fillStyle = theme ? theme.bg : '#060610';
-  ctx.fillRect(0, 0, W, H);
-  if (state === 'select') return;
 
-  ctx.save(); // [camera]
-  ctx.beginPath(); ctx.rect(0, HEADER_H, W, H - HEADER_H); ctx.clip();
-  ctx.translate(0, HEADER_H);
-  ctx.scale(ZOOM, ZOOM);
-  ctx.translate(-_camX, -_camY);
-
-  // Everything — tiles included — samples with bilinear filtering at float
-  // positions. The tile art is flat color fills (no 1px features), so the
-  // sub-pixel blend costs no visible sharpness, and motion is perfectly even.
-  ctx.imageSmoothingEnabled = true;
-  if (dungeon && dungeon.grid) drawTileChunks(_camX, _camY);
-
-  // Safe zone overlay — world-space coords (camera transform already applied)
-  if (dungeon && dungeon.safeZone) {
-    const sz = dungeon.safeZone;
-    ctx.fillStyle = 'rgba(60,220,100,0.08)';
-    ctx.fillRect(sz.x1, sz.y1, sz.x2 - sz.x1, sz.y2 - sz.y1);
-    ctx.strokeStyle = 'rgba(60,220,100,0.35)';
-    ctx.lineWidth = 3 / ZOOM;
-    ctx.strokeRect(sz.x1, sz.y1, sz.x2 - sz.x1, sz.y2 - sz.y1);
+  // ── PixiJS world ─────────────────────────────────────────
+  if (state !== 'select') {
+    pixiWorldRender(dt, ts, _camX, _camY, theme);
+  } else {
+    pixiSetBg('#060610');
+    pixiClearWorld();
   }
 
-  // AOE rings — blue circle showing skill damage area
-  if (aoeRings.length) {
-    ctx.lineWidth = 2 / ZOOM;
-    aoeRings.forEach(ring => {
-      const alpha = ring.life / ring.maxLife;
-      ctx.globalAlpha = alpha * 0.20;
-      ctx.fillStyle = '#4af';
-      ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = alpha * 0.85;
-      ctx.strokeStyle = '#4af';
-      ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2); ctx.stroke();
-      ctx.globalAlpha = 1;
-    });
-  }
+  // ── Screen-space overlays on _uiCtx ──────────────────────
+  // (ctx === _uiCtx after migration; use _uiCtx directly to be explicit)
+  _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  // NPCs
-  drawNpcs();
-
-  // Drops — no save/restore per drop; state is set fresh each iteration
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 9px Arial';
-  const _dropBob = _dropSin * 3;
-  drops.forEach(d => {
-    ctx.globalAlpha = Math.min(1, d.life * 1.5) * (0.85 + 0.15 * _dropSin);
-    const bob = _dropBob;
-    if (d.type === 'gold') {
-      ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(d.x, d.y + bob, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#a80'; ctx.fillText(d.amount + 'g', d.x, d.y + bob);
-    } else {
-      drawIconCtx(ctx, d.item.icon, d.x, d.y + bob, 20, '#ccc');
-    }
-  });
-
-  // Particles — sort by color, then batch-fill per group (1 fill() per color, not per particle)
-  if (particles.length) {
-    if (_qualityTier > 0 && particles.length > 80) particles.length = 80;
-    // Sort only when new particles were spawned — compaction keeps order
-    if (_particlesDirty) {
-      if (particles.length > 1) particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
-      _particlesDirty = false;
-    }
-    let i = 0;
-    while (i < particles.length) {
-      const col = particles[i].color;
-      ctx.fillStyle = col;
-      ctx.globalAlpha = Math.max(0, particles[i].life);
-      ctx.beginPath();
-      while (i < particles.length && particles[i].color === col) {
-        const p = particles[i++];
-        ctx.moveTo(p.x + p.size, p.y); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      }
-      ctx.fill();
-    }
-  }
-  ctx.globalAlpha = 1;
-
-  // Enemies
-  _visEnm = 0;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  serverEnemies.forEach(e => {
-    if (!_isOnScreen(e.x, e.y)) return; // viewport cull
-    _visEnm++;
-    const hurt = e.hurtTimer > 0;
-    // Selection ring
-    if (e.id === targetId && !targetIsPlayer) {
-      ctx.globalAlpha = 0.65 + 0.35 * _pulse;
-      ctx.strokeStyle = '#ff3c3c'; ctx.lineWidth = 2.5;
-      ctx.setLineDash(_DASH);
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 8 + _pulse * 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash(_NO_DASH); ctx.globalAlpha = 1;
-    }
-    if (!drawEnemySprite(e, dt)) {
-      ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + e.size, e.size * .8, e.size * .3, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = hurt ? '#fff' : e.color; ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(e.x - e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.arc(e.x + e.size * .3, e.y - e.size * .18, e.size * .18, 0, Math.PI * 2); ctx.fill();
-    }
-    // Status effect overlays
-    if ((e.slowTimer || 0) > 0) {
-      ctx.globalAlpha = 0.28; ctx.fillStyle = '#4af';
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    if ((e.stunTimer || 0) > 0) {
-      ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff8';
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    if (e.hp <= 0) return; // corpse playing its death animation — no bars/name/ring
-    const ds = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
-    const bw = Math.round(ds * 0.7), bh = 5, bx = e.x - bw / 2, by = e.y - ds * 0.55 - 8;
-    if (e.isBoss) {
-      ctx.globalAlpha = _bossGlow; ctx.strokeStyle = '#ff3232'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.size + 5, 0, Math.PI * 2); ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#f44'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText('БОСС', e.x, by - 14);
-    }
-    ctx.fillStyle = '#400'; ctx.fillRect(bx, by, bw, bh);
-    const pct = e.hp / e.maxHp;
-    ctx.fillStyle = pct > .5 ? '#2d2' : pct > .25 ? '#da2' : '#d22';
-    ctx.fillRect(bx, by, bw * pct, bh);
-    // Float position — rounding per frame makes the label step ±1px against
-    // the smoothly-moving sprite; the label canvas is supersampled so the
-    // bilinear draw stays readable.
-    const _nl = _getEnemyNameLabel(e.name, e.isBoss);
-    ctx.drawImage(_nl, e.x - _nl._lw / 2, by - _nl._lh - 1, _nl._lw, _nl._lh);
-  });
-
-  // Other players
-  otherPlayers.forEach((p, pid) => {
-    if (p.x == null || isNaN(p.x)) return;
-    if (!_isOnScreen(p.x, p.y)) return; // viewport cull
-
-    if (pid === targetId && targetIsPlayer) {
-      ctx.globalAlpha = 0.65 + 0.35 * _pulse;
-      ctx.strokeStyle = '#ff5050'; ctx.lineWidth = 2.5;
-      ctx.setLineDash(_DASH);
-      ctx.beginPath(); ctx.arc(p.x, p.y, 22 + _pulse * 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash(_NO_DASH); ctx.globalAlpha = 1;
-    }
-
-    if ((p._swingTimer || 0) > 0) {
-      ctx.strokeStyle = 'rgba(200,220,255,.65)'; ctx.lineWidth = 2.5;
-      const sa = p._swingAngle || 0;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 30, sa - .65, sa + .65); ctx.stroke();
-    }
-    const usedSprite = drawOtherPlayerSprite(p);
-    if (!usedSprite) {
-      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = (CHAR_DEF[p.type]?.color) || '#aaa';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
-    }
-    if ((p.slowTimer || 0) > 0) {
-      ctx.globalAlpha = 0.28; ctx.fillStyle = '#4af';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    if ((p.stunTimer || 0) > 0) {
-      ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff8';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    const bh = 4, bw = 38;
-    const barTop = usedSprite ? p.y - 39 : p.y - 20;
-    const bx = p.x - bw / 2;
-    // Pre-rendered name canvas — rebuilt when username, pvpMode, or render scale changes
-    const _ns = Math.max(1, Math.ceil(DPR * ZOOM));
-    if (!p._nameCanvas || p._nameCanvas._u !== (p.username || '?') || p._nameCanvas._pvp !== !!p.pvpMode || p._nameCanvas._scale !== _ns) {
-      p._nameCanvas = _buildPlayerNameCanvas(p);
-    }
-    const nc = p._nameCanvas;
-    ctx.drawImage(nc, p.x - nc._lw / 2, barTop - nc._lh - 2, nc._lw, nc._lh);
-    if (p.clanName) {
-      const _ckey = (p.clanName || '') + '|' + (p.clanIcon || 1) + '|' + _ns;
-      if (!p._clanTagCanvas || p._clanTagCanvas._key !== _ckey) {
-        p._clanTagCanvas = _buildOtherPlayerClanTag(p.clanName, p.clanIcon || 1);
-      }
-      const ct = p._clanTagCanvas;
-      ctx.drawImage(ct, Math.round(p.x - ct._lw / 2), Math.round(barTop - nc._lh - 2 - ct._lh - 1), ct._lw, ct._lh);
-    }
-    if (p.pvpMode) {
-      drawIconCtx(ctx, 'pvpOn', p.x + bw / 2 + 8, barTop - nc.height / 2 - 2, 9, '#f55');
-    }
-    ctx.fillStyle = '#300'; ctx.fillRect(bx, barTop, bw, bh);
-    ctx.fillStyle = '#2d2'; ctx.fillRect(bx, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), bh);
-  });
-
-  // Projectiles (local + other players') — two loops avoid array allocation each frame
-  projs.forEach(_drawProj);
-  otherProjs.forEach(_drawProj);
-
-  // Player
-  {
-    const _invis = invisTimer > 0;
-    if (_invis) ctx.globalAlpha = 0.35;
-    const hurtTint = player.hurtTimer > 0 ? 'rgba(255,40,40,0.55)' : null;
-    const usedSprite = _lastPlayerUsedSprite = drawSprite(player, hurtTint);
-    if (!usedSprite) {
-      ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(player.x, player.y + 14, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = hurtTint ? '#ff4444' : player.charDef.color;
-      ctx.beginPath(); ctx.arc(player.x, player.y, 14, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(player.x, player.y, 14, 0, Math.PI * 2); ctx.stroke();
-      const fdx = joy.dx || (keys['ArrowRight'] || keys['d'] ? 1 : keys['ArrowLeft'] || keys['a'] ? -1 : 1);
-      const fdy = joy.dy || (keys['ArrowDown'] || keys['s'] ? 1 : keys['ArrowUp'] || keys['w'] ? -1 : 0);
-      const fl = Math.hypot(fdx, fdy) || 1;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x + fdx / fl * 8, player.y + fdy / fl * 8, 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-    if (swingTimer > 0) {
-      ctx.strokeStyle = 'rgba(200,220,255,.75)';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(player.x, player.y, 34, swingAngle - .7, swingAngle + .7); ctx.stroke();
-    }
-
-    const barTop = usedSprite ? player.y - 39 : player.y - 28;
-    const bw = 44, bh = 4, bx2 = player.x - bw / 2;
-    const hpPct = Math.max(0, Math.min(1, player.hp / player.maxHp));
-
-    ctx.fillStyle = 'rgba(30,0,0,0.75)'; ctx.fillRect(bx2, barTop, bw, bh);
-    if (hpPct > 0) {
-      ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
-      ctx.fillRect(bx2, barTop, bw * hpPct, bh);
-    }
-    if (_invis) ctx.globalAlpha = 1;
-  }
-
-  // Damage numbers
-  dmgNums.forEach(d => {
-    ctx.globalAlpha = Math.min(1, d.life * 1.5);
-    ctx.fillStyle = d.color;
-    ctx.font = d.fontSize === 19 ? _FONT_CRIT : d.fontSize === 15 ? _FONT_DMGNUM : _FONT_DMGTXT; ctx.textAlign = 'center';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(d.text, d.x, d.y); ctx.fillText(d.text, d.x, d.y);
-  });
-  ctx.globalAlpha = 1;
-  ctx.restore(); // [camera]
-
-  // Safe zone HUD label — screen-space
+  // Safe zone HUD label
   if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
     const lbl = '🛡 Безопасная зона · реген HP';
-    ctx.font = 'bold 11px system-ui, Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const lw = ctx.measureText(lbl).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
-    ctx.fillStyle = '#4de87a';
-    ctx.fillText(lbl, W / 2, HEADER_H + 20);
+    _uiCtx.font = 'bold 11px system-ui, Arial';
+    _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
+    const lw = _uiCtx.measureText(lbl).width;
+    _uiCtx.fillStyle = 'rgba(0,0,0,0.55)';
+    _uiCtx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
+    _uiCtx.fillStyle = '#4de87a';
+    _uiCtx.fillText(lbl, W / 2, HEADER_H + 20);
   }
 
-  // Raid wave notification — screen-space banner
+  // Raid wave notification
   if (_raidWaveNotif && _raidWaveNotif.timer > 0) {
     _raidWaveNotif.timer -= dt;
     const alpha = Math.min(1, _raidWaveNotif.timer * 2);
-    ctx.globalAlpha = alpha;
     const lbl = _raidWaveNotif.text;
-    ctx.font = 'bold 20px system-ui, Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const lw = ctx.measureText(lbl).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(W / 2 - lw / 2 - 14, H / 2 - 40, lw + 28, 34);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(lbl, W / 2, H / 2 - 12);
-    ctx.globalAlpha = 1;
+    _uiCtx.font = 'bold 20px system-ui, Arial';
+    _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
+    const lw = _uiCtx.measureText(lbl).width;
+    _uiCtx.clearRect(W / 2 - lw / 2 - 16, H / 2 - 42, lw + 32, 38);
+    _uiCtx.globalAlpha = alpha;
+    _uiCtx.fillStyle = 'rgba(0,0,0,0.65)';
+    _uiCtx.fillRect(W / 2 - lw / 2 - 14, H / 2 - 40, lw + 28, 34);
+    _uiCtx.fillStyle = '#fff';
+    _uiCtx.fillText(lbl, W / 2, H / 2 - 12);
+    _uiCtx.globalAlpha = 1;
     if (_raidWaveNotif.timer <= 0) _raidWaveNotif = null;
   }
 
-  // UI overlay — rendered to separate canvas at native DPR (~20fps), no blit needed
-  ctx.globalAlpha = 1;
-  if (_uiCtx && ts - _uiLastMs >= 50) { _uiLastMs = ts; _renderUI(); }
-  // Player name drawn at 60fps on UI canvas so it tracks movement without lag
-  if (_uiCtx && player && dungeon) _drawPlayerNameOnUI();
-  // Joystick drawn directly at full 60fps — knob tracks live touch position
-  if (activeTab === 0) drawJoystick();
-
+  // Transition flash
   if (transTimer > 0) {
-    ctx.fillStyle = `rgba(180,120,255,${Math.min(1, transTimer * 3)})`; ctx.fillRect(0, 0, W, H);
+    _uiCtx.fillStyle = `rgba(180,120,255,${Math.min(1, transTimer * 3)})`;
+    _uiCtx.fillRect(0, 0, W, H);
   }
+
+  // ── HUD / joystick ────────────────────────────────────────
+  if (_uiCtx && ts - _uiLastMs >= 50) { _uiLastMs = ts; _renderUI(); }
+  if (_uiCtx && player && dungeon) _drawPlayerNameOnUI();
+  if (activeTab === 0) drawJoystick();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1426,8 +1181,8 @@ const _CHUNK_MAX = 96;               // cache cap (~38MB worst case, oldest evic
 const _tileChunks = new Map();       // "cx,cy" -> canvas
 
 function buildTileCanvas() {
-  // Name kept for callers (floor change) — now just resets the chunk cache
   _tileChunks.clear();
+  if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
 }
 
 function _buildChunk(cx, cy) {
@@ -1559,6 +1314,7 @@ function restartGame() {
   serverEnemies = []; otherPlayers = new Map();
   npcs = []; nearNpc = null;
   _tileChunks.clear();
+  if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
   document.getElementById('bottom-nav').style.display = 'none';
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); p.style.display = 'none'; });
   setTab(0);
@@ -1599,28 +1355,32 @@ document.addEventListener('visibilitychange', () => {
 
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');
-  ctx = canvas.getContext('2d', { alpha: false });
   _uiOverlay = document.getElementById('ui-canvas');
-  const app = document.getElementById('app');
+  const appEl = document.getElementById('app');
+
+  // Initialise PixiJS on the world canvas
+  pixiInit(canvas);
+
   const resize = () => {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
-    W = app.clientWidth;
-    H = app.clientHeight;
-    canvas.width = Math.round(W * DPR);
-    canvas.height = Math.round(H * DPR);
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    _uiOverlay.width = Math.round(W * DPR);
+    W = appEl.clientWidth;
+    H = appEl.clientHeight;
+    // Resize PixiJS renderer (autoDensity:true handles canvas CSS size)
+    pixiResize(W, H, DPR);
+    // UI overlay — 2D canvas for HUD, joystick, name labels, etc.
+    _uiOverlay.width  = Math.round(W * DPR);
     _uiOverlay.height = Math.round(H * DPR);
     _uiCtx = _uiOverlay.getContext('2d');
-    _skillBtnGradCache = null;  // force skill button gradient rebuild
-    _uiBtnGrads = null;         // force button gradient rebuild
-    _partyHpGrads = null;       // force party HP gradient rebuild
-    updateJoyCenter();          // recompute cached joystick center
+    // ctx global points to _uiCtx so HUD drawing functions work unchanged
+    ctx = _uiCtx;
+    _skillBtnGradCache = null;
+    _uiBtnGrads = null;
+    _partyHpGrads = null;
+    updateJoyCenter();
     if (dungeon) clampCamera();
   };
-  resize(); window.addEventListener('resize', resize);
+  resize();
+  window.addEventListener('resize', resize);
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
   requestAnimationFrame(ts => { lastTs = ts; _loopTs = ts; requestAnimationFrame(loop); });
