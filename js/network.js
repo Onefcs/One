@@ -251,6 +251,17 @@ function netConnect(onReady) {
     if (_hitOp) _hitOp.hurtTimer = 0.1;
   });
 
+  socket.on('enemyCC', ({ enemyId, enemyIds, type, duration }) => {
+    function _applyCC(id) {
+      const e = serverEnemiesMap.get(id);
+      if (!e) return;
+      if (type === 'stun') e.stunTimer = duration;
+      else if (type === 'slow') e.slowTimer = duration;
+    }
+    if (enemyId) _applyCC(enemyId);
+    if (enemyIds) enemyIds.forEach(_applyCC);
+  });
+
   socket.on('enemyHurt', ({ id, hp, dmg, isCrit }) => {
     const e = serverEnemiesMap.get(id);
     if (e) {

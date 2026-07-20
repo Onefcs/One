@@ -525,11 +525,13 @@ io.on('connection', socket => {
       if (!rr) return;
       if (enemyId) rr.applySkillEffect(enemyId, type, duration);
       if (enemyIds) rr.applySkillEffectMany(enemyIds, type, duration);
+      socket.to(rId).emit('enemyCC', { enemyId, enemyIds, type, duration });
       return;
     }
     if (!currentRoom) return;
     if (enemyId) currentRoom.applySkillEffect(enemyId, type, duration);
     if (enemyIds) currentRoom.applySkillEffectMany(enemyIds, type, duration);
+    socket.to(`floor_${currentFloor}`).emit('enemyCC', { enemyId, enemyIds, type, duration });
   });
 
   socket.on('playerInvis', ({ invis }) => {

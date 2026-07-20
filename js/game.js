@@ -654,8 +654,8 @@ function _renderUI() {
   const _c = ctx; ctx = _uiCtx;
   drawHeader();
   if (typeof drawQuestNotif === 'function') drawQuestNotif();
-  drawBuffBar();
   drawPvpButton();
+  drawBuffBar();
   drawPartyButton();
   drawPartyHUD();
   drawTargetFrame();
@@ -1076,7 +1076,7 @@ function _buildOtherPlayerClanTag(clanName, clanIcon) {
   tmp.font = 'bold 9px system-ui, Arial';
   const ctw = tmp.measureText(clanName).width;
   const w = Math.ceil(iconSz + gap + ctw) + 4;
-  const h = 10;
+  const h = 18;
   const oc = document.createElement('canvas');
   oc.width = w; oc.height = h;
   const c = oc.getContext('2d');

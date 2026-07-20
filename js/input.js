@@ -40,7 +40,7 @@ function getTargetBtnPos() {
 }
 
 function getPvpBtnPos() {
-  return { x: 8, y: HEADER_H + BUFF_BAR_H + 6, w: 80, h: 26 };
+  return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
 }
 
 function getPartyLeaveBtnPos() {
@@ -52,7 +52,7 @@ function getPartyLeaveBtnPos() {
 }
 
 function getPartyBtnPos() {
-  return { x: 92, y: HEADER_H + BUFF_BAR_H + 6, w: 80, h: 26 };
+  return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
 // ATK and AUTO are above the potion/target row

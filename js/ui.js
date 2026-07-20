@@ -1223,7 +1223,7 @@ function drawBuffBar() {
 
   if (!_activeBuffs.length) return;
 
-  const chipH = 20, chipY = HEADER_H + 2, gap = 4;
+  const chipH = 20, chipY = HEADER_H + 36, gap = 4;
   let bx = 8;
 
   ctx.save();
