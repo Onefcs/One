@@ -401,11 +401,18 @@ function useSkill(idx) {
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
       dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#fa0');
       spawnBurst(player.x, player.y, '#fa0', 10);
-    } else if (sk.key === 'R') { // Charge — dash 140px toward PvP target or joystick
+    } else if (sk.key === 'R') { // Charge — dash 140px toward target/enemy or joystick
       const _pvpR = _pvpPlayerTarget();
       let _rdx, _rdy;
-      if (_pvpR) { _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y; }
-      else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
+      if (_pvpR) {
+        _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y;
+      } else {
+        const _chargeEnemy = (targetId && !targetIsPlayer)
+          ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
+          : nearestEnemy();
+        if (_chargeEnemy) { _rdx = _chargeEnemy.x - player.x; _rdy = _chargeEnemy.y - player.y; }
+        else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
+      }
       const len = Math.hypot(_rdx, _rdy) || 1;
       _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
       spawnBurst(player.x, player.y, '#5af', 8);
