@@ -861,13 +861,22 @@ function _esc(s) {
 
 // Called from network.js when server pushes clan state
 function onClanData(data) {
+  const prevClan = clanData;
   const prevLevel = clanData ? clanData.level : null;
   clanData = data;
   _clanTagCanvas = null; _clanTagKey = null;
   if (data && prevLevel !== null && data.level > prevLevel) {
     showClanLevelUp(data.level);
   }
-  if (activeTab === 5) updateClanUI();
+  // Switch to clan home when we just joined/created (had no clan before, now we do)
+  if (data && !prevClan) {
+    _clanView = 'main';
+  }
+  // Switch back to no-clan view when kicked/left
+  if (!data && prevClan) {
+    _clanView = 'main';
+  }
+  if (activeTab === 4) updateClanUI();
 }
 
 function onClanError(msg) {
