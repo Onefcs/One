@@ -61,6 +61,14 @@ function netConnect(onReady) {
 
   socket.on('authError', ({ message }) => { showAuthError(message); });
 
+  socket.on('kicked', ({ reason } = {}) => {
+    const msg = reason || 'Вы вошли с другого устройства';
+    showAuthError(msg);
+    const _ls = document.getElementById('login-screen');
+    if (_ls) { _ls.style.display = ''; _ls.classList.remove('splash-out'); }
+    setTimeout(() => location.reload(), 3000);
+  });
+
   socket.on('playerJoined', ({ id, username }) => {
     if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
     otherPlayers.get(id).username = username;

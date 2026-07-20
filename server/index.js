@@ -20,6 +20,9 @@ let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
 // In-memory gram balance cache: telegramId → balance (survives autosave overwrites)
 const _gramBalanceCache = new Map();
 
+// Single-session enforcement: telegramId → socket.id of the active session
+const activeSessions = new Map();
+
 // ── Telegram helpers ──────────────────────────────────────────────────────────
 function tgApi(method, body) {
   return fetch(`https://api.telegram.org/bot${_TG_TOKEN}/${method}`, {
@@ -480,6 +483,16 @@ io.on('connection', socket => {
       if (doc.savedData) _lastStats = doc.savedData;
       _gramBalance = doc.savedData?.gramBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
+      // Kick any existing session for this account
+      const _prevSid = activeSessions.get(telegramId);
+      if (_prevSid && _prevSid !== socket.id) {
+        const _prevSocket = io.sockets.sockets.get(_prevSid);
+        if (_prevSocket) {
+          _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' });
+          _prevSocket.disconnect(true);
+        }
+      }
+      activeSessions.set(telegramId, socket.id);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -507,6 +520,16 @@ io.on('connection', socket => {
       if (doc.savedData) _lastStats = doc.savedData;
       _gramBalance = doc.savedData?.gramBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
+      // Kick any existing session for this account
+      const _prevSid2 = activeSessions.get(telegramId);
+      if (_prevSid2 && _prevSid2 !== socket.id) {
+        const _prevSocket2 = io.sockets.sockets.get(_prevSid2);
+        if (_prevSocket2) {
+          _prevSocket2.emit('kicked', { reason: 'Вы вошли с другого устройства' });
+          _prevSocket2.disconnect(true);
+        }
+      }
+      activeSessions.set(telegramId, socket.id);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -1346,6 +1369,8 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     console.log('disconnect:', socket.id);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
+    if (authed && activeSessions.get(authed.telegramId) === socket.id)
+      activeSessions.delete(authed.telegramId);
     _cleanupRaid(socket.id);
     _cleanupLobby(socket.id);
     playerFloorMap.delete(socket.id);
