@@ -323,10 +323,12 @@ function update(dt) {
           fireProj(_op?.x ?? pa.x, _op?.y ?? pa.y);
         }
       } else {
-        netAttack(pa.id);
         if (player.charDef.atkType === 'ranged') {
+          // For ranged: fire projectile carrying enemyId; netAttack sent on visual hit
           const _e = serverEnemiesMap.get(pa.id);
-          fireProj(_e?.x ?? pa.x, _e?.y ?? pa.y);
+          fireProj(_e?.x ?? pa.x, _e?.y ?? pa.y, pa.id);
+        } else {
+          netAttack(pa.id);
         }
       }
     }
@@ -402,14 +404,20 @@ function update(dt) {
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || isWall(p.x, p.y)) continue;
       if (p.isPlayer) {
-        const ps = p.size; let hit = false;
+        const ps = p.size; let hit = false; let hitEnemy = null;
         for (let k = 0; k < serverEnemies.length; k++) {
           const e = serverEnemies[k];
           if ((e.hp || 0) <= 0) continue;
           const r = e.size + ps, ex = p.x - e.x, ey = p.y - e.y;
-          if (ex * ex + ey * ey < r * r) { hit = true; break; }
+          if (ex * ex + ey * ey < r * r) { hit = true; hitEnemy = e; break; }
         }
-        if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
+        if (hit) {
+          spawnBurst(p.x, p.y, p.color, 5);
+          // Send attack to server only now — when projectile visually lands
+          if (p.enemyId) netAttack(p.enemyId);
+          else if (hitEnemy) netAttack(hitEnemy.id);
+          continue;
+        }
         if (pvpMode) {
           let _hitOpId = null;
           for (const [_opId, op] of otherPlayers) {
