@@ -83,6 +83,8 @@ function encodeGameState(players, enemies, t) {
         _ncDV.setUint8(o, p.type ? Math.max(0, NC_CHAR_TYPES.indexOf(p.type)) : 255); o += 1;
         _ncDV.setInt32(o, p.maxHp | 0, true); o += 4;
         _ncDV.setUint8(o, p.pvpMode ? 1 : 0); o += 1;
+        o = _ncWStr(o, p.clanName || '');
+        _ncDV.setUint8(o, p.clanIcon || 0); o += 1;
       }
     }
   }
@@ -151,9 +153,11 @@ function decodeGameState(data) {
         const ti = dv.getUint8(o); o += 1;
         const maxHp = dv.getInt32(o, true); o += 4;
         const pvpMode = !!dv.getUint8(o); o += 1;
+        const clanName = rStr() || null;
+        const clanIcon = dv.getUint8(o) || null; o += 1;
         _ncPIdMap.set(seq, id);
         players.push({ id, username, type: ti === 255 ? null : NC_CHAR_TYPES[ti],
-          x, y, facing, hp, maxHp, pvpMode, atkSeq });
+          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon });
       } else {
         const id = _ncPIdMap.get(seq);
         // Unknown handle (map lost) — skip; the periodic full refresh
