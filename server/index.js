@@ -354,6 +354,7 @@ const BUNDLE_FILES = [
   'js/network.js',
   'js/quests.js',
   'js/clans.js',
+  'js/pixi-world.js',
   'js/game.js',
   'js/npc.js',
 ].map(f => path.join(ROOT, f));
