@@ -98,7 +98,7 @@ function _craftsmanBody() {
   const p = player;
   const tabs = `<div class="craft-tabs">
     <button class="craft-tab${_craftsmanTab==='items'?' active':''}" onclick="_setCraftsmanTab('items')">Предметы</button>
-    <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">Рецепты</button>
+    <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">Материалы</button>
   </div>`;
 
   let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b></div>`;
@@ -136,27 +136,6 @@ function _craftsmanItemsTab() {
     });
     html += '</div>';
   });
-
-  // Stone crafting section
-  const stoneEntries = ITEM_CRAFT_RECIPES
-    .map((rec, idx) => ({ rec, idx }))
-    .filter(({ rec }) => rec.matId);
-  if (stoneEntries.length) {
-    html += `<div class="craft-group-hdr" style="color:#ffd040">Камни заточки</div><div class="craft-items-grid">`;
-    stoneEntries.forEach(({ rec, idx }) => {
-      const mat = CRAFT_MATS.find(m => m.id === rec.matId);
-      if (!mat) return;
-      const rc = RARITY_COLOR[mat.rarity] || '#aaa';
-      const canCraft = invHasSpace() &&
-        rec.mats.every(m => _matAvailable(m)) &&
-        player.gold >= (rec.goldCost || 0);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
-        <div class="craft-item-cell-icon">${_matIcon(mat, 32)}</div>
-        <div class="craft-item-cell-name" style="color:${rc}">${mat.name}</div>
-      </div>`;
-    });
-    html += '</div>';
-  }
 
   return html;
 }
@@ -205,8 +184,9 @@ function openCraftModal(idx) {
   const resultIconHtml = item ? _itemIcon(item, 52) : _matIcon(mat, 52);
   const statsHtml = item ? (statStr(item) || '—') : '';
 
+  const _backTab = rec.matId ? 'mats' : 'items';
   document.getElementById('npc-body').innerHTML = `
-    <button class="craft-back-btn" onclick="_setCraftsmanTab('items')">← Назад</button>
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('${_backTab}')">← Назад</button>
     <div class="craft-detail-header">
       <div class="craft-detail-icon">${resultIconHtml}</div>
       <div class="craft-detail-info">
@@ -264,6 +244,27 @@ function _craftsmanMatsTab() {
     </div>`;
   });
   html += '</div>';
+
+  const stoneEntries = ITEM_CRAFT_RECIPES
+    .map((rec, idx) => ({ rec, idx }))
+    .filter(({ rec }) => rec.matId);
+  if (stoneEntries.length) {
+    html += `<div class="craft-group-hdr" style="color:#ffd040">Камни заточки</div><div class="craft-items-grid">`;
+    stoneEntries.forEach(({ rec, idx }) => {
+      const mat = CRAFT_MATS.find(m => m.id === rec.matId);
+      if (!mat) return;
+      const rc = RARITY_COLOR[mat.rarity] || '#aaa';
+      const canCraft = invHasSpace() &&
+        rec.mats.every(m => _matAvailable(m)) &&
+        player.gold >= (rec.goldCost || 0);
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_matIcon(mat, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${mat.name}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
   return html;
 }
 
