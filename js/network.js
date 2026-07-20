@@ -263,6 +263,19 @@ function netConnect(onReady) {
   });
 
   socket.on('pvpPlayerCC', ({ targetId, type, duration }) => {
+    if (targetId === socket.id) {
+      if (!player || state !== 'playing') return;
+      if (type === 'stun') {
+        player.stunTimer = Math.max(player.stunTimer || 0, duration);
+        dmgNum(player.x, player.y - 40, 'СТАН!', '#ff8');
+        spawnBurst(player.x, player.y, '#ff8', 6);
+      } else if (type === 'slow') {
+        player.slowTimer = Math.max(player.slowTimer || 0, duration);
+        dmgNum(player.x, player.y - 40, 'ЗАМЕДЛЕНИЕ!', '#4af');
+        spawnBurst(player.x, player.y, '#4af', 4);
+      }
+      return;
+    }
     const op = otherPlayers.get(targetId);
     if (op) {
       if (type === 'stun') op.stunTimer = duration;

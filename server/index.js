@@ -612,9 +612,12 @@ io.on('connection', socket => {
 
   socket.on('pvpSkillCC', ({ targetId, type, duration }) => {
     if (!currentRoom) return;
+    const attacker = currentRoom.players.get(socket.id);
+    if (!attacker || !attacker.pvpMode) return;
     const target = currentRoom.players.get(targetId);
     if (!target || target.hp <= 0) return;
-    io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration });
+    const dur = Math.max(0, Math.min(duration, 6));
+    io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration: dur });
   });
 
   socket.on('respawn', () => {

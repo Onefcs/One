@@ -161,11 +161,12 @@ function update(dt) {
   if (transTimer > 0) { transTimer -= dt; return; }
 
   if (activeTab === 0) {
-    if (player.atkAnimTimer <= 0) {
+    if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0) {
       const inp = inputDir();
+      const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if (inp.len > 0) {
-        const vx = inp.dx * player.speed * inp.len * dt;
-        const vy = inp.dy * player.speed * inp.len * dt;
+        const vx = inp.dx * player.speed * _spdMult * inp.len * dt;
+        const vy = inp.dy * player.speed * _spdMult * inp.len * dt;
         if (canMoveX(player, vx, 12)) player.x += vx;
         if (canMoveY(player, vy, 12)) player.y += vy;
         // Hysteresis on the facing axis: near-diagonal joystick input hovers
@@ -296,9 +297,9 @@ function update(dt) {
   }
   if (player.atkAnimTimer <= 0) { player.pendingAttack = null; player.attackFired = false; }
 
-  // Auto-attack (skip timer decrement in manual mode)
-  if (autoAttackMode) player.atkTimer -= dt;
-  if (player.atkTimer <= 0) {
+  // Auto-attack (skip timer decrement in manual mode; block when stunned)
+  if (autoAttackMode && (player.stunTimer || 0) <= 0) player.atkTimer -= dt;
+  if (player.atkTimer <= 0 && (player.stunTimer || 0) <= 0) {
     let closest = null, closestD = Infinity;
     let closestIsPlayer = false;
 
@@ -374,12 +375,17 @@ function update(dt) {
         }
         if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
         if (pvpMode) {
-          for (const op of otherPlayers.values()) {
+          let _hitOpId = null;
+          for (const [_opId, op] of otherPlayers) {
             if ((op.hp || 0) <= 0 || op.x == null) continue;
             const r = 18 + ps, ex = p.x - op.x, ey = p.y - op.y;
-            if (ex * ex + ey * ey < r * r) { hit = true; break; }
+            if (ex * ex + ey * ey < r * r) { _hitOpId = _opId; break; }
           }
-          if (hit) { spawnBurst(p.x, p.y, p.color, 5); continue; }
+          if (_hitOpId) {
+            if (p.pvpMult) netPvpSkillAttack(_hitOpId, p.pvpMult);
+            spawnBurst(p.x, p.y, p.color, 5);
+            continue;
+          }
         }
       }
       projs[j++] = projs[i];
@@ -452,6 +458,8 @@ function update(dt) {
   if (atkSpeedTimer > 0) { atkSpeedTimer -= dt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }
   if (faithShieldTimer > 0) { faithShieldTimer -= dt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
   if (invisTimer > 0) { invisTimer -= dt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
+  if ((player.stunTimer || 0) > 0) { player.stunTimer -= dt; if (player.stunTimer <= 0) player.stunTimer = 0; }
+  if ((player.slowTimer || 0) > 0) { player.slowTimer -= dt; if (player.slowTimer <= 0) player.slowTimer = 0; }
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
   if (typeof tickQuestNotif === 'function') tickQuestNotif(dt);
 

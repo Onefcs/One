@@ -254,9 +254,17 @@ function nearestEnemyDir() {
   }
   let closest = null, closestD = Infinity;
   serverEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0) return;
     const d = dist(e.x, e.y, player.x, player.y);
     if (d < closestD) { closestD = d; closest = e; }
   });
+  if (pvpMode) {
+    otherPlayers.forEach((op) => {
+      if ((op.hp || 0) <= 0 || op.x == null) return;
+      const d = dist(op.x, op.y, player.x, player.y);
+      if (d < closestD) { closestD = d; closest = op; }
+    });
+  }
   if (!closest) return { dx: 1, dy: 0 };
   const len = Math.max(1, closestD);
   return { dx: (closest.x - player.x) / len, dy: (closest.y - player.y) / len };
@@ -351,6 +359,7 @@ function _skillDir(dx, dy, r, arcDot) {
 
 function useSkill(idx) {
   if (!player || state !== 'playing') return;
+  if ((player.stunTimer || 0) > 0) return;
   const skills = SKILL_DEF[player.type];
   if (!skills || !skills[idx]) return;
   const sk = skills[idx];
@@ -392,10 +401,13 @@ function useSkill(idx) {
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
       dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#fa0');
       spawnBurst(player.x, player.y, '#fa0', 10);
-    } else if (sk.key === 'R') { // Charge — dash 140px
-      const dx = joy.dx || 1, dy = joy.dy || 0;
-      const len = Math.hypot(dx, dy) || 1;
-      _dashTo(player.x + (dx / len) * 140, player.y + (dy / len) * 140);
+    } else if (sk.key === 'R') { // Charge — dash 140px toward PvP target or joystick
+      const _pvpR = _pvpPlayerTarget();
+      let _rdx, _rdy;
+      if (_pvpR) { _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y; }
+      else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
+      const len = Math.hypot(_rdx, _rdy) || 1;
+      _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
       spawnBurst(player.x, player.y, '#5af', 8);
     }
   } else if (player.type === 'archer') {
@@ -406,7 +418,7 @@ function useSkill(idx) {
       [-0.35, 0, 0.35].forEach(off => {
         const ang = base + off;
         const p = { x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
-          color: '#fa0', dmg: player.atk * dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
+          color: '#fa0', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
         projs.push(p);
         netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#fa0', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
       });
@@ -419,7 +431,7 @@ function useSkill(idx) {
         setTimeout(() => {
           if (!player) return;
           projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
-            color: '#fa8', dmg: player.atk * dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
+            color: '#fa8', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
           netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
             color: '#fa8', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
         }, delayMs);
@@ -443,7 +455,7 @@ function useSkill(idx) {
       const ang = Math.atan2(dir.dy, dir.dx);
       const dmgMult = 2 * _skillDmgMult('Q');
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
-        color: '#f60', dmg: player.atk * dmgMult, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
+        color: '#f60', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
       _skillDirMult(dir.dx, dir.dy, 160, 0.5, dmgMult);
       netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
     } else if (sk.key === 'W') { // Ice Nova — AOE + slow 3s
