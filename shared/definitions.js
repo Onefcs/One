@@ -21,9 +21,9 @@ const CHAR_DEF = {
 // Floors 1-5 use FLOOR_ENEMIES map; floors 6+ use orc/troll/demon.
 const ENEMY_DEF = [
   // Floor 1 — Goblins
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:65,  atk:10,  def:2,  spd:81,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:75,  atk:13,  def:3,  spd:93,  xp:4,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:220, atk:26,  def:6,  spd:66,  xp:21, gold:[15,25], isBoss:true,  eType:'boss'    },
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:220, atk:26,  def:6,  spd:66,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
   // Floor 2 — Skeletons
   { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:225,  atk:48,  def:3,  spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'warrior' },
   { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:270,  atk:60,  def:4,  spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'guard'   },
