@@ -1,4 +1,14 @@
-* { margin:0; padding:0; box-sizing:border-box; touch-action:none; -webkit-tap-highlight-color:transparent; }
+* {
+  margin:0; padding:0; box-sizing:border-box;
+  touch-action:none;
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
+}
+a, img { -webkit-touch-callout:none; pointer-events:none; }
+a[href] { pointer-events:auto; }
+input, textarea { user-select:text; -webkit-user-select:text; }
 html, body { height:100%; overflow:hidden; }
 body {
   background:#111;
