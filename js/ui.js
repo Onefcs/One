@@ -742,7 +742,7 @@ function setTab(n) {
     if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') updateClanUI();
-    if (n === 5) updateGramUI();
+    if (n === 5) switchProfileTab(window._profileTab || 'wallet');
   }
 }
 
@@ -1997,7 +1997,102 @@ function drawDead() {
 // ─────────────────────────────────────────────────────────
 //  GRAM WALLET (Profile tab)
 // ─────────────────────────────────────────────────────────
-let _gramTxList = []; // local cache of transactions
+let _gramTxList = [];
+let _refFriendsList = [];
+
+function switchProfileTab(tab) {
+  window._profileTab = tab;
+  document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('ptab-' + tab);
+  if (btn) btn.classList.add('active');
+  if (tab === 'wallet') updateGramUI();
+  else updateFriendsUI();
+}
+
+function updateFriendsUI() {
+  const el = document.getElementById('gram-body');
+  if (!el) return;
+  const refLink = window._refLink || '';
+  const friends = _refFriendsList;
+  const totalBonus = friends.reduce((s, f) => s + (f.bonus || 0), 0);
+
+  el.innerHTML = `
+    <div class="ref-card">
+      <div class="ref-card-title">Ваша реферальная ссылка</div>
+      <div class="ref-link-box">
+        <span id="ref-link-val" style="flex:1;font-size:12px">${refLink || 'Загрузка...'}</span>
+        <button class="ref-copy-btn" onclick="refCopyLink()">Копировать</button>
+      </div>
+      <div style="font-size:11px;color:#556688;margin-top:8px">За каждый депозит друга вы получаете <b style="color:#4ecb71">5%</b></div>
+    </div>
+
+    <div class="ref-stats-row">
+      <div class="ref-stat-box">
+        <div class="ref-stat-num">${friends.length}</div>
+        <div class="ref-stat-lbl">Друзей</div>
+      </div>
+      <div class="ref-stat-box">
+        <div class="ref-stat-num">${totalBonus.toFixed(2)}</div>
+        <div class="ref-stat-lbl">GRAM получено</div>
+      </div>
+    </div>
+
+    <div class="gram-section-title" style="margin-bottom:8px">Список друзей</div>
+    <div id="ref-friends-list">
+      ${friends.length === 0
+        ? '<div class="ref-empty">Пока нет приглашённых друзей<br><span style="font-size:12px">Отправьте ссылку и получайте бонусы</span></div>'
+        : friends.map(f => {
+            const init = (f.username || '?')[0].toUpperCase();
+            return `<div class="ref-friend-row">
+              <div class="ref-friend-avatar">${init}</div>
+              <div class="ref-friend-name">@${f.username || 'игрок'}</div>
+              <div class="ref-friend-bonus">+${(f.bonus || 0).toFixed(2)} GRAM</div>
+            </div>`;
+          }).join('')
+      }
+    </div>
+  `;
+
+  if (typeof netGetReferrals === 'function') netGetReferrals();
+}
+
+function refCopyLink() {
+  const link = window._refLink || '';
+  if (!link) return;
+  navigator.clipboard.writeText(link).then(() => {
+    const btn = document.querySelector('.ref-copy-btn');
+    if (btn) { const old = btn.textContent; btn.textContent = 'Скопировано!'; btn.style.color = '#4ecb71'; setTimeout(() => { btn.textContent = old; btn.style.color = ''; }, 2000); }
+  }).catch(() => {});
+}
+
+function onRefData(data) {
+  _refFriendsList = data.friends || [];
+  window._refLink = data.refLink || '';
+  if (window._profileTab === 'friends') updateFriendsUI();
+}
+
+function onFriendJoined(data) {
+  _refFriendsList.unshift({ username: data.username, bonus: 0 });
+  const el = document.getElementById('ref-friends-list');
+  if (el && window._profileTab === 'friends') updateFriendsUI();
+  // Toast notification
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#1a3a2a;border:1px solid #4ecb71;color:#4ecb71;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
+  toast.textContent = `Друг @${data.username || 'игрок'} присоединился!`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+function onRefBonusReceived(data) {
+  const f = _refFriendsList.find(x => x.username === data.fromUsername);
+  if (f) f.bonus = (f.bonus || 0) + data.bonus;
+  if (window._profileTab === 'friends') updateFriendsUI();
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid #7eb8ff;color:#7eb8ff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
+  toast.textContent = `+${data.bonus.toFixed(2)} GRAM от реферала @${data.fromUsername}`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
 
 function updateGramUI() {
   const el = document.getElementById('gram-body');

@@ -43,13 +43,14 @@ function netConnect(onReady) {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet }) => {
+  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink }) => {
     netUsername = username;
     _savedData = savedData || null;
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     // Store GRAM info globally
     window._gramBalance = gramBalance || 0;
     window._gramWallet  = gramWallet  || '';
+    window._refLink     = refLink     || '';
     document.getElementById('login-screen').style.display = 'none';
     _showCharSelect(_savedData);
   });
@@ -986,6 +987,10 @@ function netGramHistory() {
   if (socket?.connected) socket.emit('gramGetHistory');
 }
 
+function netGetReferrals() {
+  if (socket?.connected) socket.emit('getReferrals');
+}
+
 // Incoming GRAM events
 function _initGramHandlers(s) {
   s.on('gramTxCreated', ({ tx, newBalance }) => {
@@ -998,13 +1003,23 @@ function _initGramHandlers(s) {
   s.on('gramBalanceUpdate', ({ balance }) => {
     window._gramBalance = balance;
     if (player) player.gramBalance = balance;
-    if (activeTab === 5) updateGramUI();
+    if (activeTab === 5 && window._profileTab === 'wallet') updateGramUI();
   });
   s.on('gramHistory', ({ txs }) => {
     if (typeof onGramHistory === 'function') onGramHistory(txs);
   });
   s.on('gramError', ({ msg }) => {
     if (typeof _gramMsg === 'function') _gramMsg(msg, 'err');
+  });
+  s.on('refData', (data) => {
+    if (typeof onRefData === 'function') onRefData(data);
+  });
+  s.on('friendJoined', (data) => {
+    if (typeof onFriendJoined === 'function') onFriendJoined(data);
+  });
+  s.on('refBonusReceived', (data) => {
+    window._gramBalance = (window._gramBalance || 0) + data.bonus;
+    if (typeof onRefBonusReceived === 'function') onRefBonusReceived(data);
   });
 }
 

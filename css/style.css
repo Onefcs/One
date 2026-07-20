@@ -1113,3 +1113,94 @@ canvas { display:block; width:100%; height:100%; }
   border-radius: 8px; padding: 8px 12px; font-size: 12px;
   color: #d0a040; margin-top: 10px;
 }
+
+/* ── Profile tabs ─────────────────────────────────────────────────────────── */
+.profile-tabs {
+  display: flex;
+  gap: 0;
+  background: rgba(0,0,0,.18);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  flex-shrink: 0;
+}
+.profile-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #8899bb;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.profile-tab.active {
+  color: #7eb8ff;
+  border-bottom-color: #7eb8ff;
+}
+
+/* ── Friends tab ──────────────────────────────────────────────────────────── */
+.ref-card {
+  background: rgba(126,184,255,.08);
+  border: 1px solid rgba(126,184,255,.18);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.ref-card-title { font-size: 11px; color: #8899bb; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+.ref-link-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,0,0,.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #c8d8ff;
+  word-break: break-all;
+}
+.ref-copy-btn {
+  background: rgba(126,184,255,.18);
+  border: none;
+  border-radius: 6px;
+  color: #7eb8ff;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.ref-copy-btn:active { background: rgba(126,184,255,.35); }
+.ref-stats-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.ref-stat-box {
+  flex: 1;
+  background: rgba(0,0,0,.22);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+.ref-stat-num { font-size: 22px; font-weight: 700; color: #7eb8ff; }
+.ref-stat-lbl { font-size: 11px; color: #8899bb; margin-top: 2px; }
+.ref-friend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.ref-friend-row:last-child { border-bottom: none; }
+.ref-friend-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,#3a5a8a,#1a3a6a);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: #7eb8ff; flex-shrink: 0;
+}
+.ref-friend-name { flex: 1; font-size: 14px; color: #d0e0ff; }
+.ref-friend-bonus { font-size: 12px; color: #4ecb71; font-weight: 600; }
+.ref-empty { text-align: center; padding: 30px 0; color: #556688; font-size: 13px; }

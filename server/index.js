@@ -63,13 +63,14 @@ let _tgOffset = 0;
 async function _pollTg() {
   try {
     const res = await fetch(
-      `https://api.telegram.org/bot${_TG_TOKEN}/getUpdates?offset=${_tgOffset}&timeout=20&allowed_updates=${encodeURIComponent('["callback_query"]')}`
+      `https://api.telegram.org/bot${_TG_TOKEN}/getUpdates?offset=${_tgOffset}&timeout=20&allowed_updates=${encodeURIComponent('["callback_query","message"]')}`
     );
     const data = await res.json();
     if (data.ok) {
       for (const upd of data.result) {
         _tgOffset = upd.update_id + 1;
         if (upd.callback_query) _handleAdminCallback(upd.callback_query).catch(() => {});
+        if (upd.message) _handleBotMessage(upd.message).catch(() => {});
       }
     }
   } catch { /* ignore network errors */ }
@@ -102,6 +103,29 @@ async function _handleAdminCallback(cq) {
       await doc.save();
       _gramBalanceCache.set(tx.telegramId, newBal);
       io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
+
+      // 5% referral bonus on confirmed deposit
+      if (confirmed && tx.type === 'deposit' && doc.referredBy) {
+        const bonus = Math.round(tx.amount * 0.05 * 100) / 100;
+        if (bonus > 0) {
+          const refDoc = await PlayerModel.findOne({ telegramId: doc.referredBy });
+          if (refDoc) {
+            const refSaved = refDoc.savedData || {};
+            const refNewBal = (refSaved.gramBalance || 0) + bonus;
+            refSaved.gramBalance = refNewBal;
+            refDoc.savedData = refSaved;
+            refDoc.markModified('savedData');
+            await refDoc.save();
+            _gramBalanceCache.set(doc.referredBy, refNewBal);
+            io.to(`tg_${doc.referredBy}`).emit('gramBalanceUpdate', { balance: refNewBal });
+            io.to(`tg_${doc.referredBy}`).emit('refBonusReceived', {
+              bonus,
+              fromUsername: doc.username,
+              newBalance: refNewBal,
+            });
+          }
+        }
+      }
     }
   }
 
@@ -126,6 +150,45 @@ function _txData(tx) {
     status: tx.status,
     createdAt: tx.createdAt,
   };
+}
+
+async function _handleBotMessage(msg) {
+  const text = msg?.text || '';
+  const fromId = String(msg?.from?.id || '');
+  if (!text.startsWith('/start') || !fromId) return;
+
+  const parts = text.trim().split(' ');
+  const param = parts[1] || '';
+
+  // /start ref_TELEGRAMID
+  if (param.startsWith('ref_')) {
+    const referrerId = param.slice(4);
+    if (referrerId === fromId) return; // can't refer yourself
+
+    const newPlayer = await PlayerModel.findOne({ telegramId: fromId });
+    if (newPlayer && !newPlayer.referredBy) {
+      newPlayer.referredBy = referrerId;
+      await newPlayer.save();
+      // Notify referrer if online
+      io.to(`tg_${referrerId}`).emit('friendJoined', {
+        username: msg.from.username || msg.from.first_name || `tg_${fromId}`,
+      });
+    }
+  }
+
+  // Always send welcome/game link
+  const gameUrl = process.env.GAME_URL || 'https://t.me/' + (_tgBotUsername || 'game');
+  await tgApi('sendMessage', {
+    chat_id: fromId,
+    text: `Добро пожаловать в игру! Нажмите кнопку ниже чтобы играть.`,
+    reply_markup: { inline_keyboard: [[{ text: '🎮 Играть', url: gameUrl }]] },
+  }).catch(() => {});
+}
+
+function _refLink(telegramId) {
+  const bot = _tgBotUsername || process.env.TG_BOT_USERNAME || '';
+  if (!bot) return '';
+  return `https://t.me/${bot}?start=ref_${telegramId}`;
 }
 
 // Login Widget verification (browser button)
@@ -419,7 +482,7 @@ io.on('connection', socket => {
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId) });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -446,7 +509,7 @@ io.on('connection', socket => {
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId) });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -503,6 +566,28 @@ io.on('connection', socket => {
         .sort({ createdAt: -1 }).limit(30).lean();
       socket.emit('gramHistory', { txs: txs.map(_txData) });
     } catch (err) { console.error('gramGetHistory:', err); }
+  });
+
+  socket.on('getReferrals', async () => {
+    if (!authed) return;
+    try {
+      const referrals = await PlayerModel.find({ referredBy: authed.telegramId }, 'username telegramId').lean();
+      // Sum bonuses paid to this referrer from GramTx (confirmed deposits of their referrals × 5%)
+      const bonusMap = {};
+      if (referrals.length) {
+        const refIds = referrals.map(r => r.telegramId);
+        const deposits = await GramTxModel.find({
+          telegramId: { $in: refIds },
+          type: 'deposit',
+          status: 'confirmed',
+        }, 'telegramId amount').lean();
+        for (const d of deposits) {
+          bonusMap[d.telegramId] = (bonusMap[d.telegramId] || 0) + Math.round(d.amount * 0.05 * 100) / 100;
+        }
+      }
+      const friends = referrals.map(r => ({ username: r.username, bonus: bonusMap[r.telegramId] || 0 }));
+      socket.emit('refData', { friends, refLink: _refLink(authed.telegramId) });
+    } catch (err) { console.error('getReferrals:', err); }
   });
 
   socket.on('selectChar', ({ type, savedStats }) => {
