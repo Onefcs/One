@@ -1282,7 +1282,7 @@ function drawTargetButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  BUFF / DEBUFF STRIP  (bottom-left, right of chat button)
+//  BUFF / DEBUFF STRIP  (left of skill panel)
 // ─────────────────────────────────────────────────────────
 function drawBuffStrip() {
   if (!player) return;
@@ -1322,12 +1322,13 @@ function drawBuffStrip() {
 
   if (!chips.length) return;
 
-  // 2-column icon grid stacked vertically above the chat button
-  // Chat button CSS: left:10, bottom:72px, size:42×42
+  // 2-column icon grid to the left of the skill buttons panel
+  // Skill grid: left = W-14-(SKILL_SZ+SKILL_GAP)-SKILL_SZ = W-130, bottom = H-NAV_H-14
   const SZ = 22, GAP = 3, COLS = 2;
-  const chatBtnTop = H - 72 - 42;   // top edge of chat button
-  const gridX = 10;
-  const gridBottom = chatBtnTop - GAP;
+  const skillLeft  = W - 14 - (SKILL_SZ + SKILL_GAP) - SKILL_SZ;  // W-130
+  const gridRight  = skillLeft - 8;                                  // 8px gap from skills
+  const gridX      = gridRight - (COLS * SZ + (COLS - 1) * GAP);   // left edge of chip area
+  const gridBottom = H - NAV_H - 14;                                 // aligned with skills bottom
   const F2 = 'system-ui, -apple-system, Arial';
 
   ctx.save();
