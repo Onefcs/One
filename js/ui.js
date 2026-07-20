@@ -1044,37 +1044,37 @@ function drawHeader() {
   if ((p.freezeTimer || 0) > 0) _chips.push({ kind: 'icon', icon: 'iceNova', label: Math.ceil(p.freezeTimer) + 'с', color: '#66ddff', debuff: true });
 
   if (_chips.length > 0) {
-    const chipH = 16, chipY = 69, gap = 3;
+    const chipH = 13, chipY = 70, gap = 2;
     let bx = infoX;
-    ctx.font = `bold 8px ${F}`;
+    ctx.font = `bold 7px ${F}`;
     for (const chip of _chips) {
       const tw = ctx.measureText(chip.label).width;
       const hasImg = chip.kind === 'pot' && chip.img;
-      const iconW = hasImg ? 14 : 12;
-      const chipW = Math.ceil(iconW + 4 + tw + 5);
+      const iconW = hasImg ? 12 : 10;
+      const chipW = Math.ceil(iconW + 3 + tw + 4);
 
       ctx.fillStyle = chip.debuff ? 'rgba(30,5,5,0.82)' : 'rgba(4,2,12,0.82)';
-      roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.fill();
-      ctx.globalAlpha = 0.65;
-      ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
-      roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.stroke();
+      roundRect(ctx, bx, chipY, chipW, chipH, 3); ctx.fill();
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = chip.color; ctx.lineWidth = 0.8;
+      roundRect(ctx, bx, chipY, chipW, chipH, 3); ctx.stroke();
       ctx.globalAlpha = 1;
 
       if (hasImg) {
         const img = _getPotImg(chip.img);
         if (img && img.complete && img.naturalWidth > 0) {
-          ctx.drawImage(img, bx + 2, chipY + 1, 13, 13);
+          ctx.drawImage(img, bx + 1, chipY + 1, 11, 11);
         }
       } else {
-        drawIconCtx(ctx, chip.icon, bx + iconW / 2 + 2, chipY + chipH / 2, 9, chip.color);
+        drawIconCtx(ctx, chip.icon, bx + iconW / 2 + 1, chipY + chipH / 2, 8, chip.color);
       }
 
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillStyle = chip.color;
-      ctx.fillText(chip.label, bx + iconW + 4, chipY + chipH / 2);
+      ctx.fillText(chip.label, bx + iconW + 3, chipY + chipH / 2);
 
       bx += chipW + gap;
-      if (bx > infoRight - 10) break;
+      if (bx > infoRight - 6) break;
     }
   }
 
