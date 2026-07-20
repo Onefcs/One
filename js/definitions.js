@@ -224,65 +224,65 @@ const SHOP_CATALOG = [
 // Stone recipes: boss_stone + gold → enchant stone
 const ITEM_CRAFT_RECIPES = [
   // ── Assassin knives ──────────────────────────────────────
-  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'sw4', mats:[{id:'sw3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'sw4', mats:[{id:'sw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Warrior axes ─────────────────────────────────────────
-  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'tw4', mats:[{id:'tw3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'tw4', mats:[{id:'tw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Archer bows ──────────────────────────────────────────
-  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'bw4', mats:[{id:'bw3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'bw4', mats:[{id:'bw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Staves ───────────────────────────────────────────────
-  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'st4', mats:[{id:'st3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'st5', mats:[{id:'st4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'st4', mats:[{id:'st3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'st5', mats:[{id:'st4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Helmets ──────────────────────────────────────────────
-  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'hm4', mats:[{id:'hm3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'hm5', mats:[{id:'hm4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'hm4', mats:[{id:'hm3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'hm5', mats:[{id:'hm4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Body armor ───────────────────────────────────────────
-  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'ar4', mats:[{id:'ar3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'ar5', mats:[{id:'ar4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'ar4', mats:[{id:'ar3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'ar5', mats:[{id:'ar4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Gloves ───────────────────────────────────────────────
-  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'gl4', mats:[{id:'gl3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'gl5', mats:[{id:'gl4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'gl4', mats:[{id:'gl3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'gl5', mats:[{id:'gl4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Boots ────────────────────────────────────────────────
-  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Rings ────────────────────────────────────────────────
-  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Belts ────────────────────────────────────────────────
-  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}], chance:1.0 },
-  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:1}], chance:1.0 },
-  { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:1}], chance:1.0 },
-  { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:1}], chance:1.0 },
+  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
+  { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Enchant stones ───────────────────────────────────────
   { matId:'norm_stone',  mats:[{id:'boss_stone',n:3}],  goldCost:300,  chance:1.0 },
   { matId:'bless_stone', mats:[{id:'boss_stone',n:10}], goldCost:2000, chance:1.0 },
 ];
 
-// Recipe upgrade: 20 of lower rarity → 1 of higher rarity (30% chance)
+// Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)
 const MAT_UPGRADE_RECIPES = [
-  { from:'recu', to:'recr', count:20, chance:0.30 },
-  { from:'recr', to:'rece', count:20, chance:0.30 },
-  { from:'rece', to:'recl', count:20, chance:0.30 },
+  { from:'recu', to:'recr', count:20, chance:0.80 },
+  { from:'recr', to:'rece', count:20, chance:0.80 },
+  { from:'rece', to:'recl', count:20, chance:0.80 },
 ];
 
 // Battle Power — reflects the player's overall combat strength

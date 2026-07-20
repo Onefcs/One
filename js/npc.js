@@ -196,6 +196,7 @@ function openCraftModal(idx) {
     </div>
     <div class="craft-reqs-title">Требуется:</div>
     <div class="craft-reqs-list">${matsHtml}${goldRow}</div>
+    <div class="craft-chance-row">Шанс успеха: <b style="color:#ffd040">${Math.round(rec.chance * 100)}%</b></div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">Крафтить</button>
   `;
 }
@@ -218,12 +219,16 @@ function craftSpecificItem(idx) {
   }
   if (rec.goldCost) player.gold -= rec.goldCost;
 
-  if (rec.matId) {
-    const mat = CRAFT_MATS.find(m => m.id === rec.matId);
-    if (mat) { addToInventory({ ...mat }); _shopMsg('✓ Создано: ' + mat.name); }
+  if (Math.random() < rec.chance) {
+    if (rec.matId) {
+      const mat = CRAFT_MATS.find(m => m.id === rec.matId);
+      if (mat) { addToInventory({ ...mat }); _shopMsg('✓ Создано: ' + mat.name); }
+    } else {
+      const item = ITEM_DEF.find(i => i.id === rec.itemId);
+      if (item) { addToInventory({ ...item }); _shopMsg('✓ Создано: ' + item.name); }
+    }
   } else {
-    const item = ITEM_DEF.find(i => i.id === rec.itemId);
-    if (item) { addToInventory({ ...item }); _shopMsg('✓ Создано: ' + item.name); }
+    _shopMsg('Провал! Материалы потеряны.');
   }
   netSaveProgress();
   openCraftModal(idx);
@@ -283,10 +288,8 @@ function openMatModal(idx) {
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">← Назад</button>
     <div class="craft-detail-header">
-      <div class="craft-detail-icon">${_matIcon(fromMat, 48)}</div>
+      <div class="craft-detail-icon">${_matIcon(toMat, 52)}</div>
       <div class="craft-detail-info">
-        <div class="craft-detail-name" style="color:#aaa">${fromMat.name}</div>
-        <div style="font-size:18px;color:#555;line-height:1.4">↓</div>
         <div class="craft-detail-name" style="color:${rcTo};text-shadow:0 0 8px ${rcTo}66">${toMat.name}</div>
       </div>
     </div>
