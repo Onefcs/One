@@ -2027,6 +2027,7 @@ function openRatingPanel() {
   const panel = document.getElementById('rating-panel');
   if (!panel) return;
   panel.style.display = 'flex';
+  _ratingData = { players: null, clans: null };
   switchRatingTab(_ratingTab);
 }
 

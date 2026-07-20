@@ -267,8 +267,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
   transports: ['websocket'],   // force WebSocket only — no polling overhead
-  pingTimeout: 20000,
-  pingInterval: 10000,
+  pingTimeout: 90000,
+  pingInterval: 30000,
 });
 
 mongoose.connect(process.env.MONGODB_URI)
@@ -461,7 +461,9 @@ io.on('connection', socket => {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
       }
-      PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData }).catch(() => {});
+      const bmNow = calcBM(_lastStats);
+      authed.bm = bmNow;
+      PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData, bm: bmNow }).catch(() => {});
     }, 60000);
   }
 
@@ -979,6 +981,7 @@ io.on('connection', socket => {
       _lastStats = stats;
       const bm = calcBM(stats);
       const saveData = { ...stats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance };
+      authed.bm = bm;
       PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData, bm }).catch(() => {});
     }
   });
