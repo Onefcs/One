@@ -1006,7 +1006,77 @@ function drawHeader() {
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
   ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
+  // Thin divider between XP bar and buff row
+  ctx.strokeStyle = 'rgba(65,42,118,0.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(infoX, 63); ctx.lineTo(infoRight, 63); ctx.stroke();
 
+  // ── Buff / Debuff row ─────────────────────────────────────
+  // Collect all active effects
+  const _chips = [];
+
+  // Potion buffs from player.buffs
+  const _pbuffs = p.buffs || {};
+  for (const [btype, rem] of Object.entries(_pbuffs)) {
+    if (rem <= 0) continue;
+    const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
+    if (!bdef) continue;
+    const mins = Math.ceil(rem / 60);
+    const secs = Math.ceil(rem);
+    _chips.push({ kind: 'pot', img: bdef.img, label: secs < 60 ? secs + 'с' : mins + 'м', color: '#f0c040' });
+  }
+
+  // Skill buffs
+  const _skillBuffs = [
+    { timer: typeof barrierTimer    !== 'undefined' ? barrierTimer    : 0, icon: 'barrier',   color: '#b082ff', label: null },
+    { timer: typeof battleCryTimer  !== 'undefined' ? battleCryTimer  : 0, icon: 'battleCry', color: '#ffc81e', label: null },
+    { timer: typeof atkSpeedTimer   !== 'undefined' ? atkSpeedTimer   : 0, icon: 'lightning', color: '#2ee8ff', label: null },
+    { timer: typeof faithShieldTimer!== 'undefined' ? faithShieldTimer: 0, icon: 'shield',    color: '#ffee44', label: null },
+    { timer: typeof invisTimer      !== 'undefined' ? invisTimer      : 0, icon: 'teleport',  color: '#aaddff', label: null },
+    { timer: typeof dodgeTimer      !== 'undefined' ? dodgeTimer      : 0, icon: 'dash',      color: '#44ff88', label: null },
+  ];
+  for (const b of _skillBuffs) {
+    if (b.timer > 0) _chips.push({ kind: 'icon', icon: b.icon, label: Math.ceil(b.timer) + 'с', color: b.color });
+  }
+
+  // Debuffs
+  if ((p.slowTimer || 0) > 0)   _chips.push({ kind: 'icon', icon: 'wind',    label: Math.ceil(p.slowTimer)   + 'с', color: '#88ccff', debuff: true });
+  if ((p.stunTimer || 0) > 0)   _chips.push({ kind: 'icon', icon: 'holyLight', label: Math.ceil(p.stunTimer) + 'с', color: '#ff8844', debuff: true });
+  if ((p.freezeTimer || 0) > 0) _chips.push({ kind: 'icon', icon: 'iceNova', label: Math.ceil(p.freezeTimer) + 'с', color: '#66ddff', debuff: true });
+
+  if (_chips.length > 0) {
+    const chipH = 16, chipY = 69, gap = 3;
+    let bx = infoX;
+    ctx.font = `bold 8px ${F}`;
+    for (const chip of _chips) {
+      const tw = ctx.measureText(chip.label).width;
+      const hasImg = chip.kind === 'pot' && chip.img;
+      const iconW = hasImg ? 14 : 12;
+      const chipW = Math.ceil(iconW + 4 + tw + 5);
+
+      ctx.fillStyle = chip.debuff ? 'rgba(30,5,5,0.82)' : 'rgba(4,2,12,0.82)';
+      roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.fill();
+      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
+      roundRect(ctx, bx, chipY, chipW, chipH, 4); ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      if (hasImg) {
+        const img = _getPotImg(chip.img);
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, bx + 2, chipY + 1, 13, 13);
+        }
+      } else {
+        drawIconCtx(ctx, chip.icon, bx + iconW / 2 + 2, chipY + chipH / 2, 9, chip.color);
+      }
+
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = chip.color;
+      ctx.fillText(chip.label, bx + iconW + 4, chipY + chipH / 2);
+
+      bx += chipW + gap;
+      if (bx > infoRight - 10) break;
+    }
+  }
 
   ctx.restore();
 }
@@ -1283,51 +1353,7 @@ function drawTargetButton() {
   ctx.restore();
 }
 
-// ─────────────────────────────────────────────────────────
-//  BUFF / DEBUFF BAR  (below header)
-// ─────────────────────────────────────────────────────────
-function drawBuffBar() {
-  if (!player) return;
-  const F = 'system-ui, -apple-system, Arial';
-  const _activeBuffs = [
-    { timer: barrierTimer,     icon: 'barrier',   color: '#b082ff' },
-    { timer: battleCryTimer,   icon: 'battleCry', color: '#ffc81e' },
-    { timer: atkSpeedTimer,    icon: 'wind',      color: '#2ee8ff' },
-    { timer: faithShieldTimer, icon: 'shield',    color: '#ffee44' },
-    { timer: invisTimer,       icon: 'teleport',  color: '#aaddff' },
-    { timer: dodgeTimer,       icon: 'dash',      color: '#44ff88' },
-  ].filter(b => b.timer > 0);
-
-  if (!_activeBuffs.length) return;
-
-  const chipH = 20, chipY = HEADER_H + 36, gap = 4;
-  let bx = 8;
-
-  ctx.save();
-  ctx.font = `bold 9px ${F}`;
-  for (const b of _activeBuffs) {
-    const txt = Math.ceil(b.timer) + 'с';
-    const tw = ctx.measureText(txt).width;
-    const chipW = Math.ceil(22 + tw + 8);
-
-    ctx.fillStyle = 'rgba(4,2,12,0.80)';
-    roundRect(ctx, bx, chipY, chipW, chipH, 5); ctx.fill();
-
-    ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = b.color; ctx.lineWidth = 1;
-    roundRect(ctx, bx, chipY, chipW, chipH, 5); ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    drawIconCtx(ctx, b.icon, bx + 10, chipY + chipH / 2, 10, b.color);
-
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = b.color;
-    ctx.fillText(txt, bx + 20, chipY + chipH / 2);
-
-    bx += chipW + gap;
-  }
-  ctx.restore();
-}
+// drawBuffBar removed — buff/debuff chips now rendered inside drawHeader()
 
 // ─────────────────────────────────────────────────────────
 //  PK / МИР BUTTON

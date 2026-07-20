@@ -1,7 +1,7 @@
 const SKILL_SZ  = 54;
 const SKILL_GAP = 8;
 const POTION_R  = 26;
-const BUFF_BAR_H = 24; // height of the buff/debuff strip below the header
+const BUFF_BAR_H = 0; // buff/debuff strip is now inside the header
 
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
