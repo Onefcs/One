@@ -188,7 +188,7 @@ const SKILL_DEF = {
     { key:'Q', name:'Щит-удар',    icon:'shieldBash', cd:18, desc:'×2 урон по цели + стан 3 сек' },
     { key:'W', name:'Вихрь',       icon:'whirlwind',  cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Боевой клич', icon:'battleCry',  cd:20, desc:'+20% атака на 5 сек'           },
-    { key:'R', name:'Рывок',       icon:'dash',       cd:15, desc:'Рывок 140px'                   },
+    { key:'R', name:'Рывок',       icon:'dash',       cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   archer: [
     { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   cd:6,  desc:'3 стрелы под углом ±0.35 рад' },

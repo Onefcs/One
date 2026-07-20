@@ -401,20 +401,30 @@ function useSkill(idx) {
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
       dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#fa0');
       spawnBurst(player.x, player.y, '#fa0', 10);
-    } else if (sk.key === 'R') { // Charge — dash 140px toward target/enemy or joystick
+    } else if (sk.key === 'R') { // Charge — dash 140px toward target/enemy, deal ×1.5 on arrival
       const _pvpR = _pvpPlayerTarget();
-      let _rdx, _rdy;
+      let _rdx, _rdy, _chargeTarget = null, _chargePvpTarget = null;
       if (_pvpR) {
         _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y;
+        _chargePvpTarget = _pvpR;
       } else {
-        const _chargeEnemy = (targetId && !targetIsPlayer)
+        _chargeTarget = (targetId && !targetIsPlayer)
           ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
           : nearestEnemy();
-        if (_chargeEnemy) { _rdx = _chargeEnemy.x - player.x; _rdy = _chargeEnemy.y - player.y; }
+        if (_chargeTarget) { _rdx = _chargeTarget.x - player.x; _rdy = _chargeTarget.y - player.y; }
         else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
       }
       const len = Math.hypot(_rdx, _rdy) || 1;
       _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
+      if (_chargePvpTarget) {
+        netPvpSkillAttack(_chargePvpTarget.id, 1.5 * _skillDmgMult('R'));
+        faceTowards(_chargePvpTarget.op.x, _chargePvpTarget.op.y);
+        spawnAOE(_chargePvpTarget.op.x, _chargePvpTarget.op.y, 40);
+      } else if (_chargeTarget) {
+        netSkillAttack(_chargeTarget.id, 1.5 * _skillDmgMult('R'));
+        faceTowards(_chargeTarget.x, _chargeTarget.y);
+        spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
+      }
       spawnBurst(player.x, player.y, '#5af', 8);
     }
   } else if (player.type === 'archer') {
