@@ -467,7 +467,7 @@ function getSpriteAnimKey(p) {
   const dir = p.facing || 'front';
   if (p.atkAnimTimer > 0)  return `${dir}-attack`;
   const inp = inputDir();
-  if (inp.len > 0.05)      return `${dir}-run`;
+  if (inp.len > 0.05 || p._chasing) return `${dir}-run`;
   return `${dir}-idle`;
 }
 

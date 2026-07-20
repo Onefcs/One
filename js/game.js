@@ -165,6 +165,7 @@ function update(dt) {
       const inp = inputDir();
       const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if (inp.len > 0) {
+        player._chasing = false;
         const vx = inp.dx * player.speed * _spdMult * inp.len * dt;
         const vy = inp.dy * player.speed * _spdMult * inp.len * dt;
         if (canMoveX(player, vx, 12)) player.x += vx;
@@ -182,6 +183,27 @@ function update(dt) {
           if (ax > ay * 1.25)  player.facing = inp.dx > 0 ? 'right' : 'left';
           else if (ay > 0)     player.facing = inp.dy > 0 ? 'front' : 'back';
         }
+      } else if (targetId && player.charDef.atkType !== 'ranged') {
+        // Melee chase: run toward locked target when no manual input
+        const _chEnt = targetIsPlayer ? otherPlayers.get(targetId) : serverEnemiesMap.get(targetId);
+        if (_chEnt && (_chEnt.hp || 0) > 0) {
+          const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;
+          const _clen = Math.hypot(_cdx, _cdy);
+          if (_clen > player.charDef.atkRange * 0.85) {
+            const nvx = (_cdx / _clen) * player.speed * _spdMult * dt;
+            const nvy = (_cdy / _clen) * player.speed * _spdMult * dt;
+            if (canMoveX(player, nvx, 12)) player.x += nvx;
+            if (canMoveY(player, nvy, 12)) player.y += nvy;
+            faceTowards(_chEnt.x, _chEnt.y);
+            player._chasing = true;
+          } else {
+            player._chasing = false;
+          }
+        } else {
+          player._chasing = false;
+        }
+      } else {
+        player._chasing = false;
       }
     }
 
@@ -377,6 +399,11 @@ function update(dt) {
 
     const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
     if (!closest || closestD >= atkRange || !hasLOS(player.x, player.y, closest.x, closest.y)) {
+      // For melee: lock onto closest enemy so the chase system engages
+      if (closest && player.charDef.atkType !== 'ranged' && !targetId) {
+        targetId = closestIsPlayer ? closest._socketId : closest.id;
+        targetIsPlayer = closestIsPlayer;
+      }
       player.atkTimer = 0.15;
     } else {
       if (!targetId) {
