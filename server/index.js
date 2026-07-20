@@ -17,6 +17,9 @@ const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram ch
 const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
 let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
 
+// In-memory gram balance cache: telegramId → balance (survives autosave overwrites)
+const _gramBalanceCache = new Map();
+
 // ── Telegram helpers ──────────────────────────────────────────────────────────
 function tgApi(method, body) {
   return fetch(`https://api.telegram.org/bot${_TG_TOKEN}/${method}`, {
@@ -88,29 +91,17 @@ async function _handleAdminCallback(cq) {
   const confirmed = action === 'gram_ok';
   tx.status = confirmed ? 'confirmed' : 'rejected';
 
-  if (confirmed && tx.type === 'deposit') {
-    // Credit balance
+  if ((confirmed && tx.type === 'deposit') || (!confirmed && tx.type === 'withdraw')) {
     const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
     if (doc) {
       const saved = doc.savedData || {};
-      saved.gramBalance = (saved.gramBalance || 0) + tx.amount;
+      const newBal = (saved.gramBalance || 0) + tx.amount;
+      saved.gramBalance = newBal;
       doc.savedData = saved;
       doc.markModified('savedData');
       await doc.save();
-      io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: saved.gramBalance });
-    }
-  }
-
-  if (!confirmed && tx.type === 'withdraw') {
-    // Refund balance
-    const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
-    if (doc) {
-      const saved = doc.savedData || {};
-      saved.gramBalance = (saved.gramBalance || 0) + tx.amount;
-      doc.savedData = saved;
-      doc.markModified('savedData');
-      await doc.save();
-      io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: saved.gramBalance });
+      _gramBalanceCache.set(tx.telegramId, newBal);
+      io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
     }
   }
 
@@ -390,13 +381,14 @@ io.on('connection', socket => {
   let _autoSaveInterval = null;
   let _myClanName = null;
   let _myClanIcon = null;
+  let _gramBalance = 0;
   playerFloorMap.set(socket.id, currentFloor);
 
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = setInterval(() => {
       if (!authed || !_lastStats) return;
-      const saveData = { ..._lastStats, floor: currentFloor };
+      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance };
       if (currentRoom) {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
@@ -419,14 +411,15 @@ io.on('connection', socket => {
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
+      _gramBalance = doc.savedData?.gramBalance || 0;
+      _gramBalanceCache.set(telegramId, _gramBalance);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      const gramBalance = doc.savedData?.gramBalance || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance, gramWallet: GRAM_WALLET });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -445,14 +438,15 @@ io.on('connection', socket => {
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
+      _gramBalance = doc.savedData?.gramBalance || 0;
+      _gramBalanceCache.set(telegramId, _gramBalance);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      const gramBalance = doc.savedData?.gramBalance || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance, gramWallet: GRAM_WALLET });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -478,13 +472,14 @@ io.on('connection', socket => {
   socket.on('gramWithdrawRequest', async ({ amount, address }) => {
     if (!authed || !amount || amount < 10 || !address) return;
     try {
-      const doc = await PlayerModel.findById(authed._id);
-      const bal = doc?.savedData?.gramBalance || 0;
-      if (amount > bal) return socket.emit('gramError', { msg: 'Недостаточно средств' });
+      if (amount > _gramBalance) return socket.emit('gramError', { msg: 'Недостаточно средств' });
 
       // Deduct immediately — refunded on rejection
+      _gramBalance -= amount;
+      _gramBalanceCache.set(authed.telegramId, _gramBalance);
+      const doc = await PlayerModel.findById(authed._id);
       const saved = doc.savedData || {};
-      saved.gramBalance = bal - amount;
+      saved.gramBalance = _gramBalance;
       doc.savedData = saved;
       doc.markModified('savedData');
       await doc.save();
@@ -496,7 +491,7 @@ io.on('connection', socket => {
         amount: Number(amount),
         address: String(address),
       });
-      socket.emit('gramTxCreated', { tx: _txData(tx), newBalance: saved.gramBalance });
+      socket.emit('gramTxCreated', { tx: _txData(tx), newBalance: _gramBalance });
       notifyAdminGram(tx).catch(() => {});
     } catch (err) { console.error('gramWithdrawRequest:', err); }
   });
@@ -845,7 +840,8 @@ io.on('connection', socket => {
     if (authed) {
       _lastStats = stats;
       const bm = calcBM(stats);
-      PlayerModel.findByIdAndUpdate(authed._id, { savedData: stats, bm }).catch(() => {});
+      const saveData = { ...stats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance };
+      PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData, bm }).catch(() => {});
     }
   });
 
