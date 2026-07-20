@@ -183,8 +183,8 @@ function update(dt) {
           if (ax > ay * 1.25)  player.facing = inp.dx > 0 ? 'right' : 'left';
           else if (ay > 0)     player.facing = inp.dy > 0 ? 'front' : 'back';
         }
-      } else if (targetId && player.charDef.atkType !== 'ranged') {
-        // Melee chase: run toward locked target when no manual input
+      } else if (autoAttackMode && targetId && player.charDef.atkType !== 'ranged') {
+        // Melee chase: run toward locked target when no manual input (auto-attack only)
         const _chEnt = targetIsPlayer ? otherPlayers.get(targetId) : serverEnemiesMap.get(targetId);
         if (_chEnt && (_chEnt.hp || 0) > 0) {
           const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;
