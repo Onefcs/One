@@ -17,9 +17,5 @@ function spawnBurst(x, y, color, n) {
 }
 
 function spawnAOE(x, y, r) {
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2;
-    particles.push({ x: x + Math.cos(a) * 18, y: y + Math.sin(a) * 18, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, color: '#f4f', life: .45, size: 5 });
-  }
-  _particlesDirty = true;
+  aoeRings.push({ x, y, r: r || 50, life: 0.45, maxLife: 0.45 });
 }

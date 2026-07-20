@@ -436,6 +436,15 @@ function update(dt) {
 
   {
     let j = 0;
+    for (let i = 0; i < aoeRings.length; i++) {
+      aoeRings[i].life -= dt;
+      if (aoeRings[i].life > 0) aoeRings[j++] = aoeRings[i];
+    }
+    aoeRings.length = j;
+  }
+
+  {
+    let j = 0;
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life > 0) particles[j++] = particles[i];
@@ -767,6 +776,21 @@ function render(dt, ts) {
     ctx.strokeStyle = 'rgba(60,220,100,0.35)';
     ctx.lineWidth = 3 / ZOOM;
     ctx.strokeRect(sz.x1, sz.y1, sz.x2 - sz.x1, sz.y2 - sz.y1);
+  }
+
+  // AOE rings — blue circle showing skill damage area
+  if (aoeRings.length) {
+    ctx.lineWidth = 2 / ZOOM;
+    aoeRings.forEach(ring => {
+      const alpha = ring.life / ring.maxLife;
+      ctx.globalAlpha = alpha * 0.20;
+      ctx.fillStyle = '#4af';
+      ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.strokeStyle = '#4af';
+      ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
   }
 
   // NPCs

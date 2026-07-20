@@ -101,10 +101,7 @@ function _skillAOEMult(r, mult) {
   const m = Math.max(1, mult || 1);
   serverEnemies.forEach(e => {
     if ((e.hp || 0) <= 0) return;
-    if (dist(e.x, e.y, player.x, player.y) < r) {
-      if (m > 1.001) netSkillAttack(e.id, m);
-      else netAttack(e.id);
-    }
+    if (dist(e.x, e.y, player.x, player.y) < r) netSkillAttack(e.id, m);
   });
 }
 
@@ -118,10 +115,7 @@ function _skillDirMult(dx, dy, r, arcDot, mult) {
     const ex = e.x - player.x, ey = e.y - player.y;
     const d = Math.hypot(ex, ey);
     if (d > r || d < 1) return;
-    if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3)) {
-      if (m > 1.001) netSkillAttack(e.id, m);
-      else netAttack(e.id);
-    }
+    if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3)) netSkillAttack(e.id, m);
   });
 }
 
@@ -393,7 +387,7 @@ function useSkill(idx) {
       dmgNum(player.x, player.y - 40, '🛡 Щит-удар!', '#8af');
     } else if (sk.key === 'W') { // Whirlwind — AOE 110
       spawnAOE(player.x, player.y, 110);
-      _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y);
+      _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
       _pvpSkillAOE(110, _skillDmgMult('W'));
     } else if (sk.key === 'E') { // Battle Cry — +20% ATK 5s (+1s per level)
       battleCryTimer = 5 + _skillBuffSec('E');
@@ -477,7 +471,7 @@ function useSkill(idx) {
       netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
     } else if (sk.key === 'W') { // Ice Nova — AOE + slow 3s
       spawnAOE(player.x, player.y, 130);
-      _skillAOEMult(130, _skillDmgMult('W')); netSpawnAoe(player.x, player.y);
+      _skillAOEMult(130, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 130);
       const slowIds = [];
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
@@ -563,7 +557,7 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, '#a5f', 6);
     } else if (sk.key === 'W') { // Smoke Bomb — AOE 100 + slow 3s
       spawnAOE(player.x, player.y, 100);
-      _skillAOEMult(100, _skillDmgMult('W')); netSpawnAoe(player.x, player.y);
+      _skillAOEMult(100, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 100);
       const slowIds = [];
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;

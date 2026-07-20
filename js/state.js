@@ -1,7 +1,7 @@
 let canvas, ctx, W, H, DPR = 1;
 let state = 'select';
 let player = null, dungeon = null;
-let projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [];
+let projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [], aoeRings = [];
 let camera = { x: 0, y: 0 };
 let dungeonLvl = 1;
 let frameCount = 0, lastTs = 0;

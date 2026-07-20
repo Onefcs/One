@@ -74,7 +74,7 @@ function netConnect(onReady) {
     otherPlayers = new Map();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
-    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
+    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
       camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
@@ -372,7 +372,7 @@ function netConnect(onReady) {
     otherPlayers = new Map();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
-    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
+    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
       camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
@@ -391,9 +391,8 @@ function netConnect(onReady) {
     otherProjs.push({ ...data });
   });
 
-  socket.on('spawnAoe', ({ x, y }) => {
-    spawnAOE(x, y);
-    spawnBurst(x, y, '#f4f', 6);
+  socket.on('spawnAoe', ({ x, y, r }) => {
+    spawnAOE(x, y, r || 80);
   });
 
   socket.on('partyInviteReceived', ({ fromId, fromName }) => {
@@ -940,8 +939,8 @@ function netSpawnProj(proj) {
   if (socket?.connected) socket.emit('spawnProj', proj);
 }
 
-function netSpawnAoe(x, y) {
-  if (socket?.connected) socket.emit('spawnAoe', { x, y });
+function netSpawnAoe(x, y, r) {
+  if (socket?.connected) socket.emit('spawnAoe', { x, y, r });
 }
 
 function netEnterRaid() {
