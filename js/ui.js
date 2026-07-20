@@ -2065,16 +2065,22 @@ function _renderRatingBody() {
 
   if (_ratingTab === 'players') {
     const myUsername = typeof netUsername !== 'undefined' ? netUsername : '';
-    el.innerHTML = rows.map((r, i) => {
-      const rankCls = i === 0 ? 'rating-rank-1' : i === 1 ? 'rating-rank-2' : i === 2 ? 'rating-rank-3' : '';
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
-      const isMe = r.username === myUsername;
+    let html = '';
+    rows.forEach((r, i) => {
+      const isGap = r.gap;
+      if (isGap) {
+        html += `<div class="rating-gap">• • •</div>`;
+      }
+      const rank = r.rank != null ? r.rank : i + 1;
+      const rankCls = rank === 1 ? 'rating-rank-1' : rank === 2 ? 'rating-rank-2' : rank === 3 ? 'rating-rank-3' : '';
+      const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+      const isMe = r.username === myUsername || r.isSelf;
       const init = (r.username || '?')[0].toUpperCase();
-      return `<div class="rating-row${isMe ? ' rating-me' : ''}">
+      html += `<div class="rating-row${isMe ? ' rating-me' : ''}">
         <div class="rating-rank ${rankCls}">${medal}</div>
         <div class="rating-avatar">${init}</div>
         <div style="flex:1;min-width:0">
-          <div class="rating-name">@${r.username}</div>
+          <div class="rating-name">@${r.username}${isMe ? ' <span style="font-size:10px;color:#ffd23c;opacity:.7">(вы)</span>' : ''}</div>
           <div class="rating-sub">Ур. ${r.level || 1}</div>
         </div>
         <div class="rating-bm">
@@ -2082,7 +2088,8 @@ function _renderRatingBody() {
           <div class="rating-bm-lbl">БМ</div>
         </div>
       </div>`;
-    }).join('');
+    });
+    el.innerHTML = html;
   } else {
     el.innerHTML = rows.map((r, i) => {
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);

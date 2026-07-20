@@ -605,6 +605,20 @@ io.on('connection', socket => {
           bm: p.bm || 0,
           level: p.savedData?.level || 1,
         }));
+        // If current player not in top-50, find their rank and append
+        const myUsername = authed?.username;
+        const inTop = rows.some(r => r.username === myUsername);
+        if (!inTop && authed) {
+          const myRank = await PlayerModel.countDocuments({ bm: { $gt: authed.bm || 0 } }) + 1;
+          rows.push({
+            username: myUsername,
+            bm: authed.bm || 0,
+            level: authed.savedData?.level || 1,
+            rank: myRank,
+            isSelf: true,
+            gap: true,
+          });
+        }
         socket.emit('ratingData', { tab: 'players', rows });
       } else {
         const clans = await ClanModel.find({}, 'name icon members').lean();
