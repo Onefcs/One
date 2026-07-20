@@ -238,6 +238,13 @@ function usePotion() {
 function nearestEnemyDir() {
   const jl = Math.hypot(joy.dx, joy.dy);
   if (jl > 0.25) return { dx: joy.dx / jl, dy: joy.dy / jl };
+  if (pvpMode && targetIsPlayer && targetId) {
+    const op = otherPlayers.get(targetId);
+    if (op && (op.hp || 0) > 0 && op.x != null) {
+      const len = Math.max(1, dist(op.x, op.y, player.x, player.y));
+      return { dx: (op.x - player.x) / len, dy: (op.y - player.y) / len };
+    }
+  }
   if (targetId && !targetIsPlayer) {
     const t = serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
     if (t) {
@@ -292,6 +299,44 @@ function _skillAOE(r) {
   serverEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < r) netAttack(e.id); });
 }
 
+// PvP: return targeted/nearest other player as {id, op}, or null
+function _pvpPlayerTarget() {
+  if (!pvpMode) return null;
+  if (targetIsPlayer && targetId) {
+    const op = otherPlayers.get(targetId);
+    if (op && (op.hp || 0) > 0 && op.x != null) return { id: targetId, op };
+  }
+  let best = null, bestId = null, bestD2 = Infinity;
+  otherPlayers.forEach((op, id) => {
+    if ((op.hp || 0) <= 0 || op.x == null) return;
+    const dx = op.x - player.x, dy = op.y - player.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; best = op; bestId = id; }
+  });
+  return best ? { id: bestId, op: best } : null;
+}
+
+// PvP: skill damage AOE hitting all nearby other players
+function _pvpSkillAOE(r, mult) {
+  if (!pvpMode) return;
+  otherPlayers.forEach((op, id) => {
+    if ((op.hp || 0) <= 0 || op.x == null) return;
+    if (dist(op.x, op.y, player.x, player.y) < r) netPvpSkillAttack(id, mult);
+  });
+}
+
+// PvP: slow all nearby other players
+function _pvpSkillSlow(r, duration) {
+  if (!pvpMode) return;
+  otherPlayers.forEach((op, id) => {
+    if ((op.hp || 0) <= 0 || op.x == null) return;
+    if (dist(op.x, op.y, player.x, player.y) < r) {
+      op.slowTimer = duration;
+      netPvpSkillCC(id, 'slow', duration);
+    }
+  });
+}
+
 // Send attack to enemies in joystick direction within range
 function _skillDir(dx, dy, r, arcDot) {
   const len = Math.hypot(dx, dy) || 1;
@@ -317,20 +362,30 @@ function useSkill(idx) {
 
   if (player.type === 'warrior') {
     if (sk.key === 'Q') { // Shield Bash — ×2 single target + stun 3s
-      const tgt = nearestEnemy();
-      if (tgt) {
-        spawnAOE(tgt.x, tgt.y, 50);
-        netSkillAttack(tgt.id, 2 * _skillDmgMult('Q'));
-        const stunDur = 3 + _skillBuffSec('Q');
-        tgt.stunTimer = stunDur;
-        netSkillStun(tgt.id, stunDur);
-        faceTowards(tgt.x, tgt.y);
+      const stunDur = 3 + _skillBuffSec('Q');
+      const pvpTgt = _pvpPlayerTarget();
+      if (pvpTgt) {
+        spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 50);
+        netPvpSkillAttack(pvpTgt.id, 2 * _skillDmgMult('Q'));
+        pvpTgt.op.stunTimer = stunDur;
+        netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
+        faceTowards(pvpTgt.op.x, pvpTgt.op.y);
+      } else {
+        const tgt = nearestEnemy();
+        if (tgt) {
+          spawnAOE(tgt.x, tgt.y, 50);
+          netSkillAttack(tgt.id, 2 * _skillDmgMult('Q'));
+          tgt.stunTimer = stunDur;
+          netSkillStun(tgt.id, stunDur);
+          faceTowards(tgt.x, tgt.y);
+        }
       }
       spawnBurst(player.x, player.y, '#8af', 8);
       dmgNum(player.x, player.y - 40, '🛡 Щит-удар!', '#8af');
     } else if (sk.key === 'W') { // Whirlwind — AOE 110
       spawnAOE(player.x, player.y, 110);
       _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y);
+      _pvpSkillAOE(110, _skillDmgMult('W'));
     } else if (sk.key === 'E') { // Battle Cry — +20% ATK 5s (+1s per level)
       battleCryTimer = 5 + _skillBuffSec('E');
       player.atk = Math.floor(player.atk * 1.20);
@@ -400,6 +455,8 @@ function useSkill(idx) {
         if (dist(e.x, e.y, player.x, player.y) < 130) { e.slowTimer = 3; slowIds.push(e.id); }
       });
       if (slowIds.length) netSkillSlow(slowIds, 3);
+      _pvpSkillAOE(130, _skillDmgMult('W'));
+      _pvpSkillSlow(130, 3);
       dmgNum(player.x, player.y - 40, '❄ Заморозка!', '#8ef');
       spawnBurst(player.x, player.y, '#8ef', 12);
     } else if (sk.key === 'E') { // Barrier — +50% DEF for 3s (+1s per level)
@@ -427,13 +484,22 @@ function useSkill(idx) {
       dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#ff4');
       spawnBurst(player.x, player.y, '#ff4', 8);
     } else if (sk.key === 'W') { // Оцепенение — stun nearest target 3s (+1s per level)
-      const tgt = nearestEnemy();
-      if (tgt) {
-        spawnAOE(tgt.x, tgt.y, 40);
-        const stunDur = 3 + _skillBuffSec('W');
-        tgt.stunTimer = stunDur;
-        netSkillStun(tgt.id, stunDur);
-        faceTowards(tgt.x, tgt.y);
+      const stunDur = 3 + _skillBuffSec('W');
+      const pvpTgt = _pvpPlayerTarget();
+      if (pvpTgt) {
+        spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
+        netPvpSkillAttack(pvpTgt.id, _skillDmgMult('W'));
+        pvpTgt.op.stunTimer = stunDur;
+        netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
+        faceTowards(pvpTgt.op.x, pvpTgt.op.y);
+      } else {
+        const tgt = nearestEnemy();
+        if (tgt) {
+          spawnAOE(tgt.x, tgt.y, 40);
+          tgt.stunTimer = stunDur;
+          netSkillStun(tgt.id, stunDur);
+          faceTowards(tgt.x, tgt.y);
+        }
       }
       spawnBurst(player.x, player.y, '#ff4', 8);
       dmgNum(player.x, player.y - 40, '✨ Оцепенение!', '#ff4');
@@ -454,10 +520,17 @@ function useSkill(idx) {
       }
     }
   } else if (player.type === 'assasin') {
-    if (sk.key === 'Q') { // Shadow Strike — dash 80px toward enemy
-      const dir = nearestEnemyDir();
-      const len = Math.hypot(dir.dx, dir.dy) || 1;
-      _dashTo(player.x + (dir.dx / len) * 80, player.y + (dir.dy / len) * 80);
+    if (sk.key === 'Q') { // Shadow Strike — dash 80px toward enemy/player target
+      const pvpTgt = _pvpPlayerTarget();
+      if (pvpTgt) {
+        const dx = pvpTgt.op.x - player.x, dy = pvpTgt.op.y - player.y;
+        const len = Math.hypot(dx, dy) || 1;
+        _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
+      } else {
+        const dir = nearestEnemyDir();
+        const len = Math.hypot(dir.dx, dir.dy) || 1;
+        _dashTo(player.x + (dir.dx / len) * 80, player.y + (dir.dy / len) * 80);
+      }
       spawnBurst(player.x, player.y, '#a5f', 6);
     } else if (sk.key === 'W') { // Smoke Bomb — AOE 100 + slow 3s
       spawnAOE(player.x, player.y, 100);
@@ -468,6 +541,8 @@ function useSkill(idx) {
         if (dist(e.x, e.y, player.x, player.y) < 100) { e.slowTimer = 3; slowIds.push(e.id); }
       });
       if (slowIds.length) netSkillSlow(slowIds, 3);
+      _pvpSkillAOE(100, _skillDmgMult('W'));
+      _pvpSkillSlow(100, 3);
       dmgNum(player.x, player.y - 40, '💨 Дым!', '#a5f');
       spawnBurst(player.x, player.y, '#a5f', 8);
     } else if (sk.key === 'E') { // Invisibility 4s (+1s per level)
@@ -476,11 +551,18 @@ function useSkill(idx) {
       dmgNum(player.x, player.y - 40, '👁 Невидимость!', '#a5f');
       spawnBurst(player.x, player.y, '#a5f', 6);
     } else if (sk.key === 'R') { // Death Strike — ×4 nearest target
-      const tgt = nearestEnemy();
-      if (tgt) {
-        netSkillAttack(tgt.id, 4 * _skillDmgMult('R'));
-        faceTowards(tgt.x, tgt.y);
-        spawnAOE(tgt.x, tgt.y, 40);
+      const pvpTgt = _pvpPlayerTarget();
+      if (pvpTgt) {
+        netPvpSkillAttack(pvpTgt.id, 4 * _skillDmgMult('R'));
+        faceTowards(pvpTgt.op.x, pvpTgt.op.y);
+        spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
+      } else {
+        const tgt = nearestEnemy();
+        if (tgt) {
+          netSkillAttack(tgt.id, 4 * _skillDmgMult('R'));
+          faceTowards(tgt.x, tgt.y);
+          spawnAOE(tgt.x, tgt.y, 40);
+        }
       }
       dmgNum(player.x, player.y - 50, '💀 ×4 Удар!', '#f0f');
       spawnBurst(player.x, player.y, '#f0f', 10);

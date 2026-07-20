@@ -598,9 +598,23 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
     if (!result) return;
-    // Send damage delta to target (client applies it; avoids server HP sync issues)
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+  });
+
+  socket.on('pvpSkillAttack', ({ targetId, multiplier }) => {
+    if (!currentRoom) return;
+    const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
+    if (!result) return;
+    io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
+    socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+  });
+
+  socket.on('pvpSkillCC', ({ targetId, type, duration }) => {
+    if (!currentRoom) return;
+    const target = currentRoom.players.get(targetId);
+    if (!target || target.hp <= 0) return;
+    io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration });
   });
 
   socket.on('respawn', () => {

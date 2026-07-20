@@ -262,6 +262,14 @@ function netConnect(onReady) {
     if (enemyIds) enemyIds.forEach(_applyCC);
   });
 
+  socket.on('pvpPlayerCC', ({ targetId, type, duration }) => {
+    const op = otherPlayers.get(targetId);
+    if (op) {
+      if (type === 'stun') op.stunTimer = duration;
+      else if (type === 'slow') op.slowTimer = duration;
+    }
+  });
+
   socket.on('enemyHurt', ({ id, hp, dmg, isCrit }) => {
     const e = serverEnemiesMap.get(id);
     if (e) {
@@ -894,6 +902,14 @@ function netSelectChar(type, savedStats) {
 
 function netPvpAttack(targetSocketId) {
   if (socket?.connected) socket.emit('pvpAttack', { targetId: targetSocketId });
+}
+
+function netPvpSkillAttack(targetId, multiplier) {
+  if (socket?.connected) socket.emit('pvpSkillAttack', { targetId, multiplier });
+}
+
+function netPvpSkillCC(targetId, type, duration) {
+  if (socket?.connected) socket.emit('pvpSkillCC', { targetId, type, duration });
 }
 
 function netSetPvpMode(mode) {

@@ -502,6 +502,8 @@ function update(dt) {
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
     if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
     if ((op._swingTimer || 0) > 0) op._swingTimer -= dt;
+    if ((op.stunTimer || 0) > 0) op.stunTimer -= dt;
+    if ((op.slowTimer || 0) > 0) op.slowTimer -= dt;
     if (op.type && SPRITE_DEF[op.type]) {
       if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
       const ak = getOtherPlayerAnimKey(op);
@@ -869,6 +871,16 @@ function render(dt, ts) {
       ctx.fillStyle = (CHAR_DEF[p.type]?.color) || '#aaa';
       ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    if ((p.slowTimer || 0) > 0) {
+      ctx.globalAlpha = 0.28; ctx.fillStyle = '#4af';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    if ((p.stunTimer || 0) > 0) {
+      ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff8';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
     }
     const bh = 4, bw = 38;
     const barTop = usedSprite ? p.y - 39 : p.y - 20;

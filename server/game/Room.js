@@ -337,6 +337,21 @@ class Room {
     return { dmg, isCrit, x: target.x, y: target.y };
   }
 
+  pvpSkillAttack(attackerSocketId, targetSocketId, multiplier) {
+    const attacker = this.players.get(attackerSocketId);
+    const target = this.players.get(targetSocketId);
+    if (!attacker || !target) return null;
+    if (!attacker.pvpMode) return null;
+    if (target.hp <= 0) return null;
+    const dx = attacker.x - target.x, dy = attacker.y - target.y;
+    if (dx * dx + dy * dy > 600 * 600) return null;
+    const mult = Math.max(1, Math.min(10, multiplier || 1));
+    const base = Math.max(1, Math.round(attacker.atk * mult) - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
+    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
+    return { dmg, isCrit, x: target.x, y: target.y };
+  }
+
   removePlayer(socketId) {
     this.players.delete(socketId);
     // Drop stale known-state so a returning player is treated as unseen
