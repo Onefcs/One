@@ -2753,9 +2753,62 @@ function _renderGramShopPanel() {
 function _gramShopPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
-  const armorLine  = pkg.armor  ? `<li>Полный ${pkg.armor} сет +8</li>` : '';
-  const weaponLine = pkg.weapon ? `<li>Оружие ${pkg.weapon} +8 (по классу)</li>` : '';
-  const spLine     = pkg.bonusSP ? `<li>+${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</li>` : '';
+
+  const _ARMOR_ICONS = {
+    common:   ['arm/ch.png','arm/ct.png','arm/cg.png','arm/cb.png','acs/cr.png','acs/cp.png'],
+    uncommon: ['arm/uh.png','arm/ut.png','arm/ug.png','arm/ub.png','acs/ur.png','acs/up.png'],
+    rare:     ['arm/rh.png','arm/rt.png','arm/rg.png','arm/rb.png','acs/rr.png','acs/rp.png'],
+  };
+  const _WEAPON_ICONS = {
+    common:   'wep/tw1.png',
+    uncommon: 'wep/tw2.png',
+    rare:     'wep/tw3.png',
+  };
+  const _POTION_ICONS = ['potion/hp.png','potion/exp.png','potion/gold.png','potion/regen.png','potion/atkspeed.png','potion/atk.png'];
+
+  const iStyle = 'width:28px;height:28px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)';
+  const iWrap  = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:8px';
+
+  // gold row
+  let iconsHtml = `<div style="${iWrap}">
+    <img src="/images/nexum-coin.png" style="${iStyle}" title="Золото">
+    <span style="color:#f0d060;font-size:12px;font-weight:700;margin-left:2px">${kGold} зол.</span>
+  </div>`;
+
+  // potions row
+  iconsHtml += `<div style="${iWrap}">
+    ${_POTION_ICONS.map(p => `<img src="/images/${p}" style="${iStyle}" title="Зелье">`).join('')}
+    <span style="color:#8899bb;font-size:11px;margin-left:2px">×${pkg.potions}</span>
+  </div>`;
+
+  // armor row
+  if (pkg.armor) {
+    const key = pkg.armor.toLowerCase();
+    const icons = _ARMOR_ICONS[key] || [];
+    iconsHtml += `<div style="${iWrap}">
+      ${icons.map(i => `<img src="/images/${i}" style="${iStyle}" title="${pkg.armor}">`).join('')}
+      <span style="color:#8899bb;font-size:11px;margin-left:2px">+8</span>
+    </div>`;
+  }
+
+  // weapon row
+  if (pkg.weapon) {
+    const key = pkg.weapon.toLowerCase();
+    const wIcon = _WEAPON_ICONS[key] || 'wep/tw1.png';
+    iconsHtml += `<div style="${iWrap}">
+      <img src="/images/${wIcon}" style="${iStyle}" title="${pkg.weapon} оружие">
+      <span style="color:#8899bb;font-size:11px;margin-left:2px">×1 +8 (по классу)</span>
+    </div>`;
+  }
+
+  // bonus SP row
+  if (pkg.bonusSP) {
+    iconsHtml += `<div style="${iWrap}">
+      <span style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(150,80,255,.15);border:1px solid rgba(150,80,255,.3);border-radius:4px;font-size:13px">✨</span>
+      <span style="color:#cc88ff;font-size:11px;margin-left:2px">+${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</span>
+    </div>`;
+  }
+
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
@@ -2768,11 +2821,7 @@ function _gramShopPkgHtml(pkg, bal) {
         ${canAfford ? 'Купить' : 'Мало'}
       </button>
     </div>
-    <ul class="gram-shop-list">
-      <li>${kGold} золота</li>
-      <li>${pkg.potions}× каждое зелье (6 видов)</li>
-      ${armorLine}${weaponLine}${spLine}
-    </ul>
+    ${iconsHtml}
   </div>`;
 }
 
