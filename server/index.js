@@ -547,13 +547,16 @@ io.on('connection', socket => {
   let _myClanName = null;
   let _myClanIcon = null;
   let _gramBalance = 0;
+  let _nexumBalance = 0;
   playerFloorMap.set(socket.id, currentFloor);
+
+  const NEXUM_DROP_CHANCE = [0, 0.001, 0.002, 0.005, 0.01, 0.02];
 
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = setInterval(() => {
       if (!authed || !_lastStats) return;
-      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance };
+      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance };
       if (currentRoom) {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
@@ -579,6 +582,7 @@ io.on('connection', socket => {
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
       _gramBalance = doc.savedData?.gramBalance || 0;
+      _nexumBalance = doc.savedData?.nexumBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
       // Kick any existing session for this account
       const _prevSid = activeSessions.get(telegramId);
@@ -597,7 +601,7 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] } });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -617,6 +621,7 @@ io.on('connection', socket => {
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
       _gramBalance = doc.savedData?.gramBalance || 0;
+      _nexumBalance = doc.savedData?.nexumBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
       // Kick any existing session for this account
       const _prevSid2 = activeSessions.get(telegramId);
@@ -635,7 +640,7 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] } });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -866,9 +871,16 @@ io.on('connection', socket => {
         ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
+      const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[currentFloor] || 0) ? 1 : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
+
+      if (nexumDrop > 0) {
+        _nexumBalance += nexumDrop;
+        const _saveNexum = { ..._lastStats, nexumBalance: _nexumBalance };
+        PlayerModel.findByIdAndUpdate(authed?._id, { savedData: _saveNexum }).catch(() => {});
+      }
 
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -886,6 +898,7 @@ io.on('connection', socket => {
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
+          nexum: nexumDrop,
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
@@ -906,7 +919,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone,
+          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone, nexum: nexumDrop,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
@@ -956,9 +969,15 @@ io.on('connection', socket => {
       const bossStone  = result.isBoss ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
+      const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[currentFloor] || 0) ? 1 : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
+      if (nexumDrop2 > 0) {
+        _nexumBalance += nexumDrop2;
+        const _saveNexum2 = { ..._lastStats, nexumBalance: _nexumBalance };
+        PlayerModel.findByIdAndUpdate(authed?._id, { savedData: _saveNexum2 }).catch(() => {});
+      }
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = result.xp / totalMembers, goldShare = result.gold / totalMembers;
@@ -971,6 +990,7 @@ io.on('connection', socket => {
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
+          nexum: nexumDrop2,
         });
         memberIds.forEach(mid => io.to(mid).emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
@@ -985,7 +1005,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone,
+          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone, nexum: nexumDrop2,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       }

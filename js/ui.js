@@ -485,6 +485,8 @@ function showFloorInfo(floor) {
   // Multipliers matching actual game logic
   const goldBonus = (floor >= 2 && floor <= 5) ? 3 : 1;
   const fMult     = (floor >= 1 && floor <= 5) ? floor : 1;
+  const NEXUM_CHANCES = [0, 0.1, 0.2, 0.5, 1, 2];
+  const nexumChancePct = NEXUM_CHANCES[floor] || 0;
   function _fmtPct(base) {
     const v = base * fMult;
     if (v >= 1)    return v.toFixed(1).replace(/\.0$/, '') + '%';
@@ -587,6 +589,11 @@ function showFloorInfo(floor) {
           <div class="fi-drop">
             <span class="fi-drop-lbl">Золото</span>
             <span class="fi-drop-val">${goldText}</span>
+          </div>
+          <div class="fi-drop">
+            <span class="fi-drop-icon"><img src="/images/nexum-coin.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
+            <span class="fi-drop-lbl" style="color:#00e5ff">Nexum</span>
+            <span class="fi-drop-val" style="color:#00e5ff">&times;1 · <b style="color:#00e5ff">${nexumChancePct}%</b></span>
           </div>
           ${stoneRow}
         </div>
@@ -758,6 +765,7 @@ let _avBgGrad = null, _avBgColor = '';
 let _uiBtnGrads = null;
 // Cached character name text width (measureText is expensive; name never changes mid-session)
 let _hdrNameW = 0, _hdrNameStr = '';
+let _nexumIconImg = null;
 
 function drawHeader() {
   if (!player || !dungeon) return;
@@ -942,6 +950,20 @@ function drawHeader() {
   drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#f1c40f');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#f1c40f';
   ctx.fillText(p.gold, stxH + 13, 24);
+  stxH += 13 + ctx.measureText(String(p.gold)).width + 8;
+  // Nexum balance
+  const _nxBal = window._nexumBalance || 0;
+  if (_nxBal > 0 || true) {
+    const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin.png'; return i; })());
+    if (_nxImg.complete && _nxImg.naturalWidth > 0) {
+      ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
+    } else {
+      ctx.fillStyle = '#00e5ff'; ctx.font = `bold 9px ${F}`;
+      ctx.fillText('N', stxH + 2, 24);
+    }
+    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#00e5ff';
+    ctx.fillText(_nxBal, stxH + 14, 24);
+  }
   ctx.textBaseline = 'alphabetic';
 
   // Separator
