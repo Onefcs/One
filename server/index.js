@@ -462,6 +462,24 @@ const MAX_FLOOR = 20;
 const floorRooms = new Map();
 
 // ── Battle Power (БМ) formula ─────────────────────────────────────────────────
+// Persists only the given savedData sub-fields (via Mongo dot-notation
+// $set), never the whole savedData object. Several call sites used to do
+// `findByIdAndUpdate(id, { savedData: {...} })`, which replaces the entire
+// nested object — silently wiping any field that call didn't happen to
+// know about. vipLevel/vipDeposited/vipPending (set only by the GRAM
+// deposit-confirmation flow) and nexumBalance (set only on a Nexum drop)
+// were never part of the client's regular save payload, so the very next
+// ordinary save (loot pickup, quest, anything) erased them. Dot-notation
+// $set only touches the keys actually passed here, leaving everything
+// else already in the document untouched.
+function _persistSavedFields(authed, fields, extra) {
+  if (!authed) return;
+  const set = {};
+  Object.keys(fields).forEach(k => { if (fields[k] !== undefined) set[`savedData.${k}`] = fields[k]; });
+  if (extra) Object.keys(extra).forEach(k => { set[k] = extra[k]; });
+  PlayerModel.findByIdAndUpdate(authed._id, { $set: set }).catch(() => {});
+}
+
 function calcBM(s) {
   if (!s) return 0;
   const upg = s.upgrades || {};
@@ -618,7 +636,7 @@ io.on('connection', socket => {
       }
       const bmNow = calcBM(_lastStats);
       authed.bm = bmNow;
-      PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData, bm: bmNow }).catch(() => {});
+      _persistSavedFields(authed, saveData, { bm: bmNow });
     }, 60000);
   }
 
@@ -1079,8 +1097,7 @@ io.on('connection', socket => {
 
       if (nexumDrop > 0) {
         _nexumBalance += nexumDrop;
-        const _saveNexum = { ..._lastStats, nexumBalance: _nexumBalance };
-        PlayerModel.findByIdAndUpdate(authed?._id, { savedData: _saveNexum }).catch(() => {});
+        _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       }
 
       if (memberIds.length > 0) {
@@ -1176,8 +1193,7 @@ io.on('connection', socket => {
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
       if (nexumDrop2 > 0) {
         _nexumBalance += nexumDrop2;
-        const _saveNexum2 = { ..._lastStats, nexumBalance: _nexumBalance };
-        PlayerModel.findByIdAndUpdate(authed?._id, { savedData: _saveNexum2 }).catch(() => {});
+        _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       }
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -1363,9 +1379,10 @@ io.on('connection', socket => {
     if (authed) {
       _lastStats = stats;
       const bm = calcBM(stats);
-      const saveData = { ...stats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance };
       authed.bm = bm;
-      PlayerModel.findByIdAndUpdate(authed._id, { savedData: saveData, bm }).catch(() => {});
+      _persistSavedFields(authed,
+        { ...stats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
+        { bm });
     }
   });
 
