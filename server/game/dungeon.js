@@ -11,7 +11,9 @@ function seededRng(seed) {
 }
 
 function generateDungeon(lvl) {
-  const rng = seededRng(lvl * 1337 + 777);
+  // Floors 1 and 2 swap their map layouts
+  const mapSeed = lvl === 1 ? 2 : lvl === 2 ? 1 : lvl;
+  const rng = seededRng(mapSeed * 1337 + 777);
   const DW = 110, DH = 84;
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
 
