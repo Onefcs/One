@@ -8,9 +8,34 @@ const mongoose = require('mongoose');
 const PlayerModel = require('./models/Player');
 const ClanModel   = require('./models/Clan');
 const GramTxModel = require('./models/GramTx');
+const MarketListingModel = require('./models/MarketListing');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
 const { VIP_THRESHOLDS, VIP_BONUSES } = require('../shared/definitions');
+
+// ── Market (player-to-player item trading for GRAM) ────────────────────────
+const MARKET_MIN_PRICE   = 0.1;
+const MARKET_MAX_PRICE   = 1000;
+const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
+const MARKET_MAX_ACTIVE  = 20;     // active listings per seller
+const MARKET_LIST_COOLDOWN_MS = 3000;
+function _round2(n) { return Math.round(n * 100) / 100; }
+function _marketListingData(l) {
+  return {
+    id: l._id.toString(), sellerId: l.sellerId, sellerUsername: l.sellerUsername,
+    item: l.item, price: l.price, createdAt: l.createdAt,
+  };
+}
+function _marketHistoryData(l, myId) {
+  const asSeller = l.sellerId === myId;
+  return {
+    id: l._id.toString(),
+    item: l.item, price: l.price, status: l.status,
+    role: asSeller ? 'sell' : 'buy',
+    counterpart: asSeller ? (l.buyerUsername || null) : l.sellerUsername,
+    createdAt: l.createdAt, soldAt: l.soldAt,
+  };
+}
 
 // Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
 const _TG_TOKEN    = process.env.TG_BOT_TOKEN    || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
@@ -548,6 +573,7 @@ io.on('connection', socket => {
   let _myClanIcon = null;
   let _gramBalance = 0;
   let _nexumBalance = 0;
+  let _lastMarketListAt = 0;
   playerFloorMap.set(socket.id, currentFloor);
 
   const NEXUM_DROP_CHANCE = [0, 0.001, 0.002, 0.005, 0.01, 0.02];
@@ -697,6 +723,152 @@ io.on('connection', socket => {
         .sort({ createdAt: -1 }).limit(30).lean();
       socket.emit('gramHistory', { txs: txs.map(_txData) });
     } catch (err) { console.error('gramGetHistory:', err); }
+  });
+
+  // ── Market ────────────────────────────────────────────────────────────────
+  // GRAM movement is fully server-authoritative (same balance/cache pattern as
+  // the wallet above). The item itself is trusted from the client at the same
+  // level as the rest of the inventory system — this game doesn't otherwise
+  // keep a server-side copy of item stats to validate against.
+  socket.on('marketBrowse', async () => {
+    if (!authed) return;
+    try {
+      const rows = await MarketListingModel.find({ status: 'active', sellerId: { $ne: authed.telegramId } })
+        .sort({ createdAt: -1 }).limit(200).lean();
+      socket.emit('marketBrowseData', { listings: rows.map(_marketListingData) });
+    } catch (err) { console.error('marketBrowse:', err); }
+  });
+
+  socket.on('marketMyListings', async () => {
+    if (!authed) return;
+    try {
+      const rows = await MarketListingModel.find({ status: 'active', sellerId: authed.telegramId })
+        .sort({ createdAt: -1 }).limit(MARKET_MAX_ACTIVE).lean();
+      socket.emit('marketMyListingsData', { listings: rows.map(_marketListingData) });
+    } catch (err) { console.error('marketMyListings:', err); }
+  });
+
+  socket.on('marketHistory', async () => {
+    if (!authed) return;
+    try {
+      const rows = await MarketListingModel.find({
+        status: { $in: ['sold', 'cancelled'] },
+        $or: [{ sellerId: authed.telegramId }, { buyerId: authed.telegramId }],
+      }).sort({ soldAt: -1, createdAt: -1 }).limit(50).lean();
+      socket.emit('marketHistoryData', { entries: rows.map(l => _marketHistoryData(l, authed.telegramId)) });
+    } catch (err) { console.error('marketHistory:', err); }
+  });
+
+  // marketList failures use a dedicated event (not the shared marketError) —
+  // the client optimistically removes the item from inventory before this
+  // round-trip completes, and needs to know specifically that THIS request
+  // failed to roll that back, without misfiring on an unrelated buy/cancel
+  // error that happens to land while a listing request is in flight.
+  socket.on('marketList', async ({ item, price } = {}) => {
+    if (!authed) return;
+    const now = Date.now();
+    if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
+      return socket.emit('marketListError', { msg: 'Слишком часто — подождите немного' });
+    }
+    const p = Number(price);
+    if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
+      return socket.emit('marketListError', { msg: `Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM` });
+    }
+    if (!item || typeof item !== 'object' || Array.isArray(item)
+      || typeof item.id !== 'string' || !item.id || item.id.length > 40
+      || typeof item.name !== 'string' || !item.name || item.name.length > 60
+      || JSON.stringify(item).length > 2000) {
+      return socket.emit('marketListError', { msg: 'Некорректный предмет' });
+    }
+    try {
+      const activeCount = await MarketListingModel.countDocuments({ sellerId: authed.telegramId, status: 'active' });
+      if (activeCount >= MARKET_MAX_ACTIVE) {
+        return socket.emit('marketListError', { msg: `Максимум ${MARKET_MAX_ACTIVE} активных лотов` });
+      }
+      _lastMarketListAt = now;
+      const listing = await MarketListingModel.create({
+        sellerId: authed.telegramId, sellerUsername: authed.username,
+        item, price: _round2(p), status: 'active',
+      });
+      socket.emit('marketListed', { listing: _marketListingData(listing) });
+    } catch (err) {
+      console.error('marketList:', err);
+      socket.emit('marketListError', { msg: 'Ошибка сервера' });
+    }
+  });
+
+  socket.on('marketCancel', async ({ listingId } = {}) => {
+    if (!authed || !listingId) return;
+    try {
+      const listing = await MarketListingModel.findOneAndUpdate(
+        { _id: listingId, sellerId: authed.telegramId, status: 'active' },
+        { status: 'cancelled', soldAt: new Date() },
+        { new: false }, // return the pre-update doc (still has the item)
+      );
+      if (!listing) return socket.emit('marketError', { msg: 'Лот не найден' });
+      socket.emit('marketCancelled', { listingId, item: listing.item });
+    } catch (err) { console.error('marketCancel:', err); }
+  });
+
+  socket.on('marketBuy', async ({ listingId } = {}) => {
+    if (!authed || !listingId) return;
+    try {
+      const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
+      if (!listing) return socket.emit('marketError', { msg: 'Лот уже продан или снят' });
+      if (listing.sellerId === authed.telegramId) return socket.emit('marketError', { msg: 'Нельзя купить свой лот' });
+      if (listing.price > _gramBalance) return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
+
+      // Atomically claim the listing first so two simultaneous buyers can't both win it
+      const claimed = await MarketListingModel.findOneAndUpdate(
+        { _id: listingId, status: 'active' },
+        { status: 'sold', buyerId: authed.telegramId, buyerUsername: authed.username, soldAt: new Date() },
+        { new: true },
+      );
+      if (!claimed) return socket.emit('marketError', { msg: 'Лот уже продан или снят' });
+
+      // Re-check and deduct with no `await` in between — a rapid double-buy on
+      // this same connection (two overlapping marketBuy handlers) would otherwise
+      // both pass the earlier balance check before either deduction landed and
+      // together spend more than the account holds, same risk the gap between
+      // check and write would create in gramWithdrawRequest if it awaited there.
+      if (claimed.price > _gramBalance) {
+        await MarketListingModel.updateOne(
+          { _id: listingId },
+          { status: 'active', buyerId: null, buyerUsername: null, soldAt: null },
+        ).catch(err => console.error('marketBuy release claim:', err));
+        return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
+      }
+      _gramBalance -= claimed.price;
+      _gramBalanceCache.set(authed.telegramId, _gramBalance);
+      const buyerDoc = await PlayerModel.findById(authed._id);
+      const buyerSaved = buyerDoc.savedData || {};
+      buyerSaved.gramBalance = _gramBalance;
+      buyerDoc.savedData = buyerSaved;
+      buyerDoc.markModified('savedData');
+      await buyerDoc.save();
+
+      // Credit seller (10% fee burned — not paid to anyone), whether online or not
+      const payout = _round2(claimed.price * (1 - MARKET_FEE_PCT));
+      try {
+        const sellerDoc = await PlayerModel.findOne({ telegramId: claimed.sellerId });
+        if (sellerDoc) {
+          const sellerSaved = sellerDoc.savedData || {};
+          const sellerNewBal = _round2((sellerSaved.gramBalance || 0) + payout);
+          sellerSaved.gramBalance = sellerNewBal;
+          sellerDoc.savedData = sellerSaved;
+          sellerDoc.markModified('savedData');
+          await sellerDoc.save();
+          _gramBalanceCache.set(claimed.sellerId, sellerNewBal);
+          io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
+          io.to(`tg_${claimed.sellerId}`).emit('marketSold', {
+            itemName: claimed.item?.name || '', price: claimed.price, payout,
+            buyerUsername: authed.username, newBalance: sellerNewBal,
+          });
+        }
+      } catch (err) { console.error('marketBuy seller payout:', err); }
+
+      socket.emit('marketBought', { listingId, item: claimed.item, newBalance: _gramBalance });
+    } catch (err) { console.error('marketBuy:', err); }
   });
 
   socket.on('getReferrals', async () => {

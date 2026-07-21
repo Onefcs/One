@@ -100,6 +100,9 @@
 <!-- VIP button (below rating button) -->
 <button id="vip-btn" onclick="openVipPanel()" style="display:none">💎 VIP</button>
 
+<!-- Market button (below VIP button) -->
+<button id="market-btn" onclick="openMarketPanel()" style="display:none">🏪 Маркет</button>
+
 <!-- Rating overlay panel -->
 <div id="rating-panel" style="display:none">
   <div class="rating-header">
@@ -122,6 +125,20 @@
     <button class="vip-close" onclick="closeVipPanel()">✕</button>
   </div>
   <div id="vip-body" class="vip-body"></div>
+</div>
+
+<!-- Market overlay panel -->
+<div id="market-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title" style="color:#3ef07a">🏪 Маркет</div>
+    <button class="vip-close" onclick="closeMarketPanel()">✕</button>
+  </div>
+  <div class="rating-tabs" style="position:absolute;top:50px;left:16px;right:16px;margin:0">
+    <button class="rating-tab active" id="mtab-lots"    onclick="switchMarketTab('lots')">Лоты</button>
+    <button class="rating-tab"        id="mtab-mine"    onclick="switchMarketTab('mine')">Мои лоты</button>
+    <button class="rating-tab"        id="mtab-history" onclick="switchMarketTab('history')">История</button>
+  </div>
+  <div id="market-body" class="vip-body" style="top:96px"></div>
 </div>
 
 <!-- Chat -->

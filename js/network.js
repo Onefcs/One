@@ -36,6 +36,7 @@ function netConnect(onReady) {
   });
 
   _initGramHandlers(socket);
+  _initMarketHandlers(socket);
 
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
 
@@ -902,6 +903,7 @@ function _finishOnlineStart() {
   if (chatBtn) chatBtn.style.display = 'flex';
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
+  if (typeof showMarketBtn === 'function') showMarketBtn();
   state = 'playing';
   setTab(0);
 }
@@ -1016,6 +1018,26 @@ function netGetReferrals() {
   if (socket?.connected) socket.emit('getReferrals');
 }
 
+// ── Market ──────────────────────────────────────────────────────────────────
+function netMarketBrowse() {
+  if (socket?.connected) socket.emit('marketBrowse');
+}
+function netMarketMyListings() {
+  if (socket?.connected) socket.emit('marketMyListings');
+}
+function netMarketHistory() {
+  if (socket?.connected) socket.emit('marketHistory');
+}
+function netMarketList(item, price) {
+  if (socket?.connected) socket.emit('marketList', { item, price });
+}
+function netMarketCancel(listingId) {
+  if (socket?.connected) socket.emit('marketCancel', { listingId });
+}
+function netMarketBuy(listingId) {
+  if (socket?.connected) socket.emit('marketBuy', { listingId });
+}
+
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
@@ -1069,6 +1091,38 @@ function _initGramHandlers(s) {
     }
     if (typeof renderVipPanel === 'function') renderVipPanel();
     netSaveProgressNow();
+  });
+}
+
+// Incoming Market events
+function _initMarketHandlers(s) {
+  s.on('marketBrowseData', ({ listings }) => {
+    if (typeof onMarketBrowseData === 'function') onMarketBrowseData(listings || []);
+  });
+  s.on('marketMyListingsData', ({ listings }) => {
+    if (typeof onMarketMyListingsData === 'function') onMarketMyListingsData(listings || []);
+  });
+  s.on('marketHistoryData', ({ entries }) => {
+    if (typeof onMarketHistoryData === 'function') onMarketHistoryData(entries || []);
+  });
+  s.on('marketListed', ({ listing }) => {
+    if (typeof onMarketListed === 'function') onMarketListed(listing);
+  });
+  s.on('marketCancelled', ({ listingId, item }) => {
+    if (typeof onMarketCancelled === 'function') onMarketCancelled(listingId, item);
+  });
+  s.on('marketBought', ({ listingId, item, newBalance }) => {
+    window._gramBalance = newBalance;
+    if (typeof onMarketBought === 'function') onMarketBought(listingId, item);
+  });
+  s.on('marketSold', (data) => {
+    if (typeof onMarketSold === 'function') onMarketSold(data);
+  });
+  s.on('marketError', ({ msg }) => {
+    if (typeof onMarketError === 'function') onMarketError(msg);
+  });
+  s.on('marketListError', ({ msg }) => {
+    if (typeof onMarketListError === 'function') onMarketListError(msg);
   });
 }
 
