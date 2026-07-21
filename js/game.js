@@ -779,6 +779,65 @@ function _drawPlayerNameOnUI() {
   if (pvpMode) drawIconCtx(_uiCtx, 'pvpOn', sx + tw / 2 + 8, sy - 3, 9, '#f55');
 }
 
+// Other players can show several distinct clans on screen at once, so unlike
+// the single-slot cache above this is keyed by icon id (+ DPR, in case it
+// changes on resize). Still just a handful of small canvases in the worst case.
+const _otherClanIconCv = new Map();
+function _getOtherClanIconCv(iconId) {
+  const px = Math.ceil(DPR);
+  const key = (iconId || 1) + '@' + px;
+  let cv = _otherClanIconCv.get(key);
+  if (cv) return cv;
+  cv = document.createElement('canvas');
+  cv.width = 16 * px; cv.height = 16 * px;
+  drawClanIconOnCtx(cv.getContext('2d'), iconId || 1, 8 * px, 8 * px, px);
+  _otherClanIconCv.set(key, cv);
+  return cv;
+}
+
+// Other players' username + clan tag, drawn on the 2D overlay at native
+// screen resolution every frame — mirrors _drawPlayerNameOnUI above so
+// remote players read exactly as crisp and jitter-free as the local player,
+// instead of the blurry/wobbly look a WebGL-scaled PIXI.Text gave them
+// (see pixi-world.js _getOtherPlayer). p._nameBarTop is written each frame
+// by _updateOtherPlayers right before this runs.
+function _drawOtherPlayerNamesOnUI() {
+  if (!otherPlayers.size) return;
+  otherPlayers.forEach(p => {
+    if (p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
+    const barTop = p._nameBarTop ?? -20;
+    const nameY  = p.y + barTop - 3;
+    const sx = (p.x - _lastCamX) * ZOOM;
+    const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
+    const uname = (p.username || '?').slice(0, 16);
+
+    ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    if (uname !== p._prevUname) { p._unameTw = ctx.measureText(uname).width; p._prevUname = uname; }
+
+    const cname = p.clanName || '';
+    if (cname) {
+      ctx.font = 'bold 9px system-ui, Arial';
+      if (cname !== p._prevClanName) { p._clanTw = ctx.measureText(cname).width; p._prevClanName = cname; }
+      const iconDisp = 14, gap = 3;
+      const lineX = Math.round(sx - (iconDisp + gap + p._clanTw) / 2);
+      const lineY = Math.round(sy - 16);
+      ctx.drawImage(_getOtherClanIconCv(p.clanIcon || 1), lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+      ctx.strokeText(cname, lineX + iconDisp + gap, lineY);
+      ctx.fillStyle = '#f93';
+      ctx.fillText(cname, lineX + iconDisp + gap, lineY);
+      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+      ctx.font = 'bold 10px system-ui, Arial';
+    }
+
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+    ctx.strokeText(uname, sx, sy);
+    ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
+    ctx.fillText(uname, sx, sy);
+  });
+}
+
 // Render all HUD/UI elements to the overlay canvas (called every frame from render())
 function _renderUI() {
   if (!_uiCtx) return;
@@ -849,6 +908,7 @@ function render(dt, ts) {
 
   // Player name + joystick: 60fps (smooth, cheap)
   if (player && dungeon) _drawPlayerNameOnUI();
+  if (dungeon) _drawOtherPlayerNamesOnUI();
   if (activeTab === 0) drawJoystick();
 
   // Safe zone HUD label (on top of HUD)
