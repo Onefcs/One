@@ -1188,7 +1188,7 @@ function respawnPlayer() {
 function restartGame() {
   if (state !== 'dead') return;
   document.getElementById('death-modal').style.display = 'none';
-  targetId = null; targetIsPlayer = false; pvpMode = false;
+  targetId = null; targetIsPlayer = false; pvpMode = false; autoAttackMode = false;
   serverEnemies = []; otherPlayers = new Map();
   npcs = []; nearNpc = null;
   _tileChunks.clear();

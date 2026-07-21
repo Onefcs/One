@@ -98,10 +98,16 @@
 </button>
 
 <!-- VIP button (below rating button) -->
-<button id="vip-btn" onclick="openVipPanel()" style="display:none">💎 VIP</button>
+<button id="vip-btn" onclick="openVipPanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></svg>
+  VIP
+</button>
 
 <!-- Market button (below VIP button) -->
-<button id="market-btn" onclick="openMarketPanel()" style="display:none">🏪 Маркет</button>
+<button id="market-btn" onclick="openMarketPanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+  Маркет
+</button>
 
 <!-- Rating overlay panel -->
 <div id="rating-panel" style="display:none">
@@ -121,7 +127,7 @@
 <!-- VIP overlay panel -->
 <div id="vip-panel" style="display:none">
   <div class="vip-header">
-    <div class="vip-title">💎 VIP Система</div>
+    <div class="vip-title"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></svg>VIP Система</div>
     <button class="vip-close" onclick="closeVipPanel()">✕</button>
   </div>
   <div id="vip-body" class="vip-body"></div>
@@ -130,7 +136,7 @@
 <!-- Market overlay panel -->
 <div id="market-panel" style="display:none">
   <div class="vip-header">
-    <div class="vip-title" style="color:#3ef07a">🏪 Маркет</div>
+    <div class="vip-title" style="color:#3ef07a"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Маркет</div>
     <button class="vip-close" onclick="closeMarketPanel()">✕</button>
   </div>
   <div class="rating-tabs" style="position:absolute;top:50px;left:16px;right:16px;margin:0">

@@ -731,10 +731,23 @@ function setInvTab(n) {
   if (n === 2) updateSkillsUI();
 }
 
+// Chat / VIP / Market / Rating float above the world canvas and only make
+// sense while actually playing — hidden on every other bottom-nav tab.
+// dataset.shown gates this so a button that hasn't been unlocked yet
+// (before login/char-select finishes) never gets forced visible.
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'rating-btn'];
+function _syncGameOnlyBtns(n) {
+  _GAME_ONLY_BTNS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.dataset.shown === '1') el.style.display = (n === 0) ? 'flex' : 'none';
+  });
+}
+
 function setTab(n) {
   activeTab = n;
   document.querySelectorAll('.nav-tab').forEach((el, i) => el.classList.toggle('active', i === n));
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); });
+  _syncGameOnlyBtns(n);
   if (n !== 0) {
     joy.active = false; joy.dx = 0; joy.dy = 0;
     const tb = document.getElementById('npc-talk-btn');
@@ -2042,7 +2055,7 @@ function _positionRatingBtn() {
 
 function showRatingBtn() {
   const btn = document.getElementById('rating-btn');
-  if (btn) { btn.style.display = 'flex'; _positionRatingBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionRatingBtn(); }
 }
 
 function openRatingPanel() {
@@ -2154,7 +2167,7 @@ function _positionVipBtn() {
 
 function showVipBtn() {
   const btn = document.getElementById('vip-btn');
-  if (btn) { btn.style.display = 'flex'; _positionVipBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionVipBtn(); }
 }
 
 function openVipPanel() {
@@ -2298,7 +2311,7 @@ function _positionMarketBtn() {
 
 function showMarketBtn() {
   const btn = document.getElementById('market-btn');
-  if (btn) { btn.style.display = 'flex'; _positionMarketBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionMarketBtn(); }
 }
 
 function openMarketPanel() {

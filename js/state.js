@@ -47,8 +47,8 @@ let partyMembers = [];
 // Incoming invite popup { fromId, fromName, timer }
 let partyInvitePending = null;
 
-// Attack mode
-let autoAttackMode = true;
+// Attack mode — manual by default; player switches to auto explicitly
+let autoAttackMode = false;
 
 // Clan state (null = not in a clan)
 let clanData = null;

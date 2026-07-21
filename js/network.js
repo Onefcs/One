@@ -900,7 +900,7 @@ function _finishOnlineStart() {
   document.getElementById('bottom-nav').style.display = 'block';
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   const chatBtn = document.getElementById('chat-btn');
-  if (chatBtn) chatBtn.style.display = 'flex';
+  if (chatBtn) { chatBtn.dataset.shown = '1'; chatBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
   if (typeof showMarketBtn === 'function') showMarketBtn();
