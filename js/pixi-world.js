@@ -84,6 +84,27 @@ function pixiClearEntityPools() {
   Object.keys(_pTex).forEach(k => delete _pTex[k]);
 }
 
+// Enemies/other-players are only bulk-freed on floor/raid change (above). Within
+// a single floor visit, mobs die and respawn with new ids and other players
+// enter/leave your AOI continuously — without this, their pooled Container is
+// never destroyed, so _enemyPool/_otherPool grow for as long as the floor visit
+// lasts and the per-frame visibility sweep (_updateEnemies/_updateOtherPlayers)
+// keeps iterating that ever-growing history instead of just what's on screen.
+// The growth tracks play time and exploration, so it reads as "gets janky the
+// longer/more I move around" rather than a fixed cost.
+function pixiRemoveEnemy(id) {
+  const obj = _enemyPool.get(id);
+  if (!obj) return;
+  obj.ct.destroy({ children: true });
+  _enemyPool.delete(id);
+}
+function pixiRemoveOtherPlayer(sid) {
+  const obj = _otherPool.get(sid);
+  if (!obj) return;
+  obj.ct.destroy({ children: true });
+  _otherPool.delete(sid);
+}
+
 function pixiResize(w, h, dpr) {
   if (!_pixiApp) return;
   _pixiApp.renderer.resolution = dpr;

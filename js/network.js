@@ -82,6 +82,7 @@ function netConnect(onReady) {
 
   socket.on('playerLeft', ({ id }) => {
     otherPlayers.delete(id);
+    if (typeof pixiRemoveOtherPlayer === 'function') pixiRemoveOtherPlayer(id);
   });
 
   socket.on('playerChar', ({ id, type }) => {
@@ -162,7 +163,12 @@ function netConnect(onReady) {
       // Remove players that left AOI or disconnected
       const pids = new Set();
       for (let i = 0; i < players.length; i++) pids.add(players[i].id);
-      otherPlayers.forEach((_, id) => { if (!pids.has(id)) otherPlayers.delete(id); });
+      otherPlayers.forEach((_, id) => {
+        if (!pids.has(id)) {
+          otherPlayers.delete(id);
+          if (typeof pixiRemoveOtherPlayer === 'function') pixiRemoveOtherPlayer(id);
+        }
+      });
     }
 
     // Delta update: only changed enemies arrive — add or update, never remove
@@ -349,6 +355,7 @@ function netConnect(onReady) {
       e._deathTimer = dd.cols / dd.fps + 0.1;
     } else {
       serverEnemiesMap.delete(id);
+      if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(id);
       let j = 0;
       for (let i = 0; i < serverEnemies.length; i++) {
         if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
@@ -507,9 +514,11 @@ function netConnect(onReady) {
     if (!inRaid) return;
     // Merge enemy list — preserve ALL client-side animation state
     const prevMap = new Map(serverEnemies.map(e => [e.id, e]));
+    const staleIds = new Set(prevMap.keys());
     serverEnemies.length = 0;
     serverEnemiesMap.clear();
     (enemies || []).forEach(se => {
+      staleIds.delete(se.id);
       const prev = prevMap.get(se.id);
       const e = { ...se, targetX: se.x, targetY: se.y };
       if (prev) {
@@ -525,6 +534,8 @@ function netConnect(onReady) {
       serverEnemies.push(e);
       serverEnemiesMap.set(se.id, e);
     });
+    // Enemies present last tick but absent now (killed, or wave cleared) — free their pooled sprite
+    if (typeof pixiRemoveEnemy === 'function') staleIds.forEach(id => pixiRemoveEnemy(id));
     // Update other raid players — use targetX/Y only so lerp detects movement
     const myId = socket.id;
     (players || []).forEach(p => {
@@ -549,6 +560,8 @@ function netConnect(onReady) {
 
   socket.on('raidWave', ({ wave, totalWaves, isBoss, enemies }) => {
     if (!inRaid) return;
+    // Previous wave's enemies are all gone now — free their pooled sprites
+    if (typeof pixiRemoveEnemy === 'function') serverEnemiesMap.forEach((_, id) => pixiRemoveEnemy(id));
     serverEnemies.length = 0;
     serverEnemiesMap.clear();
     (enemies || []).forEach(se => {
@@ -603,6 +616,7 @@ function netConnect(onReady) {
     const py = ey ?? (e ? e.y : player?.y ?? 0);
     spawnBurst(px, py, isBoss ? '#ff3333' : '#f80', isBoss ? 14 : 8);
     serverEnemiesMap.delete(id);
+    if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(id);
     let j = 0;
     for (let i = 0; i < serverEnemies.length; i++) {
       if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
@@ -664,7 +678,9 @@ function netConnect(onReady) {
     inRaid = false;
     _raidWaveNotif = null;
     serverEnemies = [];
+    serverEnemiesMap.clear();
     otherPlayers = new Map();
+    if (typeof pixiClearEntityPools === 'function') pixiClearEntityPools();
     otherProjs = [];
     partyMembers = [];
     partyInvitePending = null;

@@ -722,7 +722,11 @@ function update(dt) {
     let j = 0;
     for (let i = 0; i < serverEnemies.length; i++) {
       const e = serverEnemies[i];
-      if (e._deathTimer !== undefined && e._deathTimer <= 0) { serverEnemiesMap.delete(e.id); continue; }
+      if (e._deathTimer !== undefined && e._deathTimer <= 0) {
+        serverEnemiesMap.delete(e.id);
+        if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(e.id);
+        continue;
+      }
       serverEnemies[j++] = e;
     }
     serverEnemies.length = j;
