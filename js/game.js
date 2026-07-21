@@ -101,6 +101,8 @@ let _lastCamX = 0, _lastCamY = 0;
 let _lastPlayerUsedSprite = false;
 // measureText cache for player name label — avoids per-frame call when name unchanged
 let _prevDisplayName = '', _cachedNameTw = 0;
+// Clan tag cache: icon pre-rendered to offscreen canvas; blit with drawImage (1 call vs 256 fillRects)
+let _clanIconCv = null, _clanIconKey = null, _prevClanName = '', _cachedClanTw = 0;
 // last damage dealt by player — used for optimistic kill prediction on arrow hit
 let _lastOwnDmg = 0;
 
@@ -742,19 +744,28 @@ function _drawPlayerNameOnUI() {
   if (displayName !== _prevDisplayName) { _cachedNameTw = ctx.measureText(displayName).width; _prevDisplayName = displayName; }
   const tw = _cachedNameTw;
 
-  // Clan tag above character name: pixel-art icon + name, centered, no jitter
+  // Clan tag: icon (pre-rendered, 1 drawImage) + name. Both cached to avoid per-frame cost.
   if (typeof clanData !== 'undefined' && clanData && clanData.name) {
+    const iconKey = String(clanData.icon || 1);
+    if (!_clanIconCv || _clanIconKey !== iconKey) {
+      // Build once per clan icon change (256 fillRects happens only here)
+      _clanIconKey = iconKey;
+      const px = Math.ceil(DPR);
+      _clanIconCv = document.createElement('canvas');
+      _clanIconCv.width = 16 * px; _clanIconCv.height = 16 * px;
+      drawClanIconOnCtx(_clanIconCv.getContext('2d'), clanData.icon || 1, 8 * px, 8 * px, px);
+    }
     ctx.font = 'bold 9px system-ui, Arial';
-    const ctw = ctx.measureText(clanData.name).width;
-    const iconSz = 16, gap = 3; // icon at px=1 → 16×16 CSS px (sharp on retina via DPR transform)
-    const lineX = Math.round(sx - (iconSz + gap + ctw) / 2);
-    const lineY = sy - 16;
-    drawClanIconOnCtx(ctx, clanData.icon || 1, lineX + 8, lineY, 1);
+    if (clanData.name !== _prevClanName) { _cachedClanTw = ctx.measureText(clanData.name).width; _prevClanName = clanData.name; }
+    const iconDisp = 14, gap = 3;
+    const lineX = Math.round(sx - (iconDisp + gap + _cachedClanTw) / 2);
+    const lineY = Math.round(sy - 16);
+    ctx.drawImage(_clanIconCv, lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
-    ctx.strokeText(clanData.name, lineX + iconSz + gap, lineY);
+    ctx.strokeText(clanData.name, lineX + iconDisp + gap, lineY);
     ctx.fillStyle = '#f93';
-    ctx.fillText(clanData.name, lineX + iconSz + gap, lineY);
+    ctx.fillText(clanData.name, lineX + iconDisp + gap, lineY);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
     ctx.font = 'bold 10px system-ui, Arial';
   }
@@ -1173,6 +1184,7 @@ window.addEventListener('load', () => {
     // ctx global points to _uiCtx so HUD drawing functions work unchanged
     ctx = _uiCtx;
     _hudCv = null;
+    _clanIconCv = null; _clanIconKey = null; // DPR may have changed
     _skillBtnGradCache = null;
     _uiBtnGrads = null;
     _partyHpGrads = null;
