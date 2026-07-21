@@ -300,6 +300,18 @@ function setJoy(cx, cy) {
   else { joy.dx = dx / JOY_R; joy.dy = dy / JOY_R; }
 }
 
+// Below this raw magnitude (fraction of JOY_R), treat the stick as centered.
+// A real thumb resting near the middle — or just touchscreen digitizer noise
+// on an otherwise-still finger — reports 1-2px of jitter around dead center.
+// joy.dx/dy near zero still have SOME direction (angle is unstable at tiny
+// magnitude), and inputDir() below normalizes that to a full-strength unit
+// vector — so without a deadzone, that noise was flipping player.facing
+// back and forth at full confidence (the hysteresis check only compares the
+// two normalized axes against each other, and noise makes them trade off
+// arbitrarily), which resets the walk/idle animation frame every time and
+// reads as the character sprite twitching/jittering while barely moving.
+const _JOY_DEADZONE = 0.12;
+
 // Pre-allocated return value — callers must consume before next call
 const _inputDirResult = { dx: 0, dy: 0, len: 0 };
 function inputDir() {
@@ -309,7 +321,7 @@ function inputDir() {
   if (keys['ArrowUp']    || keys['w']) dy -= 1;
   if (keys['ArrowDown']  || keys['s']) dy += 1;
   const l = Math.hypot(dx, dy);
-  if (l > 0.01) {
+  if (l > _JOY_DEADZONE) {
     _inputDirResult.dx = dx / l; _inputDirResult.dy = dy / l; _inputDirResult.len = Math.min(1, l);
   } else {
     _inputDirResult.dx = 0; _inputDirResult.dy = 0; _inputDirResult.len = 0;
