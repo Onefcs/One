@@ -101,6 +101,20 @@ class Room {
     return d.grid[ty][tx] === WALL;
   }
 
+  // Same sampling algorithm as the client's hasLOS() (combat.js) — kept in
+  // lockstep so a shot the client thinks is clear doesn't get rejected here.
+  _hasLOS(x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return true;
+    const steps = Math.ceil(len / (TILE * 0.45));
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      if (this._isWall(x1 + dx * t, y1 + dy * t)) return false;
+    }
+    return true;
+  }
+
   _tick() {
     const now = Date.now();
     const dt = Math.min((now - this._lastTick) / 1000, 0.1);
@@ -165,7 +179,13 @@ class Room {
 
       const closestD = Math.sqrt(closestD2);
 
-      if (closestD < e.aggroR) e.aggro = true;
+      // Only trigger aggro with a clear line of sight — an enemy on the
+      // other side of a wall within radius shouldn't wake up and start
+      // charging at a player it can't actually see. Losing LOS after
+      // aggro doesn't cancel it (still purely distance-gated below) so a
+      // player briefly ducking behind a corner mid-chase doesn't flicker
+      // the enemy off and on.
+      if (closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       if (closestD > e.aggroR * 2.2) e.aggro = false;
 
       if (e.aggro) {
@@ -448,6 +468,7 @@ class Room {
     // Range check: must be within 350px (generous for AoE skills)
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     if (rdx * rdx + rdy * rdy > 350 * 350) return null;
+    if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     const base = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
@@ -468,6 +489,7 @@ class Room {
     if (!enemy || enemy.hp <= 0) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     if (rdx * rdx + rdy * rdy > 600 * 600) return null;
+    if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     const mult = Math.max(1, Math.min(multiplier || 1, 10));
     const base = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
