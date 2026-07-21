@@ -2181,7 +2181,7 @@ function _positionVipBtn() {
   const vipBtn    = document.getElementById('vip-btn');
   if (!vipBtn || !ratingBtn) return;
   const rTop = parseFloat(ratingBtn.style.top) || 0;
-  vipBtn.style.top       = (rTop + 26 + 5) + 'px';
+  vipBtn.style.top       = (rTop + 28 + 4) + 'px';
   vipBtn.style.left      = ratingBtn.style.left;
   vipBtn.style.width     = ratingBtn.style.width;
   vipBtn.style.right     = 'auto';
@@ -2328,7 +2328,7 @@ function _positionMarketBtn() {
   const marketBtn = document.getElementById('market-btn');
   if (!marketBtn || !vipBtn) return;
   const vTop = parseFloat(vipBtn.style.top) || 0;
-  marketBtn.style.top       = (vTop + 26 + 5) + 'px';
+  marketBtn.style.top       = (vTop + 28 + 4) + 'px';
   marketBtn.style.left      = vipBtn.style.left;
   marketBtn.style.width     = vipBtn.style.width;
   marketBtn.style.right     = 'auto';
@@ -2340,7 +2340,7 @@ function _positionGramShopBtn() {
   const shopBtn     = document.getElementById('gram-shop-btn');
   if (!shopBtn || !marketBtn) return;
   const mTop = parseFloat(marketBtn.style.top) || 0;
-  shopBtn.style.top       = (mTop + 26 + 5) + 'px';
+  shopBtn.style.top       = (mTop + 28 + 4) + 'px';
   shopBtn.style.left      = marketBtn.style.left;
   shopBtn.style.width     = marketBtn.style.width;
   shopBtn.style.right     = 'auto';
@@ -2757,64 +2757,46 @@ function _gramShopPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
 
+  // same ri() pattern as VIP
+  function ri(img, label, cls) {
+    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+  }
+
+  const wepSfx = { assasin:'k', warrior:'t', archer:'b', mage:'s', priest:'s' }[player?.type] || 't';
+  const wepPfxMap = { common:'c', uncommon:'u', rare:'r' };
+
   const _ARMOR_ICONS = {
     common:   ['arm/ch.png','arm/ct.png','arm/cg.png','arm/cb.png','acs/cr.png','acs/cp.png'],
     uncommon: ['arm/uh.png','arm/ut.png','arm/ug.png','arm/ub.png','acs/ur.png','acs/up.png'],
     rare:     ['arm/rh.png','arm/rt.png','arm/rg.png','arm/rb.png','acs/rr.png','acs/rp.png'],
   };
-  const _CLASS_WEP_ICONS = {
-    warrior: { common:'wep/ct.png', uncommon:'wep/ut.png', rare:'wep/rt.png' },
-    assasin: { common:'wep/ck.png', uncommon:'wep/uk.png', rare:'wep/rk.png' },
-    archer:  { common:'wep/cb.png', uncommon:'wep/ub.png', rare:'wep/rb.png' },
-    mage:    { common:'wep/cs.png', uncommon:'wep/us.png', rare:'wep/rs.png' },
-    priest:  { common:'wep/cs.png', uncommon:'wep/us.png', rare:'wep/rs.png' },
-  };
-  const _POTION_ICONS = ['potion/hp.png','potion/exp.png','potion/gold.png','potion/regen.png','potion/atkspeed.png','potion/atk.png'];
+  const _POTION_NAMES = ['hp','exp','gold','regen','atkspeed','atk'];
+  const coinUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
 
-  const iStyle = 'width:28px;height:28px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)';
-  const iWrap  = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:8px';
-  const coinSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f1c40f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="background:rgba(241,196,15,.08);border:1px solid rgba(241,196,15,.3);border-radius:4px;padding:3px"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg>`;
+  // gold
+  let rows = ri(coinUri, kGold + ' зол.', 'gold');
 
-  // gold row
-  let iconsHtml = `<div style="${iWrap}">
-    ${coinSvg}
-    <span style="color:#f0d060;font-size:12px;font-weight:700;margin-left:2px">${kGold} зол.</span>
-  </div>`;
+  // potions
+  rows += _POTION_NAMES.map(p => ri(`/images/potion/${p}.png`, `×${pkg.potions}`, '')).join('');
 
-  // potions row
-  iconsHtml += `<div style="${iWrap}">
-    ${_POTION_ICONS.map(p => `<img src="/images/${p}" style="${iStyle}" title="Зелье">`).join('')}
-    <span style="color:#8899bb;font-size:11px;margin-left:2px">×${pkg.potions}</span>
-  </div>`;
-
-  // armor row
+  // armor set
   if (pkg.armor) {
     const key = pkg.armor.toLowerCase();
     const icons = _ARMOR_ICONS[key] || [];
-    iconsHtml += `<div style="${iWrap}">
-      ${icons.map(i => `<img src="/images/${i}" style="${iStyle}" title="${pkg.armor}">`).join('')}
-      <span style="color:#8899bb;font-size:11px;margin-left:2px">+8</span>
-    </div>`;
+    rows += icons.map(i => ri(`/images/${i}`, '+8', key)).join('');
   }
 
-  // weapon row — class-specific icon
+  // weapon — class-specific
   if (pkg.weapon) {
-    const cls = (window.player && window.player.cls) || 'warrior';
-    const rarKey = pkg.weapon.toLowerCase();
-    const clsWeps = _CLASS_WEP_ICONS[cls] || _CLASS_WEP_ICONS.warrior;
-    const wIcon = clsWeps[rarKey] || clsWeps.common;
-    iconsHtml += `<div style="${iWrap}">
-      <img src="/images/${wIcon}" style="${iStyle}" title="Оружие +8">
-      <span style="color:#8899bb;font-size:11px;margin-left:2px">+8</span>
-    </div>`;
+    const key = pkg.weapon.toLowerCase();
+    const pfx = wepPfxMap[key] || 'c';
+    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, '+8', key);
   }
 
-  // bonus SP row
+  // bonus skill points
   if (pkg.bonusSP) {
-    iconsHtml += `<div style="${iWrap}">
-      <span style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(150,80,255,.15);border:1px solid rgba(150,80,255,.3);border-radius:4px;font-size:13px">✨</span>
-      <span style="color:#cc88ff;font-size:11px;margin-left:2px">+${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</span>
-    </div>`;
+    const spUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
+    rows += ri(spUri, `+${pkg.bonusSP} ОН`, 'epic');
   }
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
@@ -2829,7 +2811,7 @@ function _gramShopPkgHtml(pkg, bal) {
         ${canAfford ? 'Купить' : 'Мало'}
       </button>
     </div>
-    ${iconsHtml}
+    <div class="vip-items-row">${rows}</div>
   </div>`;
 }
 
