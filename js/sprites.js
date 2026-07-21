@@ -287,6 +287,35 @@ function loadEnemySprites(eid, onDone) {
 const ENEMY_FACING_ROW = { down: 0, up: 1, left: 2, right: 3 };
 
 
+// ── NPC SPRITE SHEETS ───────────────────────────────────────────────────────
+// NPCs stand in one spot facing the camera — a single-row idle loop is
+// enough, no per-facing rows like enemies/players need.
+const NPC_SPRITE_DEF = {
+  merchant:   { src: 'images/npc/merchant.png',   frameW: 128, frameH: 128, cols: 7,  fps: 6,  loop: true },
+  craftsman:  { src: 'images/npc/craftsman.png',  frameW: 128, frameH: 128, cols: 12, fps: 10, loop: true },
+  shopkeeper: { src: 'images/npc/shopkeeper.png', frameW: 128, frameH: 128, cols: 7,  fps: 6,  loop: true },
+};
+
+const npcSpriteCache = {};
+const _npcSpriteLoadPromises = {};
+
+function loadNpcSprites(id, onDone) {
+  onDone = onDone || function () {};
+  const def = NPC_SPRITE_DEF[id];
+  if (!def) { onDone(); return; }
+  if (npcSpriteCache[id]) { onDone(); return; }
+  if (_npcSpriteLoadPromises[id]) { _npcSpriteLoadPromises[id].then(onDone); return; }
+  let resolveReady;
+  _npcSpriteLoadPromises[id] = new Promise(res => { resolveReady = res; });
+  const img = new Image();
+  img.src = def.src;
+  img.onload = () => _warmUpImage(img, resolveReady);
+  img.onerror = resolveReady;
+  npcSpriteCache[id] = img;
+  _npcSpriteLoadPromises[id].then(onDone);
+}
+
+
 // ── PLAYER SPRITE SHEETS ────────────────────────────────────────────────────
 
 const spriteCache = {};
