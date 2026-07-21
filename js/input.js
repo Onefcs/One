@@ -238,7 +238,11 @@ function onTS(e) {
   if (!joyGuard()) return;
   const jc = joyCenter();
   for (const t of e.changedTouches) {
-    if (t.clientY > H - NAV_H) return;
+    // continue, not return — this only means "ignore this one touch", not
+    // "stop processing every other simultaneous touch in this event" (a
+    // multi-touch batch, e.g. one finger already on the attack button while
+    // another lands near the nav bar, was dropping the rest of the batch).
+    if (t.clientY > H - NAV_H) continue;
     if (_checkPartyInviteTouch(t.clientX, t.clientY)) continue;
     if (_checkPartyLeaveBtnTouch(t.clientX, t.clientY)) continue;
     if (_checkPvpBtnTouch(t.clientX, t.clientY)) continue;
@@ -259,17 +263,25 @@ function onTS(e) {
 function onTM(e) {
   e.preventDefault();
   if (!joyGuard()) return;
+  // joy.active is required here, not just the identifier match: touch
+  // identifiers are small integers many mobile browsers hand out
+  // sequentially and REUSE once a touch ends. onTE below cleared
+  // joy.active but left joy.id holding that now-stale identifier, so once
+  // some later, completely unrelated touch (tapping a skill button,
+  // attacking, anything) happened to be assigned the same reused id, its
+  // touchmove would silently hijack the joystick — matching what looks
+  // like "the joystick keeps steering no matter where I tap afterwards."
   for (const t of e.changedTouches)
-    if (t.identifier === joy.id) setJoy(t.clientX, t.clientY);
+    if (joy.active && t.identifier === joy.id) setJoy(t.clientX, t.clientY);
 }
 
 function onTE(e) {
   for (const t of e.changedTouches)
-    if (t.identifier === joy.id) { joy.active = false; joy.dx = 0; joy.dy = 0; }
-  if (e.touches.length === 0) { joy.active = false; joy.dx = 0; joy.dy = 0; }
+    if (t.identifier === joy.id) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
+  if (e.touches.length === 0) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
 }
 
-function onTC() { joy.active = false; joy.dx = 0; joy.dy = 0; }
+function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
 
 function onMD(e) {
   _perfToggleTap(e.clientX, e.clientY);
