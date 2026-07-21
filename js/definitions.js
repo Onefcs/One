@@ -145,9 +145,9 @@ const MERCHANT_SHOP = [
 
 const SHOP_CATALOG = [
   // Common
-  { itemId:'sw1', price:20 }, { itemId:'tw1', price:20 }, { itemId:'bw1', price:20 }, { itemId:'st1', price:20 },
-  { itemId:'hm1', price:20 }, { itemId:'ar1', price:20 }, { itemId:'gl1', price:20 }, { itemId:'bt1', price:20 },
-  { itemId:'rn1', price:30 }, { itemId:'nd1', price:30 },
+  { itemId:'sw1', price:100 }, { itemId:'tw1', price:100 }, { itemId:'bw1', price:100 }, { itemId:'st1', price:100 },
+  { itemId:'hm1', price:100 }, { itemId:'ar1', price:100 }, { itemId:'gl1', price:100 }, { itemId:'bt1', price:100 },
+  { itemId:'rn1', price:100 }, { itemId:'nd1', price:100 },
 ];
 
 // Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll

@@ -85,7 +85,7 @@ function makePlayer(type) {
       weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null,
     },
     inventory: [],
-    potionBag: { pt1: 3, pt2: 0 },
+    potionBag: { pt1: 30, pt2: 0 },
     hudPotion: 'pt1',
     buffs: {},
     potCd: 0,

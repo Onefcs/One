@@ -2783,14 +2783,14 @@ function _gramShopPkgHtml(pkg, bal) {
   if (pkg.armor) {
     const key = pkg.armor.toLowerCase();
     const icons = _ARMOR_ICONS[key] || [];
-    rows += icons.map(i => ri(`/images/${i}`, '+8', key)).join('');
+    rows += icons.map(i => ri(`/images/${i}`, '', key)).join('');
   }
 
   // weapon — class-specific
   if (pkg.weapon) {
     const key = pkg.weapon.toLowerCase();
     const pfx = wepPfxMap[key] || 'c';
-    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, '+8', key);
+    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, '', key);
   }
 
   // bonus skill points
@@ -2823,8 +2823,8 @@ function openGramShopConfirm(pkgId) {
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
-  const armorLine  = pkg.armor  ? `<div style="color:#ccc">• Полный ${pkg.armor} сет +8</div>` : '';
-  const weaponLine = pkg.weapon ? `<div style="color:#ccc">• Оружие ${pkg.weapon} +8 (по классу)</div>` : '';
+  const armorLine  = pkg.armor  ? `<div style="color:#ccc">• Полный ${pkg.armor} сет</div>` : '';
+  const weaponLine = pkg.weapon ? `<div style="color:#ccc">• Оружие ${pkg.weapon} (по классу)</div>` : '';
   const spLine     = pkg.bonusSP ? `<div style="color:#ccc">• +${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</div>` : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
