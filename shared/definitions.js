@@ -71,6 +71,109 @@ function calcGoldDrop(enemy, floor) {
 // Minimum player level to enter each floor (index = floor number)
 const FLOOR_UNLOCK_LEVEL = [0, 0, 5, 15, 30, 50];
 
+// ── Items ─────────────────────────────────────────────────────────────────────
+// Canonical item catalog — single source of truth for both client rendering
+// and server-side validation (e.g. the Market only ever stores a listing's
+// stats as recomputed from here, never whatever the client sent).
+const CRAFT_MATS = [
+  // ── Recipes (от всех) ───────────────────────────────────
+  { id:'recu',  name:'Рецепт необычный',  img:'/images/material/recu.png',  slot:'recipe',   rarity:'uncommon'  },
+  { id:'recr',  name:'Рецепт редкий',     img:'/images/material/recr.png',  slot:'recipe',   rarity:'rare'      },
+  { id:'rece',  name:'Рецепт эпичный',    img:'/images/material/rece.png',  slot:'recipe',   rarity:'epic'      },
+  { id:'recl',  name:'Рецепт легенд.',    img:'/images/material/recl.png',  slot:'recipe',   rarity:'legendary' },
+  // ── Boss stone (от боссов) ──────────────────────────────
+  { id:'boss_stone',  name:'Камень Босса',              img:'/images/material/bstone.png', slot:'material', rarity:'legendary' },
+  // ── Enchant stones ──────────────────────────────────────
+  { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
+  { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
+];
+
+const ITEM_DEF = [
+  // ── Assassin knives ───────────────────────────────────────
+  { id:'sw1', name:'Ржавый нож',       slot:'weapon', img:'/images/wep/ck.png', atk:4,                            rarity:'common'   },
+  { id:'sw2', name:'Стальной нож',     slot:'weapon', img:'/images/wep/uk.png', atk:14,                           rarity:'uncommon' },
+  { id:'sw3', name:'Нож дракона',      slot:'weapon', img:'/images/wep/rk.png', atk:23, critChance:0.05,          rarity:'rare'     },
+  { id:'sw4', name:'Нож теней',        slot:'weapon', img:'/images/wep/ek.png', atk:44, critChance:0.10,          rarity:'epic'     },
+  { id:'sw5', name:'Нож героя',        slot:'weapon', img:'/images/wep/lk.png', atk:65, critChance:0.25, rarity:'legendary'},
+  // ── Warrior axes ─────────────────────────────────────────
+  { id:'tw1', name:'Ржавый топор',     slot:'weapon', img:'/images/wep/ct.png', atk:5,                            rarity:'common'   },
+  { id:'tw2', name:'Стальной топор',   slot:'weapon', img:'/images/wep/ut.png', atk:15,                           rarity:'uncommon' },
+  { id:'tw3', name:'Топор дракона',    slot:'weapon', img:'/images/wep/rt.png', atk:23,                           rarity:'rare'     },
+  { id:'tw4', name:'Топор теней',      slot:'weapon', img:'/images/wep/et.png', atk:44,                           rarity:'epic'     },
+  { id:'tw5', name:'Топор героя',      slot:'weapon', img:'/images/wep/lt.png', atk:65,                           rarity:'legendary'},
+  // ── Archer bows ──────────────────────────────────────────
+  { id:'bw1', name:'Деревянный лук',   slot:'weapon', img:'/images/wep/cb.png', atk:8,                            rarity:'common'   },
+  { id:'bw2', name:'Серебряный лук',   slot:'weapon', img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,            rarity:'uncommon' },
+  { id:'bw3', name:'Лук охотника',     slot:'weapon', img:'/images/wep/rb.png', atk:28, atkSpeed:0.05,            rarity:'rare'     },
+  { id:'bw4', name:'Лунный лук',       slot:'weapon', img:'/images/wep/eb.png', atk:60, atkSpeed:0.10,            rarity:'epic'     },
+  { id:'bw5', name:'Лук героя',        slot:'weapon', img:'/images/wep/lb.png', atk:100, atkSpeed:0.15, critChance:0.10, rarity:'legendary'},
+  // ── Mage / Priest staves ─────────────────────────────────
+  { id:'st1', name:'Посох новичка',    slot:'weapon', img:'/images/wep/cs.png', atk:7,                            rarity:'common'   },
+  { id:'st2', name:'Посох бойца',      slot:'weapon', img:'/images/wep/us.png', atk:17,                           rarity:'uncommon' },
+  { id:'st3', name:'Посох охотника',   slot:'weapon', img:'/images/wep/rs.png', atk:30, hpPct:0.05,               rarity:'rare'     },
+  { id:'st4', name:'Посох Героя',      slot:'weapon', img:'/images/wep/es.png', atk:60, hpPct:0.10,               rarity:'epic'     },
+  { id:'st5', name:'Посох Легенды',    slot:'weapon', img:'/images/wep/ls.png', atk:120, hpPct:0.20, critChance:0.10, rarity:'legendary'},
+  // ── Helmet ────────────────────────────────────────────────
+  { id:'hm1', name:'Кожаный шлем',     slot:'helmet', img:'/images/arm/ch.png', hp:25,           rarity:'common'   },
+  { id:'hm2', name:'Железный шлем',    slot:'helmet', img:'/images/arm/uh.png', hp:50,           rarity:'uncommon' },
+  { id:'hm3', name:'Платиновый шлем',  slot:'helmet', img:'/images/arm/rh.png', hp:90,  atk:4,  rarity:'rare'     },
+  { id:'hm4', name:'Корона героя',     slot:'helmet', img:'/images/arm/eh.png', hp:140, atk:8,  rarity:'epic'     },
+  { id:'hm5', name:'Шлем легенды',     slot:'helmet', img:'/images/arm/lh.png', hp:210, atk:12, rarity:'legendary'},
+  // ── Body ─────────────────────────────────────────────────
+  { id:'ar1', name:'Кожаная броня',    slot:'body',   img:'/images/arm/ct.png', def:5,           rarity:'common'   },
+  { id:'ar2', name:'Железная броня',   slot:'body',   img:'/images/arm/ut.png', def:11,          rarity:'uncommon' },
+  { id:'ar3', name:'Платиновая броня', slot:'body',   img:'/images/arm/rt.png', def:20,          rarity:'rare'     },
+  { id:'ar4', name:'Доспех героя',     slot:'body',   img:'/images/arm/et.png', def:33,          rarity:'epic'     },
+  { id:'ar5', name:'Доспех легенды',   slot:'body',   img:'/images/arm/lt.png', def:48, hp:50,   rarity:'legendary'},
+  // ── Gloves ───────────────────────────────────────────────
+  { id:'gl1', name:'Кожаные перчи',    slot:'gloves', img:'/images/arm/cg.png', atk:2,           rarity:'common'   },
+  { id:'gl2', name:'Железные перчи',   slot:'gloves', img:'/images/arm/ug.png', atk:5,           rarity:'uncommon' },
+  { id:'gl3', name:'Платиновые перчи', slot:'gloves', img:'/images/arm/rg.png', atk:10,          rarity:'rare'     },
+  { id:'gl4', name:'Перчатки героя',   slot:'gloves', img:'/images/arm/eg.png', atk:16, def:4,   rarity:'epic'     },
+  { id:'gl5', name:'Перчатки легенды', slot:'gloves', img:'/images/arm/lg.png', atk:24, def:8,   rarity:'legendary'},
+  // ── Boots ────────────────────────────────────────────────
+  { id:'bt1', name:'Кожаные боты',     slot:'boots',  img:'/images/arm/cb.png', def:2,           rarity:'common'   },
+  { id:'bt2', name:'Железные боты',    slot:'boots',  img:'/images/arm/ub.png', def:4,           rarity:'uncommon' },
+  { id:'bt3', name:'Платиновые боты',  slot:'boots',  img:'/images/arm/rb.png', def:8,  atk:3,  rarity:'rare'     },
+  { id:'bt4', name:'Боты героя',       slot:'boots',  img:'/images/arm/eb.png', def:14, atk:5,  rarity:'epic'     },
+  { id:'bt5', name:'Боты легенды',     slot:'boots',  img:'/images/arm/lb.png', def:20, atk:10, rarity:'legendary'},
+  // ── Ring ─────────────────────────────────────────────────
+  { id:'rn1', name:'Кольцо силы',      slot:'ring',   img:'/images/acs/cr.png', atk:4,           rarity:'common'   },
+  { id:'rn2', name:'Кольцо защиты',    slot:'ring',   img:'/images/acs/ur.png', def:4,           rarity:'uncommon' },
+  { id:'rn3', name:'Кольцо крови',     slot:'ring',   img:'/images/acs/rr.png', atk:3,  hp:40,  rarity:'rare'     },
+  { id:'rn4', name:'Кольцо героя',     slot:'ring',   img:'/images/acs/er.png', atk:8,  def:4,  rarity:'epic'     },
+  { id:'rn5', name:'Кольцо легенды',   slot:'ring',   img:'/images/acs/lr.png', atk:14, def:8, hp:50, rarity:'legendary'},
+  // ── Belt ─────────────────────────────────────────────────
+  { id:'nd1', name:'Пояс силы',        slot:'belt',   img:'/images/acs/cp.png', atk:5,           rarity:'common'   },
+  { id:'nd2', name:'Пояс здоровья',    slot:'belt',   img:'/images/acs/up.png', hp:60,           rarity:'uncommon' },
+  { id:'nd3', name:'Пояс тьмы',        slot:'belt',   img:'/images/acs/rp.png', atk:8,  hp:30,  rarity:'rare'     },
+  { id:'nd4', name:'Пояс героя',       slot:'belt',   img:'/images/acs/ep.png', atk:16, hp:80,  rarity:'epic'     },
+  { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:24, hp:120, rarity:'legendary'},
+  // ── HP Potions ────────────────────────────────────────────
+  { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
+  { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:50, rarity:'uncommon' },
+  // ── Buff Potions ──────────────────────────────────────────
+  { id:'bp_hp',       name:'Зелье здоровья',   slot:'buff_potion', img:'/images/potion/hp.png',       rarity:'uncommon', buffType:'hp',       buffDur:1800, buffDesc:'+10% HP на 30 мин'            },
+  { id:'bp_exp',      name:'Зелье опыта',       slot:'buff_potion', img:'/images/potion/exp.png',      rarity:'uncommon', buffType:'exp',      buffDur:1800, buffDesc:'×2 опыт на 30 мин'            },
+  { id:'bp_gold',     name:'Зелье золота',      slot:'buff_potion', img:'/images/potion/gold.png',     rarity:'uncommon', buffType:'gold',     buffDur:1800, buffDesc:'×2 золото на 30 мин'          },
+  { id:'bp_regen',    name:'Зелье регена',      slot:'buff_potion', img:'/images/potion/regen.png',    rarity:'uncommon', buffType:'regen',    buffDur:1800, buffDesc:'+2 HP/сек на 30 мин'          },
+  { id:'bp_atkspeed', name:'Зелье скорости',    slot:'buff_potion', img:'/images/potion/atkspeed.png', rarity:'uncommon', buffType:'atkspeed', buffDur:1800, buffDesc:'+20% скорость атаки на 30 мин' },
+  { id:'bp_atk',      name:'Зелье атаки',       slot:'buff_potion', img:'/images/potion/atk.png',      rarity:'uncommon', buffType:'atk',      buffDur:1800, buffDesc:'+20% атаки на 30 мин'         },
+];
+
+// Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
+const ENHANCE_MAX = 15;
+// Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js)
+const ENHANCEABLE_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt']);
+function enhanceBonus(it, levels) {
+  if (!levels) return {};
+  const b = {};
+  if (it.atk) b.atk = Math.max(1, Math.ceil(it.atk * 0.10)) * levels;
+  if (it.def) b.def = Math.max(1, Math.ceil(it.def * 0.10)) * levels;
+  if (it.hp)  b.hp  = Math.max(5, Math.ceil(it.hp  * 0.10)) * levels;
+  return b;
+}
+
 // ── VIP System ────────────────────────────────────────────────────────────────
 // GRAM threshold to reach THIS level (counter resets after each level-up)
 const VIP_THRESHOLDS = [0, 1, 5, 10, 25, 50, 100, 150, 200, 300, 500];
@@ -90,4 +193,8 @@ const VIP_BONUSES = [
   { xp:100, gold:100, drop:100 }, // VIP 10
 ];
 
-if (typeof module !== 'undefined') module.exports = { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL, VIP_THRESHOLDS, VIP_BONUSES };
+if (typeof module !== 'undefined') module.exports = {
+  TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL,
+  VIP_THRESHOLDS, VIP_BONUSES,
+  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus,
+};

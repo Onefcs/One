@@ -11,7 +11,10 @@ const GramTxModel = require('./models/GramTx');
 const MarketListingModel = require('./models/MarketListing');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
-const { VIP_THRESHOLDS, VIP_BONUSES } = require('../shared/definitions');
+const {
+  VIP_THRESHOLDS, VIP_BONUSES,
+  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus,
+} = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
 const MARKET_MIN_PRICE   = 0.1;
@@ -20,6 +23,25 @@ const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
 const MARKET_MAX_ACTIVE  = 20;     // active listings per seller
 const MARKET_LIST_COOLDOWN_MS = 3000;
 function _round2(n) { return Math.round(n * 100) / 100; }
+
+// Rebuild a listing's item entirely from the canonical catalog — the client
+// is only trusted for WHICH item (id) and WHICH enhance level, never for any
+// stat field. This can't stop someone claiming an enhance level they didn't
+// actually earn (the enhance/craft system itself is still client-computed,
+// same as the rest of this game's economy), but it does stop a listing from
+// carrying arbitrary made-up stats, rarity, or an item id that doesn't exist.
+function _canonicalMarketItem(rawItem) {
+  if (!rawItem || typeof rawItem !== 'object') return null;
+  const id = rawItem.id;
+  const base = ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id);
+  if (!base) return null;
+  const item = { ...base };
+  if (ENHANCEABLE_SLOTS.has(base.slot)) {
+    const enh = Math.floor(Number(rawItem.enhance));
+    item.enhance = (Number.isFinite(enh) && enh >= 0 && enh <= ENHANCE_MAX) ? enh : 0;
+  }
+  return item;
+}
 function _marketListingData(l) {
   return {
     id: l._id.toString(), sellerId: l.sellerId, sellerUsername: l.sellerUsername,
@@ -774,11 +796,11 @@ io.on('connection', socket => {
     if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
       return socket.emit('marketListError', { msg: `Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM` });
     }
-    if (!item || typeof item !== 'object' || Array.isArray(item)
-      || typeof item.id !== 'string' || !item.id || item.id.length > 40
-      || typeof item.name !== 'string' || !item.name || item.name.length > 60
-      || JSON.stringify(item).length > 2000) {
-      return socket.emit('marketListError', { msg: 'Некорректный предмет' });
+    // Only id + enhance are trusted from the client — every other field
+    // (stats, rarity, name, img...) is rebuilt from the canonical catalog.
+    const canonItem = _canonicalMarketItem(item);
+    if (!canonItem) {
+      return socket.emit('marketListError', { msg: 'Такого предмета не существует' });
     }
     try {
       const activeCount = await MarketListingModel.countDocuments({ sellerId: authed.telegramId, status: 'active' });
@@ -788,7 +810,7 @@ io.on('connection', socket => {
       _lastMarketListAt = now;
       const listing = await MarketListingModel.create({
         sellerId: authed.telegramId, sellerUsername: authed.username,
-        item, price: _round2(p), status: 'active',
+        item: canonItem, price: _round2(p), status: 'active',
       });
       socket.emit('marketListed', { listing: _marketListingData(listing) });
     } catch (err) {

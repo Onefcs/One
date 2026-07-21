@@ -90,15 +90,10 @@ function makePlayer(type) {
   };
 }
 
-// Returns per-level enhance bonus for one stat unit
-function _enhBonusAt(it, levels) {
-  if (!levels) return {};
-  const b = {};
-  if (it.atk) b.atk = Math.max(1, Math.ceil(it.atk * 0.10)) * levels;
-  if (it.def) b.def = Math.max(1, Math.ceil(it.def * 0.10)) * levels;
-  if (it.hp)  b.hp  = Math.max(5, Math.ceil(it.hp  * 0.10)) * levels;
-  return b;
-}
+// Per-level enhance bonus for one stat unit — the formula itself lives in
+// shared/definitions.js (enhanceBonus) so the server's Market validation
+// can't drift out of sync with what the client actually applies.
+function _enhBonusAt(it, levels) { return enhanceBonus(it, levels); }
 function _enhBonus(it) { return _enhBonusAt(it, it.enhance || 0); }
 
 // ── Skill level helpers ───────────────────────────────────────
