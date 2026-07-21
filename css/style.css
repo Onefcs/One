@@ -1837,6 +1837,10 @@ canvas { display:block; width:100%; height:100%; }
   backdrop-filter: blur(4px);
   display: flex; align-items: flex-end; justify-content: center;
 }
+/* These modals are appended straight to <body>, outside #market-panel, so
+   they miss that panel's touch-action override and inherit the global
+   touch-action:none reset — which silently blocks scroll gestures. */
+.market-modal-overlay, .market-modal-overlay * { touch-action: pan-y; pointer-events: auto; }
 .market-modal-sheet {
   width: 100%; max-width: 500px;
   max-height: 82vh;
