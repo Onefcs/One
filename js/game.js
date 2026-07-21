@@ -1109,11 +1109,11 @@ function _buildChunk(cx, cy) {
 
   // 1. Wall base fill — real painted stone texture, tinted to this theme's
   // wallColor; falls back to the flat color if the texture hasn't loaded yet.
-  c.fillStyle = (typeof getTilePattern === 'function' && getTilePattern(c, th, 'wallBody', th.wallColor)) || th.wallColor;
+  c.fillStyle = (typeof getTilePattern === 'function' && getTilePattern(c, 'wallBody', th.wallColor)) || th.wallColor;
   c.fillRect(x0 - _CHUNK_G, y0 - _CHUNK_G, cv.width, cv.height);
 
   // 2. Floor — real painted stone texture, tinted to this theme's floorA.
-  const floorPat = (typeof getTilePattern === 'function') ? getTilePattern(c, th, 'floor', th.floorA) : null;
+  const floorPat = (typeof getTilePattern === 'function') ? getTilePattern(c, 'floor', th.floorA) : null;
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -1122,31 +1122,19 @@ function _buildChunk(cx, cy) {
     }
   }
 
-  // 3. Wall "cliff face" strip above floor (top-down depth cue) — painted
-  // brick-cap texture, tinted to this theme's wallEdge.
-  const capPat = (typeof getTilePattern === 'function') ? getTilePattern(c, th, 'wallCap', th.wallEdge) : null;
-  c.fillStyle = capPat || th.wallEdge;
-  for (let ty = ty0; ty <= ty1; ty++) {
-    for (let tx = tx0; tx <= tx1; tx++) {
-      if (dungeon.grid[ty][tx] !== WALL) continue;
-      if (!isFloor(tx, ty + 1)) continue;
-      c.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 8);
-    }
-  }
-
-  // 3b. Wall top-edge highlight — lit top face of the "3-D" wall block,
-  // flat alpha fill (no per-tile gradient) so it stays cheap per chunk.
-  if (th.wallHighlight) {
-    c.globalAlpha = th.wallHighlight;
-    c.fillStyle = '#ffffff';
+  // 3. Wall face — every wall tile gets the full painted rock-face art
+  // (brick cap + rubble body baked into one picture) instead of a flat
+  // fill. 3 art variants picked by tile hash so walls don't visibly repeat
+  // the same picture over and over.
+  if (typeof getTintedTexture === 'function') {
     for (let ty = ty0; ty <= ty1; ty++) {
       for (let tx = tx0; tx <= tx1; tx++) {
         if (dungeon.grid[ty][tx] !== WALL) continue;
-        if (!isFloor(tx, ty + 1)) continue;
-        c.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 3);
+        const h = ((tx * 37) ^ (ty * 53)) & 0xff;
+        const faceCv = getTintedTexture(getWallFaceKey(h), th.wallColor);
+        if (faceCv) c.drawImage(faceCv, tx * TILE, ty * TILE, TILE, TILE);
       }
     }
-    c.globalAlpha = 1;
   }
 
   // 4. Shadows cast onto floor from walls above / beside
@@ -1167,28 +1155,7 @@ function _buildChunk(cx, cy) {
     }
   }
 
-  // 5. Wall face decorations — torches, lanterns, skulls, crystals, etc.
-  // (theme-specific, see themes.js). Scoped to this chunk's OWN tile block
-  // (no ring margin) so a shared boundary tile is only ever decorated once
-  // — the continuity margin used above is for shadows that blend across
-  // chunk seams, not for one-off props that would otherwise double-draw.
-  if (th.drawWallDecor) {
-    const dtx0 = cx * _CHUNK_T, dty0 = cy * _CHUNK_T;
-    const dtx1 = Math.min(dungeon.w - 1, dtx0 + _CHUNK_T - 1);
-    const dty1 = Math.min(dungeon.h - 1, dty0 + _CHUNK_T - 1);
-    for (let ty = dty0; ty <= dty1; ty++) {
-      for (let tx = dtx0; tx <= dtx1; tx++) {
-        if (dungeon.grid[ty][tx] !== WALL) continue;
-        if (!isFloor(tx, ty + 1)) continue;
-        const h = ((tx * 37) ^ (ty * 53)) & 0xff;
-        c.save();
-        th.drawWallDecor(c, tx * TILE, ty * TILE, h);
-        c.restore();
-      }
-    }
-  }
-
-  // 6. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
+  // 5. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
   // scattered sparsely on floor tiles. Same own-tile-block scoping as the
   // wall decor pass above, so seams never get a doubled-up prop.
   if (th.drawFloorProp) {
