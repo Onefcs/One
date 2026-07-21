@@ -21,6 +21,7 @@ function generateDungeon(lvl) {
   const CELL_H = Math.floor(DH / ROWS);  // 21
   const SMALL = 9;   // 9×9 → 5 monsters
   const LARGE = 14;  // 14×14 → 10 monsters
+  const SPAWN_SIZE = 17; // spawn room — bigger than LARGE, no monsters
 
   function inBounds(gx, gy) { return gx >= 0 && gx < DW && gy >= 0 && gy < DH; }
   function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
@@ -42,7 +43,7 @@ function generateDungeon(lvl) {
 
     let size;
     if (isFirst) {
-      size = SMALL;  // spawn room always small
+      size = SPAWN_SIZE;
     } else if (isLast) {
       size = LARGE;  // boss room always large
     } else {
@@ -75,11 +76,26 @@ function generateDungeon(lvl) {
         paintFloor(gx, gy);
   });
 
+  // Spawn room gets a single narrow south-facing doorway instead of blending
+  // straight into the general corridor network — the rest of its perimeter
+  // stays solid wall (a door sprite is drawn there client-side). A short
+  // 2-wide stub keeps it narrow for a few tiles before the general 3-wide
+  // corridor network takes over, so the door reads against solid wall on
+  // both sides instead of immediately flaring into a wide opening.
+  const spawnRoom = rooms[0];
+  const doorTx = spawnRoom.cx, doorTy = spawnRoom.y + spawnRoom.size;
+  const DOOR_STUB = 3;
+  for (let s = 0; s < DOOR_STUB; s++) {
+    paintFloor(doorTx, doorTy + s);
+    paintFloor(doorTx + 1, doorTy + s);
+  }
+
   // Connect rooms in sequence with L-shaped corridors (3 tiles wide)
   const CW = 1;
   for (let i = 1; i < rooms.length; i++) {
     const a = rooms[i - 1], b = rooms[i];
-    let cx = a.cx, cy = a.cy;
+    let cx = i === 1 ? doorTx : a.cx;
+    let cy = i === 1 ? doorTy + DOOR_STUB - 1 : a.cy;
     const tx = b.cx, ty = b.cy;
     while (cx !== tx) {
       for (let d = -CW; d <= CW; d++) paintFloor(cx, cy + d);
@@ -152,6 +168,7 @@ function generateDungeon(lvl) {
       x2: rooms[0].bx2 * TILE,
       y2: rooms[0].by2 * TILE,
     },
+    spawnDoor: { tx: doorTx, ty: doorTy },
     enemies: enemyList,
   };
 }

@@ -1155,20 +1155,30 @@ function _buildChunk(cx, cy) {
 
   // 5. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
   // scattered sparsely on floor tiles. Same own-tile-block scoping as the
-  // wall decor pass above, so seams never get a doubled-up prop.
+  // wall decor pass above, so seams never get a doubled-up prop. Skips the
+  // spawn-room door gap so clutter never spawns in the doorway.
+  const door = dungeon.spawnDoor;
+  const ptx0 = cx * _CHUNK_T, pty0 = cy * _CHUNK_T;
+  const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
+  const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
   if (th.drawFloorProp) {
-    const ptx0 = cx * _CHUNK_T, pty0 = cy * _CHUNK_T;
-    const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
-    const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
         if (dungeon.grid[ty][tx] !== FLOOR) continue;
+        if (door && ty >= door.ty && ty <= door.ty + 1 && tx >= door.tx && tx <= door.tx + 1) continue;
         const h = ((tx * 41) ^ (ty * 59)) & 0xff;
         c.save();
         th.drawFloorProp(c, tx * TILE, ty * TILE, h);
         c.restore();
       }
     }
+  }
+
+  // 6. Spawn-room exit door — fixed position, not part of the hash-scattered
+  // prop system. Drawn last so it always sits on top of the floor beneath it.
+  if (door && typeof drawSpawnDoor === 'function' &&
+      door.tx >= ptx0 && door.tx <= ptx1 && door.ty >= pty0 && door.ty <= pty1) {
+    drawSpawnDoor(c, door.tx, door.ty, th.wallColor);
   }
 
   return cv;

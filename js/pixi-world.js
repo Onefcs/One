@@ -6,7 +6,6 @@ const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 let _pixiApp = null;
 let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
-let _szGfx    = null;   // safe-zone overlay (Graphics, rebuilt on dungeon change)
 let _aoeGfx   = null;   // AOE rings (Graphics, cleared each frame)
 let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
 let _npcNames = [];      // PIXI.Text per NPC
@@ -38,7 +37,6 @@ const _pTex = {};          // charType|animKey → PIXI.Texture[]
 const _eTex = {};          // eid|sheetKey     → {down,up,left,right}: PIXI.Texture[]
 const _npcTex = {};        // npc icon id      → PIXI.Texture[]
 
-let _szBuiltFor = null; // dungeon reference for safe-zone rebuild guard
 let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
 
 // ── init ──────────────────────────────────────────────────
@@ -57,7 +55,6 @@ function pixiInit(canvasEl) {
 
   _worldCt  = new PIXI.Container();
   _tileCt   = new PIXI.Container();
-  _szGfx    = new PIXI.Graphics();
   _aoeGfx   = new PIXI.Graphics();
   _npcCt    = new PIXI.Container();
   _dropGfx  = new PIXI.Graphics();
@@ -69,7 +66,7 @@ function pixiInit(canvasEl) {
   _dmgNumCt = new PIXI.Container();
 
   _worldCt.addChild(
-    _tileCt, _szGfx, _aoeGfx,
+    _tileCt, _aoeGfx,
     _npcCt, _dropGfx, _partGfx,
     _enemyCt, _otherPCt, _projGfx,
     _playerCt, _dmgNumCt
@@ -110,7 +107,6 @@ function pixiInvalidateChunks() {
     spr.destroy({ texture: true, baseTexture: true });
   });
   _chunkSprCache.clear();
-  _szBuiltFor = null; // force safe-zone rebuild
   pixiClearEntityPools();
 }
 
@@ -208,23 +204,6 @@ function _updateTiles(camX, camY) {
     }
   }
   _chunkSprCache.forEach(spr => { spr.visible = spr._visGen === gen; });
-}
-
-// ── safe zone ─────────────────────────────────────────────
-
-function _updateSafeZone() {
-  if (_szBuiltFor === dungeon) return;
-  _szBuiltFor = dungeon;
-  _szGfx.clear();
-  if (!dungeon || !dungeon.safeZone) return;
-  const sz = dungeon.safeZone;
-  const w = sz.x2 - sz.x1, h = sz.y2 - sz.y1;
-  _szGfx.beginFill(0x3cdc64, 0.08);
-  _szGfx.drawRect(sz.x1, sz.y1, w, h);
-  _szGfx.endFill();
-  _szGfx.lineStyle(3 / ZOOM, 0x3cdc64, 0.35);
-  _szGfx.drawRect(sz.x1, sz.y1, w, h);
-  _szGfx.lineStyle(0);
 }
 
 // ── AOE rings ─────────────────────────────────────────────
@@ -780,7 +759,6 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   const bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
 
   _updateTiles(camX, camY);
-  _updateSafeZone();
   _updateAoeRings();
   _updateNpcs(dt, ts);
   _updateDrops(ts);

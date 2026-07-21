@@ -102,9 +102,11 @@ function _floorProps(mod, entries) {
 // its stale cached copy. Bump this whenever floor/wall_body/wall_cap change.
 const _TILE_TEX_V = 3;
 const _TILE_TEX_DEF = {
-  floor:    'images/tiles/floor.png',
-  wallBody: 'images/tiles/wall_body.png',
-  wallCap:  'images/tiles/wall_cap.png',
+  floor:     'images/tiles/floor.png',
+  wallBody:  'images/tiles/wall_body.png',
+  wallCap:   'images/tiles/wall_cap.png',
+  doorLeft:  'images/tiles/door_left.png',
+  doorRight: 'images/tiles/door_right.png',
 };
 const _tileTexImg = {};
 Object.keys(_TILE_TEX_DEF).forEach(key => {
@@ -144,6 +146,16 @@ function getTilePattern(ctx, key, tintColor) {
   const cv = _getTintedTileCanvas(key, tintColor);
   if (!cv) return null;
   return ctx.createPattern(cv, 'repeat');
+}
+
+// Draws the spawn room's exit door — a matched pair of tile-sized images
+// (left leaf + right leaf) spanning the 2-tile gap the dungeon generator
+// leaves open in that room's south wall. tx/ty = the gap's left tile.
+function drawSpawnDoor(c, tx, ty, tintColor) {
+  const left = _getTintedTileCanvas('doorLeft', tintColor);
+  const right = _getTintedTileCanvas('doorRight', tintColor);
+  if (left) c.drawImage(left, tx * TILE, ty * TILE, TILE, TILE);
+  if (right) c.drawImage(right, (tx + 1) * TILE, ty * TILE, TILE, TILE);
 }
 
 // ── Themes ────────────────────────────────────────────────

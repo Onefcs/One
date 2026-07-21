@@ -71,7 +71,7 @@ class Room {
 
   get dungeonData() {
     const d = this._dungeon;
-    return { grid: d.grid, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone };
+    return { grid: d.grid, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, spawnDoor: d.spawnDoor };
   }
 
   _inSafeZone(x, y) {
