@@ -43,7 +43,7 @@ function pixiInit(canvasEl) {
     view: canvasEl,
     width:  canvasEl.clientWidth  || 375,
     height: canvasEl.clientHeight || 667,
-    resolution: Math.min(window.devicePixelRatio || 1, 2),
+    resolution: Math.min(window.devicePixelRatio || 1, 1.5), // cap at 1.5 — saves ~44% GPU fill vs 2 on high-DPR mobile
     autoDensity: true,
     backgroundAlpha: 1,
     antialias: false,
@@ -400,7 +400,7 @@ function _getEnemy(id) {
   const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 8, fill: '#dddddd', stroke: '#000', strokeThickness: 2.5 });
+  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4 });
   lbl.anchor.set(0.5, 1);
   ct.addChild(spr, gfx, lbl);
   _enemyCt.addChild(ct);
@@ -505,10 +505,11 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const { lbl } = obj;
   const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
   if (lbl.text !== lblText) lbl.text = lblText;
-  lbl.style.fill   = e.isBoss ? '#ff8888' : '#dddddd';
-  lbl.style.fontSize = e.isBoss ? 9 : 8;
+  lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
+  lbl.style.fontSize     = e.isBoss ? 18 : 14;
+  lbl.style.strokeThickness = e.isBoss ? 5 : 4;
   lbl.x = 0;
-  lbl.y = by - 3;
+  lbl.y = by - 4;
 }
 
 function _updateEnemies(dt, pulse, bossGlow) {
@@ -537,9 +538,11 @@ function _getOtherPlayer(sid) {
   const gfx = new PIXI.Graphics();
   const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 10, fontWeight: 'bold', fill: '#ffffff', stroke: '#000', strokeThickness: 3 });
   lbl.anchor.set(0.5, 1);
-  ct.addChild(spr, gfx, lbl);
+  const clanLbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 8, fontWeight: 'bold', fill: '#f93', stroke: '#000', strokeThickness: 2.5 });
+  clanLbl.anchor.set(0.5, 1);
+  ct.addChild(spr, gfx, lbl, clanLbl);
   _otherPCt.addChild(ct);
-  const obj = { ct, spr, gfx, lbl };
+  const obj = { ct, spr, gfx, lbl, clanLbl };
   _otherPool.set(sid, obj);
   return obj;
 }
@@ -605,12 +608,19 @@ function _updateOtherPlayers(pulse) {
     gfx.beginFill(0x22dd22); gfx.drawRect(-bw/2, barTop, bw * Math.max(0,(p.hp||0)/(p.maxHp||1)), bh); gfx.endFill();
 
     // Player name
-    const { lbl } = obj;
+    const { lbl, clanLbl } = obj;
     const uname = (p.username || '?').slice(0, 16);
     if (lbl.text !== uname) lbl.text = uname;
     lbl.style.fill = p.pvpMode ? '#ff9999' : '#ffffff';
     lbl.x = 0;
     lbl.y = barTop - 3;
+
+    // Clan tag above name
+    const cname = p.clanName ? `[${p.clanName}]` : '';
+    if (clanLbl.text !== cname) clanLbl.text = cname;
+    clanLbl.visible = !!cname;
+    clanLbl.x = 0;
+    clanLbl.y = lbl.y - 12;
   });
   _otherPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
 }
