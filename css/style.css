@@ -292,7 +292,6 @@ canvas { display:block; width:100%; height:100%; }
 }
 .csl-status { font-size:12px; color:#444; letter-spacing:2px; text-transform:uppercase; }
 
-.warrior-c { color:#5af; } .archer-c { color:#7e7; } .mage-c { color:#e8e; } .priest-c { color:#fe4; } .assasin-c { color:#b5f; }
 
 /* ── FLOOR INFO BUTTON ────────────────── */
 .floor-info-btn {
@@ -747,11 +746,6 @@ canvas { display:block; width:100%; height:100%; }
 .inv-cell:active { opacity:0.7; }
 .inv-cell.filled { border-color:#2e2e50; background:rgba(255,255,255,0.04); }
 
-.rarity-common   { color:#ccc; }
-.rarity-uncommon { color:#3ef07a; }
-.rarity-rare     { color:#55aaff; }
-.rarity-epic     { color:#c55ef5; }
-.rarity-legendary{ color:#ffd700; }
 
 /* ── PROFILE ──────────────────────────── */
 .prof-hero  { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
@@ -839,13 +833,6 @@ canvas { display:block; width:100%; height:100%; }
 .clan-member-role  { flex-shrink:0; font-size:14px; }
 .clan-member-name  { flex:1; font-size:13px; color:#ccc; }
 .clan-levels       { display:flex; flex-direction:column; gap:4px; }
-.clan-lv-row       { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:7px; font-size:11px; }
-.clan-lv-done      { background:rgba(40,60,40,0.3); color:#5a8; }
-.clan-lv-active    { background:rgba(90,40,180,0.35); border:1px solid rgba(140,80,255,0.4); color:#c8a0ff; }
-.clan-lv-locked    { background:rgba(20,15,40,0.3); color:#444; }
-.clan-lv-num       { width:30px; flex-shrink:0; font-weight:700; }
-.clan-lv-name      { flex:1; }
-.clan-lv-bonus     { font-size:10px; opacity:0.8; white-space:nowrap; }
 .inv-tabs          { display:flex; border-bottom:1px solid rgba(255,255,255,0.07); margin-bottom:4px; }
 .inv-tab           { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#555; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
 .inv-tab.active    { color:#60a5fa; border-bottom-color:#3b82f6; }

@@ -66,8 +66,8 @@ function _marketHistoryData(l, myId) {
   };
 }
 
-// Bot token — set TG_BOT_TOKEN env var in Railway; the value here is the fallback
-const _TG_TOKEN    = process.env.TG_BOT_TOKEN    || '8851991556:AAH4hdTeSHPP8sY4wENmSCNfdzurpUi05c4';
+// Bot token — set TG_BOT_TOKEN env var in Railway
+const _TG_TOKEN    = process.env.TG_BOT_TOKEN    || '';
 const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram chat ID
 const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
 let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
@@ -609,12 +609,10 @@ function getRoom(floor) {
 mongoose.connection.once('open', () => {
   for (let f = 1; f <= MAX_FLOOR; f++) {
     floorRooms.set(f, new Room(f, io));
-    console.log(`floor ${f}: room ready`);
   }
 });
 
 io.on('connection', socket => {
-  console.log('connect:', socket.id);
   let authed = null;
   let currentRoom = null;
   let currentFloor = 1;
@@ -652,6 +650,12 @@ io.on('connection', socket => {
       if (!user) return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
       const telegramId = String(user.id);
       const username = user.username || user.first_name || `tg_${telegramId}`;
+      // Reserve slot before first await to prevent concurrent logins
+      if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
+        const _prevSocket = io.sockets.sockets.get(activeSessions.get(telegramId));
+        if (_prevSocket) { _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' }); _prevSocket.disconnect(true); }
+      }
+      activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
@@ -661,16 +665,6 @@ io.on('connection', socket => {
       _gramBalance = doc.savedData?.gramBalance || 0;
       _nexumBalance = doc.savedData?.nexumBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
-      // Kick any existing session for this account
-      const _prevSid = activeSessions.get(telegramId);
-      if (_prevSid && _prevSid !== socket.id) {
-        const _prevSocket = io.sockets.sockets.get(_prevSid);
-        if (_prevSocket) {
-          _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' });
-          _prevSocket.disconnect(true);
-        }
-      }
-      activeSessions.set(telegramId, socket.id);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -691,6 +685,12 @@ io.on('connection', socket => {
         return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
       const telegramId = String(data.id);
       const username = data.username || data.first_name || `tg_${telegramId}`;
+      // Reserve slot before first await to prevent concurrent logins
+      if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
+        const _prevSocket2 = io.sockets.sockets.get(activeSessions.get(telegramId));
+        if (_prevSocket2) { _prevSocket2.emit('kicked', { reason: 'Вы вошли с другого устройства' }); _prevSocket2.disconnect(true); }
+      }
+      activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
       authed = doc;
@@ -700,16 +700,6 @@ io.on('connection', socket => {
       _gramBalance = doc.savedData?.gramBalance || 0;
       _nexumBalance = doc.savedData?.nexumBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
-      // Kick any existing session for this account
-      const _prevSid2 = activeSessions.get(telegramId);
-      if (_prevSid2 && _prevSid2 !== socket.id) {
-        const _prevSocket2 = io.sockets.sockets.get(_prevSid2);
-        if (_prevSocket2) {
-          _prevSocket2.emit('kicked', { reason: 'Вы вошли с другого устройства' });
-          _prevSocket2.disconnect(true);
-        }
-      }
-      activeSessions.set(telegramId, socket.id);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -1239,6 +1229,7 @@ io.on('connection', socket => {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
         });
       }
+      _onKillClanXp().catch(() => {});
     } else {
       io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
     }
@@ -1322,6 +1313,7 @@ io.on('connection', socket => {
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       }
+      _onKillClanXp().catch(() => {});
     } else {
       io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
     }
@@ -1494,7 +1486,7 @@ io.on('connection', socket => {
       if (inviterParty && inviterParty.size >= 5) return;
     }
     const targetSocket = io.sockets.sockets.get(targetId);
-    if (!targetSocket) return;
+    if (!targetSocket || !targetSocket.data?.username) return;
     targetSocket.emit('partyInviteReceived', { fromId: socket.id, fromName: authed.username });
   });
 
@@ -1704,24 +1696,21 @@ io.on('connection', socket => {
     await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
   });
 
-  // 1 kill = 1 clan XP point
-  socket.on('clanKill', async () => {
-    if (!authed) return;
+  async function _onKillClanXp() {
+    if (!authed || !_myClanName) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan || clan.level >= 10) return;
     clan.xp += 1;
-    // Check level up
     const LEVELS = [0,500,1500,4000,10000,25000,60000,150000,350000,800000];
     const nextLvl = clan.level < 10 ? LEVELS[clan.level] : Infinity;
     if (clan.xp >= nextLvl) clan.level = Math.min(10, clan.level + 1);
     await clan.save().catch(() => {});
-    // Only notify the killer (avoid DB load per kill for all members)
     const _cdKill = await _clanDataFor(clan, authed.telegramId);
     socket.emit('clanData', _cdKill);
     _myClanName = _cdKill ? _cdKill.name : null;
     _myClanIcon = _cdKill ? _cdKill.icon : null;
     currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
-  });
+  }
 
   // ── Raid ───────────────────────────────────────────────────────────────────
   // ── Raid lobbies ──────────────────────────────────────────────────────────
@@ -1844,7 +1833,6 @@ io.on('connection', socket => {
   socket.on('leaveRaid', () => { _cleanupRaid(socket.id); });
 
   socket.on('disconnect', () => {
-    console.log('disconnect:', socket.id);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     if (authed && activeSessions.get(authed.telegramId) === socket.id)
       activeSessions.delete(authed.telegramId);

@@ -406,8 +406,6 @@ function netConnect(onReady) {
       player.nexumBalance = window._nexumBalance;
       dmgNum(px, py - 52, '+' + nexum + ' Nexum', '#00e5ff');
     }
-    // Notify server for clan XP (1 kill = 1 clan point)
-    if (xp && player && clanData) socket.emit('clanKill');
   });
 
   socket.on('floorChanged', ({ floor, dungeon: d, enemies: initialEnemies }) => {
