@@ -34,8 +34,8 @@ function _drawPerf(frameMs) {
   const avgMs = sum / samples;
   const fps = avgMs > 0 ? Math.round(1000 / avgMs) : 0;
   // Adaptive quality: drop to tier 1 when FPS stays < 30 for ~3s; recover when FPS > 50
-  if (fps < 30) { if (++_lowFpsFrames > 180) _qualityTier = 1; }
-  else if (fps > 50) { _lowFpsFrames = Math.max(0, _lowFpsFrames - 2); if (_lowFpsFrames === 0) _qualityTier = 0; }
+  // Adaptive quality disabled — game is intentionally capped at 30fps
+  _qualityTier = 0;
   // Decay worst-case slowly
   if (maxFt > _ftWorstMs) { _ftWorstMs = maxFt; _ftWorstDecay = 180; }
   else if (--_ftWorstDecay <= 0) { _ftWorstMs = maxFt; }
@@ -1138,22 +1138,23 @@ function restartGame() {
 // ─────────────────────────────────────────────────────────
 //  LOOP
 // ─────────────────────────────────────────────────────────
-let _loopTs = 0, _lastRenderTs = 0;
-function loop(ts) {
+let _loopTs = 0;
+function loop() {
+  const ts = performance.now();
   const frameMs = ts - _loopTs; _loopTs = ts;
   const dt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
   const _t0 = performance.now();
   update(dt);
   const _t1 = performance.now();
-  const _doRender = !_isMobile || ts - _lastRenderTs >= 32; // 30fps cap on mobile
-  if (_doRender) { _lastRenderTs = ts; render(dt, ts); }
+  render(dt, ts);
   const _t2 = performance.now();
   _profUpdate = _t1 - _t0;
   _profRender = _t2 - _t1;
   _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
   _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
   if (_uiCtx) _drawPerf(frameMs);
-  requestAnimationFrame(loop);
+  const elapsed = performance.now() - ts;
+  setTimeout(loop, Math.max(0, 33 - elapsed));
 }
 
 window.addEventListener('beforeunload', () => { netSaveProgressNow(); });
@@ -1195,5 +1196,5 @@ window.addEventListener('load', () => {
   window.addEventListener('resize', resize);
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
-  requestAnimationFrame(ts => { lastTs = ts; _loopTs = ts; requestAnimationFrame(loop); });
+  requestAnimationFrame(ts => { lastTs = ts; _loopTs = ts; setTimeout(loop, 0); });
 });
