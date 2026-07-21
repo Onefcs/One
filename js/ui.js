@@ -2048,6 +2048,10 @@ function showRatingBtn() {
 function openRatingPanel() {
   const panel = document.getElementById('rating-panel');
   if (!panel) return;
+  if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Рейтинг с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+    return;
+  }
   panel.style.display = 'flex';
   _ratingData = { players: null, clans: null };
   switchRatingTab(_ratingTab);
@@ -2300,6 +2304,10 @@ function showMarketBtn() {
 function openMarketPanel() {
   const panel = document.getElementById('market-panel');
   if (!panel) return;
+  if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Маркет с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+    return;
+  }
   panel.style.display = 'flex';
   switchMarketTab(_marketTab);
 }

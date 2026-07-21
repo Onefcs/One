@@ -603,6 +603,11 @@ let _clanNewName = '';
 let _clanNewIcon = 1;
 let _clanSearchResults = null;   // null = loading, [] = empty result
 let _clanHomeTab = 0;            // 0=клан, 1=участники, 2=навыки
+// Gold was spent optimistically for the in-flight clanCreate request — set
+// right before sending, cleared (and refunded on failure) when the server
+// responds. Gold isn't server-tracked like GRAM, so this is enforced the
+// same way every other gold-spending action in this game already is.
+let _pendingClanCreateGold = false;
 
 function updateClanUI() {
   const el = document.getElementById('clan-body');
@@ -637,11 +642,13 @@ function _clanGoSearch()  { _clanView = 'search'; _clanSearchResults = null; upd
 function _clanGoMain()    { _clanView = 'main'; updateClanUI(); }
 
 function _renderCreate(el) {
+  const canAfford = player && player.gold >= CLAN_CREATE_COST;
   el.innerHTML = `
     <div class="clan-form">
       <button class="clan-back" onclick="_clanGoMain()">← Назад</button>
       <div class="clan-form-title">Создать клан</div>
-      <div class="clan-form-label">Название (до 10 символов)</div>
+      <div class="clan-form-label" style="color:${canAfford ? '#f1c40f' : '#e74c3c'}">Стоимость: ${CLAN_CREATE_COST} золота ${canAfford ? '' : '(не хватает)'}</div>
+      <div class="clan-form-label" style="margin-top:10px">Название (до 10 символов)</div>
       <input class="clan-input" id="clan-name-inp" maxlength="10" placeholder="Название..." value="${_clanNewName}"
              oninput="_clanNewName=this.value;_clanUpdatePreview()">
       <div class="clan-form-label" style="margin-top:14px">Иконка клана</div>
@@ -677,6 +684,14 @@ function _clanSelectIcon(id) { _clanNewIcon = id; _clanView = 'create'; updateCl
 function _clanSubmitCreate() {
   const name = (_clanNewName || '').trim();
   if (!name) { const e = document.getElementById('clan-create-err'); if (e) e.textContent = 'Введите название'; return; }
+  if (!player || player.gold < CLAN_CREATE_COST) {
+    const e = document.getElementById('clan-create-err');
+    if (e) e.textContent = `Нужно ${CLAN_CREATE_COST} золота`;
+    return;
+  }
+  player.gold -= CLAN_CREATE_COST;
+  _pendingClanCreateGold = true;
+  if (typeof updateInvUI === 'function') updateInvUI();
   netClanCreate(name, _clanNewIcon);
 }
 
@@ -863,6 +878,7 @@ function _esc(s) {
 function onClanData(data) {
   const prevClan = clanData;
   const prevLevel = clanData ? clanData.level : null;
+  if (_pendingClanCreateGold) { _pendingClanCreateGold = false; netSaveProgress(); }
   clanData = data;
   _clanTagCanvas = null; _clanTagKey = null;
   if (data && prevLevel !== null && data.level > prevLevel) {
@@ -880,6 +896,10 @@ function onClanData(data) {
 }
 
 function onClanError(msg) {
+  if (_pendingClanCreateGold) {
+    _pendingClanCreateGold = false;
+    if (player) { player.gold += CLAN_CREATE_COST; if (typeof updateInvUI === 'function') updateInvUI(); }
+  }
   const errEl = document.getElementById('clan-create-err');
   if (errEl) { errEl.textContent = msg; return; }
   const body = document.getElementById('clan-body');

@@ -222,6 +222,10 @@ function _checkAttackBtnTouch(cx, cy) {
 function _checkAutoBtnTouch(cx, cy) {
   const ab = getAutoBtnPos();
   if (cx >= ab.x && cx <= ab.x + ab.w && cy >= ab.y && cy <= ab.y + ab.h) {
+    if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Авто-атака с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+      return true;
+    }
     autoAttackMode = !autoAttackMode;
     return true;
   }
