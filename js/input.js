@@ -275,6 +275,7 @@ function onMD(e) {
   _perfToggleTap(e.clientX, e.clientY);
   if (!joyGuard()) return;
   if (e.clientY > H - NAV_H) return;
+  const jc = joyCenter();
   if (_checkPartyInviteTouch(e.clientX, e.clientY)) return;
   if (_checkPartyLeaveBtnTouch(e.clientX, e.clientY)) return;
   if (_checkPvpBtnTouch(e.clientX, e.clientY)) return;

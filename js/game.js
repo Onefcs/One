@@ -853,6 +853,29 @@ function _drawOtherPlayerNamesOnUI() {
   });
 }
 
+// Enemy name/boss labels — 2D overlay, mirrors _drawOtherPlayerNamesOnUI.
+// e._nameBarTop is written each frame by _updateEnemyObj (pixi-world.js)
+// right before this runs; skipped for corpses (hp <= 0), which don't get a
+// bar/label in _updateEnemyObj so _nameBarTop may be stale from before death.
+function _drawEnemyNamesOnUI() {
+  if (!serverEnemies.length) return;
+  serverEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0 || e._nameBarTop === undefined || !_isOnScreen(e.x, e.y)) return;
+    const nameY = e.y + e._nameBarTop - 4;
+    const sx = (e.x - _lastCamX) * ZOOM;
+    const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
+    const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
+    if (!lblText) return;
+
+    ctx.font = (e.isBoss ? 'bold 13px' : 'bold 10px') + ' system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = e.isBoss ? 3.5 : 3;
+    ctx.strokeText(lblText, sx, sy);
+    ctx.fillStyle = e.isBoss ? '#ff9999' : '#e8e8e8';
+    ctx.fillText(lblText, sx, sy);
+  });
+}
+
 // Render all HUD/UI elements to the overlay canvas (called every frame from render())
 function _renderUI() {
   if (!_uiCtx) return;
@@ -924,6 +947,7 @@ function render(dt, ts) {
   // Player name + joystick: 60fps (smooth, cheap)
   if (player && dungeon) _drawPlayerNameOnUI();
   if (dungeon) _drawOtherPlayerNamesOnUI();
+  if (dungeon) _drawEnemyNamesOnUI();
   if (activeTab === 0) drawJoystick();
 
   // Safe zone HUD label (on top of HUD)
