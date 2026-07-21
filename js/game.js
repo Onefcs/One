@@ -760,8 +760,12 @@ function _drawPlayerNameOnUI() {
     ctx.font = 'bold 9px system-ui, Arial';
     if (clanData.name !== _prevClanName) { _cachedClanTw = ctx.measureText(clanData.name).width; _prevClanName = clanData.name; }
     const iconDisp = 14, gap = 3;
-    const lineX = Math.round(sx - (iconDisp + gap + _cachedClanTw) / 2);
-    const lineY = Math.round(sy - 16);
+    // Not rounded to whole pixels: sx/sy (and the name text below) move
+    // continuously as the player moves, so rounding just this element made
+    // it step pixel-by-pixel out of sync with everything around it — the
+    // clan tag visibly lagged/jittered relative to the name during movement.
+    const lineX = sx - (iconDisp + gap + _cachedClanTw) / 2;
+    const lineY = sy - 16;
     ctx.drawImage(_clanIconCv, lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
@@ -819,8 +823,9 @@ function _drawOtherPlayerNamesOnUI() {
       ctx.font = 'bold 9px system-ui, Arial';
       if (cname !== p._prevClanName) { p._clanTw = ctx.measureText(cname).width; p._prevClanName = cname; }
       const iconDisp = 14, gap = 3;
-      const lineX = Math.round(sx - (iconDisp + gap + p._clanTw) / 2);
-      const lineY = Math.round(sy - 16);
+      // Not rounded — see the matching comment in _drawPlayerNameOnUI.
+      const lineX = sx - (iconDisp + gap + p._clanTw) / 2;
+      const lineY = sy - 16;
       ctx.drawImage(_getOtherClanIconCv(p.clanIcon || 1), lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
       ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
