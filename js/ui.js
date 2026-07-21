@@ -2285,7 +2285,10 @@ function _vipItemDesc(lvl) {
   }
   function bless(qty) { return ri('/images/bless.png',       `×${qty}`, 'rare');   }
   function norm(qty)  { return ri('/images/norm.png',        `×${qty}`, 'uncommon'); }
-  function gold(amt)  { return ri('/images/nexum-coin.png',  `${(amt/1000).toFixed(0)}k`, 'gold'); }
+  function gold(amt)  {
+    const svg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f1c40f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg>`;
+    return `<span class="ri-wrap ri-gold">${svg}<span class="ri-badge">${(amt/1000).toFixed(0)}k</span></span>`;
+  }
   function pots(qty) {
     return ['hp','exp','gold','regen','atkspeed','atk']
       .map(p => ri(`/images/potion/${p}.png`, `×${qty}`, '')).join('');
@@ -2759,19 +2762,22 @@ function _gramShopPkgHtml(pkg, bal) {
     uncommon: ['arm/uh.png','arm/ut.png','arm/ug.png','arm/ub.png','acs/ur.png','acs/up.png'],
     rare:     ['arm/rh.png','arm/rt.png','arm/rg.png','arm/rb.png','acs/rr.png','acs/rp.png'],
   };
-  const _WEAPON_ICONS = {
-    common:   'wep/tw1.png',
-    uncommon: 'wep/tw2.png',
-    rare:     'wep/tw3.png',
+  const _CLASS_WEP_ICONS = {
+    warrior: { common:'wep/ct.png', uncommon:'wep/ut.png', rare:'wep/rt.png' },
+    assasin: { common:'wep/ck.png', uncommon:'wep/uk.png', rare:'wep/rk.png' },
+    archer:  { common:'wep/cb.png', uncommon:'wep/ub.png', rare:'wep/rb.png' },
+    mage:    { common:'wep/cs.png', uncommon:'wep/us.png', rare:'wep/rs.png' },
+    priest:  { common:'wep/cs.png', uncommon:'wep/us.png', rare:'wep/rs.png' },
   };
   const _POTION_ICONS = ['potion/hp.png','potion/exp.png','potion/gold.png','potion/regen.png','potion/atkspeed.png','potion/atk.png'];
 
   const iStyle = 'width:28px;height:28px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)';
   const iWrap  = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:8px';
+  const coinSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f1c40f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="background:rgba(241,196,15,.08);border:1px solid rgba(241,196,15,.3);border-radius:4px;padding:3px"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg>`;
 
   // gold row
   let iconsHtml = `<div style="${iWrap}">
-    <img src="/images/nexum-coin.png" style="${iStyle}" title="Золото">
+    ${coinSvg}
     <span style="color:#f0d060;font-size:12px;font-weight:700;margin-left:2px">${kGold} зол.</span>
   </div>`;
 
@@ -2791,13 +2797,15 @@ function _gramShopPkgHtml(pkg, bal) {
     </div>`;
   }
 
-  // weapon row
+  // weapon row — class-specific icon
   if (pkg.weapon) {
-    const key = pkg.weapon.toLowerCase();
-    const wIcon = _WEAPON_ICONS[key] || 'wep/tw1.png';
+    const cls = (window.player && window.player.cls) || 'warrior';
+    const rarKey = pkg.weapon.toLowerCase();
+    const clsWeps = _CLASS_WEP_ICONS[cls] || _CLASS_WEP_ICONS.warrior;
+    const wIcon = clsWeps[rarKey] || clsWeps.common;
     iconsHtml += `<div style="${iWrap}">
-      <img src="/images/${wIcon}" style="${iStyle}" title="${pkg.weapon} оружие">
-      <span style="color:#8899bb;font-size:11px;margin-left:2px">×1 +8 (по классу)</span>
+      <img src="/images/${wIcon}" style="${iStyle}" title="Оружие +8">
+      <span style="color:#8899bb;font-size:11px;margin-left:2px">+8</span>
     </div>`;
   }
 
