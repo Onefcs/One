@@ -91,16 +91,14 @@ function _drawPerf(frameMs) {
   });
 }
 
-// UI overlay canvas (separate DOM element at native DPR) — rebuilt ~20fps
-let _uiOverlay, _uiCtx = null, _uiLastMs = 0;
+// UI overlay canvas (separate DOM element at native DPR)
+let _uiOverlay, _uiCtx = null;
 // Camera position cached for UI overlay coordinate conversion
 let _lastCamX = 0, _lastCamY = 0;
-// Player sprite state and previous name label bounds for 60fps name tracking
-let _lastPlayerUsedSprite = false, _prevPlayerNameBounds = null;
+// Player sprite state flag (used by _drawPlayerNameOnUI for bar offset)
+let _lastPlayerUsedSprite = false;
 // measureText cache for player name label — avoids per-frame call when name unchanged
 let _prevDisplayName = '', _cachedNameTw = 0;
-// Enemy name label cache — pre-rendered text canvases keyed by `name|isBoss`
-const _enemyNameLabels = new Map();
 
 // Reusable sentinel for pvp closest-target — avoids per-frame object spread
 const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
@@ -113,13 +111,6 @@ let _profUpdate = 0, _profRender = 0;
 let _profSocketEvts = 0, _profSocketMs = 0;
 let _profSocketEvtsSnap = 0, _profSocketMsSnap = 0;
 
-// Reusable dash arrays — declared once, never reallocated
-const _DASH = [6, 4];
-const _NO_DASH = [];
-// Damage-number fonts — only two possible sizes, precompute to avoid template literals
-const _FONT_DMGNUM = 'bold 15px Arial';
-const _FONT_DMGTXT = 'bold 12px Arial';
-const _FONT_CRIT   = 'bold 19px Arial';
 
 // ─────────────────────────────────────────────────────────
 //  CAMERA
@@ -728,57 +719,33 @@ function update(dt) {
 //  RENDER
 // ─────────────────────────────────────────────────────────
 
-// Draw the player's name label at 60fps on the UI canvas using screen coords,
-// clearing only the label's bounding box each frame so no ghosting occurs.
 function _drawPlayerNameOnUI() {
   const barTop = _lastPlayerUsedSprite ? player.y - 39 : player.y - 28;
   const nameY = barTop - 4;
   const sx = (player.x - _lastCamX) * ZOOM;
   const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
   const displayName = (netUsername || player.charDef.name).slice(0, 16);
-  const _c = ctx; ctx = _uiCtx;
-  if (_prevPlayerNameBounds) {
-    const b = _prevPlayerNameBounds;
-    ctx.clearRect(b.x, b.y, b.w, b.h);
-  }
 
   ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   if (displayName !== _prevDisplayName) { _cachedNameTw = ctx.measureText(displayName).width; _prevDisplayName = displayName; }
   const tw = _cachedNameTw;
 
-  // ── Clan tag above character name (single drawImage — no flicker) ──────────
-  let boundsTopY = sy - 14;
-  let boundsMaxW = tw + 12;
+  // Clan tag above character name
   const _tagCanvas = typeof getClanTagCanvas === 'function' ? getClanTagCanvas() : null;
   if (_tagCanvas) {
-    const tagX = Math.round(sx - _tagCanvas.width / 2);
-    const tagY = Math.round(sy - 13 - _tagCanvas.height);
-    ctx.drawImage(_tagCanvas, tagX, tagY);
-    boundsTopY = tagY - 2;
-    boundsMaxW = Math.max(boundsMaxW, _tagCanvas.width + 4);
+    ctx.drawImage(_tagCanvas, Math.round(sx - _tagCanvas.width / 2), Math.round(sy - 13 - _tagCanvas.height));
   }
 
-  // ── Character name ─────────────────────────────────────
-  ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
   ctx.strokeText(displayName, sx, sy);
   ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
   ctx.fillText(displayName, sx, sy);
-  _prevPlayerNameBounds = { x: sx - boundsMaxW / 2, y: boundsTopY, w: boundsMaxW, h: sy - boundsTopY + 4 };
-  if (pvpMode) {
-    drawIconCtx(_uiCtx, 'pvpOn', sx + tw / 2 + 8, sy - 3, 9, '#f55');
-    _prevPlayerNameBounds.w += 26;
-  }
-  ctx = _c;
+  if (pvpMode) drawIconCtx(_uiCtx, 'pvpOn', sx + tw / 2 + 8, sy - 3, 9, '#f55');
 }
 
-// Render all HUD/UI elements to the overlay canvas at native DPR (~20fps)
+// Render all HUD/UI elements to the overlay canvas (called every frame from render())
 function _renderUI() {
   if (!_uiCtx) return;
-  _uiCtx.clearRect(0, 0, _uiOverlay.width, _uiOverlay.height);
-  _prevPlayerNameBounds = null; // cleared by the full wipe above
-  _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const _c = ctx; ctx = _uiCtx;
   drawHeader();
   if (typeof drawQuestNotif === 'function') drawQuestNotif();
   drawPvpButton();
@@ -795,35 +762,8 @@ function _renderUI() {
   }
   drawPartyInvitePopup();
   if (state === 'dead') drawDead();
-  ctx = _c;
 }
 
-function _drawProj(p) {
-  ctx.globalAlpha = 1;
-  if (p.projType === 'arrow') {
-    const ang = p.angle ?? Math.atan2(p.vy, p.vx);
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.rotate(ang);
-    ctx.strokeStyle = p.color || '#fa0';
-    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(9, 0); ctx.stroke();
-    ctx.fillStyle = p.color || '#fa0';
-    ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(6, -3.5); ctx.lineTo(6, 3.5); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8, -4); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-13, 0); ctx.lineTo(-8,  4); ctx.stroke();
-    ctx.restore();
-  } else {
-    ctx.globalAlpha = 0.3; ctx.fillStyle = p.color;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 7, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.8; ctx.fillStyle = p.color;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.38, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-}
 
 // Cached per-frame view bounds — updated once at the top of render(), read by _isOnScreen
 let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
@@ -962,89 +902,10 @@ function selectChar(type) {
   let _spritesPending = 1 + _floor1Eids.length;
   const _onSpriteSetReady = () => { if (--_spritesPending === 0) csOnSpritesReady(); };
   _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
-  loadSprites(type, () => { prewarmTintCache(type); _onSpriteSetReady(); });
+  loadSprites(type, _onSpriteSetReady);
   netSelectChar(type, savedStats);
 }
 
-// Pre-rendered player shadow (rx=13,ry=5 ellipse) — replaces per-frame ctx.ellipse+fill
-const _playerShadow = (() => {
-  const cv = document.createElement('canvas');
-  cv.width = 32; cv.height = 14;
-  const c = cv.getContext('2d');
-  c.fillStyle = 'rgba(0,0,0,.3)';
-  c.beginPath(); c.ellipse(16, 7, 13, 5, 0, 0, Math.PI * 2); c.fill();
-  return cv;
-})();
-
-function _buildOtherPlayerClanTag(clanName, clanIcon) {
-  const scale = Math.max(1, Math.ceil(DPR * ZOOM));
-  const iconSz = 16, gap = 3;
-  const tmp = document.createElement('canvas').getContext('2d');
-  tmp.font = 'bold 9px system-ui, Arial';
-  const ctw = tmp.measureText(clanName).width;
-  const lw = Math.ceil(iconSz + gap + ctw) + 4;
-  const lh = 18;
-  const oc = document.createElement('canvas');
-  oc.width = Math.ceil(lw * scale); oc.height = Math.ceil(lh * scale);
-  const c = oc.getContext('2d');
-  c.scale(scale, scale);
-  if (typeof drawClanIconOnCtx === 'function') drawClanIconOnCtx(c, clanIcon, iconSz / 2, lh / 2, 1);
-  c.font = 'bold 9px system-ui, Arial';
-  c.textAlign = 'left'; c.textBaseline = 'middle';
-  c.strokeStyle = '#000'; c.lineWidth = 2.5;
-  c.strokeText(clanName, iconSz + gap, lh / 2);
-  c.fillStyle = '#f93';
-  c.fillText(clanName, iconSz + gap, lh / 2);
-  oc._key = clanName + '|' + clanIcon + '|' + scale;
-  oc._lw = lw; oc._lh = lh; oc._scale = scale;
-  return oc;
-}
-
-function _buildPlayerNameCanvas(p) {
-  const uname = p.username || '?';
-  const pvp = !!p.pvpMode;
-  const scale = Math.max(1, Math.ceil(DPR * ZOOM));
-  const tmp = document.createElement('canvas').getContext('2d');
-  tmp.font = 'bold 10px system-ui, Arial';
-  const tw = tmp.measureText(uname).width;
-  const lw = Math.ceil(tw + 10), lh = 16;
-  const cv = document.createElement('canvas');
-  cv.width = Math.ceil(lw * scale); cv.height = Math.ceil(lh * scale);
-  const c = cv.getContext('2d');
-  c.scale(scale, scale);
-  c.font = 'bold 10px system-ui, Arial';
-  c.textAlign = 'center'; c.textBaseline = 'alphabetic';
-  c.strokeStyle = '#000'; c.lineWidth = 3;
-  c.strokeText(uname, lw / 2, lh - 2);
-  c.fillStyle = pvp ? '#f99' : '#fff';
-  c.fillText(uname, lw / 2, lh - 2);
-  cv._u = uname; cv._pvp = pvp; cv._lw = lw; cv._lh = lh; cv._scale = scale;
-  return cv;
-}
-
-function _getEnemyNameLabel(name, isBoss) {
-  const scale = Math.max(1, Math.ceil(DPR * ZOOM));
-  const key = `${name}|${isBoss}|${scale}`;
-  let cv = _enemyNameLabels.get(key);
-  if (cv) return cv;
-  const font = isBoss ? 'bold 9px system-ui,Arial' : '8px system-ui,Arial';
-  const tmp = document.createElement('canvas').getContext('2d');
-  tmp.font = font;
-  const tw = Math.ceil(tmp.measureText(name).width);
-  const lw = tw + 8, lh = 13;
-  cv = document.createElement('canvas');
-  cv.width = Math.ceil(lw * scale); cv.height = Math.ceil(lh * scale);
-  const c = cv.getContext('2d');
-  c.scale(scale, scale);
-  c.font = font; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
-  c.strokeStyle = '#000'; c.lineWidth = 2.5;
-  c.strokeText(name, lw / 2, lh - 1);
-  c.fillStyle = isBoss ? '#f88' : '#ddd';
-  c.fillText(name, lw / 2, lh - 1);
-  cv._lw = lw; cv._lh = lh;
-  _enemyNameLabels.set(key, cv);
-  return cv;
-}
 
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
@@ -1054,26 +915,6 @@ function getOtherPlayerAnimKey(p) {
   return `${dir}-idle`;
 }
 
-function drawOtherPlayerSprite(p) {
-  const def = SPRITE_DEF[p.type];
-  const cache = spriteCache[p.type];
-  if (!def || !cache) return false;
-  const key = getOtherPlayerAnimKey(p);
-  const ad = def.anims[key];
-  const img = cache[key];
-  if (!ad || !_sheetReady(img)) return false;
-  const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
-  const fi = Math.min(Math.floor(p.animFrame || 0), ad.n - 1);
-  const sx = (fi % ad.cols) * fw;
-  const sy = Math.floor(fi / ad.cols) * fh;
-  // Float position + bilinear filtering — see drawSprite for rationale
-  const dh = 68, dw = dh * fw / fh;
-  const dx = p.x - dw / 2;
-  const dy = p.y - dh * 0.62;
-  ctx.drawImage(_playerShadow, p.x - 16, p.y + 9);
-  ctx.drawImage(img, sx, sy, fw, fh, dx, dy, dw, dh);
-  return true;
-}
 
 // ─────────────────────────────────────────────────────────
 //  SAFE ZONE
@@ -1100,70 +941,8 @@ function initNpcs() {
     x: sx + offsets[i].dx,
     y: sy + offsets[i].dy,
   }));
-  _npcCache = null;
 }
 
-// NPC visuals are static (shadow + icon + name) except a pulsing aura ring —
-// profiling showed the per-frame path fills / strokeText here cost ~1.1ms per
-// frame (half the entire render budget). Pre-render each NPC once into an
-// offscreen canvas and blit two images per frame instead; the ring lives on
-// its own layer so its pulse is just globalAlpha at draw time.
-let _npcCache = null;
-const _NPC_RES = 2; // supersample so the ZOOM×DPR upscale stays crisp
-
-function _buildNpcCache() {
-  _npcCache = npcs.map(n => {
-    const w = 96, h = 84, cx = 48, cy = 44; // world-px box, NPC center at (cx,cy)
-    const cv = document.createElement('canvas');
-    cv.width = w * _NPC_RES; cv.height = h * _NPC_RES;
-    const c = cv.getContext('2d');
-    c.scale(_NPC_RES, _NPC_RES);
-    c.fillStyle = 'rgba(0,0,0,0.3)';
-    c.beginPath(); c.ellipse(cx, cy + 18, 14, 5, 0, 0, Math.PI * 2); c.fill();
-    // NOTE: the icon is NOT baked in — drawIconCtx's SVG image loads async and
-    // would bake in empty on the first frame; it's blitted per-frame below.
-    c.font = 'bold 10px system-ui, -apple-system, Arial';
-    c.textAlign = 'center'; c.textBaseline = 'alphabetic';
-    c.strokeStyle = '#000'; c.lineWidth = 3;
-    c.strokeText(n.name, cx, cy - 26);
-    c.fillStyle = n.color;
-    c.fillText(n.name, cx, cy - 26);
-
-    const rw = 52; // ring box: r=22 + lineWidth + margin
-    const ring = document.createElement('canvas');
-    ring.width = rw * _NPC_RES; ring.height = rw * _NPC_RES;
-    const rc = ring.getContext('2d');
-    rc.scale(_NPC_RES, _NPC_RES);
-    rc.strokeStyle = n.color; rc.lineWidth = 2;
-    rc.beginPath(); rc.arc(rw / 2, rw / 2, 22, 0, Math.PI * 2); rc.stroke();
-
-    return { cv, ring, w, h, cx, cy, rw };
-  });
-}
-
-function drawNpcs() {
-  if (!npcs.length) return;
-  if (!_npcCache || _npcCache.length !== npcs.length) _buildNpcCache();
-  const _nPulse  = 0.7 + 0.3 * Math.sin(_nowMs * 0.0048);
-  const _nBounce = Math.sin(_nowMs * 0.009) * 3;
-  const _smooth = ctx.imageSmoothingEnabled;
-  ctx.imageSmoothingEnabled = true; // supersampled cache needs filtering
-  for (let i = 0; i < npcs.length; i++) {
-    const n = npcs[i];
-    // NPCs cluster at spawn — skip entirely when off-screen
-    if (n.x < _vL || n.x > _vR || n.y < _vT || n.y > _vB) continue;
-    const cc = _npcCache[i];
-    ctx.globalAlpha = _nPulse;
-    ctx.drawImage(cc.ring, n.x - cc.rw / 2, n.y - cc.rw / 2, cc.rw, cc.rw);
-    ctx.globalAlpha = 1;
-    ctx.drawImage(cc.cv, n.x - cc.cx, n.y - cc.cy, cc.w, cc.h);
-    drawIconCtx(ctx, n.icon, n.x, n.y, 28, n.color);
-    if (nearNpc && nearNpc.id === n.id) {
-      drawIconCtx(ctx, 'chat', n.x, n.y - 44 + _nBounce, 18, '#fff');
-    }
-  }
-  ctx.imageSmoothingEnabled = _smooth;
-}
 
 // ── Tile chunks ────────────────────────────────────────────
 // The map used to pre-render into ONE huge canvas (up to ~3200×2400,
@@ -1250,27 +1029,6 @@ function _buildChunk(cx, cy) {
   return cv;
 }
 
-function drawTileChunks(camX, camY) {
-  const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
-  const maxCy = Math.ceil(dungeon.h * TILE / _CHUNK_PX) - 1;
-  const c0x = Math.max(0, Math.floor(camX / _CHUNK_PX));
-  const c0y = Math.max(0, Math.floor(camY / _CHUNK_PX));
-  const c1x = Math.min(maxCx, Math.floor((camX + W / ZOOM) / _CHUNK_PX));
-  const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX));
-  for (let cy = c0y; cy <= c1y; cy++) {
-    for (let cx = c0x; cx <= c1x; cx++) {
-      const key = cx + ',' + cy;
-      let cv = _tileChunks.get(key);
-      if (!cv) {
-        cv = _buildChunk(cx, cy);
-        if (_tileChunks.size >= _CHUNK_MAX)
-          _tileChunks.delete(_tileChunks.keys().next().value);
-        _tileChunks.set(key, cv);
-      }
-      ctx.drawImage(cv, cx * _CHUNK_PX - _CHUNK_G, cy * _CHUNK_PX - _CHUNK_G);
-    }
-  }
-}
 
 function playerDie() {
   state = 'dead';
@@ -1339,9 +1097,7 @@ function loop(ts) {
   _profRender = _t2 - _t1;
   _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
   _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
-  // Draw perf overlay on UI canvas so it's always on top and at native DPR
-  if (_uiCtx) { const _c = ctx; ctx = _uiCtx; _drawPerf(frameMs); ctx = _c; }
-  else { _drawPerf(frameMs); }
+  if (_uiCtx) _drawPerf(frameMs);
   requestAnimationFrame(loop);
 }
 

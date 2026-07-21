@@ -35,6 +35,7 @@ const _pTex = {};   // charType|animKey → PIXI.Texture[]
 const _eTex = {};   // eid|sheetKey     → {down,up,left,right}: PIXI.Texture[]
 
 let _szBuiltFor = null; // dungeon reference for safe-zone rebuild guard
+let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
 
 // ── init ──────────────────────────────────────────────────
 function pixiInit(canvasEl) {
@@ -69,7 +70,17 @@ function pixiInit(canvasEl) {
     _enemyCt, _otherPCt, _projGfx,
     _playerCt, _dmgNumCt
   );
+  _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
+}
+
+function pixiClearEntityPools() {
+  _enemyPool.forEach(obj => obj.ct.destroy({ children: true }));
+  _enemyPool.clear();
+  _otherPool.forEach(obj => obj.ct.destroy({ children: true }));
+  _otherPool.clear();
+  // Invalidate player texture cache so new char type picks up fresh textures
+  Object.keys(_pTex).forEach(k => delete _pTex[k]);
 }
 
 function pixiResize(w, h, dpr) {
@@ -96,6 +107,7 @@ function pixiInvalidateChunks() {
   });
   _chunkSprCache.clear();
   _szBuiltFor = null; // force safe-zone rebuild
+  pixiClearEntityPools();
 }
 
 // ── texture helpers ───────────────────────────────────────
@@ -268,7 +280,9 @@ function _updateDrops(ts) {
       _dropGfx.beginFill(0xffff00, a);
       _dropGfx.drawCircle(d.x, d.y + bob, 9);
       _dropGfx.endFill();
-      // 'g' text handled via existing canvas draw (skipped in PIXI pass)
+      _dropGfx.beginFill(0xcc8800, a * 0.9);
+      _dropGfx.drawCircle(d.x, d.y + bob, 5);
+      _dropGfx.endFill();
     } else {
       _dropGfx.beginFill(0xaaaacc, a * 0.85);
       _dropGfx.drawRoundedRect(d.x - 10, d.y + bob - 10, 20, 20, 3);
@@ -386,9 +400,11 @@ function _getEnemy(id) {
   const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  ct.addChild(spr, gfx);
+  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 8, fill: '#dddddd', stroke: '#000', strokeThickness: 2.5 });
+  lbl.anchor.set(0.5, 1);
+  ct.addChild(spr, gfx, lbl);
   _enemyCt.addChild(ct);
-  const obj = { ct, spr, gfx };
+  const obj = { ct, spr, gfx, lbl };
   _enemyPool.set(id, obj);
   return obj;
 }
@@ -432,6 +448,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     }
   }
 
+  const ds     = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
   const texRows = def ? _enemyTextures(e.eid, key) : null;
   const sh = def?.sheets[key];
   if (texRows && sh) {
@@ -440,21 +457,20 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     const frame  = Math.min(e._animFrame || 0, sh.cols - 1);
     const tex    = rowTex?.[frame];
     if (tex) {
-      const ds = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
       spr.texture  = tex;
       spr.width    = ds;
       spr.height   = ds;
       spr.x        = -ds * 0.5;
       spr.y        = -ds * 0.55;
-      spr.tint     = (e.hurtTimer > 0) ? 0xffffff : 0xffffff; // white always; PixiJS tint mixes
-      spr.visible  = true;
+      spr.tint    = (e.hurtTimer > 0) ? 0xff4444 : 0xffffff;
+      spr.visible = true;
     } else { spr.visible = false; }
   } else {
     spr.visible = false;
     // Circle fallback
     const hurt = (e.hurtTimer||0) > 0;
     const fc = parseInt((e.color||'#aa0000').replace('#',''), 16);
-    gfx.beginFill(hurt ? 0xffffff : fc);
+    gfx.beginFill(hurt ? 0xff4444 : fc);
     gfx.drawCircle(0, 0, e.size);
     gfx.endFill();
     gfx.beginFill(0x000000);
@@ -470,7 +486,6 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   if (e.hp <= 0) return; // no bars for corpse
 
   // HP bar
-  const ds  = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
   const bw  = Math.round(ds * 0.7 * 0.85);
   const bh  = 5;
   const bx  = -bw / 2;
@@ -484,10 +499,16 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     gfx.lineStyle(3, 0xff3232, bossGlow);
     gfx.drawCircle(0, 0, e.size + 5);
     gfx.lineStyle(0);
-    // Boss label
-    gfx.lineStyle(0);
-    // (text for БОСС/name is skipped in PixiJS pass — performance vs complexity tradeoff)
   }
+
+  // Name / boss label above HP bar
+  const { lbl } = obj;
+  const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
+  if (lbl.text !== lblText) lbl.text = lblText;
+  lbl.style.fill   = e.isBoss ? '#ff8888' : '#dddddd';
+  lbl.style.fontSize = e.isBoss ? 9 : 8;
+  lbl.x = 0;
+  lbl.y = by - 3;
 }
 
 function _updateEnemies(dt, pulse, bossGlow) {
@@ -514,9 +535,11 @@ function _getOtherPlayer(sid) {
   const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  ct.addChild(spr, gfx);
+  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 10, fontWeight: 'bold', fill: '#ffffff', stroke: '#000', strokeThickness: 3 });
+  lbl.anchor.set(0.5, 1);
+  ct.addChild(spr, gfx, lbl);
   _otherPCt.addChild(ct);
-  const obj = { ct, spr, gfx };
+  const obj = { ct, spr, gfx, lbl };
   _otherPool.set(sid, obj);
   return obj;
 }
@@ -580,6 +603,14 @@ function _updateOtherPlayers(pulse) {
     const bw = 38, bh = 4;
     gfx.beginFill(0x330000); gfx.drawRect(-bw/2, barTop, bw, bh); gfx.endFill();
     gfx.beginFill(0x22dd22); gfx.drawRect(-bw/2, barTop, bw * Math.max(0,(p.hp||0)/(p.maxHp||1)), bh); gfx.endFill();
+
+    // Player name
+    const { lbl } = obj;
+    const uname = (p.username || '?').slice(0, 16);
+    if (lbl.text !== uname) lbl.text = uname;
+    lbl.style.fill = p.pvpMode ? '#ff9999' : '#ffffff';
+    lbl.x = 0;
+    lbl.y = barTop - 3;
   });
   _otherPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
 }
@@ -665,9 +696,9 @@ function _updatePlayer(dt) {
 function pixiWorldRender(dt, ts, camX, camY, theme) {
   if (!_pixiApp) return;
 
-  pixiSetBg(theme ? theme.bg : '#060610');
+  const bgCol = theme ? theme.bg : '#060610';
+  if (bgCol !== _lastBgColor) { pixiSetBg(bgCol); _lastBgColor = bgCol; }
   _worldCt.visible = true;
-  _worldCt.scale.set(ZOOM);
   _worldCt.x = -camX * ZOOM;
   _worldCt.y = HEADER_H - camY * ZOOM;
 
