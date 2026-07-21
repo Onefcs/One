@@ -93,6 +93,8 @@ function _drawPerf(frameMs) {
 
 // UI overlay canvas (separate DOM element at native DPR)
 let _uiOverlay, _uiCtx = null;
+// HUD cache canvas — _renderUI() draws here at 20fps; blitted every frame (cheap drawImage)
+let _hudCv = null, _hudCvCtx = null, _uiLastMs = 0;
 // Camera position cached for UI overlay coordinate conversion
 let _lastCamX = 0, _lastCamY = 0;
 // Player sprite state flag (used by _drawPlayerNameOnUI for bar offset)
@@ -790,8 +792,28 @@ function render(dt, ts) {
   _uiCtx.clearRect(0, 0, _uiOverlay.width, _uiOverlay.height);
   _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  // HUD panels — every frame (world is GPU now so CPU budget allows 60fps HUD)
-  _renderUI();
+  // HUD panels: rebuild cache at 20fps, blit every frame (cheap drawImage)
+  if (ts - _uiLastMs >= 50) {
+    _uiLastMs = ts;
+    if (!_hudCv || _hudCv.width !== _uiOverlay.width || _hudCv.height !== _uiOverlay.height) {
+      _hudCv = document.createElement('canvas');
+      _hudCv.width = _uiOverlay.width;
+      _hudCv.height = _uiOverlay.height;
+      _hudCvCtx = _hudCv.getContext('2d');
+    }
+    _hudCvCtx.clearRect(0, 0, _hudCv.width, _hudCv.height);
+    _hudCvCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const _prevCtx = ctx; ctx = _hudCvCtx;
+    _renderUI();
+    ctx = _prevCtx;
+  }
+  if (_hudCv) {
+    _uiCtx.setTransform(1, 0, 0, 1, 0, 0);
+    _uiCtx.drawImage(_hudCv, 0, 0);
+    _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  // Player name + joystick: 60fps (smooth, cheap)
   if (player && dungeon) _drawPlayerNameOnUI();
   if (activeTab === 0) drawJoystick();
 
@@ -1128,6 +1150,7 @@ window.addEventListener('load', () => {
     _uiCtx = _uiOverlay.getContext('2d');
     // ctx global points to _uiCtx so HUD drawing functions work unchanged
     ctx = _uiCtx;
+    _hudCv = null;
     _skillBtnGradCache = null;
     _uiBtnGrads = null;
     _partyHpGrads = null;
