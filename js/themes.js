@@ -146,6 +146,57 @@ function _floorProps(mod, entries) {
   };
 }
 
+// ── Tile textures (painted, tiled + tinted per-theme) ──────────────────────
+// Source: the same hand-painted dungeon tileset as the floor props. These are
+// real seamless-ish photographic-style textures (grayscale stone/brick), not
+// procedural fills — each theme recolors them via a canvas 'color' blend
+// (keeps the painted shading, swaps hue/sat to the theme's own palette) so
+// the 20 existing zone moods carry over without touching per-theme data.
+const _TILE_TEX_DEF = {
+  floor:    'images/tiles/floor.png',
+  wallBody: 'images/tiles/wall_body.png',
+  wallCap:  'images/tiles/wall_cap.png',
+};
+const _tileTexImg = {};
+Object.keys(_TILE_TEX_DEF).forEach(key => {
+  const img = new Image();
+  img.src = _TILE_TEX_DEF[key];
+  _tileTexImg[key] = img;
+});
+
+// theme.name + ':' + key -> tinted offscreen <canvas>, built once and reused
+// as the source for cheap per-chunk createPattern() calls.
+const _tintedTileCache = new Map();
+
+function _getTintedTileCanvas(key, tintColor) {
+  const cacheKey = key + ':' + tintColor;
+  let cv = _tintedTileCache.get(cacheKey);
+  if (cv) return cv;
+  const img = _tileTexImg[key];
+  if (!img || !img.complete || !img.naturalWidth) return null;
+  cv = document.createElement('canvas');
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  const oc = cv.getContext('2d');
+  oc.drawImage(img, 0, 0);
+  oc.globalCompositeOperation = 'color';
+  oc.fillStyle = tintColor;
+  oc.fillRect(0, 0, cv.width, cv.height);
+  oc.globalCompositeOperation = 'destination-in';
+  oc.drawImage(img, 0, 0);
+  oc.globalCompositeOperation = 'source-over';
+  _tintedTileCache.set(cacheKey, cv);
+  return cv;
+}
+
+// Returns a repeating CanvasPattern for `key` tinted to theme `th`, or null
+// if the source image hasn't finished loading yet (caller should keep using
+// its flat-color fallback fill until then).
+function getTilePattern(ctx, th, key, tintColor) {
+  const cv = _getTintedTileCanvas(key, tintColor);
+  if (!cv) return null;
+  return ctx.createPattern(cv, 'repeat');
+}
+
 // ── Themes ────────────────────────────────────────────────
 const THEMES = [
 

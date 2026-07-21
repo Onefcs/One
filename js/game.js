@@ -1107,21 +1107,25 @@ function _buildChunk(cx, cy) {
   // NOTE: no 1px features — flat multi-pixel fills only, so the bilinear
   // blit at ZOOM 0.75 stays clean (thin lines would render unevenly).
 
-  // 1. Wall base fill
-  c.fillStyle = th.wallColor;
+  // 1. Wall base fill — real painted stone texture, tinted to this theme's
+  // wallColor; falls back to the flat color if the texture hasn't loaded yet.
+  c.fillStyle = (typeof getTilePattern === 'function' && getTilePattern(c, th, 'wallBody', th.wallColor)) || th.wallColor;
   c.fillRect(x0 - _CHUNK_G, y0 - _CHUNK_G, cv.width, cv.height);
 
-  // 2. Floor — subtle checkerboard
+  // 2. Floor — real painted stone texture, tinted to this theme's floorA.
+  const floorPat = (typeof getTilePattern === 'function') ? getTilePattern(c, th, 'floor', th.floorA) : null;
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      c.fillStyle = (tx + ty) % 2 === 0 ? th.floorA : th.floorB;
+      c.fillStyle = floorPat || ((tx + ty) % 2 === 0 ? th.floorA : th.floorB);
       c.fillRect(tx * TILE, ty * TILE, TILE, TILE);
     }
   }
 
-  // 3. Wall "cliff face" strip above floor (top-down depth cue)
-  c.fillStyle = th.wallEdge;
+  // 3. Wall "cliff face" strip above floor (top-down depth cue) — painted
+  // brick-cap texture, tinted to this theme's wallEdge.
+  const capPat = (typeof getTilePattern === 'function') ? getTilePattern(c, th, 'wallCap', th.wallEdge) : null;
+  c.fillStyle = capPat || th.wallEdge;
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
