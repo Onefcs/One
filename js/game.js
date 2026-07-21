@@ -185,8 +185,11 @@ function update(dt) {
       const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if (inp.len > 0) {
         player._chasing = false;
-        const vx = inp.dx * player.speed * _spdMult * inp.len * dt;
-        const vy = inp.dy * player.speed * _spdMult * inp.len * dt;
+        // Speed depends only on player.speed (character stat), not on how
+        // far the stick is pushed — inp.dx/dy are already a unit vector
+        // (inputDir() normalizes them), so no inp.len factor here.
+        const vx = inp.dx * player.speed * _spdMult * dt;
+        const vy = inp.dy * player.speed * _spdMult * dt;
         if (canMoveX(player, vx, 12)) player.x += vx;
         if (canMoveY(player, vy, 12)) player.y += vy;
         // Hysteresis on the facing axis: near-diagonal joystick input hovers
