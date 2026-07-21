@@ -21,6 +21,8 @@ let _dmgNumCt = null;
 // Entity sprite pools
 const _enemyPool  = new Map(); // id  → {ct, spr, gfx}
 const _otherPool  = new Map(); // sid → {ct, spr, gfx}
+const _seenEnm = new Set(); // reused per-frame — avoids allocation in hot path
+const _seenPlr = new Set();
 
 // Player rendering objects
 let _plSpr = null, _plGfx = null;
@@ -428,16 +430,28 @@ function _getEnemy(id) {
 function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const { ct, spr, gfx } = obj;
   ct.x = e.x; ct.y = e.y;
-  gfx.clear();
 
-  // Selection ring
-  if (e.id === targetId && !targetIsPlayer) {
-    gfx.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * pulse);
-    gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
-    gfx.lineStyle(0);
+  const ds = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
+  const by = -ds * 0.55 - 8;
+
+  // ── Graphics dirty check — skip clear+redraw when nothing visible changed
+  const isSelected = e.id === targetId && !targetIsPlayer;
+  const hurt = (e.hurtTimer || 0) > 0;
+  const slow = (e.slowTimer || 0) > 0;
+  const stun = (e.stunTimer || 0) > 0;
+  const gi = obj._gi;
+  const gfxDirty = isSelected || e.isBoss || !gi ||
+    gi.hp !== e.hp || gi.hurt !== hurt || gi.slow !== slow || gi.stun !== stun;
+  if (gfxDirty) {
+    gfx.clear();
+    if (isSelected) {
+      gfx.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * pulse);
+      gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
+      gfx.lineStyle(0);
+    }
   }
 
-  // Determine animation key (mirrors drawEnemySprite logic)
+  // ── Animation (always runs — sprite texture changes every frame)
   if (!e._facing) e._facing = 'down';
   let key;
   if (e.hp <= 0)                               key = 'death';
@@ -445,7 +459,6 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   else if (e.aggro && (e._moveTimer||0) > 0)  key = 'walk';
   else                                         key = 'idle';
 
-  // Advance animation timer (drawEnemySprite did this; now we do it here)
   const def = ENEMY_SPRITE_DEF[e.eid];
   if (def) {
     const sh = def.sheets[key];
@@ -464,7 +477,6 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     }
   }
 
-  const ds     = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
   const texRows = def ? _enemyTextures(e.eid, key) : null;
   const sh = def?.sheets[key];
   if (texRows && sh) {
@@ -473,75 +485,78 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     const frame  = Math.min(e._animFrame || 0, sh.cols - 1);
     const tex    = rowTex?.[frame];
     if (tex) {
-      spr.texture  = tex;
-      spr.width    = ds;
-      spr.height   = ds;
-      spr.x        = -ds * 0.5;
-      spr.y        = -ds * 0.55;
-      spr.tint    = (e.hurtTimer > 0) ? 0xff4444 : 0xffffff;
+      spr.texture = tex;
+      spr.width   = ds;
+      spr.height  = ds;
+      spr.x       = -ds * 0.5;
+      spr.y       = -ds * 0.55;
+      spr.tint    = hurt ? 0xff4444 : 0xffffff;
       spr.visible = true;
     } else { spr.visible = false; }
   } else {
     spr.visible = false;
-    // Circle fallback
-    const hurt = (e.hurtTimer||0) > 0;
-    const fc = parseInt((e.color||'#aa0000').replace('#',''), 16);
-    gfx.beginFill(hurt ? 0xff4444 : fc);
-    gfx.drawCircle(0, 0, e.size);
-    gfx.endFill();
-    gfx.beginFill(0x000000);
-    gfx.drawCircle(-e.size * 0.3, -e.size * 0.18, e.size * 0.18);
-    gfx.drawCircle( e.size * 0.3, -e.size * 0.18, e.size * 0.18);
-    gfx.endFill();
+    if (gfxDirty) {
+      const fc = parseInt((e.color || '#aa0000').replace('#', ''), 16);
+      gfx.beginFill(hurt ? 0xff4444 : fc);
+      gfx.drawCircle(0, 0, e.size);
+      gfx.endFill();
+      gfx.beginFill(0x000000);
+      gfx.drawCircle(-e.size * 0.3, -e.size * 0.18, e.size * 0.18);
+      gfx.drawCircle( e.size * 0.3, -e.size * 0.18, e.size * 0.18);
+      gfx.endFill();
+    }
   }
 
-  // Status overlays
-  if ((e.slowTimer||0) > 0) { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
-  if ((e.stunTimer||0) > 0) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
-
-  if (e.hp <= 0) return; // no bars for corpse
-
-  // HP bar
-  const bw  = Math.round(ds * 0.7 * 0.85);
-  const bh  = 5;
-  const bx  = -bw / 2;
-  const by  = -ds * 0.55 - 8;
-  gfx.beginFill(0x440000); gfx.drawRect(bx, by, bw, bh); gfx.endFill();
-  const pct = e.hp / e.maxHp;
-  const bc  = pct > 0.5 ? 0x22dd22 : pct > 0.25 ? 0xddaa22 : 0xdd2222;
-  gfx.beginFill(bc); gfx.drawRect(bx, by, bw * pct, bh); gfx.endFill();
-
-  if (e.isBoss) {
-    gfx.lineStyle(3, 0xff3232, bossGlow);
-    gfx.drawCircle(0, 0, e.size + 5);
-    gfx.lineStyle(0);
+  if (gfxDirty) {
+    if (slow) { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0, 0, e.size); gfx.endFill(); }
+    if (stun) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0, 0, e.size); gfx.endFill(); }
   }
 
-  // Name / boss label above HP bar
+  // Save dirty state before early return so dead enemies skip redraw next frame
+  if (!obj._gi) obj._gi = {};
+  obj._gi.hp = e.hp; obj._gi.hurt = hurt; obj._gi.slow = slow; obj._gi.stun = stun;
+  if (e.hp <= 0) return;
+
+  if (gfxDirty) {
+    const bw = Math.round(ds * 0.7 * 0.85);
+    const bx = -bw / 2;
+    gfx.beginFill(0x440000); gfx.drawRect(bx, by, bw, 5); gfx.endFill();
+    const pct = e.hp / e.maxHp;
+    const bc  = pct > 0.5 ? 0x22dd22 : pct > 0.25 ? 0xddaa22 : 0xdd2222;
+    gfx.beginFill(bc); gfx.drawRect(bx, by, bw * pct, 5); gfx.endFill();
+    if (e.isBoss) {
+      gfx.lineStyle(3, 0xff3232, bossGlow);
+      gfx.drawCircle(0, 0, e.size + 5);
+      gfx.lineStyle(0);
+    }
+  }
+
   const { lbl } = obj;
-  const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
+  const lblText   = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
+  const newFill   = e.isBoss ? '#ff9999' : '#e8e8e8';
+  const newSize   = e.isBoss ? 18 : 14;
+  const newStroke = e.isBoss ? 5 : 4;
   if (lbl.text !== lblText) lbl.text = lblText;
-  lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
-  lbl.style.fontSize     = e.isBoss ? 18 : 14;
-  lbl.style.strokeThickness = e.isBoss ? 5 : 4;
+  if (lbl.style.fill !== newFill) lbl.style.fill = newFill;
+  if (lbl.style.fontSize !== newSize) lbl.style.fontSize = newSize;
+  if (lbl.style.strokeThickness !== newStroke) lbl.style.strokeThickness = newStroke;
   lbl.x = 0;
   lbl.y = by - 4;
 }
 
 function _updateEnemies(dt, pulse, bossGlow) {
   _visEnm = 0;
-  const seen = new Set();
+  _seenEnm.clear();
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return;
-    // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
     if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
     _visEnm++;
-    seen.add(e.id);
+    _seenEnm.add(e.id);
     const obj = _getEnemy(e.id);
     obj.ct.visible = true;
     _updateEnemyObj(e, obj, dt, pulse, bossGlow);
   });
-  _enemyPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
+  _enemyPool.forEach((obj, id) => { if (!_seenEnm.has(id)) obj.ct.visible = false; });
 }
 
 // ── other players ─────────────────────────────────────────
@@ -572,37 +587,49 @@ function _getOtherPlayer(sid) {
 }
 
 function _updateOtherPlayers(pulse) {
-  const seen = new Set();
+  _seenPlr.clear();
   otherPlayers.forEach((p, pid) => {
     if (p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
-    seen.add(pid);
+    _seenPlr.add(pid);
     const obj = _getOtherPlayer(pid);
     const { ct, spr, gfx } = obj;
     ct.visible = true;
     ct.x = p.x; ct.y = p.y;
-    gfx.clear();
 
-    // Selection ring
-    if (pid === targetId && targetIsPlayer) {
-      gfx.lineStyle(2.5, 0xff5050, 0.65 + 0.35 * pulse);
-      gfx.drawCircle(0, 0, 22 + pulse * 3);
-      gfx.lineStyle(0);
+    // Determine sprite availability up-front so dirty check can include it
+    const key          = getOtherPlayerAnimKey(p);
+    const textures     = _playerTextures(p.type, key);
+    const def          = SPRITE_DEF[p.type];
+    const willUseSprite = !!(textures && def);
+
+    // ── Graphics dirty check — skip clear+redraw when nothing visible changed
+    const isSelected = pid === targetId && targetIsPlayer;
+    const swinging   = (p._swingTimer || 0) > 0;
+    const slow       = (p.slowTimer   || 0) > 0;
+    const stun       = (p.stunTimer   || 0) > 0;
+    const pg         = obj._gi;
+    const gfxDirty   = isSelected || swinging || !pg ||
+      pg.hp !== p.hp || pg.maxHp !== p.maxHp ||
+      pg.slow !== slow || pg.stun !== stun || pg.usedSprite !== willUseSprite;
+
+    if (gfxDirty) {
+      gfx.clear();
+      if (isSelected) {
+        gfx.lineStyle(2.5, 0xff5050, 0.65 + 0.35 * pulse);
+        gfx.drawCircle(0, 0, 22 + pulse * 3);
+        gfx.lineStyle(0);
+      }
+      if (swinging) {
+        const sa = p._swingAngle || 0;
+        gfx.lineStyle(2.5, 0xc8dcff, 0.65);
+        gfx.arc(0, 0, 30, sa - 0.65, sa + 0.65);
+        gfx.lineStyle(0);
+      }
     }
 
-    // Swing arc
-    if ((p._swingTimer||0) > 0) {
-      const sa = p._swingAngle || 0;
-      gfx.lineStyle(2.5, 0xc8dcff, 0.65);
-      gfx.arc(0, 0, 30, sa - 0.65, sa + 0.65);
-      gfx.lineStyle(0);
-    }
-
-    // Sprite
-    const key      = getOtherPlayerAnimKey(p);
-    const textures = _playerTextures(p.type, key);
-    const def      = SPRITE_DEF[p.type];
+    // ── Sprite (always updated for animation)
     let usedSprite = false;
-    if (textures && def) {
+    if (willUseSprite) {
       const ad = def.anims[key];
       const fi = Math.min(Math.floor(p.animFrame || 0), (ad?.n || 1) - 1);
       spr.texture = textures[fi] || PIXI.Texture.WHITE;
@@ -614,44 +641,60 @@ function _updateOtherPlayers(pulse) {
       spr.width = dw; spr.height = dh;
       spr.x = -dw / 2; spr.y = -dh * 0.62;
       spr.visible = true;
-      usedSprite = true;
+      usedSprite  = true;
     } else {
       spr.visible = false;
-      const fc = parseInt((CHAR_DEF[p.type]?.color || '#aaaaaa').replace('#',''), 16);
-      gfx.beginFill(fc); gfx.drawCircle(0, 0, 14); gfx.endFill();
+      if (gfxDirty) {
+        const fc = parseInt((CHAR_DEF[p.type]?.color || '#aaaaaa').replace('#', ''), 16);
+        gfx.beginFill(fc); gfx.drawCircle(0, 0, 14); gfx.endFill();
+      }
     }
 
-    // Status overlays
-    if ((p.slowTimer||0) > 0) { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,18); gfx.endFill(); }
-    if ((p.stunTimer||0) > 0) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,18); gfx.endFill(); }
+    if (gfxDirty) {
+      if (slow) { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0, 0, 18); gfx.endFill(); }
+      if (stun) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0, 0, 18); gfx.endFill(); }
+    }
 
-    // HP bar
     const barTop = usedSprite ? -39 : -20;
-    const bw = 38, bh = 4;
-    gfx.beginFill(0x330000); gfx.drawRect(-bw/2, barTop, bw, bh); gfx.endFill();
-    gfx.beginFill(0x22dd22); gfx.drawRect(-bw/2, barTop, bw * Math.max(0,(p.hp||0)/(p.maxHp||1)), bh); gfx.endFill();
+    if (gfxDirty) {
+      const bw = 38;
+      gfx.beginFill(0x330000); gfx.drawRect(-bw / 2, barTop, bw, 4); gfx.endFill();
+      gfx.beginFill(0x22dd22); gfx.drawRect(-bw / 2, barTop, bw * Math.max(0, (p.hp || 0) / (p.maxHp || 1)), 4); gfx.endFill();
+    }
 
-    // Player name
+    // Save dirty state
+    if (!obj._gi) obj._gi = {};
+    obj._gi.hp = p.hp; obj._gi.maxHp = p.maxHp;
+    obj._gi.slow = slow; obj._gi.stun = stun; obj._gi.usedSprite = willUseSprite;
+
+    // ── Player name
     const { lbl, clanCt, clanLbl, iconSpr } = obj;
     const uname = (p.username || '?').slice(0, 16);
     if (lbl.text !== uname) lbl.text = uname;
-    lbl.style.fill = p.pvpMode ? '#ff9999' : '#ffffff';
+    const newFill = p.pvpMode ? '#ff9999' : '#ffffff';
+    if (lbl.style.fill !== newFill) lbl.style.fill = newFill;
     lbl.x = 0;
     lbl.y = barTop - 3;
 
-    // Clan row: icon + name, centered as a group above the player name
+    // ── Clan row: icon + name, centered above the player name
     const cname = p.clanName || '';
     if (cname) {
-      if (clanLbl.text !== cname) clanLbl.text = cname;
-      iconSpr.texture = _getClanIconTex(p.clanIcon || 1);
+      const newTex    = _getClanIconTex(p.clanIcon || 1);
+      const texChg    = iconSpr.texture !== newTex;
+      const nameChg   = clanLbl.text   !== cname;
+      if (texChg)  iconSpr.texture = newTex;
+      if (nameChg) clanLbl.text    = cname;
       clanCt.visible = true;
-      clanCt.y = lbl.y - 14;
-      clanCt.x = -clanCt.width / 2; // center icon+text group over player
+      clanCt.y       = lbl.y - 14;
+      // Only recompute layout width when content changed (avoids per-frame PixiJS measure)
+      if (nameChg || texChg || obj._clanW == null) obj._clanW = clanCt.width;
+      clanCt.x = -obj._clanW / 2;
     } else {
       clanCt.visible = false;
+      obj._clanW = null;
     }
   });
-  _otherPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
+  _otherPool.forEach((obj, id) => { if (!_seenPlr.has(id)) obj.ct.visible = false; });
 }
 
 // ── player ────────────────────────────────────────────────
