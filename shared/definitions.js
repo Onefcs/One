@@ -20,14 +20,14 @@ const CHAR_DEF = {
 // ── Enemy definitions ─────────────────────────────────────────────────────────
 // Floors 1-5 use FLOOR_ENEMIES map; floors 6+ use orc/troll/demon.
 const ENEMY_DEF = [
-  // Floor 1 — Goblins
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:220, atk:26,  def:6,  spd:66,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
-  // Floor 2 — Skeletons
-  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:225,  atk:48,  def:3,  spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:270,  atk:60,  def:4,  spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:1050, atk:120, def:8,  spd:55,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  // Floor 1 — Skeletons (swapped from floor 2, stats adjusted to floor-1 level)
+  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:220, atk:26,  def:6,  spd:66,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
+  // Floor 2 — Goblins (swapped from floor 1, stats adjusted to floor-2 level)
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:225,  atk:48,  def:3,  spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:270,  atk:60,  def:4,  spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:1050, atk:120, def:8,  spd:55,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
   // Floor 3 — Mushrooms
   { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:330,  atk:66,  def:5,  spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
   { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:390,  atk:84,  def:6,  spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
@@ -48,8 +48,8 @@ const ENEMY_DEF = [
 
 // Per-floor enemy pools for floors 1-5
 const FLOOR_ENEMIES = {
-  1: { pool: ['goblin_guard', 'goblin_warrior'], boss: 'goblin_boss'   },
-  2: { pool: ['skel_warrior', 'skel_barbarian'], boss: 'skel_boss'     },
+  1: { pool: ['skel_warrior',  'skel_barbarian'], boss: 'skel_boss'     },
+  2: { pool: ['goblin_guard', 'goblin_warrior'], boss: 'goblin_boss'   },
   3: { pool: ['mush_guard',   'mush_warrior'],   boss: 'mush_boss'     },
   4: { pool: ['ghost_warrior','ghost_guard'],     boss: 'ghost_boss'    },
   5: { pool: ['golem_warrior','golem_guard'],     boss: 'golem_boss'    },
