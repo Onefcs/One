@@ -43,15 +43,16 @@ function netConnect(onReady) {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink, vipData }) => {
+  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
     netUsername = username;
     _savedData = savedData || null;
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     // Store GRAM info globally
-    window._gramBalance = gramBalance || 0;
-    window._gramWallet  = gramWallet  || '';
-    window._refLink     = refLink     || '';
-    window._vipData     = vipData     || { level: 0, deposited: 0, pending: [] };
+    window._gramBalance   = gramBalance   || 0;
+    window._gramWallet    = gramWallet    || '';
+    window._refLink       = refLink       || '';
+    window._vipData       = vipData       || { level: 0, deposited: 0, pending: [] };
+    window._nexumBalance  = nexumBalance  || 0;
     const _ls = document.getElementById('login-screen');
     if (_ls) {
       _ls.classList.add('splash-out');
@@ -330,7 +331,7 @@ function netConnect(onReady) {
     netSaveProgress();
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, bossStone, normStone, blessStone }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, bossStone, normStone, blessStone, nexum }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -391,6 +392,11 @@ function netConnect(onReady) {
       player.gold += _goldFinal;
       const g = _goldFinal % 1 === 0 ? _goldFinal : +_goldFinal.toFixed(1);
       dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
+    }
+    if (nexum && player) {
+      window._nexumBalance = (window._nexumBalance || 0) + nexum;
+      player.nexumBalance = window._nexumBalance;
+      dmgNum(px, py - 52, '+' + nexum + ' Nexum', '#00e5ff');
     }
     // Notify server for clan XP (1 kill = 1 clan point)
     if (xp && player && clanData) socket.emit('clanKill');
