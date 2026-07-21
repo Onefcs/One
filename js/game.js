@@ -1285,17 +1285,29 @@ let _loopTs = 0;
 // becomes uneven step SIZE on screen every other frame — mathematically
 // correct average speed, but visually reads as a constant rhythmic stutter,
 // which is what was being reported as "the whole world/camera jitters."
-// A flat 2-frame average of dt exactly cancels a period-2 alternating
-// pattern (avg of frame N and N-1 is the same value on both the "short" and
-// "long" frame), at the cost of ~one frame (~16ms) of added input lag —
-// negligible next to the game's existing 65ms other-player interpolation
-// delay and 100+ms network ping.
-let _prevRawDt = 1 / 60;
+// A flat N-frame average of dt cancels a period-2 alternating pattern only
+// when N is EVEN — an odd window still carries a phase-dependent bias (e.g.
+// N=3 leaves ~2.0/2.8 instead of a flat value; verified before picking this
+// number). Widened from 2 to 4 frames: a follow-up recording after the
+// 2-frame version showed the steady-hold portion of a run was already
+// perfectly even, but transitions (starting/stopping) still showed some
+// raggedness — a slightly wider (but still even) window trades a few more
+// ms of lag for more robustness against irregularity that isn't a clean
+// period-2 alternation, while still fully cancelling period-2 exactly like
+// N=2 did. Costs ~2 frames (~33ms) of added input lag — still negligible
+// next to the game's existing 65ms other-player interpolation delay and
+// 100+ms network ping.
+const _DT_SMOOTH_N = 4;
+const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 60);
+let _dtBufIdx = 0;
 function loop(ts) {
   const frameMs = ts - _loopTs; _loopTs = ts;
   const rawDt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
-  const dt = (rawDt + _prevRawDt) / 2;
-  _prevRawDt = rawDt;
+  _dtBuf[_dtBufIdx] = rawDt;
+  _dtBufIdx = (_dtBufIdx + 1) % _DT_SMOOTH_N;
+  let dt = 0;
+  for (let i = 0; i < _DT_SMOOTH_N; i++) dt += _dtBuf[i];
+  dt /= _DT_SMOOTH_N;
   const _t0 = performance.now();
   update(dt);
   const _t1 = performance.now();
