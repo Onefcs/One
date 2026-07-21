@@ -1122,18 +1122,16 @@ function _buildChunk(cx, cy) {
     }
   }
 
-  // 3. Wall face — every wall tile gets the full painted rock-face art
-  // (brick cap + rubble body baked into one picture) instead of a flat
-  // fill. 3 art variants picked by tile hash so walls don't visibly repeat
-  // the same picture over and over.
-  if (typeof getTintedTexture === 'function') {
-    for (let ty = ty0; ty <= ty1; ty++) {
-      for (let tx = tx0; tx <= tx1; tx++) {
-        if (dungeon.grid[ty][tx] !== WALL) continue;
-        const h = ((tx * 37) ^ (ty * 53)) & 0xff;
-        const faceCv = getTintedTexture(getWallFaceKey(h), th.wallColor);
-        if (faceCv) c.drawImage(faceCv, tx * TILE, ty * TILE, TILE, TILE);
-      }
+  // 3. Wall "cliff face" strip above floor (top-down depth cue) — painted
+  // brick-cap texture, tinted to this theme's wallColor. The body fill from
+  // step 1 already tiles as clean brick everywhere else.
+  const capPat = (typeof getTilePattern === 'function') ? getTilePattern(c, 'wallCap', th.wallColor) : null;
+  c.fillStyle = capPat || th.wallColor;
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      if (dungeon.grid[ty][tx] !== WALL) continue;
+      if (!isFloor(tx, ty + 1)) continue;
+      c.fillRect(tx * TILE, ty * TILE + TILE - 10, TILE, 10);
     }
   }
 

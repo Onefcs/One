@@ -46,6 +46,18 @@ const PROP_DEF = {
   vine2:           { src: 'images/props/vine2.png',           w: 24 },
   bush1:           { src: 'images/props/bush1.png',           w: 20 },
   bush2:           { src: 'images/props/bush2.png',           w: 18 },
+  bone_long:       { src: 'images/props/bone_long.png',       w: 18 },
+  bone_small:      { src: 'images/props/bone_small.png',      w: 16 },
+  bone_skull:      { src: 'images/props/bone_skull.png',      w: 14 },
+  bone_ribcage:    { src: 'images/props/bone_ribcage.png',    w: 28 },
+  crystal_purple:  { src: 'images/props/crystal_purple.png',  w: 14 },
+  crystal_blue:    { src: 'images/props/crystal_blue.png',    w: 14 },
+  crystal_green:   { src: 'images/props/crystal_green.png',   w: 16 },
+  rune_stone1:     { src: 'images/props/rune_stone1.png',     w: 18 },
+  rune_stone2:     { src: 'images/props/rune_stone2.png',     w: 18 },
+  mushroom_spotted:{ src: 'images/props/mushroom_spotted.png',w: 18 },
+  spore_sac:       { src: 'images/props/spore_sac.png',       w: 22 },
+  tombstone_mossy: { src: 'images/props/tombstone_mossy.png', w: 30 },
 };
 
 // Start loading immediately (script parse time) — small, low-priority
@@ -80,19 +92,15 @@ function _floorProps(mod, entries) {
 }
 
 // ── Tile textures (painted, tiled + tinted per-theme) ──────────────────────
-// Source: the same hand-painted dungeon tileset as the floor props. These are
-// real seamless-ish photographic-style textures (grayscale stone/brick), not
-// procedural fills — each theme recolors them via a canvas 'color' blend
-// (keeps the painted shading, swaps hue/sat to the theme's own palette) so
-// the 20 existing zone moods carry over without touching per-theme data.
+// Source: a hand-painted top-down cave/dungeon tileset — real seamless
+// stone-brick textures, not procedural fills. Each theme recolors them via
+// a canvas 'color' blend (keeps the painted shading, swaps hue/sat to the
+// theme's own palette) so all 5 floor moods share one set of art.
 const _TILE_TEX_DEF = {
   floor:    'images/tiles/floor.png',
   wallBody: 'images/tiles/wall_body.png',
-  wallFaceA: 'images/tiles/wall_face_a.png',
-  wallFaceB: 'images/tiles/wall_face_b.png',
-  wallFaceC: 'images/tiles/wall_face_c.png',
+  wallCap:  'images/tiles/wall_cap.png',
 };
-const WALL_FACE_KEYS = ['wallFaceA', 'wallFaceB', 'wallFaceC'];
 const _tileTexImg = {};
 Object.keys(_TILE_TEX_DEF).forEach(key => {
   const img = new Image();
@@ -133,20 +141,6 @@ function getTilePattern(ctx, key, tintColor) {
   return ctx.createPattern(cv, 'repeat');
 }
 
-// Returns the tinted offscreen <canvas> itself (for a plain drawImage per
-// wall tile instead of a repeating pattern) — used for the full painted
-// wall-face art, where each tile shows one whole (scaled-down) picture
-// rather than a continuously-tiled texture.
-function getTintedTexture(key, tintColor) {
-  return _getTintedTileCanvas(key, tintColor);
-}
-
-// Picks one of the 3 wall-face art variants per tile (by hash) so a long
-// wall doesn't visibly stamp the same picture over and over.
-function getWallFaceKey(h) {
-  return WALL_FACE_KEYS[h % WALL_FACE_KEYS.length];
-}
-
 // ── Themes ────────────────────────────────────────────────
 const THEMES = [
 
@@ -161,28 +155,28 @@ const THEMES = [
   {
     name: '💀 Костяной склеп', bg: '#0a0c10', mmFloor: '#6a7488',
     wallColor: '#3a4550', floorA: '#262c34', floorB: '#2d333c',
-    drawFloorProp: _floorProps(40, [{ key: 'grave_marker' }, { key: 'chest_banded' }, { key: 'key_gold' }, { key: 'spikes_row' }]),
+    drawFloorProp: _floorProps(40, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'key_gold' }, { key: 'spikes_row' }]),
   },
 
   // Floor 3 — Грибные пещеры (mushrooms)
   {
     name: '🍄 Грибные пещеры', bg: '#0a0814', mmFloor: '#6a4d8a',
     wallColor: '#3d3a5a', floorA: '#241f38', floorB: '#2b2542',
-    drawFloorProp: _floorProps(40, [{ key: 'slime_small' }, { key: 'slime_medium' }, { key: 'bush1' }, { key: 'barrel_slime' }]),
+    drawFloorProp: _floorProps(40, [{ key: 'slime_small' }, { key: 'slime_medium' }, { key: 'mushroom_spotted' }, { key: 'spore_sac' }, { key: 'barrel_slime' }]),
   },
 
   // Floor 4 — Обитель призраков (ghosts)
   {
     name: '👻 Обитель призраков', bg: '#0a0c16', mmFloor: '#7a7ab0',
     wallColor: '#4a4568', floorA: '#2c2c48', floorB: '#333356',
-    drawFloorProp: _floorProps(40, [{ key: 'grave_marker' }, { key: 'chest_round' }, { key: 'treasure_medium' }, { key: 'spikes_row' }]),
+    drawFloorProp: _floorProps(40, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'rune_stone1' }, { key: 'rune_stone2' }, { key: 'crystal_purple' }, { key: 'treasure_medium' }]),
   },
 
   // Floor 5 — Крепость големов (golems)
   {
     name: '🗿 Крепость големов', bg: '#120c08', mmFloor: '#b07840',
     wallColor: '#6b4a35', floorA: '#3c2c20', floorB: '#453427',
-    drawFloorProp: _floorProps(40, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'treasure_large' }, { key: 'pillar' }]),
+    drawFloorProp: _floorProps(40, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'treasure_large' }, { key: 'pillar' }, { key: 'rune_stone1' }, { key: 'crystal_blue' }]),
   },
 ];
 
