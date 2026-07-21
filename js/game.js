@@ -1218,9 +1218,11 @@ function respawnPlayer() {
   player.hp = player.maxHp;
   player.hurtTimer = 0;
   player.atkTimer = 0.5;
-  if (dungeon) { player.x = dungeon.spawn.x; player.y = dungeon.spawn.y; }
-  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
-  clampCamera();
+  if (dungeon) {
+    player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
+    camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
+    clampCamera(); // reads dungeon.w/h — only safe once dungeon is confirmed loaded
+  }
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
   if (xpLoss > 0) dmgNum(player.x, player.y - 30, `−${xpLoss} XP`, '#a88');
