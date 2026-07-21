@@ -13,7 +13,7 @@ const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
-  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus,
+  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -21,15 +21,18 @@ const MARKET_MIN_PRICE   = 0.1;
 const MARKET_MAX_PRICE   = 1000;
 const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
 const MARKET_MAX_ACTIVE  = 20;     // active listings per seller
+const MARKET_MAX_QTY     = 9999;   // sanity bound on a stackable listing's quantity
 const MARKET_LIST_COOLDOWN_MS = 3000;
 function _round2(n) { return Math.round(n * 100) / 100; }
 
 // Rebuild a listing's item entirely from the canonical catalog — the client
-// is only trusted for WHICH item (id) and WHICH enhance level, never for any
-// stat field. This can't stop someone claiming an enhance level they didn't
-// actually earn (the enhance/craft system itself is still client-computed,
-// same as the rest of this game's economy), but it does stop a listing from
-// carrying arbitrary made-up stats, rarity, or an item id that doesn't exist.
+// is only trusted for WHICH item (id), WHICH enhance level, and (for
+// stackable items) HOW MANY units, never for any stat field. This can't
+// stop someone claiming an enhance level or a quantity they don't actually
+// have (the enhance/craft system and the inventory itself are still
+// client-computed, same as the rest of this game's economy), but it does
+// stop a listing from carrying arbitrary made-up stats, rarity, or an item
+// id that doesn't exist.
 function _canonicalMarketItem(rawItem) {
   if (!rawItem || typeof rawItem !== 'object') return null;
   const id = rawItem.id;
@@ -39,6 +42,10 @@ function _canonicalMarketItem(rawItem) {
   if (ENHANCEABLE_SLOTS.has(base.slot)) {
     const enh = Math.floor(Number(rawItem.enhance));
     item.enhance = (Number.isFinite(enh) && enh >= 0 && enh <= ENHANCE_MAX) ? enh : 0;
+  }
+  if (isStackableItem(base)) {
+    const qty = Math.floor(Number(rawItem.qty));
+    item.qty = (Number.isFinite(qty) && qty >= 1 && qty <= MARKET_MAX_QTY) ? qty : 1;
   }
   return item;
 }

@@ -2331,14 +2331,15 @@ function _renderMarketBody() {
 function _marketRowHtml(l, mode) {
   const it = l.item || {};
   const rc = RARITY_COLOR[it.rarity] || '#aaa';
-  const sub = mode === 'buy' ? `@${l.sellerUsername || '?'}` : (statStr(it) || (it.qty > 1 ? `×${it.qty}` : ''));
+  const qtySuffix = it.qty > 1 ? ` ×${it.qty}` : '';
+  const sub = mode === 'buy' ? `@${l.sellerUsername || '?'}` : (statStr(it) || '');
   const action = mode === 'buy'
     ? `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">Купить</button>`
     : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">Снять</button>`;
   return `<div class="market-row">
     <div class="market-row-icon">${_itemIcon(it, 28)}</div>
     <div class="market-row-info">
-      <div class="market-row-name" style="color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}</div>
+      <div class="market-row-name" style="color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${qtySuffix}</div>
       <div class="market-row-sub">${sub}</div>
       ${action}
     </div>
@@ -2375,7 +2376,7 @@ function _renderMarketHistoryTab(el) {
     return `<div class="market-row">
       <div class="market-row-icon">${_itemIcon(it, 28)}</div>
       <div class="market-row-info">
-        <div class="market-row-name" style="color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}</div>
+        <div class="market-row-name" style="color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
         <div class="market-row-sub">${h.counterpart ? '@' + h.counterpart + ' · ' : ''}${date}</div>
         <span class="market-hist-status ${statusCls}">${statusLbl}</span>
       </div>
@@ -2420,7 +2421,7 @@ function openMarketBuyConfirm(listingId) {
       <div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(255,255,255,.04);border-radius:10px;margin-bottom:14px">
         <div class="market-row-icon" style="width:44px;height:44px">${_itemIcon(it, 32)}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}</div>
+          <div style="font-weight:700;color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
           <div style="font-size:11px;color:#7788aa;margin-top:2px">${statStr(it) || '&nbsp;'}</div>
           <div style="font-size:11px;color:#7788aa;margin-top:2px">Продавец: @${l.sellerUsername || '?'}</div>
         </div>
@@ -2464,7 +2465,12 @@ function openMarketSellPicker() {
       <div class="market-pick-grid" id="market-pick-grid"></div>
       <div id="market-sell-confirm" style="display:none;margin-top:6px">
         <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,.04);border-radius:10px;margin-bottom:12px" id="market-sell-selected"></div>
-        <div style="font-size:11px;color:#7788aa;margin-bottom:5px">Цена (${MARKET_MIN_PRICE}–${MARKET_MAX_PRICE} GRAM)</div>
+        <div id="market-qty-row" style="display:none;margin-bottom:10px">
+          <div style="font-size:11px;color:#7788aa;margin-bottom:5px">Количество</div>
+          <input type="number" id="market-qty-input" min="1" step="1" value="1"
+            style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#fff;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
+        </div>
+        <div style="font-size:11px;color:#7788aa;margin-bottom:5px">Цена за всё количество (${MARKET_MIN_PRICE}–${MARKET_MAX_PRICE} GRAM)</div>
         <input type="number" id="market-price-input" min="${MARKET_MIN_PRICE}" max="${MARKET_MAX_PRICE}" step="0.1" value="1"
           style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#fff;font-size:15px;font-weight:700;margin-bottom:6px;box-sizing:border-box" oninput="_updateMarketFeePreview()">
         <div id="market-fee-preview" style="font-size:11px;color:#7788aa;margin-bottom:14px"></div>
@@ -2501,13 +2507,35 @@ function _pickMarketSellItem(idx) {
   const it = player.inventory[idx];
   const box = document.getElementById('market-sell-selected');
   const confirmWrap = document.getElementById('market-sell-confirm');
+  const qtyRow = document.getElementById('market-qty-row');
   if (!it || !box || !confirmWrap) return;
   const rc = RARITY_COLOR[it.rarity] || '#aaa';
+  const have = it.qty || 1;
+  const stackable = _isStackable(it) && have > 1;
   box.innerHTML = `<div class="market-row-icon" style="width:40px;height:40px">${_itemIcon(it, 28)}</div>
     <div><div style="font-weight:700;color:${rc}">${it.name}${it.enhance ? ' +' + it.enhance : ''}</div>
-    <div style="font-size:11px;color:#7788aa;margin-top:2px">${statStr(it) || (it.qty > 1 ? '×' + it.qty : '')}</div></div>`;
+    <div style="font-size:11px;color:#7788aa;margin-top:2px">${statStr(it) || (have > 1 ? 'У вас: ×' + have : '')}</div></div>`;
   confirmWrap.style.display = 'block';
+  if (qtyRow) {
+    qtyRow.style.display = stackable ? 'block' : 'none';
+    if (stackable) {
+      const qtyInput = document.getElementById('market-qty-input');
+      if (qtyInput) { qtyInput.max = have; qtyInput.value = have; } // default: list the whole stack
+    }
+  }
   _updateMarketFeePreview();
+}
+
+function _clampMarketQtyInput() {
+  const idx = _marketSellPick;
+  const it  = idx !== null && player ? player.inventory[idx] : null;
+  const input = document.getElementById('market-qty-input');
+  if (!it || !input) return;
+  const have = it.qty || 1;
+  let v = Math.floor(Number(input.value));
+  if (!Number.isFinite(v) || v < 1) v = 1;
+  if (v > have) v = have;
+  input.value = v;
 }
 
 function _updateMarketFeePreview() {
@@ -2532,8 +2560,8 @@ function _setSellPickerBusy(busy) {
 
 function _confirmMarketList() {
   if (_marketSellPick === null || !player || _pendingSellItem) return;
-  const input = document.getElementById('market-price-input');
-  const p = Number(input?.value);
+  const priceInput = document.getElementById('market-price-input');
+  const p = Number(priceInput?.value);
   if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
     _marketToast(`Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM`, 'err');
     return;
@@ -2541,12 +2569,18 @@ function _confirmMarketList() {
   const idx = _marketSellPick;
   const it  = player.inventory[idx];
   if (!it) return;
-  // Stackable items (materials/potions) list a single unit, split off the stack
+  const have = it.qty || 1;
   let itemSnapshot;
-  if (_isStackable(it) && (it.qty || 1) > 1) {
-    itemSnapshot = { ...it, qty: 1 };
-    it.qty -= 1;
+  if (_isStackable(it) && have > 1) {
+    const qtyInput = document.getElementById('market-qty-input');
+    let qty = Math.floor(Number(qtyInput?.value));
+    if (!Number.isFinite(qty) || qty < 1) qty = 1;
+    if (qty > have) qty = have;
+    itemSnapshot = { ...it, qty };
+    if (qty >= have) player.inventory.splice(idx, 1);
+    else it.qty = have - qty;
   } else {
+    // Single unit (stackable with qty 1, or non-stackable equipment)
     itemSnapshot = it;
     player.inventory.splice(idx, 1);
   }
@@ -2582,7 +2616,7 @@ function onMarketListed(listing) {
 }
 function onMarketCancelled(listingId, item) {
   _marketMine = _marketMine.filter(l => l.id !== listingId);
-  if (item) addToInventory(item);
+  if (item) addToInventoryQty(item, item.qty || 1);
   updateInvUI();
   if (_marketTab === 'mine') _renderMarketBody();
   netSaveProgressNow();
@@ -2590,11 +2624,11 @@ function onMarketCancelled(listingId, item) {
 }
 function onMarketBought(listingId, item) {
   _marketLots = _marketLots.filter(l => l.id !== listingId);
-  if (item && !addToInventory(item)) _marketToast('Инвентарь полон — предмет не поместился!', 'err');
+  if (item && !addToInventoryQty(item, item.qty || 1)) _marketToast('Инвентарь полон — предмет не поместился!', 'err');
   updateInvUI();
   if (_marketTab === 'lots') _renderMarketBody();
   netSaveProgressNow();
-  _marketToast(`Куплено: ${item?.name || ''}`, 'ok');
+  _marketToast(`Куплено: ${item?.name || ''}${item?.qty > 1 ? ' ×' + item.qty : ''}`, 'ok');
 }
 function onMarketSold(data) {
   _marketToast(`Продано: ${data.itemName} за ${data.price} GRAM (+${(data.payout || 0).toFixed(2)} вам)`, 'ok');
@@ -2606,7 +2640,8 @@ function onMarketError(msg) {
 }
 function onMarketListError(msg) {
   if (_pendingSellItem) {
-    addToInventory(_pendingSellItem.item);
+    const it = _pendingSellItem.item;
+    addToInventoryQty(it, it.qty || 1);
     updateInvUI();
     _pendingSellItem = null;
     _setSellPickerBusy(false);

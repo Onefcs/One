@@ -1,4 +1,5 @@
-function _isStackable(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion'; }
+// Delegates to shared/definitions.js so client and server can't drift apart.
+function _isStackable(it) { return isStackableItem(it); }
 
 function invSlotCount() {
   return player.inventory.length;
@@ -19,6 +20,18 @@ function addToInventory(it) {
   } else {
     player.inventory.push(it);
   }
+  return true;
+}
+
+// Same as addToInventory but adds `qty` units at once (e.g. a Market
+// purchase of a stacked item) instead of always exactly 1.
+function addToInventoryQty(it, qty) {
+  qty = Math.max(1, Math.floor(qty) || 1);
+  if (!_isStackable(it)) return addToInventory(it);
+  const existing = player.inventory.find(i => i.id === it.id);
+  if (existing) { existing.qty = (existing.qty || 1) + qty; return true; }
+  if (!invHasSpace()) return false;
+  player.inventory.push({ ...it, qty });
   return true;
 }
 

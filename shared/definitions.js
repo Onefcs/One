@@ -173,6 +173,9 @@ function enhanceBonus(it, levels) {
   if (it.hp)  b.hp  = Math.max(5, Math.ceil(it.hp  * 0.10)) * levels;
   return b;
 }
+// Items that stack into one inventory slot by id, tracked with a qty
+// counter (mirrors _isStackable in player.js)
+function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion'; }
 
 // ── VIP System ────────────────────────────────────────────────────────────────
 // GRAM threshold to reach THIS level (counter resets after each level-up)
@@ -196,5 +199,5 @@ const VIP_BONUSES = [
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL,
   VIP_THRESHOLDS, VIP_BONUSES,
-  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus,
+  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
 };
