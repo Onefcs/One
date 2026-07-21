@@ -1130,6 +1130,21 @@ function _buildChunk(cx, cy) {
     }
   }
 
+  // 3b. Wall top-edge highlight — lit top face of the "3-D" wall block,
+  // flat alpha fill (no per-tile gradient) so it stays cheap per chunk.
+  if (th.wallHighlight) {
+    c.globalAlpha = th.wallHighlight;
+    c.fillStyle = '#ffffff';
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (dungeon.grid[ty][tx] !== WALL) continue;
+        if (!isFloor(tx, ty + 1)) continue;
+        c.fillRect(tx * TILE, ty * TILE + TILE - 8, TILE, 3);
+      }
+    }
+    c.globalAlpha = 1;
+  }
+
   // 4. Shadows cast onto floor from walls above / beside
   c.fillStyle = 'rgba(0,0,0,0.4)';
   for (let ty = ty0; ty <= ty1; ty++) {
@@ -1147,6 +1162,28 @@ function _buildChunk(cx, cy) {
       if (!isFloor(tx + 1, ty)) c.fillRect(x + TILE - 4, y, 4, TILE);
     }
   }
+
+  // 5. Wall face decorations — torches, lanterns, skulls, crystals, etc.
+  // (theme-specific, see themes.js). Scoped to this chunk's OWN tile block
+  // (no ring margin) so a shared boundary tile is only ever decorated once
+  // — the continuity margin used above is for shadows that blend across
+  // chunk seams, not for one-off props that would otherwise double-draw.
+  if (th.drawWallDecor) {
+    const dtx0 = cx * _CHUNK_T, dty0 = cy * _CHUNK_T;
+    const dtx1 = Math.min(dungeon.w - 1, dtx0 + _CHUNK_T - 1);
+    const dty1 = Math.min(dungeon.h - 1, dty0 + _CHUNK_T - 1);
+    for (let ty = dty0; ty <= dty1; ty++) {
+      for (let tx = dtx0; tx <= dtx1; tx++) {
+        if (dungeon.grid[ty][tx] !== WALL) continue;
+        if (!isFloor(tx, ty + 1)) continue;
+        const h = ((tx * 37) ^ (ty * 53)) & 0xff;
+        c.save();
+        th.drawWallDecor(c, tx * TILE, ty * TILE, h);
+        c.restore();
+      }
+    }
+  }
+
   return cv;
 }
 
