@@ -2286,8 +2286,8 @@ function _vipItemDesc(lvl) {
   function bless(qty) { return ri('/images/bless.png',       `×${qty}`, 'rare');   }
   function norm(qty)  { return ri('/images/norm.png',        `×${qty}`, 'uncommon'); }
   function gold(amt)  {
-    const svg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f1c40f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg>`;
-    return `<span class="ri-wrap ri-gold">${svg}<span class="ri-badge">${(amt/1000).toFixed(0)}k</span></span>`;
+    const uri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
+    return ri(uri, `${(amt/1000).toFixed(0)}k зол.`, 'gold');
   }
   function pots(qty) {
     return ['hp','exp','gold','regen','atkspeed','atk']
