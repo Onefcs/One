@@ -161,18 +161,18 @@ function drawSpawnDoor(c, tx, ty, tintColor) {
 // ── Themes ────────────────────────────────────────────────
 const THEMES = [
 
-  // Floor 1 — Логово гоблинов (goblins)
-  {
-    name: '🏹 Логово гоблинов', bg: '#0a1408', mmFloor: '#5a8a2e',
-    wallColor: '#3d5a2e', floorA: '#33471f', floorB: '#3d5625',
-    drawFloorProp: _floorProps(120, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
-  },
-
-  // Floor 2 — Костяной склеп (skeletons)
+  // Floor 1 — Костяной склеп (skeletons)
   {
     name: '💀 Костяной склеп', bg: '#0a0c10', mmFloor: '#6a7488',
     wallColor: '#3a4550', floorA: '#262c34', floorB: '#2d333c',
     drawFloorProp: _floorProps(120, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'key_gold' }, { key: 'spikes_row' }]),
+  },
+
+  // Floor 2 — Логово гоблинов (goblins)
+  {
+    name: '🏹 Логово гоблинов', bg: '#0a1408', mmFloor: '#5a8a2e',
+    wallColor: '#3d5a2e', floorA: '#33471f', floorB: '#3d5625',
+    drawFloorProp: _floorProps(120, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
   },
 
   // Floor 3 — Грибные пещеры (mushrooms)
