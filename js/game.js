@@ -123,14 +123,20 @@ let _profSocketEvtsSnap = 0, _profSocketMsSnap = 0;
 // ─────────────────────────────────────────────────────────
 //  CAMERA
 // ─────────────────────────────────────────────────────────
+// Height actually free for gameplay: the bottom nav is an opaque overlay
+// docked to the bottom of #app, not extra canvas space, so it must come off
+// the same as the header or the camera treats that strip as visible and can
+// center/clamp the player right behind it (invisible, same for chunk streaming).
+function _visH() { return (H - HEADER_H - NAV_H) / ZOOM; }
+
 function clampCamera() {
-  const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
+  const visW = W / ZOOM, visH = _visH();
   camera.x = clamp(camera.x, 0, Math.max(0, dungeon.w * TILE - visW));
   camera.y = clamp(camera.y, 0, Math.max(0, dungeon.h * TILE - visH));
 }
 
 function updateCamera(dt) {
-  const visW = W / ZOOM, visH = (H - HEADER_H) / ZOOM;
+  const visW = W / ZOOM, visH = _visH();
   const tx = player.x - visW / 2;
   const ty = player.y - visH / 2;
   // Velocity-matched follow. A lerp toward the target trails the player by
@@ -984,7 +990,7 @@ function enterRaidMode(data) {
     player.x = data.dungeon.spawn.x;
     player.y = data.dungeon.spawn.y;
     camera.x = player.x - W / (2 * ZOOM);
-    camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+    camera.y = player.y - _visH() / 2;
     clampCamera();
   }
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
@@ -1004,7 +1010,7 @@ function exitRaidMode() {
       player.x = _normalPlayerX ?? dungeon.spawn.x;
       player.y = _normalPlayerY ?? dungeon.spawn.y;
       camera.x = player.x - W / (2 * ZOOM);
-      camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+      camera.y = player.y - _visH() / 2;
       clampCamera();
     }
   }
@@ -1213,7 +1219,7 @@ function respawnPlayer() {
   player.hurtTimer = 0;
   player.atkTimer = 0.5;
   if (dungeon) { player.x = dungeon.spawn.x; player.y = dungeon.spawn.y; }
-  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
   clampCamera();
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';

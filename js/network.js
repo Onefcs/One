@@ -102,7 +102,7 @@ function netConnect(onReady) {
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
-      camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+      camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
       clampCamera();
     }
     const restore = _savedData && _savedData.type === player?.type ? _savedData : null;
@@ -421,7 +421,7 @@ function netConnect(onReady) {
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
-      camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - (H - HEADER_H) / (2 * ZOOM);
+      camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
       clampCamera();
     }
     initNpcs();
