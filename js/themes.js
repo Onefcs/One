@@ -96,6 +96,11 @@ function _floorProps(mod, entries) {
 // stone-brick textures, not procedural fills. Each theme recolors them via
 // a canvas 'color' blend (keeps the painted shading, swaps hue/sat to the
 // theme's own palette) so all 5 floor moods share one set of art.
+// /images/* is served with a 30-day immutable cache — these 3 files get
+// overwritten in place as the art is iterated on, so a version query string
+// is the only way a returning browser ever sees the new content instead of
+// its stale cached copy. Bump this whenever floor/wall_body/wall_cap change.
+const _TILE_TEX_V = 3;
 const _TILE_TEX_DEF = {
   floor:    'images/tiles/floor.png',
   wallBody: 'images/tiles/wall_body.png',
@@ -104,7 +109,7 @@ const _TILE_TEX_DEF = {
 const _tileTexImg = {};
 Object.keys(_TILE_TEX_DEF).forEach(key => {
   const img = new Image();
-  img.src = _TILE_TEX_DEF[key];
+  img.src = _TILE_TEX_DEF[key] + '?v=' + _TILE_TEX_V;
   _tileTexImg[key] = img;
 });
 
