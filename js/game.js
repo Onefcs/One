@@ -1200,26 +1200,34 @@ function restartGame() {
 // ─────────────────────────────────────────────────────────
 //  LOOP
 // ─────────────────────────────────────────────────────────
-// Driven by requestAnimationFrame so every render lands exactly on a vsync
+// Driven by requestAnimationFrame so every frame lands exactly on a vsync
 // boundary — a setTimeout-scheduled loop fires at arbitrary offsets from the
 // display's refresh, which reads as constant micro-stutter even when the
-// average rate is steady. update() runs every rAF tick (cheap, keeps input/
-// camera/physics responsive at the display's native rate); render() is
-// throttled to ~30fps on mobile by skipping rAF ticks that land too soon
-// after the last render — this still keeps every frame that IS drawn
-// perfectly vsync-aligned, unlike a timer-based cap.
-let _loopTs = 0, _lastRenderTs = 0;
+// average rate is steady.
+//
+// render() used to be skipped on mobile when less than ~32ms had elapsed
+// since the last one (an attempt at a ~30fps cap to save heat/battery).
+// That skip condition doesn't divide evenly into 90Hz/120Hz tick rates —
+// with realistic rAF jitter it sometimes swallows one tick too many,
+// producing an irregular sequence of ~33ms/~43ms gaps instead of a steady
+// cadence. An uneven gap sequence reads as jitter/stutter even though the
+// *average* rate looks fine, which is worse than just running at a lower
+// but perfectly steady rate. Profiling shows render() costs well under
+// 3ms/frame even in software rendering, so the heat/battery case for
+// skipping frames isn't worth that trade — render every tick and let the
+// adaptive-quality tier (below) cut visual cost on devices that genuinely
+// can't keep up, instead of an artificial cadence cap.
+let _loopTs = 0;
 function loop(ts) {
   const frameMs = ts - _loopTs; _loopTs = ts;
   const dt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
   const _t0 = performance.now();
   update(dt);
   const _t1 = performance.now();
-  const _doRender = !_isMobile || ts - _lastRenderTs >= 32; // ~30fps cap on mobile
-  if (_doRender) { _lastRenderTs = ts; render(dt, ts); }
+  render(dt, ts);
   const _t2 = performance.now();
   _profUpdate = _t1 - _t0;
-  _profRender = _doRender ? _t2 - _t1 : 0;
+  _profRender = _t2 - _t1;
   _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
   _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
   if (_uiCtx) _drawPerf(frameMs);
