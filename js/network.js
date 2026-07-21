@@ -828,6 +828,7 @@ function _emitSaveProgress() {
     questKills: player.questKills || {},
     skillLevels: player.skillLevels || {},
     skillXp: player.skillXp || {},
+    bonusSP: player.bonusSP || 0,
   };
   if (socket?.connected) socket.emit('saveProgress', { stats });
 }
@@ -923,6 +924,7 @@ function _finishOnlineStart() {
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
   if (typeof showMarketBtn === 'function') showMarketBtn();
+  if (typeof showGramShopBtn === 'function') showGramShopBtn();
   state = 'playing';
   setTab(0);
 }
@@ -1029,6 +1031,9 @@ function netGramDeposit(amount, memo) {
 function netGramWithdraw(amount, address) {
   if (socket?.connected) socket.emit('gramWithdrawRequest', { amount, address });
 }
+function netGramShopBuy(pkgId) {
+  if (socket?.connected) socket.emit('gramShopBuy', { pkgId });
+}
 function netGramHistory() {
   if (socket?.connected) socket.emit('gramGetHistory');
 }
@@ -1110,6 +1115,13 @@ function _initGramHandlers(s) {
     }
     if (typeof renderVipPanel === 'function') renderVipPanel();
     netSaveProgressNow();
+  });
+  s.on('gramShopResult', (data) => {
+    if (typeof onGramShopResult === 'function') onGramShopResult(data);
+    netSaveProgressNow();
+  });
+  s.on('gramShopError', ({ msg }) => {
+    if (typeof onGramShopError === 'function') onGramShopError(msg);
   });
 }
 

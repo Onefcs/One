@@ -116,6 +116,31 @@ const _VIP_BP = [
   { id:'bp_atk',      name:'Зелье атаки',      slot:'buff_potion', img:'/images/potion/atk.png',      rarity:'uncommon', buffType:'atk',      buffDur:1800 },
 ];
 
+// ── GRAM Shop ─────────────────────────────────────────────────────────────────
+const _GRAM_SHOP_PKGS = [
+  { id:'pkg1',   gram:1,   gold:1000,   potions:2,   armor:null,       weapon:null,       bonusSP:0  },
+  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0  },
+  { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1  },
+  { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2  },
+  { id:'pkg50',  gram:50,  gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5  },
+  { id:'pkg100', gram:100, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10 },
+];
+// Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
+const _SHOP_CLASS_WEAPONS = {
+  warrior: { common:'tw1', uncommon:'tw2', rare:'tw3' },
+  assasin: { common:'sw1', uncommon:'sw2', rare:'sw3' },
+  archer:  { common:'bw1', uncommon:'bw2', rare:'bw3' },
+  mage:    { common:'st1', uncommon:'st2', rare:'st3' },
+  priest:  { common:'st1', uncommon:'st2', rare:'st3' },
+};
+// Armor slot IDs per rarity for the shop
+const _SHOP_ARMOR_SETS = {
+  common:   ['hm1','ar1','gl1','bt1','rn1','nd1'],
+  uncommon: ['hm2','ar2','gl2','bt2','rn2','nd2'],
+  rare:     ['hm3','ar3','gl3','bt3','rn3','nd3'],
+};
+const _GRAM_WITHDRAW_FEE_PCT = 0.10;
+
 const _STONE_DEFS = {
   norm_stone:  { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   bless_stone: { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'     },
@@ -163,6 +188,8 @@ async function notifyAdminGram(tx) {
   if (!TG_ADMIN_ID) return;
   const isDeposit = tx.type === 'deposit';
   const header = isDeposit ? '💰 <b>Заявка на пополнение</b>' : '📤 <b>Заявка на вывод</b>';
+  const fee    = isDeposit ? 0 : _round2(tx.amount * _GRAM_WITHDRAW_FEE_PCT);
+  const payout = isDeposit ? 0 : _round2(tx.amount - fee);
   const lines = [
     header,
     `👤 ${tx.username} (<code>${tx.telegramId}</code>)`,
@@ -170,6 +197,7 @@ async function notifyAdminGram(tx) {
     isDeposit
       ? `🏷 Мемо: <code>${tx.memo}</code>`
       : `📬 Адрес: <code>${tx.address}</code>`,
+    ...(isDeposit ? [] : [`💸 К отправке: ${payout} GRAM (комиссия ${fee} GRAM)`]),
     `🆔 <code>${tx._id}</code>`,
   ];
   const res = await tgApi('sendMessage', {
@@ -227,35 +255,11 @@ async function _handleAdminCallback(cq) {
       const saved = doc.savedData || {};
       const newBal = (saved.gramBalance || 0) + tx.amount;
       saved.gramBalance = newBal;
-      // VIP level-up on confirmed deposit
-      if (confirmed && tx.type === 'deposit') {
-        let _vipLvl = saved.vipLevel || 0;
-        let _vipDep = saved.vipDeposited || 0;
-        const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
-        if (_vipLvl < 10) {
-          _vipDep += tx.amount;
-          while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
-            _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
-            _vipLvl++;
-            _vipPend.push(_vipLvl);
-          }
-          saved.vipLevel     = _vipLvl;
-          saved.vipDeposited = _vipDep;
-          saved.vipPending   = _vipPend;
-        }
-      }
       doc.savedData = saved;
       doc.markModified('savedData');
       await doc.save();
       _gramBalanceCache.set(tx.telegramId, newBal);
       io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
-      if (confirmed && tx.type === 'deposit') {
-        io.to(`tg_${tx.telegramId}`).emit('vipUpdate', {
-          level:     saved.vipLevel     || 0,
-          deposited: saved.vipDeposited || 0,
-          pending:   saved.vipPending   || [],
-        });
-      }
 
       // 5% referral bonus on confirmed deposit
       if (confirmed && tx.type === 'deposit' && doc.referredBy) {
@@ -770,6 +774,98 @@ io.on('connection', socket => {
         .sort({ createdAt: -1 }).limit(30).lean();
       socket.emit('gramHistory', { txs: txs.map(_txData) });
     } catch (err) { console.error('gramGetHistory:', err); }
+  });
+
+  socket.on('gramShopBuy', async ({ pkgId } = {}) => {
+    if (!authed || !pkgId) return;
+    try {
+      const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
+      if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
+      if (_gramBalance < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
+
+      const doc = await PlayerModel.findById(authed._id);
+      if (!doc) return;
+      const saved = doc.savedData || {};
+      const charClass = saved.type || 'warrior';
+      const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.warrior;
+      const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
+
+      // Deduct GRAM
+      _gramBalance -= pkg.gram;
+      _gramBalanceCache.set(authed.telegramId, _gramBalance);
+      saved.gramBalance = _gramBalance;
+
+      // Gold
+      saved.gold = (saved.gold || 0) + pkg.gold;
+
+      // Buff potions into potionBag
+      const potionBag = { pt1: 0, pt2: 0, ...(saved.potionBag || {}) };
+      _VIP_BP.forEach(bp => { potionBag[bp.id] = (potionBag[bp.id] || 0) + pkg.potions; });
+      saved.potionBag = potionBag;
+
+      // Armor set
+      if (pkg.armor) {
+        (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(id => {
+          const base = ITEM_DEF.find(d => d.id === id);
+          if (base) inv.push({ ...base, enhance: 8 });
+        });
+      }
+
+      // Class weapon
+      if (pkg.weapon) {
+        const wepId = wepMap[pkg.weapon];
+        const base = ITEM_DEF.find(d => d.id === wepId);
+        if (base) inv.push({ ...base, enhance: 8 });
+      }
+
+      // Bonus skill points
+      if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
+
+      // VIP progress from purchase
+      let _vipLvl = saved.vipLevel || 0;
+      let _vipDep = saved.vipDeposited || 0;
+      const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
+      const _prevVipLvl = _vipLvl;
+      if (_vipLvl < 10) {
+        _vipDep += pkg.gram;
+        while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
+          _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
+          _vipLvl++;
+          _vipPend.push(_vipLvl);
+        }
+        saved.vipLevel = _vipLvl;
+        saved.vipDeposited = _vipDep;
+        saved.vipPending = _vipPend;
+      }
+
+      saved.inventory = inv;
+      doc.savedData = saved;
+      doc.markModified('savedData');
+      await doc.save();
+
+      if (_lastStats) {
+        _lastStats.inventory = inv;
+        _lastStats.gold = saved.gold;
+        _lastStats.potionBag = potionBag;
+        if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
+      }
+      socket.data.vipLevel = _vipLvl;
+
+      socket.emit('gramShopResult', {
+        pkgId,
+        newBalance:  _gramBalance,
+        newGold:     saved.gold,
+        newPotionBag: potionBag,
+        newInventory: inv,
+        newBonusSP:  saved.bonusSP || 0,
+        vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
+        leveled: _vipLvl > _prevVipLvl,
+      });
+      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
+      if (_vipLvl > _prevVipLvl) {
+        socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
+      }
+    } catch (err) { console.error('gramShopBuy:', err); }
   });
 
   // ── Market ────────────────────────────────────────────────────────────────

@@ -223,7 +223,7 @@ function updateUpgradeUI() {
   if (!el) return;
   const goldLbl = document.getElementById('upg-gold-lbl');
   if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#f1c40f') + ' ' + player.gold;
-  const totalSP = (player.lvl || 1) * 3;
+  const totalSP = (player.lvl || 1) * 3 + (player.bonusSP || 0);
   const spentSP = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
   const availSP = totalSP - spentSP;
   const spLbl = document.getElementById('upg-sp-lbl');
@@ -735,7 +735,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'rating-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -2332,6 +2332,18 @@ function _positionMarketBtn() {
   marketBtn.style.transform = 'none';
 }
 
+function _positionGramShopBtn() {
+  const marketBtn   = document.getElementById('market-btn');
+  const shopBtn     = document.getElementById('gram-shop-btn');
+  if (!shopBtn || !marketBtn) return;
+  const mTop = parseFloat(marketBtn.style.top) || 0;
+  shopBtn.style.top       = (mTop + 26 + 5) + 'px';
+  shopBtn.style.left      = marketBtn.style.left;
+  shopBtn.style.width     = marketBtn.style.width;
+  shopBtn.style.right     = 'auto';
+  shopBtn.style.transform = 'none';
+}
+
 function showMarketBtn() {
   const btn = document.getElementById('market-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionMarketBtn(); }
@@ -2693,6 +2705,146 @@ function onMarketListError(msg) {
   _marketToast(msg || 'Ошибка', 'err');
 }
 
+// ─────────────────────────────────────────────────────────
+//  GRAM SHOP PANEL
+// ─────────────────────────────────────────────────────────
+const _GRAM_SHOP_PKGS_UI = [
+  { id:'pkg1',   gram:1,   label:'Стартовый',  gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#7788aa' },
+  { id:'pkg5',   gram:5,   label:'Базовый',    gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#4ecb71' },
+  { id:'pkg10',  gram:10,  label:'Стандарт',   gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#55aaff' },
+  { id:'pkg30',  gram:30,  label:'Продвинутый',gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#bb55ff' },
+  { id:'pkg50',  gram:50,  label:'Элитный',    gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#f0a040' },
+  { id:'pkg100', gram:100, label:'Легендарный',gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#ff4444' },
+];
+
+function showGramShopBtn() {
+  const btn = document.getElementById('gram-shop-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionGramShopBtn(); }
+}
+
+function openGramShopPanel() {
+  if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Магазин с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+    return;
+  }
+  const panel = document.getElementById('gram-shop-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  _renderGramShopPanel();
+}
+
+function closeGramShopPanel() {
+  const panel = document.getElementById('gram-shop-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _renderGramShopPanel() {
+  const el = document.getElementById('gram-shop-body');
+  if (!el) return;
+  const bal = window._gramBalance || 0;
+  el.innerHTML = `
+    <div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#f0d060;text-align:center">
+      Баланс: <b>${bal.toFixed(2)} GRAM</b>
+    </div>
+    ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
+  `;
+}
+
+function _gramShopPkgHtml(pkg, bal) {
+  const canAfford = bal >= pkg.gram;
+  const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
+  const armorLine  = pkg.armor  ? `<li>Полный ${pkg.armor} сет +8</li>` : '';
+  const weaponLine = pkg.weapon ? `<li>Оружие ${pkg.weapon} +8 (по классу)</li>` : '';
+  const spLine     = pkg.bonusSP ? `<li>+${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</li>` : '';
+  return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
+    <div class="gram-shop-card-head">
+      <div>
+        <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
+        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+      </div>
+      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
+        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#556'}"
+        onclick="${canAfford ? `openGramShopConfirm('${pkg.id}')` : ''}">
+        ${canAfford ? 'Купить' : 'Мало'}
+      </button>
+    </div>
+    <ul class="gram-shop-list">
+      <li>${kGold} золота</li>
+      <li>${pkg.potions}× каждое зелье (6 видов)</li>
+      ${armorLine}${weaponLine}${spLine}
+    </ul>
+  </div>`;
+}
+
+function openGramShopConfirm(pkgId) {
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId);
+  if (!pkg) return;
+  const bal = window._gramBalance || 0;
+  if (bal < pkg.gram) return;
+  const existing = document.getElementById('gram-shop-confirm-ov');
+  if (existing) existing.remove();
+  const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
+  const armorLine  = pkg.armor  ? `<div style="color:#ccc">• Полный ${pkg.armor} сет +8</div>` : '';
+  const weaponLine = pkg.weapon ? `<div style="color:#ccc">• Оружие ${pkg.weapon} +8 (по классу)</div>` : '';
+  const spLine     = pkg.bonusSP ? `<div style="color:#ccc">• +${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</div>` : '';
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'gram-shop-confirm-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
+        <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;cursor:pointer">✕</button>
+      </div>
+      <div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
+        <div style="color:#ccc">• ${kGold} золота</div>
+        <div style="color:#ccc">• ${pkg.potions}× каждое зелье (6 видов)</div>
+        ${armorLine}${weaponLine}${spLine}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
+        <span style="color:#8899bb">Стоимость</span>
+        <span style="font-weight:700;color:${pkg.color}">${pkg.gram} GRAM</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
+        <span style="color:#8899bb">Ваш баланс</span>
+        <span style="font-weight:700;color:#d0e0ff">${bal.toFixed(2)} GRAM</span>
+      </div>
+      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
+        onclick="_confirmGramShopBuy('${pkgId}')">Купить за ${pkg.gram} GRAM</button>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function _confirmGramShopBuy(pkgId) {
+  const ov = document.getElementById('gram-shop-confirm-ov');
+  if (ov) ov.remove();
+  if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId);
+}
+
+function onGramShopResult(data) {
+  window._gramBalance = data.newBalance;
+  if (player) {
+    player.gold = data.newGold;
+    if (data.newPotionBag) player.potionBag = data.newPotionBag;
+    if (data.newInventory) player.inventory = data.newInventory;
+    if (data.newBonusSP != null) player.bonusSP = data.newBonusSP;
+  }
+  if (data.vipData) window._vipData = data.vipData;
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
+  const lbl = pkg ? pkg.label : 'Пакет';
+  _marketToast(`✓ ${lbl} куплен!`, 'ok');
+  const panel = document.getElementById('gram-shop-panel');
+  if (panel && panel.style.display !== 'none') _renderGramShopPanel();
+  updateInvUI();
+  if (activeTab === 1 && _invTab === 1) updateProfileUI();
+  if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
+}
+
+function onGramShopError(msg) {
+  _marketToast(msg || 'Ошибка покупки', 'err');
+}
+
 let _gramTxList = [];
 let _refFriendsList = [];
 
@@ -2932,13 +3084,14 @@ function openGramWithdrawModal() {
         </div>
 
         <div style="background:rgba(240,160,64,0.08);border:1px solid rgba(240,160,64,0.2);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#c0a060">
-          Доступно: <b>${balance.toFixed(2)} GRAM</b>
+          Доступно: <b>${balance.toFixed(2)} GRAM</b> · Комиссия 10%
         </div>
 
         <div style="margin-bottom:12px">
           <div class="gram-hint" style="margin-bottom:6px">Сумма вывода (мин. 10 GRAM):</div>
-          <input id="gram-wd-amount" type="number" min="10" step="0.01" placeholder="Сумма GRAM" class="gram-input" style="width:100%;box-sizing:border-box">
+          <input id="gram-wd-amount" type="number" min="10" step="0.01" placeholder="Сумма GRAM" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_updateWdPreview()">
         </div>
+        <div id="gram-wd-preview" style="font-size:12px;color:#7788aa;margin:-6px 0 12px;padding:0 2px"></div>
 
         <div style="margin-bottom:16px">
           <div class="gram-hint" style="margin-bottom:6px">TON-адрес получателя:</div>
@@ -2957,6 +3110,16 @@ function openGramWithdrawModal() {
   document.body.appendChild(div);
 }
 
+function _updateWdPreview() {
+  const el = document.getElementById('gram-wd-preview');
+  if (!el) return;
+  const v = parseFloat(document.getElementById('gram-wd-amount')?.value);
+  if (!v || v < 10) { el.textContent = ''; return; }
+  const fee = Math.round(v * 0.10 * 100) / 100;
+  const net = Math.round((v - fee) * 100) / 100;
+  el.textContent = `Комиссия ${fee} GRAM — к получению: ${net} GRAM`;
+}
+
 function gramWithdrawConfirm() {
   const amount = parseFloat(document.getElementById('gram-wd-amount').value);
   const addr   = (document.getElementById('gram-wd-addr').value || '').trim();
@@ -2967,7 +3130,8 @@ function gramWithdrawConfirm() {
   if (typeof netGramWithdraw === 'function') {
     netGramWithdraw(amount, addr);
     closeGramModal();
-    _gramMsg('Заявка на вывод создана — ожидайте подтверждения', 'ok');
+    const net = Math.round((amount - amount * 0.10) * 100) / 100;
+    _gramMsg(`Заявка на вывод создана — к получению: ${net} GRAM`, 'ok');
   } else {
     _gramModalMsg('Сервис недоступен', 'err');
   }

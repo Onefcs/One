@@ -96,6 +96,7 @@ function makePlayer(type) {
     questIdx: 0,
     questKills: {},
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
+    bonusSP: 0,
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
     critChance: 0.05, critPower: 1.5,
@@ -694,6 +695,7 @@ function restoreFromSave(data) {
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
   player.inventory  = _migrateInventory(data.inventory || []);
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
+  player.bonusSP  = data.bonusSP  || 0;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
 

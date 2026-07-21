@@ -109,6 +109,12 @@
   Маркет
 </button>
 
+<!-- GRAM Shop button (below Market button) -->
+<button id="gram-shop-btn" onclick="openGramShopPanel()" style="display:none;color:#ffd700">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+  Магазин
+</button>
+
 <!-- Rating overlay panel -->
 <div id="rating-panel" style="display:none">
   <div class="rating-header">
@@ -145,6 +151,15 @@
     <button class="rating-tab"        id="mtab-history" onclick="switchMarketTab('history')">История</button>
   </div>
   <div id="market-body" class="vip-body" style="top:96px"></div>
+</div>
+
+<!-- GRAM Shop overlay panel -->
+<div id="gram-shop-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title" style="color:#ffd700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>Магазин GRAM</div>
+    <button class="vip-close" onclick="closeGramShopPanel()">✕</button>
+  </div>
+  <div id="gram-shop-body" class="vip-body"></div>
 </div>
 
 <!-- Chat -->
