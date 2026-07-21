@@ -309,9 +309,13 @@ function netConnect(onReady) {
   socket.on('enemyHurt', ({ id, hp, dmg, isCrit }) => {
     const e = serverEnemiesMap.get(id);
     if (e) {
-      e.hp = hp;
+      e.hp = hp; // overrides any optimistic hp=0 if kill was wrong
       e.hurtTimer = 0.3;
-      if (dmg) { if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4'); }
+      if (dmg) {
+        _lastOwnDmg = dmg; // track for optimistic kill prediction
+        if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19);
+        else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
+      }
     }
   });
 

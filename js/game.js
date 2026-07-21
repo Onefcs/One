@@ -101,6 +101,8 @@ let _lastCamX = 0, _lastCamY = 0;
 let _lastPlayerUsedSprite = false;
 // measureText cache for player name label — avoids per-frame call when name unchanged
 let _prevDisplayName = '', _cachedNameTw = 0;
+// last damage dealt by player — used for optimistic kill prediction on arrow hit
+let _lastOwnDmg = 0;
 
 // Reusable sentinel for pvp closest-target — avoids per-frame object spread
 const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
@@ -470,9 +472,17 @@ function update(dt) {
         }
         if (hit) {
           spawnBurst(p.x, p.y, p.color, 5);
-          // Send attack to server only now — when projectile visually lands
-          if (p.enemyId) netAttack(p.enemyId);
-          else if (hitEnemy) netAttack(hitEnemy.id);
+          const _atkId = p.enemyId || hitEnemy?.id;
+          if (_atkId) {
+            netAttack(_atkId);
+            // Optimistic feedback — no waiting for server round-trip
+            const _he = serverEnemiesMap.get(_atkId);
+            if (_he && _he.hp > 0) {
+              _he.hurtTimer = 0.3; // instant hurt flash
+              // Predict kill if last known damage would finish it
+              if (_lastOwnDmg > 0 && _lastOwnDmg >= _he.hp) _he.hp = 0;
+            }
+          }
           continue;
         }
         if (pvpMode) {
@@ -1110,14 +1120,15 @@ function restartGame() {
 // ─────────────────────────────────────────────────────────
 //  LOOP
 // ─────────────────────────────────────────────────────────
-let _loopTs = 0;
+let _loopTs = 0, _lastRenderTs = 0;
 function loop(ts) {
   const frameMs = ts - _loopTs; _loopTs = ts;
   const dt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
   const _t0 = performance.now();
   update(dt);
   const _t1 = performance.now();
-  render(dt, ts);
+  const _doRender = !_isMobile || ts - _lastRenderTs >= 32; // 30fps cap on mobile
+  if (_doRender) { _lastRenderTs = ts; render(dt, ts); }
   const _t2 = performance.now();
   _profUpdate = _t1 - _t0;
   _profRender = _t2 - _t1;

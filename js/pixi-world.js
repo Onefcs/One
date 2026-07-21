@@ -1,6 +1,8 @@
 // ── pixi-world.js — PixiJS WebGL world renderer ────────────────────────────
 // Replaces Canvas 2D world drawing; HUD stays on _uiOverlay (2D canvas).
 
+const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 let _pixiApp = null;
 let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
@@ -43,11 +45,11 @@ function pixiInit(canvasEl) {
     view: canvasEl,
     width:  canvasEl.clientWidth  || 375,
     height: canvasEl.clientHeight || 667,
-    resolution: Math.min(window.devicePixelRatio || 1, 1.5), // cap at 1.5 — saves ~44% GPU fill vs 2 on high-DPR mobile
+    resolution: Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2),
     autoDensity: true,
     backgroundAlpha: 1,
     antialias: false,
-    powerPreference: 'high-performance',
+    powerPreference: _isMobile ? 'default' : 'high-performance',
   });
   _pixiApp.stop(); // manual render call
 
