@@ -1273,9 +1273,29 @@ function restartGame() {
 // adaptive-quality tier (below) cut visual cost on devices that genuinely
 // can't keep up, instead of an artificial cadence cap.
 let _loopTs = 0;
+// Two consecutive rAF callbacks were measured landing at alternating
+// short/long intervals (confirmed three independent ways: the perf overlay's
+// own frame-time bars, a raw-pixel diff of a gameplay recording, and — most
+// clearly — a dedicated slow-run recording showing world-scroll distance per
+// frame alternating between a small and a large step in lockstep with that
+// same short/long timing). Reducing render cost (the WebGL resolution fix)
+// didn't change the pattern at all, so it isn't a "too much work per frame"
+// problem — the rAF delivery itself is uneven on the affected devices.
+// Per-entity movement is (correctly) dt-scaled, so uneven dt directly
+// becomes uneven step SIZE on screen every other frame — mathematically
+// correct average speed, but visually reads as a constant rhythmic stutter,
+// which is what was being reported as "the whole world/camera jitters."
+// A flat 2-frame average of dt exactly cancels a period-2 alternating
+// pattern (avg of frame N and N-1 is the same value on both the "short" and
+// "long" frame), at the cost of ~one frame (~16ms) of added input lag —
+// negligible next to the game's existing 65ms other-player interpolation
+// delay and 100+ms network ping.
+let _prevRawDt = 1 / 60;
 function loop(ts) {
   const frameMs = ts - _loopTs; _loopTs = ts;
-  const dt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
+  const rawDt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
+  const dt = (rawDt + _prevRawDt) / 2;
+  _prevRawDt = rawDt;
   const _t0 = performance.now();
   update(dt);
   const _t1 = performance.now();
