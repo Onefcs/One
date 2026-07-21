@@ -148,35 +148,35 @@ const THEMES = [
   {
     name: '🏹 Логово гоблинов', bg: '#0a1408', mmFloor: '#5a8a2e',
     wallColor: '#3d5a2e', floorA: '#33471f', floorB: '#3d5625',
-    drawFloorProp: _floorProps(40, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
   },
 
   // Floor 2 — Костяной склеп (skeletons)
   {
     name: '💀 Костяной склеп', bg: '#0a0c10', mmFloor: '#6a7488',
     wallColor: '#3a4550', floorA: '#262c34', floorB: '#2d333c',
-    drawFloorProp: _floorProps(40, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'key_gold' }, { key: 'spikes_row' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'key_gold' }, { key: 'spikes_row' }]),
   },
 
   // Floor 3 — Грибные пещеры (mushrooms)
   {
     name: '🍄 Грибные пещеры', bg: '#0a0814', mmFloor: '#6a4d8a',
     wallColor: '#3d3a5a', floorA: '#241f38', floorB: '#2b2542',
-    drawFloorProp: _floorProps(40, [{ key: 'slime_small' }, { key: 'slime_medium' }, { key: 'mushroom_spotted' }, { key: 'spore_sac' }, { key: 'barrel_slime' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'slime_small' }, { key: 'slime_medium' }, { key: 'mushroom_spotted' }, { key: 'spore_sac' }, { key: 'barrel_slime' }]),
   },
 
   // Floor 4 — Обитель призраков (ghosts)
   {
     name: '👻 Обитель призраков', bg: '#0a0c16', mmFloor: '#7a7ab0',
     wallColor: '#4a4568', floorA: '#2c2c48', floorB: '#333356',
-    drawFloorProp: _floorProps(40, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'rune_stone1' }, { key: 'rune_stone2' }, { key: 'crystal_purple' }, { key: 'treasure_medium' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'rune_stone1' }, { key: 'rune_stone2' }, { key: 'crystal_purple' }, { key: 'treasure_medium' }]),
   },
 
   // Floor 5 — Крепость големов (golems)
   {
     name: '🗿 Крепость големов', bg: '#120c08', mmFloor: '#b07840',
     wallColor: '#6b4a35', floorA: '#3c2c20', floorB: '#453427',
-    drawFloorProp: _floorProps(40, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'treasure_large' }, { key: 'pillar' }, { key: 'rune_stone1' }, { key: 'crystal_blue' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'treasure_large' }, { key: 'pillar' }, { key: 'rune_stone1' }, { key: 'crystal_blue' }]),
   },
 ];
 
