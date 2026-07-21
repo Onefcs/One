@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const ROOT = __dirname;
 const BUNDLE_FILES = [
   'shared/definitions.js',
+  'shared/netcodec.js',
   'js/constants.js',
   'js/utils.js',
   'js/state.js',
@@ -24,6 +25,8 @@ const BUNDLE_FILES = [
   'js/charselect.js',
   'js/network.js',
   'js/quests.js',
+  'js/clans.js',
+  'js/pixi-world.js',
   'js/game.js',
   'js/npc.js',
 ].map(f => path.join(ROOT, f));

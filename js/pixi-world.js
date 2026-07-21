@@ -171,6 +171,10 @@ function _enemyTextures(eid, sheetKey) {
 
 // ── tiles ─────────────────────────────────────────────────
 
+// Visibility is tracked with a generation stamp on each sprite rather than a
+// fresh Set every frame — avoids one GC-pressuring allocation per render on
+// mobile, where collection pauses show up as visible hitches.
+let _tileVisGen = 0;
 function _updateTiles(camX, camY) {
   if (!dungeon || !dungeon.grid) return;
   const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
@@ -180,12 +184,12 @@ function _updateTiles(camX, camY) {
   const c1x = Math.min(maxCx, Math.floor((camX + W / ZOOM) / _CHUNK_PX));
   const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX));
 
-  const vis = new Set();
+  const gen = ++_tileVisGen;
   for (let cy = c0y; cy <= c1y; cy++) {
     for (let cx = c0x; cx <= c1x; cx++) {
       const key = cx + ',' + cy;
-      vis.add(key);
-      if (!_chunkSprCache.has(key)) {
+      let spr = _chunkSprCache.get(key);
+      if (!spr) {
         let cv = _tileChunks.get(key);
         if (!cv) {
           cv = _buildChunk(cx, cy);
@@ -193,15 +197,16 @@ function _updateTiles(camX, camY) {
           _tileChunks.set(key, cv);
         }
         const tex = PIXI.Texture.from(cv);
-        const spr = new PIXI.Sprite(tex);
+        spr = new PIXI.Sprite(tex);
         spr.x = cx * _CHUNK_PX - _CHUNK_G;
         spr.y = cy * _CHUNK_PX - _CHUNK_G;
         _tileCt.addChild(spr);
         _chunkSprCache.set(key, spr);
       }
+      spr._visGen = gen;
     }
   }
-  _chunkSprCache.forEach((spr, key) => { spr.visible = vis.has(key); });
+  _chunkSprCache.forEach(spr => { spr.visible = spr._visGen === gen; });
 }
 
 // ── safe zone ─────────────────────────────────────────────
@@ -528,20 +533,21 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   lbl.y = by - 4;
 }
 
+let _enemyVisGen = 0;
 function _updateEnemies(dt, pulse, bossGlow) {
   _visEnm = 0;
-  const seen = new Set();
+  const gen = ++_enemyVisGen;
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return;
     // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
     if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
     _visEnm++;
-    seen.add(e.id);
     const obj = _getEnemy(e.id);
     obj.ct.visible = true;
+    obj._visGen = gen;
     _updateEnemyObj(e, obj, dt, pulse, bossGlow);
   });
-  _enemyPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
+  _enemyPool.forEach(obj => { if (obj._visGen !== gen) obj.ct.visible = false; });
 }
 
 // ── other players ─────────────────────────────────────────
@@ -571,12 +577,13 @@ function _getOtherPlayer(sid) {
   return obj;
 }
 
+let _otherVisGen = 0;
 function _updateOtherPlayers(pulse) {
-  const seen = new Set();
+  const gen = ++_otherVisGen;
   otherPlayers.forEach((p, pid) => {
     if (p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
-    seen.add(pid);
     const obj = _getOtherPlayer(pid);
+    obj._visGen = gen;
     const { ct, spr, gfx } = obj;
     ct.visible = true;
     ct.x = p.x; ct.y = p.y;
@@ -651,7 +658,7 @@ function _updateOtherPlayers(pulse) {
       clanCt.visible = false;
     }
   });
-  _otherPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
+  _otherPool.forEach(obj => { if (obj._visGen !== gen) obj.ct.visible = false; });
 }
 
 // ── player ────────────────────────────────────────────────
