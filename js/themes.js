@@ -72,6 +72,80 @@ function _drawCrystal(c, x, y, color, h2) {
   c.globalAlpha = 1;
 }
 
+// ── Floor props (painted sprites, not procedural shapes) ──────────────────
+// Source: a hand-painted top-down dungeon prop pack. Each entry's `w` is the
+// world-px display width; height follows the source image's own aspect
+// ratio so nothing looks squashed.
+const PROP_DEF = {
+  barrel_small:    { src: 'images/props/barrel_small.png',    w: 20 },
+  barrel_large:    { src: 'images/props/barrel_large.png',    w: 28 },
+  barrel_slime:    { src: 'images/props/barrel_slime.png',    w: 24 },
+  crate_stack:     { src: 'images/props/crate_stack.png',     w: 26 },
+  crate_single:    { src: 'images/props/crate_single.png',    w: 22 },
+  chest_round:     { src: 'images/props/chest_round.png',     w: 26 },
+  chest_banded:    { src: 'images/props/chest_banded.png',    w: 24 },
+  treasure_small:  { src: 'images/props/treasure_small.png',  w: 30 },
+  treasure_medium: { src: 'images/props/treasure_medium.png', w: 40 },
+  treasure_large:  { src: 'images/props/treasure_large.png',  w: 46 },
+  treasure_trophy: { src: 'images/props/treasure_trophy.png', w: 36 },
+  trophy:          { src: 'images/props/trophy.png',          w: 18 },
+  key_gold:        { src: 'images/props/key_gold.png',        w: 12 },
+  gem_red:         { src: 'images/props/gem_red.png',         w: 8  },
+  gem_gold:        { src: 'images/props/gem_gold.png',        w: 8  },
+  gem_blue:        { src: 'images/props/gem_blue.png',        w: 8  },
+  gem_green:       { src: 'images/props/gem_green.png',       w: 8  },
+  gem_purple:      { src: 'images/props/gem_purple.png',      w: 8  },
+  slime_small:     { src: 'images/props/slime_small.png',     w: 22 },
+  slime_medium:    { src: 'images/props/slime_medium.png',    w: 30 },
+  slime_large:     { src: 'images/props/slime_large.png',     w: 38 },
+  stump:           { src: 'images/props/stump.png',           w: 20 },
+  branch1:         { src: 'images/props/branch1.png',         w: 16 },
+  branch2:         { src: 'images/props/branch2.png',         w: 16 },
+  grave_marker:    { src: 'images/props/grave_marker.png',    w: 16 },
+  signpost:        { src: 'images/props/signpost.png',        w: 22 },
+  jug:             { src: 'images/props/jug.png',              w: 14 },
+  trap_bear:       { src: 'images/props/trap_bear.png',       w: 20 },
+  trap_spike:      { src: 'images/props/trap_spike.png',      w: 18 },
+  spikes_row:      { src: 'images/props/spikes_row.png',      w: 34 },
+  boulder:         { src: 'images/props/boulder.png',         w: 34 },
+  pillar:          { src: 'images/props/pillar.png',          w: 28 },
+  vine1:           { src: 'images/props/vine1.png',           w: 24 },
+  vine2:           { src: 'images/props/vine2.png',           w: 24 },
+  bush1:           { src: 'images/props/bush1.png',           w: 20 },
+  bush2:           { src: 'images/props/bush2.png',           w: 18 },
+};
+
+// Start loading immediately (script parse time) — small, low-priority
+// images, no reason to gate the character-select loading screen on them.
+const _propImg = {};
+Object.keys(PROP_DEF).forEach(key => {
+  const img = new Image();
+  img.src = PROP_DEF[key].src;
+  _propImg[key] = img;
+});
+
+// Draws prop `key` with its ground-contact point at (x, groundY).
+function drawProp(c, key, x, groundY) {
+  const def = PROP_DEF[key];
+  const img = _propImg[key];
+  if (!def || !img || !img.complete || !img.naturalWidth) return;
+  const w = def.w;
+  const h = w * (img.naturalHeight / img.naturalWidth);
+  c.drawImage(img, x - w / 2, groundY - h, w, h);
+}
+
+// Builds a drawFloorProp(c,px,py,h) for a theme from a short prop list —
+// h % entries.length picks (at most) one entry per floor tile, so overall
+// density is 1-in-N where N = the modulus, not the list length.
+function _floorProps(mod, entries) {
+  return function (c, px, py, h) {
+    const idx = h % mod;
+    if (idx >= entries.length) return;
+    const e = entries[idx];
+    drawProp(c, e.key, px + (e.dx ?? TILE / 2), py + (e.dy ?? TILE - 4));
+  };
+}
+
 // ── Themes ────────────────────────────────────────────────
 const THEMES = [
 
@@ -92,7 +166,8 @@ const THEMES = [
         c.beginPath(); c.ellipse(mx + 2, my - 4, 1, 1, 0, 0, Math.PI * 2); c.fill();
         c.fillStyle = '#e8d8a0'; c.fillRect(mx - 1, my, 3, 6);
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }]),
   },
 
   // Floor 2 — Дремучий лес
@@ -110,7 +185,8 @@ const THEMES = [
         c.fillStyle = '#2e7020';
         for (let i = 1; i < 5; i++) { c.beginPath(); c.ellipse(vx + 5, py + i * 7 + 4, 4, 3, 0.3, 0, Math.PI * 2); c.fill(); }
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }]),
   },
 
   // Floor 3 — Лесная чаща
@@ -130,7 +206,8 @@ const THEMES = [
         c.fillStyle = '#d0ffb0'; c.beginPath(); c.arc(fx - 1, fy - 1, 2, 0, Math.PI * 2); c.fill();
         c.fillStyle = '#d0d090'; c.fillRect(fx - 1, fy + 4, 3, 6);
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }]),
   },
 
   // ── Zone 2: Пещера (floors 4-6) ─────────────────────────
@@ -143,7 +220,8 @@ const THEMES = [
     crackColor: '#6838c8', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) _drawTorch(c, px + 14 + h % 14, py + TILE - 22, '#ffa020');
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
   },
 
   // Floor 5 — Кристальная пещера
@@ -159,7 +237,8 @@ const THEMES = [
         _drawCrystal(c, cx, cy, colors[h % 3], h);
         if (h % 6 === 0) _drawCrystal(c, cx + 9, cy - 3, colors[(h + 1) % 3], h * 3);
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'treasure_small' }, { key: 'boulder' }, { key: 'crate_single' }]),
   },
 
   // Floor 6 — Подземное озеро
@@ -185,7 +264,8 @@ const THEMES = [
         c.beginPath(); c.arc(px + 10 + h % 18, py + TILE - 4, 5, 0, Math.PI * 2); c.fill();
         c.globalAlpha = 1;
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
   },
 
   // ── Zone 3: Руины (floors 7-9) ──────────────────────────
@@ -209,7 +289,8 @@ const THEMES = [
         c.moveTo(rx - 5, ry - 5); c.lineTo(rx + 5, ry + 5);
         c.stroke(); c.globalAlpha = 1;
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'chest_round' }, { key: 'treasure_medium' }, { key: 'key_gold' }, { key: 'grave_marker' }]),
   },
 
   // Floor 8 — Разрушенный храм
@@ -225,7 +306,8 @@ const THEMES = [
       if (h % 6 === 0) {
         _drawTorch(c, px + 8 + h % 22, py + TILE - 22, '#ff8818');
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'chest_banded' }, { key: 'treasure_medium' }, { key: 'grave_marker' }, { key: 'key_gold' }]),
   },
 
   // Floor 9 — Катакомбы
@@ -253,7 +335,8 @@ const THEMES = [
         // Wall torch
         _drawTorch(c, px + 18, py + TILE - 22, '#ff6010');
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'grave_marker' }, { key: 'spikes_row' }, { key: 'chest_banded' }, { key: 'key_gold' }]),
   },
 
   // ── Zone 4: Болото (floors 10-12) ───────────────────────
@@ -277,7 +360,8 @@ const THEMES = [
           c.beginPath(); c.arc(px + 8 + h % 20, py + 14, 2, 0, Math.PI * 2); c.fill();
         }
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'slime_small' }, { key: 'stump' }, { key: 'branch1' }, { key: 'barrel_slime' }]),
   },
 
   // Floor 11 — Ядовитые топи
@@ -298,7 +382,8 @@ const THEMES = [
         c.globalAlpha = 1;
       }
       if (h % 6 === 0) _drawSkull(c, px + 10 + h % 18, py + TILE - 20, '#c8e870');
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'slime_medium' }, { key: 'slime_small' }, { key: 'stump' }]),
   },
 
   // Floor 12 — Гнилые глубины
@@ -322,7 +407,8 @@ const THEMES = [
         _drawChain(c, px + 18, py + 2, 6, '#706040');
         _drawSkull(c, px + 18, py + TILE - 8, '#c8c090');
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'slime_large' }, { key: 'barrel_slime' }, { key: 'stump' }, { key: 'grave_marker' }]),
   },
 
   // ── Zone 5: Лёд (floors 13-15) ──────────────────────────
@@ -343,7 +429,8 @@ const THEMES = [
           c.fillStyle = 'rgba(170,228,255,0.88)';
         }
       });
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'treasure_small' }]),
   },
 
   // Floor 14 — Ледяные чертоги
@@ -365,7 +452,8 @@ const THEMES = [
         c.lineTo(px + h % 18 + 10, py + 30);
         c.stroke();
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'boulder' }, { key: 'treasure_medium' }, { key: 'crate_single' }]),
   },
 
   // Floor 15 — Ледяной дворец
@@ -388,7 +476,8 @@ const THEMES = [
       } else if (h % 4 === 0) {
         _drawLantern(c, px + 8 + h % 16, py + TILE - 26, '#b8f0ff');
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'treasure_large' }, { key: 'treasure_trophy' }, { key: 'boulder' }]),
   },
 
   // ── Zone 6: Вулкан (floors 16-18) ───────────────────────
@@ -410,7 +499,8 @@ const THEMES = [
         c.beginPath(); c.arc(dx + 2, dy, 10, 0, Math.PI * 2); c.fill();
         c.globalAlpha = 1;
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'boulder' }, { key: 'crate_single' }, { key: 'trap_spike' }]),
   },
 
   // Floor 17 — Лавовые пещеры
@@ -431,7 +521,8 @@ const THEMES = [
         c.beginPath(); c.arc(px + 12 + h % 14, py + TILE - 10, 8, 0, Math.PI * 2); c.fill();
         c.globalAlpha = 1;
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'boulder' }, { key: 'treasure_large' }, { key: 'trap_spike' }]),
   },
 
   // Floor 18 — Кратер
@@ -450,7 +541,8 @@ const THEMES = [
         c.globalAlpha = 1;
       }
       if (h % 4 === 0) _drawSkull(c, px + 16 + h % 8 - 4, py + TILE - 20, '#a08060');
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'spikes_row' }, { key: 'boulder' }, { key: 'trap_spike' }]),
   },
 
   // ── Zone 7: Бездна (floors 19-20) ───────────────────────
@@ -478,7 +570,8 @@ const THEMES = [
         c.fillStyle = '#ffffff';
         c.beginPath(); c.arc(ex - 1, ey - 1, 0.8, 0, Math.PI * 2); c.fill();
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'grave_marker' }, { key: 'chest_banded' }, { key: 'key_gold' }]),
   },
 
   // Floor 20 — Сердце тьмы
@@ -508,7 +601,8 @@ const THEMES = [
         c.beginPath(); c.arc(rx, ry, r + 2, 0, Math.PI * 2); c.fill();
         c.globalAlpha = 1;
       }
-    }
+    },
+    drawFloorProp: _floorProps(50, [{ key: 'treasure_trophy' }, { key: 'chest_banded' }, { key: 'gem_purple' }, { key: 'grave_marker' }]),
   },
 ];
 

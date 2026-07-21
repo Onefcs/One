@@ -1184,6 +1184,24 @@ function _buildChunk(cx, cy) {
     }
   }
 
+  // 6. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
+  // scattered sparsely on floor tiles. Same own-tile-block scoping as the
+  // wall decor pass above, so seams never get a doubled-up prop.
+  if (th.drawFloorProp) {
+    const ptx0 = cx * _CHUNK_T, pty0 = cy * _CHUNK_T;
+    const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
+    const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
+    for (let ty = pty0; ty <= pty1; ty++) {
+      for (let tx = ptx0; tx <= ptx1; tx++) {
+        if (dungeon.grid[ty][tx] !== FLOOR) continue;
+        const h = ((tx * 41) ^ (ty * 59)) & 0xff;
+        c.save();
+        th.drawFloorProp(c, tx * TILE, ty * TILE, h);
+        c.restore();
+      }
+    }
+  }
+
   return cv;
 }
 
