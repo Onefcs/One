@@ -472,9 +472,11 @@ function _getEnemy(id) {
   const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  ct.addChild(spr, gfx);
+  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4 });
+  lbl.anchor.set(0.5, 1);
+  ct.addChild(spr, gfx, lbl);
   _enemyCt.addChild(ct);
-  const obj = { ct, spr, gfx };
+  const obj = { ct, spr, gfx, lbl };
   _enemyPool.set(id, obj);
   return obj;
 }
@@ -571,15 +573,15 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     gfx.lineStyle(0);
   }
 
-  // Name/boss label position — read by _drawEnemyNamesOnUI (2D overlay). Drawn
-  // there instead of as a WebGL PIXI.Text: text rasterizes to its own texture
-  // on first creation, and a room full of mobs coming into view at once (i.e.
-  // while running) meant a burst of those rasterizations landing in the same
-  // frame or two — a visible hitch, confirmed by a screen recording. The 2D
-  // canvas draws text at native screen resolution every frame for free by
-  // comparison (same fix already applied to player name tags — see
-  // _drawOtherPlayerNamesOnUI).
-  e._nameBarTop = by;
+  // Name / boss label above HP bar
+  const { lbl } = obj;
+  const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
+  if (lbl.text !== lblText) lbl.text = lblText;
+  lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
+  lbl.style.fontSize     = e.isBoss ? 18 : 14;
+  lbl.style.strokeThickness = e.isBoss ? 5 : 4;
+  lbl.x = 0;
+  lbl.y = by - 4;
 }
 
 let _enemyVisGen = 0;
