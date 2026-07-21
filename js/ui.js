@@ -780,6 +780,21 @@ let _uiBtnGrads = null;
 let _hdrNameW = 0, _hdrNameStr = '';
 let _nexumIconImg = null;
 
+// Telegram profile photo shown in the header avatar slot in place of the
+// class-color/icon avatar, once it loads. Set once from initDataUnsafe at
+// login (see _initTelegramWidget in network.js) — not every user has one,
+// so drawHeader() keeps the existing icon avatar as a fallback.
+let _tgAvatarImg = null, _tgAvatarReady = false;
+function setTelegramAvatar(url) {
+  if (!url) return;
+  const img = new Image();
+  img.crossOrigin = 'anonymous'; // avoid tainting the canvas if the CDN sends CORS headers
+  img.onload  = () => { _tgAvatarReady = true; };
+  img.onerror = () => { _tgAvatarReady = false; _tgAvatarImg = null; };
+  img.src = url;
+  _tgAvatarImg = img;
+}
+
 function drawHeader() {
   if (!player || !dungeon) return;
   const p = player;
@@ -914,21 +929,29 @@ function drawHeader() {
 
   // ── Avatar ────────────────────────────────────────────────
   const avX = 30, avY = HEADER_H / 2, avR = 18;
+  const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
-  if (!_avBgGrad || _avBgColor !== p.charDef.color) {
-    _avBgGrad = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
-    _avBgGrad.addColorStop(0, p.charDef.color + '40');
-    _avBgGrad.addColorStop(1, 'rgba(0,0,0,0.6)');
-    _avBgColor = p.charDef.color;
+  if (hasTgAvatar) {
+    ctx.save();
+    ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(_tgAvatarImg, avX - avR, avY - avR, avR * 2, avR * 2);
+    ctx.restore();
+  } else {
+    if (!_avBgGrad || _avBgColor !== p.charDef.color) {
+      _avBgGrad = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
+      _avBgGrad.addColorStop(0, p.charDef.color + '40');
+      _avBgGrad.addColorStop(1, 'rgba(0,0,0,0.6)');
+      _avBgColor = p.charDef.color;
+    }
+    ctx.fillStyle = _avBgGrad;
+    ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.fillStyle = _avBgGrad;
-  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
   ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
-  drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 20, p.charDef.color);
+  if (!hasTgAvatar) drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 20, p.charDef.color);
 
   // ── Info area ─────────────────────────────────────────────
   const infoX = avX + avR + 9;

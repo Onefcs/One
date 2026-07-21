@@ -759,6 +759,9 @@ function _initTelegramWidget() {
     twa.setBackgroundColor?.('#000000');
     twa.lockOrientation?.();
 
+    const photoUrl = twa.initDataUnsafe?.user?.photo_url;
+    if (photoUrl && typeof setTelegramAvatar === 'function') setTelegramAvatar(photoUrl);
+
     netConnect(() => socket.emit('loginTelegramWebApp', { initData: twa.initData }));
     return;
   }
