@@ -8,7 +8,7 @@ let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
 let _szGfx    = null;   // safe-zone overlay (Graphics, rebuilt on dungeon change)
 let _aoeGfx   = null;   // AOE rings (Graphics, cleared each frame)
-let _npcGfx   = null;   // NPC bodies
+let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
 let _npcNames = [];      // PIXI.Text per NPC
 let _dropGfx  = null;
 let _partGfx  = null;   // particles (Graphics, cleared each frame)
@@ -21,6 +21,7 @@ let _dmgNumCt = null;
 // Entity sprite pools
 const _enemyPool  = new Map(); // id  → {ct, spr, gfx}
 const _otherPool  = new Map(); // sid → {ct, spr, gfx}
+const _npcPool    = new Map(); // npc.id → {ct, spr, gfx}
 
 // Player rendering objects
 let _plSpr = null, _plGfx = null;
@@ -35,6 +36,7 @@ const _chunkSprCache = new Map(); // "cx,cy" → PIXI.Sprite
 // Texture caches
 const _pTex = {};          // charType|animKey → PIXI.Texture[]
 const _eTex = {};          // eid|sheetKey     → {down,up,left,right}: PIXI.Texture[]
+const _npcTex = {};        // npc icon id      → PIXI.Texture[]
 
 let _szBuiltFor = null; // dungeon reference for safe-zone rebuild guard
 let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
@@ -57,7 +59,7 @@ function pixiInit(canvasEl) {
   _tileCt   = new PIXI.Container();
   _szGfx    = new PIXI.Graphics();
   _aoeGfx   = new PIXI.Graphics();
-  _npcGfx   = new PIXI.Graphics();
+  _npcCt    = new PIXI.Container();
   _dropGfx  = new PIXI.Graphics();
   _partGfx  = new PIXI.Graphics();
   _enemyCt  = new PIXI.Container();
@@ -68,7 +70,7 @@ function pixiInit(canvasEl) {
 
   _worldCt.addChild(
     _tileCt, _szGfx, _aoeGfx,
-    _npcGfx, _dropGfx, _partGfx,
+    _npcCt, _dropGfx, _partGfx,
     _enemyCt, _otherPCt, _projGfx,
     _playerCt, _dmgNumCt
   );
@@ -155,6 +157,19 @@ function _enemyTextures(eid, sheetKey) {
   return (_eTex[k] = rows);
 }
 
+function _npcTextures(id) {
+  if (_npcTex[id]) return _npcTex[id];
+  const def = NPC_SPRITE_DEF[id];
+  const img = npcSpriteCache[id];
+  if (!def || !img || !img.complete || !img.naturalWidth) return null;
+  const bt = PIXI.BaseTexture.from(img);
+  bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
+  const arr = [];
+  for (let c = 0; c < def.cols; c++)
+    arr.push(new PIXI.Texture(bt, new PIXI.Rectangle(c * def.frameW, 0, def.frameW, def.frameH)));
+  return (_npcTex[id] = arr);
+}
+
 // ── tiles ─────────────────────────────────────────────────
 
 // Visibility is tracked with a generation stamp on each sprite rather than a
@@ -229,8 +244,23 @@ function _updateAoeRings() {
 
 // ── NPCs ──────────────────────────────────────────────────
 
-function _updateNpcs(ts) {
-  if (!npcs || !npcs.length) { _npcGfx.clear(); return; }
+const _NPC_DISPLAY_H = 74; // world px — square frames, so width == height
+
+function _getNpcObj(id) {
+  if (_npcPool.has(id)) return _npcPool.get(id);
+  const ct  = new PIXI.Container();
+  const gfx = new PIXI.Graphics();
+  const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
+  spr.visible = false;
+  ct.addChild(gfx, spr);
+  _npcCt.addChild(ct);
+  const obj = { ct, gfx, spr };
+  _npcPool.set(id, obj);
+  return obj;
+}
+
+function _updateNpcs(dt, ts) {
+  if (!npcs || !npcs.length) return;
   // Sync name text objects count
   while (_npcNames.length > npcs.length) {
     const t = _npcNames.pop();
@@ -246,30 +276,64 @@ function _updateNpcs(ts) {
     _worldCt.addChild(t);
     _npcNames.push(t);
   }
-  _npcGfx.clear();
   const pulse  = 0.7 + 0.3 * Math.sin(ts * 0.0048);
   const bounce = Math.sin(ts * 0.009) * 3;
   for (let i = 0; i < npcs.length; i++) {
     const n = npcs[i], t = _npcNames[i];
     const onScreen = n.x >= _vL && n.x <= _vR && n.y >= _vT && n.y <= _vB;
     t.visible = onScreen;
+    const obj = _getNpcObj(n.id);
+    obj.ct.visible = onScreen;
     if (!onScreen) continue;
+    obj.ct.x = n.x; obj.ct.y = n.y;
+    const { gfx, spr } = obj;
+    gfx.clear();
     const col = parseInt((n.color || '#7b5ea7').replace('#', ''), 16);
-    _npcGfx.beginFill(0x000000, 0.3);
-    _npcGfx.drawEllipse(n.x, n.y + 18, 14, 5);
-    _npcGfx.endFill();
-    _npcGfx.beginFill(col);
-    _npcGfx.drawCircle(n.x, n.y, 18);
-    _npcGfx.endFill();
-    _npcGfx.lineStyle(2, col, pulse * 0.8);
-    _npcGfx.drawCircle(n.x, n.y, 22);
-    _npcGfx.lineStyle(0);
-    t.x = n.x; t.y = n.y - 26;
+
+    // Shadow
+    gfx.beginFill(0x000000, 0.3);
+    gfx.drawEllipse(0, 18, 14, 5);
+    gfx.endFill();
+
+    // Sprite (lazy-load on first encounter, matches enemy loading pattern)
+    if (!npcSpriteCache[n.icon]) loadNpcSprites(n.icon);
+    const def      = NPC_SPRITE_DEF[n.icon];
+    const textures = def ? _npcTextures(n.icon) : null;
+    if (textures && def) {
+      if (n._animTimer === undefined) { n._animFrame = 0; n._animTimer = 0; }
+      n._animTimer += dt;
+      const fd = 1 / def.fps;
+      while (n._animTimer >= fd) {
+        n._animTimer -= fd;
+        n._animFrame = (n._animFrame + 1) % def.cols;
+      }
+      spr.texture = textures[n._animFrame] || textures[0];
+      spr.width  = _NPC_DISPLAY_H;
+      spr.height = _NPC_DISPLAY_H;
+      spr.x = -_NPC_DISPLAY_H * 0.5;
+      spr.y = -_NPC_DISPLAY_H * 0.55;
+      spr.visible = true;
+    } else {
+      // Circle fallback while the sheet is still loading
+      spr.visible = false;
+      gfx.beginFill(col);
+      gfx.drawCircle(0, 0, 18);
+      gfx.endFill();
+    }
+
+    // Presence ring — ambient pulse around the NPC's ground position
+    gfx.lineStyle(2, col, pulse * 0.8);
+    gfx.drawCircle(0, 0, 22);
+    gfx.lineStyle(0);
+
+    t.x = n.x; t.y = n.y - (textures ? _NPC_DISPLAY_H * 0.85 : 26);
+
     if (nearNpc && nearNpc.id === n.id) {
       // chat bubble indicator
-      _npcGfx.beginFill(0xffffff, 0.85);
-      _npcGfx.drawRoundedRect(n.x - 8, n.y - 44 + bounce, 16, 13, 3);
-      _npcGfx.endFill();
+      const bubbleY = -(textures ? _NPC_DISPLAY_H * 0.95 : 44) + bounce;
+      gfx.beginFill(0xffffff, 0.85);
+      gfx.drawRoundedRect(-8, bubbleY, 16, 13, 3);
+      gfx.endFill();
     }
   }
 }
@@ -717,7 +781,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _updateTiles(camX, camY);
   _updateSafeZone();
   _updateAoeRings();
-  _updateNpcs(ts);
+  _updateNpcs(dt, ts);
   _updateDrops(ts);
   _updateParticles();
   _updateEnemies(dt, pulse, bossGlow);
