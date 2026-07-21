@@ -33,11 +33,25 @@ const _dmgPool   = [];
 const _chunkSprCache = new Map(); // "cx,cy" → PIXI.Sprite
 
 // Texture caches
-const _pTex = {};   // charType|animKey → PIXI.Texture[]
-const _eTex = {};   // eid|sheetKey     → {down,up,left,right}: PIXI.Texture[]
+const _pTex = {};          // charType|animKey → PIXI.Texture[]
+const _eTex = {};          // eid|sheetKey     → {down,up,left,right}: PIXI.Texture[]
+const _clanIconTexCache = {}; // iconId → PIXI.Texture (pixel-art clan icons)
 
 let _szBuiltFor = null; // dungeon reference for safe-zone rebuild guard
 let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
+
+// Rasterise a clan icon to a PIXI.Texture (cached per iconId, NEAREST filtering for pixel art)
+function _getClanIconTex(iconId) {
+  const id = iconId || 1;
+  if (_clanIconTexCache[id]) return _clanIconTexCache[id];
+  const px = 2, sz = 16 * px;
+  const oc = document.createElement('canvas');
+  oc.width = sz; oc.height = sz;
+  drawClanIconOnCtx(oc.getContext('2d'), id, sz / 2, sz / 2, px);
+  const bt = PIXI.BaseTexture.from(oc);
+  bt.scaleMode = PIXI.SCALE_MODES.NEAREST;
+  return (_clanIconTexCache[id] = new PIXI.Texture(bt));
+}
 
 // ── init ──────────────────────────────────────────────────
 function pixiInit(canvasEl) {
@@ -540,11 +554,19 @@ function _getOtherPlayer(sid) {
   const gfx = new PIXI.Graphics();
   const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 10, fontWeight: 'bold', fill: '#ffffff', stroke: '#000', strokeThickness: 3 });
   lbl.anchor.set(0.5, 1);
-  const clanLbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 8, fontWeight: 'bold', fill: '#f93', stroke: '#000', strokeThickness: 2.5 });
-  clanLbl.anchor.set(0.5, 1);
-  ct.addChild(spr, gfx, lbl, clanLbl);
+  // Clan row: icon sprite + name in a Container so they center as a group
+  const clanCt  = new PIXI.Container();
+  const iconSpr = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  iconSpr.width = 12; iconSpr.height = 12;
+  iconSpr.anchor.set(0, 0.5);
+  const clanLbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontSize: 10, fontWeight: 'bold', fill: '#f93', stroke: '#000', strokeThickness: 3 });
+  clanLbl.anchor.set(0, 0.5);
+  clanLbl.x = 14; // icon 12 + gap 2
+  clanCt.addChild(iconSpr, clanLbl);
+  clanCt.visible = false;
+  ct.addChild(spr, gfx, lbl, clanCt);
   _otherPCt.addChild(ct);
-  const obj = { ct, spr, gfx, lbl, clanLbl };
+  const obj = { ct, spr, gfx, lbl, clanCt, clanLbl, iconSpr };
   _otherPool.set(sid, obj);
   return obj;
 }
@@ -610,19 +632,24 @@ function _updateOtherPlayers(pulse) {
     gfx.beginFill(0x22dd22); gfx.drawRect(-bw/2, barTop, bw * Math.max(0,(p.hp||0)/(p.maxHp||1)), bh); gfx.endFill();
 
     // Player name
-    const { lbl, clanLbl } = obj;
+    const { lbl, clanCt, clanLbl, iconSpr } = obj;
     const uname = (p.username || '?').slice(0, 16);
     if (lbl.text !== uname) lbl.text = uname;
     lbl.style.fill = p.pvpMode ? '#ff9999' : '#ffffff';
     lbl.x = 0;
     lbl.y = barTop - 3;
 
-    // Clan tag above name
-    const cname = p.clanName ? `[${p.clanName}]` : '';
-    if (clanLbl.text !== cname) clanLbl.text = cname;
-    clanLbl.visible = !!cname;
-    clanLbl.x = 0;
-    clanLbl.y = lbl.y - 12;
+    // Clan row: icon + name, centered as a group above the player name
+    const cname = p.clanName || '';
+    if (cname) {
+      if (clanLbl.text !== cname) clanLbl.text = cname;
+      iconSpr.texture = _getClanIconTex(p.clanIcon || 1);
+      clanCt.visible = true;
+      clanCt.y = lbl.y - 14;
+      clanCt.x = -clanCt.width / 2; // center icon+text group over player
+    } else {
+      clanCt.visible = false;
+    }
   });
   _otherPool.forEach((obj, id) => { if (!seen.has(id)) obj.ct.visible = false; });
 }

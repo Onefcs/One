@@ -742,13 +742,20 @@ function _drawPlayerNameOnUI() {
   if (displayName !== _prevDisplayName) { _cachedNameTw = ctx.measureText(displayName).width; _prevDisplayName = displayName; }
   const tw = _cachedNameTw;
 
-  // Clan tag above character name — direct text, same DPR/context as name, no jitter
+  // Clan tag above character name: pixel-art icon + name, centered, no jitter
   if (typeof clanData !== 'undefined' && clanData && clanData.name) {
     ctx.font = 'bold 9px system-ui, Arial';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-    ctx.strokeText(`[${clanData.name}]`, sx, sy - 13);
+    const ctw = ctx.measureText(clanData.name).width;
+    const iconSz = 16, gap = 3; // icon at px=1 → 16×16 CSS px (sharp on retina via DPR transform)
+    const lineX = Math.round(sx - (iconSz + gap + ctw) / 2);
+    const lineY = sy - 16;
+    drawClanIconOnCtx(ctx, clanData.icon || 1, lineX + 8, lineY, 1);
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+    ctx.strokeText(clanData.name, lineX + iconSz + gap, lineY);
     ctx.fillStyle = '#f93';
-    ctx.fillText(`[${clanData.name}]`, sx, sy - 13);
+    ctx.fillText(clanData.name, lineX + iconSz + gap, lineY);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
     ctx.font = 'bold 10px system-ui, Arial';
   }
 
