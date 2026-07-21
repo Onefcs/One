@@ -276,7 +276,6 @@ function _updateNpcs(dt, ts) {
     _worldCt.addChild(t);
     _npcNames.push(t);
   }
-  const pulse  = 0.7 + 0.3 * Math.sin(ts * 0.0048);
   const bounce = Math.sin(ts * 0.009) * 3;
   for (let i = 0; i < npcs.length; i++) {
     const n = npcs[i], t = _npcNames[i];
@@ -295,13 +294,11 @@ function _updateNpcs(dt, ts) {
     const def      = NPC_SPRITE_DEF[n.icon];
     const textures = def ? _npcTextures(n.icon) : null;
 
-    // Sprite top/bottom in local space — the ring, shadow and label are all
-    // derived from this so they actually frame the character instead of the
-    // small fixed-radius token they were sized for before sprites existed.
+    // Sprite top/bottom in local space — the shadow and label are derived
+    // from this so they line up with the character instead of the small
+    // fixed-radius token they were sized for before sprites existed.
     const spriteTop    = -_NPC_DISPLAY_H * 0.55;
     const spriteBottom = spriteTop + _NPC_DISPLAY_H;
-    const spriteCenterY = (spriteTop + spriteBottom) / 2;
-    const ringR = _NPC_DISPLAY_H * 0.42;
 
     // Shadow at the feet
     gfx.beginFill(0x000000, 0.3);
@@ -330,13 +327,7 @@ function _updateNpcs(dt, ts) {
       gfx.endFill();
     }
 
-    // Presence ring — sized and centered to actually enclose the character
-    // sprite (falls back to the old small token ring while it's loading)
-    gfx.lineStyle(2, col, pulse * 0.8);
-    gfx.drawCircle(0, textures ? spriteCenterY : 0, textures ? ringR : 22);
-    gfx.lineStyle(0);
-
-    t.x = n.x; t.y = n.y + (textures ? spriteTop - 6 : -26);
+    t.x = n.x; t.y = n.y + (textures ? spriteTop + 8 : -26);
 
     if (nearNpc && nearNpc.id === n.id) {
       // chat bubble indicator
