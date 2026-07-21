@@ -1286,19 +1286,22 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 26px;
-  background: linear-gradient(135deg, rgba(255,210,60,.82) 0%, rgba(200,130,0,.70) 100%);
-  border: 1px solid rgba(255,210,60,.90);
-  border-radius: 7px;
-  color: #ffd23c;
-  font-size: 11px;
+  height: 28px;
+  background: rgba(6,4,18,.90);
+  border: 1px solid rgba(255,255,255,.08);
+  border-left: 3px solid #e8a800;
+  border-radius: 6px;
+  color: #f0c040;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: .3px;
+  letter-spacing: .4px;
   cursor: pointer;
   z-index: 50;
-  box-shadow: 0 1px 8px rgba(255,210,60,.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
 }
-#rating-btn:active { background: linear-gradient(135deg, rgba(255,210,60,1) 0%, rgba(200,130,0,.90) 100%); }
+#rating-btn:active { background: rgba(18,12,38,.96); border-left-color: #ffd23c; }
 
 /* ── Rating panel overlay ─────────────────────────────────────────────────── */
 #rating-panel {
@@ -1469,19 +1472,22 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 26px;
-  background: linear-gradient(135deg, rgba(180,80,255,.82) 0%, rgba(100,30,180,.70) 100%);
-  border: 1px solid rgba(180,80,255,.90);
-  border-radius: 7px;
-  color: #d080ff;
-  font-size: 11px;
+  height: 28px;
+  background: rgba(6,4,18,.90);
+  border: 1px solid rgba(255,255,255,.08);
+  border-left: 3px solid #9333ea;
+  border-radius: 6px;
+  color: #c084fc;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: .3px;
+  letter-spacing: .4px;
   cursor: pointer;
   z-index: 50;
-  box-shadow: 0 1px 8px rgba(180,80,255,.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
 }
-#vip-btn:active { background: linear-gradient(135deg, rgba(180,80,255,1) 0%, rgba(100,30,180,.90) 100%); }
+#vip-btn:active { background: rgba(18,12,38,.96); border-left-color: #d480ff; }
 
 /* ── VIP panel overlay ────────────────────────────────────────────────────── */
 #vip-panel {
@@ -1714,19 +1720,22 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 26px;
-  background: linear-gradient(135deg, rgba(62,240,122,.80) 0%, rgba(15,160,65,.68) 100%);
-  border: 1px solid rgba(62,240,122,.90);
-  border-radius: 7px;
-  color: #3ef07a;
-  font-size: 11px;
+  height: 28px;
+  background: rgba(6,4,18,.90);
+  border: 1px solid rgba(255,255,255,.08);
+  border-left: 3px solid #16a34a;
+  border-radius: 6px;
+  color: #4ade80;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: .3px;
+  letter-spacing: .4px;
   cursor: pointer;
   z-index: 50;
-  box-shadow: 0 1px 8px rgba(62,240,122,.16);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
 }
-#market-btn:active { background: linear-gradient(135deg, rgba(62,240,122,1) 0%, rgba(15,160,65,.90) 100%); }
+#market-btn:active { background: rgba(18,12,38,.96); border-left-color: #4ade80; }
 
 /* ── Market panel overlay (reuses .vip-header / .vip-body / .rating-tab*) ──── */
 #market-panel {
@@ -1878,19 +1887,22 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 26px;
-  background: linear-gradient(135deg, rgba(255,215,0,.82) 0%, rgba(190,130,0,.70) 100%);
-  border: 1px solid rgba(255,215,0,.90);
-  border-radius: 7px;
-  color: #ffd700;
-  font-size: 11px;
+  height: 28px;
+  background: rgba(6,4,18,.90);
+  border: 1px solid rgba(255,255,255,.08);
+  border-left: 3px solid #b45309;
+  border-radius: 6px;
+  color: #fbbf24;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: .3px;
+  letter-spacing: .4px;
   cursor: pointer;
   z-index: 50;
-  box-shadow: 0 1px 8px rgba(255,215,0,.16);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
 }
-#gram-shop-btn:active { background: linear-gradient(135deg, rgba(255,215,0,1) 0%, rgba(190,130,0,.90) 100%); }
+#gram-shop-btn:active { background: rgba(18,12,38,.96); border-left-color: #fcd34d; }
 
 #gram-shop-panel {
   position: absolute;
