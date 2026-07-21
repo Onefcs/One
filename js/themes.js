@@ -79,9 +79,9 @@ const THEMES = [
 
   // Floor 1 — Лесная опушка
   {
-    name: '🌳 Лесная опушка', bg: '#061408', mmFloor: '#2e5818',
-    wallColor: '#0e2010', wallEdge: '#204018', wallHighlight: 0.11,
-    floorA: '#162408', floorB: '#1c2c0c', grout: '#0c1806',
+    name: '🌳 Лесная опушка', bg: '#071309', mmFloor: '#49832a',
+    wallColor: '#36633b', wallEdge: '#518943', wallHighlight: 0.14,
+    floorA: '#33471f', floorB: '#3d5625', grout: '#16240f',
     crackColor: '#2e5018', crackAlpha: 0.25,
     drawWallDecor(c, px, py, h) {
       if (h % 5 === 0) {
@@ -97,9 +97,9 @@ const THEMES = [
 
   // Floor 2 — Дремучий лес
   {
-    name: '🌲 Дремучий лес', bg: '#030e04', mmFloor: '#224014',
-    wallColor: '#0c1c0a', wallEdge: '#1a3410', wallHighlight: 0.10,
-    floorA: '#121e08', floorB: '#16240c', grout: '#09110a',
+    name: '🌲 Дремучий лес', bg: '#061407', mmFloor: '#48802e',
+    wallColor: '#376831', wallEdge: '#548f3e', wallHighlight: 0.13,
+    floorA: '#31471f', floorB: '#395625', grout: '#132015',
     crackColor: '#284e14', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
@@ -115,9 +115,9 @@ const THEMES = [
 
   // Floor 3 — Лесная чаща
   {
-    name: '🌿 Лесная чаща', bg: '#020c04', mmFloor: '#1a3410',
-    wallColor: '#0a180c', wallEdge: '#182e14', wallHighlight: 0.09,
-    floorA: '#0e1e08', floorB: '#12220c', grout: '#070f06',
+    name: '🌿 Лесная чаща', bg: '#061409', mmFloor: '#44802d',
+    wallColor: '#35643c', wallEdge: '#518448', wallHighlight: 0.11,
+    floorA: '#2a471f', floorB: '#335526', grout: '#132211',
     crackColor: '#224012', crackAlpha: 0.30,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -137,9 +137,9 @@ const THEMES = [
 
   // Floor 4 — Верхняя пещера
   {
-    name: '⛏ Верхняя пещера', bg: '#060410', mmFloor: '#302050',
-    wallColor: '#161030', wallEdge: '#282048', wallHighlight: 0.16,
-    floorA: '#121028', floorB: '#16142e', grout: '#09080e',
+    name: '⛏ Верхняя пещера', bg: '#080614', mmFloor: '#4c3578',
+    wallColor: '#3b3069', wallEdge: '#544983', wallHighlight: 0.2,
+    floorA: '#242244', floorB: '#2d2a50', grout: '#16141f',
     crackColor: '#6838c8', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) _drawTorch(c, px + 14 + h % 14, py + TILE - 22, '#ffa020');
@@ -148,9 +148,9 @@ const THEMES = [
 
   // Floor 5 — Кристальная пещера
   {
-    name: '💎 Кристальная пещера', bg: '#04011a', mmFloor: '#242060',
-    wallColor: '#120a30', wallEdge: '#221848', wallHighlight: 0.20,
-    floorA: '#100e28', floorB: '#14122e', grout: '#080610',
+    name: '💎 Кристальная пещера', bg: '#080615', mmFloor: '#35307e',
+    wallColor: '#392a6f', wallEdge: '#50408c', wallHighlight: 0.25,
+    floorA: '#221f47', floorB: '#2b2853', grout: '#141023',
     crackColor: '#9050e8', crackAlpha: 0.35,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
@@ -164,9 +164,9 @@ const THEMES = [
 
   // Floor 6 — Подземное озеро
   {
-    name: '💧 Подземное озеро', bg: '#020814', mmFloor: '#142c48',
-    wallColor: '#0c1e38', wallEdge: '#163250', wallHighlight: 0.20,
-    floorA: '#0e2038', floorB: '#122440', grout: '#070e18',
+    name: '💧 Подземное озеро', bg: '#060a14', mmFloor: '#2b5383',
+    wallColor: '#2a466f', wallEdge: '#3a6592', wallHighlight: 0.25,
+    floorA: '#1f3047', floorB: '#253856', grout: '#0f1824',
     crackColor: '#3080b8', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       // Stalactites
@@ -192,9 +192,9 @@ const THEMES = [
 
   // Floor 7 — Древние руины
   {
-    name: '🏛 Древние руины', bg: '#0c0a06', mmFloor: '#3e3020',
-    wallColor: '#2e2416', wallEdge: '#443820', wallHighlight: 0.15,
-    floorA: '#261e0e', floorB: '#2c2414', grout: '#161008',
+    name: '🏛 Древние руины', bg: '#110e09', mmFloor: '#70583e',
+    wallColor: '#615038', wallEdge: '#826f4a', wallHighlight: 0.19,
+    floorA: '#463920', floorB: '#50432b', grout: '#231b10',
     crackColor: '#c09850', crackAlpha: 0.22,
     drawWallDecor(c, px, py, h) {
       if (h % 5 === 0) {
@@ -214,9 +214,9 @@ const THEMES = [
 
   // Floor 8 — Разрушенный храм
   {
-    name: '🏚 Разрушенный храм', bg: '#080600', mmFloor: '#382a18',
-    wallColor: '#2a1e0c', wallEdge: '#403014', wallHighlight: 0.13,
-    floorA: '#221808', floorB: '#281e10', grout: '#130e06',
+    name: '🏚 Разрушенный храм', bg: '#141006', mmFloor: '#765b37',
+    wallColor: '#6c532d', wallEdge: '#8e713e', wallHighlight: 0.16,
+    floorA: '#47381f', floorB: '#524128', grout: '#241c0f',
     crackColor: '#b08848', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -230,9 +230,9 @@ const THEMES = [
 
   // Floor 9 — Катакомбы
   {
-    name: '💀 Катакомбы', bg: '#060404', mmFloor: '#321e16',
-    wallColor: '#221616', wallEdge: '#342020', wallHighlight: 0.13,
-    floorA: '#1c1008', floorB: '#20140c', grout: '#0e0a06',
+    name: '💀 Катакомбы', bg: '#0f0a0a', mmFloor: '#754a38',
+    wallColor: '#594040', wallEdge: '#785454', wallHighlight: 0.16,
+    floorA: '#472f1f', floorB: '#533927', grout: '#221a11',
     crackColor: '#906050', crackAlpha: 0.30,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
@@ -260,9 +260,9 @@ const THEMES = [
 
   // Floor 10 — Болото
   {
-    name: '🌿 Болото', bg: '#030701', mmFloor: '#1e3610',
-    wallColor: '#0a1408', wallEdge: '#142010', wallHighlight: 0.08,
-    floorA: '#0e1a0a', floorB: '#121e0e', grout: '#070d06',
+    name: '🌿 Болото', bg: '#0a1406', mmFloor: '#4c812c',
+    wallColor: '#3c6534', wallEdge: '#59804d', wallHighlight: 0.1,
+    floorA: '#2a4521', floorB: '#344f2b', grout: '#142112',
     crackColor: '#306028', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -282,9 +282,9 @@ const THEMES = [
 
   // Floor 11 — Ядовитые топи
   {
-    name: '☠ Ядовитые топи', bg: '#030702', mmFloor: '#263e14',
-    wallColor: '#0e1c0a', wallEdge: '#1c3010', wallHighlight: 0.09,
-    floorA: '#121e08', floorB: '#162408', grout: '#090e06',
+    name: '☠ Ядовитые топи', bg: '#091306', mmFloor: '#517f2f',
+    wallColor: '#3d6831', wallEdge: '#5c8c40', wallHighlight: 0.11,
+    floorA: '#31471f', floorB: '#3d5625', grout: '#172211',
     crackColor: '#80d020', crackAlpha: 0.34,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
@@ -303,9 +303,9 @@ const THEMES = [
 
   // Floor 12 — Гнилые глубины
   {
-    name: '🍄 Гнилые глубины', bg: '#050402', mmFloor: '#2c2010',
-    wallColor: '#1a1208', wallEdge: '#282010', wallHighlight: 0.09,
-    floorA: '#161008', floorB: '#1a140a', grout: '#0b0a06',
+    name: '🍄 Гнилые глубины', bg: '#120e08', mmFloor: '#7b5c32',
+    wallColor: '#6b502e', wallEdge: '#877145', wallHighlight: 0.11,
+    floorA: '#463620', floorB: '#534327', grout: '#201d14',
     crackColor: '#705030', crackAlpha: 0.30,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -329,9 +329,9 @@ const THEMES = [
 
   // Floor 13 — Ледяная пещера
   {
-    name: '❄ Ледяная пещера', bg: '#030a18', mmFloor: '#1e3458',
-    wallColor: '#12243e', wallEdge: '#203a5e', wallHighlight: 0.22,
-    floorA: '#102030', floorB: '#142638', grout: '#091018',
+    name: '❄ Ледяная пещера', bg: '#060b15', mmFloor: '#304d7d',
+    wallColor: '#2d476c', wallEdge: '#40608c', wallHighlight: 0.28,
+    floorA: '#1f3347', floorB: '#263d54', grout: '#101923',
     crackColor: '#58a8d8', crackAlpha: 0.26,
     drawWallDecor(c, px, py, h) {
       // Icicles
@@ -348,9 +348,9 @@ const THEMES = [
 
   // Floor 14 — Ледяные чертоги
   {
-    name: '🏔 Ледяные чертоги', bg: '#040c1e', mmFloor: '#203858',
-    wallColor: '#162e4e', wallEdge: '#244268', wallHighlight: 0.24,
-    floorA: '#122838', floorB: '#162e40', grout: '#0a1420',
+    name: '🏔 Ледяные чертоги', bg: '#080d1a', mmFloor: '#32517b',
+    wallColor: '#2c486d', wallEdge: '#41628b', wallHighlight: 0.3,
+    floorA: '#1f3647', floorB: '#254155', grout: '#0f1924',
     crackColor: '#60c0e8', crackAlpha: 0.28,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -370,9 +370,9 @@ const THEMES = [
 
   // Floor 15 — Ледяной дворец
   {
-    name: '👑 Ледяной дворец', bg: '#040e22', mmFloor: '#283e60',
-    wallColor: '#1a3458', wallEdge: '#2c4e78', wallHighlight: 0.30,
-    floorA: '#16304e', floorB: '#1c3856', grout: '#0c1c2c',
+    name: '👑 Ледяной дворец', bg: '#09101d', mmFloor: '#375077',
+    wallColor: '#2d476c', wallEdge: '#436289', wallHighlight: 0.36,
+    floorA: '#1f3247', floorB: '#253c56', grout: '#111c27',
     crackColor: '#88e0ff', crackAlpha: 0.30,
     drawWallDecor(c, px, py, h) {
       if (h % 5 === 0) {
@@ -395,9 +395,9 @@ const THEMES = [
 
   // Floor 16 — Вулкан
   {
-    name: '🌋 Вулкан', bg: '#0a0200', mmFloor: '#401804',
-    wallColor: '#241008', wallEdge: '#481c08', wallHighlight: 0.22,
-    floorA: '#1c0a00', floorB: '#220e02', grout: '#100500',
+    name: '🌋 Вулкан', bg: '#140906', mmFloor: '#8b4523',
+    wallColor: '#6f3e2a', wallEdge: '#975435', wallHighlight: 0.28,
+    floorA: '#472d1f', floorB: '#563725', grout: '#24160f',
     crackColor: '#ff5500', crackAlpha: 0.40,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
@@ -415,9 +415,9 @@ const THEMES = [
 
   // Floor 17 — Лавовые пещеры
   {
-    name: '🔥 Лавовые пещеры', bg: '#080000', mmFloor: '#481a04',
-    wallColor: '#2a1006', wallEdge: '#501808', wallHighlight: 0.24,
-    floorA: '#220800', floorB: '#280e02', grout: '#120400',
+    name: '🔥 Лавовые пещеры', bg: '#140606', mmFloor: '#8b4423',
+    wallColor: '#6f3d2a', wallEdge: '#974b35', wallHighlight: 0.3,
+    floorA: '#47281f', floorB: '#563425', grout: '#24140f',
     crackColor: '#ff6600', crackAlpha: 0.42,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -436,9 +436,9 @@ const THEMES = [
 
   // Floor 18 — Кратер
   {
-    name: '💥 Кратер', bg: '#050000', mmFloor: '#300e00',
-    wallColor: '#1e0800', wallEdge: '#381000', wallHighlight: 0.20,
-    floorA: '#180600', floorB: '#1e0a00', grout: '#0e0300',
+    name: '💥 Кратер', bg: '#140606', mmFloor: '#8b4123',
+    wallColor: '#6f3c2a', wallEdge: '#975135', wallHighlight: 0.25,
+    floorA: '#47291f', floorB: '#563525', grout: '#24140f',
     crackColor: '#ff4400', crackAlpha: 0.48,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
@@ -457,9 +457,9 @@ const THEMES = [
 
   // Floor 19 — Бездна
   {
-    name: '🌑 Бездна', bg: '#000000', mmFloor: '#1c0838',
-    wallColor: '#0a0028', wallEdge: '#1c0050', wallHighlight: 0.27,
-    floorA: '#060018', floorB: '#08001e', grout: '#030010',
+    name: '🌑 Бездна', bg: '#0d0d0d', mmFloor: '#4e238b',
+    wallColor: '#3b2a6f', wallEdge: '#573597', wallHighlight: 0.34,
+    floorA: '#291f47', floorB: '#322556', grout: '#130f24',
     crackColor: '#9010ff', crackAlpha: 0.34,
     drawWallDecor(c, px, py, h) {
       if (h % 4 === 0) {
@@ -483,9 +483,9 @@ const THEMES = [
 
   // Floor 20 — Сердце тьмы
   {
-    name: '👁 Сердце тьмы', bg: '#000000', mmFloor: '#120030',
-    wallColor: '#060026', wallEdge: '#120044', wallHighlight: 0.32,
-    floorA: '#020016', floorB: '#04001e', grout: '#010008',
+    name: '👁 Сердце тьмы', bg: '#0d0d0d', mmFloor: '#4a238b',
+    wallColor: '#352a6f', wallEdge: '#4f3597', wallHighlight: 0.36,
+    floorA: '#221f47', floorB: '#2b2556', grout: '#120f24',
     crackColor: '#b020ff', crackAlpha: 0.40,
     drawWallDecor(c, px, py, h) {
       if (h % 3 === 0) {
