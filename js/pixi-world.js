@@ -290,15 +290,24 @@ function _updateNpcs(dt, ts) {
     gfx.clear();
     const col = parseInt((n.color || '#7b5ea7').replace('#', ''), 16);
 
-    // Shadow
-    gfx.beginFill(0x000000, 0.3);
-    gfx.drawEllipse(0, 18, 14, 5);
-    gfx.endFill();
-
     // Sprite (lazy-load on first encounter, matches enemy loading pattern)
     if (!npcSpriteCache[n.icon]) loadNpcSprites(n.icon);
     const def      = NPC_SPRITE_DEF[n.icon];
     const textures = def ? _npcTextures(n.icon) : null;
+
+    // Sprite top/bottom in local space — the ring, shadow and label are all
+    // derived from this so they actually frame the character instead of the
+    // small fixed-radius token they were sized for before sprites existed.
+    const spriteTop    = -_NPC_DISPLAY_H * 0.55;
+    const spriteBottom = spriteTop + _NPC_DISPLAY_H;
+    const spriteCenterY = (spriteTop + spriteBottom) / 2;
+    const ringR = _NPC_DISPLAY_H * 0.42;
+
+    // Shadow at the feet
+    gfx.beginFill(0x000000, 0.3);
+    gfx.drawEllipse(0, textures ? spriteBottom - 6 : 18, 14, 5);
+    gfx.endFill();
+
     if (textures && def) {
       if (n._animTimer === undefined) { n._animFrame = 0; n._animTimer = 0; }
       n._animTimer += dt;
@@ -311,7 +320,7 @@ function _updateNpcs(dt, ts) {
       spr.width  = _NPC_DISPLAY_H;
       spr.height = _NPC_DISPLAY_H;
       spr.x = -_NPC_DISPLAY_H * 0.5;
-      spr.y = -_NPC_DISPLAY_H * 0.55;
+      spr.y = spriteTop;
       spr.visible = true;
     } else {
       // Circle fallback while the sheet is still loading
@@ -321,16 +330,17 @@ function _updateNpcs(dt, ts) {
       gfx.endFill();
     }
 
-    // Presence ring — ambient pulse around the NPC's ground position
+    // Presence ring — sized and centered to actually enclose the character
+    // sprite (falls back to the old small token ring while it's loading)
     gfx.lineStyle(2, col, pulse * 0.8);
-    gfx.drawCircle(0, 0, 22);
+    gfx.drawCircle(0, textures ? spriteCenterY : 0, textures ? ringR : 22);
     gfx.lineStyle(0);
 
-    t.x = n.x; t.y = n.y - (textures ? _NPC_DISPLAY_H * 0.85 : 26);
+    t.x = n.x; t.y = n.y + (textures ? spriteTop - 6 : -26);
 
     if (nearNpc && nearNpc.id === n.id) {
       // chat bubble indicator
-      const bubbleY = -(textures ? _NPC_DISPLAY_H * 0.95 : 44) + bounce;
+      const bubbleY = (textures ? spriteTop - 20 : -44) + bounce;
       gfx.beginFill(0xffffff, 0.85);
       gfx.drawRoundedRect(-8, bubbleY, 16, 13, 3);
       gfx.endFill();
