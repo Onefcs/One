@@ -232,41 +232,9 @@ function update(dt) {
       }
     }
 
-    // Push player out of enemies — record position first so we can compensate the
-    // camera immediately after, preventing push-back from showing as screen jitter
-    const _prePushX = player.x, _prePushY = player.y;
-    serverEnemies.forEach(e => {
-      if ((e.hp || 0) <= 0) return;
-      const minD = e.size + 12;
-      const ddx = player.x - e.x, ddy = player.y - e.y;
-      if (ddx * ddx + ddy * ddy >= minD * minD) return; // squared-dist fast reject
-      const dd = Math.hypot(ddx, ddy);
-      if (dd > 0.01) {
-        const p2 = (minD - dd) / dd;
-        if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-        if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-      }
-    });
-
-    // Push player out of other players
-    otherPlayers.forEach(op => {
-      if ((op.hp || 0) <= 0 || op.x == null) return;
-      const minD = 26;
-      const ddx = player.x - op.x, ddy = player.y - op.y;
-      if (ddx * ddx + ddy * ddy >= minD * minD) return; // squared fast-reject avoids Math.hypot
-      const dd = Math.hypot(ddx, ddy);
-      if (dd < minD && dd > 0.01) {
-        const p2 = (minD - dd) / dd;
-        if (canMoveX(player, ddx * p2, 12)) player.x += ddx * p2;
-        if (canMoveY(player, ddy * p2, 12)) player.y += ddy * p2;
-      }
-    });
-
-    // Absorb push-back into camera immediately — without this the camera
-    // lerps at 13% per frame while the player can move 5-15px in a single
-    // push step, making the character visibly jump on screen
-    camera.x += player.x - _prePushX;
-    camera.y += player.y - _prePushY;
+    // Entities (monsters, other players) no longer block or push the
+    // player's movement — only wall/terrain collision (canMoveX/canMoveY)
+    // constrains movement now.
 
     netSendMove();
   }
