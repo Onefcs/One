@@ -1036,6 +1036,10 @@ function _sanitizeSavedStats(raw) {
     for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
     s.upgrades = u;
   }
+  // Freshness stamp used only to pick the newer of {DB, client localStorage
+  // backup} on reload. Clamp to a sane range so a client can't write a
+  // far-future value that would make its record permanently "win".
+  if (s.savedAt != null) s.savedAt = _clampInt(s.savedAt, 0, Date.now() + 60000, 0);
   return s;
 }
 

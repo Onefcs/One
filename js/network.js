@@ -10,6 +10,10 @@ let _savedData = null;
 // Set by the authOk reconnect-guard, consumed by the gameStart handler —
 // see comment there for why a reconnect must not reposition/restore.
 let _isReconnectRejoin = false;
+// Set when authOk picked the local (localStorage) backup over the server's
+// savedData because the backup was newer — the gameStart restore then pushes
+// it back so the DB catches up. See _pickFreshestSave / the unload-save note.
+let _restoredFromBackup = false;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
@@ -72,7 +76,7 @@ function netConnect(onReady) {
       return;
     }
 
-    _savedData = savedData || null;
+    _savedData = _pickFreshestSave(savedData || null);
     const _ls = document.getElementById('login-screen');
     if (_ls) {
       _ls.classList.add('splash-out');
@@ -140,6 +144,10 @@ function netConnect(onReady) {
     const restore = _savedData || null;
     if (restore) { restoreFromSave(restore); _savedData = null; }
     csOnServerReady();
+    // If the restore came from the local backup (server DB was behind because a
+    // prior unload couldn't flush), push it straight back so the server and DB
+    // catch up to the recovered state.
+    if (_restoredFromBackup) { _restoredFromBackup = false; netSaveProgressNow(); }
   });
 
   socket.on('gameState', (data) => {
@@ -891,12 +899,57 @@ function _buildSaveStats() {
     skillLevels: player.skillLevels || {},
     skillXp: player.skillXp || {},
     bonusSP: player.bonusSP || 0,
+    // Freshness stamp so a reload can tell which of {server DB, local backup}
+    // holds the most recent state (see _pickFreshestSave).
+    savedAt: Date.now(),
   };
+}
+
+// ── Local save backup ─────────────────────────────────────────────────────
+// A page unload/close usually cannot flush the final saveProgress over the
+// WebSocket in time — the socket is torn down before the frame is written — so
+// the DB keeps a slightly older snapshot and the player reloads to find their
+// last actions rolled back. localStorage.setItem, by contrast, completes
+// synchronously and survives unload, so we mirror every save into it and, on
+// the next load, adopt it when it is newer than what the server returned.
+// Keyed per Telegram user id so a shared device never restores account A's
+// progress into account B.
+function _tgUserId() {
+  try { return String(window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ''); }
+  catch (_) { return ''; }
+}
+function _saveBackupKey() {
+  const id = _tgUserId();
+  return id ? `_saveBackup_${id}` : '_saveBackup';
+}
+function _writeSaveBackup(stats) {
+  try { localStorage.setItem(_saveBackupKey(), JSON.stringify(stats)); } catch (_) {}
+}
+function _readSaveBackup() {
+  try { const raw = localStorage.getItem(_saveBackupKey()); return raw ? JSON.parse(raw) : null; }
+  catch (_) { return null; }
+}
+function _clearSaveBackup() {
+  try { localStorage.removeItem(_saveBackupKey()); } catch (_) {}
+}
+// Choose the freshest of the server's savedData and the local backup. The
+// backup only wins when it is strictly newer by its savedAt stamp, so a save
+// that did reach the server (newer server savedAt) is always preferred and
+// multi-device play resolves correctly by wall-clock.
+function _pickFreshestSave(srv) {
+  const bak = _readSaveBackup();
+  if (bak && bak.type && (bak.savedAt || 0) > (srv?.savedAt || 0)) {
+    _restoredFromBackup = true;
+    return bak;
+  }
+  return srv;
 }
 
 function _emitSaveProgress() {
   if (!player || state !== 'playing') return;
-  if (socket?.connected) socket.emit('saveProgress', { stats: _buildSaveStats() });
+  const stats = _buildSaveStats();
+  _writeSaveBackup(stats); // synchronous — lands even when the emit below is lost to unload
+  if (socket?.connected) socket.emit('saveProgress', { stats });
 }
 
 // Debounced save — serializing the full inventory + equipment on every kill
