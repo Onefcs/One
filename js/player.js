@@ -211,9 +211,14 @@ function upgradeStats(key) {
   if (typeof updateProfileUI === 'function') updateProfileUI();
 }
 
-function gainXP(amount) {
-  if ((player.buffs || {}).exp > 0) amount *= 2;
-  if ((player.buffs || {}).deathPenalty > 0) amount = Math.floor(amount * 0.5);
+function gainXP(amount, flat) {
+  // flat=true skips the exp/deathPenalty buff multipliers — used for fixed
+  // rewards the server already computed (e.g. special-quest XP), so the client
+  // adds exactly what the server added and its next save can't drift the value.
+  if (!flat) {
+    if ((player.buffs || {}).exp > 0) amount *= 2;
+    if ((player.buffs || {}).deathPenalty > 0) amount = Math.floor(amount * 0.5);
+  }
   player.xp += amount;
   while (player.xp >= player.xpNext) {
     player.xp -= player.xpNext;

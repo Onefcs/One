@@ -319,9 +319,20 @@ async function updateSpecialQuestUI() {
 
 function onSpecialQuestDone(questId, reward) {
   if (!player) return;
+  reward = reward || {};
   player.specialQuestsDone = player.specialQuestsDone || [];
   if (!player.specialQuestsDone.includes(questId)) player.specialQuestsDone.push(questId);
-  if (reward.gold)  { player.gold = (player.gold || 0) + reward.gold; if (typeof updateHUD === 'function') updateHUD(); }
+  // Apply EVERY reward the server granted to the local player. Gold and XP live
+  // in the client's save blob, so if we don't mirror them here the next
+  // saveProgress overwrites the server's freshly-added reward with our stale
+  // value — the reward silently vanishes. XP is added flat (server already
+  // applied its own multipliers) via gainXP's flat path, which also handles
+  // level-ups. Nexum is server-authoritative and not in the save blob, so we
+  // only refresh the displayed balance.
+  if (reward.gold)  { player.gold = (player.gold || 0) + reward.gold; }
+  if (reward.xp && typeof gainXP === 'function') gainXP(reward.xp, true);
+  if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
+  if (typeof updateHUD === 'function') updateHUD();
   if (_activeQuestTab === 'special') updateSpecialQuestUI();
   questNotif = { title: '✓ Специальный квест выполнен!', timer: 3.5 };
   if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#fd0', 12);
