@@ -1315,12 +1315,20 @@ const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 
 const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — target frame budget, used for dt clamping below
-// Refresh-rate detection: average the first dozen native tick durations
-// (rendering at full native rate meanwhile — a few hundred ms of uncapped
-// startup costs nothing worth avoiding), then lock in a fixed "render every
-// Nth tick" divisor for the rest of the session.
-const _RATE_DETECT_TICKS = 12;
-let _detectCount = 0, _detectSum = 0;
+// Refresh-rate detection: the native frame interval is the *shortest* real gap
+// between rAF ticks — jank only ever makes a frame longer, never shorter. The
+// old code averaged the first dozen ticks, but those land on the jankiest
+// moment of the session (sprite decode stalls right after load); a slow startup
+// inflated the average, so round(33.33/avg) collapsed to 1 and the cap silently
+// became "render every tick" (full 60fps, no cap). Instead, sample a longer
+// window and take a low percentile of the intervals: robust against both the
+// slow startup frames (they sit at the high end, ignored) and the occasional
+// sub-native catch-up frame after a stall (a handful at the very low end, also
+// skipped). Rendering runs at native rate during this ~0.5s window — a cost not
+// worth avoiding. N is then locked for the rest of the session.
+const _RATE_DETECT_TICKS = 30;
+const _detectBuf = new Float32Array(_RATE_DETECT_TICKS);
+let _detectCount = 0;
 let _renderEveryN = null;
 let _tickCounter = 0;
 
@@ -1328,9 +1336,12 @@ function loop(ts) {
   const rAFMs = ts - _loopTs; _loopTs = ts;
 
   if (_renderEveryN === null) {
-    if (rAFMs > 0 && rAFMs < 100) { _detectSum += rAFMs; _detectCount++; }
+    // Guard >4ms rejects spurious sub-native catch-up glitches while still
+    // admitting up to ~240Hz displays (4.16ms); <100ms drops tab-switch stalls.
+    if (rAFMs > 4 && rAFMs < 100) _detectBuf[_detectCount++] = rAFMs;
     if (_detectCount >= _RATE_DETECT_TICKS) {
-      const nativeMs = _detectSum / _detectCount;
+      const sorted = Array.from(_detectBuf).sort((a, b) => a - b);
+      const nativeMs = sorted[Math.floor(_RATE_DETECT_TICKS * 0.2)]; // ~20th pct
       _renderEveryN = Math.max(1, Math.round(_FPS_CAP_MS / nativeMs));
     }
   } else {
