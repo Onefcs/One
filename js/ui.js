@@ -2726,10 +2726,6 @@ function showGramShopBtn() {
 }
 
 function openGramShopPanel() {
-  if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Магазин с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
-    return;
-  }
   const panel = document.getElementById('gram-shop-panel');
   if (!panel) return;
   panel.style.display = 'flex';
