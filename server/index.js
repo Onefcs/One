@@ -533,18 +533,26 @@ mongoose.connect(process.env.MONGODB_URI, {
 app.set('trust proxy', 1);
 
 // Content-Security-Policy was previously disabled entirely. It's re-enabled
-// here as defence-in-depth on top of the existing output escaping. 'unsafe-inline'
-// is unavoidable for now (index.html has inline <script> blocks and 100+ inline
-// on* handlers), but CSP still blocks loading executable script from any origin
-// other than the ones whitelisted here, and keeps object-src/base-uri locked
-// down via helmet's defaults. All other helmet defaults (incl. X-Frame-Options
-// SAMEORIGIN / frame-ancestors 'self') are preserved unchanged.
+// here as defence-in-depth on top of the existing output escaping. Two
+// unavoidable relaxations for this app:
+//   • 'unsafe-inline' — index.html has inline <script> blocks and 100+ inline
+//     on* handlers.
+//   • 'unsafe-eval' + worker-src blob: — PixiJS generates its uniform-sync
+//     functions via `new Function` and spins up blob-URL Web Workers; without
+//     these the WebGL renderer fails to initialise and the game world renders
+//     black. (This is what a first cut of the policy broke.)
+// CSP still blocks loading executable script from any origin other than the
+// ones whitelisted here and keeps object-src/base-uri locked down via helmet's
+// defaults. All other helmet defaults (incl. X-Frame-Options SAMEORIGIN /
+// frame-ancestors 'self') are preserved unchanged.
 app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
-      scriptSrc:     ["'self'", "'unsafe-inline'", 'https://telegram.org', 'https://cdn.socket.io'],
+      scriptSrc:     ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://telegram.org', 'https://cdn.socket.io'],
       scriptSrcAttr: ["'unsafe-inline'"],
+      workerSrc:     ["'self'", 'blob:'],
+      childSrc:      ["'self'", 'blob:'],
       styleSrc:      ["'self'", "'unsafe-inline'"],
       styleSrcAttr:  ["'unsafe-inline'"],
       imgSrc:        ["'self'", 'data:', 'blob:'],
