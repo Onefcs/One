@@ -1273,6 +1273,7 @@ let _loopTs = 0;
 // without the uneven gap sequence that a raw timestamp compare produces.
 const _FPS_CAP_MS = 1000 / 30; // ~33.33ms
 let _fpsAccum = 0;
+let _lastRenderTs = 0;
 // dt smoother: 4-frame even window cancels the period-2 rAF jitter seen on
 // some mobile GPUs while keeping input lag under ~130ms.
 const _DT_SMOOTH_N = 4;
@@ -1282,13 +1283,18 @@ function loop(ts) {
   const rAFMs = ts - _loopTs; _loopTs = ts;
   _fpsAccum += rAFMs;
   if (_fpsAccum < _FPS_CAP_MS) { requestAnimationFrame(loop); return; }
-  // 30fps is an upper bound, not a fixed rate. On slow devices the native rAF
-  // interval already exceeds _FPS_CAP_MS, so we must not carry leftover — if
-  // we did, the accumulator would keep growing each frame (spiral), eventually
-  // render on every rAF, and effectively halve the target to ~15fps. Reset to
-  // zero after each render so slow devices run at their native rate.
-  const frameMs = Math.min(_fpsAccum, _FPS_CAP_MS * 2);
-  _fpsAccum = 0;
+  // Carry over remainder so the cap is exact on fast displays (e.g. a 45fps
+  // device alternates 1-skip / no-skip and averages 30fps rather than 22fps).
+  // Spiral guard: if the carry-over itself exceeds one target frame the device
+  // is running below 30fps and we're chasing an impossible backlog — reset so
+  // we don't inflate dt by accumulating debt that can never be repaid.
+  _fpsAccum = Math.max(0, _fpsAccum - _FPS_CAP_MS);
+  if (_fpsAccum > _FPS_CAP_MS) _fpsAccum = 0;
+  // dt = actual wall-clock time since the last render, not the accumulated
+  // budget — avoids inflating physics speed on sub-30fps devices.
+  const sinceLastRender = _lastRenderTs > 0 ? ts - _lastRenderTs : _FPS_CAP_MS;
+  _lastRenderTs = ts;
+  const frameMs = Math.min(sinceLastRender, _FPS_CAP_MS * 2);
   const rawDt = Math.min(frameMs / 1000, 0.05);
   _dtBuf[_dtBufIdx] = rawDt;
   _dtBufIdx = (_dtBufIdx + 1) % _DT_SMOOTH_N;
@@ -1327,9 +1333,10 @@ window.addEventListener('load', () => {
     DPR = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
     W = appEl.clientWidth;
     H = appEl.clientHeight;
-    // WebGL resolution separate from UI-canvas DPR: mobile gets 1.0 so the
-    // GPU rasterizes ~44% fewer pixels per frame vs 1.5.
-    const _pixiRes = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.0 : 1.5);
+    // WebGL resolution capped at 1.5 (same cap for mobile and desktop) so
+    // the GPU fill-rate stays reasonable on high-DPR phones without
+    // sacrificing visual quality the way res=1.0 would.
+    const _pixiRes = Math.min(window.devicePixelRatio || 1, 1.5);
     pixiResize(W, H, _pixiRes);
     // UI overlay — 2D canvas for HUD, joystick, name labels, etc.
     _uiOverlay.width  = Math.round(W * DPR);
