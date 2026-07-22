@@ -18,7 +18,8 @@ const CHAR_DEF = {
 };
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
-// Floors 1-5 use FLOOR_ENEMIES map; floors 6+ use orc/troll/demon.
+// Floors are capped at 5 (MAX_FLOOR, server/index.js); FLOOR_ENEMIES below
+// covers every eid used here.
 const ENEMY_DEF = [
   // Floor 1 — Skeletons (swapped from floor 2, stats adjusted to floor-1 level)
   { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
@@ -40,10 +41,6 @@ const ENEMY_DEF = [
   { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:2400, atk:540, def:40, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
   { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:2160, atk:480, def:48, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
   { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:12000,atk:1200,def:80, spd:40,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
-  // Floors 6+ — legacy enemies
-  { eid:'orc',    name:'Орк',    color:'#964', size:20, hp:130, atk:20, def:8,  spd:56, xp:4,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'troll',  name:'Тролль', color:'#575', size:24, hp:230, atk:28, def:12, spd:40, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'demon',  name:'ДЕМОН',  color:'#f33', size:28, hp:420, atk:42, def:16, spd:60, xp:50, gold:[50,50], isBoss:true,  eType:'boss'    },
 ];
 
 // Per-floor enemy pools for floors 1-5

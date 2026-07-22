@@ -517,7 +517,6 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const ds     = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
   const texRows = def ? _enemyTextures(e.eid, key) : null;
   const sh = def?.sheets[key];
-  let usedSprite = false;
   if (texRows && sh) {
     const facing = e._facing || 'down';
     const rowTex = texRows[facing];
@@ -531,7 +530,6 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
       spr.y        = -ds * 0.55;
       spr.tint    = (e.hurtTimer > 0) ? 0xff4444 : 0xffffff;
       spr.visible = true;
-      usedSprite  = true;
     } else { spr.visible = false; }
   } else {
     spr.visible = false;
@@ -545,19 +543,18 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
 
   // The selection ring and boss glow pulse every frame (sin-based), so those
   // force a rebuild while active. Everything else here — HP bar, status
-  // tints, fallback circle — only changes when the underlying state changes,
-  // so gfx.clear()+redraw (CPU tessellation + a fresh GPU buffer upload) is
+  // tints — only changes when the underlying state changes, so
+  // gfx.clear()+redraw (CPU tessellation + a fresh GPU buffer upload) is
   // skipped unless something actually moved. Previously this ran unconditionally
   // for every visible enemy every frame, a cost that scaled with enemy count
   // (crowded rooms, raids) even when nothing on screen was changing.
   const needsRedraw = isSelected || isBossAlive ||
-    obj._gfxUsedSprite !== usedSprite ||
-    obj._gfxHurt        !== hurt ||
-    obj._gfxSlowed       !== slowed ||
-    obj._gfxStunned      !== stunned ||
-    obj._gfxDead          !== dead ||
-    obj._gfxHp             !== e.hp ||
-    obj._gfxMaxHp            !== e.maxHp;
+    obj._gfxHurt     !== hurt ||
+    obj._gfxSlowed    !== slowed ||
+    obj._gfxStunned   !== stunned ||
+    obj._gfxDead       !== dead ||
+    obj._gfxHp          !== e.hp ||
+    obj._gfxMaxHp         !== e.maxHp;
 
   if (!needsRedraw) return;
 
@@ -570,28 +567,16 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     gfx.lineStyle(0);
   }
 
-  if (!usedSprite) {
-    const fc = parseInt((e.color||'#aa0000').replace('#',''), 16);
-    gfx.beginFill(hurt ? 0xff4444 : fc);
-    gfx.drawCircle(0, 0, e.size);
-    gfx.endFill();
-    gfx.beginFill(0x000000);
-    gfx.drawCircle(-e.size * 0.3, -e.size * 0.18, e.size * 0.18);
-    gfx.drawCircle( e.size * 0.3, -e.size * 0.18, e.size * 0.18);
-    gfx.endFill();
-  }
-
   // Status overlays
   if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
   if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
 
-  obj._gfxUsedSprite = usedSprite;
-  obj._gfxHurt        = hurt;
-  obj._gfxSlowed       = slowed;
-  obj._gfxStunned      = stunned;
-  obj._gfxDead          = dead;
-  obj._gfxHp             = e.hp;
-  obj._gfxMaxHp            = e.maxHp;
+  obj._gfxHurt     = hurt;
+  obj._gfxSlowed    = slowed;
+  obj._gfxStunned   = stunned;
+  obj._gfxDead       = dead;
+  obj._gfxHp          = e.hp;
+  obj._gfxMaxHp         = e.maxHp;
 
   if (dead) return; // no bars for corpse
 

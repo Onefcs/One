@@ -1513,7 +1513,7 @@ io.on('connection', socket => {
       { $set: { 'savedData.type': type } }
     ).catch(() => {});
     if (!currentRoom) {
-      const savedFloor = (effectiveSaved?.floor > 1) ? Math.max(1, Math.min(20, effectiveSaved.floor)) : 1;
+      const savedFloor = (effectiveSaved?.floor > 1) ? Math.max(1, Math.min(MAX_FLOOR, effectiveSaved.floor)) : 1;
       currentFloor = savedFloor;
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
@@ -1751,7 +1751,7 @@ io.on('connection', socket => {
 
   socket.on('changeFloor', ({ floor }) => {
     if (!currentRoom) return;
-    const newFloor = Math.max(1, Math.min(20, floor));
+    const newFloor = Math.max(1, Math.min(MAX_FLOOR, floor));
     if (newFloor === currentFloor) return;
 
     // Snapshot player state before leaving

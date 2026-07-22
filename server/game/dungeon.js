@@ -114,15 +114,13 @@ function generateDungeon(lvl) {
   const enemyList = [];
   let eid = 0;
 
+  // Floors are capped at MAX_FLOOR (5, see server/index.js) and FLOOR_ENEMIES
+  // covers every floor up to that cap, so lvl always has a pool here.
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   function _pickEnemy(isBoss) {
-    if (FLOOR_ENEMIES[lvl]) {
-      const fe = FLOOR_ENEMIES[lvl];
-      const id = isBoss ? fe.boss : fe.pool[Math.floor(rng() * fe.pool.length)];
-      return _enemyByEid.get(id);
-    }
-    if (isBoss) return _enemyByEid.get('demon');
-    return _enemyByEid.get(['orc', 'troll'][Math.floor(rng() * 2)]);
+    const fe = FLOOR_ENEMIES[lvl];
+    const id = isBoss ? fe.boss : fe.pool[Math.floor(rng() * fe.pool.length)];
+    return _enemyByEid.get(id);
   }
 
   // rooms[0] = safe spawn, rooms[rooms.length-1] = boss
