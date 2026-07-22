@@ -164,10 +164,10 @@ function _vipLevelItems(vipLevel, charClass) {
     case 3:  addStone('bless_stone', 2); break;
     case 4:  addStone('bless_stone', 5); addBP(10); break;
     case 5:  addStone('bless_stone', 7); addBP(10); break;
-    case 6:  addWep('uncommon', 8); addStone('bless_stone', 7); addBP(10); break;
-    case 7:  addWep('rare', 8); addStone('norm_stone', 20); addStone('bless_stone', 10); break;
-    case 8:  addWep('epic', 1); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); break;
-    case 9:  addWep('epic', 8); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); break;
+    case 6:  addWep('uncommon', 0); addStone('bless_stone', 7); addBP(10); break;
+    case 7:  addWep('rare', 0); addStone('norm_stone', 20); addStone('bless_stone', 10); break;
+    case 8:  addWep('epic', 0); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); break;
+    case 9:  addWep('epic', 0); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); break;
     case 10: addWep('legendary', 0); addBP(100); addStone('norm_stone', 100); addStone('bless_stone', 100); break;
     default: break;
   }
@@ -1176,7 +1176,7 @@ io.on('connection', socket => {
       if (pkg.armor) {
         (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(id => {
           const base = ITEM_DEF.find(d => d.id === id);
-          if (base) inv.push({ ...base, enhance: 8 });
+          if (base) inv.push({ ...base, enhance: 0 });
         });
       }
 
@@ -1184,7 +1184,7 @@ io.on('connection', socket => {
       if (pkg.weapon) {
         const wepId = wepMap[pkg.weapon];
         const base = ITEM_DEF.find(d => d.id === wepId);
-        if (base) inv.push({ ...base, enhance: 8 });
+        if (base) inv.push({ ...base, enhance: 0 });
       }
 
       // Bonus skill points
