@@ -208,8 +208,10 @@ function update(dt) {
           if (ax > ay * 1.25)  player.facing = inp.dx > 0 ? 'right' : 'left';
           else if (ay > 0)     player.facing = inp.dy > 0 ? 'front' : 'back';
         }
-      } else if (autoAttackMode && targetId) {
-        // Chase locked target when no manual input (auto-attack only)
+      } else if (targetId) {
+        // Chase locked target when no manual input — pressing attack on a
+        // distant target (manual or auto-attack mode) closes the gap instead
+        // of standing still and doing nothing.
         const _chEnt = targetIsPlayer ? otherPlayers.get(targetId) : serverEnemiesMap.get(targetId);
         if (_chEnt && (_chEnt.hp || 0) > 0) {
           const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;
@@ -222,6 +224,10 @@ function update(dt) {
             faceTowards(_chEnt.x, _chEnt.y);
             player._chasing = true;
           } else {
+            // Just arrived in range — in manual mode atkTimer isn't ticked
+            // down by time, so resolve the queued attack now instead of
+            // waiting for another button press.
+            if (player._chasing && !autoAttackMode) player.atkTimer = 0;
             player._chasing = false;
           }
         } else {
@@ -329,7 +335,7 @@ function update(dt) {
         netPvpAttack(pa.socketId);
         if (player.charDef.atkType === 'ranged') {
           const _op = otherPlayers.get(pa.socketId);
-          fireProj(_op?.x ?? pa.x, _op?.y ?? pa.y);
+          fireProj(_op?.x ?? pa.x, _op?.y ?? pa.y, null, pa.socketId);
         }
       } else {
         if (player.charDef.atkType === 'ranged') {
@@ -437,6 +443,27 @@ function update(dt) {
     let j = 0;
     for (let i = 0; i < projs.length; i++) {
       const p = projs[i];
+      // Homing: steer toward the locked target's *current* position every frame
+      // so a moving target can't dodge the projectile after it's been fired.
+      if (p.isPlayer && (p.enemyId || p.pvpTargetId)) {
+        let tgt = null;
+        if (p.enemyId) {
+          const e = serverEnemiesMap.get(p.enemyId);
+          if (e && (e.hp || 0) > 0) tgt = e;
+        } else {
+          const op = otherPlayers.get(p.pvpTargetId);
+          if (op && (op.hp || 0) > 0 && op.x != null) tgt = op;
+        }
+        if (tgt) {
+          const tdx = tgt.x - p.x, tdy = tgt.y - p.y, tlen = Math.hypot(tdx, tdy);
+          if (tlen > 0.01) {
+            const spd = Math.hypot(p.vx, p.vy);
+            p.vx = tdx / tlen * spd;
+            p.vy = tdy / tlen * spd;
+            p.angle = Math.atan2(p.vy, p.vx);
+          }
+        }
+      }
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life <= 0 || isWall(p.x, p.y)) continue;
       // Cancel projectile early if its locked target is already dead

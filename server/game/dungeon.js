@@ -144,12 +144,15 @@ function generateDungeon(lvl) {
         }
       }
 
+      // Regular (non-boss) dungeon monsters are half as strong as their base
+      // definition; bosses are unaffected and keep the full scaled values.
+      const weakMult = isBoss ? 1 : 0.5;
       enemyList.push({
         id: `e_${lvl}_${eid++}`,
         ...d,
         isBoss,
-        maxHp: Math.floor(d.hp * sc), hp: Math.floor(d.hp * sc),
-        atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18)),
+        maxHp: Math.floor(d.hp * sc * weakMult), hp: Math.floor(d.hp * sc * weakMult),
+        atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18) * weakMult),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
       });

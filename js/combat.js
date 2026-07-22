@@ -39,7 +39,7 @@ function faceTowards(tx, ty) {
   else               player.facing = dy > 0 ? 'front' : 'back';
 }
 
-function fireProj(tx, ty, enemyId) {
+function fireProj(tx, ty, enemyId, pvpTargetId) {
   const d = player.charDef, len = Math.hypot(tx - player.x, ty - player.y);
   if (len < 1) return;
   const vx = (tx - player.x) / len * 360;
@@ -49,7 +49,7 @@ function fireProj(tx, ty, enemyId) {
   const proj = { x: player.x, y: player.y, vx, vy,
     color: d.projColor, dmg: player.atk, life: 1.8, size: isArcher ? 5 : 7,
     isPlayer: true, projType: isArcher ? 'arrow' : 'ball', angle: ang,
-    enemyId: enemyId || null };
+    enemyId: enemyId || null, pvpTargetId: pvpTargetId || null };
   projs.push(proj);
   netSpawnProj({ x: proj.x, y: proj.y, vx, vy, color: d.projColor,
     size: proj.size, projType: proj.projType, angle: ang, life: 1.8 });

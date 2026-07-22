@@ -24,7 +24,7 @@ const ENEMY_DEF = [
   // Floor 1 — Skeletons (swapped from floor 2, stats adjusted to floor-1 level)
   { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
   { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:220, atk:26,  def:6,  spd:66,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:880, atk:52,  def:6,  spd:66,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
   // Floor 2 — Goblins (4× original)
   { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:900,  atk:192, def:12, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
   { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:1080, atk:240, def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
