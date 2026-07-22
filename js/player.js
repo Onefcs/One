@@ -229,9 +229,23 @@ function gainXP(amount) {
   netSaveProgress();
 }
 
+function _invMsg(msg) {
+  const panel = document.getElementById('panel-inv');
+  if (!panel) return;
+  const el = document.createElement('div');
+  el.className = 'inv-msg-err';
+  el.textContent = msg;
+  panel.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
 function equipItem(idx) {
   const it = player.inventory[idx]; if (!it) return;
   if (_isStackable(it) || it.slot === 'use') return;
+  if (it.forClass && player.type && !it.forClass.includes(player.type)) {
+    _invMsg('Это оружие не для вашего класса');
+    return;
+  }
   const old = player.equipment[it.slot];
   player.equipment[it.slot] = it;
   player.inventory.splice(idx, 1);
