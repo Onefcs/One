@@ -3,6 +3,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const http = require('http');
+const helmet = require('helmet');
+const compression = require('compression');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const PlayerModel       = require('./models/Player');
@@ -490,16 +492,23 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
-  transports: ['websocket'],   // force WebSocket only — no polling overhead
+  transports: ['websocket'],
   pingTimeout: 90000,
   pingInterval: 30000,
+  maxHttpBufferSize: 512 * 1024,  // 512 KB max per socket message
 });
 
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI, {
+  maxPoolSize: 10,
+  serverSelectionTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+})
   .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB error:', err));
+  .catch(err => console.error('MongoDB connect error:', err));
 
-app.use(express.json({ limit: '1mb' }));
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(compression());
+app.use(express.json({ limit: '256kb' }));
 
 // ── Admin auth helpers ─────────────────────────────────────────────────────────
 function _adminToken(ts) {
@@ -976,6 +985,15 @@ io.on('connection', socket => {
   let _gramBalance = 0;
   let _nexumBalance = 0;
   let _lastMarketListAt = 0;
+  let _saveDebounceTimer = null;
+  let _lastChatAt = 0;
+  // Simple per-second rate limiter for attack events
+  let _atkCount = 0, _atkResetAt = 0;
+  function _atkAllowed() {
+    const now = Date.now();
+    if (now > _atkResetAt) { _atkCount = 0; _atkResetAt = now + 1000; }
+    return ++_atkCount <= 20;
+  }
   playerFloorMap.set(socket.id, currentFloor);
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
@@ -1517,6 +1535,7 @@ io.on('connection', socket => {
   });
 
   socket.on('attack', ({ enemyId }) => {
+    if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
@@ -1597,6 +1616,7 @@ io.on('connection', socket => {
   });
 
   socket.on('skillAttack', ({ enemyId, multiplier }) => {
+    if (!_atkAllowed()) return;
     const rId = playerRaid.get(socket.id);
     if (rId) {
       const rr = raidRooms.get(rId);
@@ -1767,6 +1787,7 @@ io.on('connection', socket => {
   }
 
   socket.on('pvpAttack', ({ targetId }) => {
+    if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
@@ -1832,6 +1853,9 @@ io.on('connection', socket => {
 
   socket.on('chat', ({ text }) => {
     if (!authed || !text || typeof text !== 'string') return;
+    const now = Date.now();
+    if (now - _lastChatAt < 3000) return;
+    _lastChatAt = now;
     const msg = text.trim().slice(0, 100);
     if (!msg) return;
     _recordChat(authed.username, msg);
@@ -1839,14 +1863,16 @@ io.on('connection', socket => {
   });
 
   socket.on('saveProgress', ({ stats }) => {
-    if (authed) {
-      _lastStats = stats;
-      const bm = calcBM(stats);
-      authed.bm = bm;
+    if (!authed) return;
+    _lastStats = stats;
+    authed.bm = calcBM(stats);
+    clearTimeout(_saveDebounceTimer);
+    _saveDebounceTimer = setTimeout(() => {
+      if (!authed) return;
       _persistSavedFields(authed,
         { ...stats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
-        { bm });
-    }
+        { bm: authed.bm });
+    }, 3000);
   });
 
   // ── Party ─────────────────────────────────────────────────────────────────
@@ -2240,8 +2266,22 @@ io.on('connection', socket => {
 
   socket.on('disconnect', () => {
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
-    if (authed && activeSessions.get(authed.telegramId) === socket.id)
-      activeSessions.delete(authed.telegramId);
+    // Flush any pending debounced save immediately
+    if (_saveDebounceTimer) {
+      clearTimeout(_saveDebounceTimer);
+      _saveDebounceTimer = null;
+      if (authed && _lastStats) {
+        _persistSavedFields(authed,
+          { ..._lastStats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
+          { bm: authed.bm });
+      }
+    }
+    if (authed) {
+      if (activeSessions.get(authed.telegramId) === socket.id) {
+        activeSessions.delete(authed.telegramId);
+        _gramBalanceCache.delete(authed.telegramId);
+      }
+    }
     _cleanupRaid(socket.id);
     _cleanupLobby(socket.id);
     playerFloorMap.delete(socket.id);
@@ -2256,5 +2296,31 @@ io.on('connection', socket => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server on port ${PORT}`);
-  _pollTg(); // start Telegram callback polling
+  _pollTg();
 });
+
+// ── Error handlers ────────────────────────────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  // Give in-flight saves 2s to complete, then exit so the process manager restarts us
+  setTimeout(() => process.exit(1), 2000).unref();
+});
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+async function _gracefulShutdown(signal) {
+  console.log(`${signal}: shutting down...`);
+  // Stop all floor game loops
+  floorRooms.forEach(r => r._stopLoop());
+  // Disconnect all sockets — triggers disconnect event per socket which flushes pending saves
+  io.close();
+  // Wait 2s for in-flight DB writes to complete
+  await new Promise(r => setTimeout(r, 2000));
+  await mongoose.connection.close();
+  console.log('Shutdown complete');
+  process.exit(0);
+}
+process.on('SIGTERM', () => _gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => _gracefulShutdown('SIGINT'));
