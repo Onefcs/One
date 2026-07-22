@@ -1197,33 +1197,32 @@ function playerDie() {
   state = 'dead';
   const modal = document.getElementById('death-modal');
   if (!modal) return;
-  const xpLoss = Math.floor((player?.xp || 0) * 0.05);
+  _deathPenaltyUntil = Date.now() + 5 * 60 * 1000;
   const info = document.getElementById('death-info');
   if (info && player) {
     info.innerHTML =
-      `${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}<br>` +
-      `${player.gold} золота · ${player.kills} убито` +
-      (xpLoss > 0 ? `<br><span style="color:#c66">−${xpLoss} XP при возрождении</span>` : '');
+      `<span class="death-stat">${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}</span>` +
+      `<span class="death-stat">${player.gold} <span class="death-lbl">золота</span> · ${player.kills} <span class="death-lbl">убийств</span></span>`;
   }
+  const penaltyEl = document.getElementById('death-penalty');
+  if (penaltyEl) penaltyEl.style.display = 'block';
   modal.style.display = 'flex';
 }
 
 function respawnPlayer() {
   if (!player || state !== 'dead') return;
   if (inRaid) exitRaidMode();
-  const xpLoss = Math.floor(player.xp * 0.05);
-  player.xp = Math.max(0, player.xp - xpLoss);
-  player.hp = player.maxHp;
+  player.hp = Math.max(1, Math.floor(player.maxHp * 0.1));
   player.hurtTimer = 0;
   player.atkTimer = 0.5;
   if (dungeon) {
     player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
     camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
-    clampCamera(); // reads dungeon.w/h — only safe once dungeon is confirmed loaded
+    clampCamera();
   }
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
-  if (xpLoss > 0) dmgNum(player.x, player.y - 30, `−${xpLoss} XP`, '#a88');
+  dmgNum(player.x, player.y - 30, '−50% XP (5 мин)', '#c88');
   socket?.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
   if (socket?.connected) socket.emit('respawn');
   netSaveProgress();

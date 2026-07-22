@@ -384,40 +384,66 @@ canvas { display:block; width:100%; height:100%; }
 /* ── DEATH MODAL ──────────────────────── */
 #death-modal {
   position:absolute; inset:0;
-  background:rgba(0,0,0,0.82);
+  background:rgba(0,0,0,0.88);
   display:flex; align-items:center; justify-content:center; z-index:200;
+  backdrop-filter:blur(4px);
 }
 .death-panel {
-  background:#09091a;
-  border:2px solid #f44;
-  border-radius:18px;
-  padding:28px 22px 22px;
+  background:linear-gradient(175deg,#140a0a,#0a0a14);
+  border:1px solid rgba(200,30,30,0.5);
+  border-radius:20px;
+  padding:32px 24px 24px;
   text-align:center;
-  width:min(88%, 280px);
-  box-shadow:0 0 40px rgba(255,60,60,0.25);
+  width:min(88%, 290px);
+  box-shadow:0 0 60px rgba(180,0,0,0.3), inset 0 1px 0 rgba(255,100,100,0.1);
+}
+.death-skull {
+  font-size:48px; margin-bottom:10px; filter:grayscale(0.2);
+  animation:deathSkullPulse 2s ease-in-out infinite;
+}
+@keyframes deathSkullPulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50% { opacity:0.75; transform:scale(0.95); }
 }
 .death-title {
-  font-size:26px; font-weight:bold; color:#f44; margin-bottom:14px; letter-spacing:1px;
+  font-size:22px; font-weight:900; color:#e03030;
+  margin-bottom:16px; letter-spacing:3px;
+  text-shadow:0 0 18px rgba(255,50,50,0.6);
 }
 .death-info {
-  color:#999; font-size:13px; margin-bottom:20px; line-height:1.7;
+  margin-bottom:16px; line-height:2;
+  display:flex; flex-direction:column; gap:2px;
+}
+.death-stat {
+  display:block; font-size:13px; color:#bbb;
+}
+.death-lbl { color:#666; }
+.death-penalty {
+  background:rgba(160,40,40,0.25);
+  border:1px solid rgba(200,60,60,0.4);
+  border-radius:8px;
+  color:#e08080; font-size:12px; font-weight:600;
+  padding:7px 12px; margin-bottom:18px;
+  display:none;
 }
 .death-btn-respawn {
-  width:100%; padding:13px; margin-bottom:6px;
-  background:linear-gradient(160deg,#2a1a5a,#1a0a3a);
-  border:2px solid #88f; border-radius:12px;
-  color:#ccf; font-size:16px; font-weight:bold; cursor:pointer;
-  transition:opacity .15s;
+  width:100%; padding:14px; margin-bottom:10px;
+  background:linear-gradient(160deg,#1a0a0a,#2a0808);
+  border:1.5px solid #c03030; border-radius:13px;
+  color:#ff9090; font-size:15px; font-weight:700; cursor:pointer;
+  letter-spacing:0.5px;
+  transition:opacity .15s, border-color .15s;
 }
 .death-btn-respawn:active { opacity:.7; }
-.death-xp-note { color:#a66; font-size:11px; margin-bottom:14px; }
+.death-btn-respawn:hover { border-color:#e04040; }
 .death-btn-exit {
-  width:100%; padding:9px;
-  background:transparent; border:1px solid #333; border-radius:9px;
-  color:#999; font-size:13px; cursor:pointer;
-  transition:color .15s;
+  width:100%; padding:10px;
+  background:transparent; border:1px solid #2a2a2a; border-radius:10px;
+  color:#555; font-size:13px; cursor:pointer;
+  transition:color .15s, border-color .15s;
 }
-.death-btn-exit:active { color:#ddd; }
+.death-btn-exit:hover { color:#888; border-color:#444; }
+.death-btn-exit:active { color:#aaa; }
 
 /* ── NPC OVERLAY & DIALOG ─────────────── */
 #npc-overlay {

@@ -373,10 +373,15 @@
 <!-- Death Modal -->
 <div id="death-modal" style="display:none">
   <div class="death-panel">
-    <div class="death-title"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="8" r="5"/><path d="M9 17v-2a3 3 0 0 1 6 0v2"/><line x1="9" y1="21" x2="15" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>ВЫ ПОГИБЛИ</div>
+    <div class="death-skull">💀</div>
+    <div class="death-title">ВЫ ПАЛИ</div>
     <div class="death-info" id="death-info"></div>
-    <button class="death-btn-respawn" onclick="respawnPlayer()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>Возродиться</button>
-    <div class="death-xp-note">−5% опыта при возрождении</div>
+    <div class="death-penalty" id="death-penalty">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      −50% опыта на 5 минут
+    </div>
+    <button class="death-btn-respawn" onclick="respawnPlayer()">Возродиться (10% HP)</button>
+    <button class="death-btn-exit" onclick="restartGame()">Сменить персонажа</button>
   </div>
 </div>
 
