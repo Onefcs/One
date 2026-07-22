@@ -1308,9 +1308,19 @@ function restartGame() {
 // long or short doesn't shift when the next render fires.
 let _loopTs = 0;
 let _lastRenderTs = 0;
-// dt smoother: 4-frame even window cancels the period-2 rAF jitter seen on
-// some mobile GPUs while keeping input lag under ~130ms.
-const _DT_SMOOTH_N = 4;
+// dt smoother. A flat N-frame average decouples on-screen motion from real
+// elapsed time: the value it feeds update() lags the true frame duration by up
+// to N frames, so when frame times wobble the player/camera position drifts
+// behind then catches up — visible as micro-judder during movement even when
+// the frame cadence itself is perfectly steady (confirmed on-device: a phone
+// sitting at a rock-steady 30fps with <2ms/frame of work still juddered while
+// moving). The window exists only to cancel the period-2 rAF jitter some mobile
+// GPUs show (alternating short/long native gaps), and an *even* window of 2 already
+// cancels that exactly — (a+b)/2 is constant for an a,b,a,b sequence — so N=2
+// keeps the one benefit while halving the lag that causes the drift. (At the
+// 30fps cap each rendered frame already spans two native gaps, which self-cancels
+// period-2 at the source, making even a 2-frame average conservative there.)
+const _DT_SMOOTH_N = 2;
 const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 
