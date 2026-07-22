@@ -100,6 +100,7 @@ function buyPotion(idx) {
     if (typeof onBuyPotion === 'function') onBuyPotion();
     netSaveProgress();
     openNpc('merchant');
+    _shopMsgOk('✓ Куплено: ' + def.name);
   } else {
     if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
     const cur = player.potionBag[entry.itemId] || 0;
@@ -109,6 +110,7 @@ function buyPotion(idx) {
     if (typeof onBuyPotion === 'function') onBuyPotion();
     netSaveProgress();
     openNpc('merchant');
+    _shopMsgOk('✓ Куплено: ' + def.name);
   }
 }
 
@@ -412,6 +414,7 @@ function buyShopItem(itemId, price) {
   addToInventory({ ...item });
   netSaveProgress();
   openNpc('shopkeeper');
+  _shopMsgOk('✓ Куплено: ' + item.name);
 }
 
 function _shopMsg(msg) {
@@ -421,4 +424,13 @@ function _shopMsg(msg) {
   el.textContent = msg;
   body.insertBefore(el, body.firstChild);
   setTimeout(() => el.remove(), 2500);
+}
+
+function _shopMsgOk(msg) {
+  const body = document.getElementById('npc-body');
+  const el = document.createElement('div');
+  el.className = 'shop-msg shop-msg-ok';
+  el.textContent = msg;
+  body.insertBefore(el, body.firstChild);
+  setTimeout(() => el.remove(), 2000);
 }

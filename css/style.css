@@ -475,17 +475,30 @@ canvas { display:block; width:100%; height:100%; }
   background:linear-gradient(135deg,#5020a0,#7030c0);
   color:#fff; font-size:12px; font-weight:bold; cursor:pointer;
   white-space:nowrap; flex-shrink:0;
-  transition:opacity 0.15s;
+  transition:transform 0.1s, box-shadow 0.1s, background 0.1s;
   touch-action:manipulation;
+  box-shadow:0 3px 8px rgba(80,32,160,0.5);
 }
-.shop-btn:active { opacity:0.7; }
-.shop-btn.disabled { background:#1a1a28; color:#333; pointer-events:none; }
+.shop-btn:active {
+  transform:scale(0.88);
+  box-shadow:0 1px 3px rgba(80,32,160,0.3);
+  background:linear-gradient(135deg,#3a1278,#5520a0);
+}
+.shop-btn.disabled { background:#1a1a28; color:#333; pointer-events:none; box-shadow:none; }
 .shop-msg {
   background:rgba(255,80,80,0.15); border:1px solid #f44;
   border-radius:8px; padding:8px 12px;
   color:#f88; font-size:12px; text-align:center;
   margin-bottom:10px;
 }
+.shop-msg-ok {
+  background:rgba(62,240,122,0.12); border:1px solid #3ef07a;
+  border-radius:8px; padding:8px 12px;
+  color:#3ef07a; font-size:12px; text-align:center;
+  margin-bottom:10px;
+  animation:shopMsgPop 0.2s ease;
+}
+@keyframes shopMsgPop { from{transform:scale(0.9);opacity:0} to{transform:scale(1);opacity:1} }
 .craft-mats-info {
   font-size:11px; color:#484860; padding:4px 0 10px;
 }
