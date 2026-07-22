@@ -11,6 +11,11 @@ let _ftIdx = 0, _ftFull = false;
 let _ftWorstMs = 0, _ftWorstDecay = 0;
 // Adaptive quality tier — auto-degrades when FPS stays below 20 for ~3s
 let _qualityTier = 0, _lowFpsFrames = 0;
+// While a full-screen menu panel covers the world (any tab except the game
+// view), the world+HUD are hidden and don't need re-rendering. Kept alive for
+// a short grace window after a tab change so the ~0.28s panel slide-in still
+// shows live world at the top instead of a frozen frame. Set by setTab().
+let _menuGraceUntil = 0;
 
 function _perfToggleTap(cx, cy) {
   if (cx > 80 || cy > 80) return; // only top-left corner
@@ -559,7 +564,7 @@ function update(dt) {
       const p = particles[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if (p.life > 0) particles[j++] = particles[i];
     }
-    particles.length = Math.min(j, 200);
+    particles.length = Math.min(j, _qualityTier > 0 ? 60 : 200);
   }
   {
     let j = 0;
@@ -883,6 +888,15 @@ let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
 let _nowMs = 0;
 function render(dt, ts) {
   _nowMs = ts;
+
+  // When a full-screen menu panel (inventory/map/quests/clans/profile) is open,
+  // an opaque panel covers the whole viewport above the bottom nav — the PixiJS
+  // world and the 2D HUD are completely hidden, so re-rendering them every frame
+  // is wasted GPU/CPU/battery on mobile. Skip both once the open-panel slide-in
+  // has finished (the grace window keeps drawing during the CSS transition); the
+  // last frame stays on the hidden canvas and is revealed intact on close.
+  if (state === 'playing' && activeTab !== 0 && ts >= _menuGraceUntil) return;
+
   const _camX = _lastCamX = camera.x;
   const _camY = _lastCamY = camera.y;
   const _vM = 60;

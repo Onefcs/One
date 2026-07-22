@@ -745,6 +745,10 @@ function _syncGameOnlyBtns(n) {
 
 function setTab(n) {
   activeTab = n;
+  // Keep the world rendering through the panel slide-in/out animation (~0.28s
+  // CSS transition) so it doesn't freeze mid-slide; render() stops drawing the
+  // hidden world once this grace window elapses. See _menuGraceUntil in game.js.
+  _menuGraceUntil = performance.now() + 350;
   document.querySelectorAll('.nav-tab').forEach((el, i) => el.classList.toggle('active', i === n));
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); });
   _syncGameOnlyBtns(n);

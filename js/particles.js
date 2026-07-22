@@ -9,7 +9,11 @@ function dmgNum(x, y, text, color, fontSize) {
 let _particlesDirty = false;
 
 function spawnBurst(x, y, color, n) {
-  const _space = 120 - particles.length;
+  // On a device the adaptive tier flagged as struggling, hold far fewer live
+  // particles — each one is a per-frame PIXI fill + a physics step, so a lower
+  // ceiling directly cuts CPU/GPU load where it's needed most.
+  const _cap = (typeof _qualityTier !== 'undefined' && _qualityTier > 0) ? 45 : 120;
+  const _space = _cap - particles.length;
   if (_space <= 0) return;
   n = Math.min(n, _space);
   for (let i = 0; i < n; i++) {

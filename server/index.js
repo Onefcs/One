@@ -812,6 +812,16 @@ app.get('/api/special-quests', async (req, res) => {
 // Images: cache 30 days — sprites never change between deploys
 app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
 
+// Vendored PixiJS (~456 KB) never changes between deploys, but the catch-all
+// static handler below serves it with no explicit caching, so mobile clients
+// re-validate the whole file on every load (a wasted round trip and, on a cold
+// cache, a full re-download). Serve it immutable with a 1-year TTL so the
+// browser skips the request entirely once it's cached.
+app.get('/js/pixi.min.js', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(path.join(ROOT, 'js', 'pixi.min.js'));
+});
+
 // Single JS bundle — ETag changes on every server restart (bundle rebuilt on startup)
 app.get('/bundle.js', (req, res) => {
   if (req.headers['if-none-match'] === jsBundleEtag) return res.status(304).end();
