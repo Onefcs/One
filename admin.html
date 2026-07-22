@@ -454,7 +454,7 @@ async function loadDashboard() {
     document.getElementById('st-today').textContent = d.newToday || 0;
     document.getElementById('st-bans').textContent = d.banned || 0;
     document.getElementById('online-badge').textContent = '● ' + (d.online||0) + ' онлайн';
-    renderTops(d.tops || {});
+    renderTops(d.tops || { bm:[], lvl:[], gold:[], nexum:[] });
   } catch(e) { console.error(e); }
 }
 
@@ -471,12 +471,13 @@ function renderTops(tops) {
     const list = tops[key] || [];
     const el = document.getElementById(elId);
     if (!el) return;
-    el.innerHTML = list.slice(0,5).map((p,i)=>`
+    const rows = list.filter(p => p.val > 0).slice(0,5).map((p,i)=>`
       <div class="top-row">
         <span class="rank">${i+1}</span>
         <span class="name">${esc(p.username)}</span>
         <span class="val">${fmt(p.val)}</span>
-      </div>`).join('') || '<div style="color:var(--text2);font-size:12px;padding:8px 0">Нет данных</div>';
+      </div>`).join('');
+    el.innerHTML = rows || '<div style="color:var(--text2);font-size:12px;padding:8px 0">Нет данных</div>';
   });
 }
 

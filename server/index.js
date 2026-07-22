@@ -555,13 +555,16 @@ app.get('/admin/stats', adminAuth, async (req, res) => {
       PlayerModel.find({}, 'username savedData').sort({ 'savedData.gold': -1 }).limit(5).lean(),
       PlayerModel.find({}, 'username savedData').sort({ 'savedData.nexumBalance': -1 }).limit(5).lean(),
     ]);
+    const banned = await PlayerModel.countDocuments({ banned: true });
     res.json({
-      total, newToday, newWeek, online,
+      total, newToday, newWeek, online, banned,
       gramTotal: gramSum[0]?.s || 0,
-      topBm:    topBm.map(p    => ({ u: p.username, v: p.bm || 0 })),
-      topLvl:   topLvl.map(p   => ({ u: p.username, v: p.savedData?.lvl || 1 })),
-      topGold:  topGold.map(p  => ({ u: p.username, v: p.savedData?.gold || 0 })),
-      topNexum: topNexum.map(p => ({ u: p.username, v: p.savedData?.nexumBalance || 0 })),
+      tops: {
+        bm:    topBm.map(p    => ({ username: p.username, val: p.bm || 0 })),
+        lvl:   topLvl.map(p   => ({ username: p.username, val: p.savedData?.lvl || 1 })),
+        gold:  topGold.map(p  => ({ username: p.username, val: p.savedData?.gold || 0 })),
+        nexum: topNexum.map(p => ({ username: p.username, val: p.savedData?.nexumBalance || 0 })),
+      },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
