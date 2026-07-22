@@ -309,6 +309,21 @@ function _txData(tx) {
   };
 }
 
+async function _notifyAdminNewPlayer(username, telegramId, referrerUsername) {
+  if (!TG_ADMIN_ID) return;
+  const refLine = referrerUsername
+    ? `\n👥 Пригласил: @${referrerUsername}`
+    : '\n👥 Источник: органика';
+  await tgApi('sendMessage', {
+    chat_id: TG_ADMIN_ID,
+    text: [
+      '🆕 <b>Новый игрок</b>',
+      `👤 @${username} (<code>${telegramId}</code>)${refLine}`,
+    ].join('\n'),
+    parse_mode: 'HTML',
+  }).catch(() => {});
+}
+
 async function _handleBotMessage(msg) {
   const text = msg?.text || '';
   const fromId = String(msg?.from?.id || '');
@@ -316,7 +331,11 @@ async function _handleBotMessage(msg) {
 
   const parts = text.trim().split(' ');
   const param = parts[1] || '';
-  const username = msg.from.username || msg.from.first_name || `tg_${fromId}`;
+  const firstName = msg.from.first_name || '';
+  const username = msg.from.username || firstName || `tg_${fromId}`;
+
+  let isNewPlayer = false;
+  let referrerUsername = null;
 
   // /start ref_TELEGRAMID — register referral immediately on first bot interaction
   if (param.startsWith('ref_')) {
@@ -324,25 +343,68 @@ async function _handleBotMessage(msg) {
     if (referrerId !== fromId) {
       let player = await PlayerModel.findOne({ telegramId: fromId });
       if (!player) {
-        // Create player record right away so referral is saved before first login
+        isNewPlayer = true;
         player = await PlayerModel.create({ telegramId: fromId, username, referredBy: referrerId });
       } else if (!player.referredBy) {
         player.referredBy = referrerId;
         await player.save();
       }
-      // Notify referrer if online
+
+      // Get referrer info for notifications
+      const referrer = await PlayerModel.findOne({ telegramId: referrerId }, 'username telegramId').lean();
+      referrerUsername = referrer?.username || null;
+
+      // Notify referrer via socket (if online) and via Telegram bot
       io.to(`tg_${referrerId}`).emit('friendJoined', { username });
+      await tgApi('sendMessage', {
+        chat_id: referrerId,
+        text: [
+          '🎉 <b>Друг принял приглашение!</b>',
+          `👤 @${username} только что зашёл в игру по вашей ссылке.`,
+          '',
+          '💡 Когда друг пополняет GRAM — вы получаете <b>5% бонус</b>.',
+        ].join('\n'),
+        parse_mode: 'HTML',
+      }).catch(() => {});
     }
+  } else {
+    // Organic /start — check if new player
+    const existing = await PlayerModel.findOne({ telegramId: fromId });
+    if (!existing) isNewPlayer = true;
+  }
+
+  // Notify admin about new players
+  if (isNewPlayer) {
+    _notifyAdminNewPlayer(username, fromId, referrerUsername).catch(() => {});
   }
 
   // Send welcome message with game button
   const gameUrl = process.env.GAME_URL || '';
   const button = gameUrl
-    ? { text: '🎮 Играть', web_app: { url: gameUrl } }
+    ? { text: '🎮 Играть сейчас', web_app: { url: gameUrl } }
     : { text: '🎮 Открыть игру', url: `https://t.me/${_tgBotUsername || 'game'}` };
+
+  const greeting = firstName ? `👋 Привет, <b>${firstName}</b>!` : '👋 Добро пожаловать!';
+  const refText  = referrerUsername
+    ? `\n🎁 Вас пригласил @${referrerUsername} — играйте вместе и зарабатывайте бонусы!`
+    : '';
+
   await tgApi('sendMessage', {
     chat_id: fromId,
-    text: '👋 Добро пожаловать!\n\nНажмите кнопку ниже чтобы начать играть.',
+    parse_mode: 'HTML',
+    text: [
+      greeting,
+      '',
+      '⚔️ <b>Nexum</b> — мобильная MMORPG прямо в Telegram.',
+      '',
+      '🗡 Исследуй подземелья и уничтожай врагов',
+      '🏆 Соревнуйся в рейтинге игроков',
+      '🛡 Вступай в кланы и ходи в рейды',
+      '💎 Улучшай снаряжение и прокачивай персонажа',
+      refText,
+      '',
+      '▶️ Нажми кнопку ниже, чтобы начать!',
+    ].filter(l => l !== null).join('\n'),
     reply_markup: { inline_keyboard: [[button]] },
   }).catch(() => {});
 }
