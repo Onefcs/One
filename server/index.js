@@ -848,7 +848,10 @@ function _persistSavedFields(authed, fields, extra) {
   const set = {};
   Object.keys(fields).forEach(k => { if (fields[k] !== undefined) set[`savedData.${k}`] = fields[k]; });
   if (extra) Object.keys(extra).forEach(k => { set[k] = extra[k]; });
-  PlayerModel.findByIdAndUpdate(authed._id, { $set: set }).catch(() => {});
+  // Returns the write promise so callers that need the persist to actually
+  // land before proceeding (see socket.data._flushNow above) can await it;
+  // existing fire-and-forget call sites are unaffected since they don't.
+  return PlayerModel.findByIdAndUpdate(authed._id, { $set: set }).catch(() => {});
 }
 
 function calcBM(s) {
@@ -1001,6 +1004,22 @@ io.on('connection', socket => {
   }
   playerFloorMap.set(socket.id, currentFloor);
 
+  // Exposed on socket.data so a *different* connection's closure (e.g. the
+  // new socket that's about to kick this one on same-account reconnect) can
+  // force this socket's pending debounced save to persist before reading
+  // fresh data from the DB. Without this, a fast refresh raced the DB read
+  // in loginTelegram(WebApp) against this socket's async disconnect-flush —
+  // if the read won, the new session got stale savedData and, a few seconds
+  // later, persisted it right back over the real progress.
+  socket.data._flushNow = async () => {
+    if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
+    if (authed && _lastStats) {
+      await _persistSavedFields(authed,
+        { ..._lastStats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
+        { bm: authed.bm });
+    }
+  };
+
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
 
   function _startAutosave() {
@@ -1029,7 +1048,13 @@ io.on('connection', socket => {
       // Reserve slot before first await to prevent concurrent logins
       if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
         const _prevSocket = io.sockets.sockets.get(activeSessions.get(telegramId));
-        if (_prevSocket) { _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' }); _prevSocket.disconnect(true); }
+        if (_prevSocket) {
+          _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' });
+          // Must land before the DB read below — otherwise this read can race
+          // the old socket's async disconnect-flush and return stale data.
+          await _prevSocket.data._flushNow?.();
+          _prevSocket.disconnect(true);
+        }
       }
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
@@ -1068,7 +1093,13 @@ io.on('connection', socket => {
       // Reserve slot before first await to prevent concurrent logins
       if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
         const _prevSocket2 = io.sockets.sockets.get(activeSessions.get(telegramId));
-        if (_prevSocket2) { _prevSocket2.emit('kicked', { reason: 'Вы вошли с другого устройства' }); _prevSocket2.disconnect(true); }
+        if (_prevSocket2) {
+          _prevSocket2.emit('kicked', { reason: 'Вы вошли с другого устройства' });
+          // Must land before the DB read below — otherwise this read can race
+          // the old socket's async disconnect-flush and return stale data.
+          await _prevSocket2.data._flushNow?.();
+          _prevSocket2.disconnect(true);
+        }
       }
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
@@ -2284,16 +2315,9 @@ io.on('connection', socket => {
 
   socket.on('disconnect', () => {
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
-    // Flush any pending debounced save immediately
-    if (_saveDebounceTimer) {
-      clearTimeout(_saveDebounceTimer);
-      _saveDebounceTimer = null;
-      if (authed && _lastStats) {
-        _persistSavedFields(authed,
-          { ..._lastStats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
-          { bm: authed.bm });
-      }
-    }
+    // Flush any pending debounced save immediately (same logic socket.data
+    // ._flushNow exposes for a reconnecting session to await synchronously).
+    socket.data._flushNow?.();
     if (authed) {
       if (activeSessions.get(authed.telegramId) === socket.id) {
         activeSessions.delete(authed.telegramId);
