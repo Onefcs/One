@@ -600,9 +600,15 @@ function update(dt) {
     }
   }
 
-  // NPC proximity
-  nearNpc = null;
-  npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
+  // NPC proximity — hysteresis (enter at 65px, only drop past 80px) so
+  // standing right at the boundary doesn't flicker the chat-bubble icon and
+  // "Поговорить" button on and off every frame from sub-pixel position noise
+  // (diagonal-move rounding, wall-collision nudges) tipping the comparison
+  // back and forth around a single hard threshold.
+  if (nearNpc && dist(player.x, player.y, nearNpc.x, nearNpc.y) > 80) nearNpc = null;
+  if (!nearNpc) {
+    npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
+  }
   if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
 
   // Snapshot interpolation — render others at (serverNow - INTERP_MS)
