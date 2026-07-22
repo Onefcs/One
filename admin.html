@@ -308,8 +308,11 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
 
     <!-- Market -->
     <div id="tab-market" class="tab-panel">
+      <div class="profile-tabs" style="display:flex;gap:0;margin-bottom:12px;background:var(--bg3);border-radius:8px;padding:4px">
+        <button id="mktab-active" onclick="loadMarket('active')" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">Активные</button>
+        <button id="mktab-history" onclick="loadMarket('history')" style="flex:1;padding:8px;border:none;background:none;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer">История покупок</button>
+      </div>
       <div class="card">
-        <h3>Активные лоты</h3>
         <div id="market-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
     </div>
@@ -651,7 +654,7 @@ async function doBroadcast() {
   if (!msg) { toast('Введи текст', false); return; }
   const target = document.querySelector('input[name="bc-target"]:checked').value;
   try {
-    const r = await api('/admin/broadcast', { method:'POST', body:JSON.stringify({ message:msg, target }) });
+    const r = await api('/admin/broadcast', { method:'POST', body:JSON.stringify({ text:msg, target }) });
     const d = await r.json();
     if (r.ok) { toast('Отправлено ' + (d.sent||0) + ' игрокам'); document.getElementById('bc-text').value=''; }
     else toast(d.error||'Ошибка', false);
@@ -659,22 +662,61 @@ async function doBroadcast() {
 }
 
 // ── Market ────────────────────────────────────────────────
-async function loadMarket() {
+let _mktab = 'active';
+async function loadMarket(tab) {
+  if (tab) _mktab = tab;
+  // Update tab buttons style
+  const btnA = document.getElementById('mktab-active');
+  const btnH = document.getElementById('mktab-history');
+  if (btnA && btnH) {
+    if (_mktab === 'active') {
+      btnA.style.background = 'var(--accent)'; btnA.style.color = '#fff';
+      btnH.style.background = 'none'; btnH.style.color = 'var(--text2)';
+    } else {
+      btnH.style.background = 'var(--accent)'; btnH.style.color = '#fff';
+      btnA.style.background = 'none'; btnA.style.color = 'var(--text2)';
+    }
+  }
   const el = document.getElementById('market-list');
   el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
   try {
-    const r = await api('/admin/market');
+    const r = await api('/admin/market?tab='+_mktab);
     const d = await r.json();
     const listings = d.listings || [];
-    el.innerHTML = listings.length ? listings.map(l=>`
-      <div class="market-row">
+    if (!listings.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">Нет данных</p>'; return; }
+    el.innerHTML = listings.map(l => {
+      const rarity = l.itemRarity ? `<span style="color:${rarityColor(l.itemRarity)};font-size:10px">${l.itemRarity}</span> ` : '';
+      if (_mktab === 'history') {
+        return `<div class="market-row">
+          <div class="mn">
+            <div style="font-weight:600">${rarity}${esc(l.itemName)}</div>
+            <div style="color:var(--text2);font-size:11px">
+              Продавец: <b>${esc(l.sellerUsername)}</b>
+              ${l.buyerUsername ? ` → Покупатель: <b>${esc(l.buyerUsername)}</b>` : ''}
+              ${l.referrerUsername ? ` · Реф: ${esc(l.referrerUsername)}` : ''}
+            </div>
+            <div style="color:var(--text2);font-size:10px">${l.soldAt ? fmtDate(l.soldAt) : fmtDate(l.createdAt)} · <span style="color:${l.status==='sold'?'var(--green)':'var(--text2)'}">${l.status==='sold'?'Продано':'Отменено'}</span></div>
+          </div>
+          <span class="mv">${fmt(l.price)} 💎</span>
+        </div>`;
+      }
+      return `<div class="market-row">
         <div class="mn">
-          <div style="font-weight:600">${esc(l.itemName||l.itemId||'?')}</div>
-          <div style="color:var(--text2);font-size:11px">Продавец: ${esc(l.sellerName||l.sellerTid||'?')}${l.referrerName?` · Реф: ${esc(l.referrerName)}`:''}${l.referralPct?` (${l.referralPct}%)`:''}  </div>
+          <div style="font-weight:600">${rarity}${esc(l.itemName)}</div>
+          <div style="color:var(--text2);font-size:11px">
+            Продавец: <b>${esc(l.sellerUsername)}</b>
+            ${l.referrerUsername ? ` · Реф: ${esc(l.referrerUsername)}` : ''}
+          </div>
+          <div style="color:var(--text2);font-size:10px">${fmtDate(l.createdAt)}</div>
         </div>
-        <span class="mv">${fmt(l.price)} 🪙</span>
-      </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Лотов нет</p>';
+        <span class="mv">${fmt(l.price)} 💎</span>
+      </div>`;
+    }).join('');
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+function rarityColor(r) {
+  return {common:'#aaa',uncommon:'#2ecc71',rare:'#3498db',epic:'#9b59b6',legendary:'#f39c12'}[r]||'#aaa';
 }
 
 // ── Quests ────────────────────────────────────────────────

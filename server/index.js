@@ -715,19 +715,26 @@ app.post('/admin/broadcast', adminAuth, async (req, res) => {
 
 app.get('/admin/market', adminAuth, async (req, res) => {
   try {
-    const { page = 1 } = req.query;
-    const listings = await MarketListingModel.find({})
+    const { page = 1, tab = 'active' } = req.query;
+    const filter = tab === 'history' ? { status: { $in: ['sold', 'cancelled'] } } : { status: 'active' };
+    const listings = await MarketListingModel.find(filter)
       .sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean();
-    const sellerIds = [...new Set(listings.map(l => l.sellerTelegramId).filter(Boolean))];
+    // Resolve referrers via sellerId (field name in model)
+    const sellerIds = [...new Set(listings.map(l => l.sellerId).filter(Boolean))];
     const sellers = await PlayerModel.find({ telegramId: { $in: sellerIds } }, 'username telegramId referredBy').lean();
     const sellerMap = Object.fromEntries(sellers.map(s => [s.telegramId, s]));
-    // Resolve referrers
     const refIds = [...new Set(sellers.map(s => s.referredBy).filter(Boolean))];
     const refs = await PlayerModel.find({ telegramId: { $in: refIds } }, 'username telegramId').lean();
     const refMap = Object.fromEntries(refs.map(r => [r.telegramId, r.username]));
     res.json({ listings: listings.map(l => ({
-      ...l,
-      sellerRef: sellerMap[l.sellerTelegramId]?.referredBy ? refMap[sellerMap[l.sellerTelegramId].referredBy] || null : null,
+      _id: l._id, status: l.status,
+      itemName: l.item?.name || l.item?.id || '?',
+      itemRarity: l.item?.rarity || '',
+      price: l.price,
+      sellerUsername: l.sellerUsername || sellerMap[l.sellerId]?.username || l.sellerId,
+      buyerUsername: l.buyerUsername || null,
+      referrerUsername: sellerMap[l.sellerId]?.referredBy ? (refMap[sellerMap[l.sellerId].referredBy] || null) : null,
+      createdAt: l.createdAt, soldAt: l.soldAt,
     })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
