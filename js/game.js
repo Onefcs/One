@@ -1325,15 +1325,21 @@ const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 
 const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — dt-clamp budget (frameMs/rawDt clamps below)
-// Target render cadence. The 30fps cap exists to save heat/battery on phones;
-// on desktop there's no such constraint, and full-screen camera panning during
-// movement reads as visible judder at 30fps even when the cadence is perfectly
-// steady — 30 discrete world-scroll steps per second simply isn't smooth for a
-// translating background. The tick-counting scheme below produces an *even*
-// cadence at any divisor, N=1 included, so the original reason for capping
-// desktop (uneven 60fps looking worse than steady 30fps) no longer applies:
-// desktop can run steady native 60fps. Mobile keeps the 30fps target.
-const _TARGET_FRAME_MS = _isMobile ? 1000 / 30 : 1000 / 60;
+// Target render cadence: 60fps on every device, including phones. The 30fps
+// mobile cap was justified as heat/battery savings, but the built-in overlay
+// disproved that on real hardware: a phone sat at a steady 30fps spending only
+// ~0.8ms in update() and ~1.1ms in render() — under 2ms of a 33ms frame, ~15×
+// headroom. The GPU idles either way, so the cap saved almost no power while
+// forcing 30fps, and full-screen camera panning at 30fps reads as visible
+// judder on the 60/90/120Hz screens phones now ship with — the exact symptom
+// reported. Net-send rate is decoupled from frame rate (netSendMove is capped
+// to 40Hz), so 60fps adds only cheap extra draws, not radio/CPU wakeups. The
+// tick-counting scheduler below yields an even cadence at any divisor (N=1
+// included), so this is steady 60fps, not the jittery 60fps the cap once
+// guarded against; a device that genuinely can't hold 60 simply renders slower
+// (rAF delivers fewer ticks) and the adaptive-quality tier still trims particle
+// load below 20fps.
+const _TARGET_FRAME_MS = 1000 / 60;
 // Refresh-rate detection: the native frame interval is the *shortest* real gap
 // between rAF ticks — jank only ever makes a frame longer, never shorter. The
 // old code averaged the first dozen ticks, but those land on the jankiest
