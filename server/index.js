@@ -815,7 +815,7 @@ app.get('/tg-botname', (req, res) => {
 
 // One permanent Room per floor — pre-created at startup, never destroyed.
 // All players on the same floor share one world (no sub-instances, no capacity limit).
-const MAX_FLOOR = 20;
+const MAX_FLOOR = 5;
 const floorRooms = new Map();
 
 // ── Battle Power (БМ) formula ─────────────────────────────────────────────────
