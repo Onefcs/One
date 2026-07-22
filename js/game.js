@@ -1267,46 +1267,60 @@ function restartGame() {
 // average rate is steady.
 //
 // render() used to be skipped on mobile when less than ~32ms had elapsed
-// since the last one (an attempt at a ~30fps cap to save heat/battery).
-// That skip condition doesn't divide evenly into 90Hz/120Hz tick rates —
-// with realistic rAF jitter it sometimes swallows one tick too many,
-// producing an irregular sequence of ~33ms/~43ms gaps instead of a steady
-// cadence. An uneven gap sequence reads as jitter/stutter even though the
-// *average* rate looks fine, which is worse than just running at a lower
-// but perfectly steady rate. Profiling shows render() costs well under
-// 3ms/frame even in software rendering, so the heat/battery case for
-// skipping frames isn't worth that trade — render every tick and let the
-// adaptive-quality tier (below) cut visual cost on devices that genuinely
-// can't keep up, instead of an artificial cadence cap.
+// since the last one (an attempt at a ~30fps cap to save heat/battery), then
+// later replaced with a wall-clock accumulator (compare accumulated rAF time
+// against a 33.33ms threshold). Both were reverted for the same underlying
+// reason: real rAF timestamps jitter by a millisecond or two from OS/GPU
+// scheduling noise, and whenever that jitter tips a threshold comparison the
+// wrong way at the wrong moment, one render lands early to "catch up" right
+// after a skipped one — a visible double-step in on-screen motion. This was
+// confirmed directly: frame-by-frame analysis of a user-reported jitter
+// video measured a repeating ~12px/12px/12px/24px world-position displacement
+// pattern, the exact signature of an occasional swallowed-then-caught-up
+// tick, not smooth motion.
+//
+// Fix: render every Nth native rAF *tick*, N picked from the device's own
+// measured refresh rate, instead of comparing elapsed time to a threshold.
+// Counting ticks is immune to per-tick duration jitter — the trigger is
+// "this is tick number N", not "has enough time passed", so a tick that runs
+// long or short doesn't shift when the next render fires.
 let _loopTs = 0;
-// Frame-rate cap: accumulate rAF time and only update+render once enough
-// has built up for a 30fps frame. Using an accumulator (not a simple "skip
-// if < 33ms") makes the cap exact on any display refresh rate (60/90/120Hz)
-// without the uneven gap sequence that a raw timestamp compare produces.
-const _FPS_CAP_MS = 1000 / 30; // ~33.33ms
-let _fpsAccum = 0;
 let _lastRenderTs = 0;
 // dt smoother: 4-frame even window cancels the period-2 rAF jitter seen on
 // some mobile GPUs while keeping input lag under ~130ms.
 const _DT_SMOOTH_N = 4;
 const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
+
+const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — target frame budget, used for dt clamping below
+// Refresh-rate detection: average the first dozen native tick durations
+// (rendering at full native rate meanwhile — a few hundred ms of uncapped
+// startup costs nothing worth avoiding), then lock in a fixed "render every
+// Nth tick" divisor for the rest of the session.
+const _RATE_DETECT_TICKS = 12;
+let _detectCount = 0, _detectSum = 0;
+let _renderEveryN = null;
+let _tickCounter = 0;
+
 function loop(ts) {
   const rAFMs = ts - _loopTs; _loopTs = ts;
-  _fpsAccum += rAFMs;
-  if (_fpsAccum < _FPS_CAP_MS) { requestAnimationFrame(loop); return; }
-  // Carry over remainder so the cap is exact on fast displays (e.g. a 45fps
-  // device alternates 1-skip / no-skip and averages 30fps rather than 22fps).
-  // Spiral guard: if the carry-over itself exceeds one target frame the device
-  // is running below 30fps and we're chasing an impossible backlog — reset so
-  // we don't inflate dt by accumulating debt that can never be repaid.
-  _fpsAccum = Math.max(0, _fpsAccum - _FPS_CAP_MS);
-  if (_fpsAccum > _FPS_CAP_MS) _fpsAccum = 0;
-  // dt = actual wall-clock time since the last render, not the accumulated
-  // budget — avoids inflating physics speed on sub-30fps devices.
+
+  if (_renderEveryN === null) {
+    if (rAFMs > 0 && rAFMs < 100) { _detectSum += rAFMs; _detectCount++; }
+    if (_detectCount >= _RATE_DETECT_TICKS) {
+      const nativeMs = _detectSum / _detectCount;
+      _renderEveryN = Math.max(1, Math.round(_FPS_CAP_MS / nativeMs));
+    }
+  } else {
+    _tickCounter++;
+    if (_tickCounter % _renderEveryN !== 0) { requestAnimationFrame(loop); return; }
+  }
+
+  // dt = actual wall-clock time since the last render, not a derived budget —
+  // avoids inflating physics speed on sub-30fps devices.
   const sinceLastRender = _lastRenderTs > 0 ? ts - _lastRenderTs : _FPS_CAP_MS;
   _lastRenderTs = ts;
-  const frameMs = Math.min(sinceLastRender, _FPS_CAP_MS * 2);
+  const frameMs = Math.min(sinceLastRender, _FPS_CAP_MS * 2.5);
   const rawDt = Math.min(frameMs / 1000, 0.05);
   _dtBuf[_dtBufIdx] = rawDt;
   _dtBufIdx = (_dtBufIdx + 1) % _DT_SMOOTH_N;
