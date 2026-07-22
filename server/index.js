@@ -1302,7 +1302,14 @@ io.on('connection', socket => {
       if (_pending) await _pending.catch(() => {});
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
-      if (!doc) doc = await PlayerModel.create({ telegramId, username });
+      if (!doc) doc = await PlayerModel.create({ telegramId, username, savedData: {} });
+      // Initialise savedData to {} for legacy accounts that still have null —
+      // dotted-path $set operations fail on a null parent in MongoDB, silently
+      // swallowing quest completions and saves.
+      if (!doc.savedData) {
+        doc.savedData = {};
+        await PlayerModel.updateOne({ telegramId }, { $set: { savedData: {} } }).catch(() => {});
+      }
       if (doc.banned) {
         activeSessions.delete(telegramId);
         return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
@@ -1353,7 +1360,11 @@ io.on('connection', socket => {
       if (_pending2) await _pending2.catch(() => {});
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
-      if (!doc) doc = await PlayerModel.create({ telegramId, username });
+      if (!doc) doc = await PlayerModel.create({ telegramId, username, savedData: {} });
+      if (!doc.savedData) {
+        doc.savedData = {};
+        await PlayerModel.updateOne({ telegramId }, { $set: { savedData: {} } }).catch(() => {});
+      }
       if (doc.banned) {
         activeSessions.delete(telegramId);
         return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
@@ -2549,40 +2560,64 @@ io.on('connection', socket => {
     if (!authed || !questId) return;
     try {
       const quest = await SpecialQuestModel.findById(questId).lean();
-      if (!quest || !quest.active) return;
-      const done = authed.savedData?.specialQuestsDone || [];
-      if (done.includes(String(questId))) return;
+      if (!quest || !quest.active) {
+        socket.emit('specialQuestError', { questId: String(questId), reason: 'not_found' });
+        return;
+      }
+      const done = (authed.savedData?.specialQuestsDone) || [];
+      if (done.includes(String(questId))) {
+        // Client is out of sync — re-send done so UI corrects itself
+        socket.emit('specialQuestDone', { questId: String(questId), reward: { gold: 0, xp: 0, nexum: 0 }, alreadyDone: true });
+        return;
+      }
       const newDone = [...done, String(questId)];
-      const upd = { 'savedData.specialQuestsDone': newDone };
       // Nexum is server-authoritative — base the reward on the live balance
       // (cache), never on the possibly-stale savedData snapshot, so a quest
       // reward can't wipe nexum earned from drops earlier this session.
       const _newNexum = quest.reward.nexum
         ? ((_nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance) + quest.reward.nexum)
         : null;
-      if (quest.reward.gold)  upd['savedData.gold']         = (authed.savedData?.gold         || 0) + quest.reward.gold;
-      if (quest.reward.nexum) upd['savedData.nexumBalance'] = _newNexum;
-      if (quest.reward.xp)    upd['savedData.xp']           = (authed.savedData?.xp            || 0) + quest.reward.xp;
-      await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: upd });
+      // Build the per-field update using the in-memory savedData when available,
+      // falling back to the DB current values when savedData is null (new player
+      // who has never saved yet). In either case use $set on the whole savedData
+      // object when savedData is null to avoid a MongoDB write error ("cannot
+      // traverse null element") that would otherwise silently eat the completion.
+      if (authed.savedData) {
+        const upd = { 'savedData.specialQuestsDone': newDone };
+        if (quest.reward.gold)  upd['savedData.gold']         = (authed.savedData.gold         || 0) + quest.reward.gold;
+        if (_newNexum != null)  upd['savedData.nexumBalance'] = _newNexum;
+        if (quest.reward.xp)    upd['savedData.xp']           = (authed.savedData.xp           || 0) + quest.reward.xp;
+        await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: upd });
+        authed.savedData.specialQuestsDone = newDone;
+        if (quest.reward.gold)  authed.savedData.gold         = (authed.savedData.gold         || 0) + quest.reward.gold;
+        if (_newNexum != null)  authed.savedData.nexumBalance = _newNexum;
+        if (quest.reward.xp)    authed.savedData.xp           = (authed.savedData.xp           || 0) + quest.reward.xp;
+      } else {
+        // savedData is null (brand-new player who hasn't saved yet): initialise
+        // it as a plain object so dotted-path $set won't error on null parent.
+        const freshData = { specialQuestsDone: newDone };
+        if (quest.reward.gold)  freshData.gold         = quest.reward.gold;
+        if (_newNexum != null)  freshData.nexumBalance = _newNexum;
+        if (quest.reward.xp)    freshData.xp           = quest.reward.xp;
+        await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: { savedData: freshData } });
+        authed.savedData = freshData;
+      }
       if (_newNexum != null) {
         _nexumBalance = _newNexum;
         _nexumBalanceCache.set(authed.telegramId, _newNexum);
       }
-      if (authed.savedData) {
-        authed.savedData.specialQuestsDone = newDone;
-        if (quest.reward.gold)  authed.savedData.gold         = (authed.savedData.gold         || 0) + quest.reward.gold;
-        if (_newNexum != null)  authed.savedData.nexumBalance = _newNexum;
-        if (quest.reward.xp)    authed.savedData.xp           = (authed.savedData.xp            || 0) + quest.reward.xp;
-        if (_lastStats) {
-          _lastStats.specialQuestsDone = newDone;
-          if (quest.reward.gold)  _lastStats.gold         = authed.savedData.gold;
-          if (_newNexum != null)  _lastStats.nexumBalance = _newNexum;
-          if (quest.reward.xp)    _lastStats.xp           = authed.savedData.xp;
-        }
+      if (_lastStats) {
+        _lastStats.specialQuestsDone = newDone;
+        if (quest.reward.gold)  _lastStats.gold         = (authed.savedData.gold         || 0);
+        if (_newNexum != null)  _lastStats.nexumBalance = _newNexum;
+        if (quest.reward.xp)    _lastStats.xp           = (authed.savedData.xp           || 0);
       }
       logPlayer(authed.telegramId, authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });
       socket.emit('specialQuestDone', { questId: String(questId), reward: quest.reward });
-    } catch(e) { /* silent */ }
+    } catch(e) {
+      console.error('completeSpecialQuest error:', e);
+      socket.emit('specialQuestError', { questId: String(questId || ''), reason: 'server_error' });
+    }
   });
 
   socket.on('disconnect', () => {

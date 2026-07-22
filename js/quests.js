@@ -270,6 +270,24 @@ function switchQuestTab(tab) {
   }
 }
 
+// Track which quest IDs are currently being submitted to prevent double-clicks
+const _specialQuestPending = new Set();
+
+function _specialQuestUnlock(questId) {
+  _specialQuestPending.delete(String(questId));
+  if (_activeQuestTab === 'special') updateSpecialQuestUI();
+}
+
+function _onSpecialQuestClick(questId) {
+  if (_specialQuestPending.has(questId)) return;
+  _specialQuestPending.add(questId);
+  // Re-render so the button shows a pending state immediately
+  if (_activeQuestTab === 'special') updateSpecialQuestUI();
+  netCompleteSpecialQuest(questId);
+  // Safety timeout: if the server never responds, unlock the button after 10s
+  setTimeout(() => { _specialQuestUnlock(questId); }, 10000);
+}
+
 async function updateSpecialQuestUI() {
   const el = document.getElementById('special-quest-list');
   if (!el || !player) return;
@@ -284,6 +302,7 @@ async function updateSpecialQuestUI() {
   let html = '';
   quests.forEach(q => {
     const isDone = done.includes(q._id);
+    const isPending = _specialQuestPending.has(String(q._id));
     const icon = q.icon || '⭐';
     const rewardParts = [];
     if (q.reward.gold)  rewardParts.push(iconHTML('coin',12,'#f1c40f') + q.reward.gold);
@@ -300,10 +319,19 @@ async function updateSpecialQuestUI() {
         ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
         <div class="quest-prog" style="color:#2ecc71">✓ Выполнено</div>
       </div>`;
+    } else if (isPending) {
+      html += `<div class="quest-item quest-current">
+        <div class="quest-header">
+          <span class="quest-title">${icon} ${q.title}</span>
+          <span class="quest-reward">${rewardStr}</span>
+        </div>
+        ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
+        <button class="quest-claim-btn" disabled style="opacity:0.6">Отправка...</button>
+      </div>`;
     } else {
       const actionBtn = q.url
-        ? `<a href="${q.url}" target="_blank" class="quest-claim-btn" style="display:inline-block;text-decoration:none;text-align:center" onclick="setTimeout(()=>netCompleteSpecialQuest('${q._id}'),1500)">${typeLabel}</a>`
-        : `<button class="quest-claim-btn" onclick="netCompleteSpecialQuest('${q._id}')">Выполнено</button>`;
+        ? `<a href="${q.url}" target="_blank" class="quest-claim-btn" style="display:inline-block;text-decoration:none;text-align:center" onclick="_specialQuestPending.add('${q._id}');updateSpecialQuestUI();setTimeout(()=>{ netCompleteSpecialQuest('${q._id}');setTimeout(()=>_specialQuestUnlock('${q._id}'),10000); },1500)">${typeLabel}</a>`
+        : `<button class="quest-claim-btn" onclick="_onSpecialQuestClick('${q._id}')">${typeLabel}</button>`;
       html += `<div class="quest-item quest-current">
         <div class="quest-header">
           <span class="quest-title">${icon} ${q.title}</span>
@@ -317,8 +345,9 @@ async function updateSpecialQuestUI() {
   el.innerHTML = html;
 }
 
-function onSpecialQuestDone(questId, reward) {
+function onSpecialQuestDone(questId, reward, alreadyDone) {
   if (!player) return;
+  _specialQuestPending.delete(String(questId));
   reward = reward || {};
   player.specialQuestsDone = player.specialQuestsDone || [];
   if (!player.specialQuestsDone.includes(questId)) player.specialQuestsDone.push(questId);
@@ -329,13 +358,20 @@ function onSpecialQuestDone(questId, reward) {
   // applied its own multipliers) via gainXP's flat path, which also handles
   // level-ups. Nexum is server-authoritative and not in the save blob, so we
   // only refresh the displayed balance.
-  if (reward.gold)  { player.gold = (player.gold || 0) + reward.gold; }
-  if (reward.xp && typeof gainXP === 'function') gainXP(reward.xp, true);
-  if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
+  if (!alreadyDone) {
+    if (reward.gold)  { player.gold = (player.gold || 0) + reward.gold; }
+    if (reward.xp && typeof gainXP === 'function') gainXP(reward.xp, true);
+    if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
+  }
   if (typeof updateHUD === 'function') updateHUD();
   if (_activeQuestTab === 'special') updateSpecialQuestUI();
-  questNotif = { title: '✓ Специальный квест выполнен!', timer: 3.5 };
-  if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#fd0', 12);
+  if (!alreadyDone) {
+    questNotif = { title: '✓ Специальный квест выполнен!', timer: 3.5 };
+    if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#fd0', 12);
+  }
+  // Sync specialQuestsDone to server immediately so the next autosave can't
+  // overwrite it with a stale snapshot that predates this completion.
+  if (typeof netSaveProgress === 'function') netSaveProgress();
 }
 
 // ── HTML quest panel ──────────────────────────────────────

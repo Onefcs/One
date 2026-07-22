@@ -711,8 +711,13 @@ function netConnect(onReady) {
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 30, msg, '#f55');
   });
 
-  socket.on('specialQuestDone', ({ questId, reward }) => {
-    if (typeof onSpecialQuestDone === 'function') onSpecialQuestDone(questId, reward);
+  socket.on('specialQuestDone', ({ questId, reward, alreadyDone }) => {
+    if (typeof onSpecialQuestDone === 'function') onSpecialQuestDone(questId, reward, alreadyDone);
+  });
+
+  socket.on('specialQuestError', ({ questId, reason }) => {
+    // Re-enable the quest button so the player can retry
+    if (typeof _specialQuestUnlock === 'function') _specialQuestUnlock(questId);
   });
 
   socket.on('adminGive', ({ gold, nexum, gram }) => {
