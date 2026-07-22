@@ -1499,6 +1499,12 @@ io.on('connection', socket => {
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     if (savedStats) _lastStats = savedStats;
+    // Persist the chosen character type immediately so a page refresh
+    // before the first full saveProgress doesn't show the char select again.
+    PlayerModel.updateOne(
+      { telegramId: authed.telegramId },
+      { $set: { 'savedData.type': type } }
+    ).catch(() => {});
     if (!currentRoom) {
       const savedFloor = (savedStats?.floor > 1) ? Math.max(1, Math.min(20, savedStats.floor)) : 1;
       currentFloor = savedFloor;

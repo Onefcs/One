@@ -954,6 +954,8 @@ function _finishOnlineStart() {
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   state = 'playing';
   setTab(0);
+  // Immediately save so a page refresh always finds the character type
+  _emitSaveProgress();
 }
 
 // ── Move throttle ─────────────────────────────────────────────
