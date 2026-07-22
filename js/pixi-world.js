@@ -484,14 +484,8 @@ function _getEnemy(id) {
 function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const { ct, spr, gfx } = obj;
   ct.x = e.x; ct.y = e.y;
-  gfx.clear();
 
-  // Selection ring
-  if (e.id === targetId && !targetIsPlayer) {
-    gfx.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * pulse);
-    gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
-    gfx.lineStyle(0);
-  }
+  const isSelected = e.id === targetId && !targetIsPlayer;
 
   // Determine animation key (mirrors drawEnemySprite logic)
   if (!e._facing) e._facing = 'down';
@@ -523,6 +517,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const ds     = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
   const texRows = def ? _enemyTextures(e.eid, key) : null;
   const sh = def?.sheets[key];
+  let usedSprite = false;
   if (texRows && sh) {
     const facing = e._facing || 'down';
     const rowTex = texRows[facing];
@@ -536,11 +531,46 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
       spr.y        = -ds * 0.55;
       spr.tint    = (e.hurtTimer > 0) ? 0xff4444 : 0xffffff;
       spr.visible = true;
+      usedSprite  = true;
     } else { spr.visible = false; }
   } else {
     spr.visible = false;
-    // Circle fallback
-    const hurt = (e.hurtTimer||0) > 0;
+  }
+
+  const hurt    = (e.hurtTimer||0)  > 0;
+  const slowed  = (e.slowTimer||0)  > 0;
+  const stunned = (e.stunTimer||0)  > 0;
+  const dead    = e.hp <= 0;
+  const isBossAlive = e.isBoss && !dead;
+
+  // The selection ring and boss glow pulse every frame (sin-based), so those
+  // force a rebuild while active. Everything else here — HP bar, status
+  // tints, fallback circle — only changes when the underlying state changes,
+  // so gfx.clear()+redraw (CPU tessellation + a fresh GPU buffer upload) is
+  // skipped unless something actually moved. Previously this ran unconditionally
+  // for every visible enemy every frame, a cost that scaled with enemy count
+  // (crowded rooms, raids) even when nothing on screen was changing.
+  const needsRedraw = isSelected || isBossAlive ||
+    obj._gfxUsedSprite !== usedSprite ||
+    obj._gfxHurt        !== hurt ||
+    obj._gfxSlowed       !== slowed ||
+    obj._gfxStunned      !== stunned ||
+    obj._gfxDead          !== dead ||
+    obj._gfxHp             !== e.hp ||
+    obj._gfxMaxHp            !== e.maxHp;
+
+  if (!needsRedraw) return;
+
+  gfx.clear();
+
+  // Selection ring
+  if (isSelected) {
+    gfx.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * pulse);
+    gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
+    gfx.lineStyle(0);
+  }
+
+  if (!usedSprite) {
     const fc = parseInt((e.color||'#aa0000').replace('#',''), 16);
     gfx.beginFill(hurt ? 0xff4444 : fc);
     gfx.drawCircle(0, 0, e.size);
@@ -552,10 +582,18 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   }
 
   // Status overlays
-  if ((e.slowTimer||0) > 0) { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
-  if ((e.stunTimer||0) > 0) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
+  if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
+  if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
 
-  if (e.hp <= 0) return; // no bars for corpse
+  obj._gfxUsedSprite = usedSprite;
+  obj._gfxHurt        = hurt;
+  obj._gfxSlowed       = slowed;
+  obj._gfxStunned      = stunned;
+  obj._gfxDead          = dead;
+  obj._gfxHp             = e.hp;
+  obj._gfxMaxHp            = e.maxHp;
+
+  if (dead) return; // no bars for corpse
 
   // HP bar
   const bw  = Math.round(ds * 0.7 * 0.85);
@@ -567,7 +605,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const bc  = pct > 0.5 ? 0x22dd22 : pct > 0.25 ? 0xddaa22 : 0xdd2222;
   gfx.beginFill(bc); gfx.drawRect(bx, by, bw * pct, bh); gfx.endFill();
 
-  if (e.isBoss) {
+  if (isBossAlive) {
     gfx.lineStyle(3, 0xff3232, bossGlow);
     gfx.drawCircle(0, 0, e.size + 5);
     gfx.lineStyle(0);
@@ -632,24 +670,12 @@ function _updateOtherPlayers(pulse) {
     const { ct, spr, gfx } = obj;
     ct.visible = true;
     ct.x = p.x; ct.y = p.y;
-    gfx.clear();
 
-    // Selection ring
-    if (pid === targetId && targetIsPlayer) {
-      gfx.lineStyle(2.5, 0xff5050, 0.65 + 0.35 * pulse);
-      gfx.drawCircle(0, 0, 22 + pulse * 3);
-      gfx.lineStyle(0);
-    }
+    const isSelected = pid === targetId && targetIsPlayer;
+    const swinging = (p._swingTimer || 0) > 0;
 
-    // Swing arc
-    if ((p._swingTimer||0) > 0) {
-      const sa = p._swingAngle || 0;
-      gfx.lineStyle(2.5, 0xc8dcff, 0.65);
-      gfx.arc(0, 0, 30, sa - 0.65, sa + 0.65);
-      gfx.lineStyle(0);
-    }
-
-    // Sprite
+    // Sprite — always updated, the texture/frame changes with the walk/idle
+    // animation every frame regardless of whether the Graphics layer redraws.
     const key      = getOtherPlayerAnimKey(p);
     const textures = _playerTextures(p.type, key);
     const def      = SPRITE_DEF[p.type];
@@ -669,22 +695,66 @@ function _updateOtherPlayers(pulse) {
       usedSprite = true;
     } else {
       spr.visible = false;
+    }
+
+    // Read every frame by the 2D name/clan overlay — cheap, independent of gfx.
+    const barTop = usedSprite ? -39 : -20;
+    p._nameBarTop = barTop;
+
+    const slowed  = (p.slowTimer||0) > 0;
+    const stunned = (p.stunTimer||0) > 0;
+    const hp = p.hp || 0, maxHp = p.maxHp || 1;
+
+    // Selection ring pulses continuously while active, so it forces a redraw
+    // every frame it's on. Everything else (swing arc, HP bar, status tints,
+    // fallback circle) is state-driven, not animated — skip the Graphics
+    // rebuild (CPU tessellation + GPU buffer upload) unless the underlying
+    // state actually changed. Previously this ran unconditionally for every
+    // visible other player every frame, a cost that scaled with player count
+    // (raids, crowded floors) even while everyone stood still.
+    const needsRedraw = isSelected ||
+      obj._gfxSwinging   !== swinging ||
+      obj._gfxUsedSprite !== usedSprite ||
+      obj._gfxSlowed      !== slowed ||
+      obj._gfxStunned      !== stunned ||
+      obj._gfxHp             !== hp ||
+      obj._gfxMaxHp            !== maxHp;
+
+    if (!needsRedraw) return;
+
+    gfx.clear();
+
+    if (isSelected) {
+      gfx.lineStyle(2.5, 0xff5050, 0.65 + 0.35 * pulse);
+      gfx.drawCircle(0, 0, 22 + pulse * 3);
+      gfx.lineStyle(0);
+    }
+
+    if (swinging) {
+      const sa = p._swingAngle || 0;
+      gfx.lineStyle(2.5, 0xc8dcff, 0.65);
+      gfx.arc(0, 0, 30, sa - 0.65, sa + 0.65);
+      gfx.lineStyle(0);
+    }
+
+    if (!usedSprite) {
       const fc = parseInt((CHAR_DEF[p.type]?.color || '#aaaaaa').replace('#',''), 16);
       gfx.beginFill(fc); gfx.drawCircle(0, 0, 14); gfx.endFill();
     }
 
-    // Status overlays
-    if ((p.slowTimer||0) > 0) { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,18); gfx.endFill(); }
-    if ((p.stunTimer||0) > 0) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,18); gfx.endFill(); }
+    if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,18); gfx.endFill(); }
+    if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,18); gfx.endFill(); }
 
-    // HP bar
-    const barTop = usedSprite ? -39 : -20;
     const bw = 38, bh = 4;
     gfx.beginFill(0x330000); gfx.drawRect(-bw/2, barTop, bw, bh); gfx.endFill();
-    gfx.beginFill(0x22dd22); gfx.drawRect(-bw/2, barTop, bw * Math.max(0,(p.hp||0)/(p.maxHp||1)), bh); gfx.endFill();
+    gfx.beginFill(0x22dd22); gfx.drawRect(-bw/2, barTop, bw * Math.max(0, hp/maxHp), bh); gfx.endFill();
 
-    // Name/clan tag position — read by _drawOtherPlayerNamesOnUI (2D overlay)
-    p._nameBarTop = barTop;
+    obj._gfxSwinging    = swinging;
+    obj._gfxUsedSprite  = usedSprite;
+    obj._gfxSlowed       = slowed;
+    obj._gfxStunned       = stunned;
+    obj._gfxHp              = hp;
+    obj._gfxMaxHp             = maxHp;
   });
   _otherPool.forEach(obj => { if (obj._visGen !== gen) obj.ct.visible = false; });
 }
