@@ -232,28 +232,43 @@ function _checkAutoBtnTouch(cx, cy) {
   return false;
 }
 
+// Canvas can be offset from the viewport origin — on desktop #app is
+// centered by the body flexbox (and capped at max-height:932px), so once the
+// window is wider/taller than a phone screen, raw e.clientX/clientY no
+// longer line up with the W/H pixel space every button/joystick hitbox is
+// computed in. Mobile browsers happen to render #app flush against the
+// viewport, which is why this only ever showed up on desktop.
+function _toCanvasXY(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  return { x: clientX - r.left, y: clientY - r.top };
+}
+
 function onTS(e) {
   e.preventDefault();
-  for (const t of e.changedTouches) _perfToggleTap(t.clientX, t.clientY);
+  for (const t of e.changedTouches) {
+    const p = _toCanvasXY(t.clientX, t.clientY);
+    _perfToggleTap(p.x, p.y);
+  }
   if (!joyGuard()) return;
   const jc = joyCenter();
   for (const t of e.changedTouches) {
+    const p = _toCanvasXY(t.clientX, t.clientY);
     // continue, not return — this only means "ignore this one touch", not
     // "stop processing every other simultaneous touch in this event" (a
     // multi-touch batch, e.g. one finger already on the attack button while
     // another lands near the nav bar, was dropping the rest of the batch).
-    if (t.clientY > H - NAV_H) continue;
-    if (_checkPartyInviteTouch(t.clientX, t.clientY)) continue;
-    if (_checkPartyLeaveBtnTouch(t.clientX, t.clientY)) continue;
-    if (_checkPvpBtnTouch(t.clientX, t.clientY)) continue;
-    if (_checkPartyBtnTouch(t.clientX, t.clientY)) continue;
-    if (_checkAutoBtnTouch(t.clientX, t.clientY)) continue;
-    if (_checkAttackBtnTouch(t.clientX, t.clientY)) continue;
-    if (_checkPotionTouch(t.clientX, t.clientY)) continue;
-    if (_checkTargetBtnTouch(t.clientX, t.clientY)) continue;
-    if (_checkSkillTouch(t.clientX, t.clientY)) continue;
-    _trySelectEntityAtTouch(t.clientX, t.clientY);
-    if (!joy.active && _inJoyZone(t.clientX, t.clientY)) {
+    if (p.y > H - NAV_H) continue;
+    if (_checkPartyInviteTouch(p.x, p.y)) continue;
+    if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
+    if (_checkPvpBtnTouch(p.x, p.y)) continue;
+    if (_checkPartyBtnTouch(p.x, p.y)) continue;
+    if (_checkAutoBtnTouch(p.x, p.y)) continue;
+    if (_checkAttackBtnTouch(p.x, p.y)) continue;
+    if (_checkPotionTouch(p.x, p.y)) continue;
+    if (_checkTargetBtnTouch(p.x, p.y)) continue;
+    if (_checkSkillTouch(p.x, p.y)) continue;
+    _trySelectEntityAtTouch(p.x, p.y);
+    if (!joy.active && _inJoyZone(p.x, p.y)) {
       joy.active = true; joy.id = t.identifier;
       joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
     }
@@ -272,7 +287,10 @@ function onTM(e) {
   // touchmove would silently hijack the joystick — matching what looks
   // like "the joystick keeps steering no matter where I tap afterwards."
   for (const t of e.changedTouches)
-    if (joy.active && t.identifier === joy.id) setJoy(t.clientX, t.clientY);
+    if (joy.active && t.identifier === joy.id) {
+      const p = _toCanvasXY(t.clientX, t.clientY);
+      setJoy(p.x, p.y);
+    }
 }
 
 function onTE(e) {
@@ -284,26 +302,32 @@ function onTE(e) {
 function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
 
 function onMD(e) {
-  _perfToggleTap(e.clientX, e.clientY);
+  const p = _toCanvasXY(e.clientX, e.clientY);
+  _perfToggleTap(p.x, p.y);
   if (!joyGuard()) return;
-  if (e.clientY > H - NAV_H) return;
+  if (p.y > H - NAV_H) return;
   const jc = joyCenter();
-  if (_checkPartyInviteTouch(e.clientX, e.clientY)) return;
-  if (_checkPartyLeaveBtnTouch(e.clientX, e.clientY)) return;
-  if (_checkPvpBtnTouch(e.clientX, e.clientY)) return;
-  if (_checkPartyBtnTouch(e.clientX, e.clientY)) return;
-  if (_checkAutoBtnTouch(e.clientX, e.clientY)) return;
-  if (_checkAttackBtnTouch(e.clientX, e.clientY)) return;
-  if (_checkPotionTouch(e.clientX, e.clientY)) return;
-  if (_checkTargetBtnTouch(e.clientX, e.clientY)) return;
-  if (_checkSkillTouch(e.clientX, e.clientY)) return;
-  _trySelectEntityAtTouch(e.clientX, e.clientY);
-  if (_inJoyZone(e.clientX, e.clientY)) {
+  if (_checkPartyInviteTouch(p.x, p.y)) return;
+  if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
+  if (_checkPvpBtnTouch(p.x, p.y)) return;
+  if (_checkPartyBtnTouch(p.x, p.y)) return;
+  if (_checkAutoBtnTouch(p.x, p.y)) return;
+  if (_checkAttackBtnTouch(p.x, p.y)) return;
+  if (_checkPotionTouch(p.x, p.y)) return;
+  if (_checkTargetBtnTouch(p.x, p.y)) return;
+  if (_checkSkillTouch(p.x, p.y)) return;
+  _trySelectEntityAtTouch(p.x, p.y);
+  if (_inJoyZone(p.x, p.y)) {
     joy.active = true; joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
   }
 }
 
-function onMM(e) { if (joy.active && joyGuard()) setJoy(e.clientX, e.clientY); }
+function onMM(e) {
+  if (joy.active && joyGuard()) {
+    const p = _toCanvasXY(e.clientX, e.clientY);
+    setJoy(p.x, p.y);
+  }
+}
 function onMU()  { joy.active = false; joy.dx = 0; joy.dy = 0; }
 
 function setJoy(cx, cy) {

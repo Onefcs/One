@@ -106,6 +106,18 @@ class Room {
       }));
   }
 
+  // One boss per floor — alive or, once dead, the timestamp it respawns at.
+  // respawnTimer is undefined for the single tick right after death (the AI
+  // loop hasn't assigned it its full duration yet), so fall back to the same
+  // constant used to seed it.
+  getBossStatus() {
+    const boss = this.enemies.find(e => e.isBoss);
+    if (!boss) return null;
+    if (boss.hp > 0) return { alive: true };
+    const secs = boss.respawnTimer !== undefined ? boss.respawnTimer : 3600;
+    return { alive: false, respawnAt: Date.now() + Math.max(0, secs) * 1000 };
+  }
+
   _isWall(x, y) {
     const d = this._dungeon;
     const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
@@ -167,6 +179,7 @@ class Room {
           e.stunTimer = 0; e.slowTimer = 0;
           e._shp = -1;
           delete e.respawnTimer;
+          if (e.isBoss) this.io.to(`floor_${this.floor}`).emit('bossStatus', { alive: true });
         }
         return;
       }

@@ -1826,6 +1826,7 @@ io.on('connection', socket => {
       floor: currentFloor,
       dungeon: currentRoom.dungeonData,
       enemies: currentRoom.enemySnapshot(),
+      bossStatus: currentRoom.getBossStatus(),
     });
   });
 
@@ -1857,6 +1858,7 @@ io.on('connection', socket => {
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
 
@@ -1961,6 +1963,7 @@ io.on('connection', socket => {
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
     if (!result) return;
     if (result.killed) {
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
       const memberIds  = [];
@@ -2090,6 +2093,7 @@ io.on('connection', socket => {
       floor: newFloor,
       dungeon: currentRoom.dungeonData,
       enemies: currentRoom.enemySnapshot(),
+      bossStatus: currentRoom.getBossStatus(),
     });
   });
 

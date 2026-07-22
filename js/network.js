@@ -114,12 +114,14 @@ function netConnect(onReady) {
     loadSprites(type, () => {});
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies }) => {
+  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [], safeZone: d.safeZone || null };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
+    bossStatus = bs || { alive: true };
+    if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
@@ -448,12 +450,14 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('floorChanged', ({ floor, dungeon: d, enemies: initialEnemies }) => {
+  socket.on('floorChanged', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs }) => {
     dungeonLvl = floor;
     dungeon = { ...d, enemies: [] };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
+    bossStatus = bs || { alive: true };
+    if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
@@ -469,6 +473,11 @@ function netConnect(onReady) {
     if (fe) {
       (fe.pool || []).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
     }
+  });
+
+  socket.on('bossStatus', (bs) => {
+    bossStatus = bs || { alive: true };
+    if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
   });
 
   socket.on('spawnProj', data => {
@@ -1049,6 +1058,7 @@ function _finishOnlineStart() {
   if (typeof showVipBtn === 'function') showVipBtn();
   if (typeof showMarketBtn === 'function') showMarketBtn();
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
+  if (typeof showBossTimerBtn === 'function') showBossTimerBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type

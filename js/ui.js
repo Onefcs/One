@@ -735,7 +735,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'boss-timer-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -2356,6 +2356,52 @@ function _positionGramShopBtn() {
 function showMarketBtn() {
   const btn = document.getElementById('market-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionMarketBtn(); }
+}
+
+function _positionBossTimerBtn() {
+  const shopBtn = document.getElementById('gram-shop-btn');
+  const btn     = document.getElementById('boss-timer-btn');
+  if (!btn || !shopBtn) return;
+  const sTop = parseFloat(shopBtn.style.top) || 0;
+  btn.style.top       = (sTop + 28 + 4) + 'px';
+  btn.style.left      = shopBtn.style.left;
+  btn.style.width     = shopBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showBossTimerBtn() {
+  const btn = document.getElementById('boss-timer-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionBossTimerBtn(); }
+  _renderBossTimerBtn();
+}
+
+function _fmtBossTime(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(s / 60), r = s % 60;
+  return m + ':' + String(r).padStart(2, '0');
+}
+
+// bossStatus ({ alive, respawnAt }) is set from the server on floor join and
+// on 'bossStatus' pushes (kill / respawn) — see network.js. The countdown
+// itself just re-reads the stored respawnAt every second, no extra network
+// traffic needed for the ticking display.
+function _renderBossTimerBtn() {
+  const btn = document.getElementById('boss-timer-btn');
+  const txt = document.getElementById('boss-timer-text');
+  if (!btn || !txt) return;
+  const bs = (typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus : { alive: true };
+  if (bs.alive) {
+    btn.classList.add('boss-alive');
+    txt.textContent = 'Живой';
+  } else {
+    btn.classList.remove('boss-alive');
+    txt.textContent = _fmtBossTime((bs.respawnAt || 0) - Date.now());
+  }
+}
+
+if (typeof setInterval === 'function') {
+  setInterval(() => { if (document.getElementById('boss-timer-btn')?.style.display !== 'none') _renderBossTimerBtn(); }, 1000);
 }
 
 function openMarketPanel() {

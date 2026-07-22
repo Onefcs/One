@@ -41,6 +41,9 @@ let targetId = null;
 let targetIsPlayer = false;
 let pvpMode = false;
 
+// Current floor's boss: alive, or dead with the timestamp it respawns at
+let bossStatus = { alive: true };
+
 // Party — array of { id, name } for all OTHER members
 let partyMembers = [];
 
