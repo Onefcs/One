@@ -217,8 +217,9 @@ function gainXP(amount) {
   while (player.xp >= player.xpNext) {
     player.xp -= player.xpNext;
     player.lvl++;
-    player.xpNext = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
-    player.baseAtk += 3; player.baseDef += 1; player.baseMaxHp += 20;
+    const _xpBase = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
+    player.xpNext = player.lvl > 5 ? _xpBase * 3 : _xpBase;
+    player.baseAtk += 1; player.baseDef += 1; player.baseMaxHp += 20;
     recompute();
     player.hp = Math.min(player.maxHp, player.hp + 35);
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
