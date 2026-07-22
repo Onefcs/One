@@ -45,7 +45,7 @@ function pixiInit(canvasEl) {
     view: canvasEl,
     width:  canvasEl.clientWidth  || 375,
     height: canvasEl.clientHeight || 667,
-    resolution: Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2),
+    resolution: Math.min(window.devicePixelRatio || 1, _isMobile ? 1.0 : 1.5),
     autoDensity: true,
     backgroundAlpha: 1,
     antialias: false,

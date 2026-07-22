@@ -9,6 +9,9 @@ function dmgNum(x, y, text, color, fontSize) {
 let _particlesDirty = false;
 
 function spawnBurst(x, y, color, n) {
+  const _space = 120 - particles.length;
+  if (_space <= 0) return;
+  n = Math.min(n, _space);
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 120;
     particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, color, life: .7, size: 3 + Math.random() * 4 });

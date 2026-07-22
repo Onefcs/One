@@ -897,8 +897,8 @@ function render(dt, ts) {
   _uiCtx.clearRect(0, 0, _uiOverlay.width, _uiOverlay.height);
   _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  // HUD panels: rebuild cache at 20fps, blit every frame (cheap drawImage)
-  if (ts - _uiLastMs >= 50) {
+  // HUD panels: rebuild cache at 15fps, blit every frame (cheap drawImage)
+  if (ts - _uiLastMs >= 67) {
     _uiLastMs = ts;
     if (!_hudCv || _hudCv.width !== _uiOverlay.width || _hudCv.height !== _uiOverlay.height) {
       _hudCv = document.createElement('canvas');
@@ -1320,7 +1320,7 @@ window.addEventListener('load', () => {
   pixiInit(canvas);
 
   const resize = () => {
-    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    DPR = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
     W = appEl.clientWidth;
     H = appEl.clientHeight;
     // Resize PixiJS renderer (autoDensity:true handles canvas CSS size).
