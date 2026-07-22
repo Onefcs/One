@@ -55,11 +55,11 @@ const FLOOR_ENEMIES = {
 // Equipment rarity drops: per-kill chance (0-1) of an uncommon+ gear item
 // dropping on that floor. Boss kills use BOSS_RARITY_DROP_MULT × this chance.
 const FLOOR_RARITY_DROPS = {
-  1: { uncommon: 0.001 },
-  2: { uncommon: 0.005,  rare: 0.0005 },
-  3: { rare: 0.005,      epic: 0.0005 },
-  4: { epic: 0.005,      legendary: 0.001 },
-  5: { legendary: 0.005 },
+  1: { uncommon: 0.00001 },
+  2: { uncommon: 0.00005,  rare: 0.000005 },
+  3: { rare: 0.00005,      epic: 0.000005 },
+  4: { epic: 0.00005,      legendary: 0.00001 },
+  5: { legendary: 0.00005 },
 };
 const BOSS_RARITY_DROP_MULT = 20;
 

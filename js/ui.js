@@ -568,7 +568,12 @@ function showFloorInfo(floor) {
         const bossMult = isBoss ? BOSS_RARITY_DROP_MULT : 1;
         const rows2 = Object.keys(rarTable).map(rarity => {
           const pct = rarTable[rarity] * bossMult * 100;
-          const pctText = pct >= 0.1 ? pct.toFixed(2).replace(/\.?0+$/, '') + '%' : pct.toFixed(3).replace(/\.?0+$/, '') + '%';
+          let pctText;
+          if      (pct >= 1)     pctText = pct.toFixed(1).replace(/\.0$/, '');
+          else if (pct >= 0.1)   pctText = pct.toFixed(2).replace(/\.?0+$/, '');
+          else if (pct >= 0.001) pctText = pct.toFixed(3).replace(/\.?0+$/, '');
+          else                   pctText = pct.toFixed(5).replace(/\.?0+$/, '');
+          pctText += '%';
           const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aaa';
           const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
           return `<div class="fi-drop">
