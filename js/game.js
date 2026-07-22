@@ -1314,13 +1314,22 @@ const _DT_SMOOTH_N = 4;
 const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 
-const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — target frame budget, used for dt clamping below
+const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — dt-clamp budget (frameMs/rawDt clamps below)
+// Target render cadence. The 30fps cap exists to save heat/battery on phones;
+// on desktop there's no such constraint, and full-screen camera panning during
+// movement reads as visible judder at 30fps even when the cadence is perfectly
+// steady — 30 discrete world-scroll steps per second simply isn't smooth for a
+// translating background. The tick-counting scheme below produces an *even*
+// cadence at any divisor, N=1 included, so the original reason for capping
+// desktop (uneven 60fps looking worse than steady 30fps) no longer applies:
+// desktop can run steady native 60fps. Mobile keeps the 30fps target.
+const _TARGET_FRAME_MS = _isMobile ? 1000 / 30 : 1000 / 60;
 // Refresh-rate detection: the native frame interval is the *shortest* real gap
 // between rAF ticks — jank only ever makes a frame longer, never shorter. The
 // old code averaged the first dozen ticks, but those land on the jankiest
 // moment of the session (sprite decode stalls right after load); a slow startup
-// inflated the average, so round(33.33/avg) collapsed to 1 and the cap silently
-// became "render every tick" (full 60fps, no cap). Instead, sample a longer
+// inflated the average, so round(target/avg) collapsed to 1 and the cap silently
+// became "render every tick" (full native rate, no cap). Instead, sample a longer
 // window and take a low percentile of the intervals: robust against both the
 // slow startup frames (they sit at the high end, ignored) and the occasional
 // sub-native catch-up frame after a stall (a handful at the very low end, also
@@ -1342,7 +1351,7 @@ function loop(ts) {
     if (_detectCount >= _RATE_DETECT_TICKS) {
       const sorted = Array.from(_detectBuf).sort((a, b) => a - b);
       const nativeMs = sorted[Math.floor(_RATE_DETECT_TICKS * 0.2)]; // ~20th pct
-      _renderEveryN = Math.max(1, Math.round(_FPS_CAP_MS / nativeMs));
+      _renderEveryN = Math.max(1, Math.round(_TARGET_FRAME_MS / nativeMs));
     }
   } else {
     _tickCounter++;
