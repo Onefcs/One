@@ -348,30 +348,35 @@ async function _handleBotMessage(msg) {
     const referrerId = param.slice(4);
     if (referrerId !== fromId) {
       let player = await PlayerModel.findOne({ telegramId: fromId });
+      let refWasNew = false;
       if (!player) {
         isNewPlayer = true;
+        refWasNew = true;
         player = await PlayerModel.create({ telegramId: fromId, username, referredBy: referrerId });
       } else if (!player.referredBy) {
+        refWasNew = true;
         player.referredBy = referrerId;
         await player.save();
       }
 
-      // Get referrer info for notifications
-      const referrer = await PlayerModel.findOne({ telegramId: referrerId }, 'username telegramId').lean();
-      referrerUsername = referrer?.username || null;
+      if (refWasNew) {
+        // Get referrer info for notifications
+        const referrer = await PlayerModel.findOne({ telegramId: referrerId }, 'username telegramId').lean();
+        referrerUsername = referrer?.username || null;
 
-      // Notify referrer via socket (if online) and via Telegram bot
-      io.to(`tg_${referrerId}`).emit('friendJoined', { username });
-      await tgApi('sendMessage', {
-        chat_id: referrerId,
-        text: [
-          '🎉 <b>Друг принял приглашение!</b>',
-          `👤 @${username} только что зашёл в игру по вашей ссылке.`,
-          '',
-          '💡 Когда друг пополняет GRAM — вы получаете <b>5% бонус</b>.',
-        ].join('\n'),
-        parse_mode: 'HTML',
-      }).catch(() => {});
+        // Notify referrer via socket (if online) and via Telegram bot — once only
+        io.to(`tg_${referrerId}`).emit('friendJoined', { username });
+        await tgApi('sendMessage', {
+          chat_id: referrerId,
+          text: [
+            '🎉 <b>Друг принял приглашение!</b>',
+            `👤 @${username} только что зашёл в игру по вашей ссылке.`,
+            '',
+            '💡 Когда друг пополняет GRAM — вы получаете <b>5% бонус</b>.',
+          ].join('\n'),
+          parse_mode: 'HTML',
+        }).catch(() => {});
+      }
     }
   } else {
     // Organic /start — check if new player
