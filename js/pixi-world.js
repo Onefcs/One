@@ -193,6 +193,16 @@ function _npcTextures(id) {
 // fresh Set every frame — avoids one GC-pressuring allocation per render on
 // mobile, where collection pauses show up as visible hitches.
 let _tileVisGen = 0;
+// Building a chunk (_buildChunk: 5-6 full passes over its tiles — wall fill,
+// floor, cliff caps, two shadow passes, props) plus the GPU texture upload
+// from PIXI.Texture.from() is real synchronous work per chunk. Revealing a
+// whole viewport of never-seen chunks at once — floor entry, a dash, a
+// teleport — used to build all of them (up to ~12 on a typical viewport) in
+// a single frame: a real, reproducible hitch every time it happened. Capping
+// how many NEW chunks build per frame spreads that burst across a handful of
+// frames instead — a brief progressive pop-in rather than one big freeze.
+// Already-built chunks are unaffected, this only throttles first-time builds.
+const _CHUNK_BUILD_BUDGET = 2;
 function _updateTiles(camX, camY) {
   if (!dungeon || !dungeon.grid) return;
   const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
@@ -203,11 +213,14 @@ function _updateTiles(camX, camY) {
   const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX));
 
   const gen = ++_tileVisGen;
+  let _built = 0;
   for (let cy = c0y; cy <= c1y; cy++) {
     for (let cx = c0x; cx <= c1x; cx++) {
       const key = cx + ',' + cy;
       let spr = _chunkSprCache.get(key);
       if (!spr) {
+        if (_built >= _CHUNK_BUILD_BUDGET) continue; // picked up next frame(s)
+        _built++;
         let cv = _tileChunks.get(key);
         if (!cv) {
           cv = _buildChunk(cx, cy);
