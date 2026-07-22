@@ -112,5 +112,23 @@ function applyLootToInventory(eid) {
     }
   }
 
+  // Equipment rarity drop (uncommon..legendary gear, floor-based; boss ×20)
+  const _rarTable = typeof FLOOR_RARITY_DROPS !== 'undefined' ? FLOOR_RARITY_DROPS[_fMult] : null;
+  if (_rarTable) {
+    const _rarBossMult = eType === 'boss' ? BOSS_RARITY_DROP_MULT : 1;
+    const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+    for (const rarity in _rarTable) {
+      if (Math.random() >= _rarTable[rarity] * _rarBossMult) continue;
+      const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot) &&
+        (d.slot !== 'weapon' || (d.forClass && d.forClass.includes(player.type))));
+      if (!candidates.length) continue;
+      const it = candidates[Math.floor(Math.random() * candidates.length)];
+      if (addToInventory({ ...it })) {
+        dmgNum(player.x, player.y - 70, '+ ' + it.name, RARITY_COLOR[it.rarity] || '#4ff');
+        saved = true;
+      }
+    }
+  }
+
   if (saved) netSaveProgress();
 }

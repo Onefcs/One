@@ -471,12 +471,6 @@ function showFloorInfo(floor) {
   const sc    = 1 + (floor - 1) * 0.28;
   const atkSc = 1 + (floor - 1) * 0.18;
 
-  const rarityNames  = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
-  const rarityColors = ['#aaa',   '#3ef07a',   '#55aaff', '#c55ef5', '#ffd700'];
-  const maxRarIdx    = Math.min(4, Math.max(0, Math.floor((floor - 1) / 4)));
-  const dropRarName  = rarityNames[Math.min(maxRarIdx + 1, 4)];
-  const dropRarColor = rarityColors[Math.min(maxRarIdx + 1, 4)];
-
   const { regular: regularPool, boss } = _floorEnemyPool(floor);
   const allEnemies = boss ? [...regularPool, boss] : regularPool;
 
@@ -566,6 +560,27 @@ function showFloorInfo(floor) {
         <div class="fi-drops">${rows}</div>`;
     }
 
+    // Equipment rarity drop rows (uncommon..legendary gear); boss kills get ×20
+    let gearSection = '';
+    if (typeof FLOOR_RARITY_DROPS !== 'undefined') {
+      const rarTable = FLOOR_RARITY_DROPS[floor];
+      if (rarTable) {
+        const bossMult = isBoss ? BOSS_RARITY_DROP_MULT : 1;
+        const rows2 = Object.keys(rarTable).map(rarity => {
+          const pct = rarTable[rarity] * bossMult * 100;
+          const pctText = pct >= 0.1 ? pct.toFixed(2).replace(/\.?0+$/, '') + '%' : pct.toFixed(3).replace(/\.?0+$/, '') + '%';
+          const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aaa';
+          const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
+          return `<div class="fi-drop">
+            <span class="fi-drop-lbl" style="color:${rc}">${rn} предмет</span>
+            <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${pctText}</b></span>
+          </div>`;
+        }).join('');
+        gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка</div>
+          <div class="fi-drops">${rows2}</div>`;
+      }
+    }
+
     return `
       <div class="fi-monster${isBoss ? ' fi-boss' : ''}">
         <div class="fi-mhdr">
@@ -596,6 +611,7 @@ function showFloorInfo(floor) {
           ${stoneRow}
         </div>
         ${matSection}
+        ${gearSection}
       </div>`;
   }).join('');
 

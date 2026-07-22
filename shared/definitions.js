@@ -52,6 +52,17 @@ const FLOOR_ENEMIES = {
   5: { pool: ['golem_warrior','golem_guard'],     boss: 'golem_boss'    },
 };
 
+// Equipment rarity drops: per-kill chance (0-1) of an uncommon+ gear item
+// dropping on that floor. Boss kills use BOSS_RARITY_DROP_MULT × this chance.
+const FLOOR_RARITY_DROPS = {
+  1: { uncommon: 0.001 },
+  2: { uncommon: 0.005,  rare: 0.0005 },
+  3: { rare: 0.005,      epic: 0.0005 },
+  4: { epic: 0.005,      legendary: 0.001 },
+  5: { legendary: 0.005 },
+};
+const BOSS_RARITY_DROP_MULT = 20;
+
 // Gold drop: 30% chance for regular enemies, 100% for bosses. Scales with floor.
 // Floors 2-5 receive a ×3 gold bonus on top of the base scaling.
 function calcGoldDrop(enemy, floor) {
@@ -197,4 +208,5 @@ if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,
 };
