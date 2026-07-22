@@ -1498,7 +1498,14 @@ io.on('connection', socket => {
 
   socket.on('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
-    if (savedStats) _lastStats = savedStats;
+    // authed.savedData is the DB-loaded record for this account (single save
+    // blob, not per-type slots). If the client sent no savedStats — e.g. it
+    // raced a fast refresh before its own savedData snapshot arrived — fall
+    // back to the server's copy instead of leaving _lastStats unset, which
+    // would let the next debounced saveProgress persist fresh/default stats
+    // over real progress.
+    const effectiveSaved = savedStats || authed.savedData || null;
+    if (effectiveSaved) _lastStats = effectiveSaved;
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
     PlayerModel.updateOne(
@@ -1506,7 +1513,7 @@ io.on('connection', socket => {
       { $set: { 'savedData.type': type } }
     ).catch(() => {});
     if (!currentRoom) {
-      const savedFloor = (savedStats?.floor > 1) ? Math.max(1, Math.min(20, savedStats.floor)) : 1;
+      const savedFloor = (effectiveSaved?.floor > 1) ? Math.max(1, Math.min(20, effectiveSaved.floor)) : 1;
       currentFloor = savedFloor;
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
@@ -1515,7 +1522,7 @@ io.on('connection', socket => {
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
       if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
     }
-    currentRoom.setPlayerChar(socket.id, type, savedStats || null);
+    currentRoom.setPlayerChar(socket.id, type, effectiveSaved);
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
     socket.emit('gameStart', {
       floor: currentFloor,

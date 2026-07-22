@@ -1024,7 +1024,13 @@ function selectChar(type) {
   try { localStorage.setItem('_lastCharType', type); } catch (_) {}
   player = makePlayer(type);
   dungeonLvl = 1;
-  const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
+  // A single account has one savedData blob, not per-type save slots — gating
+  // restoration on savedData.type === type dropped real progress to defaults
+  // whenever that metadata field was missing/stale (e.g. a fast refresh
+  // before the DB write finished), and the next debounced saveProgress then
+  // persisted those defaults over the real save. restoreFromSave() itself
+  // never reads .type, so just use whatever savedData exists.
+  const savedStats = (typeof _savedData !== 'undefined' && _savedData) ? _savedData : null;
   csStartLoading(type, () => { initNpcs(); _finishOnlineStart(); });
   // Gate the loading screen on BOTH player and floor-1 enemy sprites being decoded.
   const _floor1Eids = (FLOOR_ENEMIES[1]?.pool || []).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);

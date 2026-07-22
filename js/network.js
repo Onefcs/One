@@ -105,7 +105,9 @@ function netConnect(onReady) {
       camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
       clampCamera();
     }
-    const restore = _savedData && _savedData.type === player?.type ? _savedData : null;
+    // See matching comment in selectChar() (game.js) — one savedData blob per
+    // account, not per-type, so don't gate restoration on a .type match.
+    const restore = _savedData || null;
     if (restore) { restoreFromSave(restore); _savedData = null; }
     csOnServerReady();
   });
