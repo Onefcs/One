@@ -562,6 +562,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   // for every visible enemy every frame, a cost that scaled with enemy count
   // (crowded rooms, raids) even when nothing on screen was changing.
   const needsRedraw = isSelected || isBossAlive ||
+    obj._gfxSelected  !== isSelected ||
     obj._gfxHurt     !== hurt ||
     obj._gfxSlowed    !== slowed ||
     obj._gfxStunned   !== stunned ||
@@ -572,6 +573,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   if (!needsRedraw) return;
 
   gfx.clear();
+  obj._gfxSelected = isSelected;
 
   // Selection ring
   if (isSelected) {
@@ -711,6 +713,7 @@ function _updateOtherPlayers(pulse) {
     // visible other player every frame, a cost that scaled with player count
     // (raids, crowded floors) even while everyone stood still.
     const needsRedraw = isSelected ||
+      obj._gfxSelected   !== isSelected ||
       obj._gfxSwinging   !== swinging ||
       obj._gfxUsedSprite !== usedSprite ||
       obj._gfxSlowed      !== slowed ||
@@ -721,6 +724,7 @@ function _updateOtherPlayers(pulse) {
     if (!needsRedraw) return;
 
     gfx.clear();
+    obj._gfxSelected = isSelected;
 
     if (isSelected) {
       gfx.lineStyle(2.5, 0xff5050, 0.65 + 0.35 * pulse);

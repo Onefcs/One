@@ -1612,8 +1612,6 @@ function drawAutoToggle() {
 // ─────────────────────────────────────────────────────────
 function drawPartyButton() {
   if (!player) return;
-  const inParty = partyMembers.length > 0;
-  if (inParty) return; // leave button is in party HUD
   const canInvite = targetIsPlayer && !!targetId;
   if (!canInvite) return;
 
@@ -1622,19 +1620,17 @@ function drawPartyButton() {
   const F = 'system-ui, -apple-system, Arial';
   ctx.save();
 
-  ctx.fillStyle = inParty ? _uiBtnGrads.ptg1 : _uiBtnGrads.ptg0;
+  ctx.fillStyle = _uiBtnGrads.ptg0;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
-  ctx.strokeStyle = inParty ? 'rgba(220,60,60,0.8)' : 'rgba(60,200,90,0.8)';
+  ctx.strokeStyle = 'rgba(60,200,90,0.8)';
   ctx.lineWidth = 1.5;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
 
-  const iconName = inParty ? 'partyLeave' : 'party';
-  const color = inParty ? '#ff7070' : '#3ef07a';
-  drawIconCtx(ctx, iconName, pb.x + 14, pb.y + pb.h / 2, 12, color);
+  drawIconCtx(ctx, 'party', pb.x + 14, pb.y + pb.h / 2, 12, '#3ef07a');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = color;
-  ctx.fillText(inParty ? 'Выйти' : 'Пати+', pb.x + 23, pb.y + pb.h / 2);
+  ctx.fillStyle = '#3ef07a';
+  ctx.fillText('Пати+', pb.x + 23, pb.y + pb.h / 2);
 
   ctx.restore();
 }

@@ -649,7 +649,7 @@ app.get('/admin/stats', adminAuth, async (req, res) => {
     ]);
     const online = io.sockets.sockets.size;
     const [topBm, topLvl, topGold, topNexum] = await Promise.all([
-      PlayerModel.find({ bm: { $gt: 0 } }, 'username bm savedData').sort({ bm: -1 }).limit(5).lean(),
+      PlayerModel.find({}, 'username bm savedData').sort({ bm: -1 }).limit(5).lean(),
       PlayerModel.find({}, 'username savedData').sort({ 'savedData.lvl': -1 }).limit(5).lean(),
       PlayerModel.find({}, 'username savedData').sort({ 'savedData.gold': -1 }).limit(5).lean(),
       PlayerModel.find({}, 'username savedData').sort({ 'savedData.nexumBalance': -1 }).limit(5).lean(),
@@ -1711,7 +1711,7 @@ io.on('connection', socket => {
   socket.on('getRating', async ({ tab }) => {
     try {
       if (tab === 'players') {
-        const players = await PlayerModel.find({ bm: { $gt: 0 } }, 'username bm savedData')
+        const players = await PlayerModel.find({}, 'username bm savedData')
           .sort({ bm: -1 }).limit(50).lean();
         const rows = players.map(p => ({
           username: p.username,

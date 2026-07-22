@@ -184,7 +184,7 @@ function _checkPartyLeaveBtnTouch(cx, cy) {
 }
 
 function _checkPartyBtnTouch(cx, cy) {
-  if (!player || partyMembers.length > 0) return false;
+  if (!player) return false;
   const pb = getPartyBtnPos();
   if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
     if (targetIsPlayer && targetId) {
