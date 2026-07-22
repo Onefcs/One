@@ -1767,7 +1767,7 @@ function drawPartyInvitePopup() {
 // ─────────────────────────────────────────────────────────
 const _ENH_RARITY_COST = { common:40, uncommon:70, rare:120, epic:200, legendary:350 };
 const _ENH_MAX = 15;
-function _enhSuccessRate(enh) { return Math.max(10, 100 - enh * 10); }
+function _enhSuccessRate(enh) { return Math.max(10, 80 - enh * 10); }
 function _enhStoneQty(stoneId) {
   if (!player) return 0;
   const s = player.inventory.find(i => i.id === stoneId);
