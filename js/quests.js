@@ -2,6 +2,8 @@
 //  QUEST SYSTEM
 // ─────────────────────────────────────────────────────────
 let questNotif = null; // { title, timer }
+let _activeQuestTab = 'story';
+let _specialQuestsCache = null;
 
 function getCurrentQuest() {
   if (!player) return null;
@@ -245,6 +247,86 @@ function drawQuestTracker() {
   ctx.restore();
 }
 
+// ── Quest tab switching ───────────────────────────────────
+function switchQuestTab(tab) {
+  _activeQuestTab = tab;
+  const story   = document.getElementById('quest-list');
+  const special = document.getElementById('special-quest-list');
+  const btnS    = document.getElementById('qtab-story');
+  const btnSp   = document.getElementById('qtab-special');
+  if (!story || !special) return;
+  if (tab === 'story') {
+    story.style.display = '';
+    special.style.display = 'none';
+    btnS?.classList.add('active');
+    btnSp?.classList.remove('active');
+    updateQuestUI();
+  } else {
+    story.style.display = 'none';
+    special.style.display = '';
+    btnS?.classList.remove('active');
+    btnSp?.classList.add('active');
+    updateSpecialQuestUI();
+  }
+}
+
+async function updateSpecialQuestUI() {
+  const el = document.getElementById('special-quest-list');
+  if (!el || !player) return;
+  el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">Загрузка...</div>';
+  if (!_specialQuestsCache) _specialQuestsCache = await fetchSpecialQuests();
+  const quests = _specialQuestsCache;
+  const done = player.specialQuestsDone || [];
+  if (!quests.length) {
+    el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">Специальных квестов пока нет</div>';
+    return;
+  }
+  let html = '';
+  quests.forEach(q => {
+    const isDone = done.includes(q._id);
+    const icon = q.icon || '⭐';
+    const rewardParts = [];
+    if (q.reward.gold)  rewardParts.push(iconHTML('coin',12,'#f1c40f') + q.reward.gold);
+    if (q.reward.xp)    rewardParts.push(iconHTML('star',12,'#f1c40f') + q.reward.xp + ' XP');
+    if (q.reward.nexum) rewardParts.push('💎' + q.reward.nexum + ' Nexum');
+    const rewardStr = rewardParts.join(' · ');
+    const typeLabel = q.type === 'subscribe' ? 'Подписаться' : q.type === 'link' ? 'Перейти' : 'Выполнить';
+    if (isDone) {
+      html += `<div class="quest-item quest-done">
+        <div class="quest-header">
+          <span class="quest-title">${icon} ${q.title}</span>
+          <span class="quest-reward">${rewardStr}</span>
+        </div>
+        ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
+        <div class="quest-prog" style="color:#2ecc71">✓ Выполнено</div>
+      </div>`;
+    } else {
+      const actionBtn = q.url
+        ? `<a href="${q.url}" target="_blank" class="quest-claim-btn" style="display:inline-block;text-decoration:none;text-align:center" onclick="setTimeout(()=>netCompleteSpecialQuest('${q._id}'),1500)">${typeLabel}</a>`
+        : `<button class="quest-claim-btn" onclick="netCompleteSpecialQuest('${q._id}')">Выполнено</button>`;
+      html += `<div class="quest-item quest-current">
+        <div class="quest-header">
+          <span class="quest-title">${icon} ${q.title}</span>
+          <span class="quest-reward">${rewardStr}</span>
+        </div>
+        ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
+        ${actionBtn}
+      </div>`;
+    }
+  });
+  el.innerHTML = html;
+}
+
+function onSpecialQuestDone(questId, reward) {
+  if (!player) return;
+  player.specialQuestsDone = player.specialQuestsDone || [];
+  if (!player.specialQuestsDone.includes(questId)) player.specialQuestsDone.push(questId);
+  if (reward.gold)  { player.gold = (player.gold || 0) + reward.gold; if (typeof updateHUD === 'function') updateHUD(); }
+  if (_activeQuestTab === 'special') updateSpecialQuestUI();
+  questNotif = { title: '✓ Специальный квест выполнен!', timer: 3.5 };
+  if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#fd0', 12);
+}
+
 // ── HTML quest panel ──────────────────────────────────────
 function _questProgHtml(q, isCur) {
   if (!isCur) return '';
@@ -295,6 +377,7 @@ function _questProgHtml(q, isCur) {
 function updateQuestUI() {
   const el = document.getElementById('quest-list');
   if (!el || !player) return;
+  if (_activeQuestTab !== 'story') return;
 
   // Group quests by floor
   const floors = [...new Set(QUEST_DEF.map(q => q.floor || 1))].sort((a, b) => a - b);

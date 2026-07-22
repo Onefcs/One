@@ -698,6 +698,7 @@ function restoreFromSave(data) {
   player.bonusSP  = data.bonusSP  || 0;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
+  player.specialQuestsDone = data.specialQuestsDone || [];
 
   // Migrate old save: armor → body
   const rawEq = data.equipment || {};

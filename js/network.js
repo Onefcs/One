@@ -671,6 +671,18 @@ function netConnect(onReady) {
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 30, msg, '#f55');
   });
 
+  socket.on('specialQuestDone', ({ questId, reward }) => {
+    if (typeof onSpecialQuestDone === 'function') onSpecialQuestDone(questId, reward);
+  });
+
+  socket.on('adminGive', ({ gold, nexum, gram }) => {
+    if (!player) return;
+    if (gold)  { player.gold = (player.gold || 0) + gold; if (typeof updateHUD === 'function') updateHUD(); }
+    if (nexum) { if (typeof updateNexumBalance === 'function') updateNexumBalance(nexum); }
+    if (gram)  { if (typeof updateGramBalance === 'function') updateGramBalance(gram); }
+    if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, '🎁 Подарок от админа!', '#fd0');
+  });
+
   socket.on('disconnect', () => {
     socket = null;
     inRaid = false;
@@ -705,6 +717,20 @@ function netPartyDecline(fromId) {
 function netPartyLeave() {
   if (socket?.connected) socket.emit('partyLeave');
   partyMembers = [];
+}
+
+// ── Special Quests ────────────────────────────────────────
+function netCompleteSpecialQuest(questId) {
+  if (socket?.connected) socket.emit('completeSpecialQuest', { questId });
+}
+
+async function fetchSpecialQuests() {
+  try {
+    const r = await fetch('/api/special-quests');
+    if (!r.ok) return [];
+    const { quests } = await r.json();
+    return quests || [];
+  } catch { return []; }
 }
 
 // ── Clan helpers ──────────────────────────────────────────────
@@ -824,6 +850,7 @@ function _emitSaveProgress() {
     upgrades: player.upgrades || {},
     questIdx: player.questIdx || 0,
     questKills: player.questKills || {},
+    specialQuestsDone: player.specialQuestsDone || [],
     skillLevels: player.skillLevels || {},
     skillXp: player.skillXp || {},
     bonusSP: player.bonusSP || 0,

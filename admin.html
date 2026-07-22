@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Nexum Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d14;--bg2:#13131f;--bg3:#1a1a2e;--bg4:#22223a;
+  --accent:#7c3aed;--accent2:#6d28d9;--green:#22c55e;--red:#ef4444;--yellow:#eab308;
+  --text:#e2e8f0;--text2:#94a3b8;--border:#2d2d4a;
+  --card:#161624;--radius:10px;
+}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Login ── */
+#login-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+.login-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:32px 28px;width:100%;max-width:360px}
+.login-box h1{font-size:22px;font-weight:700;text-align:center;margin-bottom:8px;color:#a78bfa}
+.login-box p{text-align:center;color:var(--text2);margin-bottom:24px;font-size:13px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;font-weight:500;letter-spacing:.3px}
+.field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;transition:border .2s}
+.field input:focus{border-color:var(--accent)}
+.btn{display:block;width:100%;padding:12px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{opacity:.88}
+.btn-sm{display:inline-block;width:auto;padding:6px 14px;font-size:13px;border-radius:6px}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-yellow{background:var(--yellow);color:#000}
+.btn-gray{background:var(--bg4);color:var(--text);border:1px solid var(--border)}
+#login-err{color:var(--red);font-size:13px;text-align:center;margin-top:12px;display:none}
+
+/* ── App shell ── */
+#app{display:none;flex-direction:column;min-height:100vh}
+header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+header h1{font-size:16px;font-weight:700;color:#a78bfa}
+header .online-badge{background:var(--green);color:#000;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px}
+#logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:5px 12px;font-size:12px;cursor:pointer}
+#logout-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* ── Tab bar ── */
+.tab-bar{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:sticky;top:49px;z-index:90}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab-btn{flex:0 0 auto;padding:10px 16px;font-size:12px;font-weight:600;color:var(--text2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;white-space:nowrap}
+.tab-btn.active{color:#a78bfa;border-bottom-color:#a78bfa}
+
+/* ── Content ── */
+#content{flex:1;padding:16px;max-width:700px;margin:0 auto;width:100%}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ── Cards / Stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
+.stat-card .val{font-size:22px;font-weight:700;color:#a78bfa}
+.stat-card .lbl{font-size:11px;color:var(--text2);margin-top:2px}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card h3{font-size:13px;color:var(--text2);font-weight:600;margin-bottom:12px;letter-spacing:.3px;text-transform:uppercase}
+
+/* ── Tables ── */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th,.tbl td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
+.tbl th{color:var(--text2);font-weight:600;font-size:11px;letter-spacing:.3px;text-transform:uppercase}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:rgba(124,58,237,.06)}
+.tbl-wrap{overflow-x:auto}
+
+/* ── Search ── */
+.search-row{display:flex;gap:8px;margin-bottom:14px}
+.search-row input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text);font-size:14px;outline:none}
+.search-row input:focus{border-color:var(--accent)}
+.search-row button{padding:9px 14px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer}
+
+/* ── Player detail ── */
+#player-detail{display:none}
+.back-btn{background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;margin-bottom:12px;padding:0}
+.back-btn:before{content:"← "}
+.prow{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.prow:last-child{border-bottom:none}
+.prow .k{color:var(--text2)}
+
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.give-row{display:flex;gap:8px;margin-top:12px}
+.give-row input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+.give-row select{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+
+/* ── Logs ── */
+.log-item{padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.log-item:last-child{border-bottom:none}
+.log-item .le{color:#a78bfa;font-weight:600}
+.log-item .lt{color:var(--text2);font-size:11px}
+.log-item .lm{color:var(--text);margin-top:2px;word-break:break-all}
+
+/* ── Quest editor ── */
+.quest-form{display:flex;flex-direction:column;gap:10px}
+.quest-form input,.quest-form select,.quest-form textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;width:100%}
+.quest-form input:focus,.quest-form select:focus,.quest-form textarea:focus{border-color:var(--accent)}
+.quest-form textarea{min-height:60px;resize:vertical}
+.reward-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.quest-item-adm{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:8px}
+.quest-item-adm .qt{flex:1;font-size:13px}
+.quest-item-adm .qbadge{font-size:11px;padding:2px 7px;border-radius:10px;background:var(--accent);color:#fff}
+.quest-item-adm .qbadge.off{background:var(--bg4);color:var(--text2)}
+
+/* ── Broadcast ── */
+.broadcast-form{display:flex;flex-direction:column;gap:10px}
+.broadcast-form textarea{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:13px;outline:none;min-height:80px;resize:vertical;width:100%}
+.broadcast-form textarea:focus{border-color:var(--accent)}
+.radio-row{display:flex;gap:12px}
+.radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer}
+
+/* ── Chat ── */
+.chat-msg{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:flex-start;gap:8px}
+.chat-msg .cu{font-weight:600;color:#a78bfa;flex:0 0 auto}
+.chat-msg .ct{flex:1;word-break:break-all}
+.chat-msg .cd{font-size:11px;color:var(--text2);flex:0 0 auto}
+.chat-msg .cdel{background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:0 4px}
+
+/* ── Tops ── */
+.tops-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.top-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+.top-card h4{font-size:11px;color:var(--text2);font-weight:600;margin-bottom:8px;text-transform:uppercase}
+.top-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid rgba(45,45,74,.5)}
+.top-row:last-child{border-bottom:none}
+.top-row .rank{color:var(--text2);width:18px}
+.top-row .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
+.top-row .val{color:#a78bfa;font-weight:600;font-size:11px;white-space:nowrap}
+
+/* ── Suspicious ── */
+.sus-row{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px}
+.sus-row .su{font-weight:600;color:var(--red)}
+.sus-row .sm{color:var(--text);margin-top:3px;font-size:12px}
+
+/* ── Market ── */
+.market-row{display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.market-row:last-child{border-bottom:none}
+.market-row .mn{flex:1}
+.market-row .mv{color:#a78bfa;font-weight:600}
+.market-row .mr{color:var(--text2);font-size:11px}
+
+/* ── GRAM ── */
+.tx-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.tx-row:last-child{border-bottom:none}
+.tx-type{font-size:10px;padding:2px 6px;border-radius:10px;background:var(--bg4);color:var(--text2)}
+.tx-type.deposit{background:rgba(34,197,94,.15);color:var(--green)}
+.tx-type.withdraw{background:rgba(239,68,68,.15);color:var(--red)}
+.tx-type.buy{background:rgba(124,58,237,.15);color:#a78bfa}
+.tx-amt{font-weight:600;color:var(--text)}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#a78bfa;color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .25s;z-index:999}
+#toast.show{opacity:1}
+
+/* ── Loading ── */
+.spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:#a78bfa;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-center{display:flex;justify-content:center;padding:30px}
+
+/* ── Clans ── */
+.clan-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+.clan-row:last-child{border-bottom:none}
+.clan-icon{font-size:22px;flex:0 0 auto}
+.clan-info{flex:1}
+.clan-name{font-weight:600}
+.clan-meta{color:var(--text2);font-size:11px;margin-top:2px}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>⚔️ Nexum</h1>
+    <p>Панель администратора</p>
+    <div class="field">
+      <label>Логин</label>
+      <input id="login-username" type="text" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Пароль</label>
+      <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">Войти</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <h1>⚔️ Nexum Admin</h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="online-badge" id="online-badge">● 0 онлайн</span>
+      <button id="logout-btn" onclick="doLogout()">Выйти</button>
+    </div>
+  </header>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="setTab('dashboard')">📊 Дашборд</button>
+    <button class="tab-btn" onclick="setTab('players')">👤 Игроки</button>
+    <button class="tab-btn" onclick="setTab('gram')">💎 GRAM</button>
+    <button class="tab-btn" onclick="setTab('clans')">🛡️ Кланы</button>
+    <button class="tab-btn" onclick="setTab('chat')">💬 Чат</button>
+    <button class="tab-btn" onclick="setTab('broadcast')">📢 Рассылка</button>
+    <button class="tab-btn" onclick="setTab('market')">🏪 Маркет</button>
+    <button class="tab-btn" onclick="setTab('quests')">⭐ Квесты</button>
+    <button class="tab-btn" onclick="setTab('suspicious')">🚨 Подозр.</button>
+  </div>
+
+  <div id="content">
+
+    <!-- Dashboard -->
+    <div id="tab-dashboard" class="tab-panel active">
+      <div class="stats-grid" id="dash-stats">
+        <div class="stat-card"><div class="val" id="st-total">—</div><div class="lbl">Всего игроков</div></div>
+        <div class="stat-card"><div class="val" id="st-online">—</div><div class="lbl">Онлайн сейчас</div></div>
+        <div class="stat-card"><div class="val" id="st-today">—</div><div class="lbl">Новых за 24ч</div></div>
+        <div class="stat-card"><div class="val" id="st-bans">—</div><div class="lbl">Заблокировано</div></div>
+      </div>
+      <div class="tops-grid" id="tops-grid">
+        <div class="top-card"><h4>🏆 По BM</h4><div id="top-bm"></div></div>
+        <div class="top-card"><h4>⚡ По уровню</h4><div id="top-lvl"></div></div>
+        <div class="top-card"><h4>💰 По золоту</h4><div id="top-gold"></div></div>
+        <div class="top-card"><h4>💎 По Nexum</h4><div id="top-nexum"></div></div>
+      </div>
+    </div>
+
+    <!-- Players -->
+    <div id="tab-players" class="tab-panel">
+      <div id="players-list">
+        <div class="search-row">
+          <input id="player-search" type="text" placeholder="Поиск по нику или ID..." onkeydown="if(event.key==='Enter')searchPlayers()">
+          <button onclick="searchPlayers()">Найти</button>
+        </div>
+        <div id="players-result"></div>
+      </div>
+      <div id="player-detail">
+        <button class="back-btn" onclick="closePlayerDetail()">Назад к списку</button>
+        <div class="card">
+          <div id="player-info"></div>
+        </div>
+        <div class="card">
+          <h3>Выдать</h3>
+          <div class="give-row">
+            <input id="give-gold" type="number" min="0" placeholder="Золото">
+            <input id="give-nexum" type="number" min="0" placeholder="Nexum">
+            <input id="give-gram" type="number" min="0" placeholder="GRAM">
+          </div>
+          <div style="margin-top:8px"><button class="btn btn-sm btn-green" onclick="givePlayer()">Выдать</button></div>
+        </div>
+        <div class="card">
+          <h3>Действия</h3>
+          <div class="action-grid">
+            <button class="btn btn-sm btn-red" id="ban-btn" onclick="banPlayer()">Заблокировать</button>
+            <button class="btn btn-sm btn-green" id="unban-btn" onclick="unbanPlayer()">Разблокировать</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Последние 30 событий</h3>
+          <div id="player-logs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRAM -->
+    <div id="tab-gram" class="tab-panel">
+      <div class="card">
+        <h3>GRAM транзакции</h3>
+        <div id="gram-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Clans -->
+    <div id="tab-clans" class="tab-panel">
+      <div class="card">
+        <h3>Кланы</h3>
+        <div id="clans-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Chat -->
+    <div id="tab-chat" class="tab-panel">
+      <div class="card">
+        <h3>Чат (последние 50)</h3>
+        <div id="chat-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Broadcast -->
+    <div id="tab-broadcast" class="tab-panel">
+      <div class="card">
+        <h3>Рассылка через бота</h3>
+        <div class="broadcast-form">
+          <div class="radio-row">
+            <label><input type="radio" name="bc-target" value="all" checked> Всем игрокам</label>
+            <label><input type="radio" name="bc-target" value="online"> Онлайн</label>
+          </div>
+          <textarea id="bc-text" placeholder="Текст сообщения..."></textarea>
+          <button class="btn btn-primary" onclick="doBroadcast()">Отправить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Market -->
+    <div id="tab-market" class="tab-panel">
+      <div class="card">
+        <h3>Активные лоты</h3>
+        <div id="market-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Quests -->
+    <div id="tab-quests" class="tab-panel">
+      <div class="card" style="margin-bottom:16px">
+        <h3>Создать квест</h3>
+        <div class="quest-form">
+          <input id="q-title" placeholder="Название">
+          <textarea id="q-desc" placeholder="Описание (необязательно)"></textarea>
+          <div style="display:flex;gap:8px">
+            <select id="q-type" style="flex:1">
+              <option value="link">Перейти по ссылке</option>
+              <option value="subscribe">Подписаться</option>
+              <option value="custom">Кастомный</option>
+            </select>
+            <input id="q-icon" placeholder="Иконка" style="width:70px;text-align:center" value="⭐">
+          </div>
+          <input id="q-url" placeholder="URL (если есть)">
+          <div class="reward-row">
+            <input id="q-gold" type="number" min="0" placeholder="Золото">
+            <input id="q-xp" type="number" min="0" placeholder="XP">
+            <input id="q-nexum" type="number" min="0" placeholder="Nexum">
+          </div>
+          <button class="btn btn-primary" onclick="createQuest()">Создать</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Текущие квесты</h3>
+        <div id="quests-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Suspicious -->
+    <div id="tab-suspicious" class="tab-panel">
+      <div class="card">
+        <h3>Подозрительные аккаунты</h3>
+        <div id="sus-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /app -->
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+let _tok = localStorage.getItem('adm_tok') || '';
+let _currentTab = 'dashboard';
+let _currentPlayerId = null;
+let _currentPlayerBanned = false;
+let _onlineInterval = null;
+
+// ── Auth ──────────────────────────────────────────────────
+async function doLogin() {
+  const u = document.getElementById('login-username').value.trim();
+  const p = document.getElementById('login-password').value;
+  const err = document.getElementById('login-err');
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username:u, password:p }) });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.error || 'Ошибка'; err.style.display = 'block'; return; }
+    _tok = d.token;
+    localStorage.setItem('adm_tok', _tok);
+    showApp();
+  } catch(e) { err.textContent = 'Ошибка сети'; err.style.display = 'block'; }
+}
+document.getElementById('login-password').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+function doLogout() {
+  _tok = '';
+  localStorage.removeItem('adm_tok');
+  clearInterval(_onlineInterval);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+async function api(path, opts={}) {
+  const r = await fetch(path, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+_tok, ...(opts.headers||{}) } });
+  if (r.status === 401) { doLogout(); throw new Error('Unauthorized'); }
+  return r;
+}
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('app').style.flexDirection = 'column';
+  loadDashboard();
+  _onlineInterval = setInterval(refreshOnline, 15000);
+}
+
+function toast(msg, ok=true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = ok ? '#a78bfa' : '#ef4444';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Check saved token on load
+window.addEventListener('load', async () => {
+  if (!_tok) return;
+  try {
+    const r = await api('/admin/stats');
+    if (r.ok) showApp(); else { _tok=''; localStorage.removeItem('adm_tok'); }
+  } catch { _tok=''; localStorage.removeItem('adm_tok'); }
+});
+
+// ── Tabs ──────────────────────────────────────────────────
+function setTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  const btns = document.querySelectorAll('.tab-btn');
+  const names = ['dashboard','players','gram','clans','chat','broadcast','market','quests','suspicious'];
+  const idx = names.indexOf(name);
+  if(idx>=0) btns[idx].classList.add('active');
+  _currentTab = name;
+  if (name==='players') { searchPlayers(); }
+  else if (name==='gram') loadGram();
+  else if (name==='clans') loadClans();
+  else if (name==='chat') loadChat();
+  else if (name==='market') loadMarket();
+  else if (name==='quests') loadQuests();
+  else if (name==='suspicious') loadSuspicious();
+}
+
+// ── Dashboard ─────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const r = await api('/admin/stats');
+    const d = await r.json();
+    document.getElementById('st-total').textContent = d.total || 0;
+    document.getElementById('st-online').textContent = d.online || 0;
+    document.getElementById('st-today').textContent = d.newToday || 0;
+    document.getElementById('st-bans').textContent = d.banned || 0;
+    document.getElementById('online-badge').textContent = '● ' + (d.online||0) + ' онлайн';
+    renderTops(d.tops || {});
+  } catch(e) { console.error(e); }
+}
+
+function refreshOnline() {
+  api('/admin/stats').then(r=>r.json()).then(d=>{
+    document.getElementById('st-online').textContent = d.online||0;
+    document.getElementById('online-badge').textContent = '● '+(d.online||0)+' онлайн';
+  }).catch(()=>{});
+}
+
+function renderTops(tops) {
+  const topMap = { bm:'top-bm', lvl:'top-lvl', gold:'top-gold', nexum:'top-nexum' };
+  Object.entries(topMap).forEach(([key, elId]) => {
+    const list = tops[key] || [];
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.innerHTML = list.slice(0,5).map((p,i)=>`
+      <div class="top-row">
+        <span class="rank">${i+1}</span>
+        <span class="name">${esc(p.username)}</span>
+        <span class="val">${fmt(p.val)}</span>
+      </div>`).join('') || '<div style="color:var(--text2);font-size:12px;padding:8px 0">Нет данных</div>';
+  });
+}
+
+// ── Players ───────────────────────────────────────────────
+async function searchPlayers() {
+  const q = document.getElementById('player-search').value.trim();
+  const el = document.getElementById('players-result');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/players?q='+encodeURIComponent(q)+'&limit=30');
+    const d = await r.json();
+    if (!d.players || !d.players.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">Игроки не найдены</p>'; return; }
+    el.innerHTML = `<div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Ник</th><th>Lvl</th><th>BM</th><th>Статус</th></tr></thead>
+      <tbody>${d.players.map(p=>`<tr style="cursor:pointer" onclick="openPlayer('${p.telegramId}')">
+        <td>${esc(p.username)}<br><span style="color:var(--text2);font-size:11px">${p.telegramId}</span></td>
+        <td>${p.lvl||1}</td>
+        <td>${p.bm||0}</td>
+        <td>${p.banned?'<span style="color:var(--red)">БАН</span>':'<span style="color:var(--green)">✓</span>'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+async function openPlayer(tid) {
+  document.getElementById('players-list').style.display = 'none';
+  document.getElementById('player-detail').style.display = 'block';
+  _currentPlayerId = tid;
+  document.getElementById('player-info').innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  document.getElementById('player-logs').innerHTML = '';
+  try {
+    const pr = await api('/admin/player/'+tid);
+    const pd = await pr.json();
+    const p = pd.player;
+    _currentPlayerBanned = p.banned;
+    const sd = p.savedData || {};
+    document.getElementById('player-info').innerHTML = `
+      <div class="prow"><span class="k">Ник</span><span>${esc(p.username)}</span></div>
+      <div class="prow"><span class="k">Telegram ID</span><span>${p.telegramId}</span></div>
+      <div class="prow"><span class="k">Уровень</span><span>${sd.lvl||1}</span></div>
+      <div class="prow"><span class="k">Класс</span><span>${sd.type||'—'}</span></div>
+      <div class="prow"><span class="k">Золото</span><span>${fmt(sd.gold||0)}</span></div>
+      <div class="prow"><span class="k">Nexum</span><span>${fmt(sd.nexumBalance||0)}</span></div>
+      <div class="prow"><span class="k">GRAM</span><span>${fmt(sd.gramBalance||0)}</span></div>
+      <div class="prow"><span class="k">BM</span><span>${p.bm||0}</span></div>
+      <div class="prow"><span class="k">Рефер</span><span>${p.referredBy||'—'}</span></div>
+      <div class="prow"><span class="k">Статус</span><span style="color:${p.banned?'var(--red)':'var(--green)'}">${p.banned?'Заблокирован':'Активен'}</span></div>
+      <div class="prow"><span class="k">Зарегистрирован</span><span>${fmtDate(p.createdAt)}</span></div>
+    `;
+    const logs = pd.logs || [];
+    document.getElementById('player-logs').innerHTML = logs.length ? logs.map(l=>`
+      <div class="log-item">
+        <span class="le">${esc(l.event)}</span>
+        <span class="lt"> · ${fmtDate(l.at)}</span>
+        ${l.meta ? `<div class="lm">${esc(JSON.stringify(l.meta))}</div>` : ''}
+      </div>`).join('') : '<p style="color:var(--text2);font-size:12px">Нет событий</p>';
+  } catch(e) { document.getElementById('player-info').innerHTML = '<p style="color:var(--red)">Ошибка загрузки</p>'; }
+}
+
+function closePlayerDetail() {
+  document.getElementById('player-detail').style.display = 'none';
+  document.getElementById('players-list').style.display = 'block';
+}
+
+async function banPlayer() {
+  if (!_currentPlayerId) return;
+  if (!confirm('Заблокировать игрока?')) return;
+  try {
+    await api('/admin/player/'+_currentPlayerId+'/ban', { method:'POST' });
+    toast('Игрок заблокирован');
+    openPlayer(_currentPlayerId);
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function unbanPlayer() {
+  if (!_currentPlayerId) return;
+  try {
+    await api('/admin/player/'+_currentPlayerId+'/unban', { method:'POST' });
+    toast('Игрок разблокирован');
+    openPlayer(_currentPlayerId);
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function givePlayer() {
+  if (!_currentPlayerId) return;
+  const gold  = Number(document.getElementById('give-gold').value)||0;
+  const nexum = Number(document.getElementById('give-nexum').value)||0;
+  const gram  = Number(document.getElementById('give-gram').value)||0;
+  if (!gold && !nexum && !gram) { toast('Укажи сумму', false); return; }
+  try {
+    const r = await api('/admin/player/'+_currentPlayerId+'/give', { method:'POST', body:JSON.stringify({ gold, nexum, gram }) });
+    if (r.ok) { toast('Выдано!'); ['give-gold','give-nexum','give-gram'].forEach(id=>document.getElementById(id).value=''); }
+    else { const d=await r.json(); toast(d.error||'Ошибка', false); }
+  } catch(e) { toast('Ошибка', false); }
+}
+
+// ── GRAM ──────────────────────────────────────────────────
+async function loadGram() {
+  const el = document.getElementById('gram-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/transactions');
+    const d = await r.json();
+    const txs = d.transactions || [];
+    el.innerHTML = txs.length ? txs.map(t=>`
+      <div class="tx-row">
+        <div>
+          <span class="tx-type ${t.type}">${t.type}</span>
+          <span style="margin-left:6px;font-weight:600">${esc(t.username||t.telegramId)}</span>
+          <div style="color:var(--text2);font-size:11px;margin-top:2px">${fmtDate(t.createdAt)}</div>
+        </div>
+        <span class="tx-amt">${t.amount} GRAM</span>
+      </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Нет транзакций</p>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+// ── Clans ─────────────────────────────────────────────────
+async function loadClans() {
+  const el = document.getElementById('clans-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/clans');
+    const d = await r.json();
+    const clans = d.clans || [];
+    el.innerHTML = clans.length ? clans.map(c=>`
+      <div class="clan-row">
+        <div class="clan-icon">${c.icon||'🛡️'}</div>
+        <div class="clan-info">
+          <div class="clan-name">${esc(c.name)}</div>
+          <div class="clan-meta">Участников: ${c.memberCount||0} · Создан: ${fmtDate(c.createdAt)}</div>
+        </div>
+        <button class="btn btn-sm btn-red" onclick="deleteClan('${c._id}')">Удалить</button>
+      </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Кланов нет</p>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+async function deleteClan(id) {
+  if (!confirm('Удалить клан?')) return;
+  try {
+    await api('/admin/clan/'+id, { method:'DELETE' });
+    toast('Клан удалён');
+    loadClans();
+  } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Chat ──────────────────────────────────────────────────
+async function loadChat() {
+  const el = document.getElementById('chat-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/chat');
+    const d = await r.json();
+    const msgs = d.messages || [];
+    el.innerHTML = msgs.length ? msgs.map((m,i)=>`
+      <div class="chat-msg">
+        <span class="cu">${esc(m.username||'?')}</span>
+        <span class="ct">${esc(m.text)}</span>
+        <span class="cd">${fmtTime(m.ts)}</span>
+        <button class="cdel" onclick="deleteChat(${i})" title="Удалить">✕</button>
+      </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Сообщений нет</p>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+async function deleteChat(idx) {
+  try {
+    await api('/admin/chat/'+idx, { method:'DELETE' });
+    toast('Удалено');
+    loadChat();
+  } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Broadcast ─────────────────────────────────────────────
+async function doBroadcast() {
+  const msg = document.getElementById('bc-text').value.trim();
+  if (!msg) { toast('Введи текст', false); return; }
+  const target = document.querySelector('input[name="bc-target"]:checked').value;
+  try {
+    const r = await api('/admin/broadcast', { method:'POST', body:JSON.stringify({ message:msg, target }) });
+    const d = await r.json();
+    if (r.ok) { toast('Отправлено ' + (d.sent||0) + ' игрокам'); document.getElementById('bc-text').value=''; }
+    else toast(d.error||'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Market ────────────────────────────────────────────────
+async function loadMarket() {
+  const el = document.getElementById('market-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/market');
+    const d = await r.json();
+    const listings = d.listings || [];
+    el.innerHTML = listings.length ? listings.map(l=>`
+      <div class="market-row">
+        <div class="mn">
+          <div style="font-weight:600">${esc(l.itemName||l.itemId||'?')}</div>
+          <div style="color:var(--text2);font-size:11px">Продавец: ${esc(l.sellerName||l.sellerTid||'?')}${l.referrerName?` · Реф: ${esc(l.referrerName)}`:''}${l.referralPct?` (${l.referralPct}%)`:''}  </div>
+        </div>
+        <span class="mv">${fmt(l.price)} 🪙</span>
+      </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Лотов нет</p>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+// ── Quests ────────────────────────────────────────────────
+async function loadQuests() {
+  const el = document.getElementById('quests-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/special-quests');
+    const d = await r.json();
+    const quests = d.quests || [];
+    el.innerHTML = quests.length ? quests.map(q=>`
+      <div class="quest-item-adm">
+        <span style="font-size:20px">${q.icon||'⭐'}</span>
+        <div class="qt">
+          <div style="font-weight:600">${esc(q.title)}</div>
+          <div style="color:var(--text2);font-size:11px">${q.type} · 🪙${q.reward?.gold||0} · XP${q.reward?.xp||0} · 💎${q.reward?.nexum||0}</div>
+        </div>
+        <span class="qbadge ${q.active?'':'off'}">${q.active?'Вкл':'Выкл'}</span>
+        <button class="btn btn-sm btn-gray" style="margin-left:6px" onclick="toggleQuest('${q._id}',${!q.active})">${q.active?'Выкл':'Вкл'}</button>
+        <button class="btn btn-sm btn-red" style="margin-left:4px" onclick="deleteQuest('${q._id}')">✕</button>
+      </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Квестов нет</p>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+async function createQuest() {
+  const title = document.getElementById('q-title').value.trim();
+  if (!title) { toast('Укажи название', false); return; }
+  const body = {
+    title,
+    desc: document.getElementById('q-desc').value.trim(),
+    type: document.getElementById('q-type').value,
+    icon: document.getElementById('q-icon').value.trim()||'⭐',
+    url:  document.getElementById('q-url').value.trim(),
+    reward: {
+      gold:  Number(document.getElementById('q-gold').value)||0,
+      xp:    Number(document.getElementById('q-xp').value)||0,
+      nexum: Number(document.getElementById('q-nexum').value)||0,
+    }
+  };
+  try {
+    const r = await api('/admin/special-quests', { method:'POST', body:JSON.stringify(body) });
+    if (r.ok) {
+      toast('Квест создан');
+      ['q-title','q-desc','q-url','q-gold','q-xp','q-nexum'].forEach(id=>document.getElementById(id).value='');
+      loadQuests();
+    } else { const d=await r.json(); toast(d.error||'Ошибка', false); }
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function toggleQuest(id, active) {
+  try {
+    await api('/admin/special-quests/'+id, { method:'PUT', body:JSON.stringify({ active }) });
+    loadQuests();
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function deleteQuest(id) {
+  if (!confirm('Удалить квест?')) return;
+  try {
+    await api('/admin/special-quests/'+id, { method:'DELETE' });
+    toast('Удалено');
+    loadQuests();
+  } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Suspicious ────────────────────────────────────────────
+async function loadSuspicious() {
+  const el = document.getElementById('sus-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/suspicious');
+    const d = await r.json();
+    const players = d.players || [];
+    el.innerHTML = players.length ? players.map(p=>`
+      <div class="sus-row">
+        <div class="su">${esc(p.username)} <span style="font-weight:normal;font-size:11px;color:var(--text2)">(${p.telegramId})</span></div>
+        <div class="sm">BM: ${p.bm||0} · Lvl: ${p.lvl||1} · Зарегистрирован: ${fmtDate(p.createdAt)}</div>
+        <div style="margin-top:6px;display:flex;gap:6px">
+          <button class="btn btn-sm btn-red" onclick="banSus('${p.telegramId}')">Заблокировать</button>
+          <button class="btn btn-sm btn-gray" onclick="openSusPlayer('${p.telegramId}')">Профиль</button>
+        </div>
+      </div>`).join('') : '<p style="color:var(--green);text-align:center;padding:20px">✓ Подозрительных аккаунтов нет</p>';
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+async function banSus(tid) {
+  if (!confirm('Заблокировать?')) return;
+  try {
+    await api('/admin/player/'+tid+'/ban', { method:'POST' });
+    toast('Заблокирован');
+    loadSuspicious();
+  } catch(e) { toast('Ошибка', false); }
+}
+
+function openSusPlayer(tid) {
+  setTab('players');
+  _currentPlayerId = tid;
+  setTimeout(() => openPlayer(tid), 100);
+}
+
+// ── Utils ─────────────────────────────────────────────────
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmt(n) { return Number(n||0).toLocaleString('ru-RU'); }
+function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('ru-RU')+' '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function fmtTime(ts) { if (!ts) return '—'; const d = new Date(ts); return d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+</script>
+</body>
+</html>

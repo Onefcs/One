@@ -5,7 +5,8 @@ const PlayerSchema = new mongoose.Schema({
   username:    { type: String, required: true },
   savedData:   { type: mongoose.Schema.Types.Mixed, default: null },
   bm:          { type: Number, default: 0 },
-  referredBy:  { type: String, default: null },  // telegramId of who referred this player
+  referredBy:  { type: String, default: null },
+  banned:      { type: Boolean, default: false },
   createdAt:   { type: Date, default: Date.now },
 });
 

@@ -5,10 +5,12 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
-const PlayerModel = require('./models/Player');
-const ClanModel   = require('./models/Clan');
-const GramTxModel = require('./models/GramTx');
-const MarketListingModel = require('./models/MarketListing');
+const PlayerModel       = require('./models/Player');
+const ClanModel         = require('./models/Clan');
+const GramTxModel       = require('./models/GramTx');
+const MarketListingModel= require('./models/MarketListing');
+const SpecialQuestModel = require('./models/SpecialQuest');
+const PlayerLogModel    = require('./models/PlayerLog');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
 const {
@@ -67,7 +69,9 @@ function _marketHistoryData(l, myId) {
 }
 
 // Bot token — set TG_BOT_TOKEN env var in Railway
-const _TG_TOKEN    = process.env.TG_BOT_TOKEN    || '';
+const _TG_TOKEN      = process.env.TG_BOT_TOKEN    || '';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD  || '';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME  || 'admin';
 const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram chat ID
 const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
 let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
@@ -495,6 +499,283 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB error:', err));
 
+app.use(express.json({ limit: '1mb' }));
+
+// ── Admin auth helpers ─────────────────────────────────────────────────────────
+function _adminToken(ts) {
+  return crypto.createHmac('sha256', ADMIN_PASSWORD || 'disabled').update(`adm:${ts}`).digest('hex');
+}
+function _verifyAdminToken(raw) {
+  if (!ADMIN_PASSWORD) return false;
+  try {
+    const { ts, sig } = JSON.parse(Buffer.from(raw, 'base64url').toString());
+    if (Date.now() - ts > 7 * 86400000) return false;
+    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(_adminToken(ts)));
+  } catch { return false; }
+}
+function adminAuth(req, res, next) {
+  const tok = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!_verifyAdminToken(tok)) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
+
+// Player event logger (last 30 per player kept, older auto-expire in 30d)
+async function logPlayer(telegramId, username, event, meta) {
+  try {
+    await PlayerLogModel.create({ telegramId, username, event, meta });
+  } catch {}
+}
+
+// ── Admin REST API ─────────────────────────────────────────────────────────────
+app.post('/admin/login', (req, res) => {
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin disabled' });
+  const { username, password } = req.body || {};
+  if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD)
+    return res.status(401).json({ error: 'Wrong credentials' });
+  const ts  = Date.now();
+  const tok = Buffer.from(JSON.stringify({ ts, sig: _adminToken(ts) })).toString('base64url');
+  res.json({ token: tok });
+});
+
+app.get('/admin/stats', adminAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const dayAgo  = new Date(now - 86400000);
+    const weekAgo = new Date(now - 7 * 86400000);
+    const [total, newToday, newWeek, gramSum] = await Promise.all([
+      PlayerModel.countDocuments(),
+      PlayerModel.countDocuments({ createdAt: { $gte: dayAgo } }),
+      PlayerModel.countDocuments({ createdAt: { $gte: weekAgo } }),
+      GramTxModel.aggregate([{ $match: { type: 'deposit', status: 'confirmed' } }, { $group: { _id: null, s: { $sum: '$amount' } } }]),
+    ]);
+    const online = io.sockets.sockets.size;
+    const [topBm, topLvl, topGold, topNexum] = await Promise.all([
+      PlayerModel.find({ bm: { $gt: 0 } }, 'username bm savedData').sort({ bm: -1 }).limit(5).lean(),
+      PlayerModel.find({}, 'username savedData').sort({ 'savedData.lvl': -1 }).limit(5).lean(),
+      PlayerModel.find({}, 'username savedData').sort({ 'savedData.gold': -1 }).limit(5).lean(),
+      PlayerModel.find({}, 'username savedData').sort({ 'savedData.nexumBalance': -1 }).limit(5).lean(),
+    ]);
+    res.json({
+      total, newToday, newWeek, online,
+      gramTotal: gramSum[0]?.s || 0,
+      topBm:    topBm.map(p    => ({ u: p.username, v: p.bm || 0 })),
+      topLvl:   topLvl.map(p   => ({ u: p.username, v: p.savedData?.lvl || 1 })),
+      topGold:  topGold.map(p  => ({ u: p.username, v: p.savedData?.gold || 0 })),
+      topNexum: topNexum.map(p => ({ u: p.username, v: p.savedData?.nexumBalance || 0 })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/players', adminAuth, async (req, res) => {
+  try {
+    const { q = '', page = 1, limit = 30 } = req.query;
+    const filter = q ? { username: { $regex: q, $options: 'i' } } : {};
+    const [players, count] = await Promise.all([
+      PlayerModel.find(filter, 'username telegramId bm banned savedData referredBy createdAt')
+        .sort({ bm: -1 }).skip((page - 1) * limit).limit(Number(limit)).lean(),
+      PlayerModel.countDocuments(filter),
+    ]);
+    const onlineIds = new Set([...io.sockets.sockets.values()].map(s => s.data?.telegramId).filter(Boolean));
+    res.json({
+      players: players.map(p => ({
+        id: p._id, telegramId: p.telegramId, username: p.username,
+        bm: p.bm || 0, banned: p.banned || false,
+        lvl: p.savedData?.lvl || 1, gold: p.savedData?.gold || 0,
+        nexum: p.savedData?.nexumBalance || 0, gram: p.savedData?.gramBalance || 0,
+        referredBy: p.referredBy, createdAt: p.createdAt,
+        online: onlineIds.has(p.telegramId),
+      })),
+      total: count,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/player/:tid', adminAuth, async (req, res) => {
+  try {
+    const p = await PlayerModel.findOne({ telegramId: req.params.tid }).lean();
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    const [logs, referrer] = await Promise.all([
+      PlayerLogModel.find({ telegramId: req.params.tid }).sort({ at: -1 }).limit(30).lean(),
+      p.referredBy ? PlayerModel.findOne({ telegramId: p.referredBy }, 'username').lean() : null,
+    ]);
+    res.json({ player: p, logs, referrerUsername: referrer?.username || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/admin/player/:tid/ban', adminAuth, async (req, res) => {
+  try {
+    const p = await PlayerModel.findOneAndUpdate({ telegramId: req.params.tid }, { banned: true }, { new: true });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    // Kick if online
+    io.sockets.sockets.forEach(s => {
+      if (s.data?.telegramId === req.params.tid) {
+        s.emit('kicked', { reason: 'Вы заблокированы администратором' });
+        s.disconnect(true);
+      }
+    });
+    logPlayer(p.telegramId, p.username, 'ban', { by: 'admin', reason: req.body?.reason || '' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/admin/player/:tid/unban', adminAuth, async (req, res) => {
+  try {
+    const p = await PlayerModel.findOneAndUpdate({ telegramId: req.params.tid }, { banned: false }, { new: true });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    logPlayer(p.telegramId, p.username, 'unban', { by: 'admin' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
+  try {
+    const { gold = 0, nexum = 0, gram = 0 } = req.body || {};
+    const p = await PlayerModel.findOne({ telegramId: req.params.tid });
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    const saved = p.savedData || {};
+    if (gold)  saved.gold          = (saved.gold || 0) + Number(gold);
+    if (nexum) saved.nexumBalance  = (saved.nexumBalance || 0) + Number(nexum);
+    if (gram) {
+      saved.gramBalance = (saved.gramBalance || 0) + Number(gram);
+      const cur = _gramBalanceCache.get(p.telegramId) || 0;
+      _gramBalanceCache.set(p.telegramId, cur + Number(gram));
+      io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: saved.gramBalance });
+    }
+    p.savedData = saved;
+    p.markModified('savedData');
+    await p.save();
+    io.to(`tg_${p.telegramId}`).emit('adminGive', { gold: Number(gold), nexum: Number(nexum), gram: Number(gram) });
+    logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/transactions', adminAuth, async (req, res) => {
+  try {
+    const { status, page = 1 } = req.query;
+    const filter = status ? { status } : {};
+    const txs = await GramTxModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean();
+    res.json({ txs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/clans', adminAuth, async (req, res) => {
+  try {
+    const clans = await ClanModel.find({}, 'name icon level xp members').sort({ level: -1, xp: -1 }).lean();
+    res.json({ clans: clans.map(c => ({
+      id: c._id, name: c.name, icon: c.icon, level: c.level, xp: c.xp,
+      memberCount: c.members?.length || 0,
+      members: c.members?.map(m => ({ username: m.username, role: m.role, telegramId: m.telegramId })) || [],
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/admin/clan/:id', adminAuth, async (req, res) => {
+  try {
+    await ClanModel.deleteOne({ _id: req.params.id });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/chat', adminAuth, (req, res) => {
+  res.json({ messages: [...globalChatHistory] });
+});
+
+app.delete('/admin/chat/:idx', adminAuth, (req, res) => {
+  const idx = Number(req.params.idx);
+  if (idx >= 0 && idx < globalChatHistory.length) globalChatHistory.splice(idx, 1);
+  res.json({ ok: true });
+});
+
+app.post('/admin/broadcast', adminAuth, async (req, res) => {
+  try {
+    const { text, target = 'all' } = req.body || {};
+    if (!text) return res.status(400).json({ error: 'text required' });
+    if (target === 'online') {
+      let sent = 0;
+      io.sockets.sockets.forEach(s => {
+        if (s.data?.telegramId) {
+          tgApi('sendMessage', { chat_id: s.data.telegramId, text, parse_mode: 'HTML' }).catch(() => {});
+          sent++;
+        }
+      });
+      return res.json({ ok: true, sent });
+    }
+    // All players — batch with delay
+    const players = await PlayerModel.find({}, 'telegramId').lean();
+    let sent = 0;
+    for (let i = 0; i < players.length; i++) {
+      tgApi('sendMessage', { chat_id: players[i].telegramId, text, parse_mode: 'HTML' }).catch(() => {});
+      sent++;
+      if (i % 30 === 29) await new Promise(r => setTimeout(r, 1000));
+    }
+    res.json({ ok: true, sent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/market', adminAuth, async (req, res) => {
+  try {
+    const { page = 1 } = req.query;
+    const listings = await MarketListingModel.find({})
+      .sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean();
+    const sellerIds = [...new Set(listings.map(l => l.sellerTelegramId).filter(Boolean))];
+    const sellers = await PlayerModel.find({ telegramId: { $in: sellerIds } }, 'username telegramId referredBy').lean();
+    const sellerMap = Object.fromEntries(sellers.map(s => [s.telegramId, s]));
+    // Resolve referrers
+    const refIds = [...new Set(sellers.map(s => s.referredBy).filter(Boolean))];
+    const refs = await PlayerModel.find({ telegramId: { $in: refIds } }, 'username telegramId').lean();
+    const refMap = Object.fromEntries(refs.map(r => [r.telegramId, r.username]));
+    res.json({ listings: listings.map(l => ({
+      ...l,
+      sellerRef: sellerMap[l.sellerTelegramId]?.referredBy ? refMap[sellerMap[l.sellerTelegramId].referredBy] || null : null,
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/suspicious', adminAuth, async (req, res) => {
+  try {
+    const weekAgo = new Date(Date.now() - 7 * 86400000);
+    const players = await PlayerModel.find(
+      { createdAt: { $gte: weekAgo }, bm: { $gt: 3000 } },
+      'username telegramId bm savedData createdAt'
+    ).sort({ bm: -1 }).limit(50).lean();
+    res.json({ players: players.map(p => ({
+      telegramId: p.telegramId, username: p.username,
+      bm: p.bm, lvl: p.savedData?.lvl || 1,
+      gold: p.savedData?.gold || 0, createdAt: p.createdAt,
+      ageHours: Math.round((Date.now() - new Date(p.createdAt)) / 3600000),
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Special Quests (admin CRUD) ──────────────────────────────────────────────
+app.get('/admin/special-quests', adminAuth, async (req, res) => {
+  try { res.json({ quests: await SpecialQuestModel.find({}).sort({ createdAt: -1 }).lean() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/admin/special-quests', adminAuth, async (req, res) => {
+  try { res.json({ quest: await SpecialQuestModel.create(req.body) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/admin/special-quests/:id', adminAuth, async (req, res) => {
+  try {
+    const q = await SpecialQuestModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json({ quest: q });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/admin/special-quests/:id', adminAuth, async (req, res) => {
+  try { await SpecialQuestModel.deleteOne({ _id: req.params.id }); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Special Quests (public — game client) ─────────────────────────────────────
+app.get('/api/special-quests', async (req, res) => {
+  try {
+    const quests = await SpecialQuestModel.find({ active: true }).sort({ createdAt: -1 }).lean();
+    res.json({ quests });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Images: cache 30 days — sprites never change between deploys
 app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
 
@@ -720,6 +1001,10 @@ io.on('connection', socket => {
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
+      if (doc.banned) {
+        activeSessions.delete(telegramId);
+        return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
+      }
       authed = doc;
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
@@ -755,6 +1040,10 @@ io.on('connection', socket => {
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
+      if (doc.banned) {
+        activeSessions.delete(telegramId);
+        return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
+      }
       authed = doc;
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
@@ -1893,6 +2182,37 @@ io.on('connection', socket => {
   });
 
   socket.on('leaveRaid', () => { _cleanupRaid(socket.id); });
+
+  // ── Special Quests ────────────────────────────────────────────────────────
+  socket.on('completeSpecialQuest', async ({ questId } = {}) => {
+    if (!authed || !questId) return;
+    try {
+      const quest = await SpecialQuestModel.findById(questId).lean();
+      if (!quest || !quest.active) return;
+      const done = authed.savedData?.specialQuestsDone || [];
+      if (done.includes(String(questId))) return;
+      const newDone = [...done, String(questId)];
+      const upd = { 'savedData.specialQuestsDone': newDone };
+      if (quest.reward.gold)  upd['savedData.gold']         = (authed.savedData?.gold         || 0) + quest.reward.gold;
+      if (quest.reward.nexum) upd['savedData.nexumBalance'] = (authed.savedData?.nexumBalance  || 0) + quest.reward.nexum;
+      if (quest.reward.xp)    upd['savedData.xp']           = (authed.savedData?.xp            || 0) + quest.reward.xp;
+      await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: upd });
+      if (authed.savedData) {
+        authed.savedData.specialQuestsDone = newDone;
+        if (quest.reward.gold)  authed.savedData.gold         = (authed.savedData.gold         || 0) + quest.reward.gold;
+        if (quest.reward.nexum) authed.savedData.nexumBalance = (authed.savedData.nexumBalance  || 0) + quest.reward.nexum;
+        if (quest.reward.xp)    authed.savedData.xp           = (authed.savedData.xp            || 0) + quest.reward.xp;
+        if (_lastStats) {
+          _lastStats.specialQuestsDone = newDone;
+          if (quest.reward.gold)  _lastStats.gold         = authed.savedData.gold;
+          if (quest.reward.nexum) _lastStats.nexumBalance = authed.savedData.nexumBalance;
+          if (quest.reward.xp)    _lastStats.xp           = authed.savedData.xp;
+        }
+      }
+      logPlayer(authed.telegramId, authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });
+      socket.emit('specialQuestDone', { questId: String(questId), reward: quest.reward });
+    } catch(e) { /* silent */ }
+  });
 
   socket.on('disconnect', () => {
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
