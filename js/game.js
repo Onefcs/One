@@ -1282,9 +1282,13 @@ function loop(ts) {
   const rAFMs = ts - _loopTs; _loopTs = ts;
   _fpsAccum += rAFMs;
   if (_fpsAccum < _FPS_CAP_MS) { requestAnimationFrame(loop); return; }
-  // Consume one target frame; clamp leftover so a lag spike doesn't spiral
+  // 30fps is an upper bound, not a fixed rate. On slow devices the native rAF
+  // interval already exceeds _FPS_CAP_MS, so we must not carry leftover — if
+  // we did, the accumulator would keep growing each frame (spiral), eventually
+  // render on every rAF, and effectively halve the target to ~15fps. Reset to
+  // zero after each render so slow devices run at their native rate.
   const frameMs = Math.min(_fpsAccum, _FPS_CAP_MS * 2);
-  _fpsAccum = Math.max(0, _fpsAccum - _FPS_CAP_MS);
+  _fpsAccum = 0;
   const rawDt = Math.min(frameMs / 1000, 0.05);
   _dtBuf[_dtBufIdx] = rawDt;
   _dtBufIdx = (_dtBufIdx + 1) % _DT_SMOOTH_N;
@@ -1323,21 +1327,10 @@ window.addEventListener('load', () => {
     DPR = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
     W = appEl.clientWidth;
     H = appEl.clientHeight;
-    // Resize PixiJS renderer (autoDensity:true handles canvas CSS size).
-    // pixiInit() sets the WebGL renderer's initial resolution capped lower
-    // on mobile (_isMobile ? 1.5 : 2 — see pixi-world.js) to keep fill-rate
-    // down on weaker GPUs, but this resize() runs immediately after on
-    // every load (and again on every orientation change/resize) — passing
-    // the un-capped UI DPR here silently overwrote that mobile cap with up
-    // to 2x on every phone with devicePixelRatio > 1.5, i.e. effectively
-    // all of them. That's ~1.8x more pixels for the GPU to rasterize than
-    // intended, every frame, with zero JS-side cost showing up in the perf
-    // overlay's upd/rnd timers (those only measure issuing the draw calls,
-    // not the GPU's raster/composite/present work) — a plausible cause of
-    // frames missing vsync on alternating beats despite low measured JS
-    // cost. Recompute with the same mobile-aware cap pixiInit used instead
-    // of reusing the UI overlay's DPR.
-    pixiResize(W, H, Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2));
+    // WebGL resolution separate from UI-canvas DPR: mobile gets 1.0 so the
+    // GPU rasterizes ~44% fewer pixels per frame vs 1.5.
+    const _pixiRes = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.0 : 1.5);
+    pixiResize(W, H, _pixiRes);
     // UI overlay — 2D canvas for HUD, joystick, name labels, etc.
     _uiOverlay.width  = Math.round(W * DPR);
     _uiOverlay.height = Math.round(H * DPR);
