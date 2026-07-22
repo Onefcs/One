@@ -818,12 +818,14 @@ function _initTelegramWidget() {
 
 function _showCharSelect(savedData) {
   if (savedData && savedData.type) {
-    // Character already exists — skip selection screen, go straight to loading
+    // Character already exists — skip selection, show only the loading overlay
     const el = document.getElementById('char-select');
     if (el) {
       el.style.display = 'flex';
-      const cards = el.querySelector('.cs-cards');
-      if (cards) cards.style.display = 'none';
+      // Hide all selection UI, leave only #cs-loading visible
+      Array.from(el.children).forEach(child => {
+        if (child.id !== 'cs-loading') child.style.display = 'none';
+      });
     }
     selectChar(savedData.type);
   } else {

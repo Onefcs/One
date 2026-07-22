@@ -93,6 +93,8 @@ function csShow(savedData) {
   const el = document.getElementById('char-select');
   if (!el) return;
   el.style.display = 'flex';
+  // Restore any children hidden by the auto-load path
+  Array.from(el.children).forEach(child => { child.style.display = ''; });
   const loadEl = document.getElementById('cs-loading');
   if (loadEl) loadEl.style.display = 'none';
 
