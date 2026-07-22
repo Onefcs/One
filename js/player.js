@@ -184,7 +184,7 @@ function recompute() {
 }
 
 function getAvailableSkillPoints() {
-  const total = (player.lvl || 1) * 3;
+  const total = (player.lvl || 1) * 3 + (player.bonusSP || 0);
   const spent = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
   return total - spent;
 }

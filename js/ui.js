@@ -223,9 +223,7 @@ function updateUpgradeUI() {
   if (!el) return;
   const goldLbl = document.getElementById('upg-gold-lbl');
   if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#f1c40f') + ' ' + player.gold;
-  const totalSP = (player.lvl || 1) * 3 + (player.bonusSP || 0);
-  const spentSP = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
-  const availSP = totalSP - spentSP;
+  const availSP = getAvailableSkillPoints();
   const spLbl = document.getElementById('upg-sp-lbl');
   if (spLbl) spLbl.textContent = `Очки навыка: ${availSP}`;
   const u = player.upgrades || {};
