@@ -66,7 +66,19 @@ class Room {
     this._pSeq = 0;
     this.enemies.forEach((e, i) => { e._idx = i; });
     this._lastTick = Date.now();
+    this._interval = null;
+  }
+
+  _startLoop() {
+    if (this._interval) return;
+    this._lastTick = Date.now();
     this._interval = setInterval(() => this._tick(), TICK_MS);
+  }
+
+  _stopLoop() {
+    if (!this._interval) return;
+    clearInterval(this._interval);
+    this._interval = null;
   }
 
   get dungeonData() {
@@ -327,6 +339,7 @@ class Room {
       _known: new Map(), _knownE: new Map(),
       _profileRev: 1, _seq: ++this._pSeq,
     });
+    if (this.players.size === 1) this._startLoop();
     return spawn;
   }
 
@@ -378,8 +391,8 @@ class Room {
 
   removePlayer(socketId) {
     this.players.delete(socketId);
-    // Drop stale known-state so a returning player is treated as unseen
     this.players.forEach(p => p._known.delete(socketId));
+    if (this.players.size === 0) this._stopLoop();
   }
 
   setPlayerChar(socketId, type, savedStats = null) {
