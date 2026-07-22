@@ -9,7 +9,7 @@ const _FT_BUF = new Float32Array(60);
 let _ftIdx = 0, _ftFull = false;
 // Rolling max frame time — highlights spikes
 let _ftWorstMs = 0, _ftWorstDecay = 0;
-// Adaptive quality tier — auto-degrades when FPS stays below 30 for ~3s
+// Adaptive quality tier — auto-degrades when FPS stays below 20 for ~3s
 let _qualityTier = 0, _lowFpsFrames = 0;
 
 function _perfToggleTap(cx, cy) {
@@ -33,11 +33,9 @@ function _drawPerf(frameMs) {
   }
   const avgMs = sum / samples;
   const fps = avgMs > 0 ? Math.round(1000 / avgMs) : 0;
-  // Adaptive quality: drop to tier 1 when FPS stays < 30 for ~3s; recover when FPS > 50.
-  // This is a safety net for weak devices — normal mobile play stays at tier 0
-  // since render is already capped at ~30fps (see loop()) well before this kicks in.
-  if (fps < 30) { if (++_lowFpsFrames > 180) _qualityTier = 1; }
-  else if (fps > 50) { _lowFpsFrames = Math.max(0, _lowFpsFrames - 2); if (_lowFpsFrames === 0) _qualityTier = 0; }
+  // Adaptive quality: drop to tier 1 when FPS stays < 20 for ~3s; recover when FPS >= 25.
+  if (fps < 20) { if (++_lowFpsFrames > 90) _qualityTier = 1; }
+  else if (fps >= 25) { _lowFpsFrames = Math.max(0, _lowFpsFrames - 1); if (_lowFpsFrames === 0) _qualityTier = 0; }
   // Decay worst-case slowly
   if (maxFt > _ftWorstMs) { _ftWorstMs = maxFt; _ftWorstDecay = 180; }
   else if (--_ftWorstDecay <= 0) { _ftWorstMs = maxFt; }
@@ -52,13 +50,13 @@ function _drawPerf(frameMs) {
   const _oldest = _ftFull ? _ftIdx : 0;
   for (let i = 0; i < samples; i++) {
     const ft = _FT_BUF[(_oldest + i) % 60];
-    const h = Math.min(bh, ft / 33.3 * bh);
-    ctx.fillStyle = ft > 25 ? '#f55' : ft > 16.7 ? '#fa0' : '#4d4';
+    const h = Math.min(bh, ft / 50 * bh);
+    ctx.fillStyle = ft > 50 ? '#f55' : ft > 40 ? '#fa0' : '#4d4';
     ctx.fillRect(bx0 + i * bw, by0 - h, bw - 1, h);
   }
-  // 60fps line
+  // 30fps reference line
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.fillRect(bx0 - 2, by0 - bh * (16.7 / 33.3), samples * bw + 4, 1);
+  ctx.fillRect(bx0 - 2, by0 - bh * (33.3 / 50), samples * bw + 4, 1);
 
   // Text stats
   const mem = performance.memory;
@@ -87,7 +85,7 @@ function _drawPerf(frameMs) {
     ctx.fillStyle = '#000';
     ctx.fillText(ln, bx0 + 1, ty0 + i * 14 + 1);
     let col = '#ddd';
-    if (i === 0) col = fps < 40 ? '#f55' : fps < 55 ? '#fa0' : '#4f4';
+    if (i === 0) col = fps < 20 ? '#f55' : fps < 27 ? '#fa0' : '#4f4';
     else if (i === 1 && _pingMs >= 0) col = _pingMs > 150 ? '#f55' : _pingMs > 80 ? '#fa0' : '#4f4';
     ctx.fillStyle = col;
     ctx.fillText(ln, bx0, ty0 + i * 14);
@@ -629,9 +627,10 @@ function update(dt) {
         op.y = s0.y + (s1.y - s0.y) * a;
       }
     } else if (op.targetX !== undefined) {
-      // Fallback: lerp until 2 snapshots accumulate (~50ms after join)
-      op.x += (op.targetX - op.x) * Math.min(1, 40 * dt);
-      op.y += (op.targetY - op.y) * Math.min(1, 40 * dt);
+      // Fallback: exponential lerp — framerate-independent at any FPS
+      const _lf = 1 - Math.exp(-15 * dt);
+      op.x += (op.targetX - op.x) * _lf;
+      op.y += (op.targetY - op.y) * _lf;
     }
     const _mdx = op.x - prevX, _mdy = op.y - prevY;
     op.moving = _mdx * _mdx + _mdy * _mdy > 0.1;
@@ -1268,36 +1267,25 @@ function restartGame() {
 // adaptive-quality tier (below) cut visual cost on devices that genuinely
 // can't keep up, instead of an artificial cadence cap.
 let _loopTs = 0;
-// Two consecutive rAF callbacks were measured landing at alternating
-// short/long intervals (confirmed three independent ways: the perf overlay's
-// own frame-time bars, a raw-pixel diff of a gameplay recording, and — most
-// clearly — a dedicated slow-run recording showing world-scroll distance per
-// frame alternating between a small and a large step in lockstep with that
-// same short/long timing). Reducing render cost (the WebGL resolution fix)
-// didn't change the pattern at all, so it isn't a "too much work per frame"
-// problem — the rAF delivery itself is uneven on the affected devices.
-// Per-entity movement is (correctly) dt-scaled, so uneven dt directly
-// becomes uneven step SIZE on screen every other frame — mathematically
-// correct average speed, but visually reads as a constant rhythmic stutter,
-// which is what was being reported as "the whole world/camera jitters."
-// A flat N-frame average of dt cancels a period-2 alternating pattern only
-// when N is EVEN — an odd window still carries a phase-dependent bias (e.g.
-// N=3 leaves ~2.0/2.8 instead of a flat value; verified before picking this
-// number). Widened from 2 to 4 frames: a follow-up recording after the
-// 2-frame version showed the steady-hold portion of a run was already
-// perfectly even, but transitions (starting/stopping) still showed some
-// raggedness — a slightly wider (but still even) window trades a few more
-// ms of lag for more robustness against irregularity that isn't a clean
-// period-2 alternation, while still fully cancelling period-2 exactly like
-// N=2 did. Costs ~2 frames (~33ms) of added input lag — still negligible
-// next to the game's existing 65ms other-player interpolation delay and
-// 100+ms network ping.
+// Frame-rate cap: accumulate rAF time and only update+render once enough
+// has built up for a 30fps frame. Using an accumulator (not a simple "skip
+// if < 33ms") makes the cap exact on any display refresh rate (60/90/120Hz)
+// without the uneven gap sequence that a raw timestamp compare produces.
+const _FPS_CAP_MS = 1000 / 30; // ~33.33ms
+let _fpsAccum = 0;
+// dt smoother: 4-frame even window cancels the period-2 rAF jitter seen on
+// some mobile GPUs while keeping input lag under ~130ms.
 const _DT_SMOOTH_N = 4;
-const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 60);
+const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 function loop(ts) {
-  const frameMs = ts - _loopTs; _loopTs = ts;
-  const rawDt = Math.min((ts - lastTs) / 1000, .033); lastTs = ts;
+  const rAFMs = ts - _loopTs; _loopTs = ts;
+  _fpsAccum += rAFMs;
+  if (_fpsAccum < _FPS_CAP_MS) { requestAnimationFrame(loop); return; }
+  // Consume one target frame; clamp leftover so a lag spike doesn't spiral
+  const frameMs = Math.min(_fpsAccum, _FPS_CAP_MS * 2);
+  _fpsAccum = Math.max(0, _fpsAccum - _FPS_CAP_MS);
+  const rawDt = Math.min(frameMs / 1000, 0.05);
   _dtBuf[_dtBufIdx] = rawDt;
   _dtBufIdx = (_dtBufIdx + 1) % _DT_SMOOTH_N;
   let dt = 0;
@@ -1368,5 +1356,5 @@ window.addEventListener('load', () => {
   window.addEventListener('resize', resize);
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
-  requestAnimationFrame(ts => { lastTs = ts; _loopTs = ts; requestAnimationFrame(loop); });
+  requestAnimationFrame(ts => { _loopTs = ts; requestAnimationFrame(loop); });
 });
