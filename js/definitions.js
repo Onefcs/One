@@ -16,13 +16,13 @@ const CLAN_LEVELS = [
 ];
 
 const UPGRADE_DEF = {
-  atk:        { label:'Атака',       icon:'sword',      baseCost:30,  desc:'+3 ATK'       },
-  def:        { label:'Защита',      icon:'shield',     baseCost:30,  desc:'+2 DEF'       },
-  hp:         { label:'Здоровье',    icon:'heart',      baseCost:25,  desc:'+25 MaxHP'    },
+  atk:        { label:'Атака',       icon:'sword',      baseCost:30,  desc:'+1 ATK'       },
+  def:        { label:'Защита',      icon:'shield',     baseCost:30,  desc:'+1 DEF'       },
+  hp:         { label:'Здоровье',    icon:'heart',      baseCost:25,  desc:'+10 MaxHP'    },
   atkSpeed:   { label:'Скор. атаки', icon:'lightning',  baseCost:50,  desc:'+0.05 уд/с'  },
-  critChance: { label:'Шанс крита',  icon:'star',       baseCost:60,  desc:'+2.5%'        },
-  critPower:  { label:'Сила крита',  icon:'flame',      baseCost:60,  desc:'+15%'         },
-  hpRegen:    { label:'Реген HP',    icon:'hpPlus',     baseCost:80,  desc:'+0.5/сек'     },
+  critChance: { label:'Шанс крита',  icon:'star',       baseCost:60,  desc:'+1%'          },
+  critPower:  { label:'Сила крита',  icon:'flame',      baseCost:60,  desc:'+3%'          },
+  hpRegen:    { label:'Реген HP',    icon:'hpPlus',     baseCost:80,  desc:'+0.1/сек'     },
 };
 
 const QUEST_DEF = [

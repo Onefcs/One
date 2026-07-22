@@ -149,9 +149,9 @@ function _skillDirMult(dx, dy, r, arcDot, mult) {
 
 function recompute() {
   const u = player.upgrades || {};
-  let a = player.baseAtk + (u.atk || 0) * 3;
-  let d = player.baseDef + (u.def || 0) * 2;
-  let h = player.baseMaxHp + (u.hp || 0) * 25;
+  let a = player.baseAtk + (u.atk || 0) * 1;
+  let d = player.baseDef + (u.def || 0) * 1;
+  let h = player.baseMaxHp + (u.hp || 0) * 10;
   let extraCrit = 0, extraAS = 0, hpPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
@@ -177,10 +177,10 @@ function recompute() {
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
-  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.15;
+  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit);
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
-  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.5 + (buffs.regen > 0 ? 2 : 0);
+  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0);
 }
 
 function getAvailableSkillPoints() {
