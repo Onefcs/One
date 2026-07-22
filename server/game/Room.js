@@ -186,7 +186,18 @@ class Room {
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = p; }
       }
-      if (!closest) { e._targetId = null; return; }
+      // No eligible target anywhere in the room (e.g. a solo player just
+      // died, or everyone left/entered a safe zone) — snap straight back to
+      // spawn instead of freezing mid-chase wherever it happened to be. The
+      // enemy only ever moves while aggro is true, so this is the only place
+      // that state needs resetting; without it an enemy could sit stalled
+      // off its spawn point indefinitely, only recovering once some other
+      // player later wanders close enough to re-target it.
+      if (!closest) {
+        e._targetId = null;
+        if (e.aggro) { e.aggro = false; e.x = e.spawnX; e.y = e.spawnY; e._shp = -1; }
+        return;
+      }
       e._targetId = closest.socketId;
 
       const closestD = Math.sqrt(closestD2);
@@ -198,7 +209,15 @@ class Room {
       // player briefly ducking behind a corner mid-chase doesn't flicker
       // the enemy off and on.
       if (closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
-      if (closestD > e.aggroR * 2.2) e.aggro = false;
+      // Same immediate-teleport-home as above: the closest remaining player
+      // isn't necessarily near THIS enemy (they could be dead here and the
+      // "closest" is someone else across the floor) — de-aggroing shouldn't
+      // leave the enemy stranded wherever the chase ended.
+      if (closestD > e.aggroR * 2.2 && e.aggro) {
+        e.aggro = false;
+        e.x = e.spawnX; e.y = e.spawnY;
+        e._shp = -1;
+      }
 
       if (e.aggro) {
         if (closestD > e.size + 14) {
