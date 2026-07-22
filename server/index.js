@@ -1034,7 +1034,7 @@ io.on('connection', socket => {
         const rows = players.map(p => ({
           username: p.username,
           bm: p.bm || 0,
-          level: p.savedData?.level || 1,
+          level: p.savedData?.lvl || p.savedData?.level || 1,
         }));
         // If current player not in top-50, find their rank and append
         const myUsername = authed?.username;
@@ -1044,7 +1044,7 @@ io.on('connection', socket => {
           rows.push({
             username: myUsername,
             bm: authed.bm || 0,
-            level: authed.savedData?.level || 1,
+            level: (_lastStats?.lvl) || authed.savedData?.lvl || authed.savedData?.level || 1,
             rank: myRank,
             isSelf: true,
             gap: true,

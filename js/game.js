@@ -300,12 +300,6 @@ function update(dt) {
       if (_buffs[btype] <= 0) {
         _buffs[btype] = 0;
         _buffChanged = true;
-        // auto-reapply if more in inventory
-        const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
-        if (bdef && countMaterial(bdef.id) > 0) {
-          useBuffPotion(bdef.id);
-          _buffChanged = false;
-        }
       }
     }
   }
