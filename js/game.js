@@ -1209,7 +1209,15 @@ function playerDie() {
   state = 'dead';
   const modal = document.getElementById('death-modal');
   if (!modal) return;
-  _deathPenaltyUntil = Date.now() + 5 * 60 * 1000;
+  // Stored as remaining seconds in player.buffs (like every other timed buff/
+  // debuff) instead of a standalone client-only timestamp — that variable
+  // reset to 0 on every page refresh/reconnect since it was never part of
+  // the saved/restored player state, silently letting a refresh clear the
+  // penalty. buffs.* already round-trips through saveProgress/restoreFromSave
+  // and ticks down in the existing per-frame buff-timer loop for free.
+  // Assigning (not adding) also gives the "dying again resets the timer"
+  // behavior for free.
+  if (player) (player.buffs || (player.buffs = {})).deathPenalty = 5 * 60;
   const info = document.getElementById('death-info');
   if (info && player) {
     info.innerHTML =

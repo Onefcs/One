@@ -1388,10 +1388,10 @@ function drawBuffStrip() {
   if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + 'с', color:'#88ccff', debuff:true });
   if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + 'с', color:'#ff8844', debuff:true });
   if ((p.freezeTimer || 0) > 0) chips.push({ kind:'icon', icon:'iceNova',   label: Math.ceil(p.freezeTimer) + 'с', color:'#66ddff', debuff:true });
-  // Death XP penalty
-  const _penaltyLeft = typeof _deathPenaltyUntil !== 'undefined' ? (_deathPenaltyUntil - Date.now()) : 0;
+  // Death XP penalty — remaining seconds, same as any other player.buffs entry
+  const _penaltyLeft = (p.buffs || {}).deathPenalty || 0;
   if (_penaltyLeft > 0) {
-    const _pm = Math.ceil(_penaltyLeft / 60000);
+    const _pm = Math.ceil(_penaltyLeft / 60);
     chips.push({ kind:'icon', icon:'star', label: '−XP ' + _pm + 'м', color:'#cc4444', debuff:true });
   }
 

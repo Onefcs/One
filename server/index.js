@@ -1222,10 +1222,17 @@ io.on('connection', socket => {
       // Gold
       saved.gold = (saved.gold || 0) + pkg.gold;
 
-      // Buff potions into potionBag
-      const potionBag = { pt1: 0, pt2: 0, ...(saved.potionBag || {}) };
-      _VIP_BP.forEach(bp => { potionBag[bp.id] = (potionBag[bp.id] || 0) + pkg.potions; });
-      saved.potionBag = potionBag;
+      // Buff potions (bp_hp/bp_exp/... — ITEM_DEF slot 'buff_potion') are
+      // stackable inventory items, not potionBag entries. potionBag only
+      // holds pt1/pt2 HP potions; useBuffPotion() (player.js) looks these up
+      // via removeFromInventory() against player.inventory, so writing them
+      // into potionBag instead — as this used to — meant they were paid for
+      // and deducted but never actually reachable anywhere in the UI.
+      _VIP_BP.forEach(bp => {
+        const existing = inv.find(i => i.id === bp.id);
+        if (existing) existing.qty = (existing.qty || 1) + pkg.potions;
+        else inv.push({ ...bp, qty: pkg.potions });
+      });
 
       // Armor set
       if (pkg.armor) {
@@ -1270,7 +1277,6 @@ io.on('connection', socket => {
       if (_lastStats) {
         _lastStats.inventory = inv;
         _lastStats.gold = saved.gold;
-        _lastStats.potionBag = potionBag;
         if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
       }
       socket.data.vipLevel = _vipLvl;
@@ -1279,7 +1285,6 @@ io.on('connection', socket => {
         pkgId,
         newBalance:  _gramBalance,
         newGold:     saved.gold,
-        newPotionBag: potionBag,
         newInventory: inv,
         newBonusSP:  saved.bonusSP || 0,
         vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },

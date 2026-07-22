@@ -1,8 +1,6 @@
 // Delegates to shared/definitions.js so client and server can't drift apart.
 function _isStackable(it) { return isStackableItem(it); }
 
-let _deathPenaltyUntil = 0;
-
 function invSlotCount() {
   return player.inventory.length;
 }
@@ -215,7 +213,7 @@ function upgradeStats(key) {
 
 function gainXP(amount) {
   if ((player.buffs || {}).exp > 0) amount *= 2;
-  if (Date.now() < _deathPenaltyUntil) amount = Math.floor(amount * 0.5);
+  if ((player.buffs || {}).deathPenalty > 0) amount = Math.floor(amount * 0.5);
   player.xp += amount;
   while (player.xp >= player.xpNext) {
     player.xp -= player.xpNext;
