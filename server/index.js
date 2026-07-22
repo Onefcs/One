@@ -1755,8 +1755,20 @@ io.on('connection', socket => {
     });
   });
 
+  // Returns true if attacker and target share a party or clan (PvP immune)
+  function _isPvpImmune(attackerId, targetId) {
+    const aParty = playerParty.get(attackerId);
+    const tParty = playerParty.get(targetId);
+    if (aParty && aParty === tParty) return true;
+    const aPlayer = currentRoom?.players.get(attackerId);
+    const tPlayer = currentRoom?.players.get(targetId);
+    if (aPlayer?.clanName && aPlayer.clanName === tPlayer?.clanName) return true;
+    return false;
+  }
+
   socket.on('pvpAttack', ({ targetId }) => {
     if (!currentRoom) return;
+    if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
@@ -1765,6 +1777,7 @@ io.on('connection', socket => {
 
   socket.on('pvpSkillAttack', ({ targetId, multiplier }) => {
     if (!currentRoom) return;
+    if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
@@ -1773,6 +1786,7 @@ io.on('connection', socket => {
 
   socket.on('pvpSkillCC', ({ targetId, type, duration }) => {
     if (!currentRoom) return;
+    if (_isPvpImmune(socket.id, targetId)) return;
     const attacker = currentRoom.players.get(socket.id);
     if (!attacker || !attacker.pvpMode) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;

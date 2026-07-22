@@ -24,22 +24,22 @@ const ENEMY_DEF = [
   { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
   { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
   { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:220, atk:26,  def:6,  spd:66,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
-  // Floor 2 — Goblins (2× stronger)
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:450,  atk:96,  def:6,  spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:540,  atk:120, def:8,  spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:2100, atk:240, def:16, spd:55,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
-  // Floor 3 — Mushrooms (2× stronger)
-  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:660,  atk:132, def:10, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:780,  atk:168, def:12, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:3000, atk:330, def:24, spd:45,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
-  // Floor 4 — Ghosts (2× stronger)
-  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:900,  atk:210, def:14, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:780,  atk:180, def:12, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:4200, atk:420, def:30, spd:85,  xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
-  // Floor 5 — Golems (2× stronger)
-  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:1200, atk:270, def:20, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:1080, atk:240, def:24, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:6000, atk:600, def:40, spd:40,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
+  // Floor 2 — Goblins (4× original)
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:900,  atk:192, def:12, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:1080, atk:240, def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:4200, atk:480, def:32, spd:55,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  // Floor 3 — Mushrooms (4× original)
+  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:1320, atk:264, def:20, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:1560, atk:336, def:24, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:6000, atk:660, def:48, spd:45,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
+  // Floor 4 — Ghosts (4× original)
+  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:1800, atk:420, def:28, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:1560, atk:360, def:24, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:8400, atk:840, def:60, spd:85,  xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
+  // Floor 5 — Golems (4× original)
+  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:2400, atk:540, def:40, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:2160, atk:480, def:48, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:12000,atk:1200,def:80, spd:40,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
   // Floors 6+ — legacy enemies
   { eid:'orc',    name:'Орк',    color:'#964', size:20, hp:130, atk:20, def:8,  spd:56, xp:4,  gold:[1,3],   isBoss:false, eType:'warrior' },
   { eid:'troll',  name:'Тролль', color:'#575', size:24, hp:230, atk:28, def:12, spd:40, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
