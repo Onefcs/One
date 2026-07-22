@@ -7,6 +7,9 @@ const SERVER_URL = (() => {
 })();
 
 let _savedData = null;
+// Set by the authOk reconnect-guard, consumed by the gameStart handler —
+// see comment there for why a reconnect must not reposition/restore.
+let _isReconnectRejoin = false;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
@@ -46,7 +49,6 @@ function netConnect(onReady) {
 
   socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
     netUsername = username;
-    _savedData = savedData || null;
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     // Store GRAM info globally
     window._gramBalance   = gramBalance   || 0;
@@ -54,6 +56,23 @@ function netConnect(onReady) {
     window._refLink       = refLink       || '';
     window._vipData       = vipData       || { level: 0, deposited: 0, pending: [] };
     window._nexumBalance  = nexumBalance  || 0;
+
+    // netConnect()'s 'connect' handler re-sends the login on EVERY socket.io
+    // reconnect, not just the first — mobile network drops/backgrounding
+    // trigger this routinely mid-session. authOk always fires in response,
+    // so without this guard every reconnect re-ran the char-select flow,
+    // which calls selectChar() -> player = makePlayer(type), silently
+    // discarding whatever progress happened since the last save. If we
+    // already have a live player, this is a reconnect, not a fresh login:
+    // just re-establish the server-side room/floor with our current
+    // in-memory stats and leave the local player untouched.
+    if (typeof player !== 'undefined' && player) {
+      _isReconnectRejoin = true;
+      netSelectChar(player.type, _buildSaveStats());
+      return;
+    }
+
+    _savedData = savedData || null;
     const _ls = document.getElementById('login-screen');
     if (_ls) {
       _ls.classList.add('splash-out');
@@ -100,6 +119,17 @@ function netConnect(onReady) {
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
+    if (_isReconnectRejoin) {
+      // Resuming after a socket.io reconnect (see authOk guard above) — the
+      // dungeon/enemy resync above is still needed since this is a fresh
+      // server-side room attachment, but the player already has live,
+      // current stats and a real position: don't teleport back to spawn and
+      // don't run restoreFromSave, which would stomp them with whatever
+      // (possibly stale) savedData this reconnect's authOk carried.
+      _isReconnectRejoin = false;
+      csOnServerReady();
+      return;
+    }
     if (player) {
       player.x = d.spawn.x; player.y = d.spawn.y;
       camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
@@ -839,9 +869,9 @@ function _showCharSelect(savedData) {
 }
 
 
-function _emitSaveProgress() {
-  if (!player || state !== 'playing') return;
-  const stats = {
+function _buildSaveStats() {
+  if (!player) return null;
+  return {
     type: player.type,
     floor: dungeonLvl || 1,
     lvl: player.lvl, xp: player.xp, xpNext: player.xpNext,
@@ -862,7 +892,11 @@ function _emitSaveProgress() {
     skillXp: player.skillXp || {},
     bonusSP: player.bonusSP || 0,
   };
-  if (socket?.connected) socket.emit('saveProgress', { stats });
+}
+
+function _emitSaveProgress() {
+  if (!player || state !== 'playing') return;
+  if (socket?.connected) socket.emit('saveProgress', { stats: _buildSaveStats() });
 }
 
 // Debounced save — serializing the full inventory + equipment on every kill
