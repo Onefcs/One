@@ -1022,6 +1022,7 @@ function exitRaidMode() {
 
 function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
+  try { localStorage.setItem('_lastCharType', type); } catch (_) {}
   player = makePlayer(type);
   dungeonLvl = 1;
   const savedStats = (typeof _savedData !== 'undefined' && _savedData?.type === type) ? _savedData : null;
@@ -1230,6 +1231,7 @@ function respawnPlayer() {
 
 function restartGame() {
   if (state !== 'dead') return;
+  try { localStorage.removeItem('_lastCharType'); } catch (_) {}
   document.getElementById('death-modal').style.display = 'none';
   targetId = null; targetIsPlayer = false; pvpMode = false; autoAttackMode = false;
   serverEnemies = []; otherPlayers = new Map();

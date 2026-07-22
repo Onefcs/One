@@ -817,17 +817,20 @@ function _initTelegramWidget() {
 }
 
 function _showCharSelect(savedData) {
-  if (savedData && savedData.type) {
-    // Character already exists — skip selection, show only the loading overlay
+  // Prefer server savedData, fall back to localStorage for fast refresh
+  // before the first DB write completes (race condition on reconnect).
+  const type = savedData?.type || (() => {
+    try { return localStorage.getItem('_lastCharType'); } catch (_) { return null; }
+  })();
+  if (type) {
     const el = document.getElementById('char-select');
     if (el) {
       el.style.display = 'flex';
-      // Hide all selection UI, leave only #cs-loading visible
       Array.from(el.children).forEach(child => {
         if (child.id !== 'cs-loading') child.style.display = 'none';
       });
     }
-    selectChar(savedData.type);
+    selectChar(type);
   } else {
     csShow(savedData);
   }
