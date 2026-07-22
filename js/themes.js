@@ -100,7 +100,7 @@ function _floorProps(mod, entries) {
 // overwritten in place as the art is iterated on, so a version query string
 // is the only way a returning browser ever sees the new content instead of
 // its stale cached copy. Bump this whenever floor/wall_body/wall_cap change.
-const _TILE_TEX_V = 3;
+const _TILE_TEX_V = 4;
 const _TILE_TEX_DEF = {
   floor:     'images/tiles/floor.png',
   wallBody:  'images/tiles/wall_body.png',
