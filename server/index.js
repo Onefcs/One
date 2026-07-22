@@ -84,6 +84,15 @@ const _gramBalanceCache = new Map();
 // Single-session enforcement: telegramId → socket.id of the active session
 const activeSessions = new Map();
 
+// telegramId → in-flight DB-persist promise from a just-disconnected socket.
+// A page refresh usually disconnects the old socket (cleanly, fast) well
+// before the new page finishes loading and logs back in — by then the old
+// socket object is gone, so a login handler has nothing to await against
+// even though that socket's debounced save may still be writing to Mongo.
+// Any login for this telegramId awaits the pending entry (if any) before
+// reading fresh data, so the read can never land ahead of that write.
+const _pendingFlush = new Map();
+
 // ── VIP item data (server-side subset of js/definitions.js) ──────────────────
 const _VIP_WEAPONS = {
   assasin: {
@@ -1056,6 +1065,11 @@ io.on('connection', socket => {
           _prevSocket.disconnect(true);
         }
       }
+      // Covers the far more common refresh case: the old socket already
+      // disconnected on its own (faster than this page loaded) and its
+      // flush is registered here instead of reachable via a live socket.
+      const _pending = _pendingFlush.get(telegramId);
+      if (_pending) await _pending.catch(() => {});
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
@@ -1101,6 +1115,11 @@ io.on('connection', socket => {
           _prevSocket2.disconnect(true);
         }
       }
+      // Covers the far more common refresh case: the old socket already
+      // disconnected on its own (faster than this page loaded) and its
+      // flush is registered here instead of reachable via a live socket.
+      const _pending2 = _pendingFlush.get(telegramId);
+      if (_pending2) await _pending2.catch(() => {});
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
       if (!doc) doc = await PlayerModel.create({ telegramId, username });
@@ -2317,12 +2336,20 @@ io.on('connection', socket => {
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     // Flush any pending debounced save immediately (same logic socket.data
     // ._flushNow exposes for a reconnecting session to await synchronously).
-    socket.data._flushNow?.();
+    // Registered in _pendingFlush (keyed by account, not socket) so a login
+    // that arrives after this socket is already gone can still await the
+    // write landing — see _pendingFlush comment above.
     if (authed) {
-      if (activeSessions.get(authed.telegramId) === socket.id) {
-        activeSessions.delete(authed.telegramId);
-        _gramBalanceCache.delete(authed.telegramId);
+      const _tid = authed.telegramId;
+      const _p = Promise.resolve(socket.data._flushNow?.())
+        .finally(() => { if (_pendingFlush.get(_tid) === _p) _pendingFlush.delete(_tid); });
+      _pendingFlush.set(_tid, _p);
+      if (activeSessions.get(_tid) === socket.id) {
+        activeSessions.delete(_tid);
+        _gramBalanceCache.delete(_tid);
       }
+    } else {
+      socket.data._flushNow?.();
     }
     _cleanupRaid(socket.id);
     _cleanupLobby(socket.id);
