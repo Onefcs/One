@@ -81,6 +81,14 @@ let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
 // In-memory gram balance cache: telegramId → balance (survives autosave overwrites)
 const _gramBalanceCache = new Map();
 
+// Same pattern for Nexum. Nexum is server-granted only (mob drops, special-quest
+// rewards, admin give) but it also rides along inside the client's saveProgress
+// blob, so without an authoritative cache a stale client save could roll back a
+// grant the client hadn't observed yet (e.g. a quest/admin nexum award landing
+// between two saves). All server-side writers update this map; every persist
+// reads nexumBalance from here, never from the client payload.
+const _nexumBalanceCache = new Map();
+
 // Single-session enforcement: telegramId → socket.id of the active session
 const activeSessions = new Map();
 
@@ -520,7 +528,31 @@ mongoose.connect(process.env.MONGODB_URI, {
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connect error:', err));
 
-app.use(helmet({ contentSecurityPolicy: false }));
+// Behind Railway's reverse proxy — needed so req.ip reflects the real client
+// (used by the admin-login brute-force limiter below), not the proxy hop.
+app.set('trust proxy', 1);
+
+// Content-Security-Policy was previously disabled entirely. It's re-enabled
+// here as defence-in-depth on top of the existing output escaping. 'unsafe-inline'
+// is unavoidable for now (index.html has inline <script> blocks and 100+ inline
+// on* handlers), but CSP still blocks loading executable script from any origin
+// other than the ones whitelisted here, and keeps object-src/base-uri locked
+// down via helmet's defaults. All other helmet defaults (incl. X-Frame-Options
+// SAMEORIGIN / frame-ancestors 'self') are preserved unchanged.
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      scriptSrc:     ["'self'", "'unsafe-inline'", 'https://telegram.org', 'https://cdn.socket.io'],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrc:      ["'self'", "'unsafe-inline'"],
+      styleSrcAttr:  ["'unsafe-inline'"],
+      imgSrc:        ["'self'", 'data:', 'blob:'],
+      connectSrc:    ["'self'", 'https://cdn.socket.io', 'wss:', 'ws:'],
+      fontSrc:       ["'self'", 'data:'],
+    },
+  },
+}));
 app.use(compression());
 app.use(express.json({ limit: '256kb' }));
 
@@ -549,12 +581,48 @@ async function logPlayer(telegramId, username, event, meta) {
   } catch {}
 }
 
+// ── Admin login brute-force limiter ────────────────────────────────────────────
+// Per-IP failed-attempt tracker: after LOGIN_MAX_FAILS failures the IP is locked
+// out for LOGIN_LOCK_MS. A successful login clears the counter. In-memory (this
+// process holds all state anyway); good enough to blunt online password guessing.
+const _loginFails = new Map(); // ip → { n, lockedUntil }
+const LOGIN_MAX_FAILS = 8;
+const LOGIN_LOCK_MS   = 15 * 60 * 1000;
+function _loginLockedUntil(ip) {
+  const e = _loginFails.get(ip);
+  return e && e.lockedUntil > Date.now() ? e.lockedUntil : 0;
+}
+function _recordLoginFail(ip) {
+  const e = _loginFails.get(ip) || { n: 0, lockedUntil: 0 };
+  e.n += 1;
+  if (e.n >= LOGIN_MAX_FAILS) { e.lockedUntil = Date.now() + LOGIN_LOCK_MS; e.n = 0; }
+  _loginFails.set(ip, e);
+}
+// Constant-time string compare that never throws on length mismatch.
+function _safeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) { crypto.timingSafeEqual(ba, ba); return false; }
+  return crypto.timingSafeEqual(ba, bb);
+}
+
 // ── Admin REST API ─────────────────────────────────────────────────────────────
 app.post('/admin/login', (req, res) => {
   if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin disabled' });
+  const ip = req.ip || 'unknown';
+  const lockedUntil = _loginLockedUntil(ip);
+  if (lockedUntil) {
+    const mins = Math.ceil((lockedUntil - Date.now()) / 60000);
+    return res.status(429).json({ error: `Слишком много попыток. Повторите через ${mins} мин.` });
+  }
   const { username, password } = req.body || {};
-  if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD)
+  // Constant-time compare on both fields so login timing leaks neither.
+  const ok = _safeEqual(username, ADMIN_USERNAME) & _safeEqual(password, ADMIN_PASSWORD);
+  if (!ok) {
+    _recordLoginFail(ip);
     return res.status(401).json({ error: 'Wrong credentials' });
+  }
+  _loginFails.delete(ip);
   const ts  = Date.now();
   const tok = Buffer.from(JSON.stringify({ ts, sig: _adminToken(ts) })).toString('base64url');
   res.json({ token: tok });
@@ -595,7 +663,7 @@ app.get('/admin/stats', adminAuth, async (req, res) => {
 app.get('/admin/players', adminAuth, async (req, res) => {
   try {
     const { q = '', page = 1, limit = 30 } = req.query;
-    const filter = q ? { username: { $regex: q, $options: 'i' } } : {};
+    const filter = q ? { username: { $regex: _escapeRegex(q).slice(0, 64), $options: 'i' } } : {};
     const [players, count] = await Promise.all([
       PlayerModel.find(filter, 'username telegramId bm banned savedData referredBy createdAt')
         .sort({ bm: -1 }).skip((page - 1) * limit).limit(Number(limit)).lean(),
@@ -660,7 +728,15 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'Not found' });
     const saved = p.savedData || {};
     if (gold)  saved.gold          = (saved.gold || 0) + Number(gold);
-    if (nexum) saved.nexumBalance  = (saved.nexumBalance || 0) + Number(nexum);
+    if (nexum) {
+      // If the player is online, base the grant on the live cache (authoritative)
+      // and update it, so their session's next save can't roll the grant back.
+      const curN = _nexumBalanceCache.has(p.telegramId)
+        ? _nexumBalanceCache.get(p.telegramId) : (saved.nexumBalance || 0);
+      const newN = curN + Number(nexum);
+      saved.nexumBalance = newN;
+      if (_nexumBalanceCache.has(p.telegramId)) _nexumBalanceCache.set(p.telegramId, newN);
+    }
     if (gram) {
       saved.gramBalance = (saved.gramBalance || 0) + Number(gram);
       const cur = _gramBalanceCache.get(p.telegramId) || 0;
@@ -862,6 +938,103 @@ const floorRooms = new Map();
 // ordinary save (loot pickup, quest, anything) erased them. Dot-notation
 // $set only touches the keys actually passed here, leaving everything
 // else already in the document untouched.
+// ── Anti-cheat: sanitize the client-supplied save blob ─────────────────────────
+// The economy in this game is otherwise client-authoritative (loot rolls,
+// crafting and enhancing all happen on the client). This does NOT make it fully
+// server-authoritative — a *valid* item id the player never legitimately earned
+// still passes — but it removes the worst console-injection vectors before the
+// blob is persisted or used for server-side combat/BM stats:
+//   • fabricated item stats (a "legendary" with atk:99999) — every item is
+//     rebuilt from the canonical catalog; only id + enhance + (stackable) qty
+//     are trusted, exactly like the Market's _canonicalMarketItem.
+//   • non-existent item ids — dropped entirely.
+//   • absurd numeric values (gold:1e15, lvl:99999, baseAtk:1e9) — clamped.
+// Rebuilding from the catalog is loss-free for legitimate items: the client
+// stores each item as {…catalogBase, enhance} and derives the enhance bonus at
+// runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
+const _SANITIZE_MAX = {
+  gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6,
+  maxHp: 1e7, atk: 1e6, def: 1e6, baseStat: 1e6, hpBase: 1e7, invLen: 500, qty: 9999,
+};
+
+function _catalogBase(id) {
+  return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || null;
+}
+
+// Rebuild one inventory/equipment entry from the canonical catalog, trusting the
+// client only for id, enhance level and (stackables) qty. Unknown id → null.
+function _canonSavedItem(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const base = _catalogBase(raw.id);
+  if (!base) return null;
+  const item = { ...base };
+  if (ENHANCEABLE_SLOTS.has(base.slot)) {
+    const enh = Math.floor(Number(raw.enhance));
+    item.enhance = (Number.isFinite(enh) && enh >= 0 && enh <= ENHANCE_MAX) ? enh : 0;
+  }
+  if (isStackableItem(base)) {
+    const qty = Math.floor(Number(raw.qty));
+    item.qty = (Number.isFinite(qty) && qty >= 1 && qty <= _SANITIZE_MAX.qty) ? qty : 1;
+  }
+  return item;
+}
+
+function _clampNum(v, min, max, dflt) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.max(min, Math.min(max, n));
+}
+function _clampInt(v, min, max, dflt) { return Math.floor(_clampNum(v, min, max, dflt)); }
+
+function _sanitizeSavedStats(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const s = { ...raw };
+
+  // Inventory — canonicalize, drop unknowns, cap length
+  s.inventory = Array.isArray(s.inventory)
+    ? s.inventory.slice(0, _SANITIZE_MAX.invLen).map(_canonSavedItem).filter(Boolean)
+    : [];
+
+  // Equipment — { slot: item }; canonicalize, drop unknowns
+  if (s.equipment && typeof s.equipment === 'object' && !Array.isArray(s.equipment)) {
+    const eq = {};
+    for (const [slot, it] of Object.entries(s.equipment)) {
+      if (!it) continue;
+      const c = _canonSavedItem(it);
+      if (c) eq[slot] = c;
+    }
+    s.equipment = eq;
+  } else {
+    s.equipment = {};
+  }
+
+  // Numeric progression clamps (reject NaN/Infinity/negatives/absurd values)
+  s.gold    = _clampInt(s.gold,    0, _SANITIZE_MAX.gold, 0);
+  s.lvl     = _clampInt(s.lvl,     1, _SANITIZE_MAX.lvl, 1);
+  s.xp      = _clampNum(s.xp,      0, _SANITIZE_MAX.xp, 0);
+  s.kills   = _clampInt(s.kills,   0, _SANITIZE_MAX.kills, 0);
+  s.bonusSP = _clampInt(s.bonusSP, 0, _SANITIZE_MAX.bonusSP, 0);
+  if (s.maxHp     != null) s.maxHp     = _clampInt(s.maxHp,     1, _SANITIZE_MAX.maxHp, 100);
+  if (s.hp        != null) s.hp        = _clampNum(s.hp,        0, s.maxHp ?? _SANITIZE_MAX.maxHp, 0);
+  if (s.atk       != null) s.atk       = _clampNum(s.atk,       0, _SANITIZE_MAX.atk, 0);
+  if (s.def       != null) s.def       = _clampNum(s.def,       0, _SANITIZE_MAX.def, 0);
+  if (s.baseAtk   != null) s.baseAtk   = _clampNum(s.baseAtk,   0, _SANITIZE_MAX.baseStat, 0);
+  if (s.baseDef   != null) s.baseDef   = _clampNum(s.baseDef,   0, _SANITIZE_MAX.baseStat, 0);
+  if (s.baseMaxHp != null) s.baseMaxHp = _clampNum(s.baseMaxHp, 1, _SANITIZE_MAX.hpBase, 100);
+  if (s.autoHpPct != null) s.autoHpPct = _clampNum(s.autoHpPct, 0, 1, 0.5);
+
+  if (s.upgrades && typeof s.upgrades === 'object' && !Array.isArray(s.upgrades)) {
+    const u = {};
+    for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
+    s.upgrades = u;
+  }
+  return s;
+}
+
+// Escape user input before embedding it in a Mongo $regex, so a crafted query
+// can't inject regex operators (ReDoS / catastrophic backtracking on the DB).
+function _escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
 function _persistSavedFields(authed, fields, extra) {
   if (!authed) return;
   const set = {};
@@ -1021,6 +1194,41 @@ io.on('connection', socket => {
     if (now > _atkResetAt) { _atkCount = 0; _atkResetAt = now + 1000; }
     return ++_atkCount <= 20;
   }
+
+  // ── Per-socket event rate limiting ─────────────────────────────────────────
+  // Two token buckets over a 5s window: a tight one for DB-touching / broadcast
+  // / query events (spam of these is the real DoS + race-condition surface —
+  // e.g. hammering marketBuy or clanApply), and a loose one for everything else
+  // (movement/combat, already bounded by _atkAllowed and cheap in-memory ops).
+  // Excess packets are dropped silently before the handler runs. Single-instance
+  // in-memory limiter — matches this server's existing state model.
+  const _HEAVY_EVENTS = new Set([
+    'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
+    'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
+    'getReferrals', 'getRating', 'completeSpecialQuest', 'claimVipRewards',
+    'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline',
+    'clanKick', 'clanLeave', 'clanDisband',
+    'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
+    'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
+  ]);
+  const _rlHeavy = { n: 0, reset: 0 };
+  const _rlFast  = { n: 0, reset: 0 };
+  function _rlBump(bucket, max) {
+    const now = Date.now();
+    if (now > bucket.reset) { bucket.n = 0; bucket.reset = now + 5000; }
+    return ++bucket.n <= max;
+  }
+  socket.use((packet, next) => {
+    const ev = packet && packet[0];
+    const bucket = _HEAVY_EVENTS.has(ev) ? _rlHeavy : _rlFast;
+    // per 5s window. Heavy (DB/query/broadcast) kept tight; fast (movement/
+    // combat, sent per-frame) set high enough to never throttle real play —
+    // it only exists to cut a scripted flood.
+    const max    = _HEAVY_EVENTS.has(ev) ? 40 : 1500;
+    if (!_rlBump(bucket, max)) return; // drop silently — over budget
+    next();
+  });
+
   playerFloorMap.set(socket.id, currentFloor);
 
   // Exposed on socket.data so a *different* connection's closure (e.g. the
@@ -1034,7 +1242,7 @@ io.on('connection', socket => {
     if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
     if (authed && _lastStats) {
       await _persistSavedFields(authed,
-        { ..._lastStats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
+        { ..._lastStats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance },
         { bm: authed.bm });
     }
   };
@@ -1045,7 +1253,7 @@ io.on('connection', socket => {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = setInterval(() => {
       if (!authed || !_lastStats) return;
-      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance };
+      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance };
       if (currentRoom) {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
@@ -1094,6 +1302,7 @@ io.on('connection', socket => {
       _gramBalance = doc.savedData?.gramBalance || 0;
       _nexumBalance = doc.savedData?.nexumBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
+      _nexumBalanceCache.set(telegramId, _nexumBalance);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -1144,6 +1353,7 @@ io.on('connection', socket => {
       _gramBalance = doc.savedData?.gramBalance || 0;
       _nexumBalance = doc.savedData?.nexumBalance || 0;
       _gramBalanceCache.set(telegramId, _gramBalance);
+      _nexumBalanceCache.set(telegramId, _nexumBalance);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -1569,7 +1779,7 @@ io.on('connection', socket => {
     // back to the server's copy instead of leaving _lastStats unset, which
     // would let the next debounced saveProgress persist fresh/default stats
     // over real progress.
-    const effectiveSaved = savedStats || authed.savedData || null;
+    const effectiveSaved = _sanitizeSavedStats(savedStats || authed.savedData || null);
     if (effectiveSaved) _lastStats = effectiveSaved;
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
@@ -1646,6 +1856,7 @@ io.on('connection', socket => {
 
       if (nexumDrop > 0) {
         _nexumBalance += nexumDrop;
+        _nexumBalanceCache.set(authed.telegramId, _nexumBalance);
         _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       }
 
@@ -1744,6 +1955,7 @@ io.on('connection', socket => {
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
       if (nexumDrop2 > 0) {
         _nexumBalance += nexumDrop2;
+        _nexumBalanceCache.set(authed.telegramId, _nexumBalance);
         _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       }
       if (memberIds.length > 0) {
@@ -1947,13 +2159,17 @@ io.on('connection', socket => {
 
   socket.on('saveProgress', ({ stats }) => {
     if (!authed) return;
-    _lastStats = stats;
-    authed.bm = calcBM(stats);
+    // Sanitize the client blob before it becomes the server's source of truth
+    // for BM/combat stats and before it's persisted (anti-cheat — see
+    // _sanitizeSavedStats). gram/nexum are never taken from here.
+    const clean = _sanitizeSavedStats(stats);
+    _lastStats = clean;
+    authed.bm = calcBM(clean);
     clearTimeout(_saveDebounceTimer);
     _saveDebounceTimer = setTimeout(() => {
       if (!authed) return;
       _persistSavedFields(authed,
-        { ...stats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalance },
+        { ...clean, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance },
         { bm: authed.bm });
     }, 3000);
   });
@@ -2067,8 +2283,8 @@ io.on('connection', socket => {
 
   socket.on('clanSearch', async ({ query }) => {
     if (!authed) return;
-    const q = (query || '').trim();
-    const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
+    const q = (query || '').trim().slice(0, 32);
+    const filter = q ? { name: { $regex: _escapeRegex(q), $options: 'i' } } : {};
     const clans = await ClanModel.find(filter).sort({ level: -1, xp: -1 }).limit(20).catch(() => []);
     socket.emit('clanSearchResults', clans.map(c => ({
       _id: c._id, name: c.name, icon: c.icon, level: c.level, members: c.members.length,
@@ -2326,19 +2542,29 @@ io.on('connection', socket => {
       if (done.includes(String(questId))) return;
       const newDone = [...done, String(questId)];
       const upd = { 'savedData.specialQuestsDone': newDone };
+      // Nexum is server-authoritative — base the reward on the live balance
+      // (cache), never on the possibly-stale savedData snapshot, so a quest
+      // reward can't wipe nexum earned from drops earlier this session.
+      const _newNexum = quest.reward.nexum
+        ? ((_nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance) + quest.reward.nexum)
+        : null;
       if (quest.reward.gold)  upd['savedData.gold']         = (authed.savedData?.gold         || 0) + quest.reward.gold;
-      if (quest.reward.nexum) upd['savedData.nexumBalance'] = (authed.savedData?.nexumBalance  || 0) + quest.reward.nexum;
+      if (quest.reward.nexum) upd['savedData.nexumBalance'] = _newNexum;
       if (quest.reward.xp)    upd['savedData.xp']           = (authed.savedData?.xp            || 0) + quest.reward.xp;
       await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: upd });
+      if (_newNexum != null) {
+        _nexumBalance = _newNexum;
+        _nexumBalanceCache.set(authed.telegramId, _newNexum);
+      }
       if (authed.savedData) {
         authed.savedData.specialQuestsDone = newDone;
         if (quest.reward.gold)  authed.savedData.gold         = (authed.savedData.gold         || 0) + quest.reward.gold;
-        if (quest.reward.nexum) authed.savedData.nexumBalance = (authed.savedData.nexumBalance  || 0) + quest.reward.nexum;
+        if (_newNexum != null)  authed.savedData.nexumBalance = _newNexum;
         if (quest.reward.xp)    authed.savedData.xp           = (authed.savedData.xp            || 0) + quest.reward.xp;
         if (_lastStats) {
           _lastStats.specialQuestsDone = newDone;
           if (quest.reward.gold)  _lastStats.gold         = authed.savedData.gold;
-          if (quest.reward.nexum) _lastStats.nexumBalance = authed.savedData.nexumBalance;
+          if (_newNexum != null)  _lastStats.nexumBalance = _newNexum;
           if (quest.reward.xp)    _lastStats.xp           = authed.savedData.xp;
         }
       }
@@ -2362,6 +2588,7 @@ io.on('connection', socket => {
       if (activeSessions.get(_tid) === socket.id) {
         activeSessions.delete(_tid);
         _gramBalanceCache.delete(_tid);
+        _nexumBalanceCache.delete(_tid);
       }
     } else {
       socket.data._flushNow?.();
