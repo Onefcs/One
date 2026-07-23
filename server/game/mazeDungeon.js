@@ -1,11 +1,11 @@
 // Party dungeon: a real branching maze (recursive-backtracker spanning tree
 // over a cell grid), not the linear room-chain used by the normal 5 floors
-// (server/game/dungeon.js). Monsters use floor-2 stats, the boss uses
-// floor-4 stats — both computed with the exact same scaling formulas as
-// generateDungeon() so numbers match what players already see on those
-// floors. Returns the same {grid, rooms, w, h, spawn, safeZone, enemies}
-// shape Room.js/the client renderer already expect, so nothing downstream
-// needs to know this wasn't produced by generateDungeon().
+// (server/game/dungeon.js). Monsters and boss both use floor-2 stats —
+// computed with the exact same scaling formulas as generateDungeon() so
+// numbers match what players already see on that floor. Returns the same
+// {grid, rooms, w, h, spawn, safeZone, enemies} shape Room.js/the client
+// renderer already expect, so nothing downstream needs to know this wasn't
+// produced by generateDungeon().
 const { TILE, WALL, FLOOR } = require('./dungeon');
 const { ENEMY_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
 
@@ -153,10 +153,10 @@ function generatePartyDungeon(seed) {
     }
   });
 
-  // ── Enemies: monsters use floor-2 stats, boss uses floor-4 stats ────────
+  // ── Enemies: monsters and boss both use floor-2 stats ───────────────────
   // Same scaling formulas as generateDungeon() (server/game/dungeon.js) so
   // numbers match what's already on those floors.
-  const MOB_LVL = 2, BOSS_LVL = 4;
+  const MOB_LVL = 2, BOSS_LVL = 2;
   const mobSc    = 1 + (MOB_LVL  - 1) * 0.28, mobAtkSc  = 1 + (MOB_LVL  - 1) * 0.18;
   const bossSc   = 1 + (BOSS_LVL - 1) * 0.28, bossAtkSc = 1 + (BOSS_LVL - 1) * 0.18;
   const mobWeakMult = 0.5; // matches the halving applied to all regular dungeon monsters
