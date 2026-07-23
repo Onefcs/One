@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, roomStrengthMult } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -123,9 +123,21 @@ function generateDungeon(lvl) {
     return _enemyByEid.get(id);
   }
 
-  // rooms[0] = safe spawn, rooms[rooms.length-1] = boss
+  // rooms[0] = safe spawn, rooms[rooms.length-1] = boss.
+  // Room level = position in the 19-room monster chain (1 = first room after
+  // spawn ... 19 = the boss room), each level 10% stronger than the last —
+  // see roomStrengthMult()/ROOM_* in shared/definitions.js for the full
+  // per-level strength/drop/key/enchant-stone progression this feeds. The
+  // strength bump only applies to regular monsters: the boss's hp/atk are
+  // already hand-tuned per floor (see git history) and compounding another
+  // ~5.6× on top at room 19 would make it effectively unkillable — the boss
+  // still counts as room level 19 for its (much more modest) key/enchant-
+  // stone/drop-chance bonus and its "Уровень 19" label.
   rooms.slice(1).forEach((room, idx) => {
     const isBoss = idx === rooms.length - 2;
+    const roomLvl = idx + 1;
+    const rMult   = isBoss ? 1 : roomStrengthMult(roomLvl);
+    room.monsterLvl = roomLvl;
     const count  = isBoss ? 1 : (room.isSmall ? 5 : 10);
 
     for (let i = 0; i < count; i++) {
@@ -151,8 +163,9 @@ function generateDungeon(lvl) {
         id: `e_${lvl}_${eid++}`,
         ...d,
         isBoss,
-        maxHp: Math.floor(d.hp * sc * weakMult), hp: Math.floor(d.hp * sc * weakMult),
-        atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18) * weakMult),
+        rlvl: roomLvl,
+        maxHp: Math.floor(d.hp * sc * weakMult * rMult), hp: Math.floor(d.hp * sc * weakMult * rMult),
+        atk:   Math.floor(d.atk * (1 + (lvl - 1) * 0.18) * weakMult * rMult),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
       });

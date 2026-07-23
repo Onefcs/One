@@ -320,7 +320,74 @@ function _craftsmanMatsTab() {
     html += '</div>';
   }
 
+  if (typeof BOX_DEF !== 'undefined' && BOX_DEF.length) {
+    html += `<div class="craft-group-hdr" style="color:#f0c040">Боксы</div><div class="craft-items-grid">`;
+    BOX_DEF.forEach(box => {
+      const have = countMaterial(box.keyId);
+      const canCraft = have >= box.keyCost && invHasSpace();
+      const rc = RARITY_COLOR[box.rarity] || '#aaa';
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBoxCraftModal('${box.id}')" style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_itemIcon(box, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${box.name}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
   return html;
+}
+
+function openBoxCraftModal(boxId) {
+  const box = BOX_DEF.find(b => b.id === boxId);
+  if (!box || !player) return;
+  const keyDef = CRAFT_MATS.find(m => m.id === box.keyId);
+  const have = countMaterial(box.keyId);
+  const ok = have >= box.keyCost;
+  const canCraft = ok && invHasSpace();
+  const rc = RARITY_COLOR[box.rarity] || '#aaa';
+
+  const oddsHtml = box.odds.map(o => {
+    const rcO = RARITY_COLOR[o.rarity] || '#aaa';
+    return `<div class="craft-req-row">
+      <span class="craft-req-name" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity}</span>
+      <span class="craft-req-count" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">← Назад</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-icon">${_itemIcon(box, 52)}</div>
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${box.name}</div>
+      </div>
+    </div>
+    <div class="craft-reqs-title">Требуется:</div>
+    <div class="craft-reqs-list">
+      <div class="craft-req-row">
+        <span class="craft-req-icon">${keyDef ? _matIcon(keyDef, 20) : box.keyId}</span>
+        <span class="craft-req-name">${keyDef ? keyDef.name : box.keyId}</span>
+        <span class="craft-req-count" style="color:${ok ? '#4f4' : '#f44'}">${have}/${box.keyCost}</span>
+      </div>
+    </div>
+    <div class="craft-reqs-title">Содержимое (1 предмет из бокса):</div>
+    <div class="craft-reqs-list">${oddsHtml}</div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftBox('${box.id}')">Крафтить</button>
+  `;
+}
+
+function craftBox(boxId) {
+  const box = BOX_DEF.find(b => b.id === boxId);
+  if (!box || !player) return;
+  const have = countMaterial(box.keyId);
+  if (have < box.keyCost) { _shopMsg('Недостаточно ключей!'); return; }
+  if (!invHasSpace())     { _shopMsg('Инвентарь полон!'); return; }
+
+  removeFromInventory(box.keyId, box.keyCost);
+  addToInventory({ ...box });
+  _shopMsg('✓ Создано: ' + box.name);
+  netSaveProgress();
+  openBoxCraftModal(boxId);
 }
 
 function openMatModal(idx) {

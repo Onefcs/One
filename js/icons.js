@@ -84,6 +84,8 @@ const ICON_SVG = {
   mat_gem:     `<path d="M6 3l-3 5 9 13 9-13-3-5H6z"/><line x1="3" y1="8" x2="21" y2="8"/>`,
   mat_scale:   `<circle cx="12" cy="12" r="9"/><path d="M12 3c-3 3-5 6-5 9s2 6 5 9"/><path d="M12 3c3 3 5 6 5 9s-2 6-5 9"/>`,
   mat_dust:    `<path d="M12 2l1.5 4.5H18l-3.75 2.7 1.5 4.5L12 11.1l-3.75 2.6 1.5-4.5L6 6.5h4.5z"/><path d="M5 16l.75 2.25H8l-1.88 1.35.75 2.25L5 20.55l-1.88 1.3.75-2.25L2 18.25h2.25z"/>`,
+  key:         `<circle cx="7.5" cy="15.5" r="5.5"/><path d="M11.5 11.5L21 2"/><path d="M15 6l3 3"/><path d="M18 3l3 3"/>`,
+  chest:       `<rect x="3" y="10" width="18" height="10" rx="2"/><path d="M3 10a9 4 0 0 1 18 0"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="15" r="1.6"/>`,
 };
 
 // ── DOM helper: returns an <svg> string ───────────────────────────────────────

@@ -624,8 +624,77 @@ function showFloorInfo(floor) {
   if (!modal) return;
   const _fiTh = getTheme(floor);
   modal.querySelector('.fi-title').textContent = _fiTh.name;
-  document.getElementById('floor-info-body').innerHTML = html;
+  document.getElementById('floor-info-body').innerHTML = html + _roomProgressionSection() + _boxInfoSection();
   modal.style.display = 'flex';
+}
+
+// Every floor's dungeon chains 20 rooms: the spawn room (no monsters), then
+// 19 monster rooms of increasing "room level" (1 = weakest, 19 = the boss
+// room). Each level compounds monster strength +10%, item-drop chance +5%,
+// key-drop chance +5%, and enchant-stone chance +1% over the previous level
+// — see ROOM_* / room*() helpers in shared/definitions.js.
+function _roomProgressionSection() {
+  if (typeof roomStrengthMult !== 'function') return '';
+  const _fmtPctN = v => v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%';
+  const rows = Array.from({ length: 19 }, (_, i) => i + 1).map(lvl => {
+    const isBossRoom = lvl === 19;
+    const str  = roomStrengthMult(lvl);
+    const drop = roomDropMult(lvl);
+    const ku   = roomKeyChance(lvl, 'uncommon') * 100;
+    const kr   = roomKeyChance(lvl, 'rare') * 100;
+    const es   = roomEnchantStoneChance(lvl) * 100;
+    return `<tr${isBossRoom ? ' style="color:#ff6666;font-weight:700"' : ''}>
+      <td>${lvl}${isBossRoom ? ' 👑' : ''}</td>
+      <td>×${str.toFixed(2)}</td>
+      <td>×${drop.toFixed(2)}</td>
+      <td>${_fmtPctN(ku)}</td>
+      <td>${_fmtPctN(kr)}</td>
+      <td>${_fmtPctN(es)}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="fi-monster">
+      <div class="fi-mhdr"><span class="fi-mname" style="color:#f0c040">Прогрессия комнат (1–19)</span></div>
+      <div style="font-size:10px;color:#888;margin-bottom:8px;line-height:1.5">
+        Комната 1 — первая после спавна (слабейшие монстры), комната 19 — комната босса (сильнейшие).
+        Каждый уровень: сила монстра +10%, шанс дропа предметов +5%, шанс ключей +5%, шанс заточки +1% относительно предыдущего.
+      </div>
+      <div style="overflow-x:auto">
+        <table class="fi-room-table">
+          <thead><tr><th>Комн.</th><th>Сила</th><th>Дроп</th><th>Необ. ключ</th><th>Ред. ключ</th><th>Заточка</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// Forge (Кузнец) box-crafting reference: cost in keys + odds of what a box gives.
+function _boxInfoSection() {
+  if (typeof BOX_DEF === 'undefined' || !BOX_DEF.length) return '';
+  const blocks = BOX_DEF.map(box => {
+    const rc = RARITY_COLOR[box.rarity] || '#aaa';
+    const keyDef = CRAFT_MATS.find(m => m.id === box.keyId);
+    const oddsRows = box.odds.map(o => {
+      const rcO = RARITY_COLOR[o.rarity] || '#aaa';
+      return `<div class="fi-drop">
+        <span class="fi-drop-lbl" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity} предмет</span>
+        <span class="fi-drop-val" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
+      </div>`;
+    }).join('');
+    return `<div class="fi-monster">
+      <div class="fi-mhdr"><span class="fi-mname" style="color:${rc}">${box.name}</span></div>
+      <div class="fi-drops-hdr">Крафт у кузнеца</div>
+      <div class="fi-drops">
+        <div class="fi-drop">
+          <span class="fi-drop-lbl">${keyDef ? keyDef.name : box.keyId}</span>
+          <span class="fi-drop-val">×${box.keyCost}</span>
+        </div>
+      </div>
+      <div class="fi-drops-hdr" style="margin-top:8px">Содержимое (1 предмет)</div>
+      <div class="fi-drops">${oddsRows}</div>
+    </div>`;
+  }).join('');
+  return `<div class="fi-drops-hdr" style="margin-top:8px">Кузница · Боксы</div>${blocks}`;
 }
 
 function closeFloorInfo() {
@@ -1896,7 +1965,7 @@ function _enhStonesBlock(actionFn, param) {
   </div>`;
 }
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
-const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления' };
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
 
 function openInvItemModal(idx) {
   if (!player) return;
@@ -1934,6 +2003,8 @@ function openInvItemModal(idx) {
     document.getElementById('app').appendChild(ov);
     return;
   }
+
+  if (it.slot === 'box') { closeInvItemModal(); openBoxModal(idx); return; }
 
   if (_isStackable(it) || it.slot === 'use') return;
 
@@ -2010,6 +2081,82 @@ function closeInvItemModal() {
 function equipFromModal(idx) {
   closeInvItemModal();
   equipItem(idx);
+}
+
+// ── Loot boxes ────────────────────────────────────────────
+function _boxCandidates(rarity) {
+  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+  return ITEM_DEF.filter(d => d.rarity === rarity && gearSlots.includes(d.slot) &&
+    (d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type))));
+}
+
+function openBoxModal(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!it) return;
+  const boxDef = BOX_DEF.find(b => b.id === it.id);
+  if (!boxDef) return;
+  const qty = it.qty || 1;
+  const rc = RARITY_COLOR[boxDef.rarity] || '#aaa';
+
+  const oddsHtml = boxDef.odds.map(o => {
+    const rcO = RARITY_COLOR[o.rarity] || '#aaa';
+    const cands = _boxCandidates(o.rarity);
+    const icons = cands.map(c => `<span title="${c.name}" style="display:inline-block;margin:2px">${_itemIcon(c, 26)}</span>`).join('');
+    return `<div class="box-odds-row">
+      <div class="box-odds-hdr" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity} · <b>${Math.round(o.chance * 100)}%</b></div>
+      <div class="box-odds-icons">${icons || '—'}</div>
+    </div>`;
+  }).join('');
+
+  closeInvItemModal();
+  const ov = document.createElement('div');
+  ov.id = 'inv-item-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closeInvItemModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:380px;max-height:80vh;overflow-y:auto">
+    <div class="imod-hdr">
+      <span class="imod-big-icon">${_itemIcon(boxDef, 52)}</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${boxDef.name}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[boxDef.rarity] || boxDef.rarity}</span> · Бокс · ×${qty}</div>
+      </div>
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div style="font-size:11px;color:#888">Открытие даёт 1 случайный предмет:</div>
+    <div class="box-odds-list">${oddsHtml}</div>
+    <div class="imod-btns">
+      <button class="imod-btn imod-equip" onclick="openLootBox(${idx})">Открыть</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function openLootBox(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!it) return;
+  const boxDef = BOX_DEF.find(b => b.id === it.id);
+  if (!boxDef) return;
+  if (!invHasSpace()) { dmgNum(player.x, player.y - 30, 'Инвентарь полон!', '#f88'); return; }
+
+  if ((it.qty || 1) <= 1) player.inventory.splice(idx, 1);
+  else it.qty--;
+
+  const r = Math.random();
+  let acc = 0, resultRarity = boxDef.odds[boxDef.odds.length - 1].rarity;
+  for (const o of boxDef.odds) {
+    acc += o.chance;
+    if (r < acc) { resultRarity = o.rarity; break; }
+  }
+  const cands = _boxCandidates(resultRarity);
+  const wonItem = cands[Math.floor(Math.random() * cands.length)];
+  if (wonItem && addToInventory({ ...wonItem })) {
+    dmgNum(player.x, player.y - 30, '+ ' + wonItem.name, RARITY_COLOR[wonItem.rarity] || '#4ff');
+  }
+  netSaveProgress();
+  closeInvItemModal();
+  updateInvUI();
 }
 
 function enhanceItem(idx, stoneType) {

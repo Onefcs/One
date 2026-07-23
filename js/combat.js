@@ -74,7 +74,7 @@ function pickup(drop) {
   }
 }
 
-function applyLootToInventory(eid) {
+function applyLootToInventory(eid, rlvl) {
   if (!player) return;
   const eDef = typeof ENEMY_DEF !== 'undefined' ? ENEMY_DEF.find(e => e.eid === eid) : null;
   const eType = eDef ? eDef.eType : null;
@@ -88,22 +88,26 @@ function applyLootToInventory(eid) {
     saved = true;
   }
 
-  // Drop multiplier: floor N gives ×N chance (floor 1 = ×1, floor 2 = ×2, …, floor 5 = ×5)
+  // Drop multiplier: floor N gives ×N chance (floor 1 = ×1, floor 2 = ×2, …, floor 5 = ×5),
+  // further boosted 5% per room level (room 1 = ×1, room 19/boss = ×1.05^18) — see
+  // roomDropMult()/ROOM_DROP_GROWTH in shared/definitions.js.
   const _fMult = (typeof dungeonLvl !== 'undefined' && dungeonLvl >= 1 && dungeonLvl <= 5) ? dungeonLvl : 1;
+  const _rMult = typeof roomDropMult === 'function' ? roomDropMult(rlvl) : 1;
+  const _dropMult = _fMult * _rMult;
 
   // Recipe drop (all non-boss enemies)
   if (eType && eType !== 'boss') {
     const r = Math.random();
-    if      (r < 0.00001 * _fMult)  _addMat('recl', 52);
-    else if (r < 0.00021 * _fMult)  _addMat('rece', 52);
-    else if (r < 0.00071 * _fMult)  _addMat('recr', 52);
-    else if (r < 0.00171 * _fMult)  _addMat('recu', 52);
+    if      (r < 0.00001 * _dropMult)  _addMat('recl', 52);
+    else if (r < 0.00021 * _dropMult)  _addMat('rece', 52);
+    else if (r < 0.00071 * _dropMult)  _addMat('recr', 52);
+    else if (r < 0.00171 * _dropMult)  _addMat('recu', 52);
   }
 
   // Buff potion drop
   const _buffPotIds = ['bp_hp','bp_exp','bp_gold','bp_regen','bp_atkspeed','bp_atk'];
   const _bpChance = eType === 'boss' ? 0.03 : 0.005;
-  if (Math.random() < _bpChance * _fMult) {
+  if (Math.random() < _bpChance * _dropMult) {
     const bpId = _buffPotIds[Math.floor(Math.random() * _buffPotIds.length)];
     const bpDef = typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bpId) : null;
     if (bpDef && addToInventory({ ...bpDef })) {
@@ -118,7 +122,7 @@ function applyLootToInventory(eid) {
     const _rarBossMult = eType === 'boss' ? BOSS_RARITY_DROP_MULT : 1;
     const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
     for (const rarity in _rarTable) {
-      if (Math.random() >= _rarTable[rarity] * _rarBossMult) continue;
+      if (Math.random() >= _rarTable[rarity] * _rarBossMult * _rMult) continue;
       const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot) &&
         (d.slot !== 'weapon' || (d.forClass && d.forClass.includes(player.type))));
       if (!candidates.length) continue;
@@ -128,6 +132,19 @@ function applyLootToInventory(eid) {
         saved = true;
       }
     }
+  }
+
+  // Room-level key drops (necessary for forge box-crafting) — base chance at
+  // room level 1, compounding 5%/level; see roomKeyChance() (shared/definitions.js).
+  if (typeof roomKeyChance === 'function') {
+    if (Math.random() < roomKeyChance(rlvl, 'uncommon')) _addMat('key_uncommon', 60);
+    if (Math.random() < roomKeyChance(rlvl, 'rare'))     _addMat('key_rare', 68);
+  }
+
+  // Room-level enchant-stone drop (Камень обычной заточки) — base 1% at room
+  // level 1, compounding 1%/level; see roomEnchantStoneChance().
+  if (typeof roomEnchantStoneChance === 'function' && Math.random() < roomEnchantStoneChance(rlvl)) {
+    _addMat('norm_stone', 76);
   }
 
   if (saved) netSaveProgress();

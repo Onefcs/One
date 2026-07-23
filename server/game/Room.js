@@ -102,7 +102,7 @@ class Room {
       .map(e => ({
         id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
         name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
-        aggroR: e.aggroR, spd: e.spd,
+        aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
       }));
   }
 
@@ -337,7 +337,7 @@ class Room {
           nearEnemies.push({
             id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
             name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
-            aggroR: e.aggroR, spd: e.spd,
+            aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
             atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
           });
         } else {
@@ -522,7 +522,7 @@ class Room {
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
       const xpFinal = (this.floor >= 2 && this.floor <= 5) ? enemy.xp * 3 : enemy.xp;
-      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0 };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
@@ -543,7 +543,7 @@ class Room {
     if (enemy.hp <= 0) {
       const g = calcGoldDrop(enemy, this.floor);
       const xpFinal = (this.floor >= 2 && this.floor <= 5) ? enemy.xp * 3 : enemy.xp;
-      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid };
+      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0 };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }

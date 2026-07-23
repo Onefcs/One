@@ -94,6 +94,25 @@ const CRAFT_MATS = [
   // ── Enchant stones ──────────────────────────────────────
   { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
+  // ── Room-level keys (от монстров в комнатах подземелья) ──
+  { id:'key_uncommon', name:'Необычный ключ', img:'/images/material/keyu.png', slot:'material', rarity:'uncommon' },
+  { id:'key_rare',      name:'Редкий ключ',    img:'/images/material/keyr.png', slot:'material', rarity:'rare'     },
+];
+
+// ── Loot boxes ────────────────────────────────────────────────────────────────
+// Crafted at the forge (Кузнец → Материалы) from room-level keys. Opening one
+// rolls a rarity tier from `odds`, then a random matching gear item.
+const BOX_DEF = [
+  {
+    id: 'box_uncommon', name: 'Необычный бокс', img: '/images/material/boxu.png', slot: 'box', rarity: 'uncommon',
+    keyId: 'key_uncommon', keyCost: 500,
+    odds: [ { rarity: 'common', chance: 0.60 }, { rarity: 'uncommon', chance: 0.40 } ],
+  },
+  {
+    id: 'box_rare', name: 'Редкий бокс', img: '/images/material/boxr.png', slot: 'box', rarity: 'rare',
+    keyId: 'key_rare', keyCost: 500,
+    odds: [ { rarity: 'common', chance: 0.30 }, { rarity: 'uncommon', chance: 0.60 }, { rarity: 'rare', chance: 0.10 } ],
+  },
 ];
 
 const ITEM_DEF = [
@@ -183,7 +202,34 @@ function enhanceBonus(it, levels) {
 }
 // Items that stack into one inventory slot by id, tracked with a qty
 // counter (mirrors _isStackable in player.js)
-function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion'; }
+function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion' || it.slot === 'box'; }
+
+// ── Room-level monster progression ─────────────────────────────────────────────
+// Each floor's dungeon (server/game/dungeon.js) chains 20 rooms: room 0 is the
+// safe spawn room (no monsters), and the 19 rooms after it hold monsters at
+// increasing "room level" 1..19 (room 1 = weakest, room 19 = the boss room /
+// strongest). All three progressions below compound per room level, on top
+// of the existing per-floor scaling.
+const ROOM_STRENGTH_GROWTH = 0.10; // +10% monster hp/atk per room level
+const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
+const ROOM_KEY_GROWTH      = 0.05; // +5% key-drop chance per room level
+const ROOM_KEY_BASE = { uncommon: 0.05, rare: 0.01 }; // room level 1 base chance
+const ROOM_ENCHANT_STONE_BASE   = 0.01; // room level 1 base chance (Камень обычной заточки)
+const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
+
+function roomStrengthMult(lvl) {
+  return Math.pow(1 + ROOM_STRENGTH_GROWTH, Math.max(1, lvl || 1) - 1);
+}
+function roomDropMult(lvl) {
+  return Math.pow(1 + ROOM_DROP_GROWTH, Math.max(1, lvl || 1) - 1);
+}
+function roomKeyChance(lvl, tier) {
+  const base = ROOM_KEY_BASE[tier] || 0;
+  return base * Math.pow(1 + ROOM_KEY_GROWTH, Math.max(1, lvl || 1) - 1);
+}
+function roomEnchantStoneChance(lvl) {
+  return ROOM_ENCHANT_STONE_BASE * Math.pow(1 + ROOM_ENCHANT_STONE_GROWTH, Math.max(1, lvl || 1) - 1);
+}
 
 // ── VIP System ────────────────────────────────────────────────────────────────
 // GRAM threshold to reach THIS level (counter resets after each level-up)
@@ -207,6 +253,9 @@ const VIP_BONUSES = [
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL,
   VIP_THRESHOLDS, VIP_BONUSES,
-  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,
+  ROOM_STRENGTH_GROWTH, ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
+  ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
+  roomStrengthMult, roomDropMult, roomKeyChance, roomEnchantStoneChance,
 };

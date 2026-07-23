@@ -380,7 +380,7 @@ function netConnect(onReady) {
     netSaveProgress();
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, bossStone, normStone, blessStone, nexum }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, bossStone, normStone, blessStone, nexum }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -415,11 +415,11 @@ function netConnect(onReady) {
       if (_eDef) onEnemyKill(_eDef.name);
     }
     if (gotLoot && player) {
-      applyLootToInventory(eid);
+      applyLootToInventory(eid, rlvl);
       // VIP drop bonus: extra loot roll proportional to drop%
       const _vipDrop = (window._vipData?.level > 0 && typeof VIP_BONUSES !== 'undefined')
         ? (VIP_BONUSES[window._vipData.level] || VIP_BONUSES[0]).drop : 0;
-      if (_vipDrop > 0 && Math.random() * 100 < _vipDrop) applyLootToInventory(eid);
+      if (_vipDrop > 0 && Math.random() * 100 < _vipDrop) applyLootToInventory(eid, rlvl);
     }
     if (bossStone && player) {
       const stone = CRAFT_MATS.find(m => m.id === 'boss_stone');

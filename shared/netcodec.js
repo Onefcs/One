@@ -31,7 +31,7 @@
 //     u8  aggro
 //     u8  atkAnimTimer*100
 //     full only: str id, str eid, i32 maxHp, str name, str color,
-//                u8 size, u8 isBoss, f32 aggroR, u16 spd
+//                u8 size, u8 isBoss, f32 aggroR, u16 spd, u8 rlvl
 //   str = u8 byteLength + UTF-8 bytes
 // ─────────────────────────────────────────────────────────
 
@@ -110,6 +110,7 @@ function encodeGameState(players, enemies, t) {
       _ncDV.setUint8(o, e.isBoss ? 1 : 0); o += 1;
       _ncDV.setFloat32(o, e.aggroR || 0, true); o += 4;
       _ncDV.setUint16(o, Math.max(0, Math.min(65535, e.spd | 0)), true); o += 2;
+      _ncDV.setUint8(o, Math.max(0, Math.min(255, e.rlvl | 0))); o += 1;
     }
   }
   // Copy — the scratch buffer is reused for the next recipient while
@@ -188,9 +189,10 @@ function decodeGameState(data) {
       const isBoss = !!dv.getUint8(o); o += 1;
       const aggroR = dv.getFloat32(o, true); o += 4;
       const spd = dv.getUint16(o, true); o += 2;
+      const rlvl = dv.getUint8(o); o += 1;
       _ncEIdMap.set(idx, id);
       enemies.push({ id, eid, x, y, hp, maxHp, name, color, size, isBoss,
-        aggro, aggroR, spd, atkAnimTimer });
+        aggro, aggroR, spd, rlvl, atkAnimTimer });
     } else {
       const id = _ncEIdMap.get(idx);
       if (id !== undefined)

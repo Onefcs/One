@@ -613,7 +613,8 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
 
   // Name / boss label above HP bar
   const { lbl } = obj;
-  const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : (e.name || '');
+  const lvlSuffix = e.rlvl > 0 ? ` · Уровень ${e.rlvl}` : '';
+  const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}${lvlSuffix}` : `${e.name || ''}${lvlSuffix}`;
   if (lbl.text !== lblText) lbl.text = lblText;
   lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
   lbl.style.fontSize     = e.isBoss ? 18 : 14;

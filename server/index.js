@@ -18,7 +18,7 @@ const { RaidRoom } = require('./game/RaidRoom');
 const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
-  ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -967,7 +967,7 @@ const _SANITIZE_MAX = {
 };
 
 function _catalogBase(id) {
-  return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || null;
+  return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
 }
 
 // Rebuild one inventory/equipment entry from the canonical catalog, trusting the
@@ -2051,7 +2051,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === socket.id, eid: result.eid,
+          gotLoot: lootWinnerId === socket.id, eid: result.eid, rlvl: result.rlvl,
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
@@ -2061,7 +2061,7 @@ io.on('connection', socket => {
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
-            gotLoot: lootWinnerId === mid, eid: result.eid,
+            gotLoot: lootWinnerId === mid, eid: result.eid, rlvl: result.rlvl,
             bossStone:  lootWinnerId === mid ? bossStone  : 0,
             normStone:  lootWinnerId === mid ? normStone  : 0,
             blessStone: lootWinnerId === mid ? blessStone : 0,
@@ -2076,7 +2076,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone, nexum: nexumDrop,
+          gotLoot: true, eid: result.eid, rlvl: result.rlvl, bossStone, normStone, blessStone, nexum: nexumDrop,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
@@ -2146,7 +2146,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === socket.id, eid: result.eid,
+          gotLoot: lootWinnerId === socket.id, eid: result.eid, rlvl: result.rlvl,
           bossStone: lootWinnerId === socket.id ? bossStone : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
@@ -2155,7 +2155,7 @@ io.on('connection', socket => {
         memberIds.forEach(mid => io.to(mid).emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === mid, eid: result.eid,
+          gotLoot: lootWinnerId === mid, eid: result.eid, rlvl: result.rlvl,
           bossStone:  lootWinnerId === mid ? bossStone  : 0,
           normStone:  lootWinnerId === mid ? normStone  : 0,
           blessStone: lootWinnerId === mid ? blessStone : 0,
@@ -2165,7 +2165,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, bossStone, normStone, blessStone, nexum: nexumDrop2,
+          gotLoot: true, eid: result.eid, rlvl: result.rlvl, bossStone, normStone, blessStone, nexum: nexumDrop2,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       }
