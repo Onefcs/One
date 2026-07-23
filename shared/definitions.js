@@ -26,9 +26,9 @@ const ENEMY_DEF = [
   { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
   { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:88000, atk:17,  def:6,  spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
   // Floor 2 — Goblins (4× original)
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:900,  atk:115, def:12, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:1080, atk:144, def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:42000, atk:107, def:32, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:900,  atk:104, def:12, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:1080, atk:130, def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:42000, atk:96,  def:32, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
   // Floor 3 — Mushrooms (4× original)
   { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:1320, atk:264, def:20, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
   { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:1560, atk:336, def:24, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
