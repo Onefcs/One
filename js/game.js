@@ -208,10 +208,12 @@ function update(dt) {
           if (ax > ay * 1.25)  player.facing = inp.dx > 0 ? 'right' : 'left';
           else if (ay > 0)     player.facing = inp.dy > 0 ? 'front' : 'back';
         }
-      } else if (targetId) {
+      } else if (targetId && (autoAttackMode || _chaseArmed)) {
         // Chase locked target when no manual input — pressing attack on a
         // distant target (manual or auto-attack mode) closes the gap instead
-        // of standing still and doing nothing.
+        // of standing still and doing nothing. Merely selecting a target
+        // (tap/cycle) does NOT arm this — only an actual attack-button press
+        // does, via _chaseArmed.
         const _chEnt = targetIsPlayer ? otherPlayers.get(targetId) : serverEnemiesMap.get(targetId);
         if (_chEnt && (_chEnt.hp || 0) > 0) {
           const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;

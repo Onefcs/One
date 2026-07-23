@@ -793,7 +793,16 @@ function netConnect(onReady) {
     player.hurtTimer = 0.1;
     if (dmg) dmgNum(player.x, player.y - 24, dmg, '#f55');
     spawnBurst(player.x, player.y, '#f44', 4);
-    if (player.hp <= 0) { player.hp = 0; if (typeof playerDie === 'function') playerDie(); }
+    // Dying here doesn't respawn in place — the server ejects the player
+    // from the instance and follows up with partyDungeonEliminated, which
+    // is what actually exits the mode and shows the death screen.
+  });
+
+  socket.on('partyDungeonEliminated', () => {
+    if (!player) return;
+    player.hp = 0;
+    if (typeof exitPartyDungeonMode === 'function') exitPartyDungeonMode();
+    if (typeof playerDie === 'function') playerDie();
   });
 
   socket.on('partyDungeonEnemyHurt', ({ id, hp, dmg, isCrit }) => {

@@ -17,12 +17,13 @@ function _critDmg(base, critChance, critPower) {
 }
 
 class PartyDungeonRoom {
-  constructor(id, io, memberIds, onFail) {
+  constructor(id, io, memberIds, onFail, onPlayerDeath) {
     this.id = id;
     this.io = io;
     this.channel = 'pd_' + id;
     this.memberIds = [...memberIds];
     this.onFail = onFail || null;
+    this.onPlayerDeath = onPlayerDeath || null;
     this.players = new Map();
     this.state = 'fighting'; // fighting | complete | failed
     this._dungeon = generatePartyDungeon(Date.now() ^ Math.floor(Math.random() * 0xffffffff));
@@ -76,6 +77,19 @@ class PartyDungeonRoom {
     this.players.delete(socketId);
     this.memberIds = this.memberIds.filter(id => id !== socketId);
     if (this.players.size === 0) this.stop();
+  }
+
+  // A death kicks the player out of the dungeon entirely (no respawn-in-
+  // place) — remove them from the roster and let the caller (index.js) know
+  // so it can eject their client back to the normal floor. Deliberately
+  // doesn't stop()/teardown the room even if this empties it — the next
+  // tick's "no one left alive" check drives that through _fail() instead,
+  // so a full wipe still gets the normal failure notification/cleanup path.
+  _ejectPlayer(socketId) {
+    if (!this.players.has(socketId)) return;
+    this.players.delete(socketId);
+    this.memberIds = this.memberIds.filter(id => id !== socketId);
+    if (this.onPlayerDeath) this.onPlayerDeath(socketId);
   }
 
   updatePlayerStats(socketId, { atk, def, maxHp, critChance, critPower }) {
@@ -202,8 +216,10 @@ class PartyDungeonRoom {
     const dt = Math.min((now - this._lastTick) / 1000, 0.1);
     this._lastTick = now;
     if (this.state !== 'fighting') return;
-    if (this.players.size === 0) return;
 
+    // Empty (or fully-eliminated) roster is handled the same way — _fail()
+    // runs the normal failure notification/cleanup path even with nothing
+    // left to notify, rather than silently ticking forever.
     const alivePlayers = [];
     this.players.forEach(p => { if (p.hp > 0) alivePlayers.push(p); });
     if (alivePlayers.length === 0) { this._fail(); return; }
@@ -248,6 +264,7 @@ class PartyDungeonRoom {
           const dmg = Math.max(1, e.atk - (closest.def || 0));
           closest.hp = Math.max(0, closest.hp - dmg);
           this.io.to(closest.socketId).emit('partyDungeonPlayerHurt', { hp: closest.hp, dmg });
+          if (closest.hp <= 0) this._ejectPlayer(closest.socketId);
         }
       }
     });

@@ -93,11 +93,12 @@ function cycleTarget() {
     });
   }
   candidates.sort((a, b) => a.d - b.d);
-  if (candidates.length === 0) { targetId = null; targetIsPlayer = false; return; }
+  if (candidates.length === 0) { targetId = null; targetIsPlayer = false; _chaseArmed = false; return; }
   const curIdx = candidates.findIndex(c => c.id === targetId && c.isPlayer === targetIsPlayer);
   const next = candidates[(curIdx + 1) % candidates.length];
   targetId = next.id;
   targetIsPlayer = next.isPlayer;
+  _chaseArmed = false; // selecting a target this way is just aiming, not committing to chase it
 }
 
 function _trySelectEntityAtTouch(cx, cy) {
@@ -120,7 +121,7 @@ function _trySelectEntityAtTouch(cx, cy) {
       if (d < 22 + tapR && d < bestD) { bestD = d; best = { id, isPlayer: true }; }
     });
   }
-  if (best) { targetId = best.id; targetIsPlayer = best.isPlayer; }
+  if (best) { targetId = best.id; targetIsPlayer = best.isPlayer; _chaseArmed = false; }
 }
 
 function joyGuard() { return state === 'playing' && activeTab === 0; }
@@ -213,7 +214,7 @@ function _checkAttackBtnTouch(cx, cy) {
   if (!player) return false;
   const ab = getAttackBtnPos();
   if (Math.hypot(cx - ab.x, cy - ab.y) < ab.r + 8) {
-    if ((player.atkAnimTimer || 0) <= 0) player.atkTimer = -1; // ignore while animation is playing
+    if ((player.atkAnimTimer || 0) <= 0) { player.atkTimer = -1; _chaseArmed = true; } // ignore while animation is playing
     return true;
   }
   return false;

@@ -1181,10 +1181,12 @@ async function _grantPartyDungeonNexum(winnerSocketId, amount) {
   } catch (e) { console.error('party dungeon nexum grant:', e); }
 }
 
-// Marks today (UTC) as this player's completed party-dungeon run — checked
-// by createPartyDungeonLobby/joinPartyDungeonLobby before letting them queue
+// Marks today (UTC) as this player's used party-dungeon attempt — the
+// attempt is consumed on entry (startPartyDungeonLobby), not on a
+// successful clear, so dying/failing doesn't refund it. Checked by
+// createPartyDungeonLobby/joinPartyDungeonLobby before letting them queue
 // up again. Written straight to Mongo by telegramId so it works regardless
-// of which member's socket handler triggered the boss kill.
+// of which member's socket triggered it.
 function _lockPartyDungeonDaily(socketId) {
   const s = io.sockets.sockets.get(socketId);
   const tid = s?.data?.telegramId;
@@ -1240,7 +1242,6 @@ function _handlePartyDungeonKillResult(pd, attackerId, enemyId, result) {
     pd.stop();
     mids.forEach(mid => {
       io.to(mid).emit('partyDungeonComplete', { gold: goldShare, xp: xpShare });
-      _lockPartyDungeonDaily(mid);
       _cleanupPartyDungeonPlayer(mid, pd.channel);
     });
     pdRooms.delete(pd.id);
@@ -2788,10 +2789,23 @@ io.on('connection', socket => {
     const pd = new PartyDungeonRoom(pdId, io, memberIds, (mids) => {
       mids.forEach(mid => _cleanupPartyDungeonPlayer(mid, pd.channel));
       pdRooms.delete(pdId);
+    }, (deadMid) => {
+      // Death kicks the player out of the dungeon entirely (no respawn-in-
+      // place) — tell their client to leave, and drop our own bookkeeping.
+      // Do NOT call pd.removePlayer here: PartyDungeonRoom._ejectPlayer()
+      // already removed them internally, and if they were the last one
+      // left, the room's own next-tick "nobody alive" check needs to see
+      // that and run _fail() (proper notification + onFail cleanup) rather
+      // than this callback silently stop()-ing it first.
+      io.to(deadMid).emit('partyDungeonEliminated', {});
+      _cleanupPartyDungeonPlayer(deadMid, pd.channel);
     });
     pdRooms.set(pdId, pd);
     for (const mid of memberIds) {
       playerPartyDungeon.set(mid, pdId);
+      // The daily attempt is used up the moment the run starts, not on a
+      // successful clear — entering counts, win or lose.
+      _lockPartyDungeonDaily(mid);
       const mfl = playerFloorMap.get(mid);
       const mRoom = mfl !== undefined ? floorRooms.get(mfl) : null;
       const mp = mRoom?.players.get(mid);
