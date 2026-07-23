@@ -1034,6 +1034,57 @@ function exitRaidMode() {
   _raidWaveNotif = null;
 }
 
+// Party dungeon (maze + boss): unlike the raid arena, this dungeon has real
+// walls/rooms (generated server-side by mazeDungeon.js) in the exact same
+// {grid, rooms, w, h, spawn, safeZone} shape a normal floor uses, so the
+// normal floor renderer (buildTileCanvas, wall/prop drawing, minimap) just
+// works without any raid-arena-style special casing. Forcing dungeonLvl to
+// 5 makes every theme lookup (getTheme) render it with floor 5's tileset.
+function enterPartyDungeonMode(data) {
+  inPartyDungeon = true;
+  _normalDungeon    = dungeon;
+  _normalDungeonLvl = dungeonLvl;
+  _normalPlayerX    = player?.x ?? null;
+  _normalPlayerY    = player?.y ?? null;
+  dungeon = { ...data.dungeon, enemies: [] };
+  dungeonLvl = 5;
+  minimapCache = null; minimapCacheFloor = -1;
+  if (player) {
+    player.x = data.dungeon.spawn.x;
+    player.y = data.dungeon.spawn.y;
+    camera.x = player.x - W / (2 * ZOOM);
+    camera.y = player.y - _visH() / 2;
+    clampCamera();
+  }
+  if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  serverEnemies.length = 0; serverEnemiesMap.clear();
+  otherPlayers = new Map();
+  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
+  setTab(0);
+}
+
+function exitPartyDungeonMode() {
+  inPartyDungeon = false;
+  if (_normalDungeon) {
+    dungeon = _normalDungeon;
+    dungeonLvl = _normalDungeonLvl;
+    _normalDungeon = null;
+    if (player) {
+      player.x = _normalPlayerX ?? dungeon.spawn.x;
+      player.y = _normalPlayerY ?? dungeon.spawn.y;
+      camera.x = player.x - W / (2 * ZOOM);
+      camera.y = player.y - _visH() / 2;
+      clampCamera();
+    }
+  }
+  _normalPlayerX = null; _normalPlayerY = null;
+  minimapCache = null; minimapCacheFloor = -1;
+  if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  serverEnemies.length = 0; serverEnemiesMap.clear();
+  otherPlayers = new Map();
+  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
+}
+
 function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
   try { localStorage.setItem('_lastCharType', type); } catch (_) {}

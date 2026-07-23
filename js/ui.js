@@ -724,6 +724,87 @@ function showRaidFailed() {
   document.getElementById('raid-failed-modal').style.display = 'flex';
 }
 
+function updatePartyDungeonPanelUI() {
+  const body = document.getElementById('pd-panel-body');
+  if (!body) return;
+
+  if (inPartyDungeon) {
+    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">🌀 Вы в лабиринте...</div>`;
+    return;
+  }
+
+  if (_myPdLobbyId) {
+    const memberRows = (_myPdLobbyMembers || []).map(m =>
+      `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
+        <span>👤 ${m.name}</span>
+        <span style="color:#999;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
+      </div>`).join('');
+    const canStart = _isPdLobbyCreator && (_myPdLobbyMembers?.length || 0) >= 3;
+    body.innerHTML = `
+      <div class="raid-dungeon-card">
+        <div class="raid-dungeon-name">🌀 Лабиринт</div>
+        <div style="font-size:12px;color:#888;margin-bottom:8px">Ваша группа · ${_myPdLobbyMembers?.length || 1} / 8 (мин. 3)</div>
+        <div style="margin-bottom:10px">${memberRows}</div>
+        ${_isPdLobbyCreator
+          ? `<div class="raid-hint" style="margin-bottom:8px">Вы — создатель · нужно минимум 3 игрока</div>
+             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartPdLobby()' : ''}">Начать</button>`
+          : `<div class="raid-hint">Ожидание старта от создателя...</div>`}
+      </div>
+      <button onclick="netLeavePdLobby();updatePartyDungeonPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(255,60,60,.12);color:#f55;border:1px solid rgba(255,60,60,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
+    `;
+    return;
+  }
+
+  const dungeonCard = `
+    <div class="raid-dungeon-card" style="margin-bottom:10px">
+      <div class="raid-dungeon-name">🌀 Лабиринт</div>
+      <div class="raid-dungeon-desc">Ветвящийся лабиринт · 100 монстров · Финальный босс · Мин. 3 игрока</div>
+      <div class="raid-dungeon-rewards">
+        <span style="color:#00e5ff">50% Nexum с монстров</span>
+        <span style="color:#fa8">50% Заточка с босса</span>
+        <span style="color:#88f">10% Безоп. заточка с босса</span>
+      </div>
+      <div style="font-size:11px;color:#f93;margin-top:4px">Доступно 1 раз в день</div>
+    </div>`;
+
+  const createBtn = `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">Создать группу</button>`;
+
+  const lobbies = _pdLobbyList || [];
+  let lobbyListHtml = '';
+  if (lobbies.length === 0) {
+    lobbyListHtml = `<div class="raid-hint">Нет открытых групп. Создайте свою!</div>`;
+  } else {
+    lobbyListHtml = lobbies.map(lb => {
+      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#888">Ур.${m.lvl}</span> ${m.name}`).join(', ');
+      const full = (lb.members?.length || 0) >= 8;
+      return `
+        <div class="raid-dungeon-card" style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:13px;font-weight:700;color:#fff">${lb.creatorName}</span>
+            <span style="font-size:11px;color:#888">${lb.members?.length || 1} / 8</span>
+          </div>
+          <div style="font-size:11px;color:#999;margin-bottom:8px">${mList}</div>
+          <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinPdLobby('${lb.id}')`}">${full ? 'Полная' : 'Войти'}</button>
+        </div>`;
+    }).join('');
+  }
+
+  body.innerHTML = dungeonCard + createBtn +
+    `<div style="font-size:12px;color:#666;margin-bottom:6px">Открытые группы <button onclick="netGetPdLobbyList()" style="background:none;border:none;color:#60a5fa;font-size:11px;cursor:pointer">обновить</button></div>` +
+    lobbyListHtml;
+}
+
+function showPartyDungeonComplete({ gold, xp }) {
+  document.getElementById('pd-reward-body').innerHTML =
+    `<div>💰 +${gold} голда</div>` +
+    `<div>⭐ +${xp} опыта</div>`;
+  document.getElementById('pd-complete-modal').style.display = 'flex';
+}
+
+function showPartyDungeonFailed() {
+  document.getElementById('pd-failed-modal').style.display = 'flex';
+}
+
 // ─────────────────────────────────────────────────────────
 //  TAB MANAGEMENT
 // ─────────────────────────────────────────────────────────
@@ -736,7 +817,10 @@ function setMapTab(n) {
   document.getElementById('map-tab-content-0').style.display = n === 0 ? '' : 'none';
   document.getElementById('map-tab-content-1').style.display = n === 1 ? '' : 'none';
   if (n === 0) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
-  if (n === 1) { updateRaidPanelUI(); if (typeof netGetLobbyList === 'function') netGetLobbyList(); }
+  if (n === 1) {
+    updateRaidPanelUI(); if (typeof netGetLobbyList === 'function') netGetLobbyList();
+    updatePartyDungeonPanelUI(); if (typeof netGetPdLobbyList === 'function') netGetPdLobbyList();
+  }
 }
 
 function setInvTab(n) {

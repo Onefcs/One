@@ -153,7 +153,7 @@ function netConnect(onReady) {
   });
 
   socket.on('gameState', (data) => {
-    if (inRaid) return; // raid uses raidState updates, not floor gameState
+    if (inRaid || inPartyDungeon) return; // raid/party dungeon use their own *State updates, not floor gameState
     const _gs0 = performance.now();
     // Binary packet (ArrayBuffer / typed view) — decode via shared codec;
     // plain-object fallback kept for a server running older code
@@ -720,6 +720,145 @@ function netConnect(onReady) {
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 30, msg, '#f55');
   });
 
+  // ── Party dungeon (maze + boss) ──────────────────────────────────────────
+  socket.on('pdLobbyError', ({ msg }) => {
+    if (player && typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, msg, '#f93');
+  });
+
+  socket.on('pdLobbyList', ({ lobbies }) => {
+    _pdLobbyList = lobbies || [];
+    if (typeof updatePartyDungeonPanelUI === 'function') updatePartyDungeonPanelUI();
+  });
+
+  socket.on('pdLobbyJoined', ({ lobbyId, isCreator, members }) => {
+    _myPdLobbyId = lobbyId;
+    _isPdLobbyCreator = isCreator;
+    _myPdLobbyMembers = members || [];
+    if (typeof updatePartyDungeonPanelUI === 'function') updatePartyDungeonPanelUI();
+  });
+
+  socket.on('pdLobbyLeft', ({ reason } = {}) => {
+    _myPdLobbyId = null; _isPdLobbyCreator = false; _myPdLobbyMembers = [];
+    if (typeof updatePartyDungeonPanelUI === 'function') updatePartyDungeonPanelUI();
+    if (reason === 'disbanded') dmgNum(player?.x || 0, (player?.y || 0) - 30, 'Группа распущена', '#f93');
+  });
+
+  socket.on('partyDungeonStart', (data) => {
+    if (typeof enterPartyDungeonMode === 'function') enterPartyDungeonMode(data);
+  });
+
+  socket.on('partyDungeonState', ({ enemies, players }) => {
+    if (!inPartyDungeon) return;
+    const prevMap = new Map(serverEnemies.map(e => [e.id, e]));
+    const staleIds = new Set(prevMap.keys());
+    serverEnemies.length = 0;
+    serverEnemiesMap.clear();
+    (enemies || []).forEach(se => {
+      staleIds.delete(se.id);
+      const prev = prevMap.get(se.id);
+      const e = { ...se, targetX: se.x, targetY: se.y };
+      if (prev) {
+        e.hurtTimer    = prev.hurtTimer    || 0;
+        e.atkAnimTimer = prev.atkAnimTimer || 0;
+        e._animFrame   = prev._animFrame   || 0;
+        e._animTimer   = prev._animTimer   || 0;
+        e._animKey     = prev._animKey;
+        e._atkDone     = prev._atkDone     || false;
+        e._moveTimer   = prev._moveTimer   || 0;
+        e._facing      = prev._facing      || 'down';
+      }
+      serverEnemies.push(e);
+      serverEnemiesMap.set(se.id, e);
+    });
+    if (typeof pixiRemoveEnemy === 'function') staleIds.forEach(id => pixiRemoveEnemy(id));
+    const myId = socket.id;
+    (players || []).forEach(p => {
+      if (p.id === myId) return;
+      if (!otherPlayers.has(p.id)) {
+        otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y, animFrame: 0, animTimer: 0, moving: false, facing: p.facing || 'front' });
+        if (p.type) loadSprites(p.type, () => {});
+      } else {
+        const op = otherPlayers.get(p.id);
+        op.hp = p.hp; op.maxHp = p.maxHp; op.facing = p.facing || op.facing;
+        if (p.username !== undefined) op.username = p.username;
+        if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
+        op.targetX = p.x; op.targetY = p.y;
+      }
+    });
+  });
+
+  socket.on('partyDungeonPlayerHurt', ({ hp, dmg }) => {
+    if (!player || state !== 'playing') return;
+    player.hp = Math.max(0, hp);
+    player.hurtTimer = 0.1;
+    if (dmg) dmgNum(player.x, player.y - 24, dmg, '#f55');
+    spawnBurst(player.x, player.y, '#f44', 4);
+    if (player.hp <= 0) { player.hp = 0; if (typeof playerDie === 'function') playerDie(); }
+  });
+
+  socket.on('partyDungeonEnemyHurt', ({ id, hp, dmg, isCrit }) => {
+    const e = serverEnemiesMap.get(id);
+    if (e) {
+      e.hp = hp;
+      e.hurtTimer = 0.3;
+      if (dmg) { if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4'); }
+    }
+  });
+
+  socket.on('partyDungeonEnemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, isBoss, normStone, blessStone }) => {
+    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+    const e = serverEnemiesMap.get(id);
+    const px = ex ?? (e ? e.x : player?.x ?? 0);
+    const py = ey ?? (e ? e.y : player?.y ?? 0);
+    if (dmg) { if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4'); }
+    spawnBurst(px, py, color || (isBoss ? '#ff3333' : '#f80'), isBoss ? 14 : 8);
+    const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
+    if (dd) {
+      e.hp = 0;
+      e.atkAnimTimer = 0; e.hurtTimer = 0; e._moveTimer = 0;
+      e._deathTimer = dd.cols / dd.fps + 0.1;
+    } else {
+      serverEnemiesMap.delete(id);
+      if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(id);
+      let j = 0;
+      for (let i = 0; i < serverEnemies.length; i++) {
+        if (serverEnemies[i].id !== id) serverEnemies[j++] = serverEnemies[i];
+      }
+      serverEnemies.length = j;
+    }
+    if (xp && player) { player.kills++; gainXP(xp); }
+    if (gold && player) {
+      player.gold += gold;
+      const g = gold % 1 === 0 ? gold : +gold.toFixed(1);
+      dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
+    }
+    if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py);
+    if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 16);
+  });
+
+  socket.on('partyDungeonNexum', ({ amount, balance }) => {
+    if (!player) return;
+    window._nexumBalance = balance != null ? balance : (window._nexumBalance || 0) + (amount || 0);
+    player.nexumBalance = window._nexumBalance;
+    dmgNum(player.x, player.y - 52, '+' + amount + ' Nexum', '#00e5ff');
+  });
+
+  socket.on('partyDungeonComplete', ({ gold, xp }) => {
+    // gold/xp here are the boss kill's own reward share, already granted by
+    // the preceding partyDungeonEnemyKilled event for this same kill — this
+    // event is a "you cleared it" notification, not a second reward, so it
+    // only re-displays those numbers in the victory modal without re-adding
+    // them (that would double-count on top of what enemyKilled just gave).
+    if (typeof exitPartyDungeonMode === 'function') exitPartyDungeonMode();
+    if (typeof showPartyDungeonComplete === 'function') showPartyDungeonComplete({ gold: Math.round(gold || 0), xp: Math.round(xp || 0) });
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+  });
+
+  socket.on('partyDungeonFailed', () => {
+    if (typeof exitPartyDungeonMode === 'function') exitPartyDungeonMode();
+    if (typeof showPartyDungeonFailed === 'function') showPartyDungeonFailed();
+  });
+
   socket.on('specialQuestDone', ({ questId, reward, alreadyDone }) => {
     if (typeof onSpecialQuestDone === 'function') onSpecialQuestDone(questId, reward, alreadyDone);
   });
@@ -895,7 +1034,13 @@ function _buildSaveStats() {
   if (!player) return null;
   return {
     type: player.type,
-    floor: dungeonLvl || 1,
+    // Party dungeon mode force-sets dungeonLvl to 5 purely so the maze
+    // renders with floor 5's theme/tileset — that's not the player's real
+    // last floor, so a save mid-run must persist the floor backed up in
+    // _normalDungeonLvl instead, or the account would come back on floor 5
+    // next login regardless of actual progress. Raid mode never touches
+    // dungeonLvl at all, so this is a no-op there.
+    floor: inPartyDungeon ? (_normalDungeonLvl || 1) : (dungeonLvl || 1),
     lvl: player.lvl, xp: player.xp, xpNext: player.xpNext,
     gold: player.gold, kills: player.kills,
     hp: player.hp, maxHp: player.maxHp,
@@ -990,16 +1135,25 @@ function netSaveProgressNow() {
 }
 
 function netHealParty(amount) {
-  if (socket?.connected) socket.emit('healParty', { amount: Math.max(0, Math.min(amount, 9999)) });
+  if (!socket?.connected) return;
+  const amt = Math.max(0, Math.min(amount, 9999));
+  if (inPartyDungeon) { socket.emit('partyDungeonHealParty', { amount: amt }); return; }
+  socket.emit('healParty', { amount: amt });
 }
 function netSkillAttack(enemyId, multiplier) {
-  if (socket?.connected) socket.emit('skillAttack', { enemyId, multiplier });
+  if (!socket?.connected) return;
+  if (inPartyDungeon) { socket.emit('partyDungeonSkillAttack', { enemyId, multiplier }); return; }
+  socket.emit('skillAttack', { enemyId, multiplier });
 }
 function netSkillStun(enemyId, duration) {
-  if (socket?.connected && enemyId) socket.emit('skillEffect', { enemyId, type: 'stun', duration });
+  if (!socket?.connected || !enemyId) return;
+  if (inPartyDungeon) { socket.emit('partyDungeonSkillEffect', { enemyId, type: 'stun', duration }); return; }
+  socket.emit('skillEffect', { enemyId, type: 'stun', duration });
 }
 function netSkillSlow(enemyIds, duration) {
-  if (socket?.connected && enemyIds && enemyIds.length) socket.emit('skillEffect', { enemyIds, type: 'slow', duration });
+  if (!socket?.connected || !enemyIds || !enemyIds.length) return;
+  if (inPartyDungeon) { socket.emit('partyDungeonSkillEffect', { enemyIds, type: 'slow', duration }); return; }
+  socket.emit('skillEffect', { enemyIds, type: 'slow', duration });
 }
 function netPlayerInvis(invis) {
   if (socket?.connected) socket.emit('playerInvis', { invis: !!invis });
@@ -1076,6 +1230,8 @@ function netSendMove() {
   _lastMoveSend = now;
   if (inRaid) {
     socket.emit('raidMove', { x: player.x, y: player.y, hp: player.hp });
+  } else if (inPartyDungeon) {
+    socket.emit('partyDungeonMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
   } else {
     socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
   }
@@ -1094,6 +1250,7 @@ function netAttack(enemyId) {
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
   if (invisTimer > 0) { invisTimer = 0; socket.emit('playerInvis', { invis: false }); }
   if (inRaid) { socket.emit('raidAttack', { enemyId }); return; }
+  if (inPartyDungeon) { socket.emit('partyDungeonAttack', { enemyId }); return; }
   socket.emit('attack', { enemyId });
 }
 
@@ -1158,6 +1315,28 @@ function netStartLobby() {
 }
 function netGetLobbyList() {
   if (socket?.connected) socket.emit('getLobbyList');
+}
+
+// ── Party dungeon (maze + boss) lobby ────────────────────────────────────────
+function netCreatePdLobby() {
+  if (socket?.connected) socket.emit('createPartyDungeonLobby');
+}
+function netJoinPdLobby(lobbyId) {
+  if (socket?.connected) socket.emit('joinPartyDungeonLobby', { lobbyId });
+}
+function netLeavePdLobby() {
+  if (socket?.connected) socket.emit('leavePartyDungeonLobby');
+  _myPdLobbyId = null; _isPdLobbyCreator = false; _myPdLobbyMembers = [];
+}
+function netStartPdLobby() {
+  if (socket?.connected) socket.emit('startPartyDungeonLobby');
+}
+function netGetPdLobbyList() {
+  if (socket?.connected) socket.emit('getPartyDungeonLobbyList');
+}
+function netLeavePartyDungeon() {
+  if (socket?.connected) socket.emit('leavePartyDungeon');
+  inPartyDungeon = false;
 }
 
 // ── GRAM wallet ───────────────────────────────────────────────────────────────

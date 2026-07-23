@@ -69,3 +69,10 @@ let _raidLobbyList = [];     // [{ id, creatorName, dungeonId, members: [{id,nam
 let _myLobbyId    = null;
 let _isLobbyCreator = false;
 let _myLobbyMembers = [];    // [{id,name,bm,lvl}]
+
+// Party dungeon (maze + boss) state
+let inPartyDungeon = false;
+let _pdLobbyList = [];       // [{ id, creatorName, members: [{id,name,bm,lvl}] }]
+let _myPdLobbyId = null;
+let _isPdLobbyCreator = false;
+let _myPdLobbyMembers = [];  // [{id,name,bm,lvl}]
