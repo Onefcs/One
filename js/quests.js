@@ -122,6 +122,26 @@ function onLevelUp(lvl) {
   if (activeTab === 3) updateQuestUI();
 }
 
+// Open world note: there's no discrete floor to walk into a menu and
+// "travel" to anymore — legacy dungeon_clear/goto_floor quests instead
+// complete the moment the player's kills reach the corresponding corridor
+// (dungeon_clear is awarded in full since repeated "runs" have no real
+// equivalent in one seamless world). Called from the enemyKilled handler
+// with the killed monster's global room level.
+function onEnterArm(rlvl) {
+  if (!player || typeof armIndexForLevel !== 'function') return;
+  const arm = armIndexForLevel(rlvl);
+  if (!player._armCleared) player._armCleared = {};
+  for (let f = 1; f < arm; f++) {
+    if (player._armCleared[f]) continue;
+    player._armCleared[f] = true;
+    const dq = QUEST_DEF.find(q => q.type === 'dungeon_clear' && q.floor === f);
+    const times = dq ? dq.count : 1;
+    for (let i = 0; i < times; i++) onDungeonClear(f);
+    onGotoFloor(f + 1);
+  }
+}
+
 function onDungeonClear(floor) {
   if (!player) return;
   const key = '_dungeon_' + floor;
@@ -413,7 +433,7 @@ function _questProgHtml(q, isCur) {
     return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#1a3a6a,#2a5aaa)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
   }
   if (q.type === 'goto_floor') {
-    return `<div class="quest-prog">Перейди на этаж ${q.targetFloor} через Карту</div>`;
+    return `<div class="quest-prog">Дойди до монстров уровня ${(q.targetFloor - 1) * ROOMS_PER_ARM + 1}+ в коридоре</div>`;
   }
   if (q.type === 'craft') {
     return `<div class="quest-prog">Зайди к кузнецу</div>`;

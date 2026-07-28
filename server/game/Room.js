@@ -1,6 +1,6 @@
-const { generateDungeon, TILE, WALL } = require('./dungeon');
-const { calcGoldDrop, CHAR_DEF } = require('../../shared/definitions');
-const { encodeGameState } = require('../../shared/netcodec');
+const { generateOpenWorld, TILE, WALL } = require('./dungeon');
+const { calcGoldDrop, CHAR_DEF, ARM_NAMES, armIndexForLevel } = require('../../shared/definitions');
+const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server stats
 function computeStats(sd, cd) {
@@ -49,7 +49,8 @@ class Room {
     this.floor = floor;
     this.io = io;
     this.players = new Map();
-    this._dungeon = generateDungeon(floor);
+    this._dungeon = generateOpenWorld();
+    this._gridPacked = packGrid(this._dungeon.grid, this._dungeon.w, this._dungeon.h);
     this.enemies = this._dungeon.enemies.map(e => ({
       ...e, hp: e.maxHp, aggro: false,
       atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
@@ -83,7 +84,7 @@ class Room {
 
   get dungeonData() {
     const d = this._dungeon;
-    return { grid: d.grid, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, spawnDoor: d.spawnDoor };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, spawnDoors: d.spawnDoors };
   }
 
   _inSafeZone(x, y) {
@@ -106,16 +107,20 @@ class Room {
       }));
   }
 
-  // One boss per floor — alive or, once dead, the timestamp it respawns at.
-  // respawnTimer is undefined for the single tick right after death (the AI
-  // loop hasn't assigned it its full duration yet), so fall back to the same
-  // constant used to seed it.
+  // One boss per corridor (arm) — alive or, once dead, the timestamp it
+  // respawns at. respawnTimer is undefined for the single tick right after
+  // death (the AI loop hasn't assigned it its full duration yet), so fall
+  // back to the same constant used to seed it.
   getBossStatus() {
-    const boss = this.enemies.find(e => e.isBoss);
-    if (!boss) return null;
-    if (boss.hp > 0) return { alive: true };
-    const secs = boss.respawnTimer !== undefined ? boss.respawnTimer : 3600;
-    return { alive: false, respawnAt: Date.now() + Math.max(0, secs) * 1000 };
+    const status = {};
+    ARM_NAMES.forEach(arm => {
+      const boss = this.enemies.find(e => e.isBoss && e.arm === arm);
+      if (!boss) return;
+      if (boss.hp > 0) { status[arm] = { alive: true }; return; }
+      const secs = boss.respawnTimer !== undefined ? boss.respawnTimer : 3600;
+      status[arm] = { alive: false, respawnAt: Date.now() + Math.max(0, secs) * 1000 };
+    });
+    return status;
   }
 
   _isWall(x, y) {
@@ -179,7 +184,7 @@ class Room {
           e.stunTimer = 0; e.slowTimer = 0;
           e._shp = -1;
           delete e.respawnTimer;
-          if (e.isBoss) this.io.to(`floor_${this.floor}`).emit('bossStatus', { alive: true });
+          if (e.isBoss) this.io.to(`floor_${this.floor}`).emit('bossStatus', { arm: e.arm, alive: true });
         }
         return;
       }
@@ -520,9 +525,10 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
-      const g = calcGoldDrop(enemy, this.floor);
-      const xpFinal = (this.floor >= 2 && this.floor <= 5) ? enemy.xp * 3 : enemy.xp;
-      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0 };
+      const arm = armIndexForLevel(enemy.rlvl);
+      const g = calcGoldDrop(enemy, arm);
+      const xpFinal = arm >= 2 ? enemy.xp * 3 : enemy.xp;
+      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
@@ -541,9 +547,10 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
-      const g = calcGoldDrop(enemy, this.floor);
-      const xpFinal = (this.floor >= 2 && this.floor <= 5) ? enemy.xp * 3 : enemy.xp;
-      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0 };
+      const arm = armIndexForLevel(enemy.rlvl);
+      const g = calcGoldDrop(enemy, arm);
+      const xpFinal = arm >= 2 ? enemy.xp * 3 : enemy.xp;
+      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }

@@ -1,7 +1,10 @@
 // ─────────────────────────────────────────────────────────
-//  LOCATION THEMES  — one per floor (5 total, matching the 5 real
-//  dungeon floors and their enemy identity: goblins / skeletons /
-//  mushrooms / ghosts / golems).
+//  LOCATION THEMES — indices 1-4 match the open world's 4 corridor arms
+//  (index = armIndexForLevel, see shared/definitions.js) and their enemy
+//  identity: skeletons / goblins / mushrooms / ghosts. The live world itself
+//  renders with a single theme (getTheme(dungeonLvl), dungeonLvl is fixed at
+//  1); THEMES[1..4] are used for corridor-info-modal flavor only
+//  (showFloorInfo in js/ui.js). Index 5 (golems) is unused.
 //  buildTileCanvas() in game.js handles all drawing.
 // ─────────────────────────────────────────────────────────
 
@@ -148,12 +151,31 @@ function getTilePattern(ctx, key, tintColor) {
   return ctx.createPattern(cv, 'repeat');
 }
 
-// Draws the spawn room's exit door — a matched pair of tile-sized images
-// (left leaf + right leaf) spanning the 2-tile gap the dungeon generator
-// leaves open in that room's south wall. tx/ty = the gap's left tile.
-function drawSpawnDoor(c, tx, ty, tintColor) {
+// Draws one of the hub's 4 exit doors — a matched pair of tile-sized images
+// (left leaf + right leaf) spanning the 2-tile gap the world generator
+// leaves open in the hub's wall. tx/ty = the gap's first tile; dir is which
+// wall it's in ('top'/'bottom' = horizontal gap, 2 tiles wide; 'left'/
+// 'right' = vertical gap, 2 tiles tall — the leaf pair rotated 90° to match).
+function drawSpawnDoor(c, tx, ty, tintColor, dir) {
   const left = _getTintedTileCanvas('doorLeft', tintColor);
   const right = _getTintedTileCanvas('doorRight', tintColor);
+  if (dir === 'left' || dir === 'right') {
+    if (left) {
+      c.save();
+      c.translate(tx * TILE + TILE / 2, ty * TILE + TILE / 2);
+      c.rotate(-Math.PI / 2);
+      c.drawImage(left, -TILE / 2, -TILE / 2, TILE, TILE);
+      c.restore();
+    }
+    if (right) {
+      c.save();
+      c.translate(tx * TILE + TILE / 2, (ty + 1) * TILE + TILE / 2);
+      c.rotate(-Math.PI / 2);
+      c.drawImage(right, -TILE / 2, -TILE / 2, TILE, TILE);
+      c.restore();
+    }
+    return;
+  }
   if (left) c.drawImage(left, tx * TILE, ty * TILE, TILE, TILE);
   if (right) c.drawImage(right, (tx + 1) * TILE, ty * TILE, TILE, TILE);
 }

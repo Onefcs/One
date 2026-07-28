@@ -76,8 +76,21 @@ function calcGoldDrop(enemy, floor) {
   return Math.round(base * Math.pow(2, floor - 1) * floorBonus);
 }
 
-// Minimum player level to enter each floor (index = floor number)
-const FLOOR_UNLOCK_LEVEL = [0, 0, 5, 15, 30, 50];
+// ── Open-world corridors ──────────────────────────────────────────────────────
+// The world is one continuous map: a central hub room (spawn + NPCs) with 4
+// corridors radiating out, each a chain of ROOMS_PER_ARM monster rooms.
+// Global monster level 1-80 is assigned by position: rooms 1-20 in the left
+// corridor, 21-40 top, 41-60 bottom, 61-80 right. Each corridor reuses one of
+// the FLOOR_ENEMIES pools/themes below (arm index = old "floor" number) so
+// enemy stats/gold/xp/rarity scaling keeps its existing tuning per zone.
+const ARM_NAMES = ['left', 'top', 'bottom', 'right'];
+const ROOMS_PER_ARM = 20;
+function armIndexForLevel(lvl) {
+  return Math.min(ARM_NAMES.length, Math.max(1, Math.ceil((lvl || 1) / ROOMS_PER_ARM)));
+}
+function armNameForLevel(lvl) {
+  return ARM_NAMES[armIndexForLevel(lvl) - 1];
+}
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
@@ -205,11 +218,16 @@ function enhanceBonus(it, levels) {
 function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion' || it.slot === 'box'; }
 
 // ── Room-level monster progression ─────────────────────────────────────────────
-// Each floor's dungeon (server/game/dungeon.js) chains 20 rooms: room 0 is the
-// safe spawn room (no monsters), and the 19 rooms after it hold monsters at
-// increasing "room level" 1..19 (room 1 = weakest, room 19 = the boss room /
-// strongest). All three progressions below compound per room level, on top
-// of the existing per-floor scaling.
+// Each corridor (server/game/dungeon.js) chains ROOMS_PER_ARM rooms of
+// increasing "local room level" 1..20 (room 1 = weakest, room 20 = that arm's
+// boss room / strongest) — this resets every arm, same growth curve the old
+// per-floor system used, so tuning carries over unchanged. The global display
+// level (1-80, see armIndexForLevel above) feeds this via armLocalLevel().
+// All progressions below compound per LOCAL room level, on top of the
+// existing per-arm scaling (sc/atkSc in dungeon.js).
+function armLocalLevel(globalLvl) {
+  return ((Math.max(1, globalLvl || 1) - 1) % ROOMS_PER_ARM) + 1;
+}
 const ROOM_STRENGTH_GROWTH = 0.10; // +10% monster hp/atk per room level
 const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
 const ROOM_KEY_GROWTH      = 0.05; // +5% key-drop chance per room level
@@ -251,7 +269,8 @@ const VIP_BONUSES = [
 ];
 
 if (typeof module !== 'undefined') module.exports = {
-  TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop, FLOOR_UNLOCK_LEVEL,
+  TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop,
+  ARM_NAMES, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,

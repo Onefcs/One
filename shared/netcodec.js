@@ -203,5 +203,38 @@ function decodeGameState(data) {
   return { players, enemies, t };
 }
 
+// ── Dungeon grid packing ─────────────────────────────────────────────────────
+// The open-world grid is ~1000×1000 tiles (~1M cells) — sent raw as nested
+// JSON arrays that would be a multi-MB payload. Packed 1 bit/cell (WALL=0,
+// FLOOR=1) it's ~125KB, which socket.io ships as a binary attachment (no
+// base64 inflation) instead of JSON.
+function packGrid(grid, w, h) {
+  const buf = Buffer.alloc(Math.ceil((w * h) / 8));
+  let bit = 0;
+  for (let y = 0; y < h; y++) {
+    const row = grid[y];
+    for (let x = 0; x < w; x++) {
+      if (row[x]) buf[bit >> 3] |= (1 << (bit & 7));
+      bit++;
+    }
+  }
+  return buf;
+}
+
+function unpackGrid(packed, w, h) {
+  const u8 = packed instanceof Uint8Array ? packed : new Uint8Array(packed);
+  const grid = new Array(h);
+  let bit = 0;
+  for (let y = 0; y < h; y++) {
+    const row = new Uint8Array(w);
+    for (let x = 0; x < w; x++) {
+      row[x] = (u8[bit >> 3] >> (bit & 7)) & 1;
+      bit++;
+    }
+    grid[y] = row;
+  }
+  return grid;
+}
+
 if (typeof module !== 'undefined')
-  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps };
+  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, packGrid, unpackGrid };

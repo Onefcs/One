@@ -979,20 +979,6 @@ function render(dt, ts) {
 // ─────────────────────────────────────────────────────────
 //  GAME FLOW
 // ─────────────────────────────────────────────────────────
-function goToFloor(n) {
-  if (n === dungeonLvl || !player) return;
-  const req = (typeof FLOOR_UNLOCK_LEVEL !== 'undefined') ? (FLOOR_UNLOCK_LEVEL[n] || 0) : 0;
-  if (req > 0 && player.lvl < req) {
-    if (typeof showFloorLock === 'function') showFloorLock(n, req);
-    return;
-  }
-  if (n > dungeonLvl) onDungeonClear(dungeonLvl);
-  onGotoFloor(n);
-  netSaveProgressNow();
-  netSendChangeFloor(clamp(n, 1, 20));
-  setTab(0);
-}
-
 function enterRaidMode(data) {
   inRaid = true;
   _normalDungeon    = dungeon;
@@ -1131,13 +1117,16 @@ function inSafeZone(px, py) {
 // ─────────────────────────────────────────────────────────
 //  NPCs
 // ─────────────────────────────────────────────────────────
+// The hub is a big room with 4 exit doors (N/S/E/W) leading into the
+// corridors — NPCs sit in the corner quadrants between doors so they never
+// block a doorway.
 function initNpcs() {
   if (!dungeon) return;
   const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
   const offsets = [
-    { dx: -TILE * 2, dy: 0 },
-    { dx: 0,         dy: -TILE * 2 },
-    { dx: TILE * 2,  dy: 0 },
+    { dx: -TILE * 9, dy: -TILE * 7 }, // NW quadrant
+    { dx:  TILE * 9, dy: -TILE * 7 }, // NE quadrant
+    { dx:  TILE * 9, dy:  TILE * 7 }, // SE quadrant
   ];
   npcs = NPC_DEF.map((def, i) => ({
     ...def,
@@ -1238,8 +1227,8 @@ function _buildChunk(cx, cy) {
   // 5. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
   // scattered sparsely on floor tiles. Same own-tile-block scoping as the
   // wall decor pass above, so seams never get a doubled-up prop. Skips the
-  // spawn-room door gap so clutter never spawns in the doorway.
-  const door = dungeon.spawnDoor;
+  // hub's 4 door gaps so clutter never spawns in a doorway.
+  const doors = dungeon.spawnDoors || [];
   const ptx0 = cx * _CHUNK_T, pty0 = cy * _CHUNK_T;
   const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
   const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
@@ -1247,7 +1236,7 @@ function _buildChunk(cx, cy) {
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
         if (dungeon.grid[ty][tx] !== FLOOR) continue;
-        if (door && ty >= door.ty && ty <= door.ty + 1 && tx >= door.tx && tx <= door.tx + 1) continue;
+        if (doors.some(door => ty >= door.ty && ty <= door.ty + 1 && tx >= door.tx && tx <= door.tx + 1)) continue;
         const h = ((tx * 41) ^ (ty * 59)) & 0xff;
         c.save();
         th.drawFloorProp(c, tx * TILE, ty * TILE, h);
@@ -1256,11 +1245,14 @@ function _buildChunk(cx, cy) {
     }
   }
 
-  // 6. Spawn-room exit door — fixed position, not part of the hash-scattered
-  // prop system. Drawn last so it always sits on top of the floor beneath it.
-  if (door && typeof drawSpawnDoor === 'function' &&
-      door.tx >= ptx0 && door.tx <= ptx1 && door.ty >= pty0 && door.ty <= pty1) {
-    drawSpawnDoor(c, door.tx, door.ty, th.wallColor);
+  // 6. Hub exit doors — fixed positions, not part of the hash-scattered prop
+  // system. Drawn last so they always sit on top of the floor beneath them.
+  if (typeof drawSpawnDoor === 'function') {
+    doors.forEach(door => {
+      if (door.tx >= ptx0 && door.tx <= ptx1 && door.ty >= pty0 && door.ty <= pty1) {
+        drawSpawnDoor(c, door.tx, door.ty, th.wallColor, door.dir);
+      }
+    });
   }
 
   return cv;
@@ -1282,8 +1274,11 @@ function playerDie() {
   if (player) (player.buffs || (player.buffs = {})).deathPenalty = 5 * 60;
   const info = document.getElementById('death-info');
   if (info && player) {
+    const _dRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
+    const _dLoc = (_dRoom?.arm && typeof _ARM_LABELS !== 'undefined')
+      ? `${_ARM_LABELS[_dRoom.arm]} · Ур. ${_dRoom.monsterLvl}` : 'Центральный зал';
     info.innerHTML =
-      `<span class="death-stat">${getTheme(dungeonLvl).name} · Этаж ${dungeonLvl}</span>` +
+      `<span class="death-stat">${_dLoc}</span>` +
       `<span class="death-stat">${player.gold} <span class="death-lbl">золота</span> · ${player.kills} <span class="death-lbl">убийств</span></span>`;
   }
   const penaltyEl = document.getElementById('death-penalty');

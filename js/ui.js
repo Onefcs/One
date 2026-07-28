@@ -404,9 +404,13 @@ function drawMapPanel() {
     mx2.arc(ox + (n.x / TILE) * sc, oy + (n.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2);
   });
   mx2.fill();
+  const _pRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
+  const _locLabel = _pRoom?.arm ? (_ARM_LABELS[_pRoom.arm] + ' · Ур. ' + _pRoom.monsterLvl) : 'Центральный зал';
   document.getElementById('map-status').textContent =
-    th.name + ' · Этаж ' + dungeonLvl + ' · Враги: ' + aliveEnemies.length;
+    _locLabel + ' · Враги: ' + aliveEnemies.length;
 }
+
+const _ARM_LABELS = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
 
 function _floorEnemyNames(n) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
@@ -433,41 +437,36 @@ function _floorEnemyPool(n) {
   };
 }
 
+// One open world, no floor travel — this list is purely informational,
+// showing each corridor's monster levels/theme. "ВЫ ЗДЕСЬ" highlights
+// whichever corridor the player is physically standing in right now.
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
-  const plvl = player?.lvl || 1;
-  grid.innerHTML = Array.from({ length: 5 }, (_, i) => {
-    const n   = i + 1;
-    const th  = getTheme(n);
-    const cur = n === dungeonLvl;
-    const req = (typeof FLOOR_UNLOCK_LEVEL !== 'undefined') ? (FLOOR_UNLOCK_LEVEL[n] || 0) : 0;
-    const locked = plvl < req;
+  const curArm = (typeof _getRoomAt === 'function' && player) ? (_getRoomAt(player.x, player.y)?.arm || null) : null;
+  grid.innerHTML = ARM_NAMES.map((arm, i) => {
+    const n = i + 1;
+    const th = getTheme(n);
+    const cur = arm === curArm;
+    const lvlFrom = i * ROOMS_PER_ARM + 1, lvlTo = (i + 1) * ROOMS_PER_ARM;
     const enemyNames = _floorEnemyNames(n);
     return `
-      <div class="floor-item${cur ? ' active' : ''}${locked ? ' floor-locked' : ''}">
-        <div class="floor-item-left" onclick="${locked ? `showFloorLock(${n},${req})` : `goToFloor(${n})`}">
+      <div class="floor-item${cur ? ' active' : ''}">
+        <div class="floor-item-left" onclick="showFloorInfo(${n})">
           <div class="floor-item-row1">
-            <span class="floor-item-num">${locked ? '🔒 ' : ''}Этаж ${n}</span>
+            <span class="floor-item-num">${_ARM_LABELS[arm]}</span>
             <span class="floor-item-loc">${th.name}</span>
             ${cur ? '<span class="floor-item-cur">ВЫ ЗДЕСЬ</span>' : ''}
-            ${locked ? `<span class="floor-item-lock-req">Ур. ${req}</span>` : ''}
           </div>
-          <div class="floor-item-brief">${enemyNames}</div>
+          <div class="floor-item-brief">Ур. ${lvlFrom}–${lvlTo} · ${enemyNames}</div>
         </div>
-        <button class="floor-item-btn" onclick="${locked ? `showFloorLock(${n},${req})` : `showFloorInfo(${n})`}">Инфо</button>
+        <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
       </div>`;
   }).join('');
 }
 
-function showFloorLock(n, req) {
-  if (typeof dmgNum === 'function' && player) {
-    dmgNum(player.x, player.y - 38, `🔒 Нужен уровень ${req}`, '#f93');
-  }
-}
-
-function showFloorInfo(floor) {
-  floor = floor || dungeonLvl || 1;
+function showFloorInfo(arm) {
+  const floor = arm || (typeof _getRoomAt === 'function' && player ? armIndexForLevel((_getRoomAt(player.x, player.y)?.monsterLvl) || 1) : 1);
   const sc    = 1 + (floor - 1) * 0.28;
   const atkSc = 1 + (floor - 1) * 0.18;
 
@@ -623,21 +622,25 @@ function showFloorInfo(floor) {
   const modal = document.getElementById('floor-info-modal');
   if (!modal) return;
   const _fiTh = getTheme(floor);
-  modal.querySelector('.fi-title').textContent = _fiTh.name;
+  const _armName = ARM_NAMES[floor - 1];
+  modal.querySelector('.fi-title').textContent = (_ARM_LABELS[_armName] || _fiTh.name) + ' · ' + _fiTh.name;
   document.getElementById('floor-info-body').innerHTML = html + _roomProgressionSection() + _boxInfoSection();
   modal.style.display = 'flex';
 }
 
-// Every floor's dungeon chains 20 rooms: the spawn room (no monsters), then
-// 19 monster rooms of increasing "room level" (1 = weakest, 19 = the boss
-// room). Each level compounds monster strength +10%, item-drop chance +5%,
-// key-drop chance +5%, and enchant-stone chance +1% over the previous level
-// — see ROOM_* / room*() helpers in shared/definitions.js.
+// Each corridor chains ROOMS_PER_ARM (20) rooms of increasing "local room
+// level" (1 = weakest, 20 = that corridor's boss room). Each level compounds
+// monster strength +10%, item-drop chance +5%, key-drop chance +5%, and
+// enchant-stone chance +1% over the previous level — see ROOM_* / room*()
+// helpers in shared/definitions.js. This progression resets at the start of
+// every corridor; overall difficulty across corridors comes from the arm
+// index (left→right = weakest→strongest theme).
 function _roomProgressionSection() {
   if (typeof roomStrengthMult !== 'function') return '';
+  const n = typeof ROOMS_PER_ARM !== 'undefined' ? ROOMS_PER_ARM : 20;
   const _fmtPctN = v => v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%';
-  const rows = Array.from({ length: 19 }, (_, i) => i + 1).map(lvl => {
-    const isBossRoom = lvl === 19;
+  const rows = Array.from({ length: n }, (_, i) => i + 1).map(lvl => {
+    const isBossRoom = lvl === n;
     const str  = roomStrengthMult(lvl);
     const drop = roomDropMult(lvl);
     const ku   = roomKeyChance(lvl, 'uncommon') * 100;
@@ -654,9 +657,9 @@ function _roomProgressionSection() {
   }).join('');
   return `
     <div class="fi-monster">
-      <div class="fi-mhdr"><span class="fi-mname" style="color:#f0c040">Прогрессия комнат (1–19)</span></div>
+      <div class="fi-mhdr"><span class="fi-mname" style="color:#f0c040">Прогрессия комнат в коридоре (1–${n})</span></div>
       <div style="font-size:10px;color:#888;margin-bottom:8px;line-height:1.5">
-        Комната 1 — первая после спавна (слабейшие монстры), комната 19 — комната босса (сильнейшие).
+        Комната 1 — первая от центрального зала (слабейшие монстры), комната ${n} — комната босса коридора (сильнейшие).
         Каждый уровень: сила монстра +10%, шанс дропа предметов +5%, шанс ключей +5%, шанс заточки +1% относительно предыдущего.
       </div>
       <div style="overflow-x:auto">
@@ -1092,12 +1095,14 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
-  // Floor label
+  // Current room-level label (global monster level 1-80, or "Зал" in the hub)
+  const _hudRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(p.x, p.y) : null;
+  const _hudLbl = _hudRoom?.monsterLvl ? ('Ур.' + _hudRoom.monsterLvl) : 'Зал';
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillText('Эт.' + dungeonLvl, mmX + mmW / 2 + 1, mmY + mmH - 2);
+  ctx.fillText(_hudLbl, mmX + mmW / 2 + 1, mmY + mmH - 2);
   ctx.fillStyle = 'rgba(170,140,255,0.95)';
-  ctx.fillText('Эт.' + dungeonLvl, mmX + mmW / 2, mmY + mmH - 3);
+  ctx.fillText(_hudLbl, mmX + mmW / 2, mmY + mmH - 3);
 
   // Vertical divider
   ctx.strokeStyle = 'rgba(70,45,130,0.3)'; ctx.lineWidth = 1;
@@ -2632,16 +2637,23 @@ function _fmtBossTime(ms) {
   return m + ':' + String(r).padStart(2, '0');
 }
 
-// bossStatus ({ alive, respawnAt }) is set from the server on floor join and
-// on 'bossStatus' pushes (kill / respawn) — see network.js. The countdown
-// itself just re-reads the stored respawnAt every second, no extra network
-// traffic needed for the ticking display.
+// One boss per corridor now — bossStatus is a map keyed by arm name
+// ({ left: {alive,respawnAt}, top: {...}, ... }), set on gameStart and
+// updated per-arm on 'bossStatus' pushes (kill / respawn) — see network.js.
+// The button shows whichever corridor the player is currently standing in;
+// in the hub (no corridor) it just shows "—". The countdown itself just
+// re-reads the stored respawnAt every second, no extra network traffic
+// needed for the ticking display.
 function _renderBossTimerBtn() {
   const btn = document.getElementById('boss-timer-btn');
   const txt = document.getElementById('boss-timer-text');
   if (!btn || !txt) return;
-  const bs = (typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus : { alive: true };
-  if (bs.alive) {
+  const arm = (typeof _getRoomAt === 'function' && player) ? (_getRoomAt(player.x, player.y)?.arm || null) : null;
+  const bs = (arm && typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus[arm] : null;
+  if (!bs) {
+    btn.classList.remove('boss-alive');
+    txt.textContent = '—';
+  } else if (bs.alive) {
     btn.classList.add('boss-alive');
     txt.textContent = 'Живой';
   } else {

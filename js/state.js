@@ -45,8 +45,8 @@ let pvpMode = false;
 // the character run at it.
 let _chaseArmed = false;
 
-// Current floor's boss: alive, or dead with the timestamp it respawns at
-let bossStatus = { alive: true };
+// Per-corridor boss status, keyed by arm name: { left: {alive,respawnAt}, ... }
+let bossStatus = {};
 
 // Party — array of { id, name } for all OTHER members
 let partyMembers = [];

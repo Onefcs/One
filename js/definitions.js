@@ -37,11 +37,11 @@ const QUEST_DEF = [
   { id:'f1q8',  floor:1, title:'Гроза стражей',     desc:'Убей 50 Скелет варвар',     type:'kill',         enemies:['Скелет варвар'],  count:50,  reward:{ xp:200,  gold:100 } },
   { id:'f1q9',  floor:1, title:'Убийца боссов',     desc:'Убей Босса скелетов',       type:'kill',         enemies:['Босс скелетов'],  count:1,   reward:{ xp:300,  gold:150 } },
   { id:'f1q10', floor:1, title:'Ветеран',           desc:'Достигни 5 уровня',         type:'level',        level:5,                    reward:{ xp:350,  gold:175 } },
-  { id:'f1q11', floor:1, title:'Покоритель',        desc:'Пройди подземелье 1 раз',   type:'dungeon_clear',floor:1,  count:1,           reward:{ xp:400,  gold:200 } },
+  { id:'f1q11', floor:1, title:'Покоритель',        desc:'Дойди до конца левого коридора', type:'dungeon_clear',floor:1,  count:1,           reward:{ xp:400,  gold:200 } },
   { id:'f1q12', floor:1, title:'Мясник',            desc:'Убей 100 Скелет варвар',    type:'kill',         enemies:['Скелет варвар'],  count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q13', floor:1, title:'Берсерк',           desc:'Убей 100 Скелет воин',      type:'kill',         enemies:['Скелет воин'],    count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q14', floor:1, title:'В гильдию!',        desc:'Вступи в гильдию',          type:'join_guild',                               reward:{ xp:500,  gold:250 } },
-  { id:'f1q15', floor:1, title:'Следующий уровень', desc:'Перейди на этаж 2',         type:'goto_floor',   targetFloor:2,              reward:{ xp:600,  gold:300 } },
+  { id:'f1q15', floor:1, title:'Следующий уровень', desc:'Дойди до верхнего коридора', type:'goto_floor',   targetFloor:2,              reward:{ xp:600,  gold:300 } },
 
   // ── Этаж 2 · Гоблины (квесты 16-30) · награда ×2 ───────
   { id:'f2q1',  floor:2, title:'Первая кровь II',   desc:'Убей 10 Гоблин воин',       type:'kill',         enemies:['Гоблин воин'],    count:10,  reward:{ xp:100,  gold:50  } },
@@ -54,11 +54,11 @@ const QUEST_DEF = [
   { id:'f2q8',  floor:2, title:'Гроза стражей II',  desc:'Убей 50 Гоблин страж',      type:'kill',         enemies:['Гоблин страж'],   count:50,  reward:{ xp:400,  gold:200 } },
   { id:'f2q9',  floor:2, title:'Убийца боссов II',  desc:'Убей Босса гоблинов',       type:'kill',         enemies:['Босс гоблинов'],  count:1,   reward:{ xp:600,  gold:300 } },
   { id:'f2q10', floor:2, title:'Ветеран II',        desc:'Достигни 10 уровня',        type:'level',        level:10,                   reward:{ xp:700,  gold:350 } },
-  { id:'f2q11', floor:2, title:'Покоритель II',     desc:'Пройди подземелье 2 раза',  type:'dungeon_clear',floor:2,  count:2,           reward:{ xp:800,  gold:400 } },
+  { id:'f2q11', floor:2, title:'Покоритель II',     desc:'Дойди до конца верхнего коридора', type:'dungeon_clear',floor:2,  count:2,           reward:{ xp:800,  gold:400 } },
   { id:'f2q12', floor:2, title:'Мясник II',         desc:'Убей 100 Гоблин страж',     type:'kill',         enemies:['Гоблин страж'],   count:100, reward:{ xp:900,  gold:450 } },
   { id:'f2q13', floor:2, title:'Берсерк II',        desc:'Убей 100 Гоблин воин',      type:'kill',         enemies:['Гоблин воин'],    count:100, reward:{ xp:900,  gold:450 } },
   { id:'f2q14', floor:2, title:'Почётный член',     desc:'Повысь ранг в гильдии',     type:'join_guild',                               reward:{ xp:1000, gold:500 } },
-  { id:'f2q15', floor:2, title:'Вглубь тьмы',      desc:'Перейди на этаж 3',         type:'goto_floor',   targetFloor:3,              reward:{ xp:1200, gold:600 } },
+  { id:'f2q15', floor:2, title:'Вглубь тьмы',      desc:'Дойди до нижнего коридора', type:'goto_floor',   targetFloor:3,              reward:{ xp:1200, gold:600 } },
 ];
 
 

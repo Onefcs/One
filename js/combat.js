@@ -88,11 +88,13 @@ function applyLootToInventory(eid, rlvl) {
     saved = true;
   }
 
-  // Drop multiplier: floor N gives ×N chance (floor 1 = ×1, floor 2 = ×2, …, floor 5 = ×5),
-  // further boosted 5% per room level (room 1 = ×1, room 19/boss = ×1.05^18) — see
-  // roomDropMult()/ROOM_DROP_GROWTH in shared/definitions.js.
-  const _fMult = (typeof dungeonLvl !== 'undefined' && dungeonLvl >= 1 && dungeonLvl <= 5) ? dungeonLvl : 1;
-  const _rMult = typeof roomDropMult === 'function' ? roomDropMult(rlvl) : 1;
+  // Drop multiplier: corridor arm N gives ×N chance (left = ×1, top = ×2,
+  // bottom = ×3, right = ×4), further boosted 5% per room level within that
+  // arm (room 1 = ×1, room 20/boss = ×1.05^19) — see roomDropMult()/
+  // ROOM_DROP_GROWTH in shared/definitions.js.
+  const _localLvl = typeof armLocalLevel === 'function' ? armLocalLevel(rlvl) : (rlvl || 1);
+  const _fMult = typeof armIndexForLevel === 'function' ? armIndexForLevel(rlvl) : 1;
+  const _rMult = typeof roomDropMult === 'function' ? roomDropMult(_localLvl) : 1;
   const _dropMult = _fMult * _rMult;
 
   // Recipe drop (all non-boss enemies)
@@ -137,13 +139,13 @@ function applyLootToInventory(eid, rlvl) {
   // Room-level key drops (necessary for forge box-crafting) — base chance at
   // room level 1, compounding 5%/level; see roomKeyChance() (shared/definitions.js).
   if (typeof roomKeyChance === 'function') {
-    if (Math.random() < roomKeyChance(rlvl, 'uncommon')) _addMat('key_uncommon', 60);
-    if (Math.random() < roomKeyChance(rlvl, 'rare'))     _addMat('key_rare', 68);
+    if (Math.random() < roomKeyChance(_localLvl, 'uncommon')) _addMat('key_uncommon', 60);
+    if (Math.random() < roomKeyChance(_localLvl, 'rare'))     _addMat('key_rare', 68);
   }
 
   // Room-level enchant-stone drop (Камень обычной заточки) — base 1% at room
   // level 1, compounding 1%/level; see roomEnchantStoneChance().
-  if (typeof roomEnchantStoneChance === 'function' && Math.random() < roomEnchantStoneChance(rlvl)) {
+  if (typeof roomEnchantStoneChance === 'function' && Math.random() < roomEnchantStoneChance(_localLvl)) {
     _addMat('norm_stone', 76);
   }
 

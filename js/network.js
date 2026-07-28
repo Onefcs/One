@@ -116,15 +116,23 @@ function netConnect(onReady) {
 
   socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs }) => {
     dungeonLvl = floor;
-    dungeon = { ...d, enemies: [], safeZone: d.safeZone || null };
+    dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
-    bossStatus = bs || { alive: true };
+    bossStatus = bs || {};
     if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
+    // Preload sprites for every corridor's enemy pool — the whole world is
+    // reachable from the start, not gated behind a single "current floor".
+    if (typeof ARM_NAMES !== 'undefined') {
+      ARM_NAMES.forEach((_, i) => {
+        const fe = FLOOR_ENEMIES && FLOOR_ENEMIES[i + 1];
+        if (fe) (fe.pool || []).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
+      });
+    }
     if (_isReconnectRejoin) {
       // Resuming after a socket.io reconnect (see authOk guard above) — the
       // dungeon/enemy resync above is still needed since this is a fresh
@@ -414,6 +422,7 @@ function netConnect(onReady) {
       const _eDef = ENEMY_DEF.find(e => e.eid === eid);
       if (_eDef) onEnemyKill(_eDef.name);
     }
+    if (rlvl && player && typeof onEnterArm === 'function') onEnterArm(rlvl);
     if (gotLoot && player) {
       applyLootToInventory(eid, rlvl);
       // VIP drop bonus: extra loot roll proportional to drop%
@@ -450,33 +459,12 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('floorChanged', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs }) => {
-    dungeonLvl = floor;
-    dungeon = { ...d, enemies: [] };
-    serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
-    serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
-    otherPlayers = new Map();
-    bossStatus = bs || { alive: true };
-    if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
-    resetNetCodecMaps(); // binary handle→id maps are scoped to the room
-    buildTileCanvas();
-    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
-    if (player) {
-      player.x = d.spawn.x; player.y = d.spawn.y;
-      camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
-      clampCamera();
-    }
-    initNpcs();
-    transTimer = 0.5;
-    // Preload sprites for enemies on this floor to avoid mid-game hitches
-    const fe = FLOOR_ENEMIES && FLOOR_ENEMIES[floor];
-    if (fe) {
-      (fe.pool || []).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
-    }
-  });
-
-  socket.on('bossStatus', (bs) => {
-    bossStatus = bs || { alive: true };
+  // One boss per corridor — bossStatus is a map keyed by arm name
+  // ({ left: {alive,...}, top: {...}, ... }). This push updates just the
+  // arm that changed; 'gameStart' below sets the initial full map.
+  socket.on('bossStatus', ({ arm, alive, respawnAt }) => {
+    if (!bossStatus) bossStatus = {};
+    if (arm) bossStatus[arm] = { alive, respawnAt };
     if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
   });
 
@@ -1261,10 +1249,6 @@ function netAttack(enemyId) {
   if (inRaid) { socket.emit('raidAttack', { enemyId }); return; }
   if (inPartyDungeon) { socket.emit('partyDungeonAttack', { enemyId }); return; }
   socket.emit('attack', { enemyId });
-}
-
-function netSendChangeFloor(floor) {
-  if (socket?.connected) socket.emit('changeFloor', { floor });
 }
 
 function netSelectChar(type, savedStats) {

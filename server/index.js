@@ -19,6 +19,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  armIndexForLevel,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -931,9 +932,13 @@ app.get('/tg-botname', (req, res) => {
     .catch(() => res.status(503).json({ error: 'bot not resolved' }));
 });
 
-// One permanent Room per floor — pre-created at startup, never destroyed.
-// All players on the same floor share one world (no sub-instances, no capacity limit).
-const MAX_FLOOR = 5;
+// One permanent Room for the whole open world — pre-created at startup, never
+// destroyed. All players share the one world (no sub-instances, no capacity
+// limit). MAX_FLOOR=1: the "floor" machinery below (floorRooms/currentFloor/
+// the floor_1 socket.io room) is legacy plumbing from the old 5-floor system,
+// kept as-is since it still works unchanged with a single permanent world —
+// only renaming would churn without benefit.
+const MAX_FLOOR = 1;
 const floorRooms = new Map();
 
 // ── Battle Power (БМ) formula ─────────────────────────────────────────────────
@@ -1965,8 +1970,6 @@ io.on('connection', socket => {
       { $set: { 'savedData.type': type } }
     ).catch(() => {});
     if (!currentRoom) {
-      const savedFloor = (effectiveSaved?.floor > 1) ? Math.max(1, Math.min(MAX_FLOOR, effectiveSaved.floor)) : 1;
-      currentFloor = savedFloor;
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
@@ -2012,7 +2015,7 @@ io.on('connection', socket => {
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.killed) {
-      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { alive: false, respawnAt: Date.now() + 3600000 });
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
 
@@ -2024,11 +2027,12 @@ io.on('connection', socket => {
         });
       }
 
+      const _arm = armIndexForLevel(result.rlvl);
       const bossStone = result.isBoss
-        ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
+        ? (_arm + Math.floor(Math.random() * 3)) : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
-      const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[currentFloor] || 0) ? 1 : 0;
+      const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0) ? 1 : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
@@ -2117,7 +2121,7 @@ io.on('connection', socket => {
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
     if (!result) return;
     if (result.killed) {
-      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { alive: false, respawnAt: Date.now() + 3600000 });
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
       const memberIds  = [];
@@ -2126,10 +2130,11 @@ io.on('connection', socket => {
           if (mid !== socket.id && playerFloorMap.get(mid) === currentFloor) memberIds.push(mid);
         });
       }
-      const bossStone  = result.isBoss ? (currentFloor + Math.floor(Math.random() * 3)) : 0;
+      const _arm2 = armIndexForLevel(result.rlvl);
+      const bossStone  = result.isBoss ? (_arm2 + Math.floor(Math.random() * 3)) : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
-      const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[currentFloor] || 0) ? 1 : 0;
+      const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0) ? 1 : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
@@ -2203,51 +2208,6 @@ io.on('connection', socket => {
     if (!partyMap) return;
     partyMap.forEach((_, mid) => {
       if (mid !== socket.id) io.to(mid).emit('faithShieldBuff', { duration });
-    });
-  });
-
-  socket.on('changeFloor', ({ floor }) => {
-    if (!currentRoom) return;
-    const newFloor = Math.max(1, Math.min(MAX_FLOOR, floor));
-    if (newFloor === currentFloor) return;
-
-    // Snapshot player state before leaving
-    const p = currentRoom.players.get(socket.id);
-
-    // Leave old floor
-    socket.leave(`floor_${currentFloor}`);
-    socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
-    currentRoom.removePlayer(socket.id);
-
-    // Join new floor
-    currentFloor = newFloor;
-    playerFloorMap.set(socket.id, currentFloor);
-    currentRoom = getRoom(newFloor);
-    socket.join(`floor_${newFloor}`);
-    currentRoom.addPlayer(socket.id, authed.username);
-    if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
-
-    // Carry over character stats directly — avoids recalculation from partial data
-    if (p?.type) {
-      const np = currentRoom.players.get(socket.id);
-      if (np) {
-        np.type   = p.type;
-        np.atk    = p.atk;
-        np.def    = p.def;
-        np.maxHp  = p.maxHp;
-        np.hp     = p.hp;
-        np.pvpMode = p.pvpMode || false;
-      }
-    }
-
-    socket.to(`floor_${newFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
-    if (p?.type) socket.to(`floor_${newFloor}`).emit('playerChar', { id: socket.id, type: p.type });
-
-    socket.emit('floorChanged', {
-      floor: newFloor,
-      dungeon: currentRoom.dungeonData,
-      enemies: currentRoom.enemySnapshot(),
-      bossStatus: currentRoom.getBossStatus(),
     });
   });
 
