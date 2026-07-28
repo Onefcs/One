@@ -19,10 +19,6 @@ let serverEnemiesMap = new Map(); // id → enemy for O(1) lookup
 let netUsername = null;
 let netRoom = null;
 
-// Minimap tile cache
-let minimapCache = null;
-let minimapCacheFloor = -1;
-
 // NPCs in current floor
 let npcs = [];
 let nearNpc = null;

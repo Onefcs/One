@@ -1036,7 +1036,6 @@ function enterPartyDungeonMode(data) {
   _normalPlayerY    = player?.y ?? null;
   dungeon = { ...data.dungeon, enemies: [] };
   dungeonLvl = 5;
-  minimapCache = null; minimapCacheFloor = -1;
   if (player) {
     player.x = data.dungeon.spawn.x;
     player.y = data.dungeon.spawn.y;
@@ -1066,7 +1065,6 @@ function exitPartyDungeonMode() {
     }
   }
   _normalPlayerX = null; _normalPlayerY = null;
-  minimapCache = null; minimapCacheFloor = -1;
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
   serverEnemies.length = 0; serverEnemiesMap.clear();
   otherPlayers = new Map();
@@ -1124,9 +1122,9 @@ function initNpcs() {
   if (!dungeon) return;
   const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
   const offsets = [
-    { dx: -TILE * 9, dy: -TILE * 7 }, // NW quadrant
-    { dx:  TILE * 9, dy: -TILE * 7 }, // NE quadrant
-    { dx:  TILE * 9, dy:  TILE * 7 }, // SE quadrant
+    { dx: -TILE * 14, dy: -TILE * 11 }, // NW quadrant
+    { dx:  TILE * 14, dy: -TILE * 11 }, // NE quadrant
+    { dx:  TILE * 14, dy:  TILE * 11 }, // SE quadrant
   ];
   npcs = NPC_DEF.map((def, i) => ({
     ...def,

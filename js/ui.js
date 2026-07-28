@@ -628,8 +628,8 @@ function showFloorInfo(arm) {
   modal.style.display = 'flex';
 }
 
-// Each corridor chains ROOMS_PER_ARM (20) rooms of increasing "local room
-// level" (1 = weakest, 20 = that corridor's boss room). Each level compounds
+// Each corridor chains ROOMS_PER_ARM rooms of increasing "local room
+// level" (1 = weakest, the last = that corridor's boss room). Each level compounds
 // monster strength +10%, item-drop chance +5%, key-drop chance +5%, and
 // enchant-stone chance +1% over the previous level — see ROOM_* / room*()
 // helpers in shared/definitions.js. This progression resets at the start of
@@ -1004,38 +1004,19 @@ function drawHeader() {
   ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
 
   // ── Minimap (right side) ──────────────────────────────────
+  // Local window only — shows just the area around the player instead of
+  // the whole (huge) world. The window follows the player continuously
+  // (float-precision top-left, not tile-snapped) and is small enough
+  // (~60×60 tiles) to redraw from scratch every frame with no cache needed.
+  const _MM_RADIUS = 30; // tiles each direction from the player
   const mmPad = 6;
   const mmH = HEADER_H - mmPad * 2;
-  const mmW = Math.floor(Math.min(mmH * (dungeon.w / dungeon.h), W * 0.27));
+  const mmW = mmH;
   const mmX = W - mmW - mmPad - 4;
   const mmY = mmPad;
-  const mmSc = mmW / dungeon.w;
-
-  // Tile cache at native DPR for crisp rendering (independent of game DPR)
+  const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
-  const _mmDPR = window.devicePixelRatio || 1;
-  const mmCW = Math.round(mmW * _mmDPR), mmCH = Math.round(mmH * _mmDPR);
-  const mmCSc = mmCW / dungeon.w;
-  if (minimapCacheFloor !== dungeonLvl || !minimapCache ||
-      minimapCache.width !== mmCW || minimapCache.height !== mmCH) {
-    minimapCacheFloor = dungeonLvl;
-    minimapCache = document.createElement('canvas');
-    minimapCache.width = mmCW; minimapCache.height = mmCH;
-    const mctx = minimapCache.getContext('2d');
-    mctx.fillStyle = th.mmFloor;
-    mctx.beginPath();
-    for (let ty = 0; ty < dungeon.h; ty++) {
-      for (let tx = 0; tx < dungeon.w; tx++) {
-        if (dungeon.grid[ty][tx] !== WALL) {
-          mctx.rect(
-            Math.floor(tx * mmCSc), Math.floor(ty * mmCSc),
-            Math.max(1, Math.ceil(mmCSc)), Math.max(1, Math.ceil(mmCSc))
-          );
-        }
-      }
-    }
-    mctx.fill();
-  }
+  const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
 
   // Map panel border
   const mpX = mmX - 4, mpY = mmY - 4, mpW = mmW + 8, mpH = mmH + 8;
@@ -1048,7 +1029,20 @@ function drawHeader() {
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.beginPath(); roundRect(ctx, mmX, mmY, mmW, mmH, 3); ctx.clip();
-  ctx.drawImage(minimapCache, mmX, mmY, mmW, mmH);
+  ctx.fillStyle = '#030308'; ctx.fillRect(mmX, mmY, mmW, mmH);
+
+  ctx.fillStyle = th.mmFloor;
+  ctx.beginPath();
+  const _mmTx0 = Math.max(0, Math.floor(winTx)), _mmTx1 = Math.min(dungeon.w - 1, Math.ceil(winTx + _MM_RADIUS * 2));
+  const _mmTy0 = Math.max(0, Math.floor(winTy)), _mmTy1 = Math.min(dungeon.h - 1, Math.ceil(winTy + _MM_RADIUS * 2));
+  for (let ty = _mmTy0; ty <= _mmTy1; ty++) {
+    const row = dungeon.grid[ty];
+    for (let tx = _mmTx0; tx <= _mmTx1; tx++) {
+      if (row[tx] === WALL) continue;
+      ctx.rect(mmX + (tx - winTx) * mmSc, mmY + (ty - winTy) * mmSc, Math.max(1, Math.ceil(mmSc)), Math.max(1, Math.ceil(mmSc)));
+    }
+  }
+  ctx.fill();
 
   const mmEnemies = socket?.connected ? serverEnemies : enemies;
   const _mmR = Math.max(1, mmSc * 0.8);
@@ -1056,7 +1050,7 @@ function drawHeader() {
   ctx.beginPath();
   mmEnemies.forEach(e => {
     if ((e.hp || 0) <= 0 || e.isBoss) return;
-    const ex = mmX + (e.x / TILE) * mmSc, ey = mmY + (e.y / TILE) * mmSc;
+    const ex = mmX + (e.x / TILE - winTx) * mmSc, ey = mmY + (e.y / TILE - winTy) * mmSc;
     ctx.moveTo(ex + _mmR, ey); ctx.arc(ex, ey, _mmR, 0, Math.PI * 2);
   });
   ctx.fill();
@@ -1066,14 +1060,14 @@ function drawHeader() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   mmEnemies.forEach(e => {
     if ((e.hp || 0) <= 0 || !e.isBoss) return;
-    const ex = mmX + (e.x / TILE) * mmSc, ey = mmY + (e.y / TILE) * mmSc;
+    const ex = mmX + (e.x / TILE - winTx) * mmSc, ey = mmY + (e.y / TILE - winTy) * mmSc;
     ctx.fillText('💀', ex, ey);
   });
   const _mmRn = Math.max(1, mmSc);
   ctx.fillStyle = 'rgba(255,200,0,0.9)';
   ctx.beginPath();
   npcs.forEach(n => {
-    const nx = mmX + (n.x / TILE) * mmSc, ny = mmY + (n.y / TILE) * mmSc;
+    const nx = mmX + (n.x / TILE - winTx) * mmSc, ny = mmY + (n.y / TILE - winTy) * mmSc;
     ctx.moveTo(nx + _mmRn, ny); ctx.arc(nx, ny, _mmRn, 0, Math.PI * 2);
   });
   ctx.fill();
@@ -1083,12 +1077,13 @@ function drawHeader() {
     ctx.beginPath();
     otherPlayers.forEach(op => {
       if (op.x == null) return;
-      const ox = mmX + (op.x / TILE) * mmSc, oy = mmY + (op.y / TILE) * mmSc;
+      const ox = mmX + (op.x / TILE - winTx) * mmSc, oy = mmY + (op.y / TILE - winTy) * mmSc;
       ctx.moveTo(ox + _mmRop, oy); ctx.arc(ox, oy, _mmRop, 0, Math.PI * 2);
     });
     ctx.fill();
   }
-  const pdx = mmX + (p.x / TILE) * mmSc, pdy = mmY + (p.y / TILE) * mmSc;
+  // Player is always at the window's center
+  const pdx = mmX + mmW / 2, pdy = mmY + mmH / 2;
   ctx.fillStyle = 'rgba(0,255,80,0.25)';
   ctx.beginPath(); ctx.arc(pdx, pdy, 5, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#00ff55';

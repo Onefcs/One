@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, roomStrengthMult, ARM_NAMES, ROOMS_PER_ARM } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, roomStrengthMult, earlyLevelBuffMult, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -10,24 +10,33 @@ function seededRng(seed) {
   };
 }
 
-// ── Open world: one hub room + 4 corridors of ROOMS_PER_ARM rooms each ──────
-// Layout is a "plus" shape: a big central hub (spawn, NPCs, safe zone) with a
-// straight chain of rooms extending left/top/bottom/right from it, connected
-// by L-shaped corridors exactly like the old per-floor room chain did. Each
-// arm is its own monster "zone": global room level = arm's base (0/20/40/60)
-// + position-in-arm (1..ROOMS_PER_ARM), reusing one FLOOR_ENEMIES pool per
-// arm (arm index 1-4 standing in for the old floor 1-4 themes) so enemy
-// stats/gold/xp tuning carries over unchanged. The last room of each arm is
-// that arm's boss room.
-const HUB = 30;          // hub room size (tiles) — big enough for 3 NPCs + 4 doors
+// ── Open world: one hub room + 4 "comb" corridors ───────────────────────────
+// Layout is a plus shape: a big central hub (spawn, NPCs, safe zone) with a
+// dead-straight, always-empty main corridor running out to each side. Rooms
+// never sit on that path — instead, at ROOM_PAIRS_PER_ARM evenly spaced
+// positions along it, a short straight branch forks off to EACH side,
+// leading to a room, so every position has 2 rooms facing each other across
+// the corridor (see the "comb"/ladder reference sketch this was built from).
+// Global room level = arm's base (0/30/60/90) + position-in-arm
+// (1..ROOMS_PER_ARM, 2 rooms per position), reusing one FLOOR_ENEMIES pool
+// per arm (arm index 1-4 standing in for the old floor 1-4 themes) so enemy
+// stats/gold/xp tuning carries over unchanged. The last room of each arm
+// (highest level) is that arm's boss room.
+const HUB = 48;           // hub room size (tiles) — big enough for 3 NPCs + 4 doors
+                          // and to keep adjacent arms' room branches from
+                          // ever reaching into each other's corner (needs
+                          // HUB/2 >= CW + STUB + LARGE, see below)
 const SMALL = 9;          // 9×9 → 5 monsters
 const LARGE = 14;         // 14×14 → 10 monsters
-const CELL = 24;          // tile pitch per room slot along an arm
-const CW = 1;             // corridor half-width (3 tiles wide total)
+const CW = 1;             // main corridor half-width (3 tiles wide total)
+const BW = 1;             // branch corridor half-width (3 tiles wide total)
+const STUB = 6;           // branch length from main corridor edge to room edge
+const PITCH = 20;         // tile spacing between consecutive room-pair positions
+const LEAD_IN = 12;       // distance from hub wall to the first position
 const MARGIN = 6;         // outer wall padding
 const DOOR_STUB = 3;      // door gap depth carved into the hub's wall
 
-const ARM_LEN = ROOMS_PER_ARM * CELL;
+const ARM_LEN = LEAD_IN + (ROOM_PAIRS_PER_ARM - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
 const DW = MARGIN * 2 + ARM_LEN * 2 + HUB;
 const DH = DW;
 
@@ -37,6 +46,9 @@ function generateOpenWorld() {
 
   function inBounds(gx, gy) { return gx >= 0 && gx < DW && gy >= 0 && gy < DH; }
   function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
 
   const hubX0 = MARGIN + ARM_LEN, hubY0 = MARGIN + ARM_LEN;
   const hub = {
@@ -45,28 +57,12 @@ function generateOpenWorld() {
     cx: hubX0 + Math.floor(HUB / 2), cy: hubY0 + Math.floor(HUB / 2),
     isHub: true,
   };
-  for (let gy = hub.y; gy < hub.y + hub.size; gy++)
-    for (let gx = hub.x; gx < hub.x + hub.size; gx++)
-      paintFloor(gx, gy);
-
-  // Generic L-shaped 3-wide corridor between two centers (same algorithm the
-  // old per-floor generator used to chain its 20 rooms).
-  function carveCorridor(ax, ay, bx, by) {
-    let cx = ax, cy = ay;
-    while (cx !== bx) {
-      for (let d = -CW; d <= CW; d++) paintFloor(cx, cy + d);
-      cx += bx > cx ? 1 : -1;
-    }
-    while (cy !== by) {
-      for (let d = -CW; d <= CW; d++) paintFloor(cx + d, cy);
-      cy += by > cy ? 1 : -1;
-    }
-  }
+  paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
 
   // Carves a narrow door gap in the hub's wall facing `dir`. Returns both:
   // - render: the point right at the hub's wall (where the door sprite goes)
-  // - route: the stub's outer end (where the first corridor segment starts
-  //   stepping from, so the L-shaped corridor doesn't cut through the stub)
+  // - route: the stub's outer end (where the main corridor starts painting
+  //   from, so the door stub reads as a distinct gap in solid wall)
   function carveHubDoor(dir) {
     if (dir === 'left') {
       const ty = hub.cy, tx0 = hub.x - DOOR_STUB;
@@ -112,55 +108,27 @@ function generateOpenWorld() {
       return _enemyByEid.get(id);
     }
 
-    let prevCx = doors[dir].route.x, prevCy = doors[dir].route.y;
-    for (let i = 1; i <= ROOMS_PER_ARM; i++) {
-      const isBoss = i === ROOMS_PER_ARM;
-      const size = isBoss ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
+    // Main corridor: one dead-straight, always-empty strip from the hub door
+    // out to the last position (plus a little tail), 3 tiles wide.
+    const route = doors[dir].route;
+    const mainStart = horizontal ? route.x : route.y;
+    const mainEnd = mainStart + sign * (LEAD_IN + (ROOM_PAIRS_PER_ARM - 1) * PITCH + Math.floor(PITCH / 2));
+    const fixedCoord = horizontal ? route.y : route.x;
+    {
+      const lo = Math.min(mainStart, mainEnd), hi = Math.max(mainStart, mainEnd);
+      if (horizontal) paintRect(lo, fixedCoord - CW, hi, fixedCoord + CW);
+      else paintRect(fixedCoord - CW, lo, fixedCoord + CW, hi);
+    }
 
-      // Slot k=0 is nearest the hub; each slot is CELL tiles deep along the
-      // arm's axis and CELL tiles wide across it (room jitters within).
-      const k = i - 1;
-      const alongMin = k * CELL, alongMax = alongMin + CELL;
-      const maxOfsAlong = Math.max(1, CELL - size - 2);
-      const ofsAlong = 1 + Math.floor(rng() * maxOfsAlong);
-      // Across-axis jitter centered on the hub's centerline
-      const acrossSpan = Math.max(1, CELL - size);
-      const ofsAcross = Math.floor(rng() * acrossSpan) - Math.floor(acrossSpan / 2);
-
-      let x, y;
-      if (horizontal) {
-        const alongStart = sign > 0 ? (hub.x + hub.size + alongMin) : (hub.x - alongMax);
-        x = alongStart + ofsAlong;
-        y = hub.cy - Math.floor(size / 2) + ofsAcross;
-      } else {
-        const alongStart = sign > 0 ? (hub.y + hub.size + alongMin) : (hub.y - alongMax);
-        y = alongStart + ofsAlong;
-        x = hub.cx - Math.floor(size / 2) + ofsAcross;
-      }
-
-      const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
-      const room = {
-        x, y, size,
-        bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
-        cx, cy, isSmall: size === SMALL,
-        arm: dir, localLvl: i, monsterLvl: (armIdx - 1) * ROOMS_PER_ARM + i, isBoss,
-      };
-      rooms.push(room);
-
-      for (let gy = y; gy < y + size; gy++)
-        for (let gx = x; gx < x + size; gx++)
-          paintFloor(gx, gy);
-      carveCorridor(prevCx, prevCy, cx, cy);
-      prevCx = cx; prevCy = cy;
-
-      const rMult = isBoss ? 1 : roomStrengthMult(i);
+    function spawnRoomEnemies(room, x, y, size, isBoss) {
+      const rMult = isBoss ? 1 : roomStrengthMult(room.localLvl);
+      const buff = earlyLevelBuffMult(room.monsterLvl);
       const count = isBoss ? 1 : (room.isSmall ? 5 : 10);
       const weakMult = isBoss ? 1 : 0.5;
-
       for (let n = 0; n < count; n++) {
         const d = pickEnemy(isBoss);
         if (!d) continue;
-        let ex = cx * TILE + TILE / 2, ey = cy * TILE + TILE / 2;
+        let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
         for (let attempt = 0; attempt < 40; attempt++) {
           const gx = x + 1 + Math.floor(rng() * Math.max(1, size - 2));
           const gy = y + 1 + Math.floor(rng() * Math.max(1, size - 2));
@@ -169,12 +137,51 @@ function generateOpenWorld() {
         enemyList.push({
           id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
           rlvl: room.monsterLvl,
-          maxHp: Math.floor(d.hp * sc * weakMult * rMult), hp: Math.floor(d.hp * sc * weakMult * rMult),
-          atk: Math.floor(d.atk * atkSc * weakMult * rMult),
+          maxHp: Math.floor(d.hp * sc * weakMult * rMult * buff), hp: Math.floor(d.hp * sc * weakMult * rMult * buff),
+          atk: Math.floor(d.atk * atkSc * weakMult * rMult * buff),
           x: ex, y: ey, spawnX: ex, spawnY: ey,
           atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
         });
       }
+    }
+
+    // side = -1 (near side, e.g. "top"/"left" of the corridor) or +1 (far side)
+    function buildRoomAt(pos, side, localLvl, isBoss) {
+      const size = isBoss ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
+      const alongCenter = mainStart + sign * (LEAD_IN + pos * PITCH);
+
+      let x, y, branchX0, branchY0, branchX1, branchY1;
+      if (horizontal) {
+        x = alongCenter - Math.floor(size / 2);
+        y = side < 0 ? (fixedCoord - CW - STUB - size) : (fixedCoord + CW + STUB);
+        branchX0 = alongCenter - BW; branchX1 = alongCenter + BW;
+        branchY0 = side < 0 ? (y + size) : (fixedCoord + CW);
+        branchY1 = side < 0 ? (fixedCoord - CW) : (y - 1);
+      } else {
+        y = alongCenter - Math.floor(size / 2);
+        x = side < 0 ? (fixedCoord - CW - STUB - size) : (fixedCoord + CW + STUB);
+        branchY0 = alongCenter - BW; branchY1 = alongCenter + BW;
+        branchX0 = side < 0 ? (x + size) : (fixedCoord + CW);
+        branchX1 = side < 0 ? (fixedCoord - CW) : (x - 1);
+      }
+
+      const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
+      const room = {
+        x, y, size,
+        bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
+        cx, cy, isSmall: size === SMALL,
+        arm: dir, localLvl, monsterLvl: (armIdx - 1) * ROOMS_PER_ARM + localLvl, isBoss,
+      };
+      rooms.push(room);
+      paintRect(x, y, x + size - 1, y + size - 1);
+      paintRect(branchX0, branchY0, branchX1, branchY1);
+      spawnRoomEnemies(room, x, y, size, isBoss);
+    }
+
+    for (let pos = 0; pos < ROOM_PAIRS_PER_ARM; pos++) {
+      const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
+      buildRoomAt(pos, -1, lvlA, false);
+      buildRoomAt(pos, 1, lvlB, lvlB === ROOMS_PER_ARM);
     }
   }
 
