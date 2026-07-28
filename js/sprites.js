@@ -93,18 +93,23 @@ const SPRITE_DEF = {
     frameW: 128, frameH: 128,
     dispScale: 1.5,
     anims: {
-      'front-idle':   { src:'images/Lev/Front - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'back-idle':    { src:'images/Lev/Back - Idle.png',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'left-idle':    { src:'images/Lev/Left - Idle.png',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'right-idle':   { src:'images/Lev/Right - Idle.png',       cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'front-run':    { src:'images/Lev/Front - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'back-run':     { src:'images/Lev/Back - Running.png',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'left-run':     { src:'images/Lev/Left - Running.png',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'right-run':    { src:'images/Lev/Right - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'front-attack': { src:'images/Lev/Front - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'back-attack':  { src:'images/Lev/Back - Attacking.png',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'left-attack':  { src:'images/Lev/Left - Attacking.png',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'right-attack': { src:'images/Lev/Right - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
+      // ?v=3 cache-busts these paths: the underlying PNGs were re-extracted
+      // (correcting left/right) multiple times under the same filenames, and
+      // browsers/Telegram's WebView cache images by URL — without a version
+      // bump, clients that had already loaded Lev once kept rendering the
+      // stale, pre-fix sprites no matter what the server now serves.
+      'front-idle':   { src:'images/Lev/Front - Idle.png?v=3',      cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Lev/Back - Idle.png?v=3',        cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Lev/Left - Idle.png?v=3',        cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Lev/Right - Idle.png?v=3',       cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'front-run':    { src:'images/Lev/Front - Running.png?v=3',    cols:15, rows:1, n:15, fps:15, loop:true  },
+      'back-run':     { src:'images/Lev/Back - Running.png?v=3',     cols:15, rows:1, n:15, fps:15, loop:true  },
+      'left-run':     { src:'images/Lev/Left - Running.png?v=3',     cols:15, rows:1, n:15, fps:15, loop:true  },
+      'right-run':    { src:'images/Lev/Right - Running.png?v=3',    cols:15, rows:1, n:15, fps:15, loop:true  },
+      'front-attack': { src:'images/Lev/Front - Attacking.png?v=3',  cols:15, rows:1, n:15, fps:14, loop:false },
+      'back-attack':  { src:'images/Lev/Back - Attacking.png?v=3',   cols:15, rows:1, n:15, fps:14, loop:false },
+      'left-attack':  { src:'images/Lev/Left - Attacking.png?v=3',   cols:15, rows:1, n:15, fps:14, loop:false },
+      'right-attack': { src:'images/Lev/Right - Attacking.png?v=3',  cols:15, rows:1, n:15, fps:14, loop:false },
       'die':          { src:'images/Lev/Dying.png',              cols:15, rows:1, n:15, fps:12, loop:false },
     }
   },
