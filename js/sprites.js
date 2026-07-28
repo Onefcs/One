@@ -91,6 +91,7 @@ const SPRITE_DEF = {
   },
   lev: {
     frameW: 128, frameH: 128,
+    dispScale: 1.5,
     anims: {
       'front-idle':   { src:'images/Lev/Front - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
       'back-idle':    { src:'images/Lev/Back - Idle.png',        cols:15, rows:1, n:15, fps:7,  loop:true  },

@@ -689,7 +689,7 @@ function _updateOtherPlayers(pulse) {
       const img   = cache?.[key];
       const fw    = img?.frameW || def.frameW || 64;
       const fh    = img?.frameH || def.frameH || 64;
-      const dh = 68, dw = dh * fw / fh;
+      const dh = 68 * (def.dispScale || 1), dw = dh * fw / fh;
       spr.width = dw; spr.height = dh;
       spr.x = -dw / 2; spr.y = -dh * 0.62;
       spr.visible = true;
@@ -799,7 +799,7 @@ function _updatePlayer(dt) {
     const img   = cache?.[key];
     const fw    = img?.frameW || def.frameW || 64;
     const fh    = img?.frameH || def.frameH || 64;
-    const dh = 68, dw = dh * fw / fh;
+    const dh = 68 * (def.dispScale || 1), dw = dh * fw / fh;
     _plSpr.width = dw; _plSpr.height = dh;
     _plSpr.x = player.x - dw / 2;
     _plSpr.y = player.y - dh * 0.62;
