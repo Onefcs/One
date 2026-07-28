@@ -1461,7 +1461,13 @@ io.on('connection', socket => {
       if (_pending) await _pending.catch(() => {});
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
-      if (!doc) doc = await PlayerModel.create({ telegramId, username, savedData: {} });
+      // isNewAccount tells the client this telegramId has no prior server
+      // record — either a genuine first login, or (just as importantly) one
+      // that existed before but was deleted from the DB (e.g. by an admin).
+      // Either way the client must not resurrect it from its own localStorage
+      // save backup — see the authOk handler in js/network.js.
+      let isNewAccount = false;
+      if (!doc) { doc = await PlayerModel.create({ telegramId, username, savedData: {} }); isNewAccount = true; }
       // Initialise savedData to {} for legacy accounts that still have null —
       // dotted-path $set operations fail on a null parent in MongoDB, silently
       // swallowing quest completions and saves.
@@ -1488,7 +1494,7 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -1519,7 +1525,10 @@ io.on('connection', socket => {
       if (_pending2) await _pending2.catch(() => {});
       activeSessions.set(telegramId, socket.id);
       let doc = await PlayerModel.findOne({ telegramId });
-      if (!doc) doc = await PlayerModel.create({ telegramId, username, savedData: {} });
+      // See the matching comment in loginTelegramWebApp — tells the client
+      // not to resurrect a deleted account from its localStorage backup.
+      let isNewAccount = false;
+      if (!doc) { doc = await PlayerModel.create({ telegramId, username, savedData: {} }); isNewAccount = true; }
       if (!doc.savedData) {
         doc.savedData = {};
         await PlayerModel.updateOne({ telegramId }, { $set: { savedData: {} } }).catch(() => {});
@@ -1543,7 +1552,7 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });

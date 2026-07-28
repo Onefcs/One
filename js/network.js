@@ -51,8 +51,18 @@ function netConnect(onReady) {
     showAuthError('Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
+  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
     netUsername = username;
+    // The server had no record for this telegramId — either a genuine first
+    // login, or an account that existed before but was deleted from the DB
+    // (e.g. by an admin). Either way there's nothing to resume: clear any
+    // localStorage save backup / remembered class so _pickFreshestSave below
+    // and _showCharSelect's fallback don't resurrect the old (deleted)
+    // character from this device's local cache.
+    if (isNewAccount) {
+      try { localStorage.removeItem('_lastCharType'); } catch (_) {}
+      if (typeof _clearSaveBackup === 'function') _clearSaveBackup();
+    }
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     // Store GRAM info globally
     window._gramBalance   = gramBalance   || 0;
