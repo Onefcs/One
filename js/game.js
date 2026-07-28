@@ -1451,7 +1451,15 @@ window.addEventListener('beforeunload', () => { netSaveProgressNow(); });
 // Mobile browsers rarely fire beforeunload — flush the save when the app
 // goes to background (tab switch, screen lock, app switcher)
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') netSaveProgressNow();
+  if (document.visibilityState === 'hidden') { netSaveProgressNow(); return; }
+  // Coming back to the foreground: requestAnimationFrame (and with it,
+  // update()/render()) is paused for the entire time the tab is hidden, but
+  // socket messages still get processed as they arrive, so a fatal
+  // 'playerHurt' while backgrounded already set player.hp to 0 and flipped
+  // state to 'dead' correctly — this is just a defensive catch-all in case
+  // that ever races with a reconnect (see the gameStart handler in
+  // network.js for the main fix) and leaves hp at 0 without state following.
+  if (player && player.hp <= 0 && state !== 'dead' && typeof playerDie === 'function') playerDie();
 });
 
 window.addEventListener('load', () => {

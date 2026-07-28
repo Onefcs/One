@@ -152,6 +152,15 @@ function netConnect(onReady) {
       // (possibly stale) savedData this reconnect's authOk carried.
       _isReconnectRejoin = false;
       csOnServerReady();
+      // A reconnect (background tab suspended mid-session, brief network
+      // drop, etc.) re-joins as a fresh server-side room entry — if the
+      // player's own last-known hp was already 0 when that happened, the
+      // death screen never got a chance to show (or got lost along with the
+      // dropped connection). Without this, the room resumes them as if nothing
+      // happened: no modal, and — since the server now has no record they'd
+      // died — no penalty either. Re-run the same death handling a live
+      // 'playerHurt' would have triggered.
+      if (player && player.hp <= 0 && state !== 'dead') playerDie();
       return;
     }
     if (player) {
@@ -885,7 +894,14 @@ function netConnect(onReady) {
   });
 
   socket.on('disconnect', () => {
-    socket = null;
+    // NOT socket = null: this is the same Socket.IO client instance that
+    // will auto-reconnect (default behavior) and re-fire 'connect' on itself
+    // — nulling the module-level reference here left every socket?.emit(...)
+    // call across the app silently no-op-ing (or the 'connect' handler's own
+    // onReady() throwing on a null socket) forever after, even once the
+    // underlying transport successfully reconnected. socket.connected already
+    // reads false while down and true again once back, which is exactly what
+    // every call site here guards on.
     inRaid = false;
     _raidWaveNotif = null;
     serverEnemies = [];

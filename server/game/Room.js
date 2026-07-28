@@ -447,7 +447,13 @@ class Room {
       p.maxHp      = s.maxHp;
       p.critChance = s.critChance;
       p.critPower  = s.critPower;
-      p.hp    = (savedStats.hp && savedStats.hp > 0) ? Math.min(savedStats.hp, p.maxHp) : p.maxHp;
+      // hp === 0 is meaningful (the player died) and must not be confused with
+      // "no hp in this save" — a truthy check treated 0 as missing data and
+      // handed back a full heal, so anyone who reconnected (a backgrounded
+      // tab getting suspended mid-session, a network blip) while dead, or
+      // logged back in having quit during the death screen, resumed at full
+      // HP with no death ever recorded.
+      p.hp    = (savedStats.hp != null) ? Math.max(0, Math.min(savedStats.hp, p.maxHp)) : p.maxHp;
       p.lvl   = savedStats.lvl || 1;
     } else {
       p.hp = p.maxHp = cd.baseHP;

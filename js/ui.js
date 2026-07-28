@@ -378,7 +378,16 @@ function drawMapPanel() {
   }
   mx2.fillStyle = '#00ff44';
   mx2.beginPath(); mx2.arc(ox + (player.x / TILE) * sc, oy + (player.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
-  const mapEnemies = (typeof socket !== 'undefined' && socket?.connected) ? serverEnemies : enemies;
+  // There is no offline mode in this game — serverEnemies is the only enemy
+  // list that ever exists. The old `: enemies` fallback below referenced a
+  // global that was never declared anywhere; it silently never ran while the
+  // socket stayed connected, but any real disconnect (a backgrounded tab
+  // losing its connection, a network blip) hit it immediately and threw a
+  // ReferenceError out of render() — which is called from the
+  // requestAnimationFrame loop, so the throw skipped the loop's own
+  // rAF(loop) call at the end and froze the entire game, permanently, even
+  // after the socket reconnected moments later.
+  const mapEnemies = serverEnemies;
   const aliveEnemies = mapEnemies.filter(e => (e.hp || 0) > 0);
   mx2.fillStyle = '#ff3322';
   mx2.beginPath();
@@ -1044,7 +1053,7 @@ function drawHeader() {
   }
   ctx.fill();
 
-  const mmEnemies = socket?.connected ? serverEnemies : enemies;
+  const mmEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
   const _mmR = Math.max(1, mmSc * 0.8);
   ctx.fillStyle = 'rgba(255,45,35,0.9)';
   ctx.beginPath();
@@ -1657,7 +1666,7 @@ function drawPvpButton() {
 function drawTargetFrame() {
   if (!targetId || !player) return;
   const isOnline = !!(socket?.connected);
-  const activeEnemies = isOnline ? serverEnemies : enemies;
+  const activeEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
 
   let name = '', hp = 0, maxHp = 1, color = '#f80';
   if (targetIsPlayer && isOnline) {
