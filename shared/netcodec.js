@@ -14,7 +14,7 @@
 //  Layout (little-endian):
 //   u8  flags            bit0 = packet has players array
 //   f64 t                server tick timestamp
-//   [players] u8 count, then per entry:
+//   [players] u8 count (capped well under 255 by PLAYER_CAP, Room.js), per entry:
 //     u8  flags          bit0 = full
 //     u16 seq            player handle
 //     u16 x*2, u16 y*2
@@ -22,8 +22,8 @@
 //     i32 hp
 //     u16 atkSeq
 //     full only: str id, str username, u8 charType (255=none),
-//                i32 maxHp, u8 pvpMode
-//   [enemies] u8 count, then per entry:
+//                i32 maxHp, u8 pvpMode, str clanName, u8 clanIcon
+//   [enemies] u16 count (a shared open world can hold hundreds), per entry:
 //     u8  flags          bit0 = full
 //     u16 idx            enemy handle
 //     u16 x*2, u16 y*2
@@ -40,9 +40,32 @@ const NC_CHAR_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin'];
 
 const _ncEnc = new TextEncoder();
 const _ncDec = new TextDecoder();
-const _ncBuf = new ArrayBuffer(65536);
-const _ncDV  = new DataView(_ncBuf);
-const _ncU8  = new Uint8Array(_ncBuf);
+// Scratch buffer, grown on demand (never shrunk) — a shared open world can
+// have hundreds of enemies in view at once (vs. a handful on the old
+// per-floor maps this was originally sized for), and a burst of "full"
+// entries (e.g. every enemy on a player's very first tick) is much bigger
+// than a steady-state delta packet. A fixed-size buffer that a big encode
+// overflows throws mid-tick and takes the whole Room loop down with it, so
+// growth here has to be unconditional, not just a bigger constant.
+let _ncBuf = new ArrayBuffer(65536);
+let _ncDV  = new DataView(_ncBuf);
+let _ncU8  = new Uint8Array(_ncBuf);
+function _ncEnsure(o, extra) {
+  const need = o + extra;
+  if (need <= _ncBuf.byteLength) return;
+  let cap = _ncBuf.byteLength;
+  while (cap < need) cap *= 2;
+  const nu8 = new Uint8Array(cap);
+  nu8.set(_ncU8);
+  _ncBuf = nu8.buffer;
+  _ncU8 = nu8;
+  _ncDV = new DataView(_ncBuf);
+}
+// Generous per-entry upper bound (id/eid/name/color/username/clanName are
+// each at most a u8-length-prefixed string, i.e. 256 bytes; several of them
+// plus the fixed numeric fields comfortably fit in 1200 bytes) — checked
+// once before each entry instead of before every individual field write.
+const _NC_ENTRY_HEADROOM = 1200;
 
 // Decoder handle→id maps. Reset on floor change / game start — handles are
 // scoped to the current room.
@@ -62,13 +85,16 @@ function _ncQ16(v) { return Math.max(0, Math.min(65535, Math.round(v * 2))); }
 
 function encodeGameState(players, enemies, t) {
   let o = 0;
+  _ncEnsure(o, 16);
   _ncDV.setUint8(o, players ? 1 : 0); o += 1;
   _ncDV.setFloat64(o, t, true); o += 8;
 
   if (players) {
-    _ncDV.setUint8(o, players.length); o += 1;
+    // PLAYER_CAP (Room.js) keeps this well under 255 — u8 is safe.
+    _ncDV.setUint8(o, Math.min(255, players.length)); o += 1;
     for (let i = 0; i < players.length; i++) {
       const p = players[i];
+      _ncEnsure(o, _NC_ENTRY_HEADROOM);
       const full = p.username !== undefined;
       _ncDV.setUint8(o, full ? 1 : 0); o += 1;
       _ncDV.setUint16(o, p.seq & 0xffff, true); o += 2;
@@ -89,9 +115,13 @@ function encodeGameState(players, enemies, t) {
     }
   }
 
-  _ncDV.setUint8(o, enemies.length); o += 1;
+  // u16 — a shared open world can have hundreds of enemies in view at once
+  // (unlike the old per-floor maps this was originally u8-sized for).
+  _ncEnsure(o, 2);
+  _ncDV.setUint16(o, Math.min(65535, enemies.length), true); o += 2;
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i];
+    _ncEnsure(o, _NC_ENTRY_HEADROOM);
     const full = e.eid !== undefined;
     _ncDV.setUint8(o, full ? 1 : 0); o += 1;
     _ncDV.setUint16(o, e.idx & 0xffff, true); o += 2;
@@ -170,7 +200,7 @@ function decodeGameState(data) {
   }
 
   const enemies = [];
-  const en = dv.getUint8(o); o += 1;
+  const en = dv.getUint16(o, true); o += 2;
   for (let i = 0; i < en; i++) {
     const f = dv.getUint8(o); o += 1;
     const idx = dv.getUint16(o, true); o += 2;
