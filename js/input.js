@@ -355,7 +355,14 @@ function inputDir() {
   let dx = joy.dx, dy = joy.dy;
   if (keys['ArrowLeft']  || keys['a']) dx -= 1;
   if (keys['ArrowRight'] || keys['d']) dx += 1;
-  if (keys['ArrowUp']    || keys['w']) dy -= 1;
+  // 'w' is intentionally NOT a move-up alias here (unlike a/s/d) — it's also
+  // the W skill hotkey (see initInput() below), and treating it as movement
+  // too meant holding "up" on WASD kept re-triggering the W skill instead of
+  // turning the character to face up: the skill's cast animation takes over
+  // player.atkAnimTimer, which gates the movement/facing code below out
+  // entirely for as long as it plays. ArrowUp remains a full, unambiguous
+  // way to move up from the keyboard.
+  if (keys['ArrowUp']) dy -= 1;
   if (keys['ArrowDown']  || keys['s']) dy += 1;
   const l = Math.hypot(dx, dy);
   if (l > _JOY_DEADZONE) {
