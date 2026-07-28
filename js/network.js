@@ -205,7 +205,8 @@ function netConnect(onReady) {
 
           if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
             op.atkSeq = p.atkSeq;
-            op.atkAnimTimer = 0.55; op.animFrame = 0; op.animTimer = 0;
+            op.atkAnimTimer = 0.55 / ATTACK_ANIM_SPEEDUP; op.castDuration = op.atkAnimTimer;
+            op.animFrame = 0; op.animTimer = 0;
           }
         }
       });
@@ -679,7 +680,7 @@ function netConnect(onReady) {
     if (playerId === socket.id) return;
     const op = otherPlayers.get(playerId);
     if (op) {
-      op.atkAnimTimer = 0.45; op.castDuration = 0.45;
+      op.atkAnimTimer = 0.45 / ATTACK_ANIM_SPEEDUP; op.castDuration = 0.45 / ATTACK_ANIM_SPEEDUP;
       op._swingAngle = Math.atan2(ty - op.y, tx - op.x);
       op._swingTimer = 0.18;
     }

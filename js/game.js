@@ -431,7 +431,7 @@ function update(dt) {
       player.atkTimer = 1 / _as;
       faceTowards(closest.x, closest.y);
       swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
-      const _animDur = Math.min(0.825, 1 / _as);
+      const _animDur = Math.min(0.825, 1 / _as) / ATTACK_ANIM_SPEEDUP;
       player.atkAnimTimer = _animDur; player.castDuration = _animDur; player.animFrame = 0; player.animTimer = 0;
       player.pendingAttack = closestIsPlayer
         ? { isPlayer: true, socketId: closest._socketId, x: closest.x, y: closest.y }
@@ -654,11 +654,18 @@ function update(dt) {
       const ad = SPRITE_DEF[op.type].anims[ak];
       if (ad) {
         op.animTimer = (op.animTimer || 0) + dt;
-        const step = 1 / ad.fps;
+        const maxF = ad.n;
+        // Same as the local player (see update()): spread attack frames
+        // evenly across the (already speed-adjusted) cast duration instead
+        // of the sprite's own fps, so a shorter castDuration actually plays
+        // the swing faster instead of just cutting it off early.
+        const step = (!ad.loop && (op.atkAnimTimer || 0) > 0 && op.castDuration > 0)
+          ? op.castDuration / maxF
+          : 1 / ad.fps;
         while (op.animTimer >= step) {
           op.animTimer -= step;
-          if (ad.loop) { op.animFrame = (op.animFrame + 1) % ad.n; }
-          else if (op.animFrame < ad.n - 1) { op.animFrame++; }
+          if (ad.loop) { op.animFrame = (op.animFrame + 1) % maxF; }
+          else if (op.animFrame < maxF - 1) { op.animFrame++; }
         }
       }
     }
