@@ -2530,7 +2530,7 @@ function _renderVipLevels(curLevel, pending, bonuses, thresholds) {
 }
 
 function _vipItemDesc(lvl) {
-  const wepSfx = { assasin:'k', warrior:'t', archer:'b', mage:'s', priest:'s' }[player?.type] || 't';
+  const wepSfx = { assasin:'k', warrior:'t', archer:'b', mage:'s', priest:'s', lev:'t' }[player?.type] || 't';
   const wepPfx = { uncommon:'u', rare:'r', epic:'e', legendary:'l' };
 
   function ri(img, label, cls) {
@@ -3067,7 +3067,7 @@ function _gramShopPkgHtml(pkg, bal) {
     return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
   }
 
-  const wepSfx = { assasin:'k', warrior:'t', archer:'b', mage:'s', priest:'s' }[player?.type] || 't';
+  const wepSfx = { assasin:'k', warrior:'t', archer:'b', mage:'s', priest:'s', lev:'t' }[player?.type] || 't';
   const wepPfxMap = { common:'c', uncommon:'u', rare:'r' };
 
   const _ARMOR_ICONS = {

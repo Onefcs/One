@@ -36,7 +36,9 @@
 // ─────────────────────────────────────────────────────────
 
 const NC_FACING = ['front', 'back', 'left', 'right'];
-const NC_CHAR_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin'];
+// Appended, never reordered — indices are wire values other clients/servers
+// may already have cached.
+const NC_CHAR_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin', 'lev'];
 
 const _ncEnc = new TextEncoder();
 const _ncDec = new TextDecoder();

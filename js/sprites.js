@@ -89,6 +89,24 @@ const SPRITE_DEF = {
       'die':          { src:'images/Assasin/Dying.png',              cols:5, rows:2, n:10, fps:8,  loop:false },
     }
   },
+  lev: {
+    frameW: 128, frameH: 128,
+    anims: {
+      'front-idle':   { src:'images/Lev/Front - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'back-idle':    { src:'images/Lev/Back - Idle.png',        cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'left-idle':    { src:'images/Lev/Left - Idle.png',        cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'right-idle':   { src:'images/Lev/Right - Idle.png',       cols:15, rows:1, n:15, fps:7,  loop:true  },
+      'front-run':    { src:'images/Lev/Front - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
+      'back-run':     { src:'images/Lev/Back - Running.png',     cols:15, rows:1, n:15, fps:15, loop:true  },
+      'left-run':     { src:'images/Lev/Left - Running.png',     cols:15, rows:1, n:15, fps:15, loop:true  },
+      'right-run':    { src:'images/Lev/Right - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
+      'front-attack': { src:'images/Lev/Front - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
+      'back-attack':  { src:'images/Lev/Back - Attacking.png',   cols:15, rows:1, n:15, fps:14, loop:false },
+      'left-attack':  { src:'images/Lev/Left - Attacking.png',   cols:15, rows:1, n:15, fps:14, loop:false },
+      'right-attack': { src:'images/Lev/Right - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
+      'die':          { src:'images/Lev/Dying.png',              cols:15, rows:1, n:15, fps:12, loop:false },
+    }
+  },
 };
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────

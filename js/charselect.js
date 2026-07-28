@@ -1,6 +1,6 @@
 // ── Character Select ──────────────────────────────────────────
 
-const _CS_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin'];
+const _CS_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin', 'lev'];
 
 let _csRAF = null;
 let _csState = {};
@@ -13,6 +13,7 @@ const _CS_BADGE = {
   mage:    '✨ Дальний бой',
   priest:  '💛 Поддержка',
   assasin: '🗡 Ближний бой',
+  lev:     '🛡 Ближний бой',
 };
 
 // Max values for bar scaling

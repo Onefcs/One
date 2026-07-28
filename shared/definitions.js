@@ -15,6 +15,7 @@ const CHAR_DEF = {
   mage:    { name:'Маг',     icon:'mageClass',  color:'#ee88ee', baseHP:110, baseAtk:4,  baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#cc88ff' },
   priest:  { name:'Жрец',    icon:'priest',     color:'#ffee66', baseHP:160, baseAtk:2,  baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#ffff44' },
   assasin: { name:'Ассасин', icon:'assasin',    color:'#bb55ff', baseHP:120, baseAtk:5,  baseDef:2,  speed:205, atkRange:52,  atkSpeed:1.800, atkType:'melee' },
+  lev:     { name:'Лев',     icon:'lev',        color:'#b8c4d0', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
 };
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
@@ -140,11 +141,11 @@ const ITEM_DEF = [
   { id:'sw4', name:'Нож теней',        slot:'weapon', forClass:['assasin'], img:'/images/wep/ek.png', atk:44, critChance:0.10,          rarity:'epic'     },
   { id:'sw5', name:'Нож героя',        slot:'weapon', forClass:['assasin'], img:'/images/wep/lk.png', atk:65, critChance:0.25,          rarity:'legendary'},
   // ── Warrior axes ─────────────────────────────────────────
-  { id:'tw1', name:'Ржавый топор',     slot:'weapon', forClass:['warrior'], img:'/images/wep/ct.png', atk:5,                            rarity:'common'   },
-  { id:'tw2', name:'Стальной топор',   slot:'weapon', forClass:['warrior'], img:'/images/wep/ut.png', atk:15,                           rarity:'uncommon' },
-  { id:'tw3', name:'Топор дракона',    slot:'weapon', forClass:['warrior'], img:'/images/wep/rt.png', atk:23,                           rarity:'rare'     },
-  { id:'tw4', name:'Топор теней',      slot:'weapon', forClass:['warrior'], img:'/images/wep/et.png', atk:44,                           rarity:'epic'     },
-  { id:'tw5', name:'Топор героя',      slot:'weapon', forClass:['warrior'], img:'/images/wep/lt.png', atk:65,                           rarity:'legendary'},
+  { id:'tw1', name:'Ржавый топор',     slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/ct.png', atk:5,                            rarity:'common'   },
+  { id:'tw2', name:'Стальной топор',   slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/ut.png', atk:15,                           rarity:'uncommon' },
+  { id:'tw3', name:'Топор дракона',    slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/rt.png', atk:23,                           rarity:'rare'     },
+  { id:'tw4', name:'Топор теней',      slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/et.png', atk:44,                           rarity:'epic'     },
+  { id:'tw5', name:'Топор героя',      slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/lt.png', atk:65,                           rarity:'legendary'},
   // ── Archer bows ──────────────────────────────────────────
   { id:'bw1', name:'Деревянный лук',   slot:'weapon', forClass:['archer'],  img:'/images/wep/cb.png', atk:8,                            rarity:'common'   },
   { id:'bw2', name:'Серебряный лук',   slot:'weapon', forClass:['archer'],  img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,            rarity:'uncommon' },

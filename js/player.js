@@ -672,6 +672,64 @@ function useSkill(idx) {
       dmgNum(player.x, player.y - 50, '💀 ×4 Удар!', '#f0f');
       spawnBurst(player.x, player.y, '#f0f', 10);
     }
+  } else if (player.type === 'lev') {
+    if (sk.key === 'Q') { // Пинок — ×2 single target + stun 3s
+      const stunDur = 3 + _skillBuffSec('Q');
+      const pvpTgt = _pvpPlayerTarget();
+      if (pvpTgt) {
+        spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 50);
+        netPvpSkillAttack(pvpTgt.id, 2 * _skillDmgMult('Q'));
+        pvpTgt.op.stunTimer = stunDur;
+        netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
+        faceTowards(pvpTgt.op.x, pvpTgt.op.y);
+      } else {
+        const tgt = nearestEnemy();
+        if (tgt) {
+          spawnAOE(tgt.x, tgt.y, 50);
+          netSkillAttack(tgt.id, 2 * _skillDmgMult('Q'));
+          tgt.stunTimer = stunDur;
+          netSkillStun(tgt.id, stunDur);
+          faceTowards(tgt.x, tgt.y);
+        }
+      }
+      spawnBurst(player.x, player.y, '#ccd', 8);
+      dmgNum(player.x, player.y - 40, '🥾 Пинок!', '#ccd');
+    } else if (sk.key === 'W') { // Вихрь клинка — AOE 110
+      spawnAOE(player.x, player.y, 110);
+      _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
+      _pvpSkillAOE(110, _skillDmgMult('W'));
+    } else if (sk.key === 'E') { // Ярость — +20% ATK 5s (+1s per level)
+      battleCryTimer = 5 + _skillBuffSec('E');
+      player.atk = Math.floor(player.atk * 1.20);
+      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#ccd');
+      spawnBurst(player.x, player.y, '#ccd', 10);
+    } else if (sk.key === 'R') { // Кувырок — dash 140px toward target/enemy, ×1.5 on arrival
+      const _pvpR = _pvpPlayerTarget();
+      let _rdx, _rdy, _chargeTarget = null, _chargePvpTarget = null;
+      if (_pvpR) {
+        _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y;
+        _chargePvpTarget = _pvpR;
+      } else {
+        _chargeTarget = (targetId && !targetIsPlayer)
+          ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
+          : nearestEnemy();
+        if (_chargeTarget) { _rdx = _chargeTarget.x - player.x; _rdy = _chargeTarget.y - player.y; }
+        else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
+      }
+      const len = Math.hypot(_rdx, _rdy) || 1;
+      _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
+      if (_chargePvpTarget) {
+        netPvpSkillAttack(_chargePvpTarget.id, 1.5 * _skillDmgMult('R'));
+        faceTowards(_chargePvpTarget.op.x, _chargePvpTarget.op.y);
+        spawnAOE(_chargePvpTarget.op.x, _chargePvpTarget.op.y, 40);
+      } else if (_chargeTarget) {
+        netSkillAttack(_chargeTarget.id, 1.5 * _skillDmgMult('R'));
+        faceTowards(_chargeTarget.x, _chargeTarget.y);
+        spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
+      }
+      spawnBurst(player.x, player.y, '#ccd', 8);
+    }
   }
 }
 
@@ -733,7 +791,7 @@ function restoreFromSave(data) {
 
   // Brand-new players (no equipment saved) receive a full common starter kit
   if (!Object.values(player.equipment).some(Boolean)) {
-    const starterWeapon = { warrior:'tw1', archer:'bw1', mage:'st1', priest:'st1', assasin:'sw1' }[player.type] || 'tw1';
+    const starterWeapon = { warrior:'tw1', archer:'bw1', mage:'st1', priest:'st1', assasin:'sw1', lev:'tw1' }[player.type] || 'tw1';
     [starterWeapon, 'hm1', 'ar1', 'gl1', 'bt1', 'rn1', 'nd1'].forEach(id => {
       const def = ITEM_DEF.find(i => i.id === id);
       if (def) player.equipment[def.slot] = { ...def, enhance: 0 };

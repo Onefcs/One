@@ -164,6 +164,7 @@ canvas { display:block; width:100%; height:100%; }
 .cs-tab-mage.active    { color:#ee88ee; border-bottom-color:#ee88ee; }
 .cs-tab-priest.active  { color:#ffee66; border-bottom-color:#ffee66; }
 .cs-tab-assasin.active { color:#bb55ff; border-bottom-color:#bb55ff; }
+.cs-tab-lev.active     { color:#b8c4d0; border-bottom-color:#b8c4d0; }
 
 /* Large character stage */
 .cs-stage {
@@ -251,6 +252,7 @@ canvas { display:block; width:100%; height:100%; }
 .cs-btn-mage    { background:linear-gradient(135deg,#4a1a7a,#7a2aba); color:#daf; box-shadow:0 4px 18px rgba(122,42,186,.3); }
 .cs-btn-priest  { background:linear-gradient(135deg,#4a3a00,#8a7000); color:#fe4; box-shadow:0 4px 18px rgba(200,160,0,.3); }
 .cs-btn-assasin { background:linear-gradient(135deg,#2a0a4a,#6a2a9a); color:#c8f; box-shadow:0 4px 18px rgba(100,40,160,.3); }
+.cs-btn-lev     { background:linear-gradient(135deg,#3a4550,#6a7888); color:#dde4ea; box-shadow:0 4px 18px rgba(106,120,136,.3); }
 .cs-btn:hover  { opacity:.88; transform:translateY(-1px); }
 .cs-btn:active { transform:scale(.98); opacity:.75; }
 .cs-btn.cs-resume {

@@ -114,6 +114,12 @@ const SKILL_DEF = {
     { key:'E', name:'Невидимость', icon:'roll',         img:'/images/skill/ainvidible.png',cd:20, desc:'Невидим для врагов 4 сек'  },
     { key:'R', name:'Смерть. удар',icon:'deathStrike',  img:'/images/skill/asmertudar.png',cd:25, desc:'×4 удар по одной цели'     },
   ],
+  lev: [
+    { key:'Q', name:'Пинок',        icon:'kick',       cd:18, desc:'×2 урон по цели + стан 3 сек' },
+    { key:'W', name:'Вихрь клинка', icon:'whirlwind',  cd:12, desc:'АОЕ урон, радиус 110'          },
+    { key:'E', name:'Ярость',       icon:'battleCry',  cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'R', name:'Кувырок',      icon:'roll',       cd:15, desc:'Прыгает к цели нанося урон'    },
+  ],
 };
 
 // Bonus category for each skill key per class
@@ -124,6 +130,7 @@ const SKILL_BONUS_TYPE = {
   mage:    { Q: 'damage', W: 'damage', E: 'buff',     R: 'mobility' },
   priest:  { Q: 'heal',   W: 'buff',   E: 'buff',     R: 'heal'     },
   assasin: { Q: 'damage', W: 'damage', E: 'buff',     R: 'damage'   },
+  lev:     { Q: 'damage', W: 'damage', E: 'buff',     R: 'damage'   },
 };
 
 const NPC_DEF = [
