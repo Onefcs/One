@@ -57,7 +57,7 @@ function getPartyBtnPos() {
 
 // ATK and AUTO are above the potion/target row
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = 38; // noticeably bigger than the skill circles
   const pb = getPotionBtnPos();
   return { x: W - 14 - sz / 2, y: pb.y - pb.r - gap - r, r };
 }

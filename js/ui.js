@@ -948,17 +948,18 @@ function drawHeader() {
   const th = getTheme(dungeonLvl);
   const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
 
-  // Map panel border
-  const mpX = mmX - 4, mpY = mmY - 4, mpW = mmW + 8, mpH = mmH + 8;
+  // Map panel border (circular)
+  const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
+  const mpX = mmX - 4; // left-edge reference used by the header divider/info-area layout below
   ctx.fillStyle = 'rgba(15,11,4,0.92)';
-  roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.fill();
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
-  roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.stroke();
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.stroke();
 
   // Clip, draw tiles and blips
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.beginPath(); roundRect(ctx, mmX, mmY, mmW, mmH, 3); ctx.clip();
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2, 0, Math.PI * 2); ctx.clip();
   ctx.fillStyle = '#070604'; ctx.fillRect(mmX, mmY, mmW, mmH);
 
   ctx.fillStyle = th.mmFloor;
@@ -1235,55 +1236,43 @@ function drawSkillButtons() {
     const ready = cd <= 0;
     const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const r = b.w / 2;
 
-    // Background gradient (cached)
+    // Background gradient (cached) — circular
     ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
-    roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+    // Icon — clipped to the circle and scaled to fully cover it, no padding
+    // and no key-letter label, so the art fills the whole button.
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r - 1.5, 0, Math.PI * 2); ctx.clip();
+    ctx.globalAlpha = ready ? 1 : 0.45;
+    const img = sk.img ? _getPotImg(sk.img) : null;
+    if (img && img.complete && img.naturalWidth > 0) {
+      const d = r * 2;
+      ctx.drawImage(img, cx - d / 2, cy - d / 2, d, d);
+    } else {
+      drawIconCtx(ctx, sk.icon, cx, cy, r * 1.3, ready ? '#f2d39c' : '#7c7364');
+    }
+    if (!ready) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
 
     // Border
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
-    roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-    // Inner glow line when ready
-    if (ready && !isFlash) {
-      ctx.strokeStyle = 'rgba(236,187,103,0.15)'; ctx.lineWidth = 1;
-      roundRect(ctx, b.x + 1.5, b.y + 1.5, b.w - 3, b.h - 3, 10); ctx.stroke();
-    }
-
-    // Cooldown dark overlay
+    // Cooldown countdown number
     if (!ready) {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.fill();
-    }
-
-    // Icon — prefer PNG, fall back to SVG icon
-    ctx.globalAlpha = ready ? 1 : 0.45;
-    if (sk.img) {
-      const img = _getPotImg(sk.img);
-      if (img && img.complete && img.naturalWidth > 0) {
-        const is = 30;
-        ctx.drawImage(img, cx - is / 2, cy - 7 - is / 2, is, is);
-      } else {
-        drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#f2d39c' : '#7c7364');
-      }
-    } else {
-      drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#f2d39c' : '#7c7364');
-    }
-
-    // Key badge
-    ctx.globalAlpha = 1;
-    ctx.font = `bold 9px ${_F_SKILL}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
-    ctx.fillStyle = ready ? 'rgba(244,218,172,0.85)' : 'rgba(98,92,82,0.7)';
-    ctx.fillText(sk.key, cx, b.y + b.h - 6);
-
-    // Cooldown overlay number
-    if (!ready) {
-      ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle';
+      ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
       ctx.fillStyle = '#d1ccc5';
-      ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy - 7);
+      ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
     }
-    ctx.globalAlpha = 1;
   }
 }
 
