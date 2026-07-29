@@ -26,10 +26,12 @@ function getSkillBtnPos(idx) {
   };
 }
 
-// Attack and Target are stacked ABOVE the 2×2 skill grid (row); Potion now
-// takes the bigger primary slot above that row (swapped with Attack).
+// Attack and Target are stacked ABOVE the 2×2 skill grid (row); Potion takes
+// the primary slot above that row. Attack keeps the bigger (formerly
+// Potion's-slot-sized) radius here, Potion the smaller one below — icon size
+// scales off these radii, so this alone swaps how big each icon renders.
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
   const gridTop = H - NAV_H - 14 - 2 * sz - gap;
   return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
 }
@@ -58,7 +60,7 @@ function getPartyBtnPos() {
 
 // Potion is above the attack/target row; AUTO sits directly above Potion
 function getPotionBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
   const ab = getAttackBtnPos();
   return { x: W - 14 - sz / 2, y: ab.y - ab.r - gap - r, r };
 }

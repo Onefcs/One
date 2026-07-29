@@ -195,6 +195,9 @@ function update(dt) {
       const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if (inp.len > 0) {
         player._chasing = false;
+        // Manual joystick input cancels a manually-armed sustained attack
+        // (autoAttackMode is a separate persistent toggle and stays as-is).
+        _chaseArmed = false;
         // Speed depends only on player.speed (character stat), not on how
         // far the stick is pushed — inp.dx/dy are already a unit vector
         // (inputDir() normalizes them), so no inp.len factor here.
@@ -353,8 +356,11 @@ function update(dt) {
   }
   if (player.atkAnimTimer <= 0) { player.pendingAttack = null; player.attackFired = false; }
 
-  // Auto-attack (skip timer decrement in manual mode; block when stunned)
-  if (autoAttackMode && (player.stunTimer || 0) <= 0) player.atkTimer -= dt;
+  // Auto-attack, or a single manual attack-button press armed via
+  // _chaseArmed — either way keep swinging on its own until the target dies
+  // or the joystick cancels it (see inp.len > 0 below), instead of requiring
+  // another tap per swing.
+  if ((autoAttackMode || _chaseArmed) && (player.stunTimer || 0) <= 0) player.atkTimer -= dt;
   if (player.atkTimer <= 0 && (player.stunTimer || 0) <= 0) {
     let closest = null, closestD = Infinity;
     let closestIsPlayer = false;
@@ -592,14 +598,16 @@ function update(dt) {
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
   if (typeof tickQuestNotif === 'function') tickQuestNotif(dt);
 
-  // Clear stale target
+  // Clear stale target — also disarms a manually-armed sustained attack so
+  // it doesn't silently latch onto the next-nearest enemy once this one dies;
+  // a fresh attack-button press (or autoAttackMode) is needed to keep going.
   if (targetId) {
     if (targetIsPlayer) {
       const op = otherPlayers.get(targetId);
-      if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
+      if (!op || (op.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     } else {
       const te = serverEnemiesMap.get(targetId);
-      if (!te || (te.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; }
+      if (!te || (te.hp || 0) <= 0) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     }
   }
 
@@ -1387,6 +1395,7 @@ function playerDie() {
 function respawnPlayer() {
   if (!player || state !== 'dead') return;
   if (inRaid) exitRaidMode();
+  targetId = null; targetIsPlayer = false; _chaseArmed = false;
   player.hp = Math.max(1, Math.floor(player.maxHp * 0.1));
   player.hurtTimer = 0;
   player.atkTimer = 0.5;
