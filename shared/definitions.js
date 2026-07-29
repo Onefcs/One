@@ -85,11 +85,16 @@ const MONSTER_RANK_F = [
   'Проклятая', 'Кошмарная', 'Легендарная', 'Титаническая', 'Апокалиптическая',
   'Погибельная', 'Всесокрушающая', 'Первородная', 'Древняя', 'Изначальная', 'Запредельная',
 ];
-function monsterNameAtLevel(baseName, localLvl, isBoss, fem) {
+// maxLocalLvl is the arm's own last non-boss room (arms differ in length —
+// see ARM_ROOM_COUNTS below), so every arm still sweeps the full rank list
+// from 'Слабый' at room 1 to 'Запредельный' right before its boss, regardless
+// of how many rooms that arm actually has.
+function monsterNameAtLevel(baseName, localLvl, isBoss, fem, maxLocalLvl) {
   if (isBoss) return baseName;
   const ranks = fem ? MONSTER_RANK_F : MONSTER_RANK_M;
-  const idx = Math.min(ranks.length - 1, Math.max(0, (localLvl || 1) - 1));
-  return ranks[idx] + ' ' + baseName;
+  const denom = Math.max(1, (maxLocalLvl || ranks.length) - 1);
+  const t = Math.min(1, Math.max(0, ((localLvl || 1) - 1) / denom));
+  return ranks[Math.round(t * (ranks.length - 1))] + ' ' + baseName;
 }
 function _expandHex(hex) {
   hex = hex.replace('#', '');
@@ -103,32 +108,38 @@ function _lerpHexColor(c1, c2, t) {
   return '#' + [r, g, bl].map(v => v.toString(16).padStart(2, '0')).join('');
 }
 // Interpolates from the monster's base (weakest, room 1) color to its
-// `endColor` (strongest, room 29) — bosses keep their own fixed color.
-function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss) {
+// `endColor` (strongest, last non-boss room) — bosses keep their own fixed
+// color. maxLocalLvl works the same as in monsterNameAtLevel above.
+function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss, maxLocalLvl) {
   if (isBoss || !endColor) return baseColor;
-  const t = Math.min(1, Math.max(0, ((localLvl || 1) - 1) / (MONSTER_RANK_M.length - 1)));
+  const denom = Math.max(1, (maxLocalLvl || MONSTER_RANK_M.length) - 1);
+  const t = Math.min(1, Math.max(0, ((localLvl || 1) - 1) / denom));
   return _lerpHexColor(baseColor, endColor, t);
 }
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
-// Each of the 4 arms cycles through several DIFFERENT monster species as you
-// climb its 29 regular rooms (3 species per arm, or 2 for arm 4's bigger
-// creatures) instead of showing the same 2 sprites for all 30 rooms — see
-// FLOOR_ENEMIES' `bands` below. Every species contributes a guard (tankier)
-// and a warrior (harder-hitting) variant to its band; the arm's boss reuses
-// that same species' own "elite" tier for its look, so the boss always feels
-// like a stronger version of something you were just fighting.
+// Each of the 4 arms rotates through several DIFFERENT monster species EVERY
+// ROOM — room 1 is species A, room 2 is species B, room 3 is species C, room
+// 4 is back to species A, and so on (see FLOOR_ENEMIES' `species` list and
+// bandForLocalLevel below) — so no two consecutive rooms ever show the same
+// sprite, unlike the old design where one species held 10 rooms in a row.
+// Every species contributes a guard (tankier) and a warrior (harder-hitting)
+// variant; the arm's boss reuses that arm's last (toughest) species' own
+// "elite" tier for its look, so the boss always feels like a stronger version
+// of something you were just fighting.
 //
 // hp/atk/def/xp/gold below are monsterStatsAtLevel()/xpAtLevel()/goldAtLevel()
-// evaluated at each entry's band-start level (or the arm's last level for
-// bosses) — a static snapshot used as-is by the Raid and Party-dungeon modes
-// (which don't have a room-progression concept of their own) and as display
-// fallback. The main open world (server/game/dungeon.js) ignores these
-// numbers entirely and calls the level functions fresh for the enemy's actual
-// room level, overriding name/color/hp/atk/def/xp/gold per spawn.
+// evaluated at a representative level for each species (or the arm's last
+// level for bosses) — a static snapshot used as-is by the Raid and
+// Party-dungeon modes (which don't have a room-progression concept of their
+// own) and as display fallback. The main open world (server/game/dungeon.js)
+// ignores these numbers entirely and calls the level functions fresh for the
+// enemy's actual room level, overriding name/color/hp/atk/def/xp/gold per
+// spawn.
 // fem: grammatical gender of the base name's leading noun, for rank agreement
 // (Крыса/Лоза are feminine, the rest are masculine).
-// endColor: the room-29 (strongest non-boss) tint monsterColorAtLevel ramps to.
+// endColor: the tint monsterColorAtLevel ramps to at the arm's last non-boss
+// room (see maxLocalLvl in monsterColorAtLevel above).
 const ENEMY_DEF = [
   { eid:'rat_guard', name:'Крыса страж', color:'#8a7a6a', endColor:'#3a2a1a', fem:true, size:13, hp:14, atk:17, def:1, spd:112, xp:1, gold:1, isBoss:false, eType:'guard' },
   { eid:'rat_warrior', name:'Крыса воин', color:'#8a7a6a', endColor:'#3a2a1a', fem:true, size:14, hp:11, atk:23, def:1, spd:118, xp:1, gold:1, isBoss:false, eType:'warrior' },
@@ -158,35 +169,23 @@ const ENEMY_DEF = [
   { eid:'demon_boss', name:'Босс демонов', color:'#ff2020', size:32, hp:14400, atk:3600, def:60, spd:65, xp:120, gold:120, isBoss:true, eType:'boss' },
 ];
 
-// Per-floor enemy pools for floors 1-5
+// Per-arm species rotation, ordered weakest → strongest (the last entry is
+// the one whose "elite" tier the arm's boss uses for its look).
 const FLOOR_ENEMIES = {
-  1: { bands: [
-        { maxLocalLvl: 10, pool: ['rat_guard',      'rat_warrior']      },
-        { maxLocalLvl: 20, pool: ['slime_guard',    'slime_warrior']    },
-        { maxLocalLvl: 29, pool: ['imp_guard',       'imp_warrior']      },
-      ], boss: 'imp_boss' },
-  2: { bands: [
-        { maxLocalLvl: 10, pool: ['zombie_guard',    'zombie_warrior']    },
-        { maxLocalLvl: 20, pool: ['lizardman_guard', 'lizardman_warrior'] },
-        { maxLocalLvl: 29, pool: ['orc_guard',        'orc_warrior']       },
-      ], boss: 'orc_boss' },
-  3: { bands: [
-        { maxLocalLvl: 10, pool: ['plant_guard',    'plant_warrior']    },
-        { maxLocalLvl: 20, pool: ['vampire_guard',  'vampire_warrior']  },
-        { maxLocalLvl: 29, pool: ['beholder_guard', 'beholder_warrior'] },
-      ], boss: 'beholder_boss' },
-  4: { bands: [
-        { maxLocalLvl: 15, pool: ['ent_guard',   'ent_warrior']   },
-        { maxLocalLvl: 29, pool: ['demon_guard', 'demon_warrior'] },
-      ], boss: 'demon_boss' },
+  1: { species: ['rat',     'slime',      'imp']      , boss: 'imp_boss' },
+  2: { species: ['zombie',  'lizardman',  'orc']      , boss: 'orc_boss' },
+  3: { species: ['plant',   'vampire',    'beholder'] , boss: 'beholder_boss' },
+  4: { species: ['ent',     'demon']                  , boss: 'demon_boss' },
 };
 
-// Picks the right band (and its 2-eid pool) for a given local room level —
-// the last band whose maxLocalLvl covers it wins, so bands don't need to
-// divide the 29 levels evenly.
+// Picks the species (and its 2-eid guard/warrior pool) for a given local room
+// level, cycling through fe.species one room at a time — room 1 = species[0],
+// room 2 = species[1], ..., wrapping back to species[0] after the last one —
+// so every consecutive room gets a different species.
 function bandForLocalLevel(fe, localLvl) {
-  const lvl = Math.max(1, localLvl || 1);
-  return fe.bands.find(b => lvl <= b.maxLocalLvl) || fe.bands[fe.bands.length - 1];
+  const idx = (Math.max(1, localLvl || 1) - 1) % fe.species.length;
+  const sp = fe.species[idx];
+  return { pool: [sp + '_guard', sp + '_warrior'], species: sp };
 }
 
 // XP/gold: dead simple, 1:1 with the monster's global level — level 1 gives
@@ -205,9 +204,9 @@ function calcGoldDrop(enemy) {
 
 // Equipment (gear) drop: one continuous per-kill chance that climbs +0.1
 // percentage points every global level (never resets, never repeats — level
-// 1 is 0.1%, level 2 is 0.2%, ... level 120 is 12.0%). Boss kills get a flat
-// ×20 on top of their level's chance. Which RARITY drops is decided purely
-// by which quarter of the 1-120 scale the level falls in.
+// 1 is 0.1%, level 2 is 0.2%, ... level 78 is 7.8%). Boss kills get a flat
+// ×20 on top of their level's chance. Which RARITY drops is decided by which
+// arm's range the level falls in (each arm = one rarity tier).
 const ITEM_DROP_GROWTH_PCT = 0.1; // percentage points per level
 const BOSS_ITEM_DROP_MULT  = 20;
 function itemDropChanceAtLevel(lvl) {
@@ -215,27 +214,37 @@ function itemDropChanceAtLevel(lvl) {
 }
 function itemRarityForLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  if (lvl <= 30) return 'uncommon';
-  if (lvl <= 60) return 'rare';
-  if (lvl <= 90) return 'epic';
+  if (lvl <= ARM_OFFSETS[1]) return 'uncommon';
+  if (lvl <= ARM_OFFSETS[2]) return 'rare';
+  if (lvl <= ARM_OFFSETS[3]) return 'epic';
   return 'legendary';
 }
 
 // ── Open-world corridors ──────────────────────────────────────────────────────
 // The world is one continuous map: a central hub room (spawn + NPCs) with 4
 // corridors radiating out. Each corridor is a straight, empty main path with
-// rooms branching off in facing pairs (one on each side) at ROOM_PAIRS_PER_ARM
-// evenly spaced positions — ROOMS_PER_ARM = ROOM_PAIRS_PER_ARM * 2 rooms total
-// per corridor. Global monster level 1-120 is assigned by position: rooms
-// 1-30 in the left corridor, 31-60 top, 61-90 bottom, 91-120 right. Each
-// corridor reuses one of the FLOOR_ENEMIES pools/themes below (arm index =
-// old "floor" number) so enemy stats/gold/xp/rarity scaling keeps its
-// existing tuning per zone.
+// rooms branching off in facing pairs (one on each side) at ARM_ROOM_PAIRS[i]
+// evenly spaced positions — ARM_ROOM_COUNTS[i] = ARM_ROOM_PAIRS[i] * 2 rooms
+// total for that corridor. Arms 1-3 (left/top/bottom) get 20 rooms each, arm
+// 4 (right) gets 18 (it only has 2 species instead of 3) — MAX_MONSTER_LEVEL
+// (78) is the sum of all 4. Global monster level is assigned by position:
+// see ARM_OFFSETS below for where each arm's range starts. Each corridor
+// reuses one of the FLOOR_ENEMIES pools/themes below (arm index = old
+// "floor" number) so enemy stats/gold/xp/rarity scaling keeps its existing
+// tuning per zone.
 const ARM_NAMES = ['left', 'top', 'bottom', 'right'];
-const ROOM_PAIRS_PER_ARM = 15;
-const ROOMS_PER_ARM = ROOM_PAIRS_PER_ARM * 2;
+const ARM_ROOM_PAIRS  = [10, 10, 10, 9];                  // rooms-per-arm ÷ 2, indexed by armIdx-1
+const ARM_ROOM_COUNTS = ARM_ROOM_PAIRS.map(p => p * 2);   // [20, 20, 20, 18]
+const ARM_OFFSETS = [];                                   // global level right before each arm starts
+for (let i = 0, sum = 0; i < ARM_ROOM_COUNTS.length; i++) { ARM_OFFSETS.push(sum); sum += ARM_ROOM_COUNTS[i]; }
+const MAX_MONSTER_LEVEL = ARM_OFFSETS[ARM_OFFSETS.length - 1] + ARM_ROOM_COUNTS[ARM_ROOM_COUNTS.length - 1]; // 78
+function roomsInArm(armIdx) { return ARM_ROOM_COUNTS[Math.min(ARM_ROOM_COUNTS.length, Math.max(1, armIdx || 1)) - 1]; }
 function armIndexForLevel(lvl) {
-  return Math.min(ARM_NAMES.length, Math.max(1, Math.ceil((lvl || 1) / ROOMS_PER_ARM)));
+  lvl = Math.max(1, lvl || 1);
+  for (let i = 0; i < ARM_ROOM_COUNTS.length; i++) {
+    if (lvl <= ARM_OFFSETS[i] + ARM_ROOM_COUNTS[i]) return i + 1;
+  }
+  return ARM_ROOM_COUNTS.length;
 }
 function armNameForLevel(lvl) {
   return ARM_NAMES[armIndexForLevel(lvl) - 1];
@@ -368,16 +377,17 @@ function enhanceBonus(it, levels) {
 function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion' || it.slot === 'box'; }
 
 // ── Room-level monster progression ─────────────────────────────────────────────
-// Each corridor (server/game/dungeon.js) chains ROOMS_PER_ARM rooms of
-// increasing "local room level" 1..ROOMS_PER_ARM (room 1 = weakest, the last
-// = that arm's boss room / strongest) — this resets every arm. The global
-// display level (1-120, see armIndexForLevel above) feeds this via
+// Each corridor (server/game/dungeon.js) chains roomsInArm(armIdx) rooms of
+// increasing "local room level" 1..roomsInArm(armIdx) (room 1 = weakest, the
+// last = that arm's boss room / strongest) — this resets every arm. The
+// global display level (1-78, see armIndexForLevel above) feeds this via
 // armLocalLevel(). Monster HP/ATK/DEF no longer scale off local room level at
 // all (see monsterStatsAtLevel above, which is a function of the GLOBAL
 // level only) — only item/key/enchant-stone drop chance still compounds per
 // local room level below.
 function armLocalLevel(globalLvl) {
-  return ((Math.max(1, globalLvl || 1) - 1) % ROOMS_PER_ARM) + 1;
+  const armIdx = armIndexForLevel(globalLvl);
+  return Math.max(1, globalLvl || 1) - ARM_OFFSETS[armIdx - 1];
 }
 
 const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
@@ -419,7 +429,8 @@ const VIP_BONUSES = [
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel,
-  ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
+  ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
+  armIndexForLevel, armNameForLevel, armLocalLevel,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

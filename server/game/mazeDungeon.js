@@ -160,7 +160,7 @@ function generatePartyDungeon(seed) {
 
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   const _fe2 = FLOOR_ENEMIES[TIER];
-  const mobPool = bandForLocalLevel(_fe2, 29).pool; // toughest regular band in that arm
+  const mobPool = bandForLocalLevel(_fe2, _fe2.species.length).pool; // last (toughest) species in that arm's rotation
   const bossDef = _enemyByEid.get(_fe2.boss);
 
   const enemyList = [];

@@ -433,7 +433,7 @@ function _questProgHtml(q, isCur) {
     return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#614a23,#9c7738)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
   }
   if (q.type === 'goto_floor') {
-    return `<div class="quest-prog">Дойди до монстров уровня ${(q.targetFloor - 1) * ROOMS_PER_ARM + 1}+ в коридоре</div>`;
+    return `<div class="quest-prog">Дойди до монстров уровня ${ARM_OFFSETS[q.targetFloor - 1] + 1}+ в коридоре</div>`;
   }
   if (q.type === 'craft') {
     return `<div class="quest-prog">Зайди к кузнецу</div>`;

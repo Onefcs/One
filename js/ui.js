@@ -431,24 +431,27 @@ function _floorEnemyPool(n, localLvl) {
 }
 
 // Flat monster reference list (no corridor/location grouping) — one row per
-// GLOBAL LEVEL 1-120 (matching what actually spawns at that level, name/color
-// included), collapsed by default; tapping a row expands its full stat/drop
-// breakdown for every monster that can appear at that level (2 regular
-// archetypes — which SPECIES depends on the level's band within its arm, see
-// FLOOR_ENEMIES in shared/definitions.js — or the zone boss on its one level).
+// GLOBAL LEVEL 1-MAX_MONSTER_LEVEL (matching what actually spawns at that
+// level, name/color included), collapsed by default; tapping a row expands
+// its full stat/drop breakdown for every monster that can appear at that
+// level (2 regular archetypes — which SPECIES depends on the level's room
+// within its arm, cycling every room, see FLOOR_ENEMIES in
+// shared/definitions.js — or the zone boss on its one level).
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
   let html = '';
-  for (let lvl = 1; lvl <= ROOMS_PER_ARM * ARM_NAMES.length; lvl++) {
+  for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
     const armIdx = armIndexForLevel(lvl);
     const floor = armIdx;
     const localLvl = armLocalLevel(lvl);
-    const isBossLvl = localLvl === ROOMS_PER_ARM;
+    const roomCount = roomsInArm(armIdx);
+    const maxLocalLvl = roomCount - 1;
+    const isBossLvl = localLvl === roomCount;
     const { regular, boss } = _floorEnemyPool(floor, localLvl);
     html += isBossLvl
-      ? _levelAccordionItem(lvl, [_liveEnemy(boss, lvl, localLvl, true)], floor, true)
-      : _levelAccordionItem(lvl, regular.map(base => _liveEnemy(base, lvl, localLvl, false)), floor, false);
+      ? _levelAccordionItem(lvl, [_liveEnemy(boss, lvl, localLvl, true, maxLocalLvl)], floor, true)
+      : _levelAccordionItem(lvl, regular.map(base => _liveEnemy(base, lvl, localLvl, false, maxLocalLvl)), floor, false);
   }
   grid.innerHTML = html;
 }
@@ -456,12 +459,12 @@ function updateFloorUI() {
 // Builds the enemy instance exactly as it would spawn at this level (same
 // monsterStatsAtLevel/monsterNameAtLevel/monsterColorAtLevel calls dungeon.js
 // uses), so the reference list always matches what's actually in the world.
-function _liveEnemy(base, lvl, localLvl, isBoss) {
+function _liveEnemy(base, lvl, localLvl, isBoss, maxLocalLvl) {
   const stats = monsterStatsAtLevel(lvl, isBoss ? 'boss' : base.eType);
   return {
     ...base, isBoss,
-    name: monsterNameAtLevel(base.name, localLvl, isBoss, base.fem),
-    color: monsterColorAtLevel(base.color, base.endColor, localLvl, isBoss),
+    name: monsterNameAtLevel(base.name, localLvl, isBoss, base.fem, maxLocalLvl),
+    color: monsterColorAtLevel(base.color, base.endColor, localLvl, isBoss, maxLocalLvl),
     hp: stats.hp, atk: stats.atk, def: stats.def,
     xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
   };

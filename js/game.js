@@ -1084,7 +1084,7 @@ function selectChar(type) {
   const savedStats = (typeof _savedData !== 'undefined' && _savedData) ? _savedData : null;
   csStartLoading(type, () => { initNpcs(); _finishOnlineStart(); });
   // Gate the loading screen on BOTH player and floor-1 enemy sprites being decoded.
-  const _floor1Eids = (FLOOR_ENEMIES[1]?.bands || []).flatMap(b => b.pool).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);
+  const _floor1Eids = (FLOOR_ENEMIES[1]?.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);
   let _spritesPending = 1 + _floor1Eids.length;
   const _onSpriteSetReady = () => { if (--_spritesPending === 0) csOnSpritesReady(); };
   _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));

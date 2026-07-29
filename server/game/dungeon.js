@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, roomsInArm } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -13,15 +13,17 @@ function seededRng(seed) {
 // ── Open world: one hub room + 4 "comb" corridors ───────────────────────────
 // Layout is a plus shape: a big central hub (spawn, NPCs, safe zone) with a
 // dead-straight, always-empty main corridor running out to each side. Rooms
-// never sit on that path — instead, at ROOM_PAIRS_PER_ARM evenly spaced
+// never sit on that path — instead, at ARM_ROOM_PAIRS[armIdx-1] evenly spaced
 // positions along it, a short straight branch forks off to EACH side,
 // leading to a room, so every position has 2 rooms facing each other across
 // the corridor (see the "comb"/ladder reference sketch this was built from).
-// Global room level = arm's base (0/30/60/90) + position-in-arm
-// (1..ROOMS_PER_ARM, 2 rooms per position), reusing one FLOOR_ENEMIES pool
-// per arm (arm index 1-4 standing in for the old floor 1-4 themes) so enemy
-// stats/gold/xp tuning carries over unchanged. The last room of each arm
-// (highest level) is that arm's boss room.
+// Arms can have different lengths (see ARM_ROOM_PAIRS in shared/definitions.js),
+// so the world's overall size is sized to fit the longest one. Global room
+// level = arm's base (ARM_OFFSETS[armIdx-1]) + position-in-arm (1..roomsInArm,
+// 2 rooms per position), reusing one FLOOR_ENEMIES pool per arm (arm index
+// 1-4 standing in for the old floor 1-4 themes) so enemy stats/gold/xp tuning
+// carries over unchanged. The last room of each arm (highest level) is that
+// arm's boss room.
 const HUB = 48;           // hub room size (tiles) — big enough for 3 NPCs + 4 doors
                           // and to keep adjacent arms' room branches from
                           // ever reaching into each other's corner (needs
@@ -36,7 +38,8 @@ const LEAD_IN = 12;       // distance from hub wall to the first position
 const MARGIN = 6;         // outer wall padding
 const DOOR_STUB = 3;      // door gap depth carved into the hub's wall
 
-const ARM_LEN = LEAD_IN + (ROOM_PAIRS_PER_ARM - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
+const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the world grid; shorter arms just end sooner
+const ARM_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
 const DW = MARGIN * 2 + ARM_LEN * 2 + HUB;
 const DH = DW;
 
@@ -101,6 +104,9 @@ function generateOpenWorld() {
     const horizontal = dir === 'left' || dir === 'right';
     const sign = (dir === 'left' || dir === 'top') ? -1 : 1;
     const fe = FLOOR_ENEMIES[armIdx];
+    const pairs = ARM_ROOM_PAIRS[armIdx - 1];
+    const roomCount = roomsInArm(armIdx);
+    const maxLocalLvl = roomCount - 1; // last room is the boss; ranks/colors ramp to this
     function pickEnemy(isBoss, localLvl) {
       if (isBoss) return _enemyByEid.get(fe.boss);
       const pool = bandForLocalLevel(fe, localLvl).pool;
@@ -111,7 +117,7 @@ function generateOpenWorld() {
     // out to the last position (plus a little tail), 3 tiles wide.
     const route = doors[dir].route;
     const mainStart = horizontal ? route.x : route.y;
-    const mainEnd = mainStart + sign * (LEAD_IN + (ROOM_PAIRS_PER_ARM - 1) * PITCH + Math.floor(PITCH / 2));
+    const mainEnd = mainStart + sign * (LEAD_IN + (pairs - 1) * PITCH + Math.floor(PITCH / 2));
     const fixedCoord = horizontal ? route.y : route.x;
     {
       const lo = Math.min(mainStart, mainEnd), hi = Math.max(mainStart, mainEnd);
@@ -135,8 +141,8 @@ function generateOpenWorld() {
         enemyList.push({
           id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
           rlvl: room.monsterLvl,
-          name: monsterNameAtLevel(d.name, room.localLvl, isBoss, d.fem),
-          color: monsterColorAtLevel(d.color, d.endColor, room.localLvl, isBoss),
+          name: monsterNameAtLevel(d.name, room.localLvl, isBoss, d.fem, maxLocalLvl),
+          color: monsterColorAtLevel(d.color, d.endColor, room.localLvl, isBoss, maxLocalLvl),
           maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
           atk: Math.floor(stats.atk * weakMult),
           def: stats.def,
@@ -172,7 +178,7 @@ function generateOpenWorld() {
         x, y, size,
         bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
         cx, cy, isSmall: size === SMALL,
-        arm: dir, localLvl, monsterLvl: (armIdx - 1) * ROOMS_PER_ARM + localLvl, isBoss,
+        arm: dir, localLvl, monsterLvl: ARM_OFFSETS[armIdx - 1] + localLvl, isBoss,
       };
       rooms.push(room);
       paintRect(x, y, x + size - 1, y + size - 1);
@@ -180,10 +186,10 @@ function generateOpenWorld() {
       spawnRoomEnemies(room, x, y, size, isBoss);
     }
 
-    for (let pos = 0; pos < ROOM_PAIRS_PER_ARM; pos++) {
+    for (let pos = 0; pos < pairs; pos++) {
       const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
       buildRoomAt(pos, -1, lvlA, false);
-      buildRoomAt(pos, 1, lvlB, lvlB === ROOMS_PER_ARM);
+      buildRoomAt(pos, 1, lvlB, lvlB === roomCount);
     }
   }
 
