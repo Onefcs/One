@@ -215,15 +215,18 @@ function calcGoldDrop(enemy) {
 // Equipment (gear) drop: one continuous per-kill chance that climbs +0.1
 // percentage points every global level (never resets, never repeats — level
 // 1 is 0.1%, level 2 is 0.2%, ... level 78 is 7.8%). Boss kills get a flat
-// ×20 on top of their level's chance. Which RARITY drops is decided by which
-// arm's range the level falls in (each arm = one rarity tier).
+// ×20 on top of their level's chance. Which RARITY drops is decided by the
+// level: 1-10 is common-only (a gearless-start on-ramp), then it follows
+// arm ranges the same as before (each arm from 11 onward = one rarity tier).
 const ITEM_DROP_GROWTH_PCT = 0.1; // percentage points per level
 const BOSS_ITEM_DROP_MULT  = 20;
+const COMMON_ITEM_MAX_LEVEL = 10;
 function itemDropChanceAtLevel(lvl) {
   return Math.min(100, ITEM_DROP_GROWTH_PCT * Math.max(1, lvl || 1));
 }
 function itemRarityForLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
+  if (lvl <= COMMON_ITEM_MAX_LEVEL) return 'common';
   if (lvl <= ARM_OFFSETS[1]) return 'uncommon';
   if (lvl <= ARM_OFFSETS[2]) return 'rare';
   if (lvl <= ARM_OFFSETS[3]) return 'epic';
@@ -447,7 +450,7 @@ if (typeof module !== 'undefined') module.exports = {
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
+  ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
