@@ -8,7 +8,7 @@
 // renderer already expect, so nothing downstream needs to know this wasn't
 // produced by generateDungeon().
 const { TILE, WALL, FLOOR } = require('./dungeon');
-const { ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel } = require('../../shared/definitions');
+const { ENEMY_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -160,7 +160,8 @@ function generatePartyDungeon(seed) {
 
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   const _fe2 = FLOOR_ENEMIES[TIER];
-  const mobPool = bandForLocalLevel(_fe2, _fe2.species.length).pool; // last (toughest) species in that arm's rotation
+  const _toughestSpecies = _fe2.species[_fe2.species.length - 1]; // last (toughest) species in that arm's rotation
+  const mobPool = [_toughestSpecies + '_guard', _toughestSpecies + '_warrior']; // both archetypes, for variety across the maze's 100 mobs
   const bossDef = _enemyByEid.get(_fe2.boss);
 
   const enemyList = [];

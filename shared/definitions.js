@@ -123,10 +123,13 @@ function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss, maxLocalLvl)
 // 4 is back to species A, and so on (see FLOOR_ENEMIES' `species` list and
 // bandForLocalLevel below) — so no two consecutive rooms ever show the same
 // sprite, unlike the old design where one species held 10 rooms in a row.
-// Every species contributes a guard (tankier) and a warrior (harder-hitting)
-// variant; the arm's boss reuses that arm's last (toughest) species' own
-// "elite" tier for its look, so the boss always feels like a stronger version
-// of something you were just fighting.
+// Every monster IN a room is the same species and the same archetype (all
+// guard or all warrior, never mixed) — the archetype flips every time the
+// rotation completes a full lap through the arm's species list, so an exact
+// species+archetype combo only repeats every few laps, not every room. The
+// arm's boss reuses that arm's last (toughest) species' own "elite" tier for
+// its look, so the boss always feels like a stronger version of something
+// you were just fighting.
 //
 // hp/atk/def/xp/gold below are monsterStatsAtLevel()/xpAtLevel()/goldAtLevel()
 // evaluated at a representative level for each species (or the arm's last
@@ -178,14 +181,21 @@ const FLOOR_ENEMIES = {
   4: { species: ['ent',     'demon']                  , boss: 'demon_boss' },
 };
 
-// Picks the species (and its 2-eid guard/warrior pool) for a given local room
-// level, cycling through fe.species one room at a time — room 1 = species[0],
-// room 2 = species[1], ..., wrapping back to species[0] after the last one —
-// so every consecutive room gets a different species.
+// Picks the ONE species+archetype (guard or warrior) that every monster in a
+// given room shares, cycling through fe.species one room at a time — room 1
+// = species[0], room 2 = species[1], ..., wrapping back to species[0] after
+// the last one — so every consecutive room gets a different species. The
+// archetype flips (guard → warrior → guard...) every time the rotation
+// completes a full lap through fe.species, so a room's exact species+
+// archetype combo only repeats every species.length*2 rooms (6 rooms for a
+// 3-species arm, 4 for arm 4's 2-species one) instead of every room.
 function bandForLocalLevel(fe, localLvl) {
-  const idx = (Math.max(1, localLvl || 1) - 1) % fe.species.length;
+  const lvl = Math.max(1, localLvl || 1) - 1;
+  const idx = lvl % fe.species.length;
+  const lap = Math.floor(lvl / fe.species.length) % 2;
   const sp = fe.species[idx];
-  return { pool: [sp + '_guard', sp + '_warrior'], species: sp };
+  const eid = sp + (lap === 0 ? '_guard' : '_warrior');
+  return { pool: [eid], species: sp, eid };
 }
 
 // XP/gold: dead simple, 1:1 with the monster's global level — level 1 gives

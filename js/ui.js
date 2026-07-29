@@ -433,10 +433,10 @@ function _floorEnemyPool(n, localLvl) {
 // Flat monster reference list (no corridor/location grouping) — one row per
 // GLOBAL LEVEL 1-MAX_MONSTER_LEVEL (matching what actually spawns at that
 // level, name/color included), collapsed by default; tapping a row expands
-// its full stat/drop breakdown for every monster that can appear at that
-// level (2 regular archetypes — which SPECIES depends on the level's room
-// within its arm, cycling every room, see FLOOR_ENEMIES in
-// shared/definitions.js — or the zone boss on its one level).
+// its full stat/drop breakdown for the one regular species+archetype that
+// room spawns (which one depends on the level's room within its arm, cycling
+// every room, see FLOOR_ENEMIES/bandForLocalLevel in shared/definitions.js —
+// or the zone boss on its one level).
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
