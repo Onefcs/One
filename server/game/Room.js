@@ -63,6 +63,13 @@ class Room {
     this._nearPlayersBuf = [];
     this._nearEnemiesBuf = [];
     this._candBuf = [];
+    // Enemy sight/delta tracking is room-wide, not per-player: enemies are
+    // never AOI-filtered (minimap needs full dungeon-wide coverage — see the
+    // comment in _tick()), so every connected player was computing and
+    // receiving the exact same nearEnemies delta every tick anyway. Tracking
+    // it once here instead of via a per-player Map avoids redoing that same
+    // O(enemies) walk once per player, every tick.
+    this._enemyKnown = new Map();
     this._tickNo = 0;
     this._pSeq = 0;
     this.enemies.forEach((e, i) => { e._idx = i; });
@@ -283,8 +290,40 @@ class Room {
     const castPlayers = (castId & 1) === 0;
     const cand = this._candBuf;
 
+    // All alive enemies dungeon-wide (not AOI-limited) — minimap/map need
+    // full, always-current coverage regardless of player position; the delta
+    // protocol below already keeps idle far-away enemies near-free. Computed
+    // ONCE per tick (not once per player): with no per-enemy AOI, every
+    // connected player ends up with the exact same fresh/moved/hpChanged
+    // decision anyway, so a room-wide tracker (this._enemyKnown) replaces the
+    // old per-player one and this walk no longer repeats per player.
+    // Math.abs instead of hypot for moved-check.
+    nearEnemies.length = 0;
+    this.enemies.forEach(e => {
+      if (e.hp <= 0) return;
+      const k = this._enemyKnown.get(e.id);
+      const fresh = !k || k.seen !== castId - 1 ||
+        (castId + e._idx) % FULL_REFRESH_TICKS === 0;
+      if (k) k.seen = castId; else this._enemyKnown.set(e.id, { seen: castId });
+      const moved = e.aggro || Math.abs(e.x - e._sx) > 0.5 || Math.abs(e.y - e._sy) > 0.5;
+      const hpChanged = e.hp !== e._shp;
+      if (!moved && !hpChanged && !fresh) return;
+      if (fresh) {
+        nearEnemies.push({
+          id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+          name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+          aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
+          atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
+        });
+      } else {
+        nearEnemies.push({
+          id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
+          atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
+        });
+      }
+    });
+
     this.players.forEach(p => {
-      nearEnemies.length = 0;
       let playersOut = null;
 
       if (castPlayers) {
@@ -325,34 +364,6 @@ class Room {
         playersOut = nearPlayers;
       }
 
-      // All alive enemies dungeon-wide (not AOI-limited) — minimap/map need
-      // full, always-current coverage regardless of player position; the
-      // delta protocol below already keeps idle far-away enemies near-free.
-      // Math.abs instead of hypot for moved-check.
-      this.enemies.forEach(e => {
-        if (e.hp <= 0) return;
-        const k = p._knownE.get(e.id);
-        const fresh = !k || k.seen !== castId - 1 ||
-          (castId + e._idx) % FULL_REFRESH_TICKS === 0;
-        if (k) k.seen = castId; else p._knownE.set(e.id, { seen: castId });
-        const moved = e.aggro || Math.abs(e.x - e._sx) > 0.5 || Math.abs(e.y - e._sy) > 0.5;
-        const hpChanged = e.hp !== e._shp;
-        if (!moved && !hpChanged && !fresh) return;
-        if (fresh) {
-          nearEnemies.push({
-            id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
-            name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
-            aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
-            atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
-          });
-        } else {
-          nearEnemies.push({
-            id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
-            atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
-          });
-        }
-      });
-
       // t: server tick timestamp — the client uses real tick spacing (setInterval
       // drifts 45-60ms) to time snapshot playback at true velocity.
       // Payload is a binary ArrayBuffer — see shared/netcodec.js
@@ -373,7 +384,7 @@ class Room {
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
-      _known: new Map(), _knownE: new Map(),
+      _known: new Map(),
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();

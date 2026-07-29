@@ -681,18 +681,25 @@ function update(dt) {
   });
   let _corpseExpired = false;
   serverEnemies.forEach(e => {
+    // Corpse cleanup must run regardless of distance (a far corpse would
+    // otherwise never expire and pile up in the array forever).
+    if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
+    if (e.hp <= 0) return;
+
+    // Skip everything else — cosmetic timers AND full AI — for enemies
+    // outside local AOI. An open world can hold ~600 enemies at once; ticking
+    // 5 status timers on every single one every frame, most of them far
+    // off-screen and invisible anyway, adds up for no visible benefit. The
+    // server corrects position/hp/status the moment one re-enters range.
+    const _epdx = player.x - e.x, _epdy = player.y - e.y;
+    const _epd2 = _epdx * _epdx + _epdy * _epdy;
+    if (_epd2 > 1100 * 1100) return;
+
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if ((e.stunTimer || 0) > 0) e.stunTimer -= dt;
     if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
-    if (e._deathTimer !== undefined && (e._deathTimer -= dt) <= 0) _corpseExpired = true;
-    if (e.hp <= 0) return;
-
-    // Skip full AI for enemies outside local AOI — server corrects position on entry
-    const _epdx = player.x - e.x, _epdy = player.y - e.y;
-    const _epd2 = _epdx * _epdx + _epdy * _epdy;
-    if (_epd2 > 1100 * 1100) return;
 
     // Find closest player — squared dist avoids sqrts in comparison loop
     let closestD2 = _epd2, closestTgt = player;
