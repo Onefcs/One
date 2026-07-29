@@ -182,7 +182,14 @@ function update(dt) {
   frameCount++;
   if (transTimer > 0) { transTimer -= dt; return; }
 
-  if (activeTab === 0) {
+  {
+    // Not gated to activeTab === 0 — target-chasing, auto-attack movement and
+    // position sync must keep running while another bottom-nav tab (Inventory/
+    // Map/Quests/etc.) is open, or the character just stands frozen (unable to
+    // chase or reposition) while enemies out there keep fighting it. Manual
+    // joystick input naturally can't reach inp.dx/dy while its touch target is
+    // covered by another panel, so this only ever resumes real movement here
+    // via the auto-chase path below.
     if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0) {
       const inp = inputDir();
       const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
