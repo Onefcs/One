@@ -139,21 +139,23 @@ function applyLootToInventory(eid, rlvl) {
   }
 
   // Skill books — one per class+skill (studySkill()/upgradeSkillWithBook() in
-  // js/ui.js spend these to unlock and level up Q/W/E/R). Which of the
-  // player's own 4 skills the book is FOR is picked at random each drop —
-  // bosses always drop a couple; regular kills have a modest scaled chance
-  // for one (capped so it doesn't scale as aggressively as recipes/keys —
-  // this is a flat per-book resource, not a rarity tier).
-  const _classBooks = CRAFT_MATS.filter(m => m.forClass === player.type);
-  if (_classBooks.length) {
+  // js/ui.js spend these to unlock and level up Q/W/E/R). Any class's book
+  // can drop from any monster now, not just the killing player's own — a
+  // book for a class you're not playing is just something to sell on the
+  // Market to whoever needs it. Both chances are 100x rarer than the
+  // original tuning (was: boss guaranteed, regular 0.02×dropMult).
+  const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
+  if (_allBooks.length) {
     if (eType === 'boss') {
-      const book = _classBooks[Math.floor(Math.random() * _classBooks.length)];
-      if (addToInventoryQty({ ...book }, 2)) {
-        dmgNum(player.x, player.y - 84, '+ 2× ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
-        saved = true;
+      if (Math.random() < 0.01) {
+        const book = _allBooks[Math.floor(Math.random() * _allBooks.length)];
+        if (addToInventoryQty({ ...book }, 2)) {
+          dmgNum(player.x, player.y - 84, '+ 2× ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
+          saved = true;
+        }
       }
-    } else if (Math.random() < 0.02 * Math.min(_dropMult, 3)) {
-      const book = _classBooks[Math.floor(Math.random() * _classBooks.length)];
+    } else if (Math.random() < 0.0002 * Math.min(_dropMult, 3)) {
+      const book = _allBooks[Math.floor(Math.random() * _allBooks.length)];
       if (addToInventory({ ...book })) {
         dmgNum(player.x, player.y - 84, '+ ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
         saved = true;

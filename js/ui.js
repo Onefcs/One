@@ -661,22 +661,22 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка (${rn})</div><div class="fi-drops">${rows}</div>`;
   }
 
-  // Skill books — one per class+skill (shared/definitions.js CRAFT_MATS);
-  // only the CURRENT character's own class can ever drop for them (see the
-  // player.type filter in applyLootToInventory, js/combat.js), so this is
-  // scoped to whichever character is selected rather than listing all 20.
+  // Skill books — one per class+skill (shared/definitions.js CRAFT_MATS).
+  // Any class's book can drop from any monster (not just the current
+  // character's own — see js/combat.js), so every book across all 5
+  // classes is listed here, each tagged with which class it's for.
   let bookSection = '';
-  if (player && player.type && SKILL_DEF[player.type]) {
-    const classBooks = SKILL_DEF[player.type]
-      .map(sk => _skillBookDef(player.type, sk.key)).filter(Boolean);
-    if (classBooks.length) {
-      const className = (CHAR_DEF[player.type] || {}).name || '';
-      const rows = isBoss
-        ? classBooks.map(b => _dropRow(_itemIcon(b, 16), b.name,
-            `&times;2 · <b style="color:#98e456">${_pctText(100 / classBooks.length)}</b>`, '#98e456')).join('')
-        : classBooks.map(b => _dropRow(_itemIcon(b, 16), b.name,
-            `&times;1 · <b>${_pctText(0.02 * Math.min(dropMult, 3) / classBooks.length * 100)}</b>`)).join('');
-      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">Книги навыков (${className})</div><div class="fi-drops">${rows}</div>`;
+  {
+    const allBooks = CRAFT_MATS.filter(m => m.skillKey);
+    if (allBooks.length) {
+      const rows = allBooks.map(b => {
+        const className = (CHAR_DEF[b.forClass] || {}).name || b.forClass;
+        const label = `${b.name} <span style="opacity:.6">(${className})</span>`;
+        return isBoss
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allBooks.length * 0.01)}</b>`, '#98e456')
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.0002 * Math.min(dropMult, 3) / allBooks.length * 100)}</b>`);
+      }).join('');
+      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">Книги навыков (все классы)</div><div class="fi-drops">${rows}</div>`;
     }
   }
 
