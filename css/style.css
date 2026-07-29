@@ -28,6 +28,87 @@
   --font-display:Georgia,"Iowan Old Style","Palatino Linotype",serif;
 }
 
+/* ── ATMOSPHERE: ground mist, embers, vignette ─────────────
+   Diablo-style dungeon air — layered under every panel/modal (z 40+) so it
+   never needs to be shown/hidden by JS, and pure transform/opacity so it
+   costs nothing per frame beyond compositing. */
+.fog-layer {
+  position:absolute; inset:0; z-index:15;
+  pointer-events:none; overflow:hidden;
+}
+/* Guaranteed base haze along the ground, independent of where the drifting
+   blobs (below) currently sit — without this a screenshot could land on a
+   frame where the blobs happen to be off to one side and read as "no fog
+   at all". */
+.fog-layer::before {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(0deg, rgba(160,142,104,0.30) 0%, rgba(160,142,104,0.13) 30%, transparent 62%);
+}
+.fog-wisp {
+  position:absolute; left:-20%; right:-20%; bottom:-8%; height:58%;
+  filter:blur(7px);
+}
+.fog-wisp.w1 {
+  background:
+    radial-gradient(ellipse 40% 100% at 12% 100%, rgba(195,178,138,0.55), transparent 68%),
+    radial-gradient(ellipse 36% 100% at 48% 100%, rgba(215,198,155,0.42), transparent 68%),
+    radial-gradient(ellipse 42% 100% at 84% 100%, rgba(195,178,138,0.52), transparent 68%);
+  animation: fogDrift1 40s linear infinite;
+}
+.fog-wisp.w2 {
+  bottom:-12%; height:46%; opacity:0.85;
+  background:
+    radial-gradient(ellipse 38% 100% at 28% 100%, rgba(160,142,104,0.48), transparent 68%),
+    radial-gradient(ellipse 48% 100% at 68% 100%, rgba(180,160,118,0.40), transparent 68%);
+  animation: fogDrift2 55s linear infinite reverse;
+}
+@keyframes fogDrift1 { from{transform:translateX(-7%);} to{transform:translateX(7%);} }
+@keyframes fogDrift2 { from{transform:translateX(6%);}  to{transform:translateX(-8%);} }
+
+/* Split across two pseudo-elements at 2 gradient layers each — stacking
+   3+ differently-sized radial-gradients in a single background-image list
+   triggered a Chromium tiling bug (a large opaque-looking rectangle
+   painted where none of the gradients should reach); 2 per layer is the
+   verified-safe ceiling. */
+.embers { position:absolute; inset:0; z-index:14; pointer-events:none; }
+.embers::before, .embers::after { content:""; position:absolute; inset:0; }
+.embers::before {
+  opacity:0.9;
+  background-image:
+    radial-gradient(circle 2.4px, rgba(255,180,110,1), transparent 80%),
+    radial-gradient(circle 1.8px, rgba(230,140,70,0.95), transparent 80%);
+  background-size: 120px 300px, 90px 260px;
+  background-position: 20px 300px, 70px 240px;
+  animation: emberRise1 11s linear infinite;
+}
+.embers::after {
+  opacity:0.85;
+  background-image:
+    radial-gradient(circle 2.2px, rgba(250,215,140,0.9), transparent 80%),
+    radial-gradient(circle 1.6px, rgba(220,120,65,0.9), transparent 80%);
+  background-size: 150px 340px, 100px 280px;
+  background-position: 120px 320px, 45px 260px;
+  animation: emberRise2 13s linear infinite;
+}
+@keyframes emberRise1 {
+  from { background-position: 20px 300px, 70px 240px; }
+  to   { background-position: 20px -20px, 70px -40px; }
+}
+@keyframes emberRise2 {
+  from { background-position: 120px 320px, 45px 260px; }
+  to   { background-position: 120px -20px, 45px -20px; }
+}
+
+.vignette {
+  position:absolute; inset:0; z-index:16;
+  pointer-events:none;
+  background:radial-gradient(ellipse 72% 62% at 50% 40%, transparent 48%, rgba(4,2,1,0.72) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fog-wisp, .embers::before, .embers::after { animation: none; }
+}
+
 * {
   margin:0; padding:0; box-sizing:border-box;
   touch-action:none;

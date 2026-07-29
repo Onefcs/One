@@ -413,6 +413,14 @@
   </div>
 </div>
 
+<!-- Atmosphere: ground mist + vignette. Sits above the world/HUD but under
+     every bottom-nav panel and modal (they're opaque anyway), so it never
+     needs to be toggled — it's just naturally covered when something else
+     is open. Pure CSS (transform-driven), no per-frame JS cost. -->
+<div class="fog-layer"><div class="fog-wisp w1"></div><div class="fog-wisp w2"></div></div>
+<div class="embers"></div>
+<div class="vignette"></div>
+
 </div><!-- #app -->
 
 <style>
