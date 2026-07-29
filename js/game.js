@@ -195,19 +195,11 @@ function update(dt) {
         const vy = inp.dy * player.speed * _spdMult * dt;
         if (canMoveX(player, vx, 12)) player.x += vx;
         if (canMoveY(player, vy, 12)) player.y += vy;
-        // Hysteresis on the facing axis: near-diagonal joystick input hovers
-        // around a fixed threshold, flipping facing (and restarting the run
-        // animation) every frame. Once an axis owns the facing, the other
-        // axis must clearly dominate (×1.25) to take it over; flips within
-        // the same axis (left↔right, front↔back) stay immediate.
-        const ax = Math.abs(inp.dx), ay = Math.abs(inp.dy);
-        if (player.facing === 'left' || player.facing === 'right') {
-          if (ay > ax * 1.25)  player.facing = inp.dy > 0 ? 'front' : 'back';
-          else if (ax > 0)     player.facing = inp.dx > 0 ? 'right' : 'left';
-        } else {
-          if (ax > ay * 1.25)  player.facing = inp.dx > 0 ? 'right' : 'left';
-          else if (ay > 0)     player.facing = inp.dy > 0 ? 'front' : 'back';
-        }
+        // 8-way facing from joystick angle, with hysteresis: near a sector
+        // boundary, tiny input jitter would otherwise flip facing (and
+        // restart the run animation) every frame. The new angle must move
+        // clearly past the current sector's edge before facing switches.
+        player.facing = facing8FromDelta(inp.dx, inp.dy, player.facing);
       } else if (targetId && (autoAttackMode || _chaseArmed)) {
         // Chase locked target when no manual input — pressing attack on a
         // distant target (manual or auto-attack mode) closes the gap instead

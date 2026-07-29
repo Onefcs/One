@@ -34,9 +34,7 @@ function hasLOS(x1, y1, x2, y2) {
 
 function faceTowards(tx, ty) {
   const dx = tx - player.x, dy = ty - player.y;
-  const ax = Math.abs(dx), ay = Math.abs(dy);
-  if (ax > ay * 0.8) player.facing = dx > 0 ? 'right' : 'left';
-  else               player.facing = dy > 0 ? 'front' : 'back';
+  player.facing = facing8FromDelta(dx, dy, player.facing);
 }
 
 function fireProj(tx, ty, enemyId, pvpTargetId) {

@@ -1,4 +1,22 @@
 function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+const FACING8_DIRS = ['right', 'frontright', 'front', 'frontleft', 'left', 'backleft', 'back', 'backright'];
+// Screen-space delta (dx>0 east/right, dy>0 south/front) → one of 8 facings,
+// sector centers at 0°,45°,...,315° matching FACING8_DIRS order. `cur` is the
+// previous facing; hysteresis keeps it unless the new angle has moved clearly
+// past the current sector's edge, so tiny input jitter near a boundary doesn't
+// flip facing (and restart the run animation) every frame.
+function facing8FromDelta(dx, dy, cur) {
+  if (!dx && !dy) return cur || 'front';
+  let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  if (angle < 0) angle += 360;
+  const curIdx = FACING8_DIRS.indexOf(cur);
+  if (curIdx >= 0) {
+    let diff = Math.abs(angle - curIdx * 45);
+    if (diff > 180) diff = 360 - diff;
+    if (diff <= 28) return cur;
+  }
+  return FACING8_DIRS[Math.round(angle / 45) % 8];
+}
 function rnd(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 const _hasNativeRoundRect = typeof CanvasRenderingContext2D !== 'undefined' &&
