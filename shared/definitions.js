@@ -428,7 +428,7 @@ function armLocalLevel(globalLvl) {
 const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
 const ROOM_KEY_GROWTH      = 0.05; // +5% key-drop chance per room level
 const ROOM_KEY_BASE = { uncommon: 0.005, rare: 0.001 }; // room level 1 base chance (×10 lower than before)
-const ROOM_ENCHANT_STONE_BASE   = 0.001; // room level 1 base chance (Камень обычной заточки) — ×10 lower than before
+const ROOM_ENCHANT_STONE_BASE   = 0.0001; // room level 1 base chance (Камень обычной заточки) — ×100 lower than the original
 const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
 
 function roomDropMult(lvl) {
