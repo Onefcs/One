@@ -503,21 +503,33 @@ function _toggleMonster(hdrEl) {
   if (body) body.style.display = opening ? 'block' : 'none';
 }
 
+// Every row below mirrors a real roll in applyLootToInventory() (js/combat.js)
+// — same drop-chance formulas, same item pools — so this list is a complete,
+// accurate picture of everything that enemy can drop, not just a subset.
 function _monsterDropBodyHtml(e, floor, lvl) {
   const isBoss = !!e.isBoss;
   const hp  = e.hp;
   const atk = e.atk;
 
-  // Multipliers matching actual game logic (nexum/material chance are still
-  // zone-based, unrelated to the per-level xp/gold/gear-drop formulas below)
-  const fMult = (floor >= 1 && floor <= 5) ? floor : 1;
+  // dropMult matches _dropMult in combat.js exactly: arm index × room-level
+  // growth (roomDropMult), used for recipes and buff potions below.
+  const localLvl = typeof armLocalLevel === 'function' ? armLocalLevel(lvl) : (floor >= 1 ? 1 : 1);
+  const dropMult = floor * (typeof roomDropMult === 'function' ? roomDropMult(localLvl) : 1);
   const NEXUM_CHANCES = [0, 0.1, 0.2, 0.5, 1, 2];
   const nexumChancePct = NEXUM_CHANCES[floor] || 0;
-  function _fmtPct(base) {
-    const v = base * fMult;
-    if (v >= 1)    return v.toFixed(1).replace(/\.0$/, '') + '%';
-    if (v >= 0.1)  return v.toFixed(2).replace(/\.?0+$/, '') + '%';
-    return v.toFixed(3).replace(/\.?0+$/, '') + '%';
+  function _pctText(v) {
+    if (v <= 0) return '0%';
+    if (v >= 1)   return v.toFixed(1).replace(/\.0$/, '') + '%';
+    if (v >= 0.1) return v.toFixed(2).replace(/\.?0+$/, '') + '%';
+    return v.toFixed(4).replace(/\.?0+$/, '') + '%';
+  }
+  function _dropRow(icon, label, valHtml, color) {
+    const st = color ? ` style="color:${color}"` : '';
+    return `<div class="fi-drop">
+      <span class="fi-drop-icon">${icon}</span>
+      <span class="fi-drop-lbl"${st}>${label}</span>
+      <span class="fi-drop-val"${st}>${valHtml}</span>
+    </div>`;
   }
 
   // Gold: deterministic amount = level, 30% chance to drop (100% for boss)
@@ -529,75 +541,79 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   const xpFinal = e.xp;
   const xpColor = isBoss ? '#79dc23' : '#b4eb84';
 
-  // Boss stone row
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+
+  // Boss stone rows — fixed chances matching the server's boss-kill payout
   const stoneRow = isBoss
-    ? `<div class="fi-drop">
-         <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16)}</span>
-         <span class="fi-drop-lbl" style="color:#f2d197">Камень Босса</span>
-         <span class="fi-drop-val" style="color:#f2d197">&times;${floor}–${floor + 2} · 100%</span>
-       </div>
-       <div class="fi-drop">
-         <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16)}</span>
-         <span class="fi-drop-lbl" style="color:#f17e8b">Камень обычной заточки</span>
-         <span class="fi-drop-val" style="color:#f17e8b">&times;1 · <b style="color:#f17e8b">10%</b></span>
-       </div>
-       <div class="fi-drop">
-         <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16)}</span>
-         <span class="fi-drop-lbl" style="color:#efc680">Камень безопасной заточки</span>
-         <span class="fi-drop-val" style="color:#efc680">&times;1 · <b style="color:#efc680">1%</b></span>
-       </div>`
+    ? _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16), 'Камень Босса', `&times;${floor}–${floor + 2} · <b>100%</b>`, '#f2d197')
+    + _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16), 'Камень обычной заточки', `&times;1 · <b style="color:#f17e8b">10%</b>`, '#f17e8b')
+    + _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16), 'Камень безопасной заточки', `&times;1 · <b style="color:#efc680">1%</b>`, '#efc680')
     : '';
 
-  // Material drop rows for non-boss
-  let matSection = '';
-  if (!isBoss && typeof _matIcon === 'function') {
-    const matDrops = [];
-    const matPct = _fmtPct(5);
-    if (e.eType === 'warrior') {
-      matDrops.push({ id:'bonec', chance: matPct });
-      matDrops.push({ id:'coalc', chance: matPct });
-    } else if (e.eType === 'guard') {
-      matDrops.push({ id:'orec',  chance: matPct });
-      matDrops.push({ id:'skinc', chance: matPct });
-    }
-    matDrops.push({ id:'recu', chance: _fmtPct(0.1)   });
-    matDrops.push({ id:'recr', chance: _fmtPct(0.05)  });
-    matDrops.push({ id:'rece', chance: _fmtPct(0.02)  });
-    matDrops.push({ id:'recl', chance: _fmtPct(0.001) });
-
-    const rows = matDrops.map(d => {
+  // Recipe drops (non-boss only) — one roll picks at most one of the 4
+  // tiers via cumulative thresholds in combat.js; the numbers below are the
+  // equivalent independent per-item percentages (the gaps between those
+  // thresholds), so they can be shown as separate rows.
+  let recipeSection = '';
+  if (!isBoss) {
+    const recipeDrops = [
+      { id:'recl', base:0.001 },
+      { id:'rece', base:0.02  },
+      { id:'recr', base:0.05  },
+      { id:'recu', base:0.1   },
+    ];
+    const rows = recipeDrops.map(d => {
       const mat = CRAFT_MATS.find(m => m.id === d.id);
       if (!mat) return '';
       const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aea599';
-      return `<div class="fi-drop">
-        <span class="fi-drop-icon">${_matIcon(mat, 16)}</span>
-        <span class="fi-drop-lbl" style="color:${rc}">${mat.name}</span>
-        <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${d.chance}</b></span>
-      </div>`;
+      return _dropRow(_mi(mat, 16), mat.name, `&times;1 · <b style="color:${rc}">${_pctText(d.base * dropMult)}</b>`, rc);
     }).join('');
+    recipeSection = `<div class="fi-drops-hdr" style="margin-top:8px">Рецепты</div><div class="fi-drops">${rows}</div>`;
+  }
 
-    matSection = `<div class="fi-drops-hdr" style="margin-top:8px">Материалы</div>
-      <div class="fi-drops">${rows}</div>`;
+  // Buff potions — one of 6 potions chosen uniformly at random per roll
+  const _buffPotIds = ['bp_hp', 'bp_exp', 'bp_gold', 'bp_regen', 'bp_atkspeed', 'bp_atk'];
+  const bpChancePct = (isBoss ? 3 : 0.5) * dropMult; // 0.03/0.005 as fractions -> ×100 for percent
+  const bpPerItemPct = bpChancePct / _buffPotIds.length;
+  const bpRows = _buffPotIds.map(id => {
+    const it = ITEM_DEF.find(d => d.id === id);
+    if (!it) return '';
+    return _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b>${_pctText(bpPerItemPct)}</b>`);
+  }).join('');
+  const bpSection = `<div class="fi-drops-hdr" style="margin-top:8px">Зелья баффов</div><div class="fi-drops">${bpRows}</div>`;
+
+  // Room-level keys + enchant stone (non-boss only — bosses use the fixed
+  // stoneRow above instead)
+  let keySection = '';
+  if (!isBoss && typeof roomKeyChance === 'function') {
+    const matU = CRAFT_MATS.find(m => m.id === 'key_uncommon');
+    const matR = CRAFT_MATS.find(m => m.id === 'key_rare');
+    const matN = CRAFT_MATS.find(m => m.id === 'norm_stone');
+    const rows =
+      (matU ? _dropRow(_mi(matU, 16), matU.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'uncommon') * 100)}</b>`) : '') +
+      (matR ? _dropRow(_mi(matR, 16), matR.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'rare') * 100)}</b>`) : '') +
+      (matN && typeof roomEnchantStoneChance === 'function' ? _dropRow(_mi(matN, 16), matN.name, `&times;1 · <b>${_pctText(roomEnchantStoneChance(localLvl) * 100)}</b>`) : '');
+    keySection = `<div class="fi-drops-hdr" style="margin-top:8px">Ключи и камни</div><div class="fi-drops">${rows}</div>`;
   }
 
   // Equipment drop: one continuous chance (+0.1%/level, never resets across
-  // zones) picking a single rarity determined by the level's quarter of the
-  // 1-120 scale — see itemDropChanceAtLevel/itemRarityForLevel above.
+  // zones) picks a single rarity by the level's arm (itemDropChanceAtLevel/
+  // itemRarityForLevel) then one item uniformly among that rarity's 7
+  // class-filtered slots (1 weapon for your class + 6 armor/accessory
+  // slots) — every item at that rarity is shown below, each normalized to
+  // that same 1-in-7 share so the percentage matches what an actual player
+  // of that item's class would see.
   let gearSection = '';
   if (typeof itemDropChanceAtLevel === 'function') {
     const pct = Math.min(100, itemDropChanceAtLevel(lvl) * (isBoss ? BOSS_ITEM_DROP_MULT : 1));
     const rarity = itemRarityForLevel(lvl);
-    const pctText = (pct >= 1 ? pct.toFixed(1).replace(/\.0$/, '') : pct.toFixed(2).replace(/\.?0+$/, '')) + '%';
     const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
     const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
-    gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка</div>
-      <div class="fi-drops">
-        <div class="fi-drop">
-          <span class="fi-drop-lbl" style="color:${rc}">${rn} предмет</span>
-          <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${pctText}</b></span>
-        </div>
-      </div>`;
+    const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+    const perItemPct = pct / 7; // 1 weapon (for your class) + 6 other slots always compete 1-in-7
+    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && GEAR_SLOTS.includes(d.slot));
+    const rows = candidates.map(it => _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b style="color:${rc}">${_pctText(perItemPct)}</b>`, rc)).join('');
+    gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка (${rn})</div><div class="fi-drops">${rows}</div>`;
   }
 
   return `
@@ -624,7 +640,9 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       </div>
       ${stoneRow}
     </div>
-    ${matSection}
+    ${recipeSection}
+    ${bpSection}
+    ${keySection}
     ${gearSection}`;
 }
 
