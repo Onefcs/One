@@ -294,6 +294,16 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // Canonical item catalog — single source of truth for both client rendering
 // and server-side validation (e.g. the Market only ever stores a listing's
 // stats as recomputed from here, never whatever the client sent).
+// [class, skillKey, name] — name must match SKILL_DEF[class][i].name exactly
+// (js/definitions.js) so a book's label always names the ability it unlocks.
+const _SKILL_BOOK_SRC = [
+  ['lev', 'Q', 'Ледяной удар'], ['lev', 'W', 'Смерч клинков'], ['lev', 'E', 'Гнев мертвеца'], ['lev', 'R', 'Рывок тьмы'],
+  ['deathknight', 'Q', 'Пинок'], ['deathknight', 'W', 'Вихрь клинка'], ['deathknight', 'E', 'Ярость'], ['deathknight', 'R', 'Кувырок'],
+  ['ranger', 'Q', 'Мульти-выстрел'], ['ranger', 'W', 'Комбо стрела'], ['ranger', 'E', 'Прыжок'], ['ranger', 'R', 'Скорость атаки'],
+  ['mage', 'Q', 'Огненный шар'], ['mage', 'W', 'Ледяная нова'], ['mage', 'E', 'Барьер'], ['mage', 'R', 'Телепорт'],
+  ['warlock', 'Q', 'Тёмное исцеление'], ['warlock', 'W', 'Оковы тьмы'], ['warlock', 'E', 'Тёмный щит'], ['warlock', 'R', 'Тёмная молитва'],
+];
+
 const CRAFT_MATS = [
   // ── Recipes (от всех) ───────────────────────────────────
   { id:'recu',  name:'Рецепт необычный',  img:'/images/material/recu.png',  slot:'recipe',   rarity:'uncommon'  },
@@ -306,8 +316,18 @@ const CRAFT_MATS = [
   // ── Room-level keys (от монстров в комнатах подземелья) ──
   { id:'key_uncommon', name:'Необычный ключ', img:'/images/material/keyu.png', slot:'material', rarity:'uncommon' },
   { id:'key_rare',      name:'Редкий ключ',    img:'/images/material/keyr.png', slot:'material', rarity:'rare'     },
-  // ── Skill books (изучение/прокачка Q/W/E/R — см. studySkill/upgradeSkillWithBook в ui.js) ──
-  { id:'skill_book', name:'Книга навыков', icon:'book', slot:'material', rarity:'uncommon' },
+  // ── Skill books (изучение/прокачка Q/W/E/R) ──────────────
+  // One book per class+skill-key combo — each class's Q/W/E/R is a
+  // different ability, so a generic book wouldn't identify which one it
+  // unlocks. Names mirror SKILL_DEF (js/definitions.js) so the two never
+  // drift apart; the client resolves each book's actual icon/img by looking
+  // up forClass+skillKey against SKILL_DEF at render time (see _itemIcon in
+  // js/ui.js) rather than duplicating image paths here. See
+  // studySkill/upgradeSkillWithBook in js/ui.js.
+  ..._SKILL_BOOK_SRC.map(([cls, key, name]) => ({
+    id: `book_${cls}_${key}`, name: `Книга: ${name}`,
+    slot: 'material', rarity: 'uncommon', forClass: cls, skillKey: key,
+  })),
 ];
 
 // ── Loot boxes ────────────────────────────────────────────────────────────────

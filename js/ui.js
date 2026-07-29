@@ -2,6 +2,19 @@
 //  PANEL UIs
 // ─────────────────────────────────────────────────────────
 function _itemIcon(it, size) {
+  // Skill books: the book glyph framed around that skill's own icon/art, so
+  // each one is identifiable at a glance instead of all looking identical.
+  if (it && it.skillKey && it.forClass) {
+    const sk = (SKILL_DEF[it.forClass] || []).find(s => s.key === it.skillKey);
+    const gs = Math.round(size * 0.58);
+    const glyph = sk && sk.img
+      ? `<img src="${sk.img}" width="${gs}" height="${gs}" style="image-rendering:pixelated;border-radius:2px">`
+      : iconHTML((sk && sk.icon) || 'book', gs, '#e3941d');
+    return `<div style="position:relative;width:${size}px;height:${size}px">
+      ${iconHTML('book', size, '#c48a3a')}
+      <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${glyph}</div>
+    </div>`;
+  }
   if (it && it.img) {
     return `<img src="${it.img}" width="${size}" height="${size}"
       style="image-rendering:pixelated;border-radius:3px;"
@@ -271,6 +284,14 @@ const SKILL_STUDY_COST   = 1;   // books to unlock a level-0 (locked) skill
 const SKILL_UPGRADE_COST = 2;   // books per upgrade attempt once studied
 const SKILL_UPGRADE_CHANCE = 0.30;
 
+// Every class+key combo has its OWN book (shared/definitions.js CRAFT_MATS,
+// id "book_<class>_<key>") — a generic book wouldn't say which of the 4
+// different abilities it's for.
+function _skillBookId(cls, key) { return `book_${cls}_${key}`; }
+function _skillBookDef(cls, key) {
+  return CRAFT_MATS.find(m => m.id === _skillBookId(cls, key));
+}
+
 function updateSkillsUI() {
   if (!player) return;
   const el = document.getElementById('skill-upgrade-panel');
@@ -279,11 +300,10 @@ function updateSkillsUI() {
   if (!skills) { el.innerHTML = '<div style="padding:16px;color:#645f57;text-align:center">Выберите персонажа</div>'; return; }
   const bonusTypes = (SKILL_BONUS_TYPE || {})[player.type] || {};
   const sl = player.skillLevels || {};
-  const books = typeof countMaterial === 'function' ? countMaterial('skill_book') : 0;
 
   el.innerHTML = `
     <div class="skill-upg-header">
-      <span>${iconHTML('book', 13, '#e3941d')} <span id="skill-book-lbl">${books}</span> книг навыков</span>
+      <span>${iconHTML('book', 13, '#e3941d')} Книги навыков</span>
       <span class="skill-upg-hint">Изучение: ${SKILL_STUDY_COST} кн. · Улучшение: ${SKILL_UPGRADE_COST} кн. · ${Math.round(SKILL_UPGRADE_CHANCE * 100)}% шанс</span>
     </div>
     ${skills.map(sk => {
@@ -293,27 +313,36 @@ function updateSkillsUI() {
       const bonusType = bonusTypes[sk.key] || 'damage';
       const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level);
       const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1);
+      const bookId = _skillBookId(player.type, sk.key);
+      const bookName = (_skillBookDef(player.type, sk.key) || {}).name || 'Книга навыков';
+      const bookCount = countMaterial(bookId);
 
       const dots = Array.from({ length: 10 }, (_, i) =>
         `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
       ).join('');
 
-      const iconEl = sk.img
-        ? `<img src="${sk.img}" width="26" height="26" style="image-rendering:pixelated;border-radius:4px;opacity:${locked ? 0.35 : 1}">`
-        : iconHTML(sk.icon, 26, locked ? '#645f57' : '#e3941d');
+      // Book-framed icon — the skill's own icon/art nested inside the book
+      // glyph, so each skill's book is visually identifiable at a glance.
+      const skillGlyph = sk.img
+        ? `<img src="${sk.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
+        : iconHTML(sk.icon, 15, locked ? '#645f57' : '#e3941d');
+      const iconEl = `<div style="position:relative;width:26px;height:26px;opacity:${locked ? 0.4 : 1}">
+        ${iconHTML('book', 26, locked ? '#645f57' : '#c48a3a')}
+        <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${skillGlyph}</div>
+      </div>`;
 
       let btnLabel, btnAction, btnDisabled;
       if (locked) {
-        btnDisabled = books < SKILL_STUDY_COST;
-        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · Изучить`;
+        btnDisabled = bookCount < SKILL_STUDY_COST;
+        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · Изучить (${bookCount})`;
         btnAction = `studySkill('${sk.key}')`;
       } else if (maxed) {
         btnDisabled = true;
         btnLabel = 'Максимум';
         btnAction = '';
       } else {
-        btnDisabled = books < SKILL_UPGRADE_COST;
-        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · Улучшить (${Math.round(SKILL_UPGRADE_CHANCE * 100)}%)`;
+        btnDisabled = bookCount < SKILL_UPGRADE_COST;
+        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · Улучшить (${Math.round(SKILL_UPGRADE_CHANCE * 100)}%) — ${bookCount}`;
         btnAction = `upgradeSkillWithBook('${sk.key}')`;
       }
 
@@ -326,7 +355,7 @@ function updateSkillsUI() {
           <div class="skill-upg-info">
             <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${locked ? ' 🔒 Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
             <div class="skill-upg-desc">${sk.desc}</div>
-            ${!locked ? `<div class="skill-upg-type">${_skillBonusTypeLabel(bonusType)}</div>` : ''}
+            <div class="skill-upg-type">${locked ? bookName : _skillBonusTypeLabel(bonusType)}</div>
           </div>
         </div>
         ${!locked ? `<div class="sk-dots">${dots}</div>` : ''}
@@ -344,11 +373,12 @@ function studySkill(key) {
   if (!player) return;
   const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
   if ((sl[key] || 0) > 0) return; // already studied
-  if (countMaterial('skill_book') < SKILL_STUDY_COST) {
-    dmgNum(player.x, player.y - 30, 'Нужна книга навыков!', '#f17e8b');
+  const bookId = _skillBookId(player.type, key);
+  if (countMaterial(bookId) < SKILL_STUDY_COST) {
+    dmgNum(player.x, player.y - 30, 'Нужна книга этого навыка!', '#f17e8b');
     return;
   }
-  removeFromInventory('skill_book', SKILL_STUDY_COST);
+  removeFromInventory(bookId, SKILL_STUDY_COST);
   sl[key] = 1;
   spawnBurst(player.x, player.y, '#e69419', 10);
   dmgNum(player.x, player.y - 42, 'Навык изучен!', '#e69419');
@@ -363,11 +393,12 @@ function upgradeSkillWithBook(key) {
   const lvl = sl[key] || 0;
   if (lvl <= 0) { dmgNum(player.x, player.y - 30, 'Сначала изучите навык!', '#f17e8b'); return; }
   if (lvl >= 10) return;
-  if (countMaterial('skill_book') < SKILL_UPGRADE_COST) {
-    dmgNum(player.x, player.y - 30, `Нужно ${SKILL_UPGRADE_COST} книги!`, '#f17e8b');
+  const bookId = _skillBookId(player.type, key);
+  if (countMaterial(bookId) < SKILL_UPGRADE_COST) {
+    dmgNum(player.x, player.y - 30, `Нужно ${SKILL_UPGRADE_COST} книги этого навыка!`, '#f17e8b');
     return;
   }
-  removeFromInventory('skill_book', SKILL_UPGRADE_COST);
+  removeFromInventory(bookId, SKILL_UPGRADE_COST);
   if (Math.random() < SKILL_UPGRADE_CHANCE) {
     sl[key] = lvl + 1;
     spawnBurst(player.x, player.y, '#e69419', 10);
@@ -630,6 +661,25 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка (${rn})</div><div class="fi-drops">${rows}</div>`;
   }
 
+  // Skill books — one per class+skill (shared/definitions.js CRAFT_MATS);
+  // only the CURRENT character's own class can ever drop for them (see the
+  // player.type filter in applyLootToInventory, js/combat.js), so this is
+  // scoped to whichever character is selected rather than listing all 20.
+  let bookSection = '';
+  if (player && player.type && SKILL_DEF[player.type]) {
+    const classBooks = SKILL_DEF[player.type]
+      .map(sk => _skillBookDef(player.type, sk.key)).filter(Boolean);
+    if (classBooks.length) {
+      const className = (CHAR_DEF[player.type] || {}).name || '';
+      const rows = isBoss
+        ? classBooks.map(b => _dropRow(_itemIcon(b, 16), b.name,
+            `&times;2 · <b style="color:#98e456">${_pctText(100 / classBooks.length)}</b>`, '#98e456')).join('')
+        : classBooks.map(b => _dropRow(_itemIcon(b, 16), b.name,
+            `&times;1 · <b>${_pctText(0.02 * Math.min(dropMult, 3) / classBooks.length * 100)}</b>`)).join('');
+      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">Книги навыков (${className})</div><div class="fi-drops">${rows}</div>`;
+    }
+  }
+
   return `
     <div class="fi-mstats">
       <span>HP <b>${hp}</b></span>
@@ -656,7 +706,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     </div>
     ${recipeSection}
     ${keySection}
-    ${gearSection}`;
+    ${gearSection}
+    ${bookSection}`;
 }
 
 function updateRaidPanelUI() {

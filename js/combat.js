@@ -138,18 +138,27 @@ function applyLootToInventory(eid, rlvl) {
     _addMat('norm_stone', 76);
   }
 
-  // Skill books — studySkill()/upgradeSkillWithBook() (js/ui.js) spend these
-  // to unlock and level up Q/W/E/R. Bosses always drop a couple; regular
-  // kills have a modest scaled chance for one (capped so it doesn't scale as
-  // aggressively as recipes/keys — this is a flat per-book resource, not a
-  // rarity tier).
-  if (eType === 'boss') {
-    if (addToInventoryQty({ ...CRAFT_MATS.find(m => m.id === 'skill_book') }, 2)) {
-      dmgNum(player.x, player.y - 84, '+ 2× Книга навыков', RARITY_COLOR['uncommon'] || '#98e456');
-      saved = true;
+  // Skill books — one per class+skill (studySkill()/upgradeSkillWithBook() in
+  // js/ui.js spend these to unlock and level up Q/W/E/R). Which of the
+  // player's own 4 skills the book is FOR is picked at random each drop —
+  // bosses always drop a couple; regular kills have a modest scaled chance
+  // for one (capped so it doesn't scale as aggressively as recipes/keys —
+  // this is a flat per-book resource, not a rarity tier).
+  const _classBooks = CRAFT_MATS.filter(m => m.forClass === player.type);
+  if (_classBooks.length) {
+    if (eType === 'boss') {
+      const book = _classBooks[Math.floor(Math.random() * _classBooks.length)];
+      if (addToInventoryQty({ ...book }, 2)) {
+        dmgNum(player.x, player.y - 84, '+ 2× ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
+        saved = true;
+      }
+    } else if (Math.random() < 0.02 * Math.min(_dropMult, 3)) {
+      const book = _classBooks[Math.floor(Math.random() * _classBooks.length)];
+      if (addToInventory({ ...book })) {
+        dmgNum(player.x, player.y - 84, '+ ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
+        saved = true;
+      }
     }
-  } else if (Math.random() < 0.02 * Math.min(_dropMult, 3)) {
-    _addMat('skill_book', 84);
   }
 
   if (saved) netSaveProgress();
