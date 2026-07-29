@@ -162,146 +162,247 @@ const SPRITE_DEF = {
 };
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
-// 64×64 frames (golems 128×128), 4 directional rows: 0=down 1=up 2=left 3=right.
+// 64×64 frames (Rat/Ent/Demon 128×128), 4 directional rows: 0=down 1=up 2=left 3=right.
+// Each species has 3 tiers (Species1 weakest look → Species3 strongest); guard
+// uses tier1, warrior uses tier2, and whichever species is that arm's boss
+// reuses its own tier3 for the boss look — see shared/definitions.js ENEMY_DEF.
 const ENEMY_SPRITE_DEF = {
-  // ── Floor 1: Goblins ────────────────────────────────────────────────────
-  goblin_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Goblin 1/Idle0_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Goblin 1/Run0_with_shadow.png',    cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster/Goblin 1/Attack0_with_shadow.png', cols:5, fps:14, loop:false },
-      death:  { src:'images/Monster/Goblin 1/Death0_with_shadow.png',  cols:6, fps:8,  loop:false },
-    }
-  },
-  goblin_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Goblin2/Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Goblin2/Run_with_shadow.png',    cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster/Goblin2/Attack_with_shadow.png', cols:5, fps:14, loop:false },
-      death:  { src:'images/Monster/Goblin2/Death_with_shadow.png',  cols:6, fps:8,  loop:false },
-    }
-  },
-  goblin_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/GoblinBoss/Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/GoblinBoss/Run_with_shadow.png',    cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster/GoblinBoss/Attack_with_shadow.png', cols:5, fps:14, loop:false },
-      death:  { src:'images/Monster/GoblinBoss/Death_with_shadow.png',  cols:6, fps:8,  loop:false },
-    }
-  },
-  // ── Floor 2: Skeletons ──────────────────────────────────────────────────
-  skel_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Skeleton1/Skeleton1_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Skeleton1/Skeleton1_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster/Skeleton1/Skeleton1_Attack_with_shadow.png', cols:9, fps:14, loop:false },
-      death:  { src:'images/Monster/Skeleton1/Skeleton1_Death_with_shadow.png',  cols:6, fps:8,  loop:false },
-    }
-  },
-  skel_barbarian: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Skeleton2/Skeleton2_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Skeleton2/Skeleton2_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster/Skeleton2/Skeleton2_Attack_with_shadow.png', cols:9, fps:14, loop:false },
-      death:  { src:'images/Monster/Skeleton2/Skeleton2_Death_with_shadow.png',  cols:6, fps:8,  loop:false },
-    }
-  },
-  skel_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/SkeletonBoss/Skeleton3_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/SkeletonBoss/Skeleton3_Run_with_shadow.png',    cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster/SkeletonBoss/Skeleton3_Attack_with_shadow.png', cols:9, fps:14, loop:false },
-      death:  { src:'images/Monster/SkeletonBoss/Skeleton3_Death_with_shadow.png',  cols:6, fps:8,  loop:false },
-    }
-  },
-  // ── Floor 3: Mushrooms ──────────────────────────────────────────────────
-  mush_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Mushroom1/Mushroom2_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Mushroom1/Mushroom2_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
-      attack: { src:'images/Monster/Mushroom1/Mushroom2_Attack_with_shadow.png', cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster/Mushroom1/Mushroom2_Death_with_shadow.png',  cols:9, fps:8,  loop:false },
-    }
-  },
-  mush_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Mushroom2/Mushroom1_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Mushroom2/Mushroom1_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
-      attack: { src:'images/Monster/Mushroom2/Mushroom1_Attack_with_shadow.png', cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster/Mushroom2/Mushroom1_Death_with_shadow.png',  cols:9, fps:8,  loop:false },
-    }
-  },
-  mush_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/MushroomBoss/Mushroom3_Idle_with_shadow.png',   cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster/MushroomBoss/Mushroom3_Run_with_shadow.png',    cols:6, fps:12, loop:true  },
-      attack: { src:'images/Monster/MushroomBoss/Mushroom3_Attack_with_shadow.png', cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster/MushroomBoss/Mushroom3_Death_with_shadow.png',  cols:9, fps:8,  loop:false },
-    }
-  },
-  // ── Floor 4: Ghosts ─────────────────────────────────────────────────────
-  ghost_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Ghost1/Ghost1_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Ghost1/Ghost1_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
-      attack: { src:'images/Monster/Ghost1/Ghost1_Attack_with_shadow.png', cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster/Ghost1/Ghost1_Death_with_shadow.png',  cols:9,  fps:8,  loop:false },
-    }
-  },
-  ghost_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/Ghost2/Ghost2_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster/Ghost2/Ghost2_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
-      attack: { src:'images/Monster/Ghost2/Ghost2_Attack_with_shadow.png', cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster/Ghost2/Ghost2_Death_with_shadow.png',  cols:9,  fps:8,  loop:false },
-    }
-  },
-  ghost_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster/GhostBoss/Ghost3_Idle_with_shadow.png',   cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster/GhostBoss/Ghost3_Run_with_shadow.png',    cols:6,  fps:12, loop:true  },
-      attack: { src:'images/Monster/GhostBoss/Ghost3_Attack_with_shadow.png', cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster/GhostBoss/Ghost3_Death_with_shadow.png',  cols:9,  fps:8,  loop:false },
-    }
-  },
-  // ── Floor 5: Golems ─────────────────────────────────────────────────────
-  golem_warrior: {
+  // ── Arm 1 (levels 1-30) ──────────────────────────────────────────────────
+  rat_guard: {
     frameW: 128, frameH: 128,
     sheets: {
-      idle:   { src:'images/Monster/Golem 1/Golem1_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
-      walk:   { src:'images/Monster/Golem 1/Golem1_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
-      attack: { src:'images/Monster/Golem 1/Golem1_Attack_with_shadow.png', cols:9, fps:12, loop:false },
-      death:  { src:'images/Monster/Golem 1/Golem1_Death_with_shadow.png',  cols:8, fps:7,  loop:false },
+      idle:   { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Idle_with_shadow.png',     cols:6, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Run_with_shadow.png',      cols:6, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Attack_with_shadow.png',   cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Death_with_shadow.png',    cols:5, fps:8,  loop:false },
     }
   },
-  golem_guard: {
+  rat_warrior: {
     frameW: 128, frameH: 128,
     sheets: {
-      idle:   { src:'images/Monster/Golem2/Golem2_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
-      walk:   { src:'images/Monster/Golem2/Golem2_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
-      attack: { src:'images/Monster/Golem2/Golem2_Attack_with_shadow.png', cols:9, fps:12, loop:false },
-      death:  { src:'images/Monster/Golem2/Golem2_Death_with_shadow.png',  cols:8, fps:7,  loop:false },
+      idle:   { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Idle_with_shadow.png',     cols:6, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Run_with_shadow.png',      cols:6, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Attack_with_shadow.png',   cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Death_with_shadow.png',    cols:5, fps:8,  loop:false },
     }
   },
-  golem_boss: {
+  slime_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Idle_with_shadow.png',     cols:6,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
+      death:  { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Death_with_shadow.png',     cols:8,  fps:8,  loop:false },
+    }
+  },
+  slime_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Idle_with_shadow.png',     cols:6,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
+      death:  { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Death_with_shadow.png',     cols:10, fps:8,  loop:false },
+    }
+  },
+  imp_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Attack_with_shadow.png',   cols:6,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  imp_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Attack_with_shadow.png',   cols:6,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  imp_boss: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Attack_with_shadow.png',   cols:6,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  // ── Arm 2 (levels 31-60) ─────────────────────────────────────────────────
+  zombie_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
+      death:  { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
+    }
+  },
+  zombie_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
+      death:  { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
+    }
+  },
+  lizardman_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Run_with_shadow.png',      cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Attack_with_shadow.png',   cols:7, fps:14, loop:false },
+      death:  { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Death_with_shadow.png',    cols:7, fps:8,  loop:false },
+    }
+  },
+  lizardman_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Run_with_shadow.png',      cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Attack_with_shadow.png',   cols:7, fps:14, loop:false },
+      death:  { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Death_with_shadow.png',    cols:7, fps:8,  loop:false },
+    }
+  },
+  orc_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_run_with_shadow.png',      cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_attack_with_shadow.png',   cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_death_with_shadow.png',    cols:8, fps:8,  loop:false },
+    }
+  },
+  orc_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_run_with_shadow.png',      cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_attack_with_shadow.png',   cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_death_with_shadow.png',    cols:8, fps:8,  loop:false },
+    }
+  },
+  orc_boss: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_run_with_shadow.png',      cols:8, fps:12, loop:true  },
+      attack: { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_attack_with_shadow.png',   cols:8, fps:14, loop:false },
+      death:  { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_death_with_shadow.png',    cols:8, fps:8,  loop:false },
+    }
+  },
+  // ── Arm 3 (levels 61-90) ─────────────────────────────────────────────────
+  plant_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Attack_with_shadow.png',   cols:7,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  plant_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Attack_with_shadow.png',   cols:7,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  vampire_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Death_with_shadow.png',    cols:11, fps:8,  loop:false },
+    }
+  },
+  vampire_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Death_with_shadow.png',    cols:11, fps:8,  loop:false },
+    }
+  },
+  beholder_guard: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Idle_with_shadow.png',     cols:12, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
+    }
+  },
+  beholder_warrior: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Idle_with_shadow.png',     cols:12, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
+    }
+  },
+  beholder_boss: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Idle_with_shadow.png',     cols:12, fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
+      death:  { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
+    }
+  },
+  // ── Arm 4 (levels 91-120) ────────────────────────────────────────────────
+  ent_guard: {
     frameW: 128, frameH: 128,
     sheets: {
-      idle:   { src:'images/Monster/Golem3/Golem3_Idle_with_shadow.png',   cols:4, fps:6,  loop:true  },
-      walk:   { src:'images/Monster/Golem3/Golem3_Run_with_shadow.png',    cols:8, fps:10, loop:true  },
-      attack: { src:'images/Monster/Golem3/Golem3_Attack_with_shadow.png', cols:9, fps:12, loop:false },
-      death:  { src:'images/Monster/Golem3/Golem3_Death_with_shadow.png',  cols:8, fps:7,  loop:false },
+      idle:   { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Idle_with_shadow.png',     cols:4, fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Run_with_shadow.png',      cols:8, fps:10, loop:true  },
+      attack: { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Attack_with_shadow.png',   cols:7, fps:12, loop:false },
+      death:  { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Death_with_shadow.png',    cols:6, fps:7,  loop:false },
+    }
+  },
+  ent_warrior: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle:   { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Attack_with_shadow.png',   cols:7,  fps:12, loop:false },
+      death:  { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Death_with_shadow.png',    cols:12, fps:7,  loop:false },
+    }
+  },
+  demon_guard: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle:   { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
+      death:  { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
+    }
+  },
+  demon_warrior: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle:   { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
+      death:  { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
+    }
+  },
+  demon_boss: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
+      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
     }
   },
 };

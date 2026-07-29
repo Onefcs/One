@@ -113,48 +113,83 @@ function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss) {
 }
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
+// Each of the 4 arms cycles through several DIFFERENT monster species as you
+// climb its 29 regular rooms (3 species per arm, or 2 for arm 4's bigger
+// creatures) instead of showing the same 2 sprites for all 30 rooms — see
+// FLOOR_ENEMIES' `bands` below. Every species contributes a guard (tankier)
+// and a warrior (harder-hitting) variant to its band; the arm's boss reuses
+// that same species' own "elite" tier for its look, so the boss always feels
+// like a stronger version of something you were just fighting.
+//
 // hp/atk/def/xp/gold below are monsterStatsAtLevel()/xpAtLevel()/goldAtLevel()
-// evaluated at each zone's first room (arm's start level) and boss room
-// (arm's last level) — a static snapshot used as-is by the Raid and
-// Party-dungeon modes (which don't have a room-progression concept of their
-// own) and as display fallback. The main open world (server/game/dungeon.js)
-// ignores these numbers entirely and calls the level functions fresh for the
-// enemy's actual room level, overriding name/color/hp/atk/def/xp/gold per spawn.
+// evaluated at each entry's band-start level (or the arm's last level for
+// bosses) — a static snapshot used as-is by the Raid and Party-dungeon modes
+// (which don't have a room-progression concept of their own) and as display
+// fallback. The main open world (server/game/dungeon.js) ignores these
+// numbers entirely and calls the level functions fresh for the enemy's actual
+// room level, overriding name/color/hp/atk/def/xp/gold per spawn.
 // fem: grammatical gender of the base name's leading noun, for rank agreement
-// (skel/goblin/mush/golem nouns are masculine, "Тень" is feminine).
+// (Крыса/Лоза are feminine, the rest are masculine).
 // endColor: the room-29 (strongest non-boss) tint monsterColorAtLevel ramps to.
 const ENEMY_DEF = [
-  // Arm 1 (levels 1-30) — Skeletons
-  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', endColor:'#5c1a24', fem:false, size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:1,  gold:1,   isBoss:false, eType:'warrior' },
-  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', endColor:'#4a1420', fem:false, size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:1,  gold:1,   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:745,  atk:75,  def:15, spd:99,  xp:30, gold:30, isBoss:true,  eType:'boss'    },
-  // Arm 2 (levels 31-60) — Goblins
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', endColor:'#123d1a', fem:false, size:13, hp:91, atk:44,  def:16, spd:70,  xp:31,  gold:31,   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', endColor:'#0a3d14', fem:false, size:14, hp:71, atk:59,  def:16, spd:75,  xp:31,  gold:31,   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:4930,  atk:192, def:30, spd:83,  xp:60, gold:60, isBoss:true,  eType:'boss'    },
-  // Arm 3 (levels 61-90) — Mushrooms
-  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', endColor:'#4a1c08', fem:false, size:13, hp:604, atk:113, def:31, spd:60,  xp:61,  gold:61,   isBoss:false, eType:'guard'   },
-  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', endColor:'#5c2408', fem:false, size:15, hp:472, atk:152, def:31, spd:65,  xp:61,  gold:61,   isBoss:false, eType:'warrior' },
-  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:32606, atk:495, def:45, spd:68,  xp:90, gold:90, isBoss:true,  eType:'boss'    },
-  // Arm 4 (levels 91-120) — Ghosts
-  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', endColor:'#0f0f4a', fem:true,  size:16, hp:3125, atk:392, def:46, spd:110, xp:91,  gold:91,   isBoss:false, eType:'warrior' },
-  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', endColor:'#1a1a5c', fem:true,  size:14, hp:3993, atk:289, def:46, spd:120, xp:91,  gold:91,   isBoss:false, eType:'guard'   },
-  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:215667, atk:1274, def:60, spd:128, xp:120, gold:120, isBoss:true,  eType:'boss'    },
-  // Arm 5 (levels 121-150) — Golems, defined but currently unused: only 4
-  // arms are ever built (ARM_NAMES), so this pool never actually spawns.
-  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', endColor:'#3a1a08', fem:false, size:20, hp:20672, atk:1008, def:61, spd:50,  xp:121, gold:121,   isBoss:false, eType:'warrior' },
-  { eid:'golem_guard',    name:'Голем страж',   color:'#875', endColor:'#2e1406', fem:false, size:18, hp:26414, atk:745, def:61, spd:55,  xp:121,  gold:121,   isBoss:false, eType:'guard'   },
-  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1426503,atk:3276, def:75, spd:60,  xp:150, gold:150, isBoss:true,  eType:'boss'    },
+  { eid:'rat_guard', name:'Крыса страж', color:'#8a7a6a', endColor:'#3a2a1a', fem:true, size:13, hp:14, atk:17, def:1, spd:112, xp:1, gold:1, isBoss:false, eType:'guard' },
+  { eid:'rat_warrior', name:'Крыса воин', color:'#8a7a6a', endColor:'#3a2a1a', fem:true, size:14, hp:11, atk:23, def:1, spd:118, xp:1, gold:1, isBoss:false, eType:'warrior' },
+  { eid:'slime_guard', name:'Слизень страж', color:'#7ac47a', endColor:'#1a3a10', fem:false, size:13, hp:26, atk:23, def:6, spd:52, xp:11, gold:11, isBoss:false, eType:'guard' },
+  { eid:'slime_warrior', name:'Слизень воин', color:'#7ac47a', endColor:'#1a3a10', fem:false, size:14, hp:20, atk:32, def:6, spd:56, xp:11, gold:11, isBoss:false, eType:'warrior' },
+  { eid:'imp_guard', name:'Бес страж', color:'#c47a5a', endColor:'#4a1408', fem:false, size:14, hp:49, atk:32, def:11, spd:92, xp:21, gold:21, isBoss:false, eType:'guard' },
+  { eid:'imp_warrior', name:'Бес воин', color:'#c47a5a', endColor:'#4a1408', fem:false, size:15, hp:38, atk:43, def:11, spd:97, xp:21, gold:21, isBoss:false, eType:'warrior' },
+  { eid:'imp_boss', name:'Босс бесов', color:'#ff6a3a', size:22, hp:745, atk:75, def:15, spd:88, xp:30, gold:30, isBoss:true, eType:'boss' },
+  { eid:'zombie_guard', name:'Зомби страж', color:'#8aab7a', endColor:'#1a2a10', fem:false, size:15, hp:91, atk:44, def:16, spd:56, xp:31, gold:31, isBoss:false, eType:'guard' },
+  { eid:'zombie_warrior', name:'Зомби воин', color:'#8aab7a', endColor:'#1a2a10', fem:false, size:16, hp:71, atk:59, def:16, spd:60, xp:31, gold:31, isBoss:false, eType:'warrior' },
+  { eid:'lizardman_guard', name:'Ящер страж', color:'#6ab26a', endColor:'#0a2a0a', fem:false, size:15, hp:171, atk:60, def:21, spd:76, xp:41, gold:41, isBoss:false, eType:'guard' },
+  { eid:'lizardman_warrior', name:'Ящер воин', color:'#6ab26a', endColor:'#0a2a0a', fem:false, size:16, hp:134, atk:81, def:21, spd:80, xp:41, gold:41, isBoss:false, eType:'warrior' },
+  { eid:'orc_guard', name:'Орк страж', color:'#7a9a5a', endColor:'#1a2a08', fem:false, size:16, hp:322, atk:82, def:26, spd:71, xp:51, gold:51, isBoss:false, eType:'guard' },
+  { eid:'orc_warrior', name:'Орк воин', color:'#7a9a5a', endColor:'#1a2a08', fem:false, size:17, hp:252, atk:111, def:26, spd:75, xp:51, gold:51, isBoss:false, eType:'warrior' },
+  { eid:'orc_boss', name:'Босс орков', color:'#ffb020', size:24, hp:4930, atk:192, def:30, spd:68, xp:60, gold:60, isBoss:true, eType:'boss' },
+  { eid:'plant_guard', name:'Лоза страж', color:'#8aab6a', endColor:'#2a1a3a', fem:true, size:16, hp:604, atk:113, def:31, spd:46, xp:61, gold:61, isBoss:false, eType:'guard' },
+  { eid:'plant_warrior', name:'Лоза воин', color:'#8aab6a', endColor:'#2a1a3a', fem:true, size:17, hp:472, atk:152, def:31, spd:50, xp:61, gold:61, isBoss:false, eType:'warrior' },
+  { eid:'vampire_guard', name:'Вампир страж', color:'#9a8aab', endColor:'#1a0a2a', fem:false, size:17, hp:1133, atk:154, def:36, spd:101, xp:71, gold:71, isBoss:false, eType:'guard' },
+  { eid:'vampire_warrior', name:'Вампир воин', color:'#9a8aab', endColor:'#1a0a2a', fem:false, size:18, hp:887, atk:209, def:36, spd:105, xp:71, gold:71, isBoss:false, eType:'warrior' },
+  { eid:'beholder_guard', name:'Бехолдер страж', color:'#a878c0', endColor:'#2a0a3a', fem:false, size:18, hp:2127, atk:211, def:41, spd:66, xp:81, gold:81, isBoss:false, eType:'guard' },
+  { eid:'beholder_warrior', name:'Бехолдер воин', color:'#a878c0', endColor:'#2a0a3a', fem:false, size:19, hp:1665, atk:286, def:41, spd:70, xp:81, gold:81, isBoss:false, eType:'warrior' },
+  { eid:'beholder_boss', name:'Босс бехолдеров', color:'#c060ff', size:27, hp:32606, atk:495, def:45, spd:60, xp:90, gold:90, isBoss:true, eType:'boss' },
+  { eid:'ent_guard', name:'Древень страж', color:'#8a6a4a', endColor:'#2a1a08', fem:false, size:20, hp:3993, atk:289, def:46, spd:41, xp:91, gold:91, isBoss:false, eType:'guard' },
+  { eid:'ent_warrior', name:'Древень воин', color:'#8a6a4a', endColor:'#2a1a08', fem:false, size:21, hp:3125, atk:392, def:46, spd:45, xp:91, gold:91, isBoss:false, eType:'warrior' },
+  { eid:'demon_guard', name:'Демон страж', color:'#c05050', endColor:'#3a0505', fem:false, size:21, hp:10270, atk:464, def:53, spd:71, xp:106, gold:106, isBoss:false, eType:'guard' },
+  { eid:'demon_warrior', name:'Демон воин', color:'#c05050', endColor:'#3a0505', fem:false, size:22, hp:8038, atk:628, def:53, spd:75, xp:106, gold:106, isBoss:false, eType:'warrior' },
+  { eid:'demon_boss', name:'Босс демонов', color:'#ff2020', size:32, hp:215667, atk:1274, def:60, spd:65, xp:120, gold:120, isBoss:true, eType:'boss' },
 ];
 
 // Per-floor enemy pools for floors 1-5
 const FLOOR_ENEMIES = {
-  1: { pool: ['skel_warrior',  'skel_barbarian'], boss: 'skel_boss'     },
-  2: { pool: ['goblin_guard', 'goblin_warrior'], boss: 'goblin_boss'   },
-  3: { pool: ['mush_guard',   'mush_warrior'],   boss: 'mush_boss'     },
-  4: { pool: ['ghost_warrior','ghost_guard'],     boss: 'ghost_boss'    },
-  5: { pool: ['golem_warrior','golem_guard'],     boss: 'golem_boss'    },
+  1: { bands: [
+        { maxLocalLvl: 10, pool: ['rat_guard',      'rat_warrior']      },
+        { maxLocalLvl: 20, pool: ['slime_guard',    'slime_warrior']    },
+        { maxLocalLvl: 29, pool: ['imp_guard',       'imp_warrior']      },
+      ], boss: 'imp_boss' },
+  2: { bands: [
+        { maxLocalLvl: 10, pool: ['zombie_guard',    'zombie_warrior']    },
+        { maxLocalLvl: 20, pool: ['lizardman_guard', 'lizardman_warrior'] },
+        { maxLocalLvl: 29, pool: ['orc_guard',        'orc_warrior']       },
+      ], boss: 'orc_boss' },
+  3: { bands: [
+        { maxLocalLvl: 10, pool: ['plant_guard',    'plant_warrior']    },
+        { maxLocalLvl: 20, pool: ['vampire_guard',  'vampire_warrior']  },
+        { maxLocalLvl: 29, pool: ['beholder_guard', 'beholder_warrior'] },
+      ], boss: 'beholder_boss' },
+  4: { bands: [
+        { maxLocalLvl: 15, pool: ['ent_guard',   'ent_warrior']   },
+        { maxLocalLvl: 29, pool: ['demon_guard', 'demon_warrior'] },
+      ], boss: 'demon_boss' },
 };
+
+// Picks the right band (and its 2-eid pool) for a given local room level —
+// the last band whose maxLocalLvl covers it wins, so bands don't need to
+// divide the 29 levels evenly.
+function bandForLocalLevel(fe, localLvl) {
+  const lvl = Math.max(1, localLvl || 1);
+  return fe.bands.find(b => lvl <= b.maxLocalLvl) || fe.bands[fe.bands.length - 1];
+}
 
 // XP/gold: dead simple, 1:1 with the monster's global level — level 1 gives
 // 1 XP / 1 gold, level 120 gives 120 XP / 120 gold. No more per-arm ×3/×2^N
@@ -384,7 +419,7 @@ const VIP_BONUSES = [
 ];
 
 if (typeof module !== 'undefined') module.exports = {
-  TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop,
+  TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel,
   ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,

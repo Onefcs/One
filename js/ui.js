@@ -421,25 +421,21 @@ function drawMapPanel() {
 
 const _ARM_LABELS = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
 
-function _floorEnemyPool(n) {
+function _floorEnemyPool(n, localLvl) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-  if (FLOOR_ENEMIES[n]) {
-    const fe = FLOOR_ENEMIES[n];
-    const regular = fe.pool.map(eid => eMap.get(eid)).filter(Boolean);
-    const boss    = eMap.get(fe.boss);
-    return { regular, boss };
-  }
-  return {
-    regular: ENEMY_DEF.filter(e => e.eid === 'orc' || e.eid === 'troll'),
-    boss:    ENEMY_DEF.find(e => e.eid === 'demon'),
-  };
+  const fe = FLOOR_ENEMIES[n];
+  const band = bandForLocalLevel(fe, localLvl);
+  const regular = band.pool.map(eid => eMap.get(eid)).filter(Boolean);
+  const boss    = eMap.get(fe.boss);
+  return { regular, boss };
 }
 
 // Flat monster reference list (no corridor/location grouping) — one row per
 // GLOBAL LEVEL 1-120 (matching what actually spawns at that level, name/color
 // included), collapsed by default; tapping a row expands its full stat/drop
 // breakdown for every monster that can appear at that level (2 regular
-// archetypes, or the zone boss on its one level).
+// archetypes — which SPECIES depends on the level's band within its arm, see
+// FLOOR_ENEMIES in shared/definitions.js — or the zone boss on its one level).
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
@@ -449,7 +445,7 @@ function updateFloorUI() {
     const floor = armIdx;
     const localLvl = armLocalLevel(lvl);
     const isBossLvl = localLvl === ROOMS_PER_ARM;
-    const { regular, boss } = _floorEnemyPool(floor);
+    const { regular, boss } = _floorEnemyPool(floor, localLvl);
     html += isBossLvl
       ? _levelAccordionItem(lvl, [_liveEnemy(boss, lvl, localLvl, true)], floor, true)
       : _levelAccordionItem(lvl, regular.map(base => _liveEnemy(base, lvl, localLvl, false)), floor, false);

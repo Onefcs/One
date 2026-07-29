@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -101,9 +101,10 @@ function generateOpenWorld() {
     const horizontal = dir === 'left' || dir === 'right';
     const sign = (dir === 'left' || dir === 'top') ? -1 : 1;
     const fe = FLOOR_ENEMIES[armIdx];
-    function pickEnemy(isBoss) {
-      const id = isBoss ? fe.boss : fe.pool[Math.floor(rng() * fe.pool.length)];
-      return _enemyByEid.get(id);
+    function pickEnemy(isBoss, localLvl) {
+      if (isBoss) return _enemyByEid.get(fe.boss);
+      const pool = bandForLocalLevel(fe, localLvl).pool;
+      return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
     }
 
     // Main corridor: one dead-straight, always-empty strip from the hub door
@@ -122,7 +123,7 @@ function generateOpenWorld() {
       const count = isBoss ? 1 : (room.isSmall ? 5 : 10);
       const weakMult = isBoss ? 1 : 0.5; // regular monsters spawn in packs — halved individually
       for (let n = 0; n < count; n++) {
-        const d = pickEnemy(isBoss);
+        const d = pickEnemy(isBoss, room.localLvl);
         if (!d) continue;
         let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
         for (let attempt = 0; attempt < 40; attempt++) {

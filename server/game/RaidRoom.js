@@ -7,8 +7,8 @@ const CENTER    = MAP_PX / 2;       // 400 px
 const TICK_MS   = 25;
 
 const _byEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-const MOB_POOL  = ['goblin_guard', 'goblin_warrior'];
-const BOSS_EID  = 'goblin_boss';
+const MOB_POOL  = ['orc_guard', 'orc_warrior'];
+const BOSS_EID  = 'orc_boss';
 
 function _makeGrid() {
   return Array.from({ length: MAP_TILES }, () => new Array(MAP_TILES).fill(FLOOR));

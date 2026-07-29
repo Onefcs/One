@@ -140,7 +140,7 @@ function netConnect(onReady) {
     if (typeof ARM_NAMES !== 'undefined') {
       ARM_NAMES.forEach((_, i) => {
         const fe = FLOOR_ENEMIES && FLOOR_ENEMIES[i + 1];
-        if (fe) (fe.pool || []).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
+        if (fe) (fe.bands || []).flatMap(b => b.pool).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
       });
     }
     if (_isReconnectRejoin) {

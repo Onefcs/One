@@ -1,14 +1,14 @@
 // Party dungeon: a real branching maze (recursive-backtracker spanning tree
 // over a cell grid), not the linear room-chain used by the normal 5 floors
-// (server/game/dungeon.js). Monsters and boss both use goblin-tier (arm 2)
-// stats — ENEMY_DEF's hp/atk/def for those eids are already the fully
-// computed values at that level (see monsterStatsAtLevel in
+// (server/game/dungeon.js). Monsters and boss both use arm-2's toughest
+// regular band (Orc) — ENEMY_DEF's hp/atk/def for those eids are already the
+// fully computed values at that level (see monsterStatsAtLevel in
 // shared/definitions.js), so no extra scaling is applied here. Returns the same
 // {grid, rooms, w, h, spawn, safeZone, enemies} shape Room.js/the client
 // renderer already expect, so nothing downstream needs to know this wasn't
 // produced by generateDungeon().
 const { TILE, WALL, FLOOR } = require('./dungeon');
-const { ENEMY_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
+const { ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -154,13 +154,14 @@ function generatePartyDungeon(seed) {
     }
   });
 
-  // ── Enemies: monsters and boss both use floor-2 (goblin) stats ──────────
+  // ── Enemies: monsters and boss both use arm-2 (orc-band) stats ──────────
   const TIER = 2;
   const mobWeakMult = 0.5; // matches the halving applied to all regular dungeon monsters
 
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-  const mobPool = FLOOR_ENEMIES[TIER].pool;
-  const bossDef = _enemyByEid.get(FLOOR_ENEMIES[TIER].boss);
+  const _fe2 = FLOOR_ENEMIES[TIER];
+  const mobPool = bandForLocalLevel(_fe2, 29).pool; // toughest regular band in that arm
+  const bossDef = _enemyByEid.get(_fe2.boss);
 
   const enemyList = [];
   let eid = 0;
@@ -190,7 +191,7 @@ function generatePartyDungeon(seed) {
       if (!d) continue;
       const pos = _placeInRoom(room);
       enemyList.push({
-        id: `pd_${eid++}`, ...d, isBoss: false, rlvl: 31,
+        id: `pd_${eid++}`, ...d, isBoss: false, rlvl: 51,
         maxHp: Math.floor(d.hp * mobWeakMult), hp: Math.floor(d.hp * mobWeakMult),
         atk:   Math.floor(d.atk * mobWeakMult),
         x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,

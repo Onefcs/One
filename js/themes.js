@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────
 //  LOCATION THEMES — indices 1-4 match the open world's 4 corridor arms
-//  (index = armIndexForLevel, see shared/definitions.js) and their enemy
-//  identity: skeletons / goblins / mushrooms / ghosts. The live world itself
-//  renders with a single theme (getTheme(dungeonLvl), dungeonLvl is fixed at
-//  1). Index 5 (golems) is unused.
+//  (index = armIndexForLevel, see shared/definitions.js) and their rotating
+//  monster cast: Крыса→Слизень→Бес (arm1), Зомби→Ящер→Орк (arm2),
+//  Лоза→Вампир→Бехолдер (arm3), Древень→Демон (arm4) — see FLOOR_ENEMIES'
+//  `bands`. The live world itself renders with a single theme
+//  (getTheme(dungeonLvl), dungeonLvl is fixed at 1).
 //  buildTileCanvas() in game.js handles all drawing.
 // ─────────────────────────────────────────────────────────
 
