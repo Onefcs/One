@@ -1123,7 +1123,6 @@ function initNpcs() {
   const offsets = [
     { dx: -TILE * 14, dy: -TILE * 11 }, // NW quadrant
     { dx:  TILE * 14, dy: -TILE * 11 }, // NE quadrant
-    { dx:  TILE * 14, dy:  TILE * 11 }, // SE quadrant
   ];
   npcs = NPC_DEF.map((def, i) => ({
     ...def,

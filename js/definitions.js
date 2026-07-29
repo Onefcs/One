@@ -132,36 +132,39 @@ const EQ_SLOTS = [
   { slot:'belt',    label:'Пояс',   emptyIcon:'belt'   },
 ];
 
+// icon = SVG fallback (js/icons.js); img = the real skill artwork from
+// images/skill/ — both the HUD canvas buttons (drawSkillButtons) and the
+// skill-upgrade modal already prefer img over icon when it's set.
 const SKILL_DEF = {
   lev: [
-    { key:'Q', name:'Пинок',        icon:'kick',       cd:18, desc:'×2 урон по цели + стан 3 сек' },
-    { key:'W', name:'Вихрь клинка', icon:'whirlwind',  cd:12, desc:'АОЕ урон, радиус 110'          },
-    { key:'E', name:'Ярость',       icon:'battleCry',  cd:20, desc:'+20% атака на 5 сек'           },
-    { key:'R', name:'Кувырок',      icon:'roll',       cd:15, desc:'Прыгает к цели нанося урон'    },
+    { key:'Q', name:'Пинок',        icon:'kick',       img:'/images/skill/adim.png',       cd:18, desc:'×2 урон по цели + стан 3 сек' },
+    { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
+    { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible.png', cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   deathknight: [
-    { key:'Q', name:'Ледяной удар',   icon:'shieldBash', cd:18, desc:'×2 урон по цели + стан 3 сек' },
-    { key:'W', name:'Смерч клинков',  icon:'whirlwind',  cd:12, desc:'АОЕ урон, радиус 110'          },
-    { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  cd:20, desc:'+20% атака на 5 сек'           },
-    { key:'R', name:'Рывок тьмы',     icon:'dash',       cd:15, desc:'Прыгает к цели нанося урон'    },
+    { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
+    { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
+    { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy.png', cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'R', name:'Рывок тьмы',     icon:'dash',       img:'/images/skill/wrivok.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   ranger: [
-    { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
-    { key:'W', name:'Комбо стрела',   icon:'poisonArrow', cd:10, desc:'3 стрелы ×1 урон'             },
-    { key:'E', name:'Прыжок',         icon:'roll',        cd:8,  desc:'Рывок 80px'                   },
-    { key:'R', name:'Скорость атаки', icon:'arrowRain',   cd:20, desc:'×2 скорость атаки на 5 сек'   },
+    { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   img:'/images/skill/lmulti.png',    cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
+    { key:'W', name:'Комбо стрела',   icon:'poisonArrow', img:'/images/skill/lkombo.png',    cd:10, desc:'3 стрелы ×1 урон'             },
+    { key:'E', name:'Прыжок',         icon:'roll',        img:'/images/skill/lprijok.png',   cd:8,  desc:'Рывок 80px'                   },
+    { key:'R', name:'Скорость атаки', icon:'arrowRain',   img:'/images/skill/latkspeed.png', cd:20, desc:'×2 скорость атаки на 5 сек'   },
   ],
   mage: [
-    { key:'Q', name:'Огненный шар', icon:'fireball', cd:5,  desc:'Снаряд ×2 урона'               },
-    { key:'W', name:'Ледяная нова', icon:'iceNova',  cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
-    { key:'E', name:'Барьер',       icon:'barrier',  cd:18, desc:'Защита +50% на 3 сек'           },
-    { key:'R', name:'Телепорт',     icon:'teleport', cd:12, desc:'Рывок 180px по направлению'     },
+    { key:'Q', name:'Огненный шар', icon:'fireball', img:'/images/skill/mshar.png',     cd:5,  desc:'Снаряд ×2 урона'               },
+    { key:'W', name:'Ледяная нова', icon:'iceNova',  img:'/images/skill/mnova.png',     cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
+    { key:'E', name:'Барьер',       icon:'barrier',  img:'/images/skill/mbarier.png',   cd:18, desc:'Защита +50% на 3 сек'           },
+    { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 180px по направлению'     },
   ],
   warlock: [
-    { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  cd:8,  desc:'+20% maxHP'                    },
-    { key:'W', name:'Оковы тьмы',       icon:'iceNova', cd:15, desc:'Удерживает цель на месте 3 сек'},
-    { key:'E', name:'Тёмный щит',       icon:'barrier', cd:18, desc:'+50% защита себе и пати 4 сек' },
-    { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  cd:25, desc:'+10% maxHP себе и +10% пати'   },
+    { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP'                    },
+    { key:'W', name:'Оковы тьмы',       icon:'iceNova', img:'/images/skill/socepinenie.png',  cd:15, desc:'Удерживает цель на месте 3 сек'},
+    { key:'E', name:'Тёмный щит',       icon:'barrier', img:'/images/skill/sshit.png',        cd:18, desc:'+50% защита себе и пати 4 сек' },
+    { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  img:'/images/skill/spartyheal.png',   cd:25, desc:'+10% maxHP себе и +10% пати'   },
   ],
 };
 
@@ -178,7 +181,6 @@ const SKILL_BONUS_TYPE = {
 const NPC_DEF = [
   { id:'merchant',   name:'Торговец', icon:'merchant',   color:'#ffaa00', desc:'Зелья и расходники' },
   { id:'craftsman',  name:'Кузнец',   icon:'craftsman',  color:'#8888ff', desc:'Крафт предметов'    },
-  { id:'shopkeeper', name:'Лавочник', icon:'shopkeeper', color:'#44ff44', desc:'Снаряжение'         },
 ];
 
 const MERCHANT_SHOP = [
@@ -190,13 +192,6 @@ const MERCHANT_SHOP = [
   { itemId:'bp_regen',    name:'Зелье регена',      img:'/images/potion/regen.png',    price:1000, desc:'+2 HP/сек 30мин'           },
   { itemId:'bp_atkspeed', name:'Зелье скорости',    img:'/images/potion/atkspeed.png', price:1000, desc:'+20% скор. атаки 30мин'   },
   { itemId:'bp_atk',      name:'Зелье атаки',       img:'/images/potion/atk.png',      price:1000, desc:'+20% атаки 30мин'          },
-];
-
-const SHOP_CATALOG = [
-  // Common
-  { itemId:'sw1', price:100 }, { itemId:'tw1', price:100 }, { itemId:'bw1', price:100 }, { itemId:'st1', price:100 },
-  { itemId:'hm1', price:100 }, { itemId:'ar1', price:100 }, { itemId:'gl1', price:100 }, { itemId:'bt1', price:100 },
-  { itemId:'rn1', price:100 }, { itemId:'nd1', price:100 },
 ];
 
 // Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll

@@ -21,7 +21,6 @@ function closeNpc() {
 function _buildNpcBody(npcId) {
   if (npcId === 'merchant') return _merchantBody();
   if (npcId === 'craftsman') return _craftsmanBody();
-  if (npcId === 'shopkeeper') return _shopkeeperBody();
   return '';
 }
 
@@ -466,45 +465,6 @@ function craftMatUpgrade(idx) {
   }
   netSaveProgress();
   openMatModal(idx);
-}
-
-// ── Shopkeeper ──────────────────────────────────────────
-function _shopkeeperBody() {
-  const p = player;
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${invSlotCount()}/50</b></div>`;
-  html += '<div class="shop-sec">Товары</div><div class="shop-list">';
-  SHOP_CATALOG.forEach(entry => {
-    const item = ITEM_DEF.find(i => i.id === entry.itemId);
-    if (!item) return;
-    const rc = RARITY_COLOR[item.rarity] || '#aea599';
-    const canBuy = p.gold >= entry.price && invHasSpace();
-    const stats = statStr(item);
-    html += `<div class="shop-row">
-      <span class="shop-item-icon">${_itemIcon(item, 28)}</span>
-      <div class="shop-item-info">
-        <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000000cc,1px -1px 0 #000000cc,-1px 1px 0 #000000cc,1px 1px 0 #000000cc,0 0 8px ${rc}88">${item.name}</div>
-        <div class="shop-item-stat">${stats}</div>
-      </div>
-      <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyShopItem('${entry.itemId}',${entry.price})">
-        ${entry.price}${iconHTML('coin',14,'#e3941d')}
-      </button>
-    </div>`;
-  });
-  html += '</div>';
-  return html;
-}
-
-function buyShopItem(itemId, price) {
-  if (!player) return;
-  const item = ITEM_DEF.find(i => i.id === itemId);
-  if (!item) return;
-  if (player.gold < price)  { _shopMsg('Мало золота!'); return; }
-  if (!invHasSpace())       { _shopMsg('Инвентарь полон!'); return; }
-  player.gold -= price;
-  addToInventory({ ...item });
-  netSaveProgress();
-  openNpc('shopkeeper');
-  _shopMsgOk('✓ Куплено: ' + item.name);
 }
 
 function _shopMsg(msg) {

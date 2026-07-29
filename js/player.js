@@ -741,15 +741,6 @@ function restoreFromSave(data) {
   const { offhand:_, legs:__, pendant:___, ...cleanEq } = rawEq;
   player.equipment = { ...blank, ...cleanEq };
 
-  // Brand-new players (no equipment saved) receive a full common starter kit
-  if (!Object.values(player.equipment).some(Boolean)) {
-    const starterWeapon = { lev:'tw1', deathknight:'sw1', ranger:'bw1', mage:'st1', warlock:'st1' }[player.type] || 'tw1';
-    [starterWeapon, 'hm1', 'ar1', 'gl1', 'bt1', 'rn1', 'nd1'].forEach(id => {
-      const def = ITEM_DEF.find(i => i.id === id);
-      if (def) player.equipment[def.slot] = { ...def, enhance: 0 };
-    });
-  }
-
   player.skillLevels = { Q:0, W:0, E:0, R:0, ...(data.skillLevels || {}) };
   player.skillXp     = { Q:0, W:0, E:0, R:0, ...(data.skillXp || {}) };
   recompute();

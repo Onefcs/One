@@ -464,7 +464,6 @@ const ENEMY_FACING_ROW = { down: 0, up: 1, left: 2, right: 3 };
 const NPC_SPRITE_DEF = {
   merchant:   { src: 'images/npc/merchant.png',   frameW: 128, frameH: 128, cols: 7,  fps: 6,  loop: true },
   craftsman:  { src: 'images/npc/craftsman.png',  frameW: 128, frameH: 128, cols: 12, fps: 10, loop: true },
-  shopkeeper: { src: 'images/npc/shopkeeper.png', frameW: 128, frameH: 128, cols: 7,  fps: 6,  loop: true },
 };
 
 const npcSpriteCache = {};
