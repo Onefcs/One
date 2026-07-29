@@ -136,17 +136,20 @@ const EQ_SLOTS = [
 // images/skill/ — both the HUD canvas buttons (drawSkillButtons) and the
 // skill-upgrade modal already prefer img over icon when it's set.
 const SKILL_DEF = {
+  // lev <-> deathknight skill sets swapped (name/icon/img/cd/desc only —
+  // useSkill()'s per-key mechanics in js/player.js were already identical
+  // between these two classes, so swapping the definitions is enough).
   lev: [
-    { key:'Q', name:'Пинок',        icon:'kick',       img:'/images/skill/adim.png',       cd:18, desc:'×2 урон по цели + стан 3 сек' },
-    { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
-    { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible.png', cd:20, desc:'+20% атака на 5 сек'           },
-    { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
-  ],
-  deathknight: [
     { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
     { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy.png', cd:20, desc:'+20% атака на 5 сек'           },
     { key:'R', name:'Рывок тьмы',     icon:'dash',       img:'/images/skill/wrivok.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
+  ],
+  deathknight: [
+    { key:'Q', name:'Пинок',        icon:'kick',       img:'/images/skill/adim.png',       cd:18, desc:'×2 урон по цели + стан 3 сек' },
+    { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
+    { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible.png', cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   ranger: [
     { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   img:'/images/skill/lmulti.png',    cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
