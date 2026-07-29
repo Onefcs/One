@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, monsterStatsAtLevel, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -134,6 +134,8 @@ function generateOpenWorld() {
         enemyList.push({
           id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
           rlvl: room.monsterLvl,
+          name: monsterNameAtLevel(d.name, room.localLvl, isBoss, d.fem),
+          color: monsterColorAtLevel(d.color, d.endColor, room.localLvl, isBoss),
           maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
           atk: Math.floor(stats.atk * weakMult),
           def: stats.def,

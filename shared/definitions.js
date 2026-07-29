@@ -30,31 +30,24 @@ const CHAR_DEF = {
 // of each other at spawn time (server/game/dungeon.js), which made the
 // boss-vs-trash ratio swing wildly depending on where in a corridor you were.
 //
-// Levels 1-15 grow linearly, tuned so a same-level player (base stats only,
-// no gear — see js/player.js recompute()) fights a regular monster to a
-// draw in ~5 hits either way: "recommended level" holds exactly here. Past
-// 15, HP/ATK compound a fixed percentage per level instead, intentionally
-// outpacing a gearless player — that gap is meant to be closed by gear/
-// enchant/skill-point/VIP progression, not by character level alone. DEF
-// stays on the flat linear formula at every level so it never grows faster
+// HP/ATK compound a fixed percentage EVERY level, starting at level 1 — there
+// is no "fair" flat zone anymore, difficulty ramps immediately and keeps
+// outpacing a gearless player, on purpose: closing that gap is meant to come
+// from gear/enchant/skill-point/VIP progression, not character level alone.
+// DEF stays on a flat linear formula at every level so it never grows faster
 // than a player's own ATK and floors damage to a boring "always 1".
-const MONSTER_LEVEL_SOFT_CAP = 15;
-const MONSTER_HP_GROWTH  = 1.06; // per level, compounding, above the soft cap
-const MONSTER_ATK_GROWTH = 1.03;
-function _monsterFairHP(lvl)  { return 2.5 * lvl + 10; }
-function _monsterFairATK(lvl) { return lvl + 19; }
+const MONSTER_HP1  = 12; // HP at level 1, before archetype/boss multipliers
+const MONSTER_ATK1 = 20; // ATK at level 1, before archetype/boss multipliers
+const MONSTER_HP_GROWTH  = 1.065; // per level, compounding, from level 1
+const MONSTER_ATK_GROWTH = 1.032;
 function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(0.5 * Math.max(1, lvl || 1))); }
 function monsterHPAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  return lvl <= MONSTER_LEVEL_SOFT_CAP
-    ? _monsterFairHP(lvl)
-    : _monsterFairHP(MONSTER_LEVEL_SOFT_CAP) * Math.pow(MONSTER_HP_GROWTH, lvl - MONSTER_LEVEL_SOFT_CAP);
+  return MONSTER_HP1 * Math.pow(MONSTER_HP_GROWTH, lvl - 1);
 }
 function monsterATKAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  return lvl <= MONSTER_LEVEL_SOFT_CAP
-    ? _monsterFairATK(lvl)
-    : _monsterFairATK(MONSTER_LEVEL_SOFT_CAP) * Math.pow(MONSTER_ATK_GROWTH, lvl - MONSTER_LEVEL_SOFT_CAP);
+  return MONSTER_ATK1 * Math.pow(MONSTER_ATK_GROWTH, lvl - 1);
 }
 // Archetype flavor: "страж"(guard) trades damage for HP, "воин"(warrior) the
 // reverse, so the two pool monsters per zone play differently instead of
@@ -74,35 +67,84 @@ function monsterStatsAtLevel(lvl, eType) {
   return { hp: Math.max(1, Math.round(hp * arch.hp)), atk: Math.max(1, Math.round(atk * arch.atk)), def };
 }
 
+// ── Per-level name/color rank ────────────────────────────────────────────────
+// Every one of the 29 non-boss local room levels in a zone gets its own rank
+// title (weakest → strongest) prefixed onto the monster's base name, so e.g.
+// "Скелет воин" at room 1 becomes "Слабый Скелет воин" and at room 29
+// "Запредельный Скелет воин" — 29 distinct names per base monster, per zone.
+// The boss room keeps the base (already-unique) boss name unchanged.
+const MONSTER_RANK_M = [
+  'Слабый', 'Молодой', 'Обычный', 'Стойкий', 'Опытный', 'Закалённый', 'Хищный',
+  'Свирепый', 'Яростный', 'Кровожадный', 'Безжалостный', 'Отчаянный', 'Могучий',
+  'Грозный', 'Разъярённый', 'Устрашающий', 'Смертоносный', 'Демонический',
+  'Проклятый', 'Кошмарный', 'Легендарный', 'Титанический', 'Апокалиптический',
+  'Погибельный', 'Всесокрушающий', 'Первородный', 'Древний', 'Изначальный', 'Запредельный',
+];
+const MONSTER_RANK_F = [
+  'Слабая', 'Молодая', 'Обычная', 'Стойкая', 'Опытная', 'Закалённая', 'Хищная',
+  'Свирепая', 'Яростная', 'Кровожадная', 'Безжалостная', 'Отчаянная', 'Могучая',
+  'Грозная', 'Разъярённая', 'Устрашающая', 'Смертоносная', 'Демоническая',
+  'Проклятая', 'Кошмарная', 'Легендарная', 'Титаническая', 'Апокалиптическая',
+  'Погибельная', 'Всесокрушающая', 'Первородная', 'Древняя', 'Изначальная', 'Запредельная',
+];
+function monsterNameAtLevel(baseName, localLvl, isBoss, fem) {
+  if (isBoss) return baseName;
+  const ranks = fem ? MONSTER_RANK_F : MONSTER_RANK_M;
+  const idx = Math.min(ranks.length - 1, Math.max(0, (localLvl || 1) - 1));
+  return ranks[idx] + ' ' + baseName;
+}
+function _expandHex(hex) {
+  hex = hex.replace('#', '');
+  return hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+}
+function _lerpHexColor(c1, c2, t) {
+  const a = parseInt(_expandHex(c1), 16), b = parseInt(_expandHex(c2), 16);
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+  return '#' + [r, g, bl].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+// Interpolates from the monster's base (weakest, room 1) color to its
+// `endColor` (strongest, room 29) — bosses keep their own fixed color.
+function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss) {
+  if (isBoss || !endColor) return baseColor;
+  const t = Math.min(1, Math.max(0, ((localLvl || 1) - 1) / (MONSTER_RANK_M.length - 1)));
+  return _lerpHexColor(baseColor, endColor, t);
+}
+
 // ── Enemy definitions ─────────────────────────────────────────────────────────
 // hp/atk/def below are monsterStatsAtLevel() evaluated at each zone's first
 // room (arm's start level) and boss room (arm's last level) — a static
 // snapshot used as-is by the Raid and Party-dungeon modes (which don't have
 // a room-progression concept of their own) and as display fallback. The main
 // open world (server/game/dungeon.js) ignores these numbers entirely and
-// calls monsterStatsAtLevel() fresh for the enemy's actual room level.
+// calls monsterStatsAtLevel() fresh for the enemy's actual room level, and
+// overrides name/color per spawn via monsterNameAtLevel/monsterColorAtLevel.
+// fem: grammatical gender of the base name's leading noun, for rank agreement
+// (skel/goblin/mush/golem nouns are masculine, "Тень" is feminine).
+// endColor: the room-29 (strongest non-boss) tint monsterColorAtLevel ramps to.
 const ENEMY_DEF = [
   // Arm 1 (levels 1-30) — Skeletons
-  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:1138,  atk:79,  def:15, spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
+  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', endColor:'#5c1a24', fem:false, size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', endColor:'#4a1420', fem:false, size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:745,  atk:75,  def:15, spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
   // Arm 2 (levels 31-60) — Goblins
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:139, atk:46,  def:16, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:109, atk:63,  def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:6538,  atk:193, def:30, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', endColor:'#123d1a', fem:false, size:13, hp:91, atk:44,  def:16, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', endColor:'#0a3d14', fem:false, size:14, hp:71, atk:59,  def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:4930,  atk:192, def:30, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
   // Arm 3 (levels 61-90) — Mushrooms
-  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:797, atk:113, def:31, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:624, atk:152, def:31, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:37552, atk:468, def:45, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
+  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', endColor:'#4a1c08', fem:false, size:13, hp:604, atk:113, def:31, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', endColor:'#5c2408', fem:false, size:15, hp:472, atk:152, def:31, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:32606, atk:495, def:45, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
   // Arm 4 (levels 91-120) — Ghosts
-  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:3582, atk:370, def:46, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:4578, atk:273, def:46, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:215680, atk:1136, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
+  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', endColor:'#0f0f4a', fem:true,  size:16, hp:3125, atk:392, def:46, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', endColor:'#1a1a5c', fem:true,  size:14, hp:3993, atk:289, def:46, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:215667, atk:1274, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
   // Arm 5 (levels 121-150) — Golems, defined but currently unused: only 4
   // arms are ever built (ARM_NAMES), so this pool never actually spawns.
-  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:20576, atk:897, def:61, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:26291, atk:663, def:61, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1238755,atk:2758, def:75, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
+  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', endColor:'#3a1a08', fem:false, size:20, hp:20672, atk:1008, def:61, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'golem_guard',    name:'Голем страж',   color:'#875', endColor:'#2e1406', fem:false, size:18, hp:26414, atk:745, def:61, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1426503,atk:3276, def:75, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
 ];
 
 // Per-floor enemy pools for floors 1-5
@@ -336,9 +378,10 @@ const VIP_BONUSES = [
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop,
   ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
-  MONSTER_LEVEL_SOFT_CAP, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,
+  MONSTER_HP1, MONSTER_ATK1, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
+  MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,

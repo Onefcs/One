@@ -352,8 +352,12 @@ canvas { display:block; width:100%; height:100%; }
   display:inline-block; width:9px; height:9px; border-radius:50%;
   flex-shrink:0; box-shadow:0 0 0 1px rgba(0,0,0,.35) inset;
 }
+.mon-titles { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.mon-lvl {
+  font-size:9px; color:#8a8074; letter-spacing:.4px; text-transform:uppercase;
+}
+.mon-name-row { display:flex; align-items:center; gap:6px; }
 .mon-name { font-size:14px; font-weight:700; color:#d1ccc5; }
-.mon-lvl { font-size:10px; color:#8a8074; margin-left:auto; }
 .mon-chevron {
   font-size:16px; color:#a2988a; transition:transform .15s; flex-shrink:0;
 }
@@ -361,6 +365,18 @@ canvas { display:block; width:100%; height:100%; }
 .mon-body {
   display:none; padding:0 12px 14px;
 }
+.mon-rank-preview {
+  display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  font-size:10px; color:#a2988a;
+  background:rgba(209,204,197,.03); border-radius:8px;
+  padding:7px 9px; margin-bottom:10px;
+}
+.mon-rank-dot {
+  display:inline-block; width:8px; height:8px; border-radius:50%;
+  flex-shrink:0; box-shadow:0 0 0 1px rgba(0,0,0,.35) inset;
+}
+.mon-rank-arrow { color:#5d564b; }
+.mon-rank-name { color:#c5bfb7; }
 .fi-boss-tag {
   font-size:9px; font-weight:700; color:#ed5a6b; letter-spacing:1px;
   background:rgba(235,73,92,.15); border:1px solid rgba(235,73,92,.3);

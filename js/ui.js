@@ -456,12 +456,34 @@ function _monsterAccordionItem(e, floor) {
     <div class="mon-item">
       <div class="mon-hdr" onclick="_toggleMonster(this)">
         <span class="dot" style="background:${e.color}"></span>
-        <span class="mon-name">${e.name}</span>
-        ${isBoss ? '<span class="fi-boss-tag">БОСС</span>' : ''}
-        <span class="mon-lvl">ур. ${lvlFrom}–${lvlTo}</span>
+        <div class="mon-titles">
+          <span class="mon-lvl">ур. ${lvlFrom}–${lvlTo}</span>
+          <div class="mon-name-row">
+            <span class="mon-name">${e.name}</span>
+            ${isBoss ? '<span class="fi-boss-tag">БОСС</span>' : ''}
+          </div>
+        </div>
         <span class="mon-chevron">›</span>
       </div>
-      <div class="mon-body">${_monsterDropBodyHtml(e, floor)}</div>
+      <div class="mon-body">${_monsterRankPreviewHtml(e)}${_monsterDropBodyHtml(e, floor)}</div>
+    </div>`;
+}
+
+// Every non-boss monster's displayed name/color actually ranks up across the
+// 29 rooms of its zone (see monsterNameAtLevel/monsterColorAtLevel in
+// shared/definitions.js) — this is just a from→to preview for the reference
+// list, since the row above covers the whole zone, not one specific room.
+function _monsterRankPreviewHtml(e) {
+  if (e.isBoss || typeof MONSTER_RANK_M === 'undefined') return '';
+  const ranks = e.fem ? MONSTER_RANK_F : MONSTER_RANK_M;
+  const first = ranks[0] + ' ' + e.name, last = ranks[ranks.length - 1] + ' ' + e.name;
+  return `
+    <div class="mon-rank-preview">
+      <span class="mon-rank-dot" style="background:${e.color}"></span>
+      <span class="mon-rank-name">${first}</span>
+      <span class="mon-rank-arrow">→</span>
+      <span class="mon-rank-dot" style="background:${e.endColor || e.color}"></span>
+      <span class="mon-rank-name">${last}</span>
     </div>`;
 }
 
