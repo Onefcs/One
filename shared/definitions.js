@@ -30,24 +30,22 @@ const CHAR_DEF = {
 // of each other at spawn time (server/game/dungeon.js), which made the
 // boss-vs-trash ratio swing wildly depending on where in a corridor you were.
 //
-// HP/ATK compound a fixed percentage EVERY level, starting at level 1 — there
-// is no "fair" flat zone anymore, difficulty ramps immediately and keeps
-// outpacing a gearless player, on purpose: closing that gap is meant to come
-// from gear/enchant/skill-point/VIP progression, not character level alone.
-// DEF stays on a flat linear formula at every level so it never grows faster
-// than a player's own ATK and floors damage to a boring "always 1".
+// HP/ATK are a flat multiple of the level-1 value: level N is exactly N times
+// the level-1 stat (level 2 = ×2, level 3 = ×3, ... level 120 = ×120). No
+// compounding — this replaced an earlier exponential-growth curve that made
+// stats explode at high levels. DEF stays on its own flat linear formula at
+// every level so it never grows faster than a player's own ATK and floors
+// damage to a boring "always 1".
 const MONSTER_HP1  = 12; // HP at level 1, before archetype/boss multipliers
 const MONSTER_ATK1 = 20; // ATK at level 1, before archetype/boss multipliers
-const MONSTER_HP_GROWTH  = 1.065; // per level, compounding, from level 1
-const MONSTER_ATK_GROWTH = 1.032;
 function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(0.5 * Math.max(1, lvl || 1))); }
 function monsterHPAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  return MONSTER_HP1 * Math.pow(MONSTER_HP_GROWTH, lvl - 1);
+  return MONSTER_HP1 * lvl;
 }
 function monsterATKAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  return MONSTER_ATK1 * Math.pow(MONSTER_ATK_GROWTH, lvl - 1);
+  return MONSTER_ATK1 * lvl;
 }
 // Archetype flavor: "страж"(guard) trades damage for HP, "воин"(warrior) the
 // reverse, so the two pool monsters per zone play differently instead of
@@ -134,30 +132,30 @@ function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss) {
 const ENEMY_DEF = [
   { eid:'rat_guard', name:'Крыса страж', color:'#8a7a6a', endColor:'#3a2a1a', fem:true, size:13, hp:14, atk:17, def:1, spd:112, xp:1, gold:1, isBoss:false, eType:'guard' },
   { eid:'rat_warrior', name:'Крыса воин', color:'#8a7a6a', endColor:'#3a2a1a', fem:true, size:14, hp:11, atk:23, def:1, spd:118, xp:1, gold:1, isBoss:false, eType:'warrior' },
-  { eid:'slime_guard', name:'Слизень страж', color:'#7ac47a', endColor:'#1a3a10', fem:false, size:13, hp:26, atk:23, def:6, spd:52, xp:11, gold:11, isBoss:false, eType:'guard' },
-  { eid:'slime_warrior', name:'Слизень воин', color:'#7ac47a', endColor:'#1a3a10', fem:false, size:14, hp:20, atk:32, def:6, spd:56, xp:11, gold:11, isBoss:false, eType:'warrior' },
-  { eid:'imp_guard', name:'Бес страж', color:'#c47a5a', endColor:'#4a1408', fem:false, size:14, hp:49, atk:32, def:11, spd:92, xp:21, gold:21, isBoss:false, eType:'guard' },
-  { eid:'imp_warrior', name:'Бес воин', color:'#c47a5a', endColor:'#4a1408', fem:false, size:15, hp:38, atk:43, def:11, spd:97, xp:21, gold:21, isBoss:false, eType:'warrior' },
-  { eid:'imp_boss', name:'Босс бесов', color:'#ff6a3a', size:22, hp:745, atk:75, def:15, spd:88, xp:30, gold:30, isBoss:true, eType:'boss' },
-  { eid:'zombie_guard', name:'Зомби страж', color:'#8aab7a', endColor:'#1a2a10', fem:false, size:15, hp:91, atk:44, def:16, spd:56, xp:31, gold:31, isBoss:false, eType:'guard' },
-  { eid:'zombie_warrior', name:'Зомби воин', color:'#8aab7a', endColor:'#1a2a10', fem:false, size:16, hp:71, atk:59, def:16, spd:60, xp:31, gold:31, isBoss:false, eType:'warrior' },
-  { eid:'lizardman_guard', name:'Ящер страж', color:'#6ab26a', endColor:'#0a2a0a', fem:false, size:15, hp:171, atk:60, def:21, spd:76, xp:41, gold:41, isBoss:false, eType:'guard' },
-  { eid:'lizardman_warrior', name:'Ящер воин', color:'#6ab26a', endColor:'#0a2a0a', fem:false, size:16, hp:134, atk:81, def:21, spd:80, xp:41, gold:41, isBoss:false, eType:'warrior' },
-  { eid:'orc_guard', name:'Орк страж', color:'#7a9a5a', endColor:'#1a2a08', fem:false, size:16, hp:322, atk:82, def:26, spd:71, xp:51, gold:51, isBoss:false, eType:'guard' },
-  { eid:'orc_warrior', name:'Орк воин', color:'#7a9a5a', endColor:'#1a2a08', fem:false, size:17, hp:252, atk:111, def:26, spd:75, xp:51, gold:51, isBoss:false, eType:'warrior' },
-  { eid:'orc_boss', name:'Босс орков', color:'#ffb020', size:24, hp:4930, atk:192, def:30, spd:68, xp:60, gold:60, isBoss:true, eType:'boss' },
-  { eid:'plant_guard', name:'Лоза страж', color:'#8aab6a', endColor:'#2a1a3a', fem:true, size:16, hp:604, atk:113, def:31, spd:46, xp:61, gold:61, isBoss:false, eType:'guard' },
-  { eid:'plant_warrior', name:'Лоза воин', color:'#8aab6a', endColor:'#2a1a3a', fem:true, size:17, hp:472, atk:152, def:31, spd:50, xp:61, gold:61, isBoss:false, eType:'warrior' },
-  { eid:'vampire_guard', name:'Вампир страж', color:'#9a8aab', endColor:'#1a0a2a', fem:false, size:17, hp:1133, atk:154, def:36, spd:101, xp:71, gold:71, isBoss:false, eType:'guard' },
-  { eid:'vampire_warrior', name:'Вампир воин', color:'#9a8aab', endColor:'#1a0a2a', fem:false, size:18, hp:887, atk:209, def:36, spd:105, xp:71, gold:71, isBoss:false, eType:'warrior' },
-  { eid:'beholder_guard', name:'Бехолдер страж', color:'#a878c0', endColor:'#2a0a3a', fem:false, size:18, hp:2127, atk:211, def:41, spd:66, xp:81, gold:81, isBoss:false, eType:'guard' },
-  { eid:'beholder_warrior', name:'Бехолдер воин', color:'#a878c0', endColor:'#2a0a3a', fem:false, size:19, hp:1665, atk:286, def:41, spd:70, xp:81, gold:81, isBoss:false, eType:'warrior' },
-  { eid:'beholder_boss', name:'Босс бехолдеров', color:'#c060ff', size:27, hp:32606, atk:495, def:45, spd:60, xp:90, gold:90, isBoss:true, eType:'boss' },
-  { eid:'ent_guard', name:'Древень страж', color:'#8a6a4a', endColor:'#2a1a08', fem:false, size:20, hp:3993, atk:289, def:46, spd:41, xp:91, gold:91, isBoss:false, eType:'guard' },
-  { eid:'ent_warrior', name:'Древень воин', color:'#8a6a4a', endColor:'#2a1a08', fem:false, size:21, hp:3125, atk:392, def:46, spd:45, xp:91, gold:91, isBoss:false, eType:'warrior' },
-  { eid:'demon_guard', name:'Демон страж', color:'#c05050', endColor:'#3a0505', fem:false, size:21, hp:10270, atk:464, def:53, spd:71, xp:106, gold:106, isBoss:false, eType:'guard' },
-  { eid:'demon_warrior', name:'Демон воин', color:'#c05050', endColor:'#3a0505', fem:false, size:22, hp:8038, atk:628, def:53, spd:75, xp:106, gold:106, isBoss:false, eType:'warrior' },
-  { eid:'demon_boss', name:'Босс демонов', color:'#ff2020', size:32, hp:215667, atk:1274, def:60, spd:65, xp:120, gold:120, isBoss:true, eType:'boss' },
+  { eid:'slime_guard', name:'Слизень страж', color:'#7ac47a', endColor:'#1a3a10', fem:false, size:13, hp:152, atk:187, def:6, spd:52, xp:11, gold:11, isBoss:false, eType:'guard' },
+  { eid:'slime_warrior', name:'Слизень воин', color:'#7ac47a', endColor:'#1a3a10', fem:false, size:14, hp:119, atk:253, def:6, spd:56, xp:11, gold:11, isBoss:false, eType:'warrior' },
+  { eid:'imp_guard', name:'Бес страж', color:'#c47a5a', endColor:'#4a1408', fem:false, size:14, hp:290, atk:357, def:11, spd:92, xp:21, gold:21, isBoss:false, eType:'guard' },
+  { eid:'imp_warrior', name:'Бес воин', color:'#c47a5a', endColor:'#4a1408', fem:false, size:15, hp:227, atk:483, def:11, spd:97, xp:21, gold:21, isBoss:false, eType:'warrior' },
+  { eid:'imp_boss', name:'Босс бесов', color:'#ff6a3a', size:22, hp:3600, atk:900, def:15, spd:88, xp:30, gold:30, isBoss:true, eType:'boss' },
+  { eid:'zombie_guard', name:'Зомби страж', color:'#8aab7a', endColor:'#1a2a10', fem:false, size:15, hp:428, atk:527, def:16, spd:56, xp:31, gold:31, isBoss:false, eType:'guard' },
+  { eid:'zombie_warrior', name:'Зомби воин', color:'#8aab7a', endColor:'#1a2a10', fem:false, size:16, hp:335, atk:713, def:16, spd:60, xp:31, gold:31, isBoss:false, eType:'warrior' },
+  { eid:'lizardman_guard', name:'Ящер страж', color:'#6ab26a', endColor:'#0a2a0a', fem:false, size:15, hp:566, atk:697, def:21, spd:76, xp:41, gold:41, isBoss:false, eType:'guard' },
+  { eid:'lizardman_warrior', name:'Ящер воин', color:'#6ab26a', endColor:'#0a2a0a', fem:false, size:16, hp:443, atk:943, def:21, spd:80, xp:41, gold:41, isBoss:false, eType:'warrior' },
+  { eid:'orc_guard', name:'Орк страж', color:'#7a9a5a', endColor:'#1a2a08', fem:false, size:16, hp:704, atk:867, def:26, spd:71, xp:51, gold:51, isBoss:false, eType:'guard' },
+  { eid:'orc_warrior', name:'Орк воин', color:'#7a9a5a', endColor:'#1a2a08', fem:false, size:17, hp:551, atk:1173, def:26, spd:75, xp:51, gold:51, isBoss:false, eType:'warrior' },
+  { eid:'orc_boss', name:'Босс орков', color:'#ffb020', size:24, hp:7200, atk:1800, def:30, spd:68, xp:60, gold:60, isBoss:true, eType:'boss' },
+  { eid:'plant_guard', name:'Лоза страж', color:'#8aab6a', endColor:'#2a1a3a', fem:true, size:16, hp:842, atk:1037, def:31, spd:46, xp:61, gold:61, isBoss:false, eType:'guard' },
+  { eid:'plant_warrior', name:'Лоза воин', color:'#8aab6a', endColor:'#2a1a3a', fem:true, size:17, hp:659, atk:1403, def:31, spd:50, xp:61, gold:61, isBoss:false, eType:'warrior' },
+  { eid:'vampire_guard', name:'Вампир страж', color:'#9a8aab', endColor:'#1a0a2a', fem:false, size:17, hp:980, atk:1207, def:36, spd:101, xp:71, gold:71, isBoss:false, eType:'guard' },
+  { eid:'vampire_warrior', name:'Вампир воин', color:'#9a8aab', endColor:'#1a0a2a', fem:false, size:18, hp:767, atk:1633, def:36, spd:105, xp:71, gold:71, isBoss:false, eType:'warrior' },
+  { eid:'beholder_guard', name:'Бехолдер страж', color:'#a878c0', endColor:'#2a0a3a', fem:false, size:18, hp:1118, atk:1377, def:41, spd:66, xp:81, gold:81, isBoss:false, eType:'guard' },
+  { eid:'beholder_warrior', name:'Бехолдер воин', color:'#a878c0', endColor:'#2a0a3a', fem:false, size:19, hp:875, atk:1863, def:41, spd:70, xp:81, gold:81, isBoss:false, eType:'warrior' },
+  { eid:'beholder_boss', name:'Босс бехолдеров', color:'#c060ff', size:27, hp:10800, atk:2700, def:45, spd:60, xp:90, gold:90, isBoss:true, eType:'boss' },
+  { eid:'ent_guard', name:'Древень страж', color:'#8a6a4a', endColor:'#2a1a08', fem:false, size:20, hp:1256, atk:1547, def:46, spd:41, xp:91, gold:91, isBoss:false, eType:'guard' },
+  { eid:'ent_warrior', name:'Древень воин', color:'#8a6a4a', endColor:'#2a1a08', fem:false, size:21, hp:983, atk:2093, def:46, spd:45, xp:91, gold:91, isBoss:false, eType:'warrior' },
+  { eid:'demon_guard', name:'Демон страж', color:'#c05050', endColor:'#3a0505', fem:false, size:21, hp:1463, atk:1802, def:53, spd:71, xp:106, gold:106, isBoss:false, eType:'guard' },
+  { eid:'demon_warrior', name:'Демон воин', color:'#c05050', endColor:'#3a0505', fem:false, size:22, hp:1145, atk:2438, def:53, spd:75, xp:106, gold:106, isBoss:false, eType:'warrior' },
+  { eid:'demon_boss', name:'Босс демонов', color:'#ff2020', size:32, hp:14400, atk:3600, def:60, spd:65, xp:120, gold:120, isBoss:true, eType:'boss' },
 ];
 
 // Per-floor enemy pools for floors 1-5
@@ -422,7 +420,7 @@ if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel,
   ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
-  MONSTER_HP1, MONSTER_ATK1, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,
+  MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
