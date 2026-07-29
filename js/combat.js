@@ -138,5 +138,19 @@ function applyLootToInventory(eid, rlvl) {
     _addMat('norm_stone', 76);
   }
 
+  // Skill books — studySkill()/upgradeSkillWithBook() (js/ui.js) spend these
+  // to unlock and level up Q/W/E/R. Bosses always drop a couple; regular
+  // kills have a modest scaled chance for one (capped so it doesn't scale as
+  // aggressively as recipes/keys — this is a flat per-book resource, not a
+  // rarity tier).
+  if (eType === 'boss') {
+    if (addToInventoryQty({ ...CRAFT_MATS.find(m => m.id === 'skill_book') }, 2)) {
+      dmgNum(player.x, player.y - 84, '+ 2× Книга навыков', RARITY_COLOR['uncommon'] || '#98e456');
+      saved = true;
+    }
+  } else if (Math.random() < 0.02 * Math.min(_dropMult, 3)) {
+    _addMat('skill_book', 84);
+  }
+
   if (saved) netSaveProgress();
 }

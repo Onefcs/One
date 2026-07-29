@@ -306,6 +306,8 @@ const CRAFT_MATS = [
   // ── Room-level keys (от монстров в комнатах подземелья) ──
   { id:'key_uncommon', name:'Необычный ключ', img:'/images/material/keyu.png', slot:'material', rarity:'uncommon' },
   { id:'key_rare',      name:'Редкий ключ',    img:'/images/material/keyr.png', slot:'material', rarity:'rare'     },
+  // ── Skill books (изучение/прокачка Q/W/E/R — см. studySkill/upgradeSkillWithBook в ui.js) ──
+  { id:'skill_book', name:'Книга навыков', icon:'book', slot:'material', rarity:'uncommon' },
 ];
 
 // ── Loot boxes ────────────────────────────────────────────────────────────────

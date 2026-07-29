@@ -312,11 +312,18 @@ function onTS(e) {
     if (_checkPotionTouch(p.x, p.y, t.identifier)) continue;
     if (_checkTargetBtnTouch(p.x, p.y)) continue;
     if (_checkSkillTouch(p.x, p.y)) continue;
-    _trySelectEntityAtTouch(p.x, p.y);
-    if (!joy.active && _inJoyZone(p.x, p.y)) {
-      joy.active = true; joy.id = t.identifier;
-      joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
+    // Starting (or already holding) the joystick claims this touch entirely —
+    // don't ALSO tap-select whatever enemy/NPC happens to be rendered behind
+    // it on screen (that was firing on every joystick press-down, since this
+    // ran unconditionally before the joystick-zone check below).
+    if (joy.active || _inJoyZone(p.x, p.y)) {
+      if (!joy.active) {
+        joy.active = true; joy.id = t.identifier;
+        joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
+      }
+      continue;
     }
+    _trySelectEntityAtTouch(p.x, p.y);
   }
 }
 
@@ -371,10 +378,11 @@ function onMD(e) {
   if (_checkPotionTouch(p.x, p.y, 'mouse')) return;
   if (_checkTargetBtnTouch(p.x, p.y)) return;
   if (_checkSkillTouch(p.x, p.y)) return;
-  _trySelectEntityAtTouch(p.x, p.y);
   if (_inJoyZone(p.x, p.y)) {
     joy.active = true; joy.sx = jc.x; joy.sy = jc.y; joy.dx = 0; joy.dy = 0;
+    return;
   }
+  _trySelectEntityAtTouch(p.x, p.y);
 }
 
 function onMM(e) {

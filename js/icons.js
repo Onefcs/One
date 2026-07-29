@@ -89,6 +89,10 @@ const ICON_SVG = {
   mat_dust:    `<path d="M12 2l1.5 4.5H18l-3.75 2.7 1.5 4.5L12 11.1l-3.75 2.6 1.5-4.5L6 6.5h4.5z"/><path d="M5 16l.75 2.25H8l-1.88 1.35.75 2.25L5 20.55l-1.88 1.3.75-2.25L2 18.25h2.25z"/>`,
   key:         `<circle cx="7.5" cy="15.5" r="5.5"/><path d="M11.5 11.5L21 2"/><path d="M15 6l3 3"/><path d="M18 3l3 3"/>`,
   chest:       `<rect x="3" y="10" width="18" height="10" rx="2"/><path d="M3 10a9 4 0 0 1 18 0"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="15" r="1.6"/>`,
+  book:        `<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5"/><path d="M4 4.5v17"/><line x1="9" y1="7" x2="16" y2="7"/><line x1="9" y1="11" x2="16" y2="11"/>`,
+
+  // ── Lock (studied/locked skill overlay) ─────────────────────────────────────
+  lock:        `<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>`,
 };
 
 // ── DOM helper: returns an <svg> string ───────────────────────────────────────

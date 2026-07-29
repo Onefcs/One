@@ -91,8 +91,10 @@ function makePlayer(type) {
     potCd: 0,
     autoHpPct: 0,
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
+    // 0 = locked/not yet studied (see studySkill/upgradeSkillWithBook in
+    // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
+    // book drops and is spent to study one.
     skillLevels: { Q:0, W:0, E:0, R:0 },
-    skillXp: { Q:0, W:0, E:0, R:0 },
     questIdx: 0,
     questKills: {},
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
@@ -118,11 +120,6 @@ function _skillBarrierSec(key) { return _skillLvl(key) * 0.2; }
 function _skillInvisSec(key)   { return _skillLvl(key) * 0.2; }
 function _skillHealMult(key)   { return 1 + _skillLvl(key) * 0.01; }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
-
-// XP required to level up from `currentLevel` → currentLevel+1
-function skillXpRequired(currentLevel) {
-  return Math.round(100 * Math.pow(1.5, currentLevel));
-}
 
 // AOE helper with optional damage multiplier (replaces _skillAOE for leveled skills)
 function _skillAOEMult(r, mult) {
@@ -217,7 +214,10 @@ function gainXP(amount, flat) {
   // adds exactly what the server added and its next save can't drift the value.
   if (!flat) {
     if ((player.buffs || {}).exp > 0) amount *= 2;
-    if ((player.buffs || {}).deathPenalty > 0) amount = Math.floor(amount * 0.5);
+    // Halving would floor level-1 monsters' 1 XP down to 0 — the penalty
+    // shouldn't be able to zero out a kill entirely, so it skips anything
+    // already under 2 XP and leaves it untouched instead.
+    if ((player.buffs || {}).deathPenalty > 0 && amount >= 2) amount = Math.floor(amount * 0.5);
   }
   player.xp += amount;
   while (player.xp >= player.xpNext) {
@@ -439,6 +439,10 @@ function useSkill(idx) {
   const skills = SKILL_DEF[player.type];
   if (!skills || !skills[idx]) return;
   const sk = skills[idx];
+  if (_skillLvl(sk.key) <= 0) {
+    dmgNum(player.x, player.y - 38, '🔒 Навык не изучен', '#f17e8b');
+    return;
+  }
   if ((player.skillCooldowns[sk.key] || 0) > 0) return;
 
   player.skillCooldowns[sk.key] = sk.cd;
@@ -742,7 +746,6 @@ function restoreFromSave(data) {
   player.equipment = { ...blank, ...cleanEq };
 
   player.skillLevels = { Q:0, W:0, E:0, R:0, ...(data.skillLevels || {}) };
-  player.skillXp     = { Q:0, W:0, E:0, R:0, ...(data.skillXp || {}) };
   recompute();
   player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }

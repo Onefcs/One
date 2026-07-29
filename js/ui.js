@@ -267,6 +267,10 @@ function _skillBonusTypeLabel(type) {
   }
 }
 
+const SKILL_STUDY_COST   = 1;   // books to unlock a level-0 (locked) skill
+const SKILL_UPGRADE_COST = 2;   // books per upgrade attempt once studied
+const SKILL_UPGRADE_CHANCE = 0.30;
+
 function updateSkillsUI() {
   if (!player) return;
   const el = document.getElementById('skill-upgrade-panel');
@@ -275,85 +279,105 @@ function updateSkillsUI() {
   if (!skills) { el.innerHTML = '<div style="padding:16px;color:#645f57;text-align:center">Выберите персонажа</div>'; return; }
   const bonusTypes = (SKILL_BONUS_TYPE || {})[player.type] || {};
   const sl = player.skillLevels || {};
-  const sx = player.skillXp || {};
-
-  const UPGRADE_COST = 100;
-  const canAfford = player.gold >= UPGRADE_COST;
+  const books = typeof countMaterial === 'function' ? countMaterial('skill_book') : 0;
 
   el.innerHTML = `
     <div class="skill-upg-header">
-      <span>${iconHTML('coin', 13, '#e3941d')} <span id="skill-gold-lbl">${player.gold}</span> золота</span>
-      <span class="skill-upg-hint">100 зол. · 50% шанс · +5 опыта</span>
+      <span>${iconHTML('book', 13, '#e3941d')} <span id="skill-book-lbl">${books}</span> книг навыков</span>
+      <span class="skill-upg-hint">Изучение: ${SKILL_STUDY_COST} кн. · Улучшение: ${SKILL_UPGRADE_COST} кн. · ${Math.round(SKILL_UPGRADE_CHANCE * 100)}% шанс</span>
     </div>
     ${skills.map(sk => {
       const level = sl[sk.key] || 0;
-      const xp    = sx[sk.key] || 0;
+      const locked = level <= 0;
       const maxed = level >= 10;
-      const xpReq = typeof skillXpRequired === 'function' ? skillXpRequired(level) : Math.round(100 * Math.pow(1.5, level));
-      const xpPct = maxed ? 100 : Math.min(100, Math.round(xp / xpReq * 100));
       const bonusType = bonusTypes[sk.key] || 'damage';
-      const bonusNow  = _skillBonusDesc(bonusType, level);
-      const bonusNext = maxed ? null : _skillBonusDesc(bonusType, level + 1);
+      const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level);
+      const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1);
 
       const dots = Array.from({ length: 10 }, (_, i) =>
         `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
       ).join('');
 
+      const iconEl = sk.img
+        ? `<img src="${sk.img}" width="26" height="26" style="image-rendering:pixelated;border-radius:4px;opacity:${locked ? 0.35 : 1}">`
+        : iconHTML(sk.icon, 26, locked ? '#645f57' : '#e3941d');
+
+      let btnLabel, btnAction, btnDisabled;
+      if (locked) {
+        btnDisabled = books < SKILL_STUDY_COST;
+        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · Изучить`;
+        btnAction = `studySkill('${sk.key}')`;
+      } else if (maxed) {
+        btnDisabled = true;
+        btnLabel = 'Максимум';
+        btnAction = '';
+      } else {
+        btnDisabled = books < SKILL_UPGRADE_COST;
+        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · Улучшить (${Math.round(SKILL_UPGRADE_CHANCE * 100)}%)`;
+        btnAction = `upgradeSkillWithBook('${sk.key}')`;
+      }
+
       return `<div class="skill-upg-card">
         <div class="skill-upg-top">
-          <div class="skill-upg-icon">${sk.img ? `<img src="${sk.img}" width="26" height="26" style="image-rendering:pixelated;border-radius:4px;opacity:${level > 0 ? 1 : 0.4}">` : iconHTML(sk.icon, 26, level > 0 ? '#e3941d' : '#645f57')}</div>
+          <div class="skill-upg-icon" style="position:relative">
+            ${iconEl}
+            ${locked ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
+          </div>
           <div class="skill-upg-info">
-            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${maxed ? ' МАКС' : ' Ур.' + level}</span></div>
+            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${locked ? ' 🔒 Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
             <div class="skill-upg-desc">${sk.desc}</div>
-            <div class="skill-upg-type">${_skillBonusTypeLabel(bonusType)}</div>
+            ${!locked ? `<div class="skill-upg-type">${_skillBonusTypeLabel(bonusType)}</div>` : ''}
           </div>
         </div>
-        <div class="sk-dots">${dots}</div>
-        ${!maxed ? `
-        <div class="sk-xp-row">
-          <div class="sk-xp-bar-bg"><div class="sk-xp-bar-fill" style="width:${xpPct}%"></div></div>
-          <span class="sk-xp-lbl">${xp} / ${xpReq} опыта</span>
-        </div>` : ''}
-        <div class="sk-bonus-row">
+        ${!locked ? `<div class="sk-dots">${dots}</div>` : ''}
+        ${!locked ? `<div class="sk-bonus-row">
           ${bonusNow ? `<span class="sk-bonus-now">${bonusNow}</span>` : ''}
-          ${bonusNext && !maxed ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
-        </div>
-        <button class="skill-upg-btn${maxed ? ' disabled' : (!canAfford ? ' disabled' : '')}"
-          onclick="${maxed ? '' : `upgradeSkill('${sk.key}')`}">
-          ${maxed ? 'Максимум' : iconHTML('coin', 12, '#e3941d') + ' 100 · Прокачать'}
-        </button>
+          ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
+        </div>` : ''}
+        <button class="skill-upg-btn${btnDisabled ? ' disabled' : ''}" onclick="${btnAction}">${btnLabel}</button>
       </div>`;
     }).join('')}
   `;
 }
 
-function upgradeSkill(key) {
+function studySkill(key) {
   if (!player) return;
-  const cost = 100;
-  if (player.gold < cost) { dmgNum(player.x, player.y - 30, 'Мало золота!', '#f17e8b'); return; }
   const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
-  const sx = player.skillXp    || (player.skillXp    = { Q:0, W:0, E:0, R:0 });
-  const lvl = sl[key] || 0;
-  if (lvl >= 10) return;
+  if ((sl[key] || 0) > 0) return; // already studied
+  if (countMaterial('skill_book') < SKILL_STUDY_COST) {
+    dmgNum(player.x, player.y - 30, 'Нужна книга навыков!', '#f17e8b');
+    return;
+  }
+  removeFromInventory('skill_book', SKILL_STUDY_COST);
+  sl[key] = 1;
+  spawnBurst(player.x, player.y, '#e69419', 10);
+  dmgNum(player.x, player.y - 42, 'Навык изучен!', '#e69419');
+  netSaveProgress();
+  updateSkillsUI();
+  updateInvUI();
+}
 
-  player.gold -= cost;
-  const xpReq = typeof skillXpRequired === 'function' ? skillXpRequired(lvl) : Math.round(100 * Math.pow(1.5, lvl));
-  if (Math.random() < 0.5) {
-    sx[key] = (sx[key] || 0) + 5;
-    if (sx[key] >= xpReq) {
-      sx[key] = 0;
-      sl[key] = lvl + 1;
-      spawnBurst(player.x, player.y, '#e69419', 10);
-      dmgNum(player.x, player.y - 42, '↑ Навык +' + sl[key] + ' ур.!', '#e69419');
-    } else {
-      dmgNum(player.x, player.y - 36, '+5 опыта навыка', '#d0b592');
-    }
+function upgradeSkillWithBook(key) {
+  if (!player) return;
+  const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
+  const lvl = sl[key] || 0;
+  if (lvl <= 0) { dmgNum(player.x, player.y - 30, 'Сначала изучите навык!', '#f17e8b'); return; }
+  if (lvl >= 10) return;
+  if (countMaterial('skill_book') < SKILL_UPGRADE_COST) {
+    dmgNum(player.x, player.y - 30, `Нужно ${SKILL_UPGRADE_COST} книги!`, '#f17e8b');
+    return;
+  }
+  removeFromInventory('skill_book', SKILL_UPGRADE_COST);
+  if (Math.random() < SKILL_UPGRADE_CHANCE) {
+    sl[key] = lvl + 1;
+    spawnBurst(player.x, player.y, '#e69419', 10);
+    dmgNum(player.x, player.y - 42, '↑ Навык +' + sl[key] + ' ур.!', '#e69419');
   } else {
     dmgNum(player.x, player.y - 36, 'Неудача...', '#eb4e61');
   }
   netSaveProgress();
   updateSkillsUI();
-  document.getElementById('skill-gold-lbl') && (document.getElementById('skill-gold-lbl').textContent = player.gold);
+  updateInvUI();
 }
 
 function drawMapPanel() {
@@ -1232,8 +1256,9 @@ function drawSkillButtons() {
     const sk = skills[i];
     const grads = _skillBtnGradCache[i];
     const b = grads; // positions cached inside grads
+    const locked = ((player.skillLevels || {})[sk.key] || 0) <= 0;
     const cd = player.skillCooldowns[sk.key] || 0;
-    const ready = cd <= 0;
+    const ready = !locked && cd <= 0;
     const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const r = b.w / 2;
@@ -1267,8 +1292,10 @@ function drawSkillButtons() {
     ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-    // Cooldown countdown number
-    if (!ready) {
+    // Not-yet-studied skills show a lock instead of a cooldown countdown
+    if (locked) {
+      drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#d1ccc5');
+    } else if (!ready) {
       ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
       ctx.fillStyle = '#d1ccc5';
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
