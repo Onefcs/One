@@ -49,7 +49,7 @@ class RaidRoom {
       x: CENTER + off, y: CENTER + off,
       hp: stats.maxHp, maxHp: stats.maxHp,
       atk: stats.atk || 10, def: stats.def || 0,
-      type: stats.type || 'warrior',
+      type: stats.type || 'lev',
       username: stats.username || '',
     });
   }

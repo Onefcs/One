@@ -105,19 +105,19 @@ const _pendingFlush = new Map();
 
 // ── VIP item data (server-side subset of js/definitions.js) ──────────────────
 const _VIP_WEAPONS = {
-  assasin: {
-    uncommon:  { id:'sw2', name:'Стальной нож',   slot:'weapon', img:'/images/wep/uk.png', atk:14,                       rarity:'uncommon' },
-    rare:      { id:'sw3', name:'Нож дракона',    slot:'weapon', img:'/images/wep/rk.png', atk:23, critChance:0.05,       rarity:'rare'     },
-    epic:      { id:'sw4', name:'Нож теней',      slot:'weapon', img:'/images/wep/ek.png', atk:44, critChance:0.10,       rarity:'epic'     },
-    legendary: { id:'sw5', name:'Нож героя',      slot:'weapon', img:'/images/wep/lk.png', atk:65, critChance:0.25,       rarity:'legendary'},
+  deathknight: {
+    uncommon:  { id:'sw2', name:'Стальной меч',   slot:'weapon', img:'/images/wep/uk.png', atk:14,                       rarity:'uncommon' },
+    rare:      { id:'sw3', name:'Меч дракона',    slot:'weapon', img:'/images/wep/rk.png', atk:23, critChance:0.05,       rarity:'rare'     },
+    epic:      { id:'sw4', name:'Меч теней',      slot:'weapon', img:'/images/wep/ek.png', atk:44, critChance:0.10,       rarity:'epic'     },
+    legendary: { id:'sw5', name:'Меч героя',      slot:'weapon', img:'/images/wep/lk.png', atk:65, critChance:0.25,       rarity:'legendary'},
   },
-  warrior: {
+  lev: {
     uncommon:  { id:'tw2', name:'Стальной топор', slot:'weapon', img:'/images/wep/ut.png', atk:15,                       rarity:'uncommon' },
     rare:      { id:'tw3', name:'Топор дракона',  slot:'weapon', img:'/images/wep/rt.png', atk:23,                       rarity:'rare'     },
     epic:      { id:'tw4', name:'Топор теней',    slot:'weapon', img:'/images/wep/et.png', atk:44,                       rarity:'epic'     },
     legendary: { id:'tw5', name:'Топор героя',    slot:'weapon', img:'/images/wep/lt.png', atk:65,                       rarity:'legendary'},
   },
-  archer: {
+  ranger: {
     uncommon:  { id:'bw2', name:'Серебряный лук', slot:'weapon', img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,         rarity:'uncommon' },
     rare:      { id:'bw3', name:'Лук охотника',   slot:'weapon', img:'/images/wep/rb.png', atk:28, atkSpeed:0.05,         rarity:'rare'     },
     epic:      { id:'bw4', name:'Лунный лук',     slot:'weapon', img:'/images/wep/eb.png', atk:60, atkSpeed:0.10,         rarity:'epic'     },
@@ -130,7 +130,7 @@ _VIP_WEAPONS.mage = {
   epic:      { id:'st4', name:'Посох Героя',    slot:'weapon', img:'/images/wep/es.png', atk:60, hpPct:0.10,  rarity:'epic'     },
   legendary: { id:'st5', name:'Посох Легенды',  slot:'weapon', img:'/images/wep/ls.png', atk:100,hpPct:0.15,  rarity:'legendary'},
 };
-_VIP_WEAPONS.priest = _VIP_WEAPONS.mage;
+_VIP_WEAPONS.warlock = _VIP_WEAPONS.mage;
 
 const _VIP_BP = [
   { id:'bp_hp',       name:'Зелье здоровья',  slot:'buff_potion', img:'/images/potion/hp.png',       rarity:'uncommon', buffType:'hp',       buffDur:600},
@@ -152,11 +152,11 @@ const _GRAM_SHOP_PKGS = [
 ];
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
-  warrior: { common:'tw1', uncommon:'tw2', rare:'tw3' },
-  assasin: { common:'sw1', uncommon:'sw2', rare:'sw3' },
-  archer:  { common:'bw1', uncommon:'bw2', rare:'bw3' },
-  mage:    { common:'st1', uncommon:'st2', rare:'st3' },
-  priest:  { common:'st1', uncommon:'st2', rare:'st3' },
+  lev:         { common:'tw1', uncommon:'tw2', rare:'tw3' },
+  deathknight: { common:'sw1', uncommon:'sw2', rare:'sw3' },
+  ranger:      { common:'bw1', uncommon:'bw2', rare:'bw3' },
+  mage:        { common:'st1', uncommon:'st2', rare:'st3' },
+  warlock:     { common:'st1', uncommon:'st2', rare:'st3' },
 };
 // Armor slot IDs per rarity for the shop
 const _SHOP_ARMOR_SETS = {
@@ -172,7 +172,7 @@ const _STONE_DEFS = {
 };
 
 function _vipLevelItems(vipLevel, charClass) {
-  const wepMap = _VIP_WEAPONS[charClass] || _VIP_WEAPONS.warrior;
+  const wepMap = _VIP_WEAPONS[charClass] || _VIP_WEAPONS.lev;
   const items = [];
   function addStone(id, qty) { if (qty > 0) items.push({ ..._STONE_DEFS[id], qty }); }
   function addBP(qty)        { _VIP_BP.forEach(bp => items.push({ ...bp, qty })); }
@@ -1621,8 +1621,8 @@ io.on('connection', socket => {
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
       const saved = doc.savedData || {};
-      const charClass = saved.type || 'warrior';
-      const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.warrior;
+      const charClass = saved.type || 'lev';
+      const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
       const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
 
       // Deduct GRAM
@@ -1932,7 +1932,7 @@ io.on('connection', socket => {
       const saved = doc.savedData || {};
       const pending = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
       if (!pending.length) return;
-      const charClass = saved.type || 'warrior';
+      const charClass = saved.type || 'lev';
       const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
       let goldReward = 0;
       for (const vipLvl of pending) {
@@ -2640,7 +2640,7 @@ io.on('connection', socket => {
         mp._inRaid = true;
         raidRoom.addPlayer(mid, { maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type, username: mp.username || lb.members.get(mid)?.name || '' });
       } else {
-        raidRoom.addPlayer(mid, { maxHp: 100, atk: 10, def: 0, type: 'warrior', username: lb.members.get(mid)?.name || '' });
+        raidRoom.addPlayer(mid, { maxHp: 100, atk: 10, def: 0, type: 'lev', username: lb.members.get(mid)?.name || '' });
       }
       io.to(mid).emit('raidStart', { raidId, dungeon: raidRoom.dungeonData });
     }
@@ -2787,7 +2787,7 @@ io.on('connection', socket => {
           critChance: mp.critChance, critPower: mp.critPower,
         });
       } else {
-        pd.addPlayer(mid, lb.members.get(mid)?.name || '', { maxHp: 100, atk: 10, def: 0, type: 'warrior' });
+        pd.addPlayer(mid, lb.members.get(mid)?.name || '', { maxHp: 100, atk: 10, def: 0, type: 'lev' });
       }
       io.to(mid).emit('partyDungeonStart', { pdId, dungeon: pd.dungeonData, enemies: pd.enemySnapshot() });
     }

@@ -1,19 +1,18 @@
 // ── Character Select ──────────────────────────────────────────
 
-const _CS_TYPES = ['warrior', 'archer', 'mage', 'priest', 'assasin', 'lev'];
+const _CS_TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock'];
 
 let _csRAF = null;
 let _csState = {};
-let _csActiveType = 'warrior';
+let _csActiveType = 'lev';
 let _csSavedData  = null;
 
 const _CS_BADGE = {
-  warrior: '⚔ Ближний бой',
-  archer:  '🏹 Дальний бой',
-  mage:    '✨ Дальний бой',
-  priest:  '💛 Поддержка',
-  assasin: '🗡 Ближний бой',
-  lev:     '🛡 Ближний бой',
+  lev:         '🛡 Ближний бой',
+  deathknight: '💀 Ближний бой',
+  ranger:      '🏹 Дальний бой',
+  mage:        '✨ Дальний бой',
+  warlock:     '💜 Поддержка',
 };
 
 // Max values for bar scaling
@@ -105,8 +104,11 @@ function csShow(savedData) {
     if (!_csState[type]) _csState[type] = { frame: 0, timer: 0 };
   });
 
-  // Default to saved type, or warrior
-  const startType = (savedData && savedData.type) ? savedData.type : 'warrior';
+  // Default to saved type, or lev — falls back to lev too if the save
+  // points at a class that no longer exists (e.g. an older account whose
+  // saved type was one of the classes retired when this roster shipped).
+  const savedType = savedData && savedData.type;
+  const startType = (savedType && CHAR_DEF[savedType]) ? savedType : 'lev';
   _csSwitchChar(startType);
   _csStartAnim();
 }

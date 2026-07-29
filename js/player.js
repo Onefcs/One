@@ -445,8 +445,8 @@ function useSkill(idx) {
   skillFlash = { key: sk.key, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
-  if (player.type === 'warrior') {
-    if (sk.key === 'Q') { // Shield Bash — ×2 single target + stun 3s
+  if (player.type === 'deathknight') {
+    if (sk.key === 'Q') { // Ледяной удар — ×2 single target + stun 3s
       const stunDur = 3 + _skillBuffSec('Q');
       const pvpTgt = _pvpPlayerTarget();
       if (pvpTgt) {
@@ -465,19 +465,19 @@ function useSkill(idx) {
           faceTowards(tgt.x, tgt.y);
         }
       }
-      spawnBurst(player.x, player.y, '#8af', 8);
-      dmgNum(player.x, player.y - 40, '🛡 Щит-удар!', '#8af');
-    } else if (sk.key === 'W') { // Whirlwind — AOE 110
+      spawnBurst(player.x, player.y, '#a5f', 8);
+      dmgNum(player.x, player.y - 40, '❄ Ледяной удар!', '#a5f');
+    } else if (sk.key === 'W') { // Смерч клинков — AOE 110
       spawnAOE(player.x, player.y, 110);
       _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
       _pvpSkillAOE(110, _skillDmgMult('W'));
-    } else if (sk.key === 'E') { // Battle Cry — +20% ATK 5s (+1s per level)
+    } else if (sk.key === 'E') { // Гнев мертвеца — +20% ATK 5s (+1s per level)
       battleCryTimer = 5 + _skillBuffSec('E');
       player.atk = Math.floor(player.atk * 1.20);
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
-      dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#fa0');
-      spawnBurst(player.x, player.y, '#fa0', 10);
-    } else if (sk.key === 'R') { // Charge — dash 140px toward target/enemy, deal ×1.5 on arrival
+      dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
+      spawnBurst(player.x, player.y, '#a5f', 10);
+    } else if (sk.key === 'R') { // Рывок тьмы — dash 140px toward target/enemy, deal ×1.5 on arrival
       const _pvpR = _pvpPlayerTarget();
       let _rdx, _rdy, _chargeTarget = null, _chargePvpTarget = null;
       if (_pvpR) {
@@ -501,9 +501,9 @@ function useSkill(idx) {
         faceTowards(_chargeTarget.x, _chargeTarget.y);
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
       }
-      spawnBurst(player.x, player.y, '#5af', 8);
+      spawnBurst(player.x, player.y, '#a5f', 8);
     }
-  } else if (player.type === 'archer') {
+  } else if (player.type === 'ranger') {
     if (sk.key === 'Q') { // Multi-Shot — 3 arrows fan
       const dir = nearestEnemyDir();
       const base = Math.atan2(dir.dy, dir.dx);
@@ -511,9 +511,9 @@ function useSkill(idx) {
       [-0.35, 0, 0.35].forEach(off => {
         const ang = base + off;
         const p = { x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
-          color: '#fa0', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
+          color: '#8fbf5a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
         projs.push(p);
-        netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#fa0', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
+        netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#8fbf5a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
       });
       _skillDirMult(dir.dx, dir.dy, 220, 0.1, dmgMult);
     } else if (sk.key === 'W') { // Combo Arrow — 3 arrows toward target
@@ -524,9 +524,9 @@ function useSkill(idx) {
         setTimeout(() => {
           if (!player) return;
           projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
-            color: '#fa8', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
+            color: '#a8d47a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
           netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
-            color: '#fa8', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
+            color: '#a8d47a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
         }, delayMs);
       });
       _skillDirMult(dir.dx, dir.dy, 240, 0.5, dmgMult);
@@ -582,13 +582,13 @@ function useSkill(idx) {
         spawnBurst(player.x, player.y, '#f4f', 6);
       }
     }
-  } else if (player.type === 'priest') {
-    if (sk.key === 'Q') { // Heal self — +20% maxHP (+1% per level)
+  } else if (player.type === 'warlock') {
+    if (sk.key === 'Q') { // Тёмное исцеление — +20% maxHP (+1% per level)
       const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('Q'));
       player.hp = Math.min(player.maxHp, player.hp + heal);
-      dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#ff4');
-      spawnBurst(player.x, player.y, '#ff4', 8);
-    } else if (sk.key === 'W') { // Оцепенение — stun nearest target 3s (+1s per level)
+      dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#a855e0');
+      spawnBurst(player.x, player.y, '#a855e0', 8);
+    } else if (sk.key === 'W') { // Оковы тьмы — stun nearest target 3s (+1s per level)
       const stunDur = 3 + _skillBuffSec('W');
       const pvpTgt = _pvpPlayerTarget();
       if (pvpTgt) {
@@ -606,71 +606,23 @@ function useSkill(idx) {
           faceTowards(tgt.x, tgt.y);
         }
       }
-      spawnBurst(player.x, player.y, '#ff4', 8);
-      dmgNum(player.x, player.y - 40, '✨ Оцепенение!', '#ff4');
-    } else if (sk.key === 'E') { // Shield of Faith — +50% DEF self + party 4s (+1s per level)
+      spawnBurst(player.x, player.y, '#a855e0', 8);
+      dmgNum(player.x, player.y - 40, '⛓ Оковы тьмы!', '#a855e0');
+    } else if (sk.key === 'E') { // Тёмный щит — +50% DEF self + party 4s (+1s per level)
       faithShieldTimer = 4 + _skillBuffSec('E');
       player.def = Math.floor(player.def * 1.5);
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
       if (typeof netFaithShield === 'function') netFaithShield(faithShieldTimer);
-      dmgNum(player.x, player.y - 40, '🛡 Щит веры!', '#ff4');
-      spawnBurst(player.x, player.y, '#ff4', 10);
-    } else if (sk.key === 'R') { // Prayer — +10% maxHP self + party (+1% per level)
+      dmgNum(player.x, player.y - 40, '🛡 Тёмный щит!', '#a855e0');
+      spawnBurst(player.x, player.y, '#a855e0', 10);
+    } else if (sk.key === 'R') { // Тёмная молитва — +10% maxHP self + party (+1% per level)
       const healSelf = Math.round(player.maxHp * 0.10 * _skillHealMult('R'));
       player.hp = Math.min(player.maxHp, player.hp + healSelf);
-      dmgNum(player.x, player.y - 50, '+' + healSelf + '♥ Молитва!', '#ff4');
-      spawnBurst(player.x, player.y, '#ff4', 14);
+      dmgNum(player.x, player.y - 50, '+' + healSelf + '♥ Молитва!', '#a855e0');
+      spawnBurst(player.x, player.y, '#a855e0', 14);
       if (typeof netHealParty === 'function') {
         netHealParty(Math.round(player.maxHp * 0.10 * _skillHealMult('R')));
       }
-    }
-  } else if (player.type === 'assasin') {
-    if (sk.key === 'Q') { // Shadow Strike — dash 80px toward enemy/player target
-      const pvpTgt = _pvpPlayerTarget();
-      if (pvpTgt) {
-        const dx = pvpTgt.op.x - player.x, dy = pvpTgt.op.y - player.y;
-        const len = Math.hypot(dx, dy) || 1;
-        _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
-      } else {
-        const dir = nearestEnemyDir();
-        const len = Math.hypot(dir.dx, dir.dy) || 1;
-        _dashTo(player.x + (dir.dx / len) * 80, player.y + (dir.dy / len) * 80);
-      }
-      spawnBurst(player.x, player.y, '#a5f', 6);
-    } else if (sk.key === 'W') { // Smoke Bomb — AOE 100 + slow 3s
-      spawnAOE(player.x, player.y, 100);
-      _skillAOEMult(100, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 100);
-      const slowIds = [];
-      serverEnemies.forEach(e => {
-        if ((e.hp || 0) <= 0) return;
-        if (dist(e.x, e.y, player.x, player.y) < 100) { e.slowTimer = 3; slowIds.push(e.id); }
-      });
-      if (slowIds.length) netSkillSlow(slowIds, 3);
-      _pvpSkillAOE(100, _skillDmgMult('W'));
-      _pvpSkillSlow(100, 3);
-      dmgNum(player.x, player.y - 40, '💨 Дым!', '#a5f');
-      spawnBurst(player.x, player.y, '#a5f', 8);
-    } else if (sk.key === 'E') { // Invisibility 4s (+1s per level)
-      invisTimer = 4 + _skillBuffSec('E');
-      if (typeof netPlayerInvis === 'function') netPlayerInvis(true);
-      dmgNum(player.x, player.y - 40, '👁 Невидимость!', '#a5f');
-      spawnBurst(player.x, player.y, '#a5f', 6);
-    } else if (sk.key === 'R') { // Death Strike — ×4 nearest target
-      const pvpTgt = _pvpPlayerTarget();
-      if (pvpTgt) {
-        netPvpSkillAttack(pvpTgt.id, 4 * _skillDmgMult('R'));
-        faceTowards(pvpTgt.op.x, pvpTgt.op.y);
-        spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
-      } else {
-        const tgt = nearestEnemy();
-        if (tgt) {
-          netSkillAttack(tgt.id, 4 * _skillDmgMult('R'));
-          faceTowards(tgt.x, tgt.y);
-          spawnAOE(tgt.x, tgt.y, 40);
-        }
-      }
-      dmgNum(player.x, player.y - 50, '💀 ×4 Удар!', '#f0f');
-      spawnBurst(player.x, player.y, '#f0f', 10);
     }
   } else if (player.type === 'lev') {
     if (sk.key === 'Q') { // Пинок — ×2 single target + stun 3s
@@ -791,7 +743,7 @@ function restoreFromSave(data) {
 
   // Brand-new players (no equipment saved) receive a full common starter kit
   if (!Object.values(player.equipment).some(Boolean)) {
-    const starterWeapon = { warrior:'tw1', archer:'bw1', mage:'st1', priest:'st1', assasin:'sw1', lev:'tw1' }[player.type] || 'tw1';
+    const starterWeapon = { lev:'tw1', deathknight:'sw1', ranger:'bw1', mage:'st1', warlock:'st1' }[player.type] || 'tw1';
     [starterWeapon, 'hm1', 'ar1', 'gl1', 'bt1', 'rn1', 'nd1'].forEach(id => {
       const def = ITEM_DEF.find(i => i.id === id);
       if (def) player.equipment[def.slot] = { ...def, enhance: 0 };

@@ -16,12 +16,11 @@ const WALL = 0, FLOOR = 1;
 // visuals) is left alone; combat-FX readability matters more there than
 // theme purity.
 const CHAR_DEF = {
-  warrior: { name:'Воин',    icon:'warrior',    color:'#8a97a6', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
-  archer:  { name:'Лучник',  icon:'archerClass',color:'#7fa855', baseHP:140, baseAtk:2,  baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#ffaa00' },
-  mage:    { name:'Маг',     icon:'mageClass',  color:'#9a78bf', baseHP:110, baseAtk:4,  baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#cc88ff' },
-  priest:  { name:'Жрец',    icon:'priest',     color:'#e9dcae', baseHP:160, baseAtk:2,  baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#ffff44' },
-  assasin: { name:'Ассасин', icon:'assasin',    color:'#a44d6e', baseHP:120, baseAtk:5,  baseDef:2,  speed:205, atkRange:52,  atkSpeed:1.800, atkType:'melee' },
-  lev:     { name:'Лев',     icon:'lev',        color:'#9aa3ab', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
+  lev:         { name:'Лев',          icon:'lev',        color:'#9aa3ab', baseHP:200, baseAtk:3, baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
+  deathknight: { name:'Рыцарь Смерти',icon:'skull',      color:'#7a5c99', baseHP:260, baseAtk:2, baseDef:14, speed:130, atkRange:58,  atkSpeed:1.000, atkType:'melee' },
+  ranger:      { name:'Егерь',        icon:'archerClass',color:'#5c7a4a', baseHP:140, baseAtk:2, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#8fbf5a' },
+  mage:        { name:'Маг',          icon:'mageClass',  color:'#5c7fbf', baseHP:110, baseAtk:4, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#66aaff' },
+  warlock:     { name:'Чернокнижник', icon:'mageClass',  color:'#8a3a4a', baseHP:160, baseAtk:2, baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#a855e0' },
 };
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
@@ -140,30 +139,31 @@ const BOX_DEF = [
 ];
 
 const ITEM_DEF = [
-  // ── Assassin knives ───────────────────────────────────────
-  { id:'sw1', name:'Ржавый нож',       slot:'weapon', forClass:['assasin'], img:'/images/wep/ck.png', atk:4,                            rarity:'common'   },
-  { id:'sw2', name:'Стальной нож',     slot:'weapon', forClass:['assasin'], img:'/images/wep/uk.png', atk:14,                           rarity:'uncommon' },
-  { id:'sw3', name:'Нож дракона',      slot:'weapon', forClass:['assasin'], img:'/images/wep/rk.png', atk:23, critChance:0.05,          rarity:'rare'     },
-  { id:'sw4', name:'Нож теней',        slot:'weapon', forClass:['assasin'], img:'/images/wep/ek.png', atk:44, critChance:0.10,          rarity:'epic'     },
-  { id:'sw5', name:'Нож героя',        slot:'weapon', forClass:['assasin'], img:'/images/wep/lk.png', atk:65, critChance:0.25,          rarity:'legendary'},
-  // ── Warrior axes ─────────────────────────────────────────
-  { id:'tw1', name:'Ржавый топор',     slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/ct.png', atk:5,                            rarity:'common'   },
-  { id:'tw2', name:'Стальной топор',   slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/ut.png', atk:15,                           rarity:'uncommon' },
-  { id:'tw3', name:'Топор дракона',    slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/rt.png', atk:23,                           rarity:'rare'     },
-  { id:'tw4', name:'Топор теней',      slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/et.png', atk:44,                           rarity:'epic'     },
-  { id:'tw5', name:'Топор героя',      slot:'weapon', forClass:['warrior','lev'], img:'/images/wep/lt.png', atk:65,                           rarity:'legendary'},
-  // ── Archer bows ──────────────────────────────────────────
-  { id:'bw1', name:'Деревянный лук',   slot:'weapon', forClass:['archer'],  img:'/images/wep/cb.png', atk:8,                            rarity:'common'   },
-  { id:'bw2', name:'Серебряный лук',   slot:'weapon', forClass:['archer'],  img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,            rarity:'uncommon' },
-  { id:'bw3', name:'Лук охотника',     slot:'weapon', forClass:['archer'],  img:'/images/wep/rb.png', atk:28, atkSpeed:0.05,            rarity:'rare'     },
-  { id:'bw4', name:'Лунный лук',       slot:'weapon', forClass:['archer'],  img:'/images/wep/eb.png', atk:60, atkSpeed:0.10,            rarity:'epic'     },
-  { id:'bw5', name:'Лук героя',        slot:'weapon', forClass:['archer'],  img:'/images/wep/lb.png', atk:100, atkSpeed:0.15, critChance:0.10, rarity:'legendary'},
-  // ── Mage / Priest staves ─────────────────────────────────
-  { id:'st1', name:'Посох новичка',    slot:'weapon', forClass:['mage','priest'], img:'/images/wep/cs.png', atk:7,                      rarity:'common'   },
-  { id:'st2', name:'Посох бойца',      slot:'weapon', forClass:['mage','priest'], img:'/images/wep/us.png', atk:17,                     rarity:'uncommon' },
-  { id:'st3', name:'Посох охотника',   slot:'weapon', forClass:['mage','priest'], img:'/images/wep/rs.png', atk:30, hpPct:0.05,         rarity:'rare'     },
-  { id:'st4', name:'Посох Героя',      slot:'weapon', forClass:['mage','priest'], img:'/images/wep/es.png', atk:60, hpPct:0.10,         rarity:'epic'     },
-  { id:'st5', name:'Посох Легенды',    slot:'weapon', forClass:['mage','priest'], img:'/images/wep/ls.png', atk:120, hpPct:0.20, critChance:0.10, rarity:'legendary'},
+  // ── Death Knight swords (was assassin's knife tier — same ids/progression,
+  //    reforged as swords since deathknight replaced assasin) ────────────
+  { id:'sw1', name:'Ржавый меч',       slot:'weapon', forClass:['deathknight'], img:'/images/wep/ck.png', atk:4,                            rarity:'common'   },
+  { id:'sw2', name:'Стальной меч',     slot:'weapon', forClass:['deathknight'], img:'/images/wep/uk.png', atk:14,                           rarity:'uncommon' },
+  { id:'sw3', name:'Меч дракона',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/rk.png', atk:23, critChance:0.05,          rarity:'rare'     },
+  { id:'sw4', name:'Меч теней',        slot:'weapon', forClass:['deathknight'], img:'/images/wep/ek.png', atk:44, critChance:0.10,          rarity:'epic'     },
+  { id:'sw5', name:'Меч героя',        slot:'weapon', forClass:['deathknight'], img:'/images/wep/lk.png', atk:65, critChance:0.25,          rarity:'legendary'},
+  // ── Lev's axes ─────────────────────────────────────────
+  { id:'tw1', name:'Ржавый топор',     slot:'weapon', forClass:['lev'], img:'/images/wep/ct.png', atk:5,                            rarity:'common'   },
+  { id:'tw2', name:'Стальной топор',   slot:'weapon', forClass:['lev'], img:'/images/wep/ut.png', atk:15,                           rarity:'uncommon' },
+  { id:'tw3', name:'Топор дракона',    slot:'weapon', forClass:['lev'], img:'/images/wep/rt.png', atk:23,                           rarity:'rare'     },
+  { id:'tw4', name:'Топор теней',      slot:'weapon', forClass:['lev'], img:'/images/wep/et.png', atk:44,                           rarity:'epic'     },
+  { id:'tw5', name:'Топор героя',      slot:'weapon', forClass:['lev'], img:'/images/wep/lt.png', atk:65,                           rarity:'legendary'},
+  // ── Ranger bows ──────────────────────────────────────────
+  { id:'bw1', name:'Деревянный лук',   slot:'weapon', forClass:['ranger'],  img:'/images/wep/cb.png', atk:8,                            rarity:'common'   },
+  { id:'bw2', name:'Серебряный лук',   slot:'weapon', forClass:['ranger'],  img:'/images/wep/ub.png', atk:18, atkSpeed:0.03,            rarity:'uncommon' },
+  { id:'bw3', name:'Лук охотника',     slot:'weapon', forClass:['ranger'],  img:'/images/wep/rb.png', atk:28, atkSpeed:0.05,            rarity:'rare'     },
+  { id:'bw4', name:'Лунный лук',       slot:'weapon', forClass:['ranger'],  img:'/images/wep/eb.png', atk:60, atkSpeed:0.10,            rarity:'epic'     },
+  { id:'bw5', name:'Лук героя',        slot:'weapon', forClass:['ranger'],  img:'/images/wep/lb.png', atk:100, atkSpeed:0.15, critChance:0.10, rarity:'legendary'},
+  // ── Mage / Warlock staves ─────────────────────────────────
+  { id:'st1', name:'Посох новичка',    slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/cs.png', atk:7,                      rarity:'common'   },
+  { id:'st2', name:'Посох бойца',      slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/us.png', atk:17,                     rarity:'uncommon' },
+  { id:'st3', name:'Посох охотника',   slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/rs.png', atk:30, hpPct:0.05,         rarity:'rare'     },
+  { id:'st4', name:'Посох Героя',      slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/es.png', atk:60, hpPct:0.10,         rarity:'epic'     },
+  { id:'st5', name:'Посох Легенды',    slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/ls.png', atk:120, hpPct:0.20, critChance:0.10, rarity:'legendary'},
   // ── Helmet ────────────────────────────────────────────────
   { id:'hm1', name:'Кожаный шлем',     slot:'helmet', img:'/images/arm/ch.png', hp:25,           rarity:'common'   },
   { id:'hm2', name:'Железный шлем',    slot:'helmet', img:'/images/arm/uh.png', hp:50,           rarity:'uncommon' },

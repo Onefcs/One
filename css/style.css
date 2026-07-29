@@ -270,12 +270,11 @@ canvas { display:block; width:100%; height:100%; }
   touch-action:manipulation; user-select:none;
 }
 .cs-tab:hover { color:#bab2a8; }
-.cs-tab-warrior.active { color:#8a97a6; border-bottom-color:#8a97a6; }
-.cs-tab-archer.active  { color:#7fa855; border-bottom-color:#7fa855; }
-.cs-tab-mage.active    { color:#9a78bf; border-bottom-color:#9a78bf; }
-.cs-tab-priest.active  { color:#e9dcae; border-bottom-color:#e9dcae; }
-.cs-tab-assasin.active { color:#a44d6e; border-bottom-color:#a44d6e; }
-.cs-tab-lev.active     { color:#9aa3ab; border-bottom-color:#9aa3ab; }
+.cs-tab-lev.active         { color:#9aa3ab; border-bottom-color:#9aa3ab; }
+.cs-tab-deathknight.active { color:#a077c9; border-bottom-color:#a077c9; }
+.cs-tab-ranger.active      { color:#7fa855; border-bottom-color:#7fa855; }
+.cs-tab-mage.active        { color:#6f9adb; border-bottom-color:#6f9adb; }
+.cs-tab-warlock.active     { color:#c05a70; border-bottom-color:#c05a70; }
 
 /* Large character stage */
 .cs-stage {
@@ -359,12 +358,11 @@ canvas { display:block; width:100%; height:100%; }
   transition:all .15s; user-select:none; touch-action:manipulation;
   letter-spacing:1.5px; flex-shrink:0;
 }
-.cs-btn-warrior { background:linear-gradient(135deg,#2e3844,#5c6f83); color:#dbe2e8; box-shadow:0 4px 18px rgba(92,111,131,.35); }
-.cs-btn-archer  { background:linear-gradient(135deg,#2c3f1e,#527a3a); color:#d3e8b8; box-shadow:0 4px 18px rgba(82,122,58,.35); }
-.cs-btn-mage    { background:linear-gradient(135deg,#3a2a4e,#6d4d8f); color:#e2d3f2; box-shadow:0 4px 18px rgba(109,77,143,.35); }
-.cs-btn-priest  { background:linear-gradient(135deg,#4a3a10,#8a6f2a); color:#f3e6bc; box-shadow:0 4px 18px rgba(201,163,78,.35); }
-.cs-btn-assasin { background:linear-gradient(135deg,#3a1a28,#7a2f4c); color:#f0cdd9; box-shadow:0 4px 18px rgba(122,47,76,.35); }
-.cs-btn-lev     { background:linear-gradient(135deg,#3c4249,#6e7981); color:#dfe4e7; box-shadow:0 4px 18px rgba(110,121,129,.35); }
+.cs-btn-lev         { background:linear-gradient(135deg,#3c4249,#6e7981); color:#dfe4e7; box-shadow:0 4px 18px rgba(110,121,129,.35); }
+.cs-btn-deathknight { background:linear-gradient(135deg,#382a4a,#6d4d8f); color:#e2d3f2; box-shadow:0 4px 18px rgba(109,77,143,.35); }
+.cs-btn-ranger      { background:linear-gradient(135deg,#2c3f1e,#527a3a); color:#d3e8b8; box-shadow:0 4px 18px rgba(82,122,58,.35); }
+.cs-btn-mage        { background:linear-gradient(135deg,#1e2e4a,#3d6d9f); color:#cfe2f5; box-shadow:0 4px 18px rgba(61,109,159,.35); }
+.cs-btn-warlock     { background:linear-gradient(135deg,#3a1a28,#8a3a4a); color:#f0cdd9; box-shadow:0 4px 18px rgba(138,58,74,.35); }
 .cs-btn:hover  { opacity:.88; transform:translateY(-1px); }
 .cs-btn:active { transform:scale(.98); opacity:.75; }
 .cs-btn.cs-resume {

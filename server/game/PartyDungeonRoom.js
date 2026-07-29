@@ -65,7 +65,7 @@ class PartyDungeonRoom {
     this.players.set(socketId, {
       socketId, username: username || '',
       x: spawn.x, y: spawn.y, facing: 'front',
-      type: stats?.type || 'warrior',
+      type: stats?.type || 'lev',
       hp: stats?.maxHp || 200, maxHp: stats?.maxHp || 200,
       atk: stats?.atk || 10, def: stats?.def || 0,
       critChance: stats?.critChance || 0.05, critPower: stats?.critPower || 1.5,

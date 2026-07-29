@@ -34,28 +34,26 @@
 
   <!-- Tab row -->
   <div class="cs-tabs">
-    <button class="cs-tab cs-tab-warrior active" data-type="warrior" onclick="_csSwitchChar('warrior')">Воин</button>
-    <button class="cs-tab cs-tab-archer"         data-type="archer"  onclick="_csSwitchChar('archer')">Лучник</button>
-    <button class="cs-tab cs-tab-mage"           data-type="mage"    onclick="_csSwitchChar('mage')">Маг</button>
-    <button class="cs-tab cs-tab-priest"         data-type="priest"  onclick="_csSwitchChar('priest')">Жрец</button>
-    <button class="cs-tab cs-tab-assasin"        data-type="assasin" onclick="_csSwitchChar('assasin')">Ассасин</button>
-    <button class="cs-tab cs-tab-lev"            data-type="lev"     onclick="_csSwitchChar('lev')">Лев</button>
+    <button class="cs-tab cs-tab-lev active"     data-type="lev"         onclick="_csSwitchChar('lev')">Лев</button>
+    <button class="cs-tab cs-tab-deathknight"    data-type="deathknight" onclick="_csSwitchChar('deathknight')">Рыцарь Смерти</button>
+    <button class="cs-tab cs-tab-ranger"         data-type="ranger"      onclick="_csSwitchChar('ranger')">Егерь</button>
+    <button class="cs-tab cs-tab-mage"           data-type="mage"       onclick="_csSwitchChar('mage')">Маг</button>
+    <button class="cs-tab cs-tab-warlock"        data-type="warlock"    onclick="_csSwitchChar('warlock')">Чернокнижник</button>
   </div>
 
   <!-- Large character stage (one canvas per char, only active shown) -->
   <div class="cs-stage" id="cs-stage">
-    <canvas id="cs-canvas-warrior" class="cs-canvas" width="440" height="440"></canvas>
-    <canvas id="cs-canvas-archer"  class="cs-canvas" width="440" height="440" style="display:none"></canvas>
-    <canvas id="cs-canvas-mage"    class="cs-canvas" width="440" height="440" style="display:none"></canvas>
-    <canvas id="cs-canvas-priest"  class="cs-canvas" width="440" height="440" style="display:none"></canvas>
-    <canvas id="cs-canvas-assasin" class="cs-canvas" width="440" height="440" style="display:none"></canvas>
-    <canvas id="cs-canvas-lev"     class="cs-canvas" width="440" height="440" style="display:none"></canvas>
+    <canvas id="cs-canvas-lev"         class="cs-canvas" width="440" height="440"></canvas>
+    <canvas id="cs-canvas-deathknight" class="cs-canvas" width="440" height="440" style="display:none"></canvas>
+    <canvas id="cs-canvas-ranger"      class="cs-canvas" width="440" height="440" style="display:none"></canvas>
+    <canvas id="cs-canvas-mage"        class="cs-canvas" width="440" height="440" style="display:none"></canvas>
+    <canvas id="cs-canvas-warlock"     class="cs-canvas" width="440" height="440" style="display:none"></canvas>
   </div>
 
   <!-- Character name + type badge -->
   <div class="cs-charinfo">
-    <div class="cs-name" id="cs-active-name">Воин</div>
-    <div class="cs-badge" id="cs-active-badge">⚔ Ближний бой</div>
+    <div class="cs-name" id="cs-active-name">Лев</div>
+    <div class="cs-badge" id="cs-active-badge">🛡 Ближний бой</div>
   </div>
 
   <!-- Stat bars -->
@@ -74,7 +72,7 @@
   </div>
 
   <!-- Select / continue button -->
-  <button class="cs-btn cs-btn-warrior" id="cs-btn-active">Создать персонажа</button>
+  <button class="cs-btn cs-btn-lev" id="cs-btn-active">Создать персонажа</button>
 
   <!-- Loading overlay: shown after character picked, hidden when game ready -->
   <div id="cs-loading" style="display:none">

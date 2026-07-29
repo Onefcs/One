@@ -45,7 +45,7 @@ function fireProj(tx, ty, enemyId, pvpTargetId) {
   const vx = (tx - player.x) / len * 360;
   const vy = (ty - player.y) / len * 360;
   const ang = Math.atan2(vy, vx);
-  const isArcher = player.type === 'archer';
+  const isArcher = player.type === 'ranger';
   const proj = { x: player.x, y: player.y, vx, vy,
     color: d.projColor, dmg: player.atk, life: 1.8, size: isArcher ? 5 : 7,
     isPlayer: true, projType: isArcher ? 'arrow' : 'ball', angle: ang,
