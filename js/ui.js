@@ -1417,7 +1417,6 @@ function drawTargetButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const tb = _uiBtnGrads.tgtBtn;
-  const F = 'system-ui, -apple-system, Arial';
   const hasTarget = !!targetId;
 
   ctx.save();
@@ -1433,14 +1432,7 @@ function drawTargetButton() {
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  drawIconCtx(ctx, 'crosshair', tb.x, tb.y - 5, 16, hasTarget ? '#f17e8b' : '#a49783');
-
-  ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = hasTarget ? 'rgba(241,129,142,0.9)' : 'rgba(163,149,124,0.7)';
-  ctx.fillText('ЦЕЛЬ', tb.x, tb.y + tb.r - 3);
-
-  ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(147,138,123,0.55)';
-  ctx.fillText('[Tab]', tb.x, tb.y + tb.r + 10);
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, 20, hasTarget ? '#f17e8b' : '#a49783');
 
   ctx.restore();
 }
@@ -1636,7 +1628,6 @@ function drawAttackButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const ab = _uiBtnGrads.atkBtn;
-  const F = 'system-ui, -apple-system, Arial';
   const hasTarget = !!targetId;
   const animBusy = (player.atkAnimTimer || 0) > 0;
   const ready = (player.atkTimer || 0) <= 0 && !animBusy;
@@ -1667,12 +1658,9 @@ function drawAttackButton() {
 
   ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
   const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
-  drawIconCtx(ctx, 'sword', ab.x, ab.y - 5, 20, iconColor);
+  drawIconCtx(ctx, 'sword', ab.x, ab.y, 26, iconColor);
 
   ctx.globalAlpha = 1;
-  ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
-  ctx.fillStyle = autoAttackMode ? 'rgba(107,98,83,0.6)' : (hasTarget ? 'rgba(238,183,101,0.9)' : 'rgba(241,206,144,0.8)');
-  ctx.fillText('АТК', ab.x, ab.y + ab.r - 3);
   ctx.restore();
 }
 

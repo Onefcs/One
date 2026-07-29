@@ -55,18 +55,18 @@ function getPartyBtnPos() {
   return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
-// ATK and AUTO are above the potion/target row
+// ATK is above the potion/target row; AUTO sits directly above ATK
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 38; // noticeably bigger than the skill circles
+  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
   const pb = getPotionBtnPos();
   return { x: W - 14 - sz / 2, y: pb.y - pb.r - gap - r, r };
 }
 
 function getAutoBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP;
   const ab = getAttackBtnPos();
+  const gap = SKILL_GAP;
   const w = 52, h = 22;
-  return { x: W - 14 - sz - gap - sz / 2 - w / 2, y: ab.y - h / 2, w, h };
+  return { x: ab.x - w / 2, y: ab.y - ab.r - gap - h, w, h };
 }
 
 // Invite accept/decline buttons (for popup)
@@ -220,11 +220,12 @@ function _checkAttackBtnTouch(cx, cy) {
   return false;
 }
 
+const AUTO_ATTACK_VIP_MIN = 2;
 function _checkAutoBtnTouch(cx, cy) {
   const ab = getAutoBtnPos();
   if (cx >= ab.x && cx <= ab.x + ab.w && cy >= ab.y && cy <= ab.y + ab.h) {
-    if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
-      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Авто-атака с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+    if (player && (window._vipData?.level || 0) < AUTO_ATTACK_VIP_MIN) {
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Авто-атака с VIP ${AUTO_ATTACK_VIP_MIN}`, '#f93');
       return true;
     }
     autoAttackMode = !autoAttackMode;
