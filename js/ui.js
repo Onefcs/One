@@ -866,7 +866,7 @@ function setTab(n) {
   if (pid) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
-    requestAnimationFrame(() => { el.classList.add('open'); });
+    requestAnimationFrame(() => { el.classList.add('open'); el.scrollTop = 0; });
     if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) updateSkillsUI(); else updateInvUI(); }
     if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
@@ -2101,6 +2101,7 @@ function enhanceItem(idx, stoneType) {
     closeInvItemModal();
     dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#eb4e61');
   }
+  updateInvUI();
 }
 
 function openEqItemModal(slot) {
@@ -2206,6 +2207,7 @@ function enhanceEqItem(slot, stoneType) {
     closeInvItemModal();
     dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#eb4e61');
   }
+  updateInvUI();
 }
 
 // ─────────────────────────────────────────────────────────
