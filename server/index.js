@@ -2037,8 +2037,8 @@ io.on('connection', socket => {
       }
 
       const _arm = armIndexForLevel(result.rlvl);
-      const bossStone = result.isBoss
-        ? (_arm + Math.floor(Math.random() * 3)) : 0;
+      const boxUncommon = result.isBoss && Math.random() < 0.50 ? 1 : 0;
+      const boxRare     = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0) ? 1 : 0;
@@ -2065,7 +2065,8 @@ io.on('connection', socket => {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: lootWinnerId === socket.id, eid: result.eid, rlvl: result.rlvl,
-          bossStone: lootWinnerId === socket.id ? bossStone : 0,
+          boxUncommon: lootWinnerId === socket.id ? boxUncommon : 0,
+          boxRare:    lootWinnerId === socket.id ? boxRare    : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
           nexum: nexumDrop,
@@ -2075,7 +2076,8 @@ io.on('connection', socket => {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
             gotLoot: lootWinnerId === mid, eid: result.eid, rlvl: result.rlvl,
-            bossStone:  lootWinnerId === mid ? bossStone  : 0,
+            boxUncommon: lootWinnerId === mid ? boxUncommon : 0,
+            boxRare:    lootWinnerId === mid ? boxRare    : 0,
             normStone:  lootWinnerId === mid ? normStone  : 0,
             blessStone: lootWinnerId === mid ? blessStone : 0,
           });
@@ -2089,7 +2091,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, rlvl: result.rlvl, bossStone, normStone, blessStone, nexum: nexumDrop,
+          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon, boxRare, normStone, blessStone, nexum: nexumDrop,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
@@ -2140,7 +2142,8 @@ io.on('connection', socket => {
         });
       }
       const _arm2 = armIndexForLevel(result.rlvl);
-      const bossStone  = result.isBoss ? (_arm2 + Math.floor(Math.random() * 3)) : 0;
+      const boxUncommon2 = result.isBoss && Math.random() < 0.50 ? 1 : 0;
+      const boxRare2     = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0) ? 1 : 0;
@@ -2161,7 +2164,8 @@ io.on('connection', socket => {
           id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: lootWinnerId === socket.id, eid: result.eid, rlvl: result.rlvl,
-          bossStone: lootWinnerId === socket.id ? bossStone : 0,
+          boxUncommon: lootWinnerId === socket.id ? boxUncommon2 : 0,
+          boxRare:    lootWinnerId === socket.id ? boxRare2    : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
           nexum: nexumDrop2,
@@ -2170,7 +2174,8 @@ io.on('connection', socket => {
           id: enemyId, xp: xpShare, gold: goldShare,
           ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: lootWinnerId === mid, eid: result.eid, rlvl: result.rlvl,
-          bossStone:  lootWinnerId === mid ? bossStone  : 0,
+          boxUncommon: lootWinnerId === mid ? boxUncommon2 : 0,
+          boxRare:    lootWinnerId === mid ? boxRare2    : 0,
           normStone:  lootWinnerId === mid ? normStone  : 0,
           blessStone: lootWinnerId === mid ? blessStone : 0,
         }));
@@ -2179,7 +2184,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, rlvl: result.rlvl, bossStone, normStone, blessStone, nexum: nexumDrop2,
+          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon: boxUncommon2, boxRare: boxRare2, normStone, blessStone, nexum: nexumDrop2,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       }

@@ -543,9 +543,10 @@ function _monsterDropBodyHtml(e, floor, lvl) {
 
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
 
-  // Boss stone rows — fixed chances matching the server's boss-kill payout
+  // Boss-only rows — fixed chances matching the server's boss-kill payout
   const stoneRow = isBoss
-    ? _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16), 'Камень Босса', `&times;${floor}–${floor + 2} · <b>100%</b>`, '#f2d197')
+    ? _dropRow(_itemIcon(BOX_DEF.find(bx=>bx.id==='box_uncommon'), 16), 'Необычный бокс', `&times;1 · <b style="color:#90d653">50%</b>`, '#90d653')
+    + _dropRow(_itemIcon(BOX_DEF.find(bx=>bx.id==='box_rare'), 16), 'Редкий бокс', `&times;1 · <b style="color:#4a7bab">10%</b>`, '#4a7bab')
     + _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16), 'Камень обычной заточки', `&times;1 · <b style="color:#f17e8b">10%</b>`, '#f17e8b')
     + _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16), 'Камень безопасной заточки', `&times;1 · <b style="color:#efc680">1%</b>`, '#efc680')
     : '';

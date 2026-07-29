@@ -155,7 +155,7 @@ const SHOP_CATALOG = [
 ];
 
 // Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll
-// Stone recipes: boss_stone + gold → enchant stone
+// Stone recipes: recipe scrolls + gold → enchant stone
 const ITEM_CRAFT_RECIPES = [
   // ── Assassin knives ──────────────────────────────────────
   { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
@@ -208,8 +208,8 @@ const ITEM_CRAFT_RECIPES = [
   { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
   { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
   // ── Enchant stones ───────────────────────────────────────
-  { matId:'norm_stone',  mats:[{id:'boss_stone',n:3}],  goldCost:300,  chance:1.0 },
-  { matId:'bless_stone', mats:[{id:'boss_stone',n:10}], goldCost:2000, chance:1.0 },
+  { matId:'norm_stone',  mats:[{id:'recu',n:10}], goldCost:500,  chance:1.0 },
+  { matId:'bless_stone', mats:[{id:'recr',n:10}], goldCost:5000, chance:1.0 },
 ];
 
 // Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)

@@ -408,7 +408,17 @@ function netConnect(onReady) {
     netSaveProgress();
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, bossStone, normStone, blessStone, nexum }) => {
+  function _addBoxToInv(boxId, qty, px, py) {
+    const def = BOX_DEF.find(b => b.id === boxId);
+    if (!def || !player) return;
+    const ex2 = player.inventory.find(i => i.id === boxId);
+    if (ex2) { ex2.qty = (ex2.qty || 1) + qty; }
+    else { player.inventory.push({ ...def, qty }); }
+    dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#5dade2' : '#98e456');
+    netSaveProgress();
+  }
+
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -450,21 +460,10 @@ function netConnect(onReady) {
         ? (VIP_BONUSES[window._vipData.level] || VIP_BONUSES[0]).drop : 0;
       if (_vipDrop > 0 && Math.random() * 100 < _vipDrop) applyLootToInventory(eid, rlvl);
     }
-    if (bossStone && player) {
-      const stone = CRAFT_MATS.find(m => m.id === 'boss_stone');
-      if (stone) {
-        const existing = player.inventory.find(i => i.id === 'boss_stone');
-        if (existing) {
-          existing.qty = (existing.qty || 1) + bossStone;
-        } else {
-          player.inventory.push({ ...stone, qty: bossStone });
-        }
-        dmgNum(px, py - 52, '+' + bossStone + '× Камень Босса', '#aaf');
-        netSaveProgress();
-      }
-    }
-    if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py);
-    if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 16);
+    if (boxUncommon) _addBoxToInv('box_uncommon', boxUncommon, px, py);
+    if (boxRare)     _addBoxToInv('box_rare',      boxRare,     px, py - 16);
+    if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py - 32);
+    if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 48);
     if (gold && player) {
       const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
       const _goldFinal = _cb && _cb.gold > 0 ? Math.round(gold * (1 + _cb.gold / 100)) : gold;

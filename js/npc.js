@@ -190,6 +190,20 @@ function _craftsmanItemsTab() {
   return html;
 }
 
+// Crafting consumes 2 items enhanced to the recipe's minEnhance (e.g. +8) —
+// the result comes out pre-enhanced 2 levels below that (+6), instead of
+// starting back at +0. Shared by the preview (openCraftModal) and the
+// actual craft (craftSpecificItem) so they always agree.
+function _craftResultEnhance(rec) {
+  const baseMat = rec.mats.find(m => m.minEnhance != null);
+  return baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
+}
+function _itemWithEnhance(item, enhance) {
+  if (!enhance) return item;
+  const b = enhanceBonus(item, enhance);
+  return { ...item, atk: (item.atk || 0) + (b.atk || 0), def: (item.def || 0) + (b.def || 0), hp: (item.hp || 0) + (b.hp || 0) };
+}
+
 function openCraftModal(idx) {
   const rec = ITEM_CRAFT_RECIPES[idx];
   if (!rec || !player) return;
@@ -198,6 +212,7 @@ function openCraftModal(idx) {
   const resultDef = item || mat;
   if (!resultDef) return;
   const rc = RARITY_COLOR[resultDef.rarity] || '#aea599';
+  const resultEnhance = item ? _craftResultEnhance(rec) : 0;
 
   const matsHtml = rec.mats.map(m => {
     if (m.minEnhance != null) {
@@ -232,7 +247,8 @@ function openCraftModal(idx) {
     player.gold >= (rec.goldCost || 0);
 
   const resultIconHtml = item ? _itemIcon(item, 52) : _matIcon(mat, 52);
-  const statsHtml = item ? (statStr(item) || '—') : '';
+  const statsHtml = item ? (statStr(_itemWithEnhance(item, resultEnhance)) || '—') : '';
+  const enhBadge = resultEnhance ? ` <b style="color:#e69419">+${resultEnhance}</b>` : '';
 
   const _backTab = rec.matId ? 'mats' : 'items';
   document.getElementById('npc-body').innerHTML = `
@@ -240,7 +256,7 @@ function openCraftModal(idx) {
     <div class="craft-detail-header">
       <div class="craft-detail-icon">${resultIconHtml}</div>
       <div class="craft-detail-info">
-        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${resultDef.name}</div>
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${resultDef.name}${enhBadge}</div>
         ${statsHtml ? `<div class="craft-detail-stats">${statsHtml}</div>` : ''}
       </div>
     </div>
@@ -276,11 +292,7 @@ function craftSpecificItem(idx) {
     } else {
       const item = ITEM_DEF.find(i => i.id === rec.itemId);
       if (item) {
-        // Crafting consumes 2 items enhanced to the recipe's minEnhance (e.g.
-        // +8) — the result comes out pre-enhanced 2 levels below that (+6),
-        // instead of starting back at +0.
-        const baseMat = rec.mats.find(m => m.minEnhance != null);
-        const enhance = baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
+        const enhance = _craftResultEnhance(rec);
         addToInventory(enhance > 0 ? { ...item, enhance } : { ...item });
         _shopMsg('✓ Создано: ' + item.name + (enhance ? ' +' + enhance : ''));
       }

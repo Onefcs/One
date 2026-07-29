@@ -295,8 +295,6 @@ const CRAFT_MATS = [
   { id:'recr',  name:'Рецепт редкий',     img:'/images/material/recr.png',  slot:'recipe',   rarity:'rare'      },
   { id:'rece',  name:'Рецепт эпичный',    img:'/images/material/rece.png',  slot:'recipe',   rarity:'epic'      },
   { id:'recl',  name:'Рецепт легенд.',    img:'/images/material/recl.png',  slot:'recipe',   rarity:'legendary' },
-  // ── Boss stone (от боссов) ──────────────────────────────
-  { id:'boss_stone',  name:'Камень Босса',              img:'/images/material/bstone.png', slot:'material', rarity:'legendary' },
   // ── Enchant stones ──────────────────────────────────────
   { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
@@ -427,7 +425,7 @@ function armLocalLevel(globalLvl) {
 
 const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
 const ROOM_KEY_GROWTH      = 0.05; // +5% key-drop chance per room level
-const ROOM_KEY_BASE = { uncommon: 0.005, rare: 0.001 }; // room level 1 base chance (×10 lower than before)
+const ROOM_KEY_BASE = { uncommon: 0.02, rare: 0.004 }; // room level 1 base chance (×4 higher than the ×10-lowered value)
 const ROOM_ENCHANT_STONE_BASE   = 0.0001; // room level 1 base chance (Камень обычной заточки) — ×100 lower than the original
 const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
 
