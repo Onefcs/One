@@ -116,20 +116,23 @@ function applyLootToInventory(eid, rlvl) {
     }
   }
 
-  // Equipment rarity drop (uncommon..legendary gear, floor-based; boss ×20)
-  const _rarTable = typeof FLOOR_RARITY_DROPS !== 'undefined' ? FLOOR_RARITY_DROPS[_fMult] : null;
-  if (_rarTable) {
-    const _rarBossMult = eType === 'boss' ? BOSS_RARITY_DROP_MULT : 1;
-    const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-    for (const rarity in _rarTable) {
-      if (Math.random() >= _rarTable[rarity] * _rarBossMult * _rMult) continue;
+  // Equipment drop: one continuous per-level chance (+0.1%/level, never
+  // resets across zones — see itemDropChanceAtLevel in shared/definitions.js),
+  // boss kills get ×BOSS_ITEM_DROP_MULT on top. Rarity is picked by which
+  // quarter of the 1-120 level scale the kill happened in (itemRarityForLevel).
+  if (typeof itemDropChanceAtLevel === 'function') {
+    const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
+    if (Math.random() * 100 < _itemChance) {
+      const rarity = itemRarityForLevel(rlvl);
+      const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
       const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot) &&
         (d.slot !== 'weapon' || (d.forClass && d.forClass.includes(player.type))));
-      if (!candidates.length) continue;
-      const it = candidates[Math.floor(Math.random() * candidates.length)];
-      if (addToInventory({ ...it })) {
-        dmgNum(player.x, player.y - 70, '+ ' + it.name, RARITY_COLOR[it.rarity] || '#c4a276');
-        saved = true;
+      if (candidates.length) {
+        const it = candidates[Math.floor(Math.random() * candidates.length)];
+        if (addToInventory({ ...it })) {
+          dmgNum(player.x, player.y - 70, '+ ' + it.name, RARITY_COLOR[it.rarity] || '#c4a276');
+          saved = true;
+        }
       }
     }
   }

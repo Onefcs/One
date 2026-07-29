@@ -162,7 +162,7 @@ class PartyDungeonRoom {
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       return {
-        killed: true, xp: enemy.xp * 3, gold: calcGoldDrop(enemy, 2),
+        killed: true, xp: enemy.xp, gold: calcGoldDrop(enemy),
         dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color,
         isBoss: !!enemy.isBoss, eid: enemy.eid,
       };
@@ -185,7 +185,7 @@ class PartyDungeonRoom {
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       return {
-        killed: true, xp: enemy.xp * 3, gold: calcGoldDrop(enemy, 2),
+        killed: true, xp: enemy.xp, gold: calcGoldDrop(enemy),
         dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color,
         isBoss: !!enemy.isBoss, eid: enemy.eid,
       };

@@ -113,38 +113,38 @@ function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss) {
 }
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────
-// hp/atk/def below are monsterStatsAtLevel() evaluated at each zone's first
-// room (arm's start level) and boss room (arm's last level) — a static
-// snapshot used as-is by the Raid and Party-dungeon modes (which don't have
-// a room-progression concept of their own) and as display fallback. The main
-// open world (server/game/dungeon.js) ignores these numbers entirely and
-// calls monsterStatsAtLevel() fresh for the enemy's actual room level, and
-// overrides name/color per spawn via monsterNameAtLevel/monsterColorAtLevel.
+// hp/atk/def/xp/gold below are monsterStatsAtLevel()/xpAtLevel()/goldAtLevel()
+// evaluated at each zone's first room (arm's start level) and boss room
+// (arm's last level) — a static snapshot used as-is by the Raid and
+// Party-dungeon modes (which don't have a room-progression concept of their
+// own) and as display fallback. The main open world (server/game/dungeon.js)
+// ignores these numbers entirely and calls the level functions fresh for the
+// enemy's actual room level, overriding name/color/hp/atk/def/xp/gold per spawn.
 // fem: grammatical gender of the base name's leading noun, for rank agreement
 // (skel/goblin/mush/golem nouns are masculine, "Тень" is feminine).
 // endColor: the room-29 (strongest non-boss) tint monsterColorAtLevel ramps to.
 const ENEMY_DEF = [
   // Arm 1 (levels 1-30) — Skeletons
-  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', endColor:'#5c1a24', fem:false, size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', endColor:'#4a1420', fem:false, size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:745,  atk:75,  def:15, spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
+  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', endColor:'#5c1a24', fem:false, size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:1,  gold:1,   isBoss:false, eType:'warrior' },
+  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', endColor:'#4a1420', fem:false, size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:1,  gold:1,   isBoss:false, eType:'guard'   },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:745,  atk:75,  def:15, spd:99,  xp:30, gold:30, isBoss:true,  eType:'boss'    },
   // Arm 2 (levels 31-60) — Goblins
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', endColor:'#123d1a', fem:false, size:13, hp:91, atk:44,  def:16, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', endColor:'#0a3d14', fem:false, size:14, hp:71, atk:59,  def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:4930,  atk:192, def:30, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', endColor:'#123d1a', fem:false, size:13, hp:91, atk:44,  def:16, spd:70,  xp:31,  gold:31,   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', endColor:'#0a3d14', fem:false, size:14, hp:71, atk:59,  def:16, spd:75,  xp:31,  gold:31,   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:4930,  atk:192, def:30, spd:83,  xp:60, gold:60, isBoss:true,  eType:'boss'    },
   // Arm 3 (levels 61-90) — Mushrooms
-  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', endColor:'#4a1c08', fem:false, size:13, hp:604, atk:113, def:31, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', endColor:'#5c2408', fem:false, size:15, hp:472, atk:152, def:31, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:32606, atk:495, def:45, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
+  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', endColor:'#4a1c08', fem:false, size:13, hp:604, atk:113, def:31, spd:60,  xp:61,  gold:61,   isBoss:false, eType:'guard'   },
+  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', endColor:'#5c2408', fem:false, size:15, hp:472, atk:152, def:31, spd:65,  xp:61,  gold:61,   isBoss:false, eType:'warrior' },
+  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:32606, atk:495, def:45, spd:68,  xp:90, gold:90, isBoss:true,  eType:'boss'    },
   // Arm 4 (levels 91-120) — Ghosts
-  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', endColor:'#0f0f4a', fem:true,  size:16, hp:3125, atk:392, def:46, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', endColor:'#1a1a5c', fem:true,  size:14, hp:3993, atk:289, def:46, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:215667, atk:1274, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
+  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', endColor:'#0f0f4a', fem:true,  size:16, hp:3125, atk:392, def:46, spd:110, xp:91,  gold:91,   isBoss:false, eType:'warrior' },
+  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', endColor:'#1a1a5c', fem:true,  size:14, hp:3993, atk:289, def:46, spd:120, xp:91,  gold:91,   isBoss:false, eType:'guard'   },
+  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:215667, atk:1274, def:60, spd:128, xp:120, gold:120, isBoss:true,  eType:'boss'    },
   // Arm 5 (levels 121-150) — Golems, defined but currently unused: only 4
   // arms are ever built (ARM_NAMES), so this pool never actually spawns.
-  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', endColor:'#3a1a08', fem:false, size:20, hp:20672, atk:1008, def:61, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'golem_guard',    name:'Голем страж',   color:'#875', endColor:'#2e1406', fem:false, size:18, hp:26414, atk:745, def:61, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1426503,atk:3276, def:75, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
+  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', endColor:'#3a1a08', fem:false, size:20, hp:20672, atk:1008, def:61, spd:50,  xp:121, gold:121,   isBoss:false, eType:'warrior' },
+  { eid:'golem_guard',    name:'Голем страж',   color:'#875', endColor:'#2e1406', fem:false, size:18, hp:26414, atk:745, def:61, spd:55,  xp:121,  gold:121,   isBoss:false, eType:'guard'   },
+  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1426503,atk:3276, def:75, spd:60,  xp:150, gold:150, isBoss:true,  eType:'boss'    },
 ];
 
 // Per-floor enemy pools for floors 1-5
@@ -156,28 +156,36 @@ const FLOOR_ENEMIES = {
   5: { pool: ['golem_warrior','golem_guard'],     boss: 'golem_boss'    },
 };
 
-// Equipment rarity drops: per-kill chance (0-1) of an uncommon+ gear item
-// dropping on that floor. Boss kills use BOSS_RARITY_DROP_MULT × this chance.
-const FLOOR_RARITY_DROPS = {
-  1: { uncommon: 0.00001 },
-  2: { uncommon: 0.00005,  rare: 0.000005 },
-  3: { rare: 0.00005,      epic: 0.000005 },
-  4: { epic: 0.00005,      legendary: 0.00001 },
-  5: { legendary: 0.00005 },
-};
-const BOSS_RARITY_DROP_MULT = 20;
+// XP/gold: dead simple, 1:1 with the monster's global level — level 1 gives
+// 1 XP / 1 gold, level 120 gives 120 XP / 120 gold. No more per-arm ×3/×2^N
+// multipliers stacked on top; the level itself already carries the scaling.
+function xpAtLevel(lvl)   { return Math.max(1, Math.round(lvl || 1)); }
+function goldAtLevel(lvl) { return Math.max(1, Math.round(lvl || 1)); }
 
-// Gold drop: 30% chance for regular enemies, 100% for bosses. Scales with floor.
-// Floors 2-5 receive a ×3 gold bonus on top of the base scaling.
-function calcGoldDrop(enemy, floor) {
-  const floorBonus = (floor >= 2 && floor <= 5) ? 3 : 1;
-  if (enemy.isBoss) {
-    const g = enemy.gold || [50, 50];
-    return Math.round((g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1))) * floorBonus);
-  }
-  if (Math.random() > 0.30) return 0;
-  const base = enemy.gold[0] + Math.floor(Math.random() * (enemy.gold[1] - enemy.gold[0] + 1));
-  return Math.round(base * Math.pow(2, floor - 1) * floorBonus);
+// Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
+// the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
+function calcGoldDrop(enemy) {
+  const g = goldAtLevel(enemy.rlvl || 1);
+  if (enemy.isBoss) return g;
+  return Math.random() > 0.30 ? 0 : g;
+}
+
+// Equipment (gear) drop: one continuous per-kill chance that climbs +0.1
+// percentage points every global level (never resets, never repeats — level
+// 1 is 0.1%, level 2 is 0.2%, ... level 120 is 12.0%). Boss kills get a flat
+// ×20 on top of their level's chance. Which RARITY drops is decided purely
+// by which quarter of the 1-120 scale the level falls in.
+const ITEM_DROP_GROWTH_PCT = 0.1; // percentage points per level
+const BOSS_ITEM_DROP_MULT  = 20;
+function itemDropChanceAtLevel(lvl) {
+  return Math.min(100, ITEM_DROP_GROWTH_PCT * Math.max(1, lvl || 1));
+}
+function itemRarityForLevel(lvl) {
+  lvl = Math.max(1, lvl || 1);
+  if (lvl <= 30) return 'uncommon';
+  if (lvl <= 60) return 'rare';
+  if (lvl <= 90) return 'epic';
+  return 'legendary';
 }
 
 // ── Open-world corridors ──────────────────────────────────────────────────────
@@ -377,6 +385,7 @@ const VIP_BONUSES = [
 
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop,
+  xpAtLevel, goldAtLevel,
   ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
@@ -384,7 +393,7 @@ if (typeof module !== 'undefined') module.exports = {
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,
+  ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,

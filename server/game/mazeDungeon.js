@@ -190,7 +190,7 @@ function generatePartyDungeon(seed) {
       if (!d) continue;
       const pos = _placeInRoom(room);
       enemyList.push({
-        id: `pd_${eid++}`, ...d, isBoss: false,
+        id: `pd_${eid++}`, ...d, isBoss: false, rlvl: 31,
         maxHp: Math.floor(d.hp * mobWeakMult), hp: Math.floor(d.hp * mobWeakMult),
         atk:   Math.floor(d.atk * mobWeakMult),
         x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,
@@ -203,7 +203,7 @@ function generatePartyDungeon(seed) {
     const bossRoom = cellRoom.get(_key(bossCell.col, bossCell.row));
     const pos = { x: bossRoom.cx * TILE + TILE / 2, y: bossRoom.cy * TILE + TILE / 2 };
     enemyList.push({
-      id: `pd_${eid++}`, ...bossDef, isBoss: true,
+      id: `pd_${eid++}`, ...bossDef, isBoss: true, rlvl: 60,
       maxHp: bossDef.hp, hp: bossDef.hp,
       atk:   bossDef.atk,
       x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,

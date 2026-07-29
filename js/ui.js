@@ -467,6 +467,7 @@ function _liveEnemy(base, lvl, localLvl, isBoss) {
     name: monsterNameAtLevel(base.name, localLvl, isBoss, base.fem),
     color: monsterColorAtLevel(base.color, base.endColor, localLvl, isBoss),
     hp: stats.hp, atk: stats.atk, def: stats.def,
+    xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
   };
 }
 
@@ -478,7 +479,7 @@ function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
   const body = variants.map(e => `
     <div class="mon-variant">
       ${variants.length > 1 ? `<div class="mon-variant-hdr"><span class="dot" style="background:${e.color}"></span>${e.name}</div>` : ''}
-      ${_monsterDropBodyHtml(e, floor)}
+      ${_monsterDropBodyHtml(e, floor, lvl)}
     </div>`).join('');
   return `
     <div class="mon-item">
@@ -503,14 +504,14 @@ function _toggleMonster(hdrEl) {
   if (body) body.style.display = opening ? 'block' : 'none';
 }
 
-function _monsterDropBodyHtml(e, floor) {
+function _monsterDropBodyHtml(e, floor, lvl) {
   const isBoss = !!e.isBoss;
   const hp  = e.hp;
   const atk = e.atk;
 
-  // Multipliers matching actual game logic
-  const goldBonus = (floor >= 2 && floor <= 5) ? 3 : 1;
-  const fMult     = (floor >= 1 && floor <= 5) ? floor : 1;
+  // Multipliers matching actual game logic (nexum/material chance are still
+  // zone-based, unrelated to the per-level xp/gold/gear-drop formulas below)
+  const fMult = (floor >= 1 && floor <= 5) ? floor : 1;
   const NEXUM_CHANCES = [0, 0.1, 0.2, 0.5, 1, 2];
   const nexumChancePct = NEXUM_CHANCES[floor] || 0;
   function _fmtPct(base) {
@@ -520,21 +521,13 @@ function _monsterDropBodyHtml(e, floor) {
     return v.toFixed(3).replace(/\.?0+$/, '') + '%';
   }
 
-  // Gold drop text
-  let goldText;
-  if (isBoss) {
-    const g = e.gold || [50, 50];
-    const gMin = Math.round(g[0] * goldBonus), gMax = Math.round(g[1] * goldBonus);
-    const gText = gMin === gMax ? `${gMin}g` : `${gMin}–${gMax}g`;
-    goldText = `<span style="color:#e6ac19">${gText}</span>`;
-  } else {
-    const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1) * goldBonus);
-    const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1) * goldBonus);
-    goldText = `${gMin}–${gMax}g · 30%`;
-  }
+  // Gold: deterministic amount = level, 30% chance to drop (100% for boss)
+  const goldText = isBoss
+    ? `<span style="color:#e6ac19">${e.gold}g</span>`
+    : `${e.gold}g · 30%`;
 
-  // XP text (×3 on floors 2-5)
-  const xpFinal = (floor >= 2 && floor <= 5) ? e.xp * 3 : e.xp;
+  // XP: deterministic = level
+  const xpFinal = e.xp;
   const xpColor = isBoss ? '#79dc23' : '#b4eb84';
 
   // Boss stone row
@@ -589,30 +582,23 @@ function _monsterDropBodyHtml(e, floor) {
       <div class="fi-drops">${rows}</div>`;
   }
 
-  // Equipment rarity drop rows (uncommon..legendary gear); boss kills get ×20
+  // Equipment drop: one continuous chance (+0.1%/level, never resets across
+  // zones) picking a single rarity determined by the level's quarter of the
+  // 1-120 scale — see itemDropChanceAtLevel/itemRarityForLevel above.
   let gearSection = '';
-  if (typeof FLOOR_RARITY_DROPS !== 'undefined') {
-    const rarTable = FLOOR_RARITY_DROPS[floor];
-    if (rarTable) {
-      const bossMult = isBoss ? BOSS_RARITY_DROP_MULT : 1;
-      const rows2 = Object.keys(rarTable).map(rarity => {
-        const pct = rarTable[rarity] * bossMult * 100;
-        let pctText;
-        if      (pct >= 1)     pctText = pct.toFixed(1).replace(/\.0$/, '');
-        else if (pct >= 0.1)   pctText = pct.toFixed(2).replace(/\.?0+$/, '');
-        else if (pct >= 0.001) pctText = pct.toFixed(3).replace(/\.?0+$/, '');
-        else                   pctText = pct.toFixed(5).replace(/\.?0+$/, '');
-        pctText += '%';
-        const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
-        const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
-        return `<div class="fi-drop">
+  if (typeof itemDropChanceAtLevel === 'function') {
+    const pct = Math.min(100, itemDropChanceAtLevel(lvl) * (isBoss ? BOSS_ITEM_DROP_MULT : 1));
+    const rarity = itemRarityForLevel(lvl);
+    const pctText = (pct >= 1 ? pct.toFixed(1).replace(/\.0$/, '') : pct.toFixed(2).replace(/\.?0+$/, '')) + '%';
+    const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
+    const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
+    gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка</div>
+      <div class="fi-drops">
+        <div class="fi-drop">
           <span class="fi-drop-lbl" style="color:${rc}">${rn} предмет</span>
           <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${pctText}</b></span>
-        </div>`;
-      }).join('');
-      gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка</div>
-        <div class="fi-drops">${rows2}</div>`;
-    }
+        </div>
+      </div>`;
   }
 
   return `

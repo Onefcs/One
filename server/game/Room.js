@@ -1,5 +1,5 @@
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
-const { calcGoldDrop, CHAR_DEF, ARM_NAMES, armIndexForLevel } = require('../../shared/definitions');
+const { calcGoldDrop, CHAR_DEF, ARM_NAMES } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server stats
@@ -531,10 +531,8 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
-      const arm = armIndexForLevel(enemy.rlvl);
-      const g = calcGoldDrop(enemy, arm);
-      const xpFinal = arm >= 2 ? enemy.xp * 3 : enemy.xp;
-      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
+      const g = calcGoldDrop(enemy);
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
@@ -553,10 +551,8 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
-      const arm = armIndexForLevel(enemy.rlvl);
-      const g = calcGoldDrop(enemy, arm);
-      const xpFinal = arm >= 2 ? enemy.xp * 3 : enemy.xp;
-      return { killed: true, xp: xpFinal, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
+      const g = calcGoldDrop(enemy);
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
