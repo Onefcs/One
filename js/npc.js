@@ -179,7 +179,10 @@ function _craftsmanItemsTab() {
       const canCraft = invHasSpace() &&
         rec.mats.every(m => _matAvailable(m)) &&
         player.gold >= (rec.goldCost || 0);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
+      const enhance = _craftResultEnhance(rec);
+      const enhBadge = enhance ? `<span style="position:absolute;top:1px;right:3px;font-size:8px;color:#e69419;font-weight:bold">+${enhance}</span>` : '';
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66;position:relative">
+        ${enhBadge}
         <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
       </div>`;
