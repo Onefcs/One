@@ -512,7 +512,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   const atk = e.atk;
 
   // dropMult matches _dropMult in combat.js exactly: arm index × room-level
-  // growth (roomDropMult), used for recipes and buff potions below.
+  // growth (roomDropMult), used for recipes below.
   const localLvl = typeof armLocalLevel === 'function' ? armLocalLevel(lvl) : (floor >= 1 ? 1 : 1);
   const dropMult = floor * (typeof roomDropMult === 'function' ? roomDropMult(localLvl) : 1);
   const NEXUM_CHANCES = [0, 0.1, 0.2, 0.5, 1, 2];
@@ -570,17 +570,6 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     }).join('');
     recipeSection = `<div class="fi-drops-hdr" style="margin-top:8px">Рецепты</div><div class="fi-drops">${rows}</div>`;
   }
-
-  // Buff potions — one of 6 potions chosen uniformly at random per roll
-  const _buffPotIds = ['bp_hp', 'bp_exp', 'bp_gold', 'bp_regen', 'bp_atkspeed', 'bp_atk'];
-  const bpChancePct = (isBoss ? 3 : 0.5) * dropMult; // 0.03/0.005 as fractions -> ×100 for percent
-  const bpPerItemPct = bpChancePct / _buffPotIds.length;
-  const bpRows = _buffPotIds.map(id => {
-    const it = ITEM_DEF.find(d => d.id === id);
-    if (!it) return '';
-    return _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b>${_pctText(bpPerItemPct)}</b>`);
-  }).join('');
-  const bpSection = `<div class="fi-drops-hdr" style="margin-top:8px">Зелья баффов</div><div class="fi-drops">${bpRows}</div>`;
 
   // Room-level keys + enchant stone (non-boss only — bosses use the fixed
   // stoneRow above instead)
@@ -641,7 +630,6 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       ${stoneRow}
     </div>
     ${recipeSection}
-    ${bpSection}
     ${keySection}
     ${gearSection}`;
 }

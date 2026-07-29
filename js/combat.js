@@ -104,18 +104,6 @@ function applyLootToInventory(eid, rlvl) {
     else if (r < 0.00171 * _dropMult)  _addMat('recu', 52);
   }
 
-  // Buff potion drop
-  const _buffPotIds = ['bp_hp','bp_exp','bp_gold','bp_regen','bp_atkspeed','bp_atk'];
-  const _bpChance = eType === 'boss' ? 0.03 : 0.005;
-  if (Math.random() < _bpChance * _dropMult) {
-    const bpId = _buffPotIds[Math.floor(Math.random() * _buffPotIds.length)];
-    const bpDef = typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bpId) : null;
-    if (bpDef && addToInventory({ ...bpDef })) {
-      dmgNum(player.x, player.y - 52, '+ ' + bpDef.name, '#e5a546');
-      saved = true;
-    }
-  }
-
   // Equipment drop: one continuous per-level chance (+0.1%/level, never
   // resets across zones — see itemDropChanceAtLevel in shared/definitions.js),
   // boss kills get ×BOSS_ITEM_DROP_MULT on top. Rarity is picked by which

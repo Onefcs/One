@@ -212,18 +212,11 @@ function calcGoldDrop(enemy) {
   return Math.random() > 0.30 ? 0 : g;
 }
 
-// Equipment (gear) drop: one continuous per-kill chance that climbs +0.1
-// percentage points every global level (never resets, never repeats — level
-// 1 is 0.1%, level 2 is 0.2%, ... level 78 is 7.8%). Boss kills get a flat
-// ×20 on top of their level's chance. Which RARITY drops is decided by the
-// level: 1-10 is common-only (a gearless-start on-ramp), then it follows
-// arm ranges the same as before (each arm from 11 onward = one rarity tier).
-const ITEM_DROP_GROWTH_PCT = 0.1; // percentage points per level
-const BOSS_ITEM_DROP_MULT  = 20;
+// Equipment (gear) drop: which RARITY drops is decided by the level — 1-10
+// is common-only (a gearless-start on-ramp), then arm ranges the same as
+// before (each arm from 11 onward = one rarity tier).
 const COMMON_ITEM_MAX_LEVEL = 10;
-function itemDropChanceAtLevel(lvl) {
-  return Math.min(100, ITEM_DROP_GROWTH_PCT * Math.max(1, lvl || 1));
-}
+const BOSS_ITEM_DROP_MULT  = 20;
 function itemRarityForLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
   if (lvl <= COMMON_ITEM_MAX_LEVEL) return 'common';
@@ -231,6 +224,35 @@ function itemRarityForLevel(lvl) {
   if (lvl <= ARM_OFFSETS[2]) return 'rare';
   if (lvl <= ARM_OFFSETS[3]) return 'epic';
   return 'legendary';
+}
+// The level each rarity tier starts at — used both to know how far into its
+// own tier a level is (for the within-tier growth below) and to chain the
+// ×5 step-down between tiers.
+const _ITEM_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+function _itemTierMinLevel(rarity) {
+  if (rarity === 'common')    return 1;
+  if (rarity === 'uncommon')  return COMMON_ITEM_MAX_LEVEL + 1;
+  if (rarity === 'rare')      return ARM_OFFSETS[1] + 1;
+  if (rarity === 'epic')      return ARM_OFFSETS[2] + 1;
+  return ARM_OFFSETS[3] + 1; // legendary
+}
+// Equipment (gear) drop: within a rarity tier the chance climbs +0.1
+// percentage points every level, same as before — BUT each new tier starts
+// at only 1/5th of the PREVIOUS tier's starting chance (not a continuation
+// of its growth), so stepping into uncommon/rare/epic/legendary is a sharp
+// drop before it starts climbing again. Boss kills get a flat ×20 on top.
+const ITEM_DROP_GROWTH_PCT = 0.1;     // percentage points per level, within a tier
+const ITEM_TIER_STEPDOWN   = 5;       // each new tier starts at (prev tier start) / 5
+function _itemTierStartChancePct(rarity) {
+  let pct = ITEM_DROP_GROWTH_PCT; // common tier starts at level 1's value: 0.1%
+  for (let i = 0; i < _ITEM_RARITY_ORDER.indexOf(rarity); i++) pct /= ITEM_TIER_STEPDOWN;
+  return pct;
+}
+function itemDropChanceAtLevel(lvl) {
+  lvl = Math.max(1, lvl || 1);
+  const rarity = itemRarityForLevel(lvl);
+  const pct = _itemTierStartChancePct(rarity) + ITEM_DROP_GROWTH_PCT * (lvl - _itemTierMinLevel(rarity));
+  return Math.min(100, pct);
 }
 
 // ── Open-world corridors ──────────────────────────────────────────────────────
@@ -405,8 +427,8 @@ function armLocalLevel(globalLvl) {
 
 const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
 const ROOM_KEY_GROWTH      = 0.05; // +5% key-drop chance per room level
-const ROOM_KEY_BASE = { uncommon: 0.05, rare: 0.01 }; // room level 1 base chance
-const ROOM_ENCHANT_STONE_BASE   = 0.01; // room level 1 base chance (Камень обычной заточки)
+const ROOM_KEY_BASE = { uncommon: 0.005, rare: 0.001 }; // room level 1 base chance (×10 lower than before)
+const ROOM_ENCHANT_STONE_BASE   = 0.001; // room level 1 base chance (Камень обычной заточки) — ×10 lower than before
 const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
 
 function roomDropMult(lvl) {
