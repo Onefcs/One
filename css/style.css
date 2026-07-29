@@ -45,8 +45,12 @@
   background:linear-gradient(0deg, rgba(160,142,104,0.30) 0%, rgba(160,142,104,0.13) 30%, transparent 62%);
 }
 .fog-wisp {
+  /* No filter:blur() — the radial-gradients already fade out smoothly via
+     their own color stops, and animating a blurred layer forces the
+     browser to re-rasterize the blur every frame instead of handling the
+     translateX purely on the compositor (measurably heavier on mobile
+     GPUs for no visible softness gain here). */
   position:absolute; left:-20%; right:-20%; bottom:-8%; height:58%;
-  filter:blur(7px);
 }
 .fog-wisp.w1 {
   background:

@@ -1,6 +1,7 @@
 const SPRITE_DEF = {
   deathknight: {
     frameW: 128, frameH: 128,
+    dispScale: 1.5,
     anims: {
       'front-idle':   { src:'images/DeathKnight/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
       'back-idle':    { src:'images/DeathKnight/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
@@ -19,6 +20,7 @@ const SPRITE_DEF = {
   },
   ranger: {
     frameW: 128, frameH: 128,
+    dispScale: 1.5,
     anims: {
       'front-idle':   { src:'images/Ranger/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
       'back-idle':    { src:'images/Ranger/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
@@ -37,6 +39,7 @@ const SPRITE_DEF = {
   },
   mage: {
     frameW: 128, frameH: 128,
+    dispScale: 1.5,
     anims: {
       'front-idle':   { src:'images/Mage/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
       'back-idle':    { src:'images/Mage/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
@@ -55,6 +58,7 @@ const SPRITE_DEF = {
   },
   warlock: {
     frameW: 128, frameH: 128,
+    dispScale: 1.5,
     anims: {
       'front-idle':   { src:'images/Warlock/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
       'back-idle':    { src:'images/Warlock/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },

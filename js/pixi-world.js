@@ -782,11 +782,6 @@ function _updatePlayer(dt) {
   _playerCt.alpha   = invisTimer > 0 ? 0.35 : 1;
   _plGfx.clear();
 
-  // Shadow ellipse
-  _plGfx.beginFill(0x000000, 0.4);
-  _plGfx.drawEllipse(player.x, player.y + 14, 11, 4);
-  _plGfx.endFill();
-
   const key      = getSpriteAnimKey(player);
   const textures = _playerTextures(player.type, key);
   const def      = SPRITE_DEF[player.type];
