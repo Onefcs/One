@@ -39,8 +39,8 @@ const CHAR_DEF = {
 // stays on the flat linear formula at every level so it never grows faster
 // than a player's own ATK and floors damage to a boring "always 1".
 const MONSTER_LEVEL_SOFT_CAP = 15;
-const MONSTER_HP_GROWTH  = 1.045; // per level, compounding, above the soft cap
-const MONSTER_ATK_GROWTH = 1.022;
+const MONSTER_HP_GROWTH  = 1.06; // per level, compounding, above the soft cap
+const MONSTER_ATK_GROWTH = 1.03;
 function _monsterFairHP(lvl)  { return 2.5 * lvl + 10; }
 function _monsterFairATK(lvl) { return lvl + 19; }
 function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(0.5 * Math.max(1, lvl || 1))); }
@@ -85,24 +85,24 @@ const ENEMY_DEF = [
   // Arm 1 (levels 1-30) — Skeletons
   { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
   { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:919,   atk:71,  def:15, spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:1138,  atk:79,  def:15, spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
   // Arm 2 (levels 31-60) — Goblins
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:110, atk:41,  def:16, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:86,  atk:55,  def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:3443,  atk:136, def:30, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:139, atk:46,  def:16, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:109, atk:63,  def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:6538,  atk:193, def:30, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
   // Arm 3 (levels 61-90) — Mushrooms
-  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:414, atk:79,  def:31, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:324, atk:106, def:31, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:12895, atk:261, def:45, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
+  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:797, atk:113, def:31, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:624, atk:152, def:31, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:37552, atk:468, def:45, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
   // Arm 4 (levels 91-120) — Ghosts
-  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:1213, atk:204, def:46, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:1550, atk:151, def:46, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:48295, atk:501, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
+  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:3582, atk:370, def:46, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:4578, atk:273, def:46, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:215680, atk:1136, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
   // Arm 5 (levels 121-150) — Golems, defined but currently unused: only 4
   // arms are ever built (ARM_NAMES), so this pool never actually spawns.
-  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:4542, atk:393, def:61, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:5804, atk:290, def:61, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:180881,atk:963, def:75, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
+  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:20576, atk:897, def:61, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:26291, atk:663, def:61, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:1238755,atk:2758, def:75, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
 ];
 
 // Per-floor enemy pools for floors 1-5
@@ -303,16 +303,6 @@ const ROOM_KEY_BASE = { uncommon: 0.05, rare: 0.01 }; // room level 1 base chanc
 const ROOM_ENCHANT_STONE_BASE   = 0.01; // room level 1 base chance (Камень обычной заточки)
 const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
 
-// Relative HP growth from a corridor's first room to local room `lvl` —
-// purely for the in-game "room progression" info panel (js/ui.js); real
-// spawn stats always come from monsterHPAtLevel/monsterStatsAtLevel above.
-// Unlike the old per-room multiplier this isn't the same for every corridor:
-// past the level-15 soft cap the curve is steeper, so later corridors (whose
-// rooms are entirely past that cap) show a steeper in-corridor ratio too.
-function armRoomStrengthRatio(armIdx, lvl) {
-  const start = (Math.max(1, armIdx || 1) - 1) * ROOMS_PER_ARM + 1;
-  return monsterHPAtLevel(start + Math.max(1, lvl || 1) - 1) / monsterHPAtLevel(start);
-}
 function roomDropMult(lvl) {
   return Math.pow(1 + ROOM_DROP_GROWTH, Math.max(1, lvl || 1) - 1);
 }
@@ -348,7 +338,7 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
   MONSTER_LEVEL_SOFT_CAP, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
-  monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel, armRoomStrengthRatio,
+  monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,

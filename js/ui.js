@@ -421,17 +421,6 @@ function drawMapPanel() {
 
 const _ARM_LABELS = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
 
-function _floorEnemyNames(n) {
-  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-  if (FLOOR_ENEMIES[n]) {
-    const fe = FLOOR_ENEMIES[n];
-    const names = fe.pool.map(eid => (eMap.get(eid) || {}).name || eid);
-    const boss  = (eMap.get(fe.boss) || {}).name || fe.boss;
-    return [...names, boss].join(', ');
-  }
-  return 'Орк, Тролль, ДЕМОН';
-}
-
 function _floorEnemyPool(n) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   if (FLOOR_ENEMIES[n]) {
@@ -446,39 +435,49 @@ function _floorEnemyPool(n) {
   };
 }
 
-// One open world, no floor travel — this list is purely informational,
-// showing each corridor's monster levels/theme. "ВЫ ЗДЕСЬ" highlights
-// whichever corridor the player is physically standing in right now.
+// Flat monster reference list (no corridor/location grouping) — one row per
+// monster across all 4 arms, collapsed by default; tapping a row expands its
+// full stat/drop breakdown inline (built by _monsterDropBodyHtml below).
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
-  const curArm = (typeof _getRoomAt === 'function' && player) ? (_getRoomAt(player.x, player.y)?.arm || null) : null;
   grid.innerHTML = ARM_NAMES.map((arm, i) => {
-    const n = i + 1;
-    const th = getTheme(n);
-    const cur = arm === curArm;
-    const lvlFrom = i * ROOMS_PER_ARM + 1, lvlTo = (i + 1) * ROOMS_PER_ARM;
-    const enemyNames = _floorEnemyNames(n);
-    return `
-      <div class="floor-item${cur ? ' active' : ''}">
-        <div class="floor-item-left" onclick="showFloorInfo(${n})">
-          <div class="floor-item-row1">
-            <span class="floor-item-num">${_ARM_LABELS[arm]}</span>
-            <span class="floor-item-loc">${th.name}</span>
-            ${cur ? '<span class="floor-item-cur">ВЫ ЗДЕСЬ</span>' : ''}
-          </div>
-          <div class="floor-item-brief">Ур. ${lvlFrom}–${lvlTo} · ${enemyNames}</div>
-        </div>
-        <button class="floor-item-btn" onclick="showFloorInfo(${n})">Инфо</button>
-      </div>`;
+    const floor = i + 1;
+    const { regular, boss } = _floorEnemyPool(floor);
+    const all = boss ? [...regular, boss] : regular;
+    return all.map(e => _monsterAccordionItem(e, floor)).join('');
   }).join('');
 }
 
-function showFloorInfo(arm) {
-  const floor = arm || (typeof _getRoomAt === 'function' && player ? armIndexForLevel((_getRoomAt(player.x, player.y)?.monsterLvl) || 1) : 1);
+function _monsterAccordionItem(e, floor) {
+  const isBoss = !!e.isBoss;
+  const lvlFrom = (floor - 1) * ROOMS_PER_ARM + 1, lvlTo = floor * ROOMS_PER_ARM;
+  return `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:${e.color}"></span>
+        <span class="mon-name">${e.name}</span>
+        ${isBoss ? '<span class="fi-boss-tag">БОСС</span>' : ''}
+        <span class="mon-lvl">ур. ${lvlFrom}–${lvlTo}</span>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div class="mon-body">${_monsterDropBodyHtml(e, floor)}</div>
+    </div>`;
+}
 
-  const { regular: regularPool, boss } = _floorEnemyPool(floor);
-  const allEnemies = boss ? [...regularPool, boss] : regularPool;
+function _toggleMonster(hdrEl) {
+  const item = hdrEl.closest('.mon-item');
+  if (!item) return;
+  const opening = !item.classList.contains('open');
+  item.classList.toggle('open', opening);
+  const body = item.querySelector('.mon-body');
+  if (body) body.style.display = opening ? 'block' : 'none';
+}
+
+function _monsterDropBodyHtml(e, floor) {
+  const isBoss = !!e.isBoss;
+  const hp  = e.hp;
+  const atk = e.atk;
 
   // Multipliers matching actual game logic
   const goldBonus = (floor >= 2 && floor <= 5) ? 3 : 1;
@@ -492,227 +491,127 @@ function showFloorInfo(arm) {
     return v.toFixed(3).replace(/\.?0+$/, '') + '%';
   }
 
-  const html = allEnemies.map(e => {
-    const isBoss = !!e.isBoss;
-    const hp     = e.hp;
-    const atk    = e.atk;
+  // Gold drop text
+  let goldText;
+  if (isBoss) {
+    const g = e.gold || [50, 50];
+    const gMin = Math.round(g[0] * goldBonus), gMax = Math.round(g[1] * goldBonus);
+    const gText = gMin === gMax ? `${gMin}g` : `${gMin}–${gMax}g`;
+    goldText = `<span style="color:#e6ac19">${gText}</span>`;
+  } else {
+    const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1) * goldBonus);
+    const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1) * goldBonus);
+    goldText = `${gMin}–${gMax}g · 30%`;
+  }
 
-    // Gold drop text
-    let goldText;
-    if (isBoss) {
-      const g = e.gold || [50, 50];
-      const gMin = Math.round(g[0] * goldBonus), gMax = Math.round(g[1] * goldBonus);
-      const gText = gMin === gMax ? `${gMin}g` : `${gMin}–${gMax}g`;
-      goldText = `<span style="color:#e6ac19">${gText}</span>`;
-    } else {
-      const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1) * goldBonus);
-      const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1) * goldBonus);
-      goldText = `${gMin}–${gMax}g · 30%`;
+  // XP text (×3 on floors 2-5)
+  const xpFinal = (floor >= 2 && floor <= 5) ? e.xp * 3 : e.xp;
+  const xpColor = isBoss ? '#79dc23' : '#b4eb84';
+
+  // Boss stone row
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const stoneRow = isBoss
+    ? `<div class="fi-drop">
+         <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16)}</span>
+         <span class="fi-drop-lbl" style="color:#f2d197">Камень Босса</span>
+         <span class="fi-drop-val" style="color:#f2d197">&times;${floor}–${floor + 2} · 100%</span>
+       </div>
+       <div class="fi-drop">
+         <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16)}</span>
+         <span class="fi-drop-lbl" style="color:#f17e8b">Камень обычной заточки</span>
+         <span class="fi-drop-val" style="color:#f17e8b">&times;1 · <b style="color:#f17e8b">10%</b></span>
+       </div>
+       <div class="fi-drop">
+         <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16)}</span>
+         <span class="fi-drop-lbl" style="color:#efc680">Камень безопасной заточки</span>
+         <span class="fi-drop-val" style="color:#efc680">&times;1 · <b style="color:#efc680">1%</b></span>
+       </div>`
+    : '';
+
+  // Material drop rows for non-boss
+  let matSection = '';
+  if (!isBoss && typeof _matIcon === 'function') {
+    const matDrops = [];
+    const matPct = _fmtPct(5);
+    if (e.eType === 'warrior') {
+      matDrops.push({ id:'bonec', chance: matPct });
+      matDrops.push({ id:'coalc', chance: matPct });
+    } else if (e.eType === 'guard') {
+      matDrops.push({ id:'orec',  chance: matPct });
+      matDrops.push({ id:'skinc', chance: matPct });
     }
+    matDrops.push({ id:'recu', chance: _fmtPct(0.1)   });
+    matDrops.push({ id:'recr', chance: _fmtPct(0.05)  });
+    matDrops.push({ id:'rece', chance: _fmtPct(0.02)  });
+    matDrops.push({ id:'recl', chance: _fmtPct(0.001) });
 
-    // XP text (×3 on floors 2-5)
-    const xpFinal = (floor >= 2 && floor <= 5) ? e.xp * 3 : e.xp;
-    const xpColor = isBoss ? '#79dc23' : '#b4eb84';
-
-    // Boss stone row
-    const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
-    const stoneRow = isBoss
-      ? `<div class="fi-drop">
-           <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16)}</span>
-           <span class="fi-drop-lbl" style="color:#f2d197">Камень Босса</span>
-           <span class="fi-drop-val" style="color:#f2d197">&times;${floor}–${floor + 2} · 100%</span>
-         </div>
-         <div class="fi-drop">
-           <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16)}</span>
-           <span class="fi-drop-lbl" style="color:#f17e8b">Камень обычной заточки</span>
-           <span class="fi-drop-val" style="color:#f17e8b">&times;1 · <b style="color:#f17e8b">10%</b></span>
-         </div>
-         <div class="fi-drop">
-           <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16)}</span>
-           <span class="fi-drop-lbl" style="color:#efc680">Камень безопасной заточки</span>
-           <span class="fi-drop-val" style="color:#efc680">&times;1 · <b style="color:#efc680">1%</b></span>
-         </div>`
-      : '';
-
-    // Material drop rows for non-boss
-    let matSection = '';
-    if (!isBoss && typeof _matIcon === 'function') {
-      const matDrops = [];
-      const matPct = _fmtPct(5);
-      if (e.eType === 'warrior') {
-        matDrops.push({ id:'bonec', chance: matPct });
-        matDrops.push({ id:'coalc', chance: matPct });
-      } else if (e.eType === 'guard') {
-        matDrops.push({ id:'orec',  chance: matPct });
-        matDrops.push({ id:'skinc', chance: matPct });
-      }
-      matDrops.push({ id:'recu', chance: _fmtPct(0.1)   });
-      matDrops.push({ id:'recr', chance: _fmtPct(0.05)  });
-      matDrops.push({ id:'rece', chance: _fmtPct(0.02)  });
-      matDrops.push({ id:'recl', chance: _fmtPct(0.001) });
-
-      const rows = matDrops.map(d => {
-        const mat = CRAFT_MATS.find(m => m.id === d.id);
-        if (!mat) return '';
-        const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aea599';
-        return `<div class="fi-drop">
-          <span class="fi-drop-icon">${_matIcon(mat, 16)}</span>
-          <span class="fi-drop-lbl" style="color:${rc}">${mat.name}</span>
-          <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${d.chance}</b></span>
-        </div>`;
-      }).join('');
-
-      matSection = `<div class="fi-drops-hdr" style="margin-top:8px">Материалы</div>
-        <div class="fi-drops">${rows}</div>`;
-    }
-
-    // Equipment rarity drop rows (uncommon..legendary gear); boss kills get ×20
-    let gearSection = '';
-    if (typeof FLOOR_RARITY_DROPS !== 'undefined') {
-      const rarTable = FLOOR_RARITY_DROPS[floor];
-      if (rarTable) {
-        const bossMult = isBoss ? BOSS_RARITY_DROP_MULT : 1;
-        const rows2 = Object.keys(rarTable).map(rarity => {
-          const pct = rarTable[rarity] * bossMult * 100;
-          let pctText;
-          if      (pct >= 1)     pctText = pct.toFixed(1).replace(/\.0$/, '');
-          else if (pct >= 0.1)   pctText = pct.toFixed(2).replace(/\.?0+$/, '');
-          else if (pct >= 0.001) pctText = pct.toFixed(3).replace(/\.?0+$/, '');
-          else                   pctText = pct.toFixed(5).replace(/\.?0+$/, '');
-          pctText += '%';
-          const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
-          const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
-          return `<div class="fi-drop">
-            <span class="fi-drop-lbl" style="color:${rc}">${rn} предмет</span>
-            <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${pctText}</b></span>
-          </div>`;
-        }).join('');
-        gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка</div>
-          <div class="fi-drops">${rows2}</div>`;
-      }
-    }
-
-    return `
-      <div class="fi-monster${isBoss ? ' fi-boss' : ''}">
-        <div class="fi-mhdr">
-          <span class="fi-mname" style="color:${e.color}">${e.name}</span>
-          ${isBoss ? '<span class="fi-boss-tag">БОСС</span>' : ''}
-        </div>
-        <div class="fi-mstats">
-          <span>HP <b>${hp}</b></span>
-          <span>ATK <b>${atk}</b></span>
-          <span>DEF <b>${e.def}</b></span>
-          <span>СПД <b>${e.spd}</b></span>
-        </div>
-        <div class="fi-drops-hdr">Дроп</div>
-        <div class="fi-drops">
-          <div class="fi-drop">
-            <span class="fi-drop-lbl">Опыт</span>
-            <span class="fi-drop-val" style="color:${xpColor}">${xpFinal} XP</span>
-          </div>
-          <div class="fi-drop">
-            <span class="fi-drop-lbl">Золото</span>
-            <span class="fi-drop-val">${goldText}</span>
-          </div>
-          <div class="fi-drop">
-            <span class="fi-drop-icon"><img src="/images/nexum-coin.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
-            <span class="fi-drop-lbl" style="color:#b2864d">Nexum</span>
-            <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">${nexumChancePct}%</b></span>
-          </div>
-          ${stoneRow}
-        </div>
-        ${matSection}
-        ${gearSection}
-      </div>`;
-  }).join('');
-
-  const modal = document.getElementById('floor-info-modal');
-  if (!modal) return;
-  const _fiTh = getTheme(floor);
-  const _armName = ARM_NAMES[floor - 1];
-  modal.querySelector('.fi-title').textContent = (_ARM_LABELS[_armName] || _fiTh.name) + ' · ' + _fiTh.name;
-  document.getElementById('floor-info-body').innerHTML = html + _roomProgressionSection(floor) + _boxInfoSection();
-  modal.style.display = 'flex';
-}
-
-// Each corridor chains ROOMS_PER_ARM rooms of increasing "local room level"
-// (1 = weakest, the last = that corridor's boss room). Monster strength now
-// comes from the global level curve (monsterHPAtLevel in
-// shared/definitions.js — linear through level 15, then compounding), so the
-// "Сила" column below is corridor-specific past that point, not a flat
-// +10%/room like the older floors were. Drop/key/enchant chance still
-// compound flatly per room level — see ROOM_* / room*() helpers.
-// Overall difficulty across corridors also comes from the arm index
-// (left→right = weakest→strongest theme).
-function _roomProgressionSection(armIdx) {
-  if (typeof armRoomStrengthRatio !== 'function') return '';
-  const n = typeof ROOMS_PER_ARM !== 'undefined' ? ROOMS_PER_ARM : 20;
-  const _fmtPctN = v => v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%';
-  const rows = Array.from({ length: n }, (_, i) => i + 1).map(lvl => {
-    const isBossRoom = lvl === n;
-    const str  = armRoomStrengthRatio(armIdx, lvl);
-    const drop = roomDropMult(lvl);
-    const ku   = roomKeyChance(lvl, 'uncommon') * 100;
-    const kr   = roomKeyChance(lvl, 'rare') * 100;
-    const es   = roomEnchantStoneChance(lvl) * 100;
-    return `<tr${isBossRoom ? ' style="color:#ee6676;font-weight:700"' : ''}>
-      <td>${lvl}${isBossRoom ? ' 👑' : ''}</td>
-      <td>×${str.toFixed(2)}</td>
-      <td>×${drop.toFixed(2)}</td>
-      <td>${_fmtPctN(ku)}</td>
-      <td>${_fmtPctN(kr)}</td>
-      <td>${_fmtPctN(es)}</td>
-    </tr>`;
-  }).join('');
-  return `
-    <div class="fi-monster">
-      <div class="fi-mhdr"><span class="fi-mname" style="color:#e5a546">Прогрессия комнат в коридоре (1–${n})</span></div>
-      <div style="font-size:10px;color:#968a7a;margin-bottom:8px;line-height:1.5">
-        Комната 1 — первая от центрального зала (слабейшие монстры), комната ${n} — комната босса коридора (сильнейшие).
-        «Сила» — рост HP монстра относительно комнаты 1 этого коридора. Шанс дропа предметов +5%, шанс ключей +5%,
-        шанс заточки +1% за уровень комнаты относительно предыдущего.
-      </div>
-      <div style="overflow-x:auto">
-        <table class="fi-room-table">
-          <thead><tr><th>Комн.</th><th>Сила</th><th>Дроп</th><th>Необ. ключ</th><th>Ред. ключ</th><th>Заточка</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>`;
-}
-
-// Forge (Кузнец) box-crafting reference: cost in keys + odds of what a box gives.
-function _boxInfoSection() {
-  if (typeof BOX_DEF === 'undefined' || !BOX_DEF.length) return '';
-  const blocks = BOX_DEF.map(box => {
-    const rc = RARITY_COLOR[box.rarity] || '#aea599';
-    const keyDef = CRAFT_MATS.find(m => m.id === box.keyId);
-    const oddsRows = box.odds.map(o => {
-      const rcO = RARITY_COLOR[o.rarity] || '#aea599';
+    const rows = matDrops.map(d => {
+      const mat = CRAFT_MATS.find(m => m.id === d.id);
+      if (!mat) return '';
+      const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aea599';
       return `<div class="fi-drop">
-        <span class="fi-drop-lbl" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity} предмет</span>
-        <span class="fi-drop-val" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
+        <span class="fi-drop-icon">${_matIcon(mat, 16)}</span>
+        <span class="fi-drop-lbl" style="color:${rc}">${mat.name}</span>
+        <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${d.chance}</b></span>
       </div>`;
     }).join('');
-    return `<div class="fi-monster">
-      <div class="fi-mhdr"><span class="fi-mname" style="color:${rc}">${box.name}</span></div>
-      <div class="fi-drops-hdr">Крафт у кузнеца</div>
-      <div class="fi-drops">
-        <div class="fi-drop">
-          <span class="fi-drop-lbl">${keyDef ? keyDef.name : box.keyId}</span>
-          <span class="fi-drop-val">×${box.keyCost}</span>
-        </div>
-      </div>
-      <div class="fi-drops-hdr" style="margin-top:8px">Содержимое (1 предмет)</div>
-      <div class="fi-drops">${oddsRows}</div>
-    </div>`;
-  }).join('');
-  return `<div class="fi-drops-hdr" style="margin-top:8px">Кузница · Боксы</div>${blocks}`;
-}
 
-function closeFloorInfo() {
-  const modal = document.getElementById('floor-info-modal');
-  if (modal) modal.style.display = 'none';
+    matSection = `<div class="fi-drops-hdr" style="margin-top:8px">Материалы</div>
+      <div class="fi-drops">${rows}</div>`;
+  }
+
+  // Equipment rarity drop rows (uncommon..legendary gear); boss kills get ×20
+  let gearSection = '';
+  if (typeof FLOOR_RARITY_DROPS !== 'undefined') {
+    const rarTable = FLOOR_RARITY_DROPS[floor];
+    if (rarTable) {
+      const bossMult = isBoss ? BOSS_RARITY_DROP_MULT : 1;
+      const rows2 = Object.keys(rarTable).map(rarity => {
+        const pct = rarTable[rarity] * bossMult * 100;
+        let pctText;
+        if      (pct >= 1)     pctText = pct.toFixed(1).replace(/\.0$/, '');
+        else if (pct >= 0.1)   pctText = pct.toFixed(2).replace(/\.?0+$/, '');
+        else if (pct >= 0.001) pctText = pct.toFixed(3).replace(/\.?0+$/, '');
+        else                   pctText = pct.toFixed(5).replace(/\.?0+$/, '');
+        pctText += '%';
+        const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
+        const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
+        return `<div class="fi-drop">
+          <span class="fi-drop-lbl" style="color:${rc}">${rn} предмет</span>
+          <span class="fi-drop-val">&times;1 · <b style="color:${rc}">${pctText}</b></span>
+        </div>`;
+      }).join('');
+      gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка</div>
+        <div class="fi-drops">${rows2}</div>`;
+    }
+  }
+
+  return `
+    <div class="fi-mstats">
+      <span>HP <b>${hp}</b></span>
+      <span>ATK <b>${atk}</b></span>
+      <span>DEF <b>${e.def}</b></span>
+      <span>СПД <b>${e.spd}</b></span>
+    </div>
+    <div class="fi-drops-hdr">Дроп</div>
+    <div class="fi-drops">
+      <div class="fi-drop">
+        <span class="fi-drop-lbl">Опыт</span>
+        <span class="fi-drop-val" style="color:${xpColor}">${xpFinal} XP</span>
+      </div>
+      <div class="fi-drop">
+        <span class="fi-drop-lbl">Золото</span>
+        <span class="fi-drop-val">${goldText}</span>
+      </div>
+      <div class="fi-drop">
+        <span class="fi-drop-icon"><img src="/images/nexum-coin.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
+        <span class="fi-drop-lbl" style="color:#b2864d">Nexum</span>
+        <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">${nexumChancePct}%</b></span>
+      </div>
+      ${stoneRow}
+    </div>
+    ${matSection}
+    ${gearSection}`;
 }
 
 function updateRaidPanelUI() {

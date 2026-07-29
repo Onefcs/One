@@ -3,8 +3,7 @@
 //  (index = armIndexForLevel, see shared/definitions.js) and their enemy
 //  identity: skeletons / goblins / mushrooms / ghosts. The live world itself
 //  renders with a single theme (getTheme(dungeonLvl), dungeonLvl is fixed at
-//  1); THEMES[1..4] are used for corridor-info-modal flavor only
-//  (showFloorInfo in js/ui.js). Index 5 (golems) is unused.
+//  1). Index 5 (golems) is unused.
 //  buildTileCanvas() in game.js handles all drawing.
 // ─────────────────────────────────────────────────────────
 

@@ -279,8 +279,8 @@
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffcc00;vertical-align:middle;margin-right:3px"></span>NPC</span>
     </div>
     <div class="floor-section">
-      <div class="sec-title">Коридоры</div>
-      <div class="floor-list" id="floor-grid"></div>
+      <div class="sec-title">Монстры</div>
+      <div class="mon-list" id="floor-grid"></div>
     </div>
   </div>
   <!-- Подземелье tab -->
@@ -323,17 +323,6 @@
     <div style="font-size:18px;font-weight:800;color:#e74c3c;margin-bottom:16px">Пати погибла</div>
     <div style="font-size:13px;color:#888;margin-bottom:20px">Все игроки пати погибли в лабиринте.</div>
     <button onclick="document.getElementById('pd-failed-modal').style.display='none'" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#3a1a1a,#5a2a2a);color:#e74c3c;font-size:15px;font-weight:700;cursor:pointer;">Закрыть</button>
-  </div>
-</div>
-
-<!-- Corridor Info Modal -->
-<div id="floor-info-modal" style="display:none" onclick="closeFloorInfo()">
-  <div id="floor-info-panel" onclick="event.stopPropagation()">
-    <div class="fi-hdr">
-      <span class="fi-title">Коридор — Монстры</span>
-      <button class="fi-close" onclick="closeFloorInfo()">✕</button>
-    </div>
-    <div id="floor-info-body" class="fi-body"></div>
   </div>
 </div>
 
