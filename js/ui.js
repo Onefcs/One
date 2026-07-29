@@ -436,54 +436,61 @@ function _floorEnemyPool(n) {
 }
 
 // Flat monster reference list (no corridor/location grouping) — one row per
-// monster across all 4 arms, collapsed by default; tapping a row expands its
-// full stat/drop breakdown inline (built by _monsterDropBodyHtml below).
+// GLOBAL LEVEL 1-120 (matching what actually spawns at that level, name/color
+// included), collapsed by default; tapping a row expands its full stat/drop
+// breakdown for every monster that can appear at that level (2 regular
+// archetypes, or the zone boss on its one level).
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
-  grid.innerHTML = ARM_NAMES.map((arm, i) => {
-    const floor = i + 1;
+  let html = '';
+  for (let lvl = 1; lvl <= ROOMS_PER_ARM * ARM_NAMES.length; lvl++) {
+    const armIdx = armIndexForLevel(lvl);
+    const floor = armIdx;
+    const localLvl = armLocalLevel(lvl);
+    const isBossLvl = localLvl === ROOMS_PER_ARM;
     const { regular, boss } = _floorEnemyPool(floor);
-    const all = boss ? [...regular, boss] : regular;
-    return all.map(e => _monsterAccordionItem(e, floor)).join('');
-  }).join('');
+    html += isBossLvl
+      ? _levelAccordionItem(lvl, [_liveEnemy(boss, lvl, localLvl, true)], floor, true)
+      : _levelAccordionItem(lvl, regular.map(base => _liveEnemy(base, lvl, localLvl, false)), floor, false);
+  }
+  grid.innerHTML = html;
 }
 
-function _monsterAccordionItem(e, floor) {
-  const isBoss = !!e.isBoss;
-  const lvlFrom = (floor - 1) * ROOMS_PER_ARM + 1, lvlTo = floor * ROOMS_PER_ARM;
+// Builds the enemy instance exactly as it would spawn at this level (same
+// monsterStatsAtLevel/monsterNameAtLevel/monsterColorAtLevel calls dungeon.js
+// uses), so the reference list always matches what's actually in the world.
+function _liveEnemy(base, lvl, localLvl, isBoss) {
+  const stats = monsterStatsAtLevel(lvl, isBoss ? 'boss' : base.eType);
+  return {
+    ...base, isBoss,
+    name: monsterNameAtLevel(base.name, localLvl, isBoss, base.fem),
+    color: monsterColorAtLevel(base.color, base.endColor, localLvl, isBoss),
+    hp: stats.hp, atk: stats.atk, def: stats.def,
+  };
+}
+
+function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
+  const head = variants[0];
+  const nameRow = isBossLvl
+    ? `<span class="mon-name">${head.name}</span><span class="fi-boss-tag">БОСС</span>`
+    : `<span class="mon-name">${variants.map(v => v.name).join(' / ')}</span>`;
+  const body = variants.map(e => `
+    <div class="mon-variant">
+      ${variants.length > 1 ? `<div class="mon-variant-hdr"><span class="dot" style="background:${e.color}"></span>${e.name}</div>` : ''}
+      ${_monsterDropBodyHtml(e, floor)}
+    </div>`).join('');
   return `
     <div class="mon-item">
       <div class="mon-hdr" onclick="_toggleMonster(this)">
-        <span class="dot" style="background:${e.color}"></span>
+        <span class="dot" style="background:${head.color}"></span>
         <div class="mon-titles">
-          <span class="mon-lvl">ур. ${lvlFrom}–${lvlTo}</span>
-          <div class="mon-name-row">
-            <span class="mon-name">${e.name}</span>
-            ${isBoss ? '<span class="fi-boss-tag">БОСС</span>' : ''}
-          </div>
+          <span class="mon-lvl">Уровень ${lvl}</span>
+          <div class="mon-name-row">${nameRow}</div>
         </div>
         <span class="mon-chevron">›</span>
       </div>
-      <div class="mon-body">${_monsterRankPreviewHtml(e)}${_monsterDropBodyHtml(e, floor)}</div>
-    </div>`;
-}
-
-// Every non-boss monster's displayed name/color actually ranks up across the
-// 29 rooms of its zone (see monsterNameAtLevel/monsterColorAtLevel in
-// shared/definitions.js) — this is just a from→to preview for the reference
-// list, since the row above covers the whole zone, not one specific room.
-function _monsterRankPreviewHtml(e) {
-  if (e.isBoss || typeof MONSTER_RANK_M === 'undefined') return '';
-  const ranks = e.fem ? MONSTER_RANK_F : MONSTER_RANK_M;
-  const first = ranks[0] + ' ' + e.name, last = ranks[ranks.length - 1] + ' ' + e.name;
-  return `
-    <div class="mon-rank-preview">
-      <span class="mon-rank-dot" style="background:${e.color}"></span>
-      <span class="mon-rank-name">${first}</span>
-      <span class="mon-rank-arrow">→</span>
-      <span class="mon-rank-dot" style="background:${e.endColor || e.color}"></span>
-      <span class="mon-rank-name">${last}</span>
+      <div class="mon-body">${body}</div>
     </div>`;
 }
 

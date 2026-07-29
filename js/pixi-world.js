@@ -485,7 +485,7 @@ function _getEnemy(id) {
   const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4 });
+  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4, align: 'center' });
   lbl.anchor.set(0.5, 1);
   ct.addChild(spr, gfx, lbl);
   _enemyCt.addChild(ct);
@@ -611,10 +611,11 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     gfx.lineStyle(0);
   }
 
-  // Name / boss label above HP bar
+  // Name / boss label above HP bar — level on its own line above the name
   const { lbl } = obj;
-  const lvlSuffix = e.rlvl > 0 ? ` · Уровень ${e.rlvl}` : '';
-  const lblText = e.isBoss ? `⚠ БОСС · ${e.name || ''}${lvlSuffix}` : `${e.name || ''}${lvlSuffix}`;
+  const lvlLine  = e.rlvl > 0 ? `Уровень ${e.rlvl}\n` : '';
+  const nameLine = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : `${e.name || ''}`;
+  const lblText  = lvlLine + nameLine;
   if (lbl.text !== lblText) lbl.text = lblText;
   lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
   lbl.style.fontSize     = e.isBoss ? 18 : 14;
