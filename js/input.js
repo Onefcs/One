@@ -1,6 +1,6 @@
-const SKILL_SZ  = 54;
+const SKILL_SZ  = 44;
 const SKILL_GAP = 8;
-const POTION_R  = 26;
+const POTION_R  = 22;
 const BUFF_BAR_H = 0; // buff/debuff strip is now inside the header
 
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
@@ -14,29 +14,40 @@ function _inJoyZone(cx, cy) {
          dist(cx, cy, jc.x, jc.y) < JOY_R * 1.35;
 }
 
+// MOBA-style ability wheel: the attack button anchors the bottom-right
+// corner, and everything else fans out around it in two concentric arcs
+// (skills on the wider outer arc, target/potion tucked on a closer inner
+// arc) instead of a separate grid — angles are in degrees, standard math
+// convention (0°=east/right, 90°=north/up), measured from the attack
+// button's own center. Since the attack button already sits flush against
+// the right edge and the bottom boundary, every arc is kept within
+// [~85°, ~185°] (up, and around to the left) — nothing can extend right
+// of or below the attack button without clipping off-screen or into the nav bar.
+const SKILL_ORBIT = 150;
+const SKILL_ANGLES = [130, 148, 166, 184]; // idx 0..3 = Q,W,E,R — most-vertical first
+
 function getSkillBtnPos(idx) {
-  const sz = SKILL_SZ, gap = SKILL_GAP;
-  const rx = W - 14, by = H - NAV_H - 14;
-  const col = idx % 2;             // 0=left, 1=right
-  const row = Math.floor(idx / 2); // 0=top, 1=bottom
-  return {
-    x: rx - (1 - col) * (sz + gap) - sz,
-    y: by - (1 - row) * (sz + gap) - sz,
-    w: sz, h: sz,
-  };
+  const ab = getAttackBtnPos();
+  const r = SKILL_SZ / 2;
+  const rad = SKILL_ANGLES[idx] * Math.PI / 180;
+  const cx = ab.x + SKILL_ORBIT * Math.cos(rad);
+  const cy = ab.y - SKILL_ORBIT * Math.sin(rad);
+  return { x: cx - r, y: cy - r, w: r * 2, h: r * 2 };
 }
 
-// Potion and Target are now stacked ABOVE the 2×2 skill grid
+// Target/potion sit on their own closer arc, angularly ABOVE (further from
+// horizontal) the skill arc so the two never interleave at similar radii.
+const UTIL_ORBIT = 85;
 function getPotionBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
+  const ab = getAttackBtnPos();
+  const rad = 80 * Math.PI / 180;
+  return { x: ab.x + UTIL_ORBIT * Math.cos(rad), y: ab.y - UTIL_ORBIT * Math.sin(rad), r: POTION_R };
 }
 
 function getTargetBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz - gap - sz / 2, y: gridTop - gap - r, r };
+  const ab = getAttackBtnPos();
+  const rad = 112 * Math.PI / 180;
+  return { x: ab.x + UTIL_ORBIT * Math.cos(rad), y: ab.y - UTIL_ORBIT * Math.sin(rad), r: POTION_R };
 }
 
 function getPvpBtnPos() {
@@ -55,18 +66,20 @@ function getPartyBtnPos() {
   return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
-// ATK and AUTO are above the potion/target row
+// ATK anchors the bottom-right corner directly — everything else (skills,
+// target/potion, the auto toggle) is positioned relative to it, see the
+// ability-wheel comment above getSkillBtnPos.
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 38; // noticeably bigger than the skill circles
-  const pb = getPotionBtnPos();
-  return { x: W - 14 - sz / 2, y: pb.y - pb.r - gap - r, r };
+  const r = 38; // noticeably bigger than the skill circles
+  return { x: W - 14 - r, y: H - NAV_H - 14 - r, r };
 }
 
+// Sits above the skill arc, roughly centered over its spread
 function getAutoBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP;
   const ab = getAttackBtnPos();
-  const w = 52, h = 22;
-  return { x: W - 14 - sz - gap - sz / 2 - w / 2, y: ab.y - h / 2, w, h };
+  const topSkill = getSkillBtnPos(0); // idx0 = topmost point of the arc
+  const w = 52, h = 22, gap = SKILL_GAP;
+  return { x: ab.x - 97, y: topSkill.y - gap - h, w, h };
 }
 
 // Invite accept/decline buttons (for popup)
