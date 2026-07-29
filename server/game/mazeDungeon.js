@@ -1,8 +1,9 @@
 // Party dungeon: a real branching maze (recursive-backtracker spanning tree
 // over a cell grid), not the linear room-chain used by the normal 5 floors
-// (server/game/dungeon.js). Monsters and boss both use floor-2 stats —
-// computed with the exact same scaling formulas as generateDungeon() so
-// numbers match what players already see on that floor. Returns the same
+// (server/game/dungeon.js). Monsters and boss both use goblin-tier (arm 2)
+// stats — ENEMY_DEF's hp/atk/def for those eids are already the fully
+// computed values at that level (see monsterStatsAtLevel in
+// shared/definitions.js), so no extra scaling is applied here. Returns the same
 // {grid, rooms, w, h, spawn, safeZone, enemies} shape Room.js/the client
 // renderer already expect, so nothing downstream needs to know this wasn't
 // produced by generateDungeon().
@@ -153,17 +154,13 @@ function generatePartyDungeon(seed) {
     }
   });
 
-  // ── Enemies: monsters and boss both use floor-2 stats ───────────────────
-  // Same scaling formulas as generateDungeon() (server/game/dungeon.js) so
-  // numbers match what's already on those floors.
-  const MOB_LVL = 2, BOSS_LVL = 2;
-  const mobSc    = 1 + (MOB_LVL  - 1) * 0.28, mobAtkSc  = 1 + (MOB_LVL  - 1) * 0.18;
-  const bossSc   = 1 + (BOSS_LVL - 1) * 0.28, bossAtkSc = 1 + (BOSS_LVL - 1) * 0.18;
+  // ── Enemies: monsters and boss both use floor-2 (goblin) stats ──────────
+  const TIER = 2;
   const mobWeakMult = 0.5; // matches the halving applied to all regular dungeon monsters
 
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-  const mobPool = FLOOR_ENEMIES[MOB_LVL].pool;
-  const bossDef = _enemyByEid.get(FLOOR_ENEMIES[BOSS_LVL].boss);
+  const mobPool = FLOOR_ENEMIES[TIER].pool;
+  const bossDef = _enemyByEid.get(FLOOR_ENEMIES[TIER].boss);
 
   const enemyList = [];
   let eid = 0;
@@ -194,8 +191,8 @@ function generatePartyDungeon(seed) {
       const pos = _placeInRoom(room);
       enemyList.push({
         id: `pd_${eid++}`, ...d, isBoss: false,
-        maxHp: Math.floor(d.hp * mobSc * mobWeakMult), hp: Math.floor(d.hp * mobSc * mobWeakMult),
-        atk:   Math.floor(d.atk * mobAtkSc * mobWeakMult),
+        maxHp: Math.floor(d.hp * mobWeakMult), hp: Math.floor(d.hp * mobWeakMult),
+        atk:   Math.floor(d.atk * mobWeakMult),
         x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
       });
@@ -207,8 +204,8 @@ function generatePartyDungeon(seed) {
     const pos = { x: bossRoom.cx * TILE + TILE / 2, y: bossRoom.cy * TILE + TILE / 2 };
     enemyList.push({
       id: `pd_${eid++}`, ...bossDef, isBoss: true,
-      maxHp: Math.floor(bossDef.hp * bossSc), hp: Math.floor(bossDef.hp * bossSc),
-      atk:   Math.floor(bossDef.atk * bossAtkSc),
+      maxHp: bossDef.hp, hp: bossDef.hp,
+      atk:   bossDef.atk,
       x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,
       atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
     });

@@ -23,30 +23,86 @@ const CHAR_DEF = {
   warlock:     { name:'Чернокнижник', icon:'mageClass',  color:'#8a3a4a', baseHP:160, baseAtk:2, baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#a855e0' },
 };
 
+// ── Monster level curve ────────────────────────────────────────────────────────
+// Global monster level (1-120, see armIndexForLevel below) drives HP/ATK/DEF
+// directly through one continuous formula — this replaces the old system
+// where per-room, per-zone and "early level" multipliers all stacked on top
+// of each other at spawn time (server/game/dungeon.js), which made the
+// boss-vs-trash ratio swing wildly depending on where in a corridor you were.
+//
+// Levels 1-15 grow linearly, tuned so a same-level player (base stats only,
+// no gear — see js/player.js recompute()) fights a regular monster to a
+// draw in ~5 hits either way: "recommended level" holds exactly here. Past
+// 15, HP/ATK compound a fixed percentage per level instead, intentionally
+// outpacing a gearless player — that gap is meant to be closed by gear/
+// enchant/skill-point/VIP progression, not by character level alone. DEF
+// stays on the flat linear formula at every level so it never grows faster
+// than a player's own ATK and floors damage to a boring "always 1".
+const MONSTER_LEVEL_SOFT_CAP = 15;
+const MONSTER_HP_GROWTH  = 1.045; // per level, compounding, above the soft cap
+const MONSTER_ATK_GROWTH = 1.022;
+function _monsterFairHP(lvl)  { return 2.5 * lvl + 10; }
+function _monsterFairATK(lvl) { return lvl + 19; }
+function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(0.5 * Math.max(1, lvl || 1))); }
+function monsterHPAtLevel(lvl) {
+  lvl = Math.max(1, lvl || 1);
+  return lvl <= MONSTER_LEVEL_SOFT_CAP
+    ? _monsterFairHP(lvl)
+    : _monsterFairHP(MONSTER_LEVEL_SOFT_CAP) * Math.pow(MONSTER_HP_GROWTH, lvl - MONSTER_LEVEL_SOFT_CAP);
+}
+function monsterATKAtLevel(lvl) {
+  lvl = Math.max(1, lvl || 1);
+  return lvl <= MONSTER_LEVEL_SOFT_CAP
+    ? _monsterFairATK(lvl)
+    : _monsterFairATK(MONSTER_LEVEL_SOFT_CAP) * Math.pow(MONSTER_ATK_GROWTH, lvl - MONSTER_LEVEL_SOFT_CAP);
+}
+// Archetype flavor: "страж"(guard) trades damage for HP, "воин"(warrior) the
+// reverse, so the two pool monsters per zone play differently instead of
+// being near-identical reskins. Bosses are a flat HP/ATK multiplier over a
+// regular monster of the same level with no extra DEF — a longer fight, not
+// a damage sponge that also shrugs off hits.
+const MONSTER_ARCHETYPE = {
+  guard:   { hp: 1.15, atk: 0.85 },
+  warrior: { hp: 0.90, atk: 1.15 },
+};
+const BOSS_HP_MULT  = 10;
+const BOSS_ATK_MULT = 1.5;
+function monsterStatsAtLevel(lvl, eType) {
+  const hp = monsterHPAtLevel(lvl), atk = monsterATKAtLevel(lvl), def = monsterDEFAtLevel(lvl);
+  if (eType === 'boss') return { hp: Math.round(hp * BOSS_HP_MULT), atk: Math.round(atk * BOSS_ATK_MULT), def };
+  const arch = MONSTER_ARCHETYPE[eType] || { hp: 1, atk: 1 };
+  return { hp: Math.max(1, Math.round(hp * arch.hp)), atk: Math.max(1, Math.round(atk * arch.atk)), def };
+}
+
 // ── Enemy definitions ─────────────────────────────────────────────────────────
-// Floors are capped at 5 (MAX_FLOOR, server/index.js); FLOOR_ENEMIES below
-// covers every eid used here.
+// hp/atk/def below are monsterStatsAtLevel() evaluated at each zone's first
+// room (arm's start level) and boss room (arm's last level) — a static
+// snapshot used as-is by the Raid and Party-dungeon modes (which don't have
+// a room-progression concept of their own) and as display fallback. The main
+// open world (server/game/dungeon.js) ignores these numbers entirely and
+// calls monsterStatsAtLevel() fresh for the enemy's actual room level.
 const ENEMY_DEF = [
-  // Floor 1 — Skeletons (swapped from floor 2, stats adjusted to floor-1 level)
-  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:65,  atk:10,  def:2,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:75,  atk:13,  def:3,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:88000, atk:17,  def:6,  spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
-  // Floor 2 — Goblins (4× original)
-  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:900,  atk:104, def:12, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:1080, atk:130, def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:42000, atk:96,  def:32, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
-  // Floor 3 — Mushrooms (4× original)
-  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:1320, atk:264, def:20, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:1560, atk:336, def:24, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:60000, atk:220, def:48, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
-  // Floor 4 — Ghosts (4× original)
-  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:1800, atk:420, def:28, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:1560, atk:360, def:24, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:84000, atk:280, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
-  // Floor 5 — Golems (4× original)
-  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:2400, atk:540, def:40, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
-  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:2160, atk:480, def:48, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
-  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:120000,atk:400,def:80, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
+  // Arm 1 (levels 1-30) — Skeletons
+  { eid:'skel_warrior',   name:'Скелет воин',   color:'#bbb', size:15, hp:11,  atk:23,  def:1,  spd:81,  xp:2,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'skel_barbarian', name:'Скелет варвар', color:'#ccc', size:16, hp:14,  atk:17,  def:1,  spd:93,  xp:3,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'skel_boss',      name:'Босс скелетов', color:'#eee', size:24, hp:919,   atk:71,  def:15, spd:99,  xp:20, gold:[15,25], isBoss:true,  eType:'boss'    },
+  // Arm 2 (levels 31-60) — Goblins
+  { eid:'goblin_guard',   name:'Гоблин страж',  color:'#4a4', size:13, hp:110, atk:41,  def:16, spd:70,  xp:4,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'goblin_warrior', name:'Гоблин воин',   color:'#2a5', size:14, hp:86,  atk:55,  def:16, spd:75,  xp:5,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'goblin_boss',    name:'Босс гоблинов', color:'#0f5', size:22, hp:3443,  atk:136, def:30, spd:83,  xp:30, gold:[20,35], isBoss:true,  eType:'boss'    },
+  // Arm 3 (levels 61-90) — Mushrooms
+  { eid:'mush_guard',     name:'Гриб страж',    color:'#c63', size:13, hp:414, atk:79,  def:31, spd:60,  xp:6,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'mush_warrior',   name:'Гриб воин',     color:'#d74', size:15, hp:324, atk:106, def:31, spd:65,  xp:7,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'mush_boss',      name:'Босс грибов',   color:'#f85', size:26, hp:12895, atk:261, def:45, spd:68,  xp:45, gold:[30,50], isBoss:true,  eType:'boss'    },
+  // Arm 4 (levels 91-120) — Ghosts
+  { eid:'ghost_warrior',  name:'Тень воин',     color:'#88f', size:16, hp:1213, atk:204, def:46, spd:110, xp:8,  gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'ghost_guard',    name:'Тень страж',    color:'#aaf', size:14, hp:1550, atk:151, def:46, spd:120, xp:7,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'ghost_boss',     name:'Босс теней',    color:'#ccf', size:28, hp:48295, atk:501, def:60, spd:128, xp:60, gold:[40,65], isBoss:true,  eType:'boss'    },
+  // Arm 5 (levels 121-150) — Golems, defined but currently unused: only 4
+  // arms are ever built (ARM_NAMES), so this pool never actually spawns.
+  { eid:'golem_warrior',  name:'Голем воин',    color:'#964', size:20, hp:4542, atk:393, def:61, spd:50,  xp:10, gold:[1,3],   isBoss:false, eType:'warrior' },
+  { eid:'golem_guard',    name:'Голем страж',   color:'#875', size:18, hp:5804, atk:290, def:61, spd:55,  xp:9,  gold:[1,3],   isBoss:false, eType:'guard'   },
+  { eid:'golem_boss',     name:'Босс големов',  color:'#ba6', size:32, hp:180881,atk:963, def:75, spd:60,  xp:80, gold:[55,80], isBoss:true,  eType:'boss'    },
 ];
 
 // Per-floor enemy pools for floors 1-5
@@ -231,31 +287,31 @@ function isStackableItem(it) { return it.slot === 'material' || it.slot === 'rec
 // ── Room-level monster progression ─────────────────────────────────────────────
 // Each corridor (server/game/dungeon.js) chains ROOMS_PER_ARM rooms of
 // increasing "local room level" 1..ROOMS_PER_ARM (room 1 = weakest, the last
-// = that arm's boss room / strongest) — this resets every arm, same growth
-// curve the old per-floor system used, so tuning carries over unchanged. The
-// global display level (1-120, see armIndexForLevel above) feeds this via
-// armLocalLevel(). All progressions below compound per LOCAL room level, on
-// top of the existing per-arm scaling (sc/atkSc in dungeon.js).
+// = that arm's boss room / strongest) — this resets every arm. The global
+// display level (1-120, see armIndexForLevel above) feeds this via
+// armLocalLevel(). Monster HP/ATK/DEF no longer scale off local room level at
+// all (see monsterStatsAtLevel above, which is a function of the GLOBAL
+// level only) — only item/key/enchant-stone drop chance still compounds per
+// local room level below.
 function armLocalLevel(globalLvl) {
   return ((Math.max(1, globalLvl || 1) - 1) % ROOMS_PER_ARM) + 1;
 }
 
-// Global monster levels 1-20 (the first third of the left corridor) get an
-// extra flat +30% hp/atk on top of the normal per-arm/per-room scaling.
-const EARLY_LEVEL_BUFF_MAX  = 20;
-const EARLY_LEVEL_BUFF_MULT = 1.3;
-function earlyLevelBuffMult(globalLvl) {
-  return (globalLvl >= 1 && globalLvl <= EARLY_LEVEL_BUFF_MAX) ? EARLY_LEVEL_BUFF_MULT : 1;
-}
-const ROOM_STRENGTH_GROWTH = 0.10; // +10% monster hp/atk per room level
 const ROOM_DROP_GROWTH     = 0.05; // +5% item-drop chance per room level
 const ROOM_KEY_GROWTH      = 0.05; // +5% key-drop chance per room level
 const ROOM_KEY_BASE = { uncommon: 0.05, rare: 0.01 }; // room level 1 base chance
 const ROOM_ENCHANT_STONE_BASE   = 0.01; // room level 1 base chance (Камень обычной заточки)
 const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
 
-function roomStrengthMult(lvl) {
-  return Math.pow(1 + ROOM_STRENGTH_GROWTH, Math.max(1, lvl || 1) - 1);
+// Relative HP growth from a corridor's first room to local room `lvl` —
+// purely for the in-game "room progression" info panel (js/ui.js); real
+// spawn stats always come from monsterHPAtLevel/monsterStatsAtLevel above.
+// Unlike the old per-room multiplier this isn't the same for every corridor:
+// past the level-15 soft cap the curve is steeper, so later corridors (whose
+// rooms are entirely past that cap) show a steeper in-corridor ratio too.
+function armRoomStrengthRatio(armIdx, lvl) {
+  const start = (Math.max(1, armIdx || 1) - 1) * ROOMS_PER_ARM + 1;
+  return monsterHPAtLevel(start + Math.max(1, lvl || 1) - 1) / monsterHPAtLevel(start);
 }
 function roomDropMult(lvl) {
   return Math.pow(1 + ROOM_DROP_GROWTH, Math.max(1, lvl || 1) - 1);
@@ -290,11 +346,13 @@ const VIP_BONUSES = [
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, calcGoldDrop,
   ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM, armIndexForLevel, armNameForLevel, armLocalLevel,
-  EARLY_LEVEL_BUFF_MAX, EARLY_LEVEL_BUFF_MULT, earlyLevelBuffMult,
+  MONSTER_LEVEL_SOFT_CAP, MONSTER_HP_GROWTH, MONSTER_ATK_GROWTH, MONSTER_ARCHETYPE,
+  BOSS_HP_MULT, BOSS_ATK_MULT,
+  monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel, armRoomStrengthRatio,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   FLOOR_RARITY_DROPS, BOSS_RARITY_DROP_MULT,
-  ROOM_STRENGTH_GROWTH, ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
+  ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
-  roomStrengthMult, roomDropMult, roomKeyChance, roomEnchantStoneChance,
+  roomDropMult, roomKeyChance, roomEnchantStoneChance,
 };

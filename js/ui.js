@@ -476,8 +476,6 @@ function updateFloorUI() {
 
 function showFloorInfo(arm) {
   const floor = arm || (typeof _getRoomAt === 'function' && player ? armIndexForLevel((_getRoomAt(player.x, player.y)?.monsterLvl) || 1) : 1);
-  const sc    = 1 + (floor - 1) * 0.28;
-  const atkSc = 1 + (floor - 1) * 0.18;
 
   const { regular: regularPool, boss } = _floorEnemyPool(floor);
   const allEnemies = boss ? [...regularPool, boss] : regularPool;
@@ -496,8 +494,8 @@ function showFloorInfo(arm) {
 
   const html = allEnemies.map(e => {
     const isBoss = !!e.isBoss;
-    const hp     = Math.floor(e.hp  * sc);
-    const atk    = Math.floor(e.atk * atkSc);
+    const hp     = e.hp;
+    const atk    = e.atk;
 
     // Gold drop text
     let goldText;
@@ -633,24 +631,26 @@ function showFloorInfo(arm) {
   const _fiTh = getTheme(floor);
   const _armName = ARM_NAMES[floor - 1];
   modal.querySelector('.fi-title').textContent = (_ARM_LABELS[_armName] || _fiTh.name) + ' · ' + _fiTh.name;
-  document.getElementById('floor-info-body').innerHTML = html + _roomProgressionSection() + _boxInfoSection();
+  document.getElementById('floor-info-body').innerHTML = html + _roomProgressionSection(floor) + _boxInfoSection();
   modal.style.display = 'flex';
 }
 
-// Each corridor chains ROOMS_PER_ARM rooms of increasing "local room
-// level" (1 = weakest, the last = that corridor's boss room). Each level compounds
-// monster strength +10%, item-drop chance +5%, key-drop chance +5%, and
-// enchant-stone chance +1% over the previous level — see ROOM_* / room*()
-// helpers in shared/definitions.js. This progression resets at the start of
-// every corridor; overall difficulty across corridors comes from the arm
-// index (left→right = weakest→strongest theme).
-function _roomProgressionSection() {
-  if (typeof roomStrengthMult !== 'function') return '';
+// Each corridor chains ROOMS_PER_ARM rooms of increasing "local room level"
+// (1 = weakest, the last = that corridor's boss room). Monster strength now
+// comes from the global level curve (monsterHPAtLevel in
+// shared/definitions.js — linear through level 15, then compounding), so the
+// "Сила" column below is corridor-specific past that point, not a flat
+// +10%/room like the older floors were. Drop/key/enchant chance still
+// compound flatly per room level — see ROOM_* / room*() helpers.
+// Overall difficulty across corridors also comes from the arm index
+// (left→right = weakest→strongest theme).
+function _roomProgressionSection(armIdx) {
+  if (typeof armRoomStrengthRatio !== 'function') return '';
   const n = typeof ROOMS_PER_ARM !== 'undefined' ? ROOMS_PER_ARM : 20;
   const _fmtPctN = v => v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%';
   const rows = Array.from({ length: n }, (_, i) => i + 1).map(lvl => {
     const isBossRoom = lvl === n;
-    const str  = roomStrengthMult(lvl);
+    const str  = armRoomStrengthRatio(armIdx, lvl);
     const drop = roomDropMult(lvl);
     const ku   = roomKeyChance(lvl, 'uncommon') * 100;
     const kr   = roomKeyChance(lvl, 'rare') * 100;
@@ -669,7 +669,8 @@ function _roomProgressionSection() {
       <div class="fi-mhdr"><span class="fi-mname" style="color:#e5a546">Прогрессия комнат в коридоре (1–${n})</span></div>
       <div style="font-size:10px;color:#968a7a;margin-bottom:8px;line-height:1.5">
         Комната 1 — первая от центрального зала (слабейшие монстры), комната ${n} — комната босса коридора (сильнейшие).
-        Каждый уровень: сила монстра +10%, шанс дропа предметов +5%, шанс ключей +5%, шанс заточки +1% относительно предыдущего.
+        «Сила» — рост HP монстра относительно комнаты 1 этого коридора. Шанс дропа предметов +5%, шанс ключей +5%,
+        шанс заточки +1% за уровень комнаты относительно предыдущего.
       </div>
       <div style="overflow-x:auto">
         <table class="fi-room-table">

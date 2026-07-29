@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, roomStrengthMult, earlyLevelBuffMult, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, monsterStatsAtLevel, ARM_NAMES, ROOM_PAIRS_PER_ARM, ROOMS_PER_ARM } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -100,8 +100,6 @@ function generateOpenWorld() {
   function buildArm(dir, armIdx) {
     const horizontal = dir === 'left' || dir === 'right';
     const sign = (dir === 'left' || dir === 'top') ? -1 : 1;
-    const sc    = 1 + (armIdx - 1) * 0.28;
-    const atkSc = 1 + (armIdx - 1) * 0.18;
     const fe = FLOOR_ENEMIES[armIdx];
     function pickEnemy(isBoss) {
       const id = isBoss ? fe.boss : fe.pool[Math.floor(rng() * fe.pool.length)];
@@ -121,10 +119,8 @@ function generateOpenWorld() {
     }
 
     function spawnRoomEnemies(room, x, y, size, isBoss) {
-      const rMult = isBoss ? 1 : roomStrengthMult(room.localLvl);
-      const buff = earlyLevelBuffMult(room.monsterLvl);
       const count = isBoss ? 1 : (room.isSmall ? 5 : 10);
-      const weakMult = isBoss ? 1 : 0.5;
+      const weakMult = isBoss ? 1 : 0.5; // regular monsters spawn in packs — halved individually
       for (let n = 0; n < count; n++) {
         const d = pickEnemy(isBoss);
         if (!d) continue;
@@ -134,11 +130,13 @@ function generateOpenWorld() {
           const gy = y + 1 + Math.floor(rng() * Math.max(1, size - 2));
           if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
         }
+        const stats = monsterStatsAtLevel(room.monsterLvl, isBoss ? 'boss' : d.eType);
         enemyList.push({
           id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
           rlvl: room.monsterLvl,
-          maxHp: Math.floor(d.hp * sc * weakMult * rMult * buff), hp: Math.floor(d.hp * sc * weakMult * rMult * buff),
-          atk: Math.floor(d.atk * atkSc * weakMult * rMult * buff),
+          maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+          atk: Math.floor(stats.atk * weakMult),
+          def: stats.def,
           x: ex, y: ey, spawnX: ex, spawnY: ey,
           atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
         });
