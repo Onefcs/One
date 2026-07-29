@@ -275,7 +275,15 @@ function craftSpecificItem(idx) {
       if (mat) { addToInventory({ ...mat }); _shopMsg('✓ Создано: ' + mat.name); }
     } else {
       const item = ITEM_DEF.find(i => i.id === rec.itemId);
-      if (item) { addToInventory({ ...item }); _shopMsg('✓ Создано: ' + item.name); }
+      if (item) {
+        // Crafting consumes 2 items enhanced to the recipe's minEnhance (e.g.
+        // +8) — the result comes out pre-enhanced 2 levels below that (+6),
+        // instead of starting back at +0.
+        const baseMat = rec.mats.find(m => m.minEnhance != null);
+        const enhance = baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
+        addToInventory(enhance > 0 ? { ...item, enhance } : { ...item });
+        _shopMsg('✓ Создано: ' + item.name + (enhance ? ' +' + enhance : ''));
+      }
     }
   } else {
     _shopMsg('Провал! Материалы потеряны.');
