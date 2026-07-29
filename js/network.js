@@ -127,6 +127,7 @@ function netConnect(onReady) {
   socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs }) => {
     dungeonLvl = floor;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
+    if (typeof _buildArmGates === 'function') _buildArmGates();
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
@@ -1073,7 +1074,7 @@ function _buildSaveStats() {
     potionBag: player.potionBag || { pt1: 0, pt2: 0 },
     hudPotion: player.hudPotion || 'pt1',
     buffs: player.buffs || {},
-    autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0.5,
+    autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0,
     upgrades: player.upgrades || {},
     questIdx: player.questIdx || 0,
     questKills: player.questKills || {},

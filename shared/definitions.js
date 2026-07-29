@@ -285,6 +285,11 @@ function armNameForLevel(lvl) {
   return ARM_NAMES[armIndexForLevel(lvl) - 1];
 }
 
+// Character level required to pass through each arm's hub door — a level-1
+// player wandering straight into arm 3's monsters would just get shredded, so
+// the entrance doubles as a gate matching where the PREVIOUS arm tops out.
+const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
+
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
 // and server-side validation (e.g. the Market only ever stores a listing's
@@ -463,7 +468,7 @@ if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armNameForLevel, armLocalLevel,
+  armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

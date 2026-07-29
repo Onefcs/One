@@ -1384,13 +1384,13 @@ function drawPotionButton() {
   if (hudDef && hudDef.img) {
     const img = _getPotImg(hudDef.img);
     if (img && img.complete && img.naturalWidth > 0) {
-      const is = 22;
+      const is = Math.round(pb.r * 0.85);
       ctx.drawImage(img, pb.x - is / 2, pb.y - is / 2 - 5, is, is);
     } else {
-      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, '#7c7364');
+      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), '#7c7364');
     }
   } else {
-    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, ready && cd <= 0 ? '#90d653' : '#7c7364');
+    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), ready && cd <= 0 ? '#90d653' : '#7c7364');
   }
 
   ctx.globalAlpha = 1;
@@ -1658,7 +1658,7 @@ function drawAttackButton() {
 
   ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
   const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
-  drawIconCtx(ctx, 'sword', ab.x, ab.y, 26, iconColor);
+  drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
 
   ctx.globalAlpha = 1;
   ctx.restore();

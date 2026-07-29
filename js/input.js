@@ -26,8 +26,9 @@ function getSkillBtnPos(idx) {
   };
 }
 
-// Potion and Target are now stacked ABOVE the 2×2 skill grid
-function getPotionBtnPos() {
+// Attack and Target are stacked ABOVE the 2×2 skill grid (row); Potion now
+// takes the bigger primary slot above that row (swapped with Attack).
+function getAttackBtnPos() {
   const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
   const gridTop = H - NAV_H - 14 - 2 * sz - gap;
   return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
@@ -55,18 +56,18 @@ function getPartyBtnPos() {
   return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
-// ATK is above the potion/target row; AUTO sits directly above ATK
-function getAttackBtnPos() {
+// Potion is above the attack/target row; AUTO sits directly above Potion
+function getPotionBtnPos() {
   const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
-  const pb = getPotionBtnPos();
-  return { x: W - 14 - sz / 2, y: pb.y - pb.r - gap - r, r };
+  const ab = getAttackBtnPos();
+  return { x: W - 14 - sz / 2, y: ab.y - ab.r - gap - r, r };
 }
 
 function getAutoBtnPos() {
-  const ab = getAttackBtnPos();
+  const pb = getPotionBtnPos();
   const gap = SKILL_GAP;
   const w = 52, h = 22;
-  return { x: ab.x - w / 2, y: ab.y - ab.r - gap - h, w, h };
+  return { x: pb.x - w / 2, y: pb.y - pb.r - gap - h, w, h };
 }
 
 // Invite accept/decline buttons (for popup)
@@ -140,11 +141,42 @@ function _checkSkillTouch(cx, cy) {
   return false;
 }
 
-function _checkPotionTouch(cx, cy) {
+// Potion button: a quick tap uses the potion immediately; holding it down
+// opens the auto-use settings picker instead (and suppresses the tap-use).
+const POTION_LONGPRESS_MS = 450;
+let _potionTouchId = null;
+let _potionPressTimer = null;
+let _potionLongFired = false;
+
+function _potionPressStart(touchId) {
+  _potionTouchId = touchId;
+  _potionLongFired = false;
+  clearTimeout(_potionPressTimer);
+  _potionPressTimer = setTimeout(() => {
+    _potionLongFired = true;
+    if (typeof openHpPicker === 'function') openHpPicker();
+  }, POTION_LONGPRESS_MS);
+}
+
+function _potionPressEnd(touchId) {
+  if (_potionTouchId !== touchId) return;
+  clearTimeout(_potionPressTimer);
+  _potionPressTimer = null;
+  _potionTouchId = null;
+  if (!_potionLongFired) usePotion();
+}
+
+function _potionPressCancel(touchId) {
+  if (touchId !== undefined && _potionTouchId !== touchId) return;
+  clearTimeout(_potionPressTimer);
+  _potionPressTimer = null;
+  _potionTouchId = null;
+}
+
+function _checkPotionTouch(cx, cy, touchId) {
   const pb = getPotionBtnPos();
   if (Math.hypot(cx - pb.x, cy - pb.y) < pb.r + 6) {
-    if (typeof openHpPicker === 'function') openHpPicker();
-    else usePotion();
+    _potionPressStart(touchId);
     return true;
   }
   return false;
@@ -266,7 +298,7 @@ function onTS(e) {
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
-    if (_checkPotionTouch(p.x, p.y)) continue;
+    if (_checkPotionTouch(p.x, p.y, t.identifier)) continue;
     if (_checkTargetBtnTouch(p.x, p.y)) continue;
     if (_checkSkillTouch(p.x, p.y)) continue;
     _trySelectEntityAtTouch(p.x, p.y);
@@ -288,20 +320,30 @@ function onTM(e) {
   // attacking, anything) happened to be assigned the same reused id, its
   // touchmove would silently hijack the joystick — matching what looks
   // like "the joystick keeps steering no matter where I tap afterwards."
-  for (const t of e.changedTouches)
+  for (const t of e.changedTouches) {
     if (joy.active && t.identifier === joy.id) {
       const p = _toCanvasXY(t.clientX, t.clientY);
       setJoy(p.x, p.y);
     }
+    // Dragging off the potion button cancels a pending tap/long-press
+    // instead of firing either once the finger lifts elsewhere.
+    if (t.identifier === _potionTouchId) {
+      const p = _toCanvasXY(t.clientX, t.clientY);
+      const pb = getPotionBtnPos();
+      if (Math.hypot(p.x - pb.x, p.y - pb.y) > pb.r + 40) _potionPressCancel(t.identifier);
+    }
+  }
 }
 
 function onTE(e) {
-  for (const t of e.changedTouches)
+  for (const t of e.changedTouches) {
     if (t.identifier === joy.id) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
+    _potionPressEnd(t.identifier);
+  }
   if (e.touches.length === 0) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
 }
 
-function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
+function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; _potionPressCancel(); }
 
 function onMD(e) {
   const p = _toCanvasXY(e.clientX, e.clientY);
@@ -315,7 +357,7 @@ function onMD(e) {
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y)) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;
-  if (_checkPotionTouch(p.x, p.y)) return;
+  if (_checkPotionTouch(p.x, p.y, 'mouse')) return;
   if (_checkTargetBtnTouch(p.x, p.y)) return;
   if (_checkSkillTouch(p.x, p.y)) return;
   _trySelectEntityAtTouch(p.x, p.y);
@@ -325,12 +367,17 @@ function onMD(e) {
 }
 
 function onMM(e) {
+  if (_potionTouchId === 'mouse') {
+    const p = _toCanvasXY(e.clientX, e.clientY);
+    const pb = getPotionBtnPos();
+    if (Math.hypot(p.x - pb.x, p.y - pb.y) > pb.r + 40) _potionPressCancel('mouse');
+  }
   if (joy.active && joyGuard()) {
     const p = _toCanvasXY(e.clientX, e.clientY);
     setJoy(p.x, p.y);
   }
 }
-function onMU()  { joy.active = false; joy.dx = 0; joy.dy = 0; }
+function onMU()  { joy.active = false; joy.dx = 0; joy.dy = 0; _potionPressEnd('mouse'); }
 
 function setJoy(cx, cy) {
   const dx = cx - joy.sx, dy = cy - joy.sy, len = Math.hypot(dx, dy);

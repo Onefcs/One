@@ -89,7 +89,7 @@ function makePlayer(type) {
     hudPotion: 'pt1',
     buffs: {},
     potCd: 0,
-    autoHpPct: 0.5,
+    autoHpPct: 0,
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
     skillLevels: { Q:0, W:0, E:0, R:0 },
     skillXp: { Q:0, W:0, E:0, R:0 },
@@ -720,7 +720,7 @@ function restoreFromSave(data) {
   player.hudPotion  = data.hudPotion  || 'pt1';
   player.buffs      = data.buffs      || {};
   player.potCd      = 0;
-  player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0.5;
+  player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0;
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;

@@ -193,8 +193,8 @@ function update(dt) {
         // (inputDir() normalizes them), so no inp.len factor here.
         const vx = inp.dx * player.speed * _spdMult * dt;
         const vy = inp.dy * player.speed * _spdMult * dt;
-        if (canMoveX(player, vx, 12)) player.x += vx;
-        if (canMoveY(player, vy, 12)) player.y += vy;
+        if (canMoveX(player, vx, 12) && !_isGateBlocked(player.x + vx, player.y)) player.x += vx;
+        if (canMoveY(player, vy, 12) && !_isGateBlocked(player.x, player.y + vy)) player.y += vy;
         // 8-way facing from joystick angle, with hysteresis: near a sector
         // boundary, tiny input jitter would otherwise flip facing (and
         // restart the run animation) every frame. The new angle must move
@@ -213,8 +213,8 @@ function update(dt) {
           if (_clen > player.charDef.atkRange * 0.85) {
             const nvx = (_cdx / _clen) * player.speed * _spdMult * dt;
             const nvy = (_cdy / _clen) * player.speed * _spdMult * dt;
-            if (canMoveX(player, nvx, 12)) player.x += nvx;
-            if (canMoveY(player, nvy, 12)) player.y += nvy;
+            if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y)) player.x += nvx;
+            if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy)) player.y += nvy;
             faceTowards(_chEnt.x, _chEnt.y);
             player._chasing = true;
           } else {
@@ -291,6 +291,8 @@ function update(dt) {
       dmgNum(player.x, player.y - 40, 'ПК режим выключен', '#edc174');
     }
   }
+
+  _updateArmGates(dt);
 
   // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
@@ -937,6 +939,7 @@ function render(dt, ts) {
   // Player name + joystick: 60fps (smooth, cheap)
   if (player && dungeon) _drawPlayerNameOnUI();
   if (dungeon) _drawOtherPlayerNamesOnUI();
+  if (player && dungeon) drawArmGates();
   if (activeTab === 0) drawJoystick();
 
   // Safe zone HUD label (on top of HUD)
@@ -993,6 +996,7 @@ function enterRaidMode(data) {
     clampCamera();
   }
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  if (typeof _buildArmGates === 'function') _buildArmGates();
   serverEnemies.length = 0; serverEnemiesMap.clear();
   otherPlayers = new Map();
   projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
@@ -1015,6 +1019,7 @@ function exitRaidMode() {
   }
   _normalPlayerX = null; _normalPlayerY = null;
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  if (typeof _buildArmGates === 'function') _buildArmGates();
   serverEnemies.length = 0; serverEnemiesMap.clear();
   otherPlayers = new Map();
   projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
@@ -1043,6 +1048,7 @@ function enterPartyDungeonMode(data) {
     clampCamera();
   }
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  if (typeof _buildArmGates === 'function') _buildArmGates();
   serverEnemies.length = 0; serverEnemiesMap.clear();
   otherPlayers = new Map();
   projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
@@ -1065,6 +1071,7 @@ function exitPartyDungeonMode() {
   }
   _normalPlayerX = null; _normalPlayerY = null;
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
+  if (typeof _buildArmGates === 'function') _buildArmGates();
   serverEnemies.length = 0; serverEnemiesMap.clear();
   otherPlayers = new Map();
   projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
@@ -1109,6 +1116,94 @@ function inSafeZone(px, py) {
   if (!dungeon || !dungeon.safeZone) return false;
   const sz = dungeon.safeZone;
   return px >= sz.x1 && px <= sz.x2 && py >= sz.y1 && py <= sz.y2;
+}
+
+// ─────────────────────────────────────────────────────────
+//  ARM GATES — level-gated teleport pads at each hub door
+// ─────────────────────────────────────────────────────────
+// Each corridor's hub door gets a glowing pad marking the entrance; crossing
+// it while under the arm's required level (ARM_LEVEL_REQ, shared/definitions.js)
+// is blocked like a wall instead of just letting weak characters wander into
+// a much stronger arm's monsters. Rebuilt any time `dungeon` changes (see
+// _buildArmGates() call sites in network.js/game.js).
+let _armGates = null;
+const _enteredArms = new Set();
+let _gateMsgCd = 0;
+const _ARM_LABEL = { left: 'левый', top: 'верхний', bottom: 'нижний', right: 'правый' };
+
+function _buildArmGates() {
+  if (!dungeon || !dungeon.spawnDoors || typeof ARM_LEVEL_REQ === 'undefined') { _armGates = []; return; }
+  _armGates = dungeon.spawnDoors.map(door => {
+    const horizontal = door.dir === 'left' || door.dir === 'right'; // gap is 2 tiles tall
+    const x = horizontal ? door.tx * TILE + TILE / 2 : (door.tx + 1) * TILE;
+    const y = horizontal ? (door.ty + 1) * TILE : door.ty * TILE + TILE / 2;
+    return { dir: door.dir, x, y, horizontal, req: ARM_LEVEL_REQ[door.dir] || 0 };
+  });
+}
+
+function _isGateBlocked(wx, wy) {
+  if (!player || !_armGates) return false;
+  for (const g of _armGates) {
+    if (g.req <= 0 || (player.lvl || 1) >= g.req) continue;
+    const halfW = 70, thick = 22; // wide enough to span the 3-tile-wide main corridor
+    if (g.horizontal ? (Math.abs(wx - g.x) < thick && Math.abs(wy - g.y) < halfW)
+                      : (Math.abs(wy - g.y) < thick && Math.abs(wx - g.x) < halfW)) return true;
+  }
+  return false;
+}
+
+// Called once per frame from update(): shows a throttled lock message near a
+// gate the player can't pass yet, and fires a one-time "teleport" flourish
+// the first time they cross an unlocked one this session.
+function _updateArmGates(dt) {
+  if (!player || !_armGates || !_armGates.length) return;
+  if (_gateMsgCd > 0) _gateMsgCd -= dt;
+  for (const g of _armGates) {
+    if (dist(player.x, player.y, g.x, g.y) >= 90) continue;
+    if (g.req > 0 && (player.lvl || 1) < g.req) {
+      if (_gateMsgCd <= 0) {
+        dmgNum(player.x, player.y - 40, `🔒 Нужен ${g.req} уровень`, '#f17e8b');
+        _gateMsgCd = 1.5;
+      }
+    } else if (!_enteredArms.has(g.dir)) {
+      _enteredArms.add(g.dir);
+      spawnBurst(g.x, g.y, '#7fd7ff', 16);
+      dmgNum(g.x, g.y - 30, `→ Вы вошли в ${_ARM_LABEL[g.dir]} коридор`, '#7fd7ff', 15);
+    }
+  }
+}
+
+function drawArmGates() {
+  if (!player || !_armGates || !_armGates.length) return;
+  const t = _nowMs / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
+  for (const g of _armGates) {
+    const sx = (g.x - _lastCamX) * ZOOM;
+    const sy = (g.y - _lastCamY) * ZOOM + HEADER_H;
+    if (sx < -60 || sx > W + 60 || sy < -60 || sy > H + 60) continue;
+    const locked = g.req > 0 && (player.lvl || 1) < g.req;
+    const baseR = 34 * ZOOM;
+
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = locked ? 'rgba(90,20,26,0.35)' : 'rgba(30,90,110,0.28)';
+    ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.55 + 0.25 * pulse;
+    ctx.strokeStyle = locked ? '#eb4e61' : '#7fd7ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(sx, sy, baseR + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+
+    if (g.req > 0) {
+      const lbl = locked ? `🔒 Ур. ${g.req}` : `Ур. ${g.req}`;
+      ctx.font = 'bold 11px system-ui, Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+      ctx.strokeText(lbl, sx, sy + baseR + 14);
+      ctx.fillStyle = locked ? '#f17e8b' : '#a8e9ff';
+      ctx.fillText(lbl, sx, sy + baseR + 14);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────
