@@ -248,7 +248,16 @@ function _checkAttackBtnTouch(cx, cy) {
   if (!player) return false;
   const ab = getAttackBtnPos();
   if (Math.hypot(cx - ab.x, cy - ab.y) < ab.r + 8) {
-    if ((player.atkAnimTimer || 0) <= 0) { player.atkTimer = -1; _chaseArmed = true; } // ignore while animation is playing
+    // Only force an immediate swing on a FRESH press. Once sustained attack
+    // is already armed (or full autoAttackMode is on), atkTimer is already
+    // ticking down toward the next swing on its own — forcing it to -1 again
+    // here on a repeat tap would skip whatever cooldown is left and fire
+    // faster than the character's real attack speed (this was the manual-
+    // attack-feels-faster-than-auto bug).
+    if (!_chaseArmed && !autoAttackMode && (player.atkAnimTimer || 0) <= 0) {
+      player.atkTimer = -1;
+    }
+    _chaseArmed = true;
     return true;
   }
   return false;

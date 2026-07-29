@@ -316,7 +316,7 @@ function netConnect(onReady) {
       if (op) {
         op.hp = hp;
         op.hurtTimer = 0.1;
-        if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+        if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
       }
     }
   });
@@ -420,7 +420,7 @@ function netConnect(onReady) {
   }
 
   socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum }) => {
-    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
@@ -666,6 +666,7 @@ function netConnect(onReady) {
   });
 
   socket.on('raidEnemyKilled', ({ id, ex, ey, isBoss, normStone, blessStone }) => {
+    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
@@ -823,7 +824,7 @@ function netConnect(onReady) {
   });
 
   socket.on('partyDungeonEnemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, isBoss, normStone, blessStone }) => {
-    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; }
+    if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
