@@ -39,13 +39,13 @@ const UPGRADE_DEF = {
 const QUEST_DEF = [
   // ── Левый коридор · Крысиные катакомбы (квесты 1-15) ────
   { id:'f1q1',  floor:1, title:'Первая кровь',        desc:'Убей 10 Крыса страж',        type:'kill',         enemies:['Крыса страж'],      count:10,  reward:{ xp:50,   gold:25  } },
-  { id:'f1q2',  floor:1, title:'Страж падёт',         desc:'Убей 10 Крыса воин',         type:'kill',         enemies:['Крыса воин'],       count:10,  reward:{ xp:50,   gold:25  } },
+  { id:'f1q2',  floor:1, title:'Страж падёт',         desc:'Убей 10 Слизень страж',      type:'kill',         enemies:['Слизень страж'],    count:10,  reward:{ xp:50,   gold:25  } },
   { id:'f1q3',  floor:1, title:'Торговля',            desc:'Купи 10 зелий',              type:'buy_potion',                                 count:10,  reward:{ xp:60,   gold:30  } },
-  { id:'f1q4',  floor:1, title:'Охотник',             desc:'Убей 30 Крыса страж',        type:'kill',         enemies:['Крыса страж'],      count:30,  reward:{ xp:120,  gold:60  } },
+  { id:'f1q4',  floor:1, title:'Охотник',             desc:'Убей 30 Бес страж',          type:'kill',         enemies:['Бес страж'],        count:30,  reward:{ xp:120,  gold:60  } },
   { id:'f1q5',  floor:1, title:'Каратель',            desc:'Убей 30 Крыса воин',         type:'kill',         enemies:['Крыса воин'],       count:30,  reward:{ xp:120,  gold:60  } },
   { id:'f1q6',  floor:1, title:'Опытный боец',        desc:'Достигни 3 уровня',          type:'level',        level:3,                      reward:{ xp:150,  gold:75  } },
-  { id:'f1q7',  floor:1, title:'Ловец слизи',         desc:'Убей 50 Слизень страж',      type:'kill',         enemies:['Слизень страж'],    count:50,  reward:{ xp:200,  gold:100 } },
-  { id:'f1q8',  floor:1, title:'Гроза болот',         desc:'Убей 50 Слизень воин',       type:'kill',         enemies:['Слизень воин'],     count:50,  reward:{ xp:200,  gold:100 } },
+  { id:'f1q7',  floor:1, title:'Ловец слизи',         desc:'Убей 50 Слизень воин',       type:'kill',         enemies:['Слизень воин'],     count:50,  reward:{ xp:200,  gold:100 } },
+  { id:'f1q8',  floor:1, title:'Гроза бесов',         desc:'Убей 50 Бес воин',           type:'kill',         enemies:['Бес воин'],         count:50,  reward:{ xp:200,  gold:100 } },
   { id:'f1q9',  floor:1, title:'Изгоняющий бесов',    desc:'Убей Босс бесов',            type:'kill',         enemies:['Босс бесов'],       count:1,   reward:{ xp:300,  gold:150 } },
   { id:'f1q10', floor:1, title:'Ветеран',             desc:'Достигни 5 уровня',          type:'level',        level:5,                      reward:{ xp:350,  gold:175 } },
   { id:'f1q11', floor:1, title:'Покоритель',          desc:'Дойди до конца левого коридора', type:'dungeon_clear',floor:1, count:1,          reward:{ xp:400,  gold:200 } },
@@ -56,13 +56,13 @@ const QUEST_DEF = [
 
   // ── Верхний коридор · Гнилые топи (квесты 16-30) · награда ×2 ──
   { id:'f2q1',  floor:2, title:'Первая кровь II',     desc:'Убей 10 Зомби страж',        type:'kill',         enemies:['Зомби страж'],      count:10,  reward:{ xp:100,  gold:50  } },
-  { id:'f2q2',  floor:2, title:'Страж падёт II',      desc:'Убей 10 Зомби воин',         type:'kill',         enemies:['Зомби воин'],       count:10,  reward:{ xp:100,  gold:50  } },
+  { id:'f2q2',  floor:2, title:'Страж падёт II',      desc:'Убей 10 Ящер страж',         type:'kill',         enemies:['Ящер страж'],       count:10,  reward:{ xp:100,  gold:50  } },
   { id:'f2q3',  floor:2, title:'Торговля II',         desc:'Купи 10 зелий',              type:'buy_potion',                                 count:10,  reward:{ xp:120,  gold:60  } },
-  { id:'f2q4',  floor:2, title:'Охотник II',          desc:'Убей 30 Зомби страж',        type:'kill',         enemies:['Зомби страж'],      count:30,  reward:{ xp:240,  gold:120 } },
+  { id:'f2q4',  floor:2, title:'Охотник II',          desc:'Убей 30 Орк страж',          type:'kill',         enemies:['Орк страж'],        count:30,  reward:{ xp:240,  gold:120 } },
   { id:'f2q5',  floor:2, title:'Каратель II',         desc:'Убей 30 Зомби воин',         type:'kill',         enemies:['Зомби воин'],       count:30,  reward:{ xp:240,  gold:120 } },
   { id:'f2q6',  floor:2, title:'Опытный боец II',     desc:'Достигни 7 уровня',          type:'level',        level:7,                      reward:{ xp:300,  gold:150 } },
-  { id:'f2q7',  floor:2, title:'Охотник на ящеров',   desc:'Убей 50 Ящер страж',         type:'kill',         enemies:['Ящер страж'],       count:50,  reward:{ xp:400,  gold:200 } },
-  { id:'f2q8',  floor:2, title:'Чешуйчатая смерть',   desc:'Убей 50 Ящер воин',          type:'kill',         enemies:['Ящер воин'],        count:50,  reward:{ xp:400,  gold:200 } },
+  { id:'f2q7',  floor:2, title:'Охотник на ящеров',   desc:'Убей 50 Ящер воин',          type:'kill',         enemies:['Ящер воин'],        count:50,  reward:{ xp:400,  gold:200 } },
+  { id:'f2q8',  floor:2, title:'Ярость орков',        desc:'Убей 50 Орк воин',           type:'kill',         enemies:['Орк воин'],         count:50,  reward:{ xp:400,  gold:200 } },
   { id:'f2q9',  floor:2, title:'Убийца боссов II',    desc:'Убей Босс орков',            type:'kill',         enemies:['Босс орков'],       count:1,   reward:{ xp:600,  gold:300 } },
   { id:'f2q10', floor:2, title:'Ветеран II',          desc:'Достигни 10 уровня',         type:'level',        level:10,                     reward:{ xp:700,  gold:350 } },
   { id:'f2q11', floor:2, title:'Покоритель II',       desc:'Дойди до конца верхнего коридора', type:'dungeon_clear',floor:2, count:2,        reward:{ xp:800,  gold:400 } },
@@ -73,13 +73,13 @@ const QUEST_DEF = [
 
   // ── Нижний коридор · Кровавые чертоги (квесты 31-45) · награда ×4 ──
   { id:'f3q1',  floor:3, title:'Первая кровь III',    desc:'Убей 10 Лоза страж',         type:'kill',         enemies:['Лоза страж'],       count:10,  reward:{ xp:200,  gold:100  } },
-  { id:'f3q2',  floor:3, title:'Страж падёт III',     desc:'Убей 10 Лоза воин',          type:'kill',         enemies:['Лоза воин'],        count:10,  reward:{ xp:200,  gold:100  } },
+  { id:'f3q2',  floor:3, title:'Страж падёт III',     desc:'Убей 10 Вампир страж',       type:'kill',         enemies:['Вампир страж'],     count:10,  reward:{ xp:200,  gold:100  } },
   { id:'f3q3',  floor:3, title:'Торговля III',        desc:'Купи 10 зелий',              type:'buy_potion',                                 count:10,  reward:{ xp:240,  gold:120  } },
-  { id:'f3q4',  floor:3, title:'Охотник III',         desc:'Убей 30 Лоза страж',         type:'kill',         enemies:['Лоза страж'],       count:30,  reward:{ xp:480,  gold:240  } },
+  { id:'f3q4',  floor:3, title:'Охотник III',         desc:'Убей 30 Бехолдер страж',     type:'kill',         enemies:['Бехолдер страж'],   count:30,  reward:{ xp:480,  gold:240  } },
   { id:'f3q5',  floor:3, title:'Каратель III',        desc:'Убей 30 Лоза воин',          type:'kill',         enemies:['Лоза воин'],        count:30,  reward:{ xp:480,  gold:240  } },
   { id:'f3q6',  floor:3, title:'Опытный боец III',    desc:'Достигни 15 уровня',         type:'level',        level:15,                     reward:{ xp:600,  gold:300  } },
-  { id:'f3q7',  floor:3, title:'Охотник на вампиров', desc:'Убей 50 Вампир страж',       type:'kill',         enemies:['Вампир страж'],     count:50,  reward:{ xp:800,  gold:400  } },
-  { id:'f3q8',  floor:3, title:'Кровавая жатва',      desc:'Убей 50 Вампир воин',        type:'kill',         enemies:['Вампир воин'],      count:50,  reward:{ xp:800,  gold:400  } },
+  { id:'f3q7',  floor:3, title:'Охотник на вампиров', desc:'Убей 50 Вампир воин',        type:'kill',         enemies:['Вампир воин'],      count:50,  reward:{ xp:800,  gold:400  } },
+  { id:'f3q8',  floor:3, title:'Взгляд бездны',       desc:'Убей 50 Бехолдер воин',      type:'kill',         enemies:['Бехолдер воин'],    count:50,  reward:{ xp:800,  gold:400  } },
   { id:'f3q9',  floor:3, title:'Убийца боссов III',   desc:'Убей Босс бехолдеров',       type:'kill',         enemies:['Босс бехолдеров'],  count:1,   reward:{ xp:1200, gold:600  } },
   { id:'f3q10', floor:3, title:'Ветеран III',         desc:'Достигни 20 уровня',         type:'level',        level:20,                     reward:{ xp:1400, gold:700  } },
   { id:'f3q11', floor:3, title:'Покоритель III',      desc:'Дойди до конца нижнего коридора', type:'dungeon_clear',floor:3, count:3,         reward:{ xp:1600, gold:800  } },
@@ -90,7 +90,7 @@ const QUEST_DEF = [
 
   // ── Правый коридор · Врата преисподней (квесты 46-60) · награда ×8 ──
   { id:'f4q1',  floor:4, title:'Первая кровь IV',     desc:'Убей 10 Древень страж',      type:'kill',         enemies:['Древень страж'],    count:10,  reward:{ xp:400,  gold:200  } },
-  { id:'f4q2',  floor:4, title:'Страж падёт IV',      desc:'Убей 10 Древень воин',       type:'kill',         enemies:['Древень воин'],     count:10,  reward:{ xp:400,  gold:200  } },
+  { id:'f4q2',  floor:4, title:'Страж падёт IV',      desc:'Убей 10 Демон страж',        type:'kill',         enemies:['Демон страж'],      count:10,  reward:{ xp:400,  gold:200  } },
   { id:'f4q3',  floor:4, title:'Торговля IV',         desc:'Купи 10 зелий',              type:'buy_potion',                                 count:10,  reward:{ xp:480,  gold:240  } },
   { id:'f4q4',  floor:4, title:'Охотник IV',          desc:'Убей 30 Древень страж',      type:'kill',         enemies:['Древень страж'],    count:30,  reward:{ xp:960,  gold:480  } },
   { id:'f4q5',  floor:4, title:'Каратель IV',         desc:'Убей 30 Древень воин',       type:'kill',         enemies:['Древень воин'],     count:30,  reward:{ xp:960,  gold:480  } },

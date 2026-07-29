@@ -454,13 +454,11 @@ function updateQuestUI() {
     const floorQuests = QUEST_DEF.map((q, i) => ({ q, i })).filter(({ q }) => (q.floor || 1) === floorNum);
     const firstIdx    = floorQuests[0].i;
     const lastIdx     = floorQuests[floorQuests.length - 1].i;
-    // Floor section is locked if player hasn't reached its first quest yet
+    // Floor section is locked if player hasn't reached its first quest yet —
+    // just don't show anything for it yet (no "will unlock on floor N" teaser;
+    // completing everything above is what reveals it, see player.questIdx).
     const floorLocked = player.questIdx < firstIdx;
-
-    if (floorLocked) {
-      html += `<div class="quest-floor-teaser">🔒 Откроется на ${floorNum} этаже · ещё ${floorQuests.length} квестов</div>`;
-      return;
-    }
+    if (floorLocked) return;
 
     const doneCnt = Math.min(player.questIdx - firstIdx, floorQuests.length);
     html += `<div class="quest-floor-hdr">Этаж ${floorNum} · <span style="color:#968a7a;font-weight:normal">${doneCnt}/${floorQuests.length} выполнено</span></div>`;

@@ -37,8 +37,8 @@ const CHAR_DEF = {
 // every level so it never grows faster than a player's own ATK and floors
 // damage to a boring "always 1".
 const MONSTER_HP1  = 12; // HP at level 1, before archetype/boss multipliers
-const MONSTER_ATK1 = 20; // ATK at level 1, before archetype/boss multipliers
-function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(0.5 * Math.max(1, lvl || 1))); }
+const MONSTER_ATK1 = 10; // ATK at level 1, before archetype/boss multipliers (halved)
+function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(1 * Math.max(1, lvl || 1))); } // doubled
 function monsterHPAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
   return MONSTER_HP1 * lvl;
