@@ -28,14 +28,14 @@ function _buildNpcBody(npcId) {
 // ── Merchant ────────────────────────────────────────────
 function _potImg(entry, size) {
   if (entry.img) return `<img src="${entry.img}" width="${size}" height="${size}" style="image-rendering:pixelated;vertical-align:middle;border-radius:2px;">`;
-  return iconHTML(entry.icon || 'potion', size, '#3ef07a');
+  return iconHTML(entry.icon || 'potion', size, '#90d653');
 }
 
 function _merchantBody() {
   const p = player;
   const bag = p.potionBag || {};
   const total = (bag.pt1 || 0) + (bag.pt2 || 0);
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Зелий HP: <b>${total}/999</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} Золото: <b>${p.gold}</b> · Зелий HP: <b>${total}/999</b></div>`;
 
   // HP potions
   html += '<div class="shop-sec">Зелья лечения</div><div class="shop-list">';
@@ -50,10 +50,10 @@ function _merchantBody() {
       <span class="shop-item-icon">${_potImg(entry, 22)}</span>
       <div class="shop-item-info">
         <span class="shop-item-name">${entry.name}</span>
-        <span class="shop-item-stat">${entry.desc} · <b style="color:#3ef07a">×${cur}</b></span>
+        <span class="shop-item-stat">${entry.desc} · <b style="color:#90d653">×${cur}</b></span>
       </div>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx})">
-        ${entry.price}${iconHTML('coin',14,'#f1c40f')}
+        ${entry.price}${iconHTML('coin',14,'#e3941d')}
       </button>
     </div>`;
   });
@@ -71,15 +71,15 @@ function _merchantBody() {
     const btype = def && def.buffType;
     const active = btype && ((p.buffs || {})[btype] || 0) > 0;
     const canBuy = p.gold >= entry.price;
-    const activeLabel = active ? ` <span style="color:#f0c040">(акт.)</span>` : '';
+    const activeLabel = active ? ` <span style="color:#e5a546">(акт.)</span>` : '';
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_potImg(entry, 22)}</span>
       <div class="shop-item-info">
         <span class="shop-item-name">${entry.name}${activeLabel}</span>
-        <span class="shop-item-stat">${entry.desc} · <b style="color:#3ef07a">×${cur}</b></span>
+        <span class="shop-item-stat">${entry.desc} · <b style="color:#90d653">×${cur}</b></span>
       </div>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx})">
-        ${entry.price}${iconHTML('coin',14,'#f1c40f')}
+        ${entry.price}${iconHTML('coin',14,'#e3941d')}
       </button>
     </div>`;
   });
@@ -151,7 +151,7 @@ function _craftsmanBody() {
     <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">Материалы</button>
   </div>`;
 
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} Золото: <b>${p.gold}</b></div>`;
   html += tabs;
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab() : _craftsmanMatsTab();
   return html;
@@ -173,7 +173,7 @@ function _craftsmanItemsTab() {
       .filter(({ item }) => item && item.rarity === r.key);
     if (!entries.length) return;
 
-    const rc = RARITY_COLOR[r.key] || '#aaa';
+    const rc = RARITY_COLOR[r.key] || '#aea599';
     html += `<div class="craft-group-hdr" style="color:${rc}">${r.label}</div><div class="craft-items-grid">`;
     entries.forEach(({ rec, idx, item }) => {
       const canCraft = invHasSpace() &&
@@ -197,18 +197,18 @@ function openCraftModal(idx) {
   const mat  = rec.matId  ? CRAFT_MATS.find(m => m.id === rec.matId)  : null;
   const resultDef = item || mat;
   if (!resultDef) return;
-  const rc = RARITY_COLOR[resultDef.rarity] || '#aaa';
+  const rc = RARITY_COLOR[resultDef.rarity] || '#aea599';
 
   const matsHtml = rec.mats.map(m => {
     if (m.minEnhance != null) {
       const iDef = ITEM_DEF.find(i => i.id === m.id);
       const have = countEnhancedItem(m.id, m.minEnhance);
       const ok = have >= m.n;
-      const rc2 = iDef ? (RARITY_COLOR[iDef.rarity] || '#aaa') : '#aaa';
+      const rc2 = iDef ? (RARITY_COLOR[iDef.rarity] || '#aea599') : '#aea599';
       return `<div class="craft-req-row">
         <span class="craft-req-icon">${iDef ? _itemIcon(iDef, 20) : m.id}</span>
-        <span class="craft-req-name" style="color:${rc2}">${iDef ? iDef.name : m.id} <b style="color:#ffd700">+${m.minEnhance}</b></span>
-        <span class="craft-req-count" style="color:${ok ? '#4f4' : '#f44'}">${have}/${m.n}</span>
+        <span class="craft-req-name" style="color:${rc2}">${iDef ? iDef.name : m.id} <b style="color:#e69419">+${m.minEnhance}</b></span>
+        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${m.n}</span>
       </div>`;
     }
     const matDef = CRAFT_MATS.find(c => c.id === m.id);
@@ -217,14 +217,14 @@ function openCraftModal(idx) {
     return `<div class="craft-req-row">
       <span class="craft-req-icon">${matDef ? _matIcon(matDef, 20) : m.id}</span>
       <span class="craft-req-name">${matDef ? matDef.name : m.id}</span>
-      <span class="craft-req-count" style="color:${ok ? '#4f4' : '#f44'}">${have}/${m.n}</span>
+      <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${m.n}</span>
     </div>`;
   }).join('');
 
   const goldRow = rec.goldCost ? `<div class="craft-req-row">
-    <span class="craft-req-icon">${iconHTML('coin', 20, '#f1c40f')}</span>
+    <span class="craft-req-icon">${iconHTML('coin', 20, '#e3941d')}</span>
     <span class="craft-req-name">Золото</span>
-    <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#4f4' : '#f44'}">${player.gold}/${rec.goldCost}</span>
+    <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${player.gold}/${rec.goldCost}</span>
   </div>` : '';
 
   const canCraft = invHasSpace() &&
@@ -246,7 +246,7 @@ function openCraftModal(idx) {
     </div>
     <div class="craft-reqs-title">Требуется:</div>
     <div class="craft-reqs-list">${matsHtml}${goldRow}</div>
-    <div class="craft-chance-row">Шанс успеха: <b style="color:#ffd040">${Math.round(rec.chance * 100)}%</b></div>
+    <div class="craft-chance-row">Шанс успеха: <b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">Крафтить</button>
   `;
 }
@@ -292,7 +292,7 @@ function _craftsmanMatsTab() {
     if (!fromMat || !toMat) return;
     const have = countMaterial(recipe.from);
     const canCraft = have >= recipe.count && invHasSpace();
-    const rc = RARITY_COLOR[toMat.rarity] || '#aaa';
+    const rc = RARITY_COLOR[toMat.rarity] || '#aea599';
     html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
       <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
       <div class="craft-item-cell-name" style="color:${rc}">${toMat.name}</div>
@@ -304,11 +304,11 @@ function _craftsmanMatsTab() {
     .map((rec, idx) => ({ rec, idx }))
     .filter(({ rec }) => rec.matId);
   if (stoneEntries.length) {
-    html += `<div class="craft-group-hdr" style="color:#ffd040">Камни заточки</div><div class="craft-items-grid">`;
+    html += `<div class="craft-group-hdr" style="color:#ebab4b">Камни заточки</div><div class="craft-items-grid">`;
     stoneEntries.forEach(({ rec, idx }) => {
       const mat = CRAFT_MATS.find(m => m.id === rec.matId);
       if (!mat) return;
-      const rc = RARITY_COLOR[mat.rarity] || '#aaa';
+      const rc = RARITY_COLOR[mat.rarity] || '#aea599';
       const canCraft = invHasSpace() &&
         rec.mats.every(m => _matAvailable(m)) &&
         player.gold >= (rec.goldCost || 0);
@@ -321,11 +321,11 @@ function _craftsmanMatsTab() {
   }
 
   if (typeof BOX_DEF !== 'undefined' && BOX_DEF.length) {
-    html += `<div class="craft-group-hdr" style="color:#f0c040">Боксы</div><div class="craft-items-grid">`;
+    html += `<div class="craft-group-hdr" style="color:#e5a546">Боксы</div><div class="craft-items-grid">`;
     BOX_DEF.forEach(box => {
       const have = countMaterial(box.keyId);
       const canCraft = have >= box.keyCost && invHasSpace();
-      const rc = RARITY_COLOR[box.rarity] || '#aaa';
+      const rc = RARITY_COLOR[box.rarity] || '#aea599';
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBoxCraftModal('${box.id}')" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(box, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${box.name}</div>
@@ -344,10 +344,10 @@ function openBoxCraftModal(boxId) {
   const have = countMaterial(box.keyId);
   const ok = have >= box.keyCost;
   const canCraft = ok && invHasSpace();
-  const rc = RARITY_COLOR[box.rarity] || '#aaa';
+  const rc = RARITY_COLOR[box.rarity] || '#aea599';
 
   const oddsHtml = box.odds.map(o => {
-    const rcO = RARITY_COLOR[o.rarity] || '#aaa';
+    const rcO = RARITY_COLOR[o.rarity] || '#aea599';
     return `<div class="craft-req-row">
       <span class="craft-req-name" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity}</span>
       <span class="craft-req-count" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
@@ -367,7 +367,7 @@ function openBoxCraftModal(boxId) {
       <div class="craft-req-row">
         <span class="craft-req-icon">${keyDef ? _matIcon(keyDef, 20) : box.keyId}</span>
         <span class="craft-req-name">${keyDef ? keyDef.name : box.keyId}</span>
-        <span class="craft-req-count" style="color:${ok ? '#4f4' : '#f44'}">${have}/${box.keyCost}</span>
+        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${box.keyCost}</span>
       </div>
     </div>
     <div class="craft-reqs-title">Содержимое (1 предмет из бокса):</div>
@@ -400,7 +400,7 @@ function openMatModal(idx) {
   const have = countMaterial(recipe.from);
   const ok = have >= recipe.count;
   const canCraft = ok && invHasSpace();
-  const rcTo = RARITY_COLOR[toMat.rarity] || '#aaa';
+  const rcTo = RARITY_COLOR[toMat.rarity] || '#aea599';
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">← Назад</button>
@@ -415,10 +415,10 @@ function openMatModal(idx) {
       <div class="craft-req-row">
         <span class="craft-req-icon">${_matIcon(fromMat, 20)}</span>
         <span class="craft-req-name">${fromMat.name}</span>
-        <span class="craft-req-count" style="color:${ok ? '#4f4' : '#f44'}">${have}/${recipe.count}</span>
+        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${recipe.count}</span>
       </div>
     </div>
-    <div class="craft-chance-row">Шанс успеха: <b style="color:#ffd040">${Math.round(recipe.chance * 100)}%</b></div>
+    <div class="craft-chance-row">Шанс успеха: <b style="color:#ebab4b">${Math.round(recipe.chance * 100)}%</b></div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">Крафтить</button>
   `;
 }
@@ -448,22 +448,22 @@ function craftMatUpgrade(idx) {
 // ── Shopkeeper ──────────────────────────────────────────
 function _shopkeeperBody() {
   const p = player;
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#f1c40f')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${invSlotCount()}/50</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} Золото: <b>${p.gold}</b> · Инвентарь: <b>${invSlotCount()}/50</b></div>`;
   html += '<div class="shop-sec">Товары</div><div class="shop-list">';
   SHOP_CATALOG.forEach(entry => {
     const item = ITEM_DEF.find(i => i.id === entry.itemId);
     if (!item) return;
-    const rc = RARITY_COLOR[item.rarity] || '#aaa';
+    const rc = RARITY_COLOR[item.rarity] || '#aea599';
     const canBuy = p.gold >= entry.price && invHasSpace();
     const stats = statStr(item);
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_itemIcon(item, 28)}</span>
       <div class="shop-item-info">
-        <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000c,1px -1px 0 #000c,-1px 1px 0 #000c,1px 1px 0 #000c,0 0 8px ${rc}88">${item.name}</div>
+        <div class="shop-item-name" style="color:${rc};text-shadow:-1px -1px 0 #000000cc,1px -1px 0 #000000cc,-1px 1px 0 #000000cc,1px 1px 0 #000000cc,0 0 8px ${rc}88">${item.name}</div>
         <div class="shop-item-stat">${stats}</div>
       </div>
       <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyShopItem('${entry.itemId}',${entry.price})">
-        ${entry.price}${iconHTML('coin',14,'#f1c40f')}
+        ${entry.price}${iconHTML('coin',14,'#e3941d')}
       </button>
     </div>`;
   });

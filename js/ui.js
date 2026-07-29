@@ -7,7 +7,7 @@ function _itemIcon(it, size) {
       style="image-rendering:pixelated;border-radius:3px;"
       onerror="this.style.display='none'">`;
   }
-  const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '#505070';
+  const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '#6c6354';
   return iconHTML((it && it.icon) || 'weapon', size, rc);
 }
 function updateInvUI() {
@@ -18,12 +18,12 @@ function updateInvUI() {
   // Equipment grid (5 columns × 2 rows)
   document.getElementById('eq-grid').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }) => {
     const it = p.equipment[slot];
-    const rc = it ? (RARITY_COLOR[it.rarity] || '#aaa') : '';
-    const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#ffd700;font-weight:bold">+${it.enhance}</span>` : '';
+    const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '';
+    const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
     return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `openEqItemModal('${slot}')` : ''}"
       title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
       style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
-      <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#505070')}</div>
+      <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#6c6354')}</div>
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
       ${enhBadge}
     </div>`;
@@ -39,17 +39,17 @@ function updateInvUI() {
       <div style="line-height:1">${iconHTML(p.charDef.icon, 40, p.charDef.color)}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:bold;color:${p.charDef.color}">${p.charDef.name}</div>
-        <div style="font-size:11px;color:#999;margin-top:2px">Уровень ${p.lvl}</div>
-        <div style="font-size:11px;color:#484860;margin-top:2px;display:flex;align-items:center;gap:3px">
-          ${iconHTML('heart',11,'#e74c3c')}${Math.ceil(p.hp)}/${p.maxHp} ·
-          <span style="color:#f93;font-weight:700">БМ ${typeof calcBM==='function'?calcBM(p):0}</span> ·
-          ${iconHTML('coin',11,'#f1c40f')}${p.gold}
+        <div style="font-size:11px;color:#a2988a;margin-top:2px">Уровень ${p.lvl}</div>
+        <div style="font-size:11px;color:#5d564b;margin-top:2px;display:flex;align-items:center;gap:3px">
+          ${iconHTML('heart',11,'#da4658')}${Math.ceil(p.hp)}/${p.maxHp} ·
+          <span style="color:#eaa742;font-weight:700">БМ ${typeof calcBM==='function'?calcBM(p):0}</span> ·
+          ${iconHTML('coin',11,'#e3941d')}${p.gold}
         </div>
       </div>
-      <div onclick="openHpPicker()" style="color:#4f4;text-align:right;font-weight:bold;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
-        ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="20" height="20" style="image-rendering:pixelated">` : iconHTML('potion',20,'#3ef07a')}
+      <div onclick="openHpPicker()" style="color:#98e456;text-align:right;font-weight:bold;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
+        ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="20" height="20" style="image-rendering:pixelated">` : iconHTML('potion',20,'#90d653')}
         <span style="font-size:10px">×${_hudCount}</span>
-        ${_activeBufCount > 0 ? `<span style="font-size:9px;color:#f0c040">${_activeBufCount} бафф</span>` : ''}
+        ${_activeBufCount > 0 ? `<span style="font-size:9px;color:#e5a546">${_activeBufCount} бафф</span>` : ''}
       </div>
     </div>
   `;
@@ -73,9 +73,9 @@ function updateInvUI() {
     const entry = _displayInv[i];
     if (!entry) return `<div class="inv-cell"></div>`;
     const { it, idx, count } = entry;
-    const rc = RARITY_COLOR[it.rarity] || '#aaa';
-    const enh = it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#ffd700;font-weight:bold">+${it.enhance}</span>` : '';
-    const cntBadge = count ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#aee;font-weight:bold">×${count}</span>` : '';
+    const rc = RARITY_COLOR[it.rarity] || '#aea599';
+    const enh = it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
+    const cntBadge = count ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${count}</span>` : '';
     const clickable = idx !== undefined;
     return `<div class="inv-cell filled" onclick="${clickable ? `openInvItemModal(${idx})` : ''}"
       title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}"
@@ -107,17 +107,17 @@ function openHpPicker() {
     const isHud = def.id === hudPt;
     const imgEl = def.img
       ? `<img src="${def.img}" width="28" height="28" style="image-rendering:pixelated;display:block;margin:0 auto 2px">`
-      : iconHTML(def.icon || 'potion', 28, isHud ? '#3ef07a' : '#8090a0');
+      : iconHTML(def.icon || 'potion', 28, isHud ? '#90d653' : '#9c9383');
     return `<div onclick="setHudPotion('${def.id}');openHpPicker()" style="
       flex:1;padding:10px 6px;border-radius:10px;text-align:center;cursor:pointer;
-      border:2px solid ${isHud ? '#3ef07a' : 'rgba(255,255,255,0.1)'};
-      background:${isHud ? 'rgba(60,240,120,0.12)' : 'rgba(255,255,255,0.04)'};
+      border:2px solid ${isHud ? '#90d653' : 'rgba(209,204,197,0.1)'};
+      background:${isHud ? 'rgba(143,214,82,0.12)' : 'rgba(209,204,197,0.04)'};
     ">
       ${imgEl}
-      <div style="font-size:10px;color:${isHud ? '#3ef07a' : '#888'};font-weight:${isHud?'700':'400'}">${def.name}</div>
-      <div style="font-size:11px;color:#4f4;margin-top:2px">×${cnt}</div>
-      <div style="font-size:9px;color:#666">HP+${def.hp} · откат 4с</div>
-      ${isHud ? '<div style="font-size:9px;color:#3ef07a;font-weight:700;margin-top:2px">✓ В HUD</div>' : ''}
+      <div style="font-size:10px;color:${isHud ? '#90d653' : '#968a7a'};font-weight:${isHud?'700':'400'}">${def.name}</div>
+      <div style="font-size:11px;color:#98e456;margin-top:2px">×${cnt}</div>
+      <div style="font-size:9px;color:#72685a">HP+${def.hp} · откат 4с</div>
+      ${isHud ? '<div style="font-size:9px;color:#90d653;font-weight:700;margin-top:2px">✓ В HUD</div>' : ''}
     </div>`;
   }).join('');
 
@@ -125,9 +125,9 @@ function openHpPicker() {
     const isActive = Math.abs(curAuto - v) < 0.01;
     return `<button onclick="setAutoHpPct(${v})" style="
       flex:1;padding:8px 4px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
-      background:${isActive ? '#1a3a2a' : 'rgba(255,255,255,0.06)'};
-      color:${isActive ? '#3ef07a' : '#888'};
-      border:1px solid ${isActive ? '#3ef07a44' : 'transparent'};
+      background:${isActive ? '#29361e' : 'rgba(209,204,197,0.06)'};
+      color:${isActive ? '#90d653' : '#968a7a'};
+      border:1px solid ${isActive ? '#90d65344' : 'transparent'};
     ">${autoLabels[i]}</button>`;
   }).join('');
 
@@ -135,17 +135,17 @@ function openHpPicker() {
   ov.id = 'hp-picker-ov';
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#0d0818;border-radius:18px 18px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:18px 16px 30px;">
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-size:15px;font-weight:800;color:#3ef07a">Зелья лечения</div>
-      <button onclick="document.getElementById('hp-picker-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;font-size:13px;cursor:pointer;">✕</button>
+      <div style="font-size:15px;font-weight:800;color:#90d653">Зелья лечения</div>
+      <button onclick="document.getElementById('hp-picker-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:16px">${potCells}</div>
-    <div style="font-size:11px;color:#666;margin-bottom:8px">Авто-использование при HP &lt;</div>
+    <div style="font-size:11px;color:#72685a;margin-bottom:8px">Авто-использование при HP &lt;</div>
     <div style="display:flex;gap:8px">${autoRows}</div>
     <button onclick="usePotion();document.getElementById('hp-picker-ov').remove()" style="
       width:100%;margin-top:14px;padding:12px;border:none;border-radius:12px;
-      background:linear-gradient(135deg,#1a3a1a,#2a5a2a);color:#3ef07a;font-size:15px;font-weight:700;cursor:pointer;
+      background:linear-gradient(135deg,#29361e,#415331);color:#90d653;font-size:15px;font-weight:700;cursor:pointer;
     ">Использовать</button>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -175,8 +175,8 @@ function usePotionById(itemId) {
   const heal = (def && def.hp) || 20;
   player.hp = Math.min(player.maxHp, player.hp + heal);
   player.potCd = 4;
-  dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
-  spawnBurst(player.x, player.y, '#4f4', 5);
+  dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#98e456');
+  spawnBurst(player.x, player.y, '#98e456', 5);
   if (typeof netUsePotion === 'function') netUsePotion(heal);
   updateInvUI();
   netSaveProgress();
@@ -206,13 +206,13 @@ function updateProfileUI() {
     <div class="xp-lbl">Опыт: ${p.xp} / ${p.xpNext}</div>
     <div class="xp-bg"><div class="xp-fill" style="width:${pct}%"></div></div>
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-ic">${iconHTML('heart',14,'#e74c3c')}</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('sword',14,'#e67e22')}</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Атака</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('shield',14,'#5dade2')}</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Защита</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#f1c40f')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#e74c3c')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#e67e22')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#2ecc71')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('heart',14,'#da4658')}</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('sword',14,'#da952e')}</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Атака</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('shield',14,'#d1aa65')}</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Защита</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#e3941d')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#da4658')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#da952e')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#79b644')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
     </div>`;
   updateUpgradeUI();
 }
@@ -222,7 +222,7 @@ function updateUpgradeUI() {
   const el = document.getElementById('upgrade-grid');
   if (!el) return;
   const goldLbl = document.getElementById('upg-gold-lbl');
-  if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#f1c40f') + ' ' + player.gold;
+  if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#e3941d') + ' ' + player.gold;
   const availSP = getAvailableSkillPoints();
   const spLbl = document.getElementById('upg-sp-lbl');
   if (spLbl) spLbl.textContent = `Очки навыка: ${availSP}`;
@@ -233,11 +233,11 @@ function updateUpgradeUI() {
     const can  = player.gold >= cost && availSP >= 1;
     return `<div class="upg-row">
       <div class="upg-info">
-        <span class="upg-label">${iconHTML(cfg.icon, 14, '#9090bb')} ${cfg.label}</span>
+        <span class="upg-label">${iconHTML(cfg.icon, 14, '#b2a58e')} ${cfg.label}</span>
         <span class="upg-meta">Ур.${lvl} · ${cfg.desc}</span>
       </div>
       <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">
-        ${iconHTML('coin',12,'#f1c40f')}${cost} + 1 ОН
+        ${iconHTML('coin',12,'#e3941d')}${cost} + 1 ОН
       </button>
     </div>`;
   }).join('');
@@ -272,7 +272,7 @@ function updateSkillsUI() {
   const el = document.getElementById('skill-upgrade-panel');
   if (!el) return;
   const skills = SKILL_DEF[player.type];
-  if (!skills) { el.innerHTML = '<div style="padding:16px;color:#556;text-align:center">Выберите персонажа</div>'; return; }
+  if (!skills) { el.innerHTML = '<div style="padding:16px;color:#645f57;text-align:center">Выберите персонажа</div>'; return; }
   const bonusTypes = (SKILL_BONUS_TYPE || {})[player.type] || {};
   const sl = player.skillLevels || {};
   const sx = player.skillXp || {};
@@ -282,7 +282,7 @@ function updateSkillsUI() {
 
   el.innerHTML = `
     <div class="skill-upg-header">
-      <span>${iconHTML('coin', 13, '#f1c40f')} <span id="skill-gold-lbl">${player.gold}</span> золота</span>
+      <span>${iconHTML('coin', 13, '#e3941d')} <span id="skill-gold-lbl">${player.gold}</span> золота</span>
       <span class="skill-upg-hint">100 зол. · 50% шанс · +5 опыта</span>
     </div>
     ${skills.map(sk => {
@@ -301,7 +301,7 @@ function updateSkillsUI() {
 
       return `<div class="skill-upg-card">
         <div class="skill-upg-top">
-          <div class="skill-upg-icon">${sk.img ? `<img src="${sk.img}" width="26" height="26" style="image-rendering:pixelated;border-radius:4px;opacity:${level > 0 ? 1 : 0.4}">` : iconHTML(sk.icon, 26, level > 0 ? '#f1c40f' : '#556')}</div>
+          <div class="skill-upg-icon">${sk.img ? `<img src="${sk.img}" width="26" height="26" style="image-rendering:pixelated;border-radius:4px;opacity:${level > 0 ? 1 : 0.4}">` : iconHTML(sk.icon, 26, level > 0 ? '#e3941d' : '#645f57')}</div>
           <div class="skill-upg-info">
             <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${maxed ? ' МАКС' : ' Ур.' + level}</span></div>
             <div class="skill-upg-desc">${sk.desc}</div>
@@ -320,7 +320,7 @@ function updateSkillsUI() {
         </div>
         <button class="skill-upg-btn${maxed ? ' disabled' : (!canAfford ? ' disabled' : '')}"
           onclick="${maxed ? '' : `upgradeSkill('${sk.key}')`}">
-          ${maxed ? 'Максимум' : iconHTML('coin', 12, '#f1c40f') + ' 100 · Прокачать'}
+          ${maxed ? 'Максимум' : iconHTML('coin', 12, '#e3941d') + ' 100 · Прокачать'}
         </button>
       </div>`;
     }).join('')}
@@ -330,7 +330,7 @@ function updateSkillsUI() {
 function upgradeSkill(key) {
   if (!player) return;
   const cost = 100;
-  if (player.gold < cost) { dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88'); return; }
+  if (player.gold < cost) { dmgNum(player.x, player.y - 30, 'Мало золота!', '#f17e8b'); return; }
   const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
   const sx = player.skillXp    || (player.skillXp    = { Q:0, W:0, E:0, R:0 });
   const lvl = sl[key] || 0;
@@ -343,13 +343,13 @@ function upgradeSkill(key) {
     if (sx[key] >= xpReq) {
       sx[key] = 0;
       sl[key] = lvl + 1;
-      spawnBurst(player.x, player.y, '#fa0', 10);
-      dmgNum(player.x, player.y - 42, '↑ Навык +' + sl[key] + ' ур.!', '#fa0');
+      spawnBurst(player.x, player.y, '#e69419', 10);
+      dmgNum(player.x, player.y - 42, '↑ Навык +' + sl[key] + ' ур.!', '#e69419');
     } else {
-      dmgNum(player.x, player.y - 36, '+5 опыта навыка', '#7ef');
+      dmgNum(player.x, player.y - 36, '+5 опыта навыка', '#d0b592');
     }
   } else {
-    dmgNum(player.x, player.y - 36, 'Неудача...', '#f44');
+    dmgNum(player.x, player.y - 36, 'Неудача...', '#eb4e61');
   }
   netSaveProgress();
   updateSkillsUI();
@@ -368,7 +368,7 @@ function drawMapPanel() {
   const mx2 = mc.getContext('2d');
   const sc = Math.min((pw - 20) / dungeon.w, (ph - 10) / dungeon.h);
   const ox = (pw - dungeon.w * sc) / 2, oy = 8;
-  mx2.fillStyle = '#030308'; mx2.fillRect(0, 0, pw, ph);
+  mx2.fillStyle = '#070604'; mx2.fillRect(0, 0, pw, ph);
   for (let ty = 0; ty < dungeon.h; ty++) {
     for (let tx = 0; tx < dungeon.w; tx++) {
       const t = dungeon.grid[ty][tx]; if (t === WALL) continue;
@@ -376,7 +376,7 @@ function drawMapPanel() {
       mx2.fillRect(ox + tx * sc, oy + ty * sc, Math.max(1, sc - 0.5), Math.max(1, sc - 0.5));
     }
   }
-  mx2.fillStyle = '#00ff44';
+  mx2.fillStyle = '#79dc23';
   mx2.beginPath(); mx2.arc(ox + (player.x / TILE) * sc, oy + (player.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
   // There is no offline mode in this game — serverEnemies is the only enemy
   // list that ever exists. The old `: enemies` fallback below referenced a
@@ -389,7 +389,7 @@ function drawMapPanel() {
   // after the socket reconnected moments later.
   const mapEnemies = serverEnemies;
   const aliveEnemies = mapEnemies.filter(e => (e.hp || 0) > 0);
-  mx2.fillStyle = '#ff3322';
+  mx2.fillStyle = '#e9364b';
   mx2.beginPath();
   aliveEnemies.forEach(e => {
     if (e.isBoss) return;
@@ -406,7 +406,7 @@ function drawMapPanel() {
     mx2.fillText('💀', ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc);
   });
   // NPC blips on map
-  mx2.fillStyle = '#ffcc00';
+  mx2.fillStyle = '#e69419';
   mx2.beginPath();
   npcs.forEach(n => {
     mx2.moveTo(ox + (n.x / TILE) * sc + Math.max(2, sc * 0.7), oy + (n.y / TILE) * sc);
@@ -505,7 +505,7 @@ function showFloorInfo(arm) {
       const g = e.gold || [50, 50];
       const gMin = Math.round(g[0] * goldBonus), gMax = Math.round(g[1] * goldBonus);
       const gText = gMin === gMax ? `${gMin}g` : `${gMin}–${gMax}g`;
-      goldText = `<span style="color:#ff0">${gText}</span>`;
+      goldText = `<span style="color:#e6ac19">${gText}</span>`;
     } else {
       const gMin = Math.round(e.gold[0] * Math.pow(2, floor - 1) * goldBonus);
       const gMax = Math.round(e.gold[1] * Math.pow(2, floor - 1) * goldBonus);
@@ -514,25 +514,25 @@ function showFloorInfo(arm) {
 
     // XP text (×3 on floors 2-5)
     const xpFinal = (floor >= 2 && floor <= 5) ? e.xp * 3 : e.xp;
-    const xpColor = isBoss ? '#0f0' : '#8f8';
+    const xpColor = isBoss ? '#79dc23' : '#b4eb84';
 
     // Boss stone row
     const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
     const stoneRow = isBoss
       ? `<div class="fi-drop">
            <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='boss_stone'), 16)}</span>
-           <span class="fi-drop-lbl" style="color:#aaf">Камень Босса</span>
-           <span class="fi-drop-val" style="color:#aaf">&times;${floor}–${floor + 2} · 100%</span>
+           <span class="fi-drop-lbl" style="color:#f2d197">Камень Босса</span>
+           <span class="fi-drop-val" style="color:#f2d197">&times;${floor}–${floor + 2} · 100%</span>
          </div>
          <div class="fi-drop">
            <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16)}</span>
-           <span class="fi-drop-lbl" style="color:#fa8">Камень обычной заточки</span>
-           <span class="fi-drop-val" style="color:#fa8">&times;1 · <b style="color:#fa8">10%</b></span>
+           <span class="fi-drop-lbl" style="color:#f17e8b">Камень обычной заточки</span>
+           <span class="fi-drop-val" style="color:#f17e8b">&times;1 · <b style="color:#f17e8b">10%</b></span>
          </div>
          <div class="fi-drop">
            <span class="fi-drop-icon">${_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16)}</span>
-           <span class="fi-drop-lbl" style="color:#88f">Камень безопасной заточки</span>
-           <span class="fi-drop-val" style="color:#88f">&times;1 · <b style="color:#88f">1%</b></span>
+           <span class="fi-drop-lbl" style="color:#efc680">Камень безопасной заточки</span>
+           <span class="fi-drop-val" style="color:#efc680">&times;1 · <b style="color:#efc680">1%</b></span>
          </div>`
       : '';
 
@@ -556,7 +556,7 @@ function showFloorInfo(arm) {
       const rows = matDrops.map(d => {
         const mat = CRAFT_MATS.find(m => m.id === d.id);
         if (!mat) return '';
-        const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aaa';
+        const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aea599';
         return `<div class="fi-drop">
           <span class="fi-drop-icon">${_matIcon(mat, 16)}</span>
           <span class="fi-drop-lbl" style="color:${rc}">${mat.name}</span>
@@ -582,7 +582,7 @@ function showFloorInfo(arm) {
           else if (pct >= 0.001) pctText = pct.toFixed(3).replace(/\.?0+$/, '');
           else                   pctText = pct.toFixed(5).replace(/\.?0+$/, '');
           pctText += '%';
-          const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aaa';
+          const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
           const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
           return `<div class="fi-drop">
             <span class="fi-drop-lbl" style="color:${rc}">${rn} предмет</span>
@@ -618,8 +618,8 @@ function showFloorInfo(arm) {
           </div>
           <div class="fi-drop">
             <span class="fi-drop-icon"><img src="/images/nexum-coin.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
-            <span class="fi-drop-lbl" style="color:#00e5ff">Nexum</span>
-            <span class="fi-drop-val" style="color:#00e5ff">&times;1 · <b style="color:#00e5ff">${nexumChancePct}%</b></span>
+            <span class="fi-drop-lbl" style="color:#b2864d">Nexum</span>
+            <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">${nexumChancePct}%</b></span>
           </div>
           ${stoneRow}
         </div>
@@ -655,7 +655,7 @@ function _roomProgressionSection() {
     const ku   = roomKeyChance(lvl, 'uncommon') * 100;
     const kr   = roomKeyChance(lvl, 'rare') * 100;
     const es   = roomEnchantStoneChance(lvl) * 100;
-    return `<tr${isBossRoom ? ' style="color:#ff6666;font-weight:700"' : ''}>
+    return `<tr${isBossRoom ? ' style="color:#ee6676;font-weight:700"' : ''}>
       <td>${lvl}${isBossRoom ? ' 👑' : ''}</td>
       <td>×${str.toFixed(2)}</td>
       <td>×${drop.toFixed(2)}</td>
@@ -666,8 +666,8 @@ function _roomProgressionSection() {
   }).join('');
   return `
     <div class="fi-monster">
-      <div class="fi-mhdr"><span class="fi-mname" style="color:#f0c040">Прогрессия комнат в коридоре (1–${n})</span></div>
-      <div style="font-size:10px;color:#888;margin-bottom:8px;line-height:1.5">
+      <div class="fi-mhdr"><span class="fi-mname" style="color:#e5a546">Прогрессия комнат в коридоре (1–${n})</span></div>
+      <div style="font-size:10px;color:#968a7a;margin-bottom:8px;line-height:1.5">
         Комната 1 — первая от центрального зала (слабейшие монстры), комната ${n} — комната босса коридора (сильнейшие).
         Каждый уровень: сила монстра +10%, шанс дропа предметов +5%, шанс ключей +5%, шанс заточки +1% относительно предыдущего.
       </div>
@@ -684,10 +684,10 @@ function _roomProgressionSection() {
 function _boxInfoSection() {
   if (typeof BOX_DEF === 'undefined' || !BOX_DEF.length) return '';
   const blocks = BOX_DEF.map(box => {
-    const rc = RARITY_COLOR[box.rarity] || '#aaa';
+    const rc = RARITY_COLOR[box.rarity] || '#aea599';
     const keyDef = CRAFT_MATS.find(m => m.id === box.keyId);
     const oddsRows = box.odds.map(o => {
-      const rcO = RARITY_COLOR[o.rarity] || '#aaa';
+      const rcO = RARITY_COLOR[o.rarity] || '#aea599';
       return `<div class="fi-drop">
         <span class="fi-drop-lbl" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity} предмет</span>
         <span class="fi-drop-val" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
@@ -717,7 +717,7 @@ function closeFloorInfo() {
 function updateRaidPanelUI() {
   const body = document.getElementById('raid-panel-body');
   if (!body) return;
-  const RARITY_COL = { common: '#aaa', uncommon: '#3ef07a' };
+  const RARITY_COL = { common: '#aea599', uncommon: '#90d653' };
   const plvl = player?.lvl || 1;
   const lvlOk = plvl >= 3;
 
@@ -731,20 +731,20 @@ function updateRaidPanelUI() {
     const memberRows = (_myLobbyMembers || []).map(m =>
       `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
         <span>👤 ${m.name}</span>
-        <span style="color:#999;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
+        <span style="color:#a2988a;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
       </div>`).join('');
     const canStart = _isLobbyCreator && (_myLobbyMembers?.length || 0) >= 2;
     body.innerHTML = `
       <div class="raid-dungeon-card">
         <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
-        <div style="font-size:12px;color:#888;margin-bottom:8px">Ваша группа · ${_myLobbyMembers?.length || 1} / 5</div>
+        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">Ваша группа · ${_myLobbyMembers?.length || 1} / 5</div>
         <div style="margin-bottom:10px">${memberRows}</div>
         ${_isLobbyCreator
           ? `<div class="raid-hint" style="margin-bottom:8px">Вы — создатель · ждите игроков или начните</div>
              <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartLobby()' : ''}">Начать рейд</button>`
           : `<div class="raid-hint">Ожидание старта от создателя...</div>`}
       </div>
-      <button onclick="netLeaveLobby();updateRaidPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(255,60,60,.12);color:#f55;border:1px solid rgba(255,60,60,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
+      <button onclick="netLeaveLobby();updateRaidPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
     `;
     return;
   }
@@ -771,32 +771,32 @@ function updateRaidPanelUI() {
     lobbyListHtml = `<div class="raid-hint">Нет открытых групп. Создайте свою!</div>`;
   } else {
     lobbyListHtml = lobbies.map(lb => {
-      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#888">Ур.${m.lvl}</span> ${m.name}`).join(', ');
+      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">Ур.${m.lvl}</span> ${m.name}`).join(', ');
       const full = (lb.members?.length || 0) >= 5;
       return `
         <div class="raid-dungeon-card" style="margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:13px;font-weight:700;color:#fff">${lb.creatorName}</span>
-            <span style="font-size:11px;color:#888">${lb.members?.length || 1} / 5</span>
+            <span style="font-size:13px;font-weight:700;color:#d1ccc5">${lb.creatorName}</span>
+            <span style="font-size:11px;color:#968a7a">${lb.members?.length || 1} / 5</span>
           </div>
-          <div style="font-size:11px;color:#999;margin-bottom:8px">${mList}</div>
+          <div style="font-size:11px;color:#a2988a;margin-bottom:8px">${mList}</div>
           <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinLobby('${lb.id}')`}">${full ? 'Полная' : 'Войти'}</button>
         </div>`;
     }).join('');
   }
 
   body.innerHTML = dungeonCard + createBtn +
-    `<div style="font-size:12px;color:#666;margin-bottom:6px">Открытые группы <button onclick="netGetLobbyList()" style="background:none;border:none;color:#60a5fa;font-size:11px;cursor:pointer">обновить</button></div>` +
+    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">Открытые группы <button onclick="netGetLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">обновить</button></div>` +
     lobbyListHtml;
 }
 
 function showRaidComplete({ gold, xp, weaponName, weaponRarity }) {
-  const RARITY_COL = { common: '#aaa', uncommon: '#3ef07a' };
+  const RARITY_COL = { common: '#aea599', uncommon: '#90d653' };
   document.getElementById('raid-reward-body').innerHTML =
     `<div>💰 +${gold} голда</div>` +
     `<div>⭐ +${xp} опыта</div>` +
     (weaponName
-      ? `<div style="margin-top:6px;color:${RARITY_COL[weaponRarity] || '#aaa'}">🗡 ${weaponName}</div>`
+      ? `<div style="margin-top:6px;color:${RARITY_COL[weaponRarity] || '#aea599'}">🗡 ${weaponName}</div>`
       : '');
   document.getElementById('raid-complete-modal').style.display = 'flex';
 }
@@ -818,20 +818,20 @@ function updatePartyDungeonPanelUI() {
     const memberRows = (_myPdLobbyMembers || []).map(m =>
       `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
         <span>👤 ${m.name}</span>
-        <span style="color:#999;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
+        <span style="color:#a2988a;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
       </div>`).join('');
     const canStart = _isPdLobbyCreator && (_myPdLobbyMembers?.length || 0) >= 3;
     body.innerHTML = `
       <div class="raid-dungeon-card">
         <div class="raid-dungeon-name">🌀 Лабиринт</div>
-        <div style="font-size:12px;color:#888;margin-bottom:8px">Ваша группа · ${_myPdLobbyMembers?.length || 1} / 8 (мин. 3)</div>
+        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">Ваша группа · ${_myPdLobbyMembers?.length || 1} / 8 (мин. 3)</div>
         <div style="margin-bottom:10px">${memberRows}</div>
         ${_isPdLobbyCreator
           ? `<div class="raid-hint" style="margin-bottom:8px">Вы — создатель · нужно минимум 3 игрока</div>
              <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartPdLobby()' : ''}">Начать</button>`
           : `<div class="raid-hint">Ожидание старта от создателя...</div>`}
       </div>
-      <button onclick="netLeavePdLobby();updatePartyDungeonPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(255,60,60,.12);color:#f55;border:1px solid rgba(255,60,60,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
+      <button onclick="netLeavePdLobby();updatePartyDungeonPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
     `;
     return;
   }
@@ -841,11 +841,11 @@ function updatePartyDungeonPanelUI() {
       <div class="raid-dungeon-name">🌀 Лабиринт</div>
       <div class="raid-dungeon-desc">Ветвящийся лабиринт · 100 монстров · Финальный босс · Мин. 3 игрока</div>
       <div class="raid-dungeon-rewards">
-        <span style="color:#00e5ff">50% Nexum с монстров</span>
-        <span style="color:#fa8">50% Заточка с босса</span>
-        <span style="color:#88f">10% Безоп. заточка с босса</span>
+        <span style="color:#b2864d">50% Nexum с монстров</span>
+        <span style="color:#f17e8b">50% Заточка с босса</span>
+        <span style="color:#efc680">10% Безоп. заточка с босса</span>
       </div>
-      <div style="font-size:11px;color:#f93;margin-top:4px">Доступно 1 раз в день</div>
+      <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 1 раз в день</div>
     </div>`;
 
   const createBtn = `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">Создать группу</button>`;
@@ -856,22 +856,22 @@ function updatePartyDungeonPanelUI() {
     lobbyListHtml = `<div class="raid-hint">Нет открытых групп. Создайте свою!</div>`;
   } else {
     lobbyListHtml = lobbies.map(lb => {
-      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#888">Ур.${m.lvl}</span> ${m.name}`).join(', ');
+      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">Ур.${m.lvl}</span> ${m.name}`).join(', ');
       const full = (lb.members?.length || 0) >= 8;
       return `
         <div class="raid-dungeon-card" style="margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:13px;font-weight:700;color:#fff">${lb.creatorName}</span>
-            <span style="font-size:11px;color:#888">${lb.members?.length || 1} / 8</span>
+            <span style="font-size:13px;font-weight:700;color:#d1ccc5">${lb.creatorName}</span>
+            <span style="font-size:11px;color:#968a7a">${lb.members?.length || 1} / 8</span>
           </div>
-          <div style="font-size:11px;color:#999;margin-bottom:8px">${mList}</div>
+          <div style="font-size:11px;color:#a2988a;margin-bottom:8px">${mList}</div>
           <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinPdLobby('${lb.id}')`}">${full ? 'Полная' : 'Войти'}</button>
         </div>`;
     }).join('');
   }
 
   body.innerHTML = dungeonCard + createBtn +
-    `<div style="font-size:12px;color:#666;margin-bottom:6px">Открытые группы <button onclick="netGetPdLobbyList()" style="background:none;border:none;color:#60a5fa;font-size:11px;cursor:pointer">обновить</button></div>` +
+    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">Открытые группы <button onclick="netGetPdLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">обновить</button></div>` +
     lobbyListHtml;
 }
 
@@ -997,13 +997,13 @@ function drawHeader() {
     _avBgGrad = null;    // also invalidate avatar bg on resize
     _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
     _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
-    _hdrBgGrad.addColorStop(0, 'rgba(11,7,26,0.98)');
-    _hdrBgGrad.addColorStop(1, 'rgba(5,3,14,0.99)');
+    _hdrBgGrad.addColorStop(0, 'rgba(24,18,9,0.98)');
+    _hdrBgGrad.addColorStop(1, 'rgba(13,10,4,0.99)');
     _hdrSepGrad = ctx.createLinearGradient(0, 0, W, 0);
-    _hdrSepGrad.addColorStop(0,   'rgba(60,35,130,0)');
-    _hdrSepGrad.addColorStop(0.15,'rgba(90,55,185,0.75)');
-    _hdrSepGrad.addColorStop(0.85,'rgba(90,55,185,0.75)');
-    _hdrSepGrad.addColorStop(1,   'rgba(60,35,130,0)');
+    _hdrSepGrad.addColorStop(0,   'rgba(119,92,46,0)');
+    _hdrSepGrad.addColorStop(0.15,'rgba(170,133,70,0.75)');
+    _hdrSepGrad.addColorStop(0.85,'rgba(170,133,70,0.75)');
+    _hdrSepGrad.addColorStop(1,   'rgba(119,92,46,0)');
   }
   ctx.fillStyle = _hdrBgGrad;
   ctx.fillRect(0, 0, W, HEADER_H);
@@ -1029,16 +1029,16 @@ function drawHeader() {
 
   // Map panel border
   const mpX = mmX - 4, mpY = mmY - 4, mpW = mmW + 8, mpH = mmH + 8;
-  ctx.fillStyle = 'rgba(5,3,16,0.92)';
+  ctx.fillStyle = 'rgba(15,11,4,0.92)';
   roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.fill();
-  ctx.strokeStyle = 'rgba(70,45,155,0.6)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
   roundRect(ctx, mpX, mpY, mpW, mpH, 6); ctx.stroke();
 
   // Clip, draw tiles and blips
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.beginPath(); roundRect(ctx, mmX, mmY, mmW, mmH, 3); ctx.clip();
-  ctx.fillStyle = '#030308'; ctx.fillRect(mmX, mmY, mmW, mmH);
+  ctx.fillStyle = '#070604'; ctx.fillRect(mmX, mmY, mmW, mmH);
 
   ctx.fillStyle = th.mmFloor;
   ctx.beginPath();
@@ -1055,7 +1055,7 @@ function drawHeader() {
 
   const mmEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
   const _mmR = Math.max(1, mmSc * 0.8);
-  ctx.fillStyle = 'rgba(255,45,35,0.9)';
+  ctx.fillStyle = 'rgba(233,55,76,0.9)';
   ctx.beginPath();
   mmEnemies.forEach(e => {
     if ((e.hp || 0) <= 0 || e.isBoss) return;
@@ -1073,7 +1073,7 @@ function drawHeader() {
     ctx.fillText('💀', ex, ey);
   });
   const _mmRn = Math.max(1, mmSc);
-  ctx.fillStyle = 'rgba(255,200,0,0.9)';
+  ctx.fillStyle = 'rgba(230,148,25,0.9)';
   ctx.beginPath();
   npcs.forEach(n => {
     const nx = mmX + (n.x / TILE - winTx) * mmSc, ny = mmY + (n.y / TILE - winTy) * mmSc;
@@ -1082,7 +1082,7 @@ function drawHeader() {
   ctx.fill();
   if (socket?.connected) {
     const _mmRop = Math.max(1.5, mmSc);
-    ctx.fillStyle = 'rgba(100,180,255,0.9)';
+    ctx.fillStyle = 'rgba(236,187,103,0.9)';
     ctx.beginPath();
     otherPlayers.forEach(op => {
       if (op.x == null) return;
@@ -1093,9 +1093,9 @@ function drawHeader() {
   }
   // Player is always at the window's center
   const pdx = mmX + mmW / 2, pdy = mmY + mmH / 2;
-  ctx.fillStyle = 'rgba(0,255,80,0.25)';
+  ctx.fillStyle = 'rgba(121,220,35,0.25)';
   ctx.beginPath(); ctx.arc(pdx, pdy, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#00ff55';
+  ctx.fillStyle = '#79dc23';
   ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
@@ -1105,11 +1105,11 @@ function drawHeader() {
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(_hudLbl, mmX + mmW / 2 + 1, mmY + mmH - 2);
-  ctx.fillStyle = 'rgba(170,140,255,0.95)';
+  ctx.fillStyle = 'rgba(239,199,131,0.95)';
   ctx.fillText(_hudLbl, mmX + mmW / 2, mmY + mmH - 3);
 
   // Vertical divider
-  ctx.strokeStyle = 'rgba(70,45,130,0.3)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(120,96,55,0.3)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
@@ -1145,9 +1145,9 @@ function drawHeader() {
 
   // Row 1: Name + Level
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f0eeff';
+  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
   ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
-  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(190,160,255,0.95)';
+  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
   ctx.fillText('Ур.' + p.lvl, infoRight, 15);
 
   // Row 2: Class name + inline stats (gold / atk / def)
@@ -1161,15 +1161,15 @@ function drawHeader() {
   ctx.textBaseline = 'middle';
   // БМ label + value
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9933';
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
   ctx.fillText('БМ', stxH, 24);
   const _bmLabelW = ctx.measureText('БМ').width;
-  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#ff9933';
+  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
   ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
   stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
   // Gold
-  drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#f1c40f');
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#f1c40f';
+  drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#e3941d');
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
   ctx.fillText(p.gold, stxH + 13, 24);
   stxH += 13 + ctx.measureText(String(p.gold)).width + 8;
   // Nexum balance
@@ -1179,75 +1179,75 @@ function drawHeader() {
     if (_nxImg.complete && _nxImg.naturalWidth > 0) {
       ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
     } else {
-      ctx.fillStyle = '#00e5ff'; ctx.font = `bold 9px ${F}`;
+      ctx.fillStyle = '#b2864d'; ctx.font = `bold 9px ${F}`;
       ctx.fillText('N', stxH + 2, 24);
     }
-    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#00e5ff';
+    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
     ctx.fillText(_nxBal, stxH + 14, 24);
   }
   ctx.textBaseline = 'alphabetic';
 
   // Separator
-  ctx.strokeStyle = 'rgba(65,42,118,0.4)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(109,88,51,0.4)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
   const hpY = 42, hbH = 9;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(255,100,100,0.95)';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
   ctx.fillText('HP', infoX, hpY);
 
   const hbX = infoX + 22, hbW = infoW - 22;
-  ctx.fillStyle = 'rgba(35,10,10,0.92)';
+  ctx.fillStyle = 'rgba(33,12,14,0.92)';
   roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
   if (hpPct > 0) {
     // Cache horizontal HP gradients — only depend on bar X/W, not HP amount
     if (!_hpGradGreen || _hdrGradW !== W) {
       _hpGradGreen  = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradGreen.addColorStop(0, '#0d5c28'); _hpGradGreen.addColorStop(1, '#2ecc71');
+      _hpGradGreen.addColorStop(0, '#335118'); _hpGradGreen.addColorStop(1, '#79b644');
       _hpGradOrange = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradOrange.addColorStop(0, '#7a4400'); _hpGradOrange.addColorStop(1, '#f39c12');
+      _hpGradOrange.addColorStop(0, '#6e470c'); _hpGradOrange.addColorStop(1, '#e59620');
       _hpGradRed    = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradRed.addColorStop(0, '#6b0f0f'); _hpGradRed.addColorStop(1, '#e74c3c');
+      _hpGradRed.addColorStop(0, '#64161f'); _hpGradRed.addColorStop(1, '#da4658');
       _hpShineGrad  = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
-      _hpShineGrad.addColorStop(0, 'rgba(255,255,255,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      _hpShineGrad.addColorStop(0, 'rgba(209,204,197,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
     }
     ctx.fillStyle = hpPct > 0.5 ? _hpGradGreen : hpPct > 0.25 ? _hpGradOrange : _hpGradRed;
     roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
     ctx.fillStyle = _hpShineGrad;
     roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
     if (hpPct < 0.3) {
-      ctx.strokeStyle = 'rgba(231,76,60,0.6)'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(218,70,88,0.6)'; ctx.lineWidth = 1.5;
       roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
     }
   }
-  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
   ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
 
   // ── XP bar ────────────────────────────────────────────────
   const xpY = 55, xbH = 6;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(140,110,255,0.9)';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(237,190,110,0.9)';
   ctx.fillText('XP', infoX, xpY);
 
   const xbX = infoX + 22, xbW = infoW - 22;
-  ctx.fillStyle = 'rgba(8,6,25,0.9)';
+  ctx.fillStyle = 'rgba(23,17,8,0.9)';
   roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
   if (xpPct > 0) {
     if (!_xpGrad || _hdrGradW !== W) {
       _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-      _xpGrad.addColorStop(0, '#180f5a'); _xpGrad.addColorStop(1, '#7c4dff');
+      _xpGrad.addColorStop(0, '#523c17'); _xpGrad.addColorStop(1, '#eab457');
       _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
-      _xpShineGrad.addColorStop(0, 'rgba(255,255,255,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
     }
     ctx.fillStyle = _xpGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
     ctx.fillStyle = _xpShineGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
-  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,155,255,0.7)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(241,204,141,0.7)';
   ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
   ctx.restore();
@@ -1260,9 +1260,9 @@ let _joyKnobGrad = null, _joyKnobGradKx = null, _joyKnobGradKy = null;
 function drawJoystick() {
   const jc = joyCenter();
   ctx.globalAlpha = 0.52;
-  ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,.07)';
+  ctx.strokeStyle = 'rgba(209,204,197,.6)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(209,204,197,.07)';
   ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(209,204,197,.18)'; ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(jc.x - JOY_R, jc.y); ctx.lineTo(jc.x + JOY_R, jc.y);
   ctx.moveTo(jc.x, jc.y - JOY_R); ctx.lineTo(jc.x, jc.y + JOY_R);
@@ -1271,11 +1271,11 @@ function drawJoystick() {
   // Recreate gradient only when knob position actually changes
   if (_joyKnobGrad === null || kx !== _joyKnobGradKx || ky !== _joyKnobGradKy) {
     _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .3, ky - JOY_KNOB * .3, 0, kx, ky, JOY_KNOB);
-    _joyKnobGrad.addColorStop(0, 'rgba(210,210,255,.95)'); _joyKnobGrad.addColorStop(1, 'rgba(80,80,180,.7)');
+    _joyKnobGrad.addColorStop(0, 'rgba(245,219,173,.95)'); _joyKnobGrad.addColorStop(1, 'rgba(169,140,91,.7)');
     _joyKnobGradKx = kx; _joyKnobGradKy = ky;
   }
   ctx.fillStyle = _joyKnobGrad; ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(209,204,197,.7)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.stroke();
   ctx.globalAlpha = 1;
 }
@@ -1290,11 +1290,11 @@ function _buildSkillBtnGrads() {
   _skillBtnGradCache = Array.from({ length: 4 }, (_, i) => {
     const b = getSkillBtnPos(i);
     const flash = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    flash.addColorStop(0, 'rgba(80,60,10,0.97)'); flash.addColorStop(1, 'rgba(40,30,5,0.99)');
+    flash.addColorStop(0, 'rgba(76,51,14,0.97)'); flash.addColorStop(1, 'rgba(38,26,7,0.99)');
     const ready = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    ready.addColorStop(0, 'rgba(18,14,40,0.97)'); ready.addColorStop(1, 'rgba(8,6,20,0.99)');
+    ready.addColorStop(0, 'rgba(37,30,17,0.97)'); ready.addColorStop(1, 'rgba(18,14,8,0.99)');
     const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    cd.addColorStop(0, 'rgba(10,8,22,0.97)'); cd.addColorStop(1, 'rgba(5,4,12,0.99)');
+    cd.addColorStop(0, 'rgba(20,16,10,0.97)'); cd.addColorStop(1, 'rgba(11,9,5,0.99)');
     return { flash, ready, cd, x: b.x, y: b.y, w: b.w, h: b.h };
   });
 }
@@ -1321,12 +1321,12 @@ function drawSkillButtons() {
 
     // Border
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isFlash ? 'rgba(255,200,50,0.95)' : ready ? 'rgba(75,110,220,0.7)' : 'rgba(35,30,65,0.7)';
+    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
     roundRect(ctx, b.x, b.y, b.w, b.h, 11); ctx.stroke();
 
     // Inner glow line when ready
     if (ready && !isFlash) {
-      ctx.strokeStyle = 'rgba(100,140,255,0.15)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(236,187,103,0.15)'; ctx.lineWidth = 1;
       roundRect(ctx, b.x + 1.5, b.y + 1.5, b.w - 3, b.h - 3, 10); ctx.stroke();
     }
 
@@ -1344,22 +1344,22 @@ function drawSkillButtons() {
         const is = 30;
         ctx.drawImage(img, cx - is / 2, cy - 7 - is / 2, is, is);
       } else {
-        drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#b0c4ff' : '#606080');
+        drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#f2d39c' : '#7c7364');
       }
     } else {
-      drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#b0c4ff' : '#606080');
+      drawIconCtx(ctx, sk.icon, cx, cy - 7, 22, ready ? '#f2d39c' : '#7c7364');
     }
 
     // Key badge
     ctx.globalAlpha = 1;
     ctx.font = `bold 9px ${_F_SKILL}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
-    ctx.fillStyle = ready ? 'rgba(200,210,255,0.85)' : 'rgba(80,80,100,0.7)';
+    ctx.fillStyle = ready ? 'rgba(244,218,172,0.85)' : 'rgba(98,92,82,0.7)';
     ctx.fillText(sk.key, cx, b.y + b.h - 6);
 
     // Cooldown overlay number
     if (!ready) {
       ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = '#d1ccc5';
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy - 7);
     }
     ctx.globalAlpha = 1;
@@ -1381,47 +1381,47 @@ function _buildUiBtnGrads() {
   const hbX = tfX + 8, hbW = tfW - 16, hbY = tfY + 20;
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg0.addColorStop(0,'rgba(16,12,32,0.98)'); pg0.addColorStop(1,'rgba(8,6,18,0.99)');
+  pg0.addColorStop(0,'rgba(30,24,14,0.98)'); pg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg1.addColorStop(0,'rgba(20,70,35,0.98)'); pg1.addColorStop(1,'rgba(8,30,15,0.99)');
+  pg1.addColorStop(0,'rgba(44,63,27,0.98)'); pg1.addColorStop(1,'rgba(18,27,11,0.99)');
 
   const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg0.addColorStop(0,'rgba(16,12,32,0.98)'); tg0.addColorStop(1,'rgba(8,6,18,0.99)');
+  tg0.addColorStop(0,'rgba(30,24,14,0.98)'); tg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg1.addColorStop(0,'rgba(55,10,10,0.98)'); tg1.addColorStop(1,'rgba(25,5,5,0.99)');
+  tg1.addColorStop(0,'rgba(52,13,18,0.98)'); tg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg0.addColorStop(0,'rgba(16,12,32,0.97)'); pvg0.addColorStop(1,'rgba(8,6,18,0.99)');
+  pvg0.addColorStop(0,'rgba(30,24,14,0.97)'); pvg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg1.addColorStop(0,'rgba(70,10,10,0.98)'); pvg1.addColorStop(1,'rgba(35,5,5,0.99)');
+  pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
-  ptg0.addColorStop(0,'rgba(10,40,18,0.97)'); ptg0.addColorStop(1,'rgba(5,20,9,0.99)');
+  ptg0.addColorStop(0,'rgba(24,36,14,0.97)'); ptg0.addColorStop(1,'rgba(12,18,7,0.99)');
   const ptg1 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
-  ptg1.addColorStop(0,'rgba(50,10,10,0.97)'); ptg1.addColorStop(1,'rgba(25,5,5,0.99)');
+  ptg1.addColorStop(0,'rgba(47,13,17,0.97)'); ptg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const ag0 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag0.addColorStop(0,'rgba(12,10,28,0.90)'); ag0.addColorStop(1,'rgba(6,5,14,0.92)');
+  ag0.addColorStop(0,'rgba(26,21,12,0.90)'); ag0.addColorStop(1,'rgba(13,10,6,0.92)');
   const ag1 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag1.addColorStop(0,'rgba(60,20,10,0.98)'); ag1.addColorStop(1,'rgba(28,8,5,0.99)');
+  ag1.addColorStop(0,'rgba(56,14,19,0.98)'); ag1.addColorStop(1,'rgba(26,7,9,0.99)');
   const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag2.addColorStop(0,'rgba(18,14,40,0.98)'); ag2.addColorStop(1,'rgba(8,6,20,0.99)');
+  ag2.addColorStop(0,'rgba(37,30,17,0.98)'); ag2.addColorStop(1,'rgba(18,14,8,0.99)');
 
   const aag0 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
-  aag0.addColorStop(0,'rgba(35,15,5,0.95)'); aag0.addColorStop(1,'rgba(18,7,3,0.97)');
+  aag0.addColorStop(0,'rgba(33,7,10,0.95)'); aag0.addColorStop(1,'rgba(17,4,6,0.97)');
   const aag1 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
-  aag1.addColorStop(0,'rgba(10,35,15,0.95)'); aag1.addColorStop(1,'rgba(5,18,8,0.97)');
+  aag1.addColorStop(0,'rgba(22,32,13,0.95)'); aag1.addColorStop(1,'rgba(11,16,7,0.97)');
 
   const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
-  tfBg.addColorStop(0,'rgba(14,9,28,0.97)'); tfBg.addColorStop(1,'rgba(7,5,16,0.99)');
+  tfBg.addColorStop(0,'rgba(26,20,11,0.97)'); tfBg.addColorStop(1,'rgba(15,12,6,0.99)');
   const hpHi = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
-  hpHi.addColorStop(0,'#0c5a22'); hpHi.addColorStop(1,'#1ec95a');
+  hpHi.addColorStop(0,'#314f17'); hpHi.addColorStop(1,'#6fb136');
   const hpMid = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
-  hpMid.addColorStop(0,'#7a4200'); hpMid.addColorStop(1,'#f0921a');
+  hpMid.addColorStop(0,'#6e470c'); hpMid.addColorStop(1,'#e39827');
   const hpLo = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
-  hpLo.addColorStop(0,'#6b0c0c'); hpLo.addColorStop(1,'#e03030');
+  hpLo.addColorStop(0,'#64131c'); hpLo.addColorStop(1,'#d33d4e');
   const tfShine = ctx.createLinearGradient(0, hbY, 0, hbY+4);
-  tfShine.addColorStop(0,'rgba(255,255,255,0.15)'); tfShine.addColorStop(1,'rgba(255,255,255,0)');
+  tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
@@ -1460,11 +1460,11 @@ function drawPotionButton() {
   ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(60,200,90,0.75)' : 'rgba(50,40,90,0.6)';
+  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(84,70,46,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
   if (ready && cd <= 0) {
-    ctx.strokeStyle = 'rgba(80,220,110,0.15)'; ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(144,199,96,0.15)'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
@@ -1477,23 +1477,23 @@ function drawPotionButton() {
       const is = 22;
       ctx.drawImage(img, pb.x - is / 2, pb.y - is / 2 - 5, is, is);
     } else {
-      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, '#606080');
+      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, '#7c7364');
     }
   } else {
-    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, ready && cd <= 0 ? '#3ef07a' : '#606080');
+    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, 18, ready && cd <= 0 ? '#90d653' : '#7c7364');
   }
 
   ctx.globalAlpha = 1;
   ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = ready && cd <= 0 ? '#3ef07a' : 'rgba(100,100,130,0.7)';
+  ctx.fillStyle = ready && cd <= 0 ? '#90d653' : 'rgba(127,118,103,0.7)';
   ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
 
   // Show cooldown if active
   if (cd > 0) {
-    ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f88';
+    ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f17e8b';
     ctx.fillText(cd.toFixed(1) + 'с', pb.x, pb.y + pb.r + 10);
   } else {
-    ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(120,120,150,0.55)';
+    ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(147,138,123,0.55)';
     ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
   }
 
@@ -1515,21 +1515,21 @@ function drawTargetButton() {
   ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = hasTarget ? 'rgba(255,60,60,0.85)' : 'rgba(70,55,120,0.6)';
+  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(113,94,62,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
   if (hasTarget) {
-    ctx.strokeStyle = 'rgba(255,60,60,0.15)'; ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(235,73,92,0.15)'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  drawIconCtx(ctx, 'crosshair', tb.x, tb.y - 5, 16, hasTarget ? '#ff8888' : '#8880aa');
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y - 5, 16, hasTarget ? '#f17e8b' : '#a49783');
 
   ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = hasTarget ? 'rgba(255,140,140,0.9)' : 'rgba(130,120,170,0.7)';
+  ctx.fillStyle = hasTarget ? 'rgba(241,129,142,0.9)' : 'rgba(163,149,124,0.7)';
   ctx.fillText('ЦЕЛЬ', tb.x, tb.y + tb.r - 3);
 
-  ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(120,120,150,0.55)';
+  ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(147,138,123,0.55)';
   ctx.fillText('[Tab]', tb.x, tb.y + tb.r + 10);
 
   ctx.restore();
@@ -1553,31 +1553,31 @@ function drawBuffStrip() {
     const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
     if (!bdef) continue;
     const secs = Math.ceil(rem);
-    chips.push({ kind:'pot', img: bdef.img, label: secs < 60 ? secs + 'с' : Math.ceil(rem/60) + 'м', color:'#f0c040' });
+    chips.push({ kind:'pot', img: bdef.img, label: secs < 60 ? secs + 'с' : Math.ceil(rem/60) + 'м', color:'#e5a546' });
   }
 
   // Skill buffs
   const skillBuffs = [
-    { t: typeof barrierTimer     !== 'undefined' ? barrierTimer     : 0, icon:'barrier',   color:'#b082ff' },
-    { t: typeof battleCryTimer   !== 'undefined' ? battleCryTimer   : 0, icon:'battleCry', color:'#ffc81e' },
-    { t: typeof atkSpeedTimer    !== 'undefined' ? atkSpeedTimer    : 0, icon:'lightning', color:'#2ee8ff' },
-    { t: typeof faithShieldTimer !== 'undefined' ? faithShieldTimer : 0, icon:'shield',    color:'#ffee44' },
-    { t: typeof invisTimer       !== 'undefined' ? invisTimer       : 0, icon:'teleport',  color:'#aaddff' },
-    { t: typeof dodgeTimer       !== 'undefined' ? dodgeTimer       : 0, icon:'dash',      color:'#44ff88' },
+    { t: typeof barrierTimer     !== 'undefined' ? barrierTimer     : 0, icon:'barrier',   color:'#eec47c' },
+    { t: typeof battleCryTimer   !== 'undefined' ? battleCryTimer   : 0, icon:'battleCry', color:'#e8a034' },
+    { t: typeof atkSpeedTimer    !== 'undefined' ? atkSpeedTimer    : 0, icon:'lightning', color:'#bf9a6a' },
+    { t: typeof faithShieldTimer !== 'undefined' ? faithShieldTimer : 0, icon:'shield',    color:'#ebad4e' },
+    { t: typeof invisTimer       !== 'undefined' ? invisTimer       : 0, icon:'teleport',  color:'#f2d197' },
+    { t: typeof dodgeTimer       !== 'undefined' ? dodgeTimer       : 0, icon:'dash',      color:'#98e456' },
   ];
   for (const b of skillBuffs) {
     if (b.t > 0) chips.push({ kind:'icon', icon: b.icon, label: Math.ceil(b.t) + 'с', color: b.color });
   }
 
   // Debuffs
-  if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + 'с', color:'#88ccff', debuff:true });
-  if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + 'с', color:'#ff8844', debuff:true });
-  if ((p.freezeTimer || 0) > 0) chips.push({ kind:'icon', icon:'iceNova',   label: Math.ceil(p.freezeTimer) + 'с', color:'#66ddff', debuff:true });
+  if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + 'с', color:'#efc680', debuff:true });
+  if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + 'с', color:'#ebad4e', debuff:true });
+  if ((p.freezeTimer || 0) > 0) chips.push({ kind:'icon', icon:'iceNova',   label: Math.ceil(p.freezeTimer) + 'с', color:'#ccaf88', debuff:true });
   // Death XP penalty — remaining seconds, same as any other player.buffs entry
   const _penaltyLeft = (p.buffs || {}).deathPenalty || 0;
   if (_penaltyLeft > 0) {
     const _pm = Math.ceil(_penaltyLeft / 60);
-    chips.push({ kind:'icon', icon:'star', label: '−XP ' + _pm + 'м', color:'#cc4444', debuff:true });
+    chips.push({ kind:'icon', icon:'star', label: '−XP ' + _pm + 'м', color:'#c34d5b', debuff:true });
   }
 
   if (!chips.length) return;
@@ -1601,7 +1601,7 @@ function drawBuffStrip() {
     const chip = chips[i];
 
     // Background cell
-    ctx.fillStyle = chip.debuff ? 'rgba(40,5,5,0.90)' : 'rgba(8,4,22,0.90)';
+    ctx.fillStyle = chip.debuff ? 'rgba(37,8,11,0.90)' : 'rgba(20,15,6,0.90)';
     roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.fill();
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
@@ -1641,17 +1641,17 @@ function drawPvpButton() {
   ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
-  ctx.strokeStyle = pvpMode ? 'rgba(240,60,60,0.85)' : 'rgba(70,100,210,0.55)';
+  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(194,154,86,0.55)';
   ctx.lineWidth = 1.5;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
 
   if (pvpMode) {
-    ctx.strokeStyle = 'rgba(240,60,60,0.12)'; ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
     roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
   }
 
   const pvpLabel = pvpMode ? 'ПК' : 'Мир';
-  const pvpColor = pvpMode ? '#ff7070' : 'rgba(130,170,240,0.9)';
+  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(224,188,127,0.9)';
   drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
@@ -1668,17 +1668,17 @@ function drawTargetFrame() {
   const isOnline = !!(socket?.connected);
   const activeEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
 
-  let name = '', hp = 0, maxHp = 1, color = '#f80';
+  let name = '', hp = 0, maxHp = 1, color = '#e69419';
   if (targetIsPlayer && isOnline) {
     const op = otherPlayers.get(targetId);
     if (!op) return;
     name = op.username || '?';
-    hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#ff8888';
+    hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#f17e8b';
   } else {
     const e = serverEnemiesMap.get(targetId);
     if (!e) return;
     name = e.name || '?';
-    hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#f80';
+    hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#e69419';
   }
 
   const bw = 160, bh = 42;
@@ -1693,9 +1693,9 @@ function drawTargetFrame() {
   ctx.fillStyle = _uiBtnGrads.tfBg;
   roundRect(ctx, bx, by, bw, bh, 9); ctx.fill();
 
-  ctx.strokeStyle = 'rgba(200,55,55,0.6)'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(191,64,79,0.6)'; ctx.lineWidth = 1.5;
   roundRect(ctx, bx, by, bw, bh, 9); ctx.stroke();
-  ctx.strokeStyle = 'rgba(220,80,80,0.1)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(209,86,101,0.1)'; ctx.lineWidth = 1;
   roundRect(ctx, bx + 1.5, by + 1.5, bw - 3, bh - 3, 8); ctx.stroke();
 
   drawIconCtx(ctx, 'crosshair', bx + 14, by + 10, 10, color);
@@ -1704,7 +1704,7 @@ function drawTargetFrame() {
   ctx.fillText(name.slice(0, 16), bx + 22, by + 15);
 
   const hbx = bx + 8, hby = by + 20, hbw = bw - 16, hbh = 10;
-  ctx.fillStyle = 'rgba(40,10,10,0.9)';
+  ctx.fillStyle = 'rgba(38,12,15,0.9)';
   roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
   if (pct > 0) {
     ctx.fillStyle = pct > 0.5 ? _uiBtnGrads.hpHi : (pct > 0.25 ? _uiBtnGrads.hpMid : _uiBtnGrads.hpLo);
@@ -1713,7 +1713,7 @@ function drawTargetFrame() {
     roundRect(ctx, hbx, hby, hbw * pct, hbh * 0.45, 4); ctx.fill();
   }
   ctx.font = `bold 7.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillStyle = 'rgba(209,204,197,0.92)';
   ctx.fillText(Math.ceil(hp) + ' / ' + maxHp, hbx + hbw / 2, hby + hbh / 2);
 
   ctx.restore();
@@ -1738,7 +1738,7 @@ function drawAttackButton() {
   // cooldown arc overlay while attack animation is playing
   if (animBusy && player.castDuration > 0) {
     const frac = (player.atkAnimTimer || 0) / player.castDuration;
-    ctx.strokeStyle = 'rgba(255,80,40,0.55)';
+    ctx.strokeStyle = 'rgba(233,59,79,0.55)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(ab.x, ab.y, ab.r - 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
@@ -1746,22 +1746,22 @@ function drawAttackButton() {
   }
 
   const borderColor = !autoAttackMode
-    ? (hasTarget && ready ? 'rgba(255,120,60,0.9)' : 'rgba(80,100,220,0.7)')
-    : 'rgba(50,40,90,0.45)';
+    ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
+    : 'rgba(84,70,46,0.45)';
   ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
   if (!autoAttackMode && hasTarget && ready) {
-    ctx.strokeStyle = 'rgba(255,100,50,0.15)'; ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
   ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-  const iconColor = hasTarget && ready ? '#ff9060' : (autoAttackMode ? '#404060' : '#a0b4ff');
+  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
   drawIconCtx(ctx, 'sword', ab.x, ab.y - 5, 20, iconColor);
 
   ctx.globalAlpha = 1;
   ctx.font = `bold 8px ${F}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
-  ctx.fillStyle = autoAttackMode ? 'rgba(80,80,110,0.6)' : (hasTarget ? 'rgba(255,160,100,0.9)' : 'rgba(160,180,255,0.8)');
+  ctx.fillStyle = autoAttackMode ? 'rgba(107,98,83,0.6)' : (hasTarget ? 'rgba(238,183,101,0.9)' : 'rgba(241,206,144,0.8)');
   ctx.fillText('АТК', ab.x, ab.y + ab.r - 3);
   ctx.restore();
 }
@@ -1778,12 +1778,12 @@ function drawAutoToggle() {
   ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
   roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
 
-  ctx.strokeStyle = autoAttackMode ? 'rgba(60,200,90,0.7)' : 'rgba(220,120,50,0.7)';
+  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
   ctx.lineWidth = 1.5;
   roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
 
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = autoAttackMode ? '#3ef07a' : '#f09050';
+  ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
   ctx.fillText(autoAttackMode ? 'АВТО' : 'РУЧ', ab.x + ab.w / 2, ab.y + ab.h / 2);
   ctx.restore();
 }
@@ -1804,13 +1804,13 @@ function drawPartyButton() {
   ctx.fillStyle = _uiBtnGrads.ptg0;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
-  ctx.strokeStyle = 'rgba(60,200,90,0.8)';
+  ctx.strokeStyle = 'rgba(127,181,79,0.8)';
   ctx.lineWidth = 1.5;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
 
-  drawIconCtx(ctx, 'party', pb.x + 14, pb.y + pb.h / 2, 12, '#3ef07a');
+  drawIconCtx(ctx, 'party', pb.x + 14, pb.y + pb.h / 2, 12, '#90d653');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#3ef07a';
+  ctx.fillStyle = '#90d653';
   ctx.fillText('Пати+', pb.x + 23, pb.y + pb.h / 2);
 
   ctx.restore();
@@ -1833,11 +1833,11 @@ function drawPartyHUD() {
   const _hbx = startX + 20, _hbw = 130 - 24;
   if (!_partyHpGrads || _partyHpGrads.hbx !== _hbx || _partyHpGrads.c !== ctx) {
     const _gh = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
-    _gh.addColorStop(0, '#0c5a22'); _gh.addColorStop(1, '#1ec95a');
+    _gh.addColorStop(0, '#314f17'); _gh.addColorStop(1, '#6fb136');
     const _gm = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
-    _gm.addColorStop(0, '#7a4200'); _gm.addColorStop(1, '#f0921a');
+    _gm.addColorStop(0, '#6e470c'); _gm.addColorStop(1, '#e39827');
     const _gl = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
-    _gl.addColorStop(0, '#6b0c0c'); _gl.addColorStop(1, '#e03030');
+    _gl.addColorStop(0, '#64131c'); _gl.addColorStop(1, '#d33d4e');
     _partyHpGrads = { hi: _gh, mid: _gm, lo: _gl, hbx: _hbx, c: ctx };
   }
 
@@ -1851,27 +1851,27 @@ function drawPartyHUD() {
 
     ctx.save();
     const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
-    bg.addColorStop(0, 'rgba(8,30,14,0.97)'); bg.addColorStop(1, 'rgba(4,15,7,0.99)');
+    bg.addColorStop(0, 'rgba(18,27,11,0.97)'); bg.addColorStop(1, 'rgba(9,13,6,0.99)');
     ctx.fillStyle = bg;
     roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
-    ctx.strokeStyle = 'rgba(60,180,80,0.55)'; ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(117,163,77,0.55)'; ctx.lineWidth = 1.2;
     roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
 
-    drawIconCtx(ctx, 'party', bx + 11, by + bh / 2, 11, '#3ef07a');
+    drawIconCtx(ctx, 'party', bx + 11, by + bh / 2, 11, '#90d653');
 
     ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#3ef07a';
+    ctx.fillStyle = '#90d653';
     ctx.fillText((member.name || '?').slice(0, 12), bx + 20, by + 10);
 
     const hbx = bx + 20, hby = by + 13, hbw = bw - 24, hbh = 8;
-    ctx.fillStyle = 'rgba(10,30,10,0.9)';
+    ctx.fillStyle = 'rgba(20,27,13,0.9)';
     roundRect(ctx, hbx, hby, hbw, hbh, 3); ctx.fill();
     if (pct > 0) {
       ctx.fillStyle = pct > 0.5 ? _partyHpGrads.hi : pct > 0.25 ? _partyHpGrads.mid : _partyHpGrads.lo;
       roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
     }
     ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillStyle = 'rgba(209,204,197,0.88)';
     ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
 
     ctx.restore();
@@ -1881,14 +1881,14 @@ function drawPartyHUD() {
   const lb = getPartyLeaveBtnPos();
   ctx.save();
   const lbg = ctx.createLinearGradient(lb.x, lb.y, lb.x, lb.y + lb.h);
-  lbg.addColorStop(0, 'rgba(50,10,10,0.97)'); lbg.addColorStop(1, 'rgba(25,5,5,0.99)');
+  lbg.addColorStop(0, 'rgba(47,13,17,0.97)'); lbg.addColorStop(1, 'rgba(24,6,8,0.99)');
   ctx.fillStyle = lbg;
   roundRect(ctx, lb.x, lb.y, lb.w, lb.h, 7); ctx.fill();
-  ctx.strokeStyle = 'rgba(220,60,60,0.75)'; ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(209,71,87,0.75)'; ctx.lineWidth = 1.2;
   roundRect(ctx, lb.x, lb.y, lb.w, lb.h, 7); ctx.stroke();
-  drawIconCtx(ctx, 'partyLeave', lb.x + 13, lb.y + lb.h / 2, 10, '#ff7070');
+  drawIconCtx(ctx, 'partyLeave', lb.x + 13, lb.y + lb.h / 2, 10, '#ef6d7c');
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ff7070';
+  ctx.fillStyle = '#ef6d7c';
   ctx.fillText('Выйти', lb.x + 22, lb.y + lb.h / 2);
   ctx.restore();
 }
@@ -1907,42 +1907,42 @@ function drawPartyInvitePopup() {
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
 
   const bg = ctx.createLinearGradient(px, py, px, py + ph);
-  bg.addColorStop(0, 'rgba(8,30,14,0.99)'); bg.addColorStop(1, 'rgba(4,15,8,0.99)');
+  bg.addColorStop(0, 'rgba(18,27,11,0.99)'); bg.addColorStop(1, 'rgba(9,13,6,0.99)');
   ctx.fillStyle = bg;
   roundRect(ctx, px, py, pw, ph, 12); ctx.fill();
-  ctx.strokeStyle = 'rgba(60,200,90,0.75)'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(127,181,79,0.75)'; ctx.lineWidth = 1.5;
   roundRect(ctx, px, py, pw, ph, 12); ctx.stroke();
 
-  drawIconCtx(ctx, 'party', px + 20, py + 18, 16, '#3ef07a');
+  drawIconCtx(ctx, 'party', px + 20, py + 18, 16, '#90d653');
   ctx.font = `bold 12px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#eee';
+  ctx.fillStyle = '#d5d0ca';
   ctx.fillText('Приглашение в пати', px + 34, py + 14);
-  ctx.font = `10px ${F}`; ctx.fillStyle = '#3ef07a';
+  ctx.font = `10px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
 
   // Accept button
   const ac = getPartyAcceptPos();
-  ctx.fillStyle = 'rgba(10,50,20,0.99)';
+  ctx.fillStyle = 'rgba(29,44,16,0.99)';
   roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.fill();
-  ctx.strokeStyle = 'rgba(60,200,90,0.8)'; ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(127,181,79,0.8)'; ctx.lineWidth = 1.2;
   roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.stroke();
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#3ef07a';
+  ctx.fillStyle = '#90d653';
   ctx.fillText('Принять', ac.x + ac.w / 2, ac.y + ac.h / 2);
 
   // Decline button
   const dc = getPartyDeclinePos();
-  ctx.fillStyle = 'rgba(40,10,10,0.99)';
+  ctx.fillStyle = 'rgba(38,12,15,0.99)';
   roundRect(ctx, dc.x, dc.y, dc.w, dc.h, 8); ctx.fill();
-  ctx.strokeStyle = 'rgba(200,50,50,0.8)'; ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(190,60,75,0.8)'; ctx.lineWidth = 1.2;
   roundRect(ctx, dc.x, dc.y, dc.w, dc.h, 8); ctx.stroke();
-  ctx.fillStyle = '#ff7070';
+  ctx.fillStyle = '#ef6d7c';
   ctx.fillText('Отказ', dc.x + dc.w / 2, dc.y + dc.h / 2);
 
   // Timer bar
   const alpha = Math.min(1, inv.timer / 3);
   ctx.globalAlpha = 0.5;
-  ctx.fillStyle = '#3ef07a';
+  ctx.fillStyle = '#90d653';
   roundRect(ctx, px + 8, py + ph - 6, (pw - 16) * alpha, 3, 2); ctx.fill();
   ctx.globalAlpha = 1;
 
@@ -1996,13 +1996,13 @@ function openInvItemModal(idx) {
       <div class="imod-hdr">
         <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
         <div class="imod-title-block">
-          <div class="imod-name" style="color:#f0c040">${it.name}</div>
-          <div class="imod-sub"><span style="color:#f0c040">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · Зелье усиления · ×${qty}</div>
+          <div class="imod-name" style="color:#e5a546">${it.name}</div>
+          <div class="imod-sub"><span style="color:#e5a546">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · Зелье усиления · ×${qty}</div>
         </div>
         <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
       </div>
       <div class="imod-stats">${it.buffDesc || ''}</div>
-      ${active ? `<div style="padding:8px 12px;background:rgba(240,192,64,0.1);border-radius:8px;color:#f0c040;font-size:12px;text-align:center">✓ Активно · осталось ~${remaining} мин</div>` : ''}
+      ${active ? `<div style="padding:8px 12px;background:rgba(229,165,70,0.1);border-radius:8px;color:#e5a546;font-size:12px;text-align:center">✓ Активно · осталось ~${remaining} мин</div>` : ''}
       <div class="imod-btns">
         <button class="imod-btn imod-equip${active ? ' disabled' : ''}" onclick="${active ? '' : `useBuffPotion('${it.id}');closeInvItemModal()`}">
           ${active ? 'Уже активно' : 'Использовать'}
@@ -2017,7 +2017,7 @@ function openInvItemModal(idx) {
 
   if (_isStackable(it) || it.slot === 'use') return;
 
-  const rc    = RARITY_COLOR[it.rarity] || '#aaa';
+  const rc    = RARITY_COLOR[it.rarity] || '#aea599';
   const enh   = it.enhance || 0;
   const eb    = _enhBonus(it);
   const next1 = _enhBonusAt(it, 1);
@@ -2027,15 +2027,15 @@ function openInvItemModal(idx) {
   if (it.atk || eb.atk) {
     const base = it.atk || 0;
     const total = base + (eb.atk || 0);
-    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#ffd700">(+${eb.atk})</span>` : ''}`);
+    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#e69419">(+${eb.atk})</span>` : ''}`);
   }
   if (it.def || eb.def) {
     const total = (it.def || 0) + (eb.def || 0);
-    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#ffd700">(+${eb.def})</span>` : ''}`);
+    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#e69419">(+${eb.def})</span>` : ''}`);
   }
   if (it.hp || eb.hp) {
     const total = (it.hp || 0) + (eb.hp || 0);
-    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#ffd700">(+${eb.hp})</span>` : ''}`);
+    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#e69419">(+${eb.hp})</span>` : ''}`);
   }
   if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
   if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
@@ -2049,15 +2049,15 @@ function openInvItemModal(idx) {
   if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
 
   const rate = _enhSuccessRate(enh);
-  const rateColor = rate >= 80 ? '#4f4' : rate >= 50 ? '#ff0' : rate >= 30 ? '#f80' : '#f44';
+  const rateColor = rate >= 80 ? '#98e456' : rate >= 50 ? '#e6ac19' : rate >= 30 ? '#e69419' : '#eb4e61';
   const enhBlock = canEnh
     ? `<div class="imod-enh-block">
-        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#ffd700">+${enh+1}</span></div>
+        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#e69419">+${enh+1}</span></div>
         ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
         <div class="imod-enh-chance">Шанс: <b style="color:${rateColor}">${rate}%</b></div>
         ${_enhStonesBlock('enhanceItem', idx)}
       </div>`
-    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#ffd700">✦ Максимальная заточка</div></div>`;
+    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">✦ Максимальная заточка</div></div>`;
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -2068,7 +2068,7 @@ function openInvItemModal(idx) {
     <div class="imod-hdr">
       <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
       <div class="imod-title-block">
-        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#ffd700">+${enh}</span>` : ''}</div>
+        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#e69419">+${enh}</span>` : ''}</div>
         <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot}</div>
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
@@ -2106,10 +2106,10 @@ function openBoxModal(idx) {
   const boxDef = BOX_DEF.find(b => b.id === it.id);
   if (!boxDef) return;
   const qty = it.qty || 1;
-  const rc = RARITY_COLOR[boxDef.rarity] || '#aaa';
+  const rc = RARITY_COLOR[boxDef.rarity] || '#aea599';
 
   const oddsHtml = boxDef.odds.map(o => {
-    const rcO = RARITY_COLOR[o.rarity] || '#aaa';
+    const rcO = RARITY_COLOR[o.rarity] || '#aea599';
     const cands = _boxCandidates(o.rarity);
     const icons = cands.map(c => `<span title="${c.name}" style="display:inline-block;margin:2px">${_itemIcon(c, 26)}</span>`).join('');
     return `<div class="box-odds-row">
@@ -2132,7 +2132,7 @@ function openBoxModal(idx) {
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
-    <div style="font-size:11px;color:#888">Открытие даёт 1 случайный предмет:</div>
+    <div style="font-size:11px;color:#968a7a">Открытие даёт 1 случайный предмет:</div>
     <div class="box-odds-list">${oddsHtml}</div>
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="openLootBox(${idx})">Открыть</button>
@@ -2147,7 +2147,7 @@ function openLootBox(idx) {
   if (!it) return;
   const boxDef = BOX_DEF.find(b => b.id === it.id);
   if (!boxDef) return;
-  if (!invHasSpace()) { dmgNum(player.x, player.y - 30, 'Инвентарь полон!', '#f88'); return; }
+  if (!invHasSpace()) { dmgNum(player.x, player.y - 30, 'Инвентарь полон!', '#f17e8b'); return; }
 
   if ((it.qty || 1) <= 1) player.inventory.splice(idx, 1);
   else it.qty--;
@@ -2161,7 +2161,7 @@ function openLootBox(idx) {
   const cands = _boxCandidates(resultRarity);
   const wonItem = cands[Math.floor(Math.random() * cands.length)];
   if (wonItem && addToInventory({ ...wonItem })) {
-    dmgNum(player.x, player.y - 30, '+ ' + wonItem.name, RARITY_COLOR[wonItem.rarity] || '#4ff');
+    dmgNum(player.x, player.y - 30, '+ ' + wonItem.name, RARITY_COLOR[wonItem.rarity] || '#c4a276');
   }
   netSaveProgress();
   closeInvItemModal();
@@ -2177,7 +2177,7 @@ function enhanceItem(idx, stoneType) {
 
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   let stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
-  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f88'); return; }
+  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f17e8b'); return; }
 
   const stoneItem = player.inventory[stoneIdx];
   if ((stoneItem.qty || 1) <= 1) {
@@ -2191,17 +2191,17 @@ function enhanceItem(idx, stoneType) {
   if (success) {
     it.enhance = enh + 1;
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#ffd700');
+    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#e69419');
     openInvItemModal(idx);
   } else if (stoneType === 'bless') {
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f88');
+    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f17e8b');
     openInvItemModal(idx);
   } else {
     player.inventory.splice(idx, 1);
     recompute(); netSaveProgress();
     closeInvItemModal();
-    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#f44');
+    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#eb4e61');
   }
 }
 
@@ -2210,7 +2210,7 @@ function openEqItemModal(slot) {
   const it = player.equipment[slot];
   if (!it) return;
 
-  const rc   = RARITY_COLOR[it.rarity] || '#aaa';
+  const rc   = RARITY_COLOR[it.rarity] || '#aea599';
   const enh  = it.enhance || 0;
   const eb   = _enhBonus(it);
   const next1 = _enhBonusAt(it, 1);
@@ -2218,15 +2218,15 @@ function openEqItemModal(slot) {
   const statRows = [];
   if (it.atk || eb.atk) {
     const total = (it.atk || 0) + (eb.atk || 0);
-    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#ffd700">(+${eb.atk})</span>` : ''}`);
+    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#e69419">(+${eb.atk})</span>` : ''}`);
   }
   if (it.def || eb.def) {
     const total = (it.def || 0) + (eb.def || 0);
-    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#ffd700">(+${eb.def})</span>` : ''}`);
+    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#e69419">(+${eb.def})</span>` : ''}`);
   }
   if (it.hp || eb.hp) {
     const total = (it.hp || 0) + (eb.hp || 0);
-    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#ffd700">(+${eb.hp})</span>` : ''}`);
+    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#e69419">(+${eb.hp})</span>` : ''}`);
   }
   if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
   if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
@@ -2239,15 +2239,15 @@ function openEqItemModal(slot) {
   if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
 
   const rate2 = _enhSuccessRate(enh);
-  const rateColor2 = rate2 >= 80 ? '#4f4' : rate2 >= 50 ? '#ff0' : rate2 >= 30 ? '#f80' : '#f44';
+  const rateColor2 = rate2 >= 80 ? '#98e456' : rate2 >= 50 ? '#e6ac19' : rate2 >= 30 ? '#e69419' : '#eb4e61';
   const enhBlock = canEnh
     ? `<div class="imod-enh-block">
-        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#ffd700">+${enh+1}</span></div>
+        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#e69419">+${enh+1}</span></div>
         ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
         <div class="imod-enh-chance">Шанс: <b style="color:${rateColor2}">${rate2}%</b></div>
         ${_enhStonesBlock('enhanceEqItem', slot)}
       </div>`
-    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#ffd700">✦ Максимальная заточка</div></div>`;
+    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">✦ Максимальная заточка</div></div>`;
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -2258,15 +2258,15 @@ function openEqItemModal(slot) {
     <div class="imod-hdr">
       <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
       <div class="imod-title-block">
-        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#ffd700">+${enh}</span>` : ''}</div>
-        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot} · <span style="color:#7ab8ff">Надето</span></div>
+        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#e69419">+${enh}</span>` : ''}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot} · <span style="color:#eec276">Надето</span></div>
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
     ${enhBlock}
     <div class="imod-btns">
-      <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#3a1a1a,#6a2a2a);color:#ff9999" onclick="unequipFromModal('${slot}')">Снять</button>
+      <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#381c1f,#672d34);color:#f28a96" onclick="unequipFromModal('${slot}')">Снять</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -2286,7 +2286,7 @@ function enhanceEqItem(slot, stoneType) {
 
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   const stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
-  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f88'); return; }
+  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f17e8b'); return; }
 
   const stoneItem = player.inventory[stoneIdx];
   if ((stoneItem.qty || 1) <= 1) { player.inventory.splice(stoneIdx, 1); }
@@ -2296,17 +2296,17 @@ function enhanceEqItem(slot, stoneType) {
   if (success) {
     it.enhance = enh + 1;
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#ffd700');
+    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#e69419');
     openEqItemModal(slot);
   } else if (stoneType === 'bless') {
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f88');
+    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f17e8b');
     openEqItemModal(slot);
   } else {
     player.equipment[slot] = null;
     recompute(); netSaveProgress();
     closeInvItemModal();
-    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#f44');
+    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#eb4e61');
   }
 }
 
@@ -2350,7 +2350,7 @@ function openRatingPanel() {
   const panel = document.getElementById('rating-panel');
   if (!panel) return;
   if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Рейтинг с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Рейтинг с ${FEATURE_UNLOCK_LEVEL} уровня`, '#eaa742');
     return;
   }
   panel.style.display = 'flex';
@@ -2407,7 +2407,7 @@ function _renderRatingBody() {
         <div class="rating-rank ${rankCls}">${medal}</div>
         <div class="rating-avatar">${init}</div>
         <div style="flex:1;min-width:0">
-          <div class="rating-name">@${r.username}${isMe ? ' <span style="font-size:10px;color:#ffd23c;opacity:.7">(вы)</span>' : ''}</div>
+          <div class="rating-name">@${r.username}${isMe ? ' <span style="font-size:10px;color:#ebaa49;opacity:.7">(вы)</span>' : ''}</div>
           <div class="rating-sub">Ур. ${r.level || 1}</div>
         </div>
         <div class="rating-bm">
@@ -2674,7 +2674,7 @@ function openMarketPanel() {
   const panel = document.getElementById('market-panel');
   if (!panel) return;
   if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Маркет с ${FEATURE_UNLOCK_LEVEL} уровня`, '#f93');
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Маркет с ${FEATURE_UNLOCK_LEVEL} уровня`, '#eaa742');
     return;
   }
   panel.style.display = 'flex';
@@ -2707,7 +2707,7 @@ function _renderMarketBody() {
 
 function _marketRowHtml(l, mode) {
   const it = l.item || {};
-  const rc = RARITY_COLOR[it.rarity] || '#aaa';
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
   const qtySuffix = it.qty > 1 ? ` ×${it.qty}` : '';
   const sub = mode === 'buy' ? `@${l.sellerUsername || '?'}` : (statStr(it) || '');
   const action = mode === 'buy'
@@ -2720,7 +2720,7 @@ function _marketRowHtml(l, mode) {
       <div class="market-row-sub">${sub}</div>
       ${action}
     </div>
-    <div class="market-row-price">${l.price.toFixed(2)}<br><span style="font-size:9px;color:#7788aa;font-weight:600">GRAM</span></div>
+    <div class="market-row-price">${l.price.toFixed(2)}<br><span style="font-size:9px;color:#a3957c;font-weight:600">GRAM</span></div>
   </div>`;
 }
 
@@ -2742,7 +2742,7 @@ function _renderMarketHistoryTab(el) {
   if (!_marketHist.length) { el.innerHTML = '<div class="rating-empty">История пуста</div>'; return; }
   el.innerHTML = _marketHist.map(h => {
     const it = h.item || {};
-    const rc = RARITY_COLOR[it.rarity] || '#aaa';
+    const rc = RARITY_COLOR[it.rarity] || '#aea599';
     const isSell = h.role === 'sell';
     const cancelled = h.status === 'cancelled';
     const statusCls = cancelled ? 'market-hist-cancelled' : (isSell ? 'market-hist-sell' : 'market-hist-buy');
@@ -2757,7 +2757,7 @@ function _renderMarketHistoryTab(el) {
         <div class="market-row-sub">${h.counterpart ? '@' + h.counterpart + ' · ' : ''}${date}</div>
         <span class="market-hist-status ${statusCls}">${statusLbl}</span>
       </div>
-      <div class="market-row-price">${amt ? amtSign + amt + '<br><span style="font-size:9px;color:#7788aa;font-weight:600">GRAM</span>' : ''}</div>
+      <div class="market-row-price">${amt ? amtSign + amt + '<br><span style="font-size:9px;color:#a3957c;font-weight:600">GRAM</span>' : ''}</div>
     </div>`;
   }).join('');
 }
@@ -2765,7 +2765,7 @@ function _renderMarketHistoryTab(el) {
 function _marketToast(text, type) {
   const ok = type !== 'err';
   const toast = document.createElement('div');
-  toast.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);background:${ok ? '#1a3a2a' : '#3a1a1a'};border:1px solid ${ok ? '#4ecb71' : '#e05a5a'};color:${ok ? '#4ecb71' : '#ff8888'};padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;max-width:80vw;text-align:center`;
+  toast.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);background:${ok ? '#29361e' : '#381c1f'};border:1px solid ${ok ? '#89ba5f' : '#d55d6b'};color:${ok ? '#89ba5f' : '#f17e8b'};padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;max-width:80vw;text-align:center`;
   toast.textContent = text;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
@@ -2782,7 +2782,7 @@ function openMarketBuyConfirm(listingId) {
   const existing = document.getElementById('market-buy-ov');
   if (existing) existing.remove();
   const it  = l.item || {};
-  const rc  = RARITY_COLOR[it.rarity] || '#aaa';
+  const rc  = RARITY_COLOR[it.rarity] || '#aea599';
   const bal = window._gramBalance || 0;
   const canAfford = bal >= l.price;
   const ov = document.createElement('div');
@@ -2792,22 +2792,22 @@ function openMarketBuyConfirm(listingId) {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:#3ef07a">Подтверждение покупки</div>
-        <button onclick="document.getElementById('market-buy-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;cursor:pointer">✕</button>
+        <div style="font-size:16px;font-weight:800;color:#90d653">Подтверждение покупки</div>
+        <button onclick="document.getElementById('market-buy-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(255,255,255,.04);border-radius:10px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:14px">
         <div class="market-row-icon" style="width:44px;height:44px">${_itemIcon(it, 32)}</div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
-          <div style="font-size:11px;color:#7788aa;margin-top:2px">${statStr(it) || '&nbsp;'}</div>
-          <div style="font-size:11px;color:#7788aa;margin-top:2px">Продавец: @${l.sellerUsername || '?'}</div>
+          <div style="font-size:11px;color:#a3957c;margin-top:2px">${statStr(it) || '&nbsp;'}</div>
+          <div style="font-size:11px;color:#a3957c;margin-top:2px">Продавец: @${l.sellerUsername || '?'}</div>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#8899bb">Цена</span><span style="font-weight:700;color:#3ef07a">${l.price.toFixed(2)} GRAM</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px"><span style="color:#8899bb">Ваш баланс</span><span style="font-weight:700;color:${canAfford ? '#d0e0ff' : '#f66'}">${bal.toFixed(2)} GRAM</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#b2a288">Цена</span><span style="font-weight:700;color:#90d653">${l.price.toFixed(2)} GRAM</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px"><span style="color:#b2a288">Ваш баланс</span><span style="font-weight:700;color:${canAfford ? '#f5dbae' : '#ee6676'}">${bal.toFixed(2)} GRAM</span></div>
       ${canAfford
         ? `<button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="_confirmMarketBuy('${listingId}')">Купить за ${l.price.toFixed(2)} GRAM</button>`
-        : `<div style="text-align:center;color:#f66;font-size:12px;font-weight:600">Недостаточно GRAM</div>`}
+        : `<div style="text-align:center;color:#ee6676;font-size:12px;font-weight:600">Недостаточно GRAM</div>`}
     </div>`;
   document.body.appendChild(ov);
 }
@@ -2835,22 +2835,22 @@ function openMarketSellPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:#3ef07a">Выставить предмет</div>
-        <button onclick="document.getElementById('market-sell-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;cursor:pointer">✕</button>
+        <div style="font-size:16px;font-weight:800;color:#90d653">Выставить предмет</div>
+        <button onclick="document.getElementById('market-sell-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
-      <div style="font-size:11px;color:#7788aa;margin-bottom:8px">Выберите предмет из инвентаря</div>
+      <div style="font-size:11px;color:#a3957c;margin-bottom:8px">Выберите предмет из инвентаря</div>
       <div class="market-pick-grid" id="market-pick-grid"></div>
       <div id="market-sell-confirm" style="display:none;margin-top:6px">
-        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,.04);border-radius:10px;margin-bottom:12px" id="market-sell-selected"></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:12px" id="market-sell-selected"></div>
         <div id="market-qty-row" style="display:none;margin-bottom:10px">
-          <div style="font-size:11px;color:#7788aa;margin-bottom:5px">Количество</div>
+          <div style="font-size:11px;color:#a3957c;margin-bottom:5px">Количество</div>
           <input type="number" id="market-qty-input" min="1" step="1" value="1"
-            style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#fff;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
+            style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
         </div>
-        <div style="font-size:11px;color:#7788aa;margin-bottom:5px">Цена за всё количество (${MARKET_MIN_PRICE}–${MARKET_MAX_PRICE} GRAM)</div>
+        <div style="font-size:11px;color:#a3957c;margin-bottom:5px">Цена за всё количество (${MARKET_MIN_PRICE}–${MARKET_MAX_PRICE} GRAM)</div>
         <input type="number" id="market-price-input" min="${MARKET_MIN_PRICE}" max="${MARKET_MAX_PRICE}" step="0.1" value="1"
-          style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#fff;font-size:15px;font-weight:700;margin-bottom:6px;box-sizing:border-box" oninput="_updateMarketFeePreview()">
-        <div id="market-fee-preview" style="font-size:11px;color:#7788aa;margin-bottom:14px"></div>
+          style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;margin-bottom:6px;box-sizing:border-box" oninput="_updateMarketFeePreview()">
+        <div id="market-fee-preview" style="font-size:11px;color:#a3957c;margin-bottom:14px"></div>
         <button class="market-add-btn" id="market-confirm-btn" onclick="_confirmMarketList()">Выставить на продажу</button>
       </div>
     </div>`;
@@ -2869,9 +2869,9 @@ function _renderMarketPickGrid() {
   if (!grid || !player) return;
   if (!player.inventory.length) { grid.innerHTML = '<div class="rating-empty" style="grid-column:1/-1">Инвентарь пуст</div>'; return; }
   grid.innerHTML = player.inventory.map((it, idx) => {
-    const rc  = RARITY_COLOR[it.rarity] || '#aaa';
+    const rc  = RARITY_COLOR[it.rarity] || '#aea599';
     const sel = _marketSellPick === idx ? ' selected' : '';
-    const cnt = it.qty > 1 ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#aee;font-weight:bold">×${it.qty}</span>` : '';
+    const cnt = it.qty > 1 ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${it.qty}</span>` : '';
     return `<div class="market-pick-cell${sel}" style="border-color:${rc}55" onclick="_pickMarketSellItem(${idx})" title="${it.name}">
       ${_itemIcon(it, 26)}${cnt}
     </div>`;
@@ -2886,12 +2886,12 @@ function _pickMarketSellItem(idx) {
   const confirmWrap = document.getElementById('market-sell-confirm');
   const qtyRow = document.getElementById('market-qty-row');
   if (!it || !box || !confirmWrap) return;
-  const rc = RARITY_COLOR[it.rarity] || '#aaa';
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
   const have = it.qty || 1;
   const stackable = _isStackable(it) && have > 1;
   box.innerHTML = `<div class="market-row-icon" style="width:40px;height:40px">${_itemIcon(it, 28)}</div>
     <div><div style="font-weight:700;color:${rc}">${it.name}${it.enhance ? ' +' + it.enhance : ''}</div>
-    <div style="font-size:11px;color:#7788aa;margin-top:2px">${statStr(it) || (have > 1 ? 'У вас: ×' + have : '')}</div></div>`;
+    <div style="font-size:11px;color:#a3957c;margin-top:2px">${statStr(it) || (have > 1 ? 'У вас: ×' + have : '')}</div></div>`;
   confirmWrap.style.display = 'block';
   if (qtyRow) {
     qtyRow.style.display = stackable ? 'block' : 'none';
@@ -2922,12 +2922,12 @@ function _updateMarketFeePreview() {
   const p = Number(input.value);
   if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
     el.textContent = `Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM`;
-    el.style.color = '#f66';
+    el.style.color = '#ee6676';
     return;
   }
   const payout = p * (1 - MARKET_FEE_PCT);
   el.textContent = `Комиссия 10% сгорает — вы получите ${payout.toFixed(2)} GRAM`;
-  el.style.color = '#7788aa';
+  el.style.color = '#a3957c';
 }
 
 function _setSellPickerBusy(busy) {
@@ -3030,12 +3030,12 @@ function onMarketListError(msg) {
 //  GRAM SHOP PANEL
 // ─────────────────────────────────────────────────────────
 const _GRAM_SHOP_PKGS_UI = [
-  { id:'pkg1',   gram:1,   label:'Стартовый',  gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#7788aa' },
-  { id:'pkg5',   gram:5,   label:'Базовый',    gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#4ecb71' },
-  { id:'pkg10',  gram:10,  label:'Стандарт',   gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#55aaff' },
-  { id:'pkg30',  gram:30,  label:'Продвинутый',gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#bb55ff' },
-  { id:'pkg50',  gram:50,  label:'Элитный',    gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#f0a040' },
-  { id:'pkg100', gram:100, label:'Легендарный',gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#ff4444' },
+  { id:'pkg1',   gram:1,   label:'Стартовый',  gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c' },
+  { id:'pkg5',   gram:5,   label:'Базовый',    gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#89ba5f' },
+  { id:'pkg10',  gram:10,  label:'Стандарт',   gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#eab65d' },
+  { id:'pkg30',  gram:30,  label:'Продвинутый',gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761' },
+  { id:'pkg50',  gram:50,  label:'Элитный',    gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#e5a546' },
+  { id:'pkg100', gram:100, label:'Легендарный',gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61' },
 ];
 
 function showGramShopBtn() {
@@ -3060,7 +3060,7 @@ function _renderGramShopPanel() {
   if (!el) return;
   const bal = window._gramBalance || 0;
   el.innerHTML = `
-    <div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#f0d060;text-align:center">
+    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
       Баланс: <b>${bal.toFixed(2)} GRAM</b>
     </div>
     ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
@@ -3120,7 +3120,7 @@ function _gramShopPkgHtml(pkg, bal) {
         <div class="gram-shop-price">${pkg.gram} GRAM</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
-        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#556'}"
+        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
         onclick="${canAfford ? `openGramShopConfirm('${pkg.id}')` : ''}">
         ${canAfford ? 'Купить' : 'Мало'}
       </button>
@@ -3137,9 +3137,9 @@ function openGramShopConfirm(pkgId) {
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
-  const armorLine  = pkg.armor  ? `<div style="color:#ccc">• Полный ${pkg.armor} сет</div>` : '';
-  const weaponLine = pkg.weapon ? `<div style="color:#ccc">• Оружие ${pkg.weapon} (по классу)</div>` : '';
-  const spLine     = pkg.bonusSP ? `<div style="color:#ccc">• +${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</div>` : '';
+  const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">• Полный ${pkg.armor} сет</div>` : '';
+  const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">• Оружие ${pkg.weapon} (по классу)</div>` : '';
+  const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">• +${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</div>` : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
   ov.id = 'gram-shop-confirm-ov';
@@ -3148,20 +3148,20 @@ function openGramShopConfirm(pkgId) {
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
         <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
-        <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;cursor:pointer">✕</button>
+        <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
-      <div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
-        <div style="color:#ccc">• ${kGold} золота</div>
-        <div style="color:#ccc">• ${pkg.potions}× каждое зелье (6 видов)</div>
+      <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
+        <div style="color:#c5bfb7">• ${kGold} золота</div>
+        <div style="color:#c5bfb7">• ${pkg.potions}× каждое зелье (6 видов)</div>
         ${armorLine}${weaponLine}${spLine}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
-        <span style="color:#8899bb">Стоимость</span>
+        <span style="color:#b2a288">Стоимость</span>
         <span style="font-weight:700;color:${pkg.color}">${pkg.gram} GRAM</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
-        <span style="color:#8899bb">Ваш баланс</span>
-        <span style="font-weight:700;color:#d0e0ff">${bal.toFixed(2)} GRAM</span>
+        <span style="color:#b2a288">Ваш баланс</span>
+        <span style="font-weight:700;color:#f5dbae">${bal.toFixed(2)} GRAM</span>
       </div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
         onclick="_confirmGramShopBuy('${pkgId}')">Купить за ${pkg.gram} GRAM</button>
@@ -3224,7 +3224,7 @@ function updateFriendsUI() {
         <span id="ref-link-val" style="flex:1;font-size:12px">${refLink || 'Загрузка...'}</span>
         <button class="ref-copy-btn" onclick="refCopyLink()">Копировать</button>
       </div>
-      <div style="font-size:11px;color:#556688;margin-top:8px">За каждый депозит друга вы получаете <b style="color:#4ecb71">5%</b></div>
+      <div style="font-size:11px;color:#82745b;margin-top:8px">За каждый депозит друга вы получаете <b style="color:#89ba5f">5%</b></div>
     </div>
 
     <div class="ref-stats-row">
@@ -3262,7 +3262,7 @@ function refCopyLink() {
   if (!link) return;
   navigator.clipboard.writeText(link).then(() => {
     const btn = document.querySelector('.ref-copy-btn');
-    if (btn) { const old = btn.textContent; btn.textContent = 'Скопировано!'; btn.style.color = '#4ecb71'; setTimeout(() => { btn.textContent = old; btn.style.color = ''; }, 2000); }
+    if (btn) { const old = btn.textContent; btn.textContent = 'Скопировано!'; btn.style.color = '#89ba5f'; setTimeout(() => { btn.textContent = old; btn.style.color = ''; }, 2000); }
   }).catch(() => {});
 }
 
@@ -3278,7 +3278,7 @@ function onFriendJoined(data) {
   if (el && window._profileTab === 'friends') updateFriendsUI();
   // Toast notification
   const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#1a3a2a;border:1px solid #4ecb71;color:#4ecb71;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
+  toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#29361e;border:1px solid #89ba5f;color:#89ba5f;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
   toast.textContent = `Друг @${data.username || 'игрок'} присоединился!`;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
@@ -3289,7 +3289,7 @@ function onRefBonusReceived(data) {
   if (f) f.bonus = (f.bonus || 0) + data.bonus;
   if (window._profileTab === 'friends') updateFriendsUI();
   const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid #7eb8ff;color:#7eb8ff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
+  toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#362d1e;border:1px solid #eec379;color:#eec379;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
   toast.textContent = `+${data.bonus.toFixed(2)} GRAM от реферала @${data.fromUsername}`;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
@@ -3376,10 +3376,10 @@ function openGramDepositModal() {
                  : (window.netUsername || String(Date.now()));
   const html = `
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
-      <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#0d0818;border-radius:18px 18px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:22px 20px 36px;">
+      <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">
         <div style="display:flex;align-items:center;margin-bottom:18px">
-          <div style="font-size:16px;font-weight:800;color:#3ef07a">Пополнение GRAM</div>
-          <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;cursor:pointer">✕</button>
+          <div style="font-size:16px;font-weight:800;color:#90d653">Пополнение GRAM</div>
+          <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
         </div>
 
         <div class="gram-hint" style="margin-bottom:6px">Переведите GRAM на адрес кошелька:</div>
@@ -3430,13 +3430,13 @@ function openGramWithdrawModal() {
   const balance = window._gramBalance || 0;
   const html = `
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
-      <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#0d0818;border-radius:18px 18px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:22px 20px 36px;">
+      <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">
         <div style="display:flex;align-items:center;margin-bottom:18px">
-          <div style="font-size:16px;font-weight:800;color:#f0a040">Вывод GRAM</div>
-          <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;cursor:pointer">✕</button>
+          <div style="font-size:16px;font-weight:800;color:#e5a546">Вывод GRAM</div>
+          <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
         </div>
 
-        <div style="background:rgba(240,160,64,0.08);border:1px solid rgba(240,160,64,0.2);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#c0a060">
+        <div style="background:rgba(229,165,70,0.08);border:1px solid rgba(229,165,70,0.2);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#ba9865">
           Доступно: <b>${balance.toFixed(2)} GRAM</b> · Комиссия 10%
         </div>
 
@@ -3444,7 +3444,7 @@ function openGramWithdrawModal() {
           <div class="gram-hint" style="margin-bottom:6px">Сумма вывода (мин. 10 GRAM):</div>
           <input id="gram-wd-amount" type="number" min="10" step="0.01" placeholder="Сумма GRAM" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_updateWdPreview()">
         </div>
-        <div id="gram-wd-preview" style="font-size:12px;color:#7788aa;margin:-6px 0 12px;padding:0 2px"></div>
+        <div id="gram-wd-preview" style="font-size:12px;color:#a3957c;margin:-6px 0 12px;padding:0 2px"></div>
 
         <div style="margin-bottom:16px">
           <div class="gram-hint" style="margin-bottom:6px">TON-адрес получателя:</div>
@@ -3494,7 +3494,7 @@ function gramCopy(elId) {
   const el = document.getElementById(elId);
   if (!el) return;
   navigator.clipboard?.writeText(el.textContent.trim()).then(() => {
-    el.style.color = '#3ef07a';
+    el.style.color = '#90d653';
     setTimeout(() => { el.style.color = ''; }, 1000);
   });
 }

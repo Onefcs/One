@@ -72,8 +72,8 @@ function claimQuest() {
 
 function showQuestComplete(q) {
   questNotif = { title: '✓ ' + q.title, timer: 3.5 };
-  dmgNum(player.x, player.y - 54, 'Квест выполнен!', '#fd0');
-  spawnBurst(player.x, player.y, '#fd0', 12);
+  dmgNum(player.x, player.y - 54, 'Квест выполнен!', '#e69419');
+  spawnBurst(player.x, player.y, '#e69419', 12);
 }
 
 function tickQuestNotif(dt) {
@@ -179,13 +179,13 @@ function drawQuestNotif() {
   ctx.save();
   const alpha = Math.min(1, questNotif.timer, 3.5 - questNotif.timer + 0.5);
   ctx.globalAlpha = Math.max(0, alpha);
-  ctx.fillStyle = 'rgba(20,16,50,0.95)';
+  ctx.fillStyle = 'rgba(46,37,20,0.95)';
   ctx.beginPath();
   ctx.roundRect(W / 2 - 130, HEADER_H + 10, 260, 32, 8);
   ctx.fill();
   ctx.font = 'bold 13px system-ui, Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#fd0';
+  ctx.fillStyle = '#e69419';
   ctx.fillText(questNotif.title, W / 2, HEADER_H + 31);
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -209,13 +209,13 @@ function drawQuestTracker() {
     ctx.save();
     const alpha = Math.min(1, questNotif.timer, 3.5 - questNotif.timer + 0.5);
     ctx.globalAlpha = Math.max(0, alpha);
-    ctx.fillStyle = 'rgba(20,16,50,0.95)';
+    ctx.fillStyle = 'rgba(46,37,20,0.95)';
     ctx.beginPath();
     ctx.roundRect(W / 2 - 130, HEADER_H + 10, 260, 32, 8);
     ctx.fill();
     ctx.font = 'bold 13px system-ui, Arial';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#fd0';
+    ctx.fillStyle = '#e69419';
     ctx.fillText(questNotif.title, W / 2, HEADER_H + 31);
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -244,22 +244,22 @@ function drawQuestTracker() {
   const py = HEADER_H + 4;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(6,4,16,0.90)';
-  ctx.strokeStyle = 'rgba(70,45,155,0.5)';
+  ctx.fillStyle = 'rgba(15,11,5,0.90)';
+  ctx.strokeStyle = 'rgba(143,111,57,0.5)';
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(panelX, py, panelW, panelH, 5);
   ctx.fill(); ctx.stroke();
 
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = 'bold 9px system-ui, Arial';
-  ctx.fillStyle = '#fd0';
+  ctx.fillStyle = '#e69419';
   // Truncate title to fit panel
   const titleMax = Math.floor((panelW - pad * 2) / 5.5);
   const titleStr = q.title.slice(0, titleMax);
   ctx.fillText(titleStr, panelX + pad, py + pad + 9);
 
   ctx.font = '8px system-ui, Arial';
-  ctx.fillStyle = '#bbb';
+  ctx.fillStyle = '#bab2a8';
   lines.forEach((ln, i) => {
     ctx.fillText(ln, panelX + pad, py + pad + lineH + (i + 1) * lineH);
   });
@@ -311,12 +311,12 @@ function _onSpecialQuestClick(questId) {
 async function updateSpecialQuestUI() {
   const el = document.getElementById('special-quest-list');
   if (!el || !player) return;
-  el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">Загрузка...</div>';
+  el.innerHTML = '<div style="color:#968a7a;text-align:center;padding:20px">Загрузка...</div>';
   if (!_specialQuestsCache) _specialQuestsCache = await fetchSpecialQuests();
   const quests = _specialQuestsCache;
   const done = player.specialQuestsDone || [];
   if (!quests.length) {
-    el.innerHTML = '<div style="color:#888;text-align:center;padding:20px">Специальных квестов пока нет</div>';
+    el.innerHTML = '<div style="color:#968a7a;text-align:center;padding:20px">Специальных квестов пока нет</div>';
     return;
   }
   let html = '';
@@ -325,8 +325,8 @@ async function updateSpecialQuestUI() {
     const isPending = _specialQuestPending.has(String(q._id));
     const icon = q.icon || '⭐';
     const rewardParts = [];
-    if (q.reward.gold)  rewardParts.push(iconHTML('coin',12,'#f1c40f') + q.reward.gold);
-    if (q.reward.xp)    rewardParts.push(iconHTML('star',12,'#f1c40f') + q.reward.xp + ' XP');
+    if (q.reward.gold)  rewardParts.push(iconHTML('coin',12,'#e3941d') + q.reward.gold);
+    if (q.reward.xp)    rewardParts.push(iconHTML('star',12,'#e3941d') + q.reward.xp + ' XP');
     if (q.reward.nexum) rewardParts.push('💎' + q.reward.nexum + ' Nexum');
     const rewardStr = rewardParts.join(' · ');
     const typeLabel = q.type === 'subscribe' ? 'Подписаться' : q.type === 'link' ? 'Перейти' : 'Выполнить';
@@ -337,7 +337,7 @@ async function updateSpecialQuestUI() {
           <span class="quest-reward">${rewardStr}</span>
         </div>
         ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
-        <div class="quest-prog" style="color:#2ecc71">✓ Выполнено</div>
+        <div class="quest-prog" style="color:#79b644">✓ Выполнено</div>
       </div>`;
     } else if (isPending) {
       html += `<div class="quest-item quest-current">
@@ -387,7 +387,7 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   if (_activeQuestTab === 'special') updateSpecialQuestUI();
   if (!alreadyDone) {
     questNotif = { title: '✓ Специальный квест выполнен!', timer: 3.5 };
-    if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#fd0', 12);
+    if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#e69419', 12);
   }
   // Sync specialQuestsDone to server immediately so the next autosave can't
   // overwrite it with a stale snapshot that predates this completion.
@@ -430,7 +430,7 @@ function _questProgHtml(q, isCur) {
       <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100,Math.round(done/q.count*100))}%"></div></div></div>`;
   }
   if (q.type === 'join_guild') {
-    return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#1a3a6a,#2a5aaa)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
+    return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#614a23,#9c7738)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
   }
   if (q.type === 'goto_floor') {
     return `<div class="quest-prog">Дойди до монстров уровня ${(q.targetFloor - 1) * ROOMS_PER_ARM + 1}+ в коридоре</div>`;
@@ -463,19 +463,19 @@ function updateQuestUI() {
     }
 
     const doneCnt = Math.min(player.questIdx - firstIdx, floorQuests.length);
-    html += `<div class="quest-floor-hdr">Этаж ${floorNum} · <span style="color:#888;font-weight:normal">${doneCnt}/${floorQuests.length} выполнено</span></div>`;
+    html += `<div class="quest-floor-hdr">Этаж ${floorNum} · <span style="color:#968a7a;font-weight:normal">${doneCnt}/${floorQuests.length} выполнено</span></div>`;
 
     floorQuests.forEach(({ q, i }) => {
       const isDone = i < player.questIdx;
       const isCur  = i === player.questIdx;
       const cls    = isDone ? 'quest-item quest-done' : isCur ? 'quest-item quest-current' : 'quest-item quest-locked';
       const rewardStr = [
-        q.reward.xp > 0 ? iconHTML('star',12,'#f1c40f') + q.reward.xp + ' XP' : '',
-        iconHTML('coin',12,'#f1c40f') + q.reward.gold,
+        q.reward.xp > 0 ? iconHTML('star',12,'#e3941d') + q.reward.xp + ' XP' : '',
+        iconHTML('coin',12,'#e3941d') + q.reward.gold,
       ].filter(Boolean).join(' · ');
       const statusIcon = isDone
-        ? iconHTML('hpPlus', 14, '#2ecc71')
-        : isCur ? iconHTML('star', 14, '#fd0') : iconHTML('skull', 14, '#555');
+        ? iconHTML('hpPlus', 14, '#79b644')
+        : isCur ? iconHTML('star', 14, '#e69419') : iconHTML('skull', 14, '#5f574b');
 
       html += `<div class="${cls}">
         <div class="quest-header">

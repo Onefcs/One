@@ -5,12 +5,12 @@
 // ── Pixel-art icon palette (L2-style) ────────────────────
 const _CP = {
   _:null,
-  K:'#0a0a1a', k:'#1a1a2e', W:'#ffffff', S:'#b8bcc8', s:'#8890a0',
-  G:'#ffd700', g:'#aa8800', R:'#e83030', r:'#901818', B:'#3377ee',
-  b:'#1a3388', E:'#22cc44', e:'#115522', P:'#aa33ff', p:'#661199',
-  O:'#ff8800', o:'#994400', Y:'#ffee00', N:'#cc8844', n:'#664422',
-  C:'#22ccff', H:'#8899aa', D:'#445566', M:'#ff3388', L:'#88aaff',
-  A:'#ffaa00', V:'#7722cc',
+  K:'#18140c', k:'#2c261c', W:'#d1ccc5', S:'#bcb7ad', s:'#9c9589',
+  G:'#e69419', g:'#996311', R:'#db3d50', r:'#88202c', B:'#d9a347',
+  b:'#7c5c26', E:'#73b43a', e:'#314c1a', P:'#e2ad4b', p:'#866424',
+  O:'#e69419', o:'#8a590f', Y:'#e6ac19', N:'#c4944c', n:'#624a26',
+  C:'#bc9563', H:'#a49a89', D:'#625948', M:'#e74558', L:'#efc680',
+  A:'#e69419', V:'#b4893a',
 };
 
 // 30 clan icons — 16×16 pixel grids, L2 crest style
@@ -533,7 +533,7 @@ function drawClanIconOnCtx(c, iconId, cx, cy, px) {
   const p = px || 1;
   const ox = Math.round(cx - 8 * p);
   const oy = Math.round(cy - 8 * p);
-  c.fillStyle = '#0a0a1a';
+  c.fillStyle = '#18140c';
   c.fillRect(ox, oy, 16 * p, 16 * p);
   icon.forEach((row, y) => {
     [...row].forEach((ch, x) => {
@@ -548,7 +548,7 @@ function drawClanIconOnCtx(c, iconId, cx, cy, px) {
 function clanIconSVG(id, size) {
   const icon = _ICONS[(id - 1) % _ICONS.length];
   const sz = size || 40;
-  const rects = [`<rect width="32" height="32" fill="#0a0a1a" rx="2"/>`];
+  const rects = [`<rect width="32" height="32" fill="#18140c" rx="2"/>`];
   icon.forEach((row, y) => {
     [...row].forEach((c, x) => {
       const col = _CP[c];
@@ -580,9 +580,9 @@ function getClanTagCanvas() {
   c.textBaseline = 'middle';
   drawClanIconOnCtx(c, clanData.icon, iconSz / 2, h / 2, iconPx);
   c.font = 'bold 9px system-ui, Arial';
-  c.strokeStyle = '#000'; c.lineWidth = 2; c.textAlign = 'left';
+  c.strokeStyle = '#000000'; c.lineWidth = 2; c.textAlign = 'left';
   c.strokeText(clanData.name, iconSz + gap, h / 2);
-  c.fillStyle = '#f93';
+  c.fillStyle = '#eaa742';
   c.fillText(clanData.name, iconSz + gap, h / 2);
 
   _clanTagCanvas = oc;
@@ -647,7 +647,7 @@ function _renderCreate(el) {
     <div class="clan-form">
       <button class="clan-back" onclick="_clanGoMain()">← Назад</button>
       <div class="clan-form-title">Создать клан</div>
-      <div class="clan-form-label" style="color:${canAfford ? '#f1c40f' : '#e74c3c'}">Стоимость: ${CLAN_CREATE_COST} золота ${canAfford ? '' : '(не хватает)'}</div>
+      <div class="clan-form-label" style="color:${canAfford ? '#e3941d' : '#da4658'}">Стоимость: ${CLAN_CREATE_COST} золота ${canAfford ? '' : '(не хватает)'}</div>
       <div class="clan-form-label" style="margin-top:10px">Название (до 10 символов)</div>
       <input class="clan-input" id="clan-name-inp" maxlength="10" placeholder="Название..." value="${_clanNewName}"
              oninput="_clanNewName=this.value;_clanUpdatePreview()">
@@ -860,12 +860,12 @@ function _clanConfirmDisband() {
 // ── Notification when clan levels up ─────────────────────
 function showClanLevelUp(level) {
   const lvDef = CLAN_LEVELS[level - 1];
-  dmgNum(player.x, player.y - 54, `Клан уровень ${level}!`, '#ffd700');
-  spawnBurst(player.x, player.y, '#ffd700', 10);
+  dmgNum(player.x, player.y - 54, `Клан уровень ${level}!`, '#e69419');
+  spawnBurst(player.x, player.y, '#e69419', 10);
   if (lvDef) {
     const b = lvDef.bonus;
     const parts = [b.gold?`+${b.gold}% золото`:'', b.xp?`+${b.xp}%опыт`:'', b.atk?`+${b.atk}%атака`:''].filter(Boolean);
-    if (parts.length) dmgNum(player.x, player.y - 72, parts.join(' '), '#ffd700');
+    if (parts.length) dmgNum(player.x, player.y - 72, parts.join(' '), '#e69419');
   }
 }
 

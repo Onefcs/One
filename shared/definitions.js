@@ -9,13 +9,19 @@ const TILE = 40;
 const WALL = 0, FLOOR = 1;
 
 // ── Character definitions ─────────────────────────────────────────────────────
+// Class colors kept as a deliberate, distinct identity per class (steel /
+// forest / arcane violet / holy gold / wine / cool steel) rather than run
+// through the general dark-fantasy recolor pass — matches the same picks
+// made for .cs-tab-*/.cs-btn-* in css/style.css. projColor (ranged attack
+// visuals) is left alone; combat-FX readability matters more there than
+// theme purity.
 const CHAR_DEF = {
-  warrior: { name:'Воин',    icon:'warrior',    color:'#55aaff', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
-  archer:  { name:'Лучник',  icon:'archerClass',color:'#77ee77', baseHP:140, baseAtk:2,  baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#ffaa00' },
-  mage:    { name:'Маг',     icon:'mageClass',  color:'#ee88ee', baseHP:110, baseAtk:4,  baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#cc88ff' },
-  priest:  { name:'Жрец',    icon:'priest',     color:'#ffee66', baseHP:160, baseAtk:2,  baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#ffff44' },
-  assasin: { name:'Ассасин', icon:'assasin',    color:'#bb55ff', baseHP:120, baseAtk:5,  baseDef:2,  speed:205, atkRange:52,  atkSpeed:1.800, atkType:'melee' },
-  lev:     { name:'Лев',     icon:'lev',        color:'#b8c4d0', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
+  warrior: { name:'Воин',    icon:'warrior',    color:'#8a97a6', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
+  archer:  { name:'Лучник',  icon:'archerClass',color:'#7fa855', baseHP:140, baseAtk:2,  baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#ffaa00' },
+  mage:    { name:'Маг',     icon:'mageClass',  color:'#9a78bf', baseHP:110, baseAtk:4,  baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#cc88ff' },
+  priest:  { name:'Жрец',    icon:'priest',     color:'#e9dcae', baseHP:160, baseAtk:2,  baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#ffff44' },
+  assasin: { name:'Ассасин', icon:'assasin',    color:'#a44d6e', baseHP:120, baseAtk:5,  baseDef:2,  speed:205, atkRange:52,  atkSpeed:1.800, atkType:'melee' },
+  lev:     { name:'Лев',     icon:'lev',        color:'#9aa3ab', baseHP:200, baseAtk:3,  baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
 };
 
 // ── Enemy definitions ─────────────────────────────────────────────────────────

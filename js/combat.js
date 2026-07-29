@@ -60,16 +60,16 @@ function pickup(drop) {
     let amount = drop.amount;
     if ((player.buffs || {}).gold > 0) amount *= 2;
     player.gold += amount;
-    dmgNum(drop.x, drop.y - 12, '+' + amount + '💰', '#ff0');
+    dmgNum(drop.x, drop.y - 12, '+' + amount + '💰', '#e6ac19');
     return;
   }
   const it = drop.item;
   if (it.slot === 'use') {
-    if (it.hp) { player.hp = Math.min(player.maxHp, player.hp + it.hp); dmgNum(player.x, player.y - 26, '+' + it.hp + '♥', '#4f4'); }
+    if (it.hp) { player.hp = Math.min(player.maxHp, player.hp + it.hp); dmgNum(player.x, player.y - 26, '+' + it.hp + '♥', '#98e456'); }
     return;
   }
   if (addToInventory(it)) {
-    dmgNum(drop.x, drop.y - 12, it.name, RARITY_COLOR[it.rarity] || '#4ff');
+    dmgNum(drop.x, drop.y - 12, it.name, RARITY_COLOR[it.rarity] || '#c4a276');
     netSaveProgress();
   }
 }
@@ -84,7 +84,7 @@ function applyLootToInventory(eid, rlvl) {
     const mat = CRAFT_MATS.find(m => m.id === id);
     if (!mat) return;
     if (!addToInventory({ ...mat })) return;
-    dmgNum(player.x, player.y - yOff, '+ ' + mat.name, RARITY_COLOR[mat.rarity] || '#aaa');
+    dmgNum(player.x, player.y - yOff, '+ ' + mat.name, RARITY_COLOR[mat.rarity] || '#aea599');
     saved = true;
   }
 
@@ -113,7 +113,7 @@ function applyLootToInventory(eid, rlvl) {
     const bpId = _buffPotIds[Math.floor(Math.random() * _buffPotIds.length)];
     const bpDef = typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bpId) : null;
     if (bpDef && addToInventory({ ...bpDef })) {
-      dmgNum(player.x, player.y - 52, '+ ' + bpDef.name, '#f0c040');
+      dmgNum(player.x, player.y - 52, '+ ' + bpDef.name, '#e5a546');
       saved = true;
     }
   }
@@ -130,7 +130,7 @@ function applyLootToInventory(eid, rlvl) {
       if (!candidates.length) continue;
       const it = candidates[Math.floor(Math.random() * candidates.length)];
       if (addToInventory({ ...it })) {
-        dmgNum(player.x, player.y - 70, '+ ' + it.name, RARITY_COLOR[it.rarity] || '#4ff');
+        dmgNum(player.x, player.y - 70, '+ ' + it.name, RARITY_COLOR[it.rarity] || '#c4a276');
         saved = true;
       }
     }

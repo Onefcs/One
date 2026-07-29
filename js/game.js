@@ -56,11 +56,11 @@ function _drawPerf(frameMs) {
   for (let i = 0; i < samples; i++) {
     const ft = _FT_BUF[(_oldest + i) % 60];
     const h = Math.min(bh, ft / 50 * bh);
-    ctx.fillStyle = ft > 50 ? '#f55' : ft > 40 ? '#fa0' : '#4d4';
+    ctx.fillStyle = ft > 50 ? '#ed5a6b' : ft > 40 ? '#e69419' : '#8cc758';
     ctx.fillRect(bx0 + i * bw, by0 - h, bw - 1, h);
   }
   // 30fps reference line
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillStyle = 'rgba(209,204,197,0.25)';
   ctx.fillRect(bx0 - 2, by0 - bh * (33.3 / 50), samples * bw + 4, 1);
 
   // Text stats
@@ -87,11 +87,11 @@ function _drawPerf(frameMs) {
   const ty0 = by0 + 6;
   lines.forEach((ln, i) => {
     if (!ln) return;
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#000000';
     ctx.fillText(ln, bx0 + 1, ty0 + i * 14 + 1);
-    let col = '#ddd';
-    if (i === 0) col = fps < 20 ? '#f55' : fps < 27 ? '#fa0' : '#4f4';
-    else if (i === 1 && _pingMs >= 0) col = _pingMs > 150 ? '#f55' : _pingMs > 80 ? '#fa0' : '#4f4';
+    let col = '#d1ccc5';
+    if (i === 0) col = fps < 20 ? '#ed5a6b' : fps < 27 ? '#e69419' : '#98e456';
+    else if (i === 1 && _pingMs >= 0) col = _pingMs > 150 ? '#ed5a6b' : _pingMs > 80 ? '#e69419' : '#98e456';
     ctx.fillStyle = col;
     ctx.fillText(ln, bx0, ty0 + i * 14);
   });
@@ -296,7 +296,7 @@ function update(dt) {
       pvpMode = false;
       if (typeof netSetPvpMode === 'function') netSetPvpMode(false);
       if (targetIsPlayer) { targetId = null; targetIsPlayer = false; }
-      dmgNum(player.x, player.y - 40, 'ПК режим выключен', '#7cf');
+      dmgNum(player.x, player.y - 40, 'ПК режим выключен', '#edc174');
     }
   }
 
@@ -790,19 +790,19 @@ function _drawPlayerNameOnUI() {
     const lineY = sy - 16;
     ctx.drawImage(_clanIconCv, lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#000000'; ctx.lineWidth = 2.5;
     ctx.strokeText(clanData.name, lineX + iconDisp + gap, lineY);
-    ctx.fillStyle = '#f93';
+    ctx.fillStyle = '#eaa742';
     ctx.fillText(clanData.name, lineX + iconDisp + gap, lineY);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
     ctx.font = 'bold 10px system-ui, Arial';
   }
 
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeStyle = '#000000'; ctx.lineWidth = 3;
   ctx.strokeText(displayName, sx, sy);
-  ctx.fillStyle = pvpMode ? '#f99' : '#7cf';
+  ctx.fillStyle = pvpMode ? '#f28a96' : '#edc174';
   ctx.fillText(displayName, sx, sy);
-  if (pvpMode) drawIconCtx(_uiCtx, 'pvpOn', sx + tw / 2 + 8, sy - 3, 9, '#f55');
+  if (pvpMode) drawIconCtx(_uiCtx, 'pvpOn', sx + tw / 2 + 8, sy - 3, 9, '#ed5a6b');
 }
 
 // Other players can show several distinct clans on screen at once, so unlike
@@ -850,17 +850,17 @@ function _drawOtherPlayerNamesOnUI() {
       const lineY = sy - 16;
       ctx.drawImage(_getOtherClanIconCv(p.clanIcon || 1), lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
       ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#000000'; ctx.lineWidth = 2.5;
       ctx.strokeText(cname, lineX + iconDisp + gap, lineY);
-      ctx.fillStyle = '#f93';
+      ctx.fillStyle = '#eaa742';
       ctx.fillText(cname, lineX + iconDisp + gap, lineY);
       ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
       ctx.font = 'bold 10px system-ui, Arial';
     }
 
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+    ctx.strokeStyle = '#000000'; ctx.lineWidth = 3;
     ctx.strokeText(uname, sx, sy);
-    ctx.fillStyle = p.pvpMode ? '#f99' : '#fff';
+    ctx.fillStyle = p.pvpMode ? '#f28a96' : '#d1ccc5';
     ctx.fillText(uname, sx, sy);
   });
 }
@@ -913,7 +913,7 @@ function render(dt, ts) {
   if (state !== 'select') {
     pixiWorldRender(dt, ts, _camX, _camY, theme);
   } else {
-    pixiSetBg('#060610');
+    pixiSetBg('#0f0c07');
     pixiClearWorld();
   }
 
@@ -955,7 +955,7 @@ function render(dt, ts) {
     const lw = _uiCtx.measureText(lbl).width;
     _uiCtx.fillStyle = 'rgba(0,0,0,0.55)';
     _uiCtx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
-    _uiCtx.fillStyle = '#4de87a';
+    _uiCtx.fillStyle = '#94d15e';
     _uiCtx.fillText(lbl, W / 2, HEADER_H + 20);
   }
 
@@ -970,7 +970,7 @@ function render(dt, ts) {
     _uiCtx.globalAlpha = alpha;
     _uiCtx.fillStyle = 'rgba(0,0,0,0.65)';
     _uiCtx.fillRect(W / 2 - lw / 2 - 14, H / 2 - 40, lw + 28, 34);
-    _uiCtx.fillStyle = '#fff';
+    _uiCtx.fillStyle = '#d1ccc5';
     _uiCtx.fillText(lbl, W / 2, H / 2 - 12);
     _uiCtx.globalAlpha = 1;
     if (_raidWaveNotif.timer <= 0) _raidWaveNotif = null;
@@ -1304,7 +1304,7 @@ function respawnPlayer() {
   }
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
-  dmgNum(player.x, player.y - 30, '−50% XP (5 мин)', '#c88');
+  dmgNum(player.x, player.y - 30, '−50% XP (5 мин)', '#c4838a');
   socket?.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
   if (socket?.connected) socket.emit('respawn');
   netSaveProgress();

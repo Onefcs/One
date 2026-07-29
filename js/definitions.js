@@ -62,12 +62,16 @@ const QUEST_DEF = [
 ];
 
 
+// Kept as a deliberate, distinct hue ladder (grey -> moss -> steel-blue ->
+// amethyst -> gold) rather than run through the general dark-fantasy
+// recolor pass below — collapsing rare/epic toward the new gold accent
+// would erase the rarity tiers players read at a glance.
 const RARITY_COLOR = {
-  common:    '#aaa',
-  uncommon:  '#3ef07a',
-  rare:      '#55aaff',
-  epic:      '#c55ef5',
-  legendary: '#ffd700',
+  common:    '#9c9086',
+  uncommon:  '#6f9c4a',
+  rare:      '#4a7bab',
+  epic:      '#8a5cc2',
+  legendary: '#e8b93e',
 };
 
 // CRAFT_MATS, ITEM_DEF → shared/definitions.js (server needs the same
