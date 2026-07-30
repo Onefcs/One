@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, roomsInArm } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -10,47 +10,49 @@ function seededRng(seed) {
   };
 }
 
-// ── Open world: one hub room + 4 "comb" corridors ───────────────────────────
-// Layout is a plus shape: a big central hub (spawn, NPCs, safe zone) with a
-// dead-straight, always-empty main corridor running out to each side. Rooms
-// never sit on that path — instead, at ARM_ROOM_PAIRS[armIdx-1] evenly spaced
-// positions along it, a short branch forks off to EACH side. That branch
-// doesn't stop at one room: it chains ROOM_CHAIN_LEN rooms in a row, each
-// linked to the next by another short stub, so every position has
-// ROOM_CHAIN_LEN rooms facing the corridor per side (2x that many per
-// position) — all sharing the same monster level (more space/monsters per
-// level, not more levels). The chain only extends OUTWARD (deeper into the
-// hub's corner, away from the main corridor), so corridor length — and with
-// it the level-gate positions and overall level count — is untouched; only
-// the hub has to grow to keep neighboring arms' chains from ever reaching
-// into each other (see HUB's comment below). The very last position's far
-// side is the sole exception: that slot stays a single, un-chained boss room
-// (chainLen 1) — the "one boss per arm" design is preserved. Arms can have
-// different lengths (see ARM_ROOM_PAIRS in shared/definitions.js), so the
-// world's overall size is sized to fit the longest one. Global room level =
-// arm's base (ARM_OFFSETS[armIdx-1]) + position-in-arm (1..roomsInArm, 2
-// levels per corridor position), reusing one FLOOR_ENEMIES pool per arm (arm
-// index 1-4 standing in for the old floor 1-4 themes) so enemy stats/gold/xp
-// tuning carries over unchanged.
-const HUB = 140;          // hub room size (tiles) — big enough for 3 NPCs + 4 doors
-                          // and to keep adjacent arms' room chains from ever
-                          // reaching into each other's corner (needs
-                          // HUB/2 >= CW + ROOM_CHAIN_LEN * (STUB + LARGE), see below)
+// ── Open world: one small hub + 4 detached "comb" zones ─────────────────────
+// The hub is just spawn + NPCs + 4 teleport pads (one per arm/level range,
+// ARM_LEVEL_REQ) — there's no walkable corridor out of it. Each arm is its
+// own self-contained zone stacked below the hub, spaced far enough apart
+// (ZONE_GAP) that its room chains can never reach a neighboring zone's,
+// however the random room sizes land. Reaching a zone means walking onto its
+// hub pad, which teleports the player straight to that zone's own corridor
+// entrance — see the teleport-pad handling in js/game.js.
+//
+// Inside a zone the layout is unchanged from before: a dead-straight, always-
+// empty main corridor with rooms branching off both sides at ARM_ROOM_PAIRS
+// [armIdx-1] evenly spaced positions. Each branch chains ROOM_CHAIN_LEN rooms
+// in a row (linked by more short stubs) instead of stopping at one, so every
+// position has ROOM_CHAIN_LEN rooms per side, all sharing the same monster
+// level. The very last position's far side is the exception: a single,
+// un-chained boss room. Global room level = arm's base (ARM_OFFSETS[armIdx-1])
+// + position-in-arm, reusing one FLOOR_ENEMIES pool per arm (arm index 1-4
+// standing in for the old floor 1-4 themes) so enemy stats/gold/xp tuning
+// carries over unchanged.
+const HUB = 48;           // hub room size (tiles) — spawn + 2 NPCs + 4 teleport pads;
+                          // safe to keep small since nothing physically borders it anymore
 const SMALL = 9;          // 9×9 → 5 monsters
 const LARGE = 14;         // 14×14 → 10 monsters
 const CW = 1;             // main corridor half-width (3 tiles wide total)
 const BW = 1;             // branch corridor half-width (3 tiles wide total)
 const STUB = 6;           // branch length between the main corridor / each chained room
 const PITCH = 20;         // tile spacing between consecutive room-pair positions
-const LEAD_IN = 12;       // distance from hub wall to the first position
-const MARGIN = 6;         // outer wall padding
-const DOOR_STUB = 3;      // door gap depth carved into the hub's wall
+const LEAD_IN = 10;       // distance from a zone's entrance to its first position
+const MARGIN = 10;        // outer wall padding
 const ROOM_CHAIN_LEN = 3; // rooms chained per side per position (except the boss slot, always 1)
+const ZONE_GAP = 30;      // gap (tiles) between zones/hub — comfortably more than any
+                          // chain's max reach (CW + ROOM_CHAIN_LEN*(STUB+LARGE)) so
+                          // neighboring zones' rooms can never touch
 
-const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the world grid; shorter arms just end sooner
-const ARM_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
-const DW = MARGIN * 2 + ARM_LEN * 2 + HUB;
-const DH = DW;
+const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the zone width; shorter arms just end sooner
+const ZONE_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
+const REACH = CW + ROOM_CHAIN_LEN * (STUB + LARGE); // max perpendicular room-chain reach from the corridor centerline
+const ZONE_H = REACH * 2 + 4; // both sides plus a little pad
+
+const DW = MARGIN * 2 + ZONE_LEN;
+const HUB_X0 = MARGIN, HUB_Y0 = MARGIN;
+const ZONES_Y0 = HUB_Y0 + HUB + ZONE_GAP;
+const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 
 function generateOpenWorld() {
   const rng = seededRng(2026 * 1337 + 777);
@@ -62,57 +64,22 @@ function generateOpenWorld() {
     for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
   }
 
-  const hubX0 = MARGIN + ARM_LEN, hubY0 = MARGIN + ARM_LEN;
   const hub = {
-    x: hubX0, y: hubY0, size: HUB,
-    bx1: hubX0 - 1, by1: hubY0 - 1, bx2: hubX0 + HUB + 1, by2: hubY0 + HUB + 1,
-    cx: hubX0 + Math.floor(HUB / 2), cy: hubY0 + Math.floor(HUB / 2),
+    x: HUB_X0, y: HUB_Y0, size: HUB,
+    bx1: HUB_X0 - 1, by1: HUB_Y0 - 1, bx2: HUB_X0 + HUB + 1, by2: HUB_Y0 + HUB + 1,
+    cx: HUB_X0 + Math.floor(HUB / 2), cy: HUB_Y0 + Math.floor(HUB / 2),
     isHub: true,
   };
   paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
 
-  // Carves a narrow door gap in the hub's wall facing `dir`. Returns both:
-  // - render: the point right at the hub's wall (where the door sprite goes)
-  // - route: the stub's outer end (where the main corridor starts painting
-  //   from, so the door stub reads as a distinct gap in solid wall)
-  function carveHubDoor(dir) {
-    if (dir === 'left') {
-      const ty = hub.cy, tx0 = hub.x - DOOR_STUB;
-      for (let s = 0; s < DOOR_STUB; s++) { paintFloor(tx0 + s, ty); paintFloor(tx0 + s, ty + 1); }
-      return { render: { x: hub.x - 1, y: ty }, route: { x: tx0, y: ty } };
-    }
-    if (dir === 'right') {
-      const ty = hub.cy, tx0 = hub.x + hub.size;
-      for (let s = 0; s < DOOR_STUB; s++) { paintFloor(tx0 + s, ty); paintFloor(tx0 + s, ty + 1); }
-      return { render: { x: tx0, y: ty }, route: { x: tx0 + DOOR_STUB - 1, y: ty } };
-    }
-    if (dir === 'top') {
-      const tx = hub.cx, ty0 = hub.y - DOOR_STUB;
-      for (let s = 0; s < DOOR_STUB; s++) { paintFloor(tx, ty0 + s); paintFloor(tx + 1, ty0 + s); }
-      return { render: { x: tx, y: hub.y - 1 }, route: { x: tx, y: ty0 } };
-    }
-    // bottom
-    const tx = hub.cx, ty0 = hub.y + hub.size;
-    for (let s = 0; s < DOOR_STUB; s++) { paintFloor(tx, ty0 + s); paintFloor(tx + 1, ty0 + s); }
-    return { render: { x: tx, y: ty0 }, route: { x: tx, y: ty0 + DOOR_STUB - 1 } };
-  }
-
-  const doors = {
-    left:   carveHubDoor('left'),
-    top:    carveHubDoor('top'),
-    bottom: carveHubDoor('bottom'),
-    right:  carveHubDoor('right'),
-  };
-
   const rooms = [hub];
   const enemyList = [];
   const corridorGates = [];
+  const armEntries = [];
   let eid = 0;
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
-  function buildArm(dir, armIdx) {
-    const horizontal = dir === 'left' || dir === 'right';
-    const sign = (dir === 'left' || dir === 'top') ? -1 : 1;
+  function buildArm(dir, armIdx, zoneIndex) {
     const fe = FLOOR_ENEMIES[armIdx];
     const pairs = ARM_ROOM_PAIRS[armIdx - 1];
     const roomCount = roomsInArm(armIdx);
@@ -123,31 +90,25 @@ function generateOpenWorld() {
       return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
     }
 
-    // Main corridor: one dead-straight, always-empty strip from the hub door
-    // out to the last position (plus a little tail), 3 tiles wide.
-    const route = doors[dir].route;
-    const mainStart = horizontal ? route.x : route.y;
-    const mainEnd = mainStart + sign * (LEAD_IN + (pairs - 1) * PITCH + Math.floor(PITCH / 2));
-    const fixedCoord = horizontal ? route.y : route.x;
-    {
-      const lo = Math.min(mainStart, mainEnd), hi = Math.max(mainStart, mainEnd);
-      if (horizontal) paintRect(lo, fixedCoord - CW, hi, fixedCoord + CW);
-      else paintRect(fixedCoord - CW, lo, fixedCoord + CW, hi);
-    }
+    // Main corridor: one dead-straight, always-empty strip from the zone's
+    // entrance out to the last position (plus a little tail), 3 tiles wide.
+    const zoneY0 = ZONES_Y0 + zoneIndex * (ZONE_H + ZONE_GAP);
+    const fixedCoord = zoneY0 + Math.floor(ZONE_H / 2);
+    const mainStart = MARGIN;
+    const mainEnd = mainStart + LEAD_IN + (pairs - 1) * PITCH + Math.floor(PITCH / 2);
+    paintRect(mainStart, fixedCoord - CW, mainEnd, fixedCoord + CW);
 
     // Level-gated checkpoints between each room-pair position — same
-    // level-gate mechanic as the arm's own entrance (ARM_LEVEL_REQ, see
-    // js/game.js's ARM GATES section), just repeated at every position
-    // boundary along the corridor instead of only once at the hub door.
-    // Gate before position `pos` requires the level of that position's
-    // first (weaker) room — e.g. the gate before the room pair hosting
-    // local levels 3-4 requires character level 3.
+    // level-gate mechanic that used to guard the arm's entrance (now the
+    // teleport pad's own level check does that job instead), just repeated
+    // at every position boundary along the corridor. Gate before position
+    // `pos` requires the level of that position's first (weaker) room —
+    // e.g. the gate before the room pair hosting local levels 3-4 requires
+    // character level 3.
     for (let pos = 1; pos < pairs; pos++) {
-      const boundary = mainStart + sign * (LEAD_IN + (pos - 0.5) * PITCH);
+      const boundary = mainStart + LEAD_IN + (pos - 0.5) * PITCH;
       const req = ARM_OFFSETS[armIdx - 1] + (pos * 2 + 1);
-      corridorGates.push(horizontal
-        ? { dir, tx: Math.round(boundary), ty: fixedCoord, req }
-        : { dir, tx: fixedCoord, ty: Math.round(boundary), req });
+      corridorGates.push({ dir, tx: Math.round(boundary), ty: fixedCoord, req });
     }
 
     function spawnRoomEnemies(room, x, y, size, isBoss) {
@@ -178,35 +139,26 @@ function generateOpenWorld() {
       }
     }
 
-    // side = -1 (near side, e.g. "top"/"left" of the corridor) or +1 (far
-    // side). Chains `chainLen` rooms in a row starting from the main
-    // corridor's edge and going outward — each subsequent room links to the
-    // previous one via another short stub instead of the main corridor, so
-    // the corridor itself never gets any longer/wider. All rooms in the
-    // chain share the same localLvl/monsterLvl (more room to fight the same
+    // side = -1 (near/top side of the corridor) or +1 (far/bottom side).
+    // Chains `chainLen` rooms in a row starting from the main corridor's
+    // edge and going outward — each subsequent room links to the previous
+    // one via another short stub instead of the main corridor, so the
+    // corridor itself never gets any longer/wider. All rooms in the chain
+    // share the same localLvl/monsterLvl (more room to fight the same
     // level's monsters, not more levels).
     function buildRoomChain(pos, side, localLvl, chainLen, isBoss) {
-      const alongCenter = mainStart + sign * (LEAD_IN + pos * PITCH);
+      const alongCenter = mainStart + LEAD_IN + pos * PITCH;
       let cursor = side < 0 ? (fixedCoord - CW) : (fixedCoord + CW); // outer edge of whatever it's linking from
 
       for (let i = 0; i < chainLen; i++) {
         const roomIsBoss = isBoss && i === chainLen - 1;
         const size = roomIsBoss ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
 
-        let x, y, branchX0, branchY0, branchX1, branchY1;
-        if (horizontal) {
-          x = alongCenter - Math.floor(size / 2);
-          y = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
-          branchX0 = alongCenter - BW; branchX1 = alongCenter + BW;
-          branchY0 = side < 0 ? (y + size) : cursor;
-          branchY1 = side < 0 ? (cursor - 1) : (y - 1);
-        } else {
-          y = alongCenter - Math.floor(size / 2);
-          x = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
-          branchY0 = alongCenter - BW; branchY1 = alongCenter + BW;
-          branchX0 = side < 0 ? (x + size) : cursor;
-          branchX1 = side < 0 ? (cursor - 1) : (x - 1);
-        }
+        const x = alongCenter - Math.floor(size / 2);
+        const y = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
+        const branchX0 = alongCenter - BW, branchX1 = alongCenter + BW;
+        const branchY0 = side < 0 ? (y + size) : cursor;
+        const branchY1 = side < 0 ? (cursor - 1) : (y - 1);
 
         const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
         const room = {
@@ -220,9 +172,7 @@ function generateOpenWorld() {
         paintRect(branchX0, branchY0, branchX1, branchY1);
         spawnRoomEnemies(room, x, y, size, roomIsBoss);
 
-        cursor = horizontal
-          ? (side < 0 ? y : (y + size))
-          : (side < 0 ? x : (x + size));
+        cursor = side < 0 ? y : (y + size);
       }
     }
 
@@ -232,15 +182,23 @@ function generateOpenWorld() {
       buildRoomChain(pos, -1, lvlA, ROOM_CHAIN_LEN, false);
       buildRoomChain(pos, 1, lvlB, lvlBIsBossSlot ? 1 : ROOM_CHAIN_LEN, lvlBIsBossSlot);
     }
+
+    // Where a teleport into this arm drops the player — right at the start
+    // of its main corridor, clear of both hub-side pads and the first rooms.
+    armEntries.push({
+      dir, req: ARM_LEVEL_REQ[dir] || 0,
+      x: (mainStart + 2) * TILE + TILE / 2,
+      y: fixedCoord * TILE + TILE / 2,
+    });
   }
 
-  ARM_NAMES.forEach((dir, i) => buildArm(dir, i + 1));
+  ARM_NAMES.forEach((dir, i) => buildArm(dir, i + 1, i));
 
   return {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
-    spawnDoors: ARM_NAMES.map(dir => ({ tx: doors[dir].render.x, ty: doors[dir].render.y, dir })),
+    armEntries,
     corridorGates,
     enemies: enemyList,
   };

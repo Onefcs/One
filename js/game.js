@@ -303,6 +303,7 @@ function update(dt) {
   }
 
   _updateArmGates(dt);
+  _updateTeleportPads(dt);
 
   // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
@@ -964,6 +965,7 @@ function render(dt, ts) {
   if (player && dungeon) _drawPlayerNameOnUI();
   if (dungeon) _drawOtherPlayerNamesOnUI();
   if (player && dungeon) drawArmGates();
+  if (player && dungeon) drawTeleportPads();
   if (activeTab === 0) drawJoystick();
 
   // Safe zone HUD label (on top of HUD)
@@ -1143,17 +1145,14 @@ function inSafeZone(px, py) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  ARM GATES — level-gated checkpoints at the hub door AND between every
-//  room-pair position further down each corridor
+//  ARM GATES — level-gated checkpoints between every room-pair position
+//  down each (now hub-detached) corridor
 // ─────────────────────────────────────────────────────────
-// Each corridor's hub door gets a glowing pad marking the entrance; crossing
-// it while under the arm's required level (ARM_LEVEL_REQ, shared/definitions.js)
-// is blocked like a wall instead of just letting weak characters wander into
-// a much stronger arm's monsters. The same mechanic repeats at every
-// room-pair boundary further down the corridor (dungeon.corridorGates, built
-// server-side in server/game/dungeon.js) so reaching e.g. the level-3/4
-// monsters' room pair requires character level 3, the next pair requires 5,
-// and so on — not just a single check at the very start of the corridor.
+// Each zone still gates its own deeper rooms by character level: reaching
+// e.g. the level-3/4 room pair requires character level 3, the next pair
+// requires 5, and so on (dungeon.corridorGates, built server-side in
+// server/game/dungeon.js). The zone's OWN entrance is no longer a physical
+// door you walk through — see the TELEPORT PADS section below for that.
 // Rebuilt any time `dungeon` changes (see _buildArmGates() call sites in
 // network.js/game.js).
 let _armGates = null;
@@ -1161,19 +1160,99 @@ const _enteredArms = new Set();
 let _gateMsgCd = 0;
 const _ARM_LABEL = { left: 'левый', top: 'верхний', bottom: 'нижний', right: 'правый' };
 
+// ─────────────────────────────────────────────────────────
+//  TELEPORT PADS — hub-side pads (one per arm, labeled by its level range)
+//  warp straight into that zone's corridor entrance; a matching pad at each
+//  zone's entrance warps back to the hub. Replaces the old walk-down-the-
+//  corridor hub doors entirely — the hub isn't physically connected to any
+//  zone anymore.
+// ─────────────────────────────────────────────────────────
+const _TELEPORT_LABEL = { left: '1 уровень', top: '20 уровень', bottom: '40 уровень', right: '60 уровень' };
+const _TELEPORT_HUB_DX = { left: -12, top: -4, bottom: 4, right: 12 }; // tiles, hub-side pad row
+const _TELEPORT_HUB_DY = 10; // tiles south of spawn (NPCs sit north, at dy -11)
+let _teleportPads = null; // hub-side: {dir, x, y, req, label, targetX, targetY}
+let _returnPads = null;   // zone-side: {dir, x, y, targetX, targetY} — back to hub
+
 function _buildArmGates() {
-  if (!dungeon || !dungeon.spawnDoors || typeof ARM_LEVEL_REQ === 'undefined') { _armGates = []; return; }
-  const entranceGates = dungeon.spawnDoors.map(door => {
-    const horizontal = door.dir === 'left' || door.dir === 'right'; // gap is 2 tiles tall
-    const x = horizontal ? door.tx * TILE + TILE / 2 : (door.tx + 1) * TILE;
-    const y = horizontal ? (door.ty + 1) * TILE : door.ty * TILE + TILE / 2;
-    return { dir: door.dir, x, y, horizontal, req: ARM_LEVEL_REQ[door.dir] || 0 };
-  });
-  const corridorGates = (dungeon.corridorGates || []).map(g => {
+  if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; return; }
+  _armGates = (dungeon.corridorGates || []).map(g => {
     const horizontal = g.dir === 'left' || g.dir === 'right';
     return { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, horizontal, req: g.req };
   });
-  _armGates = entranceGates.concat(corridorGates);
+
+  const entries = dungeon.armEntries || [];
+  const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
+  _teleportPads = entries.map(e => ({
+    dir: e.dir, req: e.req, label: _TELEPORT_LABEL[e.dir] || `Ур. ${e.req}`,
+    x: sx + (_TELEPORT_HUB_DX[e.dir] || 0) * TILE, y: sy + _TELEPORT_HUB_DY * TILE,
+    targetX: e.x + TILE * 2, targetY: e.y,
+  }));
+  // Landing spot is offset 2 tiles further down the corridor from the return
+  // pad's own position, so arriving players don't stand on top of it and
+  // immediately bounce straight back to the hub.
+  _returnPads = entries.map(e => ({ dir: e.dir, x: e.x, y: e.y, targetX: sx, targetY: sy }));
+}
+
+let _teleportMsgCd = 0;
+function _teleportTo(tx, ty, label) {
+  player.x = tx; player.y = ty;
+  camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2; clampCamera();
+  spawnBurst(player.x, player.y, '#7fd7ff', 20);
+  dmgNum(player.x, player.y - 30, `→ ${label}`, '#7fd7ff', 15);
+}
+
+// Called once per frame from update(): triggers a teleport the instant the
+// player walks onto a pad they're allowed to use, or shows a throttled lock
+// message near one they aren't leveled for yet.
+function _updateTeleportPads(dt) {
+  if (!player) return;
+  if (_teleportMsgCd > 0) _teleportMsgCd -= dt;
+  const TRIGGER_R = 26;
+  (_teleportPads || []).forEach(p => {
+    if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
+    if (p.req > 0 && (player.lvl || 1) < p.req) {
+      if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, `🔒 Нужен ${p.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
+      return;
+    }
+    _teleportTo(p.targetX, p.targetY, p.label);
+  });
+  (_returnPads || []).forEach(p => {
+    if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
+    _teleportTo(p.targetX, p.targetY, 'Центральный зал');
+  });
+}
+
+function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
+  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
+  if (sx < -60 || sx > W + 60 || sy < -60 || sy > H + 60) return;
+  const locked = req > 0 && (player.lvl || 1) < req;
+  const t = _nowMs / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
+  const baseR = 30 * ZOOM;
+
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = locked ? 'rgba(90,20,26,0.35)' : 'rgba(20,110,70,0.28)';
+  ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 0.55 + 0.25 * pulse;
+  ctx.strokeStyle = locked ? lockedColor : unlockedColor;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(sx, sy, baseR + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+
+  const lbl = locked ? `🔒 ${label}` : label;
+  ctx.font = 'bold 11px system-ui, Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeText(lbl, sx, sy + baseR + 14);
+  ctx.fillStyle = locked ? '#f17e8b' : '#8ff0c0';
+  ctx.fillText(lbl, sx, sy + baseR + 14);
+}
+
+function drawTeleportPads() {
+  if (!player) return;
+  (_teleportPads || []).forEach(p => _drawTeleportPad(p.x, p.y, p.req, p.label, '#eb4e61', '#4ee69a'));
+  (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, 'Зал', '#eb4e61', '#4ee69a'));
 }
 
 function _isGateBlocked(wx, wy) {
@@ -1244,9 +1323,9 @@ function drawArmGates() {
 // ─────────────────────────────────────────────────────────
 //  NPCs
 // ─────────────────────────────────────────────────────────
-// The hub is a big room with 4 exit doors (N/S/E/W) leading into the
-// corridors — NPCs sit side by side just north of spawn, clear of the top
-// doorway (which is centered on dx=0), so they never block it.
+// The hub has no physical exits anymore (see TELEPORT PADS above) — NPCs
+// just sit side by side north of spawn, clear of the teleport pad row south
+// of it.
 function initNpcs() {
   if (!dungeon) return;
   const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
@@ -1352,9 +1431,7 @@ function _buildChunk(cx, cy) {
 
   // 5. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
   // scattered sparsely on floor tiles. Same own-tile-block scoping as the
-  // wall decor pass above, so seams never get a doubled-up prop. Skips the
-  // hub's 4 door gaps so clutter never spawns in a doorway.
-  const doors = dungeon.spawnDoors || [];
+  // wall decor pass above, so seams never get a doubled-up prop.
   const ptx0 = cx * _CHUNK_T, pty0 = cy * _CHUNK_T;
   const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
   const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
@@ -1362,23 +1439,12 @@ function _buildChunk(cx, cy) {
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
         if (dungeon.grid[ty][tx] !== FLOOR) continue;
-        if (doors.some(door => ty >= door.ty && ty <= door.ty + 1 && tx >= door.tx && tx <= door.tx + 1)) continue;
         const h = ((tx * 41) ^ (ty * 59)) & 0xff;
         c.save();
         th.drawFloorProp(c, tx * TILE, ty * TILE, h);
         c.restore();
       }
     }
-  }
-
-  // 6. Hub exit doors — fixed positions, not part of the hash-scattered prop
-  // system. Drawn last so they always sit on top of the floor beneath them.
-  if (typeof drawSpawnDoor === 'function') {
-    doors.forEach(door => {
-      if (door.tx >= ptx0 && door.tx <= ptx1 && door.ty >= pty0 && door.ty <= pty1) {
-        drawSpawnDoor(c, door.tx, door.ty, th.wallColor, door.dir);
-      }
-    });
   }
 
   return cv;
