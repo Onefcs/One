@@ -1214,30 +1214,45 @@ async function _grantPartyDungeonNexum(winnerSocketId, amount) {
   } catch (e) { console.error('party dungeon nexum grant:', e); }
 }
 
-// Marks today (UTC) as this player's used party-dungeon attempt — the
-// attempt is consumed on entry (startPartyDungeonLobby), not on a
-// successful clear, so dying/failing doesn't refund it. Checked by
-// createPartyDungeonLobby/joinPartyDungeonLobby before letting them queue
-// up again. Written straight to Mongo by telegramId so it works regardless
-// of which member's socket triggered it.
-function _lockPartyDungeonDaily(socketId) {
+// Both the raid ("Подземелье 1") and the party dungeon ("Лабиринт") allow
+// DAILY_DUNGEON_ATTEMPTS runs per UTC day — each gets its own savedData
+// field (see the wrapper functions below) so their attempt pools are
+// independent. The attempt is consumed on entry (start*Lobby), not on a
+// successful clear, so dying/failing doesn't refund it. Written straight to
+// Mongo by telegramId so it works regardless of which member's socket
+// triggered it.
+const DAILY_DUNGEON_ATTEMPTS = 3;
+function _todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function _lockDailyAttempt(socketId, field) {
   const s = io.sockets.sockets.get(socketId);
   const tid = s?.data?.telegramId;
   if (tid == null) return;
-  PlayerModel.findOneAndUpdate({ telegramId: tid }, { $set: { 'savedData.lastPartyDungeonAt': Date.now() } }).catch(() => {});
+  const today = _todayStr();
+  PlayerModel.findOne({ telegramId: tid }).select(`savedData.${field}`).lean()
+    .then(doc => {
+      const prev = doc?.savedData?.[field];
+      const count = (prev && prev.date === today) ? prev.count + 1 : 1;
+      return PlayerModel.findOneAndUpdate({ telegramId: tid }, { $set: { [`savedData.${field}`]: { date: today, count } } });
+    }).catch(() => {});
 }
 
-async function _partyDungeonLockedToday(socketId) {
+async function _dailyAttemptsLeft(socketId, field) {
   const s = io.sockets.sockets.get(socketId);
   const tid = s?.data?.telegramId;
-  if (tid == null) return false;
+  if (tid == null) return DAILY_DUNGEON_ATTEMPTS;
   try {
-    const doc = await PlayerModel.findOne({ telegramId: tid }).select('savedData.lastPartyDungeonAt').lean();
-    const last = doc?.savedData?.lastPartyDungeonAt;
-    if (!last) return false;
-    return new Date(last).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
-  } catch (e) { return false; }
+    const doc = await PlayerModel.findOne({ telegramId: tid }).select(`savedData.${field}`).lean();
+    const rec = doc?.savedData?.[field];
+    if (!rec || rec.date !== _todayStr()) return DAILY_DUNGEON_ATTEMPTS;
+    return Math.max(0, DAILY_DUNGEON_ATTEMPTS - rec.count);
+  } catch (e) { return DAILY_DUNGEON_ATTEMPTS; }
 }
+
+function _lockPartyDungeonDaily(socketId)            { _lockDailyAttempt(socketId, 'partyDungeonAttempts'); }
+async function _partyDungeonLockedToday(socketId)    { return (await _dailyAttemptsLeft(socketId, 'partyDungeonAttempts')) <= 0; }
+function _lockRaidDaily(socketId)                    { _lockDailyAttempt(socketId, 'raidAttempts'); }
+async function _raidLockedToday(socketId)            { return (await _dailyAttemptsLeft(socketId, 'raidAttempts')) <= 0; }
 
 // Shared by partyDungeonAttack/partyDungeonSkillAttack — mirrors the normal
 // attack/skillAttack handlers' kill-reward flow, but rewards split across
@@ -2665,12 +2680,13 @@ io.on('connection', socket => {
     socket.emit('lobbyList', { lobbies: list });
   });
 
-  safeOn('createRaidLobby', ({ dungeonId }) => {
+  safeOn('createRaidLobby', async ({ dungeonId }) => {
     if (!authed) return;
     if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
     if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp || (cp.lvl || 1) < 3) return socket.emit('lobbyError', { msg: 'Нужен 3 уровень' });
+    if (await _raidLockedToday(socket.id)) return socket.emit('lobbyError', { msg: 'Попытки в рейд на сегодня закончились' });
     const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
     const lobbyId = 'lb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
     const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
@@ -2683,12 +2699,13 @@ io.on('connection', socket => {
     _lobbyBroadcast();
   });
 
-  safeOn('joinRaidLobby', ({ lobbyId }) => {
+  safeOn('joinRaidLobby', async ({ lobbyId }) => {
     if (!authed) return;
     const lb = raidLobbies.get(lobbyId);
     if (!lb) return socket.emit('lobbyError', { msg: 'Группа не найдена' });
     if (lb.members.size >= 5) return socket.emit('lobbyError', { msg: 'Группа полна (5/5)' });
     if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
+    if (await _raidLockedToday(socket.id)) return socket.emit('lobbyError', { msg: 'Попытки в рейд на сегодня закончились' });
     if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
     const cp = currentRoom?.players.get(socket.id);
     const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
@@ -2706,7 +2723,7 @@ io.on('connection', socket => {
     _lobbyBroadcast();
   });
 
-  safeOn('startRaidLobby', () => {
+  safeOn('startRaidLobby', async () => {
     if (!authed) return;
     const lobbyId = playerLobby.get(socket.id);
     const lb = raidLobbies.get(lobbyId);
@@ -2715,6 +2732,15 @@ io.on('connection', socket => {
     const memberIds = [...lb.members.keys()];
     for (const mid of memberIds) {
       if (playerRaid.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то уже в рейде' });
+    }
+    // Re-check the daily lock against fresh DB state for every member right
+    // before launch (not just at queue time) — someone could have used up
+    // their attempts in another session between joining and starting.
+    const lockChecks = await Promise.all(memberIds.map(mid => _raidLockedToday(mid)));
+    const lockedIdx = lockChecks.findIndex(Boolean);
+    if (lockedIdx !== -1) {
+      const nm = lb.members.get(memberIds[lockedIdx])?.name || 'Игрок';
+      return socket.emit('lobbyError', { msg: `У ${nm} закончились попытки в рейд на сегодня` });
     }
     raidLobbies.delete(lobbyId);
     memberIds.forEach(mid => playerLobby.delete(mid));
@@ -2726,6 +2752,9 @@ io.on('connection', socket => {
     raidRooms.set(raidId, raidRoom);
     for (const mid of memberIds) {
       playerRaid.set(mid, raidId);
+      // The daily attempt is used up the moment the run starts, not on a
+      // successful clear — entering counts, win or lose.
+      _lockRaidDaily(mid);
       const mfl = playerFloorMap.get(mid);
       const mRoom = mfl !== undefined ? floorRooms.get(mfl) : null;
       const mp = mRoom?.players.get(mid);
@@ -2790,7 +2819,7 @@ io.on('connection', socket => {
     if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('pdLobbyError', { msg: 'Выберите персонажа' });
-    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Лабиринт уже пройден сегодня' });
+    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
     const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
     const lobbyId = 'pdlb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
     const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
@@ -2809,7 +2838,7 @@ io.on('connection', socket => {
     if (lb.members.size >= PARTY_DUNGEON_MAX_MEMBERS) return socket.emit('pdLobbyError', { msg: 'Группа полна' });
     if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
     if (playerPdLobby.has(socket.id)) _cleanupPdLobby(socket.id);
-    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Лабиринт уже пройден сегодня' });
+    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
     const cp = currentRoom?.players.get(socket.id);
     const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
     lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
@@ -2843,7 +2872,7 @@ io.on('connection', socket => {
     const lockedIdx = lockChecks.findIndex(Boolean);
     if (lockedIdx !== -1) {
       const nm = lb.members.get(memberIds[lockedIdx])?.name || 'Игрок';
-      return socket.emit('pdLobbyError', { msg: `${nm} уже проходил лабиринт сегодня` });
+      return socket.emit('pdLobbyError', { msg: `У ${nm} закончились попытки в лабиринт на сегодня` });
     }
     pdLobbies.delete(lobbyId);
     memberIds.forEach(mid => playerPdLobby.delete(mid));

@@ -755,6 +755,7 @@ function updateRaidPanelUI() {
         <span style="color:${RARITY_COL.common}">30% Common</span>
         <span style="color:${RARITY_COL.uncommon}">5% Uncommon</span>
       </div>
+      <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 3 раза в день</div>
     </div>`;
 
   const createBtn = lvlOk
@@ -835,13 +836,13 @@ function updatePartyDungeonPanelUI() {
   const dungeonCard = `
     <div class="raid-dungeon-card" style="margin-bottom:10px">
       <div class="raid-dungeon-name">🌀 Лабиринт</div>
-      <div class="raid-dungeon-desc">Ветвящийся лабиринт · 100 монстров · Финальный босс · Мин. 3 игрока</div>
+      <div class="raid-dungeon-desc">Ветвящийся лабиринт · монстры 10 уровня · 100 монстров · Финальный босс · Мин. 3 игрока</div>
       <div class="raid-dungeon-rewards">
         <span style="color:#b2864d">50% Liberty с монстров</span>
         <span style="color:#f17e8b">50% Заточка с босса</span>
         <span style="color:#efc680">10% Безоп. заточка с босса</span>
       </div>
-      <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 1 раз в день</div>
+      <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 3 раза в день</div>
     </div>`;
 
   const createBtn = `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">Создать группу</button>`;
