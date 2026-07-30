@@ -137,7 +137,7 @@ function netConnect(onReady) {
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
     bossStatus = bs || {};
-    if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
+    if (typeof _renderBossPanelBody === 'function') _renderBossPanelBody();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
@@ -494,7 +494,7 @@ function netConnect(onReady) {
   socket.on('bossStatus', ({ arm, alive, respawnAt }) => {
     if (!bossStatus) bossStatus = {};
     if (arm) bossStatus[arm] = { alive, respawnAt };
-    if (typeof _renderBossTimerBtn === 'function') _renderBossTimerBtn();
+    if (typeof _renderBossPanelBody === 'function') _renderBossPanelBody();
   });
 
   socket.on('spawnProj', data => {

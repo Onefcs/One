@@ -117,10 +117,19 @@
   Магазин
 </button>
 
-<!-- Boss respawn timer (below GRAM Shop button) -->
-<div id="boss-timer-btn" style="display:none">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M9 2h6"/></svg>
-  <span id="boss-timer-text">Живой</span>
+<!-- Boss status button (below GRAM Shop button) -->
+<button id="boss-timer-btn" onclick="openBossPanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v5c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V6l-8-4Z"/></svg>
+  <span id="boss-timer-text">Boss</span>
+</button>
+
+<!-- Boss status overlay panel -->
+<div id="boss-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title" style="color:#eb4e61"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 2 4 6v5c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V6l-8-4Z"/></svg>Боссы</div>
+    <button class="vip-close" onclick="closeBossPanel()">✕</button>
+  </div>
+  <div id="boss-panel-body" class="vip-body"></div>
 </div>
 
 <!-- Rating overlay panel -->

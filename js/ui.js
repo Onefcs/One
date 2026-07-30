@@ -2612,7 +2612,6 @@ function _positionBossTimerBtn() {
 function showBossTimerBtn() {
   const btn = document.getElementById('boss-timer-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionBossTimerBtn(); }
-  _renderBossTimerBtn();
 }
 
 function _fmtBossTime(ms) {
@@ -2621,33 +2620,46 @@ function _fmtBossTime(ms) {
   return m + ':' + String(r).padStart(2, '0');
 }
 
-// One boss per corridor now — bossStatus is a map keyed by arm name
+function openBossPanel() {
+  const panel = document.getElementById('boss-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  _renderBossPanelBody();
+}
+
+function closeBossPanel() {
+  const panel = document.getElementById('boss-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+// One boss per corridor — bossStatus is a map keyed by arm name
 // ({ left: {alive,respawnAt}, top: {...}, ... }), set on gameStart and
 // updated per-arm on 'bossStatus' pushes (kill / respawn) — see network.js.
-// The button shows whichever corridor the player is currently standing in;
-// in the hub (no corridor) it just shows "—". The countdown itself just
-// re-reads the stored respawnAt every second, no extra network traffic
-// needed for the ticking display.
-function _renderBossTimerBtn() {
-  const btn = document.getElementById('boss-timer-btn');
-  const txt = document.getElementById('boss-timer-text');
-  if (!btn || !txt) return;
-  const arm = (typeof _getRoomAt === 'function' && player) ? (_getRoomAt(player.x, player.y)?.arm || null) : null;
-  const bs = (arm && typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus[arm] : null;
-  if (!bs) {
-    btn.classList.remove('boss-alive');
-    txt.textContent = '—';
-  } else if (bs.alive) {
-    btn.classList.add('boss-alive');
-    txt.textContent = 'Живой';
-  } else {
-    btn.classList.remove('boss-alive');
-    txt.textContent = _fmtBossTime((bs.respawnAt || 0) - Date.now());
-  }
+// Lists all 4 corridors' bosses at once rather than just whichever one the
+// player currently stands in. The countdown just re-reads the stored
+// respawnAt every second while the panel is open, no extra network traffic.
+const _BOSS_ARM_LABEL = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
+function _renderBossPanelBody() {
+  const body = document.getElementById('boss-panel-body');
+  if (!body) return;
+  body.innerHTML = `<div class="vip-levels">${Object.keys(_BOSS_ARM_LABEL).map(arm => {
+    const bs = (typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus[arm] : null;
+    const alive = !bs || bs.alive;
+    const statusTxt   = alive ? 'Жив' : ('Возрождение через ' + _fmtBossTime((bs.respawnAt || 0) - Date.now()));
+    const statusColor = alive ? '#8fc95c' : '#f07886';
+    return `
+      <div class="vip-card${alive ? ' vip-card-done' : ''}">
+        <div class="vip-card-head">
+          <div class="vip-card-badge">${alive ? '💀' : '⏳'}</div>
+          <div class="vip-card-title">${_BOSS_ARM_LABEL[arm]}</div>
+          <div class="vip-card-gram" style="color:${statusColor}">${statusTxt}</div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
 }
 
 if (typeof setInterval === 'function') {
-  setInterval(() => { if (document.getElementById('boss-timer-btn')?.style.display !== 'none') _renderBossTimerBtn(); }, 1000);
+  setInterval(() => { if (document.getElementById('boss-panel')?.style.display === 'flex') _renderBossPanelBody(); }, 1000);
 }
 
 function openMarketPanel() {
