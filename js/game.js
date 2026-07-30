@@ -1483,21 +1483,13 @@ const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 
 const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — dt-clamp budget (frameMs/rawDt clamps below)
-// Target render cadence: 60fps on every device, including phones. The 30fps
-// mobile cap was justified as heat/battery savings, but the built-in overlay
-// disproved that on real hardware: a phone sat at a steady 30fps spending only
-// ~0.8ms in update() and ~1.1ms in render() — under 2ms of a 33ms frame, ~15×
-// headroom. The GPU idles either way, so the cap saved almost no power while
-// forcing 30fps, and full-screen camera panning at 30fps reads as visible
-// judder on the 60/90/120Hz screens phones now ship with — the exact symptom
-// reported. Net-send rate is decoupled from frame rate (netSendMove is capped
-// to 40Hz), so 60fps adds only cheap extra draws, not radio/CPU wakeups. The
-// tick-counting scheduler below yields an even cadence at any divisor (N=1
-// included), so this is steady 60fps, not the jittery 60fps the cap once
-// guarded against; a device that genuinely can't hold 60 simply renders slower
-// (rAF delivers fewer ticks) and the adaptive-quality tier still trims particle
-// load below 20fps.
-const _TARGET_FRAME_MS = 1000 / 60;
+// Target render cadence: capped at 30fps on every device — battery/heat over
+// smoothness on 90/120Hz screens. The tick-counting scheduler below yields an
+// even cadence at any divisor (N=1 included), so this is a steady 30fps, not
+// a jittery one; a device that genuinely can't hold 30 simply renders slower
+// still (rAF delivers fewer ticks) and the adaptive-quality tier still trims
+// particle load below 20fps.
+const _TARGET_FRAME_MS = 1000 / 30;
 // Refresh-rate detection: the native frame interval is the *shortest* real gap
 // between rAF ticks — jank only ever makes a frame longer, never shorter. The
 // old code averaged the first dozen ticks, but those land on the jankiest
