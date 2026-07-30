@@ -1,5 +1,5 @@
 const { TILE, FLOOR } = require('./dungeon');
-const { ENEMY_DEF } = require('../../shared/definitions');
+const { ENEMY_DEF, monsterStatsAtLevel } = require('../../shared/definitions');
 
 const MAP_TILES = 20;
 const MAP_PX    = MAP_TILES * TILE; // 800 px
@@ -7,8 +7,12 @@ const CENTER    = MAP_PX / 2;       // 400 px
 const TICK_MS   = 25;
 
 const _byEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-const MOB_POOL  = ['orc_guard', 'orc_warrior'];
-const BOSS_EID  = 'orc_boss';
+// Level-3 species (arm 1's third rotation slot) — an early, low-stakes raid.
+// Stats are computed fresh at RAID_LEVEL rather than using ENEMY_DEF's own
+// hp/atk/def (those are a much-higher "representative" snapshot for imp's
+// usual spawn levels, not level 3). No boss wave anymore.
+const MOB_POOL   = ['imp_guard', 'imp_warrior'];
+const RAID_LEVEL = 3;
 
 function _makeGrid() {
   return Array.from({ length: MAP_TILES }, () => new Array(MAP_TILES).fill(FLOOR));
@@ -26,7 +30,7 @@ class RaidRoom {
     this._eid      = 0;
     this._tickNo   = 0;
     this.wave      = 0;
-    this.totalWaves = 7;
+    this.totalWaves = 6; // no boss wave — was 7 with a boss on the last wave
     this.state     = 'waiting';
     this._lastTick = Date.now();
     this._interval = null;
@@ -83,53 +87,46 @@ class RaidRoom {
     this.enemies   = [];
     this._enemyMap.clear();
 
-    if (waveNum === 7) {
-      const def = _byEid.get(BOSS_EID);
-      const e = this._makeEnemy(def, CENTER, 2 * TILE, true);
+    const count = waveNum;
+    const poses = [];
+    for (let i = 0; i < count; i++) {
+      const t = (i + 0.5) / count;
+      const p = TILE + t * (MAP_PX - 2 * TILE);
+      poses.push(
+        { x: p,             y: TILE               },
+        { x: p,             y: MAP_PX - TILE       },
+        { x: TILE,          y: p                   },
+        { x: MAP_PX - TILE, y: p                   },
+      );
+    }
+    poses.forEach(pos => {
+      const def = _byEid.get(MOB_POOL[Math.floor(Math.random() * MOB_POOL.length)]);
+      const e = this._makeEnemy(def, pos.x, pos.y);
       this.enemies.push(e);
       this._enemyMap.set(e.id, e);
-    } else {
-      const count = waveNum;
-      const poses = [];
-      for (let i = 0; i < count; i++) {
-        const t = (i + 0.5) / count;
-        const p = TILE + t * (MAP_PX - 2 * TILE);
-        poses.push(
-          { x: p,             y: TILE               },
-          { x: p,             y: MAP_PX - TILE       },
-          { x: TILE,          y: p                   },
-          { x: MAP_PX - TILE, y: p                   },
-        );
-      }
-      poses.forEach(pos => {
-        const def = _byEid.get(MOB_POOL[Math.floor(Math.random() * MOB_POOL.length)]);
-        const e = this._makeEnemy(def, pos.x, pos.y, false);
-        this.enemies.push(e);
-        this._enemyMap.set(e.id, e);
-      });
-    }
+    });
 
     this.memberIds.forEach(id => this.io.to(id).emit('raidWave', {
       wave: waveNum, totalWaves: this.totalWaves,
-      isBoss: waveNum === 7,
+      isBoss: false,
       enemies: this._snapshot(),
     }));
   }
 
-  _makeEnemy(def, x, y, isBoss) {
-    const sc = isBoss ? 2 : 1;
+  _makeEnemy(def, x, y) {
     const id = `raid_${this.raidId}_${this._eid++}`;
+    const stats = monsterStatsAtLevel(RAID_LEVEL, def.eType);
     return {
       id, eid: def.eid,
-      name:  isBoss ? 'Страж Подземелья' : def.name,
-      color: isBoss ? '#ff3333'           : def.color,
-      size:  isBoss ? def.size + 8        : def.size,
-      hp:    Math.floor(def.hp  * sc),
-      maxHp: Math.floor(def.hp  * sc),
-      atk:   Math.floor(def.atk * sc),
-      def:   def.def || 0,
+      name:  def.name,
+      color: def.color,
+      size:  def.size,
+      hp:    stats.hp,
+      maxHp: stats.hp,
+      atk:   stats.atk,
+      def:   stats.def,
       spd:   def.spd,
-      isBoss,
+      isBoss: false,
       x, y, aggro: true,
       atkTimer: 1 + Math.random(),
       _shp: -1,
