@@ -32,6 +32,21 @@ function _critDmg(base, critChance, critPower) {
   return { dmg: isCrit ? Math.floor(base * (critPower || 1.5)) : base, isCrit };
 }
 
+// How far above the server's own computed "true" stats (from validated
+// equipment/upgrades/level, see computeStats) a statsUpdate push is allowed
+// to land. Must cover every buff that can legitimately stack at once — the
+// biggest is a Танк's own +80% DEF plus a received party heal-shield's +50%
+// (≈2.7×) — with margin, while still closing off a client just claiming
+// arbitrary numbers (previously the cap ratcheted off the client's OWN prior
+// value, so repeated calls walked it up to 9999 in ~10 packets).
+const STAT_BUFF_HEADROOM = 3;
+const HP_BUFF_HEADROOM   = 1.5;
+// Passive-regen ceiling used to bound how fast a playerMove-reported HP
+// increase is allowed to land (see syncPlayerHp) — real heals (potions,
+// faithShield/party heal, respawn) all go through their own dedicated,
+// server-applied paths and are never gated by this.
+const MAX_HP_REGEN_PER_SEC = 30;
+
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
 // Players render on a ~700px-wide viewport — 600px AOI covers everything visible
@@ -417,7 +432,12 @@ class Room {
     const base = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
-    return { dmg, isCrit, x: target.x, y: target.y };
+    // Apply the damage to the authoritative server-side HP right here — the
+    // target's client used to self-report "actual damage taken" afterwards
+    // (pvpDamageTaken), which a modified client could always report as 0 to
+    // become unkillable in PvP while still dealing full damage to others.
+    target.hp = Math.max(0, target.hp - dmg);
+    return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
   pvpSkillAttack(attackerSocketId, targetSocketId, multiplier) {
@@ -434,7 +454,8 @@ class Room {
     const base = Math.max(1, Math.round(attacker.atk * mult) - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
-    return { dmg, isCrit, x: target.x, y: target.y };
+    target.hp = Math.max(0, target.hp - dmg);
+    return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
   removePlayer(socketId) {
@@ -466,11 +487,25 @@ class Room {
       // HP with no death ever recorded.
       p.hp    = (savedStats.hp != null) ? Math.max(0, Math.min(savedStats.hp, p.maxHp)) : p.maxHp;
       p.lvl   = savedStats.lvl || 1;
+      // Kept fresh via updatePlayerSavedData() (called on every saveProgress)
+      // so statsUpdate can always re-derive a true base from up-to-date
+      // equipment/upgrades instead of trusting the client's own numbers.
+      p._sd = savedStats;
     } else {
       p.hp = p.maxHp = cd.baseHP;
       p.atk = cd.baseAtk;
       p.def = cd.baseDef;
+      p._sd = {};
     }
+  }
+
+  // Called on every saveProgress — keeps p._sd (the basis for statsUpdate's
+  // true-base recomputation) in sync with the player's actual equipment/
+  // upgrades/level without waiting for the next character (re)selection.
+  updatePlayerSavedData(socketId, sd) {
+    const p = this.players.get(socketId);
+    if (!p) return;
+    p._sd = sd || {};
   }
 
   updatePlayerPos(socketId, x, y, facing) {
@@ -482,8 +517,21 @@ class Room {
   syncPlayerHp(socketId, clientHp) {
     const p = this.players.get(socketId);
     if (!p || p.hp <= 0) return;
-    // Trust client HP for regen tracking; clamp to [0, maxHp]
-    p.hp = Math.min(p.maxHp, Math.max(0, clientHp));
+    const requested = Math.min(p.maxHp, Math.max(0, clientHp));
+    // Decreases are always trusted immediately — they can never help a
+    // cheater. Increases (passive HP regen ticking up between potions/heals)
+    // are rate-limited to MAX_HP_REGEN_PER_SEC instead of being applied
+    // outright — otherwise a modified client could report hp:maxHp on every
+    // movement packet and become unkillable (this is also what would have
+    // silently undone the server-applied PvP damage in pvpAttack/
+    // pvpSkillAttack below). Real heals (potions, faithShield/party heal,
+    // respawn) all go through their own dedicated methods and aren't gated
+    // by this at all.
+    if (requested <= p.hp) { p.hp = requested; p._lastHpSyncAt = Date.now(); return; }
+    const now = Date.now();
+    const elapsed = Math.max(0, (now - (p._lastHpSyncAt || now)) / 1000);
+    p._lastHpSyncAt = now;
+    p.hp = Math.min(requested, p.hp + elapsed * MAX_HP_REGEN_PER_SEC, p.maxHp);
   }
 
   healPlayer(socketId, amount) {
@@ -503,24 +551,26 @@ class Room {
   updatePlayerStats(socketId, { atk, def, maxHp, critChance, critPower }) {
     const p = this.players.get(socketId);
     if (!p) return;
-    // Cap at 1.5× current server value — blocks console-injection hacks while
-    // allowing legitimate growth from level-ups and upgrades during a session
-    if (atk  >  0) p.atk  = Math.min(atk,  p.atk  * 1.5 + 100, 9999);
-    if (def  >= 0) p.def  = Math.min(def,  p.def  * 1.5 + 100, 9999);
+    const cd = CHAR_DEF[p.type];
+    if (!cd) return;
+    // Anchor the accepted stats to a value the server can independently
+    // derive from the player's own already-sanitized saved equipment/
+    // upgrades/level (see computeStats), not to whatever this same client
+    // claimed last time — a self-referential cap ("min(x, prev*1.5+100)")
+    // ratchets up to its ceiling in ~10 calls regardless of what prev
+    // actually was, since the client controls prev too.
+    const trueBase = computeStats(p._sd || {}, cd);
+    if (atk  >  0) p.atk  = Math.min(atk,  trueBase.atk * STAT_BUFF_HEADROOM);
+    if (def  >= 0) p.def  = Math.min(def,  trueBase.def * STAT_BUFF_HEADROOM);
     if (maxHp > 0) {
-      const cap = Math.min(maxHp, p.maxHp * 1.5 + 500, 99999);
+      const cap = Math.min(maxHp, trueBase.maxHp * HP_BUFF_HEADROOM);
       p.hp = Math.min(p.hp, cap);
       if (p.maxHp !== cap) { p.maxHp = cap; p._profileRev++; }
     }
-    if (critChance !== undefined) p.critChance = Math.min(0.80, Math.max(0, critChance));
-    if (critPower  !== undefined) p.critPower  = Math.min(10,   Math.max(1, critPower));
-  }
-
-  applyPvpDamage(socketId, actual) {
-    const p = this.players.get(socketId);
-    if (!p || p.hp <= 0) return null;
-    p.hp = Math.max(0, p.hp - actual);
-    return p.hp;
+    // No skill or item in the game grants a temporary crit bonus — always
+    // the server-derived truth, never whatever the client claims.
+    p.critChance = trueBase.critChance;
+    p.critPower  = trueBase.critPower;
   }
 
   attackEnemy(socketId, enemyId) {

@@ -330,20 +330,17 @@ function netConnect(onReady) {
     spawnBurst(player.x, player.y, '#ff4', 8);
   });
 
-  socket.on('pvpDamage', ({ dmg }) => {
+  socket.on('pvpDamage', ({ dmg, hp }) => {
     if (!player || state !== 'playing') return;
-    if (typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) return;
-    let actual = 0;
-    {
-      actual = Math.max(1, Math.floor(dmg));
-      player.hp = Math.max(0, player.hp - actual);
-      player.hurtTimer = 0.1;
-      dmgNum(player.x, player.y - 24, actual, '#f55');
-      spawnBurst(player.x, player.y, '#f44', 5);
-      if (player.hp <= 0 && state === 'playing') { player.hp = 0; playerDie(); }
-    }
-    // Report actual damage taken so server can track authoritative HP
-    socket.emit('pvpDamageTaken', { actual });
+    // hp is the server's own authoritative post-hit value (Room.js applies
+    // PvP damage server-side now) — trust it directly instead of computing
+    // and self-reporting a damage number back.
+    const actual = Math.max(1, Math.floor(dmg || 0));
+    player.hp = hp != null ? Math.max(0, hp) : Math.max(0, player.hp - actual);
+    player.hurtTimer = 0.1;
+    dmgNum(player.x, player.y - 24, actual, '#f55');
+    spawnBurst(player.x, player.y, '#f44', 5);
+    if (player.hp <= 0 && state === 'playing') { player.hp = 0; playerDie(); }
   });
 
   socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId }) => {

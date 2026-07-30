@@ -2030,13 +2030,6 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp, critChance, critPower });
   });
 
-  socket.on('pvpDamageTaken', ({ actual }) => {
-    if (!currentRoom) return;
-    const newHp = currentRoom.applyPvpDamage(socket.id, Math.max(0, Math.min(actual, 9999)));
-    if (newHp !== null && newHp <= 0)
-      io.to(socket.id).emit('playerHurt', { id: socket.id, hp: 0 });
-  });
-
   socket.on('attack', ({ enemyId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
@@ -2262,8 +2255,12 @@ io.on('connection', socket => {
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
     if (!result) return;
-    io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
+    // hp is now applied server-side inside pvpAttack itself — the target's
+    // client used to self-report "actual damage taken" separately, which let
+    // a modified client always report 0 and become unkillable.
+    io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+    if (result.hp <= 0) io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 });
   });
 
   socket.on('pvpSkillAttack', ({ targetId, multiplier }) => {
@@ -2271,8 +2268,9 @@ io.on('connection', socket => {
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
     if (!result) return;
-    io.to(targetId).emit('pvpDamage', { dmg: result.dmg });
+    io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+    if (result.hp <= 0) io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 });
   });
 
   socket.on('pvpSkillCC', ({ targetId, type, duration }) => {
@@ -2340,6 +2338,10 @@ io.on('connection', socket => {
     const clean = _sanitizeSavedStats(stats);
     _lastStats = clean;
     authed.bm = calcBM(clean);
+    // Keeps the Room's basis for statsUpdate's true-base recomputation
+    // (server/game/Room.js updatePlayerStats) in sync with the player's
+    // actual equipment/upgrades/level as they change mid-session.
+    if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, clean);
     clearTimeout(_saveDebounceTimer);
     _saveDebounceTimer = setTimeout(() => {
       if (!authed) return;
