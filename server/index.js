@@ -150,8 +150,8 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0,  skillBooks:{ random:1 } },
   { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1,  skillBooks:{ random:2 } },
   { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 } },
-  { id:'pkg50',  gram:50,  gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5,  skillBooks:{ each:4 } },
-  { id:'pkg100', gram:100, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 } },
+  { id:'pkg50',  gram:50,  gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
+  { id:'pkg100', gram:100, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 } },
 ];
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
@@ -182,15 +182,21 @@ function _vipLevelItems(vipLevel, charClass) {
   function addWep(rarity, enhance) {
     const w = wepMap[rarity]; if (w) items.push({ ...w, enhance: enhance || 0, qty: 1 });
   }
+  function addBox(id, qty) {
+    if (qty <= 0) return;
+    const b = BOX_DEF.find(x => x.id === id);
+    if (b) items.push({ ...b, qty });
+  }
   switch (vipLevel) {
-    case 3:  addStone('bless_stone', 2); break;
-    case 4:  addStone('bless_stone', 5); addBP(10); break;
-    case 5:  addStone('bless_stone', 7); addBP(10); break;
-    case 6:  addWep('uncommon', 8); addStone('bless_stone', 7); addBP(10); break;
-    case 7:  addWep('rare', 8); addStone('norm_stone', 20); addStone('bless_stone', 10); break;
-    case 8:  addWep('epic', 1); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); break;
-    case 9:  addWep('epic', 8); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); break;
-    case 10: addWep('legendary', 0); addBP(100); addStone('norm_stone', 100); addStone('bless_stone', 100); break;
+    case 2:  addBox('box_uncommon', 3); break;
+    case 3:  addStone('bless_stone', 2); addBox('box_uncommon', 5); break;
+    case 4:  addStone('bless_stone', 5); addBP(10); addBox('box_rare', 2); addBox('box_uncommon', 3); break;
+    case 5:  addStone('bless_stone', 7); addBP(10); addBox('box_rare', 5); break;
+    case 6:  addWep('uncommon', 8); addStone('bless_stone', 7); addBP(10); addBox('box_rare', 10); break;
+    case 7:  addWep('rare', 8); addStone('norm_stone', 20); addStone('bless_stone', 10); addBox('box_rare', 15); break;
+    case 8:  addWep('epic', 1); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); addBox('box_rare', 20); break;
+    case 9:  addWep('epic', 8); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); addBox('box_rare', 25); break;
+    case 10: addWep('legendary', 0); addBP(100); addStone('norm_stone', 100); addStone('bless_stone', 100); addBox('box_rare', 30); break;
     default: break;
   }
   return items;
@@ -1727,6 +1733,17 @@ io.on('connection', socket => {
             _addBook(classBooks[Math.floor(Math.random() * classBooks.length)], 1);
           }
         }
+      }
+
+      // Boxes (BOX_DEF — opened via the forge for random-rarity gear)
+      if (pkg.boxes) {
+        Object.entries(pkg.boxes).forEach(([boxId, qty]) => {
+          const base = BOX_DEF.find(b => b.id === boxId);
+          if (!base) return;
+          const existing = inv.find(i => i.id === boxId);
+          if (existing) existing.qty = (existing.qty || 1) + qty;
+          else inv.push({ ...base, qty });
+        });
       }
 
       // Bonus skill points
