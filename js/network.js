@@ -1,9 +1,14 @@
 // ── Network module ───────────────────────────────────────────
 const SERVER_URL = (() => {
   const h = window.location.hostname;
+  // Same-origin in production — the server serves both the static site and
+  // the Socket.IO endpoint from one process (server/index.js), so this
+  // always points at wherever the page itself was loaded from. Avoids
+  // hardcoding a specific deploy domain that breaks the moment it changes
+  // (as a hardcoded Railway URL did here).
   return (h === 'localhost' || h === '127.0.0.1' || h === '')
     ? 'http://localhost:3000'
-    : 'https://one-production-ae10.up.railway.app';
+    : window.location.origin;
 })();
 
 let _savedData = null;
