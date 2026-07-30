@@ -297,7 +297,7 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // [class, skillKey, name] — name must match SKILL_DEF[class][i].name exactly
 // (js/definitions.js) so a book's label always names the ability it unlocks.
 const _SKILL_BOOK_SRC = [
-  ['lev', 'Q', 'Ледяной удар'], ['lev', 'W', 'Смерч клинков'], ['lev', 'E', 'Гнев мертвеца'], ['lev', 'R', 'Рывок тьмы'],
+  ['lev', 'Q', 'Ледяной удар'], ['lev', 'W', 'Смерч клинков'], ['lev', 'E', 'Гнев мертвеца'], ['lev', 'R', 'Рывок света'],
   ['deathknight', 'Q', 'Вампиризм'], ['deathknight', 'W', 'Вихрь клинка'], ['deathknight', 'E', 'Ярость'], ['deathknight', 'R', 'Кувырок'],
   ['ranger', 'Q', 'Мульти-выстрел'], ['ranger', 'W', 'Комбо стрела'], ['ranger', 'E', 'Прыжок'], ['ranger', 'R', 'Скорость атаки'],
   ['mage', 'Q', 'Ледяной шар'], ['mage', 'W', 'Ледяная нова'], ['mage', 'E', 'Барьер'], ['mage', 'R', 'Телепорт'],

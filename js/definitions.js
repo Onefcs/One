@@ -143,7 +143,7 @@ const SKILL_DEF = {
     { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
     { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy.png', cd:20, desc:'+80% защиты на 10 сек'         },
-    { key:'R', name:'Рывок тьмы',     icon:'dash',       img:'/images/skill/wrivok.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
+    { key:'R', name:'Рывок света',    icon:'dash',       img:'/images/skill/wrivok.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   deathknight: [
     { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim.png',       cd:28, desc:'Вампиризм 10% от удара на 10 сек' },
