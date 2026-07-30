@@ -443,16 +443,14 @@ async function _handleBotMessage(msg) {
 function _refLink(telegramId) {
   const bot = _tgBotUsername || process.env.TG_BOT_USERNAME || '';
   if (!bot) return '';
-  // startapp (Mini App direct link), not start (classic bot deep link) — the
-  // latter opens a bot chat and needs the user to tap "START" before the
-  // referral is ever registered (_handleBotMessage only runs once that
-  // message actually arrives). startapp opens the Mini App itself right
-  // away; Telegram forwards ref_<telegramId> as start_param inside initData,
-  // which loginTelegramWebApp reads directly — no chat step at all. This
-  // does require the bot to have a Mini App configured in @BotFather
-  // ("Configure Mini App" with the game's URL) — a plain Menu Button alone
-  // won't respond to ?startapp= links.
-  return `https://t.me/${bot}?startapp=ref_${telegramId}`;
+  // Classic bot deep link — opens the bot's own chat first (by design; see
+  // _handleBotMessage), not the Mini App directly. Telegram always requires
+  // a manual "Запустить бота" tap before the resulting /start ref_<id>
+  // message is actually sent — that's a platform-level anti-spam rule for
+  // ANY bot, not something any code here can skip. loginTelegramWebApp also
+  // reads start_param if the game is ever opened via a startapp link
+  // instead, so nothing breaks if that path is used somewhere too.
+  return `https://t.me/${bot}?start=ref_${telegramId}`;
 }
 
 // Login Widget verification (browser button)
