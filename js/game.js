@@ -1245,14 +1245,14 @@ function drawArmGates() {
 //  NPCs
 // ─────────────────────────────────────────────────────────
 // The hub is a big room with 4 exit doors (N/S/E/W) leading into the
-// corridors — NPCs sit in the corner quadrants between doors so they never
-// block a doorway.
+// corridors — NPCs sit side by side just north of spawn, clear of the top
+// doorway (which is centered on dx=0), so they never block it.
 function initNpcs() {
   if (!dungeon) return;
   const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
   const offsets = [
-    { dx: -TILE * 14, dy: -TILE * 11 }, // NW quadrant
-    { dx:  TILE * 14, dy: -TILE * 11 }, // NE quadrant
+    { dx: -TILE * 4, dy: -TILE * 11 },
+    { dx:  TILE * 4, dy: -TILE * 11 },
   ];
   npcs = NPC_DEF.map((def, i) => ({
     ...def,
