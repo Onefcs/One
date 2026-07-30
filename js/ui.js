@@ -1544,6 +1544,8 @@ function drawBuffStrip() {
     { t: typeof faithShieldTimer !== 'undefined' ? faithShieldTimer : 0, icon:'shield',    color:'#ebad4e' },
     { t: typeof invisTimer       !== 'undefined' ? invisTimer       : 0, icon:'teleport',  color:'#f2d197' },
     { t: typeof dodgeTimer       !== 'undefined' ? dodgeTimer       : 0, icon:'dash',      color:'#98e456' },
+    { t: typeof guardTimer       !== 'undefined' ? guardTimer       : 0, icon:'shield',    color:'#9aa3ab' },
+    { t: typeof vampirismTimer   !== 'undefined' ? vampirismTimer   : 0, icon:'drop',      color:'#c23b5e' },
   ];
   for (const b of skillBuffs) {
     if (b.t > 0) chips.push({ kind:'icon', icon: b.icon, label: Math.ceil(b.t) + 'с', color: b.color });

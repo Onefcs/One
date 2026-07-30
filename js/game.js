@@ -592,6 +592,8 @@ function update(dt) {
   if (dodgeTimer > 0) dodgeTimer -= dt;
   if (atkSpeedTimer > 0) { atkSpeedTimer -= dt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }
   if (faithShieldTimer > 0) { faithShieldTimer -= dt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
+  if (guardTimer > 0) { guardTimer -= dt; if (guardTimer <= 0) { guardTimer = 0; recompute(); } }
+  if (vampirismTimer > 0) { vampirismTimer -= dt; if (vampirismTimer <= 0) vampirismTimer = 0; }
   if (invisTimer > 0) { invisTimer -= dt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
   if ((player.stunTimer || 0) > 0) { player.stunTimer -= dt; if (player.stunTimer <= 0) player.stunTimer = 0; }
   if ((player.slowTimer || 0) > 0) { player.slowTimer -= dt; if (player.slowTimer <= 0) player.slowTimer = 0; }

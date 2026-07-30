@@ -347,7 +347,10 @@ function netConnect(onReady) {
   });
 
   socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId }) => {
-    if (dmg) dmgNum(x, y - 24, dmg, '#f88');
+    if (dmg) {
+      dmgNum(x, y - 24, dmg, '#f88');
+      if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
+    }
     spawnBurst(x, y, '#f44', 4);
     const _hitOp = hitTargetId ? otherPlayers.get(hitTargetId) : null;
     if (_hitOp) _hitOp.hurtTimer = 0.1;
@@ -394,6 +397,7 @@ function netConnect(onReady) {
         _lastOwnDmg = dmg; // track for optimistic kill prediction
         if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19);
         else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
+        if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
       }
     }
   });
@@ -424,7 +428,10 @@ function netConnect(onReady) {
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
-    if (dmg) { if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4'); }
+    if (dmg) {
+      if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4');
+      if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
+    }
     spawnBurst(px, py, color || '#f80', 8);
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
     if (dd) {
@@ -687,7 +694,10 @@ function netConnect(onReady) {
     if (e) {
       e.hp = hp;
       e.hurtTimer = 0.3;
-      if (dmg) dmgNum(e.x, e.y - (e.size || 16) - 4, dmg, '#ff4');
+      if (dmg) {
+        dmgNum(e.x, e.y - (e.size || 16) - 4, dmg, '#ff4');
+        if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
+      }
     }
   });
 
@@ -819,7 +829,10 @@ function netConnect(onReady) {
     if (e) {
       e.hp = hp;
       e.hurtTimer = 0.3;
-      if (dmg) { if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4'); }
+      if (dmg) {
+        if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
+        if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
+      }
     }
   });
 
@@ -828,7 +841,10 @@ function netConnect(onReady) {
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
-    if (dmg) { if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4'); }
+    if (dmg) {
+      if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4');
+      if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
+    }
     spawnBurst(px, py, color || (isBoss ? '#ff3333' : '#f80'), isBoss ? 14 : 8);
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
     if (dd) {

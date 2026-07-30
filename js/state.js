@@ -31,6 +31,9 @@ let dodgeTimer = 0;
 let atkSpeedTimer = 0;
 let faithShieldTimer = 0;
 let invisTimer = 0;
+let guardTimer = 0;      // Танк (lev) E — +80% DEF buff
+let vampirismTimer = 0;  // Рыцарь Смерти (deathknight) Q — % lifesteal buff
+const VAMPIRISM_PCT = 0.10;
 
 // Target & PK mode
 let targetId = null;

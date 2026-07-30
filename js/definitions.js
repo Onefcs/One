@@ -142,11 +142,11 @@ const SKILL_DEF = {
   lev: [
     { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
     { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
-    { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy.png', cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy.png', cd:20, desc:'+80% защиты на 10 сек'         },
     { key:'R', name:'Рывок тьмы',     icon:'dash',       img:'/images/skill/wrivok.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   deathknight: [
-    { key:'Q', name:'Пинок',        icon:'kick',       img:'/images/skill/adim.png',       cd:18, desc:'×2 урон по цели + стан 3 сек' },
+    { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim.png',       cd:28, desc:'Вампиризм 10% от удара на 10 сек' },
     { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible.png', cd:20, desc:'+20% атака на 5 сек'           },
     { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
@@ -155,10 +155,10 @@ const SKILL_DEF = {
     { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   img:'/images/skill/lmulti.png',    cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
     { key:'W', name:'Комбо стрела',   icon:'poisonArrow', img:'/images/skill/lkombo.png',    cd:10, desc:'3 стрелы ×1 урон'             },
     { key:'E', name:'Прыжок',         icon:'roll',        img:'/images/skill/lprijok.png',   cd:8,  desc:'Рывок 80px'                   },
-    { key:'R', name:'Скорость атаки', icon:'arrowRain',   img:'/images/skill/latkspeed.png', cd:20, desc:'×2 скорость атаки на 5 сек'   },
+    { key:'R', name:'Скорость атаки', icon:'arrowRain',   img:'/images/skill/latkspeed.png', cd:20, desc:'×1.5 скорость атаки на 5 сек' },
   ],
   mage: [
-    { key:'Q', name:'Огненный шар', icon:'fireball', img:'/images/skill/mshar.png',     cd:5,  desc:'Снаряд ×2 урона'               },
+    { key:'Q', name:'Ледяной шар',  icon:'fireball', img:'/images/skill/mshar.png',     cd:5,  desc:'Снаряд ×2 урона'               },
     { key:'W', name:'Ледяная нова', icon:'iceNova',  img:'/images/skill/mnova.png',     cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
     { key:'E', name:'Барьер',       icon:'barrier',  img:'/images/skill/mbarier.png',   cd:18, desc:'Защита +50% на 3 сек'           },
     { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 180px по направлению'     },
@@ -175,7 +175,7 @@ const SKILL_DEF = {
 // damage → +1% per level  |  buff → +1s duration  |  barrier → +0.2s  |  invis → +0.2s  |  heal → +1%  |  mobility → +10px range
 const SKILL_BONUS_TYPE = {
   lev:         { Q: 'damage', W: 'damage', E: 'buff', R: 'damage'   },
-  deathknight: { Q: 'damage', W: 'damage', E: 'buff', R: 'damage'   },
+  deathknight: { Q: 'buff',   W: 'damage', E: 'buff', R: 'damage'   },
   ranger:      { Q: 'damage', W: 'damage', E: 'buff', R: 'buff'     },
   mage:        { Q: 'damage', W: 'damage', E: 'buff', R: 'mobility' },
   warlock:     { Q: 'heal',   W: 'buff',   E: 'buff', R: 'heal'     },

@@ -121,6 +121,16 @@ function _skillInvisSec(key)   { return _skillLvl(key) * 0.2; }
 function _skillHealMult(key)   { return 1 + _skillLvl(key) * 0.01; }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 
+// Вампиризм (deathknight Q) — heals a % of any damage the player deals
+// while vampirismTimer is active. Called from network.js wherever a hit/kill
+// event reports how much damage this player's own attack just dealt.
+function _applyVampirism(dmg) {
+  if (!player || !(vampirismTimer > 0) || !dmg) return;
+  const heal = Math.max(1, Math.round(dmg * VAMPIRISM_PCT));
+  player.hp = Math.min(player.maxHp, player.hp + heal);
+  dmgNum(player.x, player.y - 30, '+' + heal + '♥', '#c23b5e');
+}
+
 // AOE helper with optional damage multiplier (replaces _skillAOE for leveled skills)
 function _skillAOEMult(r, mult) {
   const m = Math.max(1, mult || 1);
@@ -450,27 +460,10 @@ function useSkill(idx) {
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
   if (player.type === 'deathknight') {
-    if (sk.key === 'Q') { // Ледяной удар — ×2 single target + stun 3s
-      const stunDur = 3 + _skillBuffSec('Q');
-      const pvpTgt = _pvpPlayerTarget();
-      if (pvpTgt) {
-        spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 50);
-        netPvpSkillAttack(pvpTgt.id, 2 * _skillDmgMult('Q'));
-        pvpTgt.op.stunTimer = stunDur;
-        netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
-        faceTowards(pvpTgt.op.x, pvpTgt.op.y);
-      } else {
-        const tgt = nearestEnemy();
-        if (tgt) {
-          spawnAOE(tgt.x, tgt.y, 50);
-          netSkillAttack(tgt.id, 2 * _skillDmgMult('Q'));
-          tgt.stunTimer = stunDur;
-          netSkillStun(tgt.id, stunDur);
-          faceTowards(tgt.x, tgt.y);
-        }
-      }
-      spawnBurst(player.x, player.y, '#a5f', 8);
-      dmgNum(player.x, player.y - 40, '❄ Ледяной удар!', '#a5f');
+    if (sk.key === 'Q') { // Вампиризм — 10% lifesteal for 10s (+1s per level)
+      vampirismTimer = 10 + _skillBuffSec('Q');
+      dmgNum(player.x, player.y - 40, '🩸 Вампиризм!', '#a5f');
+      spawnBurst(player.x, player.y, '#a5f', 10);
     } else if (sk.key === 'W') { // Смерч клинков — AOE 110
       spawnAOE(player.x, player.y, 110);
       _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
@@ -540,9 +533,9 @@ function useSkill(idx) {
       const len = Math.hypot(dx, dy) || 1;
       _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
       spawnBurst(player.x, player.y, '#7e7', 6);
-    } else if (sk.key === 'R') { // Attack Speed ×2 for 5s (+1s per level)
+    } else if (sk.key === 'R') { // Attack Speed ×1.5 for 5s (+1s per level)
       atkSpeedTimer = 5 + _skillBuffSec('R');
-      player.atkSpeed = (player.atkSpeed || player.charDef.atkSpeed) * 2;
+      player.atkSpeed = (player.atkSpeed || player.charDef.atkSpeed) * 1.5;
       dmgNum(player.x, player.y - 40, '⚡ Скорость!', '#7ef');
       spawnBurst(player.x, player.y, '#7ef', 8);
     }
@@ -654,11 +647,11 @@ function useSkill(idx) {
       spawnAOE(player.x, player.y, 110);
       _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
       _pvpSkillAOE(110, _skillDmgMult('W'));
-    } else if (sk.key === 'E') { // Ярость — +20% ATK 5s (+1s per level)
-      battleCryTimer = 5 + _skillBuffSec('E');
-      player.atk = Math.floor(player.atk * 1.20);
+    } else if (sk.key === 'E') { // Гнев мертвеца — +80% DEF 10s (+1s per level)
+      guardTimer = 10 + _skillBuffSec('E');
+      player.def = Math.floor(player.def * 1.80);
       if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
-      dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#ccd');
+      dmgNum(player.x, player.y - 40, '🛡 +80% DEF!', '#ccd');
       spawnBurst(player.x, player.y, '#ccd', 10);
     } else if (sk.key === 'R') { // Кувырок — dash 140px toward target/enemy, ×1.5 on arrival
       const _pvpR = _pvpPlayerTarget();
