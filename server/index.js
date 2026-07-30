@@ -337,6 +337,31 @@ function _txData(tx) {
   };
 }
 
+// Shared by the classic bot "/start ref_X" chat flow (_handleBotMessage) and
+// the Mini App "?startapp=ref_X" direct-launch flow (loginTelegramWebApp) —
+// registers telegramId as referred by refId the first time either path sees
+// it (whichever fires first wins; the other is a no-op since referredBy is
+// already set by then). Returns the referrer's username for notifications/
+// welcome text, or null if no (new) referral was registered.
+async function _registerReferral(telegramId, username, refId, playerDoc) {
+  if (!refId || refId === telegramId || playerDoc.referredBy) return null;
+  playerDoc.referredBy = refId;
+  await playerDoc.save();
+  const referrer = await PlayerModel.findOne({ telegramId: refId }, 'username telegramId').lean();
+  io.to(`tg_${refId}`).emit('friendJoined', { username });
+  await tgApi('sendMessage', {
+    chat_id: refId,
+    text: [
+      '🎉 <b>Друг принял приглашение!</b>',
+      `👤 @${username} только что зашёл в игру по вашей ссылке.`,
+      '',
+      '💡 Когда друг пополняет GRAM — вы получаете <b>5% бонус</b>.',
+    ].join('\n'),
+    parse_mode: 'HTML',
+  }).catch(() => {});
+  return referrer?.username || null;
+}
+
 async function _notifyAdminNewPlayer(username, telegramId, referrerUsername) {
   if (!TG_ADMIN_ID) return;
   const refLine = referrerUsername
@@ -367,39 +392,12 @@ async function _handleBotMessage(msg) {
 
   // /start ref_TELEGRAMID — register referral immediately on first bot interaction
   if (param.startsWith('ref_')) {
-    const referrerId = param.slice(4);
-    if (referrerId !== fromId) {
-      let player = await PlayerModel.findOne({ telegramId: fromId });
-      let refWasNew = false;
-      if (!player) {
-        isNewPlayer = true;
-        refWasNew = true;
-        player = await PlayerModel.create({ telegramId: fromId, username, referredBy: referrerId });
-      } else if (!player.referredBy) {
-        refWasNew = true;
-        player.referredBy = referrerId;
-        await player.save();
-      }
-
-      if (refWasNew) {
-        // Get referrer info for notifications
-        const referrer = await PlayerModel.findOne({ telegramId: referrerId }, 'username telegramId').lean();
-        referrerUsername = referrer?.username || null;
-
-        // Notify referrer via socket (if online) and via Telegram bot — once only
-        io.to(`tg_${referrerId}`).emit('friendJoined', { username });
-        await tgApi('sendMessage', {
-          chat_id: referrerId,
-          text: [
-            '🎉 <b>Друг принял приглашение!</b>',
-            `👤 @${username} только что зашёл в игру по вашей ссылке.`,
-            '',
-            '💡 Когда друг пополняет GRAM — вы получаете <b>5% бонус</b>.',
-          ].join('\n'),
-          parse_mode: 'HTML',
-        }).catch(() => {});
-      }
+    let player = await PlayerModel.findOne({ telegramId: fromId });
+    if (!player) {
+      isNewPlayer = true;
+      player = await PlayerModel.create({ telegramId: fromId, username });
     }
+    referrerUsername = await _registerReferral(fromId, username, param.slice(4), player);
   } else {
     // Organic /start — check if new player
     const existing = await PlayerModel.findOne({ telegramId: fromId });
@@ -445,7 +443,16 @@ async function _handleBotMessage(msg) {
 function _refLink(telegramId) {
   const bot = _tgBotUsername || process.env.TG_BOT_USERNAME || '';
   if (!bot) return '';
-  return `https://t.me/${bot}?start=ref_${telegramId}`;
+  // startapp (Mini App direct link), not start (classic bot deep link) — the
+  // latter opens a bot chat and needs the user to tap "START" before the
+  // referral is ever registered (_handleBotMessage only runs once that
+  // message actually arrives). startapp opens the Mini App itself right
+  // away; Telegram forwards ref_<telegramId> as start_param inside initData,
+  // which loginTelegramWebApp reads directly — no chat step at all. This
+  // does require the bot to have a Mini App configured in @BotFather
+  // ("Configure Mini App" with the game's URL) — a plain Menu Button alone
+  // won't respond to ?startapp= links.
+  return `https://t.me/${bot}?startapp=ref_${telegramId}`;
 }
 
 // Login Widget verification (browser button)
@@ -460,7 +467,12 @@ function verifyTelegramAuth(data) {
   return true;
 }
 
-// Mini App verification (opened inside Telegram app) — different secret derivation
+// Mini App verification (opened inside Telegram app) — different secret derivation.
+// Returns { user, startParam } — startParam is Telegram's own start_param field,
+// present when the app was opened via a t.me/<bot>?startapp=... deep link (the
+// Mini App equivalent of a bot's ?start= deep link, but it opens the game
+// directly with no intermediate "press START in the bot chat" step — see
+// _refLink()/the referral registration in loginTelegramWebApp below).
 function verifyTelegramWebApp(initData) {
   try {
     const params = new URLSearchParams(initData);
@@ -476,7 +488,8 @@ function verifyTelegramWebApp(initData) {
     if (computed !== hash) return null;
     if (Date.now() / 1000 - Number(params.get('auth_date')) > 86400) return null;
     const userStr = params.get('user');
-    return userStr ? JSON.parse(userStr) : null;
+    if (!userStr) return null;
+    return { user: JSON.parse(userStr), startParam: params.get('start_param') || '' };
   } catch { return null; }
 }
 
@@ -1468,8 +1481,9 @@ io.on('connection', socket => {
 
   safeOn('loginTelegramWebApp', async ({ initData }) => {
     try {
-      const user = verifyTelegramWebApp(initData);
-      if (!user) return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
+      const verified = verifyTelegramWebApp(initData);
+      if (!verified) return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
+      const { user, startParam } = verified;
       const telegramId = String(user.id);
       const username = user.username || user.first_name || `tg_${telegramId}`;
       // Reserve slot before first await to prevent concurrent logins
@@ -1497,6 +1511,17 @@ io.on('connection', socket => {
       // save backup — see the authOk handler in js/network.js.
       let isNewAccount = false;
       if (!doc) { doc = await PlayerModel.create({ telegramId, username, savedData: {} }); isNewAccount = true; }
+      // startapp=ref_<telegramId> (see _refLink()) opens the Mini App directly
+      // with no bot-chat "/start" message ever sent, so this is the only place
+      // that referral link is ever registered — the classic bot-chat "/start
+      // ref_X" flow in _handleBotMessage is a fallback for anyone who still
+      // lands there first (whichever path sees the account first wins).
+      if (startParam && startParam.startsWith('ref_')) {
+        const referrerUsername = await _registerReferral(telegramId, username, startParam.slice(4), doc);
+        if (referrerUsername) _notifyAdminNewPlayer(username, telegramId, referrerUsername).catch(() => {});
+      } else if (isNewAccount) {
+        _notifyAdminNewPlayer(username, telegramId, null).catch(() => {});
+      }
       // Initialise savedData to {} for legacy accounts that still have null —
       // dotted-path $set operations fail on a null parent in MongoDB, silently
       // swallowing quest completions and saves.
