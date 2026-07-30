@@ -327,7 +327,7 @@ async function updateSpecialQuestUI() {
     const rewardParts = [];
     if (q.reward.gold)  rewardParts.push(iconHTML('coin',12,'#e3941d') + q.reward.gold);
     if (q.reward.xp)    rewardParts.push(iconHTML('star',12,'#e3941d') + q.reward.xp + ' XP');
-    if (q.reward.nexum) rewardParts.push('💎' + q.reward.nexum + ' Nexum');
+    if (q.reward.nexum) rewardParts.push('💎' + q.reward.nexum + ' Liberty');
     const rewardStr = rewardParts.join(' · ');
     const typeLabel = q.type === 'subscribe' ? 'Подписаться' : q.type === 'link' ? 'Перейти' : 'Выполнить';
     if (isDone) {

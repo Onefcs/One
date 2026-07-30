@@ -475,7 +475,7 @@ function netConnect(onReady) {
     if (nexum && player) {
       window._nexumBalance = (window._nexumBalance || 0) + nexum;
       player.nexumBalance = window._nexumBalance;
-      dmgNum(px, py - 52, '+' + nexum + ' Nexum', '#00e5ff');
+      dmgNum(px, py - 52, '+' + nexum + ' Liberty', '#00e5ff');
     }
   });
 
@@ -858,7 +858,7 @@ function netConnect(onReady) {
     if (!player) return;
     window._nexumBalance = balance != null ? balance : (window._nexumBalance || 0) + (amount || 0);
     player.nexumBalance = window._nexumBalance;
-    dmgNum(player.x, player.y - 52, '+' + amount + ' Nexum', '#00e5ff');
+    dmgNum(player.x, player.y - 52, '+' + amount + ' Liberty', '#00e5ff');
   });
 
   socket.on('partyDungeonComplete', ({ gold, xp }) => {
@@ -1019,9 +1019,9 @@ function _initTelegramWidget() {
       if (splashContent) {
         splashContent.innerHTML = `
           <div class="splash-emblem" style="margin-bottom:24px;">
-            <img src="/images/nexum-coin.png" width="160" height="160" alt="Nexum" style="border-radius:50%;display:block;">
+            <img src="/images/nexum-coin.png" width="160" height="160" alt="Liberty" style="border-radius:50%;display:block;">
           </div>
-          <div class="splash-title">NEXUM</div>
+          <div class="splash-title">LIBERTY</div>
           <div class="splash-sub">MMORPG</div>
           <div style="margin-top:28px;font-size:13px;color:#7c3aed;line-height:1.8;">Доступно только<br>в Telegram</div>
           <a href="${link}" style="margin-top:20px;display:inline-flex;align-items:center;gap:9px;background:#229ED9;color:#fff;padding:13px 26px;border-radius:14px;font-size:15px;font-weight:600;text-decoration:none;pointer-events:auto;">

@@ -699,7 +699,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       </div>
       <div class="fi-drop">
         <span class="fi-drop-icon"><img src="/images/nexum-coin.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
-        <span class="fi-drop-lbl" style="color:#b2864d">Nexum</span>
+        <span class="fi-drop-lbl" style="color:#b2864d">Liberty</span>
         <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">${nexumChancePct}%</b></span>
       </div>
       ${stoneRow}
@@ -837,7 +837,7 @@ function updatePartyDungeonPanelUI() {
       <div class="raid-dungeon-name">🌀 Лабиринт</div>
       <div class="raid-dungeon-desc">Ветвящийся лабиринт · 100 монстров · Финальный босс · Мин. 3 игрока</div>
       <div class="raid-dungeon-rewards">
-        <span style="color:#b2864d">50% Nexum с монстров</span>
+        <span style="color:#b2864d">50% Liberty с монстров</span>
         <span style="color:#f17e8b">50% Заточка с босса</span>
         <span style="color:#efc680">10% Безоп. заточка с босса</span>
       </div>

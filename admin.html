@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Nexum Admin</title>
+<title>Liberty Admin</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -175,7 +175,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
 <!-- Login -->
 <div id="login-screen">
   <div class="login-box">
-    <h1>⚔️ Nexum</h1>
+    <h1>⚔️ Liberty</h1>
     <p>Панель администратора</p>
     <div class="field">
       <label>Логин</label>
@@ -193,7 +193,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
 <!-- App -->
 <div id="app">
   <header>
-    <h1>⚔️ Nexum Admin</h1>
+    <h1>⚔️ Liberty Admin</h1>
     <div style="display:flex;align-items:center;gap:10px">
       <span class="online-badge" id="online-badge">● 0 онлайн</span>
       <button id="logout-btn" onclick="doLogout()">Выйти</button>
@@ -226,7 +226,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         <div class="top-card"><h4>🏆 По BM</h4><div id="top-bm"></div></div>
         <div class="top-card"><h4>⚡ По уровню</h4><div id="top-lvl"></div></div>
         <div class="top-card"><h4>💰 По золоту</h4><div id="top-gold"></div></div>
-        <div class="top-card"><h4>💎 По Nexum</h4><div id="top-nexum"></div></div>
+        <div class="top-card"><h4>💎 По Liberty</h4><div id="top-nexum"></div></div>
       </div>
     </div>
 
@@ -248,7 +248,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           <h3>Выдать</h3>
           <div class="give-row">
             <input id="give-gold" type="number" min="0" placeholder="Золото">
-            <input id="give-nexum" type="number" min="0" placeholder="Nexum">
+            <input id="give-nexum" type="number" min="0" placeholder="Liberty">
             <input id="give-gram" type="number" min="0" placeholder="GRAM">
           </div>
           <div style="margin-top:8px"><button class="btn btn-sm btn-green" onclick="givePlayer()">Выдать</button></div>
@@ -336,7 +336,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           <div class="reward-row">
             <input id="q-gold" type="number" min="0" placeholder="Золото">
             <input id="q-xp" type="number" min="0" placeholder="XP">
-            <input id="q-nexum" type="number" min="0" placeholder="Nexum">
+            <input id="q-nexum" type="number" min="0" placeholder="Liberty">
           </div>
           <button class="btn btn-primary" onclick="createQuest()">Создать</button>
         </div>
@@ -520,7 +520,7 @@ async function openPlayer(tid) {
       <div class="prow"><span class="k">Уровень</span><span>${sd.lvl||1}</span></div>
       <div class="prow"><span class="k">Класс</span><span>${sd.type||'—'}</span></div>
       <div class="prow"><span class="k">Золото</span><span>${fmt(sd.gold||0)}</span></div>
-      <div class="prow"><span class="k">Nexum</span><span>${fmt(sd.nexumBalance||0)}</span></div>
+      <div class="prow"><span class="k">Liberty</span><span>${fmt(sd.nexumBalance||0)}</span></div>
       <div class="prow"><span class="k">GRAM</span><span>${fmt(sd.gramBalance||0)}</span></div>
       <div class="prow"><span class="k">BM</span><span>${p.bm||0}</span></div>
       <div class="prow"><span class="k">Рефер</span><span>${p.referredBy||'—'}</span></div>

@@ -428,7 +428,7 @@ async function _handleBotMessage(msg) {
     text: [
       greeting,
       '',
-      '⚔️ <b>Nexum</b> — мобильная MMORPG прямо в Telegram.',
+      '⚔️ <b>Liberty</b> — мобильная MMORPG прямо в Telegram.',
       '',
       '🗡 Исследуй подземелья и уничтожай врагов',
       '🏆 Соревнуйся в рейтинге игроков',
