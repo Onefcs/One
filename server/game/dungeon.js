@@ -14,29 +14,38 @@ function seededRng(seed) {
 // Layout is a plus shape: a big central hub (spawn, NPCs, safe zone) with a
 // dead-straight, always-empty main corridor running out to each side. Rooms
 // never sit on that path — instead, at ARM_ROOM_PAIRS[armIdx-1] evenly spaced
-// positions along it, a short straight branch forks off to EACH side,
-// leading to a room, so every position has 2 rooms facing each other across
-// the corridor (see the "comb"/ladder reference sketch this was built from).
-// Arms can have different lengths (see ARM_ROOM_PAIRS in shared/definitions.js),
-// so the world's overall size is sized to fit the longest one. Global room
-// level = arm's base (ARM_OFFSETS[armIdx-1]) + position-in-arm (1..roomsInArm,
-// 2 rooms per position), reusing one FLOOR_ENEMIES pool per arm (arm index
-// 1-4 standing in for the old floor 1-4 themes) so enemy stats/gold/xp tuning
-// carries over unchanged. The last room of each arm (highest level) is that
-// arm's boss room.
-const HUB = 48;           // hub room size (tiles) — big enough for 3 NPCs + 4 doors
-                          // and to keep adjacent arms' room branches from
-                          // ever reaching into each other's corner (needs
-                          // HUB/2 >= CW + STUB + LARGE, see below)
+// positions along it, a short branch forks off to EACH side. That branch
+// doesn't stop at one room: it chains ROOM_CHAIN_LEN rooms in a row, each
+// linked to the next by another short stub, so every position has
+// ROOM_CHAIN_LEN rooms facing the corridor per side (2x that many per
+// position) — all sharing the same monster level (more space/monsters per
+// level, not more levels). The chain only extends OUTWARD (deeper into the
+// hub's corner, away from the main corridor), so corridor length — and with
+// it the level-gate positions and overall level count — is untouched; only
+// the hub has to grow to keep neighboring arms' chains from ever reaching
+// into each other (see HUB's comment below). The very last position's far
+// side is the sole exception: that slot stays a single, un-chained boss room
+// (chainLen 1) — the "one boss per arm" design is preserved. Arms can have
+// different lengths (see ARM_ROOM_PAIRS in shared/definitions.js), so the
+// world's overall size is sized to fit the longest one. Global room level =
+// arm's base (ARM_OFFSETS[armIdx-1]) + position-in-arm (1..roomsInArm, 2
+// levels per corridor position), reusing one FLOOR_ENEMIES pool per arm (arm
+// index 1-4 standing in for the old floor 1-4 themes) so enemy stats/gold/xp
+// tuning carries over unchanged.
+const HUB = 140;          // hub room size (tiles) — big enough for 3 NPCs + 4 doors
+                          // and to keep adjacent arms' room chains from ever
+                          // reaching into each other's corner (needs
+                          // HUB/2 >= CW + ROOM_CHAIN_LEN * (STUB + LARGE), see below)
 const SMALL = 9;          // 9×9 → 5 monsters
 const LARGE = 14;         // 14×14 → 10 monsters
 const CW = 1;             // main corridor half-width (3 tiles wide total)
 const BW = 1;             // branch corridor half-width (3 tiles wide total)
-const STUB = 6;           // branch length from main corridor edge to room edge
+const STUB = 6;           // branch length between the main corridor / each chained room
 const PITCH = 20;         // tile spacing between consecutive room-pair positions
 const LEAD_IN = 12;       // distance from hub wall to the first position
 const MARGIN = 6;         // outer wall padding
 const DOOR_STUB = 3;      // door gap depth carved into the hub's wall
+const ROOM_CHAIN_LEN = 3; // rooms chained per side per position (except the boss slot, always 1)
 
 const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the world grid; shorter arms just end sooner
 const ARM_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
@@ -169,43 +178,59 @@ function generateOpenWorld() {
       }
     }
 
-    // side = -1 (near side, e.g. "top"/"left" of the corridor) or +1 (far side)
-    function buildRoomAt(pos, side, localLvl, isBoss) {
-      const size = isBoss ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
+    // side = -1 (near side, e.g. "top"/"left" of the corridor) or +1 (far
+    // side). Chains `chainLen` rooms in a row starting from the main
+    // corridor's edge and going outward — each subsequent room links to the
+    // previous one via another short stub instead of the main corridor, so
+    // the corridor itself never gets any longer/wider. All rooms in the
+    // chain share the same localLvl/monsterLvl (more room to fight the same
+    // level's monsters, not more levels).
+    function buildRoomChain(pos, side, localLvl, chainLen, isBoss) {
       const alongCenter = mainStart + sign * (LEAD_IN + pos * PITCH);
+      let cursor = side < 0 ? (fixedCoord - CW) : (fixedCoord + CW); // outer edge of whatever it's linking from
 
-      let x, y, branchX0, branchY0, branchX1, branchY1;
-      if (horizontal) {
-        x = alongCenter - Math.floor(size / 2);
-        y = side < 0 ? (fixedCoord - CW - STUB - size) : (fixedCoord + CW + STUB);
-        branchX0 = alongCenter - BW; branchX1 = alongCenter + BW;
-        branchY0 = side < 0 ? (y + size) : (fixedCoord + CW);
-        branchY1 = side < 0 ? (fixedCoord - CW) : (y - 1);
-      } else {
-        y = alongCenter - Math.floor(size / 2);
-        x = side < 0 ? (fixedCoord - CW - STUB - size) : (fixedCoord + CW + STUB);
-        branchY0 = alongCenter - BW; branchY1 = alongCenter + BW;
-        branchX0 = side < 0 ? (x + size) : (fixedCoord + CW);
-        branchX1 = side < 0 ? (fixedCoord - CW) : (x - 1);
+      for (let i = 0; i < chainLen; i++) {
+        const roomIsBoss = isBoss && i === chainLen - 1;
+        const size = roomIsBoss ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
+
+        let x, y, branchX0, branchY0, branchX1, branchY1;
+        if (horizontal) {
+          x = alongCenter - Math.floor(size / 2);
+          y = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
+          branchX0 = alongCenter - BW; branchX1 = alongCenter + BW;
+          branchY0 = side < 0 ? (y + size) : cursor;
+          branchY1 = side < 0 ? (cursor - 1) : (y - 1);
+        } else {
+          y = alongCenter - Math.floor(size / 2);
+          x = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
+          branchY0 = alongCenter - BW; branchY1 = alongCenter + BW;
+          branchX0 = side < 0 ? (x + size) : cursor;
+          branchX1 = side < 0 ? (cursor - 1) : (x - 1);
+        }
+
+        const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
+        const room = {
+          x, y, size,
+          bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
+          cx, cy, isSmall: size === SMALL,
+          arm: dir, localLvl, monsterLvl: ARM_OFFSETS[armIdx - 1] + localLvl, isBoss: roomIsBoss,
+        };
+        rooms.push(room);
+        paintRect(x, y, x + size - 1, y + size - 1);
+        paintRect(branchX0, branchY0, branchX1, branchY1);
+        spawnRoomEnemies(room, x, y, size, roomIsBoss);
+
+        cursor = horizontal
+          ? (side < 0 ? y : (y + size))
+          : (side < 0 ? x : (x + size));
       }
-
-      const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
-      const room = {
-        x, y, size,
-        bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
-        cx, cy, isSmall: size === SMALL,
-        arm: dir, localLvl, monsterLvl: ARM_OFFSETS[armIdx - 1] + localLvl, isBoss,
-      };
-      rooms.push(room);
-      paintRect(x, y, x + size - 1, y + size - 1);
-      paintRect(branchX0, branchY0, branchX1, branchY1);
-      spawnRoomEnemies(room, x, y, size, isBoss);
     }
 
     for (let pos = 0; pos < pairs; pos++) {
       const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
-      buildRoomAt(pos, -1, lvlA, false);
-      buildRoomAt(pos, 1, lvlB, lvlB === roomCount);
+      const lvlBIsBossSlot = lvlB === roomCount;
+      buildRoomChain(pos, -1, lvlA, ROOM_CHAIN_LEN, false);
+      buildRoomChain(pos, 1, lvlB, lvlBIsBossSlot ? 1 : ROOM_CHAIN_LEN, lvlBIsBossSlot);
     }
   }
 
