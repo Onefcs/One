@@ -46,12 +46,12 @@ const QUEST_DEF = [
   { id:'f1q6',  floor:1, title:'Опытный боец',        desc:'Достигни 3 уровня',          type:'level',        level:3,                      reward:{ xp:150,  gold:75  } },
   { id:'f1q7',  floor:1, title:'Ловец слизи',         desc:'Убей 50 Слизень воин',       type:'kill',         enemies:['Слизень воин'],     count:50,  reward:{ xp:200,  gold:100 } },
   { id:'f1q8',  floor:1, title:'Гроза бесов',         desc:'Убей 50 Бес воин',           type:'kill',         enemies:['Бес воин'],         count:50,  reward:{ xp:200,  gold:100 } },
-  { id:'f1q9',  floor:1, title:'Изгоняющий бесов',    desc:'Убей Босс бесов',            type:'kill',         enemies:['Босс бесов'],       count:1,   reward:{ xp:300,  gold:150 } },
   { id:'f1q10', floor:1, title:'Ветеран',             desc:'Достигни 5 уровня',          type:'level',        level:5,                      reward:{ xp:350,  gold:175 } },
   { id:'f1q11', floor:1, title:'Покоритель',          desc:'Дойди до конца левого коридора', type:'dungeon_clear',floor:1, count:1,          reward:{ xp:400,  gold:200 } },
   { id:'f1q12', floor:1, title:'Мясник',              desc:'Убей 100 Бес воин',          type:'kill',         enemies:['Бес воин'],         count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q13', floor:1, title:'Берсерк',             desc:'Убей 100 Бес страж',         type:'kill',         enemies:['Бес страж'],        count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q14', floor:1, title:'В гильдию!',          desc:'Вступи в гильдию',           type:'join_guild',                                 reward:{ xp:500,  gold:250 } },
+  { id:'f1q9',  floor:1, title:'Изгоняющий бесов',    desc:'Убей Босс бесов',            type:'kill',         enemies:['Босс бесов'],       count:1,   reward:{ xp:300,  gold:150 } },
   { id:'f1q15', floor:1, title:'Следующий уровень',   desc:'Дойди до верхнего коридора', type:'goto_floor',   targetFloor:2,                reward:{ xp:600,  gold:300 } },
 
   // ── Верхний коридор · Гнилые топи (квесты 16-30) · награда ×2 ──
@@ -63,12 +63,12 @@ const QUEST_DEF = [
   { id:'f2q6',  floor:2, title:'Опытный боец II',     desc:'Достигни 7 уровня',          type:'level',        level:7,                      reward:{ xp:300,  gold:150 } },
   { id:'f2q7',  floor:2, title:'Охотник на ящеров',   desc:'Убей 50 Ящер воин',          type:'kill',         enemies:['Ящер воин'],        count:50,  reward:{ xp:400,  gold:200 } },
   { id:'f2q8',  floor:2, title:'Ярость орков',        desc:'Убей 50 Орк воин',           type:'kill',         enemies:['Орк воин'],         count:50,  reward:{ xp:400,  gold:200 } },
-  { id:'f2q9',  floor:2, title:'Убийца боссов II',    desc:'Убей Босс орков',            type:'kill',         enemies:['Босс орков'],       count:1,   reward:{ xp:600,  gold:300 } },
   { id:'f2q10', floor:2, title:'Ветеран II',          desc:'Достигни 10 уровня',         type:'level',        level:10,                     reward:{ xp:700,  gold:350 } },
   { id:'f2q11', floor:2, title:'Покоритель II',       desc:'Дойди до конца верхнего коридора', type:'dungeon_clear',floor:2, count:2,        reward:{ xp:800,  gold:400 } },
   { id:'f2q12', floor:2, title:'Мясник II',           desc:'Убей 100 Орк воин',          type:'kill',         enemies:['Орк воин'],         count:100, reward:{ xp:900,  gold:450 } },
   { id:'f2q13', floor:2, title:'Берсерк II',          desc:'Убей 100 Орк страж',         type:'kill',         enemies:['Орк страж'],        count:100, reward:{ xp:900,  gold:450 } },
   { id:'f2q14', floor:2, title:'Почётный член',       desc:'Повысь ранг в гильдии',      type:'join_guild',                                 reward:{ xp:1000, gold:500 } },
+  { id:'f2q9',  floor:2, title:'Убийца боссов II',    desc:'Убей Босс орков',            type:'kill',         enemies:['Босс орков'],       count:1,   reward:{ xp:600,  gold:300 } },
   { id:'f2q15', floor:2, title:'Вглубь тьмы',         desc:'Дойди до нижнего коридора',  type:'goto_floor',   targetFloor:3,                reward:{ xp:1200, gold:600 } },
 
   // ── Нижний коридор · Кровавые чертоги (квесты 31-45) · награда ×4 ──
@@ -80,12 +80,12 @@ const QUEST_DEF = [
   { id:'f3q6',  floor:3, title:'Опытный боец III',    desc:'Достигни 15 уровня',         type:'level',        level:15,                     reward:{ xp:600,  gold:300  } },
   { id:'f3q7',  floor:3, title:'Охотник на вампиров', desc:'Убей 50 Вампир воин',        type:'kill',         enemies:['Вампир воин'],      count:50,  reward:{ xp:800,  gold:400  } },
   { id:'f3q8',  floor:3, title:'Взгляд бездны',       desc:'Убей 50 Бехолдер воин',      type:'kill',         enemies:['Бехолдер воин'],    count:50,  reward:{ xp:800,  gold:400  } },
-  { id:'f3q9',  floor:3, title:'Убийца боссов III',   desc:'Убей Босс бехолдеров',       type:'kill',         enemies:['Босс бехолдеров'],  count:1,   reward:{ xp:1200, gold:600  } },
   { id:'f3q10', floor:3, title:'Ветеран III',         desc:'Достигни 20 уровня',         type:'level',        level:20,                     reward:{ xp:1400, gold:700  } },
   { id:'f3q11', floor:3, title:'Покоритель III',      desc:'Дойди до конца нижнего коридора', type:'dungeon_clear',floor:3, count:3,         reward:{ xp:1600, gold:800  } },
   { id:'f3q12', floor:3, title:'Мясник III',          desc:'Убей 100 Бехолдер воин',     type:'kill',         enemies:['Бехолдер воин'],    count:100, reward:{ xp:1800, gold:900  } },
   { id:'f3q13', floor:3, title:'Берсерк III',         desc:'Убей 100 Бехолдер страж',    type:'kill',         enemies:['Бехолдер страж'],   count:100, reward:{ xp:1800, gold:900  } },
   { id:'f3q14', floor:3, title:'Столп гильдии',       desc:'Повысь ранг в гильдии',      type:'join_guild',                                 reward:{ xp:2000, gold:1000 } },
+  { id:'f3q9',  floor:3, title:'Убийца боссов III',   desc:'Убей Босс бехолдеров',       type:'kill',         enemies:['Босс бехолдеров'],  count:1,   reward:{ xp:1200, gold:600  } },
   { id:'f3q15', floor:3, title:'На край света',       desc:'Дойди до правого коридора',  type:'goto_floor',   targetFloor:4,                reward:{ xp:2400, gold:1200 } },
 
   // ── Правый коридор · Врата преисподней (квесты 46-60) · награда ×8 ──
@@ -97,12 +97,12 @@ const QUEST_DEF = [
   { id:'f4q6',  floor:4, title:'Опытный боец IV',     desc:'Достигни 25 уровня',         type:'level',        level:25,                     reward:{ xp:1200, gold:600  } },
   { id:'f4q7',  floor:4, title:'Изгоняющий демонов',  desc:'Убей 50 Демон страж',        type:'kill',         enemies:['Демон страж'],      count:50,  reward:{ xp:1600, gold:800  } },
   { id:'f4q8',  floor:4, title:'Пламя преисподней',   desc:'Убей 50 Демон воин',         type:'kill',         enemies:['Демон воин'],       count:50,  reward:{ xp:1600, gold:800  } },
-  { id:'f4q9',  floor:4, title:'Убийца боссов IV',    desc:'Убей Босс демонов',          type:'kill',         enemies:['Босс демонов'],     count:1,   reward:{ xp:2400, gold:1200 } },
   { id:'f4q10', floor:4, title:'Ветеран IV',          desc:'Достигни 30 уровня',         type:'level',        level:30,                     reward:{ xp:2800, gold:1400 } },
   { id:'f4q11', floor:4, title:'Покоритель IV',       desc:'Дойди до конца правого коридора', type:'dungeon_clear',floor:4, count:4,         reward:{ xp:3200, gold:1600 } },
   { id:'f4q12', floor:4, title:'Мясник IV',           desc:'Убей 100 Демон воин',        type:'kill',         enemies:['Демон воин'],       count:100, reward:{ xp:3600, gold:1800 } },
   { id:'f4q13', floor:4, title:'Берсерк IV',          desc:'Убей 100 Демон страж',       type:'kill',         enemies:['Демон страж'],      count:100, reward:{ xp:3600, gold:1800 } },
   { id:'f4q14', floor:4, title:'Легенда гильдии',     desc:'Повысь ранг в гильдии',      type:'join_guild',                                 reward:{ xp:4000, gold:2000 } },
+  { id:'f4q9',  floor:4, title:'Убийца боссов IV',    desc:'Убей Босс демонов',          type:'kill',         enemies:['Босс демонов'],     count:1,   reward:{ xp:2400, gold:1200 } },
   { id:'f4q15', floor:4, title:'Владыка подземелья',  desc:'Убей Босс демонов ещё раз',  type:'kill',         enemies:['Босс демонов'],     count:2,   reward:{ xp:6000, gold:3000 } },
 ];
 
