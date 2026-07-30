@@ -5,6 +5,10 @@ const MAP_TILES = 20;
 const MAP_PX    = MAP_TILES * TILE; // 800 px
 const CENTER    = MAP_PX / 2;       // 400 px
 const TICK_MS   = 25;
+// See Room.js's syncPlayerHp for why this exists — bounds how fast a
+// playerMove-reported HP increase can land, so a modified client can't
+// just claim hp:maxHp every packet and become unkillable for the run.
+const MAX_HP_REGEN_PER_SEC = 30;
 
 const _byEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 // Level-3 species (arm 1's third rotation slot) — an early, low-stakes raid.
@@ -68,7 +72,18 @@ class RaidRoom {
     const p = this.players.get(socketId);
     if (!p) return;
     p.x = x; p.y = y;
-    if (hp !== undefined && hp >= 0) p.hp = hp;
+    if (hp === undefined || hp < 0 || p.hp <= 0) return;
+    const requested = Math.min(p.maxHp, hp);
+    // Same rate-limit as Room.js's syncPlayerHp — decreases (real hits, which
+    // are already applied server-side in _tick()) are trusted immediately;
+    // increases are capped to a passive-regen rate instead of being applied
+    // outright, so a modified client can't just report hp:maxHp every
+    // movement packet and become unkillable for the run.
+    if (requested <= p.hp) { p.hp = requested; p._lastHpSyncAt = Date.now(); return; }
+    const now = Date.now();
+    const elapsed = Math.max(0, (now - (p._lastHpSyncAt || now)) / 1000);
+    p._lastHpSyncAt = now;
+    p.hp = Math.min(requested, p.hp + elapsed * MAX_HP_REGEN_PER_SEC, p.maxHp);
   }
 
   start() {

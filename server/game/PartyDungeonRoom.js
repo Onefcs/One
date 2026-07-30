@@ -10,6 +10,10 @@ const { generatePartyDungeon, TILE, WALL } = require('./mazeDungeon');
 const { calcGoldDrop } = require('../../shared/definitions');
 
 const TICK_MS = 25;
+// See Room.js's syncPlayerHp for why this exists — bounds how fast a
+// playerMove-reported HP increase can land, so a modified client can't
+// just claim hp:maxHp every packet and become unkillable for the run.
+const MAX_HP_REGEN_PER_SEC = 30;
 
 function _critDmg(base, critChance, critPower) {
   const isCrit = Math.random() < (critChance || 0);
@@ -106,18 +110,29 @@ class PartyDungeonRoom {
     if (critPower  !== undefined) p.critPower  = Math.min(10,   Math.max(1, critPower));
   }
 
-  // Trusts client hp on every move update (matching RaidRoom's convention,
-  // not Room.js's) — there is no dedicated respawn round-trip for this
-  // instance, so a player reviving client-side (respawnPlayer() in game.js)
-  // only ever reaches the server through this same position sync. Gating
-  // on "only update while currently alive" (as Room.js does for the real
-  // floors, which DO have a separate respawn() event) would permanently
-  // strand a respawned player's server-side hp at 0.
+  // There is no dedicated respawn round-trip for this instance, so a player
+  // reviving client-side (respawnPlayer() in game.js) only ever reaches the
+  // server through this same position sync — an instant jump while p.hp<=0
+  // is trusted outright for exactly that reason (matching the original
+  // behavior here). Decreases are also always trusted immediately (real
+  // hits are already applied server-side in _tick(), and self-reporting a
+  // lower number can never help a cheater either way). An INCREASE while
+  // already alive is the one case this used to trust blindly too — that let
+  // a modified client just claim hp:maxHp every movement packet and become
+  // unkillable for the whole run, so it's now rate-limited to a passive-
+  // regen pace instead (same fix as Room.js's syncPlayerHp / RaidRoom.js's
+  // updatePlayerPos).
   updatePlayerPos(socketId, x, y, facing, hp) {
     const p = this.players.get(socketId);
     if (!p) return;
     p.x = x; p.y = y; p.facing = facing || p.facing;
-    if (hp != null && isFinite(hp)) p.hp = Math.min(p.maxHp, Math.max(0, hp));
+    if (hp == null || !isFinite(hp)) return;
+    const requested = Math.min(p.maxHp, Math.max(0, hp));
+    if (p.hp <= 0 || requested <= p.hp) { p.hp = requested; p._lastHpSyncAt = Date.now(); return; }
+    const now = Date.now();
+    const elapsed = Math.max(0, (now - (p._lastHpSyncAt || now)) / 1000);
+    p._lastHpSyncAt = now;
+    p.hp = Math.min(requested, p.hp + elapsed * MAX_HP_REGEN_PER_SEC, p.maxHp);
   }
 
   _inSafeZone(x, y) {

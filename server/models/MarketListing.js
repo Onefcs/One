@@ -12,4 +12,10 @@ const MarketListingSchema = new mongoose.Schema({
   soldAt:         { type: Date, default: null },
 });
 
+// marketBrowse/marketHistory/admin market tab all filter by status and sort
+// by createdAt; marketMyListings filters by {sellerId, status} — without
+// these it's a full collection scan on every listing/browse/history request.
+MarketListingSchema.index({ status: 1, createdAt: -1 });
+MarketListingSchema.index({ sellerId: 1, status: 1 });
+
 module.exports = mongoose.model('MarketListing', MarketListingSchema);

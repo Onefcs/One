@@ -10,4 +10,9 @@ const PlayerSchema = new mongoose.Schema({
   createdAt:   { type: Date, default: Date.now },
 });
 
+// Leaderboard/admin-stats sort key (server/index.js's getRating/admin tops
+// endpoints sort by this on every request) — without an index this is a
+// full collection scan every time.
+PlayerSchema.index({ bm: -1 });
+
 module.exports = mongoose.model('Player', PlayerSchema);

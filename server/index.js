@@ -898,6 +898,14 @@ app.get('/api/special-quests', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Health check for container orchestrators / uptime monitors — the
+// catch-all static handler below returns 200 for "/" regardless of DB
+// state, which would otherwise report "healthy" even with Mongo down.
+app.get('/health', (req, res) => {
+  const dbOk = mongoose.connection.readyState === 1; // 1 = connected
+  res.status(dbOk ? 200 : 503).json({ ok: dbOk, db: mongoose.connection.readyState });
+});
+
 // Images: cache 30 days — sprites never change between deploys
 app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
 
@@ -1438,9 +1446,27 @@ io.on('connection', socket => {
     }, 60000);
   }
 
-  socket.on('_ping', t0 => socket.emit('_pong', t0));
+  // Wraps every socket.on registration below so a thrown error or rejected
+  // promise inside a single handler can't escape to process scope — the
+  // global uncaughtException/unhandledRejection handler calls process.exit()
+  // shortly after logging, which would otherwise drop every connected
+  // player's connection over one bad packet in one handler.
+  function safeOn(event, handler) {
+    socket.on(event, (...args) => {
+      try {
+        const ret = handler(...args);
+        if (ret && typeof ret.catch === 'function') {
+          ret.catch(err => console.error(`[socket:${event}]`, err));
+        }
+      } catch (err) {
+        console.error(`[socket:${event}]`, err);
+      }
+    });
+  }
 
-  socket.on('loginTelegramWebApp', async ({ initData }) => {
+  safeOn('_ping', t0 => socket.emit('_pong', t0));
+
+  safeOn('loginTelegramWebApp', async ({ initData }) => {
     try {
       const user = verifyTelegramWebApp(initData);
       if (!user) return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
@@ -1504,7 +1530,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('loginTelegram', async (data) => {
+  safeOn('loginTelegram', async (data) => {
     try {
       if (!verifyTelegramAuth(data))
         return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
@@ -1563,7 +1589,7 @@ io.on('connection', socket => {
   });
 
   // ── GRAM wallet ───────────────────────────────────────────────────────────
-  socket.on('gramDepositRequest', async ({ amount, memo }) => {
+  safeOn('gramDepositRequest', async ({ amount, memo }) => {
     if (!authed || !amount || amount < 1) return;
     try {
       const tx = await GramTxModel.create({
@@ -1578,7 +1604,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('gramDepositRequest:', err); }
   });
 
-  socket.on('gramWithdrawRequest', async ({ amount, address }) => {
+  safeOn('gramWithdrawRequest', async ({ amount, address }) => {
     if (!authed || !amount || amount < 10 || !address) return;
     try {
       if (amount > _gramBalance) return socket.emit('gramError', { msg: 'Недостаточно средств' });
@@ -1605,7 +1631,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('gramWithdrawRequest:', err); }
   });
 
-  socket.on('gramGetHistory', async () => {
+  safeOn('gramGetHistory', async () => {
     if (!authed) return;
     try {
       const txs = await GramTxModel.find({ telegramId: authed.telegramId })
@@ -1614,7 +1640,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('gramGetHistory:', err); }
   });
 
-  socket.on('gramShopBuy', async ({ pkgId } = {}) => {
+  safeOn('gramShopBuy', async ({ pkgId } = {}) => {
     if (!authed || !pkgId) return;
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
@@ -1733,7 +1759,7 @@ io.on('connection', socket => {
   // the wallet above). The item itself is trusted from the client at the same
   // level as the rest of the inventory system — this game doesn't otherwise
   // keep a server-side copy of item stats to validate against.
-  socket.on('marketBrowse', async () => {
+  safeOn('marketBrowse', async () => {
     if (!authed) return;
     try {
       const rows = await MarketListingModel.find({ status: 'active', sellerId: { $ne: authed.telegramId } })
@@ -1742,7 +1768,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('marketBrowse:', err); }
   });
 
-  socket.on('marketMyListings', async () => {
+  safeOn('marketMyListings', async () => {
     if (!authed) return;
     try {
       const rows = await MarketListingModel.find({ status: 'active', sellerId: authed.telegramId })
@@ -1751,7 +1777,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('marketMyListings:', err); }
   });
 
-  socket.on('marketHistory', async () => {
+  safeOn('marketHistory', async () => {
     if (!authed) return;
     try {
       const rows = await MarketListingModel.find({
@@ -1767,7 +1793,7 @@ io.on('connection', socket => {
   // round-trip completes, and needs to know specifically that THIS request
   // failed to roll that back, without misfiring on an unrelated buy/cancel
   // error that happens to land while a listing request is in flight.
-  socket.on('marketList', async ({ item, price } = {}) => {
+  safeOn('marketList', async ({ item, price } = {}) => {
     if (!authed) return;
     const now = Date.now();
     if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
@@ -1800,7 +1826,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('marketCancel', async ({ listingId } = {}) => {
+  safeOn('marketCancel', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
     try {
       const listing = await MarketListingModel.findOneAndUpdate(
@@ -1813,7 +1839,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('marketCancel:', err); }
   });
 
-  socket.on('marketBuy', async ({ listingId } = {}) => {
+  safeOn('marketBuy', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
     try {
       const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
@@ -1874,7 +1900,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('marketBuy:', err); }
   });
 
-  socket.on('getReferrals', async () => {
+  safeOn('getReferrals', async () => {
     if (!authed) return;
     try {
       const referrals = await PlayerModel.find({ referredBy: authed.telegramId }, 'username telegramId').lean();
@@ -1896,7 +1922,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('getReferrals:', err); }
   });
 
-  socket.on('getRating', async ({ tab }) => {
+  safeOn('getRating', async ({ tab }) => {
     try {
       if (tab === 'players') {
         const players = await PlayerModel.find({}, 'username bm savedData')
@@ -1944,7 +1970,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('getRating:', err); }
   });
 
-  socket.on('claimVipRewards', async () => {
+  safeOn('claimVipRewards', async () => {
     if (!authed) return;
     try {
       const doc = await PlayerModel.findById(authed._id);
@@ -1982,7 +2008,7 @@ io.on('connection', socket => {
     } catch (err) { console.error('claimVipRewards:', err); }
   });
 
-  socket.on('selectChar', ({ type, savedStats }) => {
+  safeOn('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     // authed.savedData is the DB-loaded record for this account (single save
     // blob, not per-type slots). If the client sent no savedStats — e.g. it
@@ -2016,21 +2042,21 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('playerMove', ({ x, y, facing, hp }) => {
+  safeOn('playerMove', ({ x, y, facing, hp }) => {
     if (!currentRoom) return;
     currentRoom.updatePlayerPos(socket.id, x, y, facing);
     if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
   });
 
-  socket.on('usePotion', ({ amount }) => {
+  safeOn('usePotion', ({ amount }) => {
     if (currentRoom) currentRoom.healPlayer(socket.id, Math.min(amount || 60, 200));
   });
 
-  socket.on('statsUpdate', ({ atk, def, maxHp, critChance, critPower }) => {
+  safeOn('statsUpdate', ({ atk, def, maxHp, critChance, critPower }) => {
     if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp, critChance, critPower });
   });
 
-  socket.on('attack', ({ enemyId }) => {
+  safeOn('attack', ({ enemyId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
@@ -2116,7 +2142,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('skillAttack', ({ enemyId, multiplier }) => {
+  safeOn('skillAttack', ({ enemyId, multiplier }) => {
     if (!_atkAllowed()) return;
     const rId = playerRaid.get(socket.id);
     if (rId) {
@@ -2207,7 +2233,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('skillEffect', ({ enemyId, enemyIds, type, duration }) => {
+  safeOn('skillEffect', ({ enemyId, enemyIds, type, duration }) => {
     const rId = playerRaid.get(socket.id);
     if (rId) {
       const rr = raidRooms.get(rId);
@@ -2223,13 +2249,13 @@ io.on('connection', socket => {
     socket.to(`floor_${currentFloor}`).emit('enemyCC', { enemyId, enemyIds, type, duration });
   });
 
-  socket.on('playerInvis', ({ invis }) => {
+  safeOn('playerInvis', ({ invis }) => {
     if (!currentRoom) return;
     const p = currentRoom.players.get(socket.id);
     if (p) p._invis = !!invis;
   });
 
-  socket.on('faithShield', ({ duration }) => {
+  safeOn('faithShield', ({ duration }) => {
     const partyId = playerParty.get(socket.id);
     const partyMap = partyId ? parties.get(partyId) : null;
     if (!partyMap) return;
@@ -2249,7 +2275,7 @@ io.on('connection', socket => {
     return false;
   }
 
-  socket.on('pvpAttack', ({ targetId }) => {
+  safeOn('pvpAttack', ({ targetId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_isPvpImmune(socket.id, targetId)) return;
@@ -2263,7 +2289,7 @@ io.on('connection', socket => {
     if (result.hp <= 0) io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 });
   });
 
-  socket.on('pvpSkillAttack', ({ targetId, multiplier }) => {
+  safeOn('pvpSkillAttack', ({ targetId, multiplier }) => {
     if (!currentRoom) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
@@ -2273,7 +2299,7 @@ io.on('connection', socket => {
     if (result.hp <= 0) io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 });
   });
 
-  socket.on('pvpSkillCC', ({ targetId, type, duration }) => {
+  safeOn('pvpSkillCC', ({ targetId, type, duration }) => {
     if (!currentRoom) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const attacker = currentRoom.players.get(socket.id);
@@ -2286,25 +2312,25 @@ io.on('connection', socket => {
     io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration: dur });
   });
 
-  socket.on('respawn', () => {
+  safeOn('respawn', () => {
     if (currentRoom) currentRoom.respawnPlayer(socket.id);
   });
 
-  socket.on('setPvpMode', ({ pvpMode }) => {
+  safeOn('setPvpMode', ({ pvpMode }) => {
     if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
   });
 
-  socket.on('spawnProj', data => {
+  safeOn('spawnProj', data => {
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('spawnProj', data);
   });
 
-  socket.on('spawnAoe', data => {
+  safeOn('spawnAoe', data => {
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('spawnAoe', data);
   });
 
-  socket.on('healParty', ({ amount }) => {
+  safeOn('healParty', ({ amount }) => {
     if (!authed || !currentRoom) return;
     const healAmt = Math.max(0, Math.min(Math.floor(amount), 9999));
     const partyId = playerParty.get(socket.id);
@@ -2319,7 +2345,7 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('chat', ({ text }) => {
+  safeOn('chat', ({ text }) => {
     if (!authed || !text || typeof text !== 'string') return;
     const now = Date.now();
     if (now - _lastChatAt < 3000) return;
@@ -2330,7 +2356,7 @@ io.on('connection', socket => {
     io.emit('chatMsg', { username: authed.username, text: msg });
   });
 
-  socket.on('saveProgress', ({ stats }) => {
+  safeOn('saveProgress', ({ stats }) => {
     if (!authed) return;
     // Sanitize the client blob before it becomes the server's source of truth
     // for BM/combat stats and before it's persisted (anti-cheat — see
@@ -2352,7 +2378,7 @@ io.on('connection', socket => {
   });
 
   // ── Party ─────────────────────────────────────────────────────────────────
-  socket.on('partyInvite', ({ targetId }) => {
+  safeOn('partyInvite', ({ targetId }) => {
     if (!authed) return;
     // Target must not already be in a party
     if (playerParty.has(targetId)) return;
@@ -2367,7 +2393,7 @@ io.on('connection', socket => {
     targetSocket.emit('partyInviteReceived', { fromId: socket.id, fromName: authed.username });
   });
 
-  socket.on('partyAccept', ({ fromId }) => {
+  safeOn('partyAccept', ({ fromId }) => {
     if (!authed || playerParty.has(socket.id)) return;
     const fromSocket = io.sockets.sockets.get(fromId);
     if (!fromSocket) return;
@@ -2401,9 +2427,9 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('partyDecline', () => { /* no cleanup needed */ });
+  safeOn('partyDecline', () => { /* no cleanup needed */ });
 
-  socket.on('partyLeave', () => {
+  safeOn('partyLeave', () => {
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);
   });
@@ -2435,7 +2461,7 @@ io.on('connection', socket => {
     }
   }
 
-  socket.on('clanCreate', async ({ name, icon }) => {
+  safeOn('clanCreate', async ({ name, icon }) => {
     if (!authed) return;
     const n = (name || '').trim().slice(0, 10);
     if (!n) return socket.emit('clanError', { msg: 'Введите название' });
@@ -2458,7 +2484,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('clanSearch', async ({ query }) => {
+  safeOn('clanSearch', async ({ query }) => {
     if (!authed) return;
     const q = (query || '').trim().slice(0, 32);
     const filter = q ? { name: { $regex: _escapeRegex(q), $options: 'i' } } : {};
@@ -2468,7 +2494,7 @@ io.on('connection', socket => {
     })));
   });
 
-  socket.on('clanApply', async ({ clanId }) => {
+  safeOn('clanApply', async ({ clanId }) => {
     if (!authed) return;
     const inClan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (inClan) return socket.emit('clanError', { msg: 'Вы уже в клане' });
@@ -2481,7 +2507,7 @@ io.on('connection', socket => {
     await _notifyClan(clan);
   });
 
-  socket.on('clanApprove', async ({ telegramId }) => {
+  safeOn('clanApprove', async ({ telegramId }) => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
@@ -2494,7 +2520,7 @@ io.on('connection', socket => {
     await _notifyClan(clan);
   });
 
-  socket.on('clanDecline', async ({ telegramId }) => {
+  safeOn('clanDecline', async ({ telegramId }) => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
@@ -2508,7 +2534,7 @@ io.on('connection', socket => {
     currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
   });
 
-  socket.on('clanKick', async ({ telegramId }) => {
+  safeOn('clanKick', async ({ telegramId }) => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
@@ -2527,7 +2553,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('clanLeave', async () => {
+  safeOn('clanLeave', async () => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
@@ -2555,7 +2581,7 @@ io.on('connection', socket => {
     currentRoom?.setPlayerClan(socket.id, null, null);
   });
 
-  socket.on('clanDisband', async () => {
+  safeOn('clanDisband', async () => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
@@ -2591,7 +2617,7 @@ io.on('connection', socket => {
 
   // ── Raid ───────────────────────────────────────────────────────────────────
   // ── Raid lobbies ──────────────────────────────────────────────────────────
-  socket.on('getLobbyList', () => {
+  safeOn('getLobbyList', () => {
     const list = [...raidLobbies.values()].map(lb => ({
       id: lb.id, creatorName: lb.creatorName, dungeonId: lb.dungeonId,
       members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
@@ -2599,7 +2625,7 @@ io.on('connection', socket => {
     socket.emit('lobbyList', { lobbies: list });
   });
 
-  socket.on('createRaidLobby', ({ dungeonId }) => {
+  safeOn('createRaidLobby', ({ dungeonId }) => {
     if (!authed) return;
     if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
     if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
@@ -2617,7 +2643,7 @@ io.on('connection', socket => {
     _lobbyBroadcast();
   });
 
-  socket.on('joinRaidLobby', ({ lobbyId }) => {
+  safeOn('joinRaidLobby', ({ lobbyId }) => {
     if (!authed) return;
     const lb = raidLobbies.get(lobbyId);
     if (!lb) return socket.emit('lobbyError', { msg: 'Группа не найдена' });
@@ -2633,14 +2659,14 @@ io.on('connection', socket => {
     _lobbyBroadcast();
   });
 
-  socket.on('leaveRaidLobby', () => {
+  safeOn('leaveRaidLobby', () => {
     if (!playerLobby.has(socket.id)) return;
     _cleanupLobby(socket.id);
     socket.emit('lobbyLeft', {});
     _lobbyBroadcast();
   });
 
-  socket.on('startRaidLobby', () => {
+  safeOn('startRaidLobby', () => {
     if (!authed) return;
     const lobbyId = playerLobby.get(socket.id);
     const lb = raidLobbies.get(lobbyId);
@@ -2676,13 +2702,13 @@ io.on('connection', socket => {
   });
 
   // ── Raid game ─────────────────────────────────────────────────────────────
-  socket.on('raidMove', ({ x, y, hp }) => {
+  safeOn('raidMove', ({ x, y, hp }) => {
     const rId = playerRaid.get(socket.id);
     const rr  = rId ? raidRooms.get(rId) : null;
     if (rr) rr.updatePlayerPos(socket.id, x, y, hp);
   });
 
-  socket.on('raidAttack', ({ enemyId }) => {
+  safeOn('raidAttack', ({ enemyId }) => {
     const rId = playerRaid.get(socket.id);
     const rr  = rId ? raidRooms.get(rId) : null;
     if (!rr) return;
@@ -2707,10 +2733,10 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('leaveRaid', () => { _cleanupRaid(socket.id); });
+  safeOn('leaveRaid', () => { _cleanupRaid(socket.id); });
 
   // ── Party dungeon (maze + boss, min 3 players, 1x/day) ─────────────────────
-  socket.on('getPartyDungeonLobbyList', () => {
+  safeOn('getPartyDungeonLobbyList', () => {
     const list = [...pdLobbies.values()].map(lb => ({
       id: lb.id, creatorName: lb.creatorName,
       members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
@@ -2718,7 +2744,7 @@ io.on('connection', socket => {
     socket.emit('pdLobbyList', { lobbies: list });
   });
 
-  socket.on('createPartyDungeonLobby', async () => {
+  safeOn('createPartyDungeonLobby', async () => {
     if (!authed) return;
     if (playerPdLobby.has(socket.id)) _cleanupPdLobby(socket.id);
     if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
@@ -2736,7 +2762,7 @@ io.on('connection', socket => {
     _pdLobbyBroadcast();
   });
 
-  socket.on('joinPartyDungeonLobby', async ({ lobbyId }) => {
+  safeOn('joinPartyDungeonLobby', async ({ lobbyId }) => {
     if (!authed) return;
     const lb = pdLobbies.get(lobbyId);
     if (!lb) return socket.emit('pdLobbyError', { msg: 'Группа не найдена' });
@@ -2753,14 +2779,14 @@ io.on('connection', socket => {
     _pdLobbyBroadcast();
   });
 
-  socket.on('leavePartyDungeonLobby', () => {
+  safeOn('leavePartyDungeonLobby', () => {
     if (!playerPdLobby.has(socket.id)) return;
     _cleanupPdLobby(socket.id);
     socket.emit('pdLobbyLeft', {});
     _pdLobbyBroadcast();
   });
 
-  socket.on('startPartyDungeonLobby', async () => {
+  safeOn('startPartyDungeonLobby', async () => {
     if (!authed) return;
     const lobbyId = playerPdLobby.get(socket.id);
     const lb = pdLobbies.get(lobbyId);
@@ -2822,7 +2848,7 @@ io.on('connection', socket => {
     _pdLobbyBroadcast();
   });
 
-  socket.on('partyDungeonMove', ({ x, y, facing, hp }) => {
+  safeOn('partyDungeonMove', ({ x, y, facing, hp }) => {
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
     if (pd) pd.updatePlayerPos(socket.id, x, y, facing, hp);
@@ -2837,7 +2863,7 @@ io.on('connection', socket => {
     if (cp) pd.updatePlayerStats(socket.id, { atk: cp.atk, def: cp.def, maxHp: cp.maxHp, critChance: cp.critChance, critPower: cp.critPower });
   }
 
-  socket.on('partyDungeonAttack', ({ enemyId }) => {
+  safeOn('partyDungeonAttack', ({ enemyId }) => {
     if (!_atkAllowed()) return;
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
@@ -2848,7 +2874,7 @@ io.on('connection', socket => {
     _handlePartyDungeonKillResult(pd, socket.id, enemyId, result);
   });
 
-  socket.on('partyDungeonSkillAttack', ({ enemyId, multiplier }) => {
+  safeOn('partyDungeonSkillAttack', ({ enemyId, multiplier }) => {
     if (!_atkAllowed()) return;
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
@@ -2859,7 +2885,7 @@ io.on('connection', socket => {
     _handlePartyDungeonKillResult(pd, socket.id, enemyId, result);
   });
 
-  socket.on('partyDungeonSkillEffect', ({ enemyId, enemyIds, type, duration }) => {
+  safeOn('partyDungeonSkillEffect', ({ enemyId, enemyIds, type, duration }) => {
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
     if (!pd) return;
@@ -2868,7 +2894,7 @@ io.on('connection', socket => {
     io.to(pd.channel).emit('enemyCC', { enemyId, enemyIds, type, duration });
   });
 
-  socket.on('partyDungeonHealParty', ({ amount }) => {
+  safeOn('partyDungeonHealParty', ({ amount }) => {
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
     if (!pd) return;
@@ -2879,10 +2905,10 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('leavePartyDungeon', () => { _cleanupPartyDungeon(socket.id); });
+  safeOn('leavePartyDungeon', () => { _cleanupPartyDungeon(socket.id); });
 
   // ── Special Quests ────────────────────────────────────────────────────────
-  socket.on('completeSpecialQuest', async ({ questId } = {}) => {
+  safeOn('completeSpecialQuest', async ({ questId } = {}) => {
     if (!authed || !questId) return;
     try {
       const quest = await SpecialQuestModel.findById(questId).lean();
@@ -2946,7 +2972,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('disconnect', () => {
+  safeOn('disconnect', () => {
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     // Flush any pending debounced save immediately (same logic socket.data
     // ._flushNow exposes for a reconnecting session to await synchronously).
