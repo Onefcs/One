@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, roomsInArm } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_OFFSETS, roomsInArm } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -13,17 +13,19 @@ function seededRng(seed) {
 // ── Open world: one hub room + 4 "comb" corridors ───────────────────────────
 // Layout is a plus shape: a big central hub (spawn, NPCs, safe zone) with a
 // dead-straight, always-empty main corridor running out to each side. Rooms
-// never sit on that path — instead, at ARM_ROOM_PAIRS[armIdx-1] evenly spaced
-// positions along it, a short straight branch forks off to EACH side,
-// leading to a room, so every position has 2 rooms facing each other across
-// the corridor (see the "comb"/ladder reference sketch this was built from).
-// Arms can have different lengths (see ARM_ROOM_PAIRS in shared/definitions.js),
-// so the world's overall size is sized to fit the longest one. Global room
-// level = arm's base (ARM_OFFSETS[armIdx-1]) + position-in-arm (1..roomsInArm,
-// 2 rooms per position), reusing one FLOOR_ENEMIES pool per arm (arm index
-// 1-4 standing in for the old floor 1-4 themes) so enemy stats/gold/xp tuning
-// carries over unchanged. The last room of each arm (highest level) is that
-// arm's boss room.
+// never sit on that path — instead, at 2 evenly spaced "position" slots per
+// level (roomsInArm(armIdx)*2 positions total), a short straight branch
+// forks off to EACH side, leading to a room, so every position has 2 rooms
+// facing each other across the corridor (see the "comb"/ladder reference
+// sketch this was built from) — and since 2 consecutive positions share the
+// same level, that's 4 rooms per level in total. Arms can have different
+// lengths (see roomsInArm in shared/definitions.js), so the world's overall
+// size is sized to fit the longest one. Global room level = arm's base
+// (ARM_OFFSETS[armIdx-1]) + level-in-arm (1..roomsInArm), reusing one
+// FLOOR_ENEMIES pool per arm (arm index 1-4 standing in for the old floor
+// 1-4 themes) so enemy stats/gold/xp tuning carries over unchanged. The
+// very last room built for each arm (highest level) is that arm's boss room
+// — the other 3 rooms sharing that top level are regular rooms.
 const HUB = 48;           // hub room size (tiles) — big enough for 3 NPCs + 4 doors
                           // and to keep adjacent arms' room branches from
                           // ever reaching into each other's corner (needs
@@ -33,13 +35,15 @@ const LARGE = 14;         // 14×14 → 10 monsters
 const CW = 1;             // main corridor half-width (3 tiles wide total)
 const BW = 1;             // branch corridor half-width (3 tiles wide total)
 const STUB = 6;           // branch length from main corridor edge to room edge
-const PITCH = 20;         // tile spacing between consecutive room-pair positions
+const PITCH = 20;         // tile spacing between consecutive room positions
 const LEAD_IN = 12;       // distance from hub wall to the first position
 const MARGIN = 6;         // outer wall padding
 const DOOR_STUB = 3;      // door gap depth carved into the hub's wall
 
-const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the world grid; shorter arms just end sooner
-const ARM_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
+// 2 positions per level (4 rooms/level) — longest arm sizes the world grid,
+// shorter arms just end sooner.
+const MAX_ARM_POSITIONS = Math.max(...[1, 2, 3, 4].map(i => roomsInArm(i) * 2));
+const ARM_LEN = LEAD_IN + (MAX_ARM_POSITIONS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
 const DW = MARGIN * 2 + ARM_LEN * 2 + HUB;
 const DH = DW;
 
@@ -105,8 +109,8 @@ function generateOpenWorld() {
     const horizontal = dir === 'left' || dir === 'right';
     const sign = (dir === 'left' || dir === 'top') ? -1 : 1;
     const fe = FLOOR_ENEMIES[armIdx];
-    const pairs = ARM_ROOM_PAIRS[armIdx - 1];
     const roomCount = roomsInArm(armIdx);
+    const positions = roomCount * 2; // 2 positions per level (near+far rooms) = 4 rooms/level
     const maxLocalLvl = roomCount - 1; // last room is the boss; ranks/colors ramp to this
     function pickEnemy(isBoss, localLvl) {
       if (isBoss) return _enemyByEid.get(fe.boss);
@@ -118,7 +122,7 @@ function generateOpenWorld() {
     // out to the last position (plus a little tail), 3 tiles wide.
     const route = doors[dir].route;
     const mainStart = horizontal ? route.x : route.y;
-    const mainEnd = mainStart + sign * (LEAD_IN + (pairs - 1) * PITCH + Math.floor(PITCH / 2));
+    const mainEnd = mainStart + sign * (LEAD_IN + (positions - 1) * PITCH + Math.floor(PITCH / 2));
     const fixedCoord = horizontal ? route.y : route.x;
     {
       const lo = Math.min(mainStart, mainEnd), hi = Math.max(mainStart, mainEnd);
@@ -126,16 +130,17 @@ function generateOpenWorld() {
       else paintRect(fixedCoord - CW, lo, fixedCoord + CW, hi);
     }
 
-    // Level-gated checkpoints between each room-pair position — same
+    // Level-gated checkpoints between each level's 4-room cluster — same
     // level-gate mechanic as the arm's own entrance (ARM_LEVEL_REQ, see
-    // js/game.js's ARM GATES section), just repeated at every position
-    // boundary along the corridor instead of only once at the hub door.
-    // Gate before position `pos` requires the level of that position's
-    // first (weaker) room — e.g. the gate before the room pair hosting
-    // local levels 3-4 requires character level 3.
-    for (let pos = 1; pos < pairs; pos++) {
-      const boundary = mainStart + sign * (LEAD_IN + (pos - 0.5) * PITCH);
-      const req = ARM_OFFSETS[armIdx - 1] + (pos * 2 + 1);
+    // js/game.js's ARM GATES section), just repeated along the corridor
+    // instead of only once at the hub door. Gate before level `lvl` (every
+    // odd level from 3 up) sits right before the first of that level's 2
+    // positions — e.g. the gate before the 4 rooms hosting local level 3
+    // requires character level 3.
+    for (let lvl = 3; lvl < roomCount; lvl += 2) {
+      const posIndex = (lvl - 1) * 2;
+      const boundary = mainStart + sign * (LEAD_IN + (posIndex - 0.5) * PITCH);
+      const req = ARM_OFFSETS[armIdx - 1] + lvl;
       corridorGates.push(horizontal
         ? { dir, tx: Math.round(boundary), ty: fixedCoord, req }
         : { dir, tx: fixedCoord, ty: Math.round(boundary), req });
@@ -202,10 +207,15 @@ function generateOpenWorld() {
       spawnRoomEnemies(room, x, y, size, isBoss);
     }
 
-    for (let pos = 0; pos < pairs; pos++) {
-      const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
-      buildRoomAt(pos, -1, lvlA, false);
-      buildRoomAt(pos, 1, lvlB, lvlB === roomCount);
+    // 2 consecutive positions share the same level (near+far rooms at each),
+    // so 4 rooms total per level. Only the very last room built for the arm
+    // (far side of the last position) is the boss room — the other 3 rooms
+    // sharing that top level are regular rooms.
+    for (let pos = 0; pos < positions; pos++) {
+      const lvl = Math.floor(pos / 2) + 1;
+      const isLastPos = pos === positions - 1;
+      buildRoomAt(pos, -1, lvl, false);
+      buildRoomAt(pos, 1, lvl, isLastPos);
     }
   }
 
