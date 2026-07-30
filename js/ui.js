@@ -3294,6 +3294,11 @@ function updateGramUI() {
   const balance = window._gramBalance || 0;
 
   el.innerHTML = `
+    <div class="gram-airdrop-card" style="background:linear-gradient(135deg,rgba(230,148,25,0.14),rgba(230,148,25,0.05));border:1px solid rgba(230,148,25,0.3);border-radius:14px;padding:14px 16px;text-align:center;margin-bottom:14px">
+      <div style="font-size:16px;font-weight:800;color:#e6ac19;letter-spacing:0.03em">🪂 AirDrop</div>
+      <div style="font-size:12px;color:#c5bfb7;margin-top:4px">Собирайте монеты Liberty</div>
+    </div>
+
     <div class="gram-balance-card">
       <div class="gram-balance-label">Баланс GRAM</div>
       <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(2)} <span class="gram-unit">GRAM</span></div>
