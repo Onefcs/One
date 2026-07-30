@@ -749,7 +749,7 @@ function updateRaidPanelUI() {
   const dungeonCard = `
     <div class="raid-dungeon-card" style="margin-bottom:10px">
       <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
-      <div class="raid-dungeon-desc">Волны монстров · 7 волн · Финальный босс</div>
+      <div class="raid-dungeon-desc">Волны монстров 3 уровня · 6 волн</div>
       <div class="raid-dungeon-rewards">
         <span>💰 500 голд</span><span>⭐ 500 опыт</span>
         <span style="color:${RARITY_COL.common}">30% Common</span>
