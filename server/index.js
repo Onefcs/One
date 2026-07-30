@@ -142,13 +142,16 @@ const _VIP_BP = [
 ];
 
 // ── GRAM Shop ─────────────────────────────────────────────────────────────────
+// skillBooks grants skill books for the buyer's OWN class (see charClass
+// below) — `random: N` picks N books independently at random (can repeat),
+// `each: N` grants N copies of EVERY one of the class's 4 books.
 const _GRAM_SHOP_PKGS = [
-  { id:'pkg1',   gram:1,   gold:1000,   potions:2,   armor:null,       weapon:null,       bonusSP:0  },
-  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0  },
-  { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1  },
-  { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2  },
-  { id:'pkg50',  gram:50,  gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5  },
-  { id:'pkg100', gram:100, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10 },
+  { id:'pkg1',   gram:1,   gold:1000,   potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
+  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0,  skillBooks:{ random:1 } },
+  { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1,  skillBooks:{ random:2 } },
+  { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 } },
+  { id:'pkg50',  gram:50,  gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5,  skillBooks:{ each:4 } },
+  { id:'pkg100', gram:100, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 } },
 ];
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
@@ -1658,6 +1661,23 @@ io.on('connection', socket => {
         const wepId = wepMap[pkg.weapon];
         const base = ITEM_DEF.find(d => d.id === wepId);
         if (base) inv.push({ ...base, enhance: 0 });
+      }
+
+      // Skill books — for the buyer's own class only (see charClass above)
+      if (pkg.skillBooks) {
+        const classBooks = CRAFT_MATS.filter(m => m.forClass === charClass && m.skillKey);
+        const _addBook = (book, qty) => {
+          const existing = inv.find(i => i.id === book.id);
+          if (existing) existing.qty = (existing.qty || 1) + qty;
+          else inv.push({ ...book, qty });
+        };
+        if (pkg.skillBooks.each) {
+          classBooks.forEach(book => _addBook(book, pkg.skillBooks.each));
+        } else if (pkg.skillBooks.random && classBooks.length) {
+          for (let i = 0; i < pkg.skillBooks.random; i++) {
+            _addBook(classBooks[Math.floor(Math.random() * classBooks.length)], 1);
+          }
+        }
       }
 
       // Bonus skill points
