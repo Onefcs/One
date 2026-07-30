@@ -97,6 +97,7 @@ function generateOpenWorld() {
 
   const rooms = [hub];
   const enemyList = [];
+  const corridorGates = [];
   let eid = 0;
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
@@ -123,6 +124,21 @@ function generateOpenWorld() {
       const lo = Math.min(mainStart, mainEnd), hi = Math.max(mainStart, mainEnd);
       if (horizontal) paintRect(lo, fixedCoord - CW, hi, fixedCoord + CW);
       else paintRect(fixedCoord - CW, lo, fixedCoord + CW, hi);
+    }
+
+    // Level-gated checkpoints between each room-pair position — same
+    // level-gate mechanic as the arm's own entrance (ARM_LEVEL_REQ, see
+    // js/game.js's ARM GATES section), just repeated at every position
+    // boundary along the corridor instead of only once at the hub door.
+    // Gate before position `pos` requires the level of that position's
+    // first (weaker) room — e.g. the gate before the room pair hosting
+    // local levels 3-4 requires character level 3.
+    for (let pos = 1; pos < pairs; pos++) {
+      const boundary = mainStart + sign * (LEAD_IN + (pos - 0.5) * PITCH);
+      const req = ARM_OFFSETS[armIdx - 1] + (pos * 2 + 1);
+      corridorGates.push(horizontal
+        ? { dir, tx: Math.round(boundary), ty: fixedCoord, req }
+        : { dir, tx: fixedCoord, ty: Math.round(boundary), req });
     }
 
     function spawnRoomEnemies(room, x, y, size, isBoss) {
@@ -200,6 +216,7 @@ function generateOpenWorld() {
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
     spawnDoors: ARM_NAMES.map(dir => ({ tx: doors[dir].render.x, ty: doors[dir].render.y, dir })),
+    corridorGates,
     enemies: enemyList,
   };
 }

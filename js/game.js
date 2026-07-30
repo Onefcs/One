@@ -1143,13 +1143,19 @@ function inSafeZone(px, py) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  ARM GATES — level-gated teleport pads at each hub door
+//  ARM GATES — level-gated checkpoints at the hub door AND between every
+//  room-pair position further down each corridor
 // ─────────────────────────────────────────────────────────
 // Each corridor's hub door gets a glowing pad marking the entrance; crossing
 // it while under the arm's required level (ARM_LEVEL_REQ, shared/definitions.js)
 // is blocked like a wall instead of just letting weak characters wander into
-// a much stronger arm's monsters. Rebuilt any time `dungeon` changes (see
-// _buildArmGates() call sites in network.js/game.js).
+// a much stronger arm's monsters. The same mechanic repeats at every
+// room-pair boundary further down the corridor (dungeon.corridorGates, built
+// server-side in server/game/dungeon.js) so reaching e.g. the level-3/4
+// monsters' room pair requires character level 3, the next pair requires 5,
+// and so on — not just a single check at the very start of the corridor.
+// Rebuilt any time `dungeon` changes (see _buildArmGates() call sites in
+// network.js/game.js).
 let _armGates = null;
 const _enteredArms = new Set();
 let _gateMsgCd = 0;
@@ -1157,12 +1163,17 @@ const _ARM_LABEL = { left: 'левый', top: 'верхний', bottom: 'ниж�
 
 function _buildArmGates() {
   if (!dungeon || !dungeon.spawnDoors || typeof ARM_LEVEL_REQ === 'undefined') { _armGates = []; return; }
-  _armGates = dungeon.spawnDoors.map(door => {
+  const entranceGates = dungeon.spawnDoors.map(door => {
     const horizontal = door.dir === 'left' || door.dir === 'right'; // gap is 2 tiles tall
     const x = horizontal ? door.tx * TILE + TILE / 2 : (door.tx + 1) * TILE;
     const y = horizontal ? (door.ty + 1) * TILE : door.ty * TILE + TILE / 2;
     return { dir: door.dir, x, y, horizontal, req: ARM_LEVEL_REQ[door.dir] || 0 };
   });
+  const corridorGates = (dungeon.corridorGates || []).map(g => {
+    const horizontal = g.dir === 'left' || g.dir === 'right';
+    return { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, horizontal, req: g.req };
+  });
+  _armGates = entranceGates.concat(corridorGates);
 }
 
 function _isGateBlocked(wx, wy) {
