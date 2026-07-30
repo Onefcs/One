@@ -643,11 +643,11 @@ function _monsterDropBodyHtml(e, floor, lvl) {
 
   // Equipment drop: one continuous chance (+0.1%/level, never resets across
   // zones) picks a single rarity by the level's arm (itemDropChanceAtLevel/
-  // itemRarityForLevel) then one item uniformly among that rarity's 7
-  // class-filtered slots (1 weapon for your class + 6 armor/accessory
-  // slots) — every item at that rarity is shown below, each normalized to
-  // that same 1-in-7 share so the percentage matches what an actual player
-  // of that item's class would see.
+  // itemRarityForLevel) then one item uniformly among ALL candidates at that
+  // rarity — every class's weapon competes alongside every armor/accessory
+  // slot now (js/combat.js no longer restricts weapons to the killing
+  // player's own class), so each item's share is 1-in-candidates.length,
+  // not a fixed 1-in-7.
   let gearSection = '';
   if (typeof itemDropChanceAtLevel === 'function') {
     const pct = Math.min(100, itemDropChanceAtLevel(lvl) * (isBoss ? BOSS_ITEM_DROP_MULT : 1));
@@ -655,8 +655,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
     const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
     const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-    const perItemPct = pct / 7; // 1 weapon (for your class) + 6 other slots always compete 1-in-7
     const candidates = ITEM_DEF.filter(d => d.rarity === rarity && GEAR_SLOTS.includes(d.slot));
+    const perItemPct = candidates.length ? pct / candidates.length : 0;
     const rows = candidates.map(it => _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b style="color:${rc}">${_pctText(perItemPct)}</b>`, rc)).join('');
     gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка (${rn})</div><div class="fi-drops">${rows}</div>`;
   }

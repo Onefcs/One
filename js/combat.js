@@ -108,13 +108,15 @@ function applyLootToInventory(eid, rlvl) {
   // resets across zones — see itemDropChanceAtLevel in shared/definitions.js),
   // boss kills get ×BOSS_ITEM_DROP_MULT on top. Rarity is picked by which
   // quarter of the 1-120 level scale the kill happened in (itemRarityForLevel).
+  // Weapons are no longer restricted to the killing player's own class —
+  // any class's weapon can drop for anyone, same as armor/accessories
+  // always could (and same as skill books, see below).
   if (typeof itemDropChanceAtLevel === 'function') {
     const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
     if (Math.random() * 100 < _itemChance) {
       const rarity = itemRarityForLevel(rlvl);
       const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-      const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot) &&
-        (d.slot !== 'weapon' || (d.forClass && d.forClass.includes(player.type))));
+      const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot));
       if (candidates.length) {
         const it = candidates[Math.floor(Math.random() * candidates.length)];
         if (addToInventory({ ...it })) {
