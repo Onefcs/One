@@ -140,15 +140,15 @@ const SKILL_DEF = {
   // useSkill()'s per-key mechanics in js/player.js were already identical
   // between these two classes, so swapping the definitions is enough).
   lev: [
-    { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
-    { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
-    { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy.png', cd:20, desc:'+80% защиты на 10 сек'         },
-    { key:'R', name:'Рывок света',    icon:'dash',       img:'/images/skill/wrivok.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
+    { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun_v2.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
+    { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr_v2.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
+    { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy_v2.png', cd:20, desc:'+80% защиты на 10 сек'         },
+    { key:'R', name:'Рывок света',    icon:'dash',       img:'/images/skill/wrivok_v2.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   deathknight: [
-    { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim.png',       cd:28, desc:'Вампиризм 10% от удара на 10 сек' },
+    { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim_v2.png',      cd:28, desc:'Вампиризм 10% от удара на 10 сек' },
     { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
-    { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible.png', cd:20, desc:'+20% атака на 5 сек'           },
+    { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible_v2.png', cd:20, desc:'+20% атака на 5 сек'           },
     { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
   ],
   ranger: [
@@ -158,7 +158,7 @@ const SKILL_DEF = {
     { key:'R', name:'Скорость атаки', icon:'arrowRain',   img:'/images/skill/latkspeed.png', cd:20, desc:'×1.5 скорость атаки на 5 сек' },
   ],
   mage: [
-    { key:'Q', name:'Ледяной шар',  icon:'fireball', img:'/images/skill/mshar.png',     cd:5,  desc:'Снаряд ×2 урона'               },
+    { key:'Q', name:'Ледяной шар',  icon:'fireball', img:'/images/skill/mshar_v2.png',  cd:5,  desc:'Снаряд ×2 урона'               },
     { key:'W', name:'Ледяная нова', icon:'iceNova',  img:'/images/skill/mnova.png',     cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
     { key:'E', name:'Барьер',       icon:'barrier',  img:'/images/skill/mbarier.png',   cd:18, desc:'Защита +50% на 3 сек'           },
     { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 180px по направлению'     },

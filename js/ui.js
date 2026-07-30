@@ -698,7 +698,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
         <span class="fi-drop-val">${goldText}</span>
       </div>
       <div class="fi-drop">
-        <span class="fi-drop-icon"><img src="/images/nexum-coin.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
+        <span class="fi-drop-icon"><img src="/images/nexum-coin_v2.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
         <span class="fi-drop-lbl" style="color:#b2864d">Liberty</span>
         <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">${nexumChancePct}%</b></span>
       </div>
@@ -1172,7 +1172,7 @@ function drawHeader() {
   // Nexum balance
   const _nxBal = window._nexumBalance || 0;
   if (_nxBal > 0 || true) {
-    const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin.png'; return i; })());
+    const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
     if (_nxImg.complete && _nxImg.naturalWidth > 0) {
       ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
     } else {

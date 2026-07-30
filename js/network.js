@@ -1035,7 +1035,7 @@ function _initTelegramWidget() {
       if (splashContent) {
         splashContent.innerHTML = `
           <div class="splash-emblem" style="margin-bottom:24px;">
-            <img src="/images/nexum-coin.png" width="160" height="160" alt="Liberty" style="border-radius:50%;display:block;">
+            <img src="/images/nexum-coin_v2.png" width="160" height="160" alt="Liberty" style="border-radius:50%;display:block;">
           </div>
           <div class="splash-title">LIBERTY</div>
           <div class="splash-sub">MMORPG</div>
