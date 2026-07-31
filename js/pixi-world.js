@@ -203,6 +203,23 @@ let _tileVisGen = 0;
 // frames instead — a brief progressive pop-in rather than one big freeze.
 // Already-built chunks are unaffected, this only throttles first-time builds.
 const _CHUNK_BUILD_BUDGET = 2;
+// Profiling (see PR discussion) found _buildChunk's own canvas drawing is
+// cheap (~0.6ms avg) but PIXI.Texture.from()'s GPU upload is not (~5ms avg,
+// spikes over 30ms) — and until now a chunk's build+upload only ever started
+// the exact frame the camera reached it, i.e. zero lead time while running.
+// _CHUNK_LOOKAHEAD extends the range of chunks considered for building (NOT
+// the range marked visible, see the cx/cy bounds check below) by this many
+// whole chunk-widths in whichever direction the player is currently moving.
+// Because c0x/c1x are chunk INDICES (not the viewport edge's exact world
+// position), a lookahead of only 1 chunk index can, depending on where the
+// viewport edge sits inside its current chunk, buy anywhere from almost a
+// full chunk-width of lead down to almost none — so this is 2, guaranteeing
+// at least one full chunk-width (~320 world px, ~2s at normal move speed) of
+// lead in the worst-case alignment. That's comfortably inside
+// _CHUNK_BUILD_BUDGET's 2-per-frame throttle, so the expensive GPU texture
+// upload has already happened well before the chunk actually scrolls into
+// view instead of landing in the same frame the player needed it rendered.
+const _CHUNK_LOOKAHEAD = 2;
 function _updateTiles(camX, camY) {
   if (!dungeon || !dungeon.grid) return;
   const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
@@ -212,10 +229,16 @@ function _updateTiles(camX, camY) {
   const c1x = Math.min(maxCx, Math.floor((camX + W / ZOOM) / _CHUNK_PX));
   const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX));
 
+  const dir = (typeof inputDir === 'function') ? inputDir() : null;
+  const bx0 = (dir && dir.dx < -0.15) ? Math.max(0, c0x - _CHUNK_LOOKAHEAD) : c0x;
+  const bx1 = (dir && dir.dx >  0.15) ? Math.min(maxCx, c1x + _CHUNK_LOOKAHEAD) : c1x;
+  const by0 = (dir && dir.dy < -0.15) ? Math.max(0, c0y - _CHUNK_LOOKAHEAD) : c0y;
+  const by1 = (dir && dir.dy >  0.15) ? Math.min(maxCy, c1y + _CHUNK_LOOKAHEAD) : c1y;
+
   const gen = ++_tileVisGen;
   let _built = 0;
-  for (let cy = c0y; cy <= c1y; cy++) {
-    for (let cx = c0x; cx <= c1x; cx++) {
+  for (let cy = by0; cy <= by1; cy++) {
+    for (let cx = bx0; cx <= bx1; cx++) {
       const key = cx + ',' + cy;
       let spr = _chunkSprCache.get(key);
       if (!spr) {
@@ -234,7 +257,10 @@ function _updateTiles(camX, camY) {
         _tileCt.addChild(spr);
         _chunkSprCache.set(key, spr);
       }
-      spr._visGen = gen;
+      // Only chunks truly inside the viewport get marked visible this frame —
+      // lookahead chunks outside c0x/c1x/c0y/c1y stay built (upload cost
+      // already paid) but hidden until the camera actually reaches them.
+      if (cx >= c0x && cx <= c1x && cy >= c0y && cy <= c1y) spr._visGen = gen;
     }
   }
   _chunkSprCache.forEach(spr => { spr.visible = spr._visGen === gen; });
