@@ -165,5 +165,28 @@ function applyLootToInventory(eid, rlvl) {
     }
   }
 
+  // Passive skill books — studyPassiveSkill()/upgradePassiveSkillWithBook()
+  // (js/ui.js) spend these to unlock and level up passives. Same odds as
+  // active skill books above, own independent roll and pool so neither
+  // track's drop rate is diluted by the other.
+  const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
+  if (_allPassiveBooks.length) {
+    if (eType === 'boss') {
+      if (Math.random() < 0.01) {
+        const book = _allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)];
+        if (addToInventoryQty({ ...book }, 2)) {
+          dmgNum(player.x, player.y - 98, '+ 2× ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
+          saved = true;
+        }
+      }
+    } else if (Math.random() < 0.0002 * Math.min(_dropMult, 3)) {
+      const book = _allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)];
+      if (addToInventory({ ...book })) {
+        dmgNum(player.x, player.y - 98, '+ ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
+        saved = true;
+      }
+    }
+  }
+
   if (saved) netSaveProgress();
 }

@@ -95,9 +95,11 @@ function makePlayer(type) {
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
     // book drops and is spent to study one.
     skillLevels: { Q:0, W:0, E:0, R:0 },
-    // 0 = not bought, 1-5 = level (see PASSIVE_MAX_LEVEL, shared/definitions.js);
-    // keyed by passive id across both the class-exclusive pair and the six
-    // universal ones — buyPassiveLevel()/updatePassiveSkillsUI() in js/ui.js.
+    // 0 = locked/not yet studied, 1-5 = level (see PASSIVE_MAX_LEVEL,
+    // shared/definitions.js) — keyed by passive id across both the
+    // class-exclusive pair and the six universal ones. Studied/upgraded with
+    // books exactly like skillLevels above (see studyPassiveSkill/
+    // upgradePassiveSkillWithBook in js/ui.js).
     passiveLevels: {},
     cdrPct: 0,
     questIdx: 0,
@@ -234,32 +236,6 @@ function upgradeStats(key) {
   netSaveProgress();
   if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
   if (typeof updateProfileUI === 'function') updateProfileUI();
-}
-
-// Buys the NEXT level (current+1) of a passive skill for gold — id must be
-// one of the player's own class's pair (PASSIVE_CLASS_DEF) or one of the six
-// universal ones (PASSIVE_COMMON_DEF), see passiveDefById/passivesForClass
-// (shared/definitions.js). No book/material gate, unlike active skills —
-// this is a pure gold sink.
-function buyPassiveLevel(id) {
-  if (!player) return;
-  const def = typeof passiveDefById === 'function' ? passiveDefById(player.type, id) : null;
-  if (!def) return;
-  const pl = player.passiveLevels || (player.passiveLevels = {});
-  const lvl = pl[id] || 0;
-  if (lvl >= PASSIVE_MAX_LEVEL) return;
-  const cost = passiveCostAtLevel(lvl + 1);
-  if (player.gold < cost) {
-    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
-    return;
-  }
-  player.gold -= cost;
-  pl[id] = lvl + 1;
-  recompute();
-  spawnBurst(player.x, player.y, '#e69419', 10);
-  dmgNum(player.x, player.y - 42, def.name + ' +1 ур.!', '#e69419');
-  netSaveProgress();
-  if (typeof updatePassiveSkillsUI === 'function') updatePassiveSkillsUI();
 }
 
 function gainXP(amount, flat) {

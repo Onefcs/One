@@ -15,6 +15,20 @@ function _itemIcon(it, size) {
       <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${glyph}</div>
     </div>`;
   }
+  // Passive skill books: same book-glyph treatment, framing the passive's
+  // own icon (PASSIVE_CLASS_DEF for class-exclusive ones, PASSIVE_COMMON_DEF
+  // for universal ones — passiveDefById checks both).
+  if (it && it.passiveId) {
+    const pd = typeof passiveDefById === 'function' ? passiveDefById(it.forClass, it.passiveId) : null;
+    const gs = Math.round(size * 0.58);
+    const glyph = pd && pd.img
+      ? `<img src="${pd.img}" width="${gs}" height="${gs}" style="image-rendering:pixelated;border-radius:2px">`
+      : iconHTML('star', gs, '#e3941d');
+    return `<div style="position:relative;width:${size}px;height:${size}px">
+      ${iconHTML('book', size, '#c48a3a')}
+      <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${glyph}</div>
+    </div>`;
+  }
   if (it && it.img) {
     return `<img src="${it.img}" width="${size}" height="${size}"
       style="image-rendering:pixelated;border-radius:3px;"
@@ -443,47 +457,69 @@ function _passiveBonusText(p, level) {
   return `+${Math.round(val * 100)}% ${label}`;
 }
 
+// One book per passive id (shared/definitions.js CRAFT_MATS, id
+// "book_pas_<id>") — mirrors _skillBookId/_skillBookDef above exactly.
+function _passiveBookId(id) { return `book_pas_${id}`; }
+function _passiveBookDef(id) {
+  return CRAFT_MATS.find(m => m.id === _passiveBookId(id));
+}
+
 function _passiveCardHtml(p) {
   if (!player) return '';
   const pl = player.passiveLevels || {};
   const level = pl[p.id] || 0;
+  const locked = level <= 0;
   const maxed = level >= PASSIVE_MAX_LEVEL;
-  const cost = maxed ? null : passiveCostAtLevel(level + 1);
-  const bonusNow  = _passiveBonusText(p, level);
-  const bonusNext = maxed ? null : _passiveBonusText(p, level + 1);
+  const bonusNow  = locked ? null : _passiveBonusText(p, level);
+  const bonusNext = (locked || maxed) ? null : _passiveBonusText(p, level + 1);
+  const bookId = _passiveBookId(p.id);
+  const bookName = (_passiveBookDef(p.id) || {}).name || 'Книга навыков';
+  const bookCount = countMaterial(bookId);
 
   const dots = Array.from({ length: PASSIVE_MAX_LEVEL }, (_, i) =>
     `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
   ).join('');
 
-  const iconEl = `<div style="width:26px;height:26px;border-radius:6px;overflow:hidden;flex-shrink:0">
-    <img src="${p.img}" width="26" height="26" style="display:block;object-fit:cover">
+  // Book-framed icon — the passive's own icon nested inside the book glyph,
+  // same visual treatment as active skill books.
+  const passiveGlyph = `<img src="${p.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px;opacity:${locked ? 0.5 : 1}">`;
+  const iconEl = `<div style="position:relative;width:26px;height:26px;opacity:${locked ? 0.4 : 1}">
+    ${iconHTML('book', 26, locked ? '#645f57' : '#c48a3a')}
+    <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${passiveGlyph}</div>
   </div>`;
 
   let btnLabel, btnAction, btnDisabled;
-  if (maxed) {
+  if (locked) {
+    btnDisabled = bookCount < SKILL_STUDY_COST;
+    btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · Изучить (${bookCount})`;
+    btnAction = `studyPassiveSkill('${p.id}')`;
+  } else if (maxed) {
     btnDisabled = true;
     btnLabel = 'Максимум';
     btnAction = '';
   } else {
-    btnDisabled = player.gold < cost;
-    btnLabel = iconHTML('coin', 12, '#e3941d') + ` ${cost} · Улучшить`;
-    btnAction = `buyPassiveLevel('${p.id}')`;
+    btnDisabled = bookCount < SKILL_UPGRADE_COST;
+    btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · Улучшить (${Math.round(SKILL_UPGRADE_CHANCE * 100)}%) — ${bookCount}`;
+    btnAction = `upgradePassiveSkillWithBook('${p.id}')`;
   }
 
   return `<div class="skill-upg-card">
     <div class="skill-upg-top">
-      <div class="skill-upg-icon">${iconEl}</div>
+      <div class="skill-upg-icon" style="position:relative">
+        ${iconEl}
+        ${locked ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
+      </div>
       <div class="skill-upg-info">
-        <div class="skill-upg-name">${p.name}<span class="skill-upg-lvl">${level <= 0 ? ' Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
+        <div class="skill-upg-name">${p.name}<span class="skill-upg-lvl">${locked ? ' 🔒 Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
         <div class="skill-upg-desc">${p.desc}</div>
+        <div class="skill-upg-type">${locked ? bookName : ''}</div>
       </div>
     </div>
-    <div class="sk-dots">${dots}</div>
-    <div class="sk-bonus-row">
+    ${!locked ? `<div class="sk-dots">${dots}</div>` : ''}
+    ${!locked ? `<div class="sk-bonus-row">
       ${bonusNow ? `<span class="sk-bonus-now">${bonusNow}</span>` : ''}
       ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
-    </div>
+    </div>` : ''}
     <button class="skill-upg-btn${btnDisabled ? ' disabled' : ''}" onclick="${btnAction}">${btnLabel}</button>
   </div>`;
 }
@@ -495,14 +531,62 @@ function updatePassiveSkillsUI() {
 
   el.innerHTML = `
     <div class="skill-upg-header">
-      <span>${iconHTML('star', 13, '#e3941d')} Пассивные навыки</span>
-      <span class="skill-upg-hint">Покупаются за золото, макс. ${PASSIVE_MAX_LEVEL} ур.</span>
+      <span>${iconHTML('book', 13, '#e3941d')} Книги пассивок</span>
+      <span class="skill-upg-hint">Изучение: ${SKILL_STUDY_COST} кн. · Улучшение: ${SKILL_UPGRADE_COST} кн. · ${Math.round(SKILL_UPGRADE_CHANCE * 100)}% шанс</span>
     </div>
     <div class="sec-title">Классовые (${CHAR_DEF[player.type]?.name || ''})</div>
     ${classDef.map(_passiveCardHtml).join('')}
     <div class="sec-title" style="margin-top:14px">Общие</div>
     ${PASSIVE_COMMON_DEF.map(_passiveCardHtml).join('')}
   `;
+}
+
+function studyPassiveSkill(id) {
+  if (!player) return;
+  const def = typeof passiveDefById === 'function' ? passiveDefById(player.type, id) : null;
+  if (!def) return;
+  const pl = player.passiveLevels || (player.passiveLevels = {});
+  if ((pl[id] || 0) > 0) return; // already studied
+  const bookId = _passiveBookId(id);
+  if (countMaterial(bookId) < SKILL_STUDY_COST) {
+    dmgNum(player.x, player.y - 30, 'Нужна книга этой пассивки!', '#f17e8b');
+    return;
+  }
+  removeFromInventory(bookId, SKILL_STUDY_COST);
+  pl[id] = 1;
+  recompute();
+  spawnBurst(player.x, player.y, '#e69419', 10);
+  dmgNum(player.x, player.y - 42, 'Пассивка изучена!', '#e69419');
+  netSaveProgress();
+  updatePassiveSkillsUI();
+  updateInvUI();
+}
+
+function upgradePassiveSkillWithBook(id) {
+  if (!player) return;
+  const def = typeof passiveDefById === 'function' ? passiveDefById(player.type, id) : null;
+  if (!def) return;
+  const pl = player.passiveLevels || (player.passiveLevels = {});
+  const lvl = pl[id] || 0;
+  if (lvl <= 0) { dmgNum(player.x, player.y - 30, 'Сначала изучите пассивку!', '#f17e8b'); return; }
+  if (lvl >= PASSIVE_MAX_LEVEL) return;
+  const bookId = _passiveBookId(id);
+  if (countMaterial(bookId) < SKILL_UPGRADE_COST) {
+    dmgNum(player.x, player.y - 30, `Нужно ${SKILL_UPGRADE_COST} книги этой пассивки!`, '#f17e8b');
+    return;
+  }
+  removeFromInventory(bookId, SKILL_UPGRADE_COST);
+  if (Math.random() < SKILL_UPGRADE_CHANCE) {
+    pl[id] = lvl + 1;
+    recompute();
+    spawnBurst(player.x, player.y, '#e69419', 10);
+    dmgNum(player.x, player.y - 42, '↑ Пассивка +' + pl[id] + ' ур.!', '#e69419');
+  } else {
+    dmgNum(player.x, player.y - 36, 'Неудача...', '#eb4e61');
+  }
+  netSaveProgress();
+  updatePassiveSkillsUI();
+  updateInvUI();
 }
 
 function drawMapPanel() {
@@ -774,6 +858,24 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     }
   }
 
+  // Passive skill books — same mechanic/odds as active skill books above,
+  // separate roll and separate pool (js/combat.js).
+  let passiveBookSection = '';
+  {
+    const allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
+    if (allPassiveBooks.length) {
+      const rows = allPassiveBooks.map(b => {
+        const label = b.forClass
+          ? `${b.name} <span style="opacity:.6">(${(CHAR_DEF[b.forClass] || {}).name || b.forClass})</span>`
+          : `${b.name} <span style="opacity:.6">(общая)</span>`;
+        return isBoss
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.01)}</b>`, '#98e456')
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.0002 * Math.min(dropMult, 3) / allPassiveBooks.length * 100)}</b>`);
+      }).join('');
+      passiveBookSection = `<div class="fi-drops-hdr" style="margin-top:8px">Книги пассивок (все классы)</div><div class="fi-drops">${rows}</div>`;
+    }
+  }
+
   return `
     <div class="fi-mstats">
       <span>HP <b>${hp}</b></span>
@@ -801,7 +903,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     ${recipeSection}
     ${keySection}
     ${gearSection}
-    ${bookSection}`;
+    ${bookSection}
+    ${passiveBookSection}`;
 }
 
 function updateRaidPanelUI() {

@@ -304,6 +304,22 @@ const _SKILL_BOOK_SRC = [
   ['warlock', 'Q', 'Тёмное исцеление'], ['warlock', 'W', 'Оковы тьмы'], ['warlock', 'E', 'Тёмный щит'], ['warlock', 'R', 'Тёмная молитва'],
 ];
 
+// [class, passiveId, name] — class-exclusive pair of passives, one book per
+// class+passive combo. Name must match PASSIVE_CLASS_DEF's entry for that
+// id exactly (further down in this file).
+const _PASSIVE_BOOK_SRC = [
+  ['lev', 'tankatk', 'Мощь берсерка'], ['lev', 'deftank', 'Несокрушимость'],
+  ['deathknight', 'dkatk', 'Кровавый пакт'], ['deathknight', 'dkdef', 'Тёмный панцирь'],
+  ['ranger', 'bowatk', 'Меткий глаз'], ['ranger', 'bowdef', 'Чутьё следопыта'],
+  ['mage', 'mageatk', 'Поток маны'], ['mage', 'magedef', 'Ледяной щит'],
+  ['warlock', 'healatk', 'Тёмная жажда'], ['warlock', 'healdef', 'Оберег тьмы'],
+];
+// [passiveId, name] — universal passives, no class attached (PASSIVE_COMMON_DEF).
+const _PASSIVE_COMMON_BOOK_SRC = [
+  ['allatkspeed', 'Стремительность'], ['allhp', 'Живучесть'], ['allcritdmg', 'Кровавая ярость'],
+  ['allspeed', 'Быстрые ноги'], ['allcdskill', 'Ясный разум'], ['allregen', 'Регенерация'],
+];
+
 const CRAFT_MATS = [
   // ── Recipes (от всех) ───────────────────────────────────
   { id:'recu',  name:'Рецепт необычный',  img:'/images/material/recu.png',  slot:'recipe',   rarity:'uncommon'  },
@@ -327,6 +343,20 @@ const CRAFT_MATS = [
   ..._SKILL_BOOK_SRC.map(([cls, key, name]) => ({
     id: `book_${cls}_${key}`, name: `Книга: ${name}`,
     slot: 'material', rarity: 'uncommon', forClass: cls, skillKey: key,
+  })),
+  // ── Passive skill books (изучение/прокачка пассивок) ─────
+  // Same idea as the active skill books above, one per passive id — class-
+  // exclusive ones carry forClass, universal ones (PASSIVE_COMMON_DEF) don't.
+  // Icon/img resolved at render time via passiveId against PASSIVE_CLASS_DEF/
+  // PASSIVE_COMMON_DEF (see _itemIcon in js/ui.js). See studyPassiveSkill/
+  // upgradePassiveSkillWithBook in js/ui.js.
+  ..._PASSIVE_BOOK_SRC.map(([cls, id, name]) => ({
+    id: `book_pas_${id}`, name: `Книга: ${name}`,
+    slot: 'material', rarity: 'uncommon', forClass: cls, passiveId: id,
+  })),
+  ..._PASSIVE_COMMON_BOOK_SRC.map(([id, name]) => ({
+    id: `book_pas_${id}`, name: `Книга: ${name}`,
+    slot: 'material', rarity: 'uncommon', passiveId: id,
   })),
 ];
 
@@ -471,13 +501,14 @@ function roomEnchantStoneChance(lvl) {
 // Second skill track next to SKILL_DEF's active Q/W/E/R (js/definitions.js):
 // every class gets its OWN pair of passives (one ATK-flavored, one
 // DEF-flavored, matching that class's identity) plus six universal passives
-// every class can invest in regardless of which one was picked. Both tracks
-// level 1-5 and are bought outright with gold — a pure long-term gold sink
-// layered on top of the existing upgrade/enhance sinks, no book/material
-// gate — and stack as flat/percent bonuses on top of recompute()'s existing
+// every class can invest in regardless of which one was picked. Studied and
+// leveled with books exactly like active skills (studyPassiveSkill/
+// upgradePassiveSkillWithBook, js/ui.js — same SKILL_STUDY_COST/
+// SKILL_UPGRADE_COST/SKILL_UPGRADE_CHANCE), dropped by monsters the same
+// way (js/combat.js), just capped at a lower max level. Bonuses stack as
+// flat/percent on top of recompute()'s existing
 // atk/def/hp/atkSpeed/critPower/hpRegen/speed pipeline (js/player.js).
 const PASSIVE_MAX_LEVEL = 5;
-function passiveCostAtLevel(lvl) { return 400 * lvl * lvl; } // gold cost to buy up TO this level (1..5)
 
 const PASSIVE_CLASS_DEF = {
   lev: [
@@ -559,7 +590,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
-  PASSIVE_MAX_LEVEL, passiveCostAtLevel, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
+  PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
