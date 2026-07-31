@@ -58,6 +58,15 @@ const PLAYER_CAP = 20;
 // Every N casts an entry goes out full even if the recipient "knows" it —
 // self-heals any client/server known-state divergence within ~2s.
 const FULL_REFRESH_TICKS = 80;
+// Each enemy only re-runs its full closest-eligible-player scan (O(players))
+// once every this many ticks (staggered by enemy index, see _tick()) instead
+// of every tick — O(enemies × players) exceeded the 25ms tick budget at
+// ~200 concurrent players once enemy count doubled (ROOM_CHAIN_LEN 3->6).
+// Movement/attack still use a freshly recomputed distance to the (possibly
+// cached) target every tick, so this only throttles how often "who's
+// closest" is re-decided — at 4 ticks (~10Hz) that's a ≤75ms-stale target
+// choice, imperceptible in play.
+const AI_TARGET_SEARCH_EVERY = 4;
 
 class Room {
   constructor(floor, io) {
@@ -90,6 +99,16 @@ class Room {
     this.enemies.forEach((e, i) => { e._idx = i; });
     this._lastTick = Date.now();
     this._interval = null;
+    // Counts _tick() calls, purely to stagger the closest-target re-search
+    // below (a separate counter from _tickNo, which is actually a cast-id
+    // sequence, not a tick counter, despite the name).
+    this._aiTickNo = 0;
+    // Bumped once per tick, right after nearEnemies is rebuilt — lets
+    // encodeGameState (shared/netcodec.js) know it's the same enemies
+    // snapshot across every player's emit this tick, so it only has to
+    // actually encode that (string-heavy) segment once instead of once per
+    // player. See the comment at its call site below for the measured cost.
+    this._nearEnemiesGen = 0;
   }
 
   _startLoop() {
@@ -197,6 +216,7 @@ class Room {
     });
 
     // Enemy AI + respawn
+    this._aiTickNo++;
     this.enemies.forEach(e => {
       if (e.hp <= 0) {
         if (e.respawnTimer === undefined) { e.respawnTimer = e.isBoss ? 3600 : 12; return; }
@@ -218,16 +238,30 @@ class Room {
       if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
 
       // Find closest alive player not in safe zone, not in raid, not invisible
-      let closest = null, closestD2 = Infinity;
-      for (let i = 0; i < alivePlayers.length; i++) {
-        const p = alivePlayers[i];
-        if (this._inSafeZone(p.x, p.y)) continue;
-        if (p._inRaid) continue;
-        if (p._invis) continue;
-        const dx = p.x - e.x, dy = p.y - e.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < closestD2) { closestD2 = d2; closest = p; }
+      // — but only actually re-scan every AI_TARGET_SEARCH_EVERY ticks (see
+      // its comment above); otherwise reuse the cached target as long as
+      // it's still eligible, so a stale reference never keeps an enemy
+      // chasing someone who died/vanished/hid for multiple ticks.
+      const cached = e._cachedTarget;
+      const cachedStillValid = cached && cached.hp > 0 && this.players.get(cached.socketId) === cached &&
+        !this._inSafeZone(cached.x, cached.y) && !cached._inRaid && !cached._invis;
+      const dueForSearch = (e._idx % AI_TARGET_SEARCH_EVERY) === (this._aiTickNo % AI_TARGET_SEARCH_EVERY);
+      let closest = cachedStillValid ? cached : null;
+      if (dueForSearch || !cachedStillValid) {
+        closest = null;
+        let bestD2 = Infinity;
+        for (let i = 0; i < alivePlayers.length; i++) {
+          const p = alivePlayers[i];
+          if (this._inSafeZone(p.x, p.y)) continue;
+          if (p._inRaid) continue;
+          if (p._invis) continue;
+          const dx = p.x - e.x, dy = p.y - e.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) { bestD2 = d2; closest = p; }
+        }
+        e._cachedTarget = closest;
       }
+      const closestD2 = closest ? (closest.x - e.x) * (closest.x - e.x) + (closest.y - e.y) * (closest.y - e.y) : Infinity;
       // No eligible target anywhere in the room (e.g. a solo player just
       // died, or everyone left/entered a safe zone) — snap straight back to
       // spawn instead of freezing mid-chase wherever it happened to be. The
@@ -339,7 +373,17 @@ class Room {
         });
       }
     });
+    this._nearEnemiesGen++;
 
+    // nearEnemies is the exact same array/contents for every recipient this
+    // tick (enemies aren't AOI-filtered, see the comment above), but used to
+    // get re-encoded from scratch on every single emit call below — with
+    // ~200 concurrent players and a couple hundred enemies in nearEnemies
+    // (a chunk of them "full" entries with several string fields), that
+    // measured at ~0.23ms per encode call, ~46ms/tick just for the
+    // redundant re-encoding, blowing well past the 25ms tick budget.
+    // Passing _nearEnemiesGen lets encodeGameState encode that segment once
+    // and reuse the bytes for every other player this same tick.
     this.players.forEach(p => {
       let playersOut = null;
 
@@ -384,7 +428,7 @@ class Room {
       // t: server tick timestamp — the client uses real tick spacing (setInterval
       // drifts 45-60ms) to time snapshot playback at true velocity.
       // Payload is a binary ArrayBuffer — see shared/netcodec.js
-      this.io.to(p.socketId).emit('gameState', encodeGameState(playersOut, nearEnemies, now));
+      this.io.to(p.socketId).emit('gameState', encodeGameState(playersOut, nearEnemies, now, this._nearEnemiesGen));
     });
 
     // Update delta markers after all per-player emits

@@ -85,7 +85,23 @@ function _ncWStr(o, s) {
 
 function _ncQ16(v) { return Math.max(0, Math.min(65535, Math.round(v * 2))); }
 
-function encodeGameState(players, enemies, t) {
+// Caches the encoded ENEMIES segment across calls within the same tick —
+// Room.js broadcasts the identical nearEnemies snapshot to every connected
+// player, but this function used to re-encode it (including per-entry
+// TextEncoder calls for "full" entries' string fields) from scratch on
+// every single call. Measured at ~0.23ms/call with a realistic ~200-entry
+// snapshot; at ~200 concurrent players that's ~46ms of pure duplicated work
+// every tick, well past the 25ms tick budget on its own. `enemiesGen` (an
+// opaque number Room.js bumps once per tick, right after rebuilding
+// nearEnemies) is the cache-invalidation key — a plain reference-equality
+// check on `enemies` doesn't work here since Room.js reuses the same array
+// object (just cleared and refilled) every tick rather than allocating a
+// fresh one. Callers that don't pass enemiesGen (or pass a fresh event
+// number each time) simply never hit the cache, encoding normally.
+let _ncEnemiesCacheGen = NaN;
+let _ncEnemiesCacheBytes = null;
+
+function encodeGameState(players, enemies, t, enemiesGen) {
   let o = 0;
   _ncEnsure(o, 16);
   _ncDV.setUint8(o, players ? 1 : 0); o += 1;
@@ -117,32 +133,45 @@ function encodeGameState(players, enemies, t) {
     }
   }
 
-  // u16 — a shared open world can have hundreds of enemies in view at once
-  // (unlike the old per-floor maps this was originally u8-sized for).
-  _ncEnsure(o, 2);
-  _ncDV.setUint16(o, Math.min(65535, enemies.length), true); o += 2;
-  for (let i = 0; i < enemies.length; i++) {
-    const e = enemies[i];
-    _ncEnsure(o, _NC_ENTRY_HEADROOM);
-    const full = e.eid !== undefined;
-    _ncDV.setUint8(o, full ? 1 : 0); o += 1;
-    _ncDV.setUint16(o, e.idx & 0xffff, true); o += 2;
-    _ncDV.setUint16(o, _ncQ16(e.x), true); o += 2;
-    _ncDV.setUint16(o, _ncQ16(e.y), true); o += 2;
-    _ncDV.setInt32(o, e.hp | 0, true); o += 4;
-    _ncDV.setUint8(o, e.aggro ? 1 : 0); o += 1;
-    _ncDV.setUint8(o, Math.max(0, Math.min(255, Math.round((e.atkAnimTimer || 0) * 100)))); o += 1;
-    if (full) {
-      o = _ncWStr(o, e.id);
-      o = _ncWStr(o, e.eid);
-      _ncDV.setInt32(o, e.maxHp | 0, true); o += 4;
-      o = _ncWStr(o, e.name);
-      o = _ncWStr(o, e.color);
-      _ncDV.setUint8(o, Math.max(0, Math.min(255, e.size | 0))); o += 1;
-      _ncDV.setUint8(o, e.isBoss ? 1 : 0); o += 1;
-      _ncDV.setFloat32(o, e.aggroR || 0, true); o += 4;
-      _ncDV.setUint16(o, Math.max(0, Math.min(65535, e.spd | 0)), true); o += 2;
-      _ncDV.setUint8(o, Math.max(0, Math.min(255, e.rlvl | 0))); o += 1;
+  if (enemiesGen !== undefined && enemiesGen === _ncEnemiesCacheGen && _ncEnemiesCacheBytes) {
+    // Same enemies snapshot as the last call this tick — reuse the bytes
+    // instead of re-running the (string-heavy) encode loop below.
+    _ncEnsure(o, _ncEnemiesCacheBytes.length);
+    _ncU8.set(_ncEnemiesCacheBytes, o);
+    o += _ncEnemiesCacheBytes.length;
+  } else {
+    const enemiesStart = o;
+    // u16 — a shared open world can have hundreds of enemies in view at once
+    // (unlike the old per-floor maps this was originally u8-sized for).
+    _ncEnsure(o, 2);
+    _ncDV.setUint16(o, Math.min(65535, enemies.length), true); o += 2;
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      _ncEnsure(o, _NC_ENTRY_HEADROOM);
+      const full = e.eid !== undefined;
+      _ncDV.setUint8(o, full ? 1 : 0); o += 1;
+      _ncDV.setUint16(o, e.idx & 0xffff, true); o += 2;
+      _ncDV.setUint16(o, _ncQ16(e.x), true); o += 2;
+      _ncDV.setUint16(o, _ncQ16(e.y), true); o += 2;
+      _ncDV.setInt32(o, e.hp | 0, true); o += 4;
+      _ncDV.setUint8(o, e.aggro ? 1 : 0); o += 1;
+      _ncDV.setUint8(o, Math.max(0, Math.min(255, Math.round((e.atkAnimTimer || 0) * 100)))); o += 1;
+      if (full) {
+        o = _ncWStr(o, e.id);
+        o = _ncWStr(o, e.eid);
+        _ncDV.setInt32(o, e.maxHp | 0, true); o += 4;
+        o = _ncWStr(o, e.name);
+        o = _ncWStr(o, e.color);
+        _ncDV.setUint8(o, Math.max(0, Math.min(255, e.size | 0))); o += 1;
+        _ncDV.setUint8(o, e.isBoss ? 1 : 0); o += 1;
+        _ncDV.setFloat32(o, e.aggroR || 0, true); o += 4;
+        _ncDV.setUint16(o, Math.max(0, Math.min(65535, e.spd | 0)), true); o += 2;
+        _ncDV.setUint8(o, Math.max(0, Math.min(255, e.rlvl | 0))); o += 1;
+      }
+    }
+    if (enemiesGen !== undefined) {
+      _ncEnemiesCacheGen = enemiesGen;
+      _ncEnemiesCacheBytes = _ncU8.slice(enemiesStart, o);
     }
   }
   // Copy — the scratch buffer is reused for the next recipient while
