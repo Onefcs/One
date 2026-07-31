@@ -1416,9 +1416,11 @@ const _CHUNK_PX = _CHUNK_T * TILE;   // 320 world px
 const _CHUNK_G  = 2;                 // gutter so bilinear edges sample real content
 const _CHUNK_MAX = 96;               // cache cap (~38MB worst case, oldest evicted)
 const _tileChunks = new Map();       // "cx,cy" -> canvas
+const _chunkTorches = new Map();     // "cx,cy" -> [{x,y}] wall-torch flame anchor points
 
 function buildTileCanvas() {
   _tileChunks.clear();
+  _chunkTorches.clear();
   if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
   _mmTileCv = null; // minimap floor-tile buffer (js/ui.js) — new dungeon grid
 }
@@ -1591,6 +1593,25 @@ function _buildChunk(cx, cy) {
       }
     }
   }
+
+  // 6. Wall-mounted torch brackets — sparse, deterministic per (tx,ty). Only
+  // the iron bracket is baked into this static texture; the flickering flame
+  // and its warm light pooling onto the floor are animated live every frame
+  // (see _updateLights in pixi-world.js) off the anchor points collected here.
+  const torchList = [];
+  for (let ty = pty0; ty <= pty1; ty++) {
+    for (let tx = ptx0; tx <= ptx1; tx++) {
+      if (dungeon.grid[ty][tx] !== WALL || !isFloor(tx, ty + 1)) continue;
+      if (_tileHash(tx, ty, 90) >= 0.05) continue;
+      const bx = tx * TILE + TILE / 2, by = ty * TILE + TILE - 6;
+      c.fillStyle = '#2a2018';
+      c.fillRect(bx - 3, by - 10, 6, 10);
+      c.fillStyle = '#4a3826';
+      c.fillRect(bx - 5, by - 12, 10, 3);
+      torchList.push({ x: bx, y: by - 12 });
+    }
+  }
+  _chunkTorches.set(cx + ',' + cy, torchList);
 
   return cv;
 }

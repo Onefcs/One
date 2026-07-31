@@ -6,6 +6,8 @@ const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 let _pixiApp = null;
 let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
+let _lightsGfx = null;  // torch flames + warm glow (Graphics, additive blend, cleared each frame)
+let _dustGfx  = null;   // ambient drifting dust motes (Graphics, cleared each frame)
 let _aoeGfx   = null;   // AOE rings (Graphics, cleared each frame)
 let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
 let _npcNames = [];      // PIXI.Text per NPC
@@ -55,6 +57,9 @@ function pixiInit(canvasEl) {
 
   _worldCt  = new PIXI.Container();
   _tileCt   = new PIXI.Container();
+  _lightsGfx = new PIXI.Graphics();
+  _lightsGfx.blendMode = PIXI.BLEND_MODES.ADD;
+  _dustGfx  = new PIXI.Graphics();
   _aoeGfx   = new PIXI.Graphics();
   _npcCt    = new PIXI.Container();
   _dropGfx  = new PIXI.Graphics();
@@ -66,10 +71,10 @@ function pixiInit(canvasEl) {
   _dmgNumCt = new PIXI.Container();
 
   _worldCt.addChild(
-    _tileCt, _aoeGfx,
+    _tileCt, _lightsGfx, _aoeGfx,
     _npcCt, _dropGfx, _partGfx,
     _enemyCt, _otherPCt, _projGfx,
-    _playerCt, _dmgNumCt
+    _playerCt, _dmgNumCt, _dustGfx
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -246,6 +251,7 @@ function _updateTiles(camX, camY) {
 
   const gen = ++_tileVisGen;
   let _built = 0;
+  _visibleTorches.length = 0;
   for (let cy = by0; cy <= by1; cy++) {
     for (let cx = bx0; cx <= bx1; cx++) {
       const key = cx + ',' + cy;
@@ -269,10 +275,66 @@ function _updateTiles(camX, camY) {
       // Only chunks truly inside the viewport get marked visible this frame —
       // lookahead chunks outside c0x/c1x/c0y/c1y stay built (upload cost
       // already paid) but hidden until the camera actually reaches them.
-      if (cx >= c0x && cx <= c1x && cy >= c0y && cy <= c1y) spr._visGen = gen;
+      if (cx >= c0x && cx <= c1x && cy >= c0y && cy <= c1y) {
+        spr._visGen = gen;
+        const torches = _chunkTorches.get(key);
+        if (torches) for (let i = 0; i < torches.length; i++) _visibleTorches.push(torches[i]);
+      }
     }
   }
   _chunkSprCache.forEach(spr => { spr.visible = spr._visGen === gen; });
+}
+
+// ── torch light + ambient dust ───────────────────────────────
+// Torches: the iron bracket is baked flat into the chunk texture (see
+// _buildChunk); only the flame flicker + its warm glow pooling onto the
+// floor are live, driven off the anchor points _updateTiles collected for
+// whichever chunks are actually on screen this frame.
+const _visibleTorches = [];
+
+function _updateLights(ts) {
+  _lightsGfx.clear();
+  for (let i = 0; i < _visibleTorches.length; i++) {
+    const t = _visibleTorches[i];
+    const flick = 0.8 + 0.15 * Math.sin(ts * 0.006 + t.x * 0.11) + 0.08 * Math.sin(ts * 0.023 + t.y * 0.05);
+    const fx = t.x + Math.sin(ts * 0.014 + t.x) * 1.2;
+    const fy = t.y - 2 + Math.sin(ts * 0.02 + t.y) * 1;
+    _lightsGfx.beginFill(0xff9d3c, 0.05 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 60 * flick); _lightsGfx.endFill();
+    _lightsGfx.beginFill(0xffb85c, 0.09 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 32 * flick); _lightsGfx.endFill();
+    _lightsGfx.beginFill(0xff8a2e, 0.75); _lightsGfx.drawCircle(fx, fy + 2, 5 * flick); _lightsGfx.endFill();
+    _lightsGfx.beginFill(0xffe6a8, 0.9); _lightsGfx.drawCircle(fx, fy, 3.2 * flick); _lightsGfx.endFill();
+  }
+}
+
+// A sparse field of slow-drifting motes confined to the current viewport
+// (world-space anchored, so they read as floating in the room rather than
+// stuck to the screen) — cheap ambient motion so rooms don't feel static.
+let _dustMotes = null;
+function _initDustMotes(n) {
+  _dustMotes = [];
+  for (let i = 0; i < n; i++) {
+    _dustMotes.push({
+      ox: Math.random(), oy: Math.random(),
+      vx: (Math.random() - 0.5) * 0.015, vy: (Math.random() - 0.5) * 0.015,
+      size: 1 + Math.random() * 1.4, ph: Math.random() * Math.PI * 2,
+    });
+  }
+}
+function _updateDust(dt, ts, camX, camY) {
+  if (!_dustMotes) _initDustMotes(18);
+  _dustGfx.clear();
+  const vw = W / ZOOM, vh = _visH();
+  for (let i = 0; i < _dustMotes.length; i++) {
+    const m = _dustMotes[i];
+    m.ox += m.vx * dt; m.oy += m.vy * dt;
+    if (m.ox < 0) m.ox += 1; else if (m.ox > 1) m.ox -= 1;
+    if (m.oy < 0) m.oy += 1; else if (m.oy > 1) m.oy -= 1;
+    const x = camX + m.ox * vw, y = camY + m.oy * vh;
+    const a = 0.1 + 0.07 * Math.sin(ts * 0.0016 + m.ph);
+    _dustGfx.beginFill(0xd8c9a0, a);
+    _dustGfx.drawCircle(x, y, m.size);
+    _dustGfx.endFill();
+  }
 }
 
 // ── AOE rings ─────────────────────────────────────────────
@@ -884,6 +946,8 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   const bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
 
   _updateTiles(camX, camY);
+  _updateLights(ts);
+  _updateDust(dt, ts, camX, camY);
   _updateAoeRings();
   _updateNpcs(dt, ts);
   _updateDrops(ts);
