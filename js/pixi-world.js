@@ -877,19 +877,8 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   const bgCol = theme ? theme.bg : '#060610';
   if (bgCol !== _lastBgColor) { pixiSetBg(bgCol); _lastBgColor = bgCol; }
   _worldCt.visible = true;
-  // Snap the whole world's screen offset to a real device pixel. The camera
-  // now tracks the player with zero smoothing (see updateCamera, js/game.js),
-  // so its position changes by whatever raw sub-pixel amount the player
-  // moved that frame — left unsnapped, that fractional offset lands the
-  // baked ground/wall chunk textures (and everything else in this container)
-  // on a different bilinear blend every frame, which reads as the floor/
-  // walls "shimmering"/jittering while moving, most visible on their tiled
-  // pattern. Rounding here is at most half a device pixel of correction
-  // (imperceptible) — not the multi-frame easing that used to mask this by
-  // smoothing the camera's own motion instead.
-  const _res = (_pixiApp.renderer && _pixiApp.renderer.resolution) || 1;
-  _worldCt.x = Math.round(-camX * ZOOM * _res) / _res;
-  _worldCt.y = Math.round((HEADER_H - camY * ZOOM) * _res) / _res;
+  _worldCt.x = -camX * ZOOM;
+  _worldCt.y = HEADER_H - camY * ZOOM;
 
   const pulse    = 0.5 + 0.5 * Math.sin(ts * 0.009);
   const bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
