@@ -141,23 +141,11 @@ function clampCamera() {
 
 function updateCamera(dt) {
   const visW = W / ZOOM, visH = _visH();
-  const tx = player.x - visW / 2;
-  const ty = player.y - visH / 2;
-  // Velocity-matched follow. A lerp toward the target trails the player by
-  // speed/k while running, and frame-time noise makes that trail length
-  // fluctuate — visible as the player wobbling ±1px on screen every uneven
-  // frame. Instead, decay the camera→target OFFSET in error space: the
-  // camera then moves 1:1 with the player at all times (zero relative
-  // wobble), while a large offset (teleport, charge, respawn nearby) still
-  // glides down smoothly. Once within a device pixel the offset snaps to 0.
-  let ox = camera.x - tx, oy = camera.y - ty;
-  const decay = Math.exp(-6 * dt);
-  ox *= decay; oy *= decay;
-  const _devPx = 1 / (ZOOM * DPR);
-  if (Math.abs(ox) < _devPx) ox = 0;
-  if (Math.abs(oy) < _devPx) oy = 0;
-  camera.x = tx + ox;
-  camera.y = ty + oy;
+  // Hard-locked to the player — no easing/trailing offset. A charge/dash/
+  // teleport/respawn now snaps the view instantly to the new position
+  // instead of gliding, same as every other frame.
+  camera.x = player.x - visW / 2;
+  camera.y = player.y - visH / 2;
   clampCamera();
 }
 
