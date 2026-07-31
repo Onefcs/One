@@ -565,9 +565,20 @@ app.set('trust proxy', 1);
 //     black. (This is what a first cut of the policy broke.)
 // CSP still blocks loading executable script from any origin other than the
 // ones whitelisted here and keeps object-src/base-uri locked down via helmet's
-// defaults. All other helmet defaults (incl. X-Frame-Options SAMEORIGIN /
-// frame-ancestors 'self') are preserved unchanged.
+// defaults.
+//
+// frame-ancestors: this app is a Telegram Mini App — on Telegram Web/Desktop
+// it's loaded inside a cross-origin <iframe> served from web.telegram.org (not
+// a same-origin embed). Helmet's default frame-ancestors 'self' (and the
+// matching X-Frame-Options: SAMEORIGIN it used to ship with unchanged) blocks
+// that outright with ERR_BLOCKED_BY_RESPONSE — some players hit this, others
+// don't, because it only affects the iframe-based Web/Desktop clients, not the
+// native mobile app's own WebView. frameguard is disabled below because
+// X-Frame-Options can only express a single origin (or none) and would either
+// still block Telegram or have to be dropped anyway — frame-ancestors is what
+// actually enforces the allow-list in every browser that matters here.
 app.use(helmet({
+  frameguard: false,
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
@@ -580,6 +591,7 @@ app.use(helmet({
       imgSrc:        ["'self'", 'data:', 'blob:'],
       connectSrc:    ["'self'", 'https://cdn.socket.io', 'wss:', 'ws:'],
       fontSrc:       ["'self'", 'data:'],
+      frameAncestors: ["'self'", 'https://web.telegram.org', 'https://*.web.telegram.org', 'https://telegram.org', 'https://*.telegram.org'],
     },
   },
 }));
