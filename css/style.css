@@ -1802,6 +1802,9 @@ canvas { display:block; width:100%; height:100%; }
   overflow: hidden;
 }
 #market-panel, #market-panel * { touch-action: pan-y; pointer-events: auto; }
+/* Category tab strip scrolls horizontally — the blanket pan-y above blocks
+   that gesture on touch devices, so it needs its own override. */
+#market-panel .market-cat-tabs { touch-action: pan-x; }
 
 .market-add-btn {
   width: 100%;
