@@ -1099,6 +1099,7 @@ function _buildSaveStats() {
     questKills: player.questKills || {},
     specialQuestsDone: player.specialQuestsDone || [],
     skillLevels: player.skillLevels || {},
+    passiveLevels: player.passiveLevels || {},
     bonusSP: player.bonusSP || 0,
     // Freshness stamp so a reload can tell which of {server DB, local backup}
     // holds the most recent state (see _pickFreshestSave).

@@ -248,7 +248,16 @@
   </div>
   <!-- Skills sub-tab -->
   <div id="inv-tab-content-2" style="display:none">
-    <div id="skill-upgrade-panel"></div>
+    <div class="profile-tabs">
+      <button class="profile-tab active" id="sktab-active" onclick="switchSkillTab('active')">Активные</button>
+      <button class="profile-tab" id="sktab-passive" onclick="switchSkillTab('passive')">Пассивные</button>
+    </div>
+    <div id="skill-active-wrap">
+      <div id="skill-upgrade-panel"></div>
+    </div>
+    <div id="skill-passive-wrap" style="display:none">
+      <div id="passive-skill-panel"></div>
+    </div>
   </div>
 </div>
 

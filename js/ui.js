@@ -411,6 +411,100 @@ function upgradeSkillWithBook(key) {
   updateInvUI();
 }
 
+// ─────────────────────────────────────────────────────────
+//  PASSIVE SKILL UI
+// ─────────────────────────────────────────────────────────
+let _activeSkillSubTab = 'active';
+
+function switchSkillTab(tab) {
+  _activeSkillSubTab = tab;
+  const wrapActive  = document.getElementById('skill-active-wrap');
+  const wrapPassive = document.getElementById('skill-passive-wrap');
+  const btnActive   = document.getElementById('sktab-active');
+  const btnPassive  = document.getElementById('sktab-passive');
+  if (!wrapActive || !wrapPassive) return;
+  const onPassive = tab === 'passive';
+  wrapActive.style.display  = onPassive ? 'none' : '';
+  wrapPassive.style.display = onPassive ? '' : 'none';
+  btnActive?.classList.toggle('active', !onPassive);
+  btnPassive?.classList.toggle('active', onPassive);
+  if (onPassive) updatePassiveSkillsUI(); else updateSkillsUI();
+}
+
+function _passiveBonusText(p, level) {
+  if (level <= 0) return null;
+  const val = p.perLevel * level;
+  if (p.stat === 'hpRegenFlat') return `+${val.toFixed(1)} HP/сек`;
+  if (p.stat === 'cdrPct') return `-${Math.round(val * 100)}% КД навыков`;
+  const label = {
+    atkPct: 'к атаке', defPct: 'к защите', hpPct: 'к макс. HP',
+    atkSpeedPct: 'к скор. атаки', moveSpeedPct: 'к скорости', critPowerFlat: 'к силе крита',
+  }[p.stat] || '';
+  return `+${Math.round(val * 100)}% ${label}`;
+}
+
+function _passiveCardHtml(p) {
+  if (!player) return '';
+  const pl = player.passiveLevels || {};
+  const level = pl[p.id] || 0;
+  const maxed = level >= PASSIVE_MAX_LEVEL;
+  const cost = maxed ? null : passiveCostAtLevel(level + 1);
+  const bonusNow  = _passiveBonusText(p, level);
+  const bonusNext = maxed ? null : _passiveBonusText(p, level + 1);
+
+  const dots = Array.from({ length: PASSIVE_MAX_LEVEL }, (_, i) =>
+    `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
+  ).join('');
+
+  const iconEl = `<div style="width:26px;height:26px;border-radius:6px;overflow:hidden;flex-shrink:0">
+    <img src="${p.img}" width="26" height="26" style="display:block;object-fit:cover">
+  </div>`;
+
+  let btnLabel, btnAction, btnDisabled;
+  if (maxed) {
+    btnDisabled = true;
+    btnLabel = 'Максимум';
+    btnAction = '';
+  } else {
+    btnDisabled = player.gold < cost;
+    btnLabel = iconHTML('coin', 12, '#e3941d') + ` ${cost} · Улучшить`;
+    btnAction = `buyPassiveLevel('${p.id}')`;
+  }
+
+  return `<div class="skill-upg-card">
+    <div class="skill-upg-top">
+      <div class="skill-upg-icon">${iconEl}</div>
+      <div class="skill-upg-info">
+        <div class="skill-upg-name">${p.name}<span class="skill-upg-lvl">${level <= 0 ? ' Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
+        <div class="skill-upg-desc">${p.desc}</div>
+      </div>
+    </div>
+    <div class="sk-dots">${dots}</div>
+    <div class="sk-bonus-row">
+      ${bonusNow ? `<span class="sk-bonus-now">${bonusNow}</span>` : ''}
+      ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
+    </div>
+    <button class="skill-upg-btn${btnDisabled ? ' disabled' : ''}" onclick="${btnAction}">${btnLabel}</button>
+  </div>`;
+}
+
+function updatePassiveSkillsUI() {
+  const el = document.getElementById('passive-skill-panel');
+  if (!el || !player) return;
+  const classDef = PASSIVE_CLASS_DEF[player.type] || [];
+
+  el.innerHTML = `
+    <div class="skill-upg-header">
+      <span>${iconHTML('star', 13, '#e3941d')} Пассивные навыки</span>
+      <span class="skill-upg-hint">Покупаются за золото, макс. ${PASSIVE_MAX_LEVEL} ур.</span>
+    </div>
+    <div class="sec-title">Классовые (${CHAR_DEF[player.type]?.name || ''})</div>
+    ${classDef.map(_passiveCardHtml).join('')}
+    <div class="sec-title" style="margin-top:14px">Общие</div>
+    ${PASSIVE_COMMON_DEF.map(_passiveCardHtml).join('')}
+  `;
+}
+
 function drawMapPanel() {
   if (!dungeon || !player) return;
   const th = getTheme(dungeonLvl);
@@ -909,7 +1003,7 @@ function setInvTab(n) {
   document.getElementById('inv-tab-content-2').style.display = n === 2 ? '' : 'none';
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
-  if (n === 2) updateSkillsUI();
+  if (n === 2) switchSkillTab(_activeSkillSubTab);
 }
 
 // Chat / VIP / Market / Rating float above the world canvas and only make
@@ -943,7 +1037,7 @@ function setTab(n) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); el.scrollTop = 0; });
-    if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) updateSkillsUI(); else updateInvUI(); }
+    if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) switchSkillTab(_activeSkillSubTab); else updateInvUI(); }
     if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') updateClanUI();

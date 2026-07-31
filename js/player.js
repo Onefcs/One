@@ -75,7 +75,7 @@ function makePlayer(type) {
     x: 0, y: 0,
     baseAtk: d.baseAtk, baseDef: d.baseDef, baseMaxHp: d.baseHP,
     atk: d.baseAtk, def: d.baseDef, maxHp: d.baseHP, hp: d.baseHP,
-    speed: d.speed,
+    speed: d.speed, baseSpeed: d.speed,
     lvl: 1, xp: 0, xpNext: 100,
     gold: 0, kills: 0,
     atkTimer: 0, hurtTimer: 0,
@@ -95,6 +95,11 @@ function makePlayer(type) {
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
     // book drops and is spent to study one.
     skillLevels: { Q:0, W:0, E:0, R:0 },
+    // 0 = not bought, 1-5 = level (see PASSIVE_MAX_LEVEL, shared/definitions.js);
+    // keyed by passive id across both the class-exclusive pair and the six
+    // universal ones — buyPassiveLevel()/updatePassiveSkillsUI() in js/ui.js.
+    passiveLevels: {},
+    cdrPct: 0,
     questIdx: 0,
     questKills: {},
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
@@ -170,6 +175,11 @@ function recompute() {
     if (it.atkSpeed)   extraAS   += it.atkSpeed;
     if (it.hpPct)      hpPct     += it.hpPct;
   });
+
+  // Passive skills (shared/definitions.js) — class-exclusive pair + six
+  // universal ones, bought with gold in the Skills → Passive tab (js/ui.js).
+  const pt = (typeof passiveBonusTotal === 'function') ? passiveBonusTotal(player.passiveLevels, player.type) : null;
+  if (pt) hpPct += pt.hpPct;
   h = Math.floor(h * (1 + hpPct));
 
   // Buff potion bonuses
@@ -178,6 +188,12 @@ function recompute() {
   if (buffs.atk       > 0) a = Math.floor(a * 1.20);
   if (buffs.atkspeed  > 0) extraAS += (player.charDef.atkSpeed || 0) * 0.20;
 
+  if (pt) {
+    a = Math.floor(a * (1 + pt.atkPct));
+    d = Math.floor(d * (1 + pt.defPct));
+    extraAS += (player.charDef.atkSpeed || 0) * pt.atkSpeedPct;
+  }
+
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
 
@@ -185,9 +201,11 @@ function recompute() {
   const cd  = player.charDef;
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03;
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0);
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
-  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0);
+  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
+  player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;
+  player.speed      = player.baseSpeed * (1 + (pt ? pt.moveSpeedPct : 0));
 }
 
 function getAvailableSkillPoints() {
@@ -216,6 +234,32 @@ function upgradeStats(key) {
   netSaveProgress();
   if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
   if (typeof updateProfileUI === 'function') updateProfileUI();
+}
+
+// Buys the NEXT level (current+1) of a passive skill for gold — id must be
+// one of the player's own class's pair (PASSIVE_CLASS_DEF) or one of the six
+// universal ones (PASSIVE_COMMON_DEF), see passiveDefById/passivesForClass
+// (shared/definitions.js). No book/material gate, unlike active skills —
+// this is a pure gold sink.
+function buyPassiveLevel(id) {
+  if (!player) return;
+  const def = typeof passiveDefById === 'function' ? passiveDefById(player.type, id) : null;
+  if (!def) return;
+  const pl = player.passiveLevels || (player.passiveLevels = {});
+  const lvl = pl[id] || 0;
+  if (lvl >= PASSIVE_MAX_LEVEL) return;
+  const cost = passiveCostAtLevel(lvl + 1);
+  if (player.gold < cost) {
+    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
+    return;
+  }
+  player.gold -= cost;
+  pl[id] = lvl + 1;
+  recompute();
+  spawnBurst(player.x, player.y, '#e69419', 10);
+  dmgNum(player.x, player.y - 42, def.name + ' +1 ур.!', '#e69419');
+  netSaveProgress();
+  if (typeof updatePassiveSkillsUI === 'function') updatePassiveSkillsUI();
 }
 
 function gainXP(amount, flat) {
@@ -455,7 +499,7 @@ function useSkill(idx) {
   }
   if ((player.skillCooldowns[sk.key] || 0) > 0) return;
 
-  player.skillCooldowns[sk.key] = sk.cd;
+  player.skillCooldowns[sk.key] = sk.cd * (1 - (player.cdrPct || 0));
   skillFlash = { key: sk.key, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
@@ -739,6 +783,7 @@ function restoreFromSave(data) {
   player.equipment = { ...blank, ...cleanEq };
 
   player.skillLevels = { Q:0, W:0, E:0, R:0, ...(data.skillLevels || {}) };
+  player.passiveLevels = { ...(data.passiveLevels || {}) };
   recompute();
   player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }

@@ -467,6 +467,70 @@ function roomEnchantStoneChance(lvl) {
   return ROOM_ENCHANT_STONE_BASE * Math.pow(1 + ROOM_ENCHANT_STONE_GROWTH, Math.max(1, lvl || 1) - 1);
 }
 
+// ── Passive skills ────────────────────────────────────────────────────────────
+// Second skill track next to SKILL_DEF's active Q/W/E/R (js/definitions.js):
+// every class gets its OWN pair of passives (one ATK-flavored, one
+// DEF-flavored, matching that class's identity) plus six universal passives
+// every class can invest in regardless of which one was picked. Both tracks
+// level 1-5 and are bought outright with gold — a pure long-term gold sink
+// layered on top of the existing upgrade/enhance sinks, no book/material
+// gate — and stack as flat/percent bonuses on top of recompute()'s existing
+// atk/def/hp/atkSpeed/critPower/hpRegen/speed pipeline (js/player.js).
+const PASSIVE_MAX_LEVEL = 5;
+function passiveCostAtLevel(lvl) { return 400 * lvl * lvl; } // gold cost to buy up TO this level (1..5)
+
+const PASSIVE_CLASS_DEF = {
+  lev: [
+    { id:'tankatk', name:'Мощь берсерка',  img:'/images/passive/tankatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'deftank', name:'Несокрушимость', img:'/images/passive/deftank.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+  deathknight: [
+    { id:'dkatk', name:'Кровавый пакт',  img:'/images/passive/dkatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'dkdef', name:'Тёмный панцирь', img:'/images/passive/dkdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+  ranger: [
+    { id:'bowatk', name:'Меткий глаз',     img:'/images/passive/bowatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'bowdef', name:'Чутьё следопыта', img:'/images/passive/bowdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+  mage: [
+    { id:'mageatk', name:'Поток маны',  img:'/images/passive/mageatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'magedef', name:'Ледяной щит', img:'/images/passive/magedef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+  warlock: [
+    { id:'healatk', name:'Тёмная жажда', img:'/images/passive/healatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'healdef', name:'Оберег тьмы',  img:'/images/passive/healdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+};
+
+// Available to every class regardless of which one was picked — a second,
+// universal passive track next to the class-exclusive pair above.
+const PASSIVE_COMMON_DEF = [
+  { id:'allatkspeed', name:'Стремительность', img:'/images/passive/allatkspeed.png', stat:'atkSpeedPct',  perLevel:0.02, desc:'+2% скорости атаки за уровень' },
+  { id:'allhp',       name:'Живучесть',       img:'/images/passive/allhp.png',       stat:'hpPct',        perLevel:0.03, desc:'+3% макс. здоровья за уровень' },
+  { id:'allcritdmg',  name:'Кровавая ярость', img:'/images/passive/allcritdmg.png',  stat:'critPowerFlat',perLevel:0.04, desc:'+4% силы крита за уровень' },
+  { id:'allspeed',    name:'Быстрые ноги',    img:'/images/passive/allspeed.png',    stat:'moveSpeedPct', perLevel:0.02, desc:'+2% скорости передвижения за уровень' },
+  { id:'allcdskill',  name:'Ясный разум',     img:'/images/passive/allcdskill.png',  stat:'cdrPct',       perLevel:0.02, desc:'-2% перезарядки навыков за уровень' },
+  { id:'allregen',    name:'Регенерация',     img:'/images/passive/allregen.png',    stat:'hpRegenFlat',  perLevel:0.2,  desc:'+0.2 реген. HP/сек за уровень' },
+];
+
+function passiveDefById(cls, id) {
+  return (PASSIVE_CLASS_DEF[cls] || []).find(p => p.id === id) || PASSIVE_COMMON_DEF.find(p => p.id === id) || null;
+}
+function passivesForClass(cls) {
+  return [...(PASSIVE_CLASS_DEF[cls] || []), ...PASSIVE_COMMON_DEF];
+}
+// Sums every passive's (level * perLevel) into one bag of named bonuses —
+// recompute() (js/player.js) reads this once per call and folds each field
+// into its matching stat, exactly like equipment/buff bonuses already are.
+function passiveBonusTotal(passiveLevels, cls) {
+  const totals = { atkPct:0, defPct:0, hpPct:0, atkSpeedPct:0, moveSpeedPct:0, critPowerFlat:0, cdrPct:0, hpRegenFlat:0 };
+  passivesForClass(cls).forEach(p => {
+    const lvl = Math.max(0, Math.min(PASSIVE_MAX_LEVEL, (passiveLevels || {})[p.id] || 0));
+    if (lvl > 0) totals[p.stat] += p.perLevel * lvl;
+  });
+  return totals;
+}
+
 // ── VIP System ────────────────────────────────────────────────────────────────
 // GRAM threshold to reach THIS level (counter resets after each level-up)
 const VIP_THRESHOLDS = [0, 1, 5, 10, 25, 50, 100, 150, 200, 300, 500];
@@ -495,6 +559,8 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
+  PASSIVE_MAX_LEVEL, passiveCostAtLevel, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
+  passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
