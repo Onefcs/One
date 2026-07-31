@@ -715,8 +715,8 @@ function _updateEnemies(dt, pulse, bossGlow) {
 }
 
 // Base sprite display height for the local player and other players (world
-// px, before each class's own def.dispScale) — ×1.4 over the original 68.
-const _PLAYER_DISPLAY_H = 68 * 1.4;
+// px, before each class's own def.dispScale) — ×1.1 over the original 68.
+const _PLAYER_DISPLAY_H = 68 * 1.1;
 
 // ── other players ─────────────────────────────────────────
 
