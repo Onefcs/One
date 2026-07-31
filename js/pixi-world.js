@@ -153,6 +153,14 @@ function _playerTextures(charType, animKey) {
   return (_pTex[k] = arr);
 }
 
+// img is only ever a raw <img> while its network load/decode is still in
+// flight (enemySpriteCache[eid][sheetKey] flips to a rasterized <canvas>
+// once ready, see loadEnemySprites/js/sprites.js) — naturalWidth is
+// undefined on a canvas but a number on an <img>, same check _playerTextures
+// uses. Building a texture straight off the raw Image (as this used to)
+// skipped that rasterize step entirely, so PIXI.BaseTexture.from() paid a
+// real GPU upload (~5ms avg, spiking 30-40ms — see profiling notes) off a
+// full-size sheet the very first time a new species/animation was seen.
 function _enemyTextures(eid, sheetKey) {
   const k = eid + '|' + sheetKey;
   if (_eTex[k]) return _eTex[k];
@@ -160,16 +168,16 @@ function _enemyTextures(eid, sheetKey) {
   const cache = enemySpriteCache[eid];
   if (!def || !cache) return null;
   const img = cache[sheetKey];
-  if (!img || !img.complete || !img.naturalWidth) return null;
+  if (!img || img.naturalWidth !== undefined) return null; // not yet rasterized
   const sh = def.sheets[sheetKey];
-  const { frameW, frameH } = def;
+  const fw = img.frameW, fh = img.frameH; // rasterized cell size, not the source sheet's
   const bt = PIXI.BaseTexture.from(img);
   bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
   const rows = {};
   for (const [facing, ri] of Object.entries(ENEMY_FACING_ROW)) {
     rows[facing] = [];
     for (let c = 0; c < sh.cols; c++)
-      rows[facing].push(new PIXI.Texture(bt, new PIXI.Rectangle(c * frameW, ri * frameH, frameW, frameH)));
+      rows[facing].push(new PIXI.Texture(bt, new PIXI.Rectangle(c * fw, ri * fh, fw, fh)));
   }
   return (_eTex[k] = rows);
 }
@@ -178,12 +186,13 @@ function _npcTextures(id) {
   if (_npcTex[id]) return _npcTex[id];
   const def = NPC_SPRITE_DEF[id];
   const img = npcSpriteCache[id];
-  if (!def || !img || !img.complete || !img.naturalWidth) return null;
+  if (!def || !img || img.naturalWidth !== undefined) return null; // not yet rasterized
+  const fw = img.frameW, fh = img.frameH;
   const bt = PIXI.BaseTexture.from(img);
   bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
   const arr = [];
   for (let c = 0; c < def.cols; c++)
-    arr.push(new PIXI.Texture(bt, new PIXI.Rectangle(c * def.frameW, 0, def.frameW, def.frameH)));
+    arr.push(new PIXI.Texture(bt, new PIXI.Rectangle(c * fw, 0, fw, fh)));
   return (_npcTex[id] = arr);
 }
 

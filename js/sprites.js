@@ -432,6 +432,19 @@ const enemySpriteCache = {};
 // onto the existing promise instead of firing onDone before decode finishes.
 const _enemySpriteLoadPromises = {};
 
+// Same rationale/fix as _SPRITE_CELL_H above, applied to monsters: enemy
+// sheets are a 4-facing-row × N-frame grid in one image (up to ~1664×512px
+// for a 13-frame death sheet) fed straight into PIXI.BaseTexture.from() on
+// the raw Image with no rasterize step at all — profiling found that the
+// first texture upload for a never-before-seen species+animation costs
+// ~5-10ms avg, spiking past 30ms, and (same as the player bug) the raw
+// Image stays a re-decode risk for as long as it's cached. Unlike player
+// sheets there's no real headroom to downscale here — source frames are
+// already only 64 or 128px and enemies render at up to ~130 world px — so
+// this rasterizes 1:1 (cellH = def.frameH, i.e. scale 1) purely to convert
+// Image → Canvas; a canvas's raw pixel buffer isn't subject to the
+// browser's compressed-image-bitmap eviction/re-decode behavior the way an
+// <img> is, which is the actual freeze this avoids, not a byte-size cut.
 function loadEnemySprites(eid, onDone) {
   onDone = onDone || function () {};
   const def = ENEMY_SPRITE_DEF[eid];
@@ -444,9 +457,17 @@ function loadEnemySprites(eid, onDone) {
   _enemySpriteLoadPromises[eid] = new Promise(res => { resolveReady = res; });
   function tick() { if (++done >= total) resolveReady(); }
   keys.forEach(key => {
+    const sh = def.sheets[key];
     const img = new Image();
-    img.src = def.sheets[key].src;
-    img.onload = () => _warmUpImage(img, tick);
+    img.src = sh.src;
+    img.onload = () => {
+      const raster = () => _queueRaster(() => {
+        // 4 facing rows × sh.cols frames, all in this one sheet image.
+        enemySpriteCache[eid][key] = _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH);
+        tick();
+      });
+      if (img.decode) img.decode().then(raster, raster); else raster();
+    };
     img.onerror = tick;
     enemySpriteCache[eid][key] = img;
   });
@@ -479,7 +500,15 @@ function loadNpcSprites(id, onDone) {
   _npcSpriteLoadPromises[id] = new Promise(res => { resolveReady = res; });
   const img = new Image();
   img.src = def.src;
-  img.onload = () => _warmUpImage(img, resolveReady);
+  img.onload = () => {
+    const raster = () => _queueRaster(() => {
+      // Single facing row, def.cols frames — same 1:1 rasterize-to-canvas
+      // treatment as loadEnemySprites above (scale 1, Image → Canvas only).
+      npcSpriteCache[id] = _rasterizeSheet(img, { n: def.cols, cols: def.cols }, def, def.frameH);
+      resolveReady();
+    });
+    if (img.decode) img.decode().then(raster, raster); else raster();
+  };
   img.onerror = resolveReady;
   npcSpriteCache[id] = img;
   _npcSpriteLoadPromises[id].then(onDone);
@@ -527,9 +556,10 @@ function _queueRaster(job) {
   setTimeout(pump, 0);
 }
 
-function _rasterizeSheet(img, ad, def) {
-  const scale = _SPRITE_CELL_H / def.frameH;
-  const cw = Math.ceil(def.frameW * scale), ch = _SPRITE_CELL_H;
+function _rasterizeSheet(img, ad, def, cellH) {
+  const targetH = cellH || _SPRITE_CELL_H;
+  const scale = targetH / def.frameH;
+  const cw = Math.ceil(def.frameW * scale), ch = targetH;
   const rows = Math.ceil(ad.n / ad.cols);
   const cv = document.createElement('canvas');
   cv.width = cw * ad.cols; cv.height = ch * rows;
