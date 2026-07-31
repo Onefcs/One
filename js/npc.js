@@ -57,32 +57,6 @@ function _merchantBody() {
     </div>`;
   });
   html += '</div>';
-
-  // Buff potions
-  html += '<div class="shop-sec" style="margin-top:8px">Зелья усиления</div><div class="shop-list">';
-  MERCHANT_SHOP.filter(e => {
-    const def = ITEM_DEF.find(d => d.id === e.itemId);
-    return def && def.slot === 'buff_potion';
-  }).forEach(entry => {
-    const idx = MERCHANT_SHOP.indexOf(entry);
-    const def = ITEM_DEF.find(d => d.id === entry.itemId);
-    const cur = def ? countMaterial(entry.itemId) : 0;
-    const btype = def && def.buffType;
-    const active = btype && ((p.buffs || {})[btype] || 0) > 0;
-    const canBuy = p.gold >= entry.price;
-    const activeLabel = active ? ` <span style="color:#e5a546">(акт.)</span>` : '';
-    html += `<div class="shop-row">
-      <span class="shop-item-icon">${_potImg(entry, 22)}</span>
-      <div class="shop-item-info">
-        <span class="shop-item-name">${entry.name}${activeLabel}</span>
-        <span class="shop-item-stat">${entry.desc} · <b style="color:#90d653">×${cur}</b></span>
-      </div>
-      <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx})">
-        ${entry.price}${iconHTML('coin',14,'#e3941d')}
-      </button>
-    </div>`;
-  });
-  html += '</div>';
   return html;
 }
 
@@ -93,24 +67,15 @@ function buyPotion(idx) {
   if (!def) return;
   if (player.gold < entry.price) { _shopMsg('Мало золота!'); return; }
 
-  if (def.slot === 'buff_potion') {
-    if (!addToInventory({ ...def })) { _shopMsg('Инвентарь полон!'); return; }
-    player.gold -= entry.price;
-    if (typeof onBuyPotion === 'function') onBuyPotion();
-    netSaveProgress();
-    openNpc('merchant');
-    _shopMsgOk('✓ Куплено: ' + def.name);
-  } else {
-    if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
-    const cur = player.potionBag[entry.itemId] || 0;
-    if (cur >= 999) { _shopMsg('Максимум 999 зелий!'); return; }
-    player.gold -= entry.price;
-    player.potionBag[entry.itemId] = cur + 1;
-    if (typeof onBuyPotion === 'function') onBuyPotion();
-    netSaveProgress();
-    openNpc('merchant');
-    _shopMsgOk('✓ Куплено: ' + def.name);
-  }
+  if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
+  const cur = player.potionBag[entry.itemId] || 0;
+  if (cur >= 999) { _shopMsg('Максимум 999 зелий!'); return; }
+  player.gold -= entry.price;
+  player.potionBag[entry.itemId] = cur + 1;
+  if (typeof onBuyPotion === 'function') onBuyPotion();
+  netSaveProgress();
+  openNpc('merchant');
+  _shopMsgOk('✓ Куплено: ' + def.name);
 }
 
 // ── Craftsman ───────────────────────────────────────────

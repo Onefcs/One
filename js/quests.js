@@ -63,6 +63,12 @@ function claimQuest() {
   if (!q || !isQuestComplete(q)) return;
   if (q.reward.xp > 0) gainXP(q.reward.xp);
   player.gold += q.reward.gold;
+  if (q.reward.items) {
+    q.reward.items.forEach(id => {
+      const def = ITEM_DEF.find(d => d.id === id);
+      if (def) addToInventoryQty(def, 1);
+    });
+  }
   showQuestComplete(q);
   player.questIdx++;
   player.questKills = {};
@@ -470,6 +476,7 @@ function updateQuestUI() {
       const rewardStr = [
         q.reward.xp > 0 ? iconHTML('star',12,'#e3941d') + q.reward.xp + ' XP' : '',
         iconHTML('coin',12,'#e3941d') + q.reward.gold,
+        q.reward.items ? iconHTML('potion',12,'#90d653') + '×' + q.reward.items.length : '',
       ].filter(Boolean).join(' · ');
       const statusIcon = isDone
         ? iconHTML('hpPlus', 14, '#79b644')
