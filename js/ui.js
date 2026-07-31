@@ -2736,6 +2736,18 @@ function closeVipPanel() {
   if (panel) panel.style.display = 'none';
 }
 
+// VIP_THRESHOLDS[lvl] is only the GRAM delta for that one level-up (the
+// server's deposit counter rolls over — resets to the remainder — after
+// each level, see server/index.js), which reads as "starting over from
+// scratch" every level. This is the running TOTAL a player must have
+// deposited overall (since VIP 0) to be at each level, for the "how much
+// do I need in total" answer the per-level number alone doesn't give.
+function _vipCumulative(thresholds) {
+  const out = [0];
+  for (let i = 1; i < thresholds.length; i++) out.push(out[i - 1] + thresholds[i]);
+  return out;
+}
+
 function renderVipPanel() {
   const el = document.getElementById('vip-body');
   if (!el) return;
@@ -2745,6 +2757,7 @@ function renderVipPanel() {
   const pending   = vip.pending   || [];
   const bonuses   = typeof VIP_BONUSES    !== 'undefined' ? VIP_BONUSES    : null;
   const thresholds= typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500];
+  const cumulative= _vipCumulative(thresholds);
   const bon       = bonuses ? (bonuses[level] || bonuses[0]) : { xp:0, gold:0, drop:0 };
 
   let progressHtml = '';
@@ -2754,7 +2767,7 @@ function renderVipPanel() {
     progressHtml = `
       <div class="vip-progress-wrap">
         <div class="vip-progress-label">
-          <span>До VIP ${level + 1}</span>
+          <span>До VIP ${level + 1} · всего нужно ${cumulative[level + 1]} GRAM</span>
           <span>${deposited.toFixed ? deposited.toFixed(2) : deposited} / ${needed} GRAM</span>
         </div>
         <div class="vip-progress-bar"><div class="vip-progress-fill" style="width:${pct}%"></div></div>
@@ -2772,11 +2785,11 @@ function renderVipPanel() {
       <div class="vip-bonus-item ${bon.drop > 0 ? '' : 'vip-bonus-dim'}">🎁 +${bon.drop}% Дроп</div>
     </div>
     <div class="vip-section-title">Уровни VIP</div>
-    <div class="vip-levels">${_renderVipLevels(level, pending, bonuses, thresholds)}</div>
+    <div class="vip-levels">${_renderVipLevels(level, pending, bonuses, thresholds, cumulative)}</div>
   `;
 }
 
-function _renderVipLevels(curLevel, pending, bonuses, thresholds) {
+function _renderVipLevels(curLevel, pending, bonuses, thresholds, cumulative) {
   let html = '';
   for (let lvl = 1; lvl <= 10; lvl++) {
     const b         = bonuses ? (bonuses[lvl] || { xp:0, gold:0, drop:0 }) : { xp:0, gold:0, drop:0 };
@@ -2794,7 +2807,7 @@ function _renderVipLevels(curLevel, pending, bonuses, thresholds) {
         <div class="vip-card-head">
           <div class="vip-card-badge">${badge}</div>
           <div class="vip-card-title">VIP ${lvl}</div>
-          <div class="vip-card-gram">${thresholds[lvl]} GRAM</div>
+          <div class="vip-card-gram">${cumulative[lvl]} GRAM всего<span class="vip-card-gram-delta">+${thresholds[lvl]}</span></div>
         </div>
         ${bonHtml ? `<div class="vip-card-bonuses">${bonHtml}</div>` : ''}
         ${_vipItemDesc(lvl)}
@@ -3005,17 +3018,51 @@ function _marketRowHtml(l, mode) {
   </div>`;
 }
 
+// Market listings grouped into sections instead of one flat list — checked
+// in order, first match wins, so put more specific categories (books, which
+// are craft-mat items with a book_ id) ahead of their broader slot (material).
+const _MARKET_CATEGORIES = [
+  { key: 'weapon',    label: 'Оружие',     match: it => it.slot === 'weapon' },
+  { key: 'helmet',    label: 'Шлемы',      match: it => it.slot === 'helmet' },
+  { key: 'body',      label: 'Броня',      match: it => it.slot === 'body' },
+  { key: 'gloves',    label: 'Перчатки',   match: it => it.slot === 'gloves' },
+  { key: 'boots',     label: 'Ботинки',    match: it => it.slot === 'boots' },
+  { key: 'ring',      label: 'Кольца',     match: it => it.slot === 'ring' },
+  { key: 'belt',      label: 'Пояса',      match: it => it.slot === 'belt' },
+  { key: 'books',     label: 'Книги',      match: it => (it.id || '').startsWith('book_') },
+  { key: 'potions',   label: 'Расходники', match: it => it.slot === 'use' || it.slot === 'buff_potion' },
+  { key: 'materials', label: 'Материалы',  match: it => it.slot === 'material' || it.slot === 'recipe' },
+  { key: 'other',     label: 'Прочее',     match: () => true },
+];
+
+function _renderMarketSectioned(lots, mode) {
+  const buckets = new Map(_MARKET_CATEGORIES.map(c => [c.key, []]));
+  lots.forEach(l => {
+    const it = l.item || {};
+    const cat = _MARKET_CATEGORIES.find(c => c.match(it));
+    buckets.get(cat.key).push(l);
+  });
+  let html = '';
+  _MARKET_CATEGORIES.forEach(c => {
+    const catLots = buckets.get(c.key);
+    if (!catLots.length) return;
+    html += `<div class="market-section-title">${c.label} <span class="market-section-count">${catLots.length}</span></div>`;
+    html += catLots.map(l => _marketRowHtml(l, mode)).join('');
+  });
+  return html;
+}
+
 function _renderMarketLots(el) {
   if (!_marketLoaded.lots) { el.innerHTML = '<div class="rating-loading">Загрузка...</div>'; return; }
   if (!_marketLots.length) { el.innerHTML = '<div class="rating-empty">Пока никто ничего не продаёт</div>'; return; }
-  el.innerHTML = _marketLots.map(l => _marketRowHtml(l, 'buy')).join('');
+  el.innerHTML = _renderMarketSectioned(_marketLots, 'buy');
 }
 
 function _renderMarketMine(el) {
   const addBtn = `<button class="market-add-btn" onclick="openMarketSellPicker()">+ Выставить лот</button>`;
   if (!_marketLoaded.mine) { el.innerHTML = addBtn + '<div class="rating-loading">Загрузка...</div>'; return; }
   if (!_marketMine.length) { el.innerHTML = addBtn + '<div class="rating-empty">У вас нет активных лотов</div>'; return; }
-  el.innerHTML = addBtn + _marketMine.map(l => _marketRowHtml(l, 'mine')).join('');
+  el.innerHTML = addBtn + _renderMarketSectioned(_marketMine, 'mine');
 }
 
 function _renderMarketHistoryTab(el) {
