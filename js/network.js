@@ -551,6 +551,7 @@ function netConnect(onReady) {
       el.appendChild(row);
     });
     el.scrollTop = el.scrollHeight;
+    _refreshChatPreview(); // shows the last history line even before any new message arrives
   });
 
   // ── Clan listeners ────────────────────────────────────────
@@ -935,6 +936,8 @@ function netConnect(onReady) {
     if (chatBtn) chatBtn.style.display = 'none';
     const chatPanel = document.getElementById('chat-panel');
     if (chatPanel) chatPanel.classList.remove('open');
+    const chatPreview = document.getElementById('chat-preview');
+    if (chatPreview) chatPreview.style.display = 'none';
   });
 }
 
@@ -1239,6 +1242,33 @@ function _addChatMsg(username, text) {
       badge.style.display = 'flex';
     }
   }
+  _refreshChatPreview();
+}
+
+// Shows the most recent chat line in the floating bubble above the chat
+// button (see #chat-preview, index.html) — hidden while the chat panel is
+// already open (redundant there), the chat button itself isn't shown (not
+// on the Игра tab / not logged in yet), or there's no message at all.
+// Called from _addChatMsg/chatHistory below, _chatOpen/_chatClose
+// (index.html), _finishOnlineStart below, and _syncGameOnlyBtns (js/ui.js)
+// so every place that can change any of those conditions keeps it in sync.
+function _refreshChatPreview() {
+  const preview = document.getElementById('chat-preview');
+  if (!preview) return;
+  const last = _chatMsgs[_chatMsgs.length - 1];
+  const panel = document.getElementById('chat-panel');
+  const chatBtn = document.getElementById('chat-btn');
+  const panelOpen = panel && panel.classList.contains('open');
+  const btnVisible = chatBtn && chatBtn.dataset.shown === '1' && (typeof activeTab === 'undefined' || activeTab === 0);
+  if (!last || panelOpen || !btnVisible) { preview.style.display = 'none'; return; }
+
+  const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
+  const isMe = myName && last.username === myName;
+  const nameEl = document.getElementById('chat-preview-name');
+  const textEl = document.getElementById('chat-preview-text');
+  if (nameEl) { nameEl.textContent = last.username + ':'; nameEl.classList.toggle('is-me', !!isMe); }
+  if (textEl) textEl.textContent = last.text;
+  preview.style.display = 'flex';
 }
 
 function _escHtml(s) {
@@ -1251,6 +1281,7 @@ function _finishOnlineStart() {
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   const chatBtn = document.getElementById('chat-btn');
   if (chatBtn) { chatBtn.dataset.shown = '1'; chatBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
+  _refreshChatPreview();
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
   if (typeof showMarketBtn === 'function') showMarketBtn();

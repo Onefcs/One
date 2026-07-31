@@ -1119,6 +1119,10 @@ function _syncGameOnlyBtns(n) {
     const el = document.getElementById(id);
     if (el && el.dataset.shown === '1') el.style.display = (n === 0) ? 'flex' : 'none';
   });
+  // chat-btn's own visibility just changed above — keep the last-message
+  // preview bubble (js/network.js) in sync with it (also hidden off the
+  // Игра tab).
+  if (typeof _refreshChatPreview === 'function') _refreshChatPreview();
 }
 
 function setTab(n) {
