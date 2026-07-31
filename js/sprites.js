@@ -540,7 +540,20 @@ const _SPRITE_CELL_H = Math.max(120, Math.min(240,
 // character's sheets all come from HTTP cache their decodes resolve nearly
 // simultaneously and 13 back-to-back rasterizations freeze the game for a
 // beat — visible as a stutter the moment another player enters the screen.
-// Serialize them: one sheet per macrotask so the game loop breathes between.
+// Serialize them: one sheet per frame so the game loop breathes between.
+//
+// This used setTimeout(pump, 0) between jobs, which does NOT reliably give
+// the browser a chance to paint — a zero-delay timeout only defers to the
+// next macrotask, and a chain of them can run back-to-back with no repaint
+// in between under load, which is exactly the "freeze that doesn't show up
+// in the frame-time counters" this queue was supposed to prevent (profiling
+// on a real device found the drop-in-the-hub stutter this comment already
+// describes, with _profUpdate/_profRender both reporting nothing wrong,
+// because this whole queue runs outside the main loop() call it measures).
+// requestAnimationFrame callbacks are specifically defined to run once per
+// actual paint, so scheduling the next job through it guarantees the
+// browser gets to draw the frame in between — same one-job-at-a-time
+// pacing, just synced to real paints instead of hoping a paint sneaks in.
 const _rasterQueue = [];
 let _rasterPumping = false;
 function _queueRaster(job) {
@@ -550,10 +563,10 @@ function _queueRaster(job) {
   const pump = () => {
     const j = _rasterQueue.shift();
     if (j) j();
-    if (_rasterQueue.length) setTimeout(pump, 0);
+    if (_rasterQueue.length) requestAnimationFrame(pump);
     else _rasterPumping = false;
   };
-  setTimeout(pump, 0);
+  requestAnimationFrame(pump);
 }
 
 function _rasterizeSheet(img, ad, def, cellH) {
