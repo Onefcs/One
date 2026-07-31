@@ -470,6 +470,7 @@ class Room {
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
+    if (attacker.hp <= 0) return null;
     if (target.hp <= 0) return null;
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
     if (this._inSafeZone(target.x, target.y)) return null;
@@ -491,6 +492,7 @@ class Room {
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
+    if (attacker.hp <= 0) return null;
     if (target.hp <= 0) return null;
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
     if (this._inSafeZone(target.x, target.y)) return null;
@@ -556,7 +558,12 @@ class Room {
 
   updatePlayerPos(socketId, x, y, facing) {
     const p = this.players.get(socketId);
-    if (!p) return;
+    // A dead player's own client can keep sending playerMove (e.g. its "you
+    // died" flow never ran because the tab was backgrounded for the fatal
+    // hit) — without this, the server kept applying it, so the player could
+    // walk and fight normally while every other client correctly rendered
+    // them as dead (hp stuck at 0, since nothing ever prompted a respawn).
+    if (!p || p.hp <= 0) return;
     p.x = x; p.y = y; p.facing = facing;
   }
 
@@ -621,7 +628,9 @@ class Room {
 
   attackEnemy(socketId, enemyId) {
     const attacker = this.players.get(socketId);
-    if (!attacker) return null;
+    // Same reasoning as updatePlayerPos above — a dead attacker's client can
+    // keep firing attack events; the server must independently refuse them.
+    if (!attacker || attacker.hp <= 0) return null;
     // Rate-limit: max one server hit every 150ms
     const now = Date.now();
     if (now - (attacker._lastAtk || 0) < 150) return null;

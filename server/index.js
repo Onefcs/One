@@ -2379,6 +2379,7 @@ io.on('connection', socket => {
     if (_isPvpImmune(socket.id, targetId)) return;
     const attacker = currentRoom.players.get(socket.id);
     if (!attacker || !attacker.pvpMode) return;
+    if (attacker.hp <= 0) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const target = currentRoom.players.get(targetId);
     if (!target || target.hp <= 0) return;
