@@ -1380,12 +1380,32 @@ function getRoom(floor) {
   return floorRooms.get(Math.max(1, Math.min(MAX_FLOOR, floor)));
 }
 
-// Pre-create all floor rooms at startup
-mongoose.connection.once('open', () => {
+// Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
+// safe to trigger from more than one path below.
+function _initFloorRooms() {
+  if (floorRooms.size > 0) return;
   for (let f = 1; f <= MAX_FLOOR; f++) {
     floorRooms.set(f, new Room(f, io));
   }
-});
+  console.log('Floor rooms initialized');
+}
+// 'open' only ever fires once per connection and never fires at all if
+// Mongo wasn't reachable yet at the moment this ran — so the game world
+// used to stay permanently uninitialized (every player crashing at
+// selectChar) whenever Mongo had a slow/failed cold start. Cover the
+// already-connected case immediately, then either wait for 'open' (the
+// common fast path) or poll until the connection comes up as a fallback
+// for the delayed/retried-connection case.
+if (mongoose.connection.readyState === 1) {
+  _initFloorRooms();
+} else {
+  mongoose.connection.once('open', _initFloorRooms);
+  const _roomInitRetry = setInterval(() => {
+    if (mongoose.connection.readyState !== 1) return;
+    clearInterval(_roomInitRetry);
+    _initFloorRooms();
+  }, 2000);
+}
 
 io.on('connection', socket => {
   let authed = null;

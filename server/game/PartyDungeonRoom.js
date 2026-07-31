@@ -57,7 +57,9 @@ class PartyDungeonRoom {
   start() {
     if (this._interval) return;
     this._lastTick = Date.now();
-    this._interval = setInterval(() => this._tick(), TICK_MS);
+    this._interval = setInterval(() => {
+      try { this._tick(); } catch (err) { console.error(`[PartyDungeonRoom ${this.id} tick]`, err); }
+    }, TICK_MS);
   }
 
   stop() {

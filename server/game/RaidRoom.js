@@ -89,7 +89,9 @@ class RaidRoom {
   start() {
     this.state     = 'fighting';
     this._lastTick = Date.now();
-    this._interval = setInterval(() => this._tick(), TICK_MS);
+    this._interval = setInterval(() => {
+      try { this._tick(); } catch (err) { console.error(`[RaidRoom ${this.raidId} tick]`, err); }
+    }, TICK_MS);
     this._spawnWave(1);
   }
 

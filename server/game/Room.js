@@ -95,7 +95,9 @@ class Room {
   _startLoop() {
     if (this._interval) return;
     this._lastTick = Date.now();
-    this._interval = setInterval(() => this._tick(), TICK_MS);
+    this._interval = setInterval(() => {
+      try { this._tick(); } catch (err) { console.error(`[Room ${this.floor} tick]`, err); }
+    }, TICK_MS);
   }
 
   _stopLoop() {
