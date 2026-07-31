@@ -294,12 +294,21 @@ const _visibleTorches = [];
 
 function _updateLights(ts) {
   _lightsGfx.clear();
+  // Devices the adaptive tier already flagged as struggling (sustained
+  // <20fps, see _drawPerf in game.js) skip the big soft falloff circle —
+  // it's the widest fill here and large translucent circles are exactly
+  // what tends to be fill-rate-bound on low-end mobile GPUs — and drop the
+  // dimmest of the two glow rings entirely, keeping just the flame + one
+  // tight glow so torches still read as lit without the extra overdraw.
+  const lite = (typeof _qualityTier !== 'undefined' && _qualityTier > 0);
   for (let i = 0; i < _visibleTorches.length; i++) {
     const t = _visibleTorches[i];
     const flick = 0.8 + 0.15 * Math.sin(ts * 0.006 + t.x * 0.11) + 0.08 * Math.sin(ts * 0.023 + t.y * 0.05);
     const fx = t.x + Math.sin(ts * 0.014 + t.x) * 1.2;
     const fy = t.y - 2 + Math.sin(ts * 0.02 + t.y) * 1;
-    _lightsGfx.beginFill(0xff9d3c, 0.05 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 60 * flick); _lightsGfx.endFill();
+    if (!lite) {
+      _lightsGfx.beginFill(0xff9d3c, 0.05 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 60 * flick); _lightsGfx.endFill();
+    }
     _lightsGfx.beginFill(0xffb85c, 0.09 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 32 * flick); _lightsGfx.endFill();
     _lightsGfx.beginFill(0xff8a2e, 0.75); _lightsGfx.drawCircle(fx, fy + 2, 5 * flick); _lightsGfx.endFill();
     _lightsGfx.beginFill(0xffe6a8, 0.9); _lightsGfx.drawCircle(fx, fy, 3.2 * flick); _lightsGfx.endFill();
@@ -321,8 +330,11 @@ function _initDustMotes(n) {
   }
 }
 function _updateDust(dt, ts, camX, camY) {
-  if (!_dustMotes) _initDustMotes(18);
   _dustGfx.clear();
+  // Purely decorative — the first thing cut once the adaptive tier flags a
+  // device as struggling, same as the particle-count caps in particles.js.
+  if (typeof _qualityTier !== 'undefined' && _qualityTier > 0) return;
+  if (!_dustMotes) _initDustMotes(18);
   const vw = W / ZOOM, vh = _visH();
   for (let i = 0; i < _dustMotes.length; i++) {
     const m = _dustMotes[i];
