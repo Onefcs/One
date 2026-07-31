@@ -94,20 +94,15 @@ function _floorProps(mod, entries) {
   };
 }
 
-// ── Tile textures (painted, tiled + tinted per-theme) ──────────────────────
-// Source: a hand-painted top-down cave/dungeon tileset — real seamless
-// stone-brick textures, not procedural fills. Each theme recolors them via
-// a canvas 'color' blend (keeps the painted shading, swaps hue/sat to the
-// theme's own palette) so all 5 floor moods share one set of art.
-// /images/* is served with a 30-day immutable cache — these 3 files get
+// ── Tile textures (painted, tinted per-theme) ──────────────────────────────
+// Ground/wall tiles are drawn procedurally now (see _buildChunk in game.js),
+// so the only painted tile art left is the hub's spawn-door leaves.
+// /images/* is served with a 30-day immutable cache — these files get
 // overwritten in place as the art is iterated on, so a version query string
 // is the only way a returning browser ever sees the new content instead of
-// its stale cached copy. Bump this whenever floor/wall_body/wall_cap change.
+// its stale cached copy. Bump this whenever door_left/door_right change.
 const _TILE_TEX_V = 4;
 const _TILE_TEX_DEF = {
-  floor:     'images/tiles/floor.png',
-  wallBody:  'images/tiles/wall_body.png',
-  wallCap:   'images/tiles/wall_cap.png',
   doorLeft:  'images/tiles/door_left.png',
   doorRight: 'images/tiles/door_right.png',
 };
@@ -140,15 +135,6 @@ function _getTintedTileCanvas(key, tintColor) {
   oc.globalCompositeOperation = 'source-over';
   _tintedTileCache.set(cacheKey, cv);
   return cv;
-}
-
-// Returns a repeating CanvasPattern for `key` tinted to `tintColor`, or null
-// if the source image hasn't finished loading yet (caller should keep using
-// its flat-color fallback fill until then).
-function getTilePattern(ctx, key, tintColor) {
-  const cv = _getTintedTileCanvas(key, tintColor);
-  if (!cv) return null;
-  return ctx.createPattern(cv, 'repeat');
 }
 
 // Draws one of the hub's 4 exit doors — a matched pair of tile-sized images

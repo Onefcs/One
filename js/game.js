@@ -1423,6 +1423,48 @@ function buildTileCanvas() {
   _mmTileCv = null; // minimap floor-tile buffer (js/ui.js) — new dungeon grid
 }
 
+// Deterministic per-tile pseudo-random in [0,1) — stable across chunk
+// rebuild/eviction (unlike Math.random()), so a tile always redraws with
+// the exact same procedural detail no matter when its chunk gets rebuilt.
+function _tileHash(tx, ty, salt) {
+  let h = (tx * 374761393 + ty * 668265263 + salt * 2246822519) | 0;
+  h = Math.imul(h ^ (h >>> 15), 1274126177);
+  h = h ^ (h >>> 16);
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+// Lightens (t>0) or darkens (t<0) a hex color toward white/black by |t|.
+function _shadeHexColor(hex, t) {
+  return t >= 0 ? _lerpHexColor(hex, '#ffffff', t) : _lerpHexColor(hex, '#000000', -t);
+}
+
+// A short deterministic zig-zag crack, 2px thick (no 1px hairlines).
+function _drawCrack(c, x, y, tx, ty, color, segLen) {
+  c.strokeStyle = color;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(x, y);
+  let cx = x, cy = y;
+  for (let i = 0; i < 3; i++) {
+    const a = _tileHash(tx, ty, i * 3 + 21) * Math.PI * 2;
+    cx += Math.cos(a) * segLen;
+    cy += Math.sin(a) * segLen;
+    c.lineTo(cx, cy);
+  }
+  c.stroke();
+}
+
+// A soft radial grime/blood stain blob.
+function _drawStain(c, x, y, radius, color) {
+  const g = c.createRadialGradient(x, y, 0, x, y, radius);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g;
+  c.beginPath();
+  c.arc(x, y, radius, 0, Math.PI * 2);
+  c.fill();
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -1446,31 +1488,71 @@ function _buildChunk(cx, cy) {
   // NOTE: no 1px features — flat multi-pixel fills only, so the bilinear
   // blit at ZOOM 0.75 stays clean (thin lines would render unevenly).
 
-  // 1. Wall base fill — real painted stone texture, tinted to this theme's
-  // wallColor; falls back to the flat color if the texture hasn't loaded yet.
-  c.fillStyle = (typeof getTilePattern === 'function' && getTilePattern(c, 'wallBody', th.wallColor)) || th.wallColor;
+  // 1. Wall base — flat theme color, then per-tile procedural stone-block
+  // shading, coarse 2-tile masonry seams, and occasional cracks. All
+  // deterministic per (tx,ty) so a tile looks identical no matter when its
+  // chunk gets rebuilt from the LRU cache.
+  c.fillStyle = th.wallColor;
   c.fillRect(x0 - _CHUNK_G, y0 - _CHUNK_G, cv.width, cv.height);
-
-  // 2. Floor — real painted stone texture, tinted to this theme's floorA.
-  const floorPat = (typeof getTilePattern === 'function') ? getTilePattern(c, 'floor', th.floorA) : null;
+  const mortarWall = _shadeHexColor(th.wallColor, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
-      if (dungeon.grid[ty][tx] !== FLOOR) continue;
-      c.fillStyle = floorPat || ((tx + ty) % 2 === 0 ? th.floorA : th.floorB);
-      c.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+      if (dungeon.grid[ty][tx] !== WALL) continue;
+      const x = tx * TILE, y = ty * TILE;
+      c.fillStyle = _shadeHexColor(th.wallColor, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
+      c.fillRect(x, y, TILE, TILE);
+      c.fillStyle = mortarWall;
+      if (ty % 2 === 0) c.fillRect(x, y, TILE, 2);
+      if (tx % 2 === 0) c.fillRect(x, y, 2, TILE);
+      if (_tileHash(tx, ty, 11) < 0.12) {
+        const cx = x + 6 + _tileHash(tx, ty, 12) * (TILE - 12);
+        const cy = y + 6 + _tileHash(tx, ty, 13) * (TILE - 12);
+        _drawCrack(c, cx, cy, tx, ty, mortarWall, 7);
+      }
     }
   }
 
-  // 3. Wall "cliff face" strip above floor (top-down depth cue) — painted
-  // brick-cap texture, tinted to this theme's wallColor. The body fill from
-  // step 1 already tiles as clean brick everywhere else.
-  const capPat = (typeof getTilePattern === 'function') ? getTilePattern(c, 'wallCap', th.wallColor) : null;
-  c.fillStyle = capPat || th.wallColor;
+  // 2. Floor — per-tile procedural flagstone: shade blended between this
+  // theme's floorA/floorB, 2px mortar seams on the tile's own right/bottom
+  // edge, occasional cracks, and occasional grime/blood stains.
+  const mortarFloor = _shadeHexColor(th.floorA, -0.35);
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      if (dungeon.grid[ty][tx] !== FLOOR) continue;
+      const x = tx * TILE, y = ty * TILE;
+      c.fillStyle = _lerpHexColor(th.floorA, th.floorB, _tileHash(tx, ty, 0));
+      c.fillRect(x, y, TILE, TILE);
+      c.fillStyle = mortarFloor;
+      c.fillRect(x, y + TILE - 2, TILE, 2);
+      c.fillRect(x + TILE - 2, y, 2, TILE);
+      if (_tileHash(tx, ty, 1) < 0.1) {
+        const crx = x + 8 + _tileHash(tx, ty, 2) * (TILE - 16);
+        const cry = y + 8 + _tileHash(tx, ty, 3) * (TILE - 16);
+        _drawCrack(c, crx, cry, tx, ty, mortarFloor, 6);
+      }
+      if (_tileHash(tx, ty, 4) < 0.06) {
+        const sx = x + TILE * (0.3 + _tileHash(tx, ty, 5) * 0.4);
+        const sy = y + TILE * (0.3 + _tileHash(tx, ty, 6) * 0.4);
+        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, 'rgba(60,10,10,0.35)');
+      }
+    }
+  }
+
+  // 3. Wall "cliff face" strip above floor (top-down depth cue) — beveled
+  // gradient (dark at top fading to base wallColor) with a soft highlight
+  // line along the very top edge for a lit-edge depth cue.
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      c.fillRect(tx * TILE, ty * TILE + TILE - 10, TILE, 10);
+      const x = tx * TILE, y = ty * TILE + TILE - 10;
+      const grad = c.createLinearGradient(0, y, 0, y + 10);
+      grad.addColorStop(0, _shadeHexColor(th.wallColor, -0.5));
+      grad.addColorStop(1, th.wallColor);
+      c.fillStyle = grad;
+      c.fillRect(x, y, TILE, 10);
+      c.fillStyle = _shadeHexColor(th.wallColor, 0.35);
+      c.fillRect(x, y, TILE, 2);
     }
   }
 
