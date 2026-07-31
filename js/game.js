@@ -108,7 +108,9 @@ let _lastPlayerUsedSprite = false;
 // Rendered-name-bitmap cache (own player) — see _buildNameBitmap below
 let _nameBitmap = null, _prevNameKey = '';
 // Clan tag cache: icon pre-rendered to offscreen canvas; blit with drawImage (1 call vs 256 fillRects)
-let _clanIconCv = null, _clanIconKey = null, _prevClanName = '', _cachedClanTw = 0;
+let _clanIconCv = null, _clanIconKey = null;
+// Rendered clan-tag-text bitmap cache (own player) — see _buildClanTagBitmap
+let _clanTagBitmap = null, _prevClanTagKey = '';
 // last damage dealt by player — used for optimistic kill prediction on arrow hit
 let _lastOwnDmg = 0;
 
@@ -815,6 +817,38 @@ function _drawNameBitmap(cv, sx, sy) {
   return cv._tw / px;
 }
 
+// Same idea as _buildNameBitmap/_drawNameBitmap, but for the clan-tag text
+// next to a name — that one uses textAlign='left'/textBaseline='middle'
+// (anchored after the clan icon, not centered on the player), so it needs
+// its own pair rather than reusing the name one. Anchoring works the same
+// way: build with the exact alignment the old direct strokeText/fillText
+// call used, at a known offset inside the small canvas, then place that
+// same offset at the caller's (x, yMid) when blitting.
+function _buildClanTagBitmap(text, color, fontPx, px) {
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = `bold ${fontPx * px}px system-ui, Arial`;
+  const tw = probe.measureText(text).width;
+  const padL = 2 * px, padR = 3 * px, padV = fontPx * px * 0.8;
+  const cv = document.createElement('canvas');
+  cv.width  = Math.max(1, Math.ceil(tw + padL + padR));
+  cv.height = Math.max(1, Math.ceil(padV * 2));
+  const c = cv.getContext('2d');
+  c.font = `bold ${fontPx * px}px system-ui, Arial`;
+  c.textAlign = 'left'; c.textBaseline = 'middle';
+  c.lineWidth = 2.5 * px; c.strokeStyle = '#000000';
+  const ax = padL, ay = cv.height / 2;
+  c.strokeText(text, ax, ay);
+  c.fillStyle = color;
+  c.fillText(text, ax, ay);
+  cv._tw = tw; cv._anchorX = ax; cv._anchorY = ay; cv._px = px;
+  return cv;
+}
+function _drawClanTagBitmap(cv, x, yMid) {
+  const px = cv._px;
+  const dw = cv.width / px, dh = cv.height / px;
+  ctx.drawImage(cv, x - cv._anchorX / px, yMid - cv._anchorY / px, dw, dh);
+}
+
 function _drawPlayerNameOnUI() {
   const barTop = _lastPlayerUsedSprite ? player.y - 39 : player.y - 28;
   const nameY = barTop - 4;
@@ -839,22 +873,19 @@ function _drawPlayerNameOnUI() {
       _clanIconCv.width = 16 * px; _clanIconCv.height = 16 * px;
       drawClanIconOnCtx(_clanIconCv.getContext('2d'), clanData.icon || 1, 8 * px, 8 * px, px);
     }
-    ctx.font = 'bold 9px system-ui, Arial';
-    if (clanData.name !== _prevClanName) { _cachedClanTw = ctx.measureText(clanData.name).width; _prevClanName = clanData.name; }
+    const clanTagPx = Math.ceil(DPR);
+    const clanTagKey = clanData.name + '|' + clanTagPx;
+    if (clanTagKey !== _prevClanTagKey) { _clanTagBitmap = _buildClanTagBitmap(clanData.name, '#eaa742', 9, clanTagPx); _prevClanTagKey = clanTagKey; }
+    const clanTw = _clanTagBitmap._tw / clanTagPx;
     const iconDisp = 14, gap = 3;
     // Not rounded to whole pixels: sx/sy (and the name text below) move
     // continuously as the player moves, so rounding just this element made
     // it step pixel-by-pixel out of sync with everything around it — the
     // clan tag visibly lagged/jittered relative to the name during movement.
-    const lineX = sx - (iconDisp + gap + _cachedClanTw) / 2;
+    const lineX = sx - (iconDisp + gap + clanTw) / 2;
     const lineY = sy - 16;
     ctx.drawImage(_clanIconCv, lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
-    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-    ctx.strokeStyle = '#000000'; ctx.lineWidth = 2.5;
-    ctx.strokeText(clanData.name, lineX + iconDisp + gap, lineY);
-    ctx.fillStyle = '#eaa742';
-    ctx.fillText(clanData.name, lineX + iconDisp + gap, lineY);
-    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+    _drawClanTagBitmap(_clanTagBitmap, lineX + iconDisp + gap, lineY);
   }
 
   _drawNameBitmap(_nameBitmap, sx, sy);
@@ -899,19 +930,16 @@ function _drawOtherPlayerNamesOnUI() {
 
     const cname = p.clanName || '';
     if (cname) {
-      ctx.font = 'bold 9px system-ui, Arial';
-      if (cname !== p._prevClanName) { p._clanTw = ctx.measureText(cname).width; p._prevClanName = cname; }
+      const clanTagPx = Math.ceil(DPR);
+      const clanTagKey = cname + '|' + clanTagPx;
+      if (clanTagKey !== p._clanTagKey) { p._clanTagBitmap = _buildClanTagBitmap(cname, '#eaa742', 9, clanTagPx); p._clanTagKey = clanTagKey; }
+      const clanTw = p._clanTagBitmap._tw / clanTagPx;
       const iconDisp = 14, gap = 3;
       // Not rounded — see the matching comment in _drawPlayerNameOnUI.
-      const lineX = sx - (iconDisp + gap + p._clanTw) / 2;
+      const lineX = sx - (iconDisp + gap + clanTw) / 2;
       const lineY = sy - 16;
       ctx.drawImage(_getOtherClanIconCv(p.clanIcon || 1), lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
-      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-      ctx.strokeStyle = '#000000'; ctx.lineWidth = 2.5;
-      ctx.strokeText(cname, lineX + iconDisp + gap, lineY);
-      ctx.fillStyle = '#eaa742';
-      ctx.fillText(cname, lineX + iconDisp + gap, lineY);
-      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+      _drawClanTagBitmap(p._clanTagBitmap, lineX + iconDisp + gap, lineY);
     }
 
     _drawNameBitmap(p._nameBitmap, sx, sy);
@@ -1392,6 +1420,7 @@ const _tileChunks = new Map();       // "cx,cy" -> canvas
 function buildTileCanvas() {
   _tileChunks.clear();
   if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
+  _mmTileCv = null; // minimap floor-tile buffer (js/ui.js) — new dungeon grid
 }
 
 function _buildChunk(cx, cy) {

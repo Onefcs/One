@@ -1166,6 +1166,13 @@ let _uiBtnGrads = null;
 let _hdrNameW = 0, _hdrNameStr = '';
 let _nexumIconImg = null;
 
+// Minimap floor-tile buffer — see the cache block inside drawHeader() below.
+// Only rebuilt when the player crosses into a new tile (or theme/scale
+// changes); every other frame just blits it at the current sub-tile offset.
+// Invalidated on floor change too, see buildTileCanvas() in js/game.js.
+let _mmTileCv = null, _mmTileCvTx = null, _mmTileCvTy = null, _mmTileCvSc = null, _mmTileCvTheme = null;
+const _MM_MARGIN = 2; // buffer margin (tiles) beyond the visible window
+
 // Telegram profile photo shown in the header avatar slot in place of the
 // class-color/icon avatar, once it loads. Set once from initDataUnsafe at
 // login (see _initTelegramWidget in network.js) — not every user has one,
@@ -1239,18 +1246,40 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2, 0, Math.PI * 2); ctx.clip();
   ctx.fillStyle = '#070604'; ctx.fillRect(mmX, mmY, mmW, mmH);
 
-  ctx.fillStyle = th.mmFloor;
-  ctx.beginPath();
-  const _mmTx0 = Math.max(0, Math.floor(winTx)), _mmTx1 = Math.min(dungeon.w - 1, Math.ceil(winTx + _MM_RADIUS * 2));
-  const _mmTy0 = Math.max(0, Math.floor(winTy)), _mmTy1 = Math.min(dungeon.h - 1, Math.ceil(winTy + _MM_RADIUS * 2));
-  for (let ty = _mmTy0; ty <= _mmTy1; ty++) {
-    const row = dungeon.grid[ty];
-    for (let tx = _mmTx0; tx <= _mmTx1; tx++) {
-      if (row[tx] === WALL) continue;
-      ctx.rect(mmX + (tx - winTx) * mmSc, mmY + (ty - winTy) * mmSc, Math.max(1, Math.ceil(mmSc)), Math.max(1, Math.ceil(mmSc)));
+  // The floor pattern only actually changes when the player crosses into a
+  // new tile — this window's origin is float-precision but the underlying
+  // grid isn't — so rebuilding a ~3700-rect path and filling it EVERY frame
+  // (profiled at ~1.1ms, the single biggest chunk of drawHeader's cost) was
+  // redoing the same work up to a dozen-plus times between actual changes.
+  // Redraw the static pattern into an offscreen buffer only on a tile
+  // crossing (or scale/theme change); every other frame just blits it,
+  // repositioned for the current sub-tile offset.
+  const _mmTileFx = Math.floor(winTx), _mmTileFy = Math.floor(winTy);
+  if (!_mmTileCv || _mmTileCvTx !== _mmTileFx || _mmTileCvTy !== _mmTileFy || _mmTileCvSc !== mmSc || _mmTileCvTheme !== th.mmFloor) {
+    _mmTileCvTx = _mmTileFx; _mmTileCvTy = _mmTileFy; _mmTileCvSc = mmSc; _mmTileCvTheme = th.mmFloor;
+    const bufTiles = _MM_RADIUS * 2 + _MM_MARGIN * 2 + 2;
+    const bufPx = Math.ceil(bufTiles * mmSc);
+    if (!_mmTileCv) _mmTileCv = document.createElement('canvas');
+    if (_mmTileCv.width !== bufPx || _mmTileCv.height !== bufPx) { _mmTileCv.width = bufPx; _mmTileCv.height = bufPx; }
+    const mctx = _mmTileCv.getContext('2d');
+    mctx.clearRect(0, 0, bufPx, bufPx);
+    mctx.fillStyle = th.mmFloor;
+    mctx.beginPath();
+    const bufTx0 = _mmTileFx - _MM_MARGIN, bufTy0 = _mmTileFy - _MM_MARGIN;
+    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTiles - 1);
+    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTiles - 1);
+    for (let ty = ty0; ty <= ty1; ty++) {
+      const row = dungeon.grid[ty];
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (row[tx] === WALL) continue;
+        mctx.rect((tx - bufTx0) * mmSc, (ty - bufTy0) * mmSc, Math.max(1, Math.ceil(mmSc)), Math.max(1, Math.ceil(mmSc)));
+      }
     }
+    mctx.fill();
   }
-  ctx.fill();
+  const _mmBlitX = mmX - (winTx - (_mmTileCvTx - _MM_MARGIN)) * mmSc;
+  const _mmBlitY = mmY - (winTy - (_mmTileCvTy - _MM_MARGIN)) * mmSc;
+  ctx.drawImage(_mmTileCv, _mmBlitX, _mmBlitY);
 
   const mmEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
   const _mmR = Math.max(1, mmSc * 0.8);
