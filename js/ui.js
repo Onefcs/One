@@ -2785,11 +2785,11 @@ function renderVipPanel() {
       <div class="vip-bonus-item ${bon.drop > 0 ? '' : 'vip-bonus-dim'}">🎁 +${bon.drop}% Дроп</div>
     </div>
     <div class="vip-section-title">Уровни VIP</div>
-    <div class="vip-levels">${_renderVipLevels(level, pending, bonuses, thresholds, cumulative)}</div>
+    <div class="vip-levels">${_renderVipLevels(level, pending, bonuses, cumulative)}</div>
   `;
 }
 
-function _renderVipLevels(curLevel, pending, bonuses, thresholds, cumulative) {
+function _renderVipLevels(curLevel, pending, bonuses, cumulative) {
   let html = '';
   for (let lvl = 1; lvl <= 10; lvl++) {
     const b         = bonuses ? (bonuses[lvl] || { xp:0, gold:0, drop:0 }) : { xp:0, gold:0, drop:0 };
@@ -2807,7 +2807,7 @@ function _renderVipLevels(curLevel, pending, bonuses, thresholds, cumulative) {
         <div class="vip-card-head">
           <div class="vip-card-badge">${badge}</div>
           <div class="vip-card-title">VIP ${lvl}</div>
-          <div class="vip-card-gram">${cumulative[lvl]} GRAM всего<span class="vip-card-gram-delta">+${thresholds[lvl]}</span></div>
+          <div class="vip-card-gram">${cumulative[lvl]} GRAM</div>
         </div>
         ${bonHtml ? `<div class="vip-card-bonuses">${bonHtml}</div>` : ''}
         ${_vipItemDesc(lvl)}
@@ -3018,9 +3018,9 @@ function _marketRowHtml(l, mode) {
   </div>`;
 }
 
-// Market listings grouped into sections instead of one flat list — checked
-// in order, first match wins, so put more specific categories (books, which
-// are craft-mat items with a book_ id) ahead of their broader slot (material).
+// Market category filter — checked in order, first match wins, so more
+// specific categories (books, which are craft-mat items with a book_ id)
+// come ahead of their broader slot (material).
 const _MARKET_CATEGORIES = [
   { key: 'weapon',    label: 'Оружие',     match: it => it.slot === 'weapon' },
   { key: 'helmet',    label: 'Шлемы',      match: it => it.slot === 'helmet' },
@@ -3034,35 +3034,50 @@ const _MARKET_CATEGORIES = [
   { key: 'materials', label: 'Материалы',  match: it => it.slot === 'material' || it.slot === 'recipe' },
   { key: 'other',     label: 'Прочее',     match: () => true },
 ];
+let _marketCategoryFilter = 'all';
 
-function _renderMarketSectioned(lots, mode) {
-  const buckets = new Map(_MARKET_CATEGORIES.map(c => [c.key, []]));
+function _marketCategoryOf(it) {
+  return (_MARKET_CATEGORIES.find(c => c.match(it)) || _MARKET_CATEGORIES[_MARKET_CATEGORIES.length - 1]).key;
+}
+
+function setMarketCategory(key) {
+  _marketCategoryFilter = key;
+  _renderMarketBody();
+}
+
+function _renderMarketFiltered(lots, mode) {
+  const counts = new Map(_MARKET_CATEGORIES.map(c => [c.key, 0]));
   lots.forEach(l => {
-    const it = l.item || {};
-    const cat = _MARKET_CATEGORIES.find(c => c.match(it));
-    buckets.get(cat.key).push(l);
+    const key = _marketCategoryOf(l.item || {});
+    counts.set(key, counts.get(key) + 1);
   });
-  let html = '';
-  _MARKET_CATEGORIES.forEach(c => {
-    const catLots = buckets.get(c.key);
-    if (!catLots.length) return;
-    html += `<div class="market-section-title">${c.label} <span class="market-section-count">${catLots.length}</span></div>`;
-    html += catLots.map(l => _marketRowHtml(l, mode)).join('');
-  });
-  return html;
+
+  const allTab = `<button class="market-cat-tab${_marketCategoryFilter === 'all' ? ' active' : ''}" onclick="setMarketCategory('all')">Все <span class="market-cat-count">${lots.length}</span></button>`;
+  const catTabs = _MARKET_CATEGORIES.map(c => {
+    const n = counts.get(c.key);
+    if (!n) return '';
+    return `<button class="market-cat-tab${_marketCategoryFilter === c.key ? ' active' : ''}" onclick="setMarketCategory('${c.key}')">${c.label} <span class="market-cat-count">${n}</span></button>`;
+  }).join('');
+  const tabsHtml = `<div class="market-cat-tabs">${allTab}${catTabs}</div>`;
+
+  const shown = _marketCategoryFilter === 'all' ? lots : lots.filter(l => _marketCategoryOf(l.item || {}) === _marketCategoryFilter);
+  const listHtml = shown.length
+    ? shown.map(l => _marketRowHtml(l, mode)).join('')
+    : `<div class="rating-empty">Нет предметов в этой категории</div>`;
+  return tabsHtml + listHtml;
 }
 
 function _renderMarketLots(el) {
   if (!_marketLoaded.lots) { el.innerHTML = '<div class="rating-loading">Загрузка...</div>'; return; }
   if (!_marketLots.length) { el.innerHTML = '<div class="rating-empty">Пока никто ничего не продаёт</div>'; return; }
-  el.innerHTML = _renderMarketSectioned(_marketLots, 'buy');
+  el.innerHTML = _renderMarketFiltered(_marketLots, 'buy');
 }
 
 function _renderMarketMine(el) {
   const addBtn = `<button class="market-add-btn" onclick="openMarketSellPicker()">+ Выставить лот</button>`;
   if (!_marketLoaded.mine) { el.innerHTML = addBtn + '<div class="rating-loading">Загрузка...</div>'; return; }
   if (!_marketMine.length) { el.innerHTML = addBtn + '<div class="rating-empty">У вас нет активных лотов</div>'; return; }
-  el.innerHTML = addBtn + _renderMarketSectioned(_marketMine, 'mine');
+  el.innerHTML = addBtn + _renderMarketFiltered(_marketMine, 'mine');
 }
 
 function _renderMarketHistoryTab(el) {
