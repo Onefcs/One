@@ -2839,6 +2839,7 @@ io.on('connection', socket => {
     if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('pdLobbyError', { msg: 'Выберите персонажа' });
+    if ((cp.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
     if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
     const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
     const lobbyId = 'pdlb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
@@ -2858,8 +2859,9 @@ io.on('connection', socket => {
     if (lb.members.size >= PARTY_DUNGEON_MAX_MEMBERS) return socket.emit('pdLobbyError', { msg: 'Группа полна' });
     if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
     if (playerPdLobby.has(socket.id)) _cleanupPdLobby(socket.id);
-    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
     const cp = currentRoom?.players.get(socket.id);
+    if ((cp?.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
+    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
     const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
     lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
     playerPdLobby.set(socket.id, lobbyId);

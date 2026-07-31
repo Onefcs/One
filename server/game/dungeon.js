@@ -39,7 +39,7 @@ const STUB = 6;           // branch length between the main corridor / each chai
 const PITCH = 20;         // tile spacing between consecutive room-pair positions
 const LEAD_IN = 10;       // distance from a zone's entrance to its first position
 const MARGIN = 10;        // outer wall padding
-const ROOM_CHAIN_LEN = 3; // rooms chained per side per position (except the boss slot, always 1)
+const ROOM_CHAIN_LEN = 6; // rooms chained per side per position (except the boss slot, always 1)
 const ZONE_GAP = 30;      // gap (tiles) between zones/hub — comfortably more than any
                           // chain's max reach (CW + ROOM_CHAIN_LEN*(STUB+LARGE)) so
                           // neighboring zones' rooms can never touch

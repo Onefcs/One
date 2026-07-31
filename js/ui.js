@@ -589,6 +589,49 @@ function upgradePassiveSkillWithBook(id) {
   updateInvUI();
 }
 
+// Which location (hub or one of the 4 corridor arms) the player is currently
+// in, as a tile bounding box — so the "Мир" map only ever draws that one
+// location instead of the whole world (hub + all 4 arms stacked end to end).
+// Uses the player's Y position against each arm's own room-derived Y range
+// rather than requiring the player stand inside a specific room rectangle,
+// since most play happens in the connecting corridor between rooms.
+function _currentLocationBounds() {
+  if (!dungeon || !dungeon.rooms) return null;
+  const margin = 6;
+  const sz = dungeon.safeZone;
+  if (sz && player.x >= sz.x1 && player.x <= sz.x2 && player.y >= sz.y1 && player.y <= sz.y2) {
+    return {
+      tx0: Math.max(0, Math.floor(sz.x1 / TILE) - margin),
+      ty0: Math.max(0, Math.floor(sz.y1 / TILE) - margin),
+      tx1: Math.min(dungeon.w - 1, Math.ceil(sz.x2 / TILE) + margin),
+      ty1: Math.min(dungeon.h - 1, Math.ceil(sz.y2 / TILE) + margin),
+    };
+  }
+  const playerTy = player.y / TILE;
+  for (const dir of ARM_NAMES) {
+    const armRooms = dungeon.rooms.filter(r => r.arm === dir);
+    if (!armRooms.length) continue;
+    const minTy = Math.min(...armRooms.map(r => r.by1));
+    const maxTy = Math.max(...armRooms.map(r => r.by2));
+    if (playerTy < minTy - margin || playerTy > maxTy + margin) continue;
+    const minTx = Math.min(...armRooms.map(r => r.bx1));
+    const maxTx = Math.max(...armRooms.map(r => r.bx2));
+    // Include the arm's own entrance point so its corridor lead-in (between
+    // the teleport pad and the first room pair) never gets clipped off.
+    const entry = (dungeon.armEntries || []).find(e => e.dir === dir);
+    const entryTx = entry ? entry.x / TILE : minTx;
+    return {
+      tx0: Math.max(0, Math.floor(Math.min(minTx, entryTx)) - margin),
+      ty0: Math.max(0, minTy - margin),
+      tx1: Math.min(dungeon.w - 1, maxTx + margin),
+      ty1: Math.min(dungeon.h - 1, maxTy + margin),
+    };
+  }
+  // Shouldn't normally happen (hub + 4 arms should cover every reachable Y) —
+  // fall back to the whole map rather than drawing nothing.
+  return { tx0: 0, ty0: 0, tx1: dungeon.w - 1, ty1: dungeon.h - 1 };
+}
+
 function drawMapPanel() {
   if (!dungeon || !player) return;
   const th = getTheme(dungeonLvl);
@@ -599,18 +642,21 @@ function drawMapPanel() {
   mc.width = pw; mc.height = ph;
   mc.style.width = pw + 'px'; mc.style.height = ph + 'px';
   const mx2 = mc.getContext('2d');
-  const sc = Math.min((pw - 20) / dungeon.w, (ph - 10) / dungeon.h);
-  const ox = (pw - dungeon.w * sc) / 2, oy = 8;
+  const b = _currentLocationBounds() || { tx0: 0, ty0: 0, tx1: dungeon.w - 1, ty1: dungeon.h - 1 };
+  const bw = b.tx1 - b.tx0 + 1, bh = b.ty1 - b.ty0 + 1;
+  const sc = Math.min((pw - 20) / bw, (ph - 10) / bh);
+  const ox = (pw - bw * sc) / 2, oy = 8;
+  const wx = tx => ox + (tx - b.tx0) * sc, wy = ty => oy + (ty - b.ty0) * sc;
   mx2.fillStyle = '#070604'; mx2.fillRect(0, 0, pw, ph);
-  for (let ty = 0; ty < dungeon.h; ty++) {
-    for (let tx = 0; tx < dungeon.w; tx++) {
+  for (let ty = b.ty0; ty <= b.ty1; ty++) {
+    for (let tx = b.tx0; tx <= b.tx1; tx++) {
       const t = dungeon.grid[ty][tx]; if (t === WALL) continue;
       mx2.fillStyle = th.mmFloor;
-      mx2.fillRect(ox + tx * sc, oy + ty * sc, Math.max(1, sc - 0.5), Math.max(1, sc - 0.5));
+      mx2.fillRect(wx(tx), wy(ty), Math.max(1, sc - 0.5), Math.max(1, sc - 0.5));
     }
   }
   mx2.fillStyle = '#79dc23';
-  mx2.beginPath(); mx2.arc(ox + (player.x / TILE) * sc, oy + (player.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
+  mx2.beginPath(); mx2.arc(wx(player.x / TILE), wy(player.y / TILE), Math.max(2, sc * 0.7), 0, Math.PI * 2); mx2.fill();
   // There is no offline mode in this game — serverEnemies is the only enemy
   // list that ever exists. The old `: enemies` fallback below referenced a
   // global that was never declared anywhere; it silently never ran while the
@@ -620,14 +666,18 @@ function drawMapPanel() {
   // requestAnimationFrame loop, so the throw skipped the loop's own
   // rAF(loop) call at the end and froze the entire game, permanently, even
   // after the socket reconnected moments later.
+  const inBounds = (x, y) => {
+    const tx = x / TILE, ty = y / TILE;
+    return tx >= b.tx0 && tx <= b.tx1 && ty >= b.ty0 && ty <= b.ty1;
+  };
   const mapEnemies = serverEnemies;
-  const aliveEnemies = mapEnemies.filter(e => (e.hp || 0) > 0);
+  const aliveEnemies = mapEnemies.filter(e => (e.hp || 0) > 0 && inBounds(e.x, e.y));
   mx2.fillStyle = '#e9364b';
   mx2.beginPath();
   aliveEnemies.forEach(e => {
     if (e.isBoss) return;
-    mx2.moveTo(ox + (e.x / TILE) * sc + Math.max(1.5, sc * 0.5), oy + (e.y / TILE) * sc);
-    mx2.arc(ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc, Math.max(1.5, sc * 0.5), 0, Math.PI * 2);
+    mx2.moveTo(wx(e.x / TILE) + Math.max(1.5, sc * 0.5), wy(e.y / TILE));
+    mx2.arc(wx(e.x / TILE), wy(e.y / TILE), Math.max(1.5, sc * 0.5), 0, Math.PI * 2);
   });
   mx2.fill();
   // Boss skull icon on map
@@ -636,14 +686,14 @@ function drawMapPanel() {
   mx2.textAlign = 'center'; mx2.textBaseline = 'middle';
   aliveEnemies.forEach(e => {
     if (!e.isBoss) return;
-    mx2.fillText('💀', ox + (e.x / TILE) * sc, oy + (e.y / TILE) * sc);
+    mx2.fillText('💀', wx(e.x / TILE), wy(e.y / TILE));
   });
   // NPC blips on map
   mx2.fillStyle = '#e69419';
   mx2.beginPath();
-  npcs.forEach(n => {
-    mx2.moveTo(ox + (n.x / TILE) * sc + Math.max(2, sc * 0.7), oy + (n.y / TILE) * sc);
-    mx2.arc(ox + (n.x / TILE) * sc, oy + (n.y / TILE) * sc, Math.max(2, sc * 0.7), 0, Math.PI * 2);
+  npcs.filter(n => inBounds(n.x, n.y)).forEach(n => {
+    mx2.moveTo(wx(n.x / TILE) + Math.max(2, sc * 0.7), wy(n.y / TILE));
+    mx2.arc(wx(n.x / TILE), wy(n.y / TILE), Math.max(2, sc * 0.7), 0, Math.PI * 2);
   });
   mx2.fill();
   const _pRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
@@ -1042,7 +1092,10 @@ function updatePartyDungeonPanelUI() {
       <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 3 раза в день</div>
     </div>`;
 
-  const createBtn = `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">Создать группу</button>`;
+  const pdLvlOk = (player?.lvl || 1) >= 10;
+  const createBtn = pdLvlOk
+    ? `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">Создать группу</button>`
+    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">🔒 Нужен уровень 10</button>`;
 
   const lobbies = _pdLobbyList || [];
   let lobbyListHtml = '';
@@ -1052,6 +1105,8 @@ function updatePartyDungeonPanelUI() {
     lobbyListHtml = lobbies.map(lb => {
       const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">Ур.${m.lvl}</span> ${m.name}`).join(', ');
       const full = (lb.members?.length || 0) >= 8;
+      const locked = !pdLvlOk;
+      const btnLabel = full ? 'Полная' : locked ? '🔒 Ур. 10' : 'Войти';
       return `
         <div class="raid-dungeon-card" style="margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -1059,7 +1114,7 @@ function updatePartyDungeonPanelUI() {
             <span style="font-size:11px;color:#968a7a">${lb.members?.length || 1} / 8</span>
           </div>
           <div style="font-size:11px;color:#a2988a;margin-bottom:8px">${mList}</div>
-          <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinPdLobby('${lb.id}')`}">${full ? 'Полная' : 'Войти'}</button>
+          <button class="raid-enter-btn${(full || locked) ? ' disabled' : ''}" style="padding:8px" onclick="${(full || locked) ? '' : `netJoinPdLobby('${lb.id}')`}">${btnLabel}</button>
         </div>`;
     }).join('');
   }
