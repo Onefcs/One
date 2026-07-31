@@ -125,15 +125,21 @@ function generateOpenWorld() {
         }
         const stats = monsterStatsAtLevel(room.monsterLvl, isBoss ? 'boss' : d.eType);
         // Movement speed isn't part of monsterStatsAtLevel (it's flat per
-        // species in ENEMY_DEF) — scale it up separately past level 20 to
-        // match the same threshold as the HP jump above.
-        const spdMult = room.monsterLvl > 20 ? 1.5 : 1;
+        // species in ENEMY_DEF) — scale it up separately past level 20 (and
+        // for the level-20 boss itself, see below) to match the HP jumps.
+        const isLvl20Boss = isBoss && room.monsterLvl === 20;
+        const spdMult = (room.monsterLvl > 20 || isLvl20Boss) ? 1.5 : 1;
+        // The boss guarding the end of the starting arm (level 20, right
+        // before the level-20 gate) gets an extra x10 HP on top of the
+        // regular BOSS_HP_MULT — it was underwhelming next to the buffed
+        // level-21+ mobs that immediately follow it.
+        const boss20HpMult = isLvl20Boss ? 10 : 1;
         enemyList.push({
           id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
           rlvl: room.monsterLvl,
           name: monsterNameAtLevel(d.name, room.localLvl, isBoss, d.fem, maxLocalLvl),
           color: monsterColorAtLevel(d.color, d.endColor, room.localLvl, isBoss, maxLocalLvl),
-          maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+          maxHp: Math.floor(stats.hp * weakMult * boss20HpMult), hp: Math.floor(stats.hp * weakMult * boss20HpMult),
           atk: Math.floor(stats.atk * weakMult),
           def: stats.def,
           spd: d.spd * spdMult,

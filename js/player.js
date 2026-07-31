@@ -6,7 +6,7 @@ function invSlotCount() {
 }
 
 function invHasSpace() {
-  return invSlotCount() < 50;
+  return invSlotCount() < 150;
 }
 
 function addToInventory(it) {
@@ -68,6 +68,49 @@ function removeEnhancedItem(id, n, minEnh) {
   return removed >= n;
 }
 
+// ── Storage (Хранилище NPC) ──────────────────────────────────────
+function storageSlotCount() {
+  return player.storage.length;
+}
+
+function storageHasSpace() {
+  return storageSlotCount() < 200;
+}
+
+function moveToStorage(idx) {
+  const it = player.inventory[idx];
+  if (!it) return false;
+  if (_isStackable(it)) {
+    const existing = player.storage.find(i => i.id === it.id);
+    if (existing) {
+      existing.qty = (existing.qty || 1) + (it.qty || 1);
+      player.inventory.splice(idx, 1);
+      return true;
+    }
+  }
+  if (!storageHasSpace()) return false;
+  player.inventory.splice(idx, 1);
+  player.storage.push(it);
+  return true;
+}
+
+function moveToInventory(idx) {
+  const it = player.storage[idx];
+  if (!it) return false;
+  if (_isStackable(it)) {
+    const existing = player.inventory.find(i => i.id === it.id);
+    if (existing) {
+      existing.qty = (existing.qty || 1) + (it.qty || 1);
+      player.storage.splice(idx, 1);
+      return true;
+    }
+  }
+  if (!invHasSpace()) return false;
+  player.storage.splice(idx, 1);
+  player.inventory.push(it);
+  return true;
+}
+
 function makePlayer(type) {
   const d = CHAR_DEF[type];
   return {
@@ -85,6 +128,7 @@ function makePlayer(type) {
       weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null,
     },
     inventory: [],
+    storage: [],
     potionBag: { pt1: 30, pt2: 0 },
     hudPotion: 'pt1',
     buffs: {},
@@ -401,10 +445,13 @@ function _dashTo(tx, ty) {
   for (let s = STEP; s <= d + STEP; s += STEP) {
     const cx = player.x + nx * Math.min(s, d);
     const cy = player.y + ny * Math.min(s, d);
-    // Check center + forward edge + two side edges
+    // Check center + forward edge + two side edges, plus the level-gate
+    // strip so dash/jump skills can't hop straight over a locked gate the
+    // player couldn't otherwise walk through.
     if (isWall(cx + nx * R, cy + ny * R) ||
         isWall(cx - ny * R, cy + nx * R) ||
-        isWall(cx + ny * R, cy - nx * R)) break;
+        isWall(cx + ny * R, cy - nx * R) ||
+        (typeof _isGateBlocked === 'function' && _isGateBlocked(cx, cy))) break;
     safeX = cx; safeY = cy;
   }
   player.x = safeX; player.y = safeY;
@@ -595,11 +642,9 @@ function useSkill(idx) {
       const range = 180 + _skillMobRange('R');
       const tx = player.x + (dx / len) * range;
       const ty = player.y + (dy / len) * range;
-      if (!isWall(tx, ty)) {
-        spawnBurst(player.x, player.y, '#f4f', 6);
-        player.x = tx; player.y = ty;
-        spawnBurst(player.x, player.y, '#f4f', 6);
-      }
+      spawnBurst(player.x, player.y, '#f4f', 6);
+      _dashTo(tx, ty); // steps toward tx/ty, stopping at walls or locked gates
+      spawnBurst(player.x, player.y, '#f4f', 6);
     }
   } else if (player.type === 'warlock') {
     if (sk.key === 'Q') { // Тёмное исцеление — +20% maxHP (+1% per level)
@@ -744,6 +789,7 @@ function restoreFromSave(data) {
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;
   player.inventory  = _migrateInventory(data.inventory || []);
+  player.storage    = _migrateInventory(data.storage || []);
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
   player.bonusSP  = data.bonusSP  || 0;
   player.questIdx  = data.questIdx  || 0;

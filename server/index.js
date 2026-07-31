@@ -996,7 +996,7 @@ const floorRooms = new Map();
 // runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
 const _SANITIZE_MAX = {
   gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6,
-  maxHp: 1e7, atk: 1e6, def: 1e6, baseStat: 1e6, hpBase: 1e7, invLen: 500, qty: 9999,
+  maxHp: 1e7, atk: 1e6, def: 1e6, baseStat: 1e6, hpBase: 1e7, invLen: 500, storageLen: 200, qty: 9999,
 };
 
 function _catalogBase(id) {
@@ -1035,6 +1035,11 @@ function _sanitizeSavedStats(raw) {
   // Inventory — canonicalize, drop unknowns, cap length
   s.inventory = Array.isArray(s.inventory)
     ? s.inventory.slice(0, _SANITIZE_MAX.invLen).map(_canonSavedItem).filter(Boolean)
+    : [];
+
+  // Storage (Хранилище NPC) — same canonicalization, capped at 200 slots
+  s.storage = Array.isArray(s.storage)
+    ? s.storage.slice(0, _SANITIZE_MAX.storageLen).map(_canonSavedItem).filter(Boolean)
     : [];
 
   // Equipment — { slot: item }; canonicalize, drop unknowns

@@ -86,7 +86,7 @@ function updateInvUI() {
   if (ptEl) ptEl.innerHTML = '';
 
   // Inventory grid — materials stack by id
-  document.getElementById('inv-count').textContent = invSlotCount() + '/50';
+  document.getElementById('inv-count').textContent = invSlotCount() + '/150';
   const _displayInv = [];
   inv.forEach((it, idx) => {
     if (_isStackable(it)) {

@@ -1104,7 +1104,7 @@ function _buildSaveStats() {
     hp: player.hp, maxHp: player.maxHp,
     atk: player.atk, def: player.def,
     baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
-    inventory: player.inventory, equipment: player.equipment,
+    inventory: player.inventory, storage: player.storage, equipment: player.equipment,
     potionBag: player.potionBag || { pt1: 0, pt2: 0 },
     hudPotion: player.hudPotion || 'pt1',
     buffs: player.buffs || {},

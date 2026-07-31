@@ -186,8 +186,9 @@ const SKILL_BONUS_TYPE = {
 };
 
 const NPC_DEF = [
-  { id:'merchant',   name:'Торговец', icon:'merchant',   color:'#ffaa00', desc:'Зелья и расходники' },
-  { id:'craftsman',  name:'Кузнец',   icon:'craftsman',  color:'#8888ff', desc:'Крафт предметов'    },
+  { id:'merchant',   name:'Торговец',   icon:'merchant',   color:'#ffaa00', desc:'Зелья и расходники'          },
+  { id:'craftsman',  name:'Кузнец',     icon:'craftsman',  color:'#8888ff', desc:'Крафт предметов'             },
+  { id:'storage',    name:'Хранилище', icon:'storage',    color:'#44ff44', desc:'Хранение предметов (200 ячеек)' },
 ];
 
 const MERCHANT_SHOP = [

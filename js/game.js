@@ -1394,6 +1394,7 @@ function initNpcs() {
   const offsets = [
     { dx: -TILE * 4, dy: -TILE * 11 },
     { dx:  TILE * 4, dy: -TILE * 11 },
+    { dx: 0,         dy: -TILE * 8  }, // storage — between merchant and craftsman, one row forward
   ];
   npcs = NPC_DEF.map((def, i) => ({
     ...def,

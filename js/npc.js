@@ -21,6 +21,7 @@ function closeNpc() {
 function _buildNpcBody(npcId) {
   if (npcId === 'merchant') return _merchantBody();
   if (npcId === 'craftsman') return _craftsmanBody();
+  if (npcId === 'storage') return _storageBody();
   return '';
 }
 
@@ -430,6 +431,63 @@ function craftMatUpgrade(idx) {
   }
   netSaveProgress();
   openMatModal(idx);
+}
+
+// ── Storage ─────────────────────────────────────────────
+let _storageTab = 'inv'; // 'inv' | 'storage'
+
+function _setStorageTab(tab) {
+  _storageTab = tab;
+  document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
+}
+
+function _storageBody() {
+  const tabs = `<div class="craft-tabs">
+    <button class="craft-tab${_storageTab==='inv'?' active':''}" onclick="_setStorageTab('inv')">Инвентарь (${invSlotCount()}/150)</button>
+    <button class="craft-tab${_storageTab==='storage'?' active':''}" onclick="_setStorageTab('storage')">Хранилище (${storageSlotCount()}/200)</button>
+  </div>`;
+  return tabs + (_storageTab === 'inv' ? _storageInvTab() : _storageStoTab());
+}
+
+function _storageItemCell(it, idx, onclickFn) {
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
+  const cnt = it.qty > 1 ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${it.qty}</span>` : '';
+  const enh = it.enhance ? `<span style="position:absolute;top:1px;right:3px;font-size:8px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
+  return `<div class="craft-item-cell craftable" style="border-color:${rc}66;position:relative" onclick="${onclickFn}(${idx})" title="${it.name}">
+    ${enh}${cnt}
+    <div class="craft-item-cell-icon">${_itemIcon(it, 32)}</div>
+    <div class="craft-item-cell-name" style="color:${rc}">${it.name}</div>
+  </div>`;
+}
+
+function _storageInvTab() {
+  if (!player.inventory.length) return '<div class="craft-mats-info">Инвентарь пуст</div>';
+  let html = '<div class="craft-mats-info">Нажмите на предмет, чтобы положить в хранилище</div><div class="craft-items-grid">';
+  player.inventory.forEach((it, idx) => { html += _storageItemCell(it, idx, '_doMoveToStorage'); });
+  html += '</div>';
+  return html;
+}
+
+function _storageStoTab() {
+  if (!player.storage.length) return '<div class="craft-mats-info">Хранилище пусто</div>';
+  let html = '<div class="craft-mats-info">Нажмите на предмет, чтобы забрать</div><div class="craft-items-grid">';
+  player.storage.forEach((it, idx) => { html += _storageItemCell(it, idx, '_doMoveToInventory'); });
+  html += '</div>';
+  return html;
+}
+
+function _doMoveToStorage(idx) {
+  if (!player) return;
+  if (!moveToStorage(idx)) { _shopMsg('Хранилище полно!'); return; }
+  netSaveProgress();
+  document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
+}
+
+function _doMoveToInventory(idx) {
+  if (!player) return;
+  if (!moveToInventory(idx)) { _shopMsg('Инвентарь полон!'); return; }
+  netSaveProgress();
+  document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
 }
 
 function _shopMsg(msg) {
