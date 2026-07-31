@@ -51,7 +51,7 @@ const QUEST_DEF = [
   { id:'f1q7',  floor:1, title:'Ловец слизи',         desc:'Убей 50 Слизень воин',       type:'kill',         enemies:['Слизень воин'],     count:50,  reward:{ xp:200,  gold:100 } },
   { id:'f1q8',  floor:1, title:'Гроза бесов',         desc:'Убей 50 Бес воин',           type:'kill',         enemies:['Бес воин'],         count:50,  reward:{ xp:200,  gold:100 } },
   { id:'f1q10', floor:1, title:'Ветеран',             desc:'Достигни 5 уровня',          type:'level',        level:5,                      reward:{ xp:350,  gold:175 } },
-  { id:'f1q11', floor:1, title:'Покоритель',          desc:'Дойди до конца левого коридора', type:'dungeon_clear',floor:1, count:1,          reward:{ xp:400,  gold:200, items:_BUFF_POTION_IDS } },
+  { id:'f1q11', floor:1, title:'Покоритель',          desc:'Достигни 10 уровня',          type:'level',        level:10,                     reward:{ xp:400,  gold:200, items:_BUFF_POTION_IDS } },
   { id:'f1q12', floor:1, title:'Мясник',              desc:'Убей 100 Бес воин',          type:'kill',         enemies:['Бес воин'],         count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q13', floor:1, title:'Берсерк',             desc:'Убей 100 Бес страж',         type:'kill',         enemies:['Бес страж'],        count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q14', floor:1, title:'В гильдию!',          desc:'Вступи в гильдию',           type:'join_guild',                                 reward:{ xp:500,  gold:250 } },

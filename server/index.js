@@ -2576,6 +2576,22 @@ io.on('connection', socket => {
     if (inClan) return socket.emit('clanError', { msg: 'Вы уже в клане' });
     const clan = await ClanModel.findById(clanId).catch(() => null);
     if (!clan) return socket.emit('clanError', { msg: 'Клан не найден' });
+    // Only one pending application at a time — applying to a new clan
+    // withdraws any application still pending elsewhere, so a leader never
+    // approves someone who already joined a different clan in the meantime.
+    const otherPending = await ClanModel.find(
+      { _id: { $ne: clan._id }, 'applications.telegramId': authed.telegramId }
+    ).catch(() => []);
+    if (otherPending.length) {
+      await ClanModel.updateMany(
+        { _id: { $in: otherPending.map(c => c._id) } },
+        { $pull: { applications: { telegramId: authed.telegramId } } }
+      ).catch(() => {});
+      for (const c of otherPending) {
+        c.applications = c.applications.filter(a => a.telegramId !== authed.telegramId);
+        await _notifyClan(c);
+      }
+    }
     if (clan.applications.find(a => a.telegramId === authed.telegramId)) return;
     clan.applications.push({ telegramId: authed.telegramId, username: authed.username });
     await clan.save().catch(() => {});

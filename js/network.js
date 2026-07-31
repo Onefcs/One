@@ -158,6 +158,18 @@ function netConnect(onReady) {
       // (possibly stale) savedData this reconnect's authOk carried.
       _isReconnectRejoin = false;
       csOnServerReady();
+      // The 'disconnect' handler below force-hides chat-btn (display:none)
+      // on any drop, same as the whole-state wipe it also does — but only
+      // _finishOnlineStart() (the FIRST-join path) ever sets it back to
+      // visible, and a reconnect skips straight to this branch instead of
+      // going through that. Without this, a reconnect (background tab
+      // suspended mid-session, brief network drop — routine on mobile, and
+      // exactly what a raid/party-dungeon transition's loading gap can also
+      // trigger) leaves the chat button and its last-message preview
+      // permanently hidden, reading as if the whole client had reset.
+      const _chatBtn = document.getElementById('chat-btn');
+      if (_chatBtn) { _chatBtn.dataset.shown = '1'; _chatBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
+      if (typeof _refreshChatPreview === 'function') _refreshChatPreview();
       // A reconnect (background tab suspended mid-session, brief network
       // drop, etc.) re-joins as a fresh server-side room entry — if the
       // player's own last-known hp was already 0 when that happened, the
