@@ -714,6 +714,10 @@ function _updateEnemies(dt, pulse, bossGlow) {
   _enemyPool.forEach(obj => { if (obj._visGen !== gen) obj.ct.visible = false; });
 }
 
+// Base sprite display height for the local player and other players (world
+// px, before each class's own def.dispScale) — ×1.4 over the original 68.
+const _PLAYER_DISPLAY_H = 68 * 1.4;
+
 // ── other players ─────────────────────────────────────────
 
 // Username + clan tag for other players are drawn on the 2D UI overlay
@@ -763,7 +767,7 @@ function _updateOtherPlayers(pulse) {
       const img   = cache?.[key];
       const fw    = img?.frameW || def.frameW || 64;
       const fh    = img?.frameH || def.frameH || 64;
-      const dh = 68 * (def.dispScale || 1), dw = dh * fw / fh;
+      const dh = _PLAYER_DISPLAY_H * (def.dispScale || 1), dw = dh * fw / fh;
       spr.width = dw; spr.height = dh;
       spr.x = -dw / 2; spr.y = -dh * 0.62;
       spr.visible = true;
@@ -868,7 +872,7 @@ function _updatePlayer(dt) {
     const img   = cache?.[key];
     const fw    = img?.frameW || def.frameW || 64;
     const fh    = img?.frameH || def.frameH || 64;
-    const dh = 68 * (def.dispScale || 1), dw = dh * fw / fh;
+    const dh = _PLAYER_DISPLAY_H * (def.dispScale || 1), dw = dh * fw / fh;
     _plSpr.width = dw; _plSpr.height = dh;
     _plSpr.x = player.x - dw / 2;
     _plSpr.y = player.y - dh * 0.62;
