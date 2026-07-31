@@ -254,7 +254,9 @@ function gainXP(amount, flat) {
     player.xp -= player.xpNext;
     player.lvl++;
     const _xpBase = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
-    player.xpNext = player.lvl > 5 ? _xpBase * 3 : _xpBase;
+    let _xpMult = player.lvl > 5 ? 3 : 1;
+    if (player.lvl > 15) _xpMult *= 2.2;
+    player.xpNext = Math.floor(_xpBase * _xpMult);
     player.baseAtk += 1; player.baseDef += 1; player.baseMaxHp += 20;
     recompute();
     player.hp = Math.min(player.maxHp, player.hp + 35);
