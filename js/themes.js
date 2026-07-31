@@ -25,7 +25,6 @@ const PROP_DEF = {
   treasure_large:  { src: 'images/props/treasure_large.png',  w: 46 },
   treasure_trophy: { src: 'images/props/treasure_trophy.png', w: 36 },
   trophy:          { src: 'images/props/trophy.png',          w: 18 },
-  key_gold:        { src: 'images/props/key_gold.png',        w: 12 },
   gem_red:         { src: 'images/props/gem_red.png',         w: 8  },
   gem_gold:        { src: 'images/props/gem_gold.png',        w: 8  },
   gem_blue:        { src: 'images/props/gem_blue.png',        w: 8  },
@@ -37,7 +36,6 @@ const PROP_DEF = {
   stump:           { src: 'images/props/stump.png',           w: 20 },
   branch1:         { src: 'images/props/branch1.png',         w: 16 },
   branch2:         { src: 'images/props/branch2.png',         w: 16 },
-  grave_marker:    { src: 'images/props/grave_marker.png',    w: 16 },
   signpost:        { src: 'images/props/signpost.png',        w: 22 },
   jug:             { src: 'images/props/jug.png',              w: 14 },
   trap_bear:       { src: 'images/props/trap_bear.png',       w: 20 },
@@ -60,7 +58,6 @@ const PROP_DEF = {
   rune_stone2:     { src: 'images/props/rune_stone2.png',     w: 18 },
   mushroom_spotted:{ src: 'images/props/mushroom_spotted.png',w: 18 },
   spore_sac:       { src: 'images/props/spore_sac.png',       w: 22 },
-  tombstone_mossy: { src: 'images/props/tombstone_mossy.png', w: 30 },
 };
 
 // Start loading immediately (script parse time) — small, low-priority
@@ -173,7 +170,7 @@ const THEMES = [
   {
     name: '💀 Костяной склеп', bg: '#0a0c10', mmFloor: '#6a7488',
     wallColor: '#3a4550', floorA: '#262c34', floorB: '#2d333c',
-    drawFloorProp: _floorProps(120, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'key_gold' }, { key: 'spikes_row' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'spikes_row' }]),
   },
 
   // Floor 2 — Логово гоблинов (goblins)
@@ -194,7 +191,7 @@ const THEMES = [
   {
     name: '👻 Обитель призраков', bg: '#0a0c16', mmFloor: '#7a7ab0',
     wallColor: '#4a4568', floorA: '#2c2c48', floorB: '#333356',
-    drawFloorProp: _floorProps(120, [{ key: 'grave_marker' }, { key: 'tombstone_mossy' }, { key: 'rune_stone1' }, { key: 'rune_stone2' }, { key: 'crystal_purple' }, { key: 'treasure_medium' }]),
+    drawFloorProp: _floorProps(120, [{ key: 'rune_stone1' }, { key: 'rune_stone2' }, { key: 'crystal_purple' }, { key: 'treasure_medium' }]),
   },
 
   // Floor 5 — Крепость големов (golems)
