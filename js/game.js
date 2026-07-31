@@ -105,8 +105,8 @@ let _hudCv = null, _hudCvCtx = null, _uiLastMs = 0;
 let _lastCamX = 0, _lastCamY = 0;
 // Player sprite state flag (used by _drawPlayerNameOnUI for bar offset)
 let _lastPlayerUsedSprite = false;
-// measureText cache for player name label — avoids per-frame call when name unchanged
-let _prevDisplayName = '', _cachedNameTw = 0;
+// Rendered-name-bitmap cache (own player) — see _buildNameBitmap below
+let _nameBitmap = null, _prevNameKey = '';
 // Clan tag cache: icon pre-rendered to offscreen canvas; blit with drawImage (1 call vs 256 fillRects)
 let _clanIconCv = null, _clanIconKey = null, _prevClanName = '', _cachedClanTw = 0;
 // last damage dealt by player — used for optimistic kill prediction on arrow hit
@@ -776,6 +776,45 @@ function update(dt) {
 //  RENDER
 // ─────────────────────────────────────────────────────────
 
+// Renders `text` (black 3px stroke + colored fill, matching the name-tag
+// style used below) once into a small offscreen canvas at devicePixelRatio
+// resolution — profiling a busy scene (60 enemies, 15 other players) found
+// this per-player strokeText+fillText pair was the single heaviest
+// per-frame cost after the already-cached HUD panel (_renderUI, 15fps):
+// shaping+rasterizing a stroked glyph run every frame for every visible
+// name adds up fast, while the text/color themselves rarely change frame
+// to frame — only the on-screen POSITION does (it follows the camera).
+// _drawNameBitmap below just blits this at the current position instead.
+function _buildNameBitmap(text, color, fontPx, px) {
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = `bold ${fontPx * px}px system-ui, Arial`;
+  const tw = probe.measureText(text).width;
+  const padX = 4 * px, padTop = fontPx * px * 0.4, padBottom = 4 * px;
+  const cv = document.createElement('canvas');
+  cv.width  = Math.max(1, Math.ceil(tw + padX * 2));
+  cv.height = Math.max(1, Math.ceil(fontPx * px + padTop + padBottom));
+  const c = cv.getContext('2d');
+  c.font = `bold ${fontPx * px}px system-ui, Arial`;
+  c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.lineWidth = 3 * px; c.strokeStyle = '#000000';
+  const bx = cv.width / 2, by = cv.height - padBottom;
+  c.strokeText(text, bx, by);
+  c.fillStyle = color;
+  c.fillText(text, bx, by);
+  cv._tw = tw; cv._baseX = bx; cv._baseY = by; cv._px = px;
+  return cv;
+}
+// Blits a bitmap built by _buildNameBitmap centered horizontally on sx, with
+// its text baseline at sy — same anchoring strokeText/fillText(text,sx,sy)
+// with textAlign='center'/textBaseline='alphabetic' used to give directly.
+// Returns the CSS-px text width (callers use it to place e.g. the PvP icon).
+function _drawNameBitmap(cv, sx, sy) {
+  const px = cv._px;
+  const dw = cv.width / px, dh = cv.height / px;
+  ctx.drawImage(cv, sx - dw / 2, sy - cv._baseY / px, dw, dh);
+  return cv._tw / px;
+}
+
 function _drawPlayerNameOnUI() {
   const barTop = _lastPlayerUsedSprite ? player.y - 39 : player.y - 28;
   const nameY = barTop - 4;
@@ -783,9 +822,11 @@ function _drawPlayerNameOnUI() {
   const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
   const displayName = (netUsername || player.charDef.name).slice(0, 16);
 
-  ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  if (displayName !== _prevDisplayName) { _cachedNameTw = ctx.measureText(displayName).width; _prevDisplayName = displayName; }
-  const tw = _cachedNameTw;
+  const nameColor = pvpMode ? '#f28a96' : '#edc174';
+  const namePx = Math.ceil(DPR);
+  const nameKey = displayName + '|' + nameColor + '|' + namePx;
+  if (nameKey !== _prevNameKey) { _nameBitmap = _buildNameBitmap(displayName, nameColor, 10, namePx); _prevNameKey = nameKey; }
+  const tw = _nameBitmap._tw / namePx;
 
   // Clan tag: icon (pre-rendered, 1 drawImage) + name. Both cached to avoid per-frame cost.
   if (typeof clanData !== 'undefined' && clanData && clanData.name) {
@@ -814,13 +855,9 @@ function _drawPlayerNameOnUI() {
     ctx.fillStyle = '#eaa742';
     ctx.fillText(clanData.name, lineX + iconDisp + gap, lineY);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
-    ctx.font = 'bold 10px system-ui, Arial';
   }
 
-  ctx.strokeStyle = '#000000'; ctx.lineWidth = 3;
-  ctx.strokeText(displayName, sx, sy);
-  ctx.fillStyle = pvpMode ? '#f28a96' : '#edc174';
-  ctx.fillText(displayName, sx, sy);
+  _drawNameBitmap(_nameBitmap, sx, sy);
   if (pvpMode) drawIconCtx(_uiCtx, 'pvpOn', sx + tw / 2 + 8, sy - 3, 9, '#ed5a6b');
 }
 
@@ -855,9 +892,10 @@ function _drawOtherPlayerNamesOnUI() {
     const sx = (p.x - _lastCamX) * ZOOM;
     const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
     const uname = (p.username || '?').slice(0, 16);
-
-    ctx.font = 'bold 10px system-ui, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    if (uname !== p._prevUname) { p._unameTw = ctx.measureText(uname).width; p._prevUname = uname; }
+    const unameColor = p.pvpMode ? '#f28a96' : '#d1ccc5';
+    const unamePx = Math.ceil(DPR);
+    const unameKey = uname + '|' + unameColor + '|' + unamePx;
+    if (unameKey !== p._nameKey) { p._nameBitmap = _buildNameBitmap(uname, unameColor, 10, unamePx); p._nameKey = unameKey; }
 
     const cname = p.clanName || '';
     if (cname) {
@@ -874,13 +912,9 @@ function _drawOtherPlayerNamesOnUI() {
       ctx.fillStyle = '#eaa742';
       ctx.fillText(cname, lineX + iconDisp + gap, lineY);
       ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
-      ctx.font = 'bold 10px system-ui, Arial';
     }
 
-    ctx.strokeStyle = '#000000'; ctx.lineWidth = 3;
-    ctx.strokeText(uname, sx, sy);
-    ctx.fillStyle = p.pvpMode ? '#f28a96' : '#d1ccc5';
-    ctx.fillText(uname, sx, sy);
+    _drawNameBitmap(p._nameBitmap, sx, sy);
   });
 }
 
