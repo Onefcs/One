@@ -124,6 +124,10 @@ function generateOpenWorld() {
           if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
         }
         const stats = monsterStatsAtLevel(room.monsterLvl, isBoss ? 'boss' : d.eType);
+        // Movement speed isn't part of monsterStatsAtLevel (it's flat per
+        // species in ENEMY_DEF) — scale it up separately past level 20 to
+        // match the same threshold as the HP jump above.
+        const spdMult = room.monsterLvl > 20 ? 1.5 : 1;
         enemyList.push({
           id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
           rlvl: room.monsterLvl,
@@ -132,6 +136,7 @@ function generateOpenWorld() {
           maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
           atk: Math.floor(stats.atk * weakMult),
           def: stats.def,
+          spd: d.spd * spdMult,
           xp: xpAtLevel(room.monsterLvl), gold: goldAtLevel(room.monsterLvl),
           x: ex, y: ey, spawnX: ex, spawnY: ey,
           atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,

@@ -41,7 +41,8 @@ const MONSTER_ATK1 = 10; // ATK at level 1, before archetype/boss multipliers (h
 function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(1 * Math.max(1, lvl || 1))); } // doubled
 function monsterHPAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  return MONSTER_HP1 * lvl;
+  const mult = lvl > 20 ? 15 : 1;
+  return MONSTER_HP1 * lvl * mult;
 }
 function monsterATKAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
