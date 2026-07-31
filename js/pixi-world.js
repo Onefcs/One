@@ -7,7 +7,6 @@ let _pixiApp = null;
 let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
 let _lightsGfx = null;  // torch flames + warm glow (Graphics, additive blend, cleared each frame)
-let _dustGfx  = null;   // ambient drifting dust motes (Graphics, cleared each frame)
 let _aoeGfx   = null;   // AOE rings (Graphics, cleared each frame)
 let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
 let _npcNames = [];      // PIXI.Text per NPC
@@ -59,7 +58,6 @@ function pixiInit(canvasEl) {
   _tileCt   = new PIXI.Container();
   _lightsGfx = new PIXI.Graphics();
   _lightsGfx.blendMode = PIXI.BLEND_MODES.ADD;
-  _dustGfx  = new PIXI.Graphics();
   _aoeGfx   = new PIXI.Graphics();
   _npcCt    = new PIXI.Container();
   _dropGfx  = new PIXI.Graphics();
@@ -74,7 +72,7 @@ function pixiInit(canvasEl) {
     _tileCt, _lightsGfx, _aoeGfx,
     _npcCt, _dropGfx, _partGfx,
     _enemyCt, _otherPCt, _projGfx,
-    _playerCt, _dmgNumCt, _dustGfx
+    _playerCt, _dmgNumCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -312,40 +310,6 @@ function _updateLights(ts) {
     _lightsGfx.beginFill(0xffb85c, 0.09 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 32 * flick); _lightsGfx.endFill();
     _lightsGfx.beginFill(0xff8a2e, 0.75); _lightsGfx.drawCircle(fx, fy + 2, 5 * flick); _lightsGfx.endFill();
     _lightsGfx.beginFill(0xffe6a8, 0.9); _lightsGfx.drawCircle(fx, fy, 3.2 * flick); _lightsGfx.endFill();
-  }
-}
-
-// A sparse field of slow-drifting motes confined to the current viewport
-// (world-space anchored, so they read as floating in the room rather than
-// stuck to the screen) — cheap ambient motion so rooms don't feel static.
-let _dustMotes = null;
-function _initDustMotes(n) {
-  _dustMotes = [];
-  for (let i = 0; i < n; i++) {
-    _dustMotes.push({
-      ox: Math.random(), oy: Math.random(),
-      vx: (Math.random() - 0.5) * 0.015, vy: (Math.random() - 0.5) * 0.015,
-      size: 1 + Math.random() * 1.4, ph: Math.random() * Math.PI * 2,
-    });
-  }
-}
-function _updateDust(dt, ts, camX, camY) {
-  _dustGfx.clear();
-  // Purely decorative — the first thing cut once the adaptive tier flags a
-  // device as struggling, same as the particle-count caps in particles.js.
-  if (typeof _qualityTier !== 'undefined' && _qualityTier > 0) return;
-  if (!_dustMotes) _initDustMotes(18);
-  const vw = W / ZOOM, vh = _visH();
-  for (let i = 0; i < _dustMotes.length; i++) {
-    const m = _dustMotes[i];
-    m.ox += m.vx * dt; m.oy += m.vy * dt;
-    if (m.ox < 0) m.ox += 1; else if (m.ox > 1) m.ox -= 1;
-    if (m.oy < 0) m.oy += 1; else if (m.oy > 1) m.oy -= 1;
-    const x = camX + m.ox * vw, y = camY + m.oy * vh;
-    const a = 0.1 + 0.07 * Math.sin(ts * 0.0016 + m.ph);
-    _dustGfx.beginFill(0xd8c9a0, a);
-    _dustGfx.drawCircle(x, y, m.size);
-    _dustGfx.endFill();
   }
 }
 
@@ -959,7 +923,6 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
 
   _updateTiles(camX, camY);
   _updateLights(ts);
-  _updateDust(dt, ts, camX, camY);
   _updateAoeRings();
   _updateNpcs(dt, ts);
   _updateDrops(ts);
