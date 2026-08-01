@@ -420,6 +420,8 @@ async function _handleBotMessage(msg) {
   const button = gameUrl
     ? { text: '🎮 Играть сейчас', web_app: { url: gameUrl } }
     : { text: '🎮 Открыть игру', url: `https://t.me/${_tgBotUsername || 'game'}` };
+  const channelButton = { text: '📢 Канал', url: 'https://t.me/Libertymmo' };
+  const chatButton    = { text: '💬 Чат', url: 'https://t.me/+PrFI0HWtRi02NGU0' };
 
   const greeting = firstName ? `👋 Привет, <b>${firstName}</b>!` : '👋 Добро пожаловать!';
   const refText  = referrerUsername
@@ -442,7 +444,7 @@ async function _handleBotMessage(msg) {
       '',
       '▶️ Нажми кнопку ниже, чтобы начать!',
     ].filter(l => l !== null).join('\n'),
-    reply_markup: { inline_keyboard: [[button]] },
+    reply_markup: { inline_keyboard: [[button], [channelButton, chatButton]] },
   }).catch(() => {});
 }
 
