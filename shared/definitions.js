@@ -542,7 +542,7 @@ function roomEnchantStoneChance(lvl) {
 // monsters: the whole table below lands on the ground at once for everyone,
 // first come first served (see rollEventBossDrops / the worldDrops system in
 // server/game/Room.js).
-const EVENT_BOSS_ANNOUNCE_MS  = 5 * 60 * 1000; // warning shown before it appears
+const EVENT_BOSS_ANNOUNCE_MS  = 30 * 1000; // warning shown before it appears
 const EVENT_BOSS_DROP_LIFE_MS = 3 * 60 * 1000; // how long loot stays on the ground
 
 const EVENT_BOSS = {
