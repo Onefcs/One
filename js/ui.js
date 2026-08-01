@@ -1395,7 +1395,7 @@ function drawHeader() {
 
   // Current room-level label (global monster level 1-80, or "Зал" in the hub)
   const _hudRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(p.x, p.y) : null;
-  const _hudLbl = _hudRoom?.monsterLvl ? ('Ур.' + _hudRoom.monsterLvl) : 'Зал';
+  const _hudLbl = _hudRoom?.monsterLvl ? (t('levelAbbrev') + _hudRoom.monsterLvl) : t('hallShort');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(_hudLbl, mmX + mmW / 2 + 1, mmY + mmH - 2);
@@ -1442,7 +1442,7 @@ function drawHeader() {
   ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
   ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
   ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
-  ctx.fillText('Ур.' + p.lvl, infoRight, 15);
+  ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
 
   // Row 2: Class name + inline stats (gold / atk / def)
   ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
@@ -1456,8 +1456,8 @@ function drawHeader() {
   // БМ label + value
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
-  ctx.fillText('БМ', stxH, 24);
-  const _bmLabelW = ctx.measureText('БМ').width;
+  ctx.fillText(t('bmAbbrev'), stxH, 24);
+  const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
   ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
   ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
   stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
@@ -1788,7 +1788,7 @@ function drawPotionButton() {
   // Show cooldown if active
   if (cd > 0) {
     ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f17e8b';
-    ctx.fillText(cd.toFixed(1) + 'с', pb.x, pb.y + pb.r + 10);
+    ctx.fillText(cd.toFixed(1) + t('secAbbrev'), pb.x, pb.y + pb.r + 10);
   } else {
     ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(147,138,123,0.55)';
     ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
@@ -1842,7 +1842,7 @@ function drawBuffStrip() {
     const bdef = ITEM_DEF.find(d => d.buffType === btype && d.slot === 'buff_potion');
     if (!bdef) continue;
     const secs = Math.ceil(rem);
-    chips.push({ kind:'pot', img: bdef.img, label: secs < 60 ? secs + 'с' : Math.ceil(rem/60) + 'м', color:'#e5a546' });
+    chips.push({ kind:'pot', img: bdef.img, label: secs < 60 ? secs + t('secAbbrev') : Math.ceil(rem/60) + t('minAbbrev'), color:'#e5a546' });
   }
 
   // Skill buffs
@@ -1857,18 +1857,18 @@ function drawBuffStrip() {
     { t: typeof vampirismTimer   !== 'undefined' ? vampirismTimer   : 0, icon:'drop',      color:'#c23b5e' },
   ];
   for (const b of skillBuffs) {
-    if (b.t > 0) chips.push({ kind:'icon', icon: b.icon, label: Math.ceil(b.t) + 'с', color: b.color });
+    if (b.t > 0) chips.push({ kind:'icon', icon: b.icon, label: Math.ceil(b.t) + t('secAbbrev'), color: b.color });
   }
 
   // Debuffs
-  if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + 'с', color:'#efc680', debuff:true });
-  if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + 'с', color:'#ebad4e', debuff:true });
-  if ((p.freezeTimer || 0) > 0) chips.push({ kind:'icon', icon:'iceNova',   label: Math.ceil(p.freezeTimer) + 'с', color:'#ccaf88', debuff:true });
+  if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + t('secAbbrev'), color:'#efc680', debuff:true });
+  if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + t('secAbbrev'), color:'#ebad4e', debuff:true });
+  if ((p.freezeTimer || 0) > 0) chips.push({ kind:'icon', icon:'iceNova',   label: Math.ceil(p.freezeTimer) + t('secAbbrev'), color:'#ccaf88', debuff:true });
   // Death XP penalty — remaining seconds, same as any other player.buffs entry
   const _penaltyLeft = (p.buffs || {}).deathPenalty || 0;
   if (_penaltyLeft > 0) {
     const _pm = Math.ceil(_penaltyLeft / 60);
-    chips.push({ kind:'icon', icon:'star', label: '−XP ' + _pm + 'м', color:'#c34d5b', debuff:true });
+    chips.push({ kind:'icon', icon:'star', label: '−XP ' + _pm + t('minAbbrev'), color:'#c34d5b', debuff:true });
   }
 
   if (!chips.length) return;
@@ -1941,7 +1941,7 @@ function drawPvpButton() {
     roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
   }
 
-  const pvpLabel = pvpMode ? 'ПК' : 'Мир';
+  const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
   const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(224,188,127,0.9)';
   drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';

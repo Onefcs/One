@@ -323,6 +323,10 @@ Object.assign(I18N_UI, {
   enchantFromBossLbl: { ru: '50% Заточка с босса', en: '50% Enchant from boss', uk: '50% Гартування з боса', es: '50% Encantamiento del jefe', tr: 'Patrondan %50 Büyü', pt: '50% Encantamento do chefe' },
   safeEnchantFromBossLbl: { ru: '10% Безоп. заточка с босса', en: '10% Safe enchant from boss', uk: '10% Безпечне гартування з боса', es: '10% Encantamiento seguro del jefe', tr: 'Patrondan %10 Güvenli Büyü', pt: '10% Encantamento seguro do chefe' },
   minPlayersShort: { ru: 'Ур. 10', en: 'Lv. 10', uk: 'Рів. 10', es: 'Niv. 10', tr: 'Sv. 10', pt: 'Nív. 10' },
+  secAbbrev: { ru: 'с', en: 's', uk: 'с', es: 's', tr: 'sn', pt: 's' },
+  minAbbrev: { ru: 'м', en: 'm', uk: 'хв', es: 'm', tr: 'dk', pt: 'm' },
+  pvpOnLabel: { ru: 'ПК', en: 'PK', uk: 'ПК', es: 'JcJ', tr: 'PK', pt: 'JcJ' },
+  pvpOffLabel: { ru: 'Мир', en: 'Peace', uk: 'Мир', es: 'Paz', tr: 'Barış', pt: 'Paz' },
   skillLevelUpToast: { ru: '↑ Навык +{n} ур.!', en: '↑ Skill +{n} lvl.!', uk: '↑ Навик +{n} рів.!', es: '↑ ¡Habilidad +{n} niv.!', tr: '↑ Yetenek +{n} sv.!', pt: '↑ Habilidade +{n} nív.!' },
   passiveLevelUpToast: { ru: '↑ Пассивка +{n} ур.!', en: '↑ Passive +{n} lvl.!', uk: '↑ Пасивка +{n} рів.!', es: '↑ ¡Pasiva +{n} niv.!', tr: '↑ Pasif +{n} sv.!', pt: '↑ Passiva +{n} nív.!' },
 });
