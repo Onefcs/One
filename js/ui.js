@@ -3193,6 +3193,45 @@ function setEventBossCountdown(spawnAt) {
   _evtBossTick = setInterval(paint, 1000);
 }
 
+// Dedicated HP readout for the event boss. Its own bar over its head is
+// useless at this scale: 100k HP against a level-13 character's ~55 damage
+// moves that bar 0.2px per hit, which reads as "damage isn't registering"
+// even though every shot lands. This shows the exact numbers and a percentage
+// so progress is unmistakable, and because it's shared it also makes a raid's
+// combined DPS visible.
+function _evtBossHpEl() {
+  let el = document.getElementById('evt-boss-hp');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'evt-boss-hp';
+    el.style.cssText = 'position:fixed;top:110px;left:50%;transform:translateX(-50%);' +
+      'width:min(420px,92vw);z-index:340;pointer-events:none;display:none;text-align:center';
+    el.innerHTML =
+      '<div id="evt-hp-name" style="font-size:12px;font-weight:800;color:#f5dbae;text-shadow:0 1px 3px #000;margin-bottom:3px"></div>' +
+      '<div style="height:14px;background:rgba(10,8,4,.85);border:1px solid #7a2b33;border-radius:7px;overflow:hidden">' +
+      '<div id="evt-hp-fill" style="height:100%;width:100%;background:linear-gradient(90deg,#8c1f2a,#e0432f);transition:width .18s linear"></div>' +
+      '</div>' +
+      '<div id="evt-hp-num" style="font-size:11px;color:#d9c9a8;text-shadow:0 1px 3px #000;margin-top:2px;font-variant-numeric:tabular-nums"></div>';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// Called from the game loop (throttled) — reads the live enemy snapshot.
+function updateEventBossHpBar() {
+  const el = _evtBossHpEl();
+  const b = (typeof serverEnemies !== 'undefined')
+    ? serverEnemies.find(e => e.eid === 'demon_event_boss' && (e.hp || 0) > 0) : null;
+  if (!b) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const pct = Math.max(0, Math.min(1, b.hp / (b.maxHp || 1)));
+  document.getElementById('evt-hp-name').textContent = b.name || '';
+  document.getElementById('evt-hp-fill').style.width = (pct * 100).toFixed(2) + '%';
+  document.getElementById('evt-hp-num').textContent =
+    Math.ceil(b.hp).toLocaleString('ru-RU') + ' / ' + (b.maxHp || 0).toLocaleString('ru-RU') +
+    '  ·  ' + (pct * 100).toFixed(1) + '%';
+}
+
 function showEventBossBanner(text, color) {
   clearInterval(_evtBossTick);
   _evtBossTick = null;

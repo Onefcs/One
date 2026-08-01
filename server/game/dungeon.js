@@ -228,12 +228,14 @@ function generateOpenWorld() {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
-    // Arena geometry the client needs to place the event pads. entry/exit are
-    // 4 tiles apart so arriving doesn't immediately re-trigger the way back.
+    // Arena geometry the client needs to place the event pads. Players arrive
+    // at the middle of the west wall; the way out sits in the north-west
+    // corner, well clear of both the arrival spot and the boss in the centre
+    // so nobody teleports out by accident mid-fight.
     arena: {
       cx: arena.cx * TILE + TILE / 2, cy: arena.cy * TILE + TILE / 2,
       entryX: (ARENA_X0 + 6) * TILE + TILE / 2, entryY: arena.cy * TILE + TILE / 2,
-      exitX:  (ARENA_X0 + 2) * TILE + TILE / 2, exitY:  arena.cy * TILE + TILE / 2,
+      exitX:  (ARENA_X0 + 3) * TILE + TILE / 2, exitY:  (ARENA_Y0 + 3) * TILE + TILE / 2,
     },
     armEntries,
     corridorGates,

@@ -1266,6 +1266,7 @@ let _returnPads = null;   // zone-side: {dir, x, y, targetX, targetY} — back t
 const _EVENT_PAD_DX = -8;
 let _evtPad = null, _evtReturnPad = null;
 let _evtBossAlive = false;
+let _evtHpCd = 0;
 
 function _buildArmGates() {
   if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; return; }
@@ -1333,6 +1334,13 @@ function _updateTeleportPads(dt) {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
     _teleportTo(p.targetX, p.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   });
+  // Boss HP readout, refreshed 8x/sec — a DOM write every frame would be
+  // wasted work for a bar that only needs to look live.
+  _evtHpCd -= dt;
+  if (_evtHpCd <= 0) {
+    _evtHpCd = 0.125;
+    if (typeof updateEventBossHpBar === 'function') updateEventBossHpBar();
+  }
   if (_evtArenaOpen() && _evtPad && dist(player.x, player.y, _evtPad.x, _evtPad.y) < TRIGGER_R) {
     _teleportTo(_evtPad.targetX, _evtPad.targetY, t('evtArenaLbl'));
   }
