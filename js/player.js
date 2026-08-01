@@ -749,10 +749,29 @@ function useSkill(idx) {
   }
 }
 
+// Rebuilds a saved item against the LIVE catalog (shared/definitions.js),
+// trusting the save only for the truly player-specific fields (enhance,
+// qty). A saved item's own name/img/stats are a frozen snapshot of whatever
+// language/balance was active the last time the account was saved — reading
+// through the catalog instead means an item picked up before a language
+// switch (or before this account was ever restored) still shows correctly
+// translated the next time it's rendered, same as items picked up fresh.
+function _rebuildFromCatalog(it) {
+  if (!it) return null;
+  const base = (typeof itemCatalogBase === 'function') ? itemCatalogBase(it.id) : null;
+  if (!base) return it; // unknown id (e.g. a removed item) — keep as-is rather than dropping it
+  const item = { ...base };
+  if (it.enhance != null) item.enhance = it.enhance;
+  if (it.qty != null) item.qty = it.qty;
+  return item;
+}
+
 function _migrateInventory(inv) {
   const stacked = [];
   const matMap = {};
-  inv.forEach(it => {
+  inv.forEach(raw => {
+    const it = _rebuildFromCatalog(raw);
+    if (!it) return;
     if (_isStackable(it)) {
       if (matMap[it.id]) {
         matMap[it.id].qty = (matMap[it.id].qty || 1) + (it.qty || 1);
@@ -808,7 +827,9 @@ function restoreFromSave(data) {
   const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null };
   // strip removed slots from old saves
   const { offhand:_, legs:__, pendant:___, ...cleanEq } = rawEq;
-  player.equipment = { ...blank, ...cleanEq };
+  const rebuiltEq = {};
+  Object.keys(cleanEq).forEach(slot => { if (cleanEq[slot]) rebuiltEq[slot] = _rebuildFromCatalog(cleanEq[slot]); });
+  player.equipment = { ...blank, ...rebuiltEq };
 
   player.skillLevels = { Q:0, W:0, E:0, R:0, ...(data.skillLevels || {}) };
   player.passiveLevels = { ...(data.passiveLevels || {}) };

@@ -485,6 +485,17 @@ function enhanceBonus(it, levels) {
 // counter (mirrors _isStackable in player.js)
 function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion' || it.slot === 'box'; }
 
+// Look up an item's canonical catalog definition by id (mirrors the server's
+// own _catalogBase in server/index.js). Used to rebuild inventory/equipment
+// items loaded from a save against the LIVE catalog instead of trusting
+// whatever display fields (name, img, stats) were embedded in the save blob
+// — those are frozen at whatever language/balance was active the last time
+// the account was saved, so trusting them forever would leave old items
+// permanently untranslated after a language switch.
+function itemCatalogBase(id) {
+  return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
+}
+
 // ── Room-level monster progression ─────────────────────────────────────────────
 // Each corridor (server/game/dungeon.js) chains roomsInArm(armIdx) rooms of
 // increasing "local room level" 1..roomsInArm(armIdx) (room 1 = weakest, the
