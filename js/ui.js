@@ -3300,18 +3300,18 @@ function _updateMarketFeePreview() {
   if (!el || !input) return;
   const p = Number(input.value);
   if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
-    el.textContent = `Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM`;
+    el.textContent = tVars('priceRangeFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE });
     el.style.color = '#ee6676';
     return;
   }
   const payout = p * (1 - MARKET_FEE_PCT);
-  el.textContent = `Комиссия 10% сгорает — вы получите ${payout.toFixed(2)} GRAM`;
+  el.textContent = tVars('feePreviewFmt', { n: payout.toFixed(2) });
   el.style.color = '#a3957c';
 }
 
 function _setSellPickerBusy(busy) {
   const btn = document.getElementById('market-confirm-btn');
-  if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '0.5' : '1'; btn.textContent = busy ? 'Выставляем…' : 'Выставить на продажу'; }
+  if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '0.5' : '1'; btn.textContent = busy ? t('listingBusyLbl') : t('listForSaleBtn'); }
 }
 
 function _confirmMarketList() {
@@ -3319,7 +3319,7 @@ function _confirmMarketList() {
   const priceInput = document.getElementById('market-price-input');
   const p = Number(priceInput?.value);
   if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
-    _marketToast(`Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM`, 'err');
+    _marketToast(tVars('priceRangeFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE }), 'err');
     return;
   }
   const idx = _marketSellPick;
@@ -3368,7 +3368,7 @@ function onMarketListed(listing) {
   _marketMine.unshift(listing);
   if (_marketTab === 'mine') _renderMarketBody();
   netSaveProgressNow();
-  _marketToast(`Лот «${listing.item?.name || ''}» выставлен за ${listing.price} GRAM`, 'ok');
+  _marketToast(tVars('listedForFmt', { name: listing.item?.name || '', price: listing.price }), 'ok');
 }
 function onMarketCancelled(listingId, item) {
   _marketMine = _marketMine.filter(l => l.id !== listingId);
@@ -3376,23 +3376,23 @@ function onMarketCancelled(listingId, item) {
   updateInvUI();
   if (_marketTab === 'mine') _renderMarketBody();
   netSaveProgressNow();
-  _marketToast('Лот снят, предмет возвращён в инвентарь', 'ok');
+  _marketToast(t('listingCancelledToast'), 'ok');
 }
 function onMarketBought(listingId, item) {
   _marketLots = _marketLots.filter(l => l.id !== listingId);
-  if (item && !addToInventoryQty(item, item.qty || 1)) _marketToast('Инвентарь полон — предмет не поместился!', 'err');
+  if (item && !addToInventoryQty(item, item.qty || 1)) _marketToast(t('invFullItemLostToast'), 'err');
   updateInvUI();
   if (_marketTab === 'lots') _renderMarketBody();
   netSaveProgressNow();
-  _marketToast(`Куплено: ${item?.name || ''}${item?.qty > 1 ? ' ×' + item.qty : ''}`, 'ok');
+  _marketToast(tVars('boughtItemToast', { name: `${item?.name || ''}${item?.qty > 1 ? ' ×' + item.qty : ''}` }), 'ok');
 }
 function onMarketSold(data) {
-  _marketToast(`Продано: ${data.itemName} за ${data.price} GRAM (+${(data.payout || 0).toFixed(2)} вам)`, 'ok');
+  _marketToast(tVars('soldItemToast', { name: data.itemName, price: data.price, payout: (data.payout || 0).toFixed(2) }), 'ok');
   const panel = document.getElementById('market-panel');
   if (_marketTab === 'mine' && panel && panel.style.display !== 'none') netMarketMyListings();
 }
 function onMarketError(msg) {
-  _marketToast(msg || 'Ошибка', 'err');
+  _marketToast(msg || t('genericErrorLbl'), 'err');
 }
 function onMarketListError(msg) {
   if (_pendingSellItem) {
@@ -3402,19 +3402,19 @@ function onMarketListError(msg) {
     _pendingSellItem = null;
     _setSellPickerBusy(false);
   }
-  _marketToast(msg || 'Ошибка', 'err');
+  _marketToast(msg || t('genericErrorLbl'), 'err');
 }
 
 // ─────────────────────────────────────────────────────────
 //  GRAM SHOP PANEL
 // ─────────────────────────────────────────────────────────
 const _GRAM_SHOP_PKGS_UI = [
-  { id:'pkg1',   gram:1,   label:'Стартовый',  gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
-  { id:'pkg5',   gram:5,   label:'Базовый',    gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:10,  label:'Стандарт',   gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#eab65d', skillBooks:{ random:2 } },
-  { id:'pkg30',  gram:30,  label:'Продвинутый',gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 } },
-  { id:'pkg50',  gram:50,  label:'Элитный',    gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
-  { id:'pkg100', gram:100, label:'Легендарный',gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 } },
+  { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
+  { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
+  { id:'pkg10',  gram:10,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#eab65d', skillBooks:{ random:2 } },
+  { id:'pkg30',  gram:30,  get label() { return t('gramPkgLabel_pkg30'); },  gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 } },
+  { id:'pkg50',  gram:50,  get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
+  { id:'pkg100', gram:100, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 } },
 ];
 
 function showGramShopBtn() {
@@ -3440,7 +3440,7 @@ function _renderGramShopPanel() {
   const bal = window._gramBalance || 0;
   el.innerHTML = `
     <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
-      Баланс: <b>${bal.toFixed(7)} GRAM</b>
+      ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
     </div>
     ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
   `;
@@ -3467,7 +3467,7 @@ function _gramShopPkgHtml(pkg, bal) {
   const coinUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
 
   // gold
-  let rows = ri(coinUri, kGold + ' зол.', 'gold');
+  let rows = ri(coinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold');
 
   // potions
   rows += _POTION_NAMES.map(p => ri(`/images/potion/${p}.png`, `×${pkg.potions}`, '')).join('');
@@ -3489,7 +3489,7 @@ function _gramShopPkgHtml(pkg, bal) {
   // bonus skill points
   if (pkg.bonusSP) {
     const spUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
-    rows += ri(spUri, `+${pkg.bonusSP} ОН`, 'epic');
+    rows += ri(spUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');
   }
 
   // skill books — for the buyer's own class (see _skillBooksLabel below)
@@ -3512,7 +3512,7 @@ function _gramShopPkgHtml(pkg, bal) {
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
         onclick="${canAfford ? `openGramShopConfirm('${pkg.id}')` : ''}">
-        ${canAfford ? 'Купить' : 'Мало'}
+        ${canAfford ? t('affordableBuyBtn') : t('notEnoughBtn')}
       </button>
     </div>
     <div class="vip-items-row">${rows}</div>
@@ -3522,9 +3522,8 @@ function _gramShopPkgHtml(pkg, bal) {
 // Shared between the shop card preview and the confirm modal.
 function _skillBooksLabel(skillBooks) {
   if (!skillBooks) return '';
-  if (skillBooks.each) return `по ${skillBooks.each} каждой книги навыка (все 4)`;
-  const n = skillBooks.random;
-  return `${n} случайн${n > 1 ? 'ые' : 'ая'} книг${n > 1 ? 'и' : 'а'} навыка`;
+  if (skillBooks.each) return tVars('skillBooksEachLbl', { n: skillBooks.each });
+  return tVars('skillBooksRandomLbl', { n: skillBooks.random });
 }
 
 // Shared between the shop card preview and the confirm modal — mirrors
@@ -3538,7 +3537,7 @@ function _boxesLabel(boxes) {
 }
 function _boxesLine(boxes) {
   return Object.entries(boxes).map(([id, qty]) => {
-    const name = id === 'box_rare' ? 'редких бокса' : 'необычных бокса';
+    const name = id === 'box_rare' ? t('rareBoxesLbl') : t('uncommonBoxesLbl');
     return `${qty}× ${name}`;
   }).join(', ');
 }
@@ -3551,10 +3550,10 @@ function openGramShopConfirm(pkgId) {
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
-  const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">• Полный ${pkg.armor} сет</div>` : '';
-  const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">• Оружие ${pkg.weapon} (по классу)</div>` : '';
-  const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">• +${pkg.bonusSP} очко${pkg.bonusSP > 1 ? 'в' : ''} навыка</div>` : '';
-  const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} (по классу)</div>` : '';
+  const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}</div>` : '';
+  const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">${tVars('classWeaponFmt', { rarity: pkg.weapon })}</div>` : '';
+  const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
+  const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
   const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
