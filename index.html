@@ -513,9 +513,31 @@
 }
 .chat-tab.active { color:#c8a0ff; border-bottom-color:#7030c0; }
 #chat-dm-hdr {
-  flex-shrink:0; padding:6px 12px; font-size:11px; color:#8a7ab8;
+  flex-shrink:0; padding:6px 10px; font-size:11px; color:#8a7ab8;
   background:rgba(112,48,192,0.08); border-bottom:1px solid rgba(255,255,255,0.05);
+  overflow-x:auto; overflow-y:hidden; white-space:nowrap; -webkit-overflow-scrolling:touch;
 }
+/* Overrides the blanket #chat-panel, #chat-panel * { touch-action:pan-y }
+   above — a horizontal swipe on the chip row almost always starts on a chip
+   or its close button (they fill nearly the whole row), so both the
+   container AND its children need the pan-x override, not just the
+   container (a touch-action is resolved from the exact element the gesture
+   starts on, not inherited from an ancestor for gesture purposes). */
+#chat-dm-hdr, #chat-dm-hdr * { touch-action:pan-x; }
+.chat-dm-hint { display:inline-block; padding:2px 0; }
+.chat-dm-chip {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:4px 6px 4px 10px; margin-right:6px; border-radius:14px;
+  background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08);
+  font-size:11px; font-weight:600; color:#a396c8; cursor:pointer;
+}
+.chat-dm-chip.active { background:rgba(112,48,192,0.28); border-color:#7030c0; color:#e0c8ff; }
+.chat-dm-chip.has-unread:not(.active) { border-color:#c8a0ff; color:#c8a0ff; }
+.chat-dm-chip-close {
+  background:none; border:none; color:inherit; opacity:0.6; font-size:10px;
+  cursor:pointer; padding:2px; line-height:1;
+}
+.chat-dm-chip-close:active { opacity:1; }
 #chat-msgs {
   flex:1; overflow-y:auto; padding:10px 12px;
   display:flex; flex-direction:column; gap:8px;
@@ -585,31 +607,77 @@ function _chatSetTab(tab) {
     if (el) el.classList.toggle('active', t === tab);
   });
   if (tab === 'clan' && typeof netRequestClanChatHistory === 'function') netRequestClanChatHistory();
-  _updateChatDmHdr();
+  if (typeof _renderDmConvoList === 'function') _renderDmConvoList();
   _updateChatPlaceholder();
   if (typeof _renderActiveChatList === 'function') _renderActiveChatList();
 }
 
-// Switches the one active "Беседа" thread. Clears the stale DM buffer on an
-// actual partner change so an old conversation never flashes before the
-// server's fresh privMsgHistory reply repopulates it (see js/network.js).
+// Switches which conversation is displayed in Беседа — each partner keeps
+// their own message history (js/network.js's _dmConvos), so this never
+// discards another conversation, it only changes which one is on screen.
 function _setActiveDmUser(username) {
-  const changed = (_activeDmUser || '').toLowerCase() !== (username || '').toLowerCase();
   _activeDmUser = username || null;
-  if (changed && typeof _dmMsgs !== 'undefined') _dmMsgs.length = 0;
+  if (_activeDmUser && typeof _dmConvo === 'function') _dmConvo(_activeDmUser, true).unread = false;
   if (_chatTab !== 'dm') { _chatSetTab('dm'); return; }
-  _updateChatDmHdr();
+  if (typeof _renderDmConvoList === 'function') _renderDmConvoList();
   _updateChatPlaceholder();
-  if (changed && typeof _renderActiveChatList === 'function') _renderActiveChatList();
+  if (typeof _renderActiveChatList === 'function') _renderActiveChatList();
 }
 
-function _updateChatDmHdr() {
+// Opens (or switches to) a conversation from the chip list / a fresh @mention
+// and asks the server for its latest history (cheap — just a Map lookup +
+// the recorded messages, works whether or not the other party is online).
+function _openDmConvo(username) {
+  _setActiveDmUser(username);
+  if (typeof netRequestDmHistory === 'function') netRequestDmHistory(username);
+}
+
+// Removes a conversation from the list entirely (client-side only — the
+// server keeps its own rolling history regardless, so if that person writes
+// to you again later it just reappears as a fresh unread conversation).
+function _closeDmConvo(username) {
+  if (typeof _removeDmConvoData === 'function') _removeDmConvoData(username);
+  if (_activeDmUser && _activeDmUser.toLowerCase() === (username || '').toLowerCase()) {
+    _activeDmUser = null;
+    _updateChatPlaceholder();
+    if (typeof _renderActiveChatList === 'function') _renderActiveChatList();
+  }
+  if (typeof _renderDmConvoList === 'function') _renderDmConvoList();
+}
+
+// Renders the "which conversation" chip row shown above #chat-msgs while on
+// the Беседа tab — one chip per partner with an unread history, clickable to
+// switch, plus a ✕ to close it. Built with data-attributes + delegated click
+// handling rather than inline onclick, since a chip's label is someone
+// else's Telegram display name: when they have no @handle set it falls back
+// to first_name, which is untrusted free text and must never be interpolated
+// into an inline event-handler string.
+function _renderDmConvoList() {
   const hdr = document.getElementById('chat-dm-hdr');
   if (!hdr) return;
   if (_chatTab !== 'dm') { hdr.style.display = 'none'; return; }
   hdr.style.display = 'block';
-  hdr.textContent = _activeDmUser ? ('Беседа с @' + _activeDmUser) : 'Отметьте @ник в сообщении, чтобы начать беседу';
+  const convos = (typeof _dmConvoList === 'function') ? _dmConvoList() : [];
+  if (!convos.length) {
+    hdr.innerHTML = '<div class="chat-dm-hint">Отметьте @ник в сообщении, чтобы начать беседу</div>';
+    return;
+  }
+  const escAttr = typeof _escAttr === 'function' ? _escAttr : (s => s);
+  const escHtml = typeof _escHtml === 'function' ? _escHtml : (s => s);
+  hdr.innerHTML = convos.map(c => {
+    const active = _activeDmUser && c.username.toLowerCase() === _activeDmUser.toLowerCase();
+    return `<div class="chat-dm-chip${active ? ' active' : ''}${c.unread ? ' has-unread' : ''}" data-user="${escAttr(c.username)}">
+      <span class="chat-dm-chip-name">@${escHtml(c.username)}</span>
+      <button class="chat-dm-chip-close" data-close-user="${escAttr(c.username)}">✕</button>
+    </div>`;
+  }).join('');
 }
+document.getElementById('chat-dm-hdr')?.addEventListener('click', e => {
+  const closeBtn = e.target.closest('[data-close-user]');
+  if (closeBtn) { _closeDmConvo(closeBtn.dataset.closeUser); return; }
+  const chip = e.target.closest('[data-user]');
+  if (chip) _openDmConvo(chip.dataset.user);
+});
 
 function _updateChatPlaceholder() {
   const inp = document.getElementById('chat-input');
@@ -631,8 +699,7 @@ function _chatSend() {
   const mention = raw.match(/^@(\S+)\s*([\s\S]*)$/);
   if (mention) {
     const toUser = mention[1], rest = mention[2].trim();
-    _setActiveDmUser(toUser);
-    if (typeof netRequestDmHistory === 'function') netRequestDmHistory(toUser);
+    _openDmConvo(toUser);
     if (rest && typeof netPrivMsg === 'function') netPrivMsg(toUser, rest);
     inp.value = '';
     inp.focus();
@@ -643,7 +710,7 @@ function _chatSend() {
     if (typeof netClanChat === 'function') netClanChat(raw);
   } else if (_chatTab === 'dm') {
     if (_activeDmUser && typeof netPrivMsg === 'function') netPrivMsg(_activeDmUser, raw);
-    else if (typeof _chatChannelError === 'function') _chatChannelError('Отметьте @ник, чтобы написать');
+    else if (typeof _chatChannelError === 'function') _chatChannelError('Выберите беседу выше или отметьте @ник');
   } else if (typeof netChat === 'function') {
     netChat(raw);
   }

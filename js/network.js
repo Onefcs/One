@@ -567,23 +567,20 @@ function netConnect(onReady) {
   // ── Private messages (Беседа) ─────────────────────────────
   // withUsername is always "the other party in this conversation" — the
   // server sends it that way for both the sender's own echo and the
-  // recipient's live copy, so this client always knows who the thread
-  // belongs to regardless of which side originated the message.
+  // recipient's live copy, so this client always knows which conversation a
+  // message belongs to regardless of which side originated it. Each partner
+  // gets their own persistent entry (_dmConvos) — receiving from someone new
+  // never discards whatever conversation you already have open.
   socket.on('privMsg', ({ withUsername, username, text }) => {
     if (!withUsername) return;
-    const activePartner = typeof _activeDmUser !== 'undefined' ? _activeDmUser : null;
-    if (!activePartner || activePartner.toLowerCase() !== withUsername.toLowerCase()) {
-      // Message belongs to a conversation we're not currently viewing (or none
-      // yet) — switch to it and pull the full thread instead of just this line.
-      if (typeof _setActiveDmUser === 'function') _setActiveDmUser(withUsername);
-      netRequestDmHistory(withUsername);
-      return;
-    }
-    _pushChatMsg('dm', _dmMsgs, 50, username, text, _nowHHMM());
+    _recordDmMessage(withUsername, username, text, _nowHHMM());
+    // Nothing open yet at all → default to showing this one as a convenience.
+    // Otherwise leave whatever conversation the user is already viewing alone.
+    if (!_currentDmUser() && typeof _setActiveDmUser === 'function') _setActiveDmUser(withUsername);
   });
   socket.on('privMsgHistory', ({ withUsername, messages }) => {
+    _setDmConvoHistory(withUsername, messages);
     if (typeof _setActiveDmUser === 'function') _setActiveDmUser(withUsername);
-    _setChannelHistory('dm', _dmMsgs, 50, messages);
   });
   socket.on('privMsgError', ({ msg }) => _chatChannelError(msg));
   socket.on('chatError', ({ msg }) => _chatChannelError(msg));
@@ -1268,7 +1265,12 @@ function netRequestDmHistory(withUsername) {
 // pattern already used throughout this file (e.g. _refreshChatPreview).
 const _chatMsgs = [];
 const _clanChatMsgs = [];
-const _dmMsgs = [];
+// Беседа keeps one entry PER partner (not a single overwritten thread) so
+// writing to a new person never discards a conversation you already had
+// open — that was the bug this replaced. Keyed by lowercased username;
+// index.html's _renderDmConvoList/_openDmConvo/_closeDmConvo build the
+// "which conversation" chip row on top of this.
+const _dmConvos = new Map(); // lowercased username -> { username, messages: [], unread }
 
 function _nowHHMM() {
   const now = new Date();
@@ -1276,10 +1278,21 @@ function _nowHHMM() {
 }
 
 function _currentChatTab() { return (typeof _chatTab !== 'undefined' && _chatTab) || 'global'; }
+function _currentDmUser() { return (typeof _activeDmUser !== 'undefined' && _activeDmUser) || null; }
+
+function _dmConvo(username, createIfMissing) {
+  const key = String(username || '').toLowerCase();
+  if (!key) return null;
+  let c = _dmConvos.get(key);
+  if (!c && createIfMissing) { c = { username, messages: [], unread: false }; _dmConvos.set(key, c); }
+  return c;
+}
+function _dmConvoList() { return [..._dmConvos.values()]; }
+function _removeDmConvoData(username) { _dmConvos.delete(String(username || '').toLowerCase()); }
 
 function _chatListFor(tabKey) {
   if (tabKey === 'clan') return _clanChatMsgs;
-  if (tabKey === 'dm') return _dmMsgs;
+  if (tabKey === 'dm') { const c = _dmConvo(_currentDmUser(), false); return c ? c.messages : []; }
   return _chatMsgs;
 }
 
@@ -1292,9 +1305,10 @@ function _renderChatRow(el, username, text, time) {
   el.appendChild(row);
 }
 
-// Re-renders #chat-msgs from scratch using whichever channel's array
-// matches the currently active tab — called on tab switch (index.html) and
-// whenever a history payload lands for the tab currently on screen.
+// Re-renders #chat-msgs from scratch using whichever channel/conversation
+// matches the currently active tab — called on tab switch, conversation
+// switch (index.html) and whenever a history payload lands for what's
+// currently on screen.
 function _renderActiveChatList() {
   const el = document.getElementById('chat-msgs');
   if (!el) return;
@@ -1303,15 +1317,29 @@ function _renderActiveChatList() {
   el.scrollTop = el.scrollHeight;
 }
 
-// Pushes one live message into a channel's array. If that channel is the one
-// currently on screen it's appended immediately; otherwise it just bumps the
-// shared unread badge (one combined counter across all 3 channels) so a
-// message on a channel you're not looking at still surfaces.
+// Bumps the shared unread badge (one combined counter across every channel/
+// conversation) — used whenever a message lands somewhere other than what's
+// currently on screen.
+function _bumpChatUnread() {
+  if (typeof _chatUnread !== 'undefined') _chatUnread++;
+  const badge = document.getElementById('chat-badge');
+  if (badge) {
+    badge.textContent = (_chatUnread || 0) > 9 ? '9+' : String(_chatUnread || 1);
+    badge.style.display = 'flex';
+  }
+}
+
+// Pushes one live message into a channel's array (global/clan only — see
+// _recordDmMessage for Беседа, which has to pick a specific conversation
+// rather than one shared array). If that channel is the one currently on
+// screen it's appended immediately; otherwise just bumps the unread badge.
 function _pushChatMsg(tabKey, list, cap, username, text, time) {
   list.push({ username, text, time });
   if (list.length > cap) list.shift();
 
   const activeTabKey = _currentChatTab();
+  const panel = document.getElementById('chat-panel');
+  const visible = panel && panel.classList.contains('open') && activeTabKey === tabKey;
   if (activeTabKey === tabKey) {
     const el = document.getElementById('chat-msgs');
     if (el) {
@@ -1320,18 +1348,36 @@ function _pushChatMsg(tabKey, list, cap, username, text, time) {
       el.scrollTop = el.scrollHeight;
     }
   }
-
-  const panel = document.getElementById('chat-panel');
-  const visible = panel && panel.classList.contains('open') && activeTabKey === tabKey;
-  if (!visible) {
-    if (typeof _chatUnread !== 'undefined') _chatUnread++;
-    const badge = document.getElementById('chat-badge');
-    if (badge) {
-      badge.textContent = (_chatUnread || 0) > 9 ? '9+' : String(_chatUnread || 1);
-      badge.style.display = 'flex';
-    }
-  }
+  if (!visible) _bumpChatUnread();
   if (tabKey === 'global') _refreshChatPreview();
+}
+
+// Records one message into a specific DM partner's conversation (creating it
+// if this is a brand-new conversation). Renders live only if that exact
+// conversation is the one currently open; otherwise flags it unread in the
+// chip list (see index.html's _renderDmConvoList) without touching whatever
+// conversation IS currently open.
+function _recordDmMessage(otherUsername, senderUsername, text, time) {
+  const convo = _dmConvo(otherUsername, true);
+  convo.username = otherUsername; // keep the canonical casing fresh
+  convo.messages.push({ username: senderUsername, text, time });
+  if (convo.messages.length > 50) convo.messages.shift();
+
+  const isActive = _currentChatTab() === 'dm' && _currentDmUser() && _currentDmUser().toLowerCase() === otherUsername.toLowerCase();
+  const panel = document.getElementById('chat-panel');
+  const visible = panel && panel.classList.contains('open') && isActive;
+  if (isActive) {
+    const el = document.getElementById('chat-msgs');
+    if (el) {
+      _renderChatRow(el, senderUsername, text, time);
+      while (el.children.length > 50) el.removeChild(el.firstChild);
+      el.scrollTop = el.scrollHeight;
+    }
+  } else {
+    convo.unread = true;
+  }
+  if (typeof _renderDmConvoList === 'function' && _currentChatTab() === 'dm') _renderDmConvoList();
+  if (!visible) _bumpChatUnread();
 }
 
 // Replaces a channel's whole history (initial load / tab switch fetch).
@@ -1341,6 +1387,18 @@ function _setChannelHistory(tabKey, list, cap, messages) {
   if (list.length > cap) list.splice(0, list.length - cap);
   if (_currentChatTab() === tabKey) _renderActiveChatList();
   if (tabKey === 'global') _refreshChatPreview();
+}
+
+// Replaces one DM conversation's whole history (privMsgHistory response).
+function _setDmConvoHistory(username, messages) {
+  const convo = _dmConvo(username, true);
+  convo.username = username;
+  convo.messages = (messages || []).slice(-50);
+  convo.unread = false;
+  if (_currentChatTab() === 'dm' && _currentDmUser() && _currentDmUser().toLowerCase() === username.toLowerCase()) {
+    _renderActiveChatList();
+  }
+  if (typeof _renderDmConvoList === 'function') _renderDmConvoList();
 }
 
 function _chatChannelError(msg) {
@@ -1379,6 +1437,13 @@ function _refreshChatPreview() {
 
 function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// For embedding untrusted text (e.g. a Telegram display name with no @handle
+// set, which falls back to first_name and so isn't restricted to safe
+// characters) inside a double-quoted HTML attribute — _escHtml alone doesn't
+// escape quotes, which would let it break out of the attribute.
+function _escAttr(s) {
+  return _escHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function _finishOnlineStart() {
