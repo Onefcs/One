@@ -66,17 +66,17 @@ function updateInvUI() {
       <div style="line-height:1">${iconHTML(p.charDef.icon, 40, p.charDef.color)}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:bold;color:${p.charDef.color}">${p.charDef.name}</div>
-        <div style="font-size:11px;color:#a2988a;margin-top:2px">Уровень ${p.lvl}</div>
+        <div style="font-size:11px;color:#a2988a;margin-top:2px">${tVars('charLevelFmt', { lvl: p.lvl })}</div>
         <div style="font-size:11px;color:#5d564b;margin-top:2px;display:flex;align-items:center;gap:3px">
           ${iconHTML('heart',11,'#da4658')}${Math.ceil(p.hp)}/${p.maxHp} ·
-          <span style="color:#eaa742;font-weight:700">БМ ${typeof calcBM==='function'?calcBM(p):0}</span> ·
+          <span style="color:#eaa742;font-weight:700">${t('bmAbbrev')} ${typeof calcBM==='function'?calcBM(p):0}</span> ·
           ${iconHTML('coin',11,'#e3941d')}${p.gold}
         </div>
       </div>
       <div onclick="openHpPicker()" style="color:#98e456;text-align:right;font-weight:bold;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
         ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="20" height="20" style="image-rendering:pixelated">` : iconHTML('potion',20,'#90d653')}
         <span style="font-size:10px">×${_hudCount}</span>
-        ${_activeBufCount > 0 ? `<span style="font-size:9px;color:#e5a546">${_activeBufCount} бафф</span>` : ''}
+        ${_activeBufCount > 0 ? `<span style="font-size:9px;color:#e5a546">${_activeBufCount} ${t('buffCountSuffix')}</span>` : ''}
       </div>
     </div>
   `;
@@ -125,7 +125,7 @@ function openHpPicker() {
   const bag = player.potionBag || {};
   const hudPt = player.hudPotion || 'pt1';
   const autoThresholds = [0, 0.3, 0.5, 0.7];
-  const autoLabels = ['ВЫКЛ', '30%', '50%', '70%'];
+  const autoLabels = [t('offLbl'), '30%', '50%', '70%'];
   const curAuto = player.autoHpPct || 0;
 
   const hpPots = ITEM_DEF.filter(d => d.slot === 'use');
@@ -143,8 +143,8 @@ function openHpPicker() {
       ${imgEl}
       <div style="font-size:10px;color:${isHud ? '#90d653' : '#968a7a'};font-weight:${isHud?'700':'400'}">${def.name}</div>
       <div style="font-size:11px;color:#98e456;margin-top:2px">×${cnt}</div>
-      <div style="font-size:9px;color:#72685a">HP+${def.hp} · откат 4с</div>
-      ${isHud ? '<div style="font-size:9px;color:#90d653;font-weight:700;margin-top:2px">✓ В HUD</div>' : ''}
+      <div style="font-size:9px;color:#72685a">${tVars('potCooldownFmt', { hp: def.hp, s: 4 })}</div>
+      ${isHud ? `<div style="font-size:9px;color:#90d653;font-weight:700;margin-top:2px">${t('inHudBadge')}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -164,16 +164,16 @@ function openHpPicker() {
   ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-size:15px;font-weight:800;color:#90d653">Зелья лечения</div>
+      <div style="font-size:15px;font-weight:800;color:#90d653">${t('npcHealPotionsHdr')}</div>
       <button onclick="document.getElementById('hp-picker-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:16px">${potCells}</div>
-    <div style="font-size:11px;color:#72685a;margin-bottom:8px">Авто-использование при HP &lt;</div>
+    <div style="font-size:11px;color:#72685a;margin-bottom:8px">${t('autoUseHint')}</div>
     <div style="display:flex;gap:8px">${autoRows}</div>
     <button onclick="usePotion();document.getElementById('hp-picker-ov').remove()" style="
       width:100%;margin-top:14px;padding:12px;border:none;border-radius:12px;
       background:linear-gradient(135deg,#29361e,#415331);color:#90d653;font-size:15px;font-weight:700;cursor:pointer;
-    ">Использовать</button>
+    ">${t('useBtn')}</button>
   </div>`;
   document.getElementById('app').appendChild(ov);
 }
@@ -227,19 +227,19 @@ function updateProfileUI() {
       <div class="prof-emoji">${iconHTML(d.icon, 40, d.color)}</div>
       <div>
         <div class="prof-cls" style="color:${d.color}">${d.name}</div>
-        <div class="prof-lvl">Уровень ${p.lvl} · ${th.name}</div>
+        <div class="prof-lvl">${tVars('charLevelFmt', { lvl: p.lvl })} · ${th.name}</div>
       </div>
     </div>
-    <div class="xp-lbl">Опыт: ${p.xp} / ${p.xpNext}</div>
+    <div class="xp-lbl">${tVars('xpFmt', { xp: p.xp, xpNext: p.xpNext })}</div>
     <div class="xp-bg"><div class="xp-fill" style="width:${pct}%"></div></div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-ic">${iconHTML('heart',14,'#da4658')}</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('sword',14,'#da952e')}</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">Атака</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('shield',14,'#d1aa65')}</div><div class="stat-vl">${p.def}</div><div class="stat-nm">Защита</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#e3941d')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">Скор. ат.</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#da4658')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">Крит шанс</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#da952e')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">Крит сила</div></div>
-      <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#79b644')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">HP реген</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('sword',14,'#da952e')}</div><div class="stat-vl">${p.atk}</div><div class="stat-nm">${t('clanPerkAtk')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('shield',14,'#d1aa65')}</div><div class="stat-vl">${p.def}</div><div class="stat-nm">${t('statDef')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#e3941d')}</div><div class="stat-vl">${p.atkSpeed.toFixed(2)}</div><div class="stat-nm">${t('statAtkSpeedAbbrev')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#da4658')}</div><div class="stat-vl">${fmt1(p.critChance)}</div><div class="stat-nm">${t('statCritChance')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#da952e')}</div><div class="stat-vl">${p.critPower.toFixed(2)}x</div><div class="stat-nm">${t('statCritPower')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#79b644')}</div><div class="stat-vl">${p.hpRegen.toFixed(2)}</div><div class="stat-nm">${t('statHpRegen')}</div></div>
     </div>`;
   updateUpgradeUI();
 }
@@ -252,7 +252,7 @@ function updateUpgradeUI() {
   if (goldLbl) goldLbl.innerHTML = iconHTML('coin', 14, '#e3941d') + ' ' + player.gold;
   const availSP = getAvailableSkillPoints();
   const spLbl = document.getElementById('upg-sp-lbl');
-  if (spLbl) spLbl.textContent = `Очки навыка: ${availSP}`;
+  if (spLbl) spLbl.textContent = tVars('skillPointsFmt', { n: availSP });
   const u = player.upgrades || {};
   el.innerHTML = Object.entries(UPGRADE_DEF).map(([key, cfg]) => {
     const lvl  = u[key] || 0;
@@ -261,10 +261,10 @@ function updateUpgradeUI() {
     return `<div class="upg-row">
       <div class="upg-info">
         <span class="upg-label">${iconHTML(cfg.icon, 14, '#b2a58e')} ${cfg.label}</span>
-        <span class="upg-meta">Ур.${lvl} · ${cfg.desc}</span>
+        <span class="upg-meta">${t('levelAbbrev')}${lvl} · ${cfg.desc}</span>
       </div>
       <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">
-        ${iconHTML('coin',12,'#e3941d')}${cost} + 1 ОН
+        ${iconHTML('coin',12,'#e3941d')}${cost} + 1 ${t('spAbbrev')}
       </button>
     </div>`;
   }).join('');
@@ -276,20 +276,20 @@ function updateUpgradeUI() {
 function _skillBonusDesc(type, level) {
   if (level <= 0) return null;
   switch (type) {
-    case 'damage':   return `+${level}% к урону`;
-    case 'buff':     return `+${level}с. действия`;
-    case 'heal':     return `+${level}% к лечению`;
-    case 'mobility': return `+${level * 10}px дальность`;
+    case 'damage':   return `+${level}% ${t('bonusToDamage')}`;
+    case 'buff':     return `+${level}${t('bonusToDuration')}`;
+    case 'heal':     return `+${level}% ${t('bonusToHeal')}`;
+    case 'mobility': return `+${level * 10}${t('bonusToRange')}`;
     default:         return null;
   }
 }
 
 function _skillBonusTypeLabel(type) {
   switch (type) {
-    case 'damage':   return '+1%/ур. урон';
-    case 'buff':     return '+1с/ур. действие';
-    case 'heal':     return '+1%/ур. лечение';
-    case 'mobility': return '+10px/ур. дальность';
+    case 'damage':   return t('bonusTypeDamage');
+    case 'buff':     return t('bonusTypeBuff');
+    case 'heal':     return t('bonusTypeHeal');
+    case 'mobility': return t('bonusTypeMobility');
     default:         return '';
   }
 }
@@ -311,14 +311,14 @@ function updateSkillsUI() {
   const el = document.getElementById('skill-upgrade-panel');
   if (!el) return;
   const skills = SKILL_DEF[player.type];
-  if (!skills) { el.innerHTML = '<div style="padding:16px;color:#645f57;text-align:center">Выберите персонажа</div>'; return; }
+  if (!skills) { el.innerHTML = `<div style="padding:16px;color:#645f57;text-align:center">${t('selectCharacterHint')}</div>`; return; }
   const bonusTypes = (SKILL_BONUS_TYPE || {})[player.type] || {};
   const sl = player.skillLevels || {};
 
   el.innerHTML = `
     <div class="skill-upg-header">
-      <span>${iconHTML('book', 13, '#e3941d')} Книги навыков</span>
-      <span class="skill-upg-hint">Изучение: ${SKILL_STUDY_COST} кн. · Улучшение: ${SKILL_UPGRADE_COST} кн. · ${Math.round(SKILL_UPGRADE_CHANCE * 100)}% шанс</span>
+      <span>${iconHTML('book', 13, '#e3941d')} ${t('skillBooksHdr')}</span>
+      <span class="skill-upg-hint">${tVars('studyUpgradeHintFmt', { a: SKILL_STUDY_COST, b: SKILL_UPGRADE_COST, c: Math.round(SKILL_UPGRADE_CHANCE * 100) })}</span>
     </div>
     ${skills.map(sk => {
       const level = sl[sk.key] || 0;
@@ -328,7 +328,7 @@ function updateSkillsUI() {
       const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level);
       const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1);
       const bookId = _skillBookId(player.type, sk.key);
-      const bookName = (_skillBookDef(player.type, sk.key) || {}).name || 'Книга навыков';
+      const bookName = (_skillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
       const bookCount = countMaterial(bookId);
 
       const dots = Array.from({ length: 10 }, (_, i) =>
@@ -348,15 +348,15 @@ function updateSkillsUI() {
       let btnLabel, btnAction, btnDisabled;
       if (locked) {
         btnDisabled = bookCount < SKILL_STUDY_COST;
-        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · Изучить (${bookCount})`;
+        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · ${tVars('studyBtnFmt', { n: bookCount })}`;
         btnAction = `studySkill('${sk.key}')`;
       } else if (maxed) {
         btnDisabled = true;
-        btnLabel = 'Максимум';
+        btnLabel = t('maxLbl');
         btnAction = '';
       } else {
         btnDisabled = bookCount < SKILL_UPGRADE_COST;
-        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · Улучшить (${Math.round(SKILL_UPGRADE_CHANCE * 100)}%) — ${bookCount}`;
+        btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · ${tVars('upgradeBtnFmt', { pct: Math.round(SKILL_UPGRADE_CHANCE * 100), n: bookCount })}`;
         btnAction = `upgradeSkillWithBook('${sk.key}')`;
       }
 
@@ -367,7 +367,7 @@ function updateSkillsUI() {
             ${locked ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
           </div>
           <div class="skill-upg-info">
-            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${locked ? ' 🔒 Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
+            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${locked ? ' 🔒 ' + t('notStudiedLbl') : maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
             <div class="skill-upg-desc">${sk.desc}</div>
             <div class="skill-upg-type">${locked ? bookName : _skillBonusTypeLabel(bonusType)}</div>
           </div>
@@ -389,13 +389,13 @@ function studySkill(key) {
   if ((sl[key] || 0) > 0) return; // already studied
   const bookId = _skillBookId(player.type, key);
   if (countMaterial(bookId) < SKILL_STUDY_COST) {
-    dmgNum(player.x, player.y - 30, 'Нужна книга этого навыка!', '#f17e8b');
+    dmgNum(player.x, player.y - 30, t('needSkillBookToast'), '#f17e8b');
     return;
   }
   removeFromInventory(bookId, SKILL_STUDY_COST);
   sl[key] = 1;
   spawnBurst(player.x, player.y, '#e69419', 10);
-  dmgNum(player.x, player.y - 42, 'Навык изучен!', '#e69419');
+  dmgNum(player.x, player.y - 42, t('skillStudiedToast'), '#e69419');
   netSaveProgress();
   updateSkillsUI();
   updateInvUI();
@@ -405,20 +405,20 @@ function upgradeSkillWithBook(key) {
   if (!player) return;
   const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
   const lvl = sl[key] || 0;
-  if (lvl <= 0) { dmgNum(player.x, player.y - 30, 'Сначала изучите навык!', '#f17e8b'); return; }
+  if (lvl <= 0) { dmgNum(player.x, player.y - 30, t('studySkillFirstToast'), '#f17e8b'); return; }
   if (lvl >= 10) return;
   const bookId = _skillBookId(player.type, key);
   if (countMaterial(bookId) < SKILL_UPGRADE_COST) {
-    dmgNum(player.x, player.y - 30, `Нужно ${SKILL_UPGRADE_COST} книги этого навыка!`, '#f17e8b');
+    dmgNum(player.x, player.y - 30, tVars('needNSkillBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
     return;
   }
   removeFromInventory(bookId, SKILL_UPGRADE_COST);
   if (Math.random() < SKILL_UPGRADE_CHANCE) {
     sl[key] = lvl + 1;
     spawnBurst(player.x, player.y, '#e69419', 10);
-    dmgNum(player.x, player.y - 42, '↑ Навык +' + sl[key] + ' ур.!', '#e69419');
+    dmgNum(player.x, player.y - 42, tVars('skillLevelUpToast', { n: sl[key] }), '#e69419');
   } else {
-    dmgNum(player.x, player.y - 36, 'Неудача...', '#eb4e61');
+    dmgNum(player.x, player.y - 36, t('failToast'), '#eb4e61');
   }
   netSaveProgress();
   updateSkillsUI();
@@ -448,11 +448,11 @@ function switchSkillTab(tab) {
 function _passiveBonusText(p, level) {
   if (level <= 0) return null;
   const val = p.perLevel * level;
-  if (p.stat === 'hpRegenFlat') return `+${val.toFixed(1)} HP/сек`;
-  if (p.stat === 'cdrPct') return `-${Math.round(val * 100)}% КД навыков`;
+  if (p.stat === 'hpRegenFlat') return `+${val.toFixed(1)} ${t('hpPerSecSuffix')}`;
+  if (p.stat === 'cdrPct') return `-${Math.round(val * 100)}% ${t('skillCdrSuffix')}`;
   const label = {
-    atkPct: 'к атаке', defPct: 'к защите', hpPct: 'к макс. HP',
-    atkSpeedPct: 'к скор. атаки', moveSpeedPct: 'к скорости', critPowerFlat: 'к силе крита',
+    atkPct: t('passiveStatAtk'), defPct: t('passiveStatDef'), hpPct: t('passiveStatHp'),
+    atkSpeedPct: t('passiveStatAtkSpeed'), moveSpeedPct: t('passiveStatMoveSpeed'), critPowerFlat: t('passiveStatCritPower'),
   }[p.stat] || '';
   return `+${Math.round(val * 100)}% ${label}`;
 }
@@ -473,7 +473,7 @@ function _passiveCardHtml(p) {
   const bonusNow  = locked ? null : _passiveBonusText(p, level);
   const bonusNext = (locked || maxed) ? null : _passiveBonusText(p, level + 1);
   const bookId = _passiveBookId(p.id);
-  const bookName = (_passiveBookDef(p.id) || {}).name || 'Книга навыков';
+  const bookName = (_passiveBookDef(p.id) || {}).name || t('skillBookFallback');
   const bookCount = countMaterial(bookId);
 
   const dots = Array.from({ length: PASSIVE_MAX_LEVEL }, (_, i) =>
@@ -491,15 +491,15 @@ function _passiveCardHtml(p) {
   let btnLabel, btnAction, btnDisabled;
   if (locked) {
     btnDisabled = bookCount < SKILL_STUDY_COST;
-    btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · Изучить (${bookCount})`;
+    btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_STUDY_COST} · ${tVars('studyBtnFmt', { n: bookCount })}`;
     btnAction = `studyPassiveSkill('${p.id}')`;
   } else if (maxed) {
     btnDisabled = true;
-    btnLabel = 'Максимум';
+    btnLabel = t('maxLbl');
     btnAction = '';
   } else {
     btnDisabled = bookCount < SKILL_UPGRADE_COST;
-    btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · Улучшить (${Math.round(SKILL_UPGRADE_CHANCE * 100)}%) — ${bookCount}`;
+    btnLabel = iconHTML('book', 12, '#e3941d') + ` ${SKILL_UPGRADE_COST} · ${tVars('upgradeBtnFmt', { pct: Math.round(SKILL_UPGRADE_CHANCE * 100), n: bookCount })}`;
     btnAction = `upgradePassiveSkillWithBook('${p.id}')`;
   }
 
@@ -510,7 +510,7 @@ function _passiveCardHtml(p) {
         ${locked ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
       </div>
       <div class="skill-upg-info">
-        <div class="skill-upg-name">${p.name}<span class="skill-upg-lvl">${locked ? ' 🔒 Не изучен' : maxed ? ' МАКС' : ' Ур.' + level}</span></div>
+        <div class="skill-upg-name">${p.name}<span class="skill-upg-lvl">${locked ? ' 🔒 ' + t('notStudiedLbl') : maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
         <div class="skill-upg-desc">${p.desc}</div>
         <div class="skill-upg-type">${locked ? bookName : ''}</div>
       </div>
@@ -531,12 +531,12 @@ function updatePassiveSkillsUI() {
 
   el.innerHTML = `
     <div class="skill-upg-header">
-      <span>${iconHTML('book', 13, '#e3941d')} Книги пассивок</span>
-      <span class="skill-upg-hint">Изучение: ${SKILL_STUDY_COST} кн. · Улучшение: ${SKILL_UPGRADE_COST} кн. · ${Math.round(SKILL_UPGRADE_CHANCE * 100)}% шанс</span>
+      <span>${iconHTML('book', 13, '#e3941d')} ${t('passiveBooksHdr')}</span>
+      <span class="skill-upg-hint">${tVars('studyUpgradeHintFmt', { a: SKILL_STUDY_COST, b: SKILL_UPGRADE_COST, c: Math.round(SKILL_UPGRADE_CHANCE * 100) })}</span>
     </div>
-    <div class="sec-title">Классовые (${CHAR_DEF[player.type]?.name || ''})</div>
+    <div class="sec-title">${tVars('classPassivesFmt', { cls: CHAR_DEF[player.type]?.name || '' })}</div>
     ${classDef.map(_passiveCardHtml).join('')}
-    <div class="sec-title" style="margin-top:14px">Общие</div>
+    <div class="sec-title" style="margin-top:14px">${t('commonPassivesHdr')}</div>
     ${PASSIVE_COMMON_DEF.map(_passiveCardHtml).join('')}
   `;
 }
@@ -549,14 +549,14 @@ function studyPassiveSkill(id) {
   if ((pl[id] || 0) > 0) return; // already studied
   const bookId = _passiveBookId(id);
   if (countMaterial(bookId) < SKILL_STUDY_COST) {
-    dmgNum(player.x, player.y - 30, 'Нужна книга этой пассивки!', '#f17e8b');
+    dmgNum(player.x, player.y - 30, t('needPassiveBookToast'), '#f17e8b');
     return;
   }
   removeFromInventory(bookId, SKILL_STUDY_COST);
   pl[id] = 1;
   recompute();
   spawnBurst(player.x, player.y, '#e69419', 10);
-  dmgNum(player.x, player.y - 42, 'Пассивка изучена!', '#e69419');
+  dmgNum(player.x, player.y - 42, t('passiveStudiedToast'), '#e69419');
   netSaveProgress();
   updatePassiveSkillsUI();
   updateInvUI();
@@ -568,11 +568,11 @@ function upgradePassiveSkillWithBook(id) {
   if (!def) return;
   const pl = player.passiveLevels || (player.passiveLevels = {});
   const lvl = pl[id] || 0;
-  if (lvl <= 0) { dmgNum(player.x, player.y - 30, 'Сначала изучите пассивку!', '#f17e8b'); return; }
+  if (lvl <= 0) { dmgNum(player.x, player.y - 30, t('studyPassiveFirstToast'), '#f17e8b'); return; }
   if (lvl >= PASSIVE_MAX_LEVEL) return;
   const bookId = _passiveBookId(id);
   if (countMaterial(bookId) < SKILL_UPGRADE_COST) {
-    dmgNum(player.x, player.y - 30, `Нужно ${SKILL_UPGRADE_COST} книги этой пассивки!`, '#f17e8b');
+    dmgNum(player.x, player.y - 30, tVars('needNPassiveBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
     return;
   }
   removeFromInventory(bookId, SKILL_UPGRADE_COST);
@@ -580,9 +580,9 @@ function upgradePassiveSkillWithBook(id) {
     pl[id] = lvl + 1;
     recompute();
     spawnBurst(player.x, player.y, '#e69419', 10);
-    dmgNum(player.x, player.y - 42, '↑ Пассивка +' + pl[id] + ' ур.!', '#e69419');
+    dmgNum(player.x, player.y - 42, tVars('passiveLevelUpToast', { n: pl[id] }), '#e69419');
   } else {
-    dmgNum(player.x, player.y - 36, 'Неудача...', '#eb4e61');
+    dmgNum(player.x, player.y - 36, t('failToast'), '#eb4e61');
   }
   netSaveProgress();
   updatePassiveSkillsUI();
@@ -697,12 +697,18 @@ function drawMapPanel() {
   });
   mx2.fill();
   const _pRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
-  const _locLabel = _pRoom?.arm ? (_ARM_LABELS[_pRoom.arm] + ' · Ур. ' + _pRoom.monsterLvl) : 'Центральный зал';
+  const _locLabel = _pRoom?.arm ? (_armLabel(_pRoom.arm) + ' · ' + t('levelAbbrev') + ' ' + _pRoom.monsterLvl) : t('centralHall');
   document.getElementById('map-status').textContent =
-    _locLabel + ' · Враги: ' + aliveEnemies.length;
+    _locLabel + ' · ' + tVars('enemiesCountFmt', { n: aliveEnemies.length });
 }
 
-const _ARM_LABELS = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
+// Derived live from the current language (armLeft/armTop/armBottom/armRight +
+// corridorSuffix in I18N_UI) instead of a static object, so a language switch
+// takes effect immediately — mirrors the _ARM_LABEL Proxy in js/game.js.
+function _armLabel(dir) {
+  const adjKey = { left: 'armLeft', top: 'armTop', bottom: 'armBottom', right: 'armRight' }[dir];
+  return (typeof t === 'function' ? t(adjKey) : dir) + ' ' + (typeof t === 'function' ? t('corridorSuffix') : 'коридор');
+}
 
 function _floorEnemyPool(n, localLvl) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
@@ -756,7 +762,7 @@ function _liveEnemy(base, lvl, localLvl, isBoss, maxLocalLvl) {
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
   const head = variants[0];
   const nameRow = isBossLvl
-    ? `<span class="mon-name">${head.name}</span><span class="fi-boss-tag">БОСС</span>`
+    ? `<span class="mon-name">${head.name}</span><span class="fi-boss-tag">${t('bossTag')}</span>`
     : `<span class="mon-name">${variants.map(v => v.name).join(' / ')}</span>`;
   const body = variants.map(e => `
     <div class="mon-variant">
@@ -768,7 +774,7 @@ function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
       <div class="mon-hdr" onclick="_toggleMonster(this)">
         <span class="dot" style="background:${head.color}"></span>
         <div class="mon-titles">
-          <span class="mon-lvl">Уровень ${lvl}</span>
+          <span class="mon-lvl">${tVars('charLevelFmt', { lvl })}</span>
           <div class="mon-name-row">${nameRow}</div>
         </div>
         <span class="mon-chevron">›</span>
@@ -827,11 +833,15 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
 
   // Boss-only rows — fixed chances matching the server's boss-kill payout
+  const _boxUncommon = BOX_DEF.find(bx=>bx.id==='box_uncommon');
+  const _boxRare = BOX_DEF.find(bx=>bx.id==='box_rare');
+  const _normStone = CRAFT_MATS.find(m=>m.id==='norm_stone');
+  const _blessStone = CRAFT_MATS.find(m=>m.id==='bless_stone');
   const stoneRow = isBoss
-    ? _dropRow(_itemIcon(BOX_DEF.find(bx=>bx.id==='box_uncommon'), 16), 'Необычный бокс', `&times;1 · <b style="color:#90d653">50%</b>`, '#90d653')
-    + _dropRow(_itemIcon(BOX_DEF.find(bx=>bx.id==='box_rare'), 16), 'Редкий бокс', `&times;1 · <b style="color:#4a7bab">10%</b>`, '#4a7bab')
-    + _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='norm_stone'), 16), 'Камень обычной заточки', `&times;1 · <b style="color:#f17e8b">10%</b>`, '#f17e8b')
-    + _dropRow(_mi(CRAFT_MATS.find(m=>m.id==='bless_stone'), 16), 'Камень безопасной заточки', `&times;1 · <b style="color:#efc680">1%</b>`, '#efc680')
+    ? _dropRow(_itemIcon(_boxUncommon, 16), _boxUncommon.name, `&times;1 · <b style="color:#90d653">50%</b>`, '#90d653')
+    + _dropRow(_itemIcon(_boxRare, 16), _boxRare.name, `&times;1 · <b style="color:#4a7bab">10%</b>`, '#4a7bab')
+    + _dropRow(_mi(_normStone, 16), _normStone.name, `&times;1 · <b style="color:#f17e8b">10%</b>`, '#f17e8b')
+    + _dropRow(_mi(_blessStone, 16), _blessStone.name, `&times;1 · <b style="color:#efc680">1%</b>`, '#efc680')
     : '';
 
   // Recipe drops (non-boss only) — one roll picks at most one of the 4
@@ -852,7 +862,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aea599';
       return _dropRow(_mi(mat, 16), mat.name, `&times;1 · <b style="color:${rc}">${_pctText(d.base * dropMult)}</b>`, rc);
     }).join('');
-    recipeSection = `<div class="fi-drops-hdr" style="margin-top:8px">Рецепты</div><div class="fi-drops">${rows}</div>`;
+    recipeSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('craftRecipesHdr')}</div><div class="fi-drops">${rows}</div>`;
   }
 
   // Room-level keys + enchant stone (non-boss only — bosses use the fixed
@@ -866,7 +876,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       (matU ? _dropRow(_mi(matU, 16), matU.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'uncommon') * 100)}</b>`) : '') +
       (matR ? _dropRow(_mi(matR, 16), matR.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'rare') * 100)}</b>`) : '') +
       (matN && typeof roomEnchantStoneChance === 'function' ? _dropRow(_mi(matN, 16), matN.name, `&times;1 · <b>${_pctText(roomEnchantStoneChance(localLvl) * 100)}</b>`) : '');
-    keySection = `<div class="fi-drops-hdr" style="margin-top:8px">Ключи и камни</div><div class="fi-drops">${rows}</div>`;
+    keySection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('keysStonesHdr')}</div><div class="fi-drops">${rows}</div>`;
   }
 
   // Equipment drop: one continuous chance (+0.1%/level, never resets across
@@ -886,7 +896,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     const candidates = ITEM_DEF.filter(d => d.rarity === rarity && GEAR_SLOTS.includes(d.slot));
     const perItemPct = candidates.length ? pct / candidates.length : 0;
     const rows = candidates.map(it => _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b style="color:${rc}">${_pctText(perItemPct)}</b>`, rc)).join('');
-    gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">Экипировка (${rn})</div><div class="fi-drops">${rows}</div>`;
+    gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">${tVars('gearRarityFmt', { rn })}</div><div class="fi-drops">${rows}</div>`;
   }
 
   // Skill books — one per class+skill (shared/definitions.js CRAFT_MATS).
@@ -904,7 +914,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
           ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allBooks.length * 0.01)}</b>`, '#98e456')
           : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.0002 * Math.min(dropMult, 3) / allBooks.length * 100)}</b>`);
       }).join('');
-      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">Книги навыков (все классы)</div><div class="fi-drops">${rows}</div>`;
+      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
   }
 
@@ -917,12 +927,12 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       const rows = allPassiveBooks.map(b => {
         const label = b.forClass
           ? `${b.name} <span style="opacity:.6">(${(CHAR_DEF[b.forClass] || {}).name || b.forClass})</span>`
-          : `${b.name} <span style="opacity:.6">(общая)</span>`;
+          : `${b.name} <span style="opacity:.6">(${t('commonTag')})</span>`;
         return isBoss
           ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.01)}</b>`, '#98e456')
           : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.0002 * Math.min(dropMult, 3) / allPassiveBooks.length * 100)}</b>`);
       }).join('');
-      passiveBookSection = `<div class="fi-drops-hdr" style="margin-top:8px">Книги пассивок (все классы)</div><div class="fi-drops">${rows}</div>`;
+      passiveBookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('passiveBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
   }
 
@@ -931,16 +941,16 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       <span>HP <b>${hp}</b></span>
       <span>ATK <b>${atk}</b></span>
       <span>DEF <b>${e.def}</b></span>
-      <span>СПД <b>${e.spd}</b></span>
+      <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
     </div>
-    <div class="fi-drops-hdr">Дроп</div>
+    <div class="fi-drops-hdr">${t('dropHdr')}</div>
     <div class="fi-drops">
       <div class="fi-drop">
-        <span class="fi-drop-lbl">Опыт</span>
+        <span class="fi-drop-lbl">${t('clanPerkXp')}</span>
         <span class="fi-drop-val" style="color:${xpColor}">${xpFinal} XP</span>
       </div>
       <div class="fi-drop">
-        <span class="fi-drop-lbl">Золото</span>
+        <span class="fi-drop-lbl">${t('npcGoldLbl')}</span>
         <span class="fi-drop-val">${goldText}</span>
       </div>
       <div class="fi-drop">
@@ -965,7 +975,7 @@ function updateRaidPanelUI() {
   const lvlOk = plvl >= 3;
 
   if (inRaid) {
-    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">⚔️ Вы в бою...</div>`;
+    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">${t('inBattleHint')}</div>`;
     return;
   }
 
@@ -974,20 +984,20 @@ function updateRaidPanelUI() {
     const memberRows = (_myLobbyMembers || []).map(m =>
       `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
         <span>👤 ${m.name}</span>
-        <span style="color:#a2988a;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
+        <span style="color:#a2988a;font-size:11px">${tVars('memberStatsFmt', { lvl: m.lvl, bm: m.bm })}</span>
       </div>`).join('');
     const canStart = _isLobbyCreator && (_myLobbyMembers?.length || 0) >= 2;
     body.innerHTML = `
       <div class="raid-dungeon-card">
-        <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
-        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">Ваша группа · ${_myLobbyMembers?.length || 1} / 5</div>
+        <div class="raid-dungeon-name">${t('dungeon1Name')}</div>
+        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">${tVars('yourGroupFmt', { n: _myLobbyMembers?.length || 1 })}</div>
         <div style="margin-bottom:10px">${memberRows}</div>
         ${_isLobbyCreator
-          ? `<div class="raid-hint" style="margin-bottom:8px">Вы — создатель · ждите игроков или начните</div>
-             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartLobby()' : ''}">Начать рейд</button>`
-          : `<div class="raid-hint">Ожидание старта от создателя...</div>`}
+          ? `<div class="raid-hint" style="margin-bottom:8px">${t('creatorWaitHint')}</div>
+             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartLobby()' : ''}">${t('startRaidBtn')}</button>`
+          : `<div class="raid-hint">${t('waitingStartHint')}</div>`}
       </div>
-      <button onclick="netLeaveLobby();updateRaidPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
+      <button onclick="netLeaveLobby();updateRaidPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">${t('leaveGroupBtn')}</button>
     `;
     return;
   }
@@ -995,27 +1005,27 @@ function updateRaidPanelUI() {
   // Lobby list
   const dungeonCard = `
     <div class="raid-dungeon-card" style="margin-bottom:10px">
-      <div class="raid-dungeon-name">⚔️ Подземелье 1</div>
-      <div class="raid-dungeon-desc">Волны монстров 3 уровня · 6 волн</div>
+      <div class="raid-dungeon-name">${t('dungeon1Name')}</div>
+      <div class="raid-dungeon-desc">${tVars('monsterWavesFmt', { lvl: 3, w: 6 })}</div>
       <div class="raid-dungeon-rewards">
-        <span>💰 500 голд</span><span>⭐ 500 опыт</span>
-        <span style="color:${RARITY_COL.common}">30% Common</span>
-        <span style="color:${RARITY_COL.uncommon}">5% Uncommon</span>
+        <span>💰 500 ${t('goldShortSuffix')}</span><span>⭐ 500 ${t('xpShortSuffix')}</span>
+        <span style="color:${RARITY_COL.common}">30% ${_RARITY_NAMES.common}</span>
+        <span style="color:${RARITY_COL.uncommon}">5% ${_RARITY_NAMES.uncommon}</span>
       </div>
-      <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 3 раза в день</div>
+      <div style="font-size:11px;color:#eaa742;margin-top:4px">${tVars('availableTimesPerDayFmt', { n: 3 })}</div>
     </div>`;
 
   const createBtn = lvlOk
-    ? `<button class="raid-enter-btn" onclick="netCreateLobby(1);netGetLobbyList()" style="margin-bottom:12px">Создать группу</button>`
-    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">🔒 Нужен уровень 3</button>`;
+    ? `<button class="raid-enter-btn" onclick="netCreateLobby(1);netGetLobbyList()" style="margin-bottom:12px">${t('createGroupBtn')}</button>`
+    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">${tVars('lockedNeedLevel', { n: 3 })}</button>`;
 
   const lobbies = _raidLobbyList || [];
   let lobbyListHtml = '';
   if (lobbies.length === 0) {
-    lobbyListHtml = `<div class="raid-hint">Нет открытых групп. Создайте свою!</div>`;
+    lobbyListHtml = `<div class="raid-hint">${t('noOpenGroupsHint')}</div>`;
   } else {
     lobbyListHtml = lobbies.map(lb => {
-      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">Ур.${m.lvl}</span> ${m.name}`).join(', ');
+      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">${t('levelAbbrev')}${m.lvl}</span> ${m.name}`).join(', ');
       const full = (lb.members?.length || 0) >= 5;
       return `
         <div class="raid-dungeon-card" style="margin-bottom:8px">
@@ -1024,21 +1034,21 @@ function updateRaidPanelUI() {
             <span style="font-size:11px;color:#968a7a">${lb.members?.length || 1} / 5</span>
           </div>
           <div style="font-size:11px;color:#a2988a;margin-bottom:8px">${mList}</div>
-          <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinLobby('${lb.id}')`}">${full ? 'Полная' : 'Войти'}</button>
+          <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinLobby('${lb.id}')`}">${full ? t('fullLbl') : t('enterBtn')}</button>
         </div>`;
     }).join('');
   }
 
   body.innerHTML = dungeonCard + createBtn +
-    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">Открытые группы <button onclick="netGetLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">обновить</button></div>` +
+    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">${t('openGroupsLbl')} <button onclick="netGetLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">${t('refreshBtn')}</button></div>` +
     lobbyListHtml;
 }
 
 function showRaidComplete({ gold, xp, weaponName, weaponRarity }) {
   const RARITY_COL = { common: '#aea599', uncommon: '#90d653' };
   document.getElementById('raid-reward-body').innerHTML =
-    `<div>💰 +${gold} голда</div>` +
-    `<div>⭐ +${xp} опыта</div>` +
+    `<div>${tVars('goldRewardFmt', { gold })}</div>` +
+    `<div>${tVars('xpRewardFmt', { xp })}</div>` +
     (weaponName
       ? `<div style="margin-top:6px;color:${RARITY_COL[weaponRarity] || '#aea599'}">🗡 ${weaponName}</div>`
       : '');
@@ -1054,7 +1064,7 @@ function updatePartyDungeonPanelUI() {
   if (!body) return;
 
   if (inPartyDungeon) {
-    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">🌀 Вы в лабиринте...</div>`;
+    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">${t('inMazeHint')}</div>`;
     return;
   }
 
@@ -1062,51 +1072,51 @@ function updatePartyDungeonPanelUI() {
     const memberRows = (_myPdLobbyMembers || []).map(m =>
       `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
         <span>👤 ${m.name}</span>
-        <span style="color:#a2988a;font-size:11px">Ур.${m.lvl} · БМ ${m.bm}</span>
+        <span style="color:#a2988a;font-size:11px">${tVars('memberStatsFmt', { lvl: m.lvl, bm: m.bm })}</span>
       </div>`).join('');
     const canStart = _isPdLobbyCreator && (_myPdLobbyMembers?.length || 0) >= 3;
     body.innerHTML = `
       <div class="raid-dungeon-card">
-        <div class="raid-dungeon-name">🌀 Лабиринт</div>
-        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">Ваша группа · ${_myPdLobbyMembers?.length || 1} / 8 (мин. 3)</div>
+        <div class="raid-dungeon-name">${t('mazeName')}</div>
+        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">${tVars('yourGroupMinFmt', { n: _myPdLobbyMembers?.length || 1 })}</div>
         <div style="margin-bottom:10px">${memberRows}</div>
         ${_isPdLobbyCreator
-          ? `<div class="raid-hint" style="margin-bottom:8px">Вы — создатель · нужно минимум 3 игрока</div>
-             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartPdLobby()' : ''}">Начать</button>`
-          : `<div class="raid-hint">Ожидание старта от создателя...</div>`}
+          ? `<div class="raid-hint" style="margin-bottom:8px">${t('creatorNeedMin3Hint')}</div>
+             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartPdLobby()' : ''}">${t('startBtn')}</button>`
+          : `<div class="raid-hint">${t('waitingStartHint')}</div>`}
       </div>
-      <button onclick="netLeavePdLobby();updatePartyDungeonPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">Покинуть группу</button>
+      <button onclick="netLeavePdLobby();updatePartyDungeonPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">${t('leaveGroupBtn')}</button>
     `;
     return;
   }
 
   const dungeonCard = `
     <div class="raid-dungeon-card" style="margin-bottom:10px">
-      <div class="raid-dungeon-name">🌀 Лабиринт</div>
-      <div class="raid-dungeon-desc">Ветвящийся лабиринт · монстры 10 уровня · 100 монстров · Финальный босс · Мин. 3 игрока</div>
+      <div class="raid-dungeon-name">${t('mazeName')}</div>
+      <div class="raid-dungeon-desc">${t('mazeDescFull')}</div>
       <div class="raid-dungeon-rewards">
-        <span style="color:#b2864d">50% Liberty с монстров</span>
-        <span style="color:#f17e8b">50% Заточка с босса</span>
-        <span style="color:#efc680">10% Безоп. заточка с босса</span>
+        <span style="color:#b2864d">${t('libertyFromMonstersLbl')}</span>
+        <span style="color:#f17e8b">${t('enchantFromBossLbl')}</span>
+        <span style="color:#efc680">${t('safeEnchantFromBossLbl')}</span>
       </div>
-      <div style="font-size:11px;color:#eaa742;margin-top:4px">Доступно 3 раза в день</div>
+      <div style="font-size:11px;color:#eaa742;margin-top:4px">${tVars('availableTimesPerDayFmt', { n: 3 })}</div>
     </div>`;
 
   const pdLvlOk = (player?.lvl || 1) >= 10;
   const createBtn = pdLvlOk
-    ? `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">Создать группу</button>`
-    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">🔒 Нужен уровень 10</button>`;
+    ? `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">${t('createGroupBtn')}</button>`
+    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">${tVars('lockedNeedLevel', { n: 10 })}</button>`;
 
   const lobbies = _pdLobbyList || [];
   let lobbyListHtml = '';
   if (lobbies.length === 0) {
-    lobbyListHtml = `<div class="raid-hint">Нет открытых групп. Создайте свою!</div>`;
+    lobbyListHtml = `<div class="raid-hint">${t('noOpenGroupsHint')}</div>`;
   } else {
     lobbyListHtml = lobbies.map(lb => {
-      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">Ур.${m.lvl}</span> ${m.name}`).join(', ');
+      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">${t('levelAbbrev')}${m.lvl}</span> ${m.name}`).join(', ');
       const full = (lb.members?.length || 0) >= 8;
       const locked = !pdLvlOk;
-      const btnLabel = full ? 'Полная' : locked ? '🔒 Ур. 10' : 'Войти';
+      const btnLabel = full ? t('fullLbl') : locked ? `🔒 ${t('minPlayersShort')}` : t('enterBtn');
       return `
         <div class="raid-dungeon-card" style="margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -1120,14 +1130,14 @@ function updatePartyDungeonPanelUI() {
   }
 
   body.innerHTML = dungeonCard + createBtn +
-    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">Открытые группы <button onclick="netGetPdLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">обновить</button></div>` +
+    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">${t('openGroupsLbl')} <button onclick="netGetPdLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">${t('refreshBtn')}</button></div>` +
     lobbyListHtml;
 }
 
 function showPartyDungeonComplete({ gold, xp }) {
   document.getElementById('pd-reward-body').innerHTML =
-    `<div>💰 +${gold} голда</div>` +
-    `<div>⭐ +${xp} опыта</div>`;
+    `<div>${tVars('goldRewardFmt', { gold })}</div>` +
+    `<div>${tVars('xpRewardFmt', { xp })}</div>`;
   document.getElementById('pd-complete-modal').style.display = 'flex';
 }
 
