@@ -230,7 +230,7 @@ function updateProfileUI() {
         <div class="prof-lvl">${tVars('charLevelFmt', { lvl: p.lvl })} · ${th.name}</div>
       </div>
     </div>
-    <div class="xp-lbl">${tVars('xpFmt', { xp: p.xp, xpNext: p.xpNext })}</div>
+    <div class="xp-lbl">${tVars('xpFmt', { xp: Math.floor(p.xp), xpNext: p.xpNext })}</div>
     <div class="xp-bg"><div class="xp-fill" style="width:${pct}%"></div></div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-ic">${iconHTML('heart',14,'#da4658')}</div><div class="stat-vl">${Math.ceil(p.hp)}</div><div class="stat-nm">HP</div></div>
@@ -1550,7 +1550,11 @@ function drawHeader() {
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(241,204,141,0.7)';
-  ctx.fillText(p.xp + '/' + p.xpNext, xbX + xbW / 2, xpY);
+  // Floor the XP readout: party kills split their reward (result.xp / members
+  // on the server), so xp is legitimately fractional and float addition turns
+  // that into "858.9999999999418" on the bar. The stored value keeps its
+  // precision — only the display is whole.
+  ctx.fillText(Math.floor(p.xp) + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
   ctx.restore();
 }

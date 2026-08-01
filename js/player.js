@@ -293,9 +293,15 @@ function gainXP(amount, flat) {
     // already under 2 XP and leaves it untouched instead.
     if ((player.buffs || {}).deathPenalty > 0 && amount >= 2) amount = Math.floor(amount * 0.5);
   }
-  player.xp += amount;
+  // Rounded to 6 decimals on every add so binary-float noise can't accumulate.
+  // Party kills award result.xp / memberCount (server/index.js), which is
+  // genuinely fractional — adding those raw drifted the total into values like
+  // 858.9999999999418, which then got persisted and displayed. 6 decimals is
+  // far below any share size (so no XP is actually lost to the rounding) but
+  // far above the ~1e-13 noise that was accumulating.
+  player.xp = Math.round((player.xp + amount) * 1e6) / 1e6;
   while (player.xp >= player.xpNext) {
-    player.xp -= player.xpNext;
+    player.xp = Math.round((player.xp - player.xpNext) * 1e6) / 1e6;
     player.lvl++;
     const _xpBase = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
     let _xpMult = player.lvl > 5 ? 3 : 1;
