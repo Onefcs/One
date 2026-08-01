@@ -3041,8 +3041,8 @@ function _marketRowHtml(l, mode) {
   const qtySuffix = it.qty > 1 ? ` ×${it.qty}` : '';
   const sub = mode === 'buy' ? `@${l.sellerUsername || '?'}` : (statStr(it) || '');
   const action = mode === 'buy'
-    ? `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">Купить</button>`
-    : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">Снять</button>`;
+    ? `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">${t('buyBtn')}</button>`
+    : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">${t('cancelListingBtn')}</button>`;
   return `<div class="market-row">
     <div class="market-row-icon">${_itemIcon(it, 28)}</div>
     <div class="market-row-info">
@@ -3058,17 +3058,17 @@ function _marketRowHtml(l, mode) {
 // specific categories (books, which are craft-mat items with a book_ id)
 // come ahead of their broader slot (material).
 const _MARKET_CATEGORIES = [
-  { key: 'weapon',    label: 'Оружие',     match: it => it.slot === 'weapon' },
-  { key: 'helmet',    label: 'Шлемы',      match: it => it.slot === 'helmet' },
-  { key: 'body',      label: 'Броня',      match: it => it.slot === 'body' },
-  { key: 'gloves',    label: 'Перчатки',   match: it => it.slot === 'gloves' },
-  { key: 'boots',     label: 'Ботинки',    match: it => it.slot === 'boots' },
-  { key: 'ring',      label: 'Кольца',     match: it => it.slot === 'ring' },
-  { key: 'belt',      label: 'Пояса',      match: it => it.slot === 'belt' },
-  { key: 'books',     label: 'Книги',      match: it => (it.id || '').startsWith('book_') },
-  { key: 'potions',   label: 'Расходники', match: it => it.slot === 'use' || it.slot === 'buff_potion' },
-  { key: 'materials', label: 'Материалы',  match: it => it.slot === 'material' || it.slot === 'recipe' },
-  { key: 'other',     label: 'Прочее',     match: () => true },
+  { key: 'weapon',    get label() { return t('catWeapon'); },    match: it => it.slot === 'weapon' },
+  { key: 'helmet',    get label() { return t('catHelmet'); },    match: it => it.slot === 'helmet' },
+  { key: 'body',      get label() { return t('catBody'); },      match: it => it.slot === 'body' },
+  { key: 'gloves',    get label() { return t('catGloves'); },    match: it => it.slot === 'gloves' },
+  { key: 'boots',     get label() { return t('catBoots'); },     match: it => it.slot === 'boots' },
+  { key: 'ring',      get label() { return t('catRing'); },      match: it => it.slot === 'ring' },
+  { key: 'belt',      get label() { return t('catBelt'); },      match: it => it.slot === 'belt' },
+  { key: 'books',     get label() { return t('catBooks'); },     match: it => (it.id || '').startsWith('book_') },
+  { key: 'potions',   get label() { return t('catPotions'); },   match: it => it.slot === 'use' || it.slot === 'buff_potion' },
+  { key: 'materials', get label() { return t('catMaterials'); }, match: it => it.slot === 'material' || it.slot === 'recipe' },
+  { key: 'other',     get label() { return t('catOther'); },     match: () => true },
 ];
 let _marketCategoryFilter = 'all';
 
@@ -3088,7 +3088,7 @@ function _renderMarketFiltered(lots, mode) {
     counts.set(key, counts.get(key) + 1);
   });
 
-  const allTab = `<button class="market-cat-tab${_marketCategoryFilter === 'all' ? ' active' : ''}" onclick="setMarketCategory('all')">Все <span class="market-cat-count">${lots.length}</span></button>`;
+  const allTab = `<button class="market-cat-tab${_marketCategoryFilter === 'all' ? ' active' : ''}" onclick="setMarketCategory('all')">${t('allCatLbl')} <span class="market-cat-count">${lots.length}</span></button>`;
   const catTabs = _MARKET_CATEGORIES.map(c => {
     const n = counts.get(c.key);
     if (!n) return '';
@@ -3099,33 +3099,33 @@ function _renderMarketFiltered(lots, mode) {
   const shown = _marketCategoryFilter === 'all' ? lots : lots.filter(l => _marketCategoryOf(l.item || {}) === _marketCategoryFilter);
   const listHtml = shown.length
     ? shown.map(l => _marketRowHtml(l, mode)).join('')
-    : `<div class="rating-empty">Нет предметов в этой категории</div>`;
+    : `<div class="rating-empty">${t('noItemsInCategoryHint')}</div>`;
   return tabsHtml + listHtml;
 }
 
 function _renderMarketLots(el) {
-  if (!_marketLoaded.lots) { el.innerHTML = '<div class="rating-loading">Загрузка...</div>'; return; }
-  if (!_marketLots.length) { el.innerHTML = '<div class="rating-empty">Пока никто ничего не продаёт</div>'; return; }
+  if (!_marketLoaded.lots) { el.innerHTML = `<div class="rating-loading">${t('questLoading')}</div>`; return; }
+  if (!_marketLots.length) { el.innerHTML = `<div class="rating-empty">${t('nobodySellingHint')}</div>`; return; }
   el.innerHTML = _renderMarketFiltered(_marketLots, 'buy');
 }
 
 function _renderMarketMine(el) {
-  const addBtn = `<button class="market-add-btn" onclick="openMarketSellPicker()">+ Выставить лот</button>`;
-  if (!_marketLoaded.mine) { el.innerHTML = addBtn + '<div class="rating-loading">Загрузка...</div>'; return; }
-  if (!_marketMine.length) { el.innerHTML = addBtn + '<div class="rating-empty">У вас нет активных лотов</div>'; return; }
+  const addBtn = `<button class="market-add-btn" onclick="openMarketSellPicker()">${t('addListingBtn')}</button>`;
+  if (!_marketLoaded.mine) { el.innerHTML = addBtn + `<div class="rating-loading">${t('questLoading')}</div>`; return; }
+  if (!_marketMine.length) { el.innerHTML = addBtn + `<div class="rating-empty">${t('noActiveLotsHint')}</div>`; return; }
   el.innerHTML = addBtn + _renderMarketFiltered(_marketMine, 'mine');
 }
 
 function _renderMarketHistoryTab(el) {
-  if (!_marketLoaded.history) { el.innerHTML = '<div class="rating-loading">Загрузка...</div>'; return; }
-  if (!_marketHist.length) { el.innerHTML = '<div class="rating-empty">История пуста</div>'; return; }
+  if (!_marketLoaded.history) { el.innerHTML = `<div class="rating-loading">${t('questLoading')}</div>`; return; }
+  if (!_marketHist.length) { el.innerHTML = `<div class="rating-empty">${t('historyEmptyHint')}</div>`; return; }
   el.innerHTML = _marketHist.map(h => {
     const it = h.item || {};
     const rc = RARITY_COLOR[it.rarity] || '#aea599';
     const isSell = h.role === 'sell';
     const cancelled = h.status === 'cancelled';
     const statusCls = cancelled ? 'market-hist-cancelled' : (isSell ? 'market-hist-sell' : 'market-hist-buy');
-    const statusLbl = cancelled ? 'Снято' : (isSell ? 'Продано' : 'Куплено');
+    const statusLbl = cancelled ? t('cancelledLbl') : (isSell ? t('soldLbl') : t('boughtLbl'));
     const date = new Date(h.soldAt || h.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const amt = cancelled ? '' : (isSell ? (h.price * (1 - MARKET_FEE_PCT)).toFixed(2) : h.price.toFixed(2));
     const amtSign = cancelled ? '' : (isSell ? '+' : '-');
@@ -3155,7 +3155,7 @@ function openMarketBuyConfirm(listingId) {
   const l = _marketLots.find(x => x.id === listingId);
   if (!l) return;
   if (typeof invHasSpace === 'function' && !invHasSpace()) {
-    _marketToast('Инвентарь полон — освободите место', 'err');
+    _marketToast(t('invFullFreeSpaceToast'), 'err');
     return;
   }
   const existing = document.getElementById('market-buy-ov');
@@ -3171,7 +3171,7 @@ function openMarketBuyConfirm(listingId) {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:#90d653">Подтверждение покупки</div>
+        <div style="font-size:16px;font-weight:800;color:#90d653">${t('confirmPurchaseTitle')}</div>
         <button onclick="document.getElementById('market-buy-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:14px">
@@ -3179,14 +3179,14 @@ function openMarketBuyConfirm(listingId) {
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
           <div style="font-size:11px;color:#a3957c;margin-top:2px">${statStr(it) || '&nbsp;'}</div>
-          <div style="font-size:11px;color:#a3957c;margin-top:2px">Продавец: @${l.sellerUsername || '?'}</div>
+          <div style="font-size:11px;color:#a3957c;margin-top:2px">${tVars('sellerLbl', { u: l.sellerUsername || '?' })}</div>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#b2a288">Цена</span><span style="font-weight:700;color:#90d653">${l.price.toFixed(2)} GRAM</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px"><span style="color:#b2a288">Ваш баланс</span><span style="font-weight:700;color:${canAfford ? '#f5dbae' : '#ee6676'}">${bal.toFixed(7)} GRAM</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#b2a288">${t('priceLbl')}</span><span style="font-weight:700;color:#90d653">${l.price.toFixed(2)} GRAM</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px"><span style="color:#b2a288">${t('yourBalanceLbl')}</span><span style="font-weight:700;color:${canAfford ? '#f5dbae' : '#ee6676'}">${bal.toFixed(7)} GRAM</span></div>
       ${canAfford
-        ? `<button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="_confirmMarketBuy('${listingId}')">Купить за ${l.price.toFixed(2)} GRAM</button>`
-        : `<div style="text-align:center;color:#ee6676;font-size:12px;font-weight:600">Недостаточно GRAM</div>`}
+        ? `<button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="_confirmMarketBuy('${listingId}')">${tVars('buyForFmt', { price: l.price.toFixed(2) })}</button>`
+        : `<div style="text-align:center;color:#ee6676;font-size:12px;font-weight:600">${t('notEnoughGramLbl')}</div>`}
     </div>`;
   document.body.appendChild(ov);
 }
@@ -3214,23 +3214,23 @@ function openMarketSellPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:#90d653">Выставить предмет</div>
+        <div style="font-size:16px;font-weight:800;color:#90d653">${t('listItemTitle')}</div>
         <button onclick="document.getElementById('market-sell-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
-      <div style="font-size:11px;color:#a3957c;margin-bottom:8px">Выберите предмет из инвентаря</div>
+      <div style="font-size:11px;color:#a3957c;margin-bottom:8px">${t('selectFromInvHint')}</div>
       <div class="market-pick-grid" id="market-pick-grid"></div>
       <div id="market-sell-confirm" style="display:none;margin-top:6px">
         <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:12px" id="market-sell-selected"></div>
         <div id="market-qty-row" style="display:none;margin-bottom:10px">
-          <div style="font-size:11px;color:#a3957c;margin-bottom:5px">Количество</div>
+          <div style="font-size:11px;color:#a3957c;margin-bottom:5px">${t('quantityLbl')}</div>
           <input type="number" id="market-qty-input" min="1" step="1" value="1"
             style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
         </div>
-        <div style="font-size:11px;color:#a3957c;margin-bottom:5px">Цена за всё количество (${MARKET_MIN_PRICE}–${MARKET_MAX_PRICE} GRAM)</div>
+        <div style="font-size:11px;color:#a3957c;margin-bottom:5px">${tVars('priceForAllFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE })}</div>
         <input type="number" id="market-price-input" min="${MARKET_MIN_PRICE}" max="${MARKET_MAX_PRICE}" step="0.1" value="1"
           style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;margin-bottom:6px;box-sizing:border-box" oninput="_updateMarketFeePreview()">
         <div id="market-fee-preview" style="font-size:11px;color:#a3957c;margin-bottom:14px"></div>
-        <button class="market-add-btn" id="market-confirm-btn" onclick="_confirmMarketList()">Выставить на продажу</button>
+        <button class="market-add-btn" id="market-confirm-btn" onclick="_confirmMarketList()">${t('listForSaleBtn')}</button>
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -3246,7 +3246,7 @@ function closeMarketSellPicker() {
 function _renderMarketPickGrid() {
   const grid = document.getElementById('market-pick-grid');
   if (!grid || !player) return;
-  if (!player.inventory.length) { grid.innerHTML = '<div class="rating-empty" style="grid-column:1/-1">Инвентарь пуст</div>'; return; }
+  if (!player.inventory.length) { grid.innerHTML = `<div class="rating-empty" style="grid-column:1/-1">${t('storageInvEmpty')}</div>`; return; }
   grid.innerHTML = player.inventory.map((it, idx) => {
     const rc  = RARITY_COLOR[it.rarity] || '#aea599';
     const sel = _marketSellPick === idx ? ' selected' : '';
@@ -3270,7 +3270,7 @@ function _pickMarketSellItem(idx) {
   const stackable = _isStackable(it) && have > 1;
   box.innerHTML = `<div class="market-row-icon" style="width:40px;height:40px">${_itemIcon(it, 28)}</div>
     <div><div style="font-weight:700;color:${rc}">${it.name}${it.enhance ? ' +' + it.enhance : ''}</div>
-    <div style="font-size:11px;color:#a3957c;margin-top:2px">${statStr(it) || (have > 1 ? 'У вас: ×' + have : '')}</div></div>`;
+    <div style="font-size:11px;color:#a3957c;margin-top:2px">${statStr(it) || (have > 1 ? tVars('youHaveFmt', { n: have }) : '')}</div></div>`;
   confirmWrap.style.display = 'block';
   if (qtyRow) {
     qtyRow.style.display = stackable ? 'block' : 'none';
