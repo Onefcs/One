@@ -1567,7 +1567,7 @@ io.on('connection', socket => {
   // monster's own level (rlvl) — a level-1 mob drops 0.000001 GRAM, a
   // level-2 mob 0.000002, and so on.
   const GRAM_DROP_CHANCE = 0.30;
-  const GRAM_PER_LEVEL = 0.000001;
+  const GRAM_PER_LEVEL = 0.0000001;
 
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);

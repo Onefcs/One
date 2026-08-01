@@ -1480,7 +1480,7 @@ function drawHeader() {
     ctx.fillText('G', stxH + 2, 24);
   }
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#4fd67a';
-  ctx.fillText(_grBal.toFixed(6), stxH + 14, 24);
+  ctx.fillText(_grBal.toFixed(7), stxH + 14, 24);
   ctx.textBaseline = 'alphabetic';
 
   // Separator
@@ -3173,7 +3173,7 @@ function openMarketBuyConfirm(listingId) {
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#b2a288">Цена</span><span style="font-weight:700;color:#90d653">${l.price.toFixed(2)} GRAM</span></div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px"><span style="color:#b2a288">Ваш баланс</span><span style="font-weight:700;color:${canAfford ? '#f5dbae' : '#ee6676'}">${bal.toFixed(6)} GRAM</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px"><span style="color:#b2a288">Ваш баланс</span><span style="font-weight:700;color:${canAfford ? '#f5dbae' : '#ee6676'}">${bal.toFixed(7)} GRAM</span></div>
       ${canAfford
         ? `<button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="_confirmMarketBuy('${listingId}')">Купить за ${l.price.toFixed(2)} GRAM</button>`
         : `<div style="text-align:center;color:#ee6676;font-size:12px;font-weight:600">Недостаточно GRAM</div>`}
@@ -3430,7 +3430,7 @@ function _renderGramShopPanel() {
   const bal = window._gramBalance || 0;
   el.innerHTML = `
     <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
-      Баланс: <b>${bal.toFixed(6)} GRAM</b>
+      Баланс: <b>${bal.toFixed(7)} GRAM</b>
     </div>
     ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
   `;
@@ -3567,7 +3567,7 @@ function openGramShopConfirm(pkgId) {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">Ваш баланс</span>
-        <span style="font-weight:700;color:#f5dbae">${bal.toFixed(6)} GRAM</span>
+        <span style="font-weight:700;color:#f5dbae">${bal.toFixed(7)} GRAM</span>
       </div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
         onclick="_confirmGramShopBuy('${pkgId}')">Купить за ${pkg.gram} GRAM</button>
@@ -3733,7 +3733,7 @@ function updateGramUI() {
 
     <div class="gram-balance-card">
       <div class="gram-balance-label">Баланс GRAM</div>
-      <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(6)} <span class="gram-unit">GRAM</span></div>
+      <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(7)} <span class="gram-unit">GRAM</span></div>
     </div>
 
     <div style="display:flex;gap:10px;margin-bottom:14px">
@@ -3789,14 +3789,14 @@ function onGramTxCreated(tx) {
   _gramTxList.unshift(tx);
   _renderGramHistory();
   const bal = document.getElementById('gram-balance-val');
-  if (bal) bal.textContent = (window._gramBalance || 0).toFixed(6) + ' ';
+  if (bal) bal.textContent = (window._gramBalance || 0).toFixed(7) + ' ';
 }
 
 function onGramTxUpdate(id, status) {
   const tx = _gramTxList.find(t => t.id === id);
   if (tx) { tx.status = status; _renderGramHistory(); }
   const bal = document.getElementById('gram-balance-val');
-  if (bal) bal.textContent = (window._gramBalance || 0).toFixed(6) + ' ';
+  if (bal) bal.textContent = (window._gramBalance || 0).toFixed(7) + ' ';
 }
 
 // ── Deposit modal ─────────────────────────────────────────
@@ -3867,7 +3867,7 @@ function openGramWithdrawModal() {
         </div>
 
         <div style="background:rgba(229,165,70,0.08);border:1px solid rgba(229,165,70,0.2);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#ba9865">
-          Доступно: <b>${balance.toFixed(6)} GRAM</b> · Комиссия 10%
+          Доступно: <b>${balance.toFixed(7)} GRAM</b> · Комиссия 10%
         </div>
 
         <div style="margin-bottom:12px">
