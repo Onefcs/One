@@ -96,7 +96,7 @@ function updateInvUI() {
     }
   });
 
-  document.getElementById('inv-grid').innerHTML = Array.from({ length: 50 }, (_, i) => {
+  document.getElementById('inv-grid').innerHTML = Array.from({ length: 150 }, (_, i) => {
     const entry = _displayInv[i];
     if (!entry) return `<div class="inv-cell"></div>`;
     const { it, idx, count } = entry;
@@ -2354,6 +2354,7 @@ function openInvItemModal(idx) {
     ${enhBlock}
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">Надеть</button>
+      ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">Продать за 100${iconHTML('coin',12,'#e3941d')}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -2367,6 +2368,18 @@ function closeInvItemModal() {
 function equipFromModal(idx) {
   closeInvItemModal();
   equipItem(idx);
+}
+
+const SELL_COMMON_PRICE = 100;
+function sellCommonItem(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!it || it.rarity !== 'common') return;
+  player.inventory.splice(idx, 1);
+  player.gold += SELL_COMMON_PRICE;
+  netSaveProgress();
+  closeInvItemModal();
+  dmgNum(player.x, player.y - 36, '+' + SELL_COMMON_PRICE + 'g', '#ff0');
 }
 
 // ── Loot boxes ────────────────────────────────────────────

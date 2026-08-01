@@ -746,6 +746,8 @@ canvas { display:block; width:100%; height:100%; }
 }
 .imod-equip { background:linear-gradient(135deg,#534121,#7f6435); color:#eec276; }
 .imod-equip:active { opacity:0.8; }
+.imod-sell { background:linear-gradient(135deg,#3a1f1f,#5e3232); color:#e5a546; }
+.imod-sell:active { opacity:0.8; }
 .imod-sharpen { background:linear-gradient(135deg,#281d0c,#46300e); color:#e69419; }
 .imod-sharpen:active { opacity:0.8; }
 .imod-sharpen.disabled { background:#26221c; color:#4c453c; pointer-events:none; }
