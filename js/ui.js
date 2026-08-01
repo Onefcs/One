@@ -2071,7 +2071,7 @@ function drawAutoToggle() {
 
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
-  ctx.fillText(autoAttackMode ? 'АВТО' : 'РУЧ', ab.x + ab.w / 2, ab.y + ab.h / 2);
+  ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), ab.x + ab.w / 2, ab.y + ab.h / 2);
   ctx.restore();
 }
 
@@ -2098,7 +2098,7 @@ function drawPartyButton() {
   drawIconCtx(ctx, 'party', pb.x + 14, pb.y + pb.h / 2, 12, '#90d653');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#90d653';
-  ctx.fillText('Пати+', pb.x + 23, pb.y + pb.h / 2);
+  ctx.fillText(t('partyInviteBtnLbl'), pb.x + 23, pb.y + pb.h / 2);
 
   ctx.restore();
 }
@@ -2176,7 +2176,7 @@ function drawPartyHUD() {
   drawIconCtx(ctx, 'partyLeave', lb.x + 13, lb.y + lb.h / 2, 10, '#ef6d7c');
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ef6d7c';
-  ctx.fillText('Выйти', lb.x + 22, lb.y + lb.h / 2);
+  ctx.fillText(t('partyLeaveBtnLbl'), lb.x + 22, lb.y + lb.h / 2);
   ctx.restore();
 }
 
@@ -2203,7 +2203,7 @@ function drawPartyInvitePopup() {
   drawIconCtx(ctx, 'party', px + 20, py + 18, 16, '#90d653');
   ctx.font = `bold 12px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#d5d0ca';
-  ctx.fillText('Приглашение в пати', px + 34, py + 14);
+  ctx.fillText(t('partyInviteTitle'), px + 34, py + 14);
   ctx.font = `10px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
 
@@ -2215,7 +2215,7 @@ function drawPartyInvitePopup() {
   roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.stroke();
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#90d653';
-  ctx.fillText('Принять', ac.x + ac.w / 2, ac.y + ac.h / 2);
+  ctx.fillText(t('acceptBtn'), ac.x + ac.w / 2, ac.y + ac.h / 2);
 
   // Decline button
   const dc = getPartyDeclinePos();
@@ -2224,7 +2224,7 @@ function drawPartyInvitePopup() {
   ctx.strokeStyle = 'rgba(190,60,75,0.8)'; ctx.lineWidth = 1.2;
   roundRect(ctx, dc.x, dc.y, dc.w, dc.h, 8); ctx.stroke();
   ctx.fillStyle = '#ef6d7c';
-  ctx.fillText('Отказ', dc.x + dc.w / 2, dc.y + dc.h / 2);
+  ctx.fillText(t('declineBtn'), dc.x + dc.w / 2, dc.y + dc.h / 2);
 
   // Timer bar
   const alpha = Math.min(1, inv.timer / 3);
@@ -2252,11 +2252,11 @@ function _enhStonesBlock(actionFn, param) {
   const blessQty = _enhStoneQty('bless_stone');
   const p = JSON.stringify(param);
   return `<div class="imod-enh-stones">
-    <button class="imod-enh-stone-btn${normQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'norm')" title="При неудаче вещь сгорит">
-      <img src="/images/norm.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">Обычный (${normQty})
+    <button class="imod-enh-stone-btn${normQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'norm')" title="${t('enhFailBurnHint')}">
+      <img src="/images/norm.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">${tVars('normalStoneBtnFmt', { n: normQty })}
     </button>
-    <button class="imod-enh-stone-btn imod-enh-stone-bless${blessQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'bless')" title="При неудаче вещь останется">
-      <img src="/images/bless.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">Безопасный (${blessQty})
+    <button class="imod-enh-stone-btn imod-enh-stone-bless${blessQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'bless')" title="${t('enhFailKeepHint')}">
+      <img src="/images/bless.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">${tVars('safeStoneBtnFmt', { n: blessQty })}
     </button>
   </div>`;
 }
@@ -2284,15 +2284,15 @@ function openInvItemModal(idx) {
         <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
         <div class="imod-title-block">
           <div class="imod-name" style="color:#e5a546">${it.name}</div>
-          <div class="imod-sub"><span style="color:#e5a546">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · Зелье усиления · ×${qty}</div>
+          <div class="imod-sub"><span style="color:#e5a546">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${t('buffPotionSlotName')} · ×${qty}</div>
         </div>
         <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
       </div>
       <div class="imod-stats">${it.buffDesc || ''}</div>
-      ${active ? `<div style="padding:8px 12px;background:rgba(229,165,70,0.1);border-radius:8px;color:#e5a546;font-size:12px;text-align:center">✓ Активно · осталось ~${remaining} мин</div>` : ''}
+      ${active ? `<div style="padding:8px 12px;background:rgba(229,165,70,0.1);border-radius:8px;color:#e5a546;font-size:12px;text-align:center">${tVars('activeRemainingFmt', { n: remaining })}</div>` : ''}
       <div class="imod-btns">
         <button class="imod-btn imod-equip${active ? ' disabled' : ''}" onclick="${active ? '' : `useBuffPotion('${it.id}');closeInvItemModal()`}">
-          ${active ? 'Уже активно' : 'Использовать'}
+          ${active ? t('alreadyActiveLbl') : t('useBtn')}
         </button>
       </div>
     </div>`;
@@ -2324,8 +2324,8 @@ function openInvItemModal(idx) {
     const total = (it.hp || 0) + (eb.hp || 0);
     statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#e69419">(+${eb.hp})</span>` : ''}`);
   }
-  if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
-  if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
+  if (it.critChance) statRows.push(`${t('statCritInline')} <b>${(it.critChance*100).toFixed(0)}%</b>`);
+  if (it.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
 
   // Next enhance preview
@@ -2339,12 +2339,12 @@ function openInvItemModal(idx) {
   const rateColor = rate >= 80 ? '#98e456' : rate >= 50 ? '#e6ac19' : rate >= 30 ? '#e69419' : '#eb4e61';
   const enhBlock = canEnh
     ? `<div class="imod-enh-block">
-        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#e69419">+${enh+1}</span></div>
+        <div class="imod-enh-title">${tVars('enhanceTitleFmt', { cur: enh > 0 ? '+' + enh : '0', next: '<span style="color:#e69419">+' + (enh+1) + '</span>' })}</div>
         ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
-        <div class="imod-enh-chance">Шанс: <b style="color:${rateColor}">${rate}%</b></div>
+        <div class="imod-enh-chance">${tVars('enhChanceFmt', { rate: `<b style="color:${rateColor}">${rate}</b>` })}</div>
         ${_enhStonesBlock('enhanceItem', idx)}
       </div>`
-    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">✦ Максимальная заточка</div></div>`;
+    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">${t('maxEnhanceLbl')}</div></div>`;
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -2428,14 +2428,14 @@ function openBoxModal(idx) {
       <span class="imod-big-icon">${_itemIcon(boxDef, 52)}</span>
       <div class="imod-title-block">
         <div class="imod-name" style="color:${rc}">${boxDef.name}</div>
-        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[boxDef.rarity] || boxDef.rarity}</span> · Бокс · ×${qty}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[boxDef.rarity] || boxDef.rarity}</span> · ${t('boxSlotName')} · ×${qty}</div>
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
-    <div style="font-size:11px;color:#968a7a">Открытие даёт 1 случайный предмет:</div>
+    <div style="font-size:11px;color:#968a7a">${t('boxOpensRandomHint')}</div>
     <div class="box-odds-list">${oddsHtml}</div>
     <div class="imod-btns">
-      <button class="imod-btn imod-equip" onclick="openLootBox(${idx})">Открыть</button>
+      <button class="imod-btn imod-equip" onclick="openLootBox(${idx})">${t('openBtn')}</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -2447,7 +2447,7 @@ function openLootBox(idx) {
   if (!it) return;
   const boxDef = BOX_DEF.find(b => b.id === it.id);
   if (!boxDef) return;
-  if (!invHasSpace()) { dmgNum(player.x, player.y - 30, 'Инвентарь полон!', '#f17e8b'); return; }
+  if (!invHasSpace()) { dmgNum(player.x, player.y - 30, t('invFull'), '#f17e8b'); return; }
 
   if ((it.qty || 1) <= 1) player.inventory.splice(idx, 1);
   else it.qty--;
@@ -2477,7 +2477,7 @@ function enhanceItem(idx, stoneType) {
 
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   let stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
-  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f17e8b'); return; }
+  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
 
   const stoneItem = player.inventory[stoneIdx];
   if ((stoneItem.qty || 1) <= 1) {
@@ -2491,7 +2491,7 @@ function enhanceItem(idx, stoneType) {
   if (success) {
     it.enhance = enh + 1;
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#e69419');
+    dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: it.enhance }), '#e69419');
     openInvItemModal(idx);
   } else if (stoneType === 'bless') {
     recompute(); netSaveProgress();
@@ -2529,8 +2529,8 @@ function openEqItemModal(slot) {
     const total = (it.hp || 0) + (eb.hp || 0);
     statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#e69419">(+${eb.hp})</span>` : ''}`);
   }
-  if (it.critChance) statRows.push(`Крит <b>${(it.critChance*100).toFixed(0)}%</b>`);
-  if (it.atkSpeed)   statRows.push(`Скор <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
+  if (it.critChance) statRows.push(`${t('statCritInline')} <b>${(it.critChance*100).toFixed(0)}%</b>`);
+  if (it.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
 
   const canEnh = enh < _ENH_MAX;
@@ -2587,7 +2587,7 @@ function enhanceEqItem(slot, stoneType) {
 
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   const stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
-  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, 'Нет камня!', '#f17e8b'); return; }
+  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
 
   const stoneItem = player.inventory[stoneIdx];
   if ((stoneItem.qty || 1) <= 1) { player.inventory.splice(stoneIdx, 1); }
@@ -2597,7 +2597,7 @@ function enhanceEqItem(slot, stoneType) {
   if (success) {
     it.enhance = enh + 1;
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, `+${it.enhance} Успех!`, '#e69419');
+    dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: it.enhance }), '#e69419');
     openEqItemModal(slot);
   } else if (stoneType === 'bless') {
     recompute(); netSaveProgress();
