@@ -195,13 +195,13 @@
 <div id="chat-panel">
   <div class="cp-hdr">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="#c8a0ff" stroke-width="2" fill="none" style="flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    <span class="cp-title">Чат</span>
+    <span class="cp-title" data-i18n="chatTitle">Чат</span>
     <button class="cp-close" onclick="_chatClose()">✕</button>
   </div>
   <div class="chat-tabs">
-    <div class="chat-tab active" id="chat-tab-global" onclick="_chatSetTab('global')">Общий</div>
-    <div class="chat-tab" id="chat-tab-clan" onclick="_chatSetTab('clan')">Клан</div>
-    <div class="chat-tab" id="chat-tab-dm" onclick="_chatSetTab('dm')">Беседа</div>
+    <div class="chat-tab active" id="chat-tab-global" onclick="_chatSetTab('global')" data-i18n="chatTabGlobal">Общий</div>
+    <div class="chat-tab" id="chat-tab-clan" onclick="_chatSetTab('clan')" data-i18n="chatTabClan">Клан</div>
+    <div class="chat-tab" id="chat-tab-dm" onclick="_chatSetTab('dm')" data-i18n="chatTabDm">Беседа</div>
   </div>
   <div id="chat-dm-hdr" style="display:none"></div>
   <div id="chat-msgs"></div>
@@ -382,8 +382,9 @@
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/><line x1="12" y1="12" x2="12" y2="16"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>Профиль
   </div>
   <div class="profile-tabs">
-    <button class="profile-tab active" id="ptab-wallet" onclick="switchProfileTab('wallet')">Кошелёк</button>
-    <button class="profile-tab" id="ptab-friends" onclick="switchProfileTab('friends')">Друзья</button>
+    <button class="profile-tab active" id="ptab-wallet" onclick="switchProfileTab('wallet')" data-i18n="profileTabWallet">Кошелёк</button>
+    <button class="profile-tab" id="ptab-friends" onclick="switchProfileTab('friends')" data-i18n="profileTabFriends">Друзья</button>
+    <button class="profile-tab" id="ptab-lang" onclick="switchProfileTab('lang')" data-i18n="profileTabLang">Язык</button>
   </div>
   <div class="panel-body" id="gram-body"></div>
 </div>
@@ -393,27 +394,27 @@
   <div class="nav-tabs">
     <div class="nav-tab active" onclick="setTab(0)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5L3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><line x1="19" y1="21" x2="21" y2="19"/></svg></div>
-      <div class="nl">Игра</div>
+      <div class="nl" data-i18n="navGame">Игра</div>
     </div>
     <div class="nav-tab" onclick="setTab(1)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
-      <div class="nl">Персонаж</div>
+      <div class="nl" data-i18n="navChar">Персонаж</div>
     </div>
     <div class="nav-tab" onclick="setTab(2)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="3,6 9,3 15,6 21,3 21,18 15,21 9,18 3,21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg></div>
-      <div class="nl">Карта</div>
+      <div class="nl" data-i18n="navMap">Карта</div>
     </div>
     <div class="nav-tab" onclick="setTab(3)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="12" y2="15"/></svg></div>
-      <div class="nl">Квесты</div>
+      <div class="nl" data-i18n="navQuests">Квесты</div>
     </div>
     <div class="nav-tab" onclick="setTab(4)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-      <div class="nl">Кланы</div>
+      <div class="nl" data-i18n="navClans">Кланы</div>
     </div>
     <div class="nav-tab" onclick="setTab(5)">
       <div class="ni"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
-      <div class="nl">Профиль</div>
+      <div class="nl" data-i18n="navProfile">Профиль</div>
     </div>
   </div>
 </nav>
@@ -422,13 +423,13 @@
 <div id="death-modal" style="display:none">
   <div class="death-panel">
     <div class="death-skull">💀</div>
-    <div class="death-title">ВЫ ПАЛИ</div>
+    <div class="death-title" data-i18n="deathTitle">ВЫ ПАЛИ</div>
     <div class="death-info" id="death-info"></div>
     <div class="death-penalty" id="death-penalty">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       −50% опыта на 5 минут
     </div>
-    <button class="death-btn-respawn" onclick="respawnPlayer()">Возродиться (10% HP)</button>
+    <button class="death-btn-respawn" onclick="respawnPlayer()" data-i18n="deathRespawn">Возродиться (10% HP)</button>
   </div>
 </div>
 
@@ -682,9 +683,10 @@ document.getElementById('chat-dm-hdr')?.addEventListener('click', e => {
 function _updateChatPlaceholder() {
   const inp = document.getElementById('chat-input');
   if (!inp) return;
-  if (_chatTab === 'dm') inp.placeholder = _activeDmUser ? ('Сообщение @' + _activeDmUser + '...') : '@ник сообщение...';
-  else if (_chatTab === 'clan') inp.placeholder = 'Сообщение клану...';
-  else inp.placeholder = 'Сообщение...';
+  if (typeof t !== 'function') { inp.placeholder = 'Сообщение...'; return; }
+  if (_chatTab === 'dm') inp.placeholder = _activeDmUser ? tVars('chatPlaceholderDmActive', { u: _activeDmUser }) : t('chatPlaceholderDmEmpty');
+  else if (_chatTab === 'clan') inp.placeholder = t('chatPlaceholderClan');
+  else inp.placeholder = t('chatPlaceholder');
 }
 
 function _chatSend() {
@@ -710,7 +712,7 @@ function _chatSend() {
     if (typeof netClanChat === 'function') netClanChat(raw);
   } else if (_chatTab === 'dm') {
     if (_activeDmUser && typeof netPrivMsg === 'function') netPrivMsg(_activeDmUser, raw);
-    else if (typeof _chatChannelError === 'function') _chatChannelError('Выберите беседу выше или отметьте @ник');
+    else if (typeof _chatChannelError === 'function') _chatChannelError(typeof t === 'function' ? t('chatDmNoPartner') : 'Выберите беседу выше или отметьте @ник');
   } else if (typeof netChat === 'function') {
     netChat(raw);
   }

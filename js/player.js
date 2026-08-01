@@ -770,6 +770,10 @@ function _migrateInventory(inv) {
 
 function restoreFromSave(data) {
   if (!player || !data) return;
+  // Account-level language preference, synced across devices — applied here
+  // (not just localStorage, see js/i18n.js's initLocale) so a login on a
+  // fresh device picks up whatever language was last chosen anywhere.
+  if (data.lang && typeof setLang === 'function' && data.lang !== currentLang) setLang(data.lang);
   player.lvl      = data.lvl      || 1;
   player.xp       = data.xp       || 0;
   player.xpNext   = data.xpNext   || 100;

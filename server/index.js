@@ -514,6 +514,7 @@ const BUNDLE_FILES = [
   'js/icons.js',
   'js/themes.js',
   'js/definitions.js',
+  'js/i18n.js',
   'js/sprites.js',
   'js/particles.js',
   'js/player.js',
@@ -1040,9 +1041,15 @@ function _clampNum(v, min, max, dflt) {
 }
 function _clampInt(v, min, max, dflt) { return Math.floor(_clampNum(v, min, max, dflt)); }
 
+const _VALID_LANGS = ['ru', 'en', 'uk', 'es', 'tr', 'pt'];
+
 function _sanitizeSavedStats(raw) {
   if (!raw || typeof raw !== 'object') return raw;
   const s = { ...raw };
+
+  // Language preference (js/i18n.js) — display-only, but validate anyway
+  // rather than trust an arbitrary client string.
+  if (s.lang != null) s.lang = _VALID_LANGS.includes(s.lang) ? s.lang : 'ru';
 
   // Inventory — canonicalize, drop unknowns, cap length
   s.inventory = Array.isArray(s.inventory)

@@ -1135,6 +1135,7 @@ function _buildSaveStats() {
     skillLevels: player.skillLevels || {},
     passiveLevels: player.passiveLevels || {},
     bonusSP: player.bonusSP || 0,
+    lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
     // Freshness stamp so a reload can tell which of {server DB, local backup}
     // holds the most recent state (see _pickFreshestSave).
     savedAt: Date.now(),
@@ -1716,6 +1717,11 @@ function _initMarketHandlers(s) {
 function netClaimVipRewards() {
   if (socket?.connected) socket.emit('claimVipRewards');
 }
+
+// Applies the saved (or default) language before anything renders — see
+// js/i18n.js. Safe to call this early since it only mutates data arrays
+// and DOM elements already present in the initial HTML.
+if (typeof initLocale === 'function') initLocale();
 
 // Init Telegram widget on page load (bundle runs at end of <body>)
 _initTelegramWidget();

@@ -3613,7 +3613,26 @@ function switchProfileTab(tab) {
   const btn = document.getElementById('ptab-' + tab);
   if (btn) btn.classList.add('active');
   if (tab === 'wallet') updateGramUI();
+  else if (tab === 'lang') _renderLangPicker();
   else updateFriendsUI();
+}
+
+// ── Language picker (Профиль → Язык) ───────────────────────
+function _renderLangPicker() {
+  if (window._profileTab !== 'lang') return;
+  const el = document.getElementById('gram-body');
+  if (!el || typeof I18N_LANGS === 'undefined') return;
+  const cards = I18N_LANGS.map(l => `
+    <button class="lang-card${l.code === currentLang ? ' active' : ''}" onclick="setLang('${l.code}')">
+      <span class="lang-card-flag">${l.flag}</span>
+      <span class="lang-card-name">${l.native}</span>
+      ${l.code === currentLang ? '<span class="lang-card-check">✓</span>' : ''}
+    </button>`).join('');
+  el.innerHTML = `
+    <div class="gram-section-title" style="margin-bottom:10px">${t('langPickerTitle')}</div>
+    <div class="lang-card-grid">${cards}</div>
+    <div style="font-size:11px;color:#82745b;margin-top:12px;text-align:center">${t('langPickerHint')}</div>
+  `;
 }
 
 function updateFriendsUI() {
