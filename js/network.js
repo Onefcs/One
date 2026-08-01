@@ -157,6 +157,7 @@ function netConnect(onReady) {
     // Event boss: restore the countdown banner and any loot already lying on
     // the floor, so joining mid-event shows the same state as everyone else.
     worldDrops = new Map((evb && evb.drops || []).map(d => [d.id, d]));
+    _evtBossAlive = !!(evb && evb.alive);
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(evb && evb.spawnAt || 0);
     // Preload sprites for every corridor's enemy pool — the whole world is
     // reachable from the start, not gated behind a single "current floor".
@@ -1673,10 +1674,12 @@ function _initEventBossHandlers(s) {
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(spawnAt);
   });
   s.on('eventBossSpawned', () => {
+    _evtBossAlive = true;
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(0);
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossArrived'), '#ff5a4a');
   });
   s.on('eventBossDefeated', () => {
+    _evtBossAlive = false;
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossDefeated'), '#90d653');
   });
   s.on('worldDropsSpawned', ({ drops: ds }) => {

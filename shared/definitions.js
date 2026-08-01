@@ -533,7 +533,9 @@ function roomEnchantStoneChance(lvl) {
 }
 
 // ── Event boss (summoned from the admin panel) ──────────────────────────────
-// Not part of any room chain: spawned on demand into the hub, announced
+// Not part of any room chain: spawned on demand into its own sealed arena
+// (server/game/dungeon.js), reachable only through the event teleport pad
+// that appears in the hub while the event runs. Announced
 // EVENT_BOSS_ANNOUNCE_MS ahead, and gone for good once killed (the per-arm
 // bosses in ENEMY_DEF respawn on a timer — this one only ever comes back when
 // an admin summons it again). Its loot does NOT roll per-killer like ordinary
@@ -555,8 +557,10 @@ const EVENT_BOSS = {
   hp: 100000, atk: 20, def: 1, spd: 50,
   xp: 120, gold: 120,
   isBoss: true, eType: 'boss',
-  // Lets this one boss act inside the hub's safe zone, which normally makes
-  // enemies drop aggro and skip every player standing there.
+  // Exempts this one boss from three rules tuned for ordinary room-bound
+  // monsters: the safe-zone target skip, the 420px leash, and the de-aggro
+  // teleport-home. The arena is 40 tiles across, so without the last two it
+  // would reset its 100k HP to full the moment players kited it any distance.
   ignoresSafeZone: true,
 };
 

@@ -51,6 +51,17 @@ const ZONE_H = REACH * 2 + 4; // both sides plus a little pad
 
 const DW = MARGIN * 2 + ZONE_LEN;
 const HUB_X0 = MARGIN, HUB_Y0 = MARGIN;
+// ── Boss arena ──────────────────────────────────────────────────────────────
+// A plain square room off to the right of the hub, in the otherwise empty
+// band above the first zone. Nothing spawns here during normal play and it
+// has no walkable connection to anything — the only way in is the event
+// teleport pad that appears in the hub while a world boss is active (see
+// _buildArmGates / _updateTeleportPads in js/game.js). Sized so a size-165
+// boss (≈630px across) has room to be kited and its 62 loot piles still land
+// well inside the walls.
+const ARENA = 40;
+const ARENA_X0 = HUB_X0 + HUB + ZONE_GAP;
+const ARENA_Y0 = HUB_Y0;
 const ZONES_Y0 = HUB_Y0 + HUB + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 
@@ -72,7 +83,15 @@ function generateOpenWorld() {
   };
   paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
 
-  const rooms = [hub];
+  const arena = {
+    x: ARENA_X0, y: ARENA_Y0, size: ARENA,
+    bx1: ARENA_X0 - 1, by1: ARENA_Y0 - 1, bx2: ARENA_X0 + ARENA + 1, by2: ARENA_Y0 + ARENA + 1,
+    cx: ARENA_X0 + Math.floor(ARENA / 2), cy: ARENA_Y0 + Math.floor(ARENA / 2),
+    isArena: true,
+  };
+  paintRect(arena.x, arena.y, arena.x + arena.size - 1, arena.y + arena.size - 1);
+
+  const rooms = [hub, arena];
   const enemyList = [];
   const corridorGates = [];
   const armEntries = [];
@@ -209,6 +228,13 @@ function generateOpenWorld() {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
+    // Arena geometry the client needs to place the event pads. entry/exit are
+    // 4 tiles apart so arriving doesn't immediately re-trigger the way back.
+    arena: {
+      cx: arena.cx * TILE + TILE / 2, cy: arena.cy * TILE + TILE / 2,
+      entryX: (ARENA_X0 + 6) * TILE + TILE / 2, entryY: arena.cy * TILE + TILE / 2,
+      exitX:  (ARENA_X0 + 2) * TILE + TILE / 2, exitY:  arena.cy * TILE + TILE / 2,
+    },
     armEntries,
     corridorGates,
     enemies: enemyList,

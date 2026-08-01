@@ -1260,6 +1260,12 @@ const _TELEPORT_HUB_DX = { left: -12, top: -4, bottom: 4, right: 12 }; // tiles,
 const _TELEPORT_HUB_DY = 10; // tiles south of spawn (NPCs sit north, at dy -11)
 let _teleportPads = null; // hub-side: {dir, x, y, req, label, targetX, targetY}
 let _returnPads = null;   // zone-side: {dir, x, y, targetX, targetY} — back to hub
+// Event-boss arena pads (see _evtArenaOpen). The hub-side one sits due west
+// of spawn — NPCs are north (dy -8..-11) and the arm pads south (dy +10), so
+// this row is clear.
+const _EVENT_PAD_DX = -8;
+let _evtPad = null, _evtReturnPad = null;
+let _evtBossAlive = false;
 
 function _buildArmGates() {
   if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; return; }
@@ -1279,6 +1285,25 @@ function _buildArmGates() {
   // pad's own position, so arriving players don't stand on top of it and
   // immediately bounce straight back to the hub.
   _returnPads = entries.map(e => ({ dir: e.dir, x: e.x, y: e.y, targetX: sx, targetY: sy }));
+
+  // Event-boss arena pads. Built once here, but only drawn and only trigger
+  // while the event is running (see _evtArenaOpen) — outside an event the
+  // arena has no entrance at all.
+  const ar = dungeon.arena;
+  if (ar) {
+    _evtPad = { x: sx + _EVENT_PAD_DX * TILE, y: sy, targetX: ar.entryX, targetY: ar.entryY };
+    _evtReturnPad = { x: ar.exitX, y: ar.exitY, targetX: sx, targetY: sy };
+  } else {
+    _evtPad = null; _evtReturnPad = null;
+  }
+}
+
+// True while a world boss is announced, alive, or its loot is still on the
+// floor — the window in which the arena is reachable.
+function _evtArenaOpen() {
+  return (typeof _evtBossSpawnAt !== 'undefined' && _evtBossSpawnAt > Date.now()) ||
+         _evtBossAlive ||
+         (typeof worldDrops !== 'undefined' && worldDrops.size > 0);
 }
 
 let _teleportMsgCd = 0;
@@ -1308,6 +1333,14 @@ function _updateTeleportPads(dt) {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
     _teleportTo(p.targetX, p.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   });
+  if (_evtArenaOpen() && _evtPad && dist(player.x, player.y, _evtPad.x, _evtPad.y) < TRIGGER_R) {
+    _teleportTo(_evtPad.targetX, _evtPad.targetY, t('evtArenaLbl'));
+  }
+  // The way back stays usable even after the event closes, so nobody can be
+  // stranded in the arena when the loot expires.
+  if (_evtReturnPad && dist(player.x, player.y, _evtReturnPad.x, _evtReturnPad.y) < TRIGGER_R) {
+    _teleportTo(_evtReturnPad.targetX, _evtReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+  }
 }
 
 function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
@@ -1341,6 +1374,10 @@ function drawTeleportPads() {
   if (!player) return;
   (_teleportPads || []).forEach(p => _drawTeleportPad(p.x, p.y, p.req, p.label, '#eb4e61', '#4ee69a'));
   (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a'));
+  // Event pads in their own colours so they read as "this is the boss thing",
+  // not just another level gate.
+  if (_evtArenaOpen() && _evtPad) _drawTeleportPad(_evtPad.x, _evtPad.y, 0, t('evtArenaLbl'), '#eb4e61', '#ff8a4a');
+  if (_evtReturnPad) _drawTeleportPad(_evtReturnPad.x, _evtReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
 }
 
 function _isGateBlocked(wx, wy) {

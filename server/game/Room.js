@@ -119,13 +119,15 @@ class Room {
   }
 
   // ── Event boss ────────────────────────────────────────────────────────────
-  // Spawns EVENT_BOSS in the hub, west of spawn on the same row: NPCs sit
-  // north of spawn (dy -8..-11 tiles) and the teleport pads south (dy +10),
-  // so due west is the one large clear stretch inside the safe zone.
+  // Spawns EVENT_BOSS at the centre of the dedicated arena (server/game/
+  // dungeon.js), a sealed square room reachable only via the event teleport
+  // pad that appears in the hub while the event is running. Keeping it out of
+  // the hub means the safe zone stays genuinely safe for anyone who doesn't
+  // opt in by stepping on the pad.
   spawnEventBoss() {
     if (this.isEventBossAlive()) return null;
-    const sp = this._dungeon.spawn;
-    const x = sp.x - 16 * TILE, y = sp.y;
+    const ar = this._dungeon.arena;
+    const x = ar.cx, y = ar.cy;
     const e = {
       id: `evtboss_${Date.now()}`,
       ...EVENT_BOSS,
@@ -136,8 +138,8 @@ class Room {
       x, y, spawnX: x, spawnY: y,
       atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
       aggro: false,
-      // Wide enough to cover the hub — the default 175 would leave a boss this
-      // size idle unless someone walked right into it.
+      // Wide enough to cover the arena — the default 175 would leave a boss
+      // this size idle unless someone walked right into it.
       aggroR: 900,
       _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
       _idx: this.enemies.length,
