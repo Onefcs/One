@@ -515,6 +515,7 @@ const BUNDLE_FILES = [
   'js/themes.js',
   'js/definitions.js',
   'js/i18n.js',
+  'js/tonconnect.js',
   'js/sprites.js',
   'js/particles.js',
   'js/player.js',
@@ -589,8 +590,13 @@ app.use(helmet({
       childSrc:      ["'self'", 'blob:'],
       styleSrc:      ["'self'", "'unsafe-inline'"],
       styleSrcAttr:  ["'unsafe-inline'"],
-      imgSrc:        ["'self'", 'data:', 'blob:'],
-      connectSrc:    ["'self'", 'https://cdn.socket.io', 'wss:', 'ws:'],
+      // 'https:' (not a fixed domain list) for img/connect: TON Connect talks
+      // to whichever bridge server the player's chosen wallet registers (a
+      // different https host per wallet, an open/growing set — Tonkeeper,
+      // MyTonWallet, etc. — not something this app can enumerate), and pulls
+      // each wallet's icon from that wallet's own https host too.
+      imgSrc:        ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc:    ["'self'", 'https://cdn.socket.io', 'wss:', 'ws:', 'https:'],
       fontSrc:       ["'self'", 'data:'],
       frameAncestors: ["'self'", 'https://web.telegram.org', 'https://*.web.telegram.org', 'https://telegram.org', 'https://*.telegram.org'],
     },
@@ -957,6 +963,19 @@ app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge
 app.get('/js/pixi.min.js', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   res.sendFile(path.join(ROOT, 'js', 'pixi.min.js'));
+});
+
+// Vendored TON Connect UI SDK (~445 KB) — same immutable-caching treatment as
+// pixi.min.js above, for the same reason (never changes between deploys).
+app.get('/js/vendor/tonconnect-ui.min.js', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(path.join(ROOT, 'js', 'vendor', 'tonconnect-ui.min.js'));
+});
+// The min.js above ends in a //# sourceMappingURL= comment pointing here —
+// only fetched by a browser devtools panel, but serve it to avoid a 404.
+app.get('/js/vendor/tonconnect-ui.min.js.map', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(path.join(ROOT, 'js', 'vendor', 'tonconnect-ui.min.js.map'));
 });
 
 // Single JS bundle — ETag changes on every server restart (bundle rebuilt on startup)

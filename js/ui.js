@@ -3741,6 +3741,8 @@ function updateGramUI() {
       <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(7)} <span class="gram-unit">GRAM</span></div>
     </div>
 
+    <div id="ton-connect-row" style="margin-bottom:14px"></div>
+
     <div style="display:flex;gap:10px;margin-bottom:14px">
       <button class="gram-btn gram-btn-green" style="flex:1;padding:13px" onclick="openGramDepositModal()">
         ${t('depositBtn')}
@@ -3756,7 +3758,41 @@ function updateGramUI() {
     </div>
   `;
 
+  _renderTonConnectRow();
   if (typeof netGramHistory === 'function') netGramHistory();
+}
+
+// Short "UQ...ab3f" form for display — TON addresses are long and don't need
+// to be shown in full outside the copy-paste boxes that specifically need it.
+function _shortenTonAddr(addr) {
+  if (!addr) return '';
+  return addr.length > 12 ? addr.slice(0, 6) + '…' + addr.slice(-4) : addr;
+}
+
+function _renderTonConnectRow() {
+  const el = document.getElementById('ton-connect-row');
+  if (!el) return;
+  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  el.innerHTML = addr
+    ? `<div style="display:flex;align-items:center;gap:8px;background:rgba(209,204,197,.04);border:1px solid rgba(209,204,197,.12);border-radius:10px;padding:9px 12px;font-size:12px">
+        <span style="color:#90d653">✓ ${t('tcConnectedLbl')}</span>
+        <span style="color:#a3957c;font-variant-numeric:tabular-nums">${_shortenTonAddr(addr)}</span>
+        <button onclick="tcDisconnect()" style="margin-left:auto;background:none;border:none;color:#ee6676;font-size:11px;cursor:pointer;text-decoration:underline">${t('tcDisconnectBtn')}</button>
+      </div>`
+    : `<button class="gram-btn" style="width:100%;padding:11px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5" onclick="tcConnect()">${t('tcConnectBtn')}</button>`;
+}
+
+// Called by js/tonconnect.js whenever the wallet connect status changes —
+// keeps the wallet tab (and any open deposit/withdraw modal) in sync without
+// the player needing to close and reopen anything.
+function _onTonConnectChange() {
+  _renderTonConnectRow();
+  const depBtn = document.getElementById('ton-deposit-send-wrap');
+  if (depBtn) _renderTonDepositSection();
+  const wdAddr = document.getElementById('gram-wd-addr');
+  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  if (wdAddr && addr && !wdAddr.value) wdAddr.value = addr;
+  if (document.getElementById('ton-wd-connect-wrap')) _renderTonWithdrawConnectHint();
 }
 
 function _renderGramHistory() {
@@ -3817,6 +3853,13 @@ function openGramDepositModal() {
           <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
         </div>
 
+        <div style="margin-bottom:10px">
+          <div class="gram-hint" style="margin-bottom:6px">${t('transferAmountHint')}</div>
+          <input id="gram-dep-amount" type="number" min="1" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_renderTonDepositSection()">
+        </div>
+
+        <div id="ton-deposit-send-wrap" style="margin-bottom:6px"></div>
+
         <div class="gram-hint" style="margin-bottom:6px">${t('transferToWalletHint')}</div>
         <div class="gram-copy-box" onclick="gramCopy('gram-addr-val')">
           <span id="gram-addr-val">${wallet}</span>
@@ -3831,12 +3874,7 @@ function openGramDepositModal() {
 
         <div class="gram-warn">${t('memoWarnHint')}</div>
 
-        <div style="margin:16px 0 10px">
-          <div class="gram-hint" style="margin-bottom:6px">${t('transferAmountHint')}</div>
-          <input id="gram-dep-amount" type="number" min="1" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box">
-        </div>
-
-        <button class="gram-btn gram-btn-green" style="width:100%;padding:14px;font-size:15px" onclick="gramDepositConfirm('${memo}')">
+        <button class="gram-btn gram-btn-green" style="width:100%;padding:14px;font-size:15px;margin-top:16px" onclick="gramDepositConfirm('${memo}')">
           ${t('iPaidBtn')}
         </button>
         <div id="gram-modal-msg" class="gram-msg" style="display:none;margin-top:10px"></div>
@@ -3846,6 +3884,49 @@ function openGramDepositModal() {
   div.id = 'gram-modal-wrap';
   div.innerHTML = html;
   document.body.appendChild(div);
+  window._gramDepositMemo = memo;
+  _renderTonDepositSection();
+}
+
+// Fills #ton-deposit-send-wrap inside the (currently open) deposit modal:
+// a connect prompt if no wallet is linked yet, or a one-tap "send from
+// wallet" button that fires an actual on-chain transfer once one is. The
+// manual copy-paste address/memo boxes below stay available either way —
+// TON Connect only makes *sending* easier, admin approval is unchanged.
+function _renderTonDepositSection() {
+  const el = document.getElementById('ton-deposit-send-wrap');
+  if (!el) return;
+  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  if (!addr) {
+    el.innerHTML = `<button class="gram-btn" style="width:100%;padding:12px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5;margin-bottom:10px" onclick="tcConnect()">${t('tcConnectBtn')}</button>
+      <div class="gram-hint" style="text-align:center;margin-bottom:10px">${t('tcOrManualHint')}</div>`;
+    return;
+  }
+  const amountVal = document.getElementById('gram-dep-amount')?.value || '0';
+  el.innerHTML = `<button id="ton-deposit-send-btn" class="gram-btn gram-btn-green" style="width:100%;padding:13px;margin-bottom:10px" onclick="_tcDepositSend()">${tVars('tcSendFromWalletFmt', { n: amountVal })}</button>
+    <div class="gram-hint" style="text-align:center;margin-bottom:10px">${t('tcOrManualHint')}</div>`;
+}
+
+// Sends the entered amount as a real on-chain transfer from the connected
+// wallet, then registers the same pending GramTx the manual "I paid" flow
+// creates (netGramDeposit) so admin approval works identically either way.
+async function _tcDepositSend() {
+  const amount = parseFloat(document.getElementById('gram-dep-amount')?.value);
+  if (!amount || amount < 1) { _gramModalMsg(t('tcEnterAmountFirstToast'), 'err'); return; }
+  const wallet = window._gramWallet;
+  const memo = window._gramDepositMemo;
+  if (!wallet || typeof tcSendDeposit !== 'function') { _gramModalMsg(t('serviceUnavailableToast'), 'err'); return; }
+  const btn = document.getElementById('ton-deposit-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = t('tcSendingLbl'); }
+  try {
+    await tcSendDeposit(wallet, amount, memo);
+    if (typeof netGramDeposit === 'function') netGramDeposit(amount, memo);
+    closeGramModal();
+    _gramMsg(t('tcTxSentToast'), 'ok');
+  } catch (e) {
+    _gramModalMsg(t('tcTxErrorToast'), 'err');
+    if (btn) { btn.disabled = false; _renderTonDepositSection(); }
+  }
 }
 
 function gramDepositConfirm(memo) {
@@ -3884,6 +3965,7 @@ function openGramWithdrawModal() {
         <div style="margin-bottom:16px">
           <div class="gram-hint" style="margin-bottom:6px">${t('tonAddrHint')}</div>
           <input id="gram-wd-addr" type="text" placeholder="UQ..." class="gram-input gram-input-addr" style="width:100%;box-sizing:border-box">
+          <div id="ton-wd-connect-wrap" style="margin-top:8px"></div>
         </div>
 
         <button class="gram-btn gram-btn-orange" style="width:100%;padding:14px;font-size:15px" onclick="gramWithdrawConfirm()">
@@ -3896,6 +3978,19 @@ function openGramWithdrawModal() {
   div.id = 'gram-modal-wrap';
   div.innerHTML = html;
   document.body.appendChild(div);
+  const connectedAddr = typeof tcAddress === 'function' ? tcAddress() : null;
+  if (connectedAddr) document.getElementById('gram-wd-addr').value = connectedAddr;
+  _renderTonWithdrawConnectHint();
+}
+
+// Small "connect wallet to autofill" link shown under the address field
+// while no wallet is linked; disappears once one connects (see
+// _onTonConnectChange, which re-renders this if the modal is still open).
+function _renderTonWithdrawConnectHint() {
+  const el = document.getElementById('ton-wd-connect-wrap');
+  if (!el) return;
+  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  el.innerHTML = addr ? '' : `<button style="background:none;border:none;color:#e5a546;font-size:12px;cursor:pointer;text-decoration:underline;padding:0" onclick="tcConnect()">${t('tcConnectBtn')}</button>`;
 }
 
 function _updateWdPreview() {
