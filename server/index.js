@@ -286,12 +286,14 @@ async function _handleAdminCallback(cq) {
   if ((confirmed && tx.type === 'deposit') || (!confirmed && tx.type === 'withdraw')) {
     const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
     if (doc) {
-      const saved = doc.savedData || {};
-      const newBal = (saved.gramBalance || 0) + tx.amount;
-      saved.gramBalance = newBal;
-      doc.savedData = saved;
-      doc.markModified('savedData');
-      await doc.save();
+      // Base on _gramBalanceCache (live, up-to-the-second) rather than the DB's
+      // savedData snapshot, and write back with a targeted $set — a full-document
+      // findOne-then-save here can read a stale balance (the player's own
+      // gameplay autosave landing in between) and then clobber it, which is how
+      // an approved deposit could add its amount on top of the wrong base and
+      // wipe out balance changes that happened in the meantime.
+      const newBal = _round2((_gramBalanceCache.get(tx.telegramId) ?? (doc.savedData?.gramBalance || 0)) + tx.amount);
+      await PlayerModel.updateOne({ telegramId: tx.telegramId }, { $set: { 'savedData.gramBalance': newBal } });
       _gramBalanceCache.set(tx.telegramId, newBal);
       io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
 
@@ -301,12 +303,8 @@ async function _handleAdminCallback(cq) {
         if (bonus > 0) {
           const refDoc = await PlayerModel.findOne({ telegramId: doc.referredBy });
           if (refDoc) {
-            const refSaved = refDoc.savedData || {};
-            const refNewBal = (refSaved.gramBalance || 0) + bonus;
-            refSaved.gramBalance = refNewBal;
-            refDoc.savedData = refSaved;
-            refDoc.markModified('savedData');
-            await refDoc.save();
+            const refNewBal = _round2((_gramBalanceCache.get(doc.referredBy) ?? (refDoc.savedData?.gramBalance || 0)) + bonus);
+            await PlayerModel.updateOne({ telegramId: doc.referredBy }, { $set: { 'savedData.gramBalance': refNewBal } });
             _gramBalanceCache.set(doc.referredBy, refNewBal);
             io.to(`tg_${doc.referredBy}`).emit('gramBalanceUpdate', { balance: refNewBal });
             io.to(`tg_${doc.referredBy}`).emit('refBonusReceived', {
@@ -783,10 +781,15 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
       if (_nexumBalanceCache.has(p.telegramId)) _nexumBalanceCache.set(p.telegramId, newN);
     }
     if (gram) {
-      saved.gramBalance = (saved.gramBalance || 0) + Number(gram);
-      const cur = _gramBalanceCache.get(p.telegramId) || 0;
-      _gramBalanceCache.set(p.telegramId, cur + Number(gram));
-      io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: saved.gramBalance });
+      // Same live-cache-first pattern as nexum above — basing this on
+      // saved.gramBalance alone (a DB snapshot) could diverge from the
+      // player's actual live balance if they're currently online.
+      const curG = _gramBalanceCache.has(p.telegramId)
+        ? _gramBalanceCache.get(p.telegramId) : (saved.gramBalance || 0);
+      const newG = curG + Number(gram);
+      saved.gramBalance = newG;
+      _gramBalanceCache.set(p.telegramId, newG);
+      io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
     }
     p.savedData = saved;
     p.markModified('savedData');
@@ -2032,31 +2035,42 @@ io.on('connection', socket => {
       }
       _gramBalance -= claimed.price;
       _gramBalanceCache.set(authed.telegramId, _gramBalance);
-      const buyerDoc = await PlayerModel.findById(authed._id);
-      const buyerSaved = buyerDoc.savedData || {};
-      buyerSaved.gramBalance = _gramBalance;
-      buyerDoc.savedData = buyerSaved;
-      buyerDoc.markModified('savedData');
-      await buyerDoc.save();
+      // Atomic $set on just this one nested field — a full-document
+      // findOne-then-save (as this used to do) reads a savedData snapshot
+      // that can already be stale by the time it writes back (the player's
+      // own debounced saveProgress autosave landing in between), silently
+      // reverting whatever else changed in savedData since that snapshot.
+      await PlayerModel.updateOne(
+        { _id: authed._id },
+        { $set: { 'savedData.gramBalance': _gramBalance } },
+      ).catch(err => console.error('marketBuy buyer persist:', err));
 
-      // Credit seller (10% fee burned — not paid to anyone), whether online or not
+      // Credit seller (10% fee burned — not paid to anyone), whether online or not.
+      // Base the payout on _gramBalanceCache (the live, up-to-the-second balance
+      // for anyone active this server process) rather than the DB's savedData
+      // snapshot, which can lag behind the seller's own actions (gram drops,
+      // deposits) — adding the payout on top of that stale figure, then having
+      // this write clobber the true live value, is exactly what caused sold
+      // items to sometimes not credit anything, or to reset the balance to a
+      // wrong number. Only offline sellers (no live cache entry) fall back to
+      // the DB figure, which is safe since nothing else can be mutating it.
       const payout = _round2(claimed.price * (1 - MARKET_FEE_PCT));
       try {
-        const sellerDoc = await PlayerModel.findOne({ telegramId: claimed.sellerId });
-        if (sellerDoc) {
-          const sellerSaved = sellerDoc.savedData || {};
-          const sellerNewBal = _round2((sellerSaved.gramBalance || 0) + payout);
-          sellerSaved.gramBalance = sellerNewBal;
-          sellerDoc.savedData = sellerSaved;
-          sellerDoc.markModified('savedData');
-          await sellerDoc.save();
-          _gramBalanceCache.set(claimed.sellerId, sellerNewBal);
-          io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
-          io.to(`tg_${claimed.sellerId}`).emit('marketSold', {
-            itemName: claimed.item?.name || '', price: claimed.price, payout,
-            buyerUsername: authed.username, newBalance: sellerNewBal,
-          });
-        }
+        const hasLive = _gramBalanceCache.has(claimed.sellerId);
+        const sellerBase = hasLive
+          ? _gramBalanceCache.get(claimed.sellerId)
+          : ((await PlayerModel.findOne({ telegramId: claimed.sellerId }, 'savedData.gramBalance').lean())?.savedData?.gramBalance || 0);
+        const sellerNewBal = _round2(sellerBase + payout);
+        _gramBalanceCache.set(claimed.sellerId, sellerNewBal);
+        await PlayerModel.updateOne(
+          { telegramId: claimed.sellerId },
+          { $set: { 'savedData.gramBalance': sellerNewBal } },
+        );
+        io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
+        io.to(`tg_${claimed.sellerId}`).emit('marketSold', {
+          itemName: claimed.item?.name || '', price: claimed.price, payout,
+          buyerUsername: authed.username, newBalance: sellerNewBal,
+        });
       } catch (err) { console.error('marketBuy seller payout:', err); }
 
       socket.emit('marketBought', { listingId, item: claimed.item, newBalance: _gramBalance });
