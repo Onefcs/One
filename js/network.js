@@ -12,6 +12,17 @@ const SERVER_URL = (() => {
 })();
 
 let _savedData = null;
+// True only between a received 'authOk' and the next 'disconnect' — a fresh
+// socket.io reconnect (e.g. switching away to Tonkeeper to approve a TON
+// Connect transaction/connection and back — the mini app's WebView routinely
+// drops the socket while backgrounded) reconnects the *transport* first;
+// the server doesn't treat this connection as authed until the client's
+// re-sent loginTelegramWebApp round-trips. socket.connected alone can't
+// tell the two apart, which used to let a GRAM deposit/withdraw fired right
+// after such a reconnect reach the server before authed was set there — the
+// handler's `if (!authed) return;` guard then silently dropped it with no
+// error shown. See _emitWhenAuthed below.
+let _authOkReceived = false;
 // Set by the authOk reconnect-guard, consumed by the gameStart handler —
 // see comment there for why a reconnect must not reposition/restore.
 let _isReconnectRejoin = false;
@@ -57,6 +68,7 @@ function netConnect(onReady) {
   });
 
   socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
+    _authOkReceived = true;
     netUsername = username;
     // The server had no record for this telegramId — either a genuine first
     // login, or an account that existed before but was deleted from the DB
@@ -945,6 +957,7 @@ function netConnect(onReady) {
   });
 
   socket.on('disconnect', () => {
+    _authOkReceived = false;
     // NOT socket = null: this is the same Socket.IO client instance that
     // will auto-reconnect (default behavior) and re-fire 'connect' on itself
     // — nulling the module-level reference here left every socket?.emit(...)
@@ -1582,11 +1595,25 @@ function netLeavePartyDungeon() {
 }
 
 // ── GRAM wallet ───────────────────────────────────────────────────────────────
+// Waits (briefly, polling) for both the transport AND the server-side authed
+// handshake before emitting — see the _authOkReceived comment up top. A
+// TON Connect deposit routinely calls this right as the app returns from
+// backgrounding to approve a transaction, exactly the reconnect window this
+// guards against. Gives up after ~6s and surfaces an error instead of
+// silently doing nothing.
+function _emitWhenAuthed(event, payload, triesLeft = 30) {
+  if (socket?.connected && _authOkReceived) { socket.emit(event, payload); return; }
+  if (triesLeft <= 0) {
+    if (typeof _gramMsg === 'function') _gramMsg(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером', 'err');
+    return;
+  }
+  setTimeout(() => _emitWhenAuthed(event, payload, triesLeft - 1), 300);
+}
 function netGramDeposit(amount, memo) {
-  if (socket?.connected) socket.emit('gramDepositRequest', { amount, memo });
+  _emitWhenAuthed('gramDepositRequest', { amount, memo });
 }
 function netGramWithdraw(amount, address) {
-  if (socket?.connected) socket.emit('gramWithdrawRequest', { amount, address });
+  _emitWhenAuthed('gramWithdrawRequest', { amount, address });
 }
 function netGramShopBuy(pkgId) {
   if (socket?.connected) socket.emit('gramShopBuy', { pkgId });
