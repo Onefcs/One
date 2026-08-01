@@ -222,7 +222,8 @@ function update(dt) {
         if (_chEnt && (_chEnt.hp || 0) > 0) {
           const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;
           const _clen = Math.hypot(_cdx, _cdy);
-          if (_clen > player.charDef.atkRange * 0.85) {
+          const _chR = targetIsPlayer ? 0 : ((_chEnt.size) || 0);
+          if (_clen > (player.charDef.atkRange + _chR) * 0.85) {
             const nvx = (_cdx / _clen) * player.speed * _spdMult * dt;
             const nvy = (_cdy / _clen) * player.speed * _spdMult * dt;
             if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y)) player.x += nvx;
@@ -424,7 +425,14 @@ function update(dt) {
       }
     }
 
-    const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1);
+    // Range is measured to the target's CENTRE. For the size 13-22 regular
+    // monsters that's indistinguishable from "distance to its body", but a
+    // large enemy has to be approached *into* its own sprite before it counts
+    // as in range — the size-165 event boss (631px across on screen) was
+    // literally unhittable for a 58px-range melee class, and barely reachable
+    // for ranged. Adding the target's radius makes range mean "to its edge".
+    const _tgtR = closestIsPlayer ? 0 : ((closest && closest.size) || 0);
+    const atkRange = player.charDef.atkRange * (closestIsPlayer ? 1.3 : 1) + _tgtR;
     if (!closest || closestD >= atkRange || !hasLOS(player.x, player.y, closest.x, closest.y)) {
       // Lock onto closest enemy so the chase system engages
       if (closest && !targetId) {

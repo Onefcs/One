@@ -791,9 +791,13 @@ class Room {
     attacker._lastAtk = now;
     const enemy = this._enemyMap.get(enemyId); // O(1) Map lookup
     if (!enemy || enemy.hp <= 0) return null;
-    // Range check: must be within 350px (generous for AoE skills)
+    // Range check: must be within 350px of the enemy's BODY (generous for AoE
+    // skills). enemy.size is added because this is measured to its centre —
+    // without it a large enemy shrinks the usable window by its own radius,
+    // which rejected hits on the size-165 event boss.
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
-    if (rdx * rdx + rdy * rdy > 350 * 350) return null;
+    const _reach = 350 + (enemy.size || 0);
+    if (rdx * rdx + rdy * rdy > _reach * _reach) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     const base = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);

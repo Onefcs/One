@@ -187,7 +187,7 @@ function _skillAOEMult(r, mult) {
   const m = Math.max(1, mult || 1);
   serverEnemies.forEach(e => {
     if ((e.hp || 0) <= 0) return;
-    if (dist(e.x, e.y, player.x, player.y) < r && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m);
+    if (dist(e.x, e.y, player.x, player.y) < r + (e.size || 0) && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m);
   });
 }
 
@@ -200,7 +200,7 @@ function _skillDirMult(dx, dy, r, arcDot, mult) {
     if ((e.hp || 0) <= 0) return;
     const ex = e.x - player.x, ey = e.y - player.y;
     const d = Math.hypot(ex, ey);
-    if (d > r || d < 1) return;
+    if (d > r + (e.size || 0) || d < 1) return;
     if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3) && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m);
   });
 }
@@ -513,7 +513,7 @@ function _skillDir(dx, dy, r, arcDot) {
   serverEnemies.forEach(e => {
     const ex = e.x - player.x, ey = e.y - player.y;
     const d = Math.hypot(ex, ey);
-    if (d > r || d < 1) return;
+    if (d > r + (e.size || 0) || d < 1) return;
     if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3)) netAttack(e.id);
   });
 }
