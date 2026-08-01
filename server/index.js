@@ -791,9 +791,14 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
       _gramBalanceCache.set(p.telegramId, newG);
       io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
     }
-    p.savedData = saved;
-    p.markModified('savedData');
-    await p.save();
+    // Targeted $set on just the touched fields — a full-document save from
+    // this snapshot would revert any other savedData field this account's
+    // own gameplay autosave wrote in the same window.
+    const _giveSet = {};
+    if (gold)  _giveSet['savedData.gold'] = saved.gold;
+    if (nexum) _giveSet['savedData.nexumBalance'] = saved.nexumBalance;
+    if (gram)  _giveSet['savedData.gramBalance'] = saved.gramBalance;
+    if (Object.keys(_giveSet).length) await PlayerModel.updateOne({ _id: p._id }, { $set: _giveSet });
     io.to(`tg_${p.telegramId}`).emit('adminGive', { gold: Number(gold), nexum: Number(nexum), gram: Number(gram) });
     logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram });
     res.json({ ok: true });
@@ -1767,12 +1772,15 @@ io.on('connection', socket => {
       // Deduct immediately — refunded on rejection
       _gramBalance -= amount;
       _gramBalanceCache.set(authed.telegramId, _gramBalance);
-      const doc = await PlayerModel.findById(authed._id);
-      const saved = doc.savedData || {};
-      saved.gramBalance = _gramBalance;
-      doc.savedData = saved;
-      doc.markModified('savedData');
-      await doc.save();
+      // Targeted $set instead of a findById-then-save round trip — this
+      // value is already the live authoritative figure (_gramBalance), so
+      // there's nothing to read first, and a full-document save would risk
+      // clobbering any other savedData field this account's own autosave
+      // writes in the same window.
+      await PlayerModel.updateOne(
+        { _id: authed._id },
+        { $set: { 'savedData.gramBalance': _gramBalance } },
+      );
 
       const tx = await GramTxModel.create({
         telegramId: authed.telegramId,
@@ -1893,9 +1901,22 @@ io.on('connection', socket => {
       }
 
       saved.inventory = inv;
-      doc.savedData = saved;
-      doc.markModified('savedData');
-      await doc.save();
+      // Targeted $set on exactly the fields this purchase touched, instead of
+      // a full-document save from the doc fetched at the top of this handler
+      // — that snapshot can already be stale by the time this lands (this
+      // account's own gameplay autosave landing in between), and overwriting
+      // the whole savedData blob with it would silently revert whatever else
+      // changed (equipment, hp, position...) in that window.
+      const _shopSet = {
+        'savedData.gramBalance': saved.gramBalance,
+        'savedData.gold': saved.gold,
+        'savedData.inventory': inv,
+        'savedData.vipLevel': _vipLvl,
+        'savedData.vipDeposited': _vipDep,
+        'savedData.vipPending': _vipPend,
+      };
+      if (pkg.bonusSP > 0) _shopSet['savedData.bonusSP'] = saved.bonusSP;
+      await PlayerModel.updateOne({ _id: doc._id }, { $set: _shopSet });
 
       if (_lastStats) {
         _lastStats.inventory = inv;
@@ -2174,9 +2195,12 @@ io.on('connection', socket => {
       if (goldReward > 0) saved.gold = (saved.gold || 0) + goldReward;
       saved.inventory  = inv;
       saved.vipPending = [];
-      doc.savedData = saved;
-      doc.markModified('savedData');
-      await doc.save();
+      // Targeted $set (see the matching comment in gramShopBuy) — a full
+      // savedData overwrite here would revert any other field this account's
+      // own gameplay autosave wrote in the same window.
+      const _vipSet = { 'savedData.inventory': inv, 'savedData.vipPending': [] };
+      if (goldReward > 0) _vipSet['savedData.gold'] = saved.gold;
+      await PlayerModel.updateOne({ _id: doc._id }, { $set: _vipSet });
       if (_lastStats) {
         _lastStats.inventory = inv;
         if (goldReward > 0) _lastStats.gold = saved.gold;
