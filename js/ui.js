@@ -2803,13 +2803,13 @@ function renderVipPanel() {
     progressHtml = `
       <div class="vip-progress-wrap">
         <div class="vip-progress-label">
-          <span>До VIP ${level + 1} · всего нужно ${cumulative[level + 1]} GRAM</span>
+          <span>${tVars('vipNextFmt', { lvl: level + 1, total: cumulative[level + 1] })}</span>
           <span>${deposited.toFixed ? deposited.toFixed(2) : deposited} / ${needed} GRAM</span>
         </div>
         <div class="vip-progress-bar"><div class="vip-progress-fill" style="width:${pct}%"></div></div>
       </div>`;
   } else {
-    progressHtml = `<div class="vip-max-badge">👑 Максимальный VIP достигнут!</div>`;
+    progressHtml = `<div class="vip-max-badge">${t('vipMaxBadge')}</div>`;
   }
 
   el.innerHTML = `
@@ -2817,10 +2817,10 @@ function renderVipPanel() {
     ${progressHtml}
     <div class="vip-bonuses">
       <div class="vip-bonus-item ${bon.xp   > 0 ? '' : 'vip-bonus-dim'}">⚡ +${bon.xp}% XP</div>
-      <div class="vip-bonus-item ${bon.gold > 0 ? '' : 'vip-bonus-dim'}">💰 +${bon.gold}% Золото</div>
-      <div class="vip-bonus-item ${bon.drop > 0 ? '' : 'vip-bonus-dim'}">🎁 +${bon.drop}% Дроп</div>
+      <div class="vip-bonus-item ${bon.gold > 0 ? '' : 'vip-bonus-dim'}">💰 +${bon.gold}% ${t('vipGoldLbl')}</div>
+      <div class="vip-bonus-item ${bon.drop > 0 ? '' : 'vip-bonus-dim'}">🎁 +${bon.drop}% ${t('vipDropLbl')}</div>
     </div>
-    <div class="vip-section-title">Уровни VIP</div>
+    <div class="vip-section-title">${t('vipLevelsHdr')}</div>
     <div class="vip-levels">${_renderVipLevels(level, pending, bonuses, cumulative)}</div>
   `;
 }
@@ -2835,8 +2835,8 @@ function _renderVipLevels(curLevel, pending, bonuses, cumulative) {
     const badge     = isPending ? '🎁' : isDone ? '✓' : lvl;
     const bonHtml   = [
       b.xp   > 0 ? `<span>+${b.xp}% XP</span>`     : '',
-      b.gold > 0 ? `<span>+${b.gold}% Золото</span>` : '',
-      b.drop > 0 ? `<span>+${b.drop}% Дроп</span>`   : '',
+      b.gold > 0 ? `<span>+${b.gold}% ${t('vipGoldLbl')}</span>` : '',
+      b.drop > 0 ? `<span>+${b.drop}% ${t('vipDropLbl')}</span>`   : '',
     ].join('');
     html += `
       <div class="${cls}">
@@ -2847,7 +2847,7 @@ function _renderVipLevels(curLevel, pending, bonuses, cumulative) {
         </div>
         ${bonHtml ? `<div class="vip-card-bonuses">${bonHtml}</div>` : ''}
         ${_vipItemDesc(lvl)}
-        ${isPending ? `<button class="vip-claim-btn" onclick="netClaimVipRewards()">Забрать награду</button>` : ''}
+        ${isPending ? `<button class="vip-claim-btn" onclick="netClaimVipRewards()">${t('vipClaimBtn')}</button>` : ''}
       </div>`;
   }
   return html;
@@ -2869,7 +2869,7 @@ function _vipItemDesc(lvl) {
   function boxR(qty)  { return ri('/images/material/boxr.png', `×${qty}`, 'rare'); }
   function gold(amt)  {
     const uri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
-    return ri(uri, `${(amt/1000).toFixed(0)}k зол.`, 'gold');
+    return ri(uri, `${(amt/1000).toFixed(0)}${t('vipGoldShortSuffix')}`, 'gold');
   }
   function pots(qty) {
     return ['hp','exp','gold','regen','atkspeed','atk']
@@ -2976,20 +2976,20 @@ function closeBossPanel() {
 // Lists all 4 corridors' bosses at once rather than just whichever one the
 // player currently stands in. The countdown just re-reads the stored
 // respawnAt every second while the panel is open, no extra network traffic.
-const _BOSS_ARM_LABEL = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
+const _BOSS_ARMS = ['left', 'top', 'bottom', 'right'];
 function _renderBossPanelBody() {
   const body = document.getElementById('boss-panel-body');
   if (!body) return;
-  body.innerHTML = `<div class="vip-levels">${Object.keys(_BOSS_ARM_LABEL).map(arm => {
+  body.innerHTML = `<div class="vip-levels">${_BOSS_ARMS.map(arm => {
     const bs = (typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus[arm] : null;
     const alive = !bs || bs.alive;
-    const statusTxt   = alive ? 'Жив' : ('Возрождение через ' + _fmtBossTime((bs.respawnAt || 0) - Date.now()));
+    const statusTxt   = alive ? t('bossAliveLbl') : tVars('bossRespawnInFmt', { t: _fmtBossTime((bs.respawnAt || 0) - Date.now()) });
     const statusColor = alive ? '#8fc95c' : '#f07886';
     return `
       <div class="vip-card${alive ? ' vip-card-done' : ''}">
         <div class="vip-card-head">
           <div class="vip-card-badge">${alive ? '💀' : '⏳'}</div>
-          <div class="vip-card-title">${_BOSS_ARM_LABEL[arm]}</div>
+          <div class="vip-card-title">${_armLabel(arm)}</div>
           <div class="vip-card-gram" style="color:${statusColor}">${statusTxt}</div>
         </div>
       </div>`;
@@ -3004,7 +3004,7 @@ function openMarketPanel() {
   const panel = document.getElementById('market-panel');
   if (!panel) return;
   if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Маркет с ${FEATURE_UNLOCK_LEVEL} уровня`, '#eaa742');
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, tVars('marketUnlockToast', { n: FEATURE_UNLOCK_LEVEL }), '#eaa742');
     return;
   }
   panel.style.display = 'flex';
