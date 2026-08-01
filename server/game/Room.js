@@ -437,10 +437,27 @@ class Room {
     });
   }
 
-  addPlayer(socketId, username, clanName, clanIcon) {
+  addPlayer(socketId, username, clanName, clanIcon, telegramId) {
+    // A reconnect (network blip, backgrounded tab) can occasionally leave the
+    // old socket's entry in this room a moment longer than its own disconnect
+    // cleanup takes to land — the new connection would then render as a
+    // second, ghost copy of the same player until the stale entry's eventual
+    // disconnect fires. Since every reconnect re-authenticates with the same
+    // telegramId, proactively drop any existing entry for that account here
+    // rather than relying solely on the old socket's own cleanup timing.
+    // Returns the removed stale socketId (if any) so the caller can also
+    // tell other clients to drop it immediately, instead of waiting for its
+    // disconnect event.
+    let staleSocketId = null;
+    if (telegramId) {
+      for (const [sid, p] of this.players) {
+        if (sid !== socketId && p.telegramId === telegramId) { staleSocketId = sid; break; }
+      }
+      if (staleSocketId) this.removePlayer(staleSocketId);
+    }
     const spawn = this._dungeon.spawn;
     this.players.set(socketId, {
-      socketId, username, type: null,
+      socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
@@ -449,7 +466,7 @@ class Room {
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();
-    return spawn;
+    return { spawn, staleSocketId };
   }
 
   setPlayerClan(socketId, clanName, clanIcon) {

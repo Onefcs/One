@@ -2189,7 +2189,12 @@ io.on('connection', socket => {
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
-      currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon);
+      const { staleSocketId } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, authed.telegramId);
+      // A stale room entry for this same account (see addPlayer's comment)
+      // was just dropped — tell other clients immediately instead of waiting
+      // for that old socket's own (possibly delayed) disconnect to do it, so
+      // this account never briefly renders as two players on screen.
+      if (staleSocketId) socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: staleSocketId });
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
       if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
     }
