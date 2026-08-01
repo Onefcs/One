@@ -1105,6 +1105,24 @@ function _sanitizeSavedStats(raw) {
 // can't inject regex operators (ReDoS / catastrophic backtracking on the DB).
 function _escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Last line of defense against a client-side race (e.g. a save firing before
+// restoreFromSave has populated the real character — the exact shape of the
+// bug fixed in "stop wiping saved progress on refresh when savedData.type is
+// stale") silently overwriting real progress with a blank starter character.
+// A legitimate save never simultaneously zeroes level, gold, kills, inventory
+// AND equipment at once — those don't all reset together in normal play — so
+// treat that combination as corruption and refuse to persist it rather than
+// trust the client blindly.
+function _looksLikeCatastrophicReset(prev, next) {
+  if (!prev) return false;
+  const hadProgress = (prev.lvl || 1) > 2 || (prev.gold || 0) > 0 ||
+    (prev.inventory || []).length > 0 || Object.keys(prev.equipment || {}).length > 0;
+  if (!hadProgress) return false;
+  const isBlank = (next.lvl || 1) <= 1 && (next.gold || 0) === 0 && (next.kills || 0) === 0 &&
+    (next.inventory || []).length === 0 && Object.keys(next.equipment || {}).length === 0;
+  return isBlank;
+}
+
 function _persistSavedFields(authed, fields, extra) {
   if (!authed) return;
   const set = {};
@@ -2569,6 +2587,12 @@ io.on('connection', socket => {
     // for BM/combat stats and before it's persisted (anti-cheat — see
     // _sanitizeSavedStats). gram/nexum are never taken from here.
     const clean = _sanitizeSavedStats(stats);
+    if (_looksLikeCatastrophicReset(_lastStats, clean)) {
+      console.error(`[saveProgress] Rejected suspicious full-reset for telegramId=${authed.telegramId} ` +
+        `(had lvl=${_lastStats.lvl} gold=${_lastStats.gold} items=${(_lastStats.inventory || []).length} ` +
+        `equip=${Object.keys(_lastStats.equipment || {}).length} — incoming save was blank). Keeping previous state.`);
+      return;
+    }
     _lastStats = clean;
     authed.bm = calcBM(clean);
     // Keeps the Room's basis for statsUpdate's true-base recomputation
