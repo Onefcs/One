@@ -3817,31 +3817,31 @@ function openGramDepositModal() {
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
       <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">
         <div style="display:flex;align-items:center;margin-bottom:18px">
-          <div style="font-size:16px;font-weight:800;color:#90d653">Пополнение GRAM</div>
+          <div style="font-size:16px;font-weight:800;color:#90d653">${t('depositModalTitle')}</div>
           <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
         </div>
 
-        <div class="gram-hint" style="margin-bottom:6px">Переведите GRAM на адрес кошелька:</div>
+        <div class="gram-hint" style="margin-bottom:6px">${t('transferToWalletHint')}</div>
         <div class="gram-copy-box" onclick="gramCopy('gram-addr-val')">
           <span id="gram-addr-val">${wallet}</span>
           <span class="gram-copy-icon">⎘</span>
         </div>
 
-        <div class="gram-hint" style="margin:12px 0 6px">Обязательно укажите MEMO (комментарий):</div>
+        <div class="gram-hint" style="margin:12px 0 6px">${t('memoRequiredHint')}</div>
         <div class="gram-copy-box" onclick="gramCopy('gram-memo-val')">
           <span id="gram-memo-val">${memo}</span>
           <span class="gram-copy-icon">⎘</span>
         </div>
 
-        <div class="gram-warn">⚠ Без мемо перевод не будет зачислен</div>
+        <div class="gram-warn">${t('memoWarnHint')}</div>
 
         <div style="margin:16px 0 10px">
-          <div class="gram-hint" style="margin-bottom:6px">Сумма перевода:</div>
-          <input id="gram-dep-amount" type="number" min="1" step="0.01" placeholder="Введите сумму GRAM" class="gram-input" style="width:100%;box-sizing:border-box">
+          <div class="gram-hint" style="margin-bottom:6px">${t('transferAmountHint')}</div>
+          <input id="gram-dep-amount" type="number" min="1" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box">
         </div>
 
         <button class="gram-btn gram-btn-green" style="width:100%;padding:14px;font-size:15px" onclick="gramDepositConfirm('${memo}')">
-          Я оплатил ✓
+          ${t('iPaidBtn')}
         </button>
         <div id="gram-modal-msg" class="gram-msg" style="display:none;margin-top:10px"></div>
       </div>
@@ -3854,13 +3854,13 @@ function openGramDepositModal() {
 
 function gramDepositConfirm(memo) {
   const amount = parseFloat(document.getElementById('gram-dep-amount').value);
-  if (!amount || amount < 1) { _gramModalMsg('Введите сумму от 1 GRAM', 'err'); return; }
+  if (!amount || amount < 1) { _gramModalMsg(t('minAmountErrToast'), 'err'); return; }
   if (typeof netGramDeposit === 'function') {
     netGramDeposit(amount, memo);
     closeGramModal();
-    _gramMsg('Заявка на пополнение создана — ожидайте подтверждения', 'ok');
+    _gramMsg(t('depositRequestCreatedToast'), 'ok');
   } else {
-    _gramModalMsg('Сервис недоступен', 'err');
+    _gramModalMsg(t('serviceUnavailableToast'), 'err');
   }
 }
 
@@ -3871,27 +3871,27 @@ function openGramWithdrawModal() {
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
       <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">
         <div style="display:flex;align-items:center;margin-bottom:18px">
-          <div style="font-size:16px;font-weight:800;color:#e5a546">Вывод GRAM</div>
+          <div style="font-size:16px;font-weight:800;color:#e5a546">${t('withdrawModalTitle')}</div>
           <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
         </div>
 
         <div style="background:rgba(229,165,70,0.08);border:1px solid rgba(229,165,70,0.2);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#ba9865">
-          Доступно: <b>${balance.toFixed(7)} GRAM</b> · Комиссия 10%
+          ${tVars('availableFeeFmt', { bal: `<b>${balance.toFixed(7)}</b>` })}
         </div>
 
         <div style="margin-bottom:12px">
-          <div class="gram-hint" style="margin-bottom:6px">Сумма вывода (мин. 10 GRAM):</div>
-          <input id="gram-wd-amount" type="number" min="10" step="0.01" placeholder="Сумма GRAM" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_updateWdPreview()">
+          <div class="gram-hint" style="margin-bottom:6px">${t('withdrawAmountHint')}</div>
+          <input id="gram-wd-amount" type="number" min="10" step="0.01" placeholder="${t('gramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_updateWdPreview()">
         </div>
         <div id="gram-wd-preview" style="font-size:12px;color:#a3957c;margin:-6px 0 12px;padding:0 2px"></div>
 
         <div style="margin-bottom:16px">
-          <div class="gram-hint" style="margin-bottom:6px">TON-адрес получателя:</div>
+          <div class="gram-hint" style="margin-bottom:6px">${t('tonAddrHint')}</div>
           <input id="gram-wd-addr" type="text" placeholder="UQ..." class="gram-input gram-input-addr" style="width:100%;box-sizing:border-box">
         </div>
 
         <button class="gram-btn gram-btn-orange" style="width:100%;padding:14px;font-size:15px" onclick="gramWithdrawConfirm()">
-          Подать заявку на вывод
+          ${t('submitWithdrawBtn')}
         </button>
         <div id="gram-modal-msg" class="gram-msg" style="display:none;margin-top:10px"></div>
       </div>
@@ -3909,23 +3909,23 @@ function _updateWdPreview() {
   if (!v || v < 10) { el.textContent = ''; return; }
   const fee = Math.round(v * 0.10 * 100) / 100;
   const net = Math.round((v - fee) * 100) / 100;
-  el.textContent = `Комиссия ${fee} GRAM — к получению: ${net} GRAM`;
+  el.textContent = tVars('feeReceiveFmt', { fee, net });
 }
 
 function gramWithdrawConfirm() {
   const amount = parseFloat(document.getElementById('gram-wd-amount').value);
   const addr   = (document.getElementById('gram-wd-addr').value || '').trim();
   const balance = window._gramBalance || 0;
-  if (!amount || amount < 10)    { _gramModalMsg('Минимум 10 GRAM', 'err'); return; }
-  if (!addr)                     { _gramModalMsg('Введите TON-адрес', 'err'); return; }
-  if (amount > balance)          { _gramModalMsg('Недостаточно средств', 'err'); return; }
+  if (!amount || amount < 10)    { _gramModalMsg(t('minWithdraw10Toast'), 'err'); return; }
+  if (!addr)                     { _gramModalMsg(t('enterTonAddrToast'), 'err'); return; }
+  if (amount > balance)          { _gramModalMsg(t('notEnoughFundsToast'), 'err'); return; }
   if (typeof netGramWithdraw === 'function') {
     netGramWithdraw(amount, addr);
     closeGramModal();
     const net = Math.round((amount - amount * 0.10) * 100) / 100;
-    _gramMsg(`Заявка на вывод создана — к получению: ${net} GRAM`, 'ok');
+    _gramMsg(tVars('withdrawRequestCreatedFmt', { net }), 'ok');
   } else {
-    _gramModalMsg('Сервис недоступен', 'err');
+    _gramModalMsg(t('serviceUnavailableToast'), 'err');
   }
 }
 
