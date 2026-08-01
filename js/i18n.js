@@ -71,6 +71,7 @@ const I18N_UI = {
   sfxOnLbl:          { ru: 'Включены', en: 'On', uk: 'Увімкнено', es: 'Activados', tr: 'Açık', pt: 'Ativados' },
   sfxOffLbl:         { ru: 'Выключены', en: 'Off', uk: 'Вимкнено', es: 'Desactivados', tr: 'Kapalı', pt: 'Desativados' },
   sfxHint:           { ru: 'Удары, смерть врагов, лут и появление босса', en: 'Hits, enemy deaths, loot and boss spawns', uk: 'Удари, смерть ворогів, лут і поява боса', es: 'Golpes, muertes de enemigos, botín y aparición del jefe', tr: 'Vuruşlar, düşman ölümleri, ganimet ve boss belirmesi', pt: 'Acertos, mortes de inimigos, saque e aparição do chefe' },
+  bgmSectionTitle:   { ru: 'Фоновая музыка', en: 'Background music', uk: 'Фонова музика', es: 'Música de fondo', tr: 'Arka plan müziği', pt: 'Música de fundo' },
   langPickerHint:    { ru: 'Изменения применяются сразу', en: 'Changes apply immediately', uk: 'Зміни застосовуються одразу', es: 'Los cambios se aplican de inmediato', tr: 'Değişiklikler hemen uygulanır', pt: 'As alterações se aplicam imediatamente' },
 
   // ── Character select ──

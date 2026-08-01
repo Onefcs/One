@@ -349,6 +349,7 @@ function update(dt) {
       : (serverEnemiesMap.get(pa.id)?.hp || 0) > 0;
     if (targetAlive) {
       swingTimer = 0.18;
+      if (typeof Sound !== 'undefined') Sound.hit();
       if (pa.isPlayer) {
         netPvpAttack(pa.socketId);
         if (player.charDef.atkType === 'ranged') {

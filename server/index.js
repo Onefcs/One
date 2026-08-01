@@ -1042,6 +1042,8 @@ app.get('/health', (req, res) => {
 
 // Images: cache 30 days — sprites never change between deploys
 app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
+// Audio: same treatment — background music/sfx assets don't change between deploys.
+app.use('/audio', express.static(path.join(__dirname, '..', 'audio'), { maxAge: '30d', immutable: true }));
 
 // Vendored PixiJS (~456 KB) never changes between deploys, but the catch-all
 // static handler below serves it with no explicit caching, so mobile clients

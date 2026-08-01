@@ -1,3 +1,33 @@
+// ── Background music ────────────────────────────────────────────────────
+// One looping ambient track via a plain <audio> element — a real asset
+// (audio/hub-theme.mp3), unlike the synthesized sfx below. Its own mute flag
+// so a player can run one without the other.
+const Music = (() => {
+  let muted = false;
+  try { muted = localStorage.getItem('bgmMuted') === '1'; } catch (_) {}
+  const el = new Audio('/audio/hub-theme.mp3');
+  el.loop = true;
+  el.volume = 0.25;
+  el.muted = muted;
+
+  function _start() {
+    if (!muted) el.play().catch(() => {}); // autoplay can still be blocked; retried on the next gesture
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+    window.addEventListener(ev, _start, { once: true, passive: true }));
+
+  return {
+    get muted() { return muted; },
+    setMuted(v) {
+      muted = !!v;
+      el.muted = muted;
+      if (!muted) _start();
+      try { localStorage.setItem('bgmMuted', muted ? '1' : '0'); } catch (_) {}
+    },
+    toggleMuted() { this.setMuted(!muted); return muted; },
+  };
+})();
+
 // ── Sound effects ────────────────────────────────────────────────────────
 // Everything here is synthesized on the fly via the Web Audio API — no sound
 // files to fetch, license, or ship. Each function is a short envelope over an
@@ -63,7 +93,9 @@ const Sound = (() => {
   }
 
   return {
-    // Player's own attack lands on an enemy.
+    // Player's own attack lands on an enemy — fired only from the local
+    // attack path (js/game.js pendingAttack), never from network broadcasts,
+    // so other players' shots never make sound on this client.
     hit() {
       _tone(180, 0.08, { type: 'square', gain: 0.12, endFreq: 90 });
       _noise(0.05, { gain: 0.08, filterFreq: 2500 });

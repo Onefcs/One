@@ -431,7 +431,11 @@ function netConnect(onReady) {
         if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19);
         else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
         if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
-        if (typeof Sound !== 'undefined' && (typeof _isPosVisible !== 'function' || _isPosVisible(e.x, e.y))) Sound.hit();
+        // No Sound.hit() here: this broadcasts to everyone on the floor for
+        // whoever's attack it was. The player's own hit sound instead fires
+        // client-side the instant their own swing/shot lands — see the
+        // pendingAttack branch in js/game.js — so only their own shots are
+        // ever heard, never other players'.
       }
     }
   });

@@ -3743,19 +3743,34 @@ function _renderSoundPicker() {
   if (window._profileTab !== 'sound') return;
   const el = document.getElementById('gram-body');
   if (!el || typeof Sound === 'undefined') return;
-  const on = !Sound.muted;
+  const sfxOn = !Sound.muted;
+  const bgmOn = typeof Music !== 'undefined' && !Music.muted;
   el.innerHTML = `
-    <div class="gram-section-title" style="margin-bottom:10px">${t('sfxSectionTitle')}</div>
+    <div class="gram-section-title" style="margin-bottom:10px">${t('bgmSectionTitle')}</div>
     <div class="lang-card-grid">
-      <button class="lang-card${on ? ' active' : ''}" onclick="_setSfxMuted(false)">
-        <span class="lang-card-flag">🔊</span>
+      <button class="lang-card${bgmOn ? ' active' : ''}" onclick="_setBgmMuted(false)">
+        <span class="lang-card-flag">🎵</span>
         <span class="lang-card-name">${t('sfxOnLbl')}</span>
-        ${on ? '<span class="lang-card-check">✓</span>' : ''}
+        ${bgmOn ? '<span class="lang-card-check">✓</span>' : ''}
       </button>
-      <button class="lang-card${on ? '' : ' active'}" onclick="_setSfxMuted(true)">
+      <button class="lang-card${bgmOn ? '' : ' active'}" onclick="_setBgmMuted(true)">
         <span class="lang-card-flag">🔇</span>
         <span class="lang-card-name">${t('sfxOffLbl')}</span>
-        ${on ? '' : '<span class="lang-card-check">✓</span>'}
+        ${bgmOn ? '' : '<span class="lang-card-check">✓</span>'}
+      </button>
+    </div>
+
+    <div class="gram-section-title" style="margin:18px 0 10px">${t('sfxSectionTitle')}</div>
+    <div class="lang-card-grid">
+      <button class="lang-card${sfxOn ? ' active' : ''}" onclick="_setSfxMuted(false)">
+        <span class="lang-card-flag">🔊</span>
+        <span class="lang-card-name">${t('sfxOnLbl')}</span>
+        ${sfxOn ? '<span class="lang-card-check">✓</span>' : ''}
+      </button>
+      <button class="lang-card${sfxOn ? '' : ' active'}" onclick="_setSfxMuted(true)">
+        <span class="lang-card-flag">🔇</span>
+        <span class="lang-card-name">${t('sfxOffLbl')}</span>
+        ${sfxOn ? '' : '<span class="lang-card-check">✓</span>'}
       </button>
     </div>
     <div style="font-size:11px;color:#82745b;margin-top:12px;text-align:center">${t('sfxHint')}</div>
@@ -3765,6 +3780,12 @@ function _renderSoundPicker() {
 function _setSfxMuted(v) {
   if (typeof Sound === 'undefined') return;
   Sound.setMuted(v);
+  _renderSoundPicker();
+}
+
+function _setBgmMuted(v) {
+  if (typeof Music === 'undefined') return;
+  Music.setMuted(v);
   _renderSoundPicker();
 }
 
