@@ -1638,7 +1638,7 @@ function playerDie() {
   if (info && player) {
     const _dRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
     const _dLoc = (_dRoom?.arm && typeof _armLabel === 'function')
-      ? `${_armLabel(_dRoom.arm)} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+      ? `${_armLabel(_dRoom.arm)} ${typeof t === 'function' ? t('corridorSuffix') : 'коридор'} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
     info.innerHTML =
       `<span class="death-stat">${_dLoc}</span>` +
       `<span class="death-stat">${player.gold} <span class="death-lbl">${typeof t === 'function' ? t('deathGoldLbl') : 'золота'}</span> · ${player.kills} <span class="death-lbl">${typeof t === 'function' ? t('deathKillsLbl') : 'убийств'}</span></span>`;

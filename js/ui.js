@@ -697,17 +697,13 @@ function drawMapPanel() {
   });
   mx2.fill();
   const _pRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
-  const _locLabel = _pRoom?.arm ? (_armLabel(_pRoom.arm) + ' · ' + t('levelAbbrev') + ' ' + _pRoom.monsterLvl) : t('centralHall');
+  // _armLabel/_ARM_LABEL (js/game.js) only return the bare adjective (e.g.
+  // "left") — corridorSuffix is appended at each call site instead of baked
+  // into the shared helper, matching how enteredCorridorToast's own template
+  // already does it.
+  const _locLabel = _pRoom?.arm ? (_armLabel(_pRoom.arm) + ' ' + t('corridorSuffix') + ' · ' + t('levelAbbrev') + ' ' + _pRoom.monsterLvl) : t('centralHall');
   document.getElementById('map-status').textContent =
     _locLabel + ' · ' + tVars('enemiesCountFmt', { n: aliveEnemies.length });
-}
-
-// Derived live from the current language (armLeft/armTop/armBottom/armRight +
-// corridorSuffix in I18N_UI) instead of a static object, so a language switch
-// takes effect immediately — mirrors the _ARM_LABEL Proxy in js/game.js.
-function _armLabel(dir) {
-  const adjKey = { left: 'armLeft', top: 'armTop', bottom: 'armBottom', right: 'armRight' }[dir];
-  return (typeof t === 'function' ? t(adjKey) : dir) + ' ' + (typeof t === 'function' ? t('corridorSuffix') : 'коридор');
 }
 
 function _floorEnemyPool(n, localLvl) {
@@ -2989,7 +2985,7 @@ function _renderBossPanelBody() {
       <div class="vip-card${alive ? ' vip-card-done' : ''}">
         <div class="vip-card-head">
           <div class="vip-card-badge">${alive ? '💀' : '⏳'}</div>
-          <div class="vip-card-title">${_armLabel(arm)}</div>
+          <div class="vip-card-title">${_armLabel(arm)} ${t('corridorSuffix')}</div>
           <div class="vip-card-gram" style="color:${statusColor}">${statusTxt}</div>
         </div>
       </div>`;

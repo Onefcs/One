@@ -343,7 +343,7 @@ function openBoxCraftModal(boxId) {
   }).join('');
 
   document.getElementById('npc-body').innerHTML = `
-    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">← Назад</button>
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
     <div class="craft-detail-header">
       <div class="craft-detail-icon">${_itemIcon(box, 52)}</div>
       <div class="craft-detail-info">
