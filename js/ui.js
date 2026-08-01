@@ -3566,20 +3566,20 @@ function openGramShopConfirm(pkgId) {
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
-        <div style="color:#c5bfb7">• ${kGold} золота</div>
-        <div style="color:#c5bfb7">• ${pkg.potions}× каждое зелье (6 видов)</div>
+        <div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>
+        <div style="color:#c5bfb7">${tVars('eachPotionFmt', { n: pkg.potions })}</div>
         ${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
-        <span style="color:#b2a288">Стоимость</span>
+        <span style="color:#b2a288">${t('costLbl')}</span>
         <span style="font-weight:700;color:${pkg.color}">${pkg.gram} GRAM</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
-        <span style="color:#b2a288">Ваш баланс</span>
+        <span style="color:#b2a288">${t('yourBalanceLbl')}</span>
         <span style="font-weight:700;color:#f5dbae">${bal.toFixed(7)} GRAM</span>
       </div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
-        onclick="_confirmGramShopBuy('${pkgId}')">Купить за ${pkg.gram} GRAM</button>
+        onclick="_confirmGramShopBuy('${pkgId}')">${tVars('buyForFmt', { price: pkg.gram })}</button>
     </div>`;
   document.body.appendChild(ov);
 }
@@ -3600,8 +3600,8 @@ function onGramShopResult(data) {
   }
   if (data.vipData) window._vipData = data.vipData;
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
-  const lbl = pkg ? pkg.label : 'Пакет';
-  _marketToast(`✓ ${lbl} куплен!`, 'ok');
+  const lbl = pkg ? pkg.label : t('packageFallbackLbl');
+  _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
   updateInvUI();
@@ -3610,7 +3610,7 @@ function onGramShopResult(data) {
 }
 
 function onGramShopError(msg) {
-  _marketToast(msg || 'Ошибка покупки', 'err');
+  _marketToast(msg || t('purchaseErrorLbl'), 'err');
 }
 
 let _gramTxList = [];
@@ -3653,34 +3653,34 @@ function updateFriendsUI() {
 
   el.innerHTML = `
     <div class="ref-card">
-      <div class="ref-card-title">Ваша реферальная ссылка</div>
+      <div class="ref-card-title">${t('refLinkCardTitle')}</div>
       <div class="ref-link-box">
-        <span id="ref-link-val" style="flex:1;font-size:12px">${refLink || 'Загрузка...'}</span>
-        <button class="ref-copy-btn" onclick="refCopyLink()">Копировать</button>
+        <span id="ref-link-val" style="flex:1;font-size:12px">${refLink || t('questLoading')}</span>
+        <button class="ref-copy-btn" onclick="refCopyLink()">${t('copyBtn')}</button>
       </div>
-      <div style="font-size:11px;color:#82745b;margin-top:8px">За каждый депозит друга вы получаете <b style="color:#89ba5f">5%</b></div>
+      <div style="font-size:11px;color:#82745b;margin-top:8px">${tVars('refBonusHintFmt', { pct: '<b style="color:#89ba5f">5%</b>' })}</div>
     </div>
 
     <div class="ref-stats-row">
       <div class="ref-stat-box">
         <div class="ref-stat-num">${friends.length}</div>
-        <div class="ref-stat-lbl">Друзей</div>
+        <div class="ref-stat-lbl">${t('friendsCountLbl')}</div>
       </div>
       <div class="ref-stat-box">
         <div class="ref-stat-num">${totalBonus.toFixed(2)}</div>
-        <div class="ref-stat-lbl">GRAM получено</div>
+        <div class="ref-stat-lbl">${t('gramReceivedLbl')}</div>
       </div>
     </div>
 
-    <div class="gram-section-title" style="margin-bottom:8px">Список друзей</div>
+    <div class="gram-section-title" style="margin-bottom:8px">${t('friendsListHdr')}</div>
     <div id="ref-friends-list">
       ${friends.length === 0
-        ? '<div class="ref-empty">Пока нет приглашённых друзей<br><span style="font-size:12px">Отправьте ссылку и получайте бонусы</span></div>'
+        ? `<div class="ref-empty">${t('noFriendsInvitedHint')}<br><span style="font-size:12px">${t('sendLinkHint')}</span></div>`
         : friends.map(f => {
             const init = (f.username || '?')[0].toUpperCase();
             return `<div class="ref-friend-row">
               <div class="ref-friend-avatar">${init}</div>
-              <div class="ref-friend-name">@${f.username || 'игрок'}</div>
+              <div class="ref-friend-name">@${f.username || t('playerFallbackLbl')}</div>
               <div class="ref-friend-bonus">+${(f.bonus || 0).toFixed(2)} GRAM</div>
             </div>`;
           }).join('')
@@ -3696,7 +3696,7 @@ function refCopyLink() {
   if (!link) return;
   navigator.clipboard.writeText(link).then(() => {
     const btn = document.querySelector('.ref-copy-btn');
-    if (btn) { const old = btn.textContent; btn.textContent = 'Скопировано!'; btn.style.color = '#89ba5f'; setTimeout(() => { btn.textContent = old; btn.style.color = ''; }, 2000); }
+    if (btn) { const old = btn.textContent; btn.textContent = t('copiedLbl'); btn.style.color = '#89ba5f'; setTimeout(() => { btn.textContent = old; btn.style.color = ''; }, 2000); }
   }).catch(() => {});
 }
 
@@ -3713,7 +3713,7 @@ function onFriendJoined(data) {
   // Toast notification
   const toast = document.createElement('div');
   toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#29361e;border:1px solid #89ba5f;color:#89ba5f;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
-  toast.textContent = `Друг @${data.username || 'игрок'} присоединился!`;
+  toast.textContent = tVars('friendJoinedToast', { u: data.username || t('playerFallbackLbl') });
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
 }
@@ -3724,7 +3724,7 @@ function onRefBonusReceived(data) {
   if (window._profileTab === 'friends') updateFriendsUI();
   const toast = document.createElement('div');
   toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#362d1e;border:1px solid #eec379;color:#eec379;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none';
-  toast.textContent = `+${data.bonus.toFixed(2)} GRAM от реферала @${data.fromUsername}`;
+  toast.textContent = tVars('refBonusReceivedToast', { n: data.bonus.toFixed(2), u: data.fromUsername });
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
 }
@@ -3737,26 +3737,26 @@ function updateGramUI() {
   el.innerHTML = `
     <div class="gram-airdrop-card" style="background:linear-gradient(135deg,rgba(230,148,25,0.14),rgba(230,148,25,0.05));border:1px solid rgba(230,148,25,0.3);border-radius:14px;padding:14px 16px;text-align:center;margin-bottom:14px">
       <div style="font-size:16px;font-weight:800;color:#e6ac19;letter-spacing:0.03em">🪂 AirDrop</div>
-      <div style="font-size:12px;color:#c5bfb7;margin-top:4px">Собирайте монеты Liberty</div>
+      <div style="font-size:12px;color:#c5bfb7;margin-top:4px">${t('airdropCollectHint')}</div>
     </div>
 
     <div class="gram-balance-card">
-      <div class="gram-balance-label">Баланс GRAM</div>
+      <div class="gram-balance-label">${t('gramBalanceLbl')}</div>
       <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(7)} <span class="gram-unit">GRAM</span></div>
     </div>
 
     <div style="display:flex;gap:10px;margin-bottom:14px">
       <button class="gram-btn gram-btn-green" style="flex:1;padding:13px" onclick="openGramDepositModal()">
-        ↓ Пополнить
+        ${t('depositBtn')}
       </button>
       <button class="gram-btn gram-btn-orange" style="flex:1;padding:13px" onclick="openGramWithdrawModal()">
-        ↑ Вывести
+        ${t('withdrawBtn')}
       </button>
     </div>
 
     <div class="gram-section">
-      <div class="gram-section-title">История операций</div>
-      <div id="gram-history-list"><div class="gram-hint" style="text-align:center;padding:12px 0">Загрузка...</div></div>
+      <div class="gram-section-title">${t('txHistoryHdr')}</div>
+      <div id="gram-history-list"><div class="gram-hint" style="text-align:center;padding:12px 0">${t('questLoading')}</div></div>
     </div>
   `;
 
@@ -3767,18 +3767,18 @@ function _renderGramHistory() {
   const el = document.getElementById('gram-history-list');
   if (!el) return;
   if (!_gramTxList.length) {
-    el.innerHTML = '<div class="gram-hint" style="text-align:center;padding:12px 0">Операций пока нет</div>';
+    el.innerHTML = `<div class="gram-hint" style="text-align:center;padding:12px 0">${t('noTxYetHint')}</div>`;
     return;
   }
   el.innerHTML = _gramTxList.map(tx => {
     const isDeposit = tx.type === 'deposit';
     const statusCls = tx.status === 'confirmed' ? 'gram-st-ok' : tx.status === 'rejected' ? 'gram-st-no' : 'gram-st-wait';
-    const statusLbl = tx.status === 'confirmed' ? '✓ Выполнено' : tx.status === 'rejected' ? '✕ Отклонено' : '⏳ Ожидание';
+    const statusLbl = tx.status === 'confirmed' ? t('txDoneLbl') : tx.status === 'rejected' ? t('txRejectedLbl') : t('txWaitingLbl');
     const date = new Date(tx.createdAt).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     return `<div class="gram-tx-row">
       <div class="gram-tx-icon ${isDeposit ? 'gram-tx-dep' : 'gram-tx-wd'}">${isDeposit ? '↓' : '↑'}</div>
       <div class="gram-tx-info">
-        <div class="gram-tx-type">${isDeposit ? 'Пополнение' : 'Вывод'}</div>
+        <div class="gram-tx-type">${isDeposit ? t('depositTypeLbl') : t('withdrawTypeLbl')}</div>
         <div class="gram-tx-date">${date}</div>
       </div>
       <div style="text-align:right">
@@ -3810,7 +3810,7 @@ function onGramTxUpdate(id, status) {
 
 // ── Deposit modal ─────────────────────────────────────────
 function openGramDepositModal() {
-  const wallet = window._gramWallet || 'Адрес не настроен';
+  const wallet = window._gramWallet || t('walletNotSetLbl');
   const memo   = (player && player.telegramId) ? player.telegramId
                  : (window.netUsername || String(Date.now()));
   const html = `
