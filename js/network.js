@@ -437,7 +437,7 @@ function netConnect(onReady) {
     netSaveProgress();
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -497,6 +497,10 @@ function netConnect(onReady) {
       window._nexumBalance = (window._nexumBalance || 0) + nexum;
       player.nexumBalance = window._nexumBalance;
       dmgNum(px, py - 52, '+' + nexum + ' Liberty', '#00e5ff');
+    }
+    if (gram && player) {
+      window._gramBalance = (window._gramBalance || 0) + gram;
+      dmgNum(px, py - 68, '+' + gram.toFixed(6) + ' GRAM', '#4fd67a');
     }
   });
 

@@ -1499,6 +1499,11 @@ io.on('connection', socket => {
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
+  // Tiny GRAM trickle from regular kills: 30% chance, amount scales with the
+  // monster's own level (rlvl) — a level-1 mob drops 0.000001 GRAM, a
+  // level-2 mob 0.000002, and so on.
+  const GRAM_DROP_CHANCE = 0.30;
+  const GRAM_PER_LEVEL = 0.000001;
 
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
@@ -2173,6 +2178,7 @@ io.on('connection', socket => {
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0) ? 1 : 0;
+      const gramDrop   = Math.random() < GRAM_DROP_CHANCE ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
@@ -2181,6 +2187,11 @@ io.on('connection', socket => {
         _nexumBalance += nexumDrop;
         _nexumBalanceCache.set(authed.telegramId, _nexumBalance);
         _persistSavedFields(authed, { nexumBalance: _nexumBalance });
+      }
+      if (gramDrop > 0) {
+        _gramBalance += gramDrop;
+        _gramBalanceCache.set(authed.telegramId, _gramBalance);
+        _persistSavedFields(authed, { gramBalance: _gramBalance });
       }
 
       if (memberIds.length > 0) {
@@ -2200,7 +2211,7 @@ io.on('connection', socket => {
           boxRare:    lootWinnerId === socket.id ? boxRare    : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
-          nexum: nexumDrop,
+          nexum: nexumDrop, gram: gramDrop,
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
@@ -2222,7 +2233,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon, boxRare, normStone, blessStone, nexum: nexumDrop,
+          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon, boxRare, normStone, blessStone, nexum: nexumDrop, gram: gramDrop,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
           id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
@@ -2278,6 +2289,7 @@ io.on('connection', socket => {
       const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
       const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0) ? 1 : 0;
+      const gramDrop2  = Math.random() < GRAM_DROP_CHANCE ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
@@ -2285,6 +2297,11 @@ io.on('connection', socket => {
         _nexumBalance += nexumDrop2;
         _nexumBalanceCache.set(authed.telegramId, _nexumBalance);
         _persistSavedFields(authed, { nexumBalance: _nexumBalance });
+      }
+      if (gramDrop2 > 0) {
+        _gramBalance += gramDrop2;
+        _gramBalanceCache.set(authed.telegramId, _gramBalance);
+        _persistSavedFields(authed, { gramBalance: _gramBalance });
       }
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -2299,7 +2316,7 @@ io.on('connection', socket => {
           boxRare:    lootWinnerId === socket.id ? boxRare2    : 0,
           normStone:  lootWinnerId === socket.id ? normStone  : 0,
           blessStone: lootWinnerId === socket.id ? blessStone : 0,
-          nexum: nexumDrop2,
+          nexum: nexumDrop2, gram: gramDrop2,
         });
         memberIds.forEach(mid => io.to(mid).emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
@@ -2315,7 +2332,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon: boxUncommon2, boxRare: boxRare2, normStone, blessStone, nexum: nexumDrop2,
+          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon: boxUncommon2, boxRare: boxRare2, normStone, blessStone, nexum: nexumDrop2, gram: gramDrop2,
         });
         socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       }

@@ -1220,6 +1220,7 @@ let _uiBtnGrads = null;
 // Cached character name text width (measureText is expensive; name never changes mid-session)
 let _hdrNameW = 0, _hdrNameStr = '';
 let _nexumIconImg = null;
+let _gramIconImg = null;
 
 // Minimap floor-tile buffer — see the cache block inside drawHeader() below.
 // Only rebuilt when the player crosses into a new tile (or theme/scale
@@ -1467,7 +1468,19 @@ function drawHeader() {
     }
     ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
     ctx.fillText(_nxBal, stxH + 14, 24);
+    stxH += 14 + ctx.measureText(String(_nxBal)).width + 8;
   }
+  // GRAM balance (tiny per-kill drop currency, see enemyKilled's 'gram' field)
+  const _grBal = window._gramBalance || 0;
+  const _grImg = _gramIconImg || (_gramIconImg = (() => { const i = new Image(); i.src = '/images/gram-icon.png'; return i; })());
+  if (_grImg.complete && _grImg.naturalWidth > 0) {
+    ctx.drawImage(_grImg, stxH, 24 - 6, 12, 12);
+  } else {
+    ctx.fillStyle = '#4fd67a'; ctx.font = `bold 9px ${F}`;
+    ctx.fillText('G', stxH + 2, 24);
+  }
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#4fd67a';
+  ctx.fillText(_grBal.toFixed(2), stxH + 14, 24);
   ctx.textBaseline = 'alphabetic';
 
   // Separator
