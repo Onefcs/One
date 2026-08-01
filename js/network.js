@@ -500,7 +500,7 @@ function netConnect(onReady) {
     }
     if (gram && player) {
       window._gramBalance = (window._gramBalance || 0) + gram;
-      dmgNum(px, py - 68, '+' + gram.toFixed(6) + ' GRAM', '#4fd67a');
+      dmgNum(px, py - 68, '+' + gram.toFixed(7) + ' GRAM', '#4fd67a');
     }
   });
 
