@@ -2495,13 +2495,13 @@ function enhanceItem(idx, stoneType) {
     openInvItemModal(idx);
   } else if (stoneType === 'bless') {
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f17e8b');
+    dmgNum(player.x, player.y - 30, t('enhFailedToast'), '#f17e8b');
     openInvItemModal(idx);
   } else {
     player.inventory.splice(idx, 1);
     recompute(); netSaveProgress();
     closeInvItemModal();
-    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#eb4e61');
+    dmgNum(player.x, player.y - 30, t('itemBurnedToast'), '#eb4e61');
   }
   updateInvUI();
 }
@@ -2543,12 +2543,12 @@ function openEqItemModal(slot) {
   const rateColor2 = rate2 >= 80 ? '#98e456' : rate2 >= 50 ? '#e6ac19' : rate2 >= 30 ? '#e69419' : '#eb4e61';
   const enhBlock = canEnh
     ? `<div class="imod-enh-block">
-        <div class="imod-enh-title">Заточка: ${enh > 0 ? '+' + enh : '0'} → <span style="color:#e69419">+${enh+1}</span></div>
+        <div class="imod-enh-title">${tVars('enhanceTitleFmt', { cur: enh > 0 ? '+' + enh : '0', next: '<span style="color:#e69419">+' + (enh+1) + '</span>' })}</div>
         ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
-        <div class="imod-enh-chance">Шанс: <b style="color:${rateColor2}">${rate2}%</b></div>
+        <div class="imod-enh-chance">${tVars('enhChanceFmt', { rate: `<b style="color:${rateColor2}">${rate2}</b>` })}</div>
         ${_enhStonesBlock('enhanceEqItem', slot)}
       </div>`
-    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">✦ Максимальная заточка</div></div>`;
+    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">${t('maxEnhanceLbl')}</div></div>`;
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -2560,14 +2560,14 @@ function openEqItemModal(slot) {
       <span class="imod-big-icon">${_itemIcon(it, 52)}</span>
       <div class="imod-title-block">
         <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#e69419">+${enh}</span>` : ''}</div>
-        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot} · <span style="color:#eec276">Надето</span></div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity]||it.rarity}</span> · ${_SLOT_NAMES[it.slot]||it.slot} · <span style="color:#eec276">${t('equippedLbl')}</span></div>
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
     ${enhBlock}
     <div class="imod-btns">
-      <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#381c1f,#672d34);color:#f28a96" onclick="unequipFromModal('${slot}')">Снять</button>
+      <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#381c1f,#672d34);color:#f28a96" onclick="unequipFromModal('${slot}')">${t('unequipBtn')}</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -2601,13 +2601,13 @@ function enhanceEqItem(slot, stoneType) {
     openEqItemModal(slot);
   } else if (stoneType === 'bless') {
     recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, 'Заточка не удалась', '#f17e8b');
+    dmgNum(player.x, player.y - 30, t('enhFailedToast'), '#f17e8b');
     openEqItemModal(slot);
   } else {
     player.equipment[slot] = null;
     recompute(); netSaveProgress();
     closeInvItemModal();
-    dmgNum(player.x, player.y - 30, 'Вещь сгорела!', '#eb4e61');
+    dmgNum(player.x, player.y - 30, t('itemBurnedToast'), '#eb4e61');
   }
   updateInvUI();
 }
@@ -2652,7 +2652,7 @@ function openRatingPanel() {
   const panel = document.getElementById('rating-panel');
   if (!panel) return;
   if (player && (player.lvl || 1) < FEATURE_UNLOCK_LEVEL) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Рейтинг с ${FEATURE_UNLOCK_LEVEL} уровня`, '#eaa742');
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, tVars('ratingUnlockToast', { n: FEATURE_UNLOCK_LEVEL }), '#eaa742');
     return;
   }
   panel.style.display = 'flex';
@@ -2684,11 +2684,11 @@ function _renderRatingBody() {
   if (!el) return;
   const rows = _ratingData[_ratingTab];
   if (!rows) {
-    el.innerHTML = '<div class="rating-loading">Загрузка...</div>';
+    el.innerHTML = `<div class="rating-loading">${t('questLoading')}</div>`;
     return;
   }
   if (!rows.length) {
-    el.innerHTML = '<div class="rating-empty">Нет данных</div>';
+    el.innerHTML = `<div class="rating-empty">${t('noDataLbl')}</div>`;
     return;
   }
 
@@ -2709,12 +2709,12 @@ function _renderRatingBody() {
         <div class="rating-rank ${rankCls}">${medal}</div>
         <div class="rating-avatar">${init}</div>
         <div style="flex:1;min-width:0">
-          <div class="rating-name">@${r.username}${isMe ? ' <span style="font-size:10px;color:#ebaa49;opacity:.7">(вы)</span>' : ''}</div>
-          <div class="rating-sub">Ур. ${r.level || 1}</div>
+          <div class="rating-name">@${r.username}${isMe ? ` <span style="font-size:10px;color:#ebaa49;opacity:.7">${t('youMarker')}</span>` : ''}</div>
+          <div class="rating-sub">${t('levelAbbrev')} ${r.level || 1}</div>
         </div>
         <div class="rating-bm">
           <div class="rating-bm-val">${(r.bm || 0).toLocaleString()}</div>
-          <div class="rating-bm-lbl">БМ</div>
+          <div class="rating-bm-lbl">${t('bmAbbrev')}</div>
         </div>
       </div>`;
     });
@@ -2728,11 +2728,11 @@ function _renderRatingBody() {
         <div class="rating-clan-icon">${typeof clanIconSVG === 'function' ? clanIconSVG(r.icon || 1, 22) : '🛡'}</div>
         <div style="flex:1;min-width:0">
           <div class="rating-name">${r.name}</div>
-          <div class="rating-sub">${r.memberCount} участн.</div>
+          <div class="rating-sub">${tVars('membersAbbrevFmt', { n: r.memberCount })}</div>
         </div>
         <div class="rating-bm">
           <div class="rating-bm-val">${(r.totalBm || 0).toLocaleString()}</div>
-          <div class="rating-bm-lbl">БМ</div>
+          <div class="rating-bm-lbl">${t('bmAbbrev')}</div>
         </div>
       </div>`;
     }).join('');

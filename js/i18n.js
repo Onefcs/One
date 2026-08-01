@@ -352,6 +352,13 @@ Object.assign(I18N_UI, {
   openBtn: { ru: 'Открыть', en: 'Open', uk: 'Відкрити', es: 'Abrir', tr: 'Aç', pt: 'Abrir' },
   noStoneToast: { ru: 'Нет камня!', en: 'No stone!', uk: 'Немає каменя!', es: '¡Sin piedra!', tr: 'Taş yok!', pt: 'Sem pedra!' },
   enhSuccessToast: { ru: '+{n} Успех!', en: '+{n} Success!', uk: '+{n} Успіх!', es: '+{n} ¡Éxito!', tr: '+{n} Başarılı!', pt: '+{n} Sucesso!' },
+  itemBurnedToast: { ru: 'Вещь сгорела!', en: 'The item burned!', uk: 'Річ згоріла!', es: '¡El objeto se destruyó!', tr: 'Eşya yandı!', pt: 'O item queimou!' },
+  enhFailedToast: { ru: 'Заточка не удалась', en: 'Enchant failed', uk: 'Гартування не вдалося', es: 'El encantamiento falló', tr: 'Büyü başarısız oldu', pt: 'O encantamento falhou' },
+  unequipBtn: { ru: 'Снять', en: 'Unequip', uk: 'Зняти', es: 'Desequipar', tr: 'Çıkar', pt: 'Desequipar' },
+  youMarker: { ru: '(вы)', en: '(you)', uk: '(ви)', es: '(tú)', tr: '(sen)', pt: '(você)' },
+  noDataLbl: { ru: 'Нет данных', en: 'No data', uk: 'Немає даних', es: 'Sin datos', tr: 'Veri yok', pt: 'Sem dados' },
+  membersAbbrevFmt: { ru: '{n} участн.', en: '{n} members', uk: '{n} учасн.', es: '{n} miembros', tr: '{n} üye', pt: '{n} membros' },
+  ratingUnlockToast: { ru: '🔒 Рейтинг с {n} уровня', en: '🔒 Rating from level {n}', uk: '🔒 Рейтинг з {n} рівня', es: '🔒 Clasificación desde nivel {n}', tr: '🔒 Sıralama seviye {n}\'den itibaren', pt: '🔒 Classificação a partir do nível {n}' },
   skillLevelUpToast: { ru: '↑ Навык +{n} ур.!', en: '↑ Skill +{n} lvl.!', uk: '↑ Навик +{n} рів.!', es: '↑ ¡Habilidad +{n} niv.!', tr: '↑ Yetenek +{n} sv.!', pt: '↑ Habilidade +{n} nív.!' },
   passiveLevelUpToast: { ru: '↑ Пассивка +{n} ур.!', en: '↑ Passive +{n} lvl.!', uk: '↑ Пасивка +{n} рів.!', es: '↑ ¡Pasiva +{n} niv.!', tr: '↑ Pasif +{n} sv.!', pt: '↑ Passiva +{n} nív.!' },
 });
