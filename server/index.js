@@ -30,6 +30,16 @@ const MARKET_MAX_ACTIVE  = 20;     // active listings per seller
 const MARKET_MAX_QTY     = 9999;   // sanity bound on a stackable listing's quantity
 const MARKET_LIST_COOLDOWN_MS = 3000;
 function _round2(n) { return Math.round(n * 100) / 100; }
+// GRAM *balances* carry 7 decimals — kill drops accrue at GRAM_PER_LEVEL
+// (0.0000001) per mob level and the client renders every balance with
+// toFixed(7). Rounding a balance to 2 decimals (as several credit paths did)
+// silently destroyed every fraction below 0.01, so a player's entire farmed
+// sub-cent balance disappeared the moment a deposit, referral bonus or market
+// sale credited them. Use this for anything that IS a balance; _round2 stays
+// for genuinely 2-decimal money figures (listing prices, withdrawal fees).
+// The 1e7 multiply-round-divide also clears the float drift that repeated
+// += 0.0000001 accumulates.
+function _round7(n) { return Math.round(n * 1e7) / 1e7; }
 
 // Rebuild a listing's item entirely from the canonical catalog — the client
 // is only trusted for WHICH item (id), WHICH enhance level, and (for
@@ -292,7 +302,7 @@ async function _handleAdminCallback(cq) {
       // gameplay autosave landing in between) and then clobber it, which is how
       // an approved deposit could add its amount on top of the wrong base and
       // wipe out balance changes that happened in the meantime.
-      const newBal = _round2((_gramBalanceCache.get(tx.telegramId) ?? (doc.savedData?.gramBalance || 0)) + tx.amount);
+      const newBal = _round7((_gramBalanceCache.get(tx.telegramId) ?? (doc.savedData?.gramBalance || 0)) + tx.amount);
       await PlayerModel.updateOne({ telegramId: tx.telegramId }, { $set: { 'savedData.gramBalance': newBal } });
       _gramBalanceCache.set(tx.telegramId, newBal);
       io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
@@ -303,7 +313,7 @@ async function _handleAdminCallback(cq) {
         if (bonus > 0) {
           const refDoc = await PlayerModel.findOne({ telegramId: doc.referredBy });
           if (refDoc) {
-            const refNewBal = _round2((_gramBalanceCache.get(doc.referredBy) ?? (refDoc.savedData?.gramBalance || 0)) + bonus);
+            const refNewBal = _round7((_gramBalanceCache.get(doc.referredBy) ?? (refDoc.savedData?.gramBalance || 0)) + bonus);
             await PlayerModel.updateOne({ telegramId: doc.referredBy }, { $set: { 'savedData.gramBalance': refNewBal } });
             _gramBalanceCache.set(doc.referredBy, refNewBal);
             io.to(`tg_${doc.referredBy}`).emit('gramBalanceUpdate', { balance: refNewBal });
@@ -1127,6 +1137,15 @@ function _sanitizeSavedStats(raw) {
   // backup} on reload. Clamp to a sane range so a client can't write a
   // far-future value that would make its record permanently "win".
   if (s.savedAt != null) s.savedAt = _clampInt(s.savedAt, 0, Date.now() + 60000, 0);
+  // Real-money balances are server-authoritative and are NEVER taken from the
+  // client blob — they live in _gramBalanceCache/_nexumBalanceCache and are
+  // re-attached explicitly by every persist path (see _liveGram/_liveNexum).
+  // Dropping them here (rather than merely overriding them downstream) means
+  // a client can't inject a balance, and a future persist call that forgets
+  // the explicit override writes nothing for these keys instead of writing a
+  // client-supplied number — _persistSavedFields skips undefined values.
+  delete s.gramBalance;
+  delete s.nexumBalance;
   return s;
 }
 
@@ -1525,8 +1544,44 @@ io.on('connection', socket => {
   let _autoSaveInterval = null;
   let _myClanName = null;
   let _myClanIcon = null;
+  // Per-socket MIRROR of the account's balances — NOT the source of truth.
+  // _gramBalanceCache/_nexumBalanceCache (keyed by telegramId) are, because
+  // several credit paths run in a *different* connection's closure — or in no
+  // connection at all — and can only reach the account through the cache:
+  //   • a market sale's payout to the seller (marketBuy runs on the BUYER's
+  //     socket),
+  //   • an admin confirming a deposit, and the 5% referral bonus it pays,
+  //   • POST /admin/player/:tid/give,
+  //   • _grantPartyDungeonNexum (credits an arbitrary party member).
+  // All of those write the cache and push a gramBalanceUpdate to the client,
+  // so the player SEES the credit — but this socket's mirror stays at the old
+  // number. Anything that then based a new value on the mirror (a gram drop,
+  // a purchase, a withdrawal) wrote that stale figure straight back over the
+  // credit, in both the cache and the DB. With a 30% gram-drop chance per
+  // kill, a sale's proceeds could vanish within seconds of arriving — the
+  // reported "продал лот, а GRAM не пришли / баланс перезаписался" bug.
+  // Read every balance through _liveGram/_liveNexum and write every change
+  // through _setGram/_setNexum so the mirror and the cache can never diverge.
   let _gramBalance = 0;
   let _nexumBalance = 0;
+  function _liveGram() {
+    return (authed && _gramBalanceCache.has(authed.telegramId))
+      ? _gramBalanceCache.get(authed.telegramId) : _gramBalance;
+  }
+  function _setGram(v) {
+    _gramBalance = v;
+    if (authed) _gramBalanceCache.set(authed.telegramId, v);
+    return v;
+  }
+  function _liveNexum() {
+    return (authed && _nexumBalanceCache.has(authed.telegramId))
+      ? _nexumBalanceCache.get(authed.telegramId) : _nexumBalance;
+  }
+  function _setNexum(v) {
+    _nexumBalance = v;
+    if (authed) _nexumBalanceCache.set(authed.telegramId, v);
+    return v;
+  }
   let _lastMarketListAt = 0;
   let _saveDebounceTimer = null;
   let _lastChatAt = 0;
@@ -1586,7 +1641,7 @@ io.on('connection', socket => {
     if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
     if (authed && _lastStats) {
       await _persistSavedFields(authed,
-        { ..._lastStats, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance },
+        { ..._lastStats, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
         { bm: authed.bm });
     }
   };
@@ -1602,7 +1657,7 @@ io.on('connection', socket => {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = setInterval(() => {
       if (!authed || !_lastStats) return;
-      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance };
+      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _liveGram(), nexumBalance: _liveNexum() };
       if (currentRoom) {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
@@ -1691,10 +1746,8 @@ io.on('connection', socket => {
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
-      _gramBalance = doc.savedData?.gramBalance || 0;
-      _nexumBalance = doc.savedData?.nexumBalance || 0;
-      _gramBalanceCache.set(telegramId, _gramBalance);
-      _nexumBalanceCache.set(telegramId, _nexumBalance);
+      _setGram(doc.savedData?.gramBalance || 0);
+      _setNexum(doc.savedData?.nexumBalance || 0);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -1749,10 +1802,8 @@ io.on('connection', socket => {
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
-      _gramBalance = doc.savedData?.gramBalance || 0;
-      _nexumBalance = doc.savedData?.nexumBalance || 0;
-      _gramBalanceCache.set(telegramId, _gramBalance);
-      _nexumBalanceCache.set(telegramId, _nexumBalance);
+      _setGram(doc.savedData?.gramBalance || 0);
+      _setNexum(doc.savedData?.nexumBalance || 0);
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -1786,11 +1837,13 @@ io.on('connection', socket => {
   safeOn('gramWithdrawRequest', async ({ amount, address }) => {
     if (!authed || !amount || amount < 10 || !address) return;
     try {
-      if (amount > _gramBalance) return socket.emit('gramError', { msg: 'Недостаточно средств' });
+      if (amount > _liveGram()) return socket.emit('gramError', { msg: 'Недостаточно средств' });
 
-      // Deduct immediately — refunded on rejection
-      _gramBalance -= amount;
-      _gramBalanceCache.set(authed.telegramId, _gramBalance);
+      // Deduct immediately — refunded on rejection. Based on _liveGram() so a
+      // credit that landed through another code path since this socket logged
+      // in (market sale payout, admin deposit confirmation, referral bonus)
+      // isn't erased by writing back a stale mirror — see _liveGram's comment.
+      _setGram(_round7(_liveGram() - amount));
       // Targeted $set instead of a findById-then-save round trip — this
       // value is already the live authoritative figure (_gramBalance), so
       // there's nothing to read first, and a full-document save would risk
@@ -1827,7 +1880,7 @@ io.on('connection', socket => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
-      if (_gramBalance < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
+      if (_liveGram() < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
 
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
@@ -1837,8 +1890,7 @@ io.on('connection', socket => {
       const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
 
       // Deduct GRAM
-      _gramBalance -= pkg.gram;
-      _gramBalanceCache.set(authed.telegramId, _gramBalance);
+      _setGram(_round7(_liveGram() - pkg.gram));
       saved.gramBalance = _gramBalance;
 
       // Gold
@@ -2051,7 +2103,7 @@ io.on('connection', socket => {
       const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
       if (!listing) return socket.emit('marketError', { msg: 'Лот уже продан или снят' });
       if (listing.sellerId === authed.telegramId) return socket.emit('marketError', { msg: 'Нельзя купить свой лот' });
-      if (listing.price > _gramBalance) return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
+      if (listing.price > _liveGram()) return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
 
       // Atomically claim the listing first so two simultaneous buyers can't both win it
       const claimed = await MarketListingModel.findOneAndUpdate(
@@ -2066,15 +2118,14 @@ io.on('connection', socket => {
       // both pass the earlier balance check before either deduction landed and
       // together spend more than the account holds, same risk the gap between
       // check and write would create in gramWithdrawRequest if it awaited there.
-      if (claimed.price > _gramBalance) {
+      if (claimed.price > _liveGram()) {
         await MarketListingModel.updateOne(
           { _id: listingId },
           { status: 'active', buyerId: null, buyerUsername: null, soldAt: null },
         ).catch(err => console.error('marketBuy release claim:', err));
         return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
       }
-      _gramBalance -= claimed.price;
-      _gramBalanceCache.set(authed.telegramId, _gramBalance);
+      _setGram(_round7(_liveGram() - claimed.price));
       // Atomic $set on just this one nested field — a full-document
       // findOne-then-save (as this used to do) reads a savedData snapshot
       // that can already be stale by the time it writes back (the player's
@@ -2094,18 +2145,22 @@ io.on('connection', socket => {
       // items to sometimes not credit anything, or to reset the balance to a
       // wrong number. Only offline sellers (no live cache entry) fall back to
       // the DB figure, which is safe since nothing else can be mutating it.
-      const payout = _round2(claimed.price * (1 - MARKET_FEE_PCT));
+      const payout = _round7(claimed.price * (1 - MARKET_FEE_PCT));
       try {
         const hasLive = _gramBalanceCache.has(claimed.sellerId);
         const sellerBase = hasLive
           ? _gramBalanceCache.get(claimed.sellerId)
           : ((await PlayerModel.findOne({ telegramId: claimed.sellerId }, 'savedData.gramBalance').lean())?.savedData?.gramBalance || 0);
-        const sellerNewBal = _round2(sellerBase + payout);
-        _gramBalanceCache.set(claimed.sellerId, sellerNewBal);
+        const sellerNewBal = _round7(sellerBase + payout);
+        // DB first, cache second: if the write throws, the cache must not be
+        // left advertising a credit that was never persisted (the seller's
+        // session would then keep building on a number the DB never had, and
+        // lose it all on their next login).
         await PlayerModel.updateOne(
           { telegramId: claimed.sellerId },
           { $set: { 'savedData.gramBalance': sellerNewBal } },
         );
+        _gramBalanceCache.set(claimed.sellerId, sellerNewBal);
         io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
         io.to(`tg_${claimed.sellerId}`).emit('marketSold', {
           itemName: claimed.item?.name || '', price: claimed.price, payout,
@@ -2312,13 +2367,11 @@ io.on('connection', socket => {
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
 
       if (nexumDrop > 0) {
-        _nexumBalance += nexumDrop;
-        _nexumBalanceCache.set(authed.telegramId, _nexumBalance);
+        _setNexum(_liveNexum() + nexumDrop);
         _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       }
       if (gramDrop > 0) {
-        _gramBalance += gramDrop;
-        _gramBalanceCache.set(authed.telegramId, _gramBalance);
+        _setGram(_round7(_liveGram() + gramDrop));
         _persistSavedFields(authed, { gramBalance: _gramBalance });
       }
 
@@ -2422,13 +2475,11 @@ io.on('connection', socket => {
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
       if (nexumDrop2 > 0) {
-        _nexumBalance += nexumDrop2;
-        _nexumBalanceCache.set(authed.telegramId, _nexumBalance);
+        _setNexum(_liveNexum() + nexumDrop2);
         _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       }
       if (gramDrop2 > 0) {
-        _gramBalance += gramDrop2;
-        _gramBalanceCache.set(authed.telegramId, _gramBalance);
+        _setGram(_round7(_liveGram() + gramDrop2));
         _persistSavedFields(authed, { gramBalance: _gramBalance });
       }
       if (memberIds.length > 0) {
@@ -2667,7 +2718,7 @@ io.on('connection', socket => {
     _saveDebounceTimer = setTimeout(() => {
       if (!authed) return;
       _persistSavedFields(authed,
-        { ...clean, gramBalance: _gramBalanceCache.get(authed.telegramId) ?? _gramBalance, nexumBalance: _nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance },
+        { ...clean, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
         { bm: authed.bm });
     }, 3000);
   });
@@ -3254,7 +3305,7 @@ io.on('connection', socket => {
       // (cache), never on the possibly-stale savedData snapshot, so a quest
       // reward can't wipe nexum earned from drops earlier this session.
       const _newNexum = quest.reward.nexum
-        ? ((_nexumBalanceCache.get(authed.telegramId) ?? _nexumBalance) + quest.reward.nexum)
+        ? (_liveNexum() + quest.reward.nexum)
         : null;
       // Build the per-field update using the in-memory savedData when available,
       // falling back to the DB current values when savedData is null (new player
@@ -3282,8 +3333,7 @@ io.on('connection', socket => {
         authed.savedData = freshData;
       }
       if (_newNexum != null) {
-        _nexumBalance = _newNexum;
-        _nexumBalanceCache.set(authed.telegramId, _newNexum);
+        _setNexum(_newNexum);
       }
       if (_lastStats) {
         _lastStats.specialQuestsDone = newDone;
