@@ -7,14 +7,23 @@ const Music = (() => {
   try { muted = localStorage.getItem('bgmMuted') === '1'; } catch (_) {}
   const el = new Audio('/audio/hub-theme.mp3');
   el.loop = true;
-  el.volume = 0.25;
+  el.volume = 0.125;
   el.muted = muted;
 
+  // Every gesture retries until playback actually starts — { once: true }
+  // here would burn the listener on the first attempt even when el.play()
+  // is rejected (still-loading source, a stricter autoplay policy, ...),
+  // leaving nothing to retry on later gestures and forcing a manual
+  // mute/unmute to get music going at all.
+  const _UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchstart'];
   function _start() {
-    if (!muted) el.play().catch(() => {}); // autoplay can still be blocked; retried on the next gesture
+    if (muted) return;
+    el.play().then(() => {
+      _UNLOCK_EVENTS.forEach(ev => window.removeEventListener(ev, _start));
+    }).catch(() => {});
   }
-  ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
-    window.addEventListener(ev, _start, { once: true, passive: true }));
+  _UNLOCK_EVENTS.forEach(ev => window.addEventListener(ev, _start, { passive: true }));
+  _start(); // in case autoplay is already allowed (no gesture needed)
 
   return {
     get muted() { return muted; },
