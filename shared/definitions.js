@@ -237,22 +237,40 @@ function _itemTierMinLevel(rarity) {
   if (rarity === 'epic')      return ARM_OFFSETS[2] + 1;
   return ARM_OFFSETS[3] + 1; // legendary
 }
-// Equipment (gear) drop: within a rarity tier the chance climbs +0.1
-// percentage points every level, same as before — BUT each new tier starts
-// at only 1/5th of the PREVIOUS tier's starting chance (not a continuation
-// of its growth), so stepping into uncommon/rare/epic/legendary is a sharp
-// drop before it starts climbing again. Boss kills get a flat ×20 on top.
-const ITEM_DROP_GROWTH_PCT = 0.1;     // percentage points per level, within a tier
+// Equipment (gear) drop: within a rarity tier the chance climbs from that
+// tier's starting value up to the same ceiling a flat +0.1 percentage-point-
+// per-level step would have reached by the tier's last level — BUT smoothly
+// (geometric interpolation), not linearly. A flat +0.1pp step made sense for
+// the common tier (which starts at 0.1%) but produced a ~25x jump within the
+// first level or two of entering uncommon/rare/epic/legendary, since those
+// tiers start at a tiny fraction of a percent (1/5th of the previous tier's
+// start, see ITEM_TIER_STEPDOWN) — the additive step completely dwarfed the
+// starting value instead of gradually building on it. Boss kills still get a
+// flat ×20 on top.
+const ITEM_DROP_GROWTH_PCT = 0.1;     // percentage points per level — only used to derive each tier's END value (as if linear), not the actual per-level step anymore
 const ITEM_TIER_STEPDOWN   = 5;       // each new tier starts at (prev tier start) / 5
 function _itemTierStartChancePct(rarity) {
   let pct = ITEM_DROP_GROWTH_PCT; // common tier starts at level 1's value: 0.1%
   for (let i = 0; i < _ITEM_RARITY_ORDER.indexOf(rarity); i++) pct /= ITEM_TIER_STEPDOWN;
   return pct;
 }
+// Last level still inside a given tier (one level before the next tier's
+// _itemTierMinLevel, or the world's max level for legendary).
+function _itemTierMaxLevel(rarity) {
+  const idx = _ITEM_RARITY_ORDER.indexOf(rarity);
+  if (idx >= _ITEM_RARITY_ORDER.length - 1) return MAX_MONSTER_LEVEL;
+  return _itemTierMinLevel(_ITEM_RARITY_ORDER[idx + 1]) - 1;
+}
 function itemDropChanceAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
   const rarity = itemRarityForLevel(lvl);
-  const pct = _itemTierStartChancePct(rarity) + ITEM_DROP_GROWTH_PCT * (lvl - _itemTierMinLevel(rarity));
+  const tierMin = _itemTierMinLevel(rarity);
+  const tierMax = _itemTierMaxLevel(rarity);
+  const startPct = _itemTierStartChancePct(rarity);
+  const endPct = startPct + ITEM_DROP_GROWTH_PCT * (tierMax - tierMin);
+  const span = Math.max(1, tierMax - tierMin);
+  const frac = Math.min(1, (lvl - tierMin) / span);
+  const pct = startPct * Math.pow(endPct / startPct, frac);
   return Math.min(100, pct);
 }
 
