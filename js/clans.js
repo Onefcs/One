@@ -629,10 +629,10 @@ function _renderNoClan(el) {
   el.innerHTML = `
     <div class="clan-empty">
       <div class="clan-empty-icon">${clanIconSVG(1, 64)}</div>
-      <div class="clan-empty-title">У вас нет клана</div>
-      <div class="clan-empty-sub">Создайте свой клан или найдите существующий</div>
-      <button class="clan-btn clan-btn-create" onclick="_clanGoCreate()">+ Создать клан</button>
-      <button class="clan-btn clan-btn-search" onclick="_clanGoSearch()">Найти клан</button>
+      <div class="clan-empty-title">${typeof t === 'function' ? t('clanNoClanTitle') : 'У вас нет клана'}</div>
+      <div class="clan-empty-sub">${typeof t === 'function' ? t('clanNoClanSub') : 'Создайте свой клан или найдите существующий'}</div>
+      <button class="clan-btn clan-btn-create" onclick="_clanGoCreate()">${typeof t === 'function' ? t('clanCreateBtn') : '+ Создать клан'}</button>
+      <button class="clan-btn clan-btn-search" onclick="_clanGoSearch()">${typeof t === 'function' ? t('clanFindBtn') : 'Найти клан'}</button>
     </div>`;
 }
 
@@ -645,19 +645,19 @@ function _renderCreate(el) {
   const canAfford = player && player.gold >= CLAN_CREATE_COST;
   el.innerHTML = `
     <div class="clan-form">
-      <button class="clan-back" onclick="_clanGoMain()">← Назад</button>
-      <div class="clan-form-title">Создать клан</div>
-      <div class="clan-form-label" style="color:${canAfford ? '#e3941d' : '#da4658'}">Стоимость: ${CLAN_CREATE_COST} золота ${canAfford ? '' : '(не хватает)'}</div>
-      <div class="clan-form-label" style="margin-top:10px">Название (до 10 символов)</div>
-      <input class="clan-input" id="clan-name-inp" maxlength="10" placeholder="Название..." value="${_clanNewName}"
+      <button class="clan-back" onclick="_clanGoMain()">${typeof t === 'function' ? t('clanBackBtn') : '← Назад'}</button>
+      <div class="clan-form-title">${typeof t === 'function' ? t('clanCreateTitle') : 'Создать клан'}</div>
+      <div class="clan-form-label" style="color:${canAfford ? '#e3941d' : '#da4658'}">${typeof t === 'function' ? t('clanCostLbl') : 'Стоимость'}: ${CLAN_CREATE_COST} ${typeof t === 'function' ? t('npcGoldLbl').toLowerCase() : 'золота'} ${canAfford ? '' : (typeof t === 'function' ? t('clanNotEnough') : '(не хватает)')}</div>
+      <div class="clan-form-label" style="margin-top:10px">${typeof t === 'function' ? t('clanNameLbl') : 'Название (до 10 символов)'}</div>
+      <input class="clan-input" id="clan-name-inp" maxlength="10" placeholder="${typeof t === 'function' ? t('clanNamePlaceholder') : 'Название...'}" value="${_clanNewName}"
              oninput="_clanNewName=this.value;_clanUpdatePreview()">
-      <div class="clan-form-label" style="margin-top:14px">Иконка клана</div>
+      <div class="clan-form-label" style="margin-top:14px">${typeof t === 'function' ? t('clanIconLbl') : 'Иконка клана'}</div>
       <div class="clan-icon-preview" onclick="_clanPickIcon()">
         ${clanIconSVG(_clanNewIcon, 48)}
-        <span class="clan-icon-change">Изменить</span>
+        <span class="clan-icon-change">${typeof t === 'function' ? t('clanChangeBtn') : 'Изменить'}</span>
       </div>
       <div id="clan-create-err" class="clan-err"></div>
-      <button class="clan-btn clan-btn-create" style="margin-top:16px" onclick="_clanSubmitCreate()">Создать</button>
+      <button class="clan-btn clan-btn-create" style="margin-top:16px" onclick="_clanSubmitCreate()">${typeof t === 'function' ? t('clanCreateSubmit') : 'Создать'}</button>
     </div>`;
 }
 
@@ -673,8 +673,8 @@ function _renderIconPick(el) {
   }).join('');
   el.innerHTML = `
     <div class="clan-form">
-      <button class="clan-back" onclick="_clanView='create';updateClanUI()">← Назад</button>
-      <div class="clan-form-title">Выбери иконку</div>
+      <button class="clan-back" onclick="_clanView='create';updateClanUI()">${typeof t === 'function' ? t('clanBackBtn') : '← Назад'}</button>
+      <div class="clan-form-title">${typeof t === 'function' ? t('clanPickIconTitle') : 'Выбери иконку'}</div>
       <div class="clan-icon-grid">${grid}</div>
     </div>`;
 }
@@ -683,10 +683,10 @@ function _clanSelectIcon(id) { _clanNewIcon = id; _clanView = 'create'; updateCl
 
 function _clanSubmitCreate() {
   const name = (_clanNewName || '').trim();
-  if (!name) { const e = document.getElementById('clan-create-err'); if (e) e.textContent = 'Введите название'; return; }
+  if (!name) { const e = document.getElementById('clan-create-err'); if (e) e.textContent = typeof t === 'function' ? t('clanEnterName') : 'Введите название'; return; }
   if (!player || player.gold < CLAN_CREATE_COST) {
     const e = document.getElementById('clan-create-err');
-    if (e) e.textContent = `Нужно ${CLAN_CREATE_COST} золота`;
+    if (e) e.textContent = typeof tVars === 'function' ? tVars('clanNeedGold', { n: CLAN_CREATE_COST }) : `Нужно ${CLAN_CREATE_COST} золота`;
     return;
   }
   player.gold -= CLAN_CREATE_COST;
@@ -699,28 +699,28 @@ function _clanSubmitCreate() {
 function _renderSearch(el) {
   let results;
   if (_clanSearchResults === null) {
-    results = '<div class="clan-nores">Загрузка...</div>';
+    results = '<div class="clan-nores">' + (typeof t === 'function' ? t('questLoading') : 'Загрузка...') + '</div>';
   } else if (_clanSearchResults.length === 0) {
-    results = '<div class="clan-nores">Кланы не найдены</div>';
+    results = '<div class="clan-nores">' + (typeof t === 'function' ? t('clanNotFound') : 'Кланы не найдены') + '</div>';
   } else {
     results = _clanSearchResults.map(c => `
     <div class="clan-result">
       <div class="clan-result-icon">${clanIconSVG(c.icon, 36)}</div>
       <div class="clan-result-info">
         <div class="clan-result-name">${_esc(c.name)}</div>
-        <div class="clan-result-meta">Ур. ${c.level} · ${c.members} участников</div>
+        <div class="clan-result-meta">${typeof tVars === 'function' ? tVars('clanLevelMembersFmt', { lvl: c.level, n: c.members }) : 'Ур. ' + c.level + ' · ' + c.members + ' участников'}</div>
       </div>
-      <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">Вступить</button>
+      <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">${typeof t === 'function' ? t('clanJoinBtn') : 'Вступить'}</button>
     </div>`).join('');
   }
 
   el.innerHTML = `
     <div class="clan-form">
-      <button class="clan-back" onclick="_clanGoMain()">← Назад</button>
-      <div class="clan-form-title">Найти клан</div>
+      <button class="clan-back" onclick="_clanGoMain()">${typeof t === 'function' ? t('clanBackBtn') : '← Назад'}</button>
+      <div class="clan-form-title">${typeof t === 'function' ? t('clanSearchTitle') : 'Найти клан'}</div>
       <div class="clan-search-row">
-        <input class="clan-input" id="clan-search-inp" placeholder="Название клана..." maxlength="10">
-        <button class="clan-btn-sm" onclick="_clanDoSearch()">Найти</button>
+        <input class="clan-input" id="clan-search-inp" placeholder="${typeof t === 'function' ? t('clanNamePlaceholder2') : 'Название клана...'}" maxlength="10">
+        <button class="clan-btn-sm" onclick="_clanDoSearch()">${typeof t === 'function' ? t('clanSearchBtn') : 'Найти'}</button>
       </div>
       <div id="clan-search-results">${results}</div>
     </div>`;
@@ -744,14 +744,18 @@ function _renderClanHome(el) {
   const myBM = typeof calcBM === 'function' && player ? calcBM(player) : 0;
 
   const bonusLines = [];
-  if (bonus.gold > 0) bonusLines.push(`+${bonus.gold}% золото`);
-  if (bonus.xp   > 0) bonusLines.push(`+${bonus.xp}% опыт`);
-  if (bonus.atk  > 0) bonusLines.push(`+${bonus.atk}% атака`);
+  if (bonus.gold > 0) bonusLines.push(`+${bonus.gold}% ${typeof t === 'function' ? t('clanPerkGold').toLowerCase() : 'золото'}`);
+  if (bonus.xp   > 0) bonusLines.push(`+${bonus.xp}% ${typeof t === 'function' ? t('clanPerkXp').toLowerCase() : 'опыт'}`);
+  if (bonus.atk  > 0) bonusLines.push(`+${bonus.atk}% ${typeof t === 'function' ? t('clanPerkAtk').toLowerCase() : 'атака'}`);
   const bonusHtml = bonusLines.length
     ? bonusLines.map(l => `<span class="clan-bonus-tag">${l}</span>`).join('')
-    : '<span class="clan-bonus-tag clan-bonus-none">бонусов пока нет</span>';
+    : `<span class="clan-bonus-tag clan-bonus-none">${typeof t === 'function' ? t('clanNoBonusYet') : 'бонусов пока нет'}</span>`;
 
-  const tabs = ['Клан', 'Участники', 'Навыки'];
+  const tabs = [
+    typeof t === 'function' ? t('clanTabHome') : 'Клан',
+    typeof t === 'function' ? t('clanTabMembers') : 'Участники',
+    typeof t === 'function' ? t('clanTabPerks') : 'Навыки',
+  ];
   const tabHtml = tabs.map((t, i) =>
     `<div class="clan-tab${_clanHomeTab === i ? ' active' : ''}" onclick="_setClanHomeTab(${i})">${t}</div>`
   ).join('');
@@ -762,17 +766,17 @@ function _renderClanHome(el) {
     bodyHtml = `
       <div class="clan-xp-block">
         <div class="clan-xp-label">
-          Очки клана: ${c.xp.toLocaleString()}
-          ${nextDef ? `· до ур.${c.level+1}: ${(nextDef.xpReq - c.xp).toLocaleString()}` : '· Макс. уровень'}
+          ${typeof t === 'function' ? t('clanPointsLbl') : 'Очки клана'}: ${c.xp.toLocaleString()}
+          ${nextDef ? `· ${typeof tVars === 'function' ? tVars('clanUntilLevel', { lvl: c.level + 1 }) : 'до ур.' + (c.level+1)}: ${(nextDef.xpReq - c.xp).toLocaleString()}` : `· ${typeof t === 'function' ? t('clanMaxLevel') : 'Макс. уровень'}`}
         </div>
         <div class="clan-xp-bar-bg"><div class="clan-xp-bar-fill" style="width:${xpPct}%"></div></div>
       </div>
       <div class="clan-bonus-row" style="margin-bottom:14px">${bonusHtml}</div>
-      ${myBM ? `<div class="clan-my-bm">Ваша БМ: <span>${myBM.toLocaleString()}</span></div>` : ''}
+      ${myBM ? `<div class="clan-my-bm">${typeof t === 'function' ? t('clanYourBmLbl') : 'Ваша БМ'}: <span>${myBM.toLocaleString()}</span></div>` : ''}
       <div style="margin-top:16px">
         ${isLeader
-          ? `<button class="clan-btn clan-btn-danger" onclick="_clanConfirmDisband()">Расформировать</button>`
-          : `<button class="clan-btn clan-btn-leave" onclick="_clanConfirmLeave()">Покинуть клан</button>`}
+          ? `<button class="clan-btn clan-btn-danger" onclick="_clanConfirmDisband()">${typeof t === 'function' ? t('clanDisbandBtn') : 'Расформировать'}</button>`
+          : `<button class="clan-btn clan-btn-leave" onclick="_clanConfirmLeave()">${typeof t === 'function' ? t('clanLeaveBtn') : 'Покинуть клан'}</button>`}
       </div>`;
   } else if (_clanHomeTab === 1) {
     // ── Участники tab ──────────────────────────────────────
@@ -781,7 +785,7 @@ function _renderClanHome(el) {
       .map(m => {
         const roleIcon = m.role === 'leader' ? '👑' : '⚔️';
         const kickBtn = isLeader && m.role !== 'leader'
-          ? `<button class="clan-btn-sm clan-btn-danger" onclick="netClanKick('${m.telegramId}')">Исключить</button>`
+          ? `<button class="clan-btn-sm clan-btn-danger" onclick="netClanKick('${m.telegramId}')">${typeof t === 'function' ? t('clanKickBtn') : 'Исключить'}</button>`
           : '';
         return `<div class="clan-member">
           <span class="clan-member-role">${roleIcon}</span>
@@ -793,16 +797,16 @@ function _renderClanHome(el) {
 
     let appsHtml = '';
     if (isLeader && c.applications && c.applications.length > 0) {
-      appsHtml = `<div class="clan-section-hdr" style="margin-top:14px">Заявки (${c.applications.length})</div>` +
+      appsHtml = `<div class="clan-section-hdr" style="margin-top:14px">${typeof tVars === 'function' ? tVars('clanApplicationsFmt', { n: c.applications.length }) : 'Заявки (' + c.applications.length + ')'}</div>` +
         c.applications.map(a => `
           <div class="clan-member">
             <span class="clan-member-name">⌛ ${_esc(a.username)}</span>
-            <button class="clan-btn-sm" onclick="netClanApprove('${a.telegramId}')">Принять</button>
-            <button class="clan-btn-sm clan-btn-danger" onclick="netClanDecline('${a.telegramId}')">Отказать</button>
+            <button class="clan-btn-sm" onclick="netClanApprove('${a.telegramId}')">${typeof t === 'function' ? t('clanApproveBtn') : 'Принять'}</button>
+            <button class="clan-btn-sm clan-btn-danger" onclick="netClanDecline('${a.telegramId}')">${typeof t === 'function' ? t('clanDeclineBtn') : 'Отказать'}</button>
           </div>`).join('');
     }
     bodyHtml = `
-      <div class="clan-section-hdr">Участники (${(c.members||[]).length}) · по БМ</div>
+      <div class="clan-section-hdr">${typeof tVars === 'function' ? tVars('clanMembersByBmFmt', { n: (c.members||[]).length }) : 'Участники (' + (c.members||[]).length + ') · по БМ'}</div>
       ${membersHtml}
       ${appsHtml}`;
   } else {
@@ -820,19 +824,23 @@ function _renderClanHome(el) {
       { lvl:10, icon:'⚡', label:'Опыт',   desc:'+20% к опыту'             },
       { lvl:10, icon:'⚔️', label:'Атака',  desc:'+15% к атаке'             },
     ];
-    const perksHtml = PERKS_RU.map(pk => {
+    const PERK_LABEL_KEY = { 'Золото':'clanPerkGold', 'Опыт':'clanPerkXp', 'Атака':'clanPerkAtk' };
+    const perksHtml = PERKS_RU.map((pk, idx) => {
       const unlocked = c.level >= pk.lvl;
       const cls = unlocked ? 'clan-perk unlocked' : 'clan-perk locked';
+      const label = (typeof t === 'function' && PERK_LABEL_KEY[pk.label]) ? t(PERK_LABEL_KEY[pk.label]) : pk.label;
+      const descEntry = typeof I18N_CLAN_PERK_DESC !== 'undefined' ? I18N_CLAN_PERK_DESC[idx] : null;
+      const desc = (descEntry && typeof currentLang !== 'undefined' && descEntry[currentLang]) || pk.desc;
       return `<div class="${cls}">
         <div class="clan-perk-icon">${pk.icon}</div>
         <div class="clan-perk-body">
-          <div class="clan-perk-name">${pk.label} <span class="clan-perk-lvl">Ур.${pk.lvl}</span></div>
-          <div class="clan-perk-desc">${pk.desc}</div>
+          <div class="clan-perk-name">${label} <span class="clan-perk-lvl">Ур.${pk.lvl}</span></div>
+          <div class="clan-perk-desc">${desc}</div>
         </div>
       </div>`;
     }).join('');
     bodyHtml = `
-      <div class="clan-section-hdr">Бонусы клана по уровням</div>
+      <div class="clan-section-hdr">${typeof t === 'function' ? t('clanPerksHdr') : 'Бонусы клана по уровням'}</div>
       <div class="clan-perks">${perksHtml}</div>`;
   }
 
@@ -851,20 +859,23 @@ function _renderClanHome(el) {
 }
 
 function _clanConfirmLeave() {
-  if (confirm('Покинуть клан?')) netClanLeave();
+  if (confirm(typeof t === 'function' ? t('clanConfirmLeave') : 'Покинуть клан?')) netClanLeave();
 }
 function _clanConfirmDisband() {
-  if (confirm('Расформировать клан? Это нельзя отменить.')) netClanDisband();
+  if (confirm(typeof t === 'function' ? t('clanConfirmDisband') : 'Расформировать клан? Это нельзя отменить.')) netClanDisband();
 }
 
 // ── Notification when clan levels up ─────────────────────
 function showClanLevelUp(level) {
   const lvDef = CLAN_LEVELS[level - 1];
-  dmgNum(player.x, player.y - 54, `Клан уровень ${level}!`, '#e69419');
+  dmgNum(player.x, player.y - 54, typeof tVars === 'function' ? tVars('clanLevelUpToast', { lvl: level }) : `Клан уровень ${level}!`, '#e69419');
   spawnBurst(player.x, player.y, '#e69419', 10);
   if (lvDef) {
     const b = lvDef.bonus;
-    const parts = [b.gold?`+${b.gold}% золото`:'', b.xp?`+${b.xp}%опыт`:'', b.atk?`+${b.atk}%атака`:''].filter(Boolean);
+    const goldLbl = typeof t === 'function' ? t('clanPerkGold').toLowerCase() : 'золото';
+    const xpLbl = typeof t === 'function' ? t('clanPerkXp').toLowerCase() : 'опыт';
+    const atkLbl = typeof t === 'function' ? t('clanPerkAtk').toLowerCase() : 'атака';
+    const parts = [b.gold?`+${b.gold}%${goldLbl}`:'', b.xp?`+${b.xp}%${xpLbl}`:'', b.atk?`+${b.atk}%${atkLbl}`:''].filter(Boolean);
     if (parts.length) dmgNum(player.x, player.y - 72, parts.join(' '), '#e69419');
   }
 }
@@ -922,9 +933,9 @@ function onClanSearchResults(results) {
         <div class="clan-result-icon">${clanIconSVG(c.icon, 36)}</div>
         <div class="clan-result-info">
           <div class="clan-result-name">${_esc(c.name)}</div>
-          <div class="clan-result-meta">Ур. ${c.level} · ${c.members} участников</div>
+          <div class="clan-result-meta">${typeof tVars === 'function' ? tVars('clanLevelMembersFmt', { lvl: c.level, n: c.members }) : 'Ур. ' + c.level + ' · ' + c.members + ' участников'}</div>
         </div>
-        <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">Вступить</button>
+        <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">${typeof t === 'function' ? t('clanJoinBtn') : 'Вступить'}</button>
       </div>`).join('')
-    : '<div class="clan-nores">Кланы не найдены</div>';
+    : `<div class="clan-nores">${typeof t === 'function' ? t('clanNotFound') : 'Кланы не найдены'}</div>`;
 }

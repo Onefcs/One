@@ -300,7 +300,7 @@ function update(dt) {
       pvpMode = false;
       if (typeof netSetPvpMode === 'function') netSetPvpMode(false);
       if (targetIsPlayer) { targetId = null; targetIsPlayer = false; }
-      dmgNum(player.x, player.y - 40, 'ПК режим выключен', '#edc174');
+      dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('pvpOffToast') : 'ПК режим выключен', '#edc174');
     }
   }
 
@@ -1032,7 +1032,7 @@ function render(dt, ts) {
 
   // Safe zone HUD label (on top of HUD)
   if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
-    const lbl = '🛡 Безопасная зона · реген HP';
+    const lbl = typeof t === 'function' ? t('safeZoneLbl') : '🛡 Безопасная зона · реген HP';
     _uiCtx.font = 'bold 11px system-ui, Arial';
     _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
     const lw = _uiCtx.measureText(lbl).width;
@@ -1220,7 +1220,8 @@ function inSafeZone(px, py) {
 let _armGates = null;
 const _enteredArms = new Set();
 let _gateMsgCd = 0;
-const _ARM_LABEL = { left: 'левый', top: 'верхний', bottom: 'нижний', right: 'правый' };
+function _armLabel(dir) { return typeof t === 'function' ? t({ left:'armLeft', top:'armTop', bottom:'armBottom', right:'armRight' }[dir]) : ({ left:'левый', top:'верхний', bottom:'нижний', right:'правый' }[dir]); }
+const _ARM_LABEL = new Proxy({}, { get: (_, dir) => _armLabel(dir) });
 
 // ─────────────────────────────────────────────────────────
 //  TELEPORT PADS — hub-side pads (one per arm, labeled by its level range)
@@ -1229,7 +1230,8 @@ const _ARM_LABEL = { left: 'левый', top: 'верхний', bottom: 'ниж�
 //  corridor hub doors entirely — the hub isn't physically connected to any
 //  zone anymore.
 // ─────────────────────────────────────────────────────────
-const _TELEPORT_LABEL = { left: '1 уровень', top: '20 уровень', bottom: '40 уровень', right: '60 уровень' };
+function _teleportLabel(dir) { const n = { left:1, top:20, bottom:40, right:60 }[dir]; return typeof tVars === 'function' ? tVars('lvlNTeleport', { n }) : n + ' уровень'; }
+const _TELEPORT_LABEL = new Proxy({}, { get: (_, dir) => _teleportLabel(dir) });
 const _TELEPORT_HUB_DX = { left: -12, top: -4, bottom: 4, right: 12 }; // tiles, hub-side pad row
 const _TELEPORT_HUB_DY = 10; // tiles south of spawn (NPCs sit north, at dy -11)
 let _teleportPads = null; // hub-side: {dir, x, y, req, label, targetX, targetY}
@@ -1245,7 +1247,7 @@ function _buildArmGates() {
   const entries = dungeon.armEntries || [];
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
   _teleportPads = entries.map(e => ({
-    dir: e.dir, req: e.req, label: _TELEPORT_LABEL[e.dir] || `Ур. ${e.req}`,
+    dir: e.dir, req: e.req, label: _TELEPORT_LABEL[e.dir] || `${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${e.req}`,
     x: sx + (_TELEPORT_HUB_DX[e.dir] || 0) * TILE, y: sy + _TELEPORT_HUB_DY * TILE,
     targetX: e.x + TILE * 2, targetY: e.y,
   }));
@@ -1273,14 +1275,14 @@ function _updateTeleportPads(dt) {
   (_teleportPads || []).forEach(p => {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
     if (p.req > 0 && (player.lvl || 1) < p.req) {
-      if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, `🔒 Нужен ${p.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
+      if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: p.req }) : `🔒 Нужен ${p.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
       return;
     }
     _teleportTo(p.targetX, p.targetY, p.label);
   });
   (_returnPads || []).forEach(p => {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
-    _teleportTo(p.targetX, p.targetY, 'Центральный зал');
+    _teleportTo(p.targetX, p.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   });
 }
 
@@ -1314,7 +1316,7 @@ function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
 function drawTeleportPads() {
   if (!player) return;
   (_teleportPads || []).forEach(p => _drawTeleportPad(p.x, p.y, p.req, p.label, '#eb4e61', '#4ee69a'));
-  (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, 'Зал', '#eb4e61', '#4ee69a'));
+  (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a'));
 }
 
 function _isGateBlocked(wx, wy) {
@@ -1338,13 +1340,13 @@ function _updateArmGates(dt) {
     if (dist(player.x, player.y, g.x, g.y) >= 90) continue;
     if (g.req > 0 && (player.lvl || 1) < g.req) {
       if (_gateMsgCd <= 0) {
-        dmgNum(player.x, player.y - 40, `🔒 Нужен ${g.req} уровень`, '#f17e8b');
+        dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: g.req }) : `🔒 Нужен ${g.req} уровень`, '#f17e8b');
         _gateMsgCd = 1.5;
       }
     } else if (!_enteredArms.has(g.dir)) {
       _enteredArms.add(g.dir);
       spawnBurst(g.x, g.y, '#7fd7ff', 16);
-      dmgNum(g.x, g.y - 30, `→ Вы вошли в ${_ARM_LABEL[g.dir]} коридор`, '#7fd7ff', 15);
+      dmgNum(g.x, g.y - 30, '→ ' + (typeof tVars === 'function' ? tVars('enteredCorridorToast', { arm: _ARM_LABEL[g.dir] }) : `Вы вошли в ${_ARM_LABEL[g.dir]} коридор`), '#7fd7ff', 15);
     }
   }
 }
@@ -1371,7 +1373,8 @@ function drawArmGates() {
     ctx.restore();
 
     if (g.req > 0) {
-      const lbl = locked ? `🔒 Ур. ${g.req}` : `Ур. ${g.req}`;
+      const lvlAbbr = typeof t === 'function' ? t('levelAbbrev') : 'Ур.';
+      const lbl = locked ? `🔒 ${lvlAbbr} ${g.req}` : `${lvlAbbr} ${g.req}`;
       ctx.font = 'bold 11px system-ui, Arial';
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
@@ -1635,10 +1638,10 @@ function playerDie() {
   if (info && player) {
     const _dRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
     const _dLoc = (_dRoom?.arm && typeof _ARM_LABELS !== 'undefined')
-      ? `${_ARM_LABELS[_dRoom.arm]} · Ур. ${_dRoom.monsterLvl}` : 'Центральный зал';
+      ? `${_ARM_LABELS[_dRoom.arm]} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
     info.innerHTML =
       `<span class="death-stat">${_dLoc}</span>` +
-      `<span class="death-stat">${player.gold} <span class="death-lbl">золота</span> · ${player.kills} <span class="death-lbl">убийств</span></span>`;
+      `<span class="death-stat">${player.gold} <span class="death-lbl">${typeof t === 'function' ? t('deathGoldLbl') : 'золота'}</span> · ${player.kills} <span class="death-lbl">${typeof t === 'function' ? t('deathKillsLbl') : 'убийств'}</span></span>`;
   }
   const penaltyEl = document.getElementById('death-penalty');
   if (penaltyEl) penaltyEl.style.display = 'block';
@@ -1659,7 +1662,7 @@ function respawnPlayer() {
   }
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
-  dmgNum(player.x, player.y - 30, '−50% XP (5 мин)', '#c4838a');
+  dmgNum(player.x, player.y - 30, typeof t === 'function' ? t('deathXpPenalty') : '−50% XP (5 мин)', '#c4838a');
   socket?.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
   if (socket?.connected) socket.emit('respawn');
   netSaveProgress();

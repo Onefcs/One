@@ -78,7 +78,7 @@ function claimQuest() {
 
 function showQuestComplete(q) {
   questNotif = { title: '✓ ' + q.title, timer: 3.5 };
-  dmgNum(player.x, player.y - 54, 'Квест выполнен!', '#e69419');
+  dmgNum(player.x, player.y - 54, (typeof t === 'function' ? t('questCompleteToast') : 'Квест выполнен!'), '#e69419');
   spawnBurst(player.x, player.y, '#e69419', 12);
 }
 
@@ -238,11 +238,11 @@ function drawQuestTracker() {
       lines.push((player.questKills[name] || 0) + '/' + q.count + ' ' + name);
     });
   } else if (q.type === 'level') {
-    lines.push('Уровень ' + player.lvl + '/' + q.level);
+    lines.push((typeof t === 'function' ? t('questLevelLbl') : 'Уровень') + ' ' + player.lvl + '/' + q.level);
   } else if (q.type === 'buy_potion') {
-    lines.push('Куплено: ' + (player.questKills['_potion'] || 0) + '/' + q.count);
+    lines.push((typeof t === 'function' ? t('questBoughtLbl') : 'Куплено') + ': ' + (player.questKills['_potion'] || 0) + '/' + q.count);
   } else if (q.type === 'craft') {
-    lines.push('Скрафтить оружие');
+    lines.push((typeof t === 'function' ? t('questCraftWeapon') : 'Скрафтить оружие'));
   }
 
   const pad = 7, lineH = 14;
@@ -317,12 +317,12 @@ function _onSpecialQuestClick(questId) {
 async function updateSpecialQuestUI() {
   const el = document.getElementById('special-quest-list');
   if (!el || !player) return;
-  el.innerHTML = '<div style="color:#968a7a;text-align:center;padding:20px">Загрузка...</div>';
+  el.innerHTML = '<div style="color:#968a7a;text-align:center;padding:20px">' + (typeof t === 'function' ? t('questLoading') : 'Загрузка...') + '</div>';
   if (!_specialQuestsCache) _specialQuestsCache = await fetchSpecialQuests();
   const quests = _specialQuestsCache;
   const done = player.specialQuestsDone || [];
   if (!quests.length) {
-    el.innerHTML = '<div style="color:#968a7a;text-align:center;padding:20px">Специальных квестов пока нет</div>';
+    el.innerHTML = '<div style="color:#968a7a;text-align:center;padding:20px">' + (typeof t === 'function' ? t('questNoSpecial') : 'Специальных квестов пока нет') + '</div>';
     return;
   }
   let html = '';
@@ -335,7 +335,7 @@ async function updateSpecialQuestUI() {
     if (q.reward.xp)    rewardParts.push(iconHTML('star',12,'#e3941d') + q.reward.xp + ' XP');
     if (q.reward.nexum) rewardParts.push('💎' + q.reward.nexum + ' Liberty');
     const rewardStr = rewardParts.join(' · ');
-    const typeLabel = q.type === 'subscribe' ? 'Подписаться' : q.type === 'link' ? 'Перейти' : 'Выполнить';
+    const typeLabel = q.type === 'subscribe' ? (typeof t === 'function' ? t('questTypeSubscribe') : 'Подписаться') : q.type === 'link' ? (typeof t === 'function' ? t('questTypeLink') : 'Перейти') : (typeof t === 'function' ? t('questTypeDo') : 'Выполнить');
     if (isDone) {
       html += `<div class="quest-item quest-done">
         <div class="quest-header">
@@ -343,7 +343,7 @@ async function updateSpecialQuestUI() {
           <span class="quest-reward">${rewardStr}</span>
         </div>
         ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
-        <div class="quest-prog" style="color:#79b644">✓ Выполнено</div>
+        <div class="quest-prog" style="color:#79b644">✓ ${typeof t === 'function' ? t('questDoneCheck') : 'Выполнено'}</div>
       </div>`;
     } else if (isPending) {
       html += `<div class="quest-item quest-current">
@@ -352,7 +352,7 @@ async function updateSpecialQuestUI() {
           <span class="quest-reward">${rewardStr}</span>
         </div>
         ${q.desc ? `<div class="quest-desc">${q.desc}</div>` : ''}
-        <button class="quest-claim-btn" disabled style="opacity:0.6">Отправка...</button>
+        <button class="quest-claim-btn" disabled style="opacity:0.6">${typeof t === 'function' ? t('questSending') : 'Отправка...'}</button>
       </div>`;
     } else {
       const actionBtn = q.url
@@ -392,7 +392,7 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   if (typeof updateHUD === 'function') updateHUD();
   if (_activeQuestTab === 'special') updateSpecialQuestUI();
   if (!alreadyDone) {
-    questNotif = { title: '✓ Специальный квест выполнен!', timer: 3.5 };
+    questNotif = { title: '✓ ' + (typeof t === 'function' ? t('questSpecialCompleteToast') : 'Специальный квест выполнен!'), timer: 3.5 };
     if (typeof spawnBurst === 'function' && player) spawnBurst(player.x, player.y, '#e69419', 12);
   }
   // Sync specialQuestsDone to server immediately so the next autosave can't
@@ -404,7 +404,7 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
 function _questProgHtml(q, isCur) {
   if (!isCur) return '';
   const complete = isQuestComplete(q);
-  if (complete) return `<button class="quest-claim-btn" onclick="claimQuest()">Забрать награду</button>`;
+  if (complete) return `<button class="quest-claim-btn" onclick="claimQuest()">${typeof t === 'function' ? t('questClaimReward') : 'Забрать награду'}</button>`;
 
   if (q.type === 'kill') {
     const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
@@ -422,27 +422,27 @@ function _questProgHtml(q, isCur) {
   }
   if (q.type === 'level') {
     const pct = Math.min(100, Math.round(player.lvl / (q.level || 1) * 100));
-    return `<div class="quest-prog">Уровень ${player.lvl}/${q.level}
+    return `<div class="quest-prog">${typeof t === 'function' ? t('questLevelLbl') : 'Уровень'} ${player.lvl}/${q.level}
       <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
   }
   if (q.type === 'buy_potion') {
     const done = player.questKills['_potion'] || 0;
-    return `<div class="quest-prog">${done}/${q.count} куплено
+    return `<div class="quest-prog">${done}/${q.count} ${typeof t === 'function' ? t('questBoughtSuffix') : 'куплено'}
       <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100,Math.round(done/q.count*100))}%"></div></div></div>`;
   }
   if (q.type === 'dungeon_clear') {
     const done = player.questKills['_dungeon_' + q.floor] || 0;
-    return `<div class="quest-prog">${done}/${q.count} раз
+    return `<div class="quest-prog">${done}/${q.count} ${typeof t === 'function' ? t('questTimesSuffix') : 'раз'}
       <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100,Math.round(done/q.count*100))}%"></div></div></div>`;
   }
   if (q.type === 'join_guild') {
-    return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#614a23,#9c7738)" onclick="onJoinGuild();updateQuestUI()">Вступить в гильдию</button>`;
+    return `<button class="quest-claim-btn" style="background:linear-gradient(135deg,#614a23,#9c7738)" onclick="onJoinGuild();updateQuestUI()">${typeof t === 'function' ? t('questJoinGuildBtn') : 'Вступить в гильдию'}</button>`;
   }
   if (q.type === 'goto_floor') {
-    return `<div class="quest-prog">Дойди до монстров уровня ${ARM_OFFSETS[q.targetFloor - 1] + 1}+ в коридоре</div>`;
+    return `<div class="quest-prog">${typeof tVars === 'function' ? tVars('questReachCorridor', { lvl: ARM_OFFSETS[q.targetFloor - 1] + 1 }) : 'Дойди до монстров уровня ' + (ARM_OFFSETS[q.targetFloor - 1] + 1) + '+ в коридоре'}</div>`;
   }
   if (q.type === 'craft') {
-    return `<div class="quest-prog">Зайди к кузнецу</div>`;
+    return `<div class="quest-prog">${typeof t === 'function' ? t('questVisitBlacksmith') : 'Зайди к кузнецу'}</div>`;
   }
   return '';
 }
@@ -467,7 +467,7 @@ function updateQuestUI() {
     if (floorLocked) return;
 
     const doneCnt = Math.min(player.questIdx - firstIdx, floorQuests.length);
-    html += `<div class="quest-floor-hdr">Этаж ${floorNum} · <span style="color:#968a7a;font-weight:normal">${doneCnt}/${floorQuests.length} выполнено</span></div>`;
+    html += `<div class="quest-floor-hdr">${typeof t === 'function' ? t('questFloorLbl') : 'Этаж'} ${floorNum} · <span style="color:#968a7a;font-weight:normal">${doneCnt}/${floorQuests.length} ${typeof t === 'function' ? t('questCompletedSuffix') : 'выполнено'}</span></div>`;
 
     floorQuests.forEach(({ q, i }) => {
       const isDone = i < player.questIdx;

@@ -53,7 +53,7 @@ function netConnect(onReady) {
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
 
   socket.on('connect_error', () => {
-    showAuthError('Нет соединения с сервером');
+    showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
   });
 
   socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
@@ -103,7 +103,7 @@ function netConnect(onReady) {
   socket.on('authError', ({ message }) => { showAuthError(message); });
 
   socket.on('kicked', ({ reason } = {}) => {
-    const msg = reason || 'Вы вошли с другого устройства';
+    const msg = reason || (typeof t === 'function' ? t('loggedInElsewhere') : 'Вы вошли с другого устройства');
     showAuthError(msg);
     const _ls = document.getElementById('login-screen');
     if (_ls) { _ls.style.display = ''; _ls.classList.remove('splash-out'); }
@@ -343,7 +343,7 @@ function netConnect(onReady) {
     faithShieldTimer = duration;
     player.def = Math.floor(player.def * 1.5);
     if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
-    dmgNum(player.x, player.y - 40, '🛡 Щит веры!', '#ff4');
+    dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('faithShieldToast') : '🛡 Щит веры!', '#ff4');
     spawnBurst(player.x, player.y, '#ff4', 8);
   });
 
@@ -386,11 +386,11 @@ function netConnect(onReady) {
       if (!player || state !== 'playing') return;
       if (type === 'stun') {
         player.stunTimer = Math.max(player.stunTimer || 0, duration);
-        dmgNum(player.x, player.y - 40, 'СТАН!', '#ff8');
+        dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('stunToast') : 'СТАН!', '#ff8');
         spawnBurst(player.x, player.y, '#ff8', 6);
       } else if (type === 'slow') {
         player.slowTimer = Math.max(player.slowTimer || 0, duration);
-        dmgNum(player.x, player.y - 40, 'ЗАМЕДЛЕНИЕ!', '#4af');
+        dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('slowToast') : 'ЗАМЕДЛЕНИЕ!', '#4af');
         spawnBurst(player.x, player.y, '#4af', 4);
       }
       return;
@@ -422,7 +422,7 @@ function netConnect(onReady) {
     const ex2 = player.inventory.find(i => i.id === stoneId);
     if (ex2) { ex2.qty = (ex2.qty || 1) + qty; }
     else { player.inventory.push({ ...def, qty }); }
-    const label = stoneId === 'bless_stone' ? 'Безоп. камень' : 'Камень заточки';
+    const label = typeof t === 'function' ? (stoneId === 'bless_stone' ? t('safeStoneLbl') : t('enchantStoneLbl')) : (stoneId === 'bless_stone' ? 'Безоп. камень' : 'Камень заточки');
     dmgNum(px, py - 52, `+${qty}× ${label}`, stoneId === 'bless_stone' ? '#88f' : '#fa8');
     netSaveProgress();
   }
@@ -531,19 +531,19 @@ function netConnect(onReady) {
     partyMembers = members; // [{ id, name }]
     partyInvitePending = null;
     if (player && partyMembers.length > 0)
-      dmgNum(player.x, player.y - 30, 'Пати: ' + partyMembers.length + ' чел.', '#3ef07a');
+      dmgNum(player.x, player.y - 30, typeof tVars === 'function' ? tVars('partyCountToast', { n: partyMembers.length }) : 'Пати: ' + partyMembers.length + ' чел.', '#3ef07a');
   });
 
   socket.on('partyLeft', ({ leftName }) => {
     if (leftName && player)
-      dmgNum(player.x, player.y - 30, leftName + ' покинул пати', '#fa0');
+      dmgNum(player.x, player.y - 30, typeof tVars === 'function' ? tVars('leftPartyToast', { name: leftName }) : leftName + ' покинул пати', '#fa0');
     // partyUpdated (or disconnect) will clear the member list; don't wipe here
   });
 
   socket.on('healPartyMember', ({ amount }) => {
     if (!player || state !== 'playing') return;
     player.hp = Math.min(player.maxHp, player.hp + amount);
-    dmgNum(player.x, player.y - 38, '+' + amount + '♥ Молитва союзника!', '#ff4');
+    dmgNum(player.x, player.y - 38, '+' + amount + '♥ ' + (typeof t === 'function' ? t('allyPrayerToast') : 'Молитва союзника!'), '#ff4');
     spawnBurst(player.x, player.y, '#ff4', 6);
   });
 
@@ -665,7 +665,7 @@ function netConnect(onReady) {
       serverEnemies.push(e);
       serverEnemiesMap.set(se.id, e);
     });
-    const txt = isBoss ? '⚔️ ФИНАЛЬНЫЙ БОСС!' : `Волна ${wave} / ${totalWaves}`;
+    const txt = isBoss ? (typeof t === 'function' ? t('finalBossToast') : '⚔️ ФИНАЛЬНЫЙ БОСС!') : (typeof tVars === 'function' ? tVars('waveToast', { w: wave, total: totalWaves }) : `Волна ${wave} / ${totalWaves}`);
     _raidWaveNotif = { text: txt, timer: 3.5 };
   });
 
@@ -766,7 +766,7 @@ function netConnect(onReady) {
   socket.on('lobbyLeft', ({ reason } = {}) => {
     _myLobbyId = null; _isLobbyCreator = false; _myLobbyMembers = [];
     if (typeof updateRaidPanelUI === 'function') updateRaidPanelUI();
-    if (reason === 'disbanded') dmgNum(player?.x || 0, (player?.y || 0) - 30, 'Группа распущена', '#f93');
+    if (reason === 'disbanded') dmgNum(player?.x || 0, (player?.y || 0) - 30, typeof t === 'function' ? t('groupDisbandedToast') : 'Группа распущена', '#f93');
   });
 
   socket.on('lobbyError', ({ msg }) => {
@@ -793,7 +793,7 @@ function netConnect(onReady) {
   socket.on('pdLobbyLeft', ({ reason } = {}) => {
     _myPdLobbyId = null; _isPdLobbyCreator = false; _myPdLobbyMembers = [];
     if (typeof updatePartyDungeonPanelUI === 'function') updatePartyDungeonPanelUI();
-    if (reason === 'disbanded') dmgNum(player?.x || 0, (player?.y || 0) - 30, 'Группа распущена', '#f93');
+    if (reason === 'disbanded') dmgNum(player?.x || 0, (player?.y || 0) - 30, typeof t === 'function' ? t('groupDisbandedToast') : 'Группа распущена', '#f93');
   });
 
   socket.on('partyDungeonStart', (data) => {
@@ -941,7 +941,7 @@ function netConnect(onReady) {
     if (gold)  { player.gold = (player.gold || 0) + gold; if (typeof updateHUD === 'function') updateHUD(); }
     if (nexum) { if (typeof updateNexumBalance === 'function') updateNexumBalance(nexum); }
     if (gram)  { if (typeof updateGramBalance === 'function') updateGramBalance(gram); }
-    if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, '🎁 Подарок от админа!', '#fd0');
+    if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
   socket.on('disconnect', () => {

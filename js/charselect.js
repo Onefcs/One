@@ -7,13 +7,19 @@ let _csState = {};
 let _csActiveType = 'lev';
 let _csSavedData  = null;
 
-const _CS_BADGE = {
-  lev:         '🛡 Ближний бой',
-  deathknight: '💀 Ближний бой',
-  ranger:      '🏹 Дальний бой',
-  mage:        '✨ Дальний бой',
-  warlock:     '💜 Поддержка',
+// Emoji prefixes are language-neutral; only the trailing word is translated
+// (see js/i18n.js's csBadgeMelee/csBadgeRanged/csBadgeSupport).
+const _CS_BADGE_EMOJI = { lev: '🛡', deathknight: '💀', ranger: '🏹', mage: '✨', warlock: '💜' };
+const _CS_BADGE_KEY = {
+  lev:         'csBadgeMelee',
+  deathknight: 'csBadgeMelee',
+  ranger:      'csBadgeRanged',
+  mage:        'csBadgeRanged',
+  warlock:     'csBadgeSupport',
 };
+function _csBadgeText(type) {
+  return _CS_BADGE_EMOJI[type] + ' ' + (typeof t === 'function' ? t(_CS_BADGE_KEY[type]) : '');
+}
 
 // Max values for bar scaling
 const _CS_STAT_MAX = { hp: 200, atk: 9, def: 10, spd: 205, as: 1.2 };
@@ -38,7 +44,7 @@ function _csBuildSkills(type) {
       <div class="cs-skill-body">
         <div class="cs-skill-name">${sk.name}</div>
         <div class="cs-skill-desc">${sk.desc}</div>
-        <div class="cs-skill-cd">Кулдаун: ${sk.cd} сек</div>
+        <div class="cs-skill-cd">${typeof t === 'function' ? t('csCooldown') : 'Кулдаун'}: ${sk.cd} ${typeof t === 'function' ? t('csCooldownSec') : 'сек'}</div>
       </div>
     </div>`).join('');
 }
@@ -62,7 +68,7 @@ function _csSwitchChar(type) {
   const nameEl  = document.getElementById('cs-active-name');
   const badgeEl = document.getElementById('cs-active-badge');
   if (nameEl)  { nameEl.textContent = cd.name; nameEl.style.color = cd.color; }
-  if (badgeEl) { badgeEl.textContent = _CS_BADGE[type] || ''; }
+  if (badgeEl) { badgeEl.textContent = _csBadgeText(type); }
 
   // Stat bars
   _csSetBar('cs-bar-hp',  'cs-val-hp',  cd.baseHP,    _CS_STAT_MAX.hp);
@@ -79,10 +85,11 @@ function _csSwitchChar(type) {
   if (btn) {
     btn.className = 'cs-btn cs-btn-' + type;
     if (_csSavedData && _csSavedData.type === type) {
-      btn.textContent = '▶ Продолжить · Ур.' + (_csSavedData.lvl || 1) + ' · ' + (_csSavedData.gold || 0) + 'g';
+      const continueLbl = typeof t === 'function' ? t('csContinue') : 'Продолжить';
+      btn.textContent = '▶ ' + continueLbl + ' · Ур.' + (_csSavedData.lvl || 1) + ' · ' + (_csSavedData.gold || 0) + 'g';
       btn.classList.add('cs-resume');
     } else {
-      btn.textContent = 'Создать персонажа';
+      btn.textContent = typeof t === 'function' ? t('csCreateChar') : 'Создать персонажа';
     }
     btn.onclick = () => selectChar(type);
   }
@@ -208,7 +215,7 @@ function csStartLoading(type, onReady) {
   if (emojiEl) emojiEl.innerHTML = iconHTML(def.icon, 60, def.color);
   if (nameEl)  nameEl.textContent  = def.name;
 
-  csSetStatus('Загрузка спрайтов...');
+  csSetStatus(typeof t === 'function' ? t('csLoadingSprites') : 'Загрузка спрайтов...');
 }
 
 function csSetStatus(text) {
@@ -218,19 +225,19 @@ function csSetStatus(text) {
 
 function csOnSpritesReady() {
   _csGateSprites = true;
-  if (!_csGateServer) csSetStatus('Ожидание сервера...');
+  if (!_csGateServer) csSetStatus(typeof t === 'function' ? t('csWaitingServer') : 'Ожидание сервера...');
   _csCheckGate();
 }
 
 function csOnServerReady() {
   _csGateServer = true;
-  if (!_csGateSprites) csSetStatus('Загрузка спрайтов...');
+  if (!_csGateSprites) csSetStatus(typeof t === 'function' ? t('csLoadingSprites') : 'Загрузка спрайтов...');
   _csCheckGate();
 }
 
 function _csCheckGate() {
   if (_csGateSprites && _csGateServer && _csGateCb) {
-    csSetStatus('Запуск!');
+    csSetStatus(typeof t === 'function' ? t('csStarting') : 'Запуск!');
     const cb = _csGateCb;
     _csGateCb = null;
     setTimeout(cb, 180);

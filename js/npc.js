@@ -35,10 +35,10 @@ function _merchantBody() {
   const p = player;
   const bag = p.potionBag || {};
   const total = (bag.pt1 || 0) + (bag.pt2 || 0);
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} Золото: <b>${p.gold}</b> · Зелий HP: <b>${total}/999</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b> · ${typeof t === 'function' ? t('npcHpPotionsLbl') : 'Зелий HP'}: <b>${total}/999</b></div>`;
 
   // HP potions
-  html += '<div class="shop-sec">Зелья лечения</div><div class="shop-list">';
+  html += '<div class="shop-sec">' + (typeof t === 'function' ? t('npcHealPotionsHdr') : 'Зелья лечения') + '</div><div class="shop-list">';
   MERCHANT_SHOP.filter(e => {
     const def = ITEM_DEF.find(d => d.id === e.itemId);
     return def && def.slot === 'use';
@@ -66,17 +66,17 @@ function buyPotion(idx) {
   if (!entry || !player) return;
   const def = ITEM_DEF.find(d => d.id === entry.itemId);
   if (!def) return;
-  if (player.gold < entry.price) { _shopMsg('Мало золота!'); return; }
+  if (player.gold < entry.price) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
 
   if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
   const cur = player.potionBag[entry.itemId] || 0;
-  if (cur >= 999) { _shopMsg('Максимум 999 зелий!'); return; }
+  if (cur >= 999) { _shopMsg(typeof t === 'function' ? t('npcMaxPotions') : 'Максимум 999 зелий!'); return; }
   player.gold -= entry.price;
   player.potionBag[entry.itemId] = cur + 1;
   if (typeof onBuyPotion === 'function') onBuyPotion();
   netSaveProgress();
   openNpc('merchant');
-  _shopMsgOk('✓ Куплено: ' + def.name);
+  _shopMsgOk((typeof t === 'function' ? t('npcBoughtPrefix') : '✓ Куплено: ') + def.name);
 }
 
 // ── Craftsman ───────────────────────────────────────────
@@ -96,7 +96,7 @@ function _listMats() {
     const n = countMaterial(m.id);
     if (n > 0) parts.push(_matIcon(m, 14) + '<span style="font-size:10px">×' + n + '</span>');
   });
-  return parts.join(' ') || 'нет';
+  return parts.join(' ') || (typeof t === 'function' ? t('npcNone') : 'нет');
 }
 
 function _matAvailable(m) {
@@ -112,11 +112,11 @@ function _setCraftsmanTab(tab) {
 function _craftsmanBody() {
   const p = player;
   const tabs = `<div class="craft-tabs">
-    <button class="craft-tab${_craftsmanTab==='items'?' active':''}" onclick="_setCraftsmanTab('items')">Предметы</button>
-    <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">Материалы</button>
+    <button class="craft-tab${_craftsmanTab==='items'?' active':''}" onclick="_setCraftsmanTab('items')">${typeof t === 'function' ? t('craftTabItems') : 'Предметы'}</button>
+    <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftTabMats') : 'Материалы'}</button>
   </div>`;
 
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} Золото: <b>${p.gold}</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b></div>`;
   html += tabs;
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab() : _craftsmanMatsTab();
   return html;
@@ -124,13 +124,13 @@ function _craftsmanBody() {
 
 function _craftsmanItemsTab() {
   const RARITIES = [
-    { key:'uncommon',  label:'Необычные'  },
-    { key:'rare',      label:'Редкие'     },
-    { key:'epic',      label:'Эпические'  },
-    { key:'legendary', label:'Легендарные'},
+    { key:'uncommon',  label: typeof t === 'function' ? t('rarityGroupUncommon') : 'Необычные' },
+    { key:'rare',      label: typeof t === 'function' ? t('rarityGroupRare') : 'Редкие' },
+    { key:'epic',      label: typeof t === 'function' ? t('rarityGroupEpic') : 'Эпические' },
+    { key:'legendary', label: typeof t === 'function' ? t('rarityGroupLegendary') : 'Легендарные' },
   ];
 
-  let html = '<div class="craft-mats-info">Рецепты: ' + _listMats() + '</div>';
+  let html = '<div class="craft-mats-info">' + (typeof t === 'function' ? t('craftRecipesPrefix') : 'Рецепты: ') + _listMats() + '</div>';
 
   RARITIES.forEach(r => {
     const entries = ITEM_CRAFT_RECIPES
@@ -206,7 +206,7 @@ function openCraftModal(idx) {
 
   const goldRow = rec.goldCost ? `<div class="craft-req-row">
     <span class="craft-req-icon">${iconHTML('coin', 20, '#e3941d')}</span>
-    <span class="craft-req-name">Золото</span>
+    <span class="craft-req-name">${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}</span>
     <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${player.gold}/${rec.goldCost}</span>
   </div>` : '';
 
@@ -220,7 +220,7 @@ function openCraftModal(idx) {
 
   const _backTab = rec.matId ? 'mats' : 'items';
   document.getElementById('npc-body').innerHTML = `
-    <button class="craft-back-btn" onclick="_setCraftsmanTab('${_backTab}')">← Назад</button>
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('${_backTab}')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
     <div class="craft-detail-header">
       <div class="craft-detail-icon">${resultIconHtml}</div>
       <div class="craft-detail-info">
@@ -228,10 +228,10 @@ function openCraftModal(idx) {
         ${statsHtml ? `<div class="craft-detail-stats">${statsHtml}</div>` : ''}
       </div>
     </div>
-    <div class="craft-reqs-title">Требуется:</div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">${matsHtml}${goldRow}</div>
-    <div class="craft-chance-row">Шанс успеха: <b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
-    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">Крафтить</button>
+    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
 }
 
@@ -240,12 +240,12 @@ function craftSpecificItem(idx) {
   if (!rec || !player) return;
 
   for (const m of rec.mats) {
-    if (!_matAvailable(m)) { _shopMsg('Недостаточно материалов!'); return; }
+    if (!_matAvailable(m)) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
   }
   if ((rec.goldCost || 0) > 0 && player.gold < rec.goldCost) {
-    _shopMsg('Мало золота!'); return;
+    _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return;
   }
-  if (!invHasSpace()) { _shopMsg('Инвентарь полон!'); return; }
+  if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
 
   for (const m of rec.mats) {
     if (m.minEnhance != null) removeEnhancedItem(m.id, m.n, m.minEnhance);
@@ -256,24 +256,24 @@ function craftSpecificItem(idx) {
   if (Math.random() < rec.chance) {
     if (rec.matId) {
       const mat = CRAFT_MATS.find(m => m.id === rec.matId);
-      if (mat) { addToInventory({ ...mat }); _shopMsg('✓ Создано: ' + mat.name); }
+      if (mat) { addToInventory({ ...mat }); _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + mat.name); }
     } else {
       const item = ITEM_DEF.find(i => i.id === rec.itemId);
       if (item) {
         const enhance = _craftResultEnhance(rec);
         addToInventory(enhance > 0 ? { ...item, enhance } : { ...item });
-        _shopMsg('✓ Создано: ' + item.name + (enhance ? ' +' + enhance : ''));
+        _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name + (enhance ? ' +' + enhance : ''));
       }
     }
   } else {
-    _shopMsg('Провал! Материалы потеряны.');
+    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }
   netSaveProgress();
   openCraftModal(idx);
 }
 
 function _craftsmanMatsTab() {
-  let html = '<div class="craft-group-hdr">Рецепты</div><div class="craft-items-grid">';
+  let html = '<div class="craft-group-hdr">' + (typeof t === 'function' ? t('craftRecipesHdr') : 'Рецепты') + '</div><div class="craft-items-grid">';
   MAT_UPGRADE_RECIPES.forEach((recipe, idx) => {
     const fromMat = CRAFT_MATS.find(m => m.id === recipe.from);
     const toMat   = CRAFT_MATS.find(m => m.id === recipe.to);
@@ -292,7 +292,7 @@ function _craftsmanMatsTab() {
     .map((rec, idx) => ({ rec, idx }))
     .filter(({ rec }) => rec.matId);
   if (stoneEntries.length) {
-    html += `<div class="craft-group-hdr" style="color:#ebab4b">Камни заточки</div><div class="craft-items-grid">`;
+    html += `<div class="craft-group-hdr" style="color:#ebab4b">${typeof t === 'function' ? t('craftEnchantStonesHdr') : 'Камни заточки'}</div><div class="craft-items-grid">`;
     stoneEntries.forEach(({ rec, idx }) => {
       const mat = CRAFT_MATS.find(m => m.id === rec.matId);
       if (!mat) return;
@@ -309,7 +309,7 @@ function _craftsmanMatsTab() {
   }
 
   if (typeof BOX_DEF !== 'undefined' && BOX_DEF.length) {
-    html += `<div class="craft-group-hdr" style="color:#e5a546">Боксы</div><div class="craft-items-grid">`;
+    html += `<div class="craft-group-hdr" style="color:#e5a546">${typeof t === 'function' ? t('craftBoxesHdr') : 'Боксы'}</div><div class="craft-items-grid">`;
     BOX_DEF.forEach(box => {
       const have = countMaterial(box.keyId);
       const canCraft = have >= box.keyCost && invHasSpace();
@@ -350,7 +350,7 @@ function openBoxCraftModal(boxId) {
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${box.name}</div>
       </div>
     </div>
-    <div class="craft-reqs-title">Требуется:</div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">
       <div class="craft-req-row">
         <span class="craft-req-icon">${keyDef ? _matIcon(keyDef, 20) : box.keyId}</span>
@@ -358,9 +358,9 @@ function openBoxCraftModal(boxId) {
         <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${box.keyCost}</span>
       </div>
     </div>
-    <div class="craft-reqs-title">Содержимое (1 предмет из бокса):</div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftBoxContentsLbl') : 'Содержимое (1 предмет из бокса):'}</div>
     <div class="craft-reqs-list">${oddsHtml}</div>
-    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftBox('${box.id}')">Крафтить</button>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftBox('${box.id}')">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
 }
 
@@ -368,12 +368,12 @@ function craftBox(boxId) {
   const box = BOX_DEF.find(b => b.id === boxId);
   if (!box || !player) return;
   const have = countMaterial(box.keyId);
-  if (have < box.keyCost) { _shopMsg('Недостаточно ключей!'); return; }
-  if (!invHasSpace())     { _shopMsg('Инвентарь полон!'); return; }
+  if (have < box.keyCost) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughKeys') : 'Недостаточно ключей!'); return; }
+  if (!invHasSpace())     { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
 
   removeFromInventory(box.keyId, box.keyCost);
   addToInventory({ ...box });
-  _shopMsg('✓ Создано: ' + box.name);
+  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + box.name);
   netSaveProgress();
   openBoxCraftModal(boxId);
 }
@@ -391,14 +391,14 @@ function openMatModal(idx) {
   const rcTo = RARITY_COLOR[toMat.rarity] || '#aea599';
 
   document.getElementById('npc-body').innerHTML = `
-    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">← Назад</button>
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
     <div class="craft-detail-header">
       <div class="craft-detail-icon">${_matIcon(toMat, 52)}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rcTo};text-shadow:0 0 8px ${rcTo}66">${toMat.name}</div>
       </div>
     </div>
-    <div class="craft-reqs-title">Требуется:</div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">
       <div class="craft-req-row">
         <span class="craft-req-icon">${_matIcon(fromMat, 20)}</span>
@@ -406,8 +406,8 @@ function openMatModal(idx) {
         <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${recipe.count}</span>
       </div>
     </div>
-    <div class="craft-chance-row">Шанс успеха: <b style="color:#ebab4b">${Math.round(recipe.chance * 100)}%</b></div>
-    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">Крафтить</button>
+    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(recipe.chance * 100)}%</b></div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
 }
 
@@ -415,8 +415,8 @@ function craftMatUpgrade(idx) {
   const recipe = MAT_UPGRADE_RECIPES[idx];
   if (!recipe || !player) return;
   const fromHave = countMaterial(recipe.from);
-  if (fromHave < recipe.count)  { _shopMsg('Недостаточно материалов!'); return; }
-  if (!invHasSpace())           { _shopMsg('Инвентарь полон!'); return; }
+  if (fromHave < recipe.count)  { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
+  if (!invHasSpace())           { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
 
   removeFromInventory(recipe.from, recipe.count);
 
@@ -424,10 +424,10 @@ function craftMatUpgrade(idx) {
     const mat = CRAFT_MATS.find(m => m.id === recipe.to);
     if (mat) {
       addToInventory({ ...mat });
-      _shopMsg('✓ Получено: ' + mat.name);
+      _shopMsg((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + mat.name);
     }
   } else {
-    _shopMsg('Провал! Материалы потеряны.');
+    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }
   netSaveProgress();
   openMatModal(idx);
@@ -443,8 +443,8 @@ function _setStorageTab(tab) {
 
 function _storageBody() {
   const tabs = `<div class="craft-tabs">
-    <button class="craft-tab${_storageTab==='inv'?' active':''}" onclick="_setStorageTab('inv')">Инвентарь (${invSlotCount()}/150)</button>
-    <button class="craft-tab${_storageTab==='storage'?' active':''}" onclick="_setStorageTab('storage')">Хранилище (${storageSlotCount()}/200)</button>
+    <button class="craft-tab${_storageTab==='inv'?' active':''}" onclick="_setStorageTab('inv')">${typeof t === 'function' ? t('storageInvTab') : 'Инвентарь'} (${invSlotCount()}/150)</button>
+    <button class="craft-tab${_storageTab==='storage'?' active':''}" onclick="_setStorageTab('storage')">${typeof t === 'function' ? t('storageStorageTab') : 'Хранилище'} (${storageSlotCount()}/200)</button>
   </div>`;
   return tabs + (_storageTab === 'inv' ? _storageInvTab() : _storageStoTab());
 }
@@ -461,16 +461,16 @@ function _storageItemCell(it, idx, onclickFn) {
 }
 
 function _storageInvTab() {
-  if (!player.inventory.length) return '<div class="craft-mats-info">Инвентарь пуст</div>';
-  let html = '<div class="craft-mats-info">Нажмите на предмет, чтобы положить в хранилище</div><div class="craft-items-grid">';
+  if (!player.inventory.length) return '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageInvEmpty') : 'Инвентарь пуст') + '</div>';
+  let html = '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToStore') : 'Нажмите на предмет, чтобы положить в хранилище') + '</div><div class="craft-items-grid">';
   player.inventory.forEach((it, idx) => { html += _storageItemCell(it, idx, '_doMoveToStorage'); });
   html += '</div>';
   return html;
 }
 
 function _storageStoTab() {
-  if (!player.storage.length) return '<div class="craft-mats-info">Хранилище пусто</div>';
-  let html = '<div class="craft-mats-info">Нажмите на предмет, чтобы забрать</div><div class="craft-items-grid">';
+  if (!player.storage.length) return '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageEmpty') : 'Хранилище пусто') + '</div>';
+  let html = '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToTake') : 'Нажмите на предмет, чтобы забрать') + '</div><div class="craft-items-grid">';
   player.storage.forEach((it, idx) => { html += _storageItemCell(it, idx, '_doMoveToInventory'); });
   html += '</div>';
   return html;
@@ -478,14 +478,14 @@ function _storageStoTab() {
 
 function _doMoveToStorage(idx) {
   if (!player) return;
-  if (!moveToStorage(idx)) { _shopMsg('Хранилище полно!'); return; }
+  if (!moveToStorage(idx)) { _shopMsg(typeof t === 'function' ? t('storageFull') : 'Хранилище полно!'); return; }
   netSaveProgress();
   document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
 }
 
 function _doMoveToInventory(idx) {
   if (!player) return;
-  if (!moveToInventory(idx)) { _shopMsg('Инвентарь полон!'); return; }
+  if (!moveToInventory(idx)) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
   netSaveProgress();
   document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
 }
