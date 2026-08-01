@@ -66,6 +66,11 @@ const I18N_UI = {
   profileTabFriends: { ru: 'Друзья',  en: 'Friends', uk: 'Друзі',    es: 'Amigos',    tr: 'Arkadaşlar', pt: 'Amigos' },
   profileTabLang:    { ru: 'Язык',    en: 'Language', uk: 'Мова',    es: 'Idioma',    tr: 'Dil',    pt: 'Idioma' },
   langPickerTitle:   { ru: 'Язык игры', en: 'Game Language', uk: 'Мова гри', es: 'Idioma del juego', tr: 'Oyun Dili', pt: 'Idioma do Jogo' },
+  profileTabSound:   { ru: 'Звук',    en: 'Sound', uk: 'Звук',    es: 'Sonido',    tr: 'Ses',    pt: 'Som' },
+  sfxSectionTitle:   { ru: 'Звуковые эффекты', en: 'Sound effects', uk: 'Звукові ефекти', es: 'Efectos de sonido', tr: 'Ses efektleri', pt: 'Efeitos sonoros' },
+  sfxOnLbl:          { ru: 'Включены', en: 'On', uk: 'Увімкнено', es: 'Activados', tr: 'Açık', pt: 'Ativados' },
+  sfxOffLbl:         { ru: 'Выключены', en: 'Off', uk: 'Вимкнено', es: 'Desactivados', tr: 'Kapalı', pt: 'Desativados' },
+  sfxHint:           { ru: 'Удары, смерть врагов, лут и появление босса', en: 'Hits, enemy deaths, loot and boss spawns', uk: 'Удари, смерть ворогів, лут і поява боса', es: 'Golpes, muertes de enemigos, botín y aparición del jefe', tr: 'Vuruşlar, düşman ölümleri, ganimet ve boss belirmesi', pt: 'Acertos, mortes de inimigos, saque e aparição do chefe' },
   langPickerHint:    { ru: 'Изменения применяются сразу', en: 'Changes apply immediately', uk: 'Зміни застосовуються одразу', es: 'Los cambios se aplican de inmediato', tr: 'Değişiklikler hemen uygulanır', pt: 'As alterações se aplicam imediatamente' },
 
   // ── Character select ──

@@ -592,6 +592,7 @@ const BUNDLE_FILES = [
   'js/tonconnect.js',
   'js/sprites.js',
   'js/particles.js',
+  'js/sound.js',
   'js/player.js',
   'js/combat.js',
   'js/input.js',

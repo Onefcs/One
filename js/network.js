@@ -431,6 +431,7 @@ function netConnect(onReady) {
         if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19);
         else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
         if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
+        if (typeof Sound !== 'undefined') Sound.hit();
       }
     }
   });
@@ -466,6 +467,7 @@ function netConnect(onReady) {
       if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
     }
     spawnBurst(px, py, color || '#f80', 8);
+    if (typeof Sound !== 'undefined') Sound.death();
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
     if (dd) {
       // Keep the corpse just long enough to play the death animation;
@@ -496,6 +498,7 @@ function netConnect(onReady) {
     if (rlvl && player && typeof onEnterArm === 'function') onEnterArm(rlvl);
     if (gotLoot && player) {
       applyLootToInventory(eid, rlvl);
+      if (typeof Sound !== 'undefined') Sound.loot();
       // VIP drop bonus: extra loot roll proportional to drop%
       const _vipDrop = (window._vipData?.level > 0 && typeof VIP_BONUSES !== 'undefined')
         ? (VIP_BONUSES[window._vipData.level] || VIP_BONUSES[0]).drop : 0;
@@ -1677,6 +1680,7 @@ function _initEventBossHandlers(s) {
     _evtBossAlive = true;
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(0);
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossArrived'), '#ff5a4a');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
   });
   s.on('eventBossDefeated', () => {
     _evtBossAlive = false;
@@ -1696,6 +1700,7 @@ function _initEventBossHandlers(s) {
     if (typeof addToInventoryQty === 'function') addToInventoryQty(item, item.qty || 1);
     if (typeof updateInvUI === 'function') updateInvUI();
     if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, '+ ' + item.name, (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[item.rarity]) || '#c4a276');
+    if (typeof Sound !== 'undefined') Sound.loot();
     netSaveProgress();
   });
   s.on('worldDropError', ({ msg }) => {
