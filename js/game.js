@@ -141,6 +141,14 @@ function clampCamera() {
   camera.y = clamp(camera.y, 0, Math.max(0, dungeon.h * TILE - visH));
 }
 
+// True if a world point currently falls inside the player's own viewport —
+// gates sfx (js/network.js) so combat/loot/boss sounds from elsewhere in the
+// shared world stay silent unless the player can actually see them happen.
+function _isPosVisible(x, y, margin = 80) {
+  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
+  return sx >= -margin && sx <= W + margin && sy >= -margin && sy <= H + margin;
+}
+
 function updateCamera(dt) {
   const visW = W / ZOOM, visH = _visH();
   const tx = player.x - visW / 2;
