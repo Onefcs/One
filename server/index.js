@@ -65,6 +65,70 @@ function _canonicalMarketItem(rawItem) {
   }
   return item;
 }
+// ── Server-side inventory ops for the market ────────────────────────────────
+// The item half of every trade used to be entirely client-authoritative: the
+// server created/sold/cancelled listings but never touched savedData.inventory,
+// trusting the client to splice the item out on listing and to add it back on
+// buy/cancel. Two consequences, both exploitable:
+//   • nothing verified the seller actually OWNED what they listed — a modified
+//     client could list any catalog item it never earned and sell it for real
+//     GRAM (unlimited GRAM minting), and
+//   • the item only left the seller's saved inventory once the CLIENT's own
+//     post-listing save landed, so listing an item and killing the app before
+//     that write duplicated it: the save still held the item and the listing
+//     was live too. The mirror case lost items instead — a buyer whose
+//     marketBought event never arrived (or whose inventory was full) paid GRAM
+//     and got nothing, and a cancelled listing whose marketCancelled event was
+//     lost destroyed the item outright.
+// These mirror js/player.js's invHasSpace/addToInventoryQty/removeFromInventory
+// so the server can apply the same change authoritatively. The client still
+// applies it optimistically and its next full-array save wins, which keeps the
+// two consistent — but the server-side copy means the trade survives a lost
+// event or a disconnect mid-trade.
+const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
+
+// Does `inv` hold at least `qty` of this item (matching enhance level for
+// enhanceable gear, which is what makes two otherwise-identical swords
+// different)? Returns the matching entry's index, or -1.
+function _invFindOwned(inv, item) {
+  if (!Array.isArray(inv)) return -1;
+  const wantEnh = ENHANCEABLE_SLOTS.has(item.slot) ? (item.enhance || 0) : null;
+  const wantQty = isStackableItem(item) ? (item.qty || 1) : 1;
+  return inv.findIndex(i =>
+    i && i.id === item.id &&
+    (wantEnh === null || (i.enhance || 0) === wantEnh) &&
+    ((i.qty || 1) >= wantQty));
+}
+
+// Removes `item` (respecting stack quantity) from `inv` in place. Caller must
+// have checked _invFindOwned first. Returns true when something was removed.
+function _invRemove(inv, item) {
+  const idx = _invFindOwned(inv, item);
+  if (idx < 0) return false;
+  const entry = inv[idx];
+  if (isStackableItem(item)) {
+    const take = item.qty || 1;
+    const have = entry.qty || 1;
+    if (have > take) entry.qty = have - take;
+    else inv.splice(idx, 1);
+  } else {
+    inv.splice(idx, 1);
+  }
+  return true;
+}
+
+// Adds `item` to `inv` in place. Returns false when there's no room — the
+// caller must then refuse the trade rather than silently destroying the item.
+function _invAdd(inv, item) {
+  if (isStackableItem(item)) {
+    const existing = inv.find(i => i && i.id === item.id);
+    if (existing) { existing.qty = (existing.qty || 1) + (item.qty || 1); return true; }
+  }
+  if (inv.length >= SERVER_INV_MAX) return false;
+  inv.push({ ...item });
+  return true;
+}
+
 function _marketListingData(l) {
   return {
     id: l._id.toString(), sellerId: l.sellerId, sellerUsername: l.sellerUsername,
@@ -2067,19 +2131,52 @@ io.on('connection', socket => {
     if (!canonItem) {
       return socket.emit('marketListError', { msg: 'Такого предмета не существует' });
     }
+    // Claim the cooldown slot BEFORE the first await. Setting it after the
+    // countDocuments round-trip let two listings sent back-to-back both read
+    // the old timestamp, pass the check and create a listing each — which,
+    // with a client that sends the same item twice, minted a duplicate.
+    const _prevListAt = _lastMarketListAt;
+    _lastMarketListAt = now;
+    // The seller must actually own what they're listing. _lastStats is the
+    // server's own sanitized copy of the inventory, refreshed on every
+    // saveProgress (the client flushes one right before this request, see
+    // _confirmMarketList in js/ui.js), so it's the authoritative answer to
+    // "does this account hold this item". Without this check any client could
+    // list catalog items it never earned and sell them for real GRAM.
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      _lastMarketListAt = _prevListAt;
+      return socket.emit('marketListError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    if (_invFindOwned(_lastStats.inventory, canonItem) < 0) {
+      _lastMarketListAt = _prevListAt;
+      return socket.emit('marketListError', { msg: 'Предмета нет в инвентаре' });
+    }
     try {
       const activeCount = await MarketListingModel.countDocuments({ sellerId: authed.telegramId, status: 'active' });
       if (activeCount >= MARKET_MAX_ACTIVE) {
+        _lastMarketListAt = _prevListAt;
         return socket.emit('marketListError', { msg: `Максимум ${MARKET_MAX_ACTIVE} активных лотов` });
       }
-      _lastMarketListAt = now;
+      // Re-check ownership right before the write: the countDocuments await
+      // above is a window in which this account's own save (or a concurrent
+      // listing of the same item) could have removed it.
+      if (_invFindOwned(_lastStats.inventory, canonItem) < 0) {
+        _lastMarketListAt = _prevListAt;
+        return socket.emit('marketListError', { msg: 'Предмета нет в инвентаре' });
+      }
       const listing = await MarketListingModel.create({
         sellerId: authed.telegramId, sellerUsername: authed.username,
         item: canonItem, price: _round2(p), status: 'active',
       });
+      // Take the item out of the server's copy too, and persist immediately —
+      // otherwise the item only left the account once the CLIENT's own save
+      // landed, and listing-then-killing-the-app duplicated it.
+      _invRemove(_lastStats.inventory, canonItem);
+      _persistSavedFields(authed, { inventory: _lastStats.inventory });
       socket.emit('marketListed', { listing: _marketListingData(listing) });
     } catch (err) {
       console.error('marketList:', err);
+      _lastMarketListAt = _prevListAt;
       socket.emit('marketListError', { msg: 'Ошибка сервера' });
     }
   });
@@ -2087,15 +2184,44 @@ io.on('connection', socket => {
   safeOn('marketCancel', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
     try {
+      // Peek at the item before cancelling: if there's nowhere to put it back,
+      // the cancellation must not happen at all. Cancelling first and only
+      // then discovering the inventory is full destroyed the item — the
+      // listing was already gone, so nothing would ever return it.
+      const pre = await MarketListingModel.findOne(
+        { _id: listingId, sellerId: authed.telegramId, status: 'active' }, 'item').lean();
+      if (!pre) return socket.emit('marketError', { msg: 'Лот не найден' });
+      const _sellerInv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+      if (_sellerInv && !isStackableItem(pre.item) && _sellerInv.length >= SERVER_INV_MAX) {
+        return socket.emit('marketError', { msg: 'Инвентарь полон' });
+      }
       const listing = await MarketListingModel.findOneAndUpdate(
         { _id: listingId, sellerId: authed.telegramId, status: 'active' },
         { status: 'cancelled', soldAt: new Date() },
         { new: false }, // return the pre-update doc (still has the item)
       );
       if (!listing) return socket.emit('marketError', { msg: 'Лот не найден' });
+      // Put the item back server-side as well. Relying on the client to do it
+      // from the marketCancelled event meant a lost event (or a disconnect in
+      // the round trip) destroyed the item — the listing was already
+      // cancelled, so nothing would ever return it.
+      if (_sellerInv && _invAdd(_sellerInv, listing.item)) {
+        _persistSavedFields(authed, { inventory: _sellerInv });
+      }
       socket.emit('marketCancelled', { listingId, item: listing.item });
     } catch (err) { console.error('marketCancel:', err); }
   });
+
+  // Undoes THIS buyer's claim only. The old unconditional update-by-_id would
+  // happily flip a listing back to 'active' regardless of who currently held
+  // it, so a release racing another buyer's completed purchase could put an
+  // already-paid-for lot back on sale.
+  function _releaseClaim(listingId) {
+    return MarketListingModel.updateOne(
+      { _id: listingId, status: 'sold', buyerId: authed.telegramId },
+      { status: 'active', buyerId: null, buyerUsername: null, soldAt: null },
+    ).catch(err => console.error('marketBuy release claim:', err));
+  }
 
   safeOn('marketBuy', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
@@ -2119,11 +2245,17 @@ io.on('connection', socket => {
       // together spend more than the account holds, same risk the gap between
       // check and write would create in gramWithdrawRequest if it awaited there.
       if (claimed.price > _liveGram()) {
-        await MarketListingModel.updateOne(
-          { _id: listingId },
-          { status: 'active', buyerId: null, buyerUsername: null, soldAt: null },
-        ).catch(err => console.error('marketBuy release claim:', err));
+        await _releaseClaim(listingId);
         return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
+      }
+      // Room for the item BEFORE any money moves. The client used to just
+      // report "инвентарь полон, предмет потерян" after the fact — the GRAM
+      // was already gone and the item was destroyed with the listing marked
+      // sold. Refuse the trade instead and put the lot back up.
+      const _buyerInv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+      if (_buyerInv && !isStackableItem(claimed.item) && _buyerInv.length >= SERVER_INV_MAX) {
+        await _releaseClaim(listingId);
+        return socket.emit('marketError', { msg: 'Инвентарь полон' });
       }
       _setGram(_round7(_liveGram() - claimed.price));
       // Atomic $set on just this one nested field — a full-document
@@ -2131,9 +2263,16 @@ io.on('connection', socket => {
       // that can already be stale by the time it writes back (the player's
       // own debounced saveProgress autosave landing in between), silently
       // reverting whatever else changed in savedData since that snapshot.
+      // Deliver the item server-side in the same write as the payment, so a
+      // marketBought event that never reaches the client (disconnect, lost
+      // packet) can't leave the buyer having paid for nothing.
+      const _buyerSet = { 'savedData.gramBalance': _gramBalance };
+      if (_buyerInv && _invAdd(_buyerInv, claimed.item)) {
+        _buyerSet['savedData.inventory'] = _buyerInv;
+      }
       await PlayerModel.updateOne(
         { _id: authed._id },
-        { $set: { 'savedData.gramBalance': _gramBalance } },
+        { $set: _buyerSet },
       ).catch(err => console.error('marketBuy buyer persist:', err));
 
       // Credit seller (10% fee burned — not paid to anyone), whether online or not.

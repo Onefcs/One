@@ -3321,6 +3321,23 @@ function _confirmMarketList() {
   const idx = _marketSellPick;
   const it  = player.inventory[idx];
   if (!it) return;
+  // Bail out before touching the inventory if there's no connection: the
+  // splice below is optimistic and is only ever rolled back by a
+  // marketListError from the server, so emitting into a dead socket left the
+  // item removed from the inventory with no listing and no error to undo it.
+  if (!netIsLive()) {
+    _marketToast(t('noServerConn'), 'err');
+    return;
+  }
+  // Flush a save with the item STILL in the inventory, before the optimistic
+  // splice below. The server verifies the seller actually owns what they're
+  // listing against its own copy of the inventory (see marketList in
+  // server/index.js), and socket.io delivers per-connection messages in order,
+  // so this save is guaranteed to have been applied by the time the listing
+  // request is handled. Without it, an item picked up in the last couple of
+  // seconds — not yet covered by the debounced autosave — would be rejected as
+  // "not in inventory".
+  netSaveProgressNow();
   const have = it.qty || 1;
   let itemSnapshot;
   if (_isStackable(it) && have > 1) {

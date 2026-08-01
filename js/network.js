@@ -1609,6 +1609,14 @@ function _emitWhenAuthed(event, payload, triesLeft = 30) {
   }
   setTimeout(() => _emitWhenAuthed(event, payload, triesLeft - 1), 300);
 }
+// True only when the socket is up AND the server has re-authed this
+// connection — the same condition _emitWhenAuthed waits for. Callers that
+// mutate local state optimistically (the market sell flow) must check this
+// first, since an emit into a dead or not-yet-authed socket is dropped
+// silently and no error ever comes back to roll that mutation back.
+function netIsLive() {
+  return !!(socket?.connected && _authOkReceived);
+}
 function netGramDeposit(amount, memo) {
   _emitWhenAuthed('gramDepositRequest', { amount, memo });
 }
