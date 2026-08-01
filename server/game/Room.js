@@ -1,5 +1,5 @@
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
-const { calcGoldDrop, CHAR_DEF, ARM_NAMES } = require('../../shared/definitions');
+const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server stats
@@ -109,6 +109,94 @@ class Room {
     // actually encode that (string-heavy) segment once instead of once per
     // player. See the comment at its call site below for the measured cost.
     this._nearEnemiesGen = 0;
+    // ── World drops (event-boss loot lying on the floor) ───────────────────
+    // id -> { id, x, y, item, expiresAt }. Not per-player: one shared pool
+    // everyone can see, claimed atomically by claimWorldDrop() so exactly one
+    // player can ever take a given pile ("кто успел, тот забрал").
+    this.worldDrops = new Map();
+    this._dropSeq = 0;
+    this._eventBossId = null;
+  }
+
+  // ── Event boss ────────────────────────────────────────────────────────────
+  // Spawns EVENT_BOSS in the hub, west of spawn on the same row: NPCs sit
+  // north of spawn (dy -8..-11 tiles) and the teleport pads south (dy +10),
+  // so due west is the one large clear stretch inside the safe zone.
+  spawnEventBoss() {
+    if (this.isEventBossAlive()) return null;
+    const sp = this._dungeon.spawn;
+    const x = sp.x - 16 * TILE, y = sp.y;
+    const e = {
+      id: `evtboss_${Date.now()}`,
+      ...EVENT_BOSS,
+      arm: 'hub',
+      rlvl: 0,
+      maxHp: EVENT_BOSS.hp,
+      hp: EVENT_BOSS.hp,
+      x, y, spawnX: x, spawnY: y,
+      atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
+      aggro: false,
+      // Wide enough to cover the hub — the default 175 would leave a boss this
+      // size idle unless someone walked right into it.
+      aggroR: 900,
+      _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
+      _idx: this.enemies.length,
+    };
+    this.enemies.push(e);
+    this._enemyMap.set(e.id, e);
+    this._eventBossId = e.id;
+    return e;
+  }
+
+  isEventBossAlive() {
+    const e = this._eventBossId ? this._enemyMap.get(this._eventBossId) : null;
+    return !!(e && e.hp > 0);
+  }
+
+  // Scatters `items` on the floor around (cx, cy) as individually claimable
+  // piles and tells everyone about them. Positions are rejected if they'd
+  // land in a wall so nothing spawns unreachable.
+  spawnWorldDrops(items, cx, cy) {
+    const now = Date.now();
+    const spawned = [];
+    items.forEach((item, i) => {
+      // Rings of increasing radius — 62 piles in one tight cluster would
+      // overlap into an unreadable heap and all get vacuumed by one player
+      // standing still (pickup radius is 30px, see js/game.js).
+      let x = cx, y = cy;
+      for (let attempt = 0; attempt < 24; attempt++) {
+        const ring = 70 + Math.floor(i / 10) * 55 + Math.random() * 45;
+        const ang = Math.random() * Math.PI * 2;
+        const tx = cx + Math.cos(ang) * ring, ty = cy + Math.sin(ang) * ring;
+        if (!this._isWall(tx, ty)) { x = tx; y = ty; break; }
+      }
+      const d = { id: `wd_${++this._dropSeq}`, x, y, item, expiresAt: now + EVENT_BOSS_DROP_LIFE_MS };
+      this.worldDrops.set(d.id, d);
+      spawned.push(d);
+    });
+    if (spawned.length) this.io.to(`floor_${this.floor}`).emit('worldDropsSpawned', { drops: spawned });
+    return spawned;
+  }
+
+  // Atomic claim — the Map delete is the arbitration point, so two players
+  // walking over the same pile in the same tick can't both get it.
+  claimWorldDrop(dropId, px, py) {
+    const d = this.worldDrops.get(dropId);
+    if (!d) return null;
+    if (d.expiresAt <= Date.now()) { this.worldDrops.delete(dropId); return null; }
+    // Server-side range check so a modified client can't hoover the map from
+    // across the hub. Generous vs the client's own 30px pickup radius to
+    // allow for movement latency.
+    const dx = d.x - px, dy = d.y - py;
+    if (dx * dx + dy * dy > 120 * 120) return null;
+    this.worldDrops.delete(dropId);
+    this.io.to(`floor_${this.floor}`).emit('worldDropTaken', { id: dropId });
+    return d;
+  }
+
+  worldDropSnapshot() {
+    const now = Date.now();
+    return [...this.worldDrops.values()].filter(d => d.expiresAt > now);
   }
 
   _startLoop() {
@@ -206,6 +294,7 @@ class Room {
       if (nowIn && !p._wasInSafeZone) {
         this.enemies.forEach(e => {
           if (e.hp <= 0 || e._targetId !== p.socketId) return;
+          if (e.ignoresSafeZone) return; // event boss keeps chasing into the hub
           e.x = e.spawnX; e.y = e.spawnY;
           e.aggro = false;
           e._targetId = null;
@@ -219,6 +308,20 @@ class Room {
     this._aiTickNo++;
     this.enemies.forEach(e => {
       if (e.hp <= 0) {
+        // Event boss: drop its whole loot table on the floor for everyone and
+        // remove it for good. Unlike the per-arm bosses it never respawns on
+        // a timer — only another admin summon brings it back. _evtLooted
+        // guards against the drop firing twice before the removal below runs.
+        if (e.ignoresSafeZone) {
+          if (!e._evtLooted) {
+            e._evtLooted = true;
+            this.spawnWorldDrops(rollEventBossDrops(), e.x, e.y);
+            this.io.to(`floor_${this.floor}`).emit('eventBossDefeated', {});
+            e._evtRemove = true; // purged after this forEach, see below
+            this._evtPurge = true;
+          }
+          return;
+        }
         if (e.respawnTimer === undefined) { e.respawnTimer = e.isBoss ? 3600 : 12; return; }
         e.respawnTimer -= dt;
         if (e.respawnTimer <= 0) {
@@ -242,9 +345,15 @@ class Room {
       // its comment above); otherwise reuse the cached target as long as
       // it's still eligible, so a stale reference never keeps an enemy
       // chasing someone who died/vanished/hid for multiple ticks.
+      // The event boss (shared/definitions.js EVENT_BOSS) is summoned INTO the
+      // hub, which is the safe zone — the normal rules would leave it with no
+      // eligible target forever. It alone may target players standing there;
+      // every other enemy still skips them, so the hub stays safe from
+      // everything except this one deliberate world event.
+      const _sz = !e.ignoresSafeZone;
       const cached = e._cachedTarget;
       const cachedStillValid = cached && cached.hp > 0 && this.players.get(cached.socketId) === cached &&
-        !this._inSafeZone(cached.x, cached.y) && !cached._inRaid && !cached._invis;
+        !(_sz && this._inSafeZone(cached.x, cached.y)) && !cached._inRaid && !cached._invis;
       const dueForSearch = (e._idx % AI_TARGET_SEARCH_EVERY) === (this._aiTickNo % AI_TARGET_SEARCH_EVERY);
       let closest = cachedStillValid ? cached : null;
       if (dueForSearch || !cachedStillValid) {
@@ -252,7 +361,7 @@ class Room {
         let bestD2 = Infinity;
         for (let i = 0; i < alivePlayers.length; i++) {
           const p = alivePlayers[i];
-          if (this._inSafeZone(p.x, p.y)) continue;
+          if (_sz && this._inSafeZone(p.x, p.y)) continue;
           if (p._inRaid) continue;
           if (p._invis) continue;
           const dx = p.x - e.x, dy = p.y - e.y;
@@ -271,7 +380,8 @@ class Room {
       // player later wanders close enough to re-target it.
       if (!closest) {
         e._targetId = null;
-        if (e.aggro) { e.aggro = false; e.x = e.spawnX; e.y = e.spawnY; e._shp = -1; }
+        if (e.aggro && !e.ignoresSafeZone) { e.aggro = false; e.x = e.spawnX; e.y = e.spawnY; e._shp = -1; }
+        if (e.ignoresSafeZone) e.aggro = false;
         return;
       }
       e._targetId = closest.socketId;
@@ -289,7 +399,7 @@ class Room {
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
       // leave the enemy stranded wherever the chase ended.
-      if (closestD > e.aggroR * 2.2 && e.aggro) {
+      if (closestD > e.aggroR * 2.2 && e.aggro && !e.ignoresSafeZone) {
         e.aggro = false;
         e.x = e.spawnX; e.y = e.spawnY;
         e._shp = -1;
@@ -318,15 +428,42 @@ class Room {
         }
       }
 
-      // Leash: too far from spawn → full HP reset back to spawn
+      // Leash: too far from spawn → full HP reset back to spawn. Skipped for
+      // the event boss: LEASH_R2 is only 420px and the hub is 48 tiles across,
+      // so players circling it would repeatedly reset its 100k HP to full.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
-      if (ldx * ldx + ldy * ldy > LEASH_R2) {
+      if (!e.ignoresSafeZone && ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;
         e._shp = -1;
       }
     });
+
+    // Drop a defeated event boss out of the world for good. Deferred to here
+    // because splicing this.enemies inside the forEach above would skip an
+    // element and leave every _idx (used for the AI target-search stagger and
+    // the _enemyKnown delta tracker) pointing at the wrong enemy.
+    if (this._evtPurge) {
+      this._evtPurge = false;
+      this.enemies = this.enemies.filter(e => {
+        if (!e._evtRemove) return true;
+        this._enemyMap.delete(e.id);
+        this._enemyKnown.delete(e.id);
+        return false;
+      });
+      this.enemies.forEach((e, i) => { e._idx = i; });
+    }
+
+    // Expire ground loot nobody picked up in time.
+    if (this.worldDrops.size) {
+      const expired = [];
+      this.worldDrops.forEach(d => { if (d.expiresAt <= now) expired.push(d.id); });
+      if (expired.length) {
+        expired.forEach(id => this.worldDrops.delete(id));
+        this.io.to(`floor_${this.floor}`).emit('worldDropsExpired', { ids: expired });
+      }
+    }
 
     // Per-player emit: AOI filter + delta (reuse buffers — emit serializes synchronously).
     // Bandwidth protocol:

@@ -222,6 +222,15 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         <div class="stat-card"><div class="val" id="st-today">—</div><div class="lbl">Новых за 24ч</div></div>
         <div class="stat-card"><div class="val" id="st-bans">—</div><div class="lbl">Заблокировано</div></div>
       </div>
+      <div class="card">
+        <h3>⚔️ Мировой босс</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="evtboss-status">—</div>
+        <button class="btn btn-primary" id="evtboss-btn" onclick="summonEventBoss()">Вызвать босса</button>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Все игроки получат предупреждение, босс появится в безопасной зоне через 5 минут.
+          Добыча падает на пол для всех — кто успел, тот забрал.
+        </div>
+      </div>
       <div class="tops-grid" id="tops-grid">
         <div class="top-card"><h4>🏆 По BM</h4><div id="top-bm"></div></div>
         <div class="top-card"><h4>⚡ По уровню</h4><div id="top-lvl"></div></div>
@@ -456,6 +465,38 @@ async function loadDashboard() {
     document.getElementById('online-badge').textContent = '● ' + (d.online||0) + ' онлайн';
     renderTops(d.tops || { bm:[], lvl:[], gold:[], nexum:[] });
   } catch(e) { console.error(e); }
+  loadEventBoss();
+}
+
+// ── World event boss ──────────────────────────────────────
+async function loadEventBoss() {
+  const el = document.getElementById('evtboss-status');
+  const btn = document.getElementById('evtboss-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/event-boss')).json();
+    let txt, busy = false;
+    if (d.alive) { txt = '🔴 Босс сейчас на карте'; busy = true; }
+    else if (d.spawnAt) {
+      const left = Math.max(0, Math.round((d.spawnAt - Date.now()) / 1000));
+      txt = '⏳ Появится через ' + Math.floor(left/60) + ':' + String(left%60).padStart(2,'0');
+      busy = true;
+    } else txt = '⚪ Босса нет — можно вызывать';
+    if (d.dropsOnGround) txt += ' · на полу лежит ' + d.dropsOnGround + ' предметов';
+    el.textContent = txt;
+    if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '.5' : '1'; }
+  } catch(e) { el.textContent = '—'; }
+}
+
+async function summonEventBoss() {
+  if (!confirm('Вызвать мирового босса? Все игроки увидят предупреждение, босс появится через 5 минут.')) return;
+  try {
+    const r = await api('/admin/event-boss', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Босс вызван — появится через 5 минут');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadEventBoss();
 }
 
 function refreshOnline() {

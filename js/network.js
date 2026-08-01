@@ -60,6 +60,7 @@ function netConnect(onReady) {
 
   _initGramHandlers(socket);
   _initMarketHandlers(socket);
+  _initEventBossHandlers(socket);
 
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
 
@@ -141,7 +142,7 @@ function netConnect(onReady) {
     loadSprites(type, () => {});
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs }) => {
+  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb }) => {
     dungeonLvl = floor;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     if (typeof _buildArmGates === 'function') _buildArmGates();
@@ -153,6 +154,10 @@ function netConnect(onReady) {
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
+    // Event boss: restore the countdown banner and any loot already lying on
+    // the floor, so joining mid-event shows the same state as everyone else.
+    worldDrops = new Map((evb && evb.drops || []).map(d => [d.id, d]));
+    if (typeof setEventBossCountdown === 'function') setEventBossCountdown(evb && evb.spawnAt || 0);
     // Preload sprites for every corridor's enemy pool — the whole world is
     // reachable from the start, not gated behind a single "current floor".
     if (typeof ARM_NAMES !== 'undefined') {
@@ -161,6 +166,7 @@ function netConnect(onReady) {
         if (fe) (fe.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
       });
     }
+    loadEnemySprites('demon_event_boss');
     if (_isReconnectRejoin) {
       // Resuming after a socket.io reconnect (see authOk guard above) — the
       // dungeon/enemy resync above is still needed since this is a fresh
@@ -1656,6 +1662,46 @@ function netMarketBuy(listingId) {
 
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
+}
+
+// ── Event boss + world drops ────────────────────────────────────────────────
+// worldDrops is the shared ground-loot pool (id -> {id,x,y,item}); the server
+// arbitrates every pickup, so this map is display-only — an entry disappearing
+// means someone else got there first.
+function _initEventBossHandlers(s) {
+  s.on('eventBossAnnounce', ({ spawnAt }) => {
+    if (typeof setEventBossCountdown === 'function') setEventBossCountdown(spawnAt);
+  });
+  s.on('eventBossSpawned', () => {
+    if (typeof setEventBossCountdown === 'function') setEventBossCountdown(0);
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossArrived'), '#ff5a4a');
+  });
+  s.on('eventBossDefeated', () => {
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossDefeated'), '#90d653');
+  });
+  s.on('worldDropsSpawned', ({ drops: ds }) => {
+    (ds || []).forEach(d => worldDrops.set(d.id, d));
+  });
+  s.on('worldDropTaken', ({ id }) => { worldDrops.delete(id); _worldDropPending.delete(id); });
+  s.on('worldDropsExpired', ({ ids }) => { (ids || []).forEach(id => { worldDrops.delete(id); _worldDropPending.delete(id); }); });
+  s.on('worldDropPicked', ({ id, item }) => {
+    worldDrops.delete(id);
+    _worldDropPending.delete(id);
+    if (!player || !item) return;
+    // The server already wrote this into the account's inventory; mirror it
+    // locally and save so the client's own next full-array save agrees.
+    if (typeof addToInventoryQty === 'function') addToInventoryQty(item, item.qty || 1);
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, '+ ' + item.name, (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[item.rarity]) || '#c4a276');
+    netSaveProgress();
+  });
+  s.on('worldDropError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg, 'err');
+  });
+}
+
+function netPickupWorldDrop(id) {
+  if (socket?.connected) socket.emit('pickupWorldDrop', { id });
 }
 
 // Incoming GRAM events

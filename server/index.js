@@ -19,7 +19,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  armIndexForLevel,
+  armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -948,6 +948,19 @@ app.post('/admin/broadcast', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Summon the world-event boss (shared/definitions.js EVENT_BOSS). Announces
+// it to everyone immediately and spawns it EVENT_BOSS_ANNOUNCE_MS later.
+app.post('/admin/event-boss', adminAuth, (req, res) => {
+  const r = scheduleEventBoss();
+  if (r.error) return res.status(409).json({ error: r.error });
+  res.json(r);
+});
+
+app.get('/admin/event-boss', adminAuth, (req, res) => {
+  const st = eventBossState();
+  res.json({ spawnAt: st.spawnAt, alive: st.alive, dropsOnGround: st.drops.length });
+});
+
 app.get('/admin/market', adminAuth, async (req, res) => {
   try {
     const { page = 1, tab = 'active' } = req.query;
@@ -1573,6 +1586,41 @@ function getRoom(floor) {
   return floorRooms.get(Math.max(1, Math.min(MAX_FLOOR, floor)));
 }
 
+// ── Event boss scheduling ───────────────────────────────────────────────────
+// An admin summon doesn't spawn the boss straight away: everyone gets a
+// countdown banner first (EVENT_BOSS_ANNOUNCE_MS), then it appears. The
+// pending time is module state rather than per-socket so a player who logs in
+// mid-countdown still sees the timer (sent from gameStart, see selectChar).
+let _eventBossSpawnAt = 0;
+let _eventBossTimer   = null;
+
+function eventBossState() {
+  const room = getRoom(1);
+  return {
+    spawnAt: _eventBossSpawnAt > Date.now() ? _eventBossSpawnAt : 0,
+    alive: !!(room && room.isEventBossAlive()),
+    drops: room ? room.worldDropSnapshot() : [],
+  };
+}
+
+function scheduleEventBoss() {
+  const room = getRoom(1);
+  if (!room) return { error: 'Мир ещё не инициализирован' };
+  if (room.isEventBossAlive()) return { error: 'Босс уже на карте' };
+  if (_eventBossSpawnAt > Date.now()) return { error: 'Босс уже вызван — идёт отсчёт' };
+  _eventBossSpawnAt = Date.now() + EVENT_BOSS_ANNOUNCE_MS;
+  io.to('floor_1').emit('eventBossAnnounce', { spawnAt: _eventBossSpawnAt });
+  clearTimeout(_eventBossTimer);
+  _eventBossTimer = setTimeout(() => {
+    _eventBossSpawnAt = 0;
+    const r = getRoom(1);
+    if (!r) return;
+    const boss = r.spawnEventBoss();
+    if (boss) io.to('floor_1').emit('eventBossSpawned', { x: boss.x, y: boss.y });
+  }, EVENT_BOSS_ANNOUNCE_MS);
+  return { ok: true, spawnAt: _eventBossSpawnAt };
+}
+
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
 // safe to trigger from more than one path below.
 function _initFloorRooms() {
@@ -2081,6 +2129,33 @@ io.on('connection', socket => {
   // the wallet above). The item itself is trusted from the client at the same
   // level as the rest of the inventory system — this game doesn't otherwise
   // keep a server-side copy of item stats to validate against.
+  // ── Ground loot (event-boss drops) ────────────────────────────────────────
+  // The claim itself is arbitrated inside the Room (one Map delete, so exactly
+  // one player can win a given pile). Awarding is done here because this is
+  // where _lastStats — the server's own inventory copy — lives; same pattern
+  // as the market, so a dropped worldDropTaken event or a disconnect mid-
+  // pickup can't lose the item.
+  safeOn('pickupWorldDrop', ({ id } = {}) => {
+    if (!authed || !id || !currentRoom) return;
+    const p = currentRoom.players.get(socket.id);
+    if (!p || p.hp <= 0) return;
+    const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+    // Peek at the pile first: a full inventory must be rejected BEFORE the
+    // claim consumes it, otherwise the item is destroyed instead of staying
+    // on the floor for someone else — same ordering as the market's buy path.
+    const peek = currentRoom.worldDrops.get(id);
+    if (!peek) return;
+    if (inv && !isStackableItem(peek.item) && inv.length >= SERVER_INV_MAX) {
+      return socket.emit('worldDropError', { msg: 'Инвентарь полон' });
+    }
+    const drop = currentRoom.claimWorldDrop(id, p.x, p.y);
+    if (!drop) return;
+    if (inv && _invAdd(inv, drop.item)) {
+      _persistSavedFields(authed, { inventory: inv });
+    }
+    socket.emit('worldDropPicked', { id: drop.id, item: drop.item });
+  });
+
   safeOn('marketBrowse', async () => {
     if (!authed) return;
     try {
@@ -2458,6 +2533,9 @@ io.on('connection', socket => {
       dungeon: currentRoom.dungeonData,
       enemies: currentRoom.enemySnapshot(),
       bossStatus: currentRoom.getBossStatus(),
+      // So someone logging in mid-countdown still sees the timer, and someone
+      // arriving after the kill still sees loot already lying on the floor.
+      eventBoss: eventBossState(),
     });
   });
 

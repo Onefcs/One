@@ -3150,6 +3150,61 @@ function _marketToast(text, type) {
   setTimeout(() => toast.remove(), 4000);
 }
 
+// ─────────────────────────────────────────────────────────
+//  EVENT BOSS — countdown banner + arrival/defeat announcement
+// ─────────────────────────────────────────────────────────
+// One persistent strip under the HUD counting down to the summoned boss
+// (shared/definitions.js EVENT_BOSS), replaced by a short flash message when
+// it actually arrives or dies. Created lazily so the markup lives in one
+// place instead of index.html.
+let _evtBossSpawnAt = 0, _evtBossTick = null;
+
+function _evtBossEl() {
+  let el = document.getElementById('evt-boss-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'evt-boss-banner';
+    el.style.cssText = 'position:fixed;top:74px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(22,18,10,.94);border:1px solid #d55d6b;color:#f5dbae;' +
+      'padding:8px 16px;border-radius:10px;font-size:13px;font-weight:700;z-index:350;' +
+      'pointer-events:none;max-width:88vw;text-align:center;display:none;' +
+      'box-shadow:0 4px 18px rgba(0,0,0,.5)';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// spawnAt = 0 clears the countdown (boss arrived, or nothing pending).
+function setEventBossCountdown(spawnAt) {
+  _evtBossSpawnAt = spawnAt || 0;
+  clearInterval(_evtBossTick);
+  _evtBossTick = null;
+  const el = _evtBossEl();
+  if (!_evtBossSpawnAt || _evtBossSpawnAt <= Date.now()) { el.style.display = 'none'; return; }
+  const paint = () => {
+    const left = Math.max(0, _evtBossSpawnAt - Date.now());
+    if (left <= 0) { clearInterval(_evtBossTick); _evtBossTick = null; el.style.display = 'none'; return; }
+    const m = Math.floor(left / 60000), s = Math.floor(left % 60000 / 1000);
+    el.style.borderColor = '#d55d6b';
+    el.style.display = 'block';
+    el.textContent = tVars('evtBossIncomingFmt', { time: m + ':' + String(s).padStart(2, '0') });
+  };
+  paint();
+  _evtBossTick = setInterval(paint, 1000);
+}
+
+function showEventBossBanner(text, color) {
+  clearInterval(_evtBossTick);
+  _evtBossTick = null;
+  _evtBossSpawnAt = 0;
+  const el = _evtBossEl();
+  el.style.borderColor = color || '#d55d6b';
+  el.style.display = 'block';
+  el.textContent = text;
+  clearTimeout(showEventBossBanner._t);
+  showEventBossBanner._t = setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
+
 // ── Buy flow ────────────────────────────────────────────────
 function openMarketBuyConfirm(listingId) {
   const l = _marketLots.find(x => x.id === listingId);

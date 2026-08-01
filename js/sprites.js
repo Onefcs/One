@@ -405,6 +405,18 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
     }
   },
+  // Admin-summoned world-event boss (shared/definitions.js EVENT_BOSS) — same
+  // Demon3 sheets as the arm boss above, just drawn far larger via its own
+  // size. Needs its own entry because sprites are looked up by eid.
+  demon_event_boss: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
+      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
+    }
+  },
 };
 
 // Warm up an already-loaded image so the canvas 2D pipeline never has to

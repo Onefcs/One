@@ -429,6 +429,7 @@ function _updateNpcs(dt, ts) {
 
 function _updateDrops(ts) {
   _dropGfx.clear();
+  _drawWorldDrops(ts);
   if (!drops.length) return;
   const s = Math.sin(ts * 0.0054);
   const bob = s * 3;
@@ -449,6 +450,32 @@ function _updateDrops(ts) {
       _dropGfx.drawRoundedRect(d.x - 10, d.y + bob - 10, 20, 20, 3);
       _dropGfx.lineStyle(0);
     }
+  });
+}
+
+// Event-boss ground loot (js/state.js worldDrops). Drawn as rarity-tinted
+// gems on the same graphics layer as ordinary drops, with a soft halo so a
+// field of 60+ piles reads clearly against the floor tiles.
+const _WD_RARITY_HEX = {
+  common: 0x9aa0a6, uncommon: 0x6fc46f, rare: 0x5aa8e6, epic: 0xb06fe0, legendary: 0xe0a24a,
+};
+function _drawWorldDrops(ts) {
+  if (!worldDrops || !worldDrops.size) return;
+  const s = Math.sin(ts * 0.0054);
+  const bob = s * 3;
+  const a = 0.85 + 0.15 * s;
+  worldDrops.forEach(d => {
+    const col = _WD_RARITY_HEX[d.item && d.item.rarity] || 0xc4a276;
+    const y = d.y + bob;
+    _dropGfx.beginFill(col, a * 0.18);
+    _dropGfx.drawCircle(d.x, y, 17);
+    _dropGfx.endFill();
+    _dropGfx.beginFill(col, a * 0.9);
+    _dropGfx.drawRoundedRect(d.x - 9, y - 9, 18, 18, 4);
+    _dropGfx.endFill();
+    _dropGfx.lineStyle(1.5, 0xffffff, a * 0.55);
+    _dropGfx.drawRoundedRect(d.x - 9, y - 9, 18, 18, 4);
+    _dropGfx.lineStyle(0);
   });
 }
 

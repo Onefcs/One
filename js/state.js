@@ -2,6 +2,13 @@ let canvas, ctx, W, H, DPR = 1;
 let state = 'select';
 let player = null, dungeon = null;
 let projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [], aoeRings = [];
+// Event-boss ground loot, shared by everyone: id -> {id, x, y, item}. The
+// server owns it (see pickupWorldDrop in server/index.js) — this map only
+// mirrors what's currently on the floor so it can be drawn and walked over.
+let worldDrops = new Map();
+// Pickup requests already sent and not yet answered, so walking over a pile
+// doesn't spam one emit per frame while the round trip is in flight.
+let _worldDropPending = new Map();
 let camera = { x: 0, y: 0 };
 let dungeonLvl = 1;
 let frameCount = 0, lastTs = 0;

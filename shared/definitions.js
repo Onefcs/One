@@ -532,6 +532,66 @@ function roomEnchantStoneChance(lvl) {
   return ROOM_ENCHANT_STONE_BASE * Math.pow(1 + ROOM_ENCHANT_STONE_GROWTH, Math.max(1, lvl || 1) - 1);
 }
 
+// ── Event boss (summoned from the admin panel) ──────────────────────────────
+// Not part of any room chain: spawned on demand into the hub, announced
+// EVENT_BOSS_ANNOUNCE_MS ahead, and gone for good once killed (the per-arm
+// bosses in ENEMY_DEF respawn on a timer — this one only ever comes back when
+// an admin summons it again). Its loot does NOT roll per-killer like ordinary
+// monsters: the whole table below lands on the ground at once for everyone,
+// first come first served (see rollEventBossDrops / the worldDrops system in
+// server/game/Room.js).
+const EVENT_BOSS_ANNOUNCE_MS  = 5 * 60 * 1000; // warning shown before it appears
+const EVENT_BOSS_DROP_LIFE_MS = 3 * 60 * 1000; // how long loot stays on the ground
+
+const EVENT_BOSS = {
+  eid: 'demon_event_boss',
+  name: 'Владыка Демонов',
+  color: '#ff2020',
+  // Bosses render at size*4.5 while regular monsters render at size*6.75
+  // (js/pixi-world.js) — which is why the existing demon_boss (size 32) looks
+  // no bigger than a demon warrior (size 22). "5× a regular monster" therefore
+  // means 5 * (22 * 6.75) / 4.5 ≈ 165, not simply 5 * 22.
+  size: 165,
+  hp: 100000, atk: 20, def: 1, spd: 50,
+  xp: 120, gold: 120,
+  isBoss: true, eType: 'boss',
+  // Lets this one boss act inside the hub's safe zone, which normally makes
+  // enemies drop aggro and skip every player standing there.
+  ignoresSafeZone: true,
+};
+
+const _EVENT_BOSS_ARMOR_SLOTS = ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+
+// Builds the full ground-loot list for one kill. Every entry becomes its own
+// separate pile on the floor (hence qty 1 on the stackables) so 10 keys are
+// ten things to walk over, not one stack of ten.
+function rollEventBossDrops(rand) {
+  const rnd = rand || Math.random;
+  const out = [];
+  const pick = arr => arr[Math.floor(rnd() * arr.length)];
+  const add = (base, n) => {
+    if (!base) return;
+    for (let i = 0; i < n; i++) {
+      const it = { ...base };
+      if (isStackableItem(base)) it.qty = 1;
+      else if (ENHANCEABLE_SLOTS.has(base.slot)) it.enhance = 0;
+      out.push(it);
+    }
+  };
+  const mat = id => CRAFT_MATS.find(m => m.id === id);
+
+  add(mat('key_uncommon'), 10);                                    // 10 необычных ключей
+  ITEM_DEF.filter(i => i.slot === 'buff_potion').forEach(bp => add(bp, 5)); // 6 видов × 5 = 30 зелий
+  add(pick(ITEM_DEF.filter(i => i.rarity === 'uncommon' && _EVENT_BOSS_ARMOR_SLOTS.includes(i.slot))), 1);
+  add(pick(ITEM_DEF.filter(i => i.rarity === 'uncommon' && i.slot === 'weapon')), 1);
+  const commons = ITEM_DEF.filter(i => i.rarity === 'common' &&
+    (i.slot === 'weapon' || _EVENT_BOSS_ARMOR_SLOTS.includes(i.slot)));
+  for (let i = 0; i < 5; i++) add(pick(commons), 1);               // 5 случайных common
+  add(mat('bless_stone'), 5);                                      // 5 безопасных заточек
+  add(mat('norm_stone'), 10);                                      // 10 обычных заточек
+  return out;
+}
+
 // ── Passive skills ────────────────────────────────────────────────────────────
 // Second skill track next to SKILL_DEF's active Q/W/E/R (js/definitions.js):
 // every class gets its OWN pair of passives (one ATK-flavored, one
@@ -633,4 +693,5 @@ if (typeof module !== 'undefined') module.exports = {
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
+  EVENT_BOSS, EVENT_BOSS_ANNOUNCE_MS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
 };
