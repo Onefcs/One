@@ -483,6 +483,8 @@ Object.assign(I18N_UI, {
   enterTonAddrToast: { ru: 'Введите TON-адрес', en: 'Enter a TON address', uk: 'Введіть TON-адресу', es: 'Ingresa una dirección TON', tr: 'Bir TON adresi gir', pt: 'Digite um endereço TON' },
   notEnoughFundsToast: { ru: 'Недостаточно средств', en: 'Insufficient funds', uk: 'Недостатньо коштів', es: 'Fondos insuficientes', tr: 'Yetersiz bakiye', pt: 'Fundos insuficientes' },
   withdrawRequestCreatedFmt: { ru: 'Заявка на вывод создана — к получению: {net} GRAM', en: 'Withdrawal request created — you will receive: {net} GRAM', uk: 'Заявку на виведення створено — до отримання: {net} GRAM', es: 'Solicitud de retiro creada — recibirás: {net} GRAM', tr: 'Çekim talebi oluşturuldu — alacağın: {net} GRAM', pt: 'Solicitação de saque criada — você receberá: {net} GRAM' },
+  equipBtn: { ru: 'Надеть', en: 'Equip', uk: 'Одягнути', es: 'Equipar', tr: 'Kuşan', pt: 'Equipar' },
+  sellForFmt: { ru: 'Продать за 100', en: 'Sell for 100', uk: 'Продати за 100', es: 'Vender por 100', tr: '100\'e sat', pt: 'Vender por 100' },
   skillLevelUpToast: { ru: '↑ Навык +{n} ур.!', en: '↑ Skill +{n} lvl.!', uk: '↑ Навик +{n} рів.!', es: '↑ ¡Habilidad +{n} niv.!', tr: '↑ Yetenek +{n} sv.!', pt: '↑ Habilidade +{n} nív.!' },
   passiveLevelUpToast: { ru: '↑ Пассивка +{n} ур.!', en: '↑ Passive +{n} lvl.!', uk: '↑ Пасивка +{n} рів.!', es: '↑ ¡Pasiva +{n} niv.!', tr: '↑ Pasif +{n} sv.!', pt: '↑ Passiva +{n} nív.!' },
 });

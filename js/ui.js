@@ -2363,8 +2363,8 @@ function openInvItemModal(idx) {
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
     ${enhBlock}
     <div class="imod-btns">
-      <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">Надеть</button>
-      ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">Продать за 100${iconHTML('coin',12,'#e3941d')}</button>` : ''}
+      <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">${t('equipBtn')}</button>
+      ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
