@@ -553,22 +553,40 @@ function netConnect(onReady) {
 
   socket.on('chatHistory', (msgs) => {
     if (!Array.isArray(msgs)) return;
-    const el = document.getElementById('chat-msgs');
-    if (!el) return;
-    el.innerHTML = '';
-    _chatMsgs.length = 0;
-    msgs.forEach(({ username, text, time }) => {
-      _chatMsgs.push({ username, text, time });
-      const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
-      const isMe = myName && username === myName;
-      const row = document.createElement('div');
-      row.className = 'chat-row';
-      row.innerHTML = `<div class="chat-row-hdr"><span class="chat-name${isMe ? ' is-me' : ''}">${_escHtml(username)}</span><span class="chat-time">${time}</span></div><div class="chat-text">${_escHtml(text)}</div>`;
-      el.appendChild(row);
-    });
-    el.scrollTop = el.scrollHeight;
-    _refreshChatPreview(); // shows the last history line even before any new message arrives
+    _setChannelHistory('global', _chatMsgs, 30, msgs);
   });
+
+  // ── Clan chat ─────────────────────────────────────────────
+  socket.on('clanChatMsg', ({ username, text }) => {
+    _pushChatMsg('clan', _clanChatMsgs, 30, username, text, _nowHHMM());
+  });
+  socket.on('clanChatHistory', ({ messages }) => {
+    _setChannelHistory('clan', _clanChatMsgs, 30, messages);
+  });
+
+  // ── Private messages (Беседа) ─────────────────────────────
+  // withUsername is always "the other party in this conversation" — the
+  // server sends it that way for both the sender's own echo and the
+  // recipient's live copy, so this client always knows who the thread
+  // belongs to regardless of which side originated the message.
+  socket.on('privMsg', ({ withUsername, username, text }) => {
+    if (!withUsername) return;
+    const activePartner = typeof _activeDmUser !== 'undefined' ? _activeDmUser : null;
+    if (!activePartner || activePartner.toLowerCase() !== withUsername.toLowerCase()) {
+      // Message belongs to a conversation we're not currently viewing (or none
+      // yet) — switch to it and pull the full thread instead of just this line.
+      if (typeof _setActiveDmUser === 'function') _setActiveDmUser(withUsername);
+      netRequestDmHistory(withUsername);
+      return;
+    }
+    _pushChatMsg('dm', _dmMsgs, 50, username, text, _nowHHMM());
+  });
+  socket.on('privMsgHistory', ({ withUsername, messages }) => {
+    if (typeof _setActiveDmUser === 'function') _setActiveDmUser(withUsername);
+    _setChannelHistory('dm', _dmMsgs, 50, messages);
+  });
+  socket.on('privMsgError', ({ msg }) => _chatChannelError(msg));
+  socket.on('chatError', ({ msg }) => _chatChannelError(msg));
 
   // ── Clan listeners ────────────────────────────────────────
   socket.on('clanData', data => {
@@ -1228,29 +1246,84 @@ function netChat(text) {
   if (!text || !text.trim() || !socket?.connected) return;
   socket.emit('chat', { text: text.trim().slice(0, 100) });
 }
+function netClanChat(text) {
+  if (!text || !text.trim() || !socket?.connected) return;
+  socket.emit('clanChat', { text: text.trim().slice(0, 100) });
+}
+function netPrivMsg(toUsername, text) {
+  if (!toUsername || !text || !text.trim() || !socket?.connected) return;
+  socket.emit('privMsg', { toUsername, text: text.trim().slice(0, 100) });
+}
+function netRequestClanChatHistory() {
+  if (socket?.connected) socket.emit('clanChatHistory', {});
+}
+function netRequestDmHistory(withUsername) {
+  if (withUsername && socket?.connected) socket.emit('privMsgHistory', { withUsername });
+}
 
+// ── Multi-channel chat (Общий / Клан / Беседа) ────────────────────────────
+// _chatTab ('global'|'clan'|'dm') and _activeDmUser are owned by the
+// chat-panel script in index.html (co-located with _chatOpen/_chatSend/tab
+// switching); referenced here via typeof guards, the same cross-file
+// pattern already used throughout this file (e.g. _refreshChatPreview).
 const _chatMsgs = [];
-function _addChatMsg(username, text) {
+const _clanChatMsgs = [];
+const _dmMsgs = [];
+
+function _nowHHMM() {
   const now = new Date();
-  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-  _chatMsgs.push({ username, text, time });
-  if (_chatMsgs.length > 30) _chatMsgs.shift();
+  return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+}
 
-  const el = document.getElementById('chat-msgs');
-  if (!el) return;
+function _currentChatTab() { return (typeof _chatTab !== 'undefined' && _chatTab) || 'global'; }
 
+function _chatListFor(tabKey) {
+  if (tabKey === 'clan') return _clanChatMsgs;
+  if (tabKey === 'dm') return _dmMsgs;
+  return _chatMsgs;
+}
+
+function _renderChatRow(el, username, text, time) {
   const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
   const isMe = myName && username === myName;
-
   const row = document.createElement('div');
   row.className = 'chat-row';
   row.innerHTML = `<div class="chat-row-hdr"><span class="chat-name${isMe ? ' is-me' : ''}">${_escHtml(username)}</span><span class="chat-time">${time}</span></div><div class="chat-text">${_escHtml(text)}</div>`;
   el.appendChild(row);
-  while (el.children.length > 30) el.removeChild(el.firstChild);
+}
+
+// Re-renders #chat-msgs from scratch using whichever channel's array
+// matches the currently active tab — called on tab switch (index.html) and
+// whenever a history payload lands for the tab currently on screen.
+function _renderActiveChatList() {
+  const el = document.getElementById('chat-msgs');
+  if (!el) return;
+  el.innerHTML = '';
+  _chatListFor(_currentChatTab()).forEach(m => _renderChatRow(el, m.username, m.text, m.time));
   el.scrollTop = el.scrollHeight;
+}
+
+// Pushes one live message into a channel's array. If that channel is the one
+// currently on screen it's appended immediately; otherwise it just bumps the
+// shared unread badge (one combined counter across all 3 channels) so a
+// message on a channel you're not looking at still surfaces.
+function _pushChatMsg(tabKey, list, cap, username, text, time) {
+  list.push({ username, text, time });
+  if (list.length > cap) list.shift();
+
+  const activeTabKey = _currentChatTab();
+  if (activeTabKey === tabKey) {
+    const el = document.getElementById('chat-msgs');
+    if (el) {
+      _renderChatRow(el, username, text, time);
+      while (el.children.length > cap) el.removeChild(el.firstChild);
+      el.scrollTop = el.scrollHeight;
+    }
+  }
 
   const panel = document.getElementById('chat-panel');
-  if (!panel || !panel.classList.contains('open')) {
+  const visible = panel && panel.classList.contains('open') && activeTabKey === tabKey;
+  if (!visible) {
     if (typeof _chatUnread !== 'undefined') _chatUnread++;
     const badge = document.getElementById('chat-badge');
     if (badge) {
@@ -1258,7 +1331,24 @@ function _addChatMsg(username, text) {
       badge.style.display = 'flex';
     }
   }
-  _refreshChatPreview();
+  if (tabKey === 'global') _refreshChatPreview();
+}
+
+// Replaces a channel's whole history (initial load / tab switch fetch).
+function _setChannelHistory(tabKey, list, cap, messages) {
+  list.length = 0;
+  (messages || []).forEach(m => list.push(m));
+  if (list.length > cap) list.splice(0, list.length - cap);
+  if (_currentChatTab() === tabKey) _renderActiveChatList();
+  if (tabKey === 'global') _refreshChatPreview();
+}
+
+function _chatChannelError(msg) {
+  if (typeof _marketToast === 'function') _marketToast(msg, 'err');
+}
+
+function _addChatMsg(username, text) {
+  _pushChatMsg('global', _chatMsgs, 30, username, text, _nowHHMM());
 }
 
 // Shows the most recent chat line in the floating bubble above the chat

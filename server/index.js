@@ -1126,6 +1126,45 @@ function _recordChat(username, text) {
   if (globalChatHistory.length > 30) globalChatHistory.shift();
 }
 
+// Clan chat history — last 30 per clan, keyed by clan _id (string). Same
+// ephemeral in-memory model as globalChatHistory above (resets on restart,
+// no DB persistence) — kept consistent with the rest of this chat system.
+const clanChatHistory = new Map(); // clanId string -> [{username, text, time}]
+function _recordClanChat(clanId, username, text) {
+  const key = String(clanId);
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  const arr = clanChatHistory.get(key) || [];
+  arr.push({ username, text, time });
+  if (arr.length > 30) arr.shift();
+  clanChatHistory.set(key, arr);
+}
+
+// Private messages — last 50 per conversation, keyed by the two participants'
+// telegramIds sorted into a stable pair key. Also in-memory only, same model
+// as above; resolving a conversation by username (not telegramId) works
+// whether or not the other party is currently online — only realtime
+// *delivery* requires them to be connected (see the privMsg handler).
+const dmHistory = new Map(); // "tidA|tidB" -> [{username, text, time}]
+function _dmKey(a, b) { return [String(a), String(b)].sort().join('|'); }
+function _recordDm(tidA, tidB, username, text) {
+  const key = _dmKey(tidA, tidB);
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  const arr = dmHistory.get(key) || [];
+  arr.push({ username, text, time });
+  if (arr.length > 50) arr.shift();
+  dmHistory.set(key, arr);
+}
+// Resolves a @nickname to the canonical account, whether or not they're
+// currently online (DB lookup, case-insensitive exact match — Telegram
+// handles are treated as case-insensitive everywhere else in this app).
+async function _resolveUsername(name) {
+  const target = String(name || '').trim().replace(/^@/, '');
+  if (!target) return null;
+  return PlayerModel.findOne({ username: new RegExp('^' + _escapeRegex(target) + '$', 'i') }, 'telegramId username').lean();
+}
+
 // ── Party state ───────────────────────────────────────────────────────────────
 // partyId -> Map<socketId, username>  (up to 5 members)
 const parties     = new Map();
@@ -2464,6 +2503,57 @@ io.on('connection', socket => {
     if (!msg) return;
     _recordChat(authed.username, msg);
     io.emit('chatMsg', { username: authed.username, text: msg });
+  });
+
+  // ── Clan chat — delivered only to members currently online, same
+  // "iterate connected sockets by telegramId" pattern _notifyClan uses ──
+  safeOn('clanChat', async ({ text }) => {
+    if (!authed || !text || typeof text !== 'string') return;
+    const now = Date.now();
+    if (now - _lastChatAt < 3000) return;
+    const msg = text.trim().slice(0, 100);
+    if (!msg) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return socket.emit('chatError', { channel: 'clan', msg: 'Вы не состоите в клане' });
+    _lastChatAt = now;
+    _recordClanChat(clan._id, authed.username, msg);
+    for (const m of clan.members) {
+      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      if (target) target.emit('clanChatMsg', { username: authed.username, text: msg });
+    }
+  });
+
+  safeOn('clanChatHistory', async () => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    socket.emit('clanChatHistory', { messages: clan ? (clanChatHistory.get(String(clan._id)) || []) : [] });
+  });
+
+  // ── Private messages — @mention-addressed 1:1 conversation. Resolved via
+  // DB (works even if the recipient is offline, see _resolveUsername), but
+  // only delivered live if they currently have an active socket. ──
+  safeOn('privMsg', async ({ toUsername, text }) => {
+    if (!authed || !text || typeof text !== 'string' || !toUsername) return;
+    const now = Date.now();
+    if (now - _lastChatAt < 3000) return;
+    const msg = text.trim().slice(0, 100);
+    if (!msg) return;
+    const target = await _resolveUsername(toUsername);
+    if (!target) return socket.emit('privMsgError', { msg: 'Пользователь @' + toUsername + ' не найден' });
+    if (target.telegramId === authed.telegramId) return socket.emit('privMsgError', { msg: 'Нельзя написать самому себе' });
+    _lastChatAt = now;
+    _recordDm(authed.telegramId, target.telegramId, authed.username, msg);
+    socket.emit('privMsg', { withUsername: target.username, username: authed.username, text: msg });
+    const targetSocketId = activeSessions.get(target.telegramId);
+    const targetSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : null;
+    if (targetSocket) targetSocket.emit('privMsg', { withUsername: authed.username, username: authed.username, text: msg });
+  });
+
+  safeOn('privMsgHistory', async ({ withUsername }) => {
+    if (!authed || !withUsername) return;
+    const target = await _resolveUsername(withUsername);
+    if (!target) return socket.emit('privMsgError', { msg: 'Пользователь @' + withUsername + ' не найден' });
+    socket.emit('privMsgHistory', { withUsername: target.username, messages: dmHistory.get(_dmKey(authed.telegramId, target.telegramId)) || [] });
   });
 
   safeOn('saveProgress', ({ stats }) => {

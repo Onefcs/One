@@ -198,6 +198,12 @@
     <span class="cp-title">Чат</span>
     <button class="cp-close" onclick="_chatClose()">✕</button>
   </div>
+  <div class="chat-tabs">
+    <div class="chat-tab active" id="chat-tab-global" onclick="_chatSetTab('global')">Общий</div>
+    <div class="chat-tab" id="chat-tab-clan" onclick="_chatSetTab('clan')">Клан</div>
+    <div class="chat-tab" id="chat-tab-dm" onclick="_chatSetTab('dm')">Беседа</div>
+  </div>
+  <div id="chat-dm-hdr" style="display:none"></div>
   <div id="chat-msgs"></div>
   <div class="cp-foot">
     <input id="chat-input" type="text" maxlength="100" placeholder="Сообщение..." autocomplete="off" inputmode="text">
@@ -495,6 +501,21 @@
   cursor:pointer; padding:0 2px; line-height:1; touch-action:manipulation;
 }
 .cp-close:active { color:#aaa; }
+.chat-tabs {
+  display:flex; flex-shrink:0;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  background:rgba(10,6,22,0.99);
+}
+.chat-tab {
+  flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700;
+  color:#5c5c7a; cursor:pointer; border-bottom:2px solid transparent;
+  touch-action:manipulation; transition:color .15s;
+}
+.chat-tab.active { color:#c8a0ff; border-bottom-color:#7030c0; }
+#chat-dm-hdr {
+  flex-shrink:0; padding:6px 12px; font-size:11px; color:#8a7ab8;
+  background:rgba(112,48,192,0.08); border-bottom:1px solid rgba(255,255,255,0.05);
+}
 #chat-msgs {
   flex:1; overflow-y:auto; padding:10px 12px;
   display:flex; flex-direction:column; gap:8px;
@@ -529,6 +550,14 @@
 </style>
 <script>
 let _chatUnread = 0;
+// _chatTab: which of the 3 channels is currently on screen. _activeDmUser:
+// the other party of the one "Беседа" thread currently open (null = none
+// picked yet) — see js/network.js's _pushChatMsg/_setChannelHistory, which
+// read these two to decide whether to render a message live or just bump
+// the shared unread badge.
+let _chatTab = 'global'; // 'global' | 'clan' | 'dm'
+let _activeDmUser = null;
+
 function _chatOpen() {
   _chatUnread = 0;
   const badge = document.getElementById('chat-badge');
@@ -536,6 +565,7 @@ function _chatOpen() {
   const panel = document.getElementById('chat-panel');
   if (panel) {
     panel.classList.add('open');
+    if (typeof _renderActiveChatList === 'function') _renderActiveChatList();
     const msgs = document.getElementById('chat-msgs');
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   }
@@ -547,13 +577,80 @@ function _chatClose() {
   if (panel) panel.classList.remove('open');
   if (typeof _refreshChatPreview === 'function') _refreshChatPreview(); // re-show it with the last message, if any
 }
+
+function _chatSetTab(tab) {
+  _chatTab = tab;
+  ['global', 'clan', 'dm'].forEach(t => {
+    const el = document.getElementById('chat-tab-' + t);
+    if (el) el.classList.toggle('active', t === tab);
+  });
+  if (tab === 'clan' && typeof netRequestClanChatHistory === 'function') netRequestClanChatHistory();
+  _updateChatDmHdr();
+  _updateChatPlaceholder();
+  if (typeof _renderActiveChatList === 'function') _renderActiveChatList();
+}
+
+// Switches the one active "Беседа" thread. Clears the stale DM buffer on an
+// actual partner change so an old conversation never flashes before the
+// server's fresh privMsgHistory reply repopulates it (see js/network.js).
+function _setActiveDmUser(username) {
+  const changed = (_activeDmUser || '').toLowerCase() !== (username || '').toLowerCase();
+  _activeDmUser = username || null;
+  if (changed && typeof _dmMsgs !== 'undefined') _dmMsgs.length = 0;
+  if (_chatTab !== 'dm') { _chatSetTab('dm'); return; }
+  _updateChatDmHdr();
+  _updateChatPlaceholder();
+  if (changed && typeof _renderActiveChatList === 'function') _renderActiveChatList();
+}
+
+function _updateChatDmHdr() {
+  const hdr = document.getElementById('chat-dm-hdr');
+  if (!hdr) return;
+  if (_chatTab !== 'dm') { hdr.style.display = 'none'; return; }
+  hdr.style.display = 'block';
+  hdr.textContent = _activeDmUser ? ('Беседа с @' + _activeDmUser) : 'Отметьте @ник в сообщении, чтобы начать беседу';
+}
+
+function _updateChatPlaceholder() {
+  const inp = document.getElementById('chat-input');
+  if (!inp) return;
+  if (_chatTab === 'dm') inp.placeholder = _activeDmUser ? ('Сообщение @' + _activeDmUser + '...') : '@ник сообщение...';
+  else if (_chatTab === 'clan') inp.placeholder = 'Сообщение клану...';
+  else inp.placeholder = 'Сообщение...';
+}
+
 function _chatSend() {
   const inp = document.getElementById('chat-input');
-  const txt = inp.value.trim();
-  if (txt && typeof netChat === 'function') netChat(txt);
+  const raw = inp.value.trim();
+  if (!raw) return;
+
+  // "@nick text" anywhere routes as a private message and switches to
+  // Беседа with that person, regardless of which tab was open — this is
+  // the one way to start/continue a conversation. "@nick" alone (no text
+  // after it) just opens that conversation without sending anything.
+  const mention = raw.match(/^@(\S+)\s*([\s\S]*)$/);
+  if (mention) {
+    const toUser = mention[1], rest = mention[2].trim();
+    _setActiveDmUser(toUser);
+    if (typeof netRequestDmHistory === 'function') netRequestDmHistory(toUser);
+    if (rest && typeof netPrivMsg === 'function') netPrivMsg(toUser, rest);
+    inp.value = '';
+    inp.focus();
+    return;
+  }
+
+  if (_chatTab === 'clan') {
+    if (typeof netClanChat === 'function') netClanChat(raw);
+  } else if (_chatTab === 'dm') {
+    if (_activeDmUser && typeof netPrivMsg === 'function') netPrivMsg(_activeDmUser, raw);
+    else if (typeof _chatChannelError === 'function') _chatChannelError('Отметьте @ник, чтобы написать');
+  } else if (typeof netChat === 'function') {
+    netChat(raw);
+  }
   inp.value = '';
   inp.focus();
 }
+
 document.addEventListener('keydown', e => {
   const panel = document.getElementById('chat-panel');
   if (e.key === 'Enter' && panel && panel.classList.contains('open')) { _chatSend(); e.preventDefault(); }
