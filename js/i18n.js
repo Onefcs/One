@@ -852,12 +852,27 @@ function applyLocale(lang) {
 
   applyDomTranslations();
   // Re-render whatever's currently visible so the switch shows up immediately.
-  if (typeof updateInvUI === 'function') updateInvUI();
-  if (typeof updateProfileUI === 'function') updateProfileUI();
-  if (typeof updateQuestUI === 'function') updateQuestUI();
-  if (typeof updateSpecialQuestUI === 'function' && typeof _activeQuestTab !== 'undefined' && _activeQuestTab === 'special') updateSpecialQuestUI();
-  if (typeof renderVipPanel === 'function' && typeof window._vipData !== 'undefined') { try { renderVipPanel(); } catch (_) {} }
-  if (typeof _renderLangPicker === 'function') _renderLangPicker();
+  // Wrapped in try/catch: applyLocale() runs once at page load (initLocale(),
+  // called from the bottom of js/network.js) *before* later-loading bundle
+  // files (js/quests.js, js/clans.js, js/game.js, js/npc.js — see
+  // BUNDLE_FILES in server/index.js) have executed their own top-level
+  // `let`/`const` declarations. Referencing one of those bindings here even
+  // via `typeof` throws (TDZ — unlike a truly undeclared name, `typeof` does
+  // NOT safely return 'undefined' for a `let`/`const` that exists later in
+  // the same concatenated script but hasn't been reached yet), and an
+  // uncaught throw here would abort every top-level statement after it in
+  // network.js — including _initTelegramWidget(), i.e. the whole game would
+  // never start. Hit exactly this with _activeQuestTab (js/quests.js).
+  try {
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof updateProfileUI === 'function') updateProfileUI();
+    if (typeof updateQuestUI === 'function') updateQuestUI();
+    if (typeof updateSpecialQuestUI === 'function' && typeof _activeQuestTab !== 'undefined' && _activeQuestTab === 'special') updateSpecialQuestUI();
+    if (typeof renderVipPanel === 'function' && typeof window._vipData !== 'undefined') renderVipPanel();
+    if (typeof _renderLangPicker === 'function') _renderLangPicker();
+  } catch (err) {
+    console.error('[i18n] applyLocale re-render skipped:', err);
+  }
 }
 
 // Persisted via localStorage immediately (works even before login) and
