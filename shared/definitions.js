@@ -254,6 +254,11 @@ function _itemTierStartChancePct(rarity) {
   for (let i = 0; i < _ITEM_RARITY_ORDER.indexOf(rarity); i++) pct /= ITEM_TIER_STEPDOWN;
   return pct;
 }
+// Extra multiplier applied uniformly across one rarity's whole curve (start
+// AND end alike), on top of the geometric chain above — a knob for tuning a
+// single tier's overall drop rate without disturbing the /5 step-down chain
+// the other tiers derive their own start from.
+const _ITEM_TIER_EXTRA_MULT = { uncommon: 0.1 };
 // Last level still inside a given tier (one level before the next tier's
 // _itemTierMinLevel, or the world's max level for legendary).
 function _itemTierMaxLevel(rarity) {
@@ -271,7 +276,7 @@ function itemDropChanceAtLevel(lvl) {
   const span = Math.max(1, tierMax - tierMin);
   const frac = Math.min(1, (lvl - tierMin) / span);
   const pct = startPct * Math.pow(endPct / startPct, frac);
-  return Math.min(100, pct);
+  return Math.min(100, pct * (_ITEM_TIER_EXTRA_MULT[rarity] || 1));
 }
 
 // ── Open-world corridors ──────────────────────────────────────────────────────

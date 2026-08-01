@@ -907,8 +907,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
         const className = (CHAR_DEF[b.forClass] || {}).name || b.forClass;
         const label = `${b.name} <span style="opacity:.6">(${className})</span>`;
         return isBoss
-          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allBooks.length * 0.01)}</b>`, '#98e456')
-          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.0002 * Math.min(dropMult, 3) / allBooks.length * 100)}</b>`);
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allBooks.length * 0.001)}</b>`, '#98e456')
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allBooks.length * 100)}</b>`);
       }).join('');
       bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
@@ -925,8 +925,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
           ? `${b.name} <span style="opacity:.6">(${(CHAR_DEF[b.forClass] || {}).name || b.forClass})</span>`
           : `${b.name} <span style="opacity:.6">(${t('commonTag')})</span>`;
         return isBoss
-          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.01)}</b>`, '#98e456')
-          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.0002 * Math.min(dropMult, 3) / allPassiveBooks.length * 100)}</b>`);
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.001)}</b>`, '#98e456')
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allPassiveBooks.length * 100)}</b>`);
       }).join('');
       passiveBookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('passiveBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }

@@ -144,19 +144,19 @@ function applyLootToInventory(eid, rlvl) {
   // js/ui.js spend these to unlock and level up Q/W/E/R). Any class's book
   // can drop from any monster now, not just the killing player's own — a
   // book for a class you're not playing is just something to sell on the
-  // Market to whoever needs it. Both chances are 100x rarer than the
+  // Market to whoever needs it. Both chances are 1000x rarer than the
   // original tuning (was: boss guaranteed, regular 0.02×dropMult).
   const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
   if (_allBooks.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.01) {
+      if (Math.random() < 0.001) {
         const book = _allBooks[Math.floor(Math.random() * _allBooks.length)];
         if (addToInventoryQty({ ...book }, 2)) {
           dmgNum(player.x, player.y - 84, '+ 2× ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
           saved = true;
         }
       }
-    } else if (Math.random() < 0.0002 * Math.min(_dropMult, 3)) {
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
       const book = _allBooks[Math.floor(Math.random() * _allBooks.length)];
       if (addToInventory({ ...book })) {
         dmgNum(player.x, player.y - 84, '+ ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
@@ -172,14 +172,14 @@ function applyLootToInventory(eid, rlvl) {
   const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
   if (_allPassiveBooks.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.01) {
+      if (Math.random() < 0.001) {
         const book = _allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)];
         if (addToInventoryQty({ ...book }, 2)) {
           dmgNum(player.x, player.y - 98, '+ 2× ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
           saved = true;
         }
       }
-    } else if (Math.random() < 0.0002 * Math.min(_dropMult, 3)) {
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
       const book = _allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)];
       if (addToInventory({ ...book })) {
         dmgNum(player.x, player.y - 98, '+ ' + book.name, RARITY_COLOR['uncommon'] || '#98e456');
