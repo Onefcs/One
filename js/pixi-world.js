@@ -782,22 +782,49 @@ const _PLAYER_DISPLAY_H = 68 * 1.1;
 // which blurs it, and re-centering it every frame from live text metrics is
 // what caused the jitter. The overlay draws text at native screen resolution
 // every frame, exactly like the local player's own name/clan tag already do.
-// ── rating-leader aura ────────────────────────────────────
-// The #1 player in the rating (server/index.js _refreshTopPlayer tells every
-// client who that is) is wrapped in a golden aura so they're recognisable on
-// sight. Drawn on its own Graphics UNDER the sprite, so it reads as light
-// around the character rather than paint on top of them.
+// ── status auras ──────────────────────────────────────────
+// Two ranks of player wear a light aura so they're recognisable on sight:
+//   • the #1 player in the rating (server/index.js _refreshTopPlayer tells
+//     every client who that is) — purple, since it's the rarer of the two;
+//   • anyone at VIP 2 or above who is currently online (server/index.js
+//     _vipAuraUsers / the 'vipAuras' broadcast) — gold.
+// Top-1 outranks VIP, so the leader shows purple even when they're also VIP.
+// Drawn on its own Graphics UNDER the sprite, so it reads as light around
+// the character rather than paint on top of them.
 //
 // Everything here is flat Graphics — the strict CSP this game ships under
 // rules out loading a glow texture, so the soft falloff is faked with a few
-// stacked translucent ellipses, cheapest-first. Only ever one player wears
-// this, so the per-frame redraw it forces costs one Graphics rebuild.
+// stacked translucent ellipses, cheapest-first. Each aura forces one
+// Graphics rebuild per frame for the player wearing it.
+const _AURA_PALETTES = {
+  // pool: ground light · halo: body light · core: hot centre ·
+  // rim: pool outline · ray: sweeping spokes · mote: rising sparks
+  gold:   { pool: 0xffc63c, halo: 0xffd76a, core: 0xfff3cf, rim: 0xffe9a8, ray: 0xffd76a, mote: 0xfff0c0 },
+  purple: { pool: 0x9b3fe0, halo: 0xb56cf0, core: 0xf3e2ff, rim: 0xd8a8ff, ray: 0xb56cf0, mote: 0xe8c8ff },
+};
+
 function isTopPlayer(username) {
   const top = window._topPlayer;
   return !!top && !!username && username === top;
 }
 
-function _drawTopAura(g, cx, cy, ts) {
+function hasVipAura(username) {
+  const set = window._vipAuraUsers;
+  return !!set && !!username && set.has(username);
+}
+
+// Which aura (if any) this username wears — 'purple' | 'gold' | null.
+// Returning a plain key lets callers cheaply detect a change (and skip the
+// redraw/clear) without re-deriving the whole thing.
+function auraKindFor(username) {
+  if (isTopPlayer(username)) return 'purple';
+  if (hasVipAura(username))  return 'gold';
+  return null;
+}
+
+function _drawAura(g, cx, cy, ts, kind) {
+  const c = _AURA_PALETTES[kind];
+  if (!c) return;
   const t     = ts * 0.001;
   const pulse = 0.5 + 0.5 * Math.sin(t * 2.2);
   const gy    = cy + 6;                       // ground contact, just below the feet
@@ -807,24 +834,24 @@ function _drawTopAura(g, cx, cy, ts) {
   // between them read as visible rings instead of as light.
   for (let i = 10; i >= 1; i--) {
     const r = 6 + i * 2.9 + pulse * 2;
-    g.beginFill(0xffc63c, 0.020 + 0.013 * (11 - i));
+    g.beginFill(c.pool, 0.020 + 0.013 * (11 - i));
     g.drawEllipse(cx, gy, r, r * 0.42);
     g.endFill();
   }
   // Body halo — vertical, so the character stands inside the light rather
   // than on top of a lit patch.
   for (let i = 7; i >= 1; i--) {
-    g.beginFill(0xffd76a, 0.013 + 0.009 * (8 - i));
+    g.beginFill(c.halo, 0.013 + 0.009 * (8 - i));
     g.drawEllipse(cx, cy - 12, 12 + i * 2.6, 20 + i * 3.6);
     g.endFill();
   }
   // Bright core where the light meets the floor.
-  g.beginFill(0xfff3cf, 0.10 + 0.06 * pulse);
+  g.beginFill(c.core, 0.10 + 0.06 * pulse);
   g.drawEllipse(cx, gy, 11, 4.6);
   g.endFill();
   // Rim of the pool.
   const rr = 25 + pulse * 2.5;
-  g.lineStyle(2, 0xffe9a8, 0.40 + 0.25 * pulse);
+  g.lineStyle(2, c.rim, 0.40 + 0.25 * pulse);
   g.drawEllipse(cx, gy, rr, rr * 0.42);
   g.lineStyle(0);
   // Rays sweeping around the rim, at two speeds so the motion isn't a rigid
@@ -832,7 +859,7 @@ function _drawTopAura(g, cx, cy, ts) {
   for (let i = 0; i < 8; i++) {
     const a  = t * 0.7 + (i * Math.PI * 2) / 8;
     const r1 = 30 + 5 * Math.sin(t * 3 + i);
-    g.lineStyle(2, 0xffd76a, 0.16 + 0.16 * pulse);
+    g.lineStyle(2, c.ray, 0.16 + 0.16 * pulse);
     g.moveTo(cx + Math.cos(a) * 13, gy + Math.sin(a) * 13 * 0.42);
     g.lineTo(cx + Math.cos(a) * r1, gy + Math.sin(a) * r1 * 0.42);
   }
@@ -841,7 +868,7 @@ function _drawTopAura(g, cx, cy, ts) {
   for (let i = 0; i < 5; i++) {
     const a  = t * 1.1 + (i * Math.PI * 2) / 5;
     const ry = ((t * 22 + i * 15) % 46);
-    g.beginFill(0xfff0c0, 0.5 * (1 - ry / 46));
+    g.beginFill(c.mote, 0.5 * (1 - ry / 46));
     g.drawCircle(cx + Math.cos(a) * 17, gy - ry, 1.7);
     g.endFill();
   }
@@ -872,19 +899,19 @@ function _updateOtherPlayers(pulse, ts) {
     ct.visible = true;
     ct.x = p.x; ct.y = p.y;
 
-    // Rating leader's aura. Animated, so unlike the gfx layer below it can't
-    // sit behind the needsRedraw guard — but it only ever runs for one player.
-    // Drawn in container-local space, hence 0,0.
-    const isTop = isTopPlayer(p.username);
-    if (isTop) {
+    // Rating-leader / VIP aura. Animated, so unlike the gfx layer below it
+    // can't sit behind the needsRedraw guard. Drawn in container-local
+    // space, hence 0,0.
+    const auraKind = auraKindFor(p.username);
+    if (auraKind) {
       aura.clear();
-      _drawTopAura(aura, 0, 0, ts);
+      _drawAura(aura, 0, 0, ts, auraKind);
       aura.visible = true;
-    } else if (obj._auraOn) {
+    } else if (obj._auraKind) {
       aura.clear();
       aura.visible = false;
     }
-    obj._auraOn = isTop;
+    obj._auraKind = auraKind;
 
     const isSelected = pid === targetId && targetIsPlayer;
     const swinging = (p._swingTimer || 0) > 0;
@@ -1001,9 +1028,9 @@ function _updatePlayer(dt, ts) {
   // The leader sees their own aura too. netUsername is this client's own name,
   // the same value the rating table matches on.
   _plAura.clear();
-  const _selfTop = isTopPlayer(typeof netUsername !== 'undefined' ? netUsername : null);
-  _plAura.visible = _selfTop;
-  if (_selfTop) _drawTopAura(_plAura, player.x, player.y, ts);
+  const _selfAura = auraKindFor(typeof netUsername !== 'undefined' ? netUsername : null);
+  _plAura.visible = !!_selfAura;
+  if (_selfAura) _drawAura(_plAura, player.x, player.y, ts, _selfAura);
 
   const key      = getSpriteAnimKey(player);
   const textures = _playerTextures(player.type, key);

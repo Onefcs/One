@@ -1337,6 +1337,33 @@ async function _refreshTopPlayer() {
   } catch (err) { console.error('_refreshTopPlayer:', err); }
 }
 
+// ── VIP aura roster ───────────────────────────────────────────────────────────
+// Usernames of currently-online players at VIP_AURA_MIN_LEVEL or above, so
+// every client can draw their aura. Broadcast as a plain username list — the
+// same shape/pattern as _topPlayerUsername above — rather than adding a field
+// to the per-player gameState entries, because those go through the binary
+// codec (shared/netcodec.js) and VIP level changes at most once per purchase;
+// paying for it in every world packet, forever, would be absurd.
+const VIP_AURA_MIN_LEVEL = 2;
+const _vipAuraUsers = new Set();
+
+function _broadcastVipAuras() {
+  io.emit('vipAuras', { usernames: [..._vipAuraUsers] });
+}
+
+// Called whenever an account's online/VIP state changes (login, logout, a
+// GRAM purchase that levels them up). No-ops unless the roster really
+// changed, so a login storm doesn't turn into a broadcast storm.
+function _setVipAura(username, vipLevel) {
+  if (!username) return;
+  const should = (vipLevel || 0) >= VIP_AURA_MIN_LEVEL;
+  const had = _vipAuraUsers.has(username);
+  if (should === had) return;
+  if (should) _vipAuraUsers.add(username);
+  else _vipAuraUsers.delete(username);
+  _broadcastVipAuras();
+}
+
 // Global chat history — last CHAT_HISTORY_MAX messages across all floors.
 // Unlike clan chat and DMs below, this one is DB-backed (models/ChatMessage):
 // the in-memory array stays the hot path every read goes through, and Mongo
@@ -2173,7 +2200,8 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername });
+      _setVipAura(doc.username, socket.data.vipLevel);
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -2229,7 +2257,8 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername });
+      _setVipAura(doc.username, socket.data.vipLevel);
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -2413,6 +2442,7 @@ io.on('connection', socket => {
         if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
       }
       socket.data.vipLevel = _vipLvl;
+      _setVipAura(authed.username, _vipLvl);
 
       socket.emit('gramShopResult', {
         pkgId,
@@ -2934,11 +2964,18 @@ io.on('connection', socket => {
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
 
-      // Party members on the same floor (excluding attacker)
+      // Party members near enough to have actually taken part (excluding the
+      // attacker). The floor check alone was never a proximity test — the
+      // whole world is one shared floor (MAX_FLOOR = 1), so it passed for
+      // every member no matter where they were, and someone parked across
+      // the map collected a full XP/gold share off every kill.
       const memberIds = [];
       if (partyMap) {
         partyMap.forEach((_, mid) => {
-          if (mid !== socket.id && playerFloorMap.get(mid) === currentFloor) memberIds.push(mid);
+          if (mid === socket.id) return;
+          if (playerFloorMap.get(mid) !== currentFloor) return;
+          if (!currentRoom.arePlayersNear(socket.id, mid)) return;
+          memberIds.push(mid);
         });
       }
 
@@ -3058,10 +3095,14 @@ io.on('connection', socket => {
       if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
+      // Same proximity requirement as the basic-attack kill above.
       const memberIds  = [];
       if (partyMap) {
         partyMap.forEach((_, mid) => {
-          if (mid !== socket.id && playerFloorMap.get(mid) === currentFloor) memberIds.push(mid);
+          if (mid === socket.id) return;
+          if (playerFloorMap.get(mid) !== currentFloor) return;
+          if (!currentRoom.arePlayersNear(socket.id, mid)) return;
+          memberIds.push(mid);
         });
       }
       const _arm2 = armIndexForLevel(result.rlvl);
@@ -3146,11 +3187,18 @@ io.on('connection', socket => {
   });
 
   safeOn('faithShield', ({ duration }) => {
+    if (!currentRoom) return;
     const partyId = playerParty.get(socket.id);
     const partyMap = partyId ? parties.get(partyId) : null;
     if (!partyMap) return;
     partyMap.forEach((_, mid) => {
-      if (mid !== socket.id) io.to(mid).emit('faithShieldBuff', { duration });
+      if (mid === socket.id) return;
+      // Buffs the caster's party, not the caster's friends list: this had no
+      // distance (or even floor) check at all, so the shield reached every
+      // member wherever they were on the map. Same radius as the shared
+      // XP/gold and the party heal — see arePlayersNear.
+      if (!currentRoom.arePlayersNear(socket.id, mid)) return;
+      io.to(mid).emit('faithShieldBuff', { duration });
     });
   });
 
@@ -3275,6 +3323,8 @@ io.on('connection', socket => {
     partyMap.forEach((_, mid) => {
       if (mid === socket.id) return;
       if (playerFloorMap.get(mid) !== currentFloor) return;
+      // Only members actually standing with the healer — see arePlayersNear.
+      if (!currentRoom.arePlayersNear(socket.id, mid)) return;
       if (currentRoom.healPartyMember(mid, healAmt))
         io.to(mid).emit('healPartyMember', { amount: healAmt });
     });
@@ -4013,6 +4063,11 @@ io.on('connection', socket => {
         activeSessions.delete(_tid);
         _gramBalanceCache.delete(_tid);
         _nexumBalanceCache.delete(_tid);
+        // Drop their aura from the roster — but only when this socket is
+        // still the account's active session. On a reconnect the new socket
+        // has already claimed it (and re-registered the aura), and clearing
+        // it here would blank the aura of a player who is very much online.
+        _setVipAura(authed.username, 0);
       }
     } else {
       socket.data._flushNow?.();

@@ -81,6 +81,13 @@ const LEASH_R2  = 420 * 420;      // max distance from spawn before leash trigge
 // Players render on a ~700px-wide viewport — 600px AOI covers everything visible
 // with margin, at 2.25× less area than the 900px enemy AOI.
 const PLAYER_AOI_R2 = 600 * 600;
+// Party rewards (shared XP/gold, the healer's party heal) only reach members
+// who are actually there for the fight. Set a little wider than PLAYER_AOI_R2
+// so someone right at the edge of the screen — visible, but whose exact
+// position the client and server may disagree on by a few frames of movement
+// — still counts, instead of flickering in and out of the share.
+const PARTY_SHARE_R = 700;
+const PARTY_SHARE_R2 = PARTY_SHARE_R * PARTY_SHARE_R;
 // At most this many other players per packet (screen fits ~15). Bounds the
 // N² blowup when hundreds of players stack in one spot.
 const PLAYER_CAP = 20;
@@ -925,6 +932,19 @@ class Room {
     if (!p || p.hp <= 0) return false;
     p.hp = Math.min(p.maxHp, p.hp + amount);
     return true;
+  }
+
+  // Are these two players close enough to share party rewards/heals? Both
+  // must actually be in this room. Used by the kill-reward split and the
+  // party heal in server/index.js — the world is a single shared floor, so
+  // "same floor" was never a real proximity check and a party member parked
+  // anywhere on the map still collected a full share.
+  arePlayersNear(socketIdA, socketIdB) {
+    const a = this.players.get(socketIdA);
+    const b = this.players.get(socketIdB);
+    if (!a || !b) return false;
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return dx * dx + dy * dy <= PARTY_SHARE_R2;
   }
 
   stop() { clearInterval(this._interval); }

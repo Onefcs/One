@@ -97,7 +97,7 @@ function netConnect(onReady) {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer }) => {
+  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras }) => {
     _authOkReceived = true;
     netUsername = username;
     // Rating leader, for the aura in pixi-world.js. Carried on authOk so a
@@ -125,6 +125,10 @@ function netConnect(onReady) {
     window._refLink       = refLink       || '';
     window._vipData       = vipData       || { level: 0, deposited: 0, pending: [] };
     window._nexumBalance  = nexumBalance  || 0;
+    // Usernames of online VIP players who get an aura (js/pixi-world.js).
+    // Sent as a whole roster, both here and via the 'vipAuras' broadcast
+    // below, so it self-heals rather than drifting on a missed delta.
+    window._vipAuraUsers = new Set(vipAuras || []);
 
     // netConnect()'s 'connect' handler re-sends the login on EVERY socket.io
     // reconnect, not just the first — mobile network drops/backgrounding
@@ -587,6 +591,10 @@ function netConnect(onReady) {
   // Sent to everyone, so the glow moves the moment the top spot does.
   socket.on('topPlayer', ({ username } = {}) => {
     window._topPlayer = username || null;
+  });
+
+  socket.on('vipAuras', ({ usernames } = {}) => {
+    window._vipAuraUsers = new Set(usernames || []);
   });
 
   // One boss per corridor — bossStatus is a map keyed by arm name
