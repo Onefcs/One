@@ -30,6 +30,22 @@ let _isReconnectRejoin = false;
 // savedData because the backup was newer — the gameStart restore then pushes
 // it back so the DB catches up. See _pickFreshestSave / the unload-save note.
 let _restoredFromBackup = false;
+// True only once gameStart's non-reconnect branch has actually run
+// restoreFromSave() (or made the deliberate "no data yet, start fresh" call
+// for a genuinely new account) at least once this session. The authOk
+// reconnect-guard below used to key off `player` merely being non-null, but
+// `player` is already assigned (blank, via makePlayer() in selectChar())
+// the instant the FIRST authOk's char-select flow starts — well before its
+// matching gameStart/restoreFromSave has round-tripped. A slow/flaky
+// connection that drops and reconnects in that window made a second authOk
+// arrive while player was still that blank object, which the old check
+// couldn't tell apart from a legitimate live reconnect: it took the
+// reconnect branch, sent the blank stats to the server as "current", and the
+// very next autosave persisted them — wiping progress (see the '_lastStats'
+// guard added in server/index.js's selectChar handler for the matching
+// server-side half of this fix). Until this flag is true, every authOk is
+// treated as the original fresh login, however many reconnects happen first.
+let _playerRestored = false;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
@@ -102,7 +118,7 @@ function netConnect(onReady) {
     // already have a live player, this is a reconnect, not a fresh login:
     // just re-establish the server-side room/floor with our current
     // in-memory stats and leave the local player untouched.
-    if (typeof player !== 'undefined' && player) {
+    if (typeof player !== 'undefined' && player && _playerRestored) {
       _isReconnectRejoin = true;
       netSelectChar(player.type, _buildSaveStats());
       return;
@@ -220,6 +236,11 @@ function netConnect(onReady) {
     // account, not per-type, so don't gate restoration on a .type match.
     const restore = _savedData || null;
     if (restore) { restoreFromSave(restore); _savedData = null; }
+    // Either real data just got restored above, or there genuinely was none
+    // (brand-new account) — either way the fresh-login decision has now been
+    // made for real, so any authOk from here on is a genuine reconnect. See
+    // _playerRestored's declaration for the race this closes.
+    _playerRestored = true;
     csOnServerReady();
     // If the restore came from the local backup (server DB was behind because a
     // prior unload couldn't flush), push it straight back so the server and DB
@@ -1223,9 +1244,24 @@ function _clearSaveBackup() {
 // backup only wins when it is strictly newer by its savedAt stamp, so a save
 // that did reach the server (newer server savedAt) is always preferred and
 // multi-device play resolves correctly by wall-clock.
+// Mirrors the server's _looksLikeCatastrophicReset (server/index.js) —
+// same "lvl 1, no gold, nothing in inventory/equipment" shape check, applied
+// client-side. A backup that looks like a fresh/blank character must not be
+// allowed to beat a server save with real progress just because its savedAt
+// stamp is newer: that's exactly what got written locally by
+// _emitSaveProgress's (synchronous) _writeSaveBackup call during the
+// poisoned-reconnect race the _playerRestored guard above now closes —
+// without this check, a backup left over from before that fix landed would
+// keep re-infecting every future login even after the race itself is gone.
+function _looksBlankSave(s) {
+  if (!s) return true;
+  return (s.lvl || 1) <= 1 && (s.gold || 0) === 0 &&
+    (s.inventory || []).length === 0 && Object.keys(s.equipment || {}).length === 0;
+}
 function _pickFreshestSave(srv) {
   const bak = _readSaveBackup();
   if (bak && bak.type && (bak.savedAt || 0) > (srv?.savedAt || 0)) {
+    if (_looksBlankSave(bak) && !_looksBlankSave(srv)) return srv;
     _restoredFromBackup = true;
     return bak;
   }

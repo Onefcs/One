@@ -2778,7 +2778,22 @@ io.on('connection', socket => {
     // back to the server's copy instead of leaving _lastStats unset, which
     // would let the next debounced saveProgress persist fresh/default stats
     // over real progress.
-    const effectiveSaved = _sanitizeSavedStats(savedStats || authed.savedData || null);
+    //
+    // A client can also send a well-formed but BLANK object here — a fresh
+    // makePlayer() sent by a socket.io reconnect that raced ahead of its own
+    // restoreFromSave (a flaky/slow connection during the loading window is
+    // exactly what triggers this: see the _playerRestored guard in
+    // js/network.js's authOk handler). That object is truthy, so it slips
+    // past the "sent nothing" fallback above. Catch it the same way
+    // saveProgress already catches a blank autosave — refuse to let it
+    // overwrite a real DB record, which is what _lastStats (read by every
+    // later saveProgress's own catastrophic-reset check) would otherwise be
+    // poisoned with for the rest of this connection.
+    const sanitized = _sanitizeSavedStats(savedStats || null);
+    const blankOverReal = sanitized && authed.savedData && _looksLikeCatastrophicReset(authed.savedData, sanitized);
+    const effectiveSaved = blankOverReal
+      ? _sanitizeSavedStats(authed.savedData)
+      : (sanitized || _sanitizeSavedStats(authed.savedData || null));
     if (effectiveSaved) _lastStats = effectiveSaved;
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
