@@ -46,6 +46,18 @@ let _restoredFromBackup = false;
 // server-side half of this fix). Until this flag is true, every authOk is
 // treated as the original fresh login, however many reconnects happen first.
 let _playerRestored = false;
+// Last-ditch backstop for the same class of bug as _playerRestored, covering
+// any path (present or future) that reaches state==='playing' without real
+// data behind it. _accountIsNew comes straight from authOk's isNewAccount —
+// the server's own "this telegramId had no record" answer, the only reliable
+// way to tell "this character legitimately has nothing yet" apart from "the
+// character has progress but this session failed to load it." _sessionHasRealData
+// records whether the restore that actually ran carried anything. Together
+// they let _emitSaveProgress refuse to write a blank save (to the DB *or* to
+// the localStorage backup) for an account the server says already exists —
+// the write that turned the load-time race below into permanent data loss.
+let _accountIsNew = false;
+let _sessionHasRealData = false;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
@@ -101,6 +113,11 @@ function netConnect(onReady) {
       try { localStorage.removeItem('_lastCharType'); } catch (_) {}
       if (typeof _clearSaveBackup === 'function') _clearSaveBackup();
     }
+    // Only ever widens (never resets to false on a later authOk): once the
+    // server has told us this account is brand new, a reconnect's authOk
+    // reporting otherwise must not retroactively lock this session out of
+    // saving its first, still-empty state. See _emitSaveProgress.
+    if (isNewAccount) _accountIsNew = true;
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     // Store GRAM info globally
     window._gramBalance   = gramBalance   || 0;
@@ -236,6 +253,10 @@ function netConnect(onReady) {
     // account, not per-type, so don't gate restoration on a .type match.
     const restore = _savedData || null;
     if (restore) { restoreFromSave(restore); _savedData = null; }
+    // Did the data we just restored actually carry progress? Recorded before
+    // anything can save, so _emitSaveProgress can tell "this character really
+    // is empty" from "this session never managed to load the character".
+    if (restore && !_looksBlankSave(restore)) _sessionHasRealData = true;
     // Either real data just got restored above, or there genuinely was none
     // (brand-new account) — either way the fresh-login decision has now been
     // made for real, so any authOk from here on is a genuine reconnect. See
@@ -1253,10 +1274,18 @@ function _clearSaveBackup() {
 // poisoned-reconnect race the _playerRestored guard above now closes —
 // without this check, a backup left over from before that fix landed would
 // keep re-infecting every future login even after the race itself is gone.
+// NB: counts only FILLED equipment slots, not keys. The client's live
+// player.equipment always carries all EQ_SLOTS keys with null values (see
+// makePlayer in js/player.js), so a plain Object.keys().length — which is
+// what the server's copy of this check can safely use, since
+// _sanitizeSavedStats drops the nulls before it ever sees the object —
+// reads 8 here even for a brand-new blank character and would silently
+// never fire.
 function _looksBlankSave(s) {
   if (!s) return true;
+  const equipped = Object.values(s.equipment || {}).filter(Boolean).length;
   return (s.lvl || 1) <= 1 && (s.gold || 0) === 0 &&
-    (s.inventory || []).length === 0 && Object.keys(s.equipment || {}).length === 0;
+    (s.inventory || []).length === 0 && equipped === 0;
 }
 function _pickFreshestSave(srv) {
   const bak = _readSaveBackup();
@@ -1270,7 +1299,21 @@ function _pickFreshestSave(srv) {
 
 function _emitSaveProgress() {
   if (!player || state !== 'playing') return;
+  // Never let a session that hasn't got real data behind it write a blank
+  // save. In the normal flow this is unreachable (state only becomes
+  // 'playing' after gameStart ran the restore), so it costs nothing — but it
+  // is the single choke point every save path in the game funnels through,
+  // and blank-save-over-real-progress is exactly the failure that cost a
+  // player their character. The DB half is already guarded server-side
+  // (_looksLikeCatastrophicReset in saveProgress/selectChar); this also stops
+  // the *localStorage backup* from being overwritten with the blank state,
+  // which is what made that loss survive a reload and outlive the fix.
+  // _accountIsNew accounts are exempt: their first save legitimately is blank.
   const stats = _buildSaveStats();
+  if (!_accountIsNew && !_sessionHasRealData && _looksBlankSave(stats)) {
+    console.warn('[save] refusing to persist a blank save for an existing account — no real data loaded this session');
+    return;
+  }
   _writeSaveBackup(stats); // synchronous — lands even when the emit below is lost to unload
   if (socket?.connected) socket.emit('saveProgress', { stats });
 }
