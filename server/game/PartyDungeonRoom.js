@@ -98,18 +98,32 @@ class PartyDungeonRoom {
     if (this.onPlayerDeath) this.onPlayerDeath(socketId);
   }
 
+  // The only caller (_syncPdStats in server/index.js) feeds this straight from
+  // the player's floor-Room entry, whose numbers Room.updatePlayerStats has
+  // already validated against computeStats() — server-derived data, not a
+  // client claim, so it needs no second anti-cheat pass.
+  //
+  // It used to get one anyway, and a self-referential one at that
+  // ("min(x, prev * 1.5 + 100)") — the exact pattern Room.js abandoned,
+  // because a cap derived from the previous accepted value ratchets upward on
+  // repeated calls instead of bounding anything. Here it also did real harm in
+  // the other direction: a member who enters without a floor-Room entry is
+  // seeded from addPlayer's atk:10/def:0 placeholder, so the first sync capped
+  // them at 10 * 1.5 + 100 = 115 ATK and their actual stats were silently
+  // clipped for the whole run.
   updatePlayerStats(socketId, { atk, def, maxHp, critChance, critPower }) {
     const p = this.players.get(socketId);
     if (!p) return;
-    if (atk  >  0) p.atk  = Math.min(atk,  p.atk  * 1.5 + 100, 9999);
-    if (def  >= 0) p.def  = Math.min(def,  p.def  * 1.5 + 100, 9999);
-    if (maxHp > 0) {
-      const cap = Math.min(maxHp, p.maxHp * 1.5 + 500, 99999);
-      p.hp = Math.min(p.hp, cap);
-      p.maxHp = cap;
+    if (Number.isFinite(atk)   && atk  >  0) p.atk = atk;
+    if (Number.isFinite(def)   && def  >= 0) p.def = def;
+    if (Number.isFinite(maxHp) && maxHp > 0) {
+      p.hp = Math.min(p.hp, maxHp);
+      p.maxHp = maxHp;
     }
-    if (critChance !== undefined) p.critChance = Math.min(0.80, Math.max(0, critChance));
-    if (critPower  !== undefined) p.critPower  = Math.min(10,   Math.max(1, critPower));
+    // Absolute sanity bounds only — these mirror _critDmg's own assumptions
+    // rather than trying to re-derive what the stats should have been.
+    if (Number.isFinite(critChance)) p.critChance = Math.min(0.80, Math.max(0, critChance));
+    if (Number.isFinite(critPower))  p.critPower  = Math.min(10,   Math.max(1, critPower));
   }
 
   // There is no dedicated respawn round-trip for this instance, so a player

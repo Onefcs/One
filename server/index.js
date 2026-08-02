@@ -1480,7 +1480,10 @@ async function _raidLockedToday(socketId)            { return (await _dailyAttem
 // stones on the boss kill — both to one random member, not the killer.
 function _handlePartyDungeonKillResult(pd, attackerId, enemyId, result) {
   if (!result.killed) {
-    io.to(pd.channel).emit('partyDungeonEnemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
+    // dmg only to the attacker — see the enemyHurt split in the normal attack
+    // handler for why (floating number / vampirism / kill prediction).
+    io.to(attackerId).emit('partyDungeonEnemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
+    io.to(pd.channel).except(attackerId).emit('partyDungeonEnemyHurt', { id: enemyId, hp: result.hp });
     return;
   }
   const mids = [...pd.memberIds];
@@ -2831,7 +2834,15 @@ io.on('connection', socket => {
       }
       _onKillClanXp().catch(() => {});
     } else {
-      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
+      // Only the attacker is told how hard the hit landed. dmg is what drives
+      // the floating damage number, vampirism and the client's optimistic kill
+      // prediction (see the `if (dmg)` branch in js/network.js), so sending it
+      // floor-wide made every nearby player render someone else's hit as their
+      // own — and let a Вампиризм deathknight heal off other people's damage.
+      // Everyone else still gets hp so health bars and the hit flash stay in
+      // sync. Mirrors the split enemyKilled above already uses.
+      socket.emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
+      socket.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp });
     }
   });
 
@@ -2856,7 +2867,11 @@ io.on('connection', socket => {
           blessStone: mid === socket.id ? rBless : 0,
         }));
       } else {
-        rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg }));
+        // dmg only to the attacker (0 reads as "not mine" client-side) — same
+        // reasoning as the enemyHurt split in the normal attack handler.
+        rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', {
+          id: enemyId, hp: result.hp, dmg: mid === socket.id ? result.dmg : 0,
+        }));
       }
       return;
     }
@@ -2927,7 +2942,9 @@ io.on('connection', socket => {
       }
       _onKillClanXp().catch(() => {});
     } else {
-      io.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
+      // dmg only to the attacker — see the same split in the attack handler.
+      socket.emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
+      socket.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp });
     }
   });
 
@@ -3557,8 +3574,10 @@ io.on('connection', socket => {
         blessStone: mid === socket.id ? rBless : 0,
       }));
     } else {
+      // dmg only to the attacker — see the enemyHurt split in the normal
+      // attack handler.
       rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', {
-        id: enemyId, hp: result.hp, dmg: result.dmg,
+        id: enemyId, hp: result.hp, dmg: mid === socket.id ? result.dmg : 0,
       }));
     }
   });
