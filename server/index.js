@@ -1262,12 +1262,19 @@ function _persistSavedFields(authed, fields, extra) {
   return PlayerModel.findByIdAndUpdate(authed._id, { $set: set }).catch(() => {});
 }
 
+// Keep in sync with the identical calcBM in js/definitions.js — the client
+// renders this number in the HUD and clan panel, the server stores it for the
+// rating and reports it in raid/party-dungeon lobbies, and the two disagreeing
+// is immediately visible to players.
+// The level field is `lvl` everywhere (save blobs and the live player object
+// alike); reading `s.level` matched nothing, so the level term silently
+// collapsed to its `|| 1` fallback and BM ignored levels entirely.
 function calcBM(s) {
   if (!s) return 0;
   const upg = s.upgrades || {};
   const extras = ((upg.critChance || 0) + (upg.critPower || 0) +
     (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
-  return Math.round((s.level || 1) * 50 + (s.atk || 0) * 5 + (s.def || 0) * 3 + (s.maxHp || 100) * 0.5 + extras);
+  return Math.round((s.lvl || s.level || 1) * 50 + (s.atk || 0) * 5 + (s.def || 0) * 3 + (s.maxHp || 100) * 0.5 + extras);
 }
 
 // Global chat history (last 30 messages across all floors)
@@ -3214,7 +3221,7 @@ io.on('connection', socket => {
     const cp = currentRoom?.players.get(socket.id);
     if (!cp || (cp.lvl || 1) < 3) return socket.emit('lobbyError', { msg: 'Нужен 3 уровень' });
     if (await _raidLockedToday(socket.id)) return socket.emit('lobbyError', { msg: 'Попытки в рейд на сегодня закончились' });
-    const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
+    const bm = calcBM(_lastStats);
     const lobbyId = 'lb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
     const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
       dungeonId: dungeonId || 1,
@@ -3235,7 +3242,7 @@ io.on('connection', socket => {
     if (await _raidLockedToday(socket.id)) return socket.emit('lobbyError', { msg: 'Попытки в рейд на сегодня закончились' });
     if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
     const cp = currentRoom?.players.get(socket.id);
-    const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
+    const bm = calcBM(_lastStats);
     lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
     playerLobby.set(socket.id, lobbyId);
     const memberList = [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl }));
@@ -3348,7 +3355,7 @@ io.on('connection', socket => {
     if (!cp) return socket.emit('pdLobbyError', { msg: 'Выберите персонажа' });
     if ((cp.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
     if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
-    const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
+    const bm = calcBM(_lastStats);
     const lobbyId = 'pdlb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
     const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
       members: new Map([[socket.id, { name: authed.username, bm, lvl: cp.lvl || 1 }]]) };
@@ -3369,7 +3376,7 @@ io.on('connection', socket => {
     const cp = currentRoom?.players.get(socket.id);
     if ((cp?.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
     if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
-    const bm = _lastStats ? ((_lastStats.lvl || 1) * 50 + (_lastStats.atk || 0) * 5 + (_lastStats.def || 0) * 3) : 0;
+    const bm = calcBM(_lastStats);
     lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
     playerPdLobby.set(socket.id, lobbyId);
     const memberList = [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl }));
