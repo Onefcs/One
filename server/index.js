@@ -13,6 +13,7 @@ const GramTxModel       = require('./models/GramTx');
 const MarketListingModel= require('./models/MarketListing');
 const SpecialQuestModel = require('./models/SpecialQuest');
 const PlayerLogModel    = require('./models/PlayerLog');
+const ChatMessageModel  = require('./models/ChatMessage');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
 const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
@@ -646,7 +647,15 @@ mongoose.connect(process.env.MONGODB_URI, {
   serverSelectionTimeoutMS: 10000,
   socketTimeoutMS: 45000,
 })
-  .then(() => console.log('MongoDB connected'))
+  .then(() => {
+    console.log('MongoDB connected');
+    // Repopulate the in-memory global chat from the DB. Runs after connect
+    // (not at listen time) because the server starts accepting connections
+    // before Mongo is necessarily up — anyone who logs in before this
+    // resolves just gets the empty history they'd have got pre-persistence,
+    // and the very next login sees the restored one.
+    _loadChatHistory();
+  })
   .catch(err => console.error('MongoDB connect error:', err));
 
 // Behind Railway's reverse proxy — needed so req.ip reflects the real client
@@ -936,12 +945,19 @@ app.delete('/admin/clan/:id', adminAuth, async (req, res) => {
 });
 
 app.get('/admin/chat', adminAuth, (req, res) => {
-  res.json({ messages: [...globalChatHistory] });
+  res.json({ messages: _publicChatHistory() });
 });
 
-app.delete('/admin/chat/:idx', adminAuth, (req, res) => {
+app.delete('/admin/chat/:idx', adminAuth, async (req, res) => {
   const idx = Number(req.params.idx);
-  if (idx >= 0 && idx < globalChatHistory.length) globalChatHistory.splice(idx, 1);
+  if (idx >= 0 && idx < globalChatHistory.length) {
+    const [removed] = globalChatHistory.splice(idx, 1);
+    // Also drop the persisted row — otherwise a deleted message came back on
+    // the next restart, now that the history is DB-backed.
+    if (removed && removed._id) {
+      await ChatMessageModel.deleteOne({ _id: removed._id }).catch(err => console.error('admin chat delete:', err));
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -1321,13 +1337,71 @@ async function _refreshTopPlayer() {
   } catch (err) { console.error('_refreshTopPlayer:', err); }
 }
 
-// Global chat history (last 30 messages across all floors)
+// Global chat history — last CHAT_HISTORY_MAX messages across all floors.
+// Unlike clan chat and DMs below, this one is DB-backed (models/ChatMessage):
+// the in-memory array stays the hot path every read goes through, and Mongo
+// is only touched to write new messages and to repopulate the array at
+// startup, so a restart/redeploy no longer wipes the chat everyone sees.
+const CHAT_HISTORY_MAX = 50;
 const globalChatHistory = [];
+// Trimming on every single message would double the write load for no
+// benefit — the array is already capped in memory, and the only cost of the
+// collection running slightly long is a few extra stored rows.
+let _chatWritesSinceTrim = 0;
+const CHAT_TRIM_EVERY = 20;
+
+// What clients receive. Strips the Mongo _id carried on entries loaded from
+// (or written to) the DB, so the wire shape stays exactly the {username,
+// text, time} the client has always parsed and no internal ids leak out.
+function _publicChatHistory() {
+  return globalChatHistory.map(({ username, text, time }) => ({ username, text, time }));
+}
+
+async function _loadChatHistory() {
+  try {
+    const docs = await ChatMessageModel.find({}, 'username text time')
+      .sort({ createdAt: -1 }).limit(CHAT_HISTORY_MAX).lean();
+    // Query is newest-first for the limit; the array is oldest-first.
+    globalChatHistory.length = 0;
+    docs.reverse().forEach(d => globalChatHistory.push({ username: d.username, text: d.text, time: d.time }));
+    console.log(`Chat history restored: ${globalChatHistory.length} message(s)`);
+  } catch (err) {
+    // A failed load must not stop the server coming up — chat simply starts
+    // empty for this boot, exactly as it always did before persistence.
+    console.error('_loadChatHistory:', err);
+  }
+}
+
+async function _trimChatHistory() {
+  // Deletes exactly the rows past the newest CHAT_HISTORY_MAX, by id. Doing
+  // it as a range delete on _id instead would rely on ObjectId ordering
+  // matching createdAt ordering — which only holds within one process, since
+  // the per-process counter resets on restart.
+  const stale = await ChatMessageModel.find({}, '_id')
+    .sort({ createdAt: -1 }).skip(CHAT_HISTORY_MAX).lean();
+  if (stale.length) {
+    await ChatMessageModel.deleteMany({ _id: { $in: stale.map(d => d._id) } });
+  }
+}
+
 function _recordChat(username, text) {
   const now = new Date();
   const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-  globalChatHistory.push({ username, text, time });
-  if (globalChatHistory.length > 30) globalChatHistory.shift();
+  const entry = { username, text, time };
+  globalChatHistory.push(entry);
+  if (globalChatHistory.length > CHAT_HISTORY_MAX) globalChatHistory.shift();
+  // Fire-and-forget: chat must never block on (or be lost to) a slow DB.
+  ChatMessageModel.create({ username, text, time, createdAt: now })
+    .then(doc => {
+      // Lets the admin panel's delete-by-index remove the row too, not just
+      // the in-memory copy that the next restart would resurrect.
+      entry._id = doc._id;
+      if (++_chatWritesSinceTrim >= CHAT_TRIM_EVERY) {
+        _chatWritesSinceTrim = 0;
+        return _trimChatHistory();
+      }
+    })
+    .catch(err => console.error('_recordChat persist:', err));
 }
 
 // Clan chat history — last 30 per clan, keyed by clan _id (string). Same
@@ -2812,7 +2886,7 @@ io.on('connection', socket => {
       // this account never briefly renders as two players on screen.
       if (staleSocketId) socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: staleSocketId });
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
-      if (globalChatHistory.length) socket.emit('chatHistory', globalChatHistory);
+      if (globalChatHistory.length) socket.emit('chatHistory', _publicChatHistory());
     }
     currentRoom.setPlayerChar(socket.id, type, effectiveSaved);
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });

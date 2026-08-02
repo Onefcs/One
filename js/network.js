@@ -638,7 +638,7 @@ function netConnect(onReady) {
 
   socket.on('chatHistory', (msgs) => {
     if (!Array.isArray(msgs)) return;
-    _setChannelHistory('global', _chatMsgs, 30, msgs);
+    _setChannelHistory('global', _chatMsgs, _GLOBAL_CHAT_CAP, msgs);
   });
 
   // ── Clan chat ─────────────────────────────────────────────
@@ -1045,7 +1045,24 @@ function netConnect(onReady) {
     // underlying transport successfully reconnected. socket.connected already
     // reads false while down and true again once back, which is exactly what
     // every call site here guards on.
+    // The server drops this socket from any raid / party-dungeon instance the
+    // instant it disconnects (_cleanupRaid/_cleanupPartyDungeon in
+    // server/index.js's disconnect handler), so the client has to leave those
+    // modes too or it reconnects still believing it's inside an instance that
+    // no longer exists. inRaid was already cleared here; inPartyDungeon was
+    // not — and that asymmetry is what made leaving a dungeon look like the
+    // server had restarted: the gameState handler early-returns for the whole
+    // floor while inPartyDungeon is set, so after reconnecting every world
+    // update was silently dropped and the world sat frozen and empty with no
+    // way back (nothing was ever going to send partyDungeonComplete/Failed
+    // for an instance the server had already removed us from).
+    // Going through the real exit functions rather than just clearing the
+    // flags also restores the saved normal-world map//position, instead of
+    // leaving the client rendering the instance's own dungeon.
+    if (inPartyDungeon && typeof exitPartyDungeonMode === 'function') exitPartyDungeonMode();
+    else if (inRaid && typeof exitRaidMode === 'function') exitRaidMode();
     inRaid = false;
+    inPartyDungeon = false;
     _raidWaveNotif = null;
     serverEnemies = [];
     serverEnemiesMap.clear();
@@ -1393,6 +1410,10 @@ function netRequestDmHistory(withUsername) {
 // chat-panel script in index.html (co-located with _chatOpen/_chatSend/tab
 // switching); referenced here via typeof guards, the same cross-file
 // pattern already used throughout this file (e.g. _refreshChatPreview).
+// Keep in sync with CHAT_HISTORY_MAX in server/index.js — the server both
+// stores and replays this many global messages, so a smaller cap here would
+// silently throw away part of the restored history on arrival.
+const _GLOBAL_CHAT_CAP = 50;
 const _chatMsgs = [];
 const _clanChatMsgs = [];
 // Беседа keeps one entry PER partner (not a single overwritten thread) so
@@ -1536,7 +1557,7 @@ function _chatChannelError(msg) {
 }
 
 function _addChatMsg(username, text) {
-  _pushChatMsg('global', _chatMsgs, 30, username, text, _nowHHMM());
+  _pushChatMsg('global', _chatMsgs, _GLOBAL_CHAT_CAP, username, text, _nowHHMM());
 }
 
 // Shows the most recent chat line in the floating bubble above the chat
