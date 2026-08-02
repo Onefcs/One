@@ -7,6 +7,12 @@ const PlayerSchema = new mongoose.Schema({
   bm:          { type: Number, default: 0 },
   referredBy:  { type: String, default: null },
   banned:      { type: Boolean, default: false },
+  // Set once, the first time the "🆕 Новый игрок" message is claimed for this
+  // account (see _notifyAdminNewPlayer). Several independent paths can each
+  // meet a player for what looks like the first time — the bot's /start, the
+  // Mini App's first auth, referral registration — so the flag, not the
+  // caller, is what makes that message fire exactly once per account.
+  adminNotified: { type: Boolean, default: false },
   createdAt:   { type: Date, default: Date.now },
 });
 

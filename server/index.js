@@ -442,8 +442,27 @@ async function _registerReferral(telegramId, username, refId, playerDoc) {
   return referrer?.username || null;
 }
 
+// Fires at most once per account, ever. Claiming the adminNotified flag is
+// what enforces that, rather than each caller trying to work out whether it is
+// the first to see this player — they can't reliably tell. The bot's organic
+// "/start" only LOOKS a player up (it deliberately doesn't create the record,
+// so isNewAccount below still does its job on first launch), which meant
+// isNewPlayer stayed true there forever: every extra /start sent another
+// message, and the normal "/start, then tap Играть" flow sent one from the bot
+// and a second from auth once the account was actually created.
+//
+// The claim is a single-document update, so it also settles the two-tabs /
+// reconnect race between concurrent auths, and it survives restarts.
+// Consequence worth knowing: someone who only presses /start and never opens
+// the game has no account row yet and so isn't announced — the message now
+// arrives when they first actually launch the game.
 async function _notifyAdminNewPlayer(username, telegramId, referrerUsername) {
   if (!TG_ADMIN_ID) return;
+  const claimed = await PlayerModel.findOneAndUpdate(
+    { telegramId, adminNotified: { $ne: true } },
+    { $set: { adminNotified: true } },
+  ).catch(() => null);
+  if (!claimed) return;
   const refLine = referrerUsername
     ? `\n👥 Пригласил: @${referrerUsername}`
     : '\n👥 Источник: органика';
