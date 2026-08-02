@@ -464,10 +464,10 @@ const ITEM_DEF = [
   { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:24, hp:120, rarity:'legendary'},
   // ── Pets ─────────────────────────────────────────────────
   // Own equip slot (EQ_SLOTS 'pet', js/definitions.js), crafted at the forge
-  // for gold (PET_CRAFT_RECIPES, js/definitions.js) — not a mob/box drop.
-  // Base atk/def/hp scale with rarity like any other slot; each pet also
-  // carries one small unique bonus (crit/atk-speed/hp%) so same-rarity pets
-  // aren't pure duplicates of each other.
+  // for Liberty/Nexum (PET_CRAFT_RECIPES below) — not a mob/box drop. Base
+  // atk/def/hp scale with rarity like any other slot; each pet also carries
+  // one small unique bonus (crit/atk-speed/hp%) so same-rarity pets aren't
+  // pure duplicates of each other.
   { id:'pet_aztec',   name:'Ацтек',    slot:'pet', img:'/images/pet/pet_aztec/icon.png',   hp:150, atk:10, def:10, atkSpeed:0.10,   rarity:'common'   },
   { id:'pet_maya',    name:'Майя',     slot:'pet', img:'/images/pet/pet_maya/icon.png',    hp:150, atk:10, def:10, critChance:0.10, rarity:'common'   },
   { id:'pet_bear',    name:'Медведь',  slot:'pet', img:'/images/pet/pet_bear/icon.png',    hp:150, atk:10, def:10, hpPct:0.15,      rarity:'common'   },
@@ -487,6 +487,22 @@ const ITEM_DEF = [
   { id:'bp_regen',    name:'Зелье регена',      slot:'buff_potion', img:'/images/potion/regen.png',    rarity:'uncommon', buffType:'regen',    buffDur:600, buffDesc:'+2 HP/сек на 10 мин'          },
   { id:'bp_atkspeed', name:'Зелье скорости',    slot:'buff_potion', img:'/images/potion/atkspeed.png', rarity:'uncommon', buffType:'atkspeed', buffDur:600, buffDesc:'+20% скорость атаки на 10 мин' },
   { id:'bp_atk',      name:'Зелье атаки',       slot:'buff_potion', img:'/images/potion/atk.png',      rarity:'uncommon', buffType:'atk',      buffDur:600, buffDesc:'+20% атаки на 10 мин'         },
+];
+
+// Pet crafting: Liberty (Nexum)-only, no recipe scrolls — crafting a rarity
+// tier gives one random pet from that tier's 3 skins (ITEM_DEF entries with
+// slot:'pet'). Unlike ITEM_CRAFT_RECIPES's per-item tiers (sw1→sw2→...),
+// pets of the same rarity are horizontal alternatives, not a progression, so
+// there's no single `itemId` to craft toward.
+// Lives here (not js/definitions.js, where every other recipe table sits)
+// because Nexum is server-granted/server-authoritative only (see
+// _nexumBalanceCache in server/index.js) — unlike gold, a client can't be
+// trusted to deduct it itself, so the craft has to be a server round-trip
+// (server/index.js 'craftPet') and the server needs this table too.
+const PET_CRAFT_RECIPES = [
+  { rarity:'common',   nexumCost:500,  chance:1.0 },
+  { rarity:'uncommon', nexumCost:2000, chance:1.0 },
+  { rarity:'rare',     nexumCost:5000, chance:1.0 },
 ];
 
 // Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
@@ -741,6 +757,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  PET_CRAFT_RECIPES,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,

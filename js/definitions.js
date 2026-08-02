@@ -255,17 +255,6 @@ const ITEM_CRAFT_RECIPES = [
   { matId:'bless_stone', mats:[{id:'recr',n:50}], goldCost:5000, chance:1.0 },
 ];
 
-// Pet crafting: gold-only, no recipe scrolls — crafting a rarity tier gives
-// one random pet from that tier's 3 skins (ITEM_DEF entries with slot:'pet').
-// Unlike ITEM_CRAFT_RECIPES's per-item tiers (sw1→sw2→...), pets of the same
-// rarity are horizontal alternatives, not a progression, so there's no single
-// `itemId` to craft toward — see openPetCraftModal/craftPet in js/npc.js.
-const PET_CRAFT_RECIPES = [
-  { rarity:'common',   goldCost:500,  chance:1.0 },
-  { rarity:'uncommon', goldCost:2000, chance:1.0 },
-  { rarity:'rare',     goldCost:5000, chance:1.0 },
-];
-
 // Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)
 const MAT_UPGRADE_RECIPES = [
   { from:'recu', to:'recr', count:20, chance:0.80 },

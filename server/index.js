@@ -19,6 +19,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  PET_CRAFT_RECIPES,
   armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
   DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -2353,6 +2354,47 @@ io.on('connection', socket => {
         socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
       }
     } catch (err) { console.error('gramShopBuy:', err); }
+  });
+
+  // ── Pet crafting (Кузнец → Материалы → Питомцы) ────────────────────────────
+  // Costs Liberty (Nexum), which — unlike gold — is server-granted/server-
+  // authoritative only (see _nexumBalanceCache above), so unlike every other
+  // craft in this game this can't be a client-computed spend: the client
+  // would just be trusted to decrement a balance it doesn't actually own the
+  // source of truth for. Mirrors gramShopBuy below: server checks the live
+  // balance, deducts it, and picks+returns the random result itself — the
+  // client only ever displays what this event reports back.
+  safeOn('craftPet', ({ rarity } = {}) => {
+    if (!authed) return;
+    try {
+      const rec = PET_CRAFT_RECIPES.find(r => r.rarity === rarity);
+      if (!rec) return socket.emit('petCraftError', { msg: 'Неизвестная редкость питомца' });
+      if (_liveNexum() < rec.nexumCost) {
+        return socket.emit('petCraftError', { msg: 'Недостаточно Liberty' });
+      }
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('petCraftError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      if (_lastStats.inventory.length >= SERVER_INV_MAX) {
+        return socket.emit('petCraftError', { msg: 'Инвентарь полон' });
+      }
+      const candidates = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity);
+      if (!candidates.length) return socket.emit('petCraftError', { msg: 'Питомцы этой редкости не найдены' });
+
+      _setNexum(_liveNexum() - rec.nexumCost);
+
+      let resultPet = null;
+      if (Math.random() < rec.chance) {
+        resultPet = { ...candidates[Math.floor(Math.random() * candidates.length)] };
+        _invAdd(_lastStats.inventory, resultPet);
+      }
+      _persistSavedFields(authed, { inventory: _lastStats.inventory, nexumBalance: _nexumBalance });
+
+      socket.emit('petCrafted', { pet: resultPet, newNexumBalance: _nexumBalance });
+    } catch (err) {
+      console.error('craftPet:', err);
+      socket.emit('petCraftError', { msg: 'Ошибка сервера' });
+    }
   });
 
   // ── Market ────────────────────────────────────────────────────────────────

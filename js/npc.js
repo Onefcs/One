@@ -116,7 +116,8 @@ function _craftsmanBody() {
     <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftTabMats') : 'Материалы'}</button>
   </div>`;
 
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b>
+    &nbsp;·&nbsp; ${_nexumIconHtml(16)} Liberty: <b>${window._nexumBalance || 0}</b></div>`;
   html += tabs;
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab() : _craftsmanMatsTab();
   return html;
@@ -323,12 +324,13 @@ function _craftsmanMatsTab() {
   }
 
   if (typeof PET_CRAFT_RECIPES !== 'undefined' && PET_CRAFT_RECIPES.length) {
+    const nexumBal = window._nexumBalance || 0;
     html += `<div class="craft-group-hdr" style="color:#89ba5f">${typeof t === 'function' ? t('craftPetsHdr') : 'Питомцы'}</div><div class="craft-items-grid">`;
     PET_CRAFT_RECIPES.forEach((rec, idx) => {
       const pets = _petsOfRarity(rec.rarity);
       if (!pets.length) return;
       const rc = RARITY_COLOR[rec.rarity] || '#aea599';
-      const canCraft = invHasSpace() && player.gold >= (rec.goldCost || 0);
+      const canCraft = invHasSpace() && nexumBal >= (rec.nexumCost || 0);
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openPetCraftModal(${idx})" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(pets[0], 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
@@ -340,12 +342,21 @@ function _craftsmanMatsTab() {
   return html;
 }
 
-// ── Pet crafting (gold-only; result is random among that rarity's 3 skins —
-// see PET_CRAFT_RECIPES/ITEM_DEF slot:'pet' in shared/definitions.js and
-// js/definitions.js) ─────────────────────────────────────────────────────
+// ── Pet crafting (Liberty/Nexum-only; result is random among that rarity's
+// 3 skins — see PET_CRAFT_RECIPES/ITEM_DEF slot:'pet' in
+// shared/definitions.js). Nexum is server-authoritative (unlike gold, which
+// every other craft here spends client-side), so this is the one craft flow
+// that's a real round-trip: craftPet() just asks the server and waits, the
+// item + new balance only ever come from onPetCrafted/onPetCraftError below
+// (see netCraftPet/'petCrafted'/'petCraftError' in js/network.js).
 function _petsOfRarity(rarity) {
   return ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity);
 }
+function _nexumIconHtml(size) {
+  return `<img src="/images/nexum-coin_v2.png" width="${size}" height="${size}" style="vertical-align:middle;border-radius:50%">`;
+}
+
+let _pendingPetCraftIdx = null; // recipe idx awaiting a server response
 
 function openPetCraftModal(idx) {
   const rec = PET_CRAFT_RECIPES[idx];
@@ -353,6 +364,8 @@ function openPetCraftModal(idx) {
   const pets = _petsOfRarity(rec.rarity);
   if (!pets.length) return;
   const rc = RARITY_COLOR[rec.rarity] || '#aea599';
+  const nexumBal = window._nexumBalance || 0;
+  const pending = _pendingPetCraftIdx === idx;
 
   const candidatesHtml = pets.map(p => `
     <div style="text-align:center;flex:1">
@@ -360,13 +373,13 @@ function openPetCraftModal(idx) {
       <div style="font-size:11px;color:${rc};margin-top:2px">${p.name}</div>
     </div>`).join('');
 
-  const goldRow = `<div class="craft-req-row">
-    <span class="craft-req-icon">${iconHTML('coin', 20, '#e3941d')}</span>
-    <span class="craft-req-name">${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}</span>
-    <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${player.gold}/${rec.goldCost}</span>
+  const costRow = `<div class="craft-req-row">
+    <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
+    <span class="craft-req-name">Liberty</span>
+    <span class="craft-req-count" style="color:${nexumBal >= rec.nexumCost ? '#98e456' : '#eb4e61'}">${nexumBal}/${rec.nexumCost}</span>
   </div>`;
 
-  const canCraft = invHasSpace() && player.gold >= (rec.goldCost || 0);
+  const canCraft = !pending && invHasSpace() && nexumBal >= (rec.nexumCost || 0);
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
@@ -378,29 +391,41 @@ function openPetCraftModal(idx) {
     </div>
     <div style="display:flex;gap:6px;margin:8px 0">${candidatesHtml}</div>
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
-    <div class="craft-reqs-list">${goldRow}</div>
-    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftPet(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
+    <div class="craft-reqs-list">${costRow}</div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftPet(${idx})">${pending ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
   `;
 }
 
 function craftPet(idx) {
   const rec = PET_CRAFT_RECIPES[idx];
-  if (!rec || !player) return;
-  if (player.gold < (rec.goldCost || 0)) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
+  if (!rec || !player || _pendingPetCraftIdx !== null) return;
+  if (!netIsLive()) { _shopMsg(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером'); return; }
+  if ((window._nexumBalance || 0) < (rec.nexumCost || 0)) { _shopMsg('Недостаточно Liberty!'); return; }
   if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
-  const pets = _petsOfRarity(rec.rarity);
-  if (!pets.length) return;
 
-  player.gold -= rec.goldCost;
-  if (Math.random() < rec.chance) {
-    const pet = pets[Math.floor(Math.random() * pets.length)];
+  _pendingPetCraftIdx = idx;
+  openPetCraftModal(idx); // re-render with the button disabled/busy
+  netCraftPet(rec.rarity);
+}
+
+function onPetCrafted(pet) {
+  const idx = _pendingPetCraftIdx;
+  _pendingPetCraftIdx = null;
+  if (pet) {
     addToInventory({ ...pet });
+    if (typeof updateInvUI === 'function') updateInvUI();
     _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
   } else {
     _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }
-  netSaveProgress();
-  openPetCraftModal(idx);
+  if (idx !== null) openPetCraftModal(idx);
+}
+
+function onPetCraftError(msg) {
+  const idx = _pendingPetCraftIdx;
+  _pendingPetCraftIdx = null;
+  _shopMsg(msg || (typeof t === 'function' ? t('genericErrorLbl') : 'Ошибка'));
+  if (idx !== null) openPetCraftModal(idx);
 }
 
 function openBoxCraftModal(boxId) {

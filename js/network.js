@@ -60,6 +60,7 @@ function netConnect(onReady) {
 
   _initGramHandlers(socket);
   _initMarketHandlers(socket);
+  _initPetCraftHandlers(socket);
   _initEventBossHandlers(socket);
 
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
@@ -1691,6 +1692,10 @@ function netMarketBuy(listingId) {
   if (socket?.connected) socket.emit('marketBuy', { listingId });
 }
 
+function netCraftPet(rarity) {
+  if (socket?.connected) socket.emit('craftPet', { rarity });
+}
+
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
@@ -1895,6 +1900,20 @@ function _initGramHandlers(s) {
   });
   s.on('gramShopError', ({ msg }) => {
     if (typeof onGramShopError === 'function') onGramShopError(msg);
+  });
+}
+
+// Incoming pet-crafting events — Liberty (Nexum) is server-authoritative, so
+// unlike every other craft in this game (all resolved instantly client-side)
+// this one is a real round-trip: netCraftPet just asks, the actual pet and
+// the new balance only ever come from here (see 'craftPet' in server/index.js).
+function _initPetCraftHandlers(s) {
+  s.on('petCrafted', ({ pet, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (typeof onPetCrafted === 'function') onPetCrafted(pet);
+  });
+  s.on('petCraftError', ({ msg }) => {
+    if (typeof onPetCraftError === 'function') onPetCraftError(msg);
   });
 }
 
