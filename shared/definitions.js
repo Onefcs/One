@@ -468,15 +468,15 @@ const ITEM_DEF = [
   // Base atk/def/hp scale with rarity like any other slot; each pet also
   // carries one small unique bonus (crit/atk-speed/hp%) so same-rarity pets
   // aren't pure duplicates of each other.
-  { id:'pet_aztec',   name:'Ацтек',    slot:'pet', img:'/images/pet/pet_aztec/icon.png',   hp:30,  atk:2, def:2, atkSpeed:0.02,   rarity:'common'   },
-  { id:'pet_maya',    name:'Майя',     slot:'pet', img:'/images/pet/pet_maya/icon.png',    hp:30,  atk:2, def:2, critChance:0.02, rarity:'common'   },
-  { id:'pet_bear',    name:'Медведь',  slot:'pet', img:'/images/pet/pet_bear/icon.png',    hp:30,  atk:2, def:2, hpPct:0.03,      rarity:'common'   },
-  { id:'pet_medusa',  name:'Медуза',   slot:'pet', img:'/images/pet/pet_medusa/icon.png',  hp:60,  atk:5, def:4, critChance:0.035,rarity:'uncommon' },
-  { id:'pet_bone',    name:'Костяк',   slot:'pet', img:'/images/pet/pet_bone/icon.png',    hp:60,  atk:5, def:4, atkSpeed:0.035,  rarity:'uncommon' },
-  { id:'pet_ogre',    name:'Огр',      slot:'pet', img:'/images/pet/pet_ogre/icon.png',    hp:60,  atk:5, def:4, hpPct:0.05,      rarity:'uncommon' },
-  { id:'pet_bonessa', name:'Бонесса',  slot:'pet', img:'/images/pet/pet_bonessa/icon.png', hp:110, atk:9, def:7, critChance:0.05, rarity:'rare'     },
-  { id:'pet_cyclops', name:'Циклоп',   slot:'pet', img:'/images/pet/pet_cyclops/icon.png', hp:110, atk:9, def:7, hpPct:0.08,      rarity:'rare'     },
-  { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:110, atk:9, def:7, atkSpeed:0.05,   rarity:'rare'     },
+  { id:'pet_aztec',   name:'Ацтек',    slot:'pet', img:'/images/pet/pet_aztec/icon.png',   hp:150, atk:10, def:10, atkSpeed:0.10,   rarity:'common'   },
+  { id:'pet_maya',    name:'Майя',     slot:'pet', img:'/images/pet/pet_maya/icon.png',    hp:150, atk:10, def:10, critChance:0.10, rarity:'common'   },
+  { id:'pet_bear',    name:'Медведь',  slot:'pet', img:'/images/pet/pet_bear/icon.png',    hp:150, atk:10, def:10, hpPct:0.15,      rarity:'common'   },
+  { id:'pet_medusa',  name:'Медуза',   slot:'pet', img:'/images/pet/pet_medusa/icon.png',  hp:300, atk:25, def:20, critChance:0.175,rarity:'uncommon' },
+  { id:'pet_bone',    name:'Костяк',   slot:'pet', img:'/images/pet/pet_bone/icon.png',    hp:300, atk:25, def:20, atkSpeed:0.175,  rarity:'uncommon' },
+  { id:'pet_ogre',    name:'Огр',      slot:'pet', img:'/images/pet/pet_ogre/icon.png',    hp:300, atk:25, def:20, hpPct:0.25,      rarity:'uncommon' },
+  { id:'pet_bonessa', name:'Бонесса',  slot:'pet', img:'/images/pet/pet_bonessa/icon.png', hp:550, atk:45, def:35, critChance:0.25, rarity:'rare'     },
+  { id:'pet_cyclops', name:'Циклоп',   slot:'pet', img:'/images/pet/pet_cyclops/icon.png', hp:550, atk:45, def:35, hpPct:0.40,      rarity:'rare'     },
+  { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:550, atk:45, def:35, atkSpeed:0.25,   rarity:'rare'     },
   // ── HP Potions ────────────────────────────────────────────
   { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
   { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:50, rarity:'uncommon' },

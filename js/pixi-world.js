@@ -1073,6 +1073,7 @@ function _petFacing4(nx, ny) {
 }
 const _PET_TRAIL_OFFSET = 24;  // world px behind the player the pet trails at
 const _PET_SNAP_DIST    = 260; // floor change / respawn — snap instead of visibly sliding across the map
+const _PET_DISPLAY_SCALE = 0.5; // fraction of the player's own sprite height (was 1/3, ×1.5)
 
 function _updatePet(dt) {
   const petItem = player && player.equipment ? player.equipment.pet : null;
@@ -1139,7 +1140,7 @@ function _updatePet(dt) {
     const img   = cache && cache[key];
     const fw    = img?.frameW || def.frameW;
     const fh    = img?.frameH || def.frameH;
-    const dh = _PLAYER_DISPLAY_H / 3, dw = dh * fw / fh;
+    const dh = _PLAYER_DISPLAY_H * _PET_DISPLAY_SCALE, dw = dh * fw / fh;
     _petSpr.texture = textures[_petState._animFrame] || PIXI.Texture.WHITE;
     _petSpr.width = dw; _petSpr.height = dh;
     _petSpr.x = _petState.x - dw / 2;
