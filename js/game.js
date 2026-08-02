@@ -1828,7 +1828,30 @@ const _DT_SMOOTH_N = 2;
 const _dtBuf = new Float32Array(_DT_SMOOTH_N).fill(1 / 30);
 let _dtBufIdx = 0;
 
-const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — dt-clamp budget (frameMs/rawDt clamps below)
+const _FPS_CAP_MS = 1000 / 30; // ~33.33ms — first-frame fallback for sinceLastRender
+// ── Physics sub-stepping ──────────────────────────────────────────────────
+// dt used to be hard-clamped to _PHYS_STEP_MAX, which silently threw away
+// every millisecond a frame ran longer than that. Movement is dt-scaled
+// (player.x += speed * dt), so below ~20fps the character genuinely covered
+// less ground per real second — at 10fps, half speed; at 6fps, a third. Auto
+// -attack cadence and HP regen ride on the same dt and were penalised too.
+// (Buffs, cooldowns and crowd control were never affected — they run on
+// realDt, see the block in update().)
+//
+// The clamp itself was right to exist: collision here is a plain per-axis
+// check against the destination, with no swept test, so one oversized step
+// can put the player through a wall. The fix is to keep steps small but stop
+// discarding the leftover — simulate a long frame as several ≤_PHYS_STEP_MAX
+// steps instead of one truncated one. Real-time speed then holds at any frame
+// rate while no single step is ever bigger than what the clamp already
+// allowed.
+//
+// _PHYS_STEPS_MAX bounds the catch-up so a long stall (tab switch, screen
+// lock, GC pause) can't replay seconds of movement in one frame; past that
+// the extra time is dropped exactly as it always was. At 20fps and above a
+// frame needs one step, so the common path stays bit-for-bit what it was.
+const _PHYS_STEP_MAX  = 0.05; // seconds — the old dt clamp, now the step size
+const _PHYS_STEPS_MAX = 4;    // ≤200ms of catch-up per rendered frame
 // Target render cadence: 60fps on every device, including phones. The 30fps
 // mobile cap was justified as heat/battery savings, but the built-in overlay
 // disproved that on real hardware: a phone sat at a steady 30fps spending only
@@ -1879,11 +1902,13 @@ function loop(ts) {
   }
 
   // dt = actual wall-clock time since the last render, not a derived budget —
-  // avoids inflating physics speed on sub-30fps devices.
+  // avoids inflating physics speed on sub-30fps devices. Bounded by the total
+  // catch-up budget rather than truncated to a single step: the loop below
+  // splits whatever lands here into steps no longer than _PHYS_STEP_MAX.
   const sinceLastRender = _lastRenderTs > 0 ? ts - _lastRenderTs : _FPS_CAP_MS;
   _lastRenderTs = ts;
-  const frameMs = Math.min(sinceLastRender, _FPS_CAP_MS * 2.5);
-  const rawDt = Math.min(frameMs / 1000, 0.05);
+  const frameMs = Math.min(sinceLastRender, _PHYS_STEP_MAX * _PHYS_STEPS_MAX * 1000);
+  const rawDt = frameMs / 1000;
   _dtBuf[_dtBufIdx] = rawDt;
   _dtBufIdx = (_dtBufIdx + 1) % _DT_SMOOTH_N;
   let dt = 0;
@@ -1892,12 +1917,20 @@ function loop(ts) {
   // Unclamped wall-clock delta, for anything that must expire on real time
   // rather than on rendered frames. rAF stops entirely while the page is
   // hidden (screen lock, app switch, another Telegram chat) and dt above is
-  // capped at 50ms a frame, so buffs and cooldowns ticked on dt froze for the
-  // whole background period — a 10s buff could outlive half an hour of real
-  // time. Physics stays on the clamped dt (see the comment above it).
+  // bounded to _PHYS_STEP_MAX × _PHYS_STEPS_MAX per frame, so buffs and
+  // cooldowns ticked on dt froze for the whole background period — a 10s buff
+  // could outlive half an hour of real time. Physics stays on the bounded dt
+  // (see the comment above it).
   const realDt = sinceLastRender / 1000;
   const _t0 = performance.now();
-  update(dt, realDt);
+  // One step at 20fps+ (identical to the old single update() call); more only
+  // when the frame overran, so the time is caught up instead of discarded.
+  // realDt is divided the same way so buffs/cooldowns still tick exactly once
+  // over the frame's real duration rather than once per step.
+  const _steps = Math.min(_PHYS_STEPS_MAX, Math.max(1, Math.ceil(dt / _PHYS_STEP_MAX)));
+  const _stepDt = dt / _steps;
+  const _stepRealDt = realDt / _steps;
+  for (let i = 0; i < _steps; i++) update(_stepDt, _stepRealDt);
   const _t1 = performance.now();
   render(dt, ts);
   const _t2 = performance.now();
