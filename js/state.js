@@ -80,6 +80,12 @@ let _myLobbyId    = null;
 let _isLobbyCreator = false;
 let _myLobbyMembers = [];    // [{id,name,bm,lvl}]
 
+// Death Battle (Битва на смерть) — scheduled free-for-all, see the handlers
+// in js/network.js and the panel in js/ui.js.
+let _dbState = { phase: 'idle', startAt: 0, nextAt: 0, count: 0 };
+let _dbRegistered = false;
+let _dbInFight = false;
+
 // Party dungeon (maze + boss) state
 let inPartyDungeon = false;
 let _pdLobbyList = [];       // [{ id, creatorName, members: [{id,name,bm,lvl}] }]

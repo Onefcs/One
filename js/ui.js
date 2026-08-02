@@ -1174,7 +1174,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'boss-timer-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'boss-timer-btn', 'db-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -2950,6 +2950,7 @@ function _positionBossTimerBtn() {
 function showBossTimerBtn() {
   const btn = document.getElementById('boss-timer-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionBossTimerBtn(); }
+  if (typeof _positionDeathBattleBtn === 'function') _positionDeathBattleBtn();
 }
 
 function _fmtBossTime(ms) {
@@ -2998,6 +2999,128 @@ function _renderBossPanelBody() {
 
 if (typeof setInterval === 'function') {
   setInterval(() => { if (document.getElementById('boss-panel')?.style.display === 'flex') _renderBossPanelBody(); }, 1000);
+}
+
+// ─────────────────────────────────────────────────────────
+//  DEATH BATTLE (Битва на смерть)
+// ─────────────────────────────────────────────────────────
+// Scheduled free-for-all (shared/definitions.js DEATH_BATTLE_*). The server
+// drives every transition and pushes them as deathBattleState; this panel just
+// renders whatever _dbState currently says and counts the seconds down locally
+// so an open panel stays live without extra traffic.
+function _positionDeathBattleBtn() {
+  const bossBtn = document.getElementById('boss-timer-btn');
+  const btn     = document.getElementById('db-btn');
+  if (!btn || !bossBtn) return;
+  const bTop = parseFloat(bossBtn.style.top) || 0;
+  btn.style.top       = (bTop + 28 + 4) + 'px';
+  btn.style.left      = bossBtn.style.left;
+  btn.style.width     = bossBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showDeathBattleBtn() {
+  const btn = document.getElementById('db-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionDeathBattleBtn(); }
+}
+
+function openDeathBattlePanel() {
+  const panel = document.getElementById('db-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
+  _renderDeathBattleBody();
+}
+
+function closeDeathBattlePanel() {
+  const panel = document.getElementById('db-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+// Called from the network handlers on every server push — keeps the button
+// label/highlight and (if open) the panel in step with the round.
+function onDeathBattleState() {
+  const btn = document.getElementById('db-btn');
+  if (btn) {
+    const open = _dbState.phase === 'reg';
+    btn.classList.toggle('db-open', open);
+    const label = document.getElementById('db-btn-text');
+    if (label) label.textContent = open ? t('dbBtnOpen') : t('dbBtn');
+  }
+  if (document.getElementById('db-panel')?.style.display === 'flex') _renderDeathBattleBody();
+}
+
+function _renderDeathBattleBody() {
+  const body = document.getElementById('db-panel-body');
+  if (!body) return;
+  const st = (typeof _dbState !== 'undefined' && _dbState) || { phase: 'idle', nextAt: 0, startAt: 0, count: 0 };
+  const reg  = st.phase === 'reg';
+  const live = st.phase === 'live';
+  const target = reg ? st.startAt : st.nextAt;
+  const left = Math.max(0, (target || 0) - Date.now());
+
+  let phaseTxt, countTxt, action;
+  if (live) {
+    phaseTxt = t('dbPhaseLive');
+    countTxt = tVars('dbAliveFmt', { n: st.count });
+    action = `<button class="db-action" disabled>${t('dbPhaseLive')}</button>`;
+  } else if (reg) {
+    phaseTxt = t('dbPhaseReg');
+    countTxt = tVars('dbSignedUpFmt', { n: st.count });
+    action = _dbRegistered
+      ? `<button class="db-action db-leave" onclick="netDeathBattleUnregister()">${t('dbLeaveBtn')}</button>`
+      : `<button class="db-action" onclick="netDeathBattleRegister()">${t('dbJoinBtn')}</button>`;
+  } else {
+    phaseTxt = t('dbPhaseIdle');
+    countTxt = '';
+    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
+  }
+
+  body.innerHTML = `
+    <div style="padding:16px">
+      <div class="db-countdown">${_fmtBossTime(left)}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${countTxt ? `<div class="db-count">${countTxt}</div>` : ''}
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${t('dbRule1')}</li>
+          <li>${t('dbRule2')}</li>
+          <li>${t('dbRule3')}</li>
+          <li>${t('dbRule4')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+if (typeof setInterval === 'function') {
+  setInterval(() => { if (document.getElementById('db-panel')?.style.display === 'flex') _renderDeathBattleBody(); }, 1000);
+}
+
+// Victory modal. The prize is already granted server-side by the time this
+// shows; closing it is what sends the winner back to the hub.
+function showDeathBattleWin(gram, items) {
+  const modal = document.getElementById('db-win-modal');
+  const list  = document.getElementById('db-win-rewards');
+  if (!modal || !list) return;
+  const rows = [];
+  if (gram) {
+    rows.push(`<div class="db-win-row"><span style="font-size:18px">💎</span><span>GRAM</span><span class="db-win-qty">+${gram}</span></div>`);
+  }
+  (items || []).forEach(it => {
+    const img = it.img ? `<img src="${it.img}" alt="">` : '<span style="font-size:18px">🎁</span>';
+    rows.push(`<div class="db-win-row">${img}<span>${it.name || it.id}</span><span class="db-win-qty">×${it.qty || 1}</span></div>`);
+  });
+  list.innerHTML = rows.join('');
+  modal.style.display = 'flex';
+}
+
+function closeDeathBattleWin() {
+  const modal = document.getElementById('db-win-modal');
+  if (modal) modal.style.display = 'none';
+  if (typeof netDeathBattleReturn === 'function') netDeathBattleReturn();
 }
 
 function openMarketPanel() {

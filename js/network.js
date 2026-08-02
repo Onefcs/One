@@ -142,7 +142,7 @@ function netConnect(onReady) {
     loadSprites(type, () => {});
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb }) => {
+  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs }) => {
     dungeonLvl = floor;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     if (typeof _buildArmGates === 'function') _buildArmGates();
@@ -159,6 +159,13 @@ function netConnect(onReady) {
     worldDrops = new Map((evb && evb.drops || []).map(d => [d.id, d]));
     _evtBossAlive = !!(evb && evb.alive);
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(evb && evb.spawnAt || 0);
+    // Death battle: same idea — joining mid-registration shows the live
+    // countdown and whether this account is already signed up.
+    if (dbs) {
+      _dbState = { phase: dbs.phase, startAt: dbs.startAt, nextAt: dbs.nextAt, count: dbs.count };
+      _dbRegistered = !!dbs.registered;
+      if (typeof onDeathBattleState === 'function') onDeathBattleState();
+    }
     // Preload sprites for every corridor's enemy pool — the whole world is
     // reachable from the start, not gated behind a single "current floor".
     if (typeof ARM_NAMES !== 'undefined') {
@@ -1486,6 +1493,7 @@ function _finishOnlineStart() {
   if (typeof showMarketBtn === 'function') showMarketBtn();
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showBossTimerBtn === 'function') showBossTimerBtn();
+  if (typeof showDeathBattleBtn === 'function') showDeathBattleBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type
@@ -1710,7 +1718,92 @@ function _initEventBossHandlers(s) {
   s.on('worldDropError', ({ msg }) => {
     if (typeof _marketToast === 'function') _marketToast(msg, 'err');
   });
+  _initDeathBattleHandlers(s);
 }
+
+// ── Death Battle (Битва на смерть) ──────────────────────────────────────────
+// The server owns the whole round (schedule, who is in, who is out, the
+// prize); everything here just mirrors that into the UI and moves the local
+// camera/player to wherever the server says they now are.
+function _initDeathBattleHandlers(s) {
+  s.on('deathBattleState', st => {
+    _dbState = { phase: st.phase, startAt: st.startAt, nextAt: st.nextAt, count: st.count };
+    if (st.registered !== undefined) _dbRegistered = !!st.registered;
+    if (st.phase !== 'reg') _dbRegistered = false;
+    if (st.phase !== 'live') _dbInFight = false;
+    if (typeof onDeathBattleState === 'function') onDeathBattleState();
+  });
+
+  s.on('deathBattleRegistered', ({ registered }) => {
+    _dbRegistered = !!registered;
+    if (typeof onDeathBattleState === 'function') onDeathBattleState();
+    if (typeof dmgNum === 'function' && player) {
+      dmgNum(player.x, player.y - 40, registered ? t('dbSignedUpToast') : t('dbLeftToast'), registered ? '#8fc95c' : '#f07886');
+    }
+  });
+
+  s.on('deathBattleError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg, 'err');
+  });
+
+  s.on('deathBattleCancelled', () => {
+    _dbInFight = false;
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbCancelledMsg'), '#f0b25a');
+  });
+
+  // The round begins: the server has already moved this player into the arena,
+  // healed them and switched PvP on server-side — mirror all three locally so
+  // the client doesn't fight its own authoritative state.
+  s.on('deathBattleStarted', ({ x, y, hp, total }) => {
+    if (!player) return;
+    _dbInFight = true;
+    _dbRegistered = false;
+    if (hp) player.hp = hp;
+    pvpMode = true;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbArenaLbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('dbStartedFmt', { n: total }), '#e8574f');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof onDeathBattleState === 'function') onDeathBattleState();
+  });
+
+  s.on('deathBattleEliminated', ({ left, x, y }) => {
+    _dbInFight = false;
+    pvpMode = false;
+    if (player && x != null && y != null) {
+      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
+      else { player.x = x; player.y = y; }
+    }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('dbEliminatedFmt', { n: left }), '#f07886');
+    if (typeof onDeathBattleState === 'function') onDeathBattleState();
+  });
+
+  s.on('deathBattleWon', ({ gram, items }) => {
+    _dbInFight = false;
+    pvpMode = false;
+    // The prize is already in the account server-side; mirror it locally so
+    // the inventory doesn't look empty until the next reload.
+    (items || []).forEach(it => {
+      if (typeof addToInventoryQty === 'function') addToInventoryQty(it, it.qty || 1);
+    });
+    if (gram) window._gramBalance = (window._gramBalance || 0) + gram;
+    if (typeof updateInvUI === 'function') updateInvUI();
+    netSaveProgress();
+    if (typeof showDeathBattleWin === 'function') showDeathBattleWin(gram, items || []);
+    if (typeof onDeathBattleState === 'function') onDeathBattleState();
+  });
+
+  s.on('deathBattleReturned', ({ x, y }) => {
+    if (!player) return;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
+    else { player.x = x; player.y = y; }
+  });
+}
+
+function netDeathBattleRegister()   { if (socket?.connected) socket.emit('deathBattleRegister'); }
+function netDeathBattleUnregister() { if (socket?.connected) socket.emit('deathBattleUnregister'); }
+function netDeathBattleReturn()     { if (socket?.connected) socket.emit('deathBattleReturn'); }
+function netDeathBattleSync()       { if (socket?.connected) socket.emit('deathBattleSync'); }
 
 function netPickupWorldDrop(id) {
   if (socket?.connected) socket.emit('pickupWorldDrop', { id });

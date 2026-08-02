@@ -196,6 +196,12 @@ function _checkTargetBtnTouch(cx, cy) {
 function _checkPvpBtnTouch(cx, cy) {
   const pb = getPvpBtnPos();
   if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
+    // PvP is not optional inside a death battle — letting an entrant switch it
+    // off would make them unkillable and stall the round.
+    if (typeof _dbInFight !== 'undefined' && _dbInFight) {
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, t('dbPvpLockedToast'), '#f88');
+      return true;
+    }
     if (!pvpMode && typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) {
       if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, 'Нельзя в безопасной зоне', '#f88');
       return true;

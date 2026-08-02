@@ -760,6 +760,50 @@ class Room {
     p.y = this._dungeon.spawn.y;
   }
 
+  // ── Death Battle (Битва на смерть) ────────────────────────────────────────
+  // Drops every entrant onto its own point of a ring inside the event arena —
+  // the one room in the world that is sealed off and outside the hub's safe
+  // zone, so PvP works there and nobody can wander in mid-round. Everyone is
+  // healed and flipped into PvP here rather than client-side: the server owns
+  // hp and pvpMode, and a client that ignored the request would otherwise be
+  // an unkillable participant.
+  deathBattleDeploy(socketIds) {
+    const ar = this._dungeon.arena;
+    if (!ar) return [];
+    const placed = [];
+    const n = Math.max(1, socketIds.length);
+    // Arena is 40 tiles across; 13 tiles from the centre keeps the whole ring
+    // clear of the walls whatever the entrant count.
+    const R = 13 * TILE;
+    socketIds.forEach((sid, i) => {
+      const p = this.players.get(sid);
+      if (!p) return;
+      const ang = (i / n) * Math.PI * 2;
+      let x = ar.cx + Math.cos(ang) * R;
+      let y = ar.cy + Math.sin(ang) * R;
+      if (this._isWall(x, y)) { x = ar.cx; y = ar.cy; }
+      p.x = x; p.y = y;
+      p.hp = p.maxHp;
+      p.pvpMode = true;
+      p._profileRev++;
+      placed.push({ socketId: sid, x, y, hp: p.hp });
+    });
+    return placed;
+  }
+
+  // Sends a player back to the hub with PvP off — used both for entrants
+  // knocked out of a round and for the winner once they close the reward
+  // modal. Returns the landing spot so the caller can tell that client.
+  deathBattleReturn(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    p.x = this._dungeon.spawn.x;
+    p.y = this._dungeon.spawn.y;
+    p.pvpMode = false;
+    p._profileRev++;
+    return { x: p.x, y: p.y };
+  }
+
   updatePlayerStats(socketId, { atk, def, maxHp, critChance, critPower }) {
     const p = this.players.get(socketId);
     if (!p) return;

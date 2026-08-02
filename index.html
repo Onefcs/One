@@ -132,6 +132,32 @@
   <div id="boss-panel-body" class="vip-body"></div>
 </div>
 
+<!-- Death Battle button (below the Boss button) -->
+<button id="db-btn" onclick="openDeathBattlePanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="M19 21l2-2"/><path d="M9.5 6.5 21 18v3h-3L6.5 9.5"/></svg>
+  <span id="db-btn-text" data-i18n="dbBtn">Битва</span>
+</button>
+
+<!-- Death Battle overlay panel -->
+<div id="db-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title" style="color:#e8574f"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="M9.5 6.5 21 18v3h-3L6.5 9.5"/></svg><span data-i18n="dbTitle">Битва на смерть</span></div>
+    <button class="vip-close" onclick="closeDeathBattlePanel()">✕</button>
+  </div>
+  <div id="db-panel-body" class="vip-body"></div>
+</div>
+
+<!-- Death Battle victory modal -->
+<div id="db-win-modal" style="display:none">
+  <div class="db-win-panel">
+    <div class="db-win-crown">👑</div>
+    <div class="db-win-title" data-i18n="dbWinTitle">ПОБЕДА</div>
+    <div class="db-win-sub" data-i18n="dbWinSub">Вы последний выживший</div>
+    <div class="db-win-rewards" id="db-win-rewards"></div>
+    <button class="db-win-btn" onclick="closeDeathBattleWin()" data-i18n="dbWinClose">Забрать и вернуться в зал</button>
+  </div>
+</div>
+
 <!-- Rating overlay panel -->
 <div id="rating-panel" style="display:none">
   <div class="rating-header">

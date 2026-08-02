@@ -596,6 +596,35 @@ function rollEventBossDrops(rand) {
   return out;
 }
 
+// ── Death Battle (Битва на смерть) ──────────────────────────────────────────
+// Scheduled free-for-all: registration opens DEATH_BATTLE_REG_MS before each
+// start time, then everyone who signed up is scattered across the same arena
+// the event boss uses, forced into PvP, and fights until one player is left.
+// Times are Moscow (UTC+3, no DST) hours — the server converts to UTC itself
+// (see _dbNextStartAt in server/index.js) so this stays readable.
+const DEATH_BATTLE_HOURS_MSK = [10, 20];
+const DEATH_BATTLE_MSK_OFFSET_H = 3;
+const DEATH_BATTLE_REG_MS = 5 * 60 * 1000;
+// Without at least two entrants there is nobody to fight, so the round is
+// cancelled rather than handing someone a free win.
+const DEATH_BATTLE_MIN_PLAYERS = 2;
+// A round that somehow never resolves (everyone hiding, a stuck client) is
+// force-ended here so the schedule can't wedge.
+const DEATH_BATTLE_MAX_MS = 20 * 60 * 1000;
+const DEATH_BATTLE_GRAM_REWARD = 0.05;
+
+// The winner's prize, built the same way as rollEventBossDrops: every entry is
+// a fully-formed inventory item, so the granting code never has to know what
+// any of them are.
+function deathBattleRewards() {
+  const out = [];
+  const add = (base, qty) => { if (base) out.push({ ...base, qty }); };
+  add(CRAFT_MATS.find(m => m.id === 'bless_stone'), 1);   // 1 безопасная заточка
+  add(CRAFT_MATS.find(m => m.id === 'key_rare'), 10);     // 10 редких ключей
+  ITEM_DEF.filter(i => i.slot === 'buff_potion').forEach(bp => add(bp, 1)); // все 6 банок бафа
+  return out;
+}
+
 // ── Passive skills ────────────────────────────────────────────────────────────
 // Second skill track next to SKILL_DEF's active Q/W/E/R (js/definitions.js):
 // every class gets its OWN pair of passives (one ATK-flavored, one
@@ -698,4 +727,6 @@ if (typeof module !== 'undefined') module.exports = {
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   EVENT_BOSS, EVENT_BOSS_ANNOUNCE_MS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
+  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS,
+  DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
 };

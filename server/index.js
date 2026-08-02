@@ -20,6 +20,8 @@ const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
+  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS,
+  DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -1631,6 +1633,143 @@ function scheduleEventBoss() {
   return { ok: true, spawnAt: _eventBossSpawnAt };
 }
 
+// ── Death Battle (Битва на смерть) ──────────────────────────────────────────
+// Runs on a fixed daily schedule (shared/definitions.js): registration opens
+// DEATH_BATTLE_REG_MS before each start, then everyone signed up is dropped
+// into the arena in PvP and fights until one is left. All of it is module
+// state rather than per-socket, so a player who connects mid-registration sees
+// the same countdown as everyone else (sent from gameStart, see selectChar).
+const _db = {
+  phase: 'idle',       // 'idle' → 'reg' → 'live' → 'idle'
+  startAt: 0,          // when the fighting begins (also the registration deadline)
+  reg: new Map(),      // socketId -> { name }
+  alive: new Map(),    // socketId -> { name }
+  // Set for exactly one socket between winning and closing the reward modal,
+  // and cleared the moment it's used — deathBattleReturn teleports whoever
+  // sends it to the hub, so without this any client could emit it at will as a
+  // free instant travel home.
+  winnerId: null,
+  regTimer: null, startTimer: null, maxTimer: null,
+};
+
+// Next scheduled start, in UTC ms. Moscow is UTC+3 year-round (no DST since
+// 2014), so the offset is a constant rather than a timezone lookup: shift into
+// Moscow time to read the calendar date there, then shift the resulting
+// midnight back to real UTC before adding the hour.
+function _dbNextStartAt(from = Date.now()) {
+  const OFF = DEATH_BATTLE_MSK_OFFSET_H * 3600000;
+  const msk = new Date(from + OFF);
+  let best = Infinity;
+  for (let dayShift = 0; dayShift <= 1; dayShift++) {
+    const midnightUtc = Date.UTC(msk.getUTCFullYear(), msk.getUTCMonth(), msk.getUTCDate() + dayShift) - OFF;
+    for (const h of DEATH_BATTLE_HOURS_MSK) {
+      const t = midnightUtc + h * 3600000;
+      if (t > from && t < best) best = t;
+    }
+  }
+  return best;
+}
+
+function _dbPublicState() {
+  return {
+    phase:   _db.phase,
+    startAt: _db.startAt,
+    nextAt:  _dbNextStartAt(),
+    count:   _db.phase === 'live' ? _db.alive.size : _db.reg.size,
+  };
+}
+
+function _dbBroadcast() {
+  io.to('floor_1').emit('deathBattleState', _dbPublicState());
+}
+
+// Arms the registration window for the next start time. Called at boot and
+// after every round; if the process happens to start inside a registration
+// window the timeout is already due and fires immediately with whatever time
+// is left, which is the correct behaviour.
+function _dbSchedule() {
+  clearTimeout(_db.regTimer);
+  _db.phase = 'idle';
+  _db.startAt = 0;
+  const startAt = _dbNextStartAt();
+  _db.regTimer = setTimeout(() => _dbOpenReg(startAt), Math.max(0, startAt - DEATH_BATTLE_REG_MS - Date.now()));
+}
+
+function _dbOpenReg(startAt) {
+  _db.phase = 'reg';
+  _db.startAt = startAt;
+  _db.reg.clear();
+  _db.alive.clear();
+  clearTimeout(_db.startTimer);
+  _db.startTimer = setTimeout(_dbStart, Math.max(0, startAt - Date.now()));
+  _dbBroadcast();
+}
+
+function _dbStart() {
+  const room = getRoom(1);
+  // Only entrants who are still connected and still in the world can fight.
+  const ids = [..._db.reg.keys()].filter(sid =>
+    io.sockets.sockets.get(sid) && room && room.players.get(sid));
+  if (!room || ids.length < DEATH_BATTLE_MIN_PLAYERS) {
+    io.to('floor_1').emit('deathBattleCancelled', { reason: 'notEnough' });
+    _db.reg.clear();
+    _dbSchedule();
+    _dbBroadcast();
+    return;
+  }
+  _db.phase = 'live';
+  _db.alive.clear();
+  const placed = room.deathBattleDeploy(ids);
+  placed.forEach(({ socketId, x, y, hp }) => {
+    _db.alive.set(socketId, _db.reg.get(socketId) || { name: '?' });
+    io.to(socketId).emit('deathBattleStarted', { x, y, hp, total: placed.length });
+  });
+  _db.reg.clear();
+  // Safety net: a round where nobody can finish anybody off (everyone hiding,
+  // a wedged client) would otherwise block every later round forever.
+  clearTimeout(_db.maxTimer);
+  _db.maxTimer = setTimeout(() => _dbFinish(true), DEATH_BATTLE_MAX_MS);
+  _dbBroadcast();
+}
+
+// Drops one entrant out of a running round. Safe to call for a socket that
+// isn't in the round (a normal PvP kill elsewhere, an unrelated disconnect) —
+// it returns immediately.
+function _dbEliminate(socketId) {
+  if (_db.phase !== 'live') return;
+  if (!_db.alive.delete(socketId)) return;
+  const room = getRoom(1);
+  const spot = room ? room.deathBattleReturn(socketId) : null;
+  io.to(socketId).emit('deathBattleEliminated', { left: _db.alive.size, x: spot?.x, y: spot?.y });
+  _dbBroadcast();
+  if (_db.alive.size <= 1) _dbFinish(false);
+}
+
+async function _dbFinish(timedOut) {
+  if (_db.phase !== 'live') return;
+  clearTimeout(_db.maxTimer);
+  _db.phase = 'idle';
+  const room = getRoom(1);
+  // A timeout has no winner: send everyone still standing back to the hub.
+  const winnerId = (!timedOut && _db.alive.size === 1) ? [..._db.alive.keys()][0] : null;
+  _db.alive.forEach((_, sid) => {
+    if (sid === winnerId) return;
+    const spot = room ? room.deathBattleReturn(sid) : null;
+    io.to(sid).emit('deathBattleEliminated', { left: 0, x: spot?.x, y: spot?.y });
+  });
+  _db.alive.clear();
+  _db.winnerId = winnerId;
+  if (winnerId) {
+    const s = io.sockets.sockets.get(winnerId);
+    // The prize is granted through the winner's own socket closure, which is
+    // where its inventory/GRAM copies live (same reasoning as pickupWorldDrop).
+    const items = s?.data?._dbGrantWin ? await s.data._dbGrantWin() : null;
+    if (s) s.emit('deathBattleWon', { gram: DEATH_BATTLE_GRAM_REWARD, items: items || [] });
+  }
+  _dbSchedule();
+  _dbBroadcast();
+}
+
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
 // safe to trigger from more than one path below.
 function _initFloorRooms() {
@@ -1766,6 +1905,22 @@ io.on('connection', socket => {
         { ..._lastStats, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
         { bm: authed.bm });
     }
+  };
+
+  // Hands the death-battle winner its prize. Lives here rather than beside
+  // _dbFinish because this is where the socket's own inventory/GRAM copies
+  // are (same reasoning as pickupWorldDrop's award path). Returns the item
+  // list so the caller can show it in the win modal.
+  socket.data._dbGrantWin = async () => {
+    if (!authed) return null;
+    const items = deathBattleRewards();
+    const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+    if (inv) items.forEach(it => _invAdd(inv, it));
+    _setGram(_round7(_liveGram() + DEATH_BATTLE_GRAM_REWARD));
+    await _persistSavedFields(authed,
+      { ...(inv ? { inventory: inv } : {}), gramBalance: _liveGram() });
+    logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
+    return items;
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
@@ -2546,6 +2701,7 @@ io.on('connection', socket => {
       // So someone logging in mid-countdown still sees the timer, and someone
       // arriving after the kill still sees loot already lying on the floor.
       eventBoss: eventBossState(),
+      deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
     });
   });
 
@@ -2781,6 +2937,10 @@ io.on('connection', socket => {
 
   // Returns true if attacker and target share a party or clan (PvP immune)
   function _isPvpImmune(attackerId, targetId) {
+    // A death battle is a free-for-all: party and clan protection would let
+    // allied entrants refuse to fight and stall the round forever, so both are
+    // suspended for as long as the two of them are in the same live round.
+    if (_db.phase === 'live' && _db.alive.has(attackerId) && _db.alive.has(targetId)) return false;
     const aParty = playerParty.get(attackerId);
     const tParty = playerParty.get(targetId);
     if (aParty && aParty === tParty) return true;
@@ -2801,7 +2961,7 @@ io.on('connection', socket => {
     // a modified client always report 0 and become unkillable.
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 });
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _dbEliminate(targetId); }
   });
 
   safeOn('pvpSkillAttack', ({ targetId, multiplier }) => {
@@ -2811,7 +2971,7 @@ io.on('connection', socket => {
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 });
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _dbEliminate(targetId); }
   });
 
   safeOn('pvpSkillCC', ({ targetId, type, duration }) => {
@@ -2829,7 +2989,44 @@ io.on('connection', socket => {
   });
 
   safeOn('respawn', () => {
+    // Dying to anything at all during a round is an elimination — this covers
+    // the paths the PvP kill hooks don't (the event boss, a stray mob).
+    _dbEliminate(socket.id);
     if (currentRoom) currentRoom.respawnPlayer(socket.id);
+  });
+
+  // ── Death Battle (Битва на смерть) ─────────────────────────────────────────
+  safeOn('deathBattleRegister', () => {
+    if (!authed) return;
+    if (_db.phase !== 'reg') return socket.emit('deathBattleError', { msg: 'Регистрация закрыта' });
+    const cp = currentRoom?.players.get(socket.id);
+    if (!cp) return socket.emit('deathBattleError', { msg: 'Выберите персонажа' });
+    if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
+      return socket.emit('deathBattleError', { msg: 'Нельзя записаться из рейда или подземелья' });
+    }
+    _db.reg.set(socket.id, { name: authed.username });
+    socket.emit('deathBattleRegistered', { registered: true });
+    _dbBroadcast();
+  });
+
+  safeOn('deathBattleUnregister', () => {
+    if (_db.phase !== 'reg') return;
+    if (!_db.reg.delete(socket.id)) return;
+    socket.emit('deathBattleRegistered', { registered: false });
+    _dbBroadcast();
+  });
+
+  // Sent once the winner closes the reward modal — everyone else is already
+  // back in the hub, the winner is left standing in the arena until this.
+  safeOn('deathBattleReturn', () => {
+    if (_db.winnerId !== socket.id) return; // see _db.winnerId — not a free teleport home
+    _db.winnerId = null;
+    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    if (spot) socket.emit('deathBattleReturned', spot);
+  });
+
+  safeOn('deathBattleSync', () => {
+    socket.emit('deathBattleState', { ..._dbPublicState(), registered: _db.reg.has(socket.id) });
   });
 
   safeOn('setPvpMode', ({ pvpMode }) => {
@@ -3600,6 +3797,10 @@ io.on('connection', socket => {
     _cleanupLobby(socket.id);
     _cleanupPartyDungeon(socket.id);
     _cleanupPdLobby(socket.id);
+    // Leaving mid-round counts as being knocked out, so a round can't hang
+    // waiting on someone who closed the app.
+    _db.reg.delete(socket.id);
+    _dbEliminate(socket.id);
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);
@@ -3613,6 +3814,7 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server on port ${PORT}`);
   _pollTg();
+  _dbSchedule();
 });
 
 // ── Error handlers ────────────────────────────────────────────────────────────

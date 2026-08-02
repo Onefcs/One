@@ -2116,3 +2116,153 @@ canvas { display:block; width:100%; height:100%; }
   opacity: 0.4;
   cursor: default;
 }
+
+/* ── DEATH BATTLE (Битва на смерть) ───────────────────── */
+/* Button stacks under #boss-timer-btn; position is set from JS the same way
+   (see _positionDeathBattleBtn in js/ui.js), so only the look lives here. */
+#db-btn {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  background: rgba(16,12,6,.90);
+  border: 1px solid rgba(209,204,197,.08);
+  border-left: 3px solid #e8574f;
+  border-radius: 6px;
+  color: #f0937e;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
+}
+/* Registration is open — make the button obvious without moving it. */
+#db-btn.db-open {
+  color: #ffd18a;
+  border-left-color: #ffb454;
+  animation: dbPulse 1.6s ease-in-out infinite;
+}
+@keyframes dbPulse {
+  0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04); }
+  50%      { box-shadow: 0 2px 12px rgba(0,0,0,.55), 0 0 12px rgba(255,180,84,.55), inset 0 1px 0 rgba(209,204,197,.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #db-btn.db-open { animation: none; }
+}
+
+#db-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: rgba(15,11,4,.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#db-panel, #db-panel * { touch-action: pan-y; pointer-events: auto; }
+
+.db-countdown {
+  font-size: 30px;
+  font-weight: 800;
+  color: #ffcf8a;
+  text-align: center;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 2px;
+}
+.db-phase {
+  text-align: center;
+  font-size: 12px;
+  color: #a2988a;
+  margin-bottom: 14px;
+}
+.db-count {
+  text-align: center;
+  font-size: 13px;
+  color: #8fc95c;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.db-action {
+  width: 100%;
+  padding: 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(232,87,79,.5);
+  background: linear-gradient(180deg, rgba(232,87,79,.24), rgba(232,87,79,.10));
+  color: #ffb9a6;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.db-action:disabled { opacity: .45; cursor: default; }
+.db-action.db-leave {
+  border-color: rgba(209,204,197,.22);
+  background: rgba(209,204,197,.05);
+  color: #c9c2b7;
+}
+.db-rules {
+  margin-top: 16px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: #82745b;
+}
+.db-rules li { margin-left: 14px; }
+
+/* Victory modal — same framing as the death modal, gold instead of blood. */
+#db-win-modal {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.88);
+  display: flex; align-items: center; justify-content: center; z-index: 260;
+  backdrop-filter: blur(4px);
+}
+.db-win-panel {
+  position: relative;
+  background:
+    radial-gradient(ellipse 200px 140px at 50% -10%, rgba(255,180,84,0.20), transparent 65%),
+    linear-gradient(175deg, var(--leather-hi), var(--leather-lo) 85%);
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  padding: 28px 22px 22px;
+  text-align: center;
+  width: min(90%, 320px);
+  box-shadow: 0 0 0 1px #000, 0 30px 50px -15px rgba(0,0,0,0.8), 0 0 40px rgba(255,180,84,0.15);
+}
+.db-win-panel::before, .db-win-panel::after {
+  content: ""; position: absolute; width: 14px; height: 14px;
+  border: 1.5px solid var(--gold);
+}
+.db-win-panel::before { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+.db-win-panel::after  { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+.db-win-crown { font-size: 42px; margin-bottom: 6px; }
+.db-win-title {
+  font-size: 21px; font-weight: 800; letter-spacing: 3px;
+  color: #ffcf8a; margin-bottom: 4px;
+}
+.db-win-sub { font-size: 12px; color: #a2988a; margin-bottom: 16px; }
+.db-win-rewards {
+  display: flex; flex-direction: column; gap: 7px;
+  margin-bottom: 18px; text-align: left;
+}
+.db-win-row {
+  display: flex; align-items: center; gap: 9px;
+  background: rgba(209,204,197,.04);
+  border: 1px solid rgba(209,204,197,.09);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: #d7cfc2;
+}
+.db-win-row img { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; }
+.db-win-row .db-win-qty { margin-left: auto; color: #ffcf8a; font-weight: 700; font-variant-numeric: tabular-nums; }
+.db-win-btn {
+  width: 100%; padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,180,84,.5);
+  background: linear-gradient(180deg, rgba(255,180,84,.24), rgba(255,180,84,.10));
+  color: #ffcf8a; font-size: 13.5px; font-weight: 700;
+  cursor: pointer; touch-action: manipulation;
+}
