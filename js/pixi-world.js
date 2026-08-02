@@ -16,6 +16,7 @@ let _enemyCt  = null;
 let _otherPCt = null;
 let _projGfx  = null;
 let _playerCt = null;
+let _plAura = null;
 let _dmgNumCt = null;
 
 // Entity sprite pools
@@ -753,29 +754,109 @@ const _PLAYER_DISPLAY_H = 68 * 1.1;
 // which blurs it, and re-centering it every frame from live text metrics is
 // what caused the jitter. The overlay draws text at native screen resolution
 // every frame, exactly like the local player's own name/clan tag already do.
+// ── rating-leader aura ────────────────────────────────────
+// The #1 player in the rating (server/index.js _refreshTopPlayer tells every
+// client who that is) is wrapped in a golden aura so they're recognisable on
+// sight. Drawn on its own Graphics UNDER the sprite, so it reads as light
+// around the character rather than paint on top of them.
+//
+// Everything here is flat Graphics — the strict CSP this game ships under
+// rules out loading a glow texture, so the soft falloff is faked with a few
+// stacked translucent ellipses, cheapest-first. Only ever one player wears
+// this, so the per-frame redraw it forces costs one Graphics rebuild.
+function isTopPlayer(username) {
+  const top = window._topPlayer;
+  return !!top && !!username && username === top;
+}
+
+function _drawTopAura(g, cx, cy, ts) {
+  const t     = ts * 0.001;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 2.2);
+  const gy    = cy + 6;                       // ground contact, just below the feet
+
+  // Ground pool: widest and faintest first, so the overlaps build a falloff.
+  // Many thin layers rather than few thick ones — at three or four the steps
+  // between them read as visible rings instead of as light.
+  for (let i = 10; i >= 1; i--) {
+    const r = 6 + i * 2.9 + pulse * 2;
+    g.beginFill(0xffc63c, 0.020 + 0.013 * (11 - i));
+    g.drawEllipse(cx, gy, r, r * 0.42);
+    g.endFill();
+  }
+  // Body halo — vertical, so the character stands inside the light rather
+  // than on top of a lit patch.
+  for (let i = 7; i >= 1; i--) {
+    g.beginFill(0xffd76a, 0.013 + 0.009 * (8 - i));
+    g.drawEllipse(cx, cy - 12, 12 + i * 2.6, 20 + i * 3.6);
+    g.endFill();
+  }
+  // Bright core where the light meets the floor.
+  g.beginFill(0xfff3cf, 0.10 + 0.06 * pulse);
+  g.drawEllipse(cx, gy, 11, 4.6);
+  g.endFill();
+  // Rim of the pool.
+  const rr = 25 + pulse * 2.5;
+  g.lineStyle(2, 0xffe9a8, 0.40 + 0.25 * pulse);
+  g.drawEllipse(cx, gy, rr, rr * 0.42);
+  g.lineStyle(0);
+  // Rays sweeping around the rim, at two speeds so the motion isn't a rigid
+  // spin. These are what read as "radiant" rather than just "lit".
+  for (let i = 0; i < 8; i++) {
+    const a  = t * 0.7 + (i * Math.PI * 2) / 8;
+    const r1 = 30 + 5 * Math.sin(t * 3 + i);
+    g.lineStyle(2, 0xffd76a, 0.16 + 0.16 * pulse);
+    g.moveTo(cx + Math.cos(a) * 13, gy + Math.sin(a) * 13 * 0.42);
+    g.lineTo(cx + Math.cos(a) * r1, gy + Math.sin(a) * r1 * 0.42);
+  }
+  g.lineStyle(0);
+  // Motes drifting upward around the body.
+  for (let i = 0; i < 5; i++) {
+    const a  = t * 1.1 + (i * Math.PI * 2) / 5;
+    const ry = ((t * 22 + i * 15) % 46);
+    g.beginFill(0xfff0c0, 0.5 * (1 - ry / 46));
+    g.drawCircle(cx + Math.cos(a) * 17, gy - ry, 1.7);
+    g.endFill();
+  }
+}
+
 function _getOtherPlayer(sid) {
   if (_otherPool.has(sid)) return _otherPool.get(sid);
-  const ct  = new PIXI.Container();
-  const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
+  const ct   = new PIXI.Container();
+  const aura = new PIXI.Graphics();
+  const spr  = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  ct.addChild(spr, gfx);
+  ct.addChild(aura, spr, gfx);
   _otherPCt.addChild(ct);
-  const obj = { ct, spr, gfx };
+  const obj = { ct, spr, gfx, aura };
   _otherPool.set(sid, obj);
   return obj;
 }
 
 let _otherVisGen = 0;
-function _updateOtherPlayers(pulse) {
+function _updateOtherPlayers(pulse, ts) {
   const gen = ++_otherVisGen;
   otherPlayers.forEach((p, pid) => {
     if (p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
     const obj = _getOtherPlayer(pid);
     obj._visGen = gen;
-    const { ct, spr, gfx } = obj;
+    const { ct, spr, gfx, aura } = obj;
     ct.visible = true;
     ct.x = p.x; ct.y = p.y;
+
+    // Rating leader's aura. Animated, so unlike the gfx layer below it can't
+    // sit behind the needsRedraw guard — but it only ever runs for one player.
+    // Drawn in container-local space, hence 0,0.
+    const isTop = isTopPlayer(p.username);
+    if (isTop) {
+      aura.clear();
+      _drawTopAura(aura, 0, 0, ts);
+      aura.visible = true;
+    } else if (obj._auraOn) {
+      aura.clear();
+      aura.visible = false;
+    }
+    obj._auraOn = isTop;
 
     const isSelected = pid === targetId && targetIsPlayer;
     const swinging = (p._swingTimer || 0) > 0;
@@ -873,11 +954,13 @@ function _initPlayer() {
   if (_plSpr) return;
   _plSpr = new PIXI.Sprite(PIXI.Texture.WHITE);
   _plSpr.visible = false;
-  _plGfx = new PIXI.Graphics();
-  _playerCt.addChild(_plSpr, _plGfx);
+  _plGfx  = new PIXI.Graphics();
+  _plAura = new PIXI.Graphics();
+  // Under the sprite, same as other players' aura layer.
+  _playerCt.addChild(_plAura, _plSpr, _plGfx);
 }
 
-function _updatePlayer(dt) {
+function _updatePlayer(dt, ts) {
   _initPlayer();
   if (!player || (state !== 'playing' && state !== 'dead')) {
     _playerCt.visible = false;
@@ -886,6 +969,13 @@ function _updatePlayer(dt) {
   _playerCt.visible = true;
   _playerCt.alpha   = invisTimer > 0 ? 0.35 : 1;
   _plGfx.clear();
+
+  // The leader sees their own aura too. netUsername is this client's own name,
+  // the same value the rating table matches on.
+  _plAura.clear();
+  const _selfTop = isTopPlayer(typeof netUsername !== 'undefined' ? netUsername : null);
+  _plAura.visible = _selfTop;
+  if (_selfTop) _drawTopAura(_plAura, player.x, player.y, ts);
 
   const key      = getSpriteAnimKey(player);
   const textures = _playerTextures(player.type, key);
@@ -959,9 +1049,9 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _updateDrops(ts);
   _updateParticles();
   _updateEnemies(dt, pulse, bossGlow);
-  _updateOtherPlayers(pulse);
+  _updateOtherPlayers(pulse, ts);
   _updateProjs();
-  _updatePlayer(dt);
+  _updatePlayer(dt, ts);
   _updateDmgNums();
 
   _pixiApp.renderer.render(_pixiApp.stage);

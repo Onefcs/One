@@ -1298,6 +1298,28 @@ function calcBM(s) {
   return Math.round((s.lvl || s.level || 1) * 50 + (s.atk || 0) * 5 + (s.def || 0) * 3 + (s.maxHp || 100) * 0.5 + extras);
 }
 
+// ── Rating leader ─────────────────────────────────────────────────────────────
+// Whoever currently sits at #1 in the players rating gets a visible aura in the
+// world (js/pixi-world.js). Sorted by bm, the same order getRating uses, so the
+// glowing character is always the one at the top of the table players can open
+// for themselves. Clients are told a username and nothing else — exactly the
+// identity that rating table already shows everyone.
+//
+// Polled rather than recomputed on every bm change: bm moves on each
+// saveProgress (every few seconds, per player), while the leader changes rarely.
+// The query rides the existing { bm: -1 } index and reads a single document.
+let _topPlayerUsername = null;
+const TOP_PLAYER_POLL_MS = 60000;
+async function _refreshTopPlayer() {
+  try {
+    const top = await PlayerModel.findOne({}, 'username').sort({ bm: -1 }).lean();
+    const name = top?.username || null;
+    if (name === _topPlayerUsername) return;
+    _topPlayerUsername = name;
+    io.emit('topPlayer', { username: name });
+  } catch (err) { console.error('_refreshTopPlayer:', err); }
+}
+
 // Global chat history (last 30 messages across all floors)
 const globalChatHistory = [];
 function _recordChat(username, text) {
@@ -1819,6 +1841,9 @@ function _initFloorRooms() {
     floorRooms.set(f, new Room(f, io));
   }
   console.log('Floor rooms initialized');
+  // Needs Mongo, so it starts here rather than at require time.
+  _refreshTopPlayer();
+  setInterval(_refreshTopPlayer, TOP_PLAYER_POLL_MS);
 }
 // 'open' only ever fires once per connection and never fires at all if
 // Mongo wasn't reachable yet at the moment this ran — so the game world
@@ -2073,7 +2098,7 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername });
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -2129,7 +2154,7 @@ io.on('connection', socket => {
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance });
+      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername });
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });

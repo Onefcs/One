@@ -68,9 +68,12 @@ function netConnect(onReady) {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance }) => {
+  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer }) => {
     _authOkReceived = true;
     netUsername = username;
+    // Rating leader, for the aura in pixi-world.js. Carried on authOk so a
+    // client that joins between two 'topPlayer' broadcasts still knows.
+    window._topPlayer = topPlayer || null;
     // The server had no record for this telegramId — either a genuine first
     // login, or an account that existed before but was deleted from the DB
     // (e.g. by an admin). Either way there's nothing to resume: clear any
@@ -535,6 +538,12 @@ function netConnect(onReady) {
       window._gramBalance = (window._gramBalance || 0) + gram;
       dmgNum(px, py - 68, '+' + gram.toFixed(7) + ' GRAM', '#4fd67a');
     }
+  });
+
+  // Rating leader changed — whoever this is now wears the aura (pixi-world.js).
+  // Sent to everyone, so the glow moves the moment the top spot does.
+  socket.on('topPlayer', ({ username } = {}) => {
+    window._topPlayer = username || null;
   });
 
   // One boss per corridor — bossStatus is a map keyed by arm name
