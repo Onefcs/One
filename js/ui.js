@@ -3687,14 +3687,28 @@ function onMarketError(msg) {
   _marketToast(msg || t('genericErrorLbl'), 'err');
 }
 function onMarketListError(msg) {
-  if (_pendingSellItem) {
-    const it = _pendingSellItem.item;
-    addToInventoryQty(it, it.qty || 1);
-    updateInvUI();
-    _pendingSellItem = null;
-    _setSellPickerBusy(false);
-  }
-  _marketToast(msg || t('genericErrorLbl'), 'err');
+  if (_rollbackPendingSell()) _marketToast(msg || t('genericErrorLbl'), 'err');
+}
+// Called when the socket drops while a marketList request is in flight
+// (js/network.js's 'disconnect' handler) — the optimistic splice in
+// _confirmMarketList is normally undone by marketListError, but that event
+// can never arrive once the connection itself is gone, which is exactly the
+// "оборвалась связь" scenario that used to strand the item in limbo forever
+// (see _pendingSellItem). Restore it locally instead of waiting for a
+// response that will never come.
+function onMarketConnectionLost() {
+  if (_rollbackPendingSell()) _marketToast(t('noServerConn'), 'err');
+}
+// Shared by onMarketListError and onMarketConnectionLost. Returns true if
+// there was a pending sell to roll back.
+function _rollbackPendingSell() {
+  if (!_pendingSellItem) return false;
+  const it = _pendingSellItem.item;
+  addToInventoryQty(it, it.qty || 1);
+  updateInvUI();
+  _pendingSellItem = null;
+  _setSellPickerBusy(false);
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────

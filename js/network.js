@@ -988,6 +988,12 @@ function netConnect(onReady) {
 
   socket.on('disconnect', () => {
     _authOkReceived = false;
+    // A marketList request may be in flight right now (item already spliced
+    // out of the local inventory optimistically, see _confirmMarketList in
+    // js/ui.js). The only rollback path, marketListError, comes over this
+    // same socket, so once it's dead that response is never coming — restore
+    // the item locally instead of leaving it stranded forever.
+    if (typeof onMarketConnectionLost === 'function') onMarketConnectionLost();
     // NOT socket = null: this is the same Socket.IO client instance that
     // will auto-reconnect (default behavior) and re-fire 'connect' on itself
     // — nulling the module-level reference here left every socket?.emit(...)
