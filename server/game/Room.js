@@ -1,29 +1,58 @@
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
-const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops } = require('../../shared/definitions');
+const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
+        enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
-// Replicates client recompute() formula — single source of truth for server stats
-function computeStats(sd, cd) {
+// Replicates client recompute() formula — single source of truth for server
+// stats. Must stay step-for-step identical to recompute() (js/player.js) for
+// every PERMANENT stat source: base + upgrades + equipment (including its
+// enhancement) + passive skills. Temporary buffs (potions, skill buffs) are
+// deliberately left out — those are exactly what STAT_BUFF_HEADROOM below
+// leaves room for on top of this value.
+//
+// The per-point upgrade values are the ones UPGRADE_DEF advertises in the
+// upgrade UI (js/definitions.js): +1 ATK, +1 DEF, +10 MaxHP, +1% crit chance,
+// +3% crit power. This function used to carry its own, much larger numbers
+// (×3 ATK, ×2 DEF, ×25 HP, +2.5%/+15% crit) and to ignore both item
+// enhancement and passives entirely, so the server's idea of a player never
+// matched the character sheet the player was looking at. For atk/def/maxHp
+// that only skewed the anti-cheat ceiling, but updatePlayerStats() ASSIGNS
+// crit from here rather than capping it, so the wrong crit numbers were the
+// ones actually rolled in combat — a crit landed for a different multiplier
+// than the sheet showed, and "Кровавая ярость" (+4% crit power per level) did
+// nothing at all because passives never reached the server.
+function computeStats(sd, cd, type) {
   const u = sd.upgrades || {};
-  const baseAtk   = sd.baseAtk   ?? cd.baseAtk;
-  const baseDef   = sd.baseDef   ?? cd.baseDef;
-  const baseMaxHp = sd.baseMaxHp ?? cd.baseHP;
-  let eqAtk = 0, eqDef = 0, eqHp = 0, hpPct = 0, extraCrit = 0;
+  let a = (sd.baseAtk   ?? cd.baseAtk) + (u.atk || 0) * 1;
+  let d = (sd.baseDef   ?? cd.baseDef) + (u.def || 0) * 1;
+  let h = (sd.baseMaxHp ?? cd.baseHP)  + (u.hp  || 0) * 10;
+  let hpPct = 0, extraCrit = 0;
   Object.values(sd.equipment || {}).forEach(it => {
     if (!it) return;
-    eqAtk  += it.atk   || 0;
-    eqDef  += it.def   || 0;
-    eqHp   += it.hp    || 0;
-    hpPct  += it.hpPct || 0;
+    // Enhancement (+N) is part of an item's real stats — see _canonSavedItem
+    // (server/index.js), which validates and preserves `enhance` on the way in.
+    const eb = enhanceBonus(it, it.enhance || 0);
+    a     += (it.atk || 0) + (eb.atk || 0);
+    d     += (it.def || 0) + (eb.def || 0);
+    h     += (it.hp  || 0) + (eb.hp  || 0);
+    hpPct += it.hpPct || 0;
     if (it.critChance) extraCrit += it.critChance;
   });
+  // Passive skills (shared/definitions.js). passiveBonusTotal clamps every
+  // level to PASSIVE_MAX_LEVEL and only reads known passive ids, so a client
+  // can't inflate these by sending junk in savedData.passiveLevels.
+  const pt = passiveBonusTotal(sd.passiveLevels, type || sd.type);
+  hpPct += pt.hpPct;
+  h = Math.floor(h * (1 + hpPct));
+  a = Math.floor(a * (1 + pt.atkPct));
+  d = Math.floor(d * (1 + pt.defPct));
   const lvl = (sd.lvl || 1) - 1;
   return {
-    atk:       baseAtk   + (u.atk || 0) * 3 + eqAtk,
-    def:       baseDef   + (u.def || 0) * 2 + eqDef,
-    maxHp:     Math.floor((baseMaxHp + (u.hp || 0) * 25 + eqHp) * (1 + hpPct)),
-    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.025 + extraCrit),
-    critPower:  1.5 + lvl * 0.015 + (u.critPower || 0) * 0.15,
+    atk: a,
+    def: d,
+    maxHp: h,
+    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit),
+    critPower:  1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + pt.critPowerFlat,
   };
 }
 
@@ -680,7 +709,7 @@ class Room {
     p.pvpMode = false;
     p._profileRev++;
     if (savedStats) {
-      const s = computeStats(savedStats, cd);
+      const s = computeStats(savedStats, cd, type);
       p.atk        = s.atk;
       p.def        = s.def;
       p.maxHp      = s.maxHp;
@@ -815,7 +844,7 @@ class Room {
     // claimed last time — a self-referential cap ("min(x, prev*1.5+100)")
     // ratchets up to its ceiling in ~10 calls regardless of what prev
     // actually was, since the client controls prev too.
-    const trueBase = computeStats(p._sd || {}, cd);
+    const trueBase = computeStats(p._sd || {}, cd, p.type);
     if (atk  >  0) p.atk  = Math.min(atk,  trueBase.atk * STAT_BUFF_HEADROOM);
     if (def  >= 0) p.def  = Math.min(def,  trueBase.def * STAT_BUFF_HEADROOM);
     if (maxHp > 0) {
