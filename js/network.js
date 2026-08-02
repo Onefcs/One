@@ -260,6 +260,7 @@ function netConnect(onReady) {
           if (p.clanIcon !== undefined && op.clanIcon !== p.clanIcon) { op.clanIcon = p.clanIcon; op._clanTagCanvas = null; }
           if (p.maxHp    !== undefined) op.maxHp    = p.maxHp;
           if (p.pvpMode  !== undefined) op.pvpMode  = p.pvpMode || false;
+          if (p.wEnh     !== undefined) op.wEnh     = p.wEnh || 0;
           op.hp = p.hp; op.facing = p.facing;
           if (op.x === undefined) { op.x = p.x; op.y = p.y; }
 

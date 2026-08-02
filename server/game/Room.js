@@ -1,6 +1,6 @@
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
+        enhanceBonus, passiveBonusTotal, ENHANCE_MAX } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server
@@ -54,6 +54,14 @@ function computeStats(sd, cd, type) {
     critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit),
     critPower:  1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + pt.critPowerFlat,
   };
+}
+
+// Enhance level of the weapon the player has equipped, for the swing-trail glow
+// (shared/definitions.js enhanceGlow). Clamped here so a bad save can't widen
+// the wire field, which is a single byte.
+function _weaponEnhance(sd) {
+  const w = sd && sd.equipment ? sd.equipment.weapon : null;
+  return w ? Math.max(0, Math.min(ENHANCE_MAX, Math.floor(w.enhance) || 0)) : 0;
 }
 
 function _critDmg(base, critChance, critPower) {
@@ -583,6 +591,7 @@ class Room {
               x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
               pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
               clanName: op.clanName || null, clanIcon: op.clanIcon || null,
+              wEnh: op.wEnh || 0,
             });
           } else {
             nearPlayers.push({
@@ -632,7 +641,7 @@ class Room {
       clanName: clanName || null, clanIcon: clanIcon || null,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
-      pvpMode: false, lastAtkSeq: 0,
+      pvpMode: false, lastAtkSeq: 0, wEnh: 0,
       _known: new Map(),
       _profileRev: 1, _seq: ++this._pSeq,
     });
@@ -727,6 +736,7 @@ class Room {
       // so statsUpdate can always re-derive a true base from up-to-date
       // equipment/upgrades instead of trusting the client's own numbers.
       p._sd = savedStats;
+      p.wEnh = _weaponEnhance(savedStats);
     } else {
       p.hp = p.maxHp = cd.baseHP;
       p.atk = cd.baseAtk;
@@ -742,6 +752,12 @@ class Room {
     const p = this.players.get(socketId);
     if (!p) return;
     p._sd = sd || {};
+    // Swapping or enhancing a weapon changes how this player's swing looks to
+    // everyone else, and that only travels in a "full" entry — so it has to
+    // bump _profileRev the same way a clan or pvpMode change does, or the glow
+    // wouldn't appear for onlookers until the next periodic refresh.
+    const wEnh = _weaponEnhance(p._sd);
+    if (p.wEnh !== wEnh) { p.wEnh = wEnh; p._profileRev++; }
   }
 
   updatePlayerPos(socketId, x, y, facing) {

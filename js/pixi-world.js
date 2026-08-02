@@ -819,6 +819,40 @@ function _drawTopAura(g, cx, cy, ts) {
   }
 }
 
+// ── swing trail ───────────────────────────────────────────
+// Draws the arc a swing leaves behind, plus the enchantment glow when the
+// weapon is enhanced (shared/definitions.js enhanceGlow explains why the glow
+// rides the swing rather than the blade — the weapon is painted into each
+// character's spritesheet, so there is no blade object to light up).
+//
+// The plain pale line is drawn last, on top, so an enhanced swing keeps exactly
+// the shape an ordinary one has and the glow reads as light coming off it.
+// Callers pass their own radius/width, so both the local player and everyone
+// else keep the arcs they already had.
+function _drawSwingTrail(g, cx, cy, angle, wEnh, baseR, baseW, baseA, spread) {
+  const glow = (typeof enhanceGlow === 'function') ? enhanceGlow(wEnh) : null;
+  if (glow) {
+    // Widest and faintest first — the overlap is what makes the bloom.
+    for (let i = 3; i >= 1; i--) {
+      g.lineStyle(glow.width * (1 + i * 0.6), glow.color, glow.alpha * 0.13);
+      g.arc(cx, cy, baseR, angle - spread - 0.07, angle + spread + 0.07);
+    }
+    g.lineStyle(glow.width, glow.color, glow.alpha);
+    g.arc(cx, cy, baseR, angle - spread, angle + spread);
+    // Sparks flicked off the arc, only at the higher tiers.
+    for (let i = 0; i < glow.sparks; i++) {
+      const a = angle - spread + Math.random() * spread * 2;
+      const r = baseR + 2 + Math.random() * 9;
+      g.beginFill(glow.color, glow.alpha * (0.5 + Math.random() * 0.5));
+      g.drawCircle(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 0.9 + Math.random() * 1.3);
+      g.endFill();
+    }
+  }
+  g.lineStyle(baseW, 0xc8dcff, glow ? Math.min(1, baseA + 0.15) : baseA);
+  g.arc(cx, cy, baseR, angle - spread, angle + spread);
+  g.lineStyle(0);
+}
+
 function _getOtherPlayer(sid) {
   if (_otherPool.has(sid)) return _otherPool.get(sid);
   const ct   = new PIXI.Container();
@@ -920,10 +954,7 @@ function _updateOtherPlayers(pulse, ts) {
     }
 
     if (swinging) {
-      const sa = p._swingAngle || 0;
-      gfx.lineStyle(2.5, 0xc8dcff, 0.65);
-      gfx.arc(0, 0, 30, sa - 0.65, sa + 0.65);
-      gfx.lineStyle(0);
+      _drawSwingTrail(gfx, 0, 0, p._swingAngle || 0, p.wEnh || 0, 30, 2.5, 0.65, 0.65);
     }
 
     if (!usedSprite) {
@@ -1008,11 +1039,10 @@ function _updatePlayer(dt, ts) {
     _plGfx.lineStyle(0);
   }
 
-  // Swing arc
+  // Swing arc — with the enchantment trail when the equipped weapon is enhanced
   if (swingTimer > 0) {
-    _plGfx.lineStyle(3, 0xc8dcff, 0.75);
-    _plGfx.arc(player.x, player.y, 34, swingAngle - 0.7, swingAngle + 0.7);
-    _plGfx.lineStyle(0);
+    const _w = player.equipment && player.equipment.weapon;
+    _drawSwingTrail(_plGfx, player.x, player.y, swingAngle, _w ? _w.enhance || 0 : 0, 34, 3, 0.75, 0.7);
   }
 
   // HP bar

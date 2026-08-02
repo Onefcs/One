@@ -22,7 +22,8 @@
 //     i32 hp
 //     u16 atkSeq
 //     full only: str id, str username, u8 charType (255=none),
-//                i32 maxHp, u8 pvpMode, str clanName, u8 clanIcon
+//                i32 maxHp, u8 pvpMode, str clanName, u8 clanIcon,
+//                u8 wEnh (equipped weapon's enhance level, 0-ENHANCE_MAX)
 //   [enemies] u16 count (a shared open world can hold hundreds), per entry:
 //     u8  flags          bit0 = full
 //     u16 idx            enemy handle
@@ -129,6 +130,7 @@ function encodeGameState(players, enemies, t, enemiesGen) {
         _ncDV.setUint8(o, p.pvpMode ? 1 : 0); o += 1;
         o = _ncWStr(o, p.clanName || '');
         _ncDV.setUint8(o, p.clanIcon || 0); o += 1;
+        _ncDV.setUint8(o, p.wEnh || 0); o += 1;
       }
     }
   }
@@ -217,9 +219,10 @@ function decodeGameState(data) {
         const pvpMode = !!dv.getUint8(o); o += 1;
         const clanName = rStr() || null;
         const clanIcon = dv.getUint8(o) || null; o += 1;
+        const wEnh = dv.getUint8(o); o += 1;
         _ncPIdMap.set(seq, id);
         players.push({ id, username, type: ti === 255 ? null : NC_CHAR_TYPES[ti],
-          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon });
+          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon, wEnh });
       } else {
         const id = _ncPIdMap.get(seq);
         // Unknown handle (map lost) — skip; the periodic full refresh

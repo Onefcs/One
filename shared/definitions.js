@@ -486,6 +486,31 @@ function enhanceBonus(it, levels) {
   if (it.hp)  b.hp  = Math.max(5, Math.ceil(it.hp  * 0.10)) * levels;
   return b;
 }
+// How an enhanced weapon shows itself in the world (js/pixi-world.js).
+//
+// Each class's weapon is painted into its character spritesheet frame by frame,
+// so there is no separate blade object to light up on its own. What there IS,
+// already drawn for every attack by both the local player and everyone else, is
+// the swing arc — the one moment the weapon's path is actually on screen. So
+// the enchantment rides that: a brighter, thicker, hotter-coloured trail the
+// higher the weapon is enhanced, with sparks thrown off at the top tiers.
+//
+// Below +1 this returns null and the swing keeps the plain pale arc it has
+// today, so the glow appearing at all is the visible reward for enhancing.
+// Tiers are ordered high→low; the first one the level reaches wins.
+const ENHANCE_GLOW_TIERS = [
+  { min: 15, color: 0xfff4d6, width: 6.5, alpha: 0.95, sparks: 5 }, // white-hot
+  { min: 12, color: 0xc07af0, width: 5.5, alpha: 0.85, sparks: 4 }, // violet
+  { min:  8, color: 0xff8a3c, width: 4.6, alpha: 0.78, sparks: 3 }, // ember
+  { min:  4, color: 0xffc63c, width: 3.9, alpha: 0.68, sparks: 2 }, // gold
+  { min:  1, color: 0xffe09a, width: 3.2, alpha: 0.55, sparks: 0 }, // faint
+];
+function enhanceGlow(level) {
+  const lvl = Math.max(0, Math.min(ENHANCE_MAX, level || 0));
+  if (lvl < 1) return null;
+  return ENHANCE_GLOW_TIERS.find(tier => lvl >= tier.min) || null;
+}
+
 // Items that stack into one inventory slot by id, tracked with a qty
 // counter (mirrors _isStackable in player.js)
 function isStackableItem(it) { return it.slot === 'material' || it.slot === 'recipe' || it.slot === 'buff_potion' || it.slot === 'box'; }
@@ -725,7 +750,7 @@ if (typeof module !== 'undefined') module.exports = {
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, enhanceGlow, isStackableItem,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
