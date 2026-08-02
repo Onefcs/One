@@ -672,7 +672,12 @@ function update(dt, realDt) {
   if (!nearNpc) {
     npcs.forEach(n => { if (dist(player.x, player.y, n.x, n.y) < 65) nearNpc = n; });
   }
-  if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0) ? 'block' : 'none';
+  // Hidden while the chat panel is open: the button now draws above the chat
+  // layer (css/style.css #npc-talk-btn) so a chat preview bubble can't cover
+  // it, and the open panel's own input sits in exactly this strip — without
+  // this it would land on top of the text field.
+  const _chatOpenNow = document.getElementById('chat-panel')?.classList.contains('open');
+  if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0 && !_chatOpenNow) ? 'block' : 'none';
 
   // Snapshot interpolation — render others at (serverNow - INTERP_MS)
   // Always between two known positions → no prediction errors, perfectly linear

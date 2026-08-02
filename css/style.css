@@ -406,7 +406,13 @@ canvas { display:block; width:100%; height:100%; }
   background:rgba(55,43,21,0.95); border:1px solid #c09750;
   border-radius:20px; padding:10px 22px;
   color:#e69419; font-size:14px; font-weight:bold;
-  z-index:30; cursor:pointer; user-select:none;
+  /* Above the chat widgets (#chat-preview 61, #chat-btn 62, index.html): the
+     preview bubble sits on the same bottom strip and is wide enough to cover
+     most of this button, so at the old z-index:30 walking up to an NPC left
+     the "Поговорить" prompt hidden behind a chat message. The button is
+     hidden outright while the chat panel is open (see the display rule in
+     js/game.js), so winning here never means covering the chat input. */
+  z-index:63; cursor:pointer; user-select:none;
   box-shadow:0 4px 20px rgba(202,157,78,0.4);
   transition:opacity 0.15s;
   touch-action:manipulation;
