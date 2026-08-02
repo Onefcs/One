@@ -183,6 +183,22 @@ function netConnect(onReady) {
     loadSprites(type, () => {});
   });
 
+  // Equipped pets of everyone already on the floor, sent as we join.
+  socket.on('playerPets', ({ pets } = {}) => {
+    (pets || []).forEach(({ id, petId }) => {
+      if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
+      otherPlayers.get(id).petId = petId || null;
+      if (petId && typeof loadPetSprites === 'function') loadPetSprites(petId);
+    });
+  });
+
+  // One player equipped/unequipped a pet.
+  socket.on('playerPet', ({ id, petId } = {}) => {
+    if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
+    otherPlayers.get(id).petId = petId || null;
+    if (petId && typeof loadPetSprites === 'function') loadPetSprites(petId);
+  });
+
   socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs }) => {
     dungeonLvl = floor;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };

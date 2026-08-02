@@ -86,6 +86,12 @@ const PLAYER_AOI_R2 = 600 * 600;
 // so someone right at the edge of the screen — visible, but whose exact
 // position the client and server may disagree on by a few frames of movement
 // — still counts, instead of flickering in and out of the share.
+// Equipped pet id out of a save blob, or null. Pets live in the normal
+// equipment map (slot 'pet'), so this is just a guarded lookup.
+function _petIdOf(sd) {
+  return (sd && sd.equipment && sd.equipment.pet && sd.equipment.pet.id) || null;
+}
+
 const PARTY_SHARE_R = 700;
 const PARTY_SHARE_R2 = PARTY_SHARE_R * PARTY_SHARE_R;
 // At most this many other players per packet (screen fits ~15). Bounds the
@@ -734,21 +740,39 @@ class Room {
       // so statsUpdate can always re-derive a true base from up-to-date
       // equipment/upgrades instead of trusting the client's own numbers.
       p._sd = savedStats;
+      p.petId = _petIdOf(savedStats);
     } else {
       p.hp = p.maxHp = cd.baseHP;
       p.atk = cd.baseAtk;
       p.def = cd.baseDef;
       p._sd = {};
+      p.petId = null;
     }
   }
 
   // Called on every saveProgress — keeps p._sd (the basis for statsUpdate's
   // true-base recomputation) in sync with the player's actual equipment/
   // upgrades/level without waiting for the next character (re)selection.
+  // Returns true when the equipped pet changed, so the caller knows to tell
+  // the other clients (pets are broadcast as their own small event rather
+  // than as a gameState field — see the playerPet handler in server/index.js).
   updatePlayerSavedData(socketId, sd) {
     const p = this.players.get(socketId);
-    if (!p) return;
+    if (!p) return false;
     p._sd = sd || {};
+    const petId = _petIdOf(p._sd);
+    if (petId === p.petId) return false;
+    p.petId = petId;
+    return true;
+  }
+
+  // socketId -> equipped pet id, for everyone in the room who has one. Sent
+  // to a player as they join so they see the pets that are already out,
+  // instead of only ones equipped after they arrived.
+  petSnapshot() {
+    const out = [];
+    this.players.forEach(p => { if (p.petId) out.push({ id: p.socketId, petId: p.petId }); });
+    return out;
   }
 
   updatePlayerPos(socketId, x, y, facing) {

@@ -18,7 +18,7 @@ let _projGfx  = null;
 let _playerCt = null;
 let _plAura = null;
 let _dmgNumCt = null;
-let _petCt = null; // equipped-pet follower (local player only, see _updatePet)
+let _petCt = null; // holds every player's pet follower (see _updatePets)
 
 // Entity sprite pools
 const _enemyPool  = new Map(); // id  → {ct, spr, gfx}
@@ -28,10 +28,9 @@ const _npcPool    = new Map(); // npc.id → {ct, spr, gfx}
 // Player rendering objects
 let _plSpr = null, _plGfx = null;
 
-// Equipped-pet follower rendering objects + trailing-follow simulation state
-let _petSpr = null, _petGfx = null;
-let _petState = null;       // { x, y, facing, moving } — world-space, eased toward a point behind the player
-let _petLoadedFor = null;   // petId whose sheets loadPetSprites() has been asked to fetch
+// petId whose sheets loadPetSprites() has been asked to fetch for the LOCAL
+// player. Other players' pets are fetched as their ids arrive (js/network.js).
+let _petLoadedFor = null;
 
 // Damage-number pool
 const _dmgActive = [];
@@ -92,6 +91,9 @@ function pixiClearEntityPools() {
   _enemyPool.clear();
   _otherPool.forEach(obj => obj.ct.destroy({ children: true }));
   _otherPool.clear();
+  _petPool.forEach(obj => obj.ct.destroy({ children: true }));
+  _petPool.clear();
+  Object.keys(_petTex).forEach(k => delete _petTex[k]);
   // Invalidate player texture cache so new char type picks up fresh textures
   Object.keys(_pTex).forEach(k => delete _pTex[k]);
 }
@@ -115,6 +117,7 @@ function pixiRemoveOtherPlayer(sid) {
   if (!obj) return;
   obj.ct.destroy({ children: true });
   _otherPool.delete(sid);
+  pixiRemovePet(sid);
 }
 
 function pixiResize(w, h, dpr) {
@@ -1083,12 +1086,11 @@ function _updatePlayer(dt, ts) {
   _lastPlayerUsedSprite = usedSprite;
 }
 
-// ── equipped pet (local player only — see the equip-slot 'pet' feature) ──
-// Trails a point behind the player rather than sitting glued to player.x/y,
-// so it visibly follows instead of teleporting; the chase speed is capped at
-// player.speed (never faster) per the spec ("follows at the same speed as
-// the character") — it only visibly keeps pace rather than closing the gap
-// instantly, same as a real trailing companion would.
+// ── equipped pets ─────────────────────────────────────────
+// Every player's pet is drawn, not just the local one: pet ids arrive via
+// the 'playerPets'/'playerPet' events (see js/network.js) and ride on the
+// otherPlayers entries. Each pet trails a point behind its owner rather than
+// sitting glued to them, so it visibly follows instead of teleporting.
 function _dirVecFromFacing(facing) {
   const idx = FACING8_DIRS.indexOf(facing);
   if (idx < 0) return [0, 1]; // default: front
@@ -1098,84 +1100,134 @@ function _dirVecFromFacing(facing) {
 function _petFacing4(nx, ny) {
   return Math.abs(nx) > Math.abs(ny) ? (nx > 0 ? 'right' : 'left') : (ny > 0 ? 'front' : 'back');
 }
-const _PET_TRAIL_OFFSET = 24;  // world px behind the player the pet trails at
+const _PET_TRAIL_OFFSET = 24;  // world px behind the owner the pet trails at
 const _PET_SNAP_DIST    = 260; // floor change / respawn — snap instead of visibly sliding across the map
 const _PET_DISPLAY_SCALE = 0.5; // fraction of the player's own sprite height (was 1/3, ×1.5)
+// Chase cap for OTHER players' pets. The local pet uses its owner's real
+// player.speed, but remote players don't report their speed — this just has to be
+// at least the fastest class (ranger, 175) plus move-speed passives so a pet
+// never visibly lags behind its owner; the trailing offset above, not this,
+// is what produces the follow look.
+const _PET_REMOTE_SPEED = 260;
 
-function _updatePet(dt) {
-  const petItem = player && player.equipment ? player.equipment.pet : null;
-  if (!_petCt) return;
-  if (!player || (state !== 'playing' && state !== 'dead') || !petItem) {
-    _petCt.visible = false;
-    _petState = null;
-    return;
-  }
+// One pooled {ct, spr, gfx} + trailing sim state per pet owner, keyed by
+// socket id ('self' for the local player).
+const _petPool = new Map();
 
-  const petId = petItem.id;
-  if (_petLoadedFor !== petId) {
-    _petLoadedFor = petId;
-    if (typeof loadPetSprites === 'function') loadPetSprites(petId);
-  }
+function _getPetObj(key) {
+  let obj = _petPool.get(key);
+  if (obj) return obj;
+  const ct  = new PIXI.Container();
+  const gfx = new PIXI.Graphics();
+  const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
+  spr.visible = false;
+  ct.addChild(gfx, spr);
+  _petCt.addChild(ct);
+  obj = { ct, gfx, spr, st: null };
+  _petPool.set(key, obj);
+  return obj;
+}
 
-  const [fx, fy] = _dirVecFromFacing(player.facing);
-  const targetX = player.x - fx * _PET_TRAIL_OFFSET;
-  const targetY = player.y - fy * _PET_TRAIL_OFFSET;
+function pixiRemovePet(key) {
+  const obj = _petPool.get(key);
+  if (!obj) return;
+  obj.ct.destroy({ children: true });
+  _petPool.delete(key);
+}
 
-  if (!_petState) _petState = { x: targetX, y: targetY, facing: 'front', moving: false };
+// Advances one pet's trailing position/facing toward a point behind its
+// owner, then draws it. ownerX/ownerY/ownerFacing describe the owner this
+// frame; speed caps how fast the pet may close the gap.
+function _updateOnePet(key, petId, ownerX, ownerY, ownerFacing, speed, dt) {
+  const obj = _getPetObj(key);
+  obj._visGen = _petVisGen;
 
-  const dx = targetX - _petState.x, dy = targetY - _petState.y;
+  const [fx, fy] = _dirVecFromFacing(ownerFacing);
+  const targetX = ownerX - fx * _PET_TRAIL_OFFSET;
+  const targetY = ownerY - fy * _PET_TRAIL_OFFSET;
+
+  if (!obj.st) obj.st = { x: targetX, y: targetY, facing: 'front', moving: false };
+  const st = obj.st;
+
+  const dx = targetX - st.x, dy = targetY - st.y;
   const dist = Math.hypot(dx, dy);
   if (dist > _PET_SNAP_DIST) {
-    _petState.x = targetX; _petState.y = targetY;
-    _petState.moving = false;
+    st.x = targetX; st.y = targetY;
+    st.moving = false;
   } else if (dist > 0.5) {
-    const step = Math.min(dist, (player.speed || 0) * dt);
-    _petState.x += (dx / dist) * step;
-    _petState.y += (dy / dist) * step;
-    _petState.moving = step > 0.05;
-    if (_petState.moving) _petState.facing = _petFacing4(dx / dist, dy / dist);
+    const step = Math.min(dist, (speed || 0) * dt);
+    st.x += (dx / dist) * step;
+    st.y += (dy / dist) * step;
+    st.moving = step > 0.05;
+    if (st.moving) st.facing = _petFacing4(dx / dist, dy / dist);
   } else {
-    _petState.moving = false;
+    st.moving = false;
   }
 
-  if (!_petSpr) {
-    _petSpr = new PIXI.Sprite(PIXI.Texture.WHITE);
-    _petSpr.visible = false;
-    _petGfx = new PIXI.Graphics();
-    _petCt.addChild(_petGfx, _petSpr);
-  }
-  _petCt.visible = true;
-
-  _petGfx.clear();
-  _petGfx.beginFill(0x000000, 0.25);
-  _petGfx.drawEllipse(_petState.x, _petState.y + 3, 9, 3.5);
-  _petGfx.endFill();
+  obj.ct.visible = true;
+  obj.gfx.clear();
+  obj.gfx.beginFill(0x000000, 0.25);
+  obj.gfx.drawEllipse(st.x, st.y + 3, 9, 3.5);
+  obj.gfx.endFill();
 
   const def = PET_SPRITE_DEF[petId];
-  const key = `${_petState.facing}-${_petState.moving ? 'run' : 'idle'}`;
-  const textures = _petTextures(petId, key);
+  const animKey = `${st.facing}-${st.moving ? 'run' : 'idle'}`;
+  const textures = _petTextures(petId, animKey);
   if (textures && def) {
-    const ad = def.anims[key];
-    if (_petState._animKey !== key) { _petState._animKey = key; _petState._animFrame = 0; _petState._animTimer = 0; }
-    _petState._animTimer += dt;
-    const step = 1 / ad.fps;
-    while (_petState._animTimer >= step) {
-      _petState._animTimer -= step;
-      _petState._animFrame = ad.loop ? (_petState._animFrame + 1) % ad.n : Math.min(ad.n - 1, _petState._animFrame + 1);
+    const ad = def.anims[animKey];
+    if (st._animKey !== animKey) { st._animKey = animKey; st._animFrame = 0; st._animTimer = 0; }
+    st._animTimer += dt;
+    const fstep = 1 / ad.fps;
+    while (st._animTimer >= fstep) {
+      st._animTimer -= fstep;
+      st._animFrame = ad.loop ? (st._animFrame + 1) % ad.n : Math.min(ad.n - 1, st._animFrame + 1);
     }
     const cache = petSpriteCache[petId];
-    const img   = cache && cache[key];
+    const img   = cache && cache[animKey];
     const fw    = img?.frameW || def.frameW;
     const fh    = img?.frameH || def.frameH;
     const dh = _PLAYER_DISPLAY_H * _PET_DISPLAY_SCALE, dw = dh * fw / fh;
-    _petSpr.texture = textures[_petState._animFrame] || PIXI.Texture.WHITE;
-    _petSpr.width = dw; _petSpr.height = dh;
-    _petSpr.x = _petState.x - dw / 2;
-    _petSpr.y = _petState.y - dh * (def.anchorY != null ? def.anchorY : 0.7);
-    _petSpr.visible = true;
+    obj.spr.texture = textures[st._animFrame] || PIXI.Texture.WHITE;
+    obj.spr.width = dw; obj.spr.height = dh;
+    obj.spr.x = st.x - dw / 2;
+    obj.spr.y = st.y - dh * (def.anchorY != null ? def.anchorY : 0.7);
+    obj.spr.visible = true;
   } else {
-    _petSpr.visible = false;
+    obj.spr.visible = false;
   }
+}
+
+let _petVisGen = 0;
+function _updatePets(dt) {
+  if (!_petCt) return;
+  const gen = ++_petVisGen;
+
+  if (player && (state === 'playing' || state === 'dead')) {
+    const petItem = player.equipment ? player.equipment.pet : null;
+    if (petItem && petItem.id) {
+      if (_petLoadedFor !== petItem.id) {
+        _petLoadedFor = petItem.id;
+        if (typeof loadPetSprites === 'function') loadPetSprites(petItem.id);
+      }
+      _updateOnePet('self', petItem.id, player.x, player.y, player.facing, player.speed, dt);
+    }
+  }
+
+  // Other players — only the ones actually on screen, matching the same AOI
+  // sweep _updateOtherPlayers does, so an off-screen pet costs nothing.
+  otherPlayers.forEach((p, pid) => {
+    if (!p.petId || p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
+    _updateOnePet(pid, p.petId, p.x, p.y, p.facing || 'front', _PET_REMOTE_SPEED, dt);
+  });
+
+  // Anything not touched this frame (owner gone, off screen, pet unequipped)
+  // is hidden — and its trailing state dropped, so it doesn't slide across
+  // the map from a stale position when it comes back.
+  _petPool.forEach((obj, key) => {
+    if (obj._visGen === gen) return;
+    if (obj.ct.visible) { obj.ct.visible = false; obj.spr.visible = false; obj.gfx.clear(); }
+    obj.st = null;
+  });
 }
 
 // ── main render entry ─────────────────────────────────────
@@ -1201,7 +1253,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _updateEnemies(dt, pulse, bossGlow);
   _updateOtherPlayers(pulse, ts);
   _updateProjs();
-  _updatePet(dt);
+  _updatePets(dt);
   _updatePlayer(dt, ts);
   _updateDmgNums();
 

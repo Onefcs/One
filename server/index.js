@@ -2920,6 +2920,15 @@ io.on('connection', socket => {
     }
     currentRoom.setPlayerChar(socket.id, type, effectiveSaved);
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
+    // Whole roster to the arriving player, their own pet to everyone else —
+    // same shape both ways, so a missed update self-heals on the next join.
+    socket.emit('playerPets', { pets: currentRoom.petSnapshot() });
+    {
+      const _self = currentRoom.players.get(socket.id);
+      if (_self && _self.petId) {
+        socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _self.petId });
+      }
+    }
     socket.emit('gameStart', {
       floor: currentFloor,
       dungeon: currentRoom.dungeonData,
@@ -3409,7 +3418,18 @@ io.on('connection', socket => {
     // Keeps the Room's basis for statsUpdate's true-base recomputation
     // (server/game/Room.js updatePlayerStats) in sync with the player's
     // actual equipment/upgrades/level as they change mid-session.
-    if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, clean);
+    if (currentRoom) {
+      // Pets are the one bit of equipment other players can see, so a change
+      // has to be pushed out. Broadcast as its own tiny event rather than a
+      // gameState field: those go through the binary codec (shared/netcodec.js)
+      // and a client that's still running the previous bundle after a redeploy
+      // would misparse every packet, whereas an unknown extra event is simply
+      // ignored.
+      if (currentRoom.updatePlayerSavedData(socket.id, clean)) {
+        const _p = currentRoom.players.get(socket.id);
+        socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _p ? _p.petId : null });
+      }
+    }
     clearTimeout(_saveDebounceTimer);
     _saveDebounceTimer = setTimeout(() => {
       if (!authed) return;
