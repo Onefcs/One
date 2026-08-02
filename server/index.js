@@ -226,8 +226,8 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0,  skillBooks:{ random:1 } },
   { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1,  skillBooks:{ random:2 } },
   { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 } },
-  { id:'pkg50',  gram:50,  gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
-  { id:'pkg100', gram:100, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 } },
+  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
+  { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:3 },
 ];
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
@@ -2208,7 +2208,7 @@ io.on('connection', socket => {
       if (pkg.armor) {
         (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(id => {
           const base = ITEM_DEF.find(d => d.id === id);
-          if (base) inv.push({ ...base, enhance: 0 });
+          if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
         });
       }
 
@@ -2216,7 +2216,7 @@ io.on('connection', socket => {
       if (pkg.weapon) {
         const wepId = wepMap[pkg.weapon];
         const base = ITEM_DEF.find(d => d.id === wepId);
-        if (base) inv.push({ ...base, enhance: 0 });
+        if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
       }
 
       // Skill books — for the buyer's own class only (see charClass above)

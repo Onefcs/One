@@ -3705,8 +3705,8 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
   { id:'pkg10',  gram:10,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#eab65d', skillBooks:{ random:2 } },
   { id:'pkg30',  gram:30,  get label() { return t('gramPkgLabel_pkg30'); },  gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 } },
-  { id:'pkg50',  gram:50,  get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
-  { id:'pkg100', gram:100, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 } },
+  { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
+  { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:3 },
 ];
 
 function showGramShopBtn() {
@@ -3768,14 +3768,15 @@ function _gramShopPkgHtml(pkg, bal) {
   if (pkg.armor) {
     const key = pkg.armor.toLowerCase();
     const icons = _ARMOR_ICONS[key] || [];
-    rows += icons.map(i => ri(`/images/${i}`, '', key)).join('');
+    const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
+    rows += icons.map(i => ri(`/images/${i}`, enhLbl, key)).join('');
   }
 
   // weapon — class-specific
   if (pkg.weapon) {
     const key = pkg.weapon.toLowerCase();
     const pfx = wepPfxMap[key] || 'c';
-    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, '', key);
+    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, pkg.enhance ? `+${pkg.enhance}` : '', key);
   }
 
   // bonus skill points
@@ -3842,8 +3843,9 @@ function openGramShopConfirm(pkgId) {
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
-  const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}</div>` : '';
-  const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">${tVars('classWeaponFmt', { rarity: pkg.weapon })}</div>` : '';
+  const enhSuffix  = pkg.enhance ? ` +${pkg.enhance}` : '';
+  const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}${enhSuffix}</div>` : '';
+  const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">${tVars('classWeaponFmt', { rarity: pkg.weapon })}${enhSuffix}</div>` : '';
   const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
   const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
   const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
