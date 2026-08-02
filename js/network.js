@@ -360,8 +360,7 @@ function netConnect(onReady) {
   socket.on('faithShieldBuff', ({ duration }) => {
     if (!player) return;
     faithShieldTimer = duration;
-    player.def = Math.floor(player.def * 1.5);
-    if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+    if (typeof recompute === 'function') recompute();
     dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('faithShieldToast') : '🛡 Щит веры!', '#ff4');
     spawnBurst(player.x, player.y, '#ff4', 8);
   });

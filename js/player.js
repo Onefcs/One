@@ -240,12 +240,25 @@ function recompute() {
     extraAS += (player.charDef.atkSpeed || 0) * pt.atkSpeedPct;
   }
 
+  // Active skill buffs (timers live in js/state.js, ticked in js/game.js).
+  // Derived here rather than mutating player.atk/def at cast time: this
+  // function rebuilds both fields from scratch, so any unrelated recompute()
+  // — a level-up, a gear swap, a potion buff expiring — used to silently
+  // erase a still-running skill buff while its timer and icon kept going.
+  if (typeof battleCryTimer !== 'undefined' && battleCryTimer > 0) a = Math.floor(a * 1.20);
+  let defMult = 1;
+  if (typeof guardTimer       !== 'undefined' && guardTimer       > 0) defMult *= 1.80;
+  if (typeof barrierTimer     !== 'undefined' && barrierTimer     > 0) defMult *= 1.50;
+  if (typeof faithShieldTimer !== 'undefined' && faithShieldTimer > 0) defMult *= 1.50;
+  if (defMult !== 1) d = Math.floor(d * defMult);
+
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
+  if (typeof atkSpeedTimer !== 'undefined' && atkSpeedTimer > 0) player.atkSpeed *= 1.5;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0);
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
@@ -545,8 +558,7 @@ function useSkill(idx) {
       _pvpSkillAOE(110, _skillDmgMult('W'));
     } else if (sk.key === 'E') { // Гнев мертвеца — +20% ATK 5s (+1s per level)
       battleCryTimer = 5 + _skillBuffSec('E');
-      player.atk = Math.floor(player.atk * 1.20);
-      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      recompute(); // applies the buff off the timer above and pushes the new stats to the server
       dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
       spawnBurst(player.x, player.y, '#a5f', 10);
     } else if (sk.key === 'R') { // Рывок тьмы — dash 140px toward target/enemy, deal ×1.5 on arrival
@@ -610,7 +622,7 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, '#7e7', 6);
     } else if (sk.key === 'R') { // Attack Speed ×1.5 for 5s (+1s per level)
       atkSpeedTimer = 5 + _skillBuffSec('R');
-      player.atkSpeed = (player.atkSpeed || player.charDef.atkSpeed) * 1.5;
+      recompute();
       dmgNum(player.x, player.y - 40, '⚡ Скорость!', '#7ef');
       spawnBurst(player.x, player.y, '#7ef', 8);
     }
@@ -638,8 +650,7 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, '#8ef', 12);
     } else if (sk.key === 'E') { // Barrier — +50% DEF for 3s (+1s per level)
       barrierTimer = 3 + _skillBuffSec('E');
-      player.def = Math.floor(player.def * 1.5);
-      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      recompute();
       dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
       spawnBurst(player.x, player.y, '#e8e', 8);
     } else if (sk.key === 'R') { // Teleport (+10px per level)
@@ -680,8 +691,7 @@ function useSkill(idx) {
       dmgNum(player.x, player.y - 40, '⛓ Оковы тьмы!', '#a855e0');
     } else if (sk.key === 'E') { // Тёмный щит — +50% DEF self + party 4s (+1s per level)
       faithShieldTimer = 4 + _skillBuffSec('E');
-      player.def = Math.floor(player.def * 1.5);
-      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      recompute();
       if (typeof netFaithShield === 'function') netFaithShield(faithShieldTimer);
       dmgNum(player.x, player.y - 40, '🛡 Тёмный щит!', '#a855e0');
       spawnBurst(player.x, player.y, '#a855e0', 10);
@@ -722,8 +732,7 @@ function useSkill(idx) {
       _pvpSkillAOE(110, _skillDmgMult('W'));
     } else if (sk.key === 'E') { // Гнев мертвеца — +80% DEF 10s (+1s per level)
       guardTimer = 10 + _skillBuffSec('E');
-      player.def = Math.floor(player.def * 1.80);
-      if (typeof netStatsUpdate === 'function') netStatsUpdate(player.atk, player.def, player.maxHp);
+      recompute();
       dmgNum(player.x, player.y - 40, '🛡 +80% DEF!', '#ccd');
       spawnBurst(player.x, player.y, '#ccd', 10);
     } else if (sk.key === 'R') { // Кувырок — dash 140px toward target/enemy, ×1.5 on arrival

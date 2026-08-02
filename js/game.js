@@ -187,8 +187,9 @@ function _getRoomAt(wx, wy) {
 // ─────────────────────────────────────────────────────────
 //  UPDATE
 // ─────────────────────────────────────────────────────────
-function update(dt) {
+function update(dt, realDt) {
   if (state !== 'playing') return;
+  if (realDt == null) realDt = dt;
   frameCount++;
   if (transTimer > 0) { transTimer -= dt; return; }
 
@@ -281,14 +282,15 @@ function update(dt) {
     player.hp = Math.min(player.maxHp, player.hp + player.hpRegen * dt);
 
   // Potion cooldown tick
-  if ((player.potCd || 0) > 0) player.potCd = Math.max(0, player.potCd - dt);
+  if ((player.potCd || 0) > 0) player.potCd = Math.max(0, player.potCd - realDt);
 
-  // Buff timers tick
+  // Buff timers tick — realDt, so a 10-minute potion lasts ten real minutes
+  // instead of ten minutes of foreground animation frames.
   const _buffs = player.buffs || (player.buffs = {});
   let _buffChanged = false;
   for (const btype of Object.keys(_buffs)) {
     if (_buffs[btype] > 0) {
-      _buffs[btype] -= dt;
+      _buffs[btype] -= realDt;
       if (_buffs[btype] <= 0) {
         _buffs[btype] = 0;
         _buffChanged = true;
@@ -618,21 +620,25 @@ function update(dt) {
   // Skill timers
   if (player.skillCooldowns) {
     const cds = player.skillCooldowns;
-    if (cds.Q > 0) cds.Q -= dt;
-    if (cds.W > 0) cds.W -= dt;
-    if (cds.E > 0) cds.E -= dt;
-    if (cds.R > 0) cds.R -= dt;
+    if (cds.Q > 0) cds.Q -= realDt;
+    if (cds.W > 0) cds.W -= realDt;
+    if (cds.E > 0) cds.E -= realDt;
+    if (cds.R > 0) cds.R -= realDt;
   }
-  if (barrierTimer > 0) { barrierTimer -= dt; if (barrierTimer <= 0) { barrierTimer = 0; recompute(); } }
-  if (battleCryTimer > 0) { battleCryTimer -= dt; if (battleCryTimer <= 0) { battleCryTimer = 0; recompute(); } }
-  if (dodgeTimer > 0) dodgeTimer -= dt;
-  if (atkSpeedTimer > 0) { atkSpeedTimer -= dt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }
-  if (faithShieldTimer > 0) { faithShieldTimer -= dt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
-  if (guardTimer > 0) { guardTimer -= dt; if (guardTimer <= 0) { guardTimer = 0; recompute(); } }
-  if (vampirismTimer > 0) { vampirismTimer -= dt; if (vampirismTimer <= 0) vampirismTimer = 0; }
-  if (invisTimer > 0) { invisTimer -= dt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
-  if ((player.stunTimer || 0) > 0) { player.stunTimer -= dt; if (player.stunTimer <= 0) player.stunTimer = 0; }
-  if ((player.slowTimer || 0) > 0) { player.slowTimer -= dt; if (player.slowTimer <= 0) player.slowTimer = 0; }
+  // Buffs, cooldowns and crowd control all run on realDt — see the realDt
+  // comment in loop(). On dt they stopped advancing whenever the app was
+  // backgrounded, so a buff cast right before a screen lock stayed active
+  // (and kept boosting server-side damage) for as long as the player was away.
+  if (barrierTimer > 0) { barrierTimer -= realDt; if (barrierTimer <= 0) { barrierTimer = 0; recompute(); } }
+  if (battleCryTimer > 0) { battleCryTimer -= realDt; if (battleCryTimer <= 0) { battleCryTimer = 0; recompute(); } }
+  if (dodgeTimer > 0) dodgeTimer -= realDt;
+  if (atkSpeedTimer > 0) { atkSpeedTimer -= realDt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }
+  if (faithShieldTimer > 0) { faithShieldTimer -= realDt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
+  if (guardTimer > 0) { guardTimer -= realDt; if (guardTimer <= 0) { guardTimer = 0; recompute(); } }
+  if (vampirismTimer > 0) { vampirismTimer -= realDt; if (vampirismTimer <= 0) vampirismTimer = 0; }
+  if (invisTimer > 0) { invisTimer -= realDt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
+  if ((player.stunTimer || 0) > 0) { player.stunTimer -= realDt; if (player.stunTimer <= 0) player.stunTimer = 0; }
+  if ((player.slowTimer || 0) > 0) { player.slowTimer -= realDt; if (player.slowTimer <= 0) player.slowTimer = 0; }
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
   if (typeof tickQuestNotif === 'function') tickQuestNotif(dt);
 
@@ -1870,8 +1876,15 @@ function loop(ts) {
   let dt = 0;
   for (let i = 0; i < _DT_SMOOTH_N; i++) dt += _dtBuf[i];
   dt /= _DT_SMOOTH_N;
+  // Unclamped wall-clock delta, for anything that must expire on real time
+  // rather than on rendered frames. rAF stops entirely while the page is
+  // hidden (screen lock, app switch, another Telegram chat) and dt above is
+  // capped at 50ms a frame, so buffs and cooldowns ticked on dt froze for the
+  // whole background period — a 10s buff could outlive half an hour of real
+  // time. Physics stays on the clamped dt (see the comment above it).
+  const realDt = sinceLastRender / 1000;
   const _t0 = performance.now();
-  update(dt);
+  update(dt, realDt);
   const _t1 = performance.now();
   render(dt, ts);
   const _t2 = performance.now();
