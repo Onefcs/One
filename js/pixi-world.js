@@ -18,6 +18,7 @@ let _projGfx  = null;
 let _playerCt = null;
 let _plAura = null;
 let _dmgNumCt = null;
+let _petCt = null; // equipped-pet follower (local player only, see _updatePet)
 
 // Entity sprite pools
 const _enemyPool  = new Map(); // id  → {ct, spr, gfx}
@@ -26,6 +27,11 @@ const _npcPool    = new Map(); // npc.id → {ct, spr, gfx}
 
 // Player rendering objects
 let _plSpr = null, _plGfx = null;
+
+// Equipped-pet follower rendering objects + trailing-follow simulation state
+let _petSpr = null, _petGfx = null;
+let _petState = null;       // { x, y, facing, moving } — world-space, eased toward a point behind the player
+let _petLoadedFor = null;   // petId whose sheets loadPetSprites() has been asked to fetch
 
 // Damage-number pool
 const _dmgActive = [];
@@ -38,6 +44,7 @@ const _chunkSprCache = new Map(); // "cx,cy" → PIXI.Sprite
 const _pTex = {};          // charType|animKey → PIXI.Texture[]
 const _eTex = {};          // eid|sheetKey     → {down,up,left,right}: PIXI.Texture[]
 const _npcTex = {};        // npc icon id      → PIXI.Texture[]
+const _petTex = {};        // petId|animKey    → PIXI.Texture[]
 
 let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
 
@@ -67,13 +74,14 @@ function pixiInit(canvasEl) {
   _otherPCt = new PIXI.Container();
   _projGfx  = new PIXI.Graphics();
   _playerCt = new PIXI.Container();
+  _petCt    = new PIXI.Container();
   _dmgNumCt = new PIXI.Container();
 
   _worldCt.addChild(
     _tileCt, _lightsGfx, _aoeGfx,
     _npcCt, _dropGfx, _partGfx,
     _enemyCt, _otherPCt, _projGfx,
-    _playerCt, _dmgNumCt
+    _petCt, _playerCt, _dmgNumCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -155,6 +163,26 @@ function _playerTextures(charType, animKey) {
     arr.push(new PIXI.Texture(bt, new PIXI.Rectangle(col * fw, row * fh, fw, fh)));
   }
   return (_pTex[k] = arr);
+}
+
+function _petTextures(petId, animKey) {
+  const k = petId + '|' + animKey;
+  if (_petTex[k]) return _petTex[k];
+  const def   = PET_SPRITE_DEF[petId];
+  const cache = petSpriteCache[petId];
+  if (!def || !cache) return null;
+  const img = cache[animKey];
+  if (!img || img.naturalWidth !== undefined) return null; // not yet rasterized
+  const ad = def.anims[animKey];
+  const fw = img.frameW, fh = img.frameH;
+  const bt = PIXI.BaseTexture.from(img);
+  bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
+  const arr = [];
+  for (let i = 0; i < ad.n; i++) {
+    const col = i % ad.cols, row = Math.floor(i / ad.cols);
+    arr.push(new PIXI.Texture(bt, new PIXI.Rectangle(col * fw, row * fh, fw, fh)));
+  }
+  return (_petTex[k] = arr);
 }
 
 // img is only ever a raw <img> while its network load/decode is still in
@@ -1028,6 +1056,100 @@ function _updatePlayer(dt, ts) {
   _lastPlayerUsedSprite = usedSprite;
 }
 
+// ── equipped pet (local player only — see the equip-slot 'pet' feature) ──
+// Trails a point behind the player rather than sitting glued to player.x/y,
+// so it visibly follows instead of teleporting; the chase speed is capped at
+// player.speed (never faster) per the spec ("follows at the same speed as
+// the character") — it only visibly keeps pace rather than closing the gap
+// instantly, same as a real trailing companion would.
+function _dirVecFromFacing(facing) {
+  const idx = FACING8_DIRS.indexOf(facing);
+  if (idx < 0) return [0, 1]; // default: front
+  const rad = idx * 45 * Math.PI / 180;
+  return [Math.cos(rad), Math.sin(rad)];
+}
+function _petFacing4(nx, ny) {
+  return Math.abs(nx) > Math.abs(ny) ? (nx > 0 ? 'right' : 'left') : (ny > 0 ? 'front' : 'back');
+}
+const _PET_TRAIL_OFFSET = 24;  // world px behind the player the pet trails at
+const _PET_SNAP_DIST    = 260; // floor change / respawn — snap instead of visibly sliding across the map
+
+function _updatePet(dt) {
+  const petItem = player && player.equipment ? player.equipment.pet : null;
+  if (!_petCt) return;
+  if (!player || (state !== 'playing' && state !== 'dead') || !petItem) {
+    _petCt.visible = false;
+    _petState = null;
+    return;
+  }
+
+  const petId = petItem.id;
+  if (_petLoadedFor !== petId) {
+    _petLoadedFor = petId;
+    if (typeof loadPetSprites === 'function') loadPetSprites(petId);
+  }
+
+  const [fx, fy] = _dirVecFromFacing(player.facing);
+  const targetX = player.x - fx * _PET_TRAIL_OFFSET;
+  const targetY = player.y - fy * _PET_TRAIL_OFFSET;
+
+  if (!_petState) _petState = { x: targetX, y: targetY, facing: 'front', moving: false };
+
+  const dx = targetX - _petState.x, dy = targetY - _petState.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > _PET_SNAP_DIST) {
+    _petState.x = targetX; _petState.y = targetY;
+    _petState.moving = false;
+  } else if (dist > 0.5) {
+    const step = Math.min(dist, (player.speed || 0) * dt);
+    _petState.x += (dx / dist) * step;
+    _petState.y += (dy / dist) * step;
+    _petState.moving = step > 0.05;
+    if (_petState.moving) _petState.facing = _petFacing4(dx / dist, dy / dist);
+  } else {
+    _petState.moving = false;
+  }
+
+  if (!_petSpr) {
+    _petSpr = new PIXI.Sprite(PIXI.Texture.WHITE);
+    _petSpr.visible = false;
+    _petGfx = new PIXI.Graphics();
+    _petCt.addChild(_petGfx, _petSpr);
+  }
+  _petCt.visible = true;
+
+  _petGfx.clear();
+  _petGfx.beginFill(0x000000, 0.25);
+  _petGfx.drawEllipse(_petState.x, _petState.y + 3, 9, 3.5);
+  _petGfx.endFill();
+
+  const def = PET_SPRITE_DEF[petId];
+  const key = `${_petState.facing}-${_petState.moving ? 'run' : 'idle'}`;
+  const textures = _petTextures(petId, key);
+  if (textures && def) {
+    const ad = def.anims[key];
+    if (_petState._animKey !== key) { _petState._animKey = key; _petState._animFrame = 0; _petState._animTimer = 0; }
+    _petState._animTimer += dt;
+    const step = 1 / ad.fps;
+    while (_petState._animTimer >= step) {
+      _petState._animTimer -= step;
+      _petState._animFrame = ad.loop ? (_petState._animFrame + 1) % ad.n : Math.min(ad.n - 1, _petState._animFrame + 1);
+    }
+    const cache = petSpriteCache[petId];
+    const img   = cache && cache[key];
+    const fw    = img?.frameW || def.frameW;
+    const fh    = img?.frameH || def.frameH;
+    const dh = _PLAYER_DISPLAY_H / 3, dw = dh * fw / fh;
+    _petSpr.texture = textures[_petState._animFrame] || PIXI.Texture.WHITE;
+    _petSpr.width = dw; _petSpr.height = dh;
+    _petSpr.x = _petState.x - dw / 2;
+    _petSpr.y = _petState.y - dh * (def.anchorY != null ? def.anchorY : 0.7);
+    _petSpr.visible = true;
+  } else {
+    _petSpr.visible = false;
+  }
+}
+
 // ── main render entry ─────────────────────────────────────
 
 function pixiWorldRender(dt, ts, camX, camY, theme) {
@@ -1051,6 +1173,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _updateEnemies(dt, pulse, bossGlow);
   _updateOtherPlayers(pulse, ts);
   _updateProjs();
+  _updatePet(dt);
   _updatePlayer(dt, ts);
   _updateDmgNums();
 

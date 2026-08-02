@@ -134,6 +134,7 @@ const EQ_SLOTS = [
   { slot:'boots',   label:'Боты',   emptyIcon:'boots'  },
   { slot:'ring',    label:'Кольцо', emptyIcon:'ring'   },
   { slot:'belt',    label:'Пояс',   emptyIcon:'belt'   },
+  { slot:'pet',     label:'Питомец',emptyIcon:'pet'    },
 ];
 
 // icon = SVG fallback (js/icons.js); img = the real skill artwork from
@@ -252,6 +253,17 @@ const ITEM_CRAFT_RECIPES = [
   // ── Enchant stones ───────────────────────────────────────
   { matId:'norm_stone',  mats:[{id:'recu',n:50}], goldCost:500,  chance:1.0 },
   { matId:'bless_stone', mats:[{id:'recr',n:50}], goldCost:5000, chance:1.0 },
+];
+
+// Pet crafting: gold-only, no recipe scrolls — crafting a rarity tier gives
+// one random pet from that tier's 3 skins (ITEM_DEF entries with slot:'pet').
+// Unlike ITEM_CRAFT_RECIPES's per-item tiers (sw1→sw2→...), pets of the same
+// rarity are horizontal alternatives, not a progression, so there's no single
+// `itemId` to craft toward — see openPetCraftModal/craftPet in js/npc.js.
+const PET_CRAFT_RECIPES = [
+  { rarity:'common',   goldCost:500,  chance:1.0 },
+  { rarity:'uncommon', goldCost:2000, chance:1.0 },
+  { rarity:'rare',     goldCost:5000, chance:1.0 },
 ];
 
 // Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)

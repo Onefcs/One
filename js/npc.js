@@ -322,7 +322,85 @@ function _craftsmanMatsTab() {
     html += '</div>';
   }
 
+  if (typeof PET_CRAFT_RECIPES !== 'undefined' && PET_CRAFT_RECIPES.length) {
+    html += `<div class="craft-group-hdr" style="color:#89ba5f">${typeof t === 'function' ? t('craftPetsHdr') : 'Питомцы'}</div><div class="craft-items-grid">`;
+    PET_CRAFT_RECIPES.forEach((rec, idx) => {
+      const pets = _petsOfRarity(rec.rarity);
+      if (!pets.length) return;
+      const rc = RARITY_COLOR[rec.rarity] || '#aea599';
+      const canCraft = invHasSpace() && player.gold >= (rec.goldCost || 0);
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openPetCraftModal(${idx})" style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_itemIcon(pets[0], 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
   return html;
+}
+
+// ── Pet crafting (gold-only; result is random among that rarity's 3 skins —
+// see PET_CRAFT_RECIPES/ITEM_DEF slot:'pet' in shared/definitions.js and
+// js/definitions.js) ─────────────────────────────────────────────────────
+function _petsOfRarity(rarity) {
+  return ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity);
+}
+
+function openPetCraftModal(idx) {
+  const rec = PET_CRAFT_RECIPES[idx];
+  if (!rec || !player) return;
+  const pets = _petsOfRarity(rec.rarity);
+  if (!pets.length) return;
+  const rc = RARITY_COLOR[rec.rarity] || '#aea599';
+
+  const candidatesHtml = pets.map(p => `
+    <div style="text-align:center;flex:1">
+      <div>${_itemIcon(p, 44)}</div>
+      <div style="font-size:11px;color:${rc};margin-top:2px">${p.name}</div>
+    </div>`).join('');
+
+  const goldRow = `<div class="craft-req-row">
+    <span class="craft-req-icon">${iconHTML('coin', 20, '#e3941d')}</span>
+    <span class="craft-req-name">${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}</span>
+    <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${player.gold}/${rec.goldCost}</span>
+  </div>`;
+
+  const canCraft = invHasSpace() && player.gold >= (rec.goldCost || 0);
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
+        <div class="craft-detail-stats">${typeof t === 'function' ? t('craftPetPickOneOf') : 'Один случайный из 3'}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin:8px 0">${candidatesHtml}</div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
+    <div class="craft-reqs-list">${goldRow}</div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftPet(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
+  `;
+}
+
+function craftPet(idx) {
+  const rec = PET_CRAFT_RECIPES[idx];
+  if (!rec || !player) return;
+  if (player.gold < (rec.goldCost || 0)) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
+  if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  const pets = _petsOfRarity(rec.rarity);
+  if (!pets.length) return;
+
+  player.gold -= rec.goldCost;
+  if (Math.random() < rec.chance) {
+    const pet = pets[Math.floor(Math.random() * pets.length)];
+    addToInventory({ ...pet });
+    _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
+  } else {
+    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
+  }
+  netSaveProgress();
+  openPetCraftModal(idx);
 }
 
 function openBoxCraftModal(boxId) {

@@ -158,6 +158,8 @@ const I18N_UI = {
   craftRecipesHdr:  { ru: 'Рецепты', en: 'Recipes', uk: 'Рецепти', es: 'Recetas', tr: 'Tarifler', pt: 'Receitas' },
   craftEnchantStonesHdr: { ru: 'Камни заточки', en: 'Enchant Stones', uk: 'Камені гартування', es: 'Piedras de Encantamiento', tr: 'Büyü Taşları', pt: 'Pedras de Encantamento' },
   craftBoxesHdr:    { ru: 'Боксы', en: 'Boxes', uk: 'Бокси', es: 'Cajas', tr: 'Kutular', pt: 'Caixas' },
+  craftPetsHdr:     { ru: 'Питомцы', en: 'Pets', uk: 'Улюбленці', es: 'Mascotas', tr: 'Evcil Hayvanlar', pt: 'Mascotes' },
+  craftPetPickOneOf: { ru: 'Один случайный из 3', en: 'One random of 3', uk: 'Один випадковий з 3', es: 'Uno al azar de 3', tr: '3 üzerinden rastgele biri', pt: 'Um aleatório entre 3' },
   rarityGroupUncommon:  { ru: 'Необычные',   en: 'Uncommon',   uk: 'Незвичайні',   es: 'Poco Comunes', tr: 'Nadir Olmayanlar', pt: 'Incomuns' },
   rarityGroupRare:      { ru: 'Редкие',      en: 'Rare',       uk: 'Рідкісні',     es: 'Raros',        tr: 'Nadirler',          pt: 'Raros' },
   rarityGroupEpic:      { ru: 'Эпические',   en: 'Epic',       uk: 'Епічні',       es: 'Épicos',       tr: 'Efsanevi Öncesi',   pt: 'Épicos' },
@@ -736,6 +738,7 @@ const I18N_SLOTS = {
   boots:   { en: 'Boots',    uk: 'Чоботи',   es: 'Botas',       tr: 'Botlar',    pt: 'Botas' },
   ring:    { en: 'Ring',     uk: 'Каблучка', es: 'Anillo',      tr: 'Yüzük',     pt: 'Anel' },
   belt:    { en: 'Belt',     uk: 'Пояс',     es: 'Cinturón',    tr: 'Kemer',     pt: 'Cinto' },
+  pet:     { en: 'Pet',      uk: 'Улюбленець', es: 'Mascota',   tr: 'Evcil Hayvan', pt: 'Mascote' },
   use:     { en: 'Consumable', uk: 'Витратний матеріал', es: 'Consumible', tr: 'Sarf Malzemesi', pt: 'Consumível' },
   material:{ en: 'Material', uk: 'Матеріал', es: 'Material',    tr: 'Malzeme',   pt: 'Material' },
   recipe:  { en: 'Recipe',   uk: 'Рецепт',   es: 'Receta',      tr: 'Tarif',     pt: 'Receita' },
@@ -755,6 +758,7 @@ const I18N_EQ_SLOT_LABELS = {
   boots:   { en: 'Boots',   uk: 'Чоботи',   es: 'Botas',    tr: 'Botlar',  pt: 'Botas' },
   ring:    { en: 'Ring',    uk: 'Каблучка', es: 'Anillo',   tr: 'Yüzük',   pt: 'Anel' },
   belt:    { en: 'Belt',    uk: 'Пояс',     es: 'Cinturón', tr: 'Kemer',   pt: 'Cinto' },
+  pet:     { en: 'Pet',     uk: 'Улюбленець', es: 'Mascota', tr: 'Evcil Hayvan', pt: 'Mascote' },
 };
 
 const I18N_UPGRADES = {

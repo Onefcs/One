@@ -161,6 +161,80 @@ const SPRITE_DEF = {
   },
 };
 
+// ── PET SPRITE SHEETS ────────────────────────────────────────────────────────
+// One sheet per direction × state (front/back/left/right × idle/run), same
+// "Dir - State.png" naming and 4-column grid layout as the player sheets
+// above, just no attack/die/diagonal facings — pets are a cosmetic follower,
+// not a combatant. cols/rows come straight from images/pet/<id>/ (idle: 4×4 =
+// 16 frames, run: 4×3 = 12 frames); frameW/frameH is the exact per-pet cell
+// size baked into those PNGs (see the pet-sprite prep pipeline — every sheet
+// for one pet shares one cell size, but it differs pet-to-pet).
+// anchorY = fraction of the cell's height (from the top) where this pet's
+// feet actually sit in the front-idle art — measured once from the source
+// frames (they're not bottom-flush like the player sheets; each cell carries
+// a lot of transparent headroom, and the two "cell shapes" here — the wide
+// 840-square-sourced pets vs. the 480-square-sourced ones — land at a
+// consistently different foot line). Used the same way player rendering uses
+// its fixed 0.62 (js/pixi-world.js _updatePlayer/_updatePet): position the
+// sprite box so this fraction lines up with the pet's world (x,y).
+const PET_SPRITE_DEF = {
+  pet_aztec:   { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+  pet_maya:    { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+  pet_bear:    { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+  pet_medusa:  { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
+  pet_bone:    { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
+  pet_ogre:    { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+  pet_bonessa: { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
+  pet_cyclops: { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+  pet_yeti:    { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+};
+Object.keys(PET_SPRITE_DEF).forEach(id => {
+  PET_SPRITE_DEF[id].anims = {
+    'front-idle': { src:`images/pet/${id}/Front - Idle.png`,    cols:4, rows:4, n:16, fps:7,  loop:true },
+    'back-idle':  { src:`images/pet/${id}/Back - Idle.png`,     cols:4, rows:4, n:16, fps:7,  loop:true },
+    'left-idle':  { src:`images/pet/${id}/Left - Idle.png`,     cols:4, rows:4, n:16, fps:7,  loop:true },
+    'right-idle': { src:`images/pet/${id}/Right - Idle.png`,    cols:4, rows:4, n:16, fps:7,  loop:true },
+    'front-run':  { src:`images/pet/${id}/Front - Running.png`, cols:4, rows:3, n:12, fps:14, loop:true },
+    'back-run':   { src:`images/pet/${id}/Back - Running.png`,  cols:4, rows:3, n:12, fps:14, loop:true },
+    'left-run':   { src:`images/pet/${id}/Left - Running.png`,  cols:4, rows:3, n:12, fps:14, loop:true },
+    'right-run':  { src:`images/pet/${id}/Right - Running.png`, cols:4, rows:3, n:12, fps:14, loop:true },
+  };
+});
+
+const petSpriteCache = {};
+const _petSpriteLoadPromises = {};
+
+// Mirrors loadSprites() below — its own cache/promise map so a pet's 8 sheets
+// never collide with a class's 25, and so an equipped pet's (small) sheets
+// aren't paid for by players who never craft one.
+function loadPetSprites(petId, onDone) {
+  onDone = onDone || function () {};
+  const def = PET_SPRITE_DEF[petId];
+  if (!def) { onDone(); return; }
+  if (_petSpriteLoadPromises[petId]) { _petSpriteLoadPromises[petId].then(onDone); return; }
+  petSpriteCache[petId] = petSpriteCache[petId] || {};
+  const cache = petSpriteCache[petId];
+  const keys = Object.keys(def.anims);
+  let total = keys.length, done = 0;
+  let resolveReady;
+  _petSpriteLoadPromises[petId] = new Promise(res => { resolveReady = res; });
+  function tick() { if (++done >= total) resolveReady(); }
+  keys.forEach(key => {
+    const img = new Image();
+    img.src = def.anims[key].src;
+    img.onload = () => {
+      const raster = () => _queueRaster(() => {
+        cache[key] = _rasterizeSheet(img, def.anims[key], def); tick();
+      });
+      if (img.decode) img.decode().then(raster, raster); else raster();
+    };
+    img.onerror = tick;
+    cache[key] = img;
+  });
+  if (total === 0) resolveReady();
+  _petSpriteLoadPromises[petId].then(onDone);
+}
+
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
 // 64×64 frames (Rat/Ent/Demon 128×128), 4 directional rows: 0=down 1=up 2=left 3=right.
 // Each species has 3 tiers (Species1 weakest look → Species3 strongest); guard

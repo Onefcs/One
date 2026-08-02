@@ -462,6 +462,21 @@ const ITEM_DEF = [
   { id:'nd3', name:'Пояс тьмы',        slot:'belt',   img:'/images/acs/rp.png', atk:8,  hp:30,  rarity:'rare'     },
   { id:'nd4', name:'Пояс героя',       slot:'belt',   img:'/images/acs/ep.png', atk:16, hp:80,  rarity:'epic'     },
   { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:24, hp:120, rarity:'legendary'},
+  // ── Pets ─────────────────────────────────────────────────
+  // Own equip slot (EQ_SLOTS 'pet', js/definitions.js), crafted at the forge
+  // for gold (PET_CRAFT_RECIPES, js/definitions.js) — not a mob/box drop.
+  // Base atk/def/hp scale with rarity like any other slot; each pet also
+  // carries one small unique bonus (crit/atk-speed/hp%) so same-rarity pets
+  // aren't pure duplicates of each other.
+  { id:'pet_aztec',   name:'Ацтек',    slot:'pet', img:'/images/pet/pet_aztec/icon.png',   hp:30,  atk:2, def:2, atkSpeed:0.02,   rarity:'common'   },
+  { id:'pet_maya',    name:'Майя',     slot:'pet', img:'/images/pet/pet_maya/icon.png',    hp:30,  atk:2, def:2, critChance:0.02, rarity:'common'   },
+  { id:'pet_bear',    name:'Медведь',  slot:'pet', img:'/images/pet/pet_bear/icon.png',    hp:30,  atk:2, def:2, hpPct:0.03,      rarity:'common'   },
+  { id:'pet_medusa',  name:'Медуза',   slot:'pet', img:'/images/pet/pet_medusa/icon.png',  hp:60,  atk:5, def:4, critChance:0.035,rarity:'uncommon' },
+  { id:'pet_bone',    name:'Костяк',   slot:'pet', img:'/images/pet/pet_bone/icon.png',    hp:60,  atk:5, def:4, atkSpeed:0.035,  rarity:'uncommon' },
+  { id:'pet_ogre',    name:'Огр',      slot:'pet', img:'/images/pet/pet_ogre/icon.png',    hp:60,  atk:5, def:4, hpPct:0.05,      rarity:'uncommon' },
+  { id:'pet_bonessa', name:'Бонесса',  slot:'pet', img:'/images/pet/pet_bonessa/icon.png', hp:110, atk:9, def:7, critChance:0.05, rarity:'rare'     },
+  { id:'pet_cyclops', name:'Циклоп',   slot:'pet', img:'/images/pet/pet_cyclops/icon.png', hp:110, atk:9, def:7, hpPct:0.08,      rarity:'rare'     },
+  { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:110, atk:9, def:7, atkSpeed:0.05,   rarity:'rare'     },
   // ── HP Potions ────────────────────────────────────────────
   { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
   { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:50, rarity:'uncommon' },
@@ -477,7 +492,7 @@ const ITEM_DEF = [
 // Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
 const ENHANCE_MAX = 15;
 // Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js)
-const ENHANCEABLE_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt']);
+const ENHANCEABLE_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet']);
 function enhanceBonus(it, levels) {
   if (!levels) return {};
   const b = {};
