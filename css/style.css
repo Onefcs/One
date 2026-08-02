@@ -2243,11 +2243,18 @@ canvas { display:block; width:100%; height:100%; }
   color: #ffcf8a; margin-bottom: 4px;
 }
 .db-win-sub { font-size: 12px; color: #a2988a; margin-bottom: 16px; }
-.db-win-rewards {
+/* Prize list — shared by the panel's preview and the winner's modal, so the
+   two always show the same thing (see _dbRewardRows in js/ui.js). */
+.db-rewards {
   display: flex; flex-direction: column; gap: 7px;
   margin-bottom: 18px; text-align: left;
 }
-.db-win-row {
+.db-rewards-hdr {
+  margin-top: 16px; margin-bottom: 8px;
+  font-size: 12px; font-weight: 700;
+  color: #ffcf8a;
+}
+.db-reward-row {
   display: flex; align-items: center; gap: 9px;
   background: rgba(209,204,197,.04);
   border: 1px solid rgba(209,204,197,.09);
@@ -2256,8 +2263,9 @@ canvas { display:block; width:100%; height:100%; }
   font-size: 12.5px;
   color: #d7cfc2;
 }
-.db-win-row img { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; }
-.db-win-row .db-win-qty { margin-left: auto; color: #ffcf8a; font-weight: 700; font-variant-numeric: tabular-nums; }
+.db-reward-row img { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; image-rendering: pixelated; }
+.db-reward-fallback { font-size: 18px; width: 22px; text-align: center; flex: 0 0 auto; }
+.db-reward-row .db-reward-qty { margin-left: auto; color: #ffcf8a; font-weight: 700; font-variant-numeric: tabular-nums; }
 .db-win-btn {
   width: 100%; padding: 12px;
   border-radius: 10px;

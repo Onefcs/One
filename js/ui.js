@@ -3092,7 +3092,33 @@ function _renderDeathBattleBody() {
           <li>${t('dbRule4')}</li>
         </ul>
       </div>
+      <div class="db-rewards-hdr">${t('dbRewardsHdr')}</div>
+      <div class="db-rewards">${_dbRewardRows()}</div>
     </div>`;
+}
+
+// One row per prize, shared by the panel's "what you can win" list and the
+// winner's modal so the two can't drift apart. Called with no arguments it
+// reads the canonical prize list straight out of shared/definitions.js, which
+// is the same function the server grants from.
+function _dbRewardRows(gram, items) {
+  const g = gram !== undefined ? gram
+    : (typeof DEATH_BATTLE_GRAM_REWARD !== 'undefined' ? DEATH_BATTLE_GRAM_REWARD : 0);
+  const list = items || (typeof deathBattleRewards === 'function' ? deathBattleRewards() : []);
+  const rows = [];
+  if (g) {
+    rows.push(`<div class="db-reward-row">
+      <img src="/images/gram-icon.png" alt="">
+      <span>GRAM</span><span class="db-reward-qty">+${g}</span></div>`);
+  }
+  list.forEach(it => {
+    // Items carry their own inventory icon; the emoji is only a stand-in for a
+    // prize that somehow has no art rather than a broken image.
+    const icon = it.img ? `<img src="${it.img}" alt="">` : '<span class="db-reward-fallback">🎁</span>';
+    rows.push(`<div class="db-reward-row">
+      ${icon}<span>${it.name || it.id}</span><span class="db-reward-qty">×${it.qty || 1}</span></div>`);
+  });
+  return rows.join('');
 }
 
 if (typeof setInterval === 'function') {
@@ -3105,15 +3131,7 @@ function showDeathBattleWin(gram, items) {
   const modal = document.getElementById('db-win-modal');
   const list  = document.getElementById('db-win-rewards');
   if (!modal || !list) return;
-  const rows = [];
-  if (gram) {
-    rows.push(`<div class="db-win-row"><span style="font-size:18px">💎</span><span>GRAM</span><span class="db-win-qty">+${gram}</span></div>`);
-  }
-  (items || []).forEach(it => {
-    const img = it.img ? `<img src="${it.img}" alt="">` : '<span style="font-size:18px">🎁</span>';
-    rows.push(`<div class="db-win-row">${img}<span>${it.name || it.id}</span><span class="db-win-qty">×${it.qty || 1}</span></div>`);
-  });
-  list.innerHTML = rows.join('');
+  list.innerHTML = _dbRewardRows(gram, items || []);
   modal.style.display = 'flex';
 }
 
