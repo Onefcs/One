@@ -534,6 +534,9 @@ function _skillDir(dx, dy, r, arcDot) {
 function useSkill(idx) {
   if (!player || state !== 'playing') return;
   if ((player.stunTimer || 0) > 0) return;
+  // Frozen on the death-battle start line — no getting a buff or a dash off
+  // before the countdown ends (the server refuses these too).
+  if (typeof _dbFrozen === 'function' && _dbFrozen()) return;
   const skills = SKILL_DEF[player.type];
   if (!skills || !skills[idx]) return;
   const sk = skills[idx];

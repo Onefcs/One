@@ -135,6 +135,14 @@ let _profSocketEvtsSnap = 0, _profSocketMsSnap = 0;
 // center/clamp the player right behind it (invisible, same for chunk streaming).
 function _visH() { return (H - HEADER_H - NAV_H) / ZOOM; }
 
+// True while this client is frozen on the arena start line waiting for the
+// death battle's countdown. Gates movement, attacks and skills — the server
+// refuses all three for the same window (see _dbFrozen in server/index.js),
+// so this only keeps the local view honest rather than being the real guard.
+function _dbFrozen() {
+  return typeof _dbFightAt !== 'undefined' && _dbFightAt > 0 && Date.now() < _dbFightAt;
+}
+
 function clampCamera() {
   const visW = W / ZOOM, visH = _visH();
   camera.x = clamp(camera.x, 0, Math.max(0, dungeon.w * TILE - visW));
@@ -201,7 +209,7 @@ function update(dt, realDt) {
     // joystick input naturally can't reach inp.dx/dy while its touch target is
     // covered by another panel, so this only ever resumes real movement here
     // via the auto-chase path below.
-    if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0) {
+    if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen()) {
       const inp = inputDir();
       const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if (inp.len > 0) {
@@ -376,7 +384,7 @@ function update(dt, realDt) {
   // or the joystick cancels it (see inp.len > 0 below), instead of requiring
   // another tap per swing.
   if ((autoAttackMode || _chaseArmed) && (player.stunTimer || 0) <= 0) player.atkTimer -= dt;
-  if (player.atkTimer <= 0 && (player.stunTimer || 0) <= 0) {
+  if (player.atkTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen()) {
     let closest = null, closestD = Infinity;
     let closestIsPlayer = false;
 

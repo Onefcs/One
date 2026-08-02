@@ -1748,27 +1748,40 @@ function _initDeathBattleHandlers(s) {
 
   s.on('deathBattleCancelled', () => {
     _dbInFight = false;
+    _dbFightAt = 0;
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbCancelledMsg'), '#f0b25a');
   });
 
   // The round begins: the server has already moved this player into the arena,
   // healed them and switched PvP on server-side — mirror all three locally so
   // the client doesn't fight its own authoritative state.
-  s.on('deathBattleStarted', ({ x, y, hp, total }) => {
+  s.on('deathBattleStarted', ({ x, y, hp, total, fightAt }) => {
     if (!player) return;
     _dbInFight = true;
     _dbRegistered = false;
+    _dbFightAt = fightAt || 0;
     if (hp) player.hp = hp;
     pvpMode = true;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbArenaLbl'));
     else { player.x = x; player.y = y; }
     if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('dbStartedFmt', { n: total }), '#e8574f');
     if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
     if (typeof onDeathBattleState === 'function') onDeathBattleState();
+  });
+
+  // Countdown is over — the server has lifted the freeze for everyone at once.
+  s.on('deathBattleFight', () => {
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbFightMsg'), '#e8574f');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
   });
 
   s.on('deathBattleEliminated', ({ left, x, y }) => {
     _dbInFight = false;
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     pvpMode = false;
     if (player && x != null && y != null) {
       if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
@@ -1780,6 +1793,8 @@ function _initDeathBattleHandlers(s) {
 
   s.on('deathBattleWon', ({ gram, items }) => {
     _dbInFight = false;
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     pvpMode = false;
     // The prize is already in the account server-side; mirror it locally so
     // the inventory doesn't look empty until the next reload.

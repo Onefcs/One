@@ -605,6 +605,10 @@ function rollEventBossDrops(rand) {
 const DEATH_BATTLE_HOURS_MSK = [10, 20];
 const DEATH_BATTLE_MSK_OFFSET_H = 3;
 const DEATH_BATTLE_REG_MS = 5 * 60 * 1000;
+// Everyone lands in the arena frozen for this long — nobody can move or
+// attack — so the round starts from a standstill instead of handing the win to
+// whoever's client finished loading the teleport first.
+const DEATH_BATTLE_FREEZE_MS = 30 * 1000;
 // Without at least two entrants there is nobody to fight, so the round is
 // cancelled rather than handing someone a free win.
 const DEATH_BATTLE_MIN_PLAYERS = 2;
@@ -727,6 +731,6 @@ if (typeof module !== 'undefined') module.exports = {
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   EVENT_BOSS, EVENT_BOSS_ANNOUNCE_MS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS,
+  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
 };

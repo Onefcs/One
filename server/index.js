@@ -20,7 +20,7 @@ const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
-  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS,
+  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
 } = require('../shared/definitions');
 
@@ -1649,8 +1649,17 @@ const _db = {
   // sends it to the hub, so without this any client could emit it at will as a
   // free instant travel home.
   winnerId: null,
-  regTimer: null, startTimer: null, maxTimer: null,
+  // While Date.now() < fightAt everyone is in the arena but held still: the
+  // server refuses their movement and attacks outright (see _dbFrozen), so a
+  // modified client can't get a head start by ignoring the countdown.
+  fightAt: 0,
+  regTimer: null, startTimer: null, maxTimer: null, freezeTimer: null,
 };
+
+// True while this socket is an entrant of a round that hasn't gone live yet.
+function _dbFrozen(socketId) {
+  return _db.phase === 'live' && Date.now() < _db.fightAt && _db.alive.has(socketId);
+}
 
 // Next scheduled start, in UTC ms. Moscow is UTC+3 year-round (no DST since
 // 2014), so the offset is a constant rather than a timezone lookup: shift into
@@ -1719,12 +1728,20 @@ function _dbStart() {
   }
   _db.phase = 'live';
   _db.alive.clear();
+  _db.fightAt = Date.now() + DEATH_BATTLE_FREEZE_MS;
   const placed = room.deathBattleDeploy(ids);
   placed.forEach(({ socketId, x, y, hp }) => {
     _db.alive.set(socketId, _db.reg.get(socketId) || { name: '?' });
-    io.to(socketId).emit('deathBattleStarted', { x, y, hp, total: placed.length });
+    io.to(socketId).emit('deathBattleStarted', { x, y, hp, total: placed.length, fightAt: _db.fightAt });
   });
   _db.reg.clear();
+  // Lift the freeze on a timer as well as by clock, so clients get a clean
+  // "go" push instead of each deciding for itself when the countdown ended.
+  clearTimeout(_db.freezeTimer);
+  _db.freezeTimer = setTimeout(() => {
+    if (_db.phase !== 'live') return;
+    _db.alive.forEach((_, sid) => io.to(sid).emit('deathBattleFight'));
+  }, DEATH_BATTLE_FREEZE_MS);
   // Safety net: a round where nobody can finish anybody off (everyone hiding,
   // a wedged client) would otherwise block every later round forever.
   clearTimeout(_db.maxTimer);
@@ -1748,7 +1765,9 @@ function _dbEliminate(socketId) {
 async function _dbFinish(timedOut) {
   if (_db.phase !== 'live') return;
   clearTimeout(_db.maxTimer);
+  clearTimeout(_db.freezeTimer);
   _db.phase = 'idle';
+  _db.fightAt = 0;
   const room = getRoom(1);
   // A timeout has no winner: send everyone still standing back to the hub.
   const winnerId = (!timedOut && _db.alive.size === 1) ? [..._db.alive.keys()][0] : null;
@@ -2707,6 +2726,12 @@ io.on('connection', socket => {
 
   safeOn('playerMove', ({ x, y, facing, hp }) => {
     if (!currentRoom) return;
+    // Frozen entrants stay exactly where they were dropped. Facing/hp still
+    // sync so the countdown doesn't look like a frozen screen.
+    if (_dbFrozen(socket.id)) {
+      if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
+      return;
+    }
     currentRoom.updatePlayerPos(socket.id, x, y, facing);
     if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
   });
@@ -2722,6 +2747,7 @@ io.on('connection', socket => {
   safeOn('attack', ({ enemyId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
+    if (_dbFrozen(socket.id)) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
@@ -2811,6 +2837,7 @@ io.on('connection', socket => {
 
   safeOn('skillAttack', ({ enemyId, multiplier }) => {
     if (!_atkAllowed()) return;
+    if (_dbFrozen(socket.id)) return;
     const rId = playerRaid.get(socket.id);
     if (rId) {
       const rr = raidRooms.get(rId);
@@ -2953,6 +2980,7 @@ io.on('connection', socket => {
   safeOn('pvpAttack', ({ targetId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
+    if (_dbFrozen(socket.id) || _dbFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
     if (!result) return;
@@ -2966,6 +2994,7 @@ io.on('connection', socket => {
 
   safeOn('pvpSkillAttack', ({ targetId, multiplier }) => {
     if (!currentRoom) return;
+    if (_dbFrozen(socket.id) || _dbFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
     if (!result) return;
@@ -2976,6 +3005,7 @@ io.on('connection', socket => {
 
   safeOn('pvpSkillCC', ({ targetId, type, duration }) => {
     if (!currentRoom) return;
+    if (_dbFrozen(socket.id) || _dbFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const attacker = currentRoom.players.get(socket.id);
     if (!attacker || !attacker.pvpMode) return;

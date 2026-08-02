@@ -85,6 +85,10 @@ let _myLobbyMembers = [];    // [{id,name,bm,lvl}]
 let _dbState = { phase: 'idle', startAt: 0, nextAt: 0, count: 0 };
 let _dbRegistered = false;
 let _dbInFight = false;
+// While set and still in the future, this client is standing in the arena
+// waiting out the pre-fight countdown: movement and attacks are blocked here
+// as well as on the server (see _dbFrozen).
+let _dbFightAt = 0;
 
 // Party dungeon (maze + boss) state
 let inPartyDungeon = false;

@@ -3089,6 +3089,7 @@ function _renderDeathBattleBody() {
           <li>${t('dbRule1')}</li>
           <li>${t('dbRule2')}</li>
           <li>${t('dbRule3')}</li>
+          <li>${t('dbRule5')}</li>
           <li>${t('dbRule4')}</li>
         </ul>
       </div>
@@ -3133,6 +3134,45 @@ function showDeathBattleWin(gram, items) {
   if (!modal || !list) return;
   list.innerHTML = _dbRewardRows(gram, items || []);
   modal.style.display = 'flex';
+}
+
+// Pre-fight countdown overlay. Everyone is standing on their start point,
+// frozen, until this hits zero — big and centred so it's unmissable, and
+// pointer-events:none so it can't swallow a joystick touch the instant the
+// freeze lifts. Built lazily like the event-boss banner.
+let _dbFreezeTick = null;
+function _dbFreezeEl() {
+  let el = document.getElementById('db-freeze');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'db-freeze';
+    el.innerHTML = '<div class="db-freeze-num"></div><div class="db-freeze-lbl"></div>';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function showDeathBattleFreeze(fightAt) {
+  const el = _dbFreezeEl();
+  const num = el.querySelector('.db-freeze-num');
+  const lbl = el.querySelector('.db-freeze-lbl');
+  lbl.textContent = t('dbFreezeLbl');
+  clearInterval(_dbFreezeTick);
+  const paint = () => {
+    const left = Math.max(0, (fightAt || 0) - Date.now());
+    if (left <= 0) { hideDeathBattleFreeze(); return; }
+    num.textContent = Math.ceil(left / 1000);
+    el.style.display = 'flex';
+  };
+  paint();
+  _dbFreezeTick = setInterval(paint, 200);
+}
+
+function hideDeathBattleFreeze() {
+  clearInterval(_dbFreezeTick);
+  _dbFreezeTick = null;
+  const el = document.getElementById('db-freeze');
+  if (el) el.style.display = 'none';
 }
 
 function closeDeathBattleWin() {

@@ -2274,3 +2274,34 @@ canvas { display:block; width:100%; height:100%; }
   color: #ffcf8a; font-size: 13.5px; font-weight: 700;
   cursor: pointer; touch-action: manipulation;
 }
+
+/* Death-battle pre-fight countdown. pointer-events:none matters: it covers the
+   joystick area, and the freeze lifts mid-touch. */
+#db-freeze {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  z-index: 240;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, rgba(232,87,79,.16), transparent 60%);
+}
+.db-freeze-num {
+  font-size: 92px;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffcf8a;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 24px rgba(232,87,79,.65), 0 4px 18px rgba(0,0,0,.8);
+}
+.db-freeze-lbl {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #f0937e;
+  text-shadow: 0 2px 8px rgba(0,0,0,.9);
+}
