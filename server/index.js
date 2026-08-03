@@ -2884,6 +2884,14 @@ io.on('connection', socket => {
   // ── Ground loot (event-boss drops) ────────────────────────────────────────
   // The claim itself is arbitrated inside the Room (one Map delete, so exactly
   // one player can win a given pile). Awarding is done here because this is
+  // The client got position deltas for enemies it has no record of and is
+  // asking for their full details. Rate-limited like any other client-driven
+  // request; the room caps how many it will answer at once.
+  safeOn('enemyResync', ({ ids } = {}) => {
+    if (!currentRoom || !Array.isArray(ids)) return;
+    currentRoom.resendEnemies(socket.id, ids);
+  });
+
   // where _lastStats — the server's own inventory copy — lives; same pattern
   // as the market, so a dropped worldDropTaken event or a disconnect mid-
   // pickup can't lose the item.

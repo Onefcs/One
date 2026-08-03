@@ -302,6 +302,29 @@ function netConnect(onReady) {
     if (_restoredFromBackup) { _restoredFromBackup = false; netSaveProgressNow(); }
   });
 
+  // Enemies we've been told about but have no record of. Batched into one
+  // request per _ENEMY_RESYNC_MS so a burst (e.g. a whole corridor coming
+  // into view at once) is a single round trip, and each id is asked for once
+  // per window so a reply that is still in flight isn't re-requested every
+  // tick. Bounded to what the server will answer at once.
+  const _ENEMY_RESYNC_MS = 500;
+  const _ENEMY_RESYNC_MAX = 40;
+  const _enemyResyncQueue = new Set();
+  let _enemyResyncTimer = null;
+
+  function _queueEnemyResync(id) {
+    if (id === undefined || _enemyResyncQueue.has(id)) return;
+    if (_enemyResyncQueue.size >= _ENEMY_RESYNC_MAX) return;
+    _enemyResyncQueue.add(id);
+    if (_enemyResyncTimer) return;
+    _enemyResyncTimer = setTimeout(() => {
+      _enemyResyncTimer = null;
+      const ids = [..._enemyResyncQueue];
+      _enemyResyncQueue.clear();
+      if (ids.length && socket?.connected) socket.emit('enemyResync', { ids });
+    }, _ENEMY_RESYNC_MS);
+  }
+
   socket.on('gameState', (data) => {
     if (inRaid || inPartyDungeon) return; // raid/party dungeon use their own *State updates, not floor gameState
     const _gs0 = performance.now();
@@ -415,9 +438,11 @@ function netConnect(onReady) {
           }
         }
       } else {
-        // Slim entry for an enemy we don't know — skip; the server's periodic
-        // full refresh (every ~2s) will deliver the complete record shortly
-        if (se.eid === undefined) return;
+        // Slim entry for an enemy we have no record of. The server no longer
+        // re-broadcasts the whole world on a timer (that was ~97% of this
+        // client's download), so ask for this one specifically instead of
+        // waiting for a sweep that isn't coming.
+        if (se.eid === undefined) { _queueEnemyResync(se.id); return; }
         const newE = { ...se, targetX: se.x, targetY: se.y, _st: t };
         serverEnemies.push(newE);
         serverEnemiesMap.set(se.id, newE);

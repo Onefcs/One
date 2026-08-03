@@ -97,9 +97,35 @@ const PARTY_SHARE_R2 = PARTY_SHARE_R * PARTY_SHARE_R;
 // At most this many other players per packet (screen fits ~15). Bounds the
 // N² blowup when hundreds of players stack in one spot.
 const PLAYER_CAP = 20;
-// Every N casts an entry goes out full even if the recipient "knows" it —
-// self-heals any client/server known-state divergence within ~2s.
+// Every N casts a PLAYER entry goes out full even if the recipient "knows"
+// it — self-heals any client/server known-state divergence within ~2s.
+// Players are AOI-limited and capped at PLAYER_CAP, so this stays cheap.
 const FULL_REFRESH_TICKS = 80;
+// Enemies are NOT AOI-limited (the map needs world-wide coverage), so the
+// same 2s cadence meant re-sending all ~3300 enemies — every string field
+// included — to every player every two seconds. Measured at 164 KB/s per
+// idle player, ~576 MB/hour each, and 97% of it described enemies thousands
+// of pixels away that the player only ever sees as a dot on the map.
+// Idle enemies produce no delta at all, so stretching this to a minute makes
+// a standing player nearly free (~4 KB/s), and a client that somehow ends up
+// missing an enemy no longer waits for the sweep — it asks for that one
+// enemy directly (see resendEnemies below / 'enemyResync' in index.js).
+const ENEMY_REFRESH_TICKS = 2400;
+// Cap on one resync request, so a malformed or hostile client can't ask the
+// server to encode the whole world on demand.
+const ENEMY_RESYNC_MAX = 40;
+
+// The complete record for one enemy — every field the client needs to render
+// and fight it. Shared by the tick's periodic refresh and the on-demand
+// resync so the two can never describe an enemy differently.
+function _fullEnemyEntry(e) {
+  return {
+    id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
+    name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+    aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
+    atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
+  };
+}
 // Each enemy only re-runs its full closest-eligible-player scan (O(players))
 // once every this many ticks (staggered by enemy index, see _tick()) instead
 // of every tick — O(enemies × players) exceeded the 25ms tick budget at
@@ -236,6 +262,27 @@ class Room {
     this.worldDrops.delete(dropId);
     this.io.to(`floor_${this.floor}`).emit('worldDropTaken', { id: dropId });
     return d;
+  }
+
+  // Answers a client that received position deltas for enemies it has no
+  // record of. Replaces what the 2s world-wide refresh used to do by accident,
+  // at a fraction of the cost: one small packet to one player, only for the
+  // enemies actually missing. Encoded as an ordinary gameState (players: null)
+  // so the client's existing merge path handles it with no new format.
+  resendEnemies(socketId, ids) {
+    if (!this.players.has(socketId) || !Array.isArray(ids) || !ids.length) return;
+    const out = [];
+    for (const id of ids) {
+      if (out.length >= ENEMY_RESYNC_MAX) break;
+      const e = this._enemyMap.get(id);
+      if (e && e.hp > 0) out.push(_fullEnemyEntry(e));
+    }
+    if (!out.length) return;
+    // A fresh generation number every time — the gen is an encoder cache key,
+    // and reusing a tick's would serve that tick's bytes instead of these.
+    this._nearEnemiesGen++;
+    this.io.to(socketId).emit('gameState',
+      encodeGameState(null, out, Date.now(), this._nearEnemiesGen));
   }
 
   worldDropSnapshot() {
@@ -538,18 +585,13 @@ class Room {
       if (e.hp <= 0) return;
       const k = this._enemyKnown.get(e.id);
       const fresh = !k || k.seen !== castId - 1 ||
-        (castId + e._idx) % FULL_REFRESH_TICKS === 0;
+        (castId + e._idx) % ENEMY_REFRESH_TICKS === 0;
       if (k) k.seen = castId; else this._enemyKnown.set(e.id, { seen: castId });
       const moved = e.aggro || Math.abs(e.x - e._sx) > 0.5 || Math.abs(e.y - e._sy) > 0.5;
       const hpChanged = e.hp !== e._shp;
       if (!moved && !hpChanged && !fresh) return;
       if (fresh) {
-        nearEnemies.push({
-          id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
-          name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
-          aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
-          atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
-        });
+        nearEnemies.push(_fullEnemyEntry(e));
       } else {
         nearEnemies.push({
           id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
