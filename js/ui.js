@@ -3086,7 +3086,7 @@ function _arena3BodyHTML() {
       <div class="db-rewards-hdr">${t('a3RewardHdr')}</div>
       <div class="db-rewards">
         <div class="db-reward-row">
-          <span class="db-reward-fallback">💠</span>
+          <img src="/images/nexum-coin_v2.png" alt="">
           <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
         </div>
       </div>
@@ -3106,7 +3106,7 @@ function showArena3Result(won, wedged, reward) {
   document.getElementById('a3-result-title').style.color = won ? '#ffd18a' : '#f07886';
   document.getElementById('a3-result-sub').textContent   = won ? t('a3VictorySub') : (wedged ? t('a3NoResultSub') : t('a3DefeatSub'));
   document.getElementById('a3-result-rewards').innerHTML = reward
-    ? `<div class="db-reward-row"><span class="db-reward-fallback">💠</span>
+    ? `<div class="db-reward-row"><img src="/images/nexum-coin_v2.png" alt="">
        <span>Liberty</span><span class="db-reward-qty">+${reward}</span></div>`
     : '';
   modal.style.display = 'flex';
@@ -3994,10 +3994,10 @@ function _gramShopPkgHtml(pkg, bal) {
     rows += ri(bookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
   }
 
-  // Liberty (Nexum) bonus
+  // Liberty (Nexum) bonus — same coin icon Liberty uses everywhere else
+  // (pet crafting, drop toasts, quest/arena rewards).
   if (pkg.nexum) {
-    const libUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236fc7ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2 2 7l10 5 10-5-10-5Z'/><path d='M2 17l10 5 10-5'/><path d='M2 12l10 5 10-5'/></svg>`;
-    rows += ri(libUri, `+${pkg.nexum} Liberty`, 'epic');
+    rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'epic');
   }
 
   // boxes (BOX_DEF — see _boxesLabel below)
