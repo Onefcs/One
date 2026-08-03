@@ -97,6 +97,7 @@ const RACE10_LANE_GAP     = 2;   // wall tiles between adjacent lanes
 const RACE10_LANE_PITCH   = RACE10_LANE_HW * 2 + 1 + RACE10_LANE_GAP; // 5 tiles, row to row
 const RACE10_MOB_PER_TIER = 60;
 const RACE10_MOB_SPACING  = 30;  // px between consecutive monster centres within a tier — "впритык"
+const RACE10_XP_MULT      = 4;   // corridor kills grant 4x normal XP — part of the event's own reward, not just the boss-damage prize
 const RACE10_TIER_LEN     = Math.ceil((RACE10_MOB_PER_TIER * RACE10_MOB_SPACING) / TILE); // tiles
 const RACE10_TIER_GAP     = 4;   // tiles between the level-5 line and the level-10 line
 // Spawn sits 2 tiles into the lane (see the `lanes` spot below) — LEAD_IN has
@@ -201,7 +202,7 @@ function generateOpenWorld() {
         color: monsterColorAtLevel(d.color, d.endColor, lvl, false, 20),
         maxHp: stats.hp, hp: stats.hp,
         atk: stats.atk, def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
+        xp: xpAtLevel(lvl) * RACE10_XP_MULT, gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
       });

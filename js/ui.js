@@ -3159,10 +3159,15 @@ function _race10BodyHTML() {
       <div class="db-rewards-hdr">${t('race10RewardHdr')}</div>
       <div class="db-rewards">
         <div class="db-reward-row">
+          <img src="/images/potion/exp.png" alt="">
+          <span>${t('race10XpRewardName')}</span><span class="db-reward-qty">×4</span>
+        </div>
+        <div class="db-reward-row">
           <img src="/images/nexum-coin_v2.png" alt="">
           <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
         </div>
       </div>
+      <div class="db-count">${t('race10LibertyRewardNote')}</div>
     </div>`;
 }
 
