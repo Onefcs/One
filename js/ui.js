@@ -3159,7 +3159,7 @@ function _race10BodyHTML() {
       <div class="db-rewards-hdr">${t('race10RewardHdr')}</div>
       <div class="db-rewards">
         <div class="db-reward-row">
-          <img src="/images/potion/exp.png" alt="">
+          <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23e3941d' stroke='%23e3941d' stroke-width='1' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>" alt="">
           <span>${t('race10XpRewardName')}</span><span class="db-reward-qty">×4</span>
         </div>
         <div class="db-reward-row">
@@ -3167,7 +3167,6 @@ function _race10BodyHTML() {
           <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
         </div>
       </div>
-      <div class="db-count">${t('race10LibertyRewardNote')}</div>
     </div>`;
 }
 
