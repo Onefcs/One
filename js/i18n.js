@@ -112,11 +112,13 @@ const I18N_UI = {
   a3NoResultSub:{ ru: 'Матч закрыт: никто не добил соперника', en: 'Match closed: nobody finished the other side', uk: 'Матч закрито: ніхто не добив суперника', es: 'Partida cerrada: nadie acabó con el rival', tr: 'Maç kapandı: kimse rakibi bitiremedi', pt: 'Partida encerrada: ninguém finalizou o adversário' },
   a3ResultClose:{ ru: 'В мир', en: 'To the world', uk: 'У світ', es: 'Al mundo', tr: 'Dünyaya', pt: 'Para o mundo' },
 
-  // ── 10-player corridor race (Забег) ──────────────────────────────────────
-  race10Tab:      { ru: 'Забег', en: 'Race', uk: 'Забіг', es: 'Carrera', tr: 'Yarış', pt: 'Corrida' },
-  race10ArenaLbl: { ru: 'Забег', en: 'The Race', uk: 'Забіг', es: 'La Carrera', tr: 'Yarış', pt: 'A Corrida' },
-  race10StartedMsg: { ru: '⚔️ Забег начался! Бегите к боссу', en: '⚔️ Go! Race to the boss', uk: '⚔️ Забіг почався! Біжіть до боса', es: '⚔️ ¡Corre hacia el jefe!', tr: '⚔️ Başladı! Patrona koş', pt: '⚔️ Corra até o chefe' },
+  // ── 10-player corridor race: "Кровавая Башня" (Bloody Tower) ─────────────
+  race10Tab:      { ru: 'Кровавая Башня', en: 'Bloody Tower', uk: 'Кривава Вежа', es: 'Torre Sangrienta', tr: 'Kanlı Kule', pt: 'Torre Sangrenta' },
+  race10ArenaLbl: { ru: 'Кровавая Башня', en: 'Bloody Tower', uk: 'Кривава Вежа', es: 'Torre Sangrienta', tr: 'Kanlı Kule', pt: 'Torre Sangrenta' },
+  race10StartedMsg: { ru: '⚔️ Кровавая Башня открыта! Бегите к боссу', en: '⚔️ The Bloody Tower is open! Race to the boss', uk: '⚔️ Криваву Вежу відкрито! Біжіть до боса', es: '⚔️ ¡La Torre Sangrienta está abierta! Corre hacia el jefe', tr: '⚔️ Kanlı Kule açıldı! Patrona koş', pt: '⚔️ A Torre Sangrenta está aberta! Corra até o chefe' },
   race10PhaseFighting: { ru: 'Забег идёт', en: 'Race in progress', uk: 'Забіг триває', es: 'Carrera en curso', tr: 'Yarış sürüyor', pt: 'Corrida em andamento' },
+  race10PhaseIdle: { ru: 'До открытия Кровавой Башни', en: 'Bloody Tower opens in', uk: 'До відкриття Кривавої Вежі', es: 'La Torre Sangrienta abre en', tr: 'Kanlı Kule açılışına', pt: 'A Torre Sangrenta abre em' },
+  race10Rule6:    { ru: 'Открыта каждый день с 20:00 до 21:00 по Москве', en: 'Open every day, 20:00–21:00 Moscow time', uk: 'Відкрита щодня з 20:00 до 21:00 за Москвою', es: 'Abierta todos los días de 20:00 a 21:00 (hora de Moscú)', tr: 'Her gün 20:00–21:00 Moskova saatiyle açık', pt: 'Aberta todos os dias das 20h às 21h (horário de Moscou)' },
   race10Eliminated: { ru: 'Вы выбыли — возврат в мир', en: 'You are out — back to the world', uk: 'Ви вибули — повернення у світ', es: 'Estás fuera: de vuelta al mundo', tr: 'Elendin — dünyaya dönüş', pt: 'Você saiu — de volta ao mundo' },
   race10ScoreFmt: { ru: 'Урон боссу: {dmg} (место {rank}/{total})', en: 'Boss damage: {dmg} (rank {rank}/{total})', uk: 'Шкода босу: {dmg} (місце {rank}/{total})', es: 'Daño al jefe: {dmg} (puesto {rank}/{total})', tr: 'Patron hasarı: {dmg} (sıra {rank}/{total})', pt: 'Dano ao chefe: {dmg} (posição {rank}/{total})' },
   race10Rule1:    { ru: 'Забег стартует, как только наберётся {n} человек', en: 'The race starts as soon as {n} players are queued', uk: 'Забіг стартує, щойно набереться {n} осіб', es: 'La carrera empieza cuando haya {n} jugadores', tr: '{n} oyuncu toplanınca yarış başlar', pt: 'A corrida começa quando houver {n} jogadores' },

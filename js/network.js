@@ -205,7 +205,7 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs }) => {
+  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs, race10: r10s }) => {
     dungeonLvl = floor;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     if (typeof _buildArmGates === 'function') _buildArmGates();
@@ -235,6 +235,18 @@ function netConnect(onReady) {
       _dbState = { phase: dbs.phase, startAt: dbs.startAt, nextAt: dbs.nextAt, count: dbs.count };
       _dbRegistered = !!dbs.registered;
       if (typeof onDeathBattleState === 'function') onDeathBattleState();
+    }
+    // Кровавая Башня: same idea — joining before/during the 20:00–21:00 MSK
+    // window shows the live phase and countdown instead of "not known yet".
+    if (r10s) {
+      _race10State = {
+        queued: r10s.queued || 0, needed: r10s.needed || 10, live: !!r10s.live,
+        minLevel: r10s.minLevel || 10, reward: r10s.reward || 50,
+        maxAttempts: r10s.maxAttempts || 3, attemptsLeft: null,
+        phase: r10s.phase || 'idle', nextAt: r10s.nextAt || 0,
+      };
+      _race10Registered = !!r10s.registered;
+      if (typeof onRace10State === 'function') onRace10State();
     }
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
@@ -2192,6 +2204,9 @@ function _initRace10Handlers(s) {
       minLevel: st.minLevel || 10, reward: st.reward || 50,
       maxAttempts: st.maxAttempts || _race10State.maxAttempts || 3,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _race10State.attemptsLeft,
+      // 'idle' outside the 20:00–21:00 MSK window, 'reg' while it's open —
+      // nextAt is the next window's open time, used for the countdown.
+      phase: st.phase || 'idle', nextAt: st.nextAt || 0,
     };
     if (st.registered !== undefined) _race10Registered = !!st.registered;
     if (st.inMatch !== undefined) _race10InMatch = !!st.inMatch;

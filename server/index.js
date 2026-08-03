@@ -25,6 +25,7 @@ const {
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
+  RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
 } = require('../shared/definitions');
 
@@ -1940,6 +1941,10 @@ const _EVENT_TEXT = {
     soon: (m) => `🗡 <b>Битва на смерть</b>\n\nНачало через ${m} мин.\nПоследний выживший забирает GRAM и снаряжение.`,
     now:  () => '🗡 <b>Битва на смерть</b>\n\nРегистрация открыта — заходи и записывайся, бой начнётся через 5 минут.\nПосле старта присоединиться уже нельзя.',
   },
+  race10: {
+    soon: (m) => `🏃 <b>Кровавая Башня</b>\n\nОкно регистрации откроется через ${m} мин. — с 20:00 до 21:00 по Москве.\nПобеждает тот, кто нанесёт общему боссу больше всего урона.`,
+    now:  () => '🏃 <b>Кровавая Башня открыта!</b>\n\nЗаписывайся в игре — как наберётся 10 человек, старт. Окно открыто до 21:00 по Москве.',
+  },
 };
 
 // Each occurrence is announced at most once per process. _dbSchedule and
@@ -2468,13 +2473,14 @@ async function _a3Finish(winner, wedged) {
 const RACE10_NEEDED    = 10;
 const RACE10_MIN_LEVEL = 10;
 const RACE10_FREEZE_MS = 10 * 1000;
-const RACE10_REWARD    = 50;             // Liberty (Nexum) to the top damage-dealer only — the boss drops no loot
+const RACE10_REWARD    = 10;             // Liberty (Nexum) to the top damage-dealer only — the boss drops no loot
 // Operational guard only, same idea as the 3v3 arena's old wedge — ends the
 // race with no winner if the boss just never comes down, so the one shared
 // instance can't be tied up forever.
 const RACE10_MAX_MS    = 15 * 60 * 1000;
 
 const _race10 = {
+  phase: 'idle',        // 'idle' → 'reg' (20:00–21:00 MSK window) → 'idle'
   queue: new Map(),    // socketId -> { name, lvl }
   live: false,
   starting: false,     // guards the async attempt re-check inside _race10TryStart
@@ -2485,10 +2491,20 @@ const _race10 = {
   fightAt: 0,
   freezeTimer: null,
   maxTimer: null,
+  openTimer: null, closeTimer: null, notifyTimer: null,
 };
+
+// Next scheduled window open, in UTC ms — every day, 20:00 Moscow. Lives in
+// shared/definitions.js (RACE10_DAYS_MSK/HOURS_MSK) so it's computed the
+// same way the death battle's and world boss's own schedules are.
+function _race10NextOpenAt(from = Date.now()) {
+  return nextEventStartAt(RACE10_DAYS_MSK, RACE10_HOURS_MSK, from);
+}
 
 function _race10PublicState() {
   return {
+    phase:   _race10.phase,
+    nextAt:  _race10NextOpenAt(),
     queued: _race10.queue.size,
     needed: RACE10_NEEDED,
     live: _race10.live,
@@ -2502,6 +2518,48 @@ function _race10Broadcast() {
   const st = _race10PublicState();
   _race10.queue.forEach((_, sid) => io.to(sid).emit('race10State', { ...st, registered: true }));
   _race10.names.forEach((_, sid) => io.to(sid).emit('race10State', st));
+}
+
+// Arms the next daily window (20:00 MSK) plus its 30-minute warning. Called
+// at boot and after every window closes; if the process starts inside the
+// window itself the open-timeout is already due and fires immediately with
+// whatever time is left, same as _dbSchedule.
+function _race10Schedule() {
+  clearTimeout(_race10.openTimer);
+  clearTimeout(_race10.notifyTimer);
+  _race10.phase = 'idle';
+  const openAt = _race10NextOpenAt();
+  _race10.openTimer = setTimeout(() => _race10OpenWindow(openAt), Math.max(0, openAt - Date.now()));
+  const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+  if (warnIn > 0) _race10.notifyTimer = setTimeout(() => notifyEventSoon('race10', openAt), warnIn);
+}
+
+// Opens the hour-long registration window. Unlike the death battle's single
+// scheduled start, the queue keeps trying for the whole hour — however many
+// times 10 players gather, each one fires off its own race.
+function _race10OpenWindow(openAt) {
+  _race10.phase = 'reg';
+  notifyEventStarted('race10', openAt);
+  clearTimeout(_race10.closeTimer);
+  _race10.closeTimer = setTimeout(_race10CloseWindow, RACE10_WINDOW_MS);
+  _race10Broadcast();
+  // Covers the (unlikely) case of stragglers still parked in the queue from
+  // a previous window — safe no-op if nobody's waiting.
+  _race10TryStartSafe();
+}
+
+// Closes the window at 21:00 MSK. Anyone still only queued (never made it to
+// 10) is bumped back to "not registered" — a race already under way keeps
+// running on its own RACE10_MAX_MS clock regardless.
+function _race10CloseWindow() {
+  _race10.phase = 'idle';
+  [..._race10.queue.keys()].forEach(sid => {
+    io.to(sid).emit('race10Registered', { registered: false });
+    io.to(sid).emit('race10Error', { msg: 'Окно Кровавой Башни закрылось — до встречи в 20:00' });
+  });
+  _race10.queue.clear();
+  _race10Schedule();
+  _race10Broadcast();
 }
 
 function _race10Frozen(socketId) {
@@ -2539,7 +2597,7 @@ async function _race10Deploy(ready, room) {
   if (outOfAttempts.length) {
     outOfAttempts.forEach(sid => {
       _race10.queue.delete(sid);
-      io.to(sid).emit('race10Error', { msg: 'Попытки на забег на сегодня закончились' });
+      io.to(sid).emit('race10Error', { msg: 'Попытки в Кровавую Башню на сегодня закончились' });
       io.to(sid).emit('race10Registered', { registered: false });
     });
     _race10Broadcast();
@@ -3843,6 +3901,7 @@ io.on('connection', socket => {
       // arriving after the kill still sees loot already lying on the floor.
       eventBoss: eventBossState(),
       deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
+      race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
     });
     // MUST come after gameStart: its client handler rebuilds otherPlayers from
     // scratch (`otherPlayers = new Map()`), so a roster delivered before it was
@@ -4323,6 +4382,7 @@ io.on('connection', socket => {
   safeOn('race10Register', async () => {
     if (!authed) return;
     if (_race10.live && _race10.alive.has(socket.id)) return;
+    if (_race10.phase !== 'reg') return socket.emit('race10Error', { msg: 'Кровавая Башня открыта с 20:00 до 21:00 по Москве' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('race10Error', { msg: 'Выберите персонажа' });
     if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
@@ -4340,7 +4400,7 @@ io.on('connection', socket => {
     }
     const left = await _race10AttemptsLeft(socket.id);
     if (left <= 0) {
-      return socket.emit('race10Error', { msg: 'Попытки на забег на сегодня закончились' });
+      return socket.emit('race10Error', { msg: 'Попытки в Кровавую Башню на сегодня закончились' });
     }
     _race10.queue.set(socket.id, { name: authed.username, lvl });
     socket.emit('race10Registered', { registered: true, attemptsLeft: left });
@@ -4881,7 +4941,7 @@ io.on('connection', socket => {
       if (_a3.teams.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
       // Same idea for the corridor race — pulling someone out of a live lane
       // leaves them stuck straddling two instances at once.
-      if (_race10.alive.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас на забеге' });
+      if (_race10.alive.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас в Кровавой Башне' });
     }
     // Re-check the daily lock against fresh DB state for every member right
     // before launch (not just at queue time) — someone could have used up
@@ -5021,7 +5081,7 @@ io.on('connection', socket => {
       // Same reason as the raid guard above: the 3v3 has no timer, so a member
       // walking out of a live match would leave it unable to finish.
       if (_a3.teams.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
-      if (_race10.alive.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас на забеге' });
+      if (_race10.alive.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас в Кровавой Башне' });
     }
     // Re-check the daily lock against fresh DB state for every member right
     // before launch (not just at queue time) — someone could have cleared
@@ -5249,8 +5309,10 @@ server.listen(PORT, () => {
   _pollTg();
   _dbSchedule();
   _wbSchedule();
+  _race10Schedule();
   console.log('next death battle:', new Date(_dbNextStartAt()).toISOString(),
-              '| next world boss:', new Date(_wbNextStartAt()).toISOString());
+              '| next world boss:', new Date(_wbNextStartAt()).toISOString(),
+              '| next Bloody Tower window:', new Date(_race10NextOpenAt()).toISOString());
 });
 
 // ── Error handlers ────────────────────────────────────────────────────────────

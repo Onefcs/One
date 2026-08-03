@@ -3095,12 +3095,14 @@ function _arena3BodyHTML() {
     </div>`;
 }
 
-// ── 10-player corridor race tab (Забег) ──────────────────────────────────────
-// Same shape as _arena3BodyHTML above, minus the team split: everyone races
-// their own lane to the same shared boss.
+// ── Кровавая Башня tab (10-player corridor race) ────────────────────────────
+// Open every day 20:00–21:00 MSK (see _race10Schedule, server/index.js) —
+// same reg/idle phase shape as _deathBattleBodyHTML above, plus the queue
+// count and team-less damage race once the window is open.
 function _race10BodyHTML() {
-  const st = (typeof _race10State !== 'undefined' && _race10State) || { queued: 0, needed: 10, minLevel: 10, reward: 50 };
+  const st = (typeof _race10State !== 'undefined' && _race10State) || { phase: 'idle', nextAt: 0, queued: 0, needed: 10, minLevel: 10, reward: 10 };
   const inMatch = typeof _race10InMatch !== 'undefined' && _race10InMatch;
+  const open = st.phase === 'reg';
   const lvl = (player && player.lvl) || 1;
   const tooLow = lvl < (st.minLevel || 10);
   const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
@@ -3109,6 +3111,9 @@ function _race10BodyHTML() {
   if (inMatch) {
     phaseTxt = t('race10PhaseFighting');
     action = `<button class="db-action" disabled>${t('race10PhaseFighting')}</button>`;
+  } else if (!open) {
+    phaseTxt = t('race10PhaseIdle');
+    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
   } else if (tooLow) {
     phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
     action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
@@ -3123,20 +3128,25 @@ function _race10BodyHTML() {
     action = `<button class="db-action" onclick="netRace10Register()">${t('dbJoinBtn')}</button>`;
   }
 
+  // Idle counts down to the next daily window (can be many hours away), open/
+  // in-match stay on a plain queue count or the live damage race.
+  const countdown = !open && !inMatch ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now())) : `${st.queued}/${st.needed}`;
   const score = inMatch
     ? `<div class="db-count">${tVars('race10ScoreFmt', { dmg: Math.floor(_race10MyDamage || 0), rank: _race10Rank || 0, total: _race10Total || 0 })}</div>`
-    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined
-        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>` : '');
+    : open && st.attemptsLeft !== null && st.attemptsLeft !== undefined
+        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
+        : (!open && st.nextAt ? `<div class="db-count">${_fmtEventWhen(st.nextAt)}</div>` : '');
 
   return `
     <div style="padding:16px">
-      <div class="db-countdown">${st.queued}/${st.needed}</div>
+      <div class="db-countdown">${countdown}</div>
       <div class="db-phase">${phaseTxt}</div>
       ${score}
       ${action}
       <div class="db-rules">
         ${t('dbRulesHdr')}
         <ul>
+          <li>${t('race10Rule6')}</li>
           <li>${tVars('race10Rule1', { n: st.needed })}</li>
           <li>${t('race10Rule2')}</li>
           <li>${t('race10Rule3')}</li>
@@ -3158,6 +3168,7 @@ function _race10BodyHTML() {
 
 // Called from the network handlers on every server push.
 function onRace10State() {
+  _updateEventsBtnHighlight();
   if (_eventsPanelOpen() && _eventTab === 'race10') _renderEventsBody();
 }
 
@@ -3308,14 +3319,22 @@ function _worldBossBodyHTML() {
 // so an open panel stays live without extra traffic.
 // Called from the network handlers on every server push — keeps the Events
 // button's highlight and (if open) the panel in step with the round.
-function onDeathBattleState() {
+// Shared by the death battle and race10 (Кровавая Башня) pushes — either
+// one's registration window opening should highlight the Events button, and
+// whichever closes last shouldn't clobber the other's still-open state.
+function _updateEventsBtnHighlight() {
   const btn = document.getElementById('events-btn');
-  if (btn) {
-    const open = _dbState.phase === 'reg';
-    btn.classList.toggle('db-open', open);
-    const label = document.getElementById('events-btn-text');
-    if (label) label.textContent = open ? t('dbBtnOpen') : t('eventsBtn');
-  }
+  if (!btn) return;
+  const dbOpen = typeof _dbState !== 'undefined' && _dbState.phase === 'reg';
+  const raceOpen = typeof _race10State !== 'undefined' && _race10State.phase === 'reg';
+  const open = dbOpen || raceOpen;
+  btn.classList.toggle('db-open', open);
+  const label = document.getElementById('events-btn-text');
+  if (label) label.textContent = open ? t('dbBtnOpen') : t('eventsBtn');
+}
+
+function onDeathBattleState() {
+  _updateEventsBtnHighlight();
   if (_eventsPanelOpen() && _eventTab === 'battle') _renderEventsBody();
 }
 

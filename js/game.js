@@ -1606,6 +1606,18 @@ function _drawStain(c, x, y, radius, color) {
   c.fill();
 }
 
+// "Кровавая Башня" (the 10-player corridor race) gets its own deep blood-red
+// palette instead of the normal biome theme, so the location actually looks
+// like the name — see race10.bounds (server/game/dungeon.js), sent to the
+// client as part of dungeonData.
+const _RACE10_WALL    = '#2a0a0a';
+const _RACE10_FLOOR_A = '#210707';
+const _RACE10_FLOOR_B = '#150404';
+function _isRace10Tile(tx, ty) {
+  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.race10 && dungeon.race10.bounds;
+  return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -1636,19 +1648,23 @@ function _buildChunk(cx, cy) {
   c.fillStyle = th.wallColor;
   c.fillRect(x0 - _CHUNK_G, y0 - _CHUNK_G, cv.width, cv.height);
   const mortarWall = _shadeHexColor(th.wallColor, -0.45);
+  const mortarWallRace10 = _shadeHexColor(_RACE10_WALL, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       const x = tx * TILE, y = ty * TILE;
-      c.fillStyle = _shadeHexColor(th.wallColor, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
+      const inTower = _isRace10Tile(tx, ty);
+      const wallBase = inTower ? _RACE10_WALL : th.wallColor;
+      const mortar = inTower ? mortarWallRace10 : mortarWall;
+      c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
-      c.fillStyle = mortarWall;
+      c.fillStyle = mortar;
       if (ty % 2 === 0) c.fillRect(x, y, TILE, 2);
       if (tx % 2 === 0) c.fillRect(x, y, 2, TILE);
       if (_tileHash(tx, ty, 11) < 0.12) {
         const cx = x + 6 + _tileHash(tx, ty, 12) * (TILE - 12);
         const cy = y + 6 + _tileHash(tx, ty, 13) * (TILE - 12);
-        _drawCrack(c, cx, cy, tx, ty, mortarWall, 7);
+        _drawCrack(c, cx, cy, tx, ty, mortar, 7);
       }
     }
   }
@@ -1657,24 +1673,32 @@ function _buildChunk(cx, cy) {
   // theme's floorA/floorB, 2px mortar seams on the tile's own right/bottom
   // edge, occasional cracks, and occasional grime/blood stains.
   const mortarFloor = _shadeHexColor(th.floorA, -0.35);
+  const mortarFloorRace10 = _shadeHexColor(_RACE10_FLOOR_A, -0.35);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
-      c.fillStyle = _lerpHexColor(th.floorA, th.floorB, _tileHash(tx, ty, 0));
+      const inTower = _isRace10Tile(tx, ty);
+      const floorA = inTower ? _RACE10_FLOOR_A : th.floorA;
+      const floorB = inTower ? _RACE10_FLOOR_B : th.floorB;
+      const mortar = inTower ? mortarFloorRace10 : mortarFloor;
+      c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
-      c.fillStyle = mortarFloor;
+      c.fillStyle = mortar;
       c.fillRect(x, y + TILE - 2, TILE, 2);
       c.fillRect(x + TILE - 2, y, 2, TILE);
       if (_tileHash(tx, ty, 1) < 0.1) {
         const crx = x + 8 + _tileHash(tx, ty, 2) * (TILE - 16);
         const cry = y + 8 + _tileHash(tx, ty, 3) * (TILE - 16);
-        _drawCrack(c, crx, cry, tx, ty, mortarFloor, 6);
+        _drawCrack(c, crx, cry, tx, ty, mortar, 6);
       }
-      if (_tileHash(tx, ty, 4) < 0.06) {
+      // Bloodier and far more frequent stains inside the tower — the whole
+      // point of the reskin is that it actually looks like the name.
+      const stainChance = inTower ? 0.35 : 0.06;
+      if (_tileHash(tx, ty, 4) < stainChance) {
         const sx = x + TILE * (0.3 + _tileHash(tx, ty, 5) * 0.4);
         const sy = y + TILE * (0.3 + _tileHash(tx, ty, 6) * 0.4);
-        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, 'rgba(60,10,10,0.35)');
+        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, inTower ? 'rgba(140,10,10,0.55)' : 'rgba(60,10,10,0.35)');
       }
     }
   }
@@ -1686,13 +1710,14 @@ function _buildChunk(cx, cy) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
+      const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
-      grad.addColorStop(0, _shadeHexColor(th.wallColor, -0.5));
-      grad.addColorStop(1, th.wallColor);
+      grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));
+      grad.addColorStop(1, wallBase);
       c.fillStyle = grad;
       c.fillRect(x, y, TILE, 10);
-      c.fillStyle = _shadeHexColor(th.wallColor, 0.35);
+      c.fillStyle = _shadeHexColor(wallBase, 0.35);
       c.fillRect(x, y, TILE, 2);
     }
   }

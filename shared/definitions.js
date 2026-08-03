@@ -676,6 +676,15 @@ const GRAM_MIN_WITHDRAW = 1;
 const WORLD_BOSS_DAYS_MSK  = [1, 3, 5, 0];
 const WORLD_BOSS_HOURS_MSK = [20];
 
+// ── Corridor race schedule ───────────────────────────────────────────────────
+// Every day, 20:00–21:00 by Moscow time — registration is only open inside
+// this window (see _race10Schedule, server/index.js). Unlike the death
+// battle (one scheduled start) the queue can fire off more than one race
+// during the hour if enough players keep signing up.
+const RACE10_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
+const RACE10_HOURS_MSK = [20];
+const RACE10_WINDOW_MS = 60 * 60 * 1000;
+
 // Both events warn everyone over the bot this far ahead, then again on start.
 const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;
 
@@ -822,5 +831,6 @@ if (typeof module !== 'undefined') module.exports = {
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
+  RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
 };

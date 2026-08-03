@@ -370,8 +370,10 @@ function generateOpenWorld() {
         x: (A3_X0 + A3_W - 1 - A3_BOSS_DX) * TILE + TILE / 2, y: (A3_Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
       },
     },
-    // Race10: one spawn point per lane (index = lane number) and the single
-    // shared boss's spot at the end of every lane.
+    // Race10 ("Кровавая Башня"): one spawn point per lane (index = lane
+    // number) and the single shared boss's spot at the end of every lane.
+    // bounds (tile coords) lets the client tint this whole zone's floor/
+    // walls to match the name — see _buildChunk, js/game.js.
     race10: {
       lanes: race10LaneRows.map(cy => ({
         x: (RACE10_X0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2,
@@ -379,6 +381,7 @@ function generateOpenWorld() {
       boss: {
         x: race10BossCx * TILE + TILE / 2, y: race10BossCy * TILE + TILE / 2,
       },
+      bounds: { x0: RACE10_X0, y0: RACE10_Y0, x1: race10BossRoomX0 + RACE10_BOSS_ROOM, y1: RACE10_Y0 + RACE10_H },
     },
     armEntries,
     corridorGates,

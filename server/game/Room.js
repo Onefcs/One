@@ -315,7 +315,9 @@ class Room {
     // arena must be included: the client builds the event teleport pads from
     // it in _buildArmGates (js/game.js), and without it _evtPad stays null so
     // the portal never appears no matter what the event state says.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena };
+    // race10.bounds is what lets the client tint that zone's floor/walls to
+    // look like "Кровавая Башня" (see _buildChunk, js/game.js).
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10 };
   }
 
   _inSafeZone(x, y) {
