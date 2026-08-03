@@ -2059,14 +2059,20 @@ function _initArena3Handlers(s) {
     _a3State = {
       queued: st.queued || 0, needed: st.needed || 6, live: !!st.live,
       minLevel: st.minLevel || 15, reward: st.reward || 10,
+      maxAttempts: st.maxAttempts || _a3State.maxAttempts || 3,
+      // Absent on the frequent queue pushes — keep whatever the last sync
+      // told us rather than resetting the counter to "unknown" every time
+      // somebody else joins the queue.
+      attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _a3State.attemptsLeft,
     };
     if (st.registered !== undefined) _a3Registered = !!st.registered;
     if (st.inMatch !== undefined) _a3InMatch = !!st.inMatch;
     if (typeof onArena3State === 'function') onArena3State();
   });
 
-  s.on('arena3Registered', ({ registered }) => {
+  s.on('arena3Registered', ({ registered, attemptsLeft }) => {
     _a3Registered = !!registered;
+    if (attemptsLeft !== undefined) _a3State = { ..._a3State, attemptsLeft };
     if (typeof onArena3State === 'function') onArena3State();
   });
 
@@ -2133,6 +2139,9 @@ function _initArena3Handlers(s) {
       if (player) player.nexumBalance = window._nexumBalance;
     }
     if (typeof showArena3Result === 'function') showArena3Result(!!won, !!wedged, reward || 0);
+    // The attempt was spent when the match started; re-sync so the panel shows
+    // the new count instead of the one from before the match.
+    if (typeof netArena3Sync === 'function') netArena3Sync();
     if (typeof onArena3State === 'function') onArena3State();
   });
 

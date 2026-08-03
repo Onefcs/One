@@ -3037,6 +3037,10 @@ function _arena3BodyHTML() {
   const lvl = (player && player.lvl) || 1;
   const tooLow = lvl < (st.minLevel || 15);
 
+  // null means the panel hasn't synced yet — don't lock the button on a count
+  // we haven't actually been told.
+  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+
   let phaseTxt, action;
   if (inMatch) {
     phaseTxt = t('a3PhaseFighting');
@@ -3044,6 +3048,9 @@ function _arena3BodyHTML() {
   } else if (tooLow) {
     phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
     action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (spent && !_a3Registered) {
+    phaseTxt = t('a3NoAttempts');
+    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
   } else if (_a3Registered) {
     phaseTxt = t('a3PhaseQueued');
     action = `<button class="db-action db-leave" onclick="netArena3Unregister()">${t('dbLeaveBtn')}</button>`;
@@ -3053,7 +3060,9 @@ function _arena3BodyHTML() {
   }
 
   const score = inMatch
-    ? `<div class="db-count">${tVars('a3ScoreFmt', { a: _a3Score.a, b: _a3Score.b })}</div>` : '';
+    ? `<div class="db-count">${tVars('a3ScoreFmt', { a: _a3Score.a, b: _a3Score.b })}</div>`
+    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined
+        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>` : '');
 
   return `
     <div style="padding:16px">
@@ -3069,6 +3078,7 @@ function _arena3BodyHTML() {
           <li>${t('a3Rule3')}</li>
           <li>${t('a3Rule4')}</li>
           <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
+          <li>${tVars('a3Rule6', { n: st.maxAttempts })}</li>
         </ul>
       </div>
       <div class="db-rewards-hdr">${t('a3RewardHdr')}</div>

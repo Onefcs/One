@@ -100,7 +100,10 @@ let _dbInFight = false;
 // socket ids of everyone in it by side, so nameplates can colour allies and
 // opponents differently — the server already refuses friendly fire, this is
 // just so players can tell who is who.
-let _a3State = { queued: 0, needed: 6, live: false, minLevel: 15, reward: 10 };
+// attemptsLeft is only refreshed by an explicit sync (opening the panel, a
+// registration, a match ending) — the frequent queue-count pushes leave it
+// alone, so it starts as null meaning "not known yet" rather than 0.
+let _a3State = { queued: 0, needed: 6, live: false, minLevel: 15, reward: 10, attemptsLeft: null, maxAttempts: 3 };
 let _a3Registered = false;
 let _a3InMatch = false;
 let _a3Team = null;

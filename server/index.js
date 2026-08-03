@@ -1777,6 +1777,8 @@ function _lockPartyDungeonDaily(socketId)            { _lockDailyAttempt(socketI
 async function _partyDungeonLockedToday(socketId)    { return (await _dailyAttemptsLeft(socketId, 'partyDungeonAttempts')) <= 0; }
 function _lockRaidDaily(socketId)                    { _lockDailyAttempt(socketId, 'raidAttempts'); }
 async function _raidLockedToday(socketId)            { return (await _dailyAttemptsLeft(socketId, 'raidAttempts')) <= 0; }
+function _lockArena3Daily(socketId)                  { _lockDailyAttempt(socketId, 'arena3Attempts'); }
+async function _arena3AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'arena3Attempts'); }
 
 // Shared by partyDungeonAttack/partyDungeonSkillAttack — mirrors the normal
 // attack/skillAttack handlers' kill-reward flow, but rewards split across
@@ -2214,6 +2216,7 @@ const ARENA3_WEDGE_MS    = 30 * 60 * 1000;
 const _a3 = {
   queue: new Map(),   // socketId -> { name, lvl }
   live: false,
+  starting: false,    // guards the async attempt re-check inside _a3TryStart
   teams: new Map(),   // socketId -> 'A' | 'B'
   alive: new Map(),   // socketId -> { name, team }
   names: new Map(),   // socketId -> name, kept for the result screen after elimination
@@ -2233,6 +2236,7 @@ function _a3PublicState() {
     live: _a3.live,
     minLevel: ARENA3_MIN_LEVEL,
     reward: ARENA3_REWARD,
+    maxAttempts: DAILY_DUNGEON_ATTEMPTS,
   };
 }
 
@@ -2271,8 +2275,16 @@ function _a3Enemies(a, b) {
 function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId); }
 function _pvpEliminate(socketId) { _dbEliminate(socketId); _a3Eliminate(socketId); }
 
-function _a3TryStart() {
-  if (_a3.live) return;
+// _a3TryStart is async now (it re-checks daily attempts against the DB), and
+// every caller fires it without waiting — this keeps a failed launch from
+// surfacing as an unhandled rejection and taking the process down.
+function _a3TryStartSafe() { _a3TryStart().catch(err => console.error('_a3TryStart:', err)); }
+
+async function _a3TryStart() {
+  // _a3.starting covers the await below: without it two callers could both
+  // pass the _a3.live check while the attempt re-check is in flight and
+  // deploy two matches into the one arena.
+  if (_a3.live || _a3.starting) return;
   const room = getRoom(1);
   if (!room) return;
   // Only entrants still connected and still standing in the world can be
@@ -2282,7 +2294,35 @@ function _a3TryStart() {
   [..._a3.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _a3.queue.delete(sid); });
   if (ready.length < ARENA3_NEEDED) return;
 
+  _a3.starting = true;
+  try {
+    await _a3Deploy(ready, room);
+  } finally {
+    _a3.starting = false;
+  }
+}
+
+async function _a3Deploy(ready, room) {
   const picked = ready.slice(0, ARENA3_NEEDED);
+
+  // Attempts are re-checked against fresh DB state right before launch, not
+  // just at sign-up: someone can burn their last attempt in another session
+  // while sitting in this queue. Anyone out of attempts is dropped and the
+  // launch is retried with whoever is left.
+  const spent = await Promise.all(picked.map(sid => _arena3AttemptsLeft(sid)));
+  const outOfAttempts = picked.filter((sid, i) => spent[i] <= 0);
+  if (outOfAttempts.length) {
+    outOfAttempts.forEach(sid => {
+      _a3.queue.delete(sid);
+      io.to(sid).emit('arena3Error', { msg: 'Попытки на арену на сегодня закончились' });
+      io.to(sid).emit('arena3Registered', { registered: false });
+    });
+    _a3Broadcast();
+    // Each pass removes at least one entrant, so this can't loop forever.
+    // Deferred so _a3.starting has been cleared by the caller's finally.
+    setImmediate(_a3TryStartSafe);
+    return;
+  }
   // Fisher-Yates, so the split is genuinely random rather than "first three to
   // press the button are one team".
   for (let i = picked.length - 1; i > 0; i--) {
@@ -2315,6 +2355,10 @@ function _a3TryStart() {
     _a3.alive.set(socketId, { name, team });
     _a3.names.set(socketId, name);
     _a3.queue.delete(socketId);
+    // The attempt is spent the moment the match starts, win or lose — same
+    // rule as the raid and the maze. Only players actually deployed are
+    // charged, so a cancelled launch costs nobody anything.
+    _lockArena3Daily(socketId);
   });
   // Rosters are only known once everyone is placed, so this is a second pass.
   const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
@@ -2383,7 +2427,7 @@ async function _a3Finish(winner, wedged) {
   _a3Broadcast();
   // A queue that filled up while this match ran starts the next one straight
   // away rather than waiting for someone to press register again.
-  _a3TryStart();
+  _a3TryStartSafe();
 }
 
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
@@ -3950,7 +3994,7 @@ io.on('connection', socket => {
   });
 
   // ── 3v3 Arena ─────────────────────────────────────────────────────────────
-  safeOn('arena3Register', () => {
+  safeOn('arena3Register', async () => {
     if (!authed) return;
     if (_a3.live && _a3.teams.has(socket.id)) return;
     const cp = currentRoom?.players.get(socket.id);
@@ -3967,10 +4011,14 @@ io.on('connection', socket => {
     if (lvl < ARENA3_MIN_LEVEL) {
       return socket.emit('arena3Error', { msg: `Нужен ${ARENA3_MIN_LEVEL} уровень` });
     }
+    const left = await _arena3AttemptsLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('arena3Error', { msg: 'Попытки на арену на сегодня закончились' });
+    }
     _a3.queue.set(socket.id, { name: authed.username, lvl });
-    socket.emit('arena3Registered', { registered: true });
+    socket.emit('arena3Registered', { registered: true, attemptsLeft: left });
     _a3Broadcast();
-    _a3TryStart();
+    _a3TryStartSafe();
   });
 
   safeOn('arena3Unregister', () => {
@@ -3979,11 +4027,15 @@ io.on('connection', socket => {
     _a3Broadcast();
   });
 
-  safeOn('arena3Sync', () => {
+  // The only place attemptsLeft is read from the DB — the periodic broadcasts
+  // stay a pure in-memory push, so opening the panel costs one query rather
+  // than every queue change costing one per waiting player.
+  safeOn('arena3Sync', async () => {
     socket.emit('arena3State', {
       ..._a3PublicState(),
       registered: _a3.queue.has(socket.id),
       inMatch: _a3.teams.has(socket.id),
+      attemptsLeft: await _arena3AttemptsLeft(socket.id),
     });
   });
 
