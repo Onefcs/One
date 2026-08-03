@@ -2193,6 +2193,199 @@ async function _dbFinish(timedOut) {
   _dbBroadcast();
 }
 
+// ── 3v3 Arena (Арена 3х3) ───────────────────────────────────────────────────
+// Queue-driven team PvP: six players sign up, get split at random into two
+// teams of three, and are dropped into the three-lane arena (see pvpArena in
+// server/game/dungeon.js). Allies cannot damage each other; the team with
+// anyone left standing wins. Unlike the death battle this has no scheduled
+// slot — it fires whenever six people are waiting.
+const ARENA3_TEAM_SIZE   = 3;
+const ARENA3_NEEDED      = ARENA3_TEAM_SIZE * 2;
+const ARENA3_MIN_LEVEL   = 15;
+const ARENA3_FREEZE_MS   = 10 * 1000;   // shorter than the death battle's: six known players, no scatter to take in
+const ARENA3_REWARD      = 10;          // Liberty (Nexum) per winner
+// Deliberately NOT a match timer — the rules say a match runs until one side
+// is wiped out, however long that takes. This is an operational guard only:
+// without it two players who both refuse to fight would hold the single arena
+// forever and no one else could ever play the mode. It ends the match with no
+// winner and no reward rather than deciding it.
+const ARENA3_WEDGE_MS    = 30 * 60 * 1000;
+
+const _a3 = {
+  queue: new Map(),   // socketId -> { name, lvl }
+  live: false,
+  teams: new Map(),   // socketId -> 'A' | 'B'
+  alive: new Map(),   // socketId -> { name, team }
+  names: new Map(),   // socketId -> name, kept for the result screen after elimination
+  fightAt: 0,
+  freezeTimer: null,
+  wedgeTimer: null,
+};
+
+function _socketTid(socketId) {
+  return io.sockets.sockets.get(socketId)?.data?.telegramId || null;
+}
+
+function _a3PublicState() {
+  return {
+    queued: _a3.queue.size,
+    needed: ARENA3_NEEDED,
+    live: _a3.live,
+    minLevel: ARENA3_MIN_LEVEL,
+    reward: ARENA3_REWARD,
+  };
+}
+
+// Only the people waiting or fighting care about this, so it goes to them
+// rather than the whole floor.
+function _a3Broadcast() {
+  const st = _a3PublicState();
+  _a3.queue.forEach((_, sid) => io.to(sid).emit('arena3State', { ...st, registered: true }));
+  _a3.names.forEach((_, sid) => io.to(sid).emit('arena3State', st));
+}
+
+function _a3Frozen(socketId) {
+  return _a3.live && Date.now() < _a3.fightAt && _a3.alive.has(socketId);
+}
+
+// True only for two players on the SAME side of a running match — that is the
+// one case where PvP has to be refused inside the arena.
+function _a3Allies(a, b) {
+  if (!_a3.live) return false;
+  const ta = _a3.teams.get(a), tb = _a3.teams.get(b);
+  return !!ta && ta === tb;
+}
+// ...and this is the opposite: two players on OPPOSITE sides, who must be able
+// to hit each other even if they share a party or a clan.
+function _a3Enemies(a, b) {
+  if (!_a3.live) return false;
+  const ta = _a3.teams.get(a), tb = _a3.teams.get(b);
+  return !!ta && !!tb && ta !== tb;
+}
+
+// Both PvP modes can hold a player in a pre-fight freeze, and both need to
+// know when one goes down. Every combat path goes through these rather than
+// checking each mode separately — adding a third mode later means changing
+// these two functions, not every attack handler. Each half no-ops for a
+// socket that isn't in that mode.
+function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId); }
+function _pvpEliminate(socketId) { _dbEliminate(socketId); _a3Eliminate(socketId); }
+
+function _a3TryStart() {
+  if (_a3.live) return;
+  const room = getRoom(1);
+  if (!room) return;
+  // Only entrants still connected and still standing in the world can be
+  // deployed; anyone else is dropped from the queue rather than counted.
+  const ready = [..._a3.queue.keys()].filter(sid =>
+    io.sockets.sockets.get(sid) && room.players.get(sid));
+  [..._a3.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _a3.queue.delete(sid); });
+  if (ready.length < ARENA3_NEEDED) return;
+
+  const picked = ready.slice(0, ARENA3_NEEDED);
+  // Fisher-Yates, so the split is genuinely random rather than "first three to
+  // press the button are one team".
+  for (let i = picked.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [picked[i], picked[j]] = [picked[j], picked[i]];
+  }
+  const teamA = picked.slice(0, ARENA3_TEAM_SIZE);
+  const teamB = picked.slice(ARENA3_TEAM_SIZE);
+
+  _a3.live = true;
+  _a3.teams.clear(); _a3.alive.clear(); _a3.names.clear();
+  _a3.fightAt = Date.now() + ARENA3_FREEZE_MS;
+
+  const placed = room.pvpArenaDeploy(teamA, teamB);
+  // Someone can vanish between the readiness filter above and the deploy. A
+  // side with nobody on it would never trigger the win check — no one is left
+  // to be killed — and with no match timer that would hold the arena until the
+  // wedge guard fired half an hour later. Put everyone back and wait instead.
+  if (placed.filter(p => p.team === 'A').length === 0 ||
+      placed.filter(p => p.team === 'B').length === 0) {
+    placed.forEach(({ socketId }) => room.deathBattleReturn(socketId));
+    _a3.live = false;
+    _a3.fightAt = 0;
+    _a3Broadcast();
+    return;
+  }
+  placed.forEach(({ socketId, x, y, hp, team }) => {
+    const name = _a3.queue.get(socketId)?.name || '?';
+    _a3.teams.set(socketId, team);
+    _a3.alive.set(socketId, { name, team });
+    _a3.names.set(socketId, name);
+    _a3.queue.delete(socketId);
+  });
+  // Rosters are only known once everyone is placed, so this is a second pass.
+  const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
+  placed.forEach(({ socketId, x, y, hp, team }) => {
+    io.to(socketId).emit('arena3Started', {
+      x, y, hp, team, fightAt: _a3.fightAt, roster,
+    });
+    logPlayer(_socketTid(socketId), _a3.names.get(socketId), 'arena3_start', { team });
+  });
+
+  clearTimeout(_a3.freezeTimer);
+  _a3.freezeTimer = setTimeout(() => {
+    if (!_a3.live) return;
+    _a3.alive.forEach((_, sid) => io.to(sid).emit('arena3Fight'));
+  }, ARENA3_FREEZE_MS);
+
+  clearTimeout(_a3.wedgeTimer);
+  _a3.wedgeTimer = setTimeout(() => _a3Finish(null, true), ARENA3_WEDGE_MS);
+  _a3Broadcast();
+}
+
+// Knocks one player out. Safe to call for anyone not in a match — a normal PvP
+// kill elsewhere, an unrelated disconnect — it returns immediately.
+function _a3Eliminate(socketId) {
+  if (!_a3.live) return;
+  const rec = _a3.alive.get(socketId);
+  if (!rec) return;
+  _a3.alive.delete(socketId);
+  const room = getRoom(1);
+  const spot = room ? room.deathBattleReturn(socketId) : null;
+  io.to(socketId).emit('arena3Eliminated', { x: spot?.x, y: spot?.y });
+  const aliveA = [..._a3.alive.values()].filter(r => r.team === 'A').length;
+  const aliveB = [..._a3.alive.values()].filter(r => r.team === 'B').length;
+  _a3.alive.forEach((_, sid) => io.to(sid).emit('arena3Score', { a: aliveA, b: aliveB }));
+  if (aliveA === 0 || aliveB === 0) {
+    _a3Finish(aliveA === 0 && aliveB === 0 ? null : (aliveA === 0 ? 'B' : 'A'), false);
+  }
+}
+
+async function _a3Finish(winner, wedged) {
+  if (!_a3.live) return;
+  clearTimeout(_a3.freezeTimer);
+  clearTimeout(_a3.wedgeTimer);
+  _a3.live = false;
+  _a3.fightAt = 0;
+  const room = getRoom(1);
+  // Everyone still standing goes home too — the match is over for them as
+  // well, they just didn't die to get there.
+  _a3.alive.forEach((_, sid) => { if (room) room.deathBattleReturn(sid); });
+
+  const teams = new Map(_a3.teams);
+  const names = new Map(_a3.names);
+  _a3.teams.clear(); _a3.alive.clear(); _a3.names.clear();
+
+  for (const [sid, team] of teams) {
+    const won = !!winner && team === winner;
+    const s = io.sockets.sockets.get(sid);
+    let reward = 0;
+    if (won && s?.data?._a3GrantWin) {
+      reward = await s.data._a3GrantWin();
+    }
+    io.to(sid).emit('arena3Result', { won, winner, wedged: !!wedged, reward, team });
+    logPlayer(_socketTid(sid), names.get(sid), 'arena3_end',
+      { team, result: winner ? (won ? 'win' : 'lose') : (wedged ? 'wedged' : 'draw'), reward });
+  }
+  _a3Broadcast();
+  // A queue that filled up while this match ran starts the next one straight
+  // away rather than waiting for someone to press register again.
+  _a3TryStart();
+}
+
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
 // safe to trigger from more than one path below.
 function _initFloorRooms() {
@@ -2425,6 +2618,20 @@ io.on('connection', socket => {
       { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD });
     logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
     return { items, delivered: !!inv };
+  };
+
+  // Pays out a 3v3 win. Lives on the socket for the same reason _dbGrantWin
+  // does: Liberty is server-authoritative and its live value is in this
+  // closure, not in whatever the DB last saw. Returns what was actually paid
+  // so the result screen can't claim a reward that didn't land.
+  socket.data._a3GrantWin = async () => {
+    if (!authed) return 0;
+    _setNexum(_round7(_liveNexum() + ARENA3_REWARD));
+    await _persistSavedFields(authed, { nexumBalance: _liveNexum() });
+    socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
+    logPlayer(authed.telegramId, authed.username, 'arena3_reward',
+      { nexum: ARENA3_REWARD, balance: _liveNexum() });
+    return ARENA3_REWARD;
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
@@ -3387,7 +3594,7 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     // Frozen entrants stay exactly where they were dropped. Facing/hp still
     // sync so the countdown doesn't look like a frozen screen.
-    if (_dbFrozen(socket.id)) {
+    if (_pvpFrozen(socket.id)) {
       if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
       return;
     }
@@ -3406,7 +3613,7 @@ io.on('connection', socket => {
   safeOn('attack', ({ enemyId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
-    if (_dbFrozen(socket.id)) return;
+    if (_pvpFrozen(socket.id)) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
@@ -3511,7 +3718,7 @@ io.on('connection', socket => {
 
   safeOn('skillAttack', ({ enemyId, multiplier }) => {
     if (!_atkAllowed()) return;
-    if (_dbFrozen(socket.id)) return;
+    if (_pvpFrozen(socket.id)) return;
     const rId = playerRaid.get(socket.id);
     if (rId) {
       const rr = raidRooms.get(rId);
@@ -3655,6 +3862,11 @@ io.on('connection', socket => {
 
   // Returns true if attacker and target share a party or clan (PvP immune)
   function _isPvpImmune(attackerId, targetId) {
+    // In a 3v3 the teams are what matter, not who is whose friend: allies are
+    // protected outright, and opponents can always be hit even if they happen
+    // to share a party or a clan with the attacker.
+    if (_a3Allies(attackerId, targetId)) return true;
+    if (_a3Enemies(attackerId, targetId)) return false;
     // A death battle is a free-for-all: party and clan protection would let
     // allied entrants refuse to fight and stall the round forever, so both are
     // suspended for as long as the two of them are in the same live round.
@@ -3671,7 +3883,7 @@ io.on('connection', socket => {
   safeOn('pvpAttack', ({ targetId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
-    if (_dbFrozen(socket.id) || _dbFrozen(targetId)) return;
+    if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpAttack(socket.id, targetId);
     if (!result) return;
@@ -3680,23 +3892,23 @@ io.on('connection', socket => {
     // a modified client always report 0 and become unkillable.
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _dbEliminate(targetId); }
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId); }
   });
 
   safeOn('pvpSkillAttack', ({ targetId, multiplier }) => {
     if (!currentRoom) return;
-    if (_dbFrozen(socket.id) || _dbFrozen(targetId)) return;
+    if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _dbEliminate(targetId); }
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId); }
   });
 
   safeOn('pvpSkillCC', ({ targetId, type, duration }) => {
     if (!currentRoom) return;
-    if (_dbFrozen(socket.id) || _dbFrozen(targetId)) return;
+    if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
     const attacker = currentRoom.players.get(socket.id);
     if (!attacker || !attacker.pvpMode) return;
@@ -3712,7 +3924,7 @@ io.on('connection', socket => {
   safeOn('respawn', () => {
     // Dying to anything at all during a round is an elimination — this covers
     // the paths the PvP kill hooks don't (the event boss, a stray mob).
-    _dbEliminate(socket.id);
+    _pvpEliminate(socket.id);
     if (currentRoom) currentRoom.respawnPlayer(socket.id);
   });
 
@@ -3735,6 +3947,44 @@ io.on('connection', socket => {
     if (!_db.reg.delete(socket.id)) return;
     socket.emit('deathBattleRegistered', { registered: false });
     _dbBroadcast();
+  });
+
+  // ── 3v3 Arena ─────────────────────────────────────────────────────────────
+  safeOn('arena3Register', () => {
+    if (!authed) return;
+    if (_a3.live && _a3.teams.has(socket.id)) return;
+    const cp = currentRoom?.players.get(socket.id);
+    if (!cp) return socket.emit('arena3Error', { msg: 'Выберите персонажа' });
+    if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Нельзя записаться из рейда или подземелья' });
+    }
+    // Signing up for both at once would have the death battle yank someone out
+    // of a running 3v3 (or the reverse) mid-fight.
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < ARENA3_MIN_LEVEL) {
+      return socket.emit('arena3Error', { msg: `Нужен ${ARENA3_MIN_LEVEL} уровень` });
+    }
+    _a3.queue.set(socket.id, { name: authed.username, lvl });
+    socket.emit('arena3Registered', { registered: true });
+    _a3Broadcast();
+    _a3TryStart();
+  });
+
+  safeOn('arena3Unregister', () => {
+    if (!_a3.queue.delete(socket.id)) return;
+    socket.emit('arena3Registered', { registered: false });
+    _a3Broadcast();
+  });
+
+  safeOn('arena3Sync', () => {
+    socket.emit('arena3State', {
+      ..._a3PublicState(),
+      registered: _a3.queue.has(socket.id),
+      inMatch: _a3.teams.has(socket.id),
+    });
   });
 
   // Sent once the winner closes the reward modal — everyone else is already
@@ -4230,6 +4480,9 @@ io.on('connection', socket => {
     const memberIds = [...lb.members.keys()];
     for (const mid of memberIds) {
       if (playerRaid.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то уже в рейде' });
+      // Leaving a live 3v3 for a raid would strand the match: the arena has no
+      // timer, so the side left behind could never finish anyone off.
+      if (_a3.teams.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
     }
     // Re-check the daily lock against fresh DB state for every member right
     // before launch (not just at queue time) — someone could have used up
@@ -4366,6 +4619,9 @@ io.on('connection', socket => {
     const memberIds = [...lb.members.keys()];
     for (const mid of memberIds) {
       if (playerRaid.has(mid) || playerPartyDungeon.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то уже в подземелье' });
+      // Same reason as the raid guard above: the 3v3 has no timer, so a member
+      // walking out of a live match would leave it unable to finish.
+      if (_a3.teams.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
     }
     // Re-check the daily lock against fresh DB state for every member right
     // before launch (not just at queue time) — someone could have cleared
@@ -4572,9 +4828,11 @@ io.on('connection', socket => {
     _cleanupPartyDungeon(socket.id);
     _cleanupPdLobby(socket.id);
     // Leaving mid-round counts as being knocked out, so a round can't hang
-    // waiting on someone who closed the app.
+    // waiting on someone who closed the app. The 3v3 has no timer at all, so
+    // this is the only thing that stops a closed app from holding the arena.
     _db.reg.delete(socket.id);
-    _dbEliminate(socket.id);
+    if (_a3.queue.delete(socket.id)) _a3Broadcast();
+    _pvpEliminate(socket.id);
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);

@@ -893,6 +893,33 @@ class Room {
     return placed;
   }
 
+  // Places a 3v3 match: one side per base, one player per lane, full HP and
+  // PvP on. Returns what was actually placed so the caller only counts players
+  // who really made it in. Falls back to the arena centre if a lane spawn ever
+  // lands on a wall, so a map tweak can't strand someone inside geometry.
+  pvpArenaDeploy(teamA, teamB) {
+    const ar = this._dungeon.pvpArena;
+    if (!ar) return [];
+    const placed = [];
+    const put = (ids, spots, team) => {
+      ids.forEach((sid, i) => {
+        const p = this.players.get(sid);
+        if (!p) return;
+        const spot = spots[i % spots.length];
+        let x = spot.x, y = spot.y;
+        if (this._isWall(x, y)) { x = ar.cx; y = ar.cy; }
+        p.x = x; p.y = y;
+        p.hp = p.maxHp;
+        p.pvpMode = true;
+        p._profileRev++;
+        placed.push({ socketId: sid, x, y, hp: p.hp, team });
+      });
+    };
+    put(teamA, ar.teamA, 'A');
+    put(teamB, ar.teamB, 'B');
+    return placed;
+  }
+
   // Sends a player back to the hub with PvP off — used both for entrants
   // knocked out of a round and for the winner once they close the reward
   // modal. Returns the landing spot so the caller can tell that client.

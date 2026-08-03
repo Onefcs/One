@@ -966,16 +966,28 @@ function _getOtherClanIconCv(iconId) {
 // instead of the blurry/wobbly look a WebGL-scaled PIXI.Text gave them
 // (see pixi-world.js _getOtherPlayer). p._nameBarTop is written each frame
 // by _updateOtherPlayers right before this runs.
+// During a 3v3 the one thing that has to be readable at a glance is which
+// side someone is on. The server already refuses friendly fire; this is what
+// makes that visible instead of players discovering it by swinging at a
+// teammate. Returns null outside a match, so normal play is untouched.
+function _a3NameColor(id) {
+  if (typeof _a3Team === 'undefined' || !_a3Team) return null;
+  const mine = (_a3Mates[_a3Team] || []).includes(id);
+  if (mine) return '#6fc7ff';
+  const other = _a3Team === 'A' ? 'B' : 'A';
+  return (_a3Mates[other] || []).includes(id) ? '#ff6b6b' : null;
+}
+
 function _drawOtherPlayerNamesOnUI() {
   if (!otherPlayers.size) return;
-  otherPlayers.forEach(p => {
+  otherPlayers.forEach((p, _pid) => {
     if (p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
     const barTop = p._nameBarTop ?? -20;
     const nameY  = p.y + barTop - 3;
     const sx = (p.x - _lastCamX) * ZOOM;
     const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
     const uname = (p.username || '?').slice(0, 16);
-    const unameColor = p.pvpMode ? '#f28a96' : '#d1ccc5';
+    const unameColor = _a3NameColor(_pid) || (p.pvpMode ? '#f28a96' : '#d1ccc5');
     const unamePx = Math.ceil(DPR);
     const unameKey = uname + '|' + unameColor + '|' + unamePx;
     if (unameKey !== p._nameKey) { p._nameBitmap = _buildNameBitmap(uname, unameColor, 10, unamePx); p._nameKey = unameKey; }

@@ -96,6 +96,16 @@ let _myLobbyMembers = [];    // [{id,name,bm,lvl}]
 let _dbState = { phase: 'idle', startAt: 0, nextAt: 0, count: 0 };
 let _dbRegistered = false;
 let _dbInFight = false;
+// 3v3 arena. _a3Team is 'A' or 'B' while in a match, and _a3Mates holds the
+// socket ids of everyone in it by side, so nameplates can colour allies and
+// opponents differently — the server already refuses friendly fire, this is
+// just so players can tell who is who.
+let _a3State = { queued: 0, needed: 6, live: false, minLevel: 15, reward: 10 };
+let _a3Registered = false;
+let _a3InMatch = false;
+let _a3Team = null;
+let _a3Mates = { A: [], B: [] };
+let _a3Score = { a: 3, b: 3 };
 // While set and still in the future, this client is standing in the arena
 // waiting out the pre-fight countdown: movement and attacks are blocked here
 // as well as on the server (see _dbFrozen).

@@ -1946,6 +1946,7 @@ function _initEventBossHandlers(s) {
     if (typeof _marketToast === 'function') _marketToast(msg, 'err');
   });
   _initDeathBattleHandlers(s);
+  _initArena3Handlers(s);
 }
 
 // ── Death Battle (Битва на смерть) ──────────────────────────────────────────
@@ -2042,6 +2043,103 @@ function _initDeathBattleHandlers(s) {
     if (!player) return;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
     else { player.x = x; player.y = y; }
+  });
+}
+
+function netArena3Register()   { if (socket?.connected) socket.emit('arena3Register'); }
+function netArena3Unregister() { if (socket?.connected) socket.emit('arena3Unregister'); }
+function netArena3Sync()       { if (socket?.connected) socket.emit('arena3Sync'); }
+
+// ── 3v3 Arena ───────────────────────────────────────────────────────────────
+// The match runs inside the normal world room — the arena is a walled-off part
+// of the map, so movement, combat and rendering all keep working unchanged.
+// These handlers only track which side the player is on and drive the UI.
+function _initArena3Handlers(s) {
+  s.on('arena3State', (st) => {
+    _a3State = {
+      queued: st.queued || 0, needed: st.needed || 6, live: !!st.live,
+      minLevel: st.minLevel || 15, reward: st.reward || 10,
+    };
+    if (st.registered !== undefined) _a3Registered = !!st.registered;
+    if (st.inMatch !== undefined) _a3InMatch = !!st.inMatch;
+    if (typeof onArena3State === 'function') onArena3State();
+  });
+
+  s.on('arena3Registered', ({ registered }) => {
+    _a3Registered = !!registered;
+    if (typeof onArena3State === 'function') onArena3State();
+  });
+
+  s.on('arena3Error', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  s.on('arena3Started', ({ x, y, hp, team, fightAt, roster }) => {
+    if (!player) return;
+    _a3InMatch = true;
+    _a3Registered = false;
+    _a3Team = team;
+    _a3Mates = { A: [], B: [] };
+    (roster || []).forEach(r => { if (_a3Mates[r.team]) _a3Mates[r.team].push(r.id); });
+    _a3Score = { a: 3, b: 3 };
+    if (hp) player.hp = hp;
+    pvpMode = true;
+    _dbFightAt = fightAt || 0;   // same freeze overlay as the death battle
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('a3ArenaLbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof showEventBossBanner === 'function') {
+      showEventBossBanner(tVars('a3StartedFmt', { team: t(team === 'A' ? 'a3TeamA' : 'a3TeamB') }), '#e8574f');
+    }
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
+    if (typeof onArena3State === 'function') onArena3State();
+  });
+
+  s.on('arena3Fight', () => {
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbFightMsg'), '#e8574f');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+  });
+
+  s.on('arena3Score', ({ a, b }) => {
+    _a3Score = { a: a || 0, b: b || 0 };
+    if (typeof onArena3State === 'function') onArena3State();
+  });
+
+  // Knocked out: back to the world immediately. The result screen still comes
+  // later, when the match itself finishes.
+  s.on('arena3Eliminated', ({ x, y }) => {
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    pvpMode = false;
+    if (player && x != null && y != null) {
+      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
+      else { player.x = x; player.y = y; }
+    }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('a3Eliminated'), '#f07886');
+    if (typeof onArena3State === 'function') onArena3State();
+  });
+
+  s.on('arena3Result', ({ won, wedged, reward }) => {
+    _a3InMatch = false;
+    _a3Team = null;
+    _a3Mates = { A: [], B: [] };
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    pvpMode = false;
+    if (reward) {
+      window._nexumBalance = (window._nexumBalance || 0) + reward;
+      if (player) player.nexumBalance = window._nexumBalance;
+    }
+    if (typeof showArena3Result === 'function') showArena3Result(!!won, !!wedged, reward || 0);
+    if (typeof onArena3State === 'function') onArena3State();
+  });
+
+  s.on('nexumBalanceUpdate', ({ balance }) => {
+    if (balance == null) return;
+    window._nexumBalance = balance;
+    if (player) player.nexumBalance = balance;
   });
 }
 

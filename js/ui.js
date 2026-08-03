@@ -2999,6 +2999,7 @@ function openEventsPanel() {
   if (!panel) return;
   panel.style.display = 'flex';
   if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
+  if (typeof netArena3Sync === 'function') netArena3Sync();
   _renderEventsBody();
 }
 
@@ -3021,7 +3022,87 @@ function _eventsPanelOpen() {
 function _renderEventsBody() {
   const body = document.getElementById('events-panel-body');
   if (!body) return;
-  body.innerHTML = _eventTab === 'boss' ? _worldBossBodyHTML() : _deathBattleBodyHTML();
+  body.innerHTML = _eventTab === 'boss' ? _worldBossBodyHTML()
+                 : _eventTab === 'a3'   ? _arena3BodyHTML()
+                 : _deathBattleBodyHTML();
+}
+
+// ── 3v3 arena tab ───────────────────────────────────────────────────────────
+// Queue-driven, so there is no countdown to show — the headline number is how
+// many of the six are waiting. Everything here comes from _a3State, pushed by
+// the server (see _initArena3Handlers in js/network.js).
+function _arena3BodyHTML() {
+  const st = (typeof _a3State !== 'undefined' && _a3State) || { queued: 0, needed: 6, minLevel: 15, reward: 10 };
+  const inMatch = typeof _a3InMatch !== 'undefined' && _a3InMatch;
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = lvl < (st.minLevel || 15);
+
+  let phaseTxt, action;
+  if (inMatch) {
+    phaseTxt = t('a3PhaseFighting');
+    action = `<button class="db-action" disabled>${t('a3PhaseFighting')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (_a3Registered) {
+    phaseTxt = t('a3PhaseQueued');
+    action = `<button class="db-action db-leave" onclick="netArena3Unregister()">${t('dbLeaveBtn')}</button>`;
+  } else {
+    phaseTxt = t('a3PhaseIdle');
+    action = `<button class="db-action" onclick="netArena3Register()">${t('dbJoinBtn')}</button>`;
+  }
+
+  const score = inMatch
+    ? `<div class="db-count">${tVars('a3ScoreFmt', { a: _a3Score.a, b: _a3Score.b })}</div>` : '';
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${st.queued}/${st.needed}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${score}
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${tVars('a3Rule1', { n: st.needed })}</li>
+          <li>${t('a3Rule2')}</li>
+          <li>${t('a3Rule3')}</li>
+          <li>${t('a3Rule4')}</li>
+          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
+        </ul>
+      </div>
+      <div class="db-rewards-hdr">${t('a3RewardHdr')}</div>
+      <div class="db-rewards">
+        <div class="db-reward-row">
+          <span class="db-reward-fallback">💠</span>
+          <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Called from the network handlers on every server push.
+function onArena3State() {
+  if (_eventsPanelOpen() && _eventTab === 'a3') _renderEventsBody();
+}
+
+function showArena3Result(won, wedged, reward) {
+  const modal = document.getElementById('a3-result-modal');
+  if (!modal) return;
+  document.getElementById('a3-result-icon').textContent  = won ? '👑' : (wedged ? '⏳' : '💀');
+  document.getElementById('a3-result-title').textContent = won ? t('a3Victory') : (wedged ? t('a3NoResult') : t('a3Defeat'));
+  document.getElementById('a3-result-title').style.color = won ? '#ffd18a' : '#f07886';
+  document.getElementById('a3-result-sub').textContent   = won ? t('a3VictorySub') : (wedged ? t('a3NoResultSub') : t('a3DefeatSub'));
+  document.getElementById('a3-result-rewards').innerHTML = reward
+    ? `<div class="db-reward-row"><span class="db-reward-fallback">💠</span>
+       <span>Liberty</span><span class="db-reward-qty">+${reward}</span></div>`
+    : '';
+  modal.style.display = 'flex';
+}
+
+function closeArena3Result() {
+  const modal = document.getElementById('a3-result-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 // World boss: alive right now, mid-summon countdown, or waiting for its next
