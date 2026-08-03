@@ -31,29 +31,63 @@ function _potImg(entry, size) {
   return iconHTML(entry.icon || 'potion', size, '#90d653');
 }
 
+// How many potions one tap buys, shared by every row. 'max' is not a number
+// but "as many as gold and the 999 cap allow", resolved per row when the shop
+// is rendered — the two potions have different prices, so it can't be a single
+// figure held here.
+const POTION_CAP = 999;
+const _POTION_QTY_PRESETS = [1, 10, 50, 100];
+let _potionQty = 1;
+
+function setPotionQty(q) {
+  _potionQty = q;
+  openNpc('merchant');
+}
+
+// Resolves the shared quantity against one shop row: how many the player has
+// room for, and how many of those they can actually pay for.
+function _potionBuyPlan(entry) {
+  const cur  = (player.potionBag || {})[entry.itemId] || 0;
+  const room = Math.max(0, POTION_CAP - cur);
+  const afford = entry.price > 0 ? Math.floor((player.gold || 0) / entry.price) : room;
+  const want = _potionQty === 'max' ? Math.min(room, afford) : _potionQty;
+  return { cur, want, cost: entry.price * want, canBuy: want > 0 && want <= room && want <= afford };
+}
+
 function _merchantBody() {
   const p = player;
   const bag = p.potionBag || {};
   const total = (bag.pt1 || 0) + (bag.pt2 || 0);
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b> · ${typeof t === 'function' ? t('npcHpPotionsLbl') : 'Зелий HP'}: <b>${total}/999</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b> · ${typeof t === 'function' ? t('npcHpPotionsLbl') : 'Зелий HP'}: <b>${total}/${POTION_CAP}</b></div>`;
+
+  // Quantity picker — applies to every row below it.
+  html += '<div class="shop-sec">' + (typeof t === 'function' ? t('npcQtyHdr') : 'Сколько покупать') + '</div>';
+  html += '<div class="shop-qty">' + _POTION_QTY_PRESETS.map(q =>
+    `<button class="shop-qty-btn${_potionQty === q ? ' on' : ''}" onclick="setPotionQty(${q})">×${q}</button>`
+  ).join('') +
+    `<button class="shop-qty-btn${_potionQty === 'max' ? ' on' : ''}" onclick="setPotionQty('max')">${typeof t === 'function' ? t('npcQtyMax') : 'Макс'}</button>` +
+  '</div>';
 
   // HP potions
   html += '<div class="shop-sec">' + (typeof t === 'function' ? t('npcHealPotionsHdr') : 'Зелья лечения') + '</div><div class="shop-list">';
   MERCHANT_SHOP.filter(e => {
     const def = ITEM_DEF.find(d => d.id === e.itemId);
     return def && def.slot === 'use';
-  }).forEach((entry, i) => {
+  }).forEach((entry) => {
     const idx = MERCHANT_SHOP.indexOf(entry);
-    const cur = bag[entry.itemId] || 0;
-    const canBuy = p.gold >= entry.price && cur < 999;
+    const { cur, want, cost, canBuy } = _potionBuyPlan(entry);
+    // Falls back to the price of one when nothing can be bought, so a
+    // disabled button still says what the potion costs instead of "0".
+    const btnQty  = canBuy ? want : (_potionQty === 'max' ? 1 : _potionQty);
+    const btnCost = canBuy ? cost : entry.price * btnQty;
     html += `<div class="shop-row">
       <span class="shop-item-icon">${_potImg(entry, 22)}</span>
       <div class="shop-item-info">
         <span class="shop-item-name">${entry.name}</span>
         <span class="shop-item-stat">${entry.desc} · <b style="color:#90d653">×${cur}</b></span>
       </div>
-      <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx})">
-        ${entry.price}${iconHTML('coin',14,'#e3941d')}
+      <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyPotion(${idx},${want})">
+        ${btnQty > 1 ? `<span class="shop-btn-qty">×${btnQty}</span> ` : ''}${btnCost}${iconHTML('coin',14,'#e3941d')}
       </button>
     </div>`;
   });
@@ -61,22 +95,27 @@ function _merchantBody() {
   return html;
 }
 
-function buyPotion(idx) {
+function buyPotion(idx, qty) {
   const entry = MERCHANT_SHOP[idx];
   if (!entry || !player) return;
   const def = ITEM_DEF.find(d => d.id === entry.itemId);
   if (!def) return;
-  if (player.gold < entry.price) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
+  const n = Math.max(1, Math.floor(qty) || 1);
 
   if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
   const cur = player.potionBag[entry.itemId] || 0;
-  if (cur >= 999) { _shopMsg(typeof t === 'function' ? t('npcMaxPotions') : 'Максимум 999 зелий!'); return; }
-  player.gold -= entry.price;
-  player.potionBag[entry.itemId] = cur + 1;
+  // Re-checked here rather than trusting the count baked into the button:
+  // gold and the bag can both have changed since the shop was rendered.
+  if (cur + n > POTION_CAP) { _shopMsg(typeof t === 'function' ? t('npcMaxPotions') : 'Максимум 999 зелий!'); return; }
+  const cost = entry.price * n;
+  if (player.gold < cost) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
+
+  player.gold -= cost;
+  player.potionBag[entry.itemId] = cur + n;
   if (typeof onBuyPotion === 'function') onBuyPotion();
   netSaveProgress();
   openNpc('merchant');
-  _shopMsgOk((typeof t === 'function' ? t('npcBoughtPrefix') : '✓ Куплено: ') + def.name);
+  _shopMsgOk((typeof t === 'function' ? t('npcBoughtPrefix') : '✓ Куплено: ') + def.name + (n > 1 ? ' ×' + n : ''));
 }
 
 // ── Craftsman ───────────────────────────────────────────

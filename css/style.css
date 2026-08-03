@@ -564,6 +564,24 @@ canvas { display:block; width:100%; height:100%; }
   background:linear-gradient(135deg,#6c501e,#926d2e);
 }
 .shop-btn.disabled { background:#26221c; color:#39342d; pointer-events:none; box-shadow:none; }
+.shop-btn-qty { color:#f0dcb0; }
+/* Quantity picker at the merchant — how many potions one tap buys. */
+.shop-qty { display:flex; gap:6px; flex-wrap:wrap; }
+.shop-qty-btn {
+  flex:1; min-width:44px;
+  padding:7px 4px; border-radius:8px;
+  background:rgba(209,204,197,0.03);
+  border:1px solid #2c261c;
+  color:#a2988a; font-size:12px; font-weight:600; cursor:pointer;
+  touch-action:manipulation;
+  transition:background 0.1s, color 0.1s, border-color 0.1s;
+}
+.shop-qty-btn.on {
+  background:rgba(235,171,75,0.15);
+  border-color:#926d2e;
+  color:#ebab4b;
+}
+.shop-qty-btn:active { transform:scale(0.94); }
 .shop-msg {
   background:rgba(236,87,104,0.15); border:1px solid #eb4e61;
   border-radius:8px; padding:8px 12px;

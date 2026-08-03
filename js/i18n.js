@@ -165,6 +165,8 @@ const I18N_UI = {
   npcGoldLbl:      { ru: 'Золото', en: 'Gold', uk: 'Золото', es: 'Oro', tr: 'Altın', pt: 'Ouro' },
   npcHpPotionsLbl: { ru: 'Зелий HP', en: 'HP Potions', uk: 'Зіль HP', es: 'Pociones HP', tr: 'HP İksirleri', pt: 'Poções de HP' },
   npcHealPotionsHdr: { ru: 'Зелья лечения', en: 'Healing Potions', uk: 'Зілля лікування', es: 'Pociones Curativas', tr: 'İyileştirme İksirleri', pt: 'Poções de Cura' },
+  npcQtyHdr:   { ru: 'Сколько покупать', en: 'How many to buy', uk: 'Скільки купувати', es: 'Cuántas comprar', tr: 'Kaç tane alınacak', pt: 'Quantas comprar' },
+  npcQtyMax:   { ru: 'Макс', en: 'Max', uk: 'Макс', es: 'Máx', tr: 'Maks', pt: 'Máx' },
   npcNotEnoughGold: { ru: 'Мало золота!', en: 'Not enough gold!', uk: 'Мало золота!', es: '¡Oro insuficiente!', tr: 'Yeterli altın yok!', pt: 'Ouro insuficiente!' },
   npcMaxPotions:    { ru: 'Максимум 999 зелий!', en: 'Maximum 999 potions!', uk: 'Максимум 999 зіль!', es: '¡Máximo 999 pociones!', tr: 'En fazla 999 iksir!', pt: 'Máximo de 999 poções!' },
   npcBoughtPrefix:  { ru: '✓ Куплено: ', en: '✓ Bought: ', uk: '✓ Куплено: ', es: '✓ Comprado: ', tr: '✓ Satın alındı: ', pt: '✓ Comprado: ' },
