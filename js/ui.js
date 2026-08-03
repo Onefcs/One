@@ -3671,17 +3671,19 @@ function onMarketListed(listing) {
   netSaveProgressNow();
   _marketToast(tVars('listedForFmt', { name: listing.item?.name || '', price: listing.price }), 'ok');
 }
-function onMarketCancelled(listingId, item) {
+function onMarketCancelled(listingId, item, delivered) {
   _marketMine = _marketMine.filter(l => l.id !== listingId);
-  // The return value MUST be checked — this is what destroyed items. With a
-  // full inventory the add silently fails, and the unconditional
-  // netSaveProgressNow() below then shipped an inventory without the returned
-  // item, overwriting the server's copy which did have it. The listing was
-  // already cancelled, so nothing would ever give it back.
-  // The server keeps the item either way (it re-adds to its own copy and
-  // bumps invRev), so on failure just don't push our stale set over it: skip
-  // the save and let the server's inventorySync bring us back in line.
-  const stored = item ? addToInventoryQty(item, item.qty || 1) : true;
+  // delivered: the server already put the item back and its inventorySync has
+  // arrived, so it's in player.inventory right now — adding it again here
+  // would give a free second copy of every cancelled listing.
+  //
+  // Only when it could NOT (no room server-side) do we add it locally, and
+  // then the return value MUST be checked — an unchecked failure is what
+  // destroyed items: the add silently fails on a full inventory and the
+  // unconditional netSaveProgressNow() below shipped an inventory without the
+  // returned item, overwriting the server's copy which did have it. On failure
+  // skip the save and let the server's inventorySync bring us back in line.
+  const stored = (delivered || !item) ? true : addToInventoryQty(item, item.qty || 1);
   updateInvUI();
   if (_marketTab === 'mine') _renderMarketBody();
   if (!stored) {
@@ -3691,9 +3693,14 @@ function onMarketCancelled(listingId, item) {
   netSaveProgressNow();
   _marketToast(t('listingCancelledToast'), 'ok');
 }
-function onMarketBought(listingId, item) {
+function onMarketBought(listingId, item, delivered) {
   _marketLots = _marketLots.filter(l => l.id !== listingId);
-  if (item && !addToInventoryQty(item, item.qty || 1)) _marketToast(t('invFullItemLostToast'), 'err');
+  // delivered: already in player.inventory via the inventorySync that came
+  // with this purchase. Adding it again handed out a free duplicate of every
+  // bought lot — which is how a bought skill book survived being spent.
+  if (!delivered && item && !addToInventoryQty(item, item.qty || 1)) {
+    _marketToast(t('invFullItemLostToast'), 'err');
+  }
   updateInvUI();
   if (_marketTab === 'lots') _renderMarketBody();
   netSaveProgressNow();

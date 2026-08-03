@@ -408,11 +408,13 @@ function craftPet(idx) {
   netCraftPet(rec.rarity);
 }
 
-function onPetCrafted(pet) {
+function onPetCrafted(pet, delivered) {
   const idx = _pendingPetCraftIdx;
   _pendingPetCraftIdx = null;
   if (pet) {
-    addToInventory({ ...pet });
+    // delivered: the server already added it and its inventorySync landed
+    // before this event, so adding it here would craft two pets for one price.
+    if (!delivered) addToInventory({ ...pet });
     if (typeof updateInvUI === 'function') updateInvUI();
     _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
   } else {

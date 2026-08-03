@@ -1885,13 +1885,14 @@ function _initEventBossHandlers(s) {
   });
   s.on('worldDropTaken', ({ id }) => { worldDrops.delete(id); _worldDropPending.delete(id); });
   s.on('worldDropsExpired', ({ ids }) => { (ids || []).forEach(id => { worldDrops.delete(id); _worldDropPending.delete(id); }); });
-  s.on('worldDropPicked', ({ id, item }) => {
+  s.on('worldDropPicked', ({ id, item, delivered }) => {
     worldDrops.delete(id);
     _worldDropPending.delete(id);
     if (!player || !item) return;
-    // The server already wrote this into the account's inventory; mirror it
-    // locally and save so the client's own next full-array save agrees.
-    if (typeof addToInventoryQty === 'function') addToInventoryQty(item, item.qty || 1);
+    // delivered means the server already put it in AND pushed the result down
+    // via inventorySync (which arrives before this event) — mirroring it again
+    // here handed out a second copy. Only add it when the server could not.
+    if (!delivered && typeof addToInventoryQty === 'function') addToInventoryQty(item, item.qty || 1);
     if (typeof updateInvUI === 'function') updateInvUI();
     if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, '+ ' + item.name, (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[item.rarity]) || '#c4a276');
     if (typeof Sound !== 'undefined') Sound.loot();
@@ -1973,16 +1974,19 @@ function _initDeathBattleHandlers(s) {
     if (typeof onDeathBattleState === 'function') onDeathBattleState();
   });
 
-  s.on('deathBattleWon', ({ gram, items }) => {
+  s.on('deathBattleWon', ({ gram, items, delivered }) => {
     _dbInFight = false;
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     pvpMode = false;
-    // The prize is already in the account server-side; mirror it locally so
-    // the inventory doesn't look empty until the next reload.
-    (items || []).forEach(it => {
-      if (typeof addToInventoryQty === 'function') addToInventoryQty(it, it.qty || 1);
-    });
+    // Only mirror when the server could NOT put the prize in itself — when it
+    // did (delivered), its inventorySync already arrived with the items and
+    // adding them here would double the reward.
+    if (!delivered) {
+      (items || []).forEach(it => {
+        if (typeof addToInventoryQty === 'function') addToInventoryQty(it, it.qty || 1);
+      });
+    }
     if (gram) window._gramBalance = (window._gramBalance || 0) + gram;
     if (typeof updateInvUI === 'function') updateInvUI();
     netSaveProgress();
@@ -2070,9 +2074,9 @@ function _initGramHandlers(s) {
 // this one is a real round-trip: netCraftPet just asks, the actual pet and
 // the new balance only ever come from here (see 'craftPet' in server/index.js).
 function _initPetCraftHandlers(s) {
-  s.on('petCrafted', ({ pet, newNexumBalance }) => {
+  s.on('petCrafted', ({ pet, newNexumBalance, delivered }) => {
     window._nexumBalance = newNexumBalance;
-    if (typeof onPetCrafted === 'function') onPetCrafted(pet);
+    if (typeof onPetCrafted === 'function') onPetCrafted(pet, delivered);
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
@@ -2093,12 +2097,12 @@ function _initMarketHandlers(s) {
   s.on('marketListed', ({ listing }) => {
     if (typeof onMarketListed === 'function') onMarketListed(listing);
   });
-  s.on('marketCancelled', ({ listingId, item }) => {
-    if (typeof onMarketCancelled === 'function') onMarketCancelled(listingId, item);
+  s.on('marketCancelled', ({ listingId, item, delivered }) => {
+    if (typeof onMarketCancelled === 'function') onMarketCancelled(listingId, item, delivered);
   });
-  s.on('marketBought', ({ listingId, item, newBalance }) => {
+  s.on('marketBought', ({ listingId, item, newBalance, delivered }) => {
     window._gramBalance = newBalance;
-    if (typeof onMarketBought === 'function') onMarketBought(listingId, item);
+    if (typeof onMarketBought === 'function') onMarketBought(listingId, item, delivered);
   });
   s.on('marketSold', (data) => {
     if (typeof onMarketSold === 'function') onMarketSold(data);

@@ -2096,8 +2096,12 @@ async function _dbFinish(timedOut) {
     const s = io.sockets.sockets.get(winnerId);
     // The prize is granted through the winner's own socket closure, which is
     // where its inventory/GRAM copies live (same reasoning as pickupWorldDrop).
-    const items = s?.data?._dbGrantWin ? await s.data._dbGrantWin() : null;
-    if (s) s.emit('deathBattleWon', { gram: DEATH_BATTLE_GRAM_REWARD, items: items || [] });
+    const won = s?.data?._dbGrantWin ? await s.data._dbGrantWin() : null;
+    if (s) s.emit('deathBattleWon', {
+      gram: DEATH_BATTLE_GRAM_REWARD,
+      items: (won && won.items) || [],
+      delivered: !!(won && won.delivered),
+    });
   }
   _dbSchedule();
   _dbBroadcast();
@@ -2269,6 +2273,14 @@ io.on('connection', socket => {
   // opts.persist === false: the caller writes the document itself (marketBuy
   // bundles the item and the payment into one atomic $set), but the live copy,
   // the revision bump, the client sync and the log still have to happen.
+  //
+  // IMPORTANT for callers that also emit their own "here's your item" event
+  // (worldDropPicked, marketBought, marketCancelled, petCrafted,
+  // deathBattleWon): the inventorySync below already carries the item, and it
+  // is delivered first. Those events must therefore tell the client whether
+  // the item was committed here (delivered: true) so it does NOT mirror it
+  // into the local inventory a second time — that mirroring is what handed
+  // out a free duplicate of every market purchase and world drop.
   function _commitServerItems(inventory, equipment, reason, meta, opts) {
     if (!_lastStats) _lastStats = {};
     const _before = Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0;
@@ -2314,7 +2326,8 @@ io.on('connection', socket => {
   // Hands the death-battle winner its prize. Lives here rather than beside
   // _dbFinish because this is where the socket's own inventory/GRAM copies
   // are (same reasoning as pickupWorldDrop's award path). Returns the item
-  // list so the caller can show it in the win modal.
+  // list so the caller can show it in the win modal, plus whether the prize
+  // actually landed in the server-side inventory — see _commitServerItems.
   socket.data._dbGrantWin = async () => {
     if (!authed) return null;
     const items = deathBattleRewards();
@@ -2325,7 +2338,7 @@ io.on('connection', socket => {
     if (inv) await _commitServerItems(inv, null, 'death_battle_win',
       { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD });
     logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
-    return items;
+    return { items, delivered: !!inv };
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
@@ -2758,16 +2771,18 @@ io.on('connection', socket => {
 
       _setNexum(_liveNexum() - rec.nexumCost);
 
-      let resultPet = null;
+      let resultPet = null, _delivered = false;
       if (Math.random() < rec.chance) {
         resultPet = { ...candidates[Math.floor(Math.random() * candidates.length)] };
-        _invAdd(_lastStats.inventory, resultPet);
+        _delivered = _invAdd(_lastStats.inventory, resultPet);
       }
       _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       _commitServerItems(_lastStats.inventory, null, 'pet_craft',
         { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null });
 
-      socket.emit('petCrafted', { pet: resultPet, newNexumBalance: _nexumBalance });
+      socket.emit('petCrafted', {
+        pet: resultPet, newNexumBalance: _nexumBalance, delivered: _delivered,
+      });
     } catch (err) {
       console.error('craftPet:', err);
       logPlayerErr(authed.telegramId, authed.username, 'pet_craft', err, { rarity });
@@ -2801,10 +2816,11 @@ io.on('connection', socket => {
     }
     const drop = currentRoom.claimWorldDrop(id, p.x, p.y);
     if (!drop) return;
-    if (inv && _invAdd(inv, drop.item)) {
+    const _delivered = !!(inv && _invAdd(inv, drop.item));
+    if (_delivered) {
       _commitServerItems(inv, null, 'world_drop', { item: drop.item && drop.item.id });
     }
-    socket.emit('worldDropPicked', { id: drop.id, item: drop.item });
+    socket.emit('worldDropPicked', { id: drop.id, item: drop.item, delivered: _delivered });
   });
 
   safeOn('marketBrowse', async () => {
@@ -2934,7 +2950,8 @@ io.on('connection', socket => {
       // from the marketCancelled event meant a lost event (or a disconnect in
       // the round trip) destroyed the item — the listing was already
       // cancelled, so nothing would ever return it.
-      if (_sellerInv && _invAdd(_sellerInv, listing.item)) {
+      const _returned = !!(_sellerInv && _invAdd(_sellerInv, listing.item));
+      if (_returned) {
         _commitServerItems(_sellerInv, null, 'market_cancel',
           { item: listing.item && listing.item.id, listingId: String(listingId) });
       } else {
@@ -2944,7 +2961,7 @@ io.on('connection', socket => {
           { item: listing.item && listing.item.id, listingId: String(listingId),
             slots: _sellerInv ? _sellerInv.length : null });
       }
-      socket.emit('marketCancelled', { listingId, item: listing.item });
+      socket.emit('marketCancelled', { listingId, item: listing.item, delivered: _returned });
     } catch (err) {
       console.error('marketCancel:', err);
       logPlayerErr(authed.telegramId, authed.username, 'market_cancel', err, { listingId: String(listingId) });
@@ -3006,7 +3023,8 @@ io.on('connection', socket => {
       // marketBought event that never reaches the client (disconnect, lost
       // packet) can't leave the buyer having paid for nothing.
       const _buyerSet = { 'savedData.gramBalance': _gramBalance };
-      if (_buyerInv && _invAdd(_buyerInv, claimed.item)) {
+      const _delivered = !!(_buyerInv && _invAdd(_buyerInv, claimed.item));
+      if (_delivered) {
         _buyerSet['savedData.inventory'] = _buyerInv;
         // Bundled into the single $set below for atomicity, so this only does
         // the live-copy/revision/sync/log half. Without the revision bump a
@@ -3060,7 +3078,9 @@ io.on('connection', socket => {
           { listingId: String(listingId), payout });
       }
 
-      socket.emit('marketBought', { listingId, item: claimed.item, newBalance: _gramBalance });
+      socket.emit('marketBought', {
+        listingId, item: claimed.item, newBalance: _gramBalance, delivered: _delivered,
+      });
     } catch (err) {
       console.error('marketBuy:', err);
       logPlayerErr(authed.telegramId, authed.username, 'market_buy', err, { listingId: String(listingId) });
