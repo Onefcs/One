@@ -1309,6 +1309,10 @@ let _returnPads = null;   // zone-side: {dir, x, y, targetX, targetY} — back t
 const _EVENT_PAD_DX = -8;
 let _evtPad = null, _evtReturnPad = null;
 let _evtBossAlive = false;
+// World boss state as the server last reported it: spawnAt is a summon already
+// counting down, nextAt the next scheduled appearance (пн/ср/пт/вс 20:00 МСК).
+// Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
+let _evtBossState = { spawnAt: 0, alive: false, nextAt: 0 };
 let _evtHpCd = 0;
 
 function _buildArmGates() {

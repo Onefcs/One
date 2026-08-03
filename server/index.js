@@ -22,8 +22,9 @@ const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
   armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
-  DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
+  DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
+  WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -1130,17 +1131,24 @@ app.post('/admin/broadcast', adminAuth, async (req, res) => {
       });
       return res.json({ ok: true, sent });
     }
-    // All players — batch with delay
-    const players = await PlayerModel.find({}, 'telegramId').lean();
-    let sent = 0;
-    for (let i = 0; i < players.length; i++) {
-      tgApi('sendMessage', { chat_id: players[i].telegramId, text, parse_mode: 'HTML' }).catch(() => {});
-      sent++;
-      if (i % 30 === 29) await new Promise(r => setTimeout(r, 1000));
-    }
+    const sent = await tgBroadcastAll(text);
     res.json({ ok: true, sent });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// Sends `text` to every registered account over the bot. Paced at 30 messages
+// a second because Telegram throttles bulk sends and starts dropping (or
+// 429-ing) past roughly that rate.
+async function tgBroadcastAll(text) {
+  const players = await PlayerModel.find({}, 'telegramId').lean();
+  let sent = 0;
+  for (let i = 0; i < players.length; i++) {
+    tgApi('sendMessage', { chat_id: players[i].telegramId, text, parse_mode: 'HTML' }).catch(() => {});
+    sent++;
+    if (i % 30 === 29) await new Promise(r => setTimeout(r, 1000));
+  }
+  return sent;
+}
 
 // Summon the world-event boss (shared/definitions.js EVENT_BOSS). Announces
 // it to everyone immediately and spawns it EVENT_BOSS_ANNOUNCE_MS later.
@@ -1912,6 +1920,47 @@ function getRoom(floor) {
   return floorRooms.get(Math.max(1, Math.min(MAX_FLOOR, floor)));
 }
 
+// ── Event announcements over the bot ────────────────────────────────────────
+// Both scheduled events warn everyone EVENT_NOTIFY_BEFORE_MS ahead and again
+// the moment they start. Fire-and-forget: a bot that is down or a player who
+// blocked it must never hold up (or break) the event itself, so nothing here
+// is awaited and every failure is swallowed by tgBroadcastAll's per-message
+// catch.
+const _EVENT_TEXT = {
+  boss: {
+    soon: (m) => `⚔️ <b>Мировой босс</b>\n\nПоявится через ${m} мин. — в 20:00 по Москве.\nДобыча падает на пол для всех: кто успел, тот забрал.`,
+    now:  () => '⚔️ <b>Мировой босс появился!</b>\n\nОн уже в безопасной зоне. Заходи в игру — добычу заберут без тебя.',
+  },
+  battle: {
+    soon: (m) => `🗡 <b>Битва на смерть</b>\n\nНачало через ${m} мин.\nПоследний выживший забирает GRAM и снаряжение.`,
+    now:  () => '🗡 <b>Битва на смерть</b>\n\nРегистрация открыта — заходи и записывайся, бой начнётся через 5 минут.\nПосле старта присоединиться уже нельзя.',
+  },
+};
+
+// Each occurrence is announced at most once per process. _dbSchedule and
+// _wbSchedule are both re-entrant (boot, end of a round, a cancelled round),
+// so without this a single event could be announced several times over.
+const _notifiedEvents = new Set();
+function _announceOnce(key, text, where) {
+  if (_notifiedEvents.has(key)) return;
+  _notifiedEvents.add(key);
+  // The set only ever holds a handful of keys per process, but a long-lived
+  // one shouldn't grow forever either.
+  if (_notifiedEvents.size > 64) {
+    _notifiedEvents.delete(_notifiedEvents.values().next().value);
+  }
+  tgBroadcastAll(text).catch(err => console.error(where, err));
+}
+
+function notifyEventSoon(kind, at) {
+  const mins = Math.max(1, Math.round((at - Date.now()) / 60000));
+  _announceOnce(`${kind}:soon:${at}`, _EVENT_TEXT[kind].soon(mins), 'notifyEventSoon:' + kind);
+}
+
+function notifyEventStarted(kind, at) {
+  _announceOnce(`${kind}:now:${at}`, _EVENT_TEXT[kind].now(), 'notifyEventStarted:' + kind);
+}
+
 // ── Event boss scheduling ───────────────────────────────────────────────────
 // An admin summon doesn't spawn the boss straight away: everyone gets a
 // countdown banner first (EVENT_BOSS_ANNOUNCE_MS), then it appears. The
@@ -1920,11 +1969,19 @@ function getRoom(floor) {
 let _eventBossSpawnAt = 0;
 let _eventBossTimer   = null;
 
+function _wbNextStartAt(from = Date.now()) {
+  return nextEventStartAt(WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, from);
+}
+
 function eventBossState() {
   const room = getRoom(1);
   return {
     spawnAt: _eventBossSpawnAt > Date.now() ? _eventBossSpawnAt : 0,
     alive: !!(room && room.isEventBossAlive()),
+    // The Events panel counts down to this, so it has to travel with the rest
+    // of the boss state rather than being computed client-side from a
+    // schedule copy that could drift.
+    nextAt: _wbNextStartAt(),
     drops: room ? room.worldDropSnapshot() : [],
   };
 }
@@ -1947,6 +2004,34 @@ function scheduleEventBoss() {
   return { ok: true, spawnAt: _eventBossSpawnAt };
 }
 
+// Arms the next scheduled summon (понедельник/среда/пятница/воскресенье в
+// 20:00 МСК) plus its 30-minute warning. Re-arms itself after each firing.
+// setTimeout is capped at ~24.8 days, which every gap here is comfortably
+// under, so a single timeout per event is safe.
+let _wbSpawnTimer  = null;
+let _wbNotifyTimer = null;
+
+function _wbSchedule() {
+  clearTimeout(_wbSpawnTimer);
+  clearTimeout(_wbNotifyTimer);
+  const at = _wbNextStartAt();
+  if (!at) return;
+  // Only arm the warning if its moment is still ahead. Without this, a
+  // restart inside the 30-minute window fires a "coming soon" the instant the
+  // process boots — every redeploy would spam everyone.
+  const warnIn = at - EVENT_NOTIFY_BEFORE_MS - Date.now();
+  if (warnIn > 0) _wbNotifyTimer = setTimeout(() => notifyEventSoon('boss', at), warnIn);
+  _wbSpawnTimer = setTimeout(() => {
+    const r = scheduleEventBoss();
+    // A summon refused because an admin already called the boss (or it is
+    // still on the map) is not worth alarming anyone about — just skip the
+    // announcement and re-arm for next time.
+    if (!r.error) notifyEventStarted('boss', at);
+    else console.log('world boss schedule skipped:', r.error);
+    _wbSchedule();
+  }, Math.max(0, at - Date.now()));
+}
+
 // ── Death Battle (Битва на смерть) ──────────────────────────────────────────
 // Runs on a fixed daily schedule (shared/definitions.js): registration opens
 // DEATH_BATTLE_REG_MS before each start, then everyone signed up is dropped
@@ -1967,7 +2052,7 @@ const _db = {
   // server refuses their movement and attacks outright (see _dbFrozen), so a
   // modified client can't get a head start by ignoring the countdown.
   fightAt: 0,
-  regTimer: null, startTimer: null, maxTimer: null, freezeTimer: null,
+  regTimer: null, startTimer: null, maxTimer: null, freezeTimer: null, notifyTimer: null,
 };
 
 // True while this socket is an entrant of a round that hasn't gone live yet.
@@ -1975,22 +2060,11 @@ function _dbFrozen(socketId) {
   return _db.phase === 'live' && Date.now() < _db.fightAt && _db.alive.has(socketId);
 }
 
-// Next scheduled start, in UTC ms. Moscow is UTC+3 year-round (no DST since
-// 2014), so the offset is a constant rather than a timezone lookup: shift into
-// Moscow time to read the calendar date there, then shift the resulting
-// midnight back to real UTC before adding the hour.
+// Next scheduled start, in UTC ms — вторник/четверг/суббота, дважды в день.
+// The weekday+hour maths lives in shared/definitions.js so the client's
+// countdown reads from exactly the same schedule.
 function _dbNextStartAt(from = Date.now()) {
-  const OFF = DEATH_BATTLE_MSK_OFFSET_H * 3600000;
-  const msk = new Date(from + OFF);
-  let best = Infinity;
-  for (let dayShift = 0; dayShift <= 1; dayShift++) {
-    const midnightUtc = Date.UTC(msk.getUTCFullYear(), msk.getUTCMonth(), msk.getUTCDate() + dayShift) - OFF;
-    for (const h of DEATH_BATTLE_HOURS_MSK) {
-      const t = midnightUtc + h * 3600000;
-      if (t > from && t < best) best = t;
-    }
-  }
-  return best;
+  return nextEventStartAt(DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, from);
 }
 
 function _dbPublicState() {
@@ -2012,15 +2086,27 @@ function _dbBroadcast() {
 // is left, which is the correct behaviour.
 function _dbSchedule() {
   clearTimeout(_db.regTimer);
+  clearTimeout(_db.notifyTimer);
   _db.phase = 'idle';
   _db.startAt = 0;
   const startAt = _dbNextStartAt();
   _db.regTimer = setTimeout(() => _dbOpenReg(startAt), Math.max(0, startAt - DEATH_BATTLE_REG_MS - Date.now()));
+  // The 30-minute warning is its own timer rather than part of the
+  // registration one: registration only opens DEATH_BATTLE_REG_MS ahead, far
+  // too late to get anyone into the game in time. Skipped when that moment
+  // has already passed, so a restart inside the window doesn't fire it late
+  // (see the same guard in _wbSchedule).
+  const warnIn = startAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+  if (warnIn > 0) _db.notifyTimer = setTimeout(() => notifyEventSoon('battle', startAt), warnIn);
 }
 
 function _dbOpenReg(startAt) {
   _db.phase = 'reg';
   _db.startAt = startAt;
+  // Announced when registration opens rather than at startAt: once the round
+  // actually begins nobody can join it any more, so a message then would be
+  // pointless. This is the moment the event becomes something to act on.
+  notifyEventStarted('battle', startAt);
   _db.reg.clear();
   _db.alive.clear();
   clearTimeout(_db.startTimer);
@@ -4495,6 +4581,9 @@ server.listen(PORT, () => {
   console.log(`Server on port ${PORT}`);
   _pollTg();
   _dbSchedule();
+  _wbSchedule();
+  console.log('next death battle:', new Date(_dbNextStartAt()).toISOString(),
+              '| next world boss:', new Date(_wbNextStartAt()).toISOString());
 });
 
 // ── Error handlers ────────────────────────────────────────────────────────────

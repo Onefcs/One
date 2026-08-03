@@ -74,6 +74,23 @@ const I18N_UI = {
   bgmSectionTitle:   { ru: 'Фоновая музыка', en: 'Background music', uk: 'Фонова музика', es: 'Música de fondo', tr: 'Arka plan müziği', pt: 'Música de fundo' },
 
   // ── Death Battle (Битва на смерть) ──────────────────────
+  // ── Events panel (События) ──────────────────────────────────────────────
+  eventsBtn:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },
+  eventsHdr:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },
+  worldBossTab: { ru: 'Мировой босс', en: 'World boss', uk: 'Світовий бос', es: 'Jefe mundial', tr: 'Dünya patronu', pt: 'Chefe mundial' },
+  // Day names for the "next event" line, indexed by Date#getDay() — Sunday
+  // first, matching JS, not the Russian week.
+  eventWeekdays:{ ru: 'Вс,Пн,Вт,Ср,Чт,Пт,Сб', en: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat', uk: 'Нд,Пн,Вт,Ср,Чт,Пт,Сб', es: 'Dom,Lun,Mar,Mié,Jue,Vie,Sáb', tr: 'Paz,Pzt,Sal,Çar,Per,Cum,Cmt', pt: 'Dom,Seg,Ter,Qua,Qui,Sex,Sáb' },
+  wbPhaseAlive: { ru: 'Босс на карте', en: 'Boss is on the map', uk: 'Бос на карті', es: 'El jefe está en el mapa', tr: 'Patron haritada', pt: 'O chefe está no mapa' },
+  wbPhaseSummon:{ ru: 'До появления босса', en: 'Boss appears in', uk: 'До появи боса', es: 'El jefe aparece en', tr: 'Patron geliyor', pt: 'O chefe aparece em' },
+  wbPhaseIdle:  { ru: 'До следующего босса', en: 'Next boss in', uk: 'До наступного боса', es: 'Próximo jefe en', tr: 'Sonraki patrona', pt: 'Próximo chefe em' },
+  wbNoteAlive:  { ru: 'Он в безопасной зоне — добычу заберут без тебя', en: 'He is in the safe zone — the loot will go without you', uk: 'Він у безпечній зоні — здобич заберуть без тебе', es: 'Está en la zona segura: el botín se irá sin ti', tr: 'Güvenli bölgede — ganimeti sensiz alırlar', pt: 'Ele está na zona segura — o loot vai sem você' },
+  wbNoteSummon: { ru: 'Босс уже вызван — идёт отсчёт', en: 'Already summoned — counting down', uk: 'Боса вже викликано — триває відлік', es: 'Ya invocado: cuenta atrás', tr: 'Çağrıldı — geri sayım sürüyor', pt: 'Já invocado — contagem regressiva' },
+  wbScheduleHdr:{ ru: 'Расписание:', en: 'Schedule:', uk: 'Розклад:', es: 'Horario:', tr: 'Program:', pt: 'Programação:' },
+  wbRule1:      { ru: 'Понедельник, среда, пятница, воскресенье — в 20:00 по Москве', en: 'Monday, Wednesday, Friday, Sunday at 20:00 Moscow time', uk: 'Понеділок, середа, п’ятниця, неділя — о 20:00 за Москвою', es: 'Lunes, miércoles, viernes y domingo a las 20:00 hora de Moscú', tr: 'Pazartesi, çarşamba, cuma, pazar 20:00 Moskova saati', pt: 'Segunda, quarta, sexta e domingo às 20:00 horário de Moscou' },
+  wbRule2:      { ru: 'Появляется в безопасной зоне — драться может каждый', en: 'Spawns in the safe zone — anyone can fight him', uk: 'З’являється в безпечній зоні — битися може кожен', es: 'Aparece en la zona segura: cualquiera puede luchar', tr: 'Güvenli bölgede doğar — herkes dövüşebilir', pt: 'Aparece na zona segura — qualquer um pode lutar' },
+  wbRule3:      { ru: 'Добыча падает на пол для всех: кто успел, тот забрал', en: 'Loot drops on the floor for everyone — first come, first served', uk: 'Здобич падає на підлогу для всіх: хто встиг, той забрав', es: 'El botín cae al suelo para todos: quien llega primero se lo lleva', tr: 'Ganimet herkes için yere düşer: kapan alır', pt: 'O loot cai no chão para todos: quem chegar primeiro leva' },
+
   dbBtn:        { ru: 'Битва', en: 'Battle', uk: 'Битва', es: 'Batalla', tr: 'Savaş', pt: 'Batalha' },
   dbBtnOpen:    { ru: 'Битва · набор!', en: 'Battle · open!', uk: 'Битва · набір!', es: '¡Batalla · abierta!', tr: 'Savaş · kayıt!', pt: 'Batalha · aberta!' },
   dbTitle:      { ru: 'Битва на смерть', en: 'Death Battle', uk: 'Битва на смерть', es: 'Batalla a muerte', tr: 'Ölüm Savaşı', pt: 'Batalha até a morte' },
@@ -86,7 +103,7 @@ const I18N_UI = {
   dbSignedUpFmt:{ ru: 'Записалось: {n}', en: 'Signed up: {n}', uk: 'Записалось: {n}', es: 'Inscritos: {n}', tr: 'Kayıtlı: {n}', pt: 'Inscritos: {n}' },
   dbAliveFmt:   { ru: 'В живых: {n}', en: 'Alive: {n}', uk: 'Живих: {n}', es: 'Vivos: {n}', tr: 'Hayatta: {n}', pt: 'Vivos: {n}' },
   dbRulesHdr:   { ru: 'Правила:', en: 'Rules:', uk: 'Правила:', es: 'Reglas:', tr: 'Kurallar:', pt: 'Regras:' },
-  dbRule1:      { ru: 'Каждый день в 10:00 и 20:00 по Москве', en: 'Every day at 10:00 and 20:00 Moscow time', uk: 'Щодня о 10:00 та 20:00 за Москвою', es: 'Todos los días a las 10:00 y 20:00 hora de Moscú', tr: 'Her gün 10:00 ve 20:00 Moskova saati', pt: 'Todos os dias às 10:00 e 20:00 horário de Moscou' },
+  dbRule1:      { ru: 'Вторник, четверг, суббота — в 10:00 и 20:00 по Москве', en: 'Tuesday, Thursday, Saturday at 10:00 and 20:00 Moscow time', uk: 'Вівторок, четвер, субота — о 10:00 та 20:00 за Москвою', es: 'Martes, jueves y sábado a las 10:00 y 20:00 hora de Moscú', tr: 'Salı, perşembe, cumartesi 10:00 ve 20:00 Moskova saati', pt: 'Terça, quinta e sábado às 10:00 e 20:00 horário de Moscou' },
   dbRule2:      { ru: 'Регистрация открыта за 5 минут до начала', en: 'Registration opens 5 minutes before the start', uk: 'Реєстрація відкрита за 5 хвилин до початку', es: 'La inscripción abre 5 minutos antes', tr: 'Kayıt başlamadan 5 dakika önce açılır', pt: 'A inscrição abre 5 minutos antes' },
   dbRule3:      { ru: 'Всех переносит на арену с включённым ПК', en: 'Everyone is moved to the arena with PvP on', uk: 'Усіх переносить на арену з увімкненим ПК', es: 'Todos van a la arena con PvP activado', tr: 'Herkes PvP açık şekilde arenaya taşınır', pt: 'Todos vão para a arena com PvP ligado' },
   dbRule5:      { ru: 'Первые 30 секунд никто не может двигаться', en: 'Nobody can move for the first 30 seconds', uk: 'Перші 30 секунд ніхто не може рухатися', es: 'Nadie puede moverse durante los primeros 30 segundos', tr: 'İlk 30 saniye kimse hareket edemez', pt: 'Ninguém pode se mover nos primeiros 30 segundos' },
@@ -407,8 +424,6 @@ Object.assign(I18N_UI, {
   vipLevelsHdr: { ru: 'Уровни VIP', en: 'VIP Levels', uk: 'Рівні VIP', es: 'Niveles VIP', tr: 'VIP Seviyeleri', pt: 'Níveis VIP' },
   vipClaimBtn: { ru: 'Забрать награду', en: 'Claim Reward', uk: 'Забрати нагороду', es: 'Reclamar Recompensa', tr: 'Ödülü Al', pt: 'Resgatar Recompensa' },
   vipGoldShortSuffix: { ru: 'k зол.', en: 'k gold', uk: 'k зол.', es: 'k oro', tr: 'bin altın', pt: 'k ouro' },
-  bossAliveLbl: { ru: 'Жив', en: 'Alive', uk: 'Живий', es: 'Vivo', tr: 'Canlı', pt: 'Vivo' },
-  bossRespawnInFmt: { ru: 'Возрождение через {t}', en: 'Respawns in {t}', uk: 'Відродження через {t}', es: 'Reaparece en {t}', tr: '{t} sonra yeniden doğar', pt: 'Renasce em {t}' },
   buyBtn: { ru: 'Купить', en: 'Buy', uk: 'Купити', es: 'Comprar', tr: 'Satın Al', pt: 'Comprar' },
   cancelListingBtn: { ru: 'Снять', en: 'Cancel', uk: 'Зняти', es: 'Cancelar', tr: 'Kaldır', pt: 'Cancelar' },
   catWeapon: { ru: 'Оружие', en: 'Weapons', uk: 'Зброя', es: 'Armas', tr: 'Silahlar', pt: 'Armas' },
@@ -546,7 +561,6 @@ Object.assign(I18N_UI, {
   navRatingBtn: { ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
   navMarketBtn: { ru: 'Маркет', en: 'Market', uk: 'Маркет', es: 'Mercado', tr: 'Pazar', pt: 'Mercado' },
   navShopBtn: { ru: 'Магазин', en: 'Shop', uk: 'Магазин', es: 'Tienda', tr: 'Mağaza', pt: 'Loja' },
-  bossesHdr: { ru: 'Боссы', en: 'Bosses', uk: 'Боси', es: 'Jefes', tr: 'Patronlar', pt: 'Chefes' },
   skillsHdrUpper: { ru: 'НАВЫКИ', en: 'SKILLS', uk: 'НАВИЧКИ', es: 'HABILIDADES', tr: 'YETENEKLER', pt: 'HABILIDADES' },
   gearSectionHdr: { ru: 'Снаряжение (нажми для снятия)', en: 'Equipment (tap to unequip)', uk: 'Спорядження (натисни, щоб зняти)', es: 'Equipo (toca para desequipar)', tr: 'Ekipman (çıkarmak için dokun)', pt: 'Equipamento (toque para desequipar)' },
   itemsSectionHdr: { ru: 'Предметы (нажми для экипировки)', en: 'Items (tap to equip)', uk: 'Предмети (натисни, щоб одягнути)', es: 'Objetos (toca para equipar)', tr: 'Eşyalar (kuşanmak için dokun)', pt: 'Itens (toque para equipar)' },

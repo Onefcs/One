@@ -1174,7 +1174,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'boss-timer-btn', 'db-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -2944,9 +2944,16 @@ function showMarketBtn() {
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionMarketBtn(); }
 }
 
-function _positionBossTimerBtn() {
+// ─────────────────────────────────────────────────────────
+//  EVENTS (События) — Битва + Мировой босс
+// ─────────────────────────────────────────────────────────
+// One entry point for both scheduled events; each is a tab inside the panel.
+// The server owns both schedules (shared/definitions.js DEATH_BATTLE_*/
+// WORLD_BOSS_*) and pushes their state, so everything here just renders what
+// arrived and counts the seconds down locally.
+function _positionEventsBtn() {
   const shopBtn = document.getElementById('gram-shop-btn');
-  const btn     = document.getElementById('boss-timer-btn');
+  const btn     = document.getElementById('events-btn');
   if (!btn || !shopBtn) return;
   const sTop = parseFloat(shopBtn.style.top) || 0;
   btn.style.top       = (sTop + 28 + 4) + 'px';
@@ -2956,10 +2963,9 @@ function _positionBossTimerBtn() {
   btn.style.transform = 'none';
 }
 
-function showBossTimerBtn() {
-  const btn = document.getElementById('boss-timer-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionBossTimerBtn(); }
-  if (typeof _positionDeathBattleBtn === 'function') _positionDeathBattleBtn();
+function showEventsBtn() {
+  const btn = document.getElementById('events-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionEventsBtn(); }
 }
 
 function _fmtBossTime(ms) {
@@ -2968,46 +2974,94 @@ function _fmtBossTime(ms) {
   return m + ':' + String(r).padStart(2, '0');
 }
 
-function openBossPanel() {
-  const panel = document.getElementById('boss-panel');
-  if (!panel) return;
-  panel.style.display = 'flex';
-  _renderBossPanelBody();
+// Countdowns longer than an hour ("следующая битва в четверг") read as
+// nonsense in m:ss, so anything past 60 minutes is shown as д/ч/м instead.
+function _fmtEventEta(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 3600) return _fmtBossTime(ms);
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d > 0 ? `${d}д ${h}ч` : `${h}ч ${m}м`;
 }
 
-function closeBossPanel() {
-  const panel = document.getElementById('boss-panel');
+// Weekday + time of the next occurrence, so the panel says when it is rather
+// than only how long is left.
+function _fmtEventWhen(at) {
+  if (!at) return '';
+  const d = new Date(at);
+  const days = t('eventWeekdays').split(',');
+  return `${days[d.getDay()]}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+let _eventTab = 'battle';
+
+function openEventsPanel() {
+  const panel = document.getElementById('events-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
+  _renderEventsBody();
+}
+
+function closeEventsPanel() {
+  const panel = document.getElementById('events-panel');
   if (panel) panel.style.display = 'none';
 }
 
-// One boss per corridor — bossStatus is a map keyed by arm name
-// ({ left: {alive,respawnAt}, top: {...}, ... }), set on gameStart and
-// updated per-arm on 'bossStatus' pushes (kill / respawn) — see network.js.
-// Lists all 4 corridors' bosses at once rather than just whichever one the
-// player currently stands in. The countdown just re-reads the stored
-// respawnAt every second while the panel is open, no extra network traffic.
-const _BOSS_ARMS = ['left', 'top', 'bottom', 'right'];
-function _renderBossPanelBody() {
-  const body = document.getElementById('boss-panel-body');
-  if (!body) return;
-  body.innerHTML = `<div class="vip-levels">${_BOSS_ARMS.map(arm => {
-    const bs = (typeof bossStatus !== 'undefined' && bossStatus) ? bossStatus[arm] : null;
-    const alive = !bs || bs.alive;
-    const statusTxt   = alive ? t('bossAliveLbl') : tVars('bossRespawnInFmt', { t: _fmtBossTime((bs.respawnAt || 0) - Date.now()) });
-    const statusColor = alive ? '#8fc95c' : '#f07886';
-    return `
-      <div class="vip-card${alive ? ' vip-card-done' : ''}">
-        <div class="vip-card-head">
-          <div class="vip-card-badge">${alive ? '💀' : '⏳'}</div>
-          <div class="vip-card-title">${_armLabel(arm)} ${t('corridorSuffix')}</div>
-          <div class="vip-card-gram" style="color:${statusColor}">${statusTxt}</div>
-        </div>
-      </div>`;
-  }).join('')}</div>`;
+function switchEventTab(tab) {
+  _eventTab = tab;
+  document.querySelectorAll('#events-panel .rating-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('etab-' + tab)?.classList.add('active');
+  _renderEventsBody();
 }
 
-if (typeof setInterval === 'function') {
-  setInterval(() => { if (document.getElementById('boss-panel')?.style.display === 'flex') _renderBossPanelBody(); }, 1000);
+function _eventsPanelOpen() {
+  return document.getElementById('events-panel')?.style.display === 'flex';
+}
+
+function _renderEventsBody() {
+  const body = document.getElementById('events-panel-body');
+  if (!body) return;
+  body.innerHTML = _eventTab === 'boss' ? _worldBossBodyHTML() : _deathBattleBodyHTML();
+}
+
+// World boss: alive right now, mid-summon countdown, or waiting for its next
+// scheduled appearance. _evtBossState is filled from gameStart and the
+// eventBoss* pushes (see network.js).
+function _worldBossBodyHTML() {
+  const st = (typeof _evtBossState !== 'undefined' && _evtBossState) || {};
+  const alive   = !!(typeof _evtBossAlive !== 'undefined' ? _evtBossAlive : st.alive);
+  const summonAt = st.spawnAt || 0;
+  const pending = summonAt > Date.now();
+
+  let phaseTxt, timeTxt, note;
+  if (alive) {
+    phaseTxt = t('wbPhaseAlive');
+    timeTxt  = '⚔';
+    note     = t('wbNoteAlive');
+  } else if (pending) {
+    phaseTxt = t('wbPhaseSummon');
+    timeTxt  = _fmtBossTime(summonAt - Date.now());
+    note     = t('wbNoteSummon');
+  } else {
+    phaseTxt = t('wbPhaseIdle');
+    timeTxt  = st.nextAt ? _fmtEventEta(st.nextAt - Date.now()) : '—';
+    note     = st.nextAt ? _fmtEventWhen(st.nextAt) : '';
+  }
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${timeTxt}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${note ? `<div class="db-count">${note}</div>` : ''}
+      <div class="db-rules">
+        ${t('wbScheduleHdr')}
+        <ul>
+          <li>${t('wbRule1')}</li>
+          <li>${t('wbRule2')}</li>
+          <li>${t('wbRule3')}</li>
+        </ul>
+      </div>
+    </div>`;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3017,52 +3071,20 @@ if (typeof setInterval === 'function') {
 // drives every transition and pushes them as deathBattleState; this panel just
 // renders whatever _dbState currently says and counts the seconds down locally
 // so an open panel stays live without extra traffic.
-function _positionDeathBattleBtn() {
-  const bossBtn = document.getElementById('boss-timer-btn');
-  const btn     = document.getElementById('db-btn');
-  if (!btn || !bossBtn) return;
-  const bTop = parseFloat(bossBtn.style.top) || 0;
-  btn.style.top       = (bTop + 28 + 4) + 'px';
-  btn.style.left      = bossBtn.style.left;
-  btn.style.width     = bossBtn.style.width;
-  btn.style.right     = 'auto';
-  btn.style.transform = 'none';
-}
-
-function showDeathBattleBtn() {
-  const btn = document.getElementById('db-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionDeathBattleBtn(); }
-}
-
-function openDeathBattlePanel() {
-  const panel = document.getElementById('db-panel');
-  if (!panel) return;
-  panel.style.display = 'flex';
-  if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
-  _renderDeathBattleBody();
-}
-
-function closeDeathBattlePanel() {
-  const panel = document.getElementById('db-panel');
-  if (panel) panel.style.display = 'none';
-}
-
-// Called from the network handlers on every server push — keeps the button
-// label/highlight and (if open) the panel in step with the round.
+// Called from the network handlers on every server push — keeps the Events
+// button's highlight and (if open) the panel in step with the round.
 function onDeathBattleState() {
-  const btn = document.getElementById('db-btn');
+  const btn = document.getElementById('events-btn');
   if (btn) {
     const open = _dbState.phase === 'reg';
     btn.classList.toggle('db-open', open);
-    const label = document.getElementById('db-btn-text');
-    if (label) label.textContent = open ? t('dbBtnOpen') : t('dbBtn');
+    const label = document.getElementById('events-btn-text');
+    if (label) label.textContent = open ? t('dbBtnOpen') : t('eventsBtn');
   }
-  if (document.getElementById('db-panel')?.style.display === 'flex') _renderDeathBattleBody();
+  if (_eventsPanelOpen() && _eventTab === 'battle') _renderEventsBody();
 }
 
-function _renderDeathBattleBody() {
-  const body = document.getElementById('db-panel-body');
-  if (!body) return;
+function _deathBattleBodyHTML() {
   const st = (typeof _dbState !== 'undefined' && _dbState) || { phase: 'idle', nextAt: 0, startAt: 0, count: 0 };
   const reg  = st.phase === 'reg';
   const live = st.phase === 'live';
@@ -3086,11 +3108,16 @@ function _renderDeathBattleBody() {
     action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
   }
 
-  body.innerHTML = `
+  // Idle counts down to a start that can be days away (вт/чт/сб), so it gets
+  // the long-form ETA and the weekday; a live round stays on m:ss.
+  const timeTxt = (reg || live) ? _fmtBossTime(left) : _fmtEventEta(left);
+  const whenTxt = (!reg && !live && st.nextAt) ? _fmtEventWhen(st.nextAt) : countTxt;
+
+  return `
     <div style="padding:16px">
-      <div class="db-countdown">${_fmtBossTime(left)}</div>
+      <div class="db-countdown">${timeTxt}</div>
       <div class="db-phase">${phaseTxt}</div>
-      ${countTxt ? `<div class="db-count">${countTxt}</div>` : ''}
+      ${whenTxt ? `<div class="db-count">${whenTxt}</div>` : ''}
       ${action}
       <div class="db-rules">
         ${t('dbRulesHdr')}
@@ -3131,8 +3158,10 @@ function _dbRewardRows(gram, items) {
   return rows.join('');
 }
 
+// One ticker for the whole Events panel — both tabs count down, and only the
+// visible one is rendered.
 if (typeof setInterval === 'function') {
-  setInterval(() => { if (document.getElementById('db-panel')?.style.display === 'flex') _renderDeathBattleBody(); }, 1000);
+  setInterval(() => { if (_eventsPanelOpen()) _renderEventsBody(); }, 1000);
 }
 
 // Victory modal. The prize is already granted server-side by the time this

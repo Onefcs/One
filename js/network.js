@@ -216,7 +216,6 @@ function netConnect(onReady) {
     // or our very first save would be mistaken for a stale one.
     window._invRev = 0;
     bossStatus = bs || {};
-    if (typeof _renderBossPanelBody === 'function') _renderBossPanelBody();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
@@ -224,6 +223,11 @@ function netConnect(onReady) {
     // the floor, so joining mid-event shows the same state as everyone else.
     worldDrops = new Map((evb && evb.drops || []).map(d => [d.id, d]));
     _evtBossAlive = !!(evb && evb.alive);
+    _evtBossState = {
+      spawnAt: (evb && evb.spawnAt) || 0,
+      alive:   _evtBossAlive,
+      nextAt:  (evb && evb.nextAt) || 0,
+    };
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(evb && evb.spawnAt || 0);
     // Death battle: same idea — joining mid-registration shows the live
     // countdown and whether this account is already signed up.
@@ -628,7 +632,6 @@ function netConnect(onReady) {
   socket.on('bossStatus', ({ arm, alive, respawnAt }) => {
     if (!bossStatus) bossStatus = {};
     if (arm) bossStatus[arm] = { alive, respawnAt };
-    if (typeof _renderBossPanelBody === 'function') _renderBossPanelBody();
   });
 
   socket.on('spawnProj', data => {
@@ -1670,8 +1673,7 @@ function _finishOnlineStart() {
   if (typeof showVipBtn === 'function') showVipBtn();
   if (typeof showMarketBtn === 'function') showMarketBtn();
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
-  if (typeof showBossTimerBtn === 'function') showBossTimerBtn();
-  if (typeof showDeathBattleBtn === 'function') showDeathBattleBtn();
+  if (typeof showEventsBtn === 'function') showEventsBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type
@@ -1868,16 +1870,20 @@ function netGetRating(tab) {
 // means someone else got there first.
 function _initEventBossHandlers(s) {
   s.on('eventBossAnnounce', ({ spawnAt }) => {
+    _evtBossState = { ..._evtBossState, spawnAt: spawnAt || 0 };
+    // No explicit re-render — the Events panel's own 1s ticker picks this up.
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(spawnAt);
   });
   s.on('eventBossSpawned', ({ x, y } = {}) => {
     _evtBossAlive = true;
+    _evtBossState = { ..._evtBossState, spawnAt: 0, alive: true };
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(0);
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossArrived'), '#ff5a4a');
     if (typeof Sound !== 'undefined' && (typeof _isPosVisible !== 'function' || x === undefined || _isPosVisible(x, y))) Sound.bossSpawn();
   });
   s.on('eventBossDefeated', () => {
     _evtBossAlive = false;
+    _evtBossState = { ..._evtBossState, alive: false };
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('evtBossDefeated'), '#90d653');
   });
   s.on('worldDropsSpawned', ({ drops: ds }) => {
