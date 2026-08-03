@@ -1317,10 +1317,9 @@ let _evtHpCd = 0;
 
 function _buildArmGates() {
   if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; return; }
-  _armGates = (dungeon.corridorGates || []).map(g => {
-    const horizontal = g.dir === 'left' || g.dir === 'right';
-    return { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, horizontal, req: g.req };
-  });
+  _armGates = (dungeon.corridorGates || []).map(g => (
+    { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
+  ));
 
   const entries = dungeon.armEntries || [];
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
@@ -1435,13 +1434,21 @@ function drawTeleportPads() {
   if (_evtReturnPad) _drawTeleportPad(_evtReturnPad.x, _evtReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
 }
 
+// Every zone's main corridor runs along X — the arm names ('left', 'top',
+// 'bottom', 'right') are just labels for the four stacked zones, not compass
+// directions, ever since they stopped radiating out of the hub (see buildArm
+// in server/game/dungeon.js: all four paint their corridor along X at a fixed
+// Y). Orienting the barrier from the name left the 'top' and 'bottom' zones
+// with a barrier turned 90°: it only covered the middle GATE_THICK of the
+// 3-tile corridor, so anyone hugging either edge walked straight past a gate
+// they were too low-level for.
+const GATE_THICK  = 22;        // along the corridor — how deep the barrier is
+const GATE_HALF_W = TILE * 2;  // across it — 4 tiles, wider than the 3-tile corridor
 function _isGateBlocked(wx, wy) {
   if (!player || !_armGates) return false;
   for (const g of _armGates) {
     if (g.req <= 0 || (player.lvl || 1) >= g.req) continue;
-    const halfW = 70, thick = 22; // wide enough to span the 3-tile-wide main corridor
-    if (g.horizontal ? (Math.abs(wx - g.x) < thick && Math.abs(wy - g.y) < halfW)
-                      : (Math.abs(wy - g.y) < thick && Math.abs(wx - g.x) < halfW)) return true;
+    if (Math.abs(wx - g.x) < GATE_THICK && Math.abs(wy - g.y) < GATE_HALF_W) return true;
   }
   return false;
 }
