@@ -1879,7 +1879,16 @@ function drawBuffStrip() {
   const skillLeft  = W - 14 - (SKILL_SZ + SKILL_GAP) - SKILL_SZ;  // W-130
   const gridRight  = skillLeft - 8;                                  // 8px gap from skills
   const gridX      = gridRight - (COLS * SZ + (COLS - 1) * GAP);   // left edge of chip area
-  const gridBottom = H - NAV_H - 14;                                 // aligned with skills bottom
+  // Raised clear of the chat widgets rather than bottom-aligned with the
+  // skills. #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
+  // and stand up to ~46px tall, so they own the band from H-118 to H-72 —
+  // and being DOM elements layered over the UI canvas, they paint over
+  // anything drawn there regardless of draw order. The bottom row of chips
+  // used to land at H-98..H-76, entirely inside that band, so an incoming
+  // chat message hid it completely. Chips grow upward from here, so only
+  // this baseline needs to move.
+  const CHAT_STRIP_TOP = 72 + 46;   // keep in sync with #chat-btn/#chat-preview
+  const gridBottom = H - CHAT_STRIP_TOP - 6;                         // 6px breathing room
   const F2 = 'system-ui, -apple-system, Arial';
 
   ctx.save();
