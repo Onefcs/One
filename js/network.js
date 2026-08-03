@@ -1059,6 +1059,30 @@ function netConnect(onReady) {
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
+  // An admin edited this account's items from the panel. The server has
+  // already applied it to its own authoritative copy and persisted it — this
+  // just brings the live client in line so the change shows up now instead of
+  // on the next login, and so this session's next autosave doesn't push the
+  // pre-edit inventory straight back over it.
+  socket.on('adminItemsUpdate', ({ inventory, equipment } = {}) => {
+    if (!player) return;
+    if (Array.isArray(inventory) && typeof _migrateInventory === 'function') {
+      player.inventory = _migrateInventory(inventory);
+    }
+    if (equipment && typeof equipment === 'object' && typeof _rebuildFromCatalog === 'function') {
+      // Same blank-template merge restoreFromSave uses — every slot key has to
+      // exist (equipItem/recompute index into them by name), and only the
+      // filled ones come from the payload.
+      const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null };
+      const rebuilt = {};
+      Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
+      player.equipment = { ...blank, ...rebuilt };
+    }
+    if (typeof recompute === 'function') recompute();
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
+  });
+
   socket.on('disconnect', () => {
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced

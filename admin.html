@@ -89,6 +89,30 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
 .give-row input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
 .give-row select{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
 
+/* ── Inventory / equipment grids ── */
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px;margin-top:10px}
+.inv-cell{position:relative;aspect-ratio:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}
+.inv-cell:hover{border-color:var(--red)}
+.inv-cell.empty{cursor:default;opacity:.45}
+.inv-cell.empty:hover{border-color:var(--border)}
+.inv-cell img{width:30px;height:30px;image-rendering:pixelated}
+.inv-cell .ic-lbl{font-size:8px;color:var(--text2);margin-top:2px;max-width:100%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
+.inv-cell .ic-enh{position:absolute;top:1px;right:3px;font-size:9px;font-weight:700;color:#e69419}
+.inv-cell .ic-qty{position:absolute;bottom:1px;right:3px;font-size:9px;font-weight:700;color:#98e456}
+.inv-cell .ic-slot{position:absolute;top:1px;left:3px;font-size:8px;color:var(--text2)}
+.inv-sub{color:var(--text2);font-size:12px;margin:14px 0 2px}
+/* item picker */
+.pick-bar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.pick-bar input,.pick-bar select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+.pick-bar input[type=text]{flex:1;min-width:120px}
+.pick-bar input[type=number]{width:72px}
+.pick-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px;margin-top:10px;
+  max-height:230px;overflow-y:auto}
+.pick-list .inv-cell:hover{border-color:var(--green)}
+
 /* ── Logs ── */
 .log-item{padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
 .log-item:last-child{border-bottom:none}
@@ -261,6 +285,18 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
             <input id="give-gram" type="number" min="0" placeholder="GRAM">
           </div>
           <div style="margin-top:8px"><button class="btn btn-sm btn-green" onclick="givePlayer()">Выдать</button></div>
+        </div>
+        <div class="card">
+          <h3>Инвентарь и экипировка</h3>
+          <div id="player-items"><div class="loading-center"><div class="spinner"></div></div></div>
+          <div class="inv-sub">Добавить предмет</div>
+          <div class="pick-bar">
+            <input id="item-search" type="text" placeholder="Поиск по названию" oninput="renderItemPicker()">
+            <select id="item-slot" onchange="renderItemPicker()"><option value="">Все слоты</option></select>
+            <input id="item-qty" type="number" min="1" value="1" title="Количество">
+            <input id="item-enh" type="number" min="0" max="15" value="0" title="Заточка (+N)">
+          </div>
+          <div id="item-picker" class="pick-list"></div>
         </div>
         <div class="card">
           <h3>Действия</h3>
@@ -575,6 +611,11 @@ async function openPlayer(tid) {
         <span class="lt"> · ${fmtDate(l.at)}</span>
         ${l.meta ? `<div class="lm">${esc(JSON.stringify(l.meta))}</div>` : ''}
       </div>`).join('') : '<p style="color:var(--text2);font-size:12px">Нет событий</p>';
+    _curInv = Array.isArray(sd.inventory) ? sd.inventory : [];
+    _curEq  = (sd.equipment && typeof sd.equipment === 'object') ? sd.equipment : {};
+    renderPlayerItems();
+    await loadItemCatalog();
+    renderItemPicker();
   } catch(e) { document.getElementById('player-info').innerHTML = '<p style="color:var(--red)">Ошибка загрузки</p>'; }
 }
 
@@ -613,6 +654,104 @@ async function givePlayer() {
     if (r.ok) { toast('Выдано!'); ['give-gold','give-nexum','give-gram'].forEach(id=>document.getElementById(id).value=''); }
     else { const d=await r.json(); toast(d.error||'Ошибка', false); }
   } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Player items (inventory / equipment) ──────────────────
+// Catalog is fetched once and reused for every player opened afterwards.
+let _itemCatalog = null;
+let _curInv = [], _curEq = {};
+
+const SLOT_RU = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты',
+  ring:'Кольцо', belt:'Пояс', pet:'Питомец', use:'Расходник', material:'Материал',
+  recipe:'Рецепт', buff_potion:'Зелье', box:'Бокс' };
+const EQ_ORDER = ['weapon','helmet','body','gloves','boots','ring','belt','pet'];
+const RARITY_COL = { common:'#9c9086', uncommon:'#6f9c4a', rare:'#4a7bab', epic:'#8a5cc2', legendary:'#e8b93e' };
+
+function itemCellHTML(it, opts) {
+  const o = opts || {};
+  const col = RARITY_COL[it && it.rarity] || 'var(--border)';
+  const icon = it && it.img
+    ? `<img src="${esc(it.img)}" onerror="this.style.display='none'">`
+    : `<div style="font-size:9px;color:var(--text2)">${esc((it && it.id) || '')}</div>`;
+  return `<div class="inv-cell" style="border-color:${col}66" title="${esc((it && it.name) || '')}"
+      ${o.onclick ? `onclick="${o.onclick}"` : ''}>
+    ${o.slotLabel ? `<span class="ic-slot">${esc(o.slotLabel)}</span>` : ''}
+    ${it && it.enhance ? `<span class="ic-enh">+${it.enhance}</span>` : ''}
+    ${it && it.qty > 1 ? `<span class="ic-qty">${it.qty}</span>` : ''}
+    ${icon}
+    <span class="ic-lbl" style="color:${col}">${esc((it && it.name) || '')}</span>
+  </div>`;
+}
+
+function renderPlayerItems() {
+  const eqHtml = EQ_ORDER.map(sl => {
+    const it = _curEq[sl];
+    if (!it) return `<div class="inv-cell empty"><span class="ic-slot">${esc(SLOT_RU[sl] || sl)}</span></div>`;
+    return itemCellHTML(it, { slotLabel: SLOT_RU[sl] || sl, onclick: `removeEq('${sl}')` });
+  }).join('');
+
+  const invHtml = _curInv.length
+    ? _curInv.map((it, i) => itemCellHTML(it, { onclick: `removeInv(${i})` })).join('')
+    : '<p style="color:var(--text2);font-size:12px;grid-column:1/-1">Инвентарь пуст</p>';
+
+  document.getElementById('player-items').innerHTML = `
+    <div class="inv-sub">Экипировка — нажми, чтобы снять и удалить</div>
+    <div class="inv-grid">${eqHtml}</div>
+    <div class="inv-sub">Инвентарь (${_curInv.length}) — нажми, чтобы удалить</div>
+    <div class="inv-grid">${invHtml}</div>`;
+}
+
+async function loadItemCatalog() {
+  if (_itemCatalog) return _itemCatalog;
+  const r = await api('/admin/items');
+  const d = await r.json();
+  _itemCatalog = d.items || [];
+  const sel = document.getElementById('item-slot');
+  const slots = [...new Set(_itemCatalog.map(i => i.slot))];
+  sel.innerHTML = '<option value="">Все слоты</option>' +
+    slots.map(sl => `<option value="${esc(sl)}">${esc(SLOT_RU[sl] || sl)}</option>`).join('');
+  return _itemCatalog;
+}
+
+function renderItemPicker() {
+  if (!_itemCatalog) return;
+  const q = (document.getElementById('item-search').value || '').trim().toLowerCase();
+  const slot = document.getElementById('item-slot').value;
+  const list = _itemCatalog.filter(i =>
+    (!slot || i.slot === slot) && (!q || (i.name || '').toLowerCase().includes(q) || i.id.toLowerCase().includes(q)));
+  const el = document.getElementById('item-picker');
+  el.innerHTML = list.length
+    ? list.slice(0, 200).map(i => itemCellHTML(i, { onclick: `addItem('${esc(i.id)}')` })).join('')
+    : '<p style="color:var(--text2);font-size:12px;grid-column:1/-1">Ничего не найдено</p>';
+}
+
+async function itemsAction(body) {
+  if (!_currentPlayerId) return;
+  try {
+    const r = await api('/admin/player/' + _currentPlayerId + '/items',
+      { method: 'POST', body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Ошибка', false); return; }
+    _curInv = d.inventory || [];
+    _curEq  = d.equipment || {};
+    renderPlayerItems();
+    toast(d.online ? 'Готово (игрок онлайн)' : 'Готово');
+  } catch (e) { toast('Ошибка', false); }
+}
+
+function addItem(itemId) {
+  const qty = Math.max(1, Number(document.getElementById('item-qty').value) || 1);
+  const enhance = Math.max(0, Number(document.getElementById('item-enh').value) || 0);
+  itemsAction({ action: 'add', itemId, qty, enhance });
+}
+function removeInv(index) {
+  const it = _curInv[index];
+  if (!confirm('Удалить "' + ((it && it.name) || '') + '"?')) return;
+  itemsAction({ action: 'removeInv', index, qty: (it && it.qty) || 1 });
+}
+function removeEq(slot) {
+  if (!confirm('Снять и удалить предмет из слота "' + (SLOT_RU[slot] || slot) + '"?')) return;
+  itemsAction({ action: 'removeEq', slot });
 }
 
 // ── GRAM ──────────────────────────────────────────────────
