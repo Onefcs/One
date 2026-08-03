@@ -209,14 +209,22 @@ class RaidRoom {
     const aliveEnemies = this.enemies.filter(e => e.hp > 0);
     if (aliveEnemies.length === 0) {
       this.state = 'wave_clear';
+      // Guarded like the tick loop above: this runs from a bare timer, not
+      // from a socket handler, so anything that throws in here (or in the
+      // onEnd callback _complete invokes) reaches the global
+      // uncaughtException handler and takes the whole server down with it —
+      // which is exactly how a dead reference in the raid-cleanup path
+      // turned finishing a raid into a production crash.
       setTimeout(() => {
-        if (this.state !== 'wave_clear') return;
-        if (this.wave >= this.totalWaves) {
-          this._complete();
-        } else {
-          this.state = 'fighting';
-          this._spawnWave(this.wave + 1);
-        }
+        try {
+          if (this.state !== 'wave_clear') return;
+          if (this.wave >= this.totalWaves) {
+            this._complete();
+          } else {
+            this.state = 'fighting';
+            this._spawnWave(this.wave + 1);
+          }
+        } catch (err) { console.error(`[RaidRoom ${this.raidId} wave-clear]`, err); }
       }, 2000);
       return;
     }

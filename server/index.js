@@ -1537,7 +1537,7 @@ function _cleanupPartyDungeonPlayer(socketId, channel) {
   if (fl !== undefined) {
     const fr = floorRooms.get(fl);
     const p = fr?.players.get(socketId);
-    if (p) { p._inRaid = false; p._knownE.clear(); }
+    if (p) p._inRaid = false;
   }
 }
 
@@ -1684,6 +1684,22 @@ function _cleanupLobby(socketId) {
   }
 }
 
+// NB: this used to also call `p._knownE.clear()` to "force a full enemy
+// refresh on next gameState". That field never existed on a room player
+// (Room.addPlayer only ever created `_known`, for other *players*) — enemy
+// known-state is room-level, not per-player (`Room._enemyKnown`), and has
+// been since enemies stopped being AOI-filtered. So the call was dead code
+// that threw TypeError every single time it ran, taking the whole process
+// down whenever it was reached from a timer instead of a guarded handler:
+//   [uncaughtException] TypeError: Cannot read properties of undefined
+//     at _cleanupRaidPlayer ... at RaidRoom.onEnd ... at RaidRoom._complete
+// It also aborted its own callers midway — _cleanupRaid never got to remove
+// the player from the raid room or delete a finished one, and the raid/party
+// -dungeon completion loops never got past their first member, leaving the
+// rest of the party stuck in an instance the server had already ended.
+// Nothing replaces it: enemies re-send full entries on a stagger anyway
+// (FULL_REFRESH_TICKS in Room.js), which is what actually resynced returning
+// players all along, since this line never once succeeded.
 function _cleanupRaidPlayer(socketId) {
   playerRaid.delete(socketId);
   const fl = playerFloorMap.get(socketId);
@@ -1691,10 +1707,7 @@ function _cleanupRaidPlayer(socketId) {
     const fr = floorRooms.get(fl);
     if (fr) {
       const p = fr.players.get(socketId);
-      if (p) {
-        p._inRaid = false;
-        p._knownE.clear(); // force full enemy refresh on next gameState
-      }
+      if (p) p._inRaid = false;
     }
   }
 }
