@@ -143,10 +143,16 @@ class Room {
     this.players = new Map();
     this._dungeon = generateOpenWorld();
     this._gridPacked = packGrid(this._dungeon.grid, this._dungeon.w, this._dungeon.h);
+    // Per-arm bosses start already "dead" with the same fixed 1-hour
+    // respawnTimer a normal kill sets (see the tick loop below) — otherwise
+    // every restart/deploy dropped every arm's boss onto the map instantly at
+    // full HP with no cooldown at all, since a fresh Room had no kill to
+    // start a respawn timer from.
     this.enemies = this._dungeon.enemies.map(e => ({
-      ...e, hp: e.maxHp, aggro: false,
+      ...e, hp: e.isBoss ? 0 : e.maxHp, aggro: false,
       atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
-      _sx: e.x, _sy: e.y, _shp: e.maxHp,
+      _sx: e.x, _sy: e.y, _shp: e.isBoss ? 0 : e.maxHp,
+      ...(e.isBoss ? { respawnTimer: 3600 } : {}),
     }));
     // O(1) enemy lookup for attack handler
     this._enemyMap = new Map(this.enemies.map(e => [e.id, e]));

@@ -229,9 +229,9 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg1',   gram:1,   gold:1000,   potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
   { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0,  skillBooks:{ random:1 } },
   { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1,  skillBooks:{ random:2 } },
-  { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 } },
-  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:null,       bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
-  { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:3 },
+  { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 },  enhance:5, nexum:500 },
+  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:5, nexum:4000 },
+  { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
@@ -3038,6 +3038,12 @@ io.on('connection', socket => {
       // Bonus skill points
       if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
 
+      // Liberty (Nexum) bonus
+      if (pkg.nexum > 0) {
+        _setNexum(_round7(_liveNexum() + pkg.nexum));
+        saved.nexumBalance = _nexumBalance;
+      }
+
       // VIP progress from purchase
       let _vipLvl = saved.vipLevel || 0;
       let _vipDep = saved.vipDeposited || 0;
@@ -3071,6 +3077,7 @@ io.on('connection', socket => {
         'savedData.vipPending': _vipPend,
       };
       if (pkg.bonusSP > 0) _shopSet['savedData.bonusSP'] = saved.bonusSP;
+      if (pkg.nexum > 0) _shopSet['savedData.nexumBalance'] = saved.nexumBalance;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _shopSet });
 
       if (_lastStats) {
@@ -3090,6 +3097,7 @@ io.on('connection', socket => {
         newInventory: inv,
         invRev:      _invRev,
         newBonusSP:  saved.bonusSP || 0,
+        newNexumBalance: _nexumBalance,
         vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
         leveled: _vipLvl > _prevVipLvl,
       });

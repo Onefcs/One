@@ -3907,9 +3907,9 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:null,       weapon:null,       bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
   { id:'pkg10',  gram:10,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:1,  color:'#eab65d', skillBooks:{ random:2 } },
-  { id:'pkg30',  gram:30,  get label() { return t('gramPkgLabel_pkg30'); },  gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 } },
-  { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:null,       bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 } },
-  { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:3 },
+  { id:'pkg30',  gram:30,  get label() { return t('gramPkgLabel_pkg30'); },  gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 },  enhance:5, nexum:500 },
+  { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:5, nexum:4000 },
+  { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
 
 function showGramShopBtn() {
@@ -3994,6 +3994,12 @@ function _gramShopPkgHtml(pkg, bal) {
     rows += ri(bookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
   }
 
+  // Liberty (Nexum) bonus
+  if (pkg.nexum) {
+    const libUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236fc7ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2 2 7l10 5 10-5-10-5Z'/><path d='M2 17l10 5 10-5'/><path d='M2 12l10 5 10-5'/></svg>`;
+    rows += ri(libUri, `+${pkg.nexum} Liberty`, 'epic');
+  }
+
   // boxes (BOX_DEF — see _boxesLabel below)
   if (pkg.boxes) {
     rows += _boxesLabel(pkg.boxes).map(({ img, label, cls }) => ri(img, label, cls)).join('');
@@ -4015,11 +4021,13 @@ function _gramShopPkgHtml(pkg, bal) {
   </div>`;
 }
 
-// Shared between the shop card preview and the confirm modal.
+// Shared between the shop card preview and the confirm modal. The icon row
+// has no room for "по 12 каждой книги навыка (все 4)" — just the total count
+// (each × the 4 class books, or random's own count) reads at a glance.
 function _skillBooksLabel(skillBooks) {
   if (!skillBooks) return '';
-  if (skillBooks.each) return tVars('skillBooksEachLbl', { n: skillBooks.each });
-  return tVars('skillBooksRandomLbl', { n: skillBooks.random });
+  const total = skillBooks.each ? skillBooks.each * 4 : (skillBooks.random || 0);
+  return tVars('skillBooksTotalLbl', { n: total });
 }
 
 // Shared between the shop card preview and the confirm modal — mirrors
@@ -4052,6 +4060,7 @@ function openGramShopConfirm(pkgId) {
   const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
   const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
   const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
+  const nexumLine  = pkg.nexum ? `<div style="color:#6fc7ff">• +${pkg.nexum} Liberty</div>` : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
   ov.id = 'gram-shop-confirm-ov';
@@ -4065,7 +4074,7 @@ function openGramShopConfirm(pkgId) {
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
         <div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>
         <div style="color:#c5bfb7">${tVars('eachPotionFmt', { n: pkg.potions })}</div>
-        ${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}
+        ${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${nexumLine}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
@@ -4089,11 +4098,13 @@ function _confirmGramShopBuy(pkgId) {
 
 function onGramShopResult(data) {
   window._gramBalance = data.newBalance;
+  if (data.newNexumBalance != null) window._nexumBalance = data.newNexumBalance;
   if (player) {
     player.gold = data.newGold;
     if (data.newPotionBag) player.potionBag = data.newPotionBag;
     if (data.newInventory) player.inventory = data.newInventory;
     if (data.newBonusSP != null) player.bonusSP = data.newBonusSP;
+    if (data.newNexumBalance != null) player.nexumBalance = data.newNexumBalance;
   }
   if (data.vipData) window._vipData = data.vipData;
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
