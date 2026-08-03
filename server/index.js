@@ -392,6 +392,10 @@ async function _handleAdminCallback(cq) {
 
   const confirmed = action === 'gram_ok';
   tx.status = confirmed ? 'confirmed' : 'rejected';
+  // Set only when this decision actually moved the balance (a confirmed
+  // deposit or a refunded withdrawal); left null otherwise so the log shows
+  // the decision without implying a credit that never happened.
+  let _logBal = null;
 
   if ((confirmed && tx.type === 'deposit') || (!confirmed && tx.type === 'withdraw')) {
     const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
@@ -406,6 +410,7 @@ async function _handleAdminCallback(cq) {
       await PlayerModel.updateOne({ telegramId: tx.telegramId }, { $set: { 'savedData.gramBalance': newBal } });
       _gramBalanceCache.set(tx.telegramId, newBal);
       io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
+      _logBal = newBal;
 
       // 5% referral bonus on confirmed deposit
       if (confirmed && tx.type === 'deposit' && doc.referredBy) {
@@ -422,6 +427,8 @@ async function _handleAdminCallback(cq) {
               fromUsername: doc.username,
               newBalance: refNewBal,
             });
+            logPlayer(doc.referredBy, refDoc.username, 'gram_ref_bonus',
+              { bonus, from: doc.username, newBalance: refNewBal });
           }
         }
       }
@@ -430,6 +437,11 @@ async function _handleAdminCallback(cq) {
 
   await tx.save();
   io.to(`tg_${tx.telegramId}`).emit('gramTxUpdate', { id: tx._id.toString(), status: tx.status });
+  logPlayer(tx.telegramId, tx.username, 'gram_' + tx.type + '_' + tx.status, {
+    amount: tx.amount,
+    ...(_logBal === null ? {} : { newBalance: _logBal }),
+    tx: tx._id.toString(),
+  });
 
   const label = confirmed ? '✅ Подтверждено' : '❌ Отклонено';
   await tgApi('editMessageReplyMarkup', {
@@ -761,11 +773,40 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// Player event logger (last 30 per player kept, older auto-expire in 30d)
+// ── Player event log ─────────────────────────────────────────────────────────
+// Every economy-touching action lands here so a "where did my item go" report
+// can be answered from the admin panel instead of guesswork. The old comment
+// here claimed the collection was capped and TTL'd — neither was true, nothing
+// ever deleted a row, so it grew without bound. It is now really trimmed.
+const LOG_KEEP_PER_PLAYER = 100;
+// Trimming on every write would double the cost of logging for no benefit —
+// the admin only ever reads the newest LOG_KEEP_PER_PLAYER anyway, so a little
+// overshoot between trims is harmless.
+const LOG_TRIM_EVERY = 25;
+const _logWritesSinceTrim = new Map(); // telegramId -> writes since last trim
+
 async function logPlayer(telegramId, username, event, meta) {
+  if (!telegramId) return;
   try {
     await PlayerLogModel.create({ telegramId, username, event, meta });
+    const n = (_logWritesSinceTrim.get(telegramId) || 0) + 1;
+    if (n < LOG_TRIM_EVERY) { _logWritesSinceTrim.set(telegramId, n); return; }
+    _logWritesSinceTrim.set(telegramId, 0);
+    const stale = await PlayerLogModel.find({ telegramId }, '_id')
+      .sort({ at: -1 }).skip(LOG_KEEP_PER_PLAYER).lean();
+    if (stale.length) await PlayerLogModel.deleteMany({ _id: { $in: stale.map(d => d._id) } });
   } catch {}
+}
+
+// Same log, for failures. Recorded under a single 'error' event so the panel
+// can colour them and an admin can spot them without reading every row —
+// these are exactly the entries that explain a lost item or a refused grant.
+function logPlayerErr(telegramId, username, where, err, meta) {
+  logPlayer(telegramId, username, 'error', {
+    where,
+    message: err && err.message ? err.message : String(err || ''),
+    ...(meta || {}),
+  });
 }
 
 // ── Admin login brute-force limiter ────────────────────────────────────────────
@@ -876,7 +917,7 @@ app.get('/admin/player/:tid', adminAuth, async (req, res) => {
     const p = await PlayerModel.findOne({ telegramId: req.params.tid }).lean();
     if (!p) return res.status(404).json({ error: 'Not found' });
     const [logs, referrer] = await Promise.all([
-      PlayerLogModel.find({ telegramId: req.params.tid }).sort({ at: -1 }).limit(30).lean(),
+      PlayerLogModel.find({ telegramId: req.params.tid }).sort({ at: -1 }).limit(LOG_KEEP_PER_PLAYER).lean(),
       p.referredBy ? PlayerModel.findOne({ telegramId: p.referredBy }, 'username').lean() : null,
     ]);
     res.json({ player: p, logs, referrerUsername: referrer?.username || null });
@@ -2225,13 +2266,25 @@ io.on('connection', socket => {
   // Single choke point for every server-side item change: updates the live
   // copy, bumps the revision, persists, and pushes the authoritative result to
   // the client so it can't drift.
-  function _commitServerItems(inventory, equipment) {
+  // opts.persist === false: the caller writes the document itself (marketBuy
+  // bundles the item and the payment into one atomic $set), but the live copy,
+  // the revision bump, the client sync and the log still have to happen.
+  function _commitServerItems(inventory, equipment, reason, meta, opts) {
     if (!_lastStats) _lastStats = {};
+    const _before = Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0;
     _lastStats.inventory = inventory;
     if (equipment) _lastStats.equipment = equipment;
     _invRev++;
+    // Every server-side item change funnels through here, so logging it here
+    // covers all of them at once — and records the slot count before/after,
+    // which is what makes a later "my item vanished" report answerable.
+    if (authed) {
+      logPlayer(authed.telegramId, authed.username, 'inv:' + (reason || 'change'), {
+        slots: `${_before} -> ${inventory.length}`, rev: _invRev, ...(meta || {}),
+      });
+    }
     if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
-    const written = _persistSavedFields(authed,
+    const written = (opts && opts.persist === false) ? null : _persistSavedFields(authed,
       equipment ? { inventory, equipment } : { inventory });
     socket.emit('inventorySync', {
       inventory, equipment: _lastStats.equipment || {}, invRev: _invRev,
@@ -2255,7 +2308,7 @@ io.on('connection', socket => {
 
   socket.data._adminApplyItems = async (inventory, equipment) => {
     if (!authed) return;
-    await _commitServerItems(inventory, equipment);
+    await _commitServerItems(inventory, equipment, 'admin');
   };
 
   // Hands the death-battle winner its prize. Lives here rather than beside
@@ -2269,7 +2322,8 @@ io.on('connection', socket => {
     if (inv) items.forEach(it => _invAdd(inv, it));
     _setGram(_round7(_liveGram() + DEATH_BATTLE_GRAM_REWARD));
     await _persistSavedFields(authed, { gramBalance: _liveGram() });
-    if (inv) await _commitServerItems(inv);
+    if (inv) await _commitServerItems(inv, null, 'death_battle_win',
+      { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD });
     logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
     return items;
   };
@@ -2460,8 +2514,13 @@ io.on('connection', socket => {
         memo: String(memo || authed.telegramId),
       });
       socket.emit('gramTxCreated', { tx: _txData(tx) });
+      logPlayer(authed.telegramId, authed.username, 'gram_deposit_request',
+        { amount: Number(amount), tx: tx._id.toString() });
       notifyAdminGram(tx).catch(() => {});
-    } catch (err) { console.error('gramDepositRequest:', err); }
+    } catch (err) {
+      console.error('gramDepositRequest:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'gram_deposit_request', err, { amount });
+    }
   });
 
   safeOn('gramWithdrawRequest', async ({ amount, address }) => {
@@ -2492,8 +2551,13 @@ io.on('connection', socket => {
         address: String(address),
       });
       socket.emit('gramTxCreated', { tx: _txData(tx), newBalance: _gramBalance });
+      logPlayer(authed.telegramId, authed.username, 'gram_withdraw_request',
+        { amount: Number(amount), newBalance: _gramBalance, tx: tx._id.toString() });
       notifyAdminGram(tx).catch(() => {});
-    } catch (err) { console.error('gramWithdrawRequest:', err); }
+    } catch (err) {
+      console.error('gramWithdrawRequest:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'gram_withdraw_request', err, { amount });
+    }
   });
 
   safeOn('gramGetHistory', async () => {
@@ -2530,6 +2594,8 @@ io.on('connection', socket => {
       // item. Stackables that merge into an existing entry cost no new slot.
       const _newSlots = _shopNewSlots(pkg, inv, charClass);
       if (inv.length + _newSlots > SERVER_INV_MAX) {
+        logPlayer(authed.telegramId, authed.username, 'gram_shop_refused',
+          { pkg: pkg.id, need: _newSlots, slots: `${inv.length}/${SERVER_INV_MAX}` });
         return socket.emit('gramShopError', {
           msg: `Нужно ${_newSlots} свободных мест в инвентаре (занято ${inv.length}/${SERVER_INV_MAX})`,
         });
@@ -2641,7 +2707,7 @@ io.on('connection', socket => {
       }
       // Bumps the revision, so a client autosave queued before this purchase
       // can no longer land afterwards and wipe the items out.
-      _commitServerItems(inv);
+      _commitServerItems(inv, null, 'gram_shop', { pkg: pkg.id, gram: pkg.gram });
       socket.data.vipLevel = _vipLvl;
       _setVipAura(authed.username, _vipLvl);
 
@@ -2659,7 +2725,10 @@ io.on('connection', socket => {
       if (_vipLvl > _prevVipLvl) {
         socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
       }
-    } catch (err) { console.error('gramShopBuy:', err); }
+    } catch (err) {
+      console.error('gramShopBuy:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'gram_shop', err, { pkgId });
+    }
   });
 
   // ── Pet crafting (Кузнец → Материалы → Питомцы) ────────────────────────────
@@ -2695,11 +2764,13 @@ io.on('connection', socket => {
         _invAdd(_lastStats.inventory, resultPet);
       }
       _persistSavedFields(authed, { nexumBalance: _nexumBalance });
-      _commitServerItems(_lastStats.inventory);
+      _commitServerItems(_lastStats.inventory, null, 'pet_craft',
+        { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null });
 
       socket.emit('petCrafted', { pet: resultPet, newNexumBalance: _nexumBalance });
     } catch (err) {
       console.error('craftPet:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'pet_craft', err, { rarity });
       socket.emit('petCraftError', { msg: 'Ошибка сервера' });
     }
   });
@@ -2731,7 +2802,7 @@ io.on('connection', socket => {
     const drop = currentRoom.claimWorldDrop(id, p.x, p.y);
     if (!drop) return;
     if (inv && _invAdd(inv, drop.item)) {
-      _commitServerItems(inv);
+      _commitServerItems(inv, null, 'world_drop', { item: drop.item && drop.item.id });
     }
     socket.emit('worldDropPicked', { id: drop.id, item: drop.item });
   });
@@ -2827,11 +2898,14 @@ io.on('connection', socket => {
       // otherwise the item only left the account once the CLIENT's own save
       // landed, and listing-then-killing-the-app duplicated it.
       _invRemove(_lastStats.inventory, canonItem);
-      _commitServerItems(_lastStats.inventory);
+      _commitServerItems(_lastStats.inventory, null, 'market_list',
+        { item: canonItem.id, enhance: canonItem.enhance || 0, qty: canonItem.qty || 1, price: _round2(p) });
       socket.emit('marketListed', { listing: _marketListingData(listing) });
     } catch (err) {
       console.error('marketList:', err);
       _lastMarketListAt = _prevListAt;
+      logPlayerErr(authed.telegramId, authed.username, 'market_list', err,
+        { item: canonItem && canonItem.id });
       socket.emit('marketListError', { msg: 'Ошибка сервера' });
     }
   });
@@ -2861,10 +2935,20 @@ io.on('connection', socket => {
       // the round trip) destroyed the item — the listing was already
       // cancelled, so nothing would ever return it.
       if (_sellerInv && _invAdd(_sellerInv, listing.item)) {
-        _commitServerItems(_sellerInv);
+        _commitServerItems(_sellerInv, null, 'market_cancel',
+          { item: listing.item && listing.item.id, listingId: String(listingId) });
+      } else {
+        // Cancelled but not returned server-side — the client is the only
+        // copy holding it now, so make that visible rather than silent.
+        logPlayer(authed.telegramId, authed.username, 'market_cancel_noroom',
+          { item: listing.item && listing.item.id, listingId: String(listingId),
+            slots: _sellerInv ? _sellerInv.length : null });
       }
       socket.emit('marketCancelled', { listingId, item: listing.item });
-    } catch (err) { console.error('marketCancel:', err); }
+    } catch (err) {
+      console.error('marketCancel:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'market_cancel', err, { listingId: String(listingId) });
+    }
   });
 
   // Undoes THIS buyer's claim only. The old unconditional update-by-_id would
@@ -2924,6 +3008,13 @@ io.on('connection', socket => {
       const _buyerSet = { 'savedData.gramBalance': _gramBalance };
       if (_buyerInv && _invAdd(_buyerInv, claimed.item)) {
         _buyerSet['savedData.inventory'] = _buyerInv;
+        // Bundled into the single $set below for atomicity, so this only does
+        // the live-copy/revision/sync/log half. Without the revision bump a
+        // client autosave queued before the purchase could still revert it.
+        _commitServerItems(_buyerInv, null, 'market_buy',
+          { item: claimed.item && claimed.item.id, price: claimed.price,
+            seller: claimed.sellerId, listingId: String(listingId) },
+          { persist: false });
       }
       await PlayerModel.updateOne(
         { _id: authed._id },
@@ -2960,10 +3051,20 @@ io.on('connection', socket => {
           itemName: claimed.item?.name || '', price: claimed.price, payout,
           buyerUsername: authed.username, newBalance: sellerNewBal,
         });
-      } catch (err) { console.error('marketBuy seller payout:', err); }
+        logPlayer(claimed.sellerId, claimed.sellerUsername, 'market_sold',
+          { item: claimed.item && claimed.item.id, price: claimed.price, payout,
+            buyer: authed.username, balance: sellerNewBal });
+      } catch (err) {
+        console.error('marketBuy seller payout:', err);
+        logPlayerErr(claimed.sellerId, claimed.sellerUsername, 'market_sold_payout', err,
+          { listingId: String(listingId), payout });
+      }
 
       socket.emit('marketBought', { listingId, item: claimed.item, newBalance: _gramBalance });
-    } catch (err) { console.error('marketBuy:', err); }
+    } catch (err) {
+      console.error('marketBuy:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'market_buy', err, { listingId: String(listingId) });
+    }
   });
 
   safeOn('getReferrals', async () => {
@@ -3076,6 +3177,8 @@ io.on('connection', socket => {
       // Nothing is consumed on failure: vipPending is left intact so the
       // rewards stay claimable once the player frees up space.
       if (outOfRoom) {
+        logPlayer(authed.telegramId, authed.username, 'vip_rewards_refused',
+          { levels: pending, slots: `${inv.length}/${SERVER_INV_MAX}` });
         return socket.emit('gramShopError', {
           msg: `Инвентарь полон (${inv.length}/${SERVER_INV_MAX}) — освободите место и заберите награды снова`,
         });
@@ -3090,9 +3193,12 @@ io.on('connection', socket => {
       if (goldReward > 0) _vipSet['savedData.gold'] = saved.gold;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _vipSet });
       if (_lastStats && goldReward > 0) _lastStats.gold = saved.gold;
-      _commitServerItems(inv);
+      _commitServerItems(inv, null, 'vip_rewards', { levels: pending, gold: goldReward });
       socket.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
-    } catch (err) { console.error('claimVipRewards:', err); }
+    } catch (err) {
+      console.error('claimVipRewards:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'vip_rewards', err);
+    }
   });
 
   safeOn('selectChar', ({ type, savedStats }) => {
@@ -3637,13 +3743,26 @@ io.on('connection', socket => {
     // items back so the client stops resending the stale set.
     const _clientRev = Math.floor(Number(stats && stats.invRev)) || 0;
     if (_clientRev !== _invRev && _lastStats) {
+      const _rejected = Array.isArray(clean.inventory) ? clean.inventory.length : 0;
       clean.inventory = _lastStats.inventory || [];
       clean.equipment = _lastStats.equipment || {};
+      // The single most useful line when a player says an item vanished: it
+      // records that a save arrived carrying a pre-grant inventory and was
+      // overruled, rather than that happening invisibly.
+      logPlayer(authed.telegramId, authed.username, 'save_stale_items', {
+        clientRev: _clientRev, serverRev: _invRev,
+        rejectedSlots: _rejected, keptSlots: clean.inventory.length,
+      });
       socket.emit('inventorySync', {
         inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
       });
     }
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
+      logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {
+        hadLvl: _lastStats.lvl, hadGold: _lastStats.gold,
+        hadItems: (_lastStats.inventory || []).length,
+        hadEquip: Object.keys(_lastStats.equipment || {}).length,
+      });
       console.error(`[saveProgress] Rejected suspicious full-reset for telegramId=${authed.telegramId} ` +
         `(had lvl=${_lastStats.lvl} gold=${_lastStats.gold} items=${(_lastStats.inventory || []).length} ` +
         `equip=${Object.keys(_lastStats.equipment || {}).length} — incoming save was blank). Keeping previous state.`);

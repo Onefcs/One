@@ -119,6 +119,15 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
 .log-item .le{color:#a78bfa;font-weight:600}
 .log-item .lt{color:var(--text2);font-size:11px}
 .log-item .lm{color:var(--text);margin-top:2px;word-break:break-all}
+.log-item.is-err{background:rgba(239,68,68,0.07);border-left:2px solid var(--red);padding-left:8px}
+.log-item.is-err .le{color:var(--red)}
+.log-item.is-inv .le{color:#38bdf8}
+.log-item.is-market .le{color:#fbbf24}
+.log-item.is-shop .le{color:#34d399}
+.log-filter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.log-filter button{background:var(--bg3);border:1px solid var(--border);border-radius:14px;
+  padding:5px 11px;color:var(--text2);font-size:12px;cursor:pointer}
+.log-filter button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 
 /* ── Quest editor ── */
 .quest-form{display:flex;flex-direction:column;gap:10px}
@@ -306,7 +315,14 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           </div>
         </div>
         <div class="card">
-          <h3>Последние 30 событий</h3>
+          <h3>Последние 100 событий</h3>
+          <div class="log-filter">
+            <button class="on" onclick="setLogFilter('all',this)">Все</button>
+            <button onclick="setLogFilter('error',this)">Ошибки</button>
+            <button onclick="setLogFilter('inv',this)">Инвентарь</button>
+            <button onclick="setLogFilter('market',this)">Маркет</button>
+            <button onclick="setLogFilter('shop',this)">GRAM / покупки</button>
+          </div>
           <div id="player-logs"></div>
         </div>
       </div>
@@ -604,13 +620,8 @@ async function openPlayer(tid) {
       <div class="prow"><span class="k">Статус</span><span style="color:${p.banned?'var(--red)':'var(--green)'}">${p.banned?'Заблокирован':'Активен'}</span></div>
       <div class="prow"><span class="k">Зарегистрирован</span><span>${fmtDate(p.createdAt)}</span></div>
     `;
-    const logs = pd.logs || [];
-    document.getElementById('player-logs').innerHTML = logs.length ? logs.map(l=>`
-      <div class="log-item">
-        <span class="le">${esc(l.event)}</span>
-        <span class="lt"> · ${fmtDate(l.at)}</span>
-        ${l.meta ? `<div class="lm">${esc(JSON.stringify(l.meta))}</div>` : ''}
-      </div>`).join('') : '<p style="color:var(--text2);font-size:12px">Нет событий</p>';
+    _curLogs = pd.logs || [];
+    renderLogs();
     _curInv = Array.isArray(sd.inventory) ? sd.inventory : [];
     _curEq  = (sd.equipment && typeof sd.equipment === 'object') ? sd.equipment : {};
     renderPlayerItems();
@@ -654,6 +665,48 @@ async function givePlayer() {
     if (r.ok) { toast('Выдано!'); ['give-gold','give-nexum','give-gram'].forEach(id=>document.getElementById(id).value=''); }
     else { const d=await r.json(); toast(d.error||'Ошибка', false); }
   } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Player logs ───────────────────────────────────────────
+let _curLogs = [], _logFilter = 'all';
+
+function logClass(ev) {
+  if (ev === 'error') return 'is-err';
+  if (ev.startsWith('inv:') || ev.startsWith('save_')) return 'is-inv';
+  if (ev.startsWith('market')) return 'is-market';
+  if (ev.startsWith('gram') || ev.startsWith('vip_') || ev.startsWith('admin')) return 'is-shop';
+  return '';
+}
+function logMatches(ev) {
+  if (_logFilter === 'all') return true;
+  if (_logFilter === 'error') return ev === 'error';
+  if (_logFilter === 'inv') return ev.startsWith('inv:') || ev.startsWith('save_');
+  if (_logFilter === 'market') return ev.startsWith('market');
+  if (_logFilter === 'shop') return ev.startsWith('gram') || ev.startsWith('vip_') || ev.startsWith('admin');
+  return true;
+}
+// Meta reads far better as "key: value" pairs than as raw JSON — these rows
+// are meant to be scanned while someone is on the phone asking where their
+// item went.
+function logMeta(meta) {
+  if (!meta || typeof meta !== 'object') return '';
+  return Object.entries(meta)
+    .map(([k, v]) => `${esc(k)}: <b>${esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}</b>`)
+    .join(' · ');
+}
+function renderLogs() {
+  const list = _curLogs.filter(l => logMatches(l.event || ''));
+  document.getElementById('player-logs').innerHTML = list.length ? list.map(l => `
+      <div class="log-item ${logClass(l.event || '')}">
+        <span class="le">${esc(l.event)}</span>
+        <span class="lt"> · ${fmtDate(l.at)}</span>
+        ${l.meta ? `<div class="lm">${logMeta(l.meta)}</div>` : ''}
+      </div>`).join('') : '<p style="color:var(--text2);font-size:12px">Нет событий</p>';
+}
+function setLogFilter(f, btn) {
+  _logFilter = f;
+  document.querySelectorAll('.log-filter button').forEach(b => b.classList.toggle('on', b === btn));
+  renderLogs();
 }
 
 // ── Player items (inventory / equipment) ──────────────────
