@@ -236,15 +236,25 @@ function netConnect(onReady) {
       _dbRegistered = !!dbs.registered;
       if (typeof onDeathBattleState === 'function') onDeathBattleState();
     }
-    // Preload sprites for every corridor's enemy pool — the whole world is
-    // reachable from the start, not gated behind a single "current floor".
-    if (typeof ARM_NAMES !== 'undefined') {
-      ARM_NAMES.forEach((_, i) => {
-        const fe = FLOOR_ENEMIES && FLOOR_ENEMIES[i + 1];
+    // Preload only the corridors this character can actually be in: arm 1,
+    // which everyone passes through, plus whichever arm their level puts them
+    // in. All four used to be fetched here — 104 sprite sheets, 2.1 MB, on
+    // every cold start, most of it for zones a new player cannot reach for
+    // hours. Whatever is skipped still loads the moment an enemy from it is
+    // first drawn (see _updateOneEnemy in js/pixi-world.js), so this changes
+    // only WHEN the bytes are spent, not whether the sprites appear.
+    if (typeof FLOOR_ENEMIES !== 'undefined') {
+      const _lvl = (typeof player !== 'undefined' && player && player.lvl) || 1;
+      const _arm = typeof armIndexForLevel === 'function' ? armIndexForLevel(_lvl) : 1;
+      new Set([1, _arm]).forEach(i => {
+        const fe = FLOOR_ENEMIES[i];
         if (fe) (fe.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([fe.boss]).filter(Boolean).forEach(eid => loadEnemySprites(eid));
       });
     }
-    loadEnemySprites('demon_event_boss');
+    // The event boss is one more sheet set that almost never gets used: it is
+    // only on the map during an event, and the announce gives five minutes'
+    // warning — far more than the sheets need to arrive.
+    if (evb && (evb.alive || evb.spawnAt)) loadEnemySprites('demon_event_boss');
     if (_isReconnectRejoin) {
       // Resuming after a socket.io reconnect (see authOk guard above) — the
       // dungeon/enemy resync above is still needed since this is a fresh
@@ -1896,6 +1906,9 @@ function netGetRating(tab) {
 function _initEventBossHandlers(s) {
   s.on('eventBossAnnounce', ({ spawnAt }) => {
     _evtBossState = { ..._evtBossState, spawnAt: spawnAt || 0 };
+    // Fetch its sheets now rather than at gameStart — the countdown is minutes
+    // long, so they are always in place before it appears.
+    if (typeof loadEnemySprites === 'function') loadEnemySprites('demon_event_boss');
     // No explicit re-render — the Events panel's own 1s ticker picks this up.
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(spawnAt);
   });
