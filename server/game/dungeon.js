@@ -49,7 +49,6 @@ const ZONE_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) +
 const REACH = CW + ROOM_CHAIN_LEN * (STUB + LARGE); // max perpendicular room-chain reach from the corridor centerline
 const ZONE_H = REACH * 2 + 4; // both sides plus a little pad
 
-const DW = MARGIN * 2 + ZONE_LEN;
 const HUB_X0 = MARGIN, HUB_Y0 = MARGIN;
 // ── Boss arena ──────────────────────────────────────────────────────────────
 // A plain square room off to the right of the hub, in the otherwise empty
@@ -81,8 +80,41 @@ const A3_LANE_YS = [13];                    // single corridor row, relative to 
 const A3_SPAWN_YS = [4, 13, 22];
 const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corridor
 const A3_BOSS_DX = 2;                       // guard boss sits this many tiles inside the base's back wall
-const ZONES_Y0 = HUB_Y0 + HUB + ZONE_GAP;
+
+// ── 10-player corridor race ("Забег") ────────────────────────────────────────
+// Ten players each run their own sealed lane: 60 level-5 monsters packed
+// shoulder-to-shoulder, a short gap, then 60 level-10 monsters the same way —
+// "впритык", so there's no way past them except fighting through. All ten
+// lanes open into ONE shared room at the far end holding a single boss (same
+// identity as the world EVENT_BOSS — see spawnRaceBoss, server/game/Room.js).
+// Whoever has dealt it the most damage when it dies wins; dying anywhere in a
+// lane eliminates that player from the run (see the 'respawn' handler,
+// server/index.js). Sits below the 3v3 arena, same sealed-off rules: the only
+// way in is being placed there by the event.
+const RACE10_LANES        = 10;
+const RACE10_LANE_HW      = 1;   // half-width — 3 tiles wide, same convention as every other corridor
+const RACE10_LANE_GAP     = 2;   // wall tiles between adjacent lanes
+const RACE10_LANE_PITCH   = RACE10_LANE_HW * 2 + 1 + RACE10_LANE_GAP; // 5 tiles, row to row
+const RACE10_MOB_PER_TIER = 60;
+const RACE10_MOB_SPACING  = 30;  // px between consecutive monster centres within a tier — "впритык"
+const RACE10_TIER_LEN     = Math.ceil((RACE10_MOB_PER_TIER * RACE10_MOB_SPACING) / TILE); // tiles
+const RACE10_TIER_GAP     = 4;   // tiles between the level-5 line and the level-10 line
+// Spawn sits 2 tiles into the lane (see the `lanes` spot below) — LEAD_IN has
+// to clear the first monster's aggro radius (up to 230px, aggroR = 175 +
+// rng()*55) from there, or a monster could start hitting a still-frozen
+// player during the pre-race countdown with no way to fight back or flee.
+const RACE10_LEAD_IN      = 9;   // (9-2)*40 = 280px clearance
+const RACE10_LEAD_OUT     = 6;   // last monster to the shared boss room
+const RACE10_LANE_LEN     = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT;
+const RACE10_BOSS_ROOM    = 44;  // shared room, square
+const RACE10_X0 = ARENA_X0;
+const RACE10_Y0 = A3_Y0 + A3_H + 5;
+const RACE10_H  = RACE10_LANES * RACE10_LANE_PITCH;
+const RACE10_W  = RACE10_LANE_LEN + RACE10_BOSS_ROOM;
+
+const ZONES_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
+const DW = Math.max(MARGIN * 2 + ZONE_LEN, RACE10_X0 + RACE10_W + MARGIN);
 
 function generateOpenWorld() {
   const rng = seededRng(2026 * 1337 + 777);
@@ -124,12 +156,61 @@ function generateOpenWorld() {
     paintRect(A3_X0 + A3_BASE_W, cy - A3_LANE_HW, A3_X0 + A3_W - A3_BASE_W - 1, cy + A3_LANE_HW);
   });
 
+  // 10-player corridor race: ten parallel lanes, each running the full
+  // RACE10_LANE_LEN before opening into one shared boss room spanning every
+  // lane's row.
+  const race10LaneRows = [];
+  for (let i = 0; i < RACE10_LANES; i++) {
+    const cy = RACE10_Y0 + i * RACE10_LANE_PITCH + RACE10_LANE_HW;
+    race10LaneRows.push(cy);
+    paintRect(RACE10_X0, cy - RACE10_LANE_HW, RACE10_X0 + RACE10_LANE_LEN - 1, cy + RACE10_LANE_HW);
+  }
+  const race10BossRoomX0 = RACE10_X0 + RACE10_LANE_LEN;
+  paintRect(race10BossRoomX0, RACE10_Y0, race10BossRoomX0 + RACE10_BOSS_ROOM - 1, RACE10_Y0 + RACE10_H - 1);
+  const race10BossCx = race10BossRoomX0 + Math.floor(RACE10_BOSS_ROOM / 2);
+  const race10BossCy = RACE10_Y0 + Math.floor(RACE10_H / 2);
+
   const rooms = [hub, arena, a3];
   const enemyList = [];
   const corridorGates = [];
   const armEntries = [];
   let eid = 0;
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+
+  // Race10 monster lines — exact pixel spacing (RACE10_MOB_SPACING), not the
+  // random-within-a-room placement buildArm's rooms use below: "впритык"
+  // means the gap itself has to be exact. Arm 1's species rotation (rat/
+  // slime/imp) covers both tiers (level 5 and level 10) comfortably.
+  const race10Fe = FLOOR_ENEMIES[1];
+  function pickRace10Enemy(lvl) {
+    const pool = bandForLocalLevel(race10Fe, lvl).pool;
+    return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
+  }
+  function spawnRace10Tier(laneIdx, laneRow, tierIdx, lvl) {
+    const baseX = (RACE10_X0 + RACE10_LEAD_IN + tierIdx * (RACE10_TIER_LEN + RACE10_TIER_GAP)) * TILE;
+    const ey = laneRow * TILE + TILE / 2;
+    for (let i = 0; i < RACE10_MOB_PER_TIER; i++) {
+      const d = pickRace10Enemy(lvl);
+      if (!d) continue;
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      const ex = baseX + i * RACE10_MOB_SPACING + TILE / 2;
+      enemyList.push({
+        id: `race10_${laneIdx}_${eid++}`, ...d, isBoss: false, arm: 'race10',
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, lvl, false, d.fem, 20),
+        color: monsterColorAtLevel(d.color, d.endColor, lvl, false, 20),
+        maxHp: stats.hp, hp: stats.hp,
+        atk: stats.atk, def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  }
+  race10LaneRows.forEach((laneRow, laneIdx) => {
+    spawnRace10Tier(laneIdx, laneRow, 0, 5);
+    spawnRace10Tier(laneIdx, laneRow, 1, 10);
+  });
 
   function buildArm(dir, armIdx, zoneIndex) {
     const fe = FLOOR_ENEMIES[armIdx];
@@ -287,6 +368,16 @@ function generateOpenWorld() {
       },
       bossB: {
         x: (A3_X0 + A3_W - 1 - A3_BOSS_DX) * TILE + TILE / 2, y: (A3_Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
+      },
+    },
+    // Race10: one spawn point per lane (index = lane number) and the single
+    // shared boss's spot at the end of every lane.
+    race10: {
+      lanes: race10LaneRows.map(cy => ({
+        x: (RACE10_X0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2,
+      })),
+      boss: {
+        x: race10BossCx * TILE + TILE / 2, y: race10BossCy * TILE + TILE / 2,
       },
     },
     armEntries,

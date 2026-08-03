@@ -133,6 +133,7 @@
   <div class="rating-tabs">
     <button class="rating-tab active" id="etab-battle" onclick="switchEventTab('battle')" data-i18n="dbBtn">Битва</button>
     <button class="rating-tab" id="etab-a3" onclick="switchEventTab('a3')" data-i18n="a3Tab">3х3</button>
+    <button class="rating-tab" id="etab-race10" onclick="switchEventTab('race10')" data-i18n="race10Tab">Забег</button>
     <button class="rating-tab" id="etab-boss" onclick="switchEventTab('boss')" data-i18n="worldBossTab">Мировой босс</button>
   </div>
   <div id="events-panel-body" class="vip-body"></div>
@@ -146,6 +147,17 @@
     <div class="db-win-sub" id="a3-result-sub"></div>
     <div class="db-rewards" id="a3-result-rewards"></div>
     <button class="db-win-btn" onclick="closeArena3Result()" data-i18n="a3ResultClose">В мир</button>
+  </div>
+</div>
+
+<!-- Race10 result modal (winner / no result) -->
+<div id="race10-result-modal" style="display:none">
+  <div class="db-win-panel">
+    <div class="db-win-crown" id="race10-result-icon">👑</div>
+    <div class="db-win-title" id="race10-result-title">ПОБЕДА</div>
+    <div class="db-win-sub" id="race10-result-sub"></div>
+    <div class="db-rewards" id="race10-result-rewards"></div>
+    <button class="db-win-btn" onclick="closeRace10Result()" data-i18n="a3ResultClose">В мир</button>
   </div>
 </div>
 

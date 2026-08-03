@@ -506,6 +506,18 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
     }
   },
+  // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) — same
+  // reasoning as arena3_guard_boss above: visually the world boss, own eid so
+  // it doesn't show up in the real world boss's HP-bar/alive tracking.
+  race10_boss: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
+      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
+      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
+      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
+    }
+  },
 };
 
 // Warm up an already-loaded image so the canvas 2D pipeline never has to

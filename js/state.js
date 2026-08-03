@@ -123,6 +123,18 @@ let _a3RoundEndAt = 0;
 // as well as on the server (see _dbFrozen).
 let _dbFightAt = 0;
 
+// 10-player corridor race (Забег) — queue-driven like the 3v3 arena, but a
+// free-for-all against one shared boss instead of a team match: everyone who
+// makes it to the boss room fights the SAME boss, and whoever dealt it the
+// most cumulative damage wins. myDamage is this client's own running total,
+// pushed by the server (see js/network.js's race10Score handler) so the HUD
+// can show it live.
+let _race10State = { queued: 0, needed: 10, live: false, minLevel: 10, reward: 50, attemptsLeft: null, maxAttempts: 3 };
+let _race10Registered = false;
+let _race10InMatch = false;
+let _race10Lane = null;
+let _race10MyDamage = 0;
+
 // Party dungeon (maze + boss) state
 let inPartyDungeon = false;
 let _pdLobbyList = [];       // [{ id, creatorName, members: [{id,name,bm,lvl}] }]

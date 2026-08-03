@@ -1780,6 +1780,8 @@ function _lockRaidDaily(socketId)                    { _lockDailyAttempt(socketI
 async function _raidLockedToday(socketId)            { return (await _dailyAttemptsLeft(socketId, 'raidAttempts')) <= 0; }
 function _lockArena3Daily(socketId)                  { _lockDailyAttempt(socketId, 'arena3Attempts'); }
 async function _arena3AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'arena3Attempts'); }
+function _lockRace10Daily(socketId)                  { _lockDailyAttempt(socketId, 'race10Attempts'); }
+async function _race10AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'race10Attempts'); }
 
 // Shared by partyDungeonAttack/partyDungeonSkillAttack — mirrors the normal
 // attack/skillAttack handlers' kill-reward flow, but rewards split across
@@ -2275,8 +2277,8 @@ function _a3Enemies(a, b) {
 // checking each mode separately — adding a third mode later means changing
 // these two functions, not every attack handler. Each half no-ops for a
 // socket that isn't in that mode.
-function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId); }
-function _pvpEliminate(socketId) { _dbEliminate(socketId); _a3Eliminate(socketId); }
+function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId) || _race10Frozen(socketId); }
+function _pvpEliminate(socketId) { _dbEliminate(socketId); _a3Eliminate(socketId); _race10Eliminate(socketId); }
 
 // _a3TryStart is async now (it re-checks daily attempts against the DB), and
 // every caller fires it without waiting — this keeps a failed launch from
@@ -2450,6 +2452,185 @@ async function _a3Finish(winner, wedged) {
   // A queue that filled up while this match ran starts the next one straight
   // away rather than waiting for someone to press register again.
   _a3TryStartSafe();
+}
+
+// ── 10-Player Corridor Race (Забег) ─────────────────────────────────────────
+// Queue-driven like the 3v3 arena: ten players sign up, and once ten are
+// ready each is dropped into their own sealed lane (server/game/dungeon.js
+// race10) — 60 level-5 monsters then 60 level-10 monsters, packed shoulder to
+// shoulder, no way past but through. Every lane ends at the same shared room
+// and the same single boss (spawnRaceBoss, server/game/Room.js): whoever has
+// dealt it the most cumulative damage when it dies wins Liberty. Dying
+// anywhere in a lane is an elimination — handled by the existing 'respawn'
+// handler via _pvpEliminate, the same wiring the death battle and 3v3 arena
+// already share, so a monster kill in the corridor counts exactly like a PvP
+// kill would.
+const RACE10_NEEDED    = 10;
+const RACE10_MIN_LEVEL = 10;
+const RACE10_FREEZE_MS = 10 * 1000;
+const RACE10_REWARD    = 50;             // Liberty (Nexum) to the top damage-dealer only — the boss drops no loot
+// Operational guard only, same idea as the 3v3 arena's old wedge — ends the
+// race with no winner if the boss just never comes down, so the one shared
+// instance can't be tied up forever.
+const RACE10_MAX_MS    = 15 * 60 * 1000;
+
+const _race10 = {
+  queue: new Map(),    // socketId -> { name, lvl }
+  live: false,
+  starting: false,     // guards the async attempt re-check inside _race10TryStart
+  alive: new Map(),    // socketId -> { name, lane } — still in a lane or the boss room
+  names: new Map(),    // socketId -> name, kept for the result screen after elimination
+  dmg: new Map(),      // socketId -> cumulative damage dealt to the shared boss
+  bossId: null,
+  fightAt: 0,
+  freezeTimer: null,
+  maxTimer: null,
+};
+
+function _race10PublicState() {
+  return {
+    queued: _race10.queue.size,
+    needed: RACE10_NEEDED,
+    live: _race10.live,
+    minLevel: RACE10_MIN_LEVEL,
+    reward: RACE10_REWARD,
+    maxAttempts: DAILY_DUNGEON_ATTEMPTS,
+  };
+}
+
+function _race10Broadcast() {
+  const st = _race10PublicState();
+  _race10.queue.forEach((_, sid) => io.to(sid).emit('race10State', { ...st, registered: true }));
+  _race10.names.forEach((_, sid) => io.to(sid).emit('race10State', st));
+}
+
+function _race10Frozen(socketId) {
+  return _race10.live && Date.now() < _race10.fightAt && _race10.alive.has(socketId);
+}
+
+// _race10TryStart is async (re-checks daily attempts against the DB); every
+// caller fires it without awaiting, same reasoning as _a3TryStartSafe above.
+function _race10TryStartSafe() { _race10TryStart().catch(err => console.error('_race10TryStart:', err)); }
+
+async function _race10TryStart() {
+  if (_race10.live || _race10.starting) return;
+  const room = getRoom(1);
+  if (!room) return;
+  const ready = [..._race10.queue.keys()].filter(sid =>
+    io.sockets.sockets.get(sid) && room.players.get(sid));
+  [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
+  if (ready.length < RACE10_NEEDED) return;
+
+  _race10.starting = true;
+  try {
+    await _race10Deploy(ready, room);
+  } finally {
+    _race10.starting = false;
+  }
+}
+
+async function _race10Deploy(ready, room) {
+  const picked = ready.slice(0, RACE10_NEEDED);
+
+  // Re-checked against fresh DB state right before launch, not just at
+  // sign-up — same reasoning as the 3v3 arena's own re-check.
+  const spent = await Promise.all(picked.map(sid => _race10AttemptsLeft(sid)));
+  const outOfAttempts = picked.filter((sid, i) => spent[i] <= 0);
+  if (outOfAttempts.length) {
+    outOfAttempts.forEach(sid => {
+      _race10.queue.delete(sid);
+      io.to(sid).emit('race10Error', { msg: 'Попытки на забег на сегодня закончились' });
+      io.to(sid).emit('race10Registered', { registered: false });
+    });
+    _race10Broadcast();
+    setImmediate(_race10TryStartSafe);
+    return;
+  }
+
+  _race10.live = true;
+  _race10.alive.clear(); _race10.names.clear(); _race10.dmg.clear();
+  _race10.fightAt = Date.now() + RACE10_FREEZE_MS;
+
+  const placed = room.raceDeploy(picked);
+  _race10.bossId = room.spawnRaceBoss();
+
+  placed.forEach(({ socketId, lane }) => {
+    const name = _race10.queue.get(socketId)?.name || '?';
+    _race10.alive.set(socketId, { name, lane });
+    _race10.names.set(socketId, name);
+    _race10.dmg.set(socketId, 0);
+    _race10.queue.delete(socketId);
+    // Attempt spent the moment the race starts, win or lose — same rule as
+    // the raid, the maze and the 3v3 arena.
+    _lockRace10Daily(socketId);
+  });
+
+  const roster = placed.map(p => ({ id: p.socketId, name: _race10.names.get(p.socketId), lane: p.lane }));
+  placed.forEach(({ socketId, x, y, hp, lane }) => {
+    io.to(socketId).emit('race10Started', { x, y, hp, lane, fightAt: _race10.fightAt, roster });
+    logPlayer(_socketTid(socketId), _race10.names.get(socketId), 'race10_start', { lane });
+  });
+
+  clearTimeout(_race10.freezeTimer);
+  _race10.freezeTimer = setTimeout(() => {
+    if (!_race10.live) return;
+    _race10.alive.forEach((_, sid) => io.to(sid).emit('race10Fight'));
+  }, RACE10_FREEZE_MS);
+
+  clearTimeout(_race10.maxTimer);
+  _race10.maxTimer = setTimeout(() => _race10Finish(null, true), RACE10_FREEZE_MS + RACE10_MAX_MS);
+  _race10Broadcast();
+}
+
+// Knocks one player out — dying anywhere in a lane, to anything. Safe to
+// call for anyone not in the race (a normal death elsewhere), it returns
+// immediately. Their damage tally survives them: "most damage dealt" doesn't
+// require surviving to the end.
+function _race10Eliminate(socketId) {
+  if (!_race10.live) return;
+  if (!_race10.alive.has(socketId)) return;
+  _race10.alive.delete(socketId);
+  io.to(socketId).emit('race10Eliminated', {});
+  // Nobody left standing anywhere and the boss is still up — no one can ever
+  // land another hit, so there's no point riding out RACE10_MAX_MS.
+  if (_race10.alive.size === 0) _race10Finish(null, false);
+}
+
+async function _race10Finish(winnerId, timedOut) {
+  if (!_race10.live) return;
+  clearTimeout(_race10.freezeTimer);
+  clearTimeout(_race10.maxTimer);
+  _race10.live = false;
+  _race10.fightAt = 0;
+  const room = getRoom(1);
+  if (room) room.despawnRaceBoss();
+  // Everyone still standing goes home too — the race is over for them as
+  // well, they just didn't die to get there.
+  _race10.alive.forEach((_, sid) => { if (room) room.deathBattleReturn(sid); });
+
+  const names = new Map(_race10.names);
+  const dmg = new Map(_race10.dmg);
+  const participants = [...names.keys()];
+  _race10.alive.clear(); _race10.names.clear(); _race10.dmg.clear(); _race10.bossId = null;
+
+  for (const sid of participants) {
+    const won = !!winnerId && sid === winnerId;
+    const s = io.sockets.sockets.get(sid);
+    let reward = 0;
+    if (won && s?.data?._race10GrantWin) reward = await s.data._race10GrantWin();
+    io.to(sid).emit('race10Result', {
+      won, winnerName: winnerId ? names.get(winnerId) : null,
+      myDamage: dmg.get(sid) || 0, timedOut: !!timedOut, reward,
+    });
+    logPlayer(_socketTid(sid), names.get(sid), 'race10_end', {
+      result: winnerId ? (won ? 'win' : 'lose') : (timedOut ? 'timeout' : 'no_survivors'),
+      dmg: dmg.get(sid) || 0, reward,
+    });
+  }
+  _race10Broadcast();
+  // A queue that filled up while this race ran starts the next one straight
+  // away rather than waiting for someone to press register again.
+  _race10TryStartSafe();
 }
 
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
@@ -2698,6 +2879,17 @@ io.on('connection', socket => {
     logPlayer(authed.telegramId, authed.username, 'arena3_reward',
       { nexum: ARENA3_REWARD, balance: _liveNexum() });
     return ARENA3_REWARD;
+  };
+
+  // Pays out a race10 win — same reasoning as _a3GrantWin above.
+  socket.data._race10GrantWin = async () => {
+    if (!authed) return 0;
+    _setNexum(_round7(_liveNexum() + RACE10_REWARD));
+    await _persistSavedFields(authed, { nexumBalance: _liveNexum() });
+    socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
+    logPlayer(authed.telegramId, authed.username, 'race10_reward',
+      { nexum: RACE10_REWARD, balance: _liveNexum() });
+    return RACE10_REWARD;
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
@@ -3684,6 +3876,37 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp, critChance, critPower });
   });
 
+  // Shared by attack/skillAttack — tallies a hit against the race10 boss
+  // (killing or not — "most damage dealt" needs every hit, not just the
+  // last one) and ends the race the instant it dies. The winner is whoever
+  // has the highest cumulative tally, not necessarily whoever lands the
+  // killing blow. Only returns true (fully handled, caller should return) on
+  // the killing hit — a non-killing hit still needs the caller's normal
+  // enemyHurt emit below it, or the attacker would never see a damage number
+  // or a live HP-bar update.
+  function _race10TrackHit(socketId, enemyId, result) {
+    if (!result.raceBoss) return false;
+    if (_race10.live && _race10.bossId === enemyId) {
+      const newDmg = (_race10.dmg.get(socketId) || 0) + (result.dmg || 0);
+      _race10.dmg.set(socketId, newDmg);
+      // Live feedback for the hitter only (not a broadcast) — cheap since it
+      // only fires on hits against this one boss, and it's what makes the
+      // "most damage wins" framing feel like a race instead of a black box.
+      const ranked = [..._race10.dmg.values()].sort((a, b) => b - a);
+      io.to(socketId).emit('race10Score', { myDamage: newDmg, rank: ranked.indexOf(newDmg) + 1, total: _race10.dmg.size });
+    }
+    if (!result.killed) return false;
+    // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
+    // enemyKilled handler plays the death animation and removes the corpse —
+    // otherwise the boss would just freeze on screen since _race10Finish
+    // despawns it server-side before the next tick ever reports hp: 0.
+    io.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+    let winnerId = null, best = -1;
+    _race10.dmg.forEach((d, sid) => { if (d > best) { best = d; winnerId = sid; } });
+    _race10Finish(winnerId, false);
+    return true;
+  }
+
   safeOn('attack', ({ enemyId }) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
@@ -3696,6 +3919,7 @@ io.on('connection', socket => {
     if (_a3TargetEnemy && _a3TargetEnemy.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy.a3Team) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
+    if (_race10TrackHit(socket.id, enemyId, result)) return;
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -3839,6 +4063,7 @@ io.on('connection', socket => {
     if (_a3TargetEnemy2 && _a3TargetEnemy2.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy2.a3Team) return;
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
     if (!result) return;
+    if (_race10TrackHit(socket.id, enemyId, result)) return;
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -4092,6 +4317,58 @@ io.on('connection', socket => {
       inMatch: _a3.teams.has(socket.id),
       attemptsLeft: await _arena3AttemptsLeft(socket.id),
     });
+  });
+
+  // ── 10-Player Corridor Race ──────────────────────────────────────────────
+  safeOn('race10Register', async () => {
+    if (!authed) return;
+    if (_race10.live && _race10.alive.has(socket.id)) return;
+    const cp = currentRoom?.players.get(socket.id);
+    if (!cp) return socket.emit('race10Error', { msg: 'Выберите персонажа' });
+    if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Нельзя записаться из рейда или подземелья' });
+    }
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    if (_a3.live && _a3.teams.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < RACE10_MIN_LEVEL) {
+      return socket.emit('race10Error', { msg: `Нужен ${RACE10_MIN_LEVEL} уровень` });
+    }
+    const left = await _race10AttemptsLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('race10Error', { msg: 'Попытки на забег на сегодня закончились' });
+    }
+    _race10.queue.set(socket.id, { name: authed.username, lvl });
+    socket.emit('race10Registered', { registered: true, attemptsLeft: left });
+    _race10Broadcast();
+    _race10TryStartSafe();
+  });
+
+  safeOn('race10Unregister', () => {
+    if (!_race10.queue.delete(socket.id)) return;
+    socket.emit('race10Registered', { registered: false });
+    _race10Broadcast();
+  });
+
+  safeOn('race10Sync', async () => {
+    socket.emit('race10State', {
+      ..._race10PublicState(),
+      registered: _race10.queue.has(socket.id),
+      inMatch: _race10.alive.has(socket.id),
+      attemptsLeft: await _race10AttemptsLeft(socket.id),
+    });
+  });
+
+  // Sent once the player closes the race10 result modal — same reasoning as
+  // arena3Return below (server-side position was already reset when the race
+  // ended; this just makes the client catch up visually).
+  safeOn('race10Return', () => {
+    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    if (spot) socket.emit('deathBattleReturned', spot);
   });
 
   // Sent once the player closes the arena3 result modal. Server-side position
@@ -4602,6 +4879,9 @@ io.on('connection', socket => {
       // Leaving a live 3v3 for a raid would strand the match: the arena has no
       // timer, so the side left behind could never finish anyone off.
       if (_a3.teams.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
+      // Same idea for the corridor race — pulling someone out of a live lane
+      // leaves them stuck straddling two instances at once.
+      if (_race10.alive.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас на забеге' });
     }
     // Re-check the daily lock against fresh DB state for every member right
     // before launch (not just at queue time) — someone could have used up
@@ -4741,6 +5021,7 @@ io.on('connection', socket => {
       // Same reason as the raid guard above: the 3v3 has no timer, so a member
       // walking out of a live match would leave it unable to finish.
       if (_a3.teams.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
+      if (_race10.alive.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас на забеге' });
     }
     // Re-check the daily lock against fresh DB state for every member right
     // before launch (not just at queue time) — someone could have cleared
@@ -4951,6 +5232,7 @@ io.on('connection', socket => {
     // this is the only thing that stops a closed app from holding the arena.
     _db.reg.delete(socket.id);
     if (_a3.queue.delete(socket.id)) _a3Broadcast();
+    if (_race10.queue.delete(socket.id)) _race10Broadcast();
     _pvpEliminate(socket.id);
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);

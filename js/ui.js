@@ -3000,6 +3000,7 @@ function openEventsPanel() {
   panel.style.display = 'flex';
   if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
   if (typeof netArena3Sync === 'function') netArena3Sync();
+  if (typeof netRace10Sync === 'function') netRace10Sync();
   _renderEventsBody();
 }
 
@@ -3022,8 +3023,9 @@ function _eventsPanelOpen() {
 function _renderEventsBody() {
   const body = document.getElementById('events-panel-body');
   if (!body) return;
-  body.innerHTML = _eventTab === 'boss' ? _worldBossBodyHTML()
-                 : _eventTab === 'a3'   ? _arena3BodyHTML()
+  body.innerHTML = _eventTab === 'boss'    ? _worldBossBodyHTML()
+                 : _eventTab === 'a3'      ? _arena3BodyHTML()
+                 : _eventTab === 'race10'  ? _race10BodyHTML()
                  : _deathBattleBodyHTML();
 }
 
@@ -3091,6 +3093,107 @@ function _arena3BodyHTML() {
         </div>
       </div>
     </div>`;
+}
+
+// ── 10-player corridor race tab (Забег) ──────────────────────────────────────
+// Same shape as _arena3BodyHTML above, minus the team split: everyone races
+// their own lane to the same shared boss.
+function _race10BodyHTML() {
+  const st = (typeof _race10State !== 'undefined' && _race10State) || { queued: 0, needed: 10, minLevel: 10, reward: 50 };
+  const inMatch = typeof _race10InMatch !== 'undefined' && _race10InMatch;
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = lvl < (st.minLevel || 10);
+  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+
+  let phaseTxt, action;
+  if (inMatch) {
+    phaseTxt = t('race10PhaseFighting');
+    action = `<button class="db-action" disabled>${t('race10PhaseFighting')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (spent && !_race10Registered) {
+    phaseTxt = t('a3NoAttempts');
+    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+  } else if (_race10Registered) {
+    phaseTxt = t('a3PhaseQueued');
+    action = `<button class="db-action db-leave" onclick="netRace10Unregister()">${t('dbLeaveBtn')}</button>`;
+  } else {
+    phaseTxt = t('a3PhaseIdle');
+    action = `<button class="db-action" onclick="netRace10Register()">${t('dbJoinBtn')}</button>`;
+  }
+
+  const score = inMatch
+    ? `<div class="db-count">${tVars('race10ScoreFmt', { dmg: Math.floor(_race10MyDamage || 0), rank: _race10Rank || 0, total: _race10Total || 0 })}</div>`
+    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined
+        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>` : '');
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${st.queued}/${st.needed}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${score}
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${tVars('race10Rule1', { n: st.needed })}</li>
+          <li>${t('race10Rule2')}</li>
+          <li>${t('race10Rule3')}</li>
+          <li>${t('race10Rule4')}</li>
+          <li>${t('race10Rule5')}</li>
+          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
+          <li>${tVars('a3Rule6', { n: st.maxAttempts })}</li>
+        </ul>
+      </div>
+      <div class="db-rewards-hdr">${t('race10RewardHdr')}</div>
+      <div class="db-rewards">
+        <div class="db-reward-row">
+          <img src="/images/nexum-coin_v2.png" alt="">
+          <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Called from the network handlers on every server push.
+function onRace10State() {
+  if (_eventsPanelOpen() && _eventTab === 'race10') _renderEventsBody();
+}
+
+// Live damage-race feedback while the fight is on — rank/total aren't
+// persisted in _race10State (they only make sense mid-fight), just enough
+// module state to redraw the panel between pushes.
+let _race10Rank = 0, _race10Total = 0;
+function onRace10Score(rank, total) {
+  _race10Rank = rank; _race10Total = total;
+  if (_eventsPanelOpen() && _eventTab === 'race10') _renderEventsBody();
+}
+
+function showRace10Result(won, winnerName, myDamage, timedOut, reward) {
+  const modal = document.getElementById('race10-result-modal');
+  if (!modal) return;
+  const title = won ? t('race10Victory') : (timedOut ? t('a3NoResult') : t('race10Defeat'));
+  document.getElementById('race10-result-icon').textContent = won ? '👑' : (timedOut ? '⏳' : '💀');
+  document.getElementById('race10-result-title').textContent = title;
+  document.getElementById('race10-result-title').style.color = won ? '#ffd18a' : '#f07886';
+  document.getElementById('race10-result-sub').textContent = won
+    ? t('race10VictorySub')
+    : (timedOut ? t('race10NoResultSub') : tVars('race10DefeatSub', { name: winnerName || '?', dmg: Math.floor(myDamage || 0) }));
+  document.getElementById('race10-result-rewards').innerHTML = reward
+    ? `<div class="db-reward-row"><img src="/images/nexum-coin_v2.png" alt="">
+       <span>Liberty</span><span class="db-reward-qty">+${reward}</span></div>`
+    : '';
+  modal.style.display = 'flex';
+}
+
+function closeRace10Result() {
+  const modal = document.getElementById('race10-result-modal');
+  if (modal) modal.style.display = 'none';
+  // Same reasoning as closeArena3Result: server already moved this player
+  // back to the hub safe zone when the race ended, this just makes the
+  // client catch up visually.
+  if (typeof netRace10Return === 'function') netRace10Return();
 }
 
 // Called from the network handlers on every server push.
@@ -3569,10 +3672,13 @@ function _evtBossHpEl() {
 }
 
 // Called from the game loop (throttled) — reads the live enemy snapshot.
+// Doubles as the race10 boss's HP readout (own eid, see the comment in
+// js/sprites.js) — a player is never near both at once, so sharing the one
+// element is harmless and saves building a second copy of this bar.
 function updateEventBossHpBar() {
   const el = _evtBossHpEl();
   const b = (typeof serverEnemies !== 'undefined')
-    ? serverEnemies.find(e => e.eid === 'demon_event_boss' && (e.hp || 0) > 0) : null;
+    ? serverEnemies.find(e => (e.eid === 'demon_event_boss' || e.eid === 'race10_boss') && (e.hp || 0) > 0) : null;
   if (!b) { el.style.display = 'none'; return; }
   el.style.display = 'block';
   const pct = Math.max(0, Math.min(1, b.hp / (b.maxHp || 1)));

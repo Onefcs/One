@@ -413,6 +413,10 @@ class Room {
         // which calls despawnPvpArenaBosses() in the same tick it dies) — it
         // never lingers here long enough to loot or respawn.
         if (e.a3Team) return;
+        // Race10 boss: same reasoning — server/index.js ends the race and
+        // calls despawnRaceBoss() in the same tick it dies (no loot table,
+        // the reward is a Liberty payout to whoever dealt it the most damage).
+        if (e.raceBoss) return;
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -937,6 +941,74 @@ class Room {
     return placed;
   }
 
+  // Places a race10 entrant into their own lane's spawn point (array index =
+  // lane number), full HP, normal PvE combat (no pvpMode — this event has no
+  // player-vs-player component at all). Falls back to the shared boss room if
+  // a lane spawn ever lands on a wall.
+  raceDeploy(socketIds) {
+    const race = this._dungeon.race10;
+    if (!race) return [];
+    const placed = [];
+    socketIds.forEach((sid, i) => {
+      const p = this.players.get(sid);
+      if (!p) return;
+      const spot = race.lanes[i % race.lanes.length];
+      let x = spot.x, y = spot.y;
+      if (this._isWall(x, y)) { x = race.boss.x; y = race.boss.y; }
+      p.x = x; p.y = y;
+      p.hp = p.maxHp;
+      p._profileRev++;
+      placed.push({ socketId: sid, x, y, hp: p.hp, lane: i });
+    });
+    return placed;
+  }
+
+  // Spawns the single shared race10 boss — same identity/stats as the world
+  // EVENT_BOSS (full HP, normal aggro/attack AI included — unlike the 3v3
+  // guard boss this one actually fights back). ignoresSafeZone carries over
+  // from the spread for the same reason the real one needs it: the shared
+  // room is big enough that players kiting it would otherwise trip the
+  // 420px leash and reset its HP mid-race. raceBoss marks it so the tick
+  // loop's hp<=0 branch skips the event-boss loot-drop-and-purge behavior
+  // below (see that guard) — server/index.js ends the race and despawns it
+  // itself the moment the kill lands.
+  spawnRaceBoss() {
+    const race = this._dungeon.race10;
+    if (!race || !race.boss) return null;
+    const { x, y } = race.boss;
+    const e = {
+      id: `race10boss_${Date.now()}`,
+      ...EVENT_BOSS,
+      eid: 'race10_boss',
+      maxHp: EVENT_BOSS.hp, hp: EVENT_BOSS.hp,
+      arm: 'race10', rlvl: 0,
+      x, y, spawnX: x, spawnY: y,
+      atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
+      aggro: false, aggroR: 900,
+      raceBoss: true,
+      _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
+      _idx: this.enemies.length,
+    };
+    this.enemies.push(e);
+    this._enemyMap.set(e.id, e);
+    this._raceBossId = e.id;
+    return e.id;
+  }
+
+  // Removes the race10 boss (dead or still standing) once the race ends.
+  despawnRaceBoss() {
+    if (!this._raceBossId) return;
+    const id = this._raceBossId;
+    this.enemies = this.enemies.filter(e => {
+      if (e.id !== id) return true;
+      this._enemyMap.delete(e.id);
+      this._enemyKnown.delete(e.id);
+      return false;
+    });
+    this.enemies.forEach((e, i) => { e._idx = i; });
+    this._raceBossId = null;
+  }
+
   // Spawns the two stationary guard bosses for a 3v3 match — same identity as
   // the world EVENT_BOSS, but ARENA3_BOSS_HP and no loot. a3Team marks which
   // side owns each one (that team can't damage it — see the a3Team check in
@@ -1060,9 +1132,14 @@ class Room {
       // caller to still show the death visually — it ends the match off
       // a3Team instead of running the normal kill-reward flow.
       if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
+      // Race10 boss: no xp/gold/loot either — server/index.js tallies dmg per
+      // attacker across every hit (not just this killing one) to decide the
+      // race's winner, so raceBoss has to come back on non-kills too (below).
+      if (enemy.raceBoss) return { killed: true, dmg, isCrit, raceBoss: true, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
       return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
+    if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
 
@@ -1081,9 +1158,11 @@ class Room {
     enemy.aggro = true;
     if (enemy.hp <= 0) {
       if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
+      if (enemy.raceBoss) return { killed: true, dmg, isCrit, raceBoss: true, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
       return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
+    if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
 

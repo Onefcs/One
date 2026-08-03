@@ -1947,6 +1947,7 @@ function _initEventBossHandlers(s) {
   });
   _initDeathBattleHandlers(s);
   _initArena3Handlers(s);
+  _initRace10Handlers(s);
 }
 
 // ── Death Battle (Битва на смерть) ──────────────────────────────────────────
@@ -2171,6 +2172,97 @@ function _initArena3Handlers(s) {
     if (balance == null) return;
     window._nexumBalance = balance;
     if (player) player.nexumBalance = balance;
+  });
+}
+
+function netRace10Register()   { if (socket?.connected) socket.emit('race10Register'); }
+function netRace10Unregister() { if (socket?.connected) socket.emit('race10Unregister'); }
+function netRace10Sync()       { if (socket?.connected) socket.emit('race10Sync'); }
+// Sent once the result modal is closed — see closeRace10Result (js/ui.js).
+function netRace10Return()     { if (socket?.connected) socket.emit('race10Return'); }
+
+// ── 10-Player Corridor Race (Забег) ──────────────────────────────────────────
+// Same shape as the 3v3 handlers above, minus the team bookkeeping: everyone
+// fights the same shared boss, so all that matters here is this client's own
+// lane, its own damage tally, and whether it's still in the race.
+function _initRace10Handlers(s) {
+  s.on('race10State', (st) => {
+    _race10State = {
+      queued: st.queued || 0, needed: st.needed || 10, live: !!st.live,
+      minLevel: st.minLevel || 10, reward: st.reward || 50,
+      maxAttempts: st.maxAttempts || _race10State.maxAttempts || 3,
+      attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _race10State.attemptsLeft,
+    };
+    if (st.registered !== undefined) _race10Registered = !!st.registered;
+    if (st.inMatch !== undefined) _race10InMatch = !!st.inMatch;
+    if (typeof onRace10State === 'function') onRace10State();
+  });
+
+  s.on('race10Registered', ({ registered, attemptsLeft }) => {
+    _race10Registered = !!registered;
+    if (attemptsLeft !== undefined) _race10State = { ..._race10State, attemptsLeft };
+    if (typeof onRace10State === 'function') onRace10State();
+  });
+
+  s.on('race10Error', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  s.on('race10Started', ({ x, y, hp, lane, fightAt }) => {
+    if (!player) return;
+    _race10InMatch = true;
+    _race10Registered = false;
+    _race10Lane = lane;
+    _race10MyDamage = 0;
+    if (hp) player.hp = hp;
+    _dbFightAt = fightAt || 0;   // same freeze overlay the death battle/3v3 use
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('race10ArenaLbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('race10StartedMsg'), '#e8574f');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
+    // The boss shares the world event boss's look but needs its own sprite
+    // entry (js/sprites.js race10_boss) — see the eid comment in
+    // spawnRaceBoss (server/game/Room.js). Nothing else preloads it.
+    if (typeof loadEnemySprites === 'function') loadEnemySprites('race10_boss');
+    if (typeof onRace10State === 'function') onRace10State();
+  });
+
+  s.on('race10Fight', () => {
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbFightMsg'), '#e8574f');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+  });
+
+  // Live feedback while fighting the shared boss — this client's own tally
+  // and rank among however many are still hitting it.
+  s.on('race10Score', ({ myDamage, rank, total }) => {
+    _race10MyDamage = myDamage || 0;
+    if (typeof onRace10Score === 'function') onRace10Score(rank || 0, total || 0);
+  });
+
+  // Knocked out (died anywhere in the lane): the generic death/respawn flow
+  // already moved the player back to the hub — this is purely the "you're
+  // out of the race" notice.
+  s.on('race10Eliminated', () => {
+    _race10InMatch = false;
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('race10Eliminated'), '#f07886');
+    if (typeof onRace10State === 'function') onRace10State();
+  });
+
+  s.on('race10Result', ({ won, winnerName, myDamage, timedOut, reward }) => {
+    _race10InMatch = false;
+    _race10Lane = null;
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (reward) {
+      window._nexumBalance = (window._nexumBalance || 0) + reward;
+      if (player) player.nexumBalance = window._nexumBalance;
+    }
+    if (typeof showRace10Result === 'function') showRace10Result(!!won, winnerName, myDamage || 0, !!timedOut, reward || 0);
+    if (typeof netRace10Sync === 'function') netRace10Sync();
+    if (typeof onRace10State === 'function') onRace10State();
   });
 }
 
