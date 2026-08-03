@@ -212,6 +212,9 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
+    // Fresh server socket == fresh _invRev counter, so ours has to match
+    // or our very first save would be mistaken for a stale one.
+    window._invRev = 0;
     bossStatus = bs || {};
     if (typeof _renderBossPanelBody === 'function') _renderBossPanelBody();
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
@@ -1059,12 +1062,13 @@ function netConnect(onReady) {
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
-  // An admin edited this account's items from the panel. The server has
-  // already applied it to its own authoritative copy and persisted it — this
-  // just brings the live client in line so the change shows up now instead of
-  // on the next login, and so this session's next autosave doesn't push the
-  // pre-edit inventory straight back over it.
-  socket.on('adminItemsUpdate', ({ inventory, equipment } = {}) => {
+  // The server changed this account's items itself (shop pack, market
+  // cancel/list, VIP rewards, pet craft, world drop, admin panel) or rejected
+  // a stale inventory from us. It has already applied and persisted the
+  // change — this brings the live client in line so it shows up now, and
+  // carries the new invRev so our next autosave is recognised as current
+  // instead of being treated as pre-grant and dropped.
+  socket.on('inventorySync', ({ inventory, equipment, invRev } = {}) => {
     if (!player) return;
     if (Array.isArray(inventory) && typeof _migrateInventory === 'function') {
       player.inventory = _migrateInventory(inventory);
@@ -1078,9 +1082,9 @@ function netConnect(onReady) {
       Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
       player.equipment = { ...blank, ...rebuilt };
     }
+    if (invRev != null) window._invRev = invRev;
     if (typeof recompute === 'function') recompute();
     if (typeof updateInvUI === 'function') updateInvUI();
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
   socket.on('disconnect', () => {
@@ -1302,6 +1306,10 @@ function _buildSaveStats() {
     // Freshness stamp so a reload can tell which of {server DB, local backup}
     // holds the most recent state (see _pickFreshestSave).
     savedAt: Date.now(),
+    // Echoed back untouched — the server uses it to tell a save composed
+    // before its last item grant from one composed after (see _invRev in
+    // server/index.js). Not interpreted here.
+    invRev: window._invRev || 0,
   };
 }
 

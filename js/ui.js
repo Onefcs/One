@@ -3673,9 +3673,21 @@ function onMarketListed(listing) {
 }
 function onMarketCancelled(listingId, item) {
   _marketMine = _marketMine.filter(l => l.id !== listingId);
-  if (item) addToInventoryQty(item, item.qty || 1);
+  // The return value MUST be checked — this is what destroyed items. With a
+  // full inventory the add silently fails, and the unconditional
+  // netSaveProgressNow() below then shipped an inventory without the returned
+  // item, overwriting the server's copy which did have it. The listing was
+  // already cancelled, so nothing would ever give it back.
+  // The server keeps the item either way (it re-adds to its own copy and
+  // bumps invRev), so on failure just don't push our stale set over it: skip
+  // the save and let the server's inventorySync bring us back in line.
+  const stored = item ? addToInventoryQty(item, item.qty || 1) : true;
   updateInvUI();
   if (_marketTab === 'mine') _renderMarketBody();
+  if (!stored) {
+    _marketToast(t('invFullItemLostToast'), 'err');
+    return;
+  }
   netSaveProgressNow();
   _marketToast(t('listingCancelledToast'), 'ok');
 }

@@ -245,6 +245,38 @@ const _SHOP_ARMOR_SETS = {
   uncommon: ['hm2','ar2','gl2','bt2','rn2','nd2'],
   rare:     ['hm3','ar3','gl3','bt3','rn3','nd3'],
 };
+// How many NEW inventory slots a package needs, given what the player already
+// holds. Mirrors exactly what gramShopBuy grants below — stackables that merge
+// into an existing entry cost nothing, everything else is one slot per item.
+// Kept next to the package tables so the two can't drift apart.
+function _shopNewSlots(pkg, inv, charClass) {
+  const has = id => inv.some(i => i && i.id === id);
+  const pending = new Set();          // ids this purchase will itself create
+  let slots = 0;
+  const need = (id, stackable) => {
+    if (stackable) {
+      if (has(id) || pending.has(id)) return;
+      pending.add(id);
+    }
+    slots++;
+  };
+
+  if (pkg.potions > 0) _VIP_BP.forEach(bp => need(bp.id, true));
+  if (pkg.armor) (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(() => slots++);
+  if (pkg.weapon) {
+    const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
+    if (wepMap[pkg.weapon]) slots++;
+  }
+  if (pkg.skillBooks) {
+    const classBooks = CRAFT_MATS.filter(m => m.forClass === charClass && m.skillKey);
+    if (pkg.skillBooks.each) classBooks.forEach(bk => need(bk.id, true));
+    // `random` picks N books independently, so worst case it touches every one
+    else if (pkg.skillBooks.random) classBooks.forEach(bk => need(bk.id, true));
+  }
+  if (pkg.boxes) Object.keys(pkg.boxes).forEach(boxId => need(boxId, true));
+  return slots;
+}
+
 const _GRAM_WITHDRAW_FEE_PCT = 0.10;
 
 const _STONE_DEFS = {
@@ -2177,6 +2209,44 @@ io.on('connection', socket => {
   // session instead: read the current items, then apply the edit to
   // _lastStats, persist it, and push it to the client so the player sees it
   // immediately instead of on their next login.
+  // ── Server-owned inventory changes ───────────────────────────────────────
+  // The client sends its WHOLE inventory on every autosave and the server has
+  // always taken it as truth. That autosave is debounced up to 2s, so one
+  // queued before a server-side grant lands after it and silently reverts it —
+  // which is how bought packs "never arrived" for some players.
+  //
+  // _invRev is a per-session counter bumped by every server-side item change.
+  // The client echoes back the last value it was told (invRev in saveProgress)
+  // and a mismatch means that save was composed before the grant, so its
+  // inventory is stale and must not be applied. Never sent to the client for
+  // interpretation — it just stores and returns it.
+  let _invRev = 0;
+
+  // Single choke point for every server-side item change: updates the live
+  // copy, bumps the revision, persists, and pushes the authoritative result to
+  // the client so it can't drift.
+  function _commitServerItems(inventory, equipment) {
+    if (!_lastStats) _lastStats = {};
+    _lastStats.inventory = inventory;
+    if (equipment) _lastStats.equipment = equipment;
+    _invRev++;
+    if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
+    const written = _persistSavedFields(authed,
+      equipment ? { inventory, equipment } : { inventory });
+    socket.emit('inventorySync', {
+      inventory, equipment: _lastStats.equipment || {}, invRev: _invRev,
+    });
+    return written;
+  }
+
+  // The live inventory, or the DB copy when this session has yet to receive
+  // one. Server-side grants must start from THIS, never from a fresh DB read:
+  // the debounced save means Mongo can be up to ~3s behind, and building on
+  // that snapshot rolls back whatever the player picked up in the meantime.
+  function _liveInventory() {
+    return (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+  }
+
   socket.data._adminReadItems = () => ({
     inventory: (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : [],
     equipment: (_lastStats && _lastStats.equipment && typeof _lastStats.equipment === 'object')
@@ -2185,12 +2255,7 @@ io.on('connection', socket => {
 
   socket.data._adminApplyItems = async (inventory, equipment) => {
     if (!authed) return;
-    if (!_lastStats) _lastStats = {};
-    _lastStats.inventory = inventory;
-    _lastStats.equipment = equipment;
-    if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
-    await _persistSavedFields(authed, { inventory, equipment });
-    socket.emit('adminItemsUpdate', { inventory, equipment });
+    await _commitServerItems(inventory, equipment);
   };
 
   // Hands the death-battle winner its prize. Lives here rather than beside
@@ -2203,8 +2268,8 @@ io.on('connection', socket => {
     const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
     if (inv) items.forEach(it => _invAdd(inv, it));
     _setGram(_round7(_liveGram() + DEATH_BATTLE_GRAM_REWARD));
-    await _persistSavedFields(authed,
-      { ...(inv ? { inventory: inv } : {}), gramBalance: _liveGram() });
+    await _persistSavedFields(authed, { gramBalance: _liveGram() });
+    if (inv) await _commitServerItems(inv);
     logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
     return items;
   };
@@ -2452,7 +2517,23 @@ io.on('connection', socket => {
       const saved = doc.savedData || {};
       const charClass = saved.type || 'lev';
       const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
-      const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
+      // Live copy first — a fresh DB read here is up to ~3s behind (the
+      // saveProgress debounce), so building the purchase on it rolled back
+      // anything picked up in that window.
+      const _liveInv = _liveInventory();
+      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
+
+      // Room check before anything is deducted. This used to push items in
+      // unconditionally, which is how accounts ended up over the 150-slot cap
+      // the client enforces — and once over it, invHasSpace() is false forever:
+      // drops stop being picked up and every market cancellation destroys its
+      // item. Stackables that merge into an existing entry cost no new slot.
+      const _newSlots = _shopNewSlots(pkg, inv, charClass);
+      if (inv.length + _newSlots > SERVER_INV_MAX) {
+        return socket.emit('gramShopError', {
+          msg: `Нужно ${_newSlots} свободных мест в инвентаре (занято ${inv.length}/${SERVER_INV_MAX})`,
+        });
+      }
 
       // Deduct GRAM
       _setGram(_round7(_liveGram() - pkg.gram));
@@ -2555,10 +2636,12 @@ io.on('connection', socket => {
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _shopSet });
 
       if (_lastStats) {
-        _lastStats.inventory = inv;
         _lastStats.gold = saved.gold;
         if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
       }
+      // Bumps the revision, so a client autosave queued before this purchase
+      // can no longer land afterwards and wipe the items out.
+      _commitServerItems(inv);
       socket.data.vipLevel = _vipLvl;
       _setVipAura(authed.username, _vipLvl);
 
@@ -2567,6 +2650,7 @@ io.on('connection', socket => {
         newBalance:  _gramBalance,
         newGold:     saved.gold,
         newInventory: inv,
+        invRev:      _invRev,
         newBonusSP:  saved.bonusSP || 0,
         vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
         leveled: _vipLvl > _prevVipLvl,
@@ -2610,7 +2694,8 @@ io.on('connection', socket => {
         resultPet = { ...candidates[Math.floor(Math.random() * candidates.length)] };
         _invAdd(_lastStats.inventory, resultPet);
       }
-      _persistSavedFields(authed, { inventory: _lastStats.inventory, nexumBalance: _nexumBalance });
+      _persistSavedFields(authed, { nexumBalance: _nexumBalance });
+      _commitServerItems(_lastStats.inventory);
 
       socket.emit('petCrafted', { pet: resultPet, newNexumBalance: _nexumBalance });
     } catch (err) {
@@ -2646,7 +2731,7 @@ io.on('connection', socket => {
     const drop = currentRoom.claimWorldDrop(id, p.x, p.y);
     if (!drop) return;
     if (inv && _invAdd(inv, drop.item)) {
-      _persistSavedFields(authed, { inventory: inv });
+      _commitServerItems(inv);
     }
     socket.emit('worldDropPicked', { id: drop.id, item: drop.item });
   });
@@ -2742,7 +2827,7 @@ io.on('connection', socket => {
       // otherwise the item only left the account once the CLIENT's own save
       // landed, and listing-then-killing-the-app duplicated it.
       _invRemove(_lastStats.inventory, canonItem);
-      _persistSavedFields(authed, { inventory: _lastStats.inventory });
+      _commitServerItems(_lastStats.inventory);
       socket.emit('marketListed', { listing: _marketListingData(listing) });
     } catch (err) {
       console.error('marketList:', err);
@@ -2776,7 +2861,7 @@ io.on('connection', socket => {
       // the round trip) destroyed the item — the listing was already
       // cancelled, so nothing would ever return it.
       if (_sellerInv && _invAdd(_sellerInv, listing.item)) {
-        _persistSavedFields(authed, { inventory: _sellerInv });
+        _commitServerItems(_sellerInv);
       }
       socket.emit('marketCancelled', { listingId, item: listing.item });
     } catch (err) { console.error('marketCancel:', err); }
@@ -2960,20 +3045,40 @@ io.on('connection', socket => {
       const pending = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
       if (!pending.length) return;
       const charClass = saved.type || 'lev';
-      const inv = Array.isArray(saved.inventory) ? [...saved.inventory] : [];
+      // Live copy first, same reason as gramShopBuy: a fresh DB read lags the
+      // saveProgress debounce by up to ~3s and would roll back recent pickups.
+      const _liveInv = _liveInventory();
+      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
       let goldReward = 0;
+      let outOfRoom = false;
       for (const vipLvl of pending) {
         const items = _vipLevelItems(vipLvl, charClass);
         for (const item of items) {
           if (item.slot === 'weapon') {
+            // Room check — this used to push unconditionally, which is how
+            // accounts got pushed over the client's 150-slot cap; past it
+            // invHasSpace() is false forever, so drops stop being picked up
+            // and market cancellations start destroying their item.
+            if (inv.length >= SERVER_INV_MAX) { outOfRoom = true; break; }
             inv.push({ ...item });
           } else {
             const ex = inv.find(i => i.id === item.id);
             if (ex) ex.qty = (ex.qty || 1) + (item.qty || 1);
-            else inv.push({ ...item });
+            else {
+              if (inv.length >= SERVER_INV_MAX) { outOfRoom = true; break; }
+              inv.push({ ...item });
+            }
           }
         }
+        if (outOfRoom) break;
         goldReward += _vipGoldReward(vipLvl);
+      }
+      // Nothing is consumed on failure: vipPending is left intact so the
+      // rewards stay claimable once the player frees up space.
+      if (outOfRoom) {
+        return socket.emit('gramShopError', {
+          msg: `Инвентарь полон (${inv.length}/${SERVER_INV_MAX}) — освободите место и заберите награды снова`,
+        });
       }
       if (goldReward > 0) saved.gold = (saved.gold || 0) + goldReward;
       saved.inventory  = inv;
@@ -2984,10 +3089,8 @@ io.on('connection', socket => {
       const _vipSet = { 'savedData.inventory': inv, 'savedData.vipPending': [] };
       if (goldReward > 0) _vipSet['savedData.gold'] = saved.gold;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _vipSet });
-      if (_lastStats) {
-        _lastStats.inventory = inv;
-        if (goldReward > 0) _lastStats.gold = saved.gold;
-      }
+      if (_lastStats && goldReward > 0) _lastStats.gold = saved.gold;
+      _commitServerItems(inv);
       socket.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
     } catch (err) { console.error('claimVipRewards:', err); }
   });
@@ -3526,6 +3629,20 @@ io.on('connection', socket => {
     // for BM/combat stats and before it's persisted (anti-cheat — see
     // _sanitizeSavedStats). gram/nexum are never taken from here.
     const clean = _sanitizeSavedStats(stats);
+    // Stale-inventory guard. A save composed before the last server-side item
+    // change carries an inventory that predates it, and taking it at face
+    // value is what reverted shop packs and market cancellations. Keep the
+    // server's copy for those two fields, accept everything else in the save
+    // (position, hp, xp... are all still current), and push the authoritative
+    // items back so the client stops resending the stale set.
+    const _clientRev = Math.floor(Number(stats && stats.invRev)) || 0;
+    if (_clientRev !== _invRev && _lastStats) {
+      clean.inventory = _lastStats.inventory || [];
+      clean.equipment = _lastStats.equipment || {};
+      socket.emit('inventorySync', {
+        inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
+      });
+    }
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
       console.error(`[saveProgress] Rejected suspicious full-reset for telegramId=${authed.telegramId} ` +
         `(had lvl=${_lastStats.lvl} gold=${_lastStats.gold} items=${(_lastStats.inventory || []).length} ` +
