@@ -25,6 +25,7 @@ const {
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
+  GRAM_MIN_WITHDRAW,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -2874,7 +2875,7 @@ io.on('connection', socket => {
   });
 
   safeOn('gramWithdrawRequest', async ({ amount, address }) => {
-    if (!authed || !amount || amount < 10 || !address) return;
+    if (!authed || !amount || amount < GRAM_MIN_WITHDRAW || !address) return;
     try {
       if (amount > _liveGram()) return socket.emit('gramError', { msg: 'Недостаточно средств' });
 

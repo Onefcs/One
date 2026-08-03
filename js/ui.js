@@ -4469,8 +4469,8 @@ function openGramWithdrawModal() {
         </div>
 
         <div style="margin-bottom:12px">
-          <div class="gram-hint" style="margin-bottom:6px">${t('withdrawAmountHint')}</div>
-          <input id="gram-wd-amount" type="number" min="10" step="0.01" placeholder="${t('gramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_updateWdPreview()">
+          <div class="gram-hint" style="margin-bottom:6px">${tVars('withdrawAmountHint', { n: GRAM_MIN_WITHDRAW })}</div>
+          <input id="gram-wd-amount" type="number" min="${GRAM_MIN_WITHDRAW}" step="0.01" placeholder="${t('gramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_updateWdPreview()">
         </div>
         <div id="gram-wd-preview" style="font-size:12px;color:#a3957c;margin:-6px 0 12px;padding:0 2px"></div>
 
@@ -4519,7 +4519,9 @@ function gramWithdrawConfirm() {
   const amount = parseFloat(document.getElementById('gram-wd-amount').value);
   const addr   = (document.getElementById('gram-wd-addr').value || '').trim();
   const balance = window._gramBalance || 0;
-  if (!amount || amount < 10)    { _gramModalMsg(t('minWithdraw10Toast'), 'err'); return; }
+  if (!amount || amount < GRAM_MIN_WITHDRAW) {
+    _gramModalMsg(tVars('minWithdrawToast', { n: GRAM_MIN_WITHDRAW }), 'err'); return;
+  }
   if (!addr)                     { _gramModalMsg(t('enterTonAddrToast'), 'err'); return; }
   if (amount > balance)          { _gramModalMsg(t('notEnoughFundsToast'), 'err'); return; }
   if (typeof netGramWithdraw === 'function') {

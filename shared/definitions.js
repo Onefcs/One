@@ -655,6 +655,11 @@ const DEATH_BATTLE_MIN_PLAYERS = 2;
 const DEATH_BATTLE_MAX_MS = 20 * 60 * 1000;
 const DEATH_BATTLE_GRAM_REWARD = 0.05;
 
+// Smallest GRAM withdrawal the bot will take. Shared so the server's refusal
+// and the client's input/validation/hint can't drift apart — they were three
+// separate literals before, which is how a change like this gets half applied.
+const GRAM_MIN_WITHDRAW = 1;
+
 // ── World boss schedule ─────────────────────────────────────────────────────
 // Понедельник, среда, пятница, воскресенье в 20:00 по Москве. Deliberately
 // interleaved with the death battle's days so the two never land on the same
@@ -809,4 +814,5 @@ if (typeof module !== 'undefined') module.exports = {
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
+  GRAM_MIN_WITHDRAW,
 };
