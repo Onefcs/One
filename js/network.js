@@ -174,6 +174,7 @@ function netConnect(onReady) {
 
   socket.on('playerLeft', ({ id }) => {
     otherPlayers.delete(id);
+    otherPets.delete(id);
     if (typeof pixiRemoveOtherPlayer === 'function') pixiRemoveOtherPlayer(id);
   });
 
@@ -183,20 +184,25 @@ function netConnect(onReady) {
     loadSprites(type, () => {});
   });
 
-  // Equipped pets of everyone already on the floor, sent as we join.
+  // Equipped pets of everyone already on the floor, sent as we join. A full
+  // roster, so it replaces the map outright and prunes anyone who has left.
   socket.on('playerPets', ({ pets } = {}) => {
+    otherPets = new Map();
     (pets || []).forEach(({ id, petId }) => {
-      if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
-      otherPlayers.get(id).petId = petId || null;
-      if (petId && typeof loadPetSprites === 'function') loadPetSprites(petId);
+      if (!petId) return;
+      otherPets.set(id, petId);
+      if (typeof loadPetSprites === 'function') loadPetSprites(petId);
     });
   });
 
   // One player equipped/unequipped a pet.
   socket.on('playerPet', ({ id, petId } = {}) => {
-    if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
-    otherPlayers.get(id).petId = petId || null;
-    if (petId && typeof loadPetSprites === 'function') loadPetSprites(petId);
+    if (petId) {
+      otherPets.set(id, petId);
+      if (typeof loadPetSprites === 'function') loadPetSprites(petId);
+    } else {
+      otherPets.delete(id);
+    }
   });
 
   socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs }) => {

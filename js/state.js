@@ -21,6 +21,11 @@ let transTimer = 0;
 // Multiplayer state
 let socket = null;
 let otherPlayers = new Map();   // socketId → { x, y, type, facing, hp, maxHp, username }
+// socketId → equipped pet id, kept OUTSIDE otherPlayers on purpose: that map
+// is rebuilt from scratch on gameStart and on every raid/party-dungeon
+// enter/exit, which would drop pet ids the server only sends on join and on
+// change. Fed by the 'playerPets'/'playerPet' events (js/network.js).
+let otherPets = new Map();
 let serverEnemies = [];     // authoritative enemy list (server-driven)
 let serverEnemiesMap = new Map(); // id → enemy for O(1) lookup
 let netUsername = null;
@@ -72,6 +77,12 @@ let _normalDungeon = null;
 let _normalDungeonLvl = 1;
 let _normalPlayerX = null;
 let _normalPlayerY = null;
+// The rest of the open world's own contents, parked while an instance
+// (raid arena / party-dungeon maze) is on screen. NPCs and event-boss
+// ground loot belong to the world, not to the instance — without this
+// they kept rendering (and the NPCs stayed interactable) inside the maze.
+let _normalNpcs = null;
+let _normalWorldDrops = null;
 let _raidWaveNotif = null; // { text, timer }
 
 // Raid lobby state

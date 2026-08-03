@@ -609,6 +609,15 @@ let _clanHomeTab = 0;            // 0=клан, 1=участники, 2=навы
 // same way every other gold-spending action in this game already is.
 let _pendingClanCreateGold = false;
 
+// "12/30" — the cap comes from shared/definitions.js so it can't drift from
+// what clanApprove actually enforces server-side. Rendered through the
+// existing {n} slot, so every translation of clanMembersByBmFmt picks it up
+// without needing a new string.
+function _clanMemberCount(c) {
+  const n = (c && c.members || []).length;
+  return typeof CLAN_MAX_MEMBERS !== 'undefined' ? `${n}/${CLAN_MAX_MEMBERS}` : String(n);
+}
+
 function updateClanUI() {
   const el = document.getElementById('clan-body');
   if (!el || !player) return;
@@ -806,7 +815,7 @@ function _renderClanHome(el) {
           </div>`).join('');
     }
     bodyHtml = `
-      <div class="clan-section-hdr">${typeof tVars === 'function' ? tVars('clanMembersByBmFmt', { n: (c.members||[]).length }) : 'Участники (' + (c.members||[]).length + ') · по БМ'}</div>
+      <div class="clan-section-hdr">${typeof tVars === 'function' ? tVars('clanMembersByBmFmt', { n: _clanMemberCount(c) }) : 'Участники (' + _clanMemberCount(c) + ') · по БМ'}</div>
       ${membersHtml}
       ${appsHtml}`;
   } else {

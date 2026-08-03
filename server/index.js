@@ -20,7 +20,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES,
+  PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
   armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
   DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -2933,15 +2933,6 @@ io.on('connection', socket => {
     }
     currentRoom.setPlayerChar(socket.id, type, effectiveSaved);
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
-    // Whole roster to the arriving player, their own pet to everyone else —
-    // same shape both ways, so a missed update self-heals on the next join.
-    socket.emit('playerPets', { pets: currentRoom.petSnapshot() });
-    {
-      const _self = currentRoom.players.get(socket.id);
-      if (_self && _self.petId) {
-        socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _self.petId });
-      }
-    }
     socket.emit('gameStart', {
       floor: currentFloor,
       dungeon: currentRoom.dungeonData,
@@ -2952,6 +2943,16 @@ io.on('connection', socket => {
       eventBoss: eventBossState(),
       deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
     });
+    // MUST come after gameStart: its client handler rebuilds otherPlayers from
+    // scratch (`otherPlayers = new Map()`), so a roster delivered before it was
+    // wiped on arrival and nobody ever saw anyone else's pet.
+    // Whole roster to the arriving player, their own pet to everyone else —
+    // same shape both ways, so a missed update self-heals on the next join.
+    socket.emit('playerPets', { pets: currentRoom.petSnapshot() });
+    const _selfPet = currentRoom.players.get(socket.id);
+    if (_selfPet && _selfPet.petId) {
+      socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfPet.petId });
+    }
   });
 
   safeOn('playerMove', ({ x, y, facing, hp }) => {
@@ -3605,6 +3606,12 @@ io.on('connection', socket => {
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
     const app = clan.applications.find(a => a.telegramId === telegramId);
     if (!app) return;
+    // Membership cap. Checked here rather than at clanApply so a full clan can
+    // still collect applications for whenever a slot frees up; the leader just
+    // can't approve past the limit.
+    if (clan.members.length >= CLAN_MAX_MEMBERS) {
+      return socket.emit('clanError', { msg: `В клане максимум ${CLAN_MAX_MEMBERS} участников` });
+    }
     clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
     clan.members.push({ telegramId: app.telegramId, username: app.username, role: 'member' });
     await clan.save().catch(() => {});

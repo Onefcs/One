@@ -505,6 +505,11 @@ const PET_CRAFT_RECIPES = [
   { rarity:'rare',     nexumCost:5000, chance:1.0 },
 ];
 
+// Clan membership cap. Enforced server-side in clanApprove; the client
+// renders it next to the member count so a leader can see how full the
+// clan is before approving an application.
+const CLAN_MAX_MEMBERS = 30;
+
 // Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
 const ENHANCE_MAX = 15;
 // Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js)
@@ -757,7 +762,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES,
+  PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,

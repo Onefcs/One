@@ -1216,8 +1216,9 @@ function _updatePets(dt) {
   // Other players — only the ones actually on screen, matching the same AOI
   // sweep _updateOtherPlayers does, so an off-screen pet costs nothing.
   otherPlayers.forEach((p, pid) => {
-    if (!p.petId || p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
-    _updateOnePet(pid, p.petId, p.x, p.y, p.facing || 'front', _PET_REMOTE_SPEED, dt);
+    const petId = otherPets.get(pid);
+    if (!petId || p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
+    _updateOnePet(pid, petId, p.x, p.y, p.facing || 'front', _PET_REMOTE_SPEED, dt);
   });
 
   // Anything not touched this frame (owner gone, off screen, pet unequipped)
