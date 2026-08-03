@@ -2311,3 +2311,24 @@ canvas { display:block; width:100%; height:100%; }
   color: #f0937e;
   text-shadow: 0 2px 8px rgba(0,0,0,.9);
 }
+
+/* 3v3 match round clock — small, out of the way of the joystick/skill buttons,
+   just under the header. Text-only, doesn't intercept touches. */
+#a3-match-timer {
+  position: fixed;
+  top: 68px; left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  z-index: 235;
+  pointer-events: none;
+  padding: 3px 12px;
+  border-radius: 8px;
+  background: rgba(17,13,7,.72);
+  border: 1px solid rgba(203,161,89,.4);
+  color: #ffcf8a;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 6px rgba(0,0,0,.8);
+}

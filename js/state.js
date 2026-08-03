@@ -109,6 +109,15 @@ let _a3InMatch = false;
 let _a3Team = null;
 let _a3Mates = { A: [], B: [] };
 let _a3Score = { a: 3, b: 3 };
+// This match's two guard bosses (see spawnPvpArenaBosses, server/game/
+// Room.js) — id of the one standing on each side. Used to keep the target
+// button/tap-select (js/input.js) from ever offering up your OWN side's
+// boss: the server refuses the hit anyway, this just keeps it out of the
+// candidate list in the first place.
+let _a3BossIds = { A: null, B: null };
+// Wall-clock time the current round ends, or 0 outside a live fight — drives
+// the on-screen match countdown (see showArena3Timer, js/ui.js).
+let _a3RoundEndAt = 0;
 // While set and still in the future, this client is standing in the arena
 // waiting out the pre-fight countdown: movement and attacks are blocked here
 // as well as on the server (see _dbFrozen).

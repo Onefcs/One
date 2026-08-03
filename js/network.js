@@ -2049,6 +2049,8 @@ function _initDeathBattleHandlers(s) {
 function netArena3Register()   { if (socket?.connected) socket.emit('arena3Register'); }
 function netArena3Unregister() { if (socket?.connected) socket.emit('arena3Unregister'); }
 function netArena3Sync()       { if (socket?.connected) socket.emit('arena3Sync'); }
+// Sent once the result modal is closed — see closeArena3Result (js/ui.js).
+function netArena3Return()     { if (socket?.connected) socket.emit('arena3Return'); }
 
 // ── 3v3 Arena ───────────────────────────────────────────────────────────────
 // The match runs inside the normal world room — the arena is a walled-off part
@@ -2080,13 +2082,15 @@ function _initArena3Handlers(s) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
-  s.on('arena3Started', ({ x, y, hp, team, fightAt, roster }) => {
+  s.on('arena3Started', ({ x, y, hp, team, fightAt, roundEndAt, roster, bossIds }) => {
     if (!player) return;
     _a3InMatch = true;
     _a3Registered = false;
     _a3Team = team;
     _a3Mates = { A: [], B: [] };
     (roster || []).forEach(r => { if (_a3Mates[r.team]) _a3Mates[r.team].push(r.id); });
+    _a3BossIds = bossIds || { A: null, B: null };
+    _a3RoundEndAt = 0; // countdown only starts once the freeze ends — see arena3Fight below
     _a3Score = { a: 3, b: 3 };
     if (hp) player.hp = hp;
     pvpMode = true;
@@ -2094,22 +2098,35 @@ function _initArena3Handlers(s) {
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('a3ArenaLbl'));
     else { player.x = x; player.y = y; }
     if (typeof showEventBossBanner === 'function') {
-      showEventBossBanner(tVars('a3StartedFmt', { team: t(team === 'A' ? 'a3TeamA' : 'a3TeamB') }), '#e8574f');
+      // Always "Синие" here — this line is always about the RECIPIENT's own
+      // side, and a player's own team always renders as blue (see _a3NameColor,
+      // js/game.js) regardless of which internal team (A/B) they were dealt.
+      showEventBossBanner(tVars('a3StartedFmt', { team: t('a3TeamA') }), '#e8574f');
     }
     if (typeof Sound !== 'undefined') Sound.bossSpawn();
     if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
+    // Guard bosses use their own sprite entry (js/sprites.js arena3_guard_boss)
+    // rather than piggybacking on the world event boss's — see the eid
+    // comment in spawnPvpArenaBosses (server/game/Room.js). Unlike that one,
+    // nothing else preloads it, so it has to happen here.
+    if (typeof loadEnemySprites === 'function') loadEnemySprites('arena3_guard_boss');
     if (typeof onArena3State === 'function') onArena3State();
   });
 
-  s.on('arena3Fight', () => {
+  s.on('arena3Fight', ({ roundEndAt } = {}) => {
     _dbFightAt = 0;
+    _a3RoundEndAt = roundEndAt || 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbFightMsg'), '#e8574f');
+    if (typeof showArena3Timer === 'function') showArena3Timer(_a3RoundEndAt);
     if (typeof Sound !== 'undefined') Sound.bossSpawn();
   });
 
-  s.on('arena3Score', ({ a, b }) => {
-    _a3Score = { a: a || 0, b: b || 0 };
+  // mine/enemy are already relative to this socket (see the arena3Score emit
+  // in server/index.js) — stored as a/b so the existing blue-left/red-right
+  // display code (js/ui.js) doesn't need to change.
+  s.on('arena3Score', ({ mine, enemy }) => {
+    _a3Score = { a: mine || 0, b: enemy || 0 };
     if (typeof onArena3State === 'function') onArena3State();
   });
 
@@ -2117,7 +2134,9 @@ function _initArena3Handlers(s) {
   // later, when the match itself finishes.
   s.on('arena3Eliminated', ({ x, y }) => {
     _dbFightAt = 0;
+    _a3RoundEndAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof hideArena3Timer === 'function') hideArena3Timer();
     pvpMode = false;
     if (player && x != null && y != null) {
       if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
@@ -2131,8 +2150,11 @@ function _initArena3Handlers(s) {
     _a3InMatch = false;
     _a3Team = null;
     _a3Mates = { A: [], B: [] };
+    _a3BossIds = { A: null, B: null };
+    _a3RoundEndAt = 0;
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof hideArena3Timer === 'function') hideArena3Timer();
     pvpMode = false;
     if (reward) {
       window._nexumBalance = (window._nexumBalance || 0) + reward;

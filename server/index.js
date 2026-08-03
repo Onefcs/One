@@ -2207,12 +2207,13 @@ const ARENA3_NEEDED      = ARENA3_TEAM_SIZE * 2;
 const ARENA3_MIN_LEVEL   = 15;
 const ARENA3_FREEZE_MS   = 10 * 1000;   // shorter than the death battle's: six known players, no scatter to take in
 const ARENA3_REWARD      = 10;          // Liberty (Nexum) per winner
-// Deliberately NOT a match timer — the rules say a match runs until one side
-// is wiped out, however long that takes. This is an operational guard only:
-// without it two players who both refuse to fight would hold the single arena
-// forever and no one else could ever play the mode. It ends the match with no
-// winner and no reward rather than deciding it.
-const ARENA3_WEDGE_MS    = 30 * 60 * 1000;
+// A real match clock now (it used to be a 30-minute operational guard only,
+// back when the rules said a match ran until one side was wiped out however
+// long that took). Counted from when the fight itself starts (_a3.fightAt),
+// not from deploy — the freeze countdown doesn't eat into it. If nobody wipes
+// the other team or drops their guard boss to 0 before this runs out, the
+// match ends with no winner and no reward (see the wedged path in _a3Finish).
+const ARENA3_ROUND_MS    = 3 * 60 * 1000;
 
 const _a3 = {
   queue: new Map(),   // socketId -> { name, lvl }
@@ -2222,8 +2223,9 @@ const _a3 = {
   alive: new Map(),   // socketId -> { name, team }
   names: new Map(),   // socketId -> name, kept for the result screen after elimination
   fightAt: 0,
+  roundEndAt: 0,       // fightAt + ARENA3_ROUND_MS — pushed to clients so they can show a countdown
   freezeTimer: null,
-  wedgeTimer: null,
+  roundTimer: null,
 };
 
 function _socketTid(socketId) {
@@ -2336,20 +2338,27 @@ async function _a3Deploy(ready, room) {
   _a3.live = true;
   _a3.teams.clear(); _a3.alive.clear(); _a3.names.clear();
   _a3.fightAt = Date.now() + ARENA3_FREEZE_MS;
+  _a3.roundEndAt = _a3.fightAt + ARENA3_ROUND_MS;
 
   const placed = room.pvpArenaDeploy(teamA, teamB);
   // Someone can vanish between the readiness filter above and the deploy. A
   // side with nobody on it would never trigger the win check — no one is left
   // to be killed — and with no match timer that would hold the arena until the
-  // wedge guard fired half an hour later. Put everyone back and wait instead.
+  // round guard fired. Put everyone back and wait instead.
   if (placed.filter(p => p.team === 'A').length === 0 ||
       placed.filter(p => p.team === 'B').length === 0) {
     placed.forEach(({ socketId }) => room.deathBattleReturn(socketId));
     _a3.live = false;
     _a3.fightAt = 0;
+    _a3.roundEndAt = 0;
     _a3Broadcast();
     return;
   }
+  // One guard boss per side (see spawnPvpArenaBosses in server/game/Room.js) —
+  // 30k HP each, no drop; the owning team can't damage its own (checked in
+  // the attack/skillAttack handlers below) and destroying the enemy's ends
+  // the match immediately (see the a3Team branch in those same handlers).
+  const bossIds = room.spawnPvpArenaBosses();
   placed.forEach(({ socketId, x, y, hp, team }) => {
     const name = _a3.queue.get(socketId)?.name || '?';
     _a3.teams.set(socketId, team);
@@ -2365,7 +2374,7 @@ async function _a3Deploy(ready, room) {
   const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
   placed.forEach(({ socketId, x, y, hp, team }) => {
     io.to(socketId).emit('arena3Started', {
-      x, y, hp, team, fightAt: _a3.fightAt, roster,
+      x, y, hp, team, fightAt: _a3.fightAt, roundEndAt: _a3.roundEndAt, roster, bossIds,
     });
     logPlayer(_socketTid(socketId), _a3.names.get(socketId), 'arena3_start', { team });
   });
@@ -2373,11 +2382,11 @@ async function _a3Deploy(ready, room) {
   clearTimeout(_a3.freezeTimer);
   _a3.freezeTimer = setTimeout(() => {
     if (!_a3.live) return;
-    _a3.alive.forEach((_, sid) => io.to(sid).emit('arena3Fight'));
+    _a3.alive.forEach((_, sid) => io.to(sid).emit('arena3Fight', { roundEndAt: _a3.roundEndAt }));
   }, ARENA3_FREEZE_MS);
 
-  clearTimeout(_a3.wedgeTimer);
-  _a3.wedgeTimer = setTimeout(() => _a3Finish(null, true), ARENA3_WEDGE_MS);
+  clearTimeout(_a3.roundTimer);
+  _a3.roundTimer = setTimeout(() => _a3Finish(null, true), ARENA3_FREEZE_MS + ARENA3_ROUND_MS);
   _a3Broadcast();
 }
 
@@ -2393,7 +2402,15 @@ function _a3Eliminate(socketId) {
   io.to(socketId).emit('arena3Eliminated', { x: spot?.x, y: spot?.y });
   const aliveA = [..._a3.alive.values()].filter(r => r.team === 'A').length;
   const aliveB = [..._a3.alive.values()].filter(r => r.team === 'B').length;
-  _a3.alive.forEach((_, sid) => io.to(sid).emit('arena3Score', { a: aliveA, b: aliveB }));
+  // Sent relative to each recipient — "mine" is always their own side, so the
+  // client can always render itself as the blue half of the score and the
+  // opponent as the red half, regardless of which internal team (A/B) either
+  // side actually got assigned.
+  _a3.alive.forEach((_, sid) => {
+    const mine  = _a3.teams.get(sid) === 'A' ? aliveA : aliveB;
+    const enemy = _a3.teams.get(sid) === 'A' ? aliveB : aliveA;
+    io.to(sid).emit('arena3Score', { mine, enemy });
+  });
   if (aliveA === 0 || aliveB === 0) {
     _a3Finish(aliveA === 0 && aliveB === 0 ? null : (aliveA === 0 ? 'B' : 'A'), false);
   }
@@ -2402,10 +2419,14 @@ function _a3Eliminate(socketId) {
 async function _a3Finish(winner, wedged) {
   if (!_a3.live) return;
   clearTimeout(_a3.freezeTimer);
-  clearTimeout(_a3.wedgeTimer);
+  clearTimeout(_a3.roundTimer);
   _a3.live = false;
   _a3.fightAt = 0;
+  _a3.roundEndAt = 0;
   const room = getRoom(1);
+  // Match is over either way — clear both guard bosses so a dead-or-alive
+  // leftover never carries into the next one.
+  if (room) room.despawnPvpArenaBosses();
   // Everyone still standing goes home too — the match is over for them as
   // well, they just didn't die to get there.
   _a3.alive.forEach((_, sid) => { if (room) room.deathBattleReturn(sid); });
@@ -3660,8 +3681,22 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id)) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
+    // Arena3 guard boss: the owning team can't damage its own — the only
+    // team check needed here, since attackEnemy already refuses anything
+    // dead/out of range on its own.
+    const _a3TargetEnemy = currentRoom._enemyMap.get(enemyId);
+    if (_a3TargetEnemy && _a3TargetEnemy.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy.a3Team) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
+    if (result.a3Team) {
+      // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
+      // enemyKilled handler plays the death animation and removes the corpse
+      // — otherwise the boss would just freeze on screen since _a3Finish
+      // despawns it server-side before the next tick ever reports hp: 0.
+      io.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+      _a3Finish(result.a3Team === 'A' ? 'B' : 'A', false);
+      return;
+    }
     if (result.killed) {
       if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
@@ -3792,8 +3827,19 @@ io.on('connection', socket => {
     }
     if (!currentRoom) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
+    const _a3TargetEnemy2 = currentRoom._enemyMap.get(enemyId);
+    if (_a3TargetEnemy2 && _a3TargetEnemy2.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy2.a3Team) return;
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
     if (!result) return;
+    if (result.a3Team) {
+      // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
+      // enemyKilled handler plays the death animation and removes the corpse
+      // — otherwise the boss would just freeze on screen since _a3Finish
+      // despawns it server-side before the next tick ever reports hp: 0.
+      io.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+      _a3Finish(result.a3Team === 'A' ? 'B' : 'A', false);
+      return;
+    }
     if (result.killed) {
       if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
       const partyId    = playerParty.get(socket.id);
@@ -4038,6 +4084,18 @@ io.on('connection', socket => {
       inMatch: _a3.teams.has(socket.id),
       attemptsLeft: await _arena3AttemptsLeft(socket.id),
     });
+  });
+
+  // Sent once the player closes the arena3 result modal. Server-side position
+  // was already reset to the hub spawn when the match ended (eliminated
+  // players get it immediately via arena3Eliminated; survivors get it inside
+  // _a3Finish) — this just tells THIS client to catch up visually, same as
+  // deathBattleReturn below does for the death battle's winner. Safe to call
+  // any time (not gated on being mid-match): deathBattleReturn always just
+  // re-lands the caller on the hub spawn.
+  safeOn('arena3Return', () => {
+    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    if (spot) socket.emit('deathBattleReturned', spot);
   });
 
   // Sent once the winner closes the reward modal — everyone else is already

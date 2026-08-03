@@ -63,17 +63,24 @@ const ARENA = 40;
 const ARENA_X0 = HUB_X0 + HUB + ZONE_GAP;
 const ARENA_Y0 = HUB_Y0;
 // ── 3v3 PvP arena ───────────────────────────────────────────────────────────
-// Two team bases facing each other across three separate corridors, so a 3v3
-// splits into lanes instead of collapsing into one scrum in an open box. Like
-// the boss arena it is walled off from everything — the only way in is being
-// placed there by the match, and the only way out is dying or the match
-// ending. Sits in the empty band between the boss arena and the first zone.
+// Two team bases facing each other across a single central corridor — one
+// lane, so both teams meet head-on instead of splitting into side skirmishes.
+// Like the boss arena it is walled off from everything — the only way in is
+// being placed there by the match, and the only way out is dying or the
+// match ending. Sits in the empty band between the boss arena and the first
+// zone. Each base also holds a stationary guard boss (see A3_BOSS_DX below) —
+// the opposing team destroying it wins the match instantly.
 const A3_X0 = ARENA_X0;
 const A3_Y0 = ARENA_Y0 + ARENA + 5;
 const A3_W = 60, A3_H = 27;
 const A3_BASE_W = 10;                       // depth of each team's starting box
-const A3_LANE_YS = [4, 13, 22];             // lane centre rows, relative to A3_Y0
-const A3_LANE_HW = 1;                       // half-width: 3 tiles per corridor
+const A3_LANE_YS = [13];                    // single corridor row, relative to A3_Y0
+// Spawn rows are kept separate from the (now singular) lane row so a team's
+// 3 players still land on 3 distinct tiles inside their own base instead of
+// stacking on the one lane spawn.
+const A3_SPAWN_YS = [4, 13, 22];
+const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corridor
+const A3_BOSS_DX = 2;                       // guard boss sits this many tiles inside the base's back wall
 const ZONES_Y0 = HUB_Y0 + HUB + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 
@@ -103,9 +110,7 @@ function generateOpenWorld() {
   };
   paintRect(arena.x, arena.y, arena.x + arena.size - 1, arena.y + arena.size - 1);
 
-  // 3v3 arena: a base box at each end, joined by three separate lanes. The
-  // gaps between the lanes stay WALL, so the only way from one lane to another
-  // is back through a base.
+  // 3v3 arena: a base box at each end, joined by a single central lane.
   const a3 = {
     x: A3_X0, y: A3_Y0, size: A3_W,
     bx1: A3_X0 - 1, by1: A3_Y0 - 1, bx2: A3_X0 + A3_W + 1, by2: A3_Y0 + A3_H + 1,
@@ -265,16 +270,24 @@ function generateOpenWorld() {
       entryX: (ARENA_X0 + 6) * TILE + TILE / 2, entryY: arena.cy * TILE + TILE / 2,
       exitX:  (ARENA_X0 + 3) * TILE + TILE / 2, exitY:  (ARENA_Y0 + 3) * TILE + TILE / 2,
     },
-    // 3v3 spawn points: one per lane per side, set back inside each base so a
-    // match never starts with the two teams already in contact.
+    // 3v3 spawn points: one per player per side, set back inside each base so
+    // a match never starts with the two teams already in contact. bossA/bossB
+    // are each team's stationary guard boss, further back still so the
+    // owning team stands between it and the lane.
     pvpArena: {
       cx: a3.cx * TILE + TILE / 2, cy: a3.cy * TILE + TILE / 2,
-      teamA: A3_LANE_YS.map(dy => ({
+      teamA: A3_SPAWN_YS.map(dy => ({
         x: (A3_X0 + 4) * TILE + TILE / 2, y: (A3_Y0 + dy) * TILE + TILE / 2,
       })),
-      teamB: A3_LANE_YS.map(dy => ({
+      teamB: A3_SPAWN_YS.map(dy => ({
         x: (A3_X0 + A3_W - 5) * TILE + TILE / 2, y: (A3_Y0 + dy) * TILE + TILE / 2,
       })),
+      bossA: {
+        x: (A3_X0 + A3_BOSS_DX) * TILE + TILE / 2, y: (A3_Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
+      },
+      bossB: {
+        x: (A3_X0 + A3_W - 1 - A3_BOSS_DX) * TILE + TILE / 2, y: (A3_Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
+      },
     },
     armEntries,
     corridorGates,

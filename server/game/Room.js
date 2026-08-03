@@ -1,6 +1,6 @@
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
+        ARENA3_BOSS_HP, enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server
@@ -402,6 +402,11 @@ class Room {
     this._aiTickNo++;
     this.enemies.forEach(e => {
       if (e.hp <= 0) {
+        // 3v3 guard boss: killing one ends the match on the spot (see the
+        // a3Team check in server/index.js's attack/skillAttack handlers,
+        // which calls despawnPvpArenaBosses() in the same tick it dies) — it
+        // never lingers here long enough to loot or respawn.
+        if (e.a3Team) return;
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -429,6 +434,12 @@ class Room {
         }
         return;
       }
+
+      // 3v3 guard boss: stands exactly where it spawned for the whole match —
+      // no targeting, no movement, no attack, no leash. Damage still applies
+      // normally via attackEnemy/skillAttackEnemy, which don't go through
+      // this loop at all.
+      if (e.a3Passive) return;
 
       // Tick CC timers
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
@@ -920,6 +931,62 @@ class Room {
     return placed;
   }
 
+  // Spawns the two stationary guard bosses for a 3v3 match — same identity as
+  // the world EVENT_BOSS, but ARENA3_BOSS_HP and no loot. a3Team marks which
+  // side owns each one (that team can't damage it — see the a3Team check in
+  // server/index.js's attack/skillAttack handlers); a3Passive tells the AI
+  // tick loop to skip it entirely, so it never moves, aggros or attacks.
+  // Returns { A: bossId, B: bossId } for the caller to hand to both clients.
+  spawnPvpArenaBosses() {
+    const ar = this._dungeon.pvpArena;
+    if (!ar || !ar.bossA || !ar.bossB) return null;
+    const mk = (spot, team) => {
+      const e = {
+        id: `a3boss_${team}_${Date.now()}`,
+        ...EVENT_BOSS,
+        // Own eid (not EVENT_BOSS's demon_event_boss) — the client keys the
+        // world event boss's HP-bar overlay and alive-tracking off that exact
+        // string (js/ui.js updateEventBossHpBar), and this boss sharing it
+        // would show up there too. Its sprite entry (js/sprites.js
+        // arena3_guard_boss) points at the identical sheets, so it still
+        // looks the same.
+        eid: 'arena3_guard_boss',
+        arm: 'a3', rlvl: 0,
+        atk: 0, spd: 0,
+        maxHp: ARENA3_BOSS_HP, hp: ARENA3_BOSS_HP,
+        x: spot.x, y: spot.y, spawnX: spot.x, spawnY: spot.y,
+        atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
+        aggro: false, aggroR: 0,
+        a3Team: team, a3Passive: true,
+        _sx: spot.x, _sy: spot.y, _shp: ARENA3_BOSS_HP,
+        _idx: this.enemies.length,
+      };
+      this.enemies.push(e);
+      this._enemyMap.set(e.id, e);
+      return e;
+    };
+    const bossA = mk(ar.bossA, 'A');
+    const bossB = mk(ar.bossB, 'B');
+    this._a3BossIds = { A: bossA.id, B: bossB.id };
+    return this._a3BossIds;
+  }
+
+  // Removes whatever's left of the two guard bosses — called once a match
+  // ends, win or wedge, so a leftover boss (dead or still standing) never
+  // lingers into the next match.
+  despawnPvpArenaBosses() {
+    if (!this._a3BossIds) return;
+    const ids = new Set([this._a3BossIds.A, this._a3BossIds.B]);
+    this.enemies = this.enemies.filter(e => {
+      if (!ids.has(e.id)) return true;
+      this._enemyMap.delete(e.id);
+      this._enemyKnown.delete(e.id);
+      return false;
+    });
+    this.enemies.forEach((e, i) => { e._idx = i; });
+    this._a3BossIds = null;
+  }
+
   // Sends a player back to the hub with PvP off — used both for entrants
   // knocked out of a round and for the winner once they close the reward
   // modal. Returns the landing spot so the caller can tell that client.
@@ -983,6 +1050,10 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
+      // 3v3 guard boss: no xp/gold/loot, just enough (ex/ey/color) for the
+      // caller to still show the death visually — it ends the match off
+      // a3Team instead of running the normal kill-reward flow.
+      if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
       return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }
@@ -1003,6 +1074,7 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
+      if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
       return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
     }

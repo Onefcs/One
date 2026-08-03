@@ -3077,6 +3077,8 @@ function _arena3BodyHTML() {
           <li>${t('a3Rule2')}</li>
           <li>${t('a3Rule3')}</li>
           <li>${t('a3Rule4')}</li>
+          <li>${t('a3RuleBoss')}</li>
+          <li>${t('a3RuleDuration')}</li>
           <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
           <li>${tVars('a3Rule6', { n: st.maxAttempts })}</li>
         </ul>
@@ -3113,6 +3115,45 @@ function showArena3Result(won, wedged, reward) {
 function closeArena3Result() {
   const modal = document.getElementById('a3-result-modal');
   if (modal) modal.style.display = 'none';
+  // Server already moved this player back to the hub spawn (a safe zone) the
+  // moment the match ended — this just makes the client catch up visually
+  // instead of leaving them rendered wherever the arena left them.
+  if (typeof netArena3Return === 'function') netArena3Return();
+}
+
+// ── 3v3 match countdown ──────────────────────────────────────────────────────
+// A small on-screen clock for the round's 3-minute duration (ARENA3_ROUND_MS,
+// server/index.js), shown from the moment the pre-fight freeze ends until the
+// match's result modal appears. Built lazily, same pattern as _dbFreezeEl above.
+let _a3TimerTick = null;
+function _a3TimerEl() {
+  let el = document.getElementById('a3-match-timer');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'a3-match-timer';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function showArena3Timer(endAt) {
+  if (!endAt) return;
+  const el = _a3TimerEl();
+  clearInterval(_a3TimerTick);
+  const paint = () => {
+    const msLeft = Math.max(0, endAt - Date.now());
+    const s = Math.ceil(msLeft / 1000);
+    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    el.style.display = 'block';
+    if (msLeft <= 0) clearInterval(_a3TimerTick);
+  };
+  paint();
+  _a3TimerTick = setInterval(paint, 250);
+}
+function hideArena3Timer() {
+  clearInterval(_a3TimerTick);
+  _a3TimerTick = null;
+  const el = document.getElementById('a3-match-timer');
+  if (el) el.style.display = 'none';
 }
 
 // World boss: alive right now, mid-summon countdown, or waiting for its next

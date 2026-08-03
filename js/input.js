@@ -80,18 +80,28 @@ function _isOnScreen(wx, wy) {
   return wx >= _vL && wx <= _vR && wy >= _vT && wy <= _vB;
 }
 
+// True while in a live 3v3 match for an id that shouldn't be selectable as a
+// target: your own teammates (assist should only ever offer the enemy team)
+// and your own side's guard boss (it can't be hit — see the a3Team check in
+// server/index.js — so it shouldn't be offered as a target either).
+function _a3Unselectable(id) {
+  if (typeof _a3InMatch === 'undefined' || !_a3InMatch || !_a3Team) return false;
+  if (id === (typeof _a3BossIds !== 'undefined' && _a3BossIds[_a3Team])) return true;
+  return (_a3Mates[_a3Team] || []).includes(id);
+}
+
 function cycleTarget() {
   if (!player) return;
   const isOnline = !!(socket?.connected);
   const activeEnemies = isOnline ? serverEnemies : enemies;
   const candidates = [];
   activeEnemies.forEach(e => {
-    if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y))
+    if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y) && !_a3Unselectable(e.id))
       candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
   });
   if (pvpMode && isOnline) {
     otherPlayers.forEach((op, id) => {
-      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y))
+      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y) && !_a3Unselectable(id))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
     });
   }
@@ -113,13 +123,13 @@ function _trySelectEntityAtTouch(cx, cy) {
   const tapR = 28;
   let best = null, bestD = Infinity;
   activeEnemies.forEach(e => {
-    if ((e.hp || 0) <= 0) return;
+    if ((e.hp || 0) <= 0 || _a3Unselectable(e.id)) return;
     const d = dist(worldX, worldY, e.x, e.y);
     if (d < e.size + tapR && d < bestD) { bestD = d; best = { id: e.id, isPlayer: false }; }
   });
   if (isOnline) {
     otherPlayers.forEach((op, id) => {
-      if ((op.hp || 0) <= 0 || op.x == null) return;
+      if ((op.hp || 0) <= 0 || op.x == null || _a3Unselectable(id)) return;
       const d = dist(worldX, worldY, op.x, op.y);
       if (d < 22 + tapR && d < bestD) { bestD = d; best = { id, isPlayer: true }; }
     });
