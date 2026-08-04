@@ -711,9 +711,12 @@ function netConnect(onReady) {
     if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py - 32);
     if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 48);
     if (gold && player) {
+      // Clan bonus first, then the ×2 potion on top — same order the server
+      // already applies the VIP gold bonus in (it multiplies result.gold
+      // before sending it, see the attack handler in server/index.js).
       const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
-      const _goldFinal = _cb && _cb.gold > 0 ? Math.round(gold * (1 + _cb.gold / 100)) : gold;
-      player.gold += _goldFinal;
+      const _goldClan = _cb && _cb.gold > 0 ? Math.round(gold * (1 + _cb.gold / 100)) : gold;
+      const _goldFinal = gainGold(_goldClan);
       const g = _goldFinal % 1 === 0 ? _goldFinal : +_goldFinal.toFixed(1);
       dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
     }
@@ -923,7 +926,7 @@ function netConnect(onReady) {
 
   socket.on('raidComplete', ({ gold, xp, weaponRarity }) => {
     if (player) {
-      player.gold = (player.gold || 0) + gold;
+      gainGold(gold);
       if (typeof gainXP === 'function') gainXP(xp);
       // Apply weapon drop if player was the lucky winner
       if (weaponRarity && typeof CRAFT_MATS !== 'undefined') {
@@ -1155,8 +1158,8 @@ function netConnect(onReady) {
     }
     if (xp && player) { player.kills++; gainXP(xp); }
     if (gold && player) {
-      player.gold += gold;
-      const g = gold % 1 === 0 ? gold : +gold.toFixed(1);
+      const _goldFinal = gainGold(gold);
+      const g = _goldFinal % 1 === 0 ? _goldFinal : +_goldFinal.toFixed(1);
       dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
     }
     if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py);
@@ -1197,7 +1200,7 @@ function netConnect(onReady) {
 
   socket.on('adminGive', ({ gold, nexum, gram }) => {
     if (!player) return;
-    if (gold)  { player.gold = (player.gold || 0) + gold; if (typeof updateHUD === 'function') updateHUD(); }
+    if (gold)  { gainGold(gold, true); if (typeof updateHUD === 'function') updateHUD(); }
     if (nexum) { if (typeof updateNexumBalance === 'function') updateNexumBalance(nexum); }
     if (gram)  { if (typeof updateGramBalance === 'function') updateGramBalance(gram); }
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
@@ -2460,7 +2463,7 @@ function _initGramHandlers(s) {
     if (window._vipData) window._vipData.pending = vipPending || [];
     if (player && newInventory) player.inventory = newInventory;
     if (player && goldAdded > 0) {
-      player.gold = (player.gold || 0) + goldAdded;
+      gainGold(goldAdded, true);
       if (player.x !== undefined) dmgNum(player.x, player.y - 40, '+' + goldAdded + 'g VIP', '#ffd700');
     }
     if (typeof renderVipPanel === 'function') renderVipPanel();

@@ -55,9 +55,13 @@ function fireProj(tx, ty, enemyId, pvpTargetId) {
 
 function pickup(drop) {
   if (drop.type === 'gold') {
-    let amount = drop.amount;
-    if ((player.buffs || {}).gold > 0) amount *= 2;
-    player.gold += amount;
+    // Currently unreachable: nothing pushes into `drops` any more, because
+    // kill gold comes straight down the server's enemyKilled event instead of
+    // being dropped on the floor to walk over. This branch is what USED to
+    // apply the ×2 gold potion, and it going dead is exactly why that potion
+    // stopped working — so it now defers to gainGold like every other reward
+    // path, and can't drift out of sync again if ground gold ever returns.
+    const amount = gainGold(drop.amount);
     dmgNum(drop.x, drop.y - 12, '+' + amount + '💰', '#e6ac19');
     return;
   }

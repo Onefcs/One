@@ -62,7 +62,7 @@ function claimQuest() {
   const q = getCurrentQuest();
   if (!q || !isQuestComplete(q)) return;
   if (q.reward.xp > 0) gainXP(q.reward.xp);
-  player.gold += q.reward.gold;
+  gainGold(q.reward.gold);
   if (q.reward.items) {
     q.reward.items.forEach(id => {
       const def = ITEM_DEF.find(d => d.id === id);
@@ -385,7 +385,7 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   // level-ups. Nexum is server-authoritative and not in the save blob, so we
   // only refresh the displayed balance.
   if (!alreadyDone) {
-    if (reward.gold)  { player.gold = (player.gold || 0) + reward.gold; }
+    if (reward.gold)  { gainGold(reward.gold, true); }
     if (reward.xp && typeof gainXP === 'function') gainXP(reward.xp, true);
     if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
   }

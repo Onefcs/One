@@ -295,6 +295,29 @@ function upgradeStats(key) {
   if (typeof updateProfileUI === 'function') updateProfileUI();
 }
 
+// Gold counterpart to gainXP below, and deliberately the same shape: `flat`
+// marks a fixed amount the server already finalised (a special-quest payout, a
+// VIP reward, an admin grant, the proceeds of a sale) and skips the multiplier,
+// exactly as gainXP's flat path does for XP.
+//
+// Every place that EARNS gold has to go through here, because this is the only
+// place the ×2 gold potion is applied. It used to be applied in pickup()
+// (js/combat.js) instead — the old walk-over-the-pile gold path. Gold now
+// arrives directly on the server's enemyKilled event and nothing fills `drops`
+// any more, so that branch became unreachable and the potion quietly did
+// nothing at all: it was consumed, it counted down in the HUD, and it
+// multiplied no gold whatsoever. Keeping the multiplier in one function is what
+// stops the next change to a reward path from re-breaking it the same way.
+//
+// Returns the amount actually credited, so callers can show the real number
+// rather than the pre-buff one.
+function gainGold(amount, flat) {
+  if (!player || !amount) return 0;
+  const gained = (!flat && (player.buffs || {}).gold > 0) ? amount * 2 : amount;
+  player.gold = (player.gold || 0) + gained;
+  return gained;
+}
+
 function gainXP(amount, flat) {
   // flat=true skips the exp/deathPenalty buff multipliers — used for fixed
   // rewards the server already computed (e.g. special-quest XP), so the client
