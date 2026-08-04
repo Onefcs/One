@@ -54,8 +54,11 @@ function getPartyLeaveBtnPos() {
   return { x: pvpBtn.x, y: startY + count * (bh + gap), w: 80, h: 22 };
 }
 
+// x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
+// see getPartyInfoBtnPos, whose width completes the pair's total span back
+// to W/2 ± (80 + 6 + 52) / 2.
 function getPartyBtnPos() {
-  return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
+  return { x: W / 2 - 69, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
 // "Инфо" button right next to Пати+ — view whoever is currently targeted
