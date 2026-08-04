@@ -178,15 +178,20 @@ class Room {
       }
       const savedAt = bossState[e.arm];
       // Three cases for a per-arm boss at startup:
-      //  - a persisted deadline that's still in the future: dead, resume the
-      //    real remaining cooldown instead of losing it to the restart.
-      //  - a persisted deadline already in the past: the whole cooldown
-      //    elapsed while the server was down, so it's alive again now.
-      //  - no record at all (first boot ever for this arm): fall back to
-      //    dead with a fresh random 1-2h wait — the original fix for every
-      //    restart otherwise dropping a full-HP boss on the map instantly.
-      const hp = (savedAt != null && savedAt <= _now) ? e.maxHp : 0;
-      const respawnTimer = hp > 0 ? undefined : (savedAt != null ? (savedAt - _now) / 1000 : _bossRespawnSecs());
+      //  - a persisted deadline still in the future: stay dead, and resume
+      //    the real remaining cooldown rather than losing it to the restart.
+      //  - a deadline already in the past: the cooldown ran out while the
+      //    server was down, so it's alive again now.
+      //  - no record at all: this boss has never been killed, so it's alive.
+      //    (Before deadlines were persisted, this case had to assume the
+      //    worst and start every boss dead on a fresh timer, or a restart
+      //    would respawn one that had just been killed. Now that a kill
+      //    always leaves a record, a missing one is unambiguous — and
+      //    assuming death here was killing bosses nobody had touched, every
+      //    restart, for up to two hours at a time.)
+      const dead = savedAt != null && savedAt > _now;
+      const hp = dead ? 0 : e.maxHp;
+      const respawnTimer = dead ? (savedAt - _now) / 1000 : undefined;
       return {
         ...e, hp, aggro: false, atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
         _sx: e.x, _sy: e.y, _shp: hp,
