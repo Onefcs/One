@@ -75,6 +75,9 @@ function getAutoBtnPos() {
 // Invite accept/decline buttons (for popup)
 function getPartyAcceptPos()  { return { x: W / 2 - 68, y: H / 2 + 18, w: 58, h: 26 }; }
 function getPartyDeclinePos() { return { x: W / 2 + 10, y: H / 2 + 18, w: 58, h: 26 }; }
+// "i" button on the invite popup — lets the invitee check the inviter's
+// stats/equipment before accepting (see showPeerProfileModal, js/ui.js).
+function getPartyInviteInfoPos() { const pw = 220; return { x: W / 2 + pw / 2 - 18, y: H / 2 - 24, r: 10 }; }
 
 function _isOnScreen(wx, wy) {
   return wx >= _vL && wx <= _vR && wy >= _vT && wy <= _vB;
@@ -248,6 +251,11 @@ function _checkPartyBtnTouch(cx, cy) {
 
 function _checkPartyInviteTouch(cx, cy) {
   if (!partyInvitePending) return false;
+  const ip = getPartyInviteInfoPos();
+  if (Math.hypot(cx - ip.x, cy - ip.y) <= ip.r + 4) {
+    if (typeof netRequestPlayerProfile === 'function') netRequestPlayerProfile(partyInvitePending.fromId);
+    return true;
+  }
   const ac = getPartyAcceptPos(), dc = getPartyDeclinePos();
   if (cx >= ac.x && cx <= ac.x + ac.w && cy >= ac.y && cy <= ac.y + ac.h) {
     if (typeof netPartyAccept === 'function') netPartyAccept(partyInvitePending.fromId);

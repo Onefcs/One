@@ -216,6 +216,61 @@ function setHudPotion(itemId) {
   netSaveProgress();
 }
 
+// ─────────────────────────────────────────────────────────
+//  PEER PROFILE MODAL (view another player's stats/equipment —
+//  currently reached from the party invite popup's info button)
+// ─────────────────────────────────────────────────────────
+function showPeerProfileModal(fromName, profile) {
+  if (!profile) return;
+  const existing = document.getElementById('peer-profile-ov');
+  if (existing) existing.remove();
+
+  const fmt1 = v => ((v || 0) * 100).toFixed(1) + '%';
+  const eqCells = EQ_SLOTS.map(({ slot, label, emptyIcon }) => {
+    const it = profile.equipment[slot];
+    const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '';
+    const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
+    return `<div class="eq-cell${it ? ' filled' : ''}"
+      title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
+      style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
+      <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#6c6354')}</div>
+      <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
+      ${enhBadge}
+    </div>`;
+  }).join('');
+
+  const ov = document.createElement('div');
+  ov.id = 'peer-profile-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-height:82vh;overflow-y:auto;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:800;color:#90d653">${fromName || profile.name}</div>
+      <button onclick="document.getElementById('peer-profile-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
+    </div>
+    <div class="prof-hero">
+      <div class="prof-emoji">${iconHTML(profile.charIcon, 40, profile.charColor)}</div>
+      <div>
+        <div class="prof-cls" style="color:${profile.charColor}">${profile.className}</div>
+        <div class="prof-lvl">${tVars('charLevelFmt', { lvl: profile.lvl })}</div>
+      </div>
+    </div>
+    <div class="stat-grid" style="margin-top:12px">
+      <div class="stat-card"><div class="stat-ic">${iconHTML('heart',14,'#da4658')}</div><div class="stat-vl">${profile.hp}/${profile.maxHp}</div><div class="stat-nm">HP</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('sword',14,'#da952e')}</div><div class="stat-vl">${profile.atk}</div><div class="stat-nm">${t('clanPerkAtk')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('shield',14,'#d1aa65')}</div><div class="stat-vl">${profile.def}</div><div class="stat-nm">${t('statDef')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('lightning',14,'#e3941d')}</div><div class="stat-vl">${(profile.atkSpeed || 0).toFixed(2)}</div><div class="stat-nm">${t('statAtkSpeedAbbrev')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#da4658')}</div><div class="stat-vl">${fmt1(profile.critChance)}</div><div class="stat-nm">${t('statCritChance')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('flame',14,'#da952e')}</div><div class="stat-vl">${(profile.critPower || 0).toFixed(2)}x</div><div class="stat-nm">${t('statCritPower')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('hpPlus',14,'#79b644')}</div><div class="stat-vl">${(profile.hpRegen || 0).toFixed(2)}</div><div class="stat-nm">${t('statHpRegen')}</div></div>
+      <div class="stat-card"><div class="stat-ic">${iconHTML('star',14,'#eaa742')}</div><div class="stat-vl">${profile.bm}</div><div class="stat-nm">${t('bmAbbrev')}</div></div>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:#a2988a;margin:14px 0 8px">${t('peerEquipHdr')}</div>
+    <div id="peer-eq-grid" class="eq-grid-5col">${eqCells}</div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
 function updateProfileUI() {
   if (!player) return;
   const p = player, d = p.charDef;
@@ -2216,6 +2271,17 @@ function drawPartyInvitePopup() {
   ctx.fillText(t('partyInviteTitle'), px + 34, py + 14);
   ctx.font = `10px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
+
+  // Info button — check the inviter's stats/equipment before accepting
+  const ip = getPartyInviteInfoPos();
+  ctx.fillStyle = 'rgba(144,214,83,0.15)';
+  ctx.beginPath(); ctx.arc(ip.x, ip.y, ip.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(144,214,83,0.7)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(ip.x, ip.y, ip.r, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#90d653';
+  ctx.fillText('i', ip.x, ip.y + 1);
+  ctx.textBaseline = 'alphabetic';
 
   // Accept button
   const ac = getPartyAcceptPos();

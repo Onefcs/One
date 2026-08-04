@@ -2878,6 +2878,7 @@ io.on('connection', socket => {
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
+    'requestPlayerProfile', 'playerProfileResponse',
   ]);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
@@ -4760,6 +4761,24 @@ io.on('connection', socket => {
   });
 
   safeOn('partyDecline', () => { /* no cleanup needed */ });
+
+  // Stats/equipment are client-authoritative (see the build in js/player.js),
+  // so the server never has another player's full loadout to hand over —
+  // it just relays the request to that player's own client and relays their
+  // answer back, the same shape as the partyInvite round trip above.
+  safeOn('requestPlayerProfile', ({ targetId }) => {
+    if (!authed || typeof targetId !== 'string') return;
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (!targetSocket || !targetSocket.data?.username) return;
+    targetSocket.emit('playerProfileRequested', { requesterId: socket.id });
+  });
+
+  safeOn('playerProfileResponse', ({ targetId, profile }) => {
+    if (!authed || typeof targetId !== 'string' || !profile) return;
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (!targetSocket) return;
+    targetSocket.emit('playerProfileResult', { fromId: socket.id, fromName: authed.username, profile });
+  });
 
   safeOn('partyLeave', () => {
     const partyId = playerParty.get(socket.id);

@@ -720,6 +720,20 @@ function netConnect(onReady) {
     // partyUpdated (or disconnect) will clear the member list; don't wipe here
   });
 
+  // Someone (the party inviter, currently — see the info button on the
+  // invite popup, js/ui.js/js/input.js) wants to see our stats/equipment.
+  // We're the only side that actually has them (client-authoritative build),
+  // so answer with our own computed payload instead of the server doing it.
+  socket.on('playerProfileRequested', ({ requesterId }) => {
+    if (!player || !requesterId) return;
+    const profile = typeof _buildPeerProfilePayload === 'function' ? _buildPeerProfilePayload() : null;
+    if (profile && socket?.connected) socket.emit('playerProfileResponse', { targetId: requesterId, profile });
+  });
+
+  socket.on('playerProfileResult', ({ fromId, fromName, profile }) => {
+    if (typeof showPeerProfileModal === 'function') showPeerProfileModal(fromName, profile);
+  });
+
   socket.on('healPartyMember', ({ amount }) => {
     if (!player || state !== 'playing') return;
     player.hp = Math.min(player.maxHp, player.hp + amount);
@@ -1216,6 +1230,14 @@ function netPartyDecline(fromId) {
 function netPartyLeave() {
   if (socket?.connected) socket.emit('partyLeave');
   partyMembers = [];
+}
+
+// Stats/equipment are client-authoritative, so there's no server-side copy
+// of another player's loadout to fetch — the server only relays this
+// request to their client, which answers with _buildPeerProfilePayload()
+// (js/ui.js) below, and relays the answer back.
+function netRequestPlayerProfile(targetId) {
+  if (socket?.connected) socket.emit('requestPlayerProfile', { targetId });
 }
 
 // ── Special Quests ────────────────────────────────────────
