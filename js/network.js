@@ -2014,6 +2014,12 @@ function netCraftPet(rarity) {
   if (socket?.connected) socket.emit('craftPet', { rarity });
 }
 
+// Charged in Liberty, so the server does the whole thing and answers with
+// 'upgradesReset' — see the handler above.
+function netResetUpgrades() {
+  if (socket?.connected) socket.emit('resetUpgrades');
+}
+
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
@@ -2470,6 +2476,24 @@ function _initPetCraftHandlers(s) {
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
+  });
+
+  // Upgrade reset. The server has already charged the Liberty and cleared its
+  // own copy of the upgrades; clearing ours here is what actually returns the
+  // points, since "spent" is derived from this map rather than stored (see
+  // getAvailableSkillPoints, js/player.js). Save straight away so an autosave
+  // composed a moment earlier can't put the old upgrades back.
+  s.on('upgradesReset', ({ pointsReturned, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (!player) return;
+    player.nexumBalance = newNexumBalance;
+    player.upgrades = {};
+    if (typeof recompute === 'function') recompute();
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+    if (typeof onUpgradesReset === 'function') onUpgradesReset(pointsReturned);
+  });
+  s.on('resetUpgradesError', ({ msg }) => {
+    if (typeof onUpgradesResetError === 'function') onUpgradesResetError(msg);
   });
 }
 

@@ -21,7 +21,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
+  PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -2897,7 +2897,7 @@ io.on('connection', socket => {
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile',
+    'requestPlayerProfile', 'resetUpgrades', 'craftPet',
   ]);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
@@ -3462,6 +3462,42 @@ io.on('connection', socket => {
     } catch (err) {
       console.error('gramShopBuy:', err);
       logPlayerErr(authed.telegramId, authed.username, 'gram_shop', err, { pkgId });
+    }
+  });
+
+  // ── Reset stat upgrades (Улучшения → Сбросить) ─────────────────────────────
+  // Costs Liberty, so the charge has to happen here: Liberty is the one
+  // currency the client doesn't own the source of truth for (see craftPet
+  // below for the same reasoning).
+  //
+  // Clearing player.upgrades is all a "refund" needs to be — spent points are
+  // never stored, they're derived as lvl*3 + bonusSP minus the sum of the
+  // upgrade levels (getAvailableSkillPoints, js/player.js). Emptying the map
+  // therefore hands back every point ever put into it, however many that was.
+  // Gold spent on those upgrades is deliberately not refunded.
+  safeOn('resetUpgrades', () => {
+    if (!authed) return;
+    try {
+      const cur = (_lastStats && _lastStats.upgrades) || {};
+      const spent = Object.values(cur).reduce((s, v) => s + (Number(v) || 0), 0);
+      if (spent <= 0) {
+        return socket.emit('resetUpgradesError', { msg: 'Улучшений нет — сбрасывать нечего' });
+      }
+      if (_liveNexum() < UPGRADE_RESET_COST) {
+        return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
+      }
+      _setNexum(_liveNexum() - UPGRADE_RESET_COST);
+      if (_lastStats) _lastStats.upgrades = {};
+      // Keep the room's anti-cheat baseline in step, or its computeStats would
+      // go on crediting the cleared upgrades until the next saveProgress.
+      if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
+      _persistSavedFields(authed, { upgrades: {}, nexumBalance: _nexumBalance });
+      logPlayer(authed.telegramId, authed.username, 'upgrades_reset',
+        { pointsReturned: spent, cost: UPGRADE_RESET_COST });
+      socket.emit('upgradesReset', { pointsReturned: spent, newNexumBalance: _nexumBalance });
+    } catch (err) {
+      console.error('resetUpgrades:', err);
+      socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
     }
   });
 

@@ -323,6 +323,71 @@ function updateUpgradeUI() {
       </button>
     </div>`;
   }).join('');
+
+  const rw = document.getElementById('upg-reset-wrap');
+  if (rw) {
+    const spent = Object.values(u).reduce((s, v) => s + (v || 0), 0);
+    const bal = window._nexumBalance || 0;
+    const can = spent > 0 && bal >= UPGRADE_RESET_COST;
+    rw.innerHTML = `
+      <button class="upg-reset-btn${can ? '' : ' disabled'}" onclick="openUpgradeResetModal()">
+        ${t('upgResetBtn')} · ${_nexumIconHtml(13)} ${UPGRADE_RESET_COST}
+      </button>
+      <div class="upg-reset-hint">${spent > 0
+        ? tVars('upgResetHint', { n: spent })
+        : t('upgResetNothing')}</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+//  UPGRADE RESET  (Улучшения → Сбросить, стоит Liberty)
+// ─────────────────────────────────────────────────────────
+function openUpgradeResetModal() {
+  if (!player) return;
+  const spent = Object.values(player.upgrades || {}).reduce((s, v) => s + (v || 0), 0);
+  if (spent <= 0) return;
+  const bal = window._nexumBalance || 0;
+  if (bal < UPGRADE_RESET_COST) {
+    dmgNum(player.x, player.y - 30, tVars('upgResetNeedFmt', { n: UPGRADE_RESET_COST }), '#f88');
+    return;
+  }
+  const ov = document.createElement('div');
+  ov.id = 'upg-reset-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('upgResetTitle')}</div>
+    <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:16px">
+      ${tVars('upgResetConfirm', { n: spent, cost: UPGRADE_RESET_COST })}
+    </div>
+    <div style="display:flex;gap:10px">
+      <button onclick="document.getElementById('upg-reset-ov').remove()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+        color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+      <button onclick="_confirmUpgradeReset()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;
+        background:linear-gradient(135deg,#4a3410,#6b4a17);color:#e5aa52;
+        font-size:14px;font-weight:700;cursor:pointer">${t('upgResetGo')}</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _confirmUpgradeReset() {
+  const ov = document.getElementById('upg-reset-ov');
+  if (ov) ov.remove();
+  if (typeof netResetUpgrades === 'function') netResetUpgrades();
+}
+
+function onUpgradesReset(pointsReturned) {
+  if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
+  if (typeof updateProfileUI === 'function') updateProfileUI();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (player) dmgNum(player.x, player.y - 30, tVars('upgResetDone', { n: pointsReturned }), '#98e456');
+}
+
+function onUpgradesResetError(msg) {
+  if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
 }
 
 // ─────────────────────────────────────────────────────────

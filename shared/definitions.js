@@ -687,9 +687,9 @@ function rollEventBossDrops(rand) {
 // the event boss uses, forced into PvP, and fights until one player is left.
 // Times are Moscow (UTC+3, no DST) hours — nextEventStartAt below converts to
 // UTC itself, so this stays readable.
-// Вторник, четверг, суббота — дважды в день.
+// Вторник, четверг, суббота — раз в день, в 10:00.
 const DEATH_BATTLE_DAYS_MSK = [2, 4, 6];
-const DEATH_BATTLE_HOURS_MSK = [10, 20];
+const DEATH_BATTLE_HOURS_MSK = [10];
 const DEATH_BATTLE_MSK_OFFSET_H = 3;
 const DEATH_BATTLE_REG_MS = 5 * 60 * 1000;
 // Everyone lands in the arena frozen for this long — nobody can move or
@@ -784,6 +784,12 @@ function deathBattleRewards() {
 // way (js/combat.js), just capped at a lower max level. Bonuses stack as
 // flat/percent on top of recompute()'s existing
 // atk/def/hp/atkSpeed/critPower/hpRegen/speed pipeline (js/player.js).
+// Liberty charged to wipe every stat upgrade and hand back the skill points
+// that went into them (see the resetUpgrades handler in server/index.js and
+// the button in js/ui.js — both read this so the price shown is the price
+// charged).
+const UPGRADE_RESET_COST = 200;
+
 const PASSIVE_MAX_LEVEL = 5;
 
 const PASSIVE_CLASS_DEF = {
@@ -866,6 +872,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
+  UPGRADE_RESET_COST,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
