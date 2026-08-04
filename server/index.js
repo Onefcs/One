@@ -4078,7 +4078,7 @@ io.on('connection', socket => {
       return;
     }
     if (result.killed) {
-      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + Room.randomBossRespawnMs() });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
 
@@ -4222,7 +4222,7 @@ io.on('connection', socket => {
       return;
     }
     if (result.killed) {
-      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + 3600000 });
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + Room.randomBossRespawnMs() });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
       // Same proximity requirement as the basic-attack kill above.

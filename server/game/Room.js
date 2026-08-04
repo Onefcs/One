@@ -142,6 +142,16 @@ function _fullEnemyEntry(e) {
 // choice, imperceptible in play.
 const AI_TARGET_SEARCH_EVERY = 4;
 
+// Per-arm boss respawn: random 1-2h, not a flat 3600s — otherwise every
+// boss on the map ticks back in at exactly the same offset from whatever
+// moment killed/reset them, which reads as suspiciously mechanical over a
+// full day of restarts/kills.
+const BOSS_RESPAWN_MIN_S = 60 * 60;
+const BOSS_RESPAWN_MAX_S = 2 * 60 * 60;
+function _bossRespawnSecs() {
+  return BOSS_RESPAWN_MIN_S + Math.random() * (BOSS_RESPAWN_MAX_S - BOSS_RESPAWN_MIN_S);
+}
+
 class Room {
   constructor(floor, io) {
     this.floor = floor;
@@ -149,7 +159,7 @@ class Room {
     this.players = new Map();
     this._dungeon = generateOpenWorld();
     this._gridPacked = packGrid(this._dungeon.grid, this._dungeon.w, this._dungeon.h);
-    // Per-arm bosses start already "dead" with the same fixed 1-hour
+    // Per-arm bosses start already "dead" with the same random 1-2h
     // respawnTimer a normal kill sets (see the tick loop below) — otherwise
     // every restart/deploy dropped every arm's boss onto the map instantly at
     // full HP with no cooldown at all, since a fresh Room had no kill to
@@ -158,7 +168,7 @@ class Room {
       ...e, hp: e.isBoss ? 0 : e.maxHp, aggro: false,
       atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
       _sx: e.x, _sy: e.y, _shp: e.isBoss ? 0 : e.maxHp,
-      ...(e.isBoss ? { respawnTimer: 3600 } : {}),
+      ...(e.isBoss ? { respawnTimer: _bossRespawnSecs() } : {}),
     }));
     // O(1) enemy lookup for attack handler
     this._enemyMap = new Map(this.enemies.map(e => [e.id, e]));
@@ -356,7 +366,7 @@ class Room {
       const boss = this.enemies.find(e => e.isBoss && e.arm === arm);
       if (!boss) return;
       if (boss.hp > 0) { status[arm] = { alive: true }; return; }
-      const secs = boss.respawnTimer !== undefined ? boss.respawnTimer : 3600;
+      const secs = boss.respawnTimer !== undefined ? boss.respawnTimer : _bossRespawnSecs();
       status[arm] = { alive: false, respawnAt: Date.now() + Math.max(0, secs) * 1000 };
     });
     return status;
@@ -444,7 +454,7 @@ class Room {
           }
           return;
         }
-        if (e.respawnTimer === undefined) { e.respawnTimer = e.isBoss ? 3600 : 12; return; }
+        if (e.respawnTimer === undefined) { e.respawnTimer = e.isBoss ? _bossRespawnSecs() : 12; return; }
         e.respawnTimer -= dt;
         if (e.respawnTimer <= 0) {
           e.hp = e.maxHp;
@@ -1263,5 +1273,12 @@ class Room {
 
   stop() { clearInterval(this._interval); }
 }
+
+// Exposed so server/index.js can broadcast a bossStatus notice with the same
+// random 1-2h window right at kill time, one tick before the AI loop
+// (above) actually assigns the enemy's own respawnTimer — without this
+// they'd disagree, showing players a "1 hour" ETA that then jumps once the
+// real timer kicks in.
+Room.randomBossRespawnMs = () => _bossRespawnSecs() * 1000;
 
 module.exports = Room;
