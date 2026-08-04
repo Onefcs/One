@@ -459,6 +459,11 @@ function netConnect(onReady) {
         const sdist = Math.abs(sdx) + Math.abs(sdy);
         if (sdist > 0.3) {
           ex._moveTimer = 0.35;
+          // "The server is actually walking this one right now." The local
+          // chase prediction in js/game.js is gated on this, so it can only
+          // ever smooth out movement the server is already doing — never
+          // invent movement of its own. See the comment there for why.
+          ex._srvMoving = 0.4;
           // Facing with axis hysteresis: on diagonal paths |dx|≈|dy|, so a
           // plain >= comparison flip-flops left/down every tick — keep the
           // current axis unless the other is clearly (1.4x) dominant
@@ -865,6 +870,14 @@ function netConnect(onReady) {
         e._atkDone    = prev._atkDone    || false;
         e._moveTimer  = prev._moveTimer  || 0;
         e._facing     = prev._facing     || 'down';
+        // This instance resends its whole enemy list instead of deltas, so
+        // derive "the server is walking it" here the way the open world does.
+        // Both the walk animation and the local chase prediction key off it.
+        e._srvMoving  = prev._srvMoving  || 0;
+        if (Math.abs(se.x - (prev.targetX ?? se.x)) +
+            Math.abs(se.y - (prev.targetY ?? se.y)) > 0.3) {
+          e._moveTimer = 0.35; e._srvMoving = 0.4;
+        }
       }
       serverEnemies.push(e);
       serverEnemiesMap.set(se.id, e);
@@ -1058,6 +1071,13 @@ function netConnect(onReady) {
         e._atkDone     = prev._atkDone     || false;
         e._moveTimer   = prev._moveTimer   || 0;
         e._facing      = prev._facing      || 'down';
+        // Same as the raid handler above — full list, no deltas, so work out
+        // server-driven movement from the previous snapshot's position.
+        e._srvMoving   = prev._srvMoving   || 0;
+        if (Math.abs(se.x - (prev.targetX ?? se.x)) +
+            Math.abs(se.y - (prev.targetY ?? se.y)) > 0.3) {
+          e._moveTimer = 0.35; e._srvMoving = 0.4;
+        }
       }
       serverEnemies.push(e);
       serverEnemiesMap.set(se.id, e);

@@ -124,6 +124,14 @@ const EKNOWN_FORGET_CASTS = 6;
 // Map-panel dot refresh, in ticks (40/s) — 1Hz. Only sent to players with the
 // panel open; see _broadcastMapBlips.
 const MAP_BLIP_EVERY = 40;
+// Every N casts an enemy is re-sent in full even if this player's copy looks
+// current, staggered per enemy so it costs a handful of entries per cast
+// rather than a world-wide sweep. Purely a self-heal: it puts an authoritative
+// position, hp and aggro flag back in front of a client whose own copy has
+// drifted for any reason. Dropping it (when enemies moved to per-player
+// streaming) is what let a client-invented aggro survive indefinitely instead
+// of correcting itself within a minute.
+const ENEMY_REFRESH_CASTS = 1200; // 20 casts/s -> once a minute
 
 // The complete record for one enemy — every field the client needs to render
 // and fight it. Shared by the tick's periodic refresh and the on-demand
@@ -824,7 +832,11 @@ class Room {
 
   _pushEnemyEntry(e, known, out, castId) {
     const k = known.get(e.id);
-    if (!k) {
+    // castId advances two per cast (casts run every other tick), so halve it
+    // before the stagger — on the raw value an enemy with an odd _idx would
+    // never satisfy the modulo and would never be refreshed at all.
+    const stale = ((castId >> 1) + (e._idx || 0)) % ENEMY_REFRESH_CASTS === 0;
+    if (!k || stale) {
       out.push(_fullEnemyEntry(e));
       known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: castId });
       return;

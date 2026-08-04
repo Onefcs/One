@@ -756,6 +756,7 @@ function update(dt, realDt) {
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
+    if ((e._srvMoving || 0) > 0) e._srvMoving -= dt;
     if ((e.stunTimer || 0) > 0) e.stunTimer -= dt;
     if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
 
@@ -792,7 +793,15 @@ function update(dt, realDt) {
       }
       return;
     }
-    if (e.aggro && dp > sz + 14) {
+    // Only ever smooth out a walk the server is already performing (see
+    // _srvMoving, js/network.js) — never start one on our own. The server
+    // holds enemies still for several reasons this side knows nothing about:
+    // the 420px leash back to their spawn point (spawnX isn't even sent over
+    // the wire), players standing in a safe zone, a lost line of sight. When
+    // that happened, this branch kept walking the enemy toward the player
+    // anyway and the position correction below kept hauling it back — so it
+    // wandered in a circle, permanently "running" without ever arriving.
+    if (e.aggro && (e._srvMoving || 0) > 0 && dp > sz + 14) {
       const nx = (closestTgt.x - e.x) / dp;
       const ny = (closestTgt.y - e.y) / dp;
       if (Math.abs(nx) >= Math.abs(ny)) e._facing = nx > 0 ? 'right' : 'left';
