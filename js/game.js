@@ -1886,7 +1886,7 @@ function playerDie() {
       ? `${_armLabel(_dRoom.arm)} ${typeof t === 'function' ? t('corridorSuffix') : 'коридор'} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
     info.innerHTML =
       `<span class="death-stat">${_dLoc}</span>` +
-      `<span class="death-stat">${player.gold} <span class="death-lbl">${typeof t === 'function' ? t('deathGoldLbl') : 'золота'}</span> · ${player.kills} <span class="death-lbl">${typeof t === 'function' ? t('deathKillsLbl') : 'убийств'}</span></span>`;
+      `<span class="death-stat">${Math.floor(player.gold)} <span class="death-lbl">${typeof t === 'function' ? t('deathGoldLbl') : 'золота'}</span> · ${player.kills} <span class="death-lbl">${typeof t === 'function' ? t('deathKillsLbl') : 'убийств'}</span></span>`;
   }
   const penaltyEl = document.getElementById('death-penalty');
   if (penaltyEl) penaltyEl.style.display = 'block';

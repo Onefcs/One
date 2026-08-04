@@ -306,15 +306,14 @@ function gainXP(amount, flat) {
     // already under 2 XP and leaves it untouched instead.
     if ((player.buffs || {}).deathPenalty > 0 && amount >= 2) amount = Math.floor(amount * 0.5);
   }
-  // Rounded to 6 decimals on every add so binary-float noise can't accumulate.
-  // Party kills award result.xp / memberCount (server/index.js), which is
-  // genuinely fractional — adding those raw drifted the total into values like
-  // 858.9999999999418, which then got persisted and displayed. 6 decimals is
-  // far below any share size (so no XP is actually lost to the rounding) but
-  // far above the ~1e-13 noise that was accumulating.
-  player.xp = Math.round((player.xp + amount) * 1e6) / 1e6;
+  // Rounded to a whole number on every add — XP is a whole-number stat, and
+  // party-kill shares (result.xp / memberCount, server/index.js) are now
+  // rounded server-side too, but this keeps the client robust against any
+  // stray fractional amount (and against old float-noise drift like
+  // 858.9999999999418) instead of letting it persist and display.
+  player.xp = Math.round(player.xp + amount);
   while (player.xp >= player.xpNext) {
-    player.xp = Math.round((player.xp - player.xpNext) * 1e6) / 1e6;
+    player.xp = Math.round(player.xp - player.xpNext);
     player.lvl++;
     const _xpBase = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
     let _xpMult = player.lvl > 5 ? 3 : 1;
@@ -812,9 +811,12 @@ function restoreFromSave(data) {
   // fresh device picks up whatever language was last chosen anywhere.
   if (data.lang && typeof setLang === 'function' && data.lang !== currentLang) setLang(data.lang);
   player.lvl      = data.lvl      || 1;
-  player.xp       = data.xp       || 0;
+  // Rounded on load: old saves picked up float noise from party-kill splits
+  // (e.g. 2182.666666666666g) before those were fixed to divide to whole
+  // numbers server-side — this cleans up anything already persisted.
+  player.xp       = Math.round(data.xp   || 0);
   player.xpNext   = data.xpNext   || 100;
-  player.gold     = data.gold     || 0;
+  player.gold     = Math.floor(data.gold || 0);
   player.kills    = data.kills    || 0;
   // migrate old integer potions save → potionBag
   if (data.potionBag) {

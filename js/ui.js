@@ -70,7 +70,7 @@ function updateInvUI() {
         <div style="font-size:11px;color:#5d564b;margin-top:2px;display:flex;align-items:center;gap:3px">
           ${iconHTML('heart',11,'#da4658')}${Math.ceil(p.hp)}/${p.maxHp} ·
           <span style="color:#eaa742;font-weight:700">${t('bmAbbrev')} ${typeof calcBM==='function'?calcBM(p):0}</span> ·
-          ${iconHTML('coin',11,'#e3941d')}${p.gold}
+          ${iconHTML('coin',11,'#e3941d')}${Math.floor(p.gold)}
         </div>
       </div>
       <div onclick="openHpPicker()" style="color:#98e456;text-align:right;font-weight:bold;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
@@ -1460,8 +1460,9 @@ function drawHeader() {
   // Gold
   drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#e3941d');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
-  ctx.fillText(p.gold, stxH + 13, 24);
-  stxH += 13 + ctx.measureText(String(p.gold)).width + 8;
+  const _goldDisp = Math.floor(p.gold);
+  ctx.fillText(_goldDisp, stxH + 13, 24);
+  stxH += 13 + ctx.measureText(String(_goldDisp)).width + 8;
   // Nexum balance
   const _nxBal = window._nexumBalance || 0;
   if (_nxBal > 0 || true) {

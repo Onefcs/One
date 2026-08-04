@@ -58,7 +58,7 @@ function _merchantBody() {
   const p = player;
   const bag = p.potionBag || {};
   const total = (bag.pt1 || 0) + (bag.pt2 || 0);
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b> · ${typeof t === 'function' ? t('npcHpPotionsLbl') : 'Зелий HP'}: <b>${total}/${POTION_CAP}</b></div>`;
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${Math.floor(p.gold)}</b> · ${typeof t === 'function' ? t('npcHpPotionsLbl') : 'Зелий HP'}: <b>${total}/${POTION_CAP}</b></div>`;
 
   // Quantity picker — applies to every row below it.
   html += '<div class="shop-sec">' + (typeof t === 'function' ? t('npcQtyHdr') : 'Сколько покупать') + '</div>';
@@ -155,7 +155,7 @@ function _craftsmanBody() {
     <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftTabMats') : 'Материалы'}</button>
   </div>`;
 
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${p.gold}</b>
+  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${Math.floor(p.gold)}</b>
     &nbsp;·&nbsp; ${_nexumIconHtml(16)} Liberty: <b>${window._nexumBalance || 0}</b></div>`;
   html += tabs;
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab() : _craftsmanMatsTab();
@@ -247,7 +247,7 @@ function openCraftModal(idx) {
   const goldRow = rec.goldCost ? `<div class="craft-req-row">
     <span class="craft-req-icon">${iconHTML('coin', 20, '#e3941d')}</span>
     <span class="craft-req-name">${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}</span>
-    <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${player.gold}/${rec.goldCost}</span>
+    <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${Math.floor(player.gold)}/${rec.goldCost}</span>
   </div>` : '';
 
   const canCraft = invHasSpace() &&

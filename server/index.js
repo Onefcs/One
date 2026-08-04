@@ -1827,7 +1827,7 @@ function _handlePartyDungeonKillResult(pd, attackerId, enemyId, result) {
   }
   const mids = [...pd.memberIds];
   const n = Math.max(1, mids.length);
-  const xpShare = result.xp / n, goldShare = result.gold / n;
+  const xpShare = Math.max(1, Math.round(result.xp / n)), goldShare = Math.round(result.gold / n);
   const nexumDrop  = !result.isBoss && Math.random() < 0.50 ? 1 : 0;
   const normStone  = result.isBoss && Math.random() < 0.50 ? 1 : 0;
   const blessStone = result.isBoss && Math.random() < 0.10 ? 1 : 0;
@@ -4118,8 +4118,8 @@ io.on('connection', socket => {
 
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
-        const xpShare   = result.xp   / totalMembers;
-        const goldShare = result.gold  / totalMembers;
+        const xpShare   = Math.max(1, Math.round(result.xp / totalMembers));
+        const goldShare = Math.round(result.gold / totalMembers);
 
         // Random loot recipient among party + attacker
         const allIds = [socket.id, ...memberIds];
@@ -4254,7 +4254,7 @@ io.on('connection', socket => {
       }
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
-        const xpShare = result.xp / totalMembers, goldShare = result.gold / totalMembers;
+        const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
         const allIds = [socket.id, ...memberIds];
         const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
         socket.emit('enemyKilled', {
