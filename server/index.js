@@ -358,6 +358,18 @@ function tgApi(method, body) {
   }).then(r => r.json()).catch(() => ({ ok: false }));
 }
 
+// Everything below sends with parse_mode:'HTML', and several of the values
+// interpolated into those messages come from the player — the deposit memo and
+// the withdrawal address are typed straight into the client, and a display
+// name falls back to Telegram's first_name. Unescaped, a player could close a
+// tag and write their own lines into the message the admin reads before
+// pressing ✅ — a different amount, a fake "already verified" note — or simply
+// break the markup so Telegram rejects the send and the request never appears.
+function _tgEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // Admin notification with approve/reject buttons
 async function notifyAdminGram(tx) {
   if (!TG_ADMIN_ID) return;
@@ -367,11 +379,11 @@ async function notifyAdminGram(tx) {
   const payout = isDeposit ? 0 : _round2(tx.amount - fee);
   const lines = [
     header,
-    `👤 ${tx.username} (<code>${tx.telegramId}</code>)`,
-    `💎 ${tx.amount} GRAM`,
+    `👤 ${_tgEsc(tx.username)} (<code>${_tgEsc(tx.telegramId)}</code>)`,
+    `💎 ${Number(tx.amount)} GRAM`,
     isDeposit
-      ? `🏷 Мемо: <code>${tx.memo}</code>`
-      : `📬 Адрес: <code>${tx.address}</code>`,
+      ? `🏷 Мемо: <code>${_tgEsc(tx.memo)}</code>`
+      : `📬 Адрес: <code>${_tgEsc(tx.address)}</code>`,
     ...(isDeposit ? [] : [`💸 К отправке: ${payout} GRAM (комиссия ${fee} GRAM)`]),
     `🆔 <code>${tx._id}</code>`,
   ];
@@ -410,6 +422,10 @@ async function _pollTg() {
 }
 
 async function _handleAdminCallback(cq) {
+  // These buttons approve real payouts, so the sender is checked rather than
+  // assumed. Today they only exist in the admin's own chat, but nothing else
+  // in this function would notice if that stopped being true.
+  if (!TG_ADMIN_ID || String(cq?.from?.id || '') !== String(TG_ADMIN_ID)) return;
   const [action, txId] = (cq.data || '').split(':');
   if (!txId || !['gram_ok', 'gram_no'].includes(action)) return;
 
@@ -510,7 +526,7 @@ async function _registerReferral(telegramId, username, refId, playerDoc) {
     chat_id: refId,
     text: [
       '🎉 <b>Друг принял приглашение!</b>',
-      `👤 @${username} только что зашёл в игру по вашей ссылке.`,
+      `👤 @${_tgEsc(username)} только что зашёл в игру по вашей ссылке.`,
       '',
       '💡 Когда друг пополняет GRAM — вы получаете <b>5% бонус</b>.',
     ].join('\n'),
@@ -541,13 +557,13 @@ async function _notifyAdminNewPlayer(username, telegramId, referrerUsername) {
   ).catch(() => null);
   if (!claimed) return;
   const refLine = referrerUsername
-    ? `\n👥 Пригласил: @${referrerUsername}`
+    ? `\n👥 Пригласил: @${_tgEsc(referrerUsername)}`
     : '\n👥 Источник: органика';
   await tgApi('sendMessage', {
     chat_id: TG_ADMIN_ID,
     text: [
       '🆕 <b>Новый игрок</b>',
-      `👤 @${username} (<code>${telegramId}</code>)${refLine}`,
+      `👤 @${_tgEsc(username)} (<code>${_tgEsc(telegramId)}</code>)${refLine}`,
     ].join('\n'),
     parse_mode: 'HTML',
   }).catch(() => {});
@@ -561,7 +577,7 @@ async function _handleBotMessage(msg) {
   const parts = text.trim().split(' ');
   const param = parts[1] || '';
   const firstName = msg.from.first_name || '';
-  const username = msg.from.username || firstName || `tg_${fromId}`;
+  const username = _safeUsername(msg.from.username || firstName, fromId);
 
   let isNewPlayer = false;
   let referrerUsername = null;
@@ -593,9 +609,12 @@ async function _handleBotMessage(msg) {
   const channelButton = { text: '📢 Канал', url: 'https://t.me/Libertymmo' };
   const chatButton    = { text: '💬 Чат', url: 'https://t.me/+PrFI0HWtRi02NGU0' };
 
-  const greeting = firstName ? `👋 Привет, <b>${firstName}</b>!` : '👋 Добро пожаловать!';
+  // Escaped even though this one goes back to the player themselves: an
+  // unbalanced tag makes Telegram reject the whole send with a 400, so the
+  // welcome message (and its Играть button) would silently never arrive.
+  const greeting = firstName ? `👋 Привет, <b>${_tgEsc(firstName)}</b>!` : '👋 Добро пожаловать!';
   const refText  = referrerUsername
-    ? `\n🎁 Вас пригласил @${referrerUsername} — играйте вместе и зарабатывайте бонусы!`
+    ? `\n🎁 Вас пригласил @${_tgEsc(referrerUsername)} — играйте вместе и зарабатывайте бонусы!`
     : '';
 
   await tgApi('sendMessage', {
@@ -631,10 +650,50 @@ function _refLink(telegramId) {
   return `https://t.me/${bot}?start=ref_${telegramId}`;
 }
 
+// Telegram gives us `username` (a @handle, restricted to [A-Za-z0-9_]) only
+// for accounts that actually set one; everyone else falls back to first_name,
+// which is arbitrary user-chosen text. That string is then stored, shown to
+// other players (rating, market, profiles), written into the binary gameState
+// packet and embedded in the admin's Telegram notifications — so it is
+// normalised once, here, at the only place it enters the system.
+//   • angle brackets/quotes/ampersand dropped: the client escapes on output
+//     too, but a name that can't carry markup in the first place means one
+//     forgotten escape somewhere later isn't an XSS.
+//   • control characters dropped — they render as nothing and are a classic
+//     way to spoof someone else's name.
+//   • capped at 32 characters AND 200 UTF-8 bytes: _ncWStr (shared/netcodec.js)
+//     writes each string with a single-byte length prefix, so a 256-byte name
+//     (64 emoji, which Telegram allows) would wrap that byte and desync the
+//     packet for every client that can see this player.
+const _USERNAME_MAX_CHARS = 32;
+const _USERNAME_MAX_BYTES = 200;
+function _sanitizeName(raw) {
+  let s = String(raw == null ? '' : raw)
+    // Control characters, markup delimiters and quote marks — everything
+    // that could either spoof a name visually or break out of an HTML
+    // context somewhere downstream.
+    .replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '')
+    .trim()
+    .slice(0, _USERNAME_MAX_CHARS);
+  while (Buffer.byteLength(s, 'utf8') > _USERNAME_MAX_BYTES) s = s.slice(0, -1);
+  return s;
+}
+// Same cleaning, with the "nothing usable left" fallback the login paths need.
+// Clan names use _sanitizeName directly instead, so that a clan legitimately
+// called "tg_something" isn't mistaken for the fallback.
+function _safeUsername(raw, telegramId) {
+  return _sanitizeName(raw) || `tg_${telegramId}`;
+}
+
 // Login Widget verification (browser button)
 function verifyTelegramAuth(data) {
   const { hash, ...rest } = data;
   if (!hash) return false;
+  // No token configured means no signature can be trusted: the HMAC below
+  // would be computed with an empty key, which anyone can reproduce, so an
+  // unconfigured deployment would accept a forged login for ANY telegramId.
+  // Fail closed instead.
+  if (!_TG_TOKEN) return false;
   const checkStr = Object.keys(rest).sort().map(k => `${k}=${rest[k]}`).join('\n');
   const secret = crypto.createHash('sha256').update(_TG_TOKEN).digest();
   const computed = crypto.createHmac('sha256', secret).update(checkStr).digest('hex');
@@ -651,6 +710,11 @@ function verifyTelegramAuth(data) {
 // _refLink()/the referral registration in loginTelegramWebApp below).
 function verifyTelegramWebApp(initData) {
   try {
+    // Fail closed with no token — see the matching guard in verifyTelegramAuth:
+    // an HMAC keyed on the empty string is one anybody can compute, so a
+    // deployment that forgot TG_BOT_TOKEN would accept a forged login for any
+    // account rather than refusing every login.
+    if (!_TG_TOKEN) return null;
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
     if (!hash) return null;
@@ -858,6 +922,14 @@ function _recordLoginFail(ip) {
   e.n += 1;
   if (e.n >= LOGIN_MAX_FAILS) { e.lockedUntil = Date.now() + LOGIN_LOCK_MS; e.n = 0; }
   _loginFails.set(ip, e);
+  // One entry per IP that ever failed a login, kept forever, is a slow leak
+  // that a spray across many source addresses turns into a fast one. Drop
+  // entries that are neither locked nor recently active whenever the map grows
+  // past a sane size.
+  if (_loginFails.size > 5000) {
+    const now = Date.now();
+    _loginFails.forEach((v, k) => { if (v.lockedUntil <= now && v.n === 0) _loginFails.delete(k); });
+  }
 }
 // Constant-time string compare that never throws on length mismatch.
 function _safeEqual(a, b) {
@@ -868,6 +940,29 @@ function _safeEqual(a, b) {
 }
 
 // ── Admin REST API ─────────────────────────────────────────────────────────────
+// Blanket per-IP ceiling over every /admin route. The login endpoint has its
+// own (much stricter) brute-force lock; this covers the rest, where several
+// endpoints run unindexed scans and aggregations — a leaked or brute-forced
+// token shouldn't also be a way to flatten the database. Registered before the
+// routes below so it actually sees them.
+const _ADMIN_RL_WINDOW_MS = 60000;
+const _ADMIN_RL_MAX = 240;
+const _adminHits = new Map(); // ip → { n, resetAt }
+app.use('/admin', (req, res, next) => {
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const e = _adminHits.get(ip);
+  if (!e || now > e.resetAt) {
+    _adminHits.set(ip, { n: 1, resetAt: now + _ADMIN_RL_WINDOW_MS });
+    if (_adminHits.size > 5000) {
+      _adminHits.forEach((v, k) => { if (now > v.resetAt) _adminHits.delete(k); });
+    }
+    return next();
+  }
+  if (++e.n > _ADMIN_RL_MAX) return res.status(429).json({ error: 'Слишком много запросов' });
+  next();
+});
+
 app.post('/admin/login', (req, res) => {
   if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin disabled' });
   const ip = req.ip || 'unknown';
@@ -984,11 +1079,29 @@ app.post('/admin/player/:tid/unban', adminAuth, async (req, res) => {
 
 app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
   try {
-    const { gold = 0, nexum = 0, gram = 0 } = req.body || {};
+    // Validated before anything is added: an unparseable figure used to reach
+    // Mongo as NaN, and a savedData.gold of NaN breaks the client's whole
+    // money UI with no obvious cause.
+    const _amt = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const gold  = _amt((req.body || {}).gold);
+    const nexum = _amt((req.body || {}).nexum);
+    const gram  = _amt((req.body || {}).gram);
+    if (!gold && !nexum && !gram) return res.status(400).json({ error: 'Нечего выдавать' });
     const p = await PlayerModel.findOne({ telegramId: req.params.tid });
     if (!p) return res.status(404).json({ error: 'Not found' });
     const saved = p.savedData || {};
-    if (gold)  saved.gold          = (saved.gold || 0) + Number(gold);
+    // Gold, unlike gram/nexum, has no server-side live cache — it rides the
+    // client's save blob. Writing it straight to the DB for a player who is
+    // online meant their next autosave (up to 60s later) overwrote it with the
+    // figure their client still held, and the grant silently vanished. Route it
+    // through the live session when there is one, exactly as the item endpoint
+    // above does.
+    const _liveSock = io.sockets.sockets.get(activeSessions.get(String(req.params.tid)) || '');
+    const _giveGoldLive = gold ? _liveSock?.data?._adminGiveGold : null;
+    if (gold)  saved.gold          = (saved.gold || 0) + gold;
     if (nexum) {
       // If the player is online, base the grant on the live cache (authoritative)
       // and update it, so their session's next save can't roll the grant back.
@@ -1013,11 +1126,14 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     // this snapshot would revert any other savedData field this account's
     // own gameplay autosave wrote in the same window.
     const _giveSet = {};
-    if (gold)  _giveSet['savedData.gold'] = saved.gold;
+    // Gold handled by the live session when the player is online (see above);
+    // only write it here when nobody is holding a newer copy in memory.
+    if (gold && !_giveGoldLive) _giveSet['savedData.gold'] = saved.gold;
     if (nexum) _giveSet['savedData.nexumBalance'] = saved.nexumBalance;
     if (gram)  _giveSet['savedData.gramBalance'] = saved.gramBalance;
     if (Object.keys(_giveSet).length) await PlayerModel.updateOne({ _id: p._id }, { $set: _giveSet });
-    io.to(`tg_${p.telegramId}`).emit('adminGive', { gold: Number(gold), nexum: Number(nexum), gram: Number(gram) });
+    if (_giveGoldLive) await _giveGoldLive(gold);
+    io.to(`tg_${p.telegramId}`).emit('adminGive', { gold, nexum, gram });
     logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1242,13 +1358,34 @@ app.get('/admin/special-quests', adminAuth, async (req, res) => {
   try { res.json({ quests: await SpecialQuestModel.find({}).sort({ createdAt: -1 }).lean() }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Only the fields the quest editor actually offers are taken from the body —
+// passing req.body straight to the model let any document shape through,
+// including keys the game later reads as if the server had written them.
+function _questFields(body) {
+  const b = body || {};
+  const out = {};
+  if (b.title  != null) out.title  = String(b.title).slice(0, 120);
+  if (b.desc   != null) out.desc   = String(b.desc).slice(0, 500);
+  if (b.url    != null) out.url    = String(b.url).slice(0, 500);
+  if (b.icon   != null) out.icon   = String(b.icon).slice(0, 8);
+  if (b.type   != null) out.type   = ['link', 'subscribe', 'custom'].includes(b.type) ? b.type : 'link';
+  if (b.active != null) out.active = !!b.active;
+  if (b.reward) {
+    const n = v => Math.max(0, Math.min(Number(v) || 0, 1e9));
+    out.reward = { gold: n(b.reward.gold), xp: n(b.reward.xp), nexum: n(b.reward.nexum) };
+  }
+  return out;
+}
 app.post('/admin/special-quests', adminAuth, async (req, res) => {
-  try { res.json({ quest: await SpecialQuestModel.create(req.body) }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const f = _questFields(req.body);
+    if (!f.title) return res.status(400).json({ error: 'title required' });
+    res.json({ quest: await SpecialQuestModel.create(f) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.put('/admin/special-quests/:id', adminAuth, async (req, res) => {
   try {
-    const q = await SpecialQuestModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const q = await SpecialQuestModel.findByIdAndUpdate(req.params.id, _questFields(req.body), { new: true });
     res.json({ quest: q });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1275,12 +1412,20 @@ app.get('/health', (req, res) => {
   // loop was actually making its budget; tickOverruns/tickMsMax say so
   // directly. Reading resets the window, so each poll describes the interval
   // since the last one (see Room.stats).
+  // The liveness answer itself is public — an uptime monitor has to be able to
+  // read it without credentials. The operational detail below it (memory,
+  // socket count, tick timings) is only added for an authenticated admin: it
+  // says nothing an attacker needs, but it does say precisely when the server
+  // is already struggling.
+  const brief = { ok: dbOk, db: mongoose.connection.readyState };
+  if (!_verifyAdminToken((req.headers.authorization || '').replace('Bearer ', ''))) {
+    return res.status(dbOk ? 200 : 503).json(brief);
+  }
   const rooms = [];
   floorRooms.forEach(r => { try { rooms.push(r.stats()); } catch {} });
   const mem = process.memoryUsage();
   res.status(dbOk ? 200 : 503).json({
-    ok: dbOk,
-    db: mongoose.connection.readyState,
+    ...brief,
     sockets: io.engine.clientsCount,
     uptimeS: Math.round(process.uptime()),
     heapMb: Math.round(mem.heapUsed / 1048576),
@@ -1704,6 +1849,13 @@ function _recordClanChat(clanId, username, text) {
 // whether or not the other party is currently online — only realtime
 // *delivery* requires them to be connected (see the privMsg handler).
 const dmHistory = new Map(); // "tidA|tidB" -> [{username, text, time}]
+// Each conversation holds up to 50 messages and nothing ever removed a
+// conversation, so this grew for the life of the process — every pair of
+// players who ever exchanged one message, forever. Evict the least recently
+// written conversation once there are too many; the history is best-effort
+// in-memory state that a restart clears anyway (unlike global chat, which is
+// DB-backed).
+const DM_MAX_CONVERSATIONS = 2000;
 function _dmKey(a, b) { return [String(a), String(b)].sort().join('|'); }
 function _recordDm(tidA, tidB, username, text) {
   const key = _dmKey(tidA, tidB);
@@ -1712,7 +1864,13 @@ function _recordDm(tidA, tidB, username, text) {
   const arr = dmHistory.get(key) || [];
   arr.push({ username, text, time });
   if (arr.length > 50) arr.shift();
+  // Re-inserting moves this key to the end of the Map's iteration order, which
+  // is what makes the eviction below least-recently-used rather than arbitrary.
+  dmHistory.delete(key);
   dmHistory.set(key, arr);
+  while (dmHistory.size > DM_MAX_CONVERSATIONS) {
+    dmHistory.delete(dmHistory.keys().next().value);
+  }
 }
 // Resolves a @nickname to the canonical account, whether or not they're
 // currently online (DB lookup, case-insensitive exact match — Telegram
@@ -1838,17 +1996,30 @@ async function _grantPartyDungeonNexum(winnerSocketId, amount) {
 const DAILY_DUNGEON_ATTEMPTS = 3;
 function _todayStr() { return new Date().toISOString().slice(0, 10); }
 
+// Consuming an attempt is ONE update, expressed as an aggregation pipeline so
+// the "is the stored record still today's?" decision happens inside the same
+// atomic document write as the increment. The previous read-then-$set version
+// lost increments whenever two runs started in the same window — a party's
+// members all trigger this at once — which handed out more runs per day than
+// the limit allows. A pair of conditional updates would still leak one attempt
+// in the narrow case of two simultaneous runs being the first of the day.
 function _lockDailyAttempt(socketId, field) {
   const s = io.sockets.sockets.get(socketId);
   const tid = s?.data?.telegramId;
   if (tid == null) return;
   const today = _todayStr();
-  PlayerModel.findOne({ telegramId: tid }).select(`savedData.${field}`).lean()
-    .then(doc => {
-      const prev = doc?.savedData?.[field];
-      const count = (prev && prev.date === today) ? prev.count + 1 : 1;
-      return PlayerModel.findOneAndUpdate({ telegramId: tid }, { $set: { [`savedData.${field}`]: { date: today, count } } });
-    }).catch(() => {});
+  const path = `savedData.${field}`;
+  PlayerModel.updateOne({ telegramId: tid }, [{
+    $set: {
+      [path]: {
+        $cond: [
+          { $eq: [`$${path}.date`, today] },
+          { date: today, count: { $add: [{ $ifNull: [`$${path}.count`, 0] }, 1] } },
+          { date: today, count: 1 },
+        ],
+      },
+    },
+  }]).catch(() => {});
 }
 
 async function _dailyAttemptsLeft(socketId, field) {
@@ -3088,6 +3259,28 @@ io.on('connection', socket => {
     return v;
   }
   let _lastMarketListAt = 0;
+
+  // ── One-at-a-time guard for spend/claim handlers ──────────────────────────
+  // gramShopBuy, claimVipRewards and completeSpecialQuest all read a balance
+  // or a claim flag, then `await` a DB round trip, and only then spend or
+  // clear it. Two events sent in the same tick both pass the check while the
+  // first is still awaiting — buying one package twice for one payment,
+  // claiming a VIP tier's items twice, taking a quest reward twice. The rate
+  // limiter doesn't help: it allows 40 heavy events per 5s, and this needs
+  // exactly two.
+  //
+  // marketBuy solves the same problem by keeping no await between its
+  // re-check and its deduction (see the comment there); these three can't be
+  // rearranged that way, so they serialize instead. Per-socket is the right
+  // scope: all three act on the connection's own account, and a second
+  // connection for the same account is already impossible (activeSessions).
+  let _econBusy = false;
+  async function _withEconLock(fn) {
+    if (_econBusy) return false;
+    _econBusy = true;
+    try { await fn(); } finally { _econBusy = false; }
+    return true;
+  }
   let _saveDebounceTimer = null;
 
   // ── Coalesced balance writes ──────────────────────────────────────────────
@@ -3262,6 +3455,22 @@ io.on('connection', socket => {
     await _commitServerItems(inventory, equipment, 'admin');
   };
 
+  // Gold granted by an admin to a player who is online. It has to land in
+  // _lastStats, not just in the database: this session's 60s autosave writes
+  // _lastStats wholesale, so a grant written only to Mongo was reverted the
+  // next time that timer fired (most visibly for a backgrounded mobile client,
+  // whose own save — which does carry the grant, see the adminGive handler in
+  // js/network.js — may not come for a long time). No double-counting: the
+  // client's next save replaces _lastStats rather than adding to it.
+  socket.data._adminGiveGold = async (amount) => {
+    if (!authed || !Number.isFinite(amount) || amount === 0) return;
+    if (!_lastStats) _lastStats = {};
+    _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + amount);
+    await _persistSavedFields(authed, { gold: _lastStats.gold });
+    logPlayer(authed.telegramId, authed.username, 'admin_give_gold_live',
+      { amount, balance: _lastStats.gold });
+  };
+
   // Hands the death-battle winner its prize. Lives here rather than beside
   // _dbFinish because this is where the socket's own inventory/GRAM copies
   // are (same reasoning as pickupWorldDrop's award path). Returns the item
@@ -3374,7 +3583,7 @@ io.on('connection', socket => {
       if (!verified) return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
       const { user, startParam } = verified;
       const telegramId = String(user.id);
-      const username = user.username || user.first_name || `tg_${telegramId}`;
+      const username = _safeUsername(user.username || user.first_name, telegramId);
       // Reserve slot before first await to prevent concurrent logins
       if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
         const _prevSocket = io.sockets.sockets.get(activeSessions.get(telegramId));
@@ -3449,7 +3658,7 @@ io.on('connection', socket => {
       if (!verifyTelegramAuth(data))
         return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
       const telegramId = String(data.id);
-      const username = data.username || data.first_name || `tg_${telegramId}`;
+      const username = _safeUsername(data.username || data.first_name, telegramId);
       // Reserve slot before first await to prevent concurrent logins
       if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
         const _prevSocket2 = io.sockets.sockets.get(activeSessions.get(telegramId));
@@ -3511,7 +3720,9 @@ io.on('connection', socket => {
         username:   authed.username,
         type: 'deposit',
         amount: Number(amount),
-        memo: String(memo || authed.telegramId),
+        // Bounded: it is shown to the admin in a Telegram message and stored
+        // per request, so there's no reason to accept an arbitrary-length blob.
+        memo: String(memo || authed.telegramId).slice(0, 64),
       });
       socket.emit('gramTxCreated', { tx: _txData(tx) });
       logPlayer(authed.telegramId, authed.username, 'gram_deposit_request',
@@ -3528,6 +3739,18 @@ io.on('connection', socket => {
     try {
       if (amount > _liveGram()) return socket.emit('gramError', { msg: 'Недостаточно средств' });
 
+      // The request row is created BEFORE the balance moves. The other order
+      // deducted first, and a failed insert (a DB blip) then left the player
+      // short with no request to refund from — recoverable only by hand, from
+      // the log line below.
+      const tx = await GramTxModel.create({
+        telegramId: authed.telegramId,
+        username:   authed.username,
+        type: 'withdraw',
+        amount: Number(amount),
+        address: String(address).slice(0, 128),
+      });
+
       // Deduct immediately — refunded on rejection. Based on _liveGram() so a
       // credit that landed through another code path since this socket logged
       // in (market sale payout, admin deposit confirmation, referral bonus)
@@ -3543,13 +3766,6 @@ io.on('connection', socket => {
         { $set: { 'savedData.gramBalance': _gramBalance } },
       );
 
-      const tx = await GramTxModel.create({
-        telegramId: authed.telegramId,
-        username:   authed.username,
-        type: 'withdraw',
-        amount: Number(amount),
-        address: String(address),
-      });
       socket.emit('gramTxCreated', { tx: _txData(tx), newBalance: _gramBalance });
       logPlayer(authed.telegramId, authed.username, 'gram_withdraw_request',
         { amount: Number(amount), newBalance: _gramBalance, tx: tx._id.toString() });
@@ -3571,6 +3787,7 @@ io.on('connection', socket => {
 
   safeOn('gramShopBuy', async ({ pkgId } = {}) => {
     if (!authed || !pkgId) return;
+    const _ran = await _withEconLock(async () => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
@@ -3578,6 +3795,11 @@ io.on('connection', socket => {
 
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
+      // Re-checked after the await: the lock above already serializes this
+      // handler, but a credit/debit from another path (a market purchase, a
+      // withdrawal) can still land in that window, and the deduction below
+      // must never be based on a balance read before it.
+      if (_liveGram() < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
       const saved = doc.savedData || {};
       const charClass = saved.type || 'lev';
       const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
@@ -3737,6 +3959,8 @@ io.on('connection', socket => {
       console.error('gramShopBuy:', err);
       logPlayerErr(authed.telegramId, authed.username, 'gram_shop', err, { pkgId });
     }
+    });
+    if (!_ran) socket.emit('gramShopError', { msg: 'Покупка уже обрабатывается' });
   });
 
   // ── Reset stat upgrades (Улучшения → Сбросить) ─────────────────────────────
@@ -4234,19 +4458,24 @@ io.on('connection', socket => {
         socket.emit('ratingData', { tab: 'players', rows });
       } else {
         const clans = await ClanModel.find({}, 'name icon members').lean();
+        // One query for every clan's members instead of one aggregate per clan
+        // in a loop: this handler is rate-limited as a heavy event (40 per 5s
+        // per socket), so at a few dozen clans the old shape let a single
+        // client queue thousands of aggregations against the same connection
+        // pool everyone's saves share.
+        const _allMemberIds = [...new Set(clans.flatMap(c => (c.members || []).map(m => m.telegramId)))];
+        const _bmDocs = _allMemberIds.length
+          ? await PlayerModel.find({ telegramId: { $in: _allMemberIds } }, 'telegramId bm').lean()
+          : [];
+        const _bmByTid = new Map(_bmDocs.map(d => [d.telegramId, d.bm || 0]));
         const clanBm = [];
         for (const clan of clans) {
           if (!clan.members?.length) continue;
-          const ids = clan.members.map(m => m.telegramId);
-          const result = await PlayerModel.aggregate([
-            { $match: { telegramId: { $in: ids } } },
-            { $group: { _id: null, total: { $sum: '$bm' } } },
-          ]);
           clanBm.push({
             name: clan.name,
             icon: clan.icon,
             memberCount: clan.members.length,
-            totalBm: result[0]?.total || 0,
+            totalBm: clan.members.reduce((s, m) => s + (_bmByTid.get(m.telegramId) || 0), 0),
           });
         }
         clanBm.sort((a, b) => b.totalBm - a.totalBm);
@@ -4257,6 +4486,10 @@ io.on('connection', socket => {
 
   safeOn('claimVipRewards', async () => {
     if (!authed) return;
+    // Serialized: vipPending is read here and only cleared after an await, so
+    // two claims in one tick both saw the same pending list and each handed
+    // out the full item set. See _withEconLock.
+    await _withEconLock(async () => {
     try {
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
@@ -4317,6 +4550,7 @@ io.on('connection', socket => {
       console.error('claimVipRewards:', err);
       logPlayerErr(authed.telegramId, authed.username, 'vip_rewards', err);
     }
+    });
   });
 
   safeOn('selectChar', ({ type, savedStats }) => {
@@ -4410,8 +4644,15 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.setMapOpen(socket.id, !!open);
   });
 
+  // `amount` is validated as a real number before it goes anywhere near hp.
+  // Math.min('x', 200) is NaN, and NaN assigned to hp is permanent: every
+  // damage path writes Math.max(0, NaN - dmg) === NaN back, and `hp <= 0` is
+  // false for NaN — so one malformed packet made a player unkillable until
+  // respawn, which is worth real money in the death battle/arena/tower.
   safeOn('usePotion', ({ amount } = {}) => {
-    if (currentRoom) currentRoom.healPlayer(socket.id, Math.min(amount || 60, 200));
+    if (!currentRoom) return;
+    const n = Number(amount);
+    currentRoom.healPlayer(socket.id, Number.isFinite(n) ? Math.max(0, Math.min(n, 200)) : 60);
   });
 
   safeOn('statsUpdate', ({ atk, def, maxHp, critChance, critPower } = {}) => {
@@ -4769,6 +5010,9 @@ io.on('connection', socket => {
   });
 
   safeOn('pvpSkillAttack', ({ targetId, multiplier } = {}) => {
+    // Was the only combat handler outside the attack limiter, i.e. in the
+    // 300 events/s bucket.
+    if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
@@ -4957,19 +5201,53 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
   });
 
+  // Both of these are pure visuals — they carry no damage, the hit itself goes
+  // through attack/skillAttack. They used to forward the client's object as-is
+  // to everyone on the floor, which meant one player could push up to
+  // maxHttpBufferSize (512 KB) of arbitrary data at every other player, several
+  // hundred times a second, and inject unknown fields into their render loop.
+  // Rebuild a fixed, numeric, bounded packet instead: the fields below are
+  // exactly what js/network.js's netSpawnProj/netSpawnAoe send and what the
+  // receiving handlers read.
+  const _PROJ_TYPES = new Set(['arrow', 'ball']);
+  const _num = (v, min, max, dflt) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : dflt;
+  };
+  // Colours are written into a canvas fillStyle, so anything not matching a
+  // plain hex literal is replaced rather than passed through.
+  const _color = v => (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v)) ? v : '#ffffff';
+
   safeOn('spawnProj', data => {
-    if (!currentRoom) return;
-    socket.to(`floor_${currentFloor}`).emit('spawnProj', data);
+    if (!currentRoom || !data || typeof data !== 'object') return;
+    socket.to(`floor_${currentFloor}`).emit('spawnProj', {
+      x:        _num(data.x, -1e5, 1e5, 0),
+      y:        _num(data.y, -1e5, 1e5, 0),
+      vx:       _num(data.vx, -5000, 5000, 0),
+      vy:       _num(data.vy, -5000, 5000, 0),
+      angle:    _num(data.angle, -Math.PI * 2, Math.PI * 2, 0),
+      size:     _num(data.size, 1, 64, 5),
+      life:     _num(data.life, 0, 10, 1.5),
+      color:    _color(data.color),
+      projType: _PROJ_TYPES.has(data.projType) ? data.projType : 'ball',
+    });
   });
 
   safeOn('spawnAoe', data => {
-    if (!currentRoom) return;
-    socket.to(`floor_${currentFloor}`).emit('spawnAoe', data);
+    if (!currentRoom || !data || typeof data !== 'object') return;
+    socket.to(`floor_${currentFloor}`).emit('spawnAoe', {
+      x: _num(data.x, -1e5, 1e5, 0),
+      y: _num(data.y, -1e5, 1e5, 0),
+      r: _num(data.r, 1, 400, 80),
+    });
   });
 
   safeOn('healParty', ({ amount } = {}) => {
     if (!authed || !currentRoom) return;
-    const healAmt = Math.max(0, Math.min(Math.floor(amount), 9999));
+    // `|| 0` is what stops a non-numeric amount becoming NaN and freezing the
+    // recipient's hp forever — see usePotion above. The party-dungeon twin of
+    // this handler already had it; this one didn't.
+    const healAmt = Math.max(0, Math.min(Math.floor(Number(amount)) || 0, 9999));
     const partyId = playerParty.get(socket.id);
     if (!partyId) return;
     const partyMap = parties.get(partyId);
@@ -5192,7 +5470,10 @@ io.on('connection', socket => {
 
   safeOn('clanCreate', async ({ name, icon }) => {
     if (!authed) return;
-    const n = (name || '').trim().slice(0, 10);
+    // Same normalisation player names get (_safeUsername): a clan tag is shown
+    // over every member's head and in other players' panels, so it must not be
+    // able to carry markup or control characters either.
+    const n = _sanitizeName(name).slice(0, 10).trim();
     if (!n) return socket.emit('clanError', { msg: 'Введите название' });
     if (typeof icon !== 'number' || icon < 1 || icon > 30) return socket.emit('clanError', { msg: 'Неверная иконка' });
     const existing = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
@@ -5279,10 +5560,24 @@ io.on('connection', socket => {
     if (clan.members.length >= CLAN_MAX_MEMBERS) {
       return socket.emit('clanError', { msg: `В клане максимум ${CLAN_MAX_MEMBERS} участников` });
     }
-    clan.applications = clan.applications.filter(a => a.telegramId !== telegramId);
-    clan.members.push({ telegramId: app.telegramId, username: app.username, role: 'member' });
-    await clan.save().catch(() => {});
-    await _notifyClan(clan);
+    // $pull + $push instead of mutating the document and calling save(): a
+    // full-document write here loses whatever else changed since this copy was
+    // read (another approval, someone leaving, a level-up from the XP flusher).
+    // The filters make it once-only too — approving the same application twice
+    // can't add the member twice.
+    const _approved = await ClanModel.updateOne(
+      { _id: clan._id, 'applications.telegramId': telegramId, 'members.telegramId': { $ne: telegramId },
+        [`members.${CLAN_MAX_MEMBERS - 1}`]: { $exists: false } },
+      {
+        $pull: { applications: { telegramId } },
+        $push: { members: { telegramId: app.telegramId, username: app.username, role: 'member' } },
+      },
+    ).catch(() => null);
+    if (!_approved || !_approved.modifiedCount) {
+      return socket.emit('clanError', { msg: 'Заявку уже обработали' });
+    }
+    const _fresh = await ClanModel.findById(clan._id).catch(() => null);
+    await _notifyClan(_fresh || clan);
   });
 
   safeOn('clanDecline', async ({ telegramId }) => {
@@ -5306,8 +5601,10 @@ io.on('connection', socket => {
     if (!clan) return;
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
     if (telegramId === authed.telegramId) return;
+    // Atomic $pull — see clanApprove above for why a full-document save here
+    // drops concurrent changes.
+    await ClanModel.updateOne({ _id: clan._id }, { $pull: { members: { telegramId } } }).catch(() => {});
     clan.members = clan.members.filter(m => m.telegramId !== telegramId);
-    await clan.save().catch(() => {});
     await _notifyClan(clan);
     // Notify kicked player
     const kicked = _socketForTelegramId(telegramId);
@@ -5329,16 +5626,28 @@ io.on('connection', socket => {
       // Promote next member or disband
       const others = clan.members.filter(m => m.telegramId !== authed.telegramId);
       if (others.length > 0) {
-        others[0].role = 'leader';
-        clan.members = others;
-        await clan.save().catch(() => {});
-        await _notifyClan(clan);
+        // Two targeted updates rather than rewriting the member array: the
+        // leaver is pulled and the successor promoted in place, so a member who
+        // joined between this read and this write isn't dropped.
+        await ClanModel.updateOne(
+          { _id: clan._id },
+          { $pull: { members: { telegramId: authed.telegramId } } },
+        ).catch(() => {});
+        await ClanModel.updateOne(
+          { _id: clan._id, 'members.telegramId': others[0].telegramId },
+          { $set: { 'members.$.role': 'leader' } },
+        ).catch(() => {});
+        const _fresh = await ClanModel.findById(clan._id).catch(() => null);
+        await _notifyClan(_fresh || clan);
       } else {
         await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
       }
     } else {
+      await ClanModel.updateOne(
+        { _id: clan._id },
+        { $pull: { members: { telegramId: authed.telegramId } } },
+      ).catch(() => {});
       clan.members = clan.members.filter(m => m.telegramId !== authed.telegramId);
-      await clan.save().catch(() => {});
       await _notifyClan(clan);
     }
     socket.emit('clanData', null);
@@ -5726,7 +6035,19 @@ io.on('connection', socket => {
         if (quest.reward.gold)  upd['savedData.gold']         = (authed.savedData.gold         || 0) + quest.reward.gold;
         if (_newNexum != null)  upd['savedData.nexumBalance'] = _newNexum;
         if (quest.reward.xp)    upd['savedData.xp']           = (authed.savedData.xp           || 0) + quest.reward.xp;
-        await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: upd });
+        // The `$ne` on the filter is what makes the reward once-only. The
+        // `done.includes` check above reads authed.savedData, which is only
+        // updated after this await — so two completions sent in the same tick
+        // both passed it and both paid out. Here the database decides: the
+        // second write matches nothing and modifiedCount is 0.
+        const _claim = await PlayerModel.updateOne(
+          { telegramId: authed.telegramId, 'savedData.specialQuestsDone': { $ne: String(questId) } },
+          { $set: upd },
+        );
+        if (!_claim.modifiedCount) {
+          socket.emit('specialQuestDone', { questId: String(questId), reward: { gold: 0, xp: 0, nexum: 0 }, alreadyDone: true });
+          return;
+        }
         authed.savedData.specialQuestsDone = newDone;
         if (quest.reward.gold)  authed.savedData.gold         = (authed.savedData.gold         || 0) + quest.reward.gold;
         if (_newNexum != null)  authed.savedData.nexumBalance = _newNexum;
@@ -5738,7 +6059,16 @@ io.on('connection', socket => {
         if (quest.reward.gold)  freshData.gold         = quest.reward.gold;
         if (_newNexum != null)  freshData.nexumBalance = _newNexum;
         if (quest.reward.xp)    freshData.xp           = quest.reward.xp;
-        await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: { savedData: freshData } });
+        // Same once-only guard as the branch above, expressed against the null
+        // savedData this branch exists for.
+        const _claimNew = await PlayerModel.updateOne(
+          { telegramId: authed.telegramId, savedData: null },
+          { $set: { savedData: freshData } },
+        );
+        if (!_claimNew.modifiedCount) {
+          socket.emit('specialQuestDone', { questId: String(questId), reward: { gold: 0, xp: 0, nexum: 0 }, alreadyDone: true });
+          return;
+        }
         authed.savedData = freshData;
       }
       if (_newNexum != null) {

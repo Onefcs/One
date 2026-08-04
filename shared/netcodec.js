@@ -76,8 +76,17 @@ const _ncEIdMap = new Map(); // idx -> enemy id string
 
 function resetNetCodecMaps() { _ncPIdMap.clear(); _ncEIdMap.clear(); }
 
+// The length prefix is a single byte, so anything past 255 bytes has to be
+// dropped here rather than written: `_ncU8[o] = b.length` silently keeps only
+// the low 8 bits, and the decoder then reads the wrong length and misparses
+// everything after this string in the packet — for every client the entry was
+// sent to. Names are already normalised on the way in (_safeUsername,
+// server/index.js), so this is the backstop for any other string field.
+// Truncation is by whole bytes and can split a multi-byte character; the
+// decoder's TextDecoder replaces the stray bytes rather than throwing.
 function _ncWStr(o, s) {
-  const b = _ncEnc.encode(s == null ? '' : String(s));
+  let b = _ncEnc.encode(s == null ? '' : String(s));
+  if (b.length > 255) b = b.subarray(0, 255);
   _ncU8[o] = b.length;
   _ncU8.set(b, o + 1);
   return o + 1 + b.length;

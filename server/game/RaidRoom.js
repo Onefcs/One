@@ -191,8 +191,12 @@ class RaidRoom {
     else if (type === 'slow') e.slowTimer = Math.min(duration, 6);
   }
 
+  // Capped for the same reason as Room.js's copy — the list is client-supplied
+  // and this runs on the instance's tick thread.
   applySkillEffectMany(enemyIds, type, duration) {
-    for (const id of enemyIds) this.applySkillEffect(id, type, duration);
+    if (!Array.isArray(enemyIds)) return;
+    const n = Math.min(enemyIds.length, 64);
+    for (let i = 0; i < n; i++) this.applySkillEffect(enemyIds[i], type, duration);
   }
 
   _tick() {
