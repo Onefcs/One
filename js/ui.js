@@ -725,15 +725,30 @@ function drawMapPanel() {
     const tx = x / TILE, ty = y / TILE;
     return tx >= b.tx0 && tx <= b.tx1 && ty >= b.ty0 && ty <= b.ty1;
   };
-  const mapEnemies = serverEnemies;
-  const aliveEnemies = mapEnemies.filter(e => (e.hp || 0) > 0 && inBounds(e.x, e.y));
+  // Bosses still come from serverEnemies — they're streamed from anywhere on
+  // the map, unlike regular monsters, so their skulls stay accurate.
+  const aliveEnemies = serverEnemies.filter(e => (e.hp || 0) > 0 && inBounds(e.x, e.y));
+  // Regular monsters come from the panel's own coarse feed instead: this view
+  // spans a whole arm, far more than the radius serverEnemies now covers.
+  // Until the first batch lands (it's requested when the panel opens), fall
+  // back to the nearby ones so the map is never momentarily empty.
+  const _dotR = Math.max(1.5, sc * 0.5);
   mx2.fillStyle = '#e9364b';
   mx2.beginPath();
-  aliveEnemies.forEach(e => {
-    if (e.isBoss) return;
-    mx2.moveTo(wx(e.x / TILE) + Math.max(1.5, sc * 0.5), wy(e.y / TILE));
-    mx2.arc(wx(e.x / TILE), wy(e.y / TILE), Math.max(1.5, sc * 0.5), 0, Math.PI * 2);
-  });
+  if (_mapBlips) {
+    for (let i = 0; i < _mapBlips.length; i += 2) {
+      const tx = _mapBlips[i], ty = _mapBlips[i + 1];
+      if (tx < b.tx0 || tx > b.tx1 || ty < b.ty0 || ty > b.ty1) continue;
+      mx2.moveTo(wx(tx) + _dotR, wy(ty));
+      mx2.arc(wx(tx), wy(ty), _dotR, 0, Math.PI * 2);
+    }
+  } else {
+    aliveEnemies.forEach(e => {
+      if (e.isBoss) return;
+      mx2.moveTo(wx(e.x / TILE) + _dotR, wy(e.y / TILE));
+      mx2.arc(wx(e.x / TILE), wy(e.y / TILE), _dotR, 0, Math.PI * 2);
+    });
+  }
   mx2.fill();
   // Boss skull icon on map
   const _bossIconSz = Math.max(10, Math.round(sc * 4));
@@ -1207,6 +1222,7 @@ function setMapTab(n) {
   document.querySelectorAll('.map-tab').forEach((el, i) => el.classList.toggle('active', i === n));
   document.getElementById('map-tab-content-0').style.display = n === 0 ? '' : 'none';
   document.getElementById('map-tab-content-1').style.display = n === 1 ? '' : 'none';
+  if (typeof netSetMapView === 'function') netSetMapView(activeTab === 2 && n === 0);
   if (n === 0) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
   if (n === 1) {
     updateRaidPanelUI(); if (typeof netGetLobbyList === 'function') netGetLobbyList();
@@ -1255,6 +1271,9 @@ function setTab(n) {
     const tb = document.getElementById('npc-talk-btn');
     if (tb) tb.style.display = 'none';
   }
+  // Leaving the map panel stops the world-wide dot feed (setMapTab turns it
+  // back on when the map sub-tab itself is the one showing).
+  if (n !== 2 && typeof netSetMapView === 'function') netSetMapView(false);
   const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-clans', 'panel-profile'][n];
   if (pid) {
     const el = document.getElementById(pid);

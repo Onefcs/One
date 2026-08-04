@@ -4002,7 +4002,7 @@ io.on('connection', socket => {
     socket.emit('gameStart', {
       floor: currentFloor,
       dungeon: currentRoom.dungeonData,
-      enemies: currentRoom.enemySnapshot(),
+      enemies: currentRoom.enemySnapshot(socket.id),
       bossStatus: currentRoom.getBossStatus(),
       // So someone logging in mid-countdown still sees the timer, and someone
       // arriving after the kill still sees loot already lying on the floor.
@@ -4033,6 +4033,15 @@ io.on('connection', socket => {
     }
     currentRoom.updatePlayerPos(socket.id, x, y, facing);
     if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
+  });
+
+  // The КАРТА panel draws the player's whole current arm, which is far wider
+  // than the enemy stream's interest radius — so while it's open the room
+  // sends a coarse dot list for it (Room._broadcastMapBlips). Off by default
+  // and off again the moment the panel closes: it's the one feed still
+  // proportional to the world's whole enemy count.
+  safeOn('mapView', ({ open }) => {
+    if (currentRoom) currentRoom.setMapOpen(socket.id, !!open);
   });
 
   safeOn('usePotion', ({ amount }) => {

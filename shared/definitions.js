@@ -8,6 +8,24 @@
 const TILE = 40;
 const WALL = 0, FLOOR = 1;
 
+// How far from a player an enemy has to be before the server stops streaming
+// its position/hp to them (see the broadcast in server/game/Room.js and the
+// matching client-side prune in js/network.js — both must use this same
+// number or one side keeps ghosts the other has dropped).
+//
+// This used to be unlimited: every player was sent a delta for every enemy in
+// the whole world, which measured at ~92% waste (each player could actually
+// see ~100 of the ~1270 they were being told about) and ~5 Mbit/s each in
+// combat — enough to saturate a phone's uplink and show up as "high ping"
+// that was really self-inflicted queueing.
+//
+// 1400px is deliberately wider than it needs to be for rendering (~700px
+// viewport): the minimap draws a 30-tile = 1200px radius around the player,
+// so covering that here keeps the minimap fed off the same stream instead of
+// needing one of its own. Bosses are never culled by it — the boss HP bar and
+// the map's skull markers look them up by id from anywhere on the map.
+const ENEMY_AOI_R = 1400;
+
 // ── Character definitions ─────────────────────────────────────────────────────
 // Class colors kept as a deliberate, distinct identity per class (steel /
 // forest / arcane violet / holy gold / wine / cool steel) rather than run
@@ -816,7 +834,7 @@ const VIP_BONUSES = [
 ];
 
 if (typeof module !== 'undefined') module.exports = {
-  TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
+  TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ,

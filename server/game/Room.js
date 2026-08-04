@@ -1,6 +1,6 @@
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        ARENA3_BOSS_HP, enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
+        ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server
@@ -107,19 +107,23 @@ const PLAYER_CAP = 20;
 // it — self-heals any client/server known-state divergence within ~2s.
 // Players are AOI-limited and capped at PLAYER_CAP, so this stays cheap.
 const FULL_REFRESH_TICKS = 80;
-// Enemies are NOT AOI-limited (the map needs world-wide coverage), so the
-// same 2s cadence meant re-sending all ~3300 enemies — every string field
-// included — to every player every two seconds. Measured at 164 KB/s per
-// idle player, ~576 MB/hour each, and 97% of it described enemies thousands
-// of pixels away that the player only ever sees as a dot on the map.
-// Idle enemies produce no delta at all, so stretching this to a minute makes
-// a standing player nearly free (~4 KB/s), and a client that somehow ends up
-// missing an enemy no longer waits for the sweep — it asks for that one
-// enemy directly (see resendEnemies below / 'enemyResync' in index.js).
-const ENEMY_REFRESH_TICKS = 2400;
 // Cap on one resync request, so a malformed or hostile client can't ask the
 // server to encode the whole world on demand.
 const ENEMY_RESYNC_MAX = 40;
+
+// Enemy interest management. ENEMY_AOI_R (shared/definitions.js — the client
+// prunes against the same number) is the radius each player is streamed
+// enemies within; the grid cell is sized to match it so the per-player query
+// only ever touches a 2x2..3x3 block of cells.
+const ENEMY_AOI_R2 = ENEMY_AOI_R * ENEMY_AOI_R;
+const ENEMY_GRID_CELL = ENEMY_AOI_R;
+// How long (in casts, which run every other tick — so ~150ms) an enemy may be
+// out of a player's range before the server forgets having told them about
+// it. Small on purpose: see the ordering requirement in _collectEnemiesFor.
+const EKNOWN_FORGET_CASTS = 6;
+// Map-panel dot refresh, in ticks (40/s) — 1Hz. Only sent to players with the
+// panel open; see _broadcastMapBlips.
+const MAP_BLIP_EVERY = 40;
 
 // The complete record for one enemy — every field the client needs to render
 // and fight it. Shared by the tick's periodic refresh and the on-demand
@@ -196,13 +200,12 @@ class Room {
     this._nearPlayersBuf = [];
     this._nearEnemiesBuf = [];
     this._candBuf = [];
-    // Enemy sight/delta tracking is room-wide, not per-player: enemies are
-    // never AOI-filtered (minimap needs full dungeon-wide coverage — see the
-    // comment in _tick()), so every connected player was computing and
-    // receiving the exact same nearEnemies delta every tick anyway. Tracking
-    // it once here instead of via a per-player Map avoids redoing that same
-    // O(enemies) walk once per player, every tick.
-    this._enemyKnown = new Map();
+    // Spatial index over alive non-boss enemies, rebuilt every tick, so the
+    // per-player interest query in _collectEnemiesFor doesn't have to walk
+    // the whole enemy list. Bosses sit in _bossBuf instead — they're sent to
+    // everyone regardless of distance.
+    this._enemyGrid = new Map();
+    this._bossBuf = [];
     this._tickNo = 0;
     this._pSeq = 0;
     this.enemies.forEach((e, i) => { e._idx = i; });
@@ -212,11 +215,8 @@ class Room {
     // below (a separate counter from _tickNo, which is actually a cast-id
     // sequence, not a tick counter, despite the name).
     this._aiTickNo = 0;
-    // Bumped once per tick, right after nearEnemies is rebuilt — lets
-    // encodeGameState (shared/netcodec.js) know it's the same enemies
-    // snapshot across every player's emit this tick, so it only has to
-    // actually encode that (string-heavy) segment once instead of once per
-    // player. See the comment at its call site below for the measured cost.
+    // Still used by resendEnemies (below), which builds one throwaway list
+    // for a single recipient and wants encodeGameState's byte cache bypassed.
     this._nearEnemiesGen = 0;
     // ── World drops (event-boss loot lying on the floor) ───────────────────
     // id -> { id, x, y, item, expiresAt }. Not per-player: one shared pool
@@ -313,10 +313,15 @@ class Room {
   resendEnemies(socketId, ids) {
     if (!this.players.has(socketId) || !Array.isArray(ids) || !ids.length) return;
     const out = [];
+    const known = this.players.get(socketId)?._eKnown;
     for (const id of ids) {
       if (out.length >= ENEMY_RESYNC_MAX) break;
       const e = this._enemyMap.get(id);
-      if (e && e.hp > 0) out.push(_fullEnemyEntry(e));
+      if (!e || e.hp <= 0) continue;
+      out.push(_fullEnemyEntry(e));
+      // Record it as sent, or the next tick would spend another full entry on
+      // the same enemy before any slim delta could be used for it.
+      if (known) known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: this._tickNo });
     }
     if (!out.length) return;
     // A fresh generation number every time — the gen is an encoder cache key,
@@ -365,14 +370,32 @@ class Room {
     return p ? this._inSafeZone(p.x, p.y) : false;
   }
 
-  enemySnapshot() {
-    return this.enemies
-      .filter(e => e.hp > 0)
-      .map(e => ({
+  // The client's starting enemy list. Scoped to what's near that player for
+  // the same reason the live stream is (see _collectEnemiesFor): unscoped
+  // this was ~960KB of JSON on every single login, essentially all of it
+  // describing enemies on the far side of the world that the very next tick
+  // would prune again. Bosses are always included, wherever they are.
+  //
+  // Also records what it sent in the player's _eKnown, so the first tick
+  // after this doesn't immediately repeat all of it as "first sight".
+  enemySnapshot(socketId) {
+    const p = socketId != null ? this.players.get(socketId) : null;
+    const out = [];
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.hp <= 0) continue;
+      if (p && !e.isBoss) {
+        const dx = e.x - p.x, dy = e.y - p.y;
+        if (dx * dx + dy * dy > ENEMY_AOI_R2) continue;
+      }
+      out.push({
         id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
         name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
         aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
-      }));
+      });
+      if (p) p._eKnown.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: this._tickNo });
+    }
+    return out;
   }
 
   // One boss per corridor (arm) — alive or, once dead, the timestamp it
@@ -608,13 +631,13 @@ class Room {
     // Drop a defeated event boss out of the world for good. Deferred to here
     // because splicing this.enemies inside the forEach above would skip an
     // element and leave every _idx (used for the AI target-search stagger and
-    // the _enemyKnown delta tracker) pointing at the wrong enemy.
+    // the per-player delta trackers) pointing at the wrong enemy.
     if (this._evtPurge) {
       this._evtPurge = false;
       this.enemies = this.enemies.filter(e => {
         if (!e._evtRemove) return true;
         this._enemyMap.delete(e.id);
-        this._enemyKnown.delete(e.id);
+        this._forgetEnemy(e.id);
         return false;
       });
       this.enemies.forEach((e, i) => { e._idx = i; });
@@ -637,101 +660,222 @@ class Room {
     //    sight, on profile change (_profileRev), or on periodic refresh;
     //    otherwise a slim {id,x,y,facing,hp,atkSeq} entry is sent
     //  - at most PLAYER_CAP nearest players per packet
-    //  - enemies keep 40Hz change-delta, but static fields (name/color/size/…)
-    //    are likewise sent only on first sight / periodic refresh
+    //  - enemies ride the same every-other-tick cast as players, as a
+    //    change-delta within ENEMY_AOI_R; static fields (name/color/size/…)
+    //    go only on that player's first sight of them
     const castId = ++this._tickNo;
     const castPlayers = (castId & 1) === 0;
     const cand = this._candBuf;
 
-    // All alive enemies dungeon-wide (not AOI-limited) — minimap/map need
-    // full, always-current coverage regardless of player position; the delta
-    // protocol below already keeps idle far-away enemies near-free. Computed
-    // ONCE per tick (not once per player): with no per-enemy AOI, every
-    // connected player ends up with the exact same fresh/moved/hpChanged
-    // decision anyway, so a room-wide tracker (this._enemyKnown) replaces the
-    // old per-player one and this walk no longer repeats per player.
-    // Math.abs instead of hypot for moved-check.
-    nearEnemies.length = 0;
-    this.enemies.forEach(e => {
-      if (e.hp <= 0) return;
-      const k = this._enemyKnown.get(e.id);
-      const fresh = !k || k.seen !== castId - 1 ||
-        (castId + e._idx) % ENEMY_REFRESH_TICKS === 0;
-      if (k) k.seen = castId; else this._enemyKnown.set(e.id, { seen: castId });
-      const moved = e.aggro || Math.abs(e.x - e._sx) > 0.5 || Math.abs(e.y - e._sy) > 0.5;
-      const hpChanged = e.hp !== e._shp;
-      if (!moved && !hpChanged && !fresh) return;
-      if (fresh) {
-        nearEnemies.push(_fullEnemyEntry(e));
-      } else {
-        nearEnemies.push({
-          id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
-          atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
-        });
-      }
-    });
-    this._nearEnemiesGen++;
+    // Nothing to send on the off ticks — the AI above still runs at the full
+    // 40Hz, this just halves how often the result is cast out. Clients
+    // interpolate enemy positions toward the last one received (see the
+    // exponential pull in js/game.js), and the feedback that has to feel
+    // instant — your own hits — rides its own enemyHurt event rather than
+    // this stream, so 20Hz here is indistinguishable in play while halving
+    // both the packet count and the per-player collect/encode cost.
+    if (!castPlayers) return;
 
-    // nearEnemies is the exact same array/contents for every recipient this
-    // tick (enemies aren't AOI-filtered, see the comment above), but used to
-    // get re-encoded from scratch on every single emit call below — with
-    // ~200 concurrent players and a couple hundred enemies in nearEnemies
-    // (a chunk of them "full" entries with several string fields), that
-    // measured at ~0.23ms per encode call, ~46ms/tick just for the
-    // redundant re-encoding, blowing well past the 25ms tick budget.
-    // Passing _nearEnemiesGen lets encodeGameState encode that segment once
-    // and reuse the bytes for every other player this same tick.
+    // Bucket every alive enemy into the spatial grid once per cast, so the
+    // per-player interest query below only walks the handful of cells around
+    // that player instead of all ~4500 enemies (which at 200 players would be
+    // ~900k distance checks every 25ms).
+    this._rebuildEnemyGrid();
+
     this.players.forEach(p => {
-      let playersOut = null;
-
-      if (castPlayers) {
-        nearPlayers.length = 0;
-        cand.length = 0;
-        this.players.forEach(op => {
-          if (op.socketId === p.socketId) return;
-          const dx = op.x - p.x, dy = op.y - p.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 > PLAYER_AOI_R2) return;
-          cand.push({ op, d2 });
-        });
-        if (cand.length > PLAYER_CAP) {
-          cand.sort((a, b) => a.d2 - b.d2);
-          cand.length = PLAYER_CAP;
-        }
-        for (let i = 0; i < cand.length; i++) {
-          const op = cand[i].op;
-          const k = p._known.get(op.socketId);
-          const full = !k || k.rev !== op._profileRev || k.seen !== castId - 2 ||
-            ((castId >> 1) + op._seq) % FULL_REFRESH_TICKS === 0;
-          if (full) {
-            nearPlayers.push({
-              id: op.socketId, seq: op._seq, username: op.username, type: op.type,
-              x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
-              pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
-              clanName: op.clanName || null, clanIcon: op.clanIcon || null,
-            });
-          } else {
-            nearPlayers.push({
-              id: op.socketId, seq: op._seq, x: op.x, y: op.y, facing: op.facing,
-              hp: op.hp, atkSeq: op.lastAtkSeq || 0,
-            });
-          }
-          if (k) { k.rev = op._profileRev; k.seen = castId; }
-          else p._known.set(op.socketId, { rev: op._profileRev, seen: castId });
-        }
-        playersOut = nearPlayers;
+      nearPlayers.length = 0;
+      cand.length = 0;
+      this.players.forEach(op => {
+        if (op.socketId === p.socketId) return;
+        const dx = op.x - p.x, dy = op.y - p.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > PLAYER_AOI_R2) return;
+        cand.push({ op, d2 });
+      });
+      if (cand.length > PLAYER_CAP) {
+        cand.sort((a, b) => a.d2 - b.d2);
+        cand.length = PLAYER_CAP;
       }
+      for (let i = 0; i < cand.length; i++) {
+        const op = cand[i].op;
+        const k = p._known.get(op.socketId);
+        const full = !k || k.rev !== op._profileRev || k.seen !== castId - 2 ||
+          ((castId >> 1) + op._seq) % FULL_REFRESH_TICKS === 0;
+        if (full) {
+          nearPlayers.push({
+            id: op.socketId, seq: op._seq, username: op.username, type: op.type,
+            x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
+            pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
+            clanName: op.clanName || null, clanIcon: op.clanIcon || null,
+          });
+        } else {
+          nearPlayers.push({
+            id: op.socketId, seq: op._seq, x: op.x, y: op.y, facing: op.facing,
+            hp: op.hp, atkSeq: op.lastAtkSeq || 0,
+          });
+        }
+        if (k) { k.rev = op._profileRev; k.seen = castId; }
+        else p._known.set(op.socketId, { rev: op._profileRev, seen: castId });
+      }
+      const playersOut = nearPlayers;
+
+      // Enemies are now picked per player (only what's near them), so unlike
+      // the players segment there's nothing shared to reuse between
+      // recipients — hence the undefined gen, which tells encodeGameState to
+      // skip its cross-recipient byte cache. That cache existed because this
+      // list used to be identical for everyone and re-encoding ~1300 entries
+      // per player blew the tick budget; the AOI list is ~6x smaller, so
+      // encoding it per player is cheaper than the old shared encode was.
+      this._collectEnemiesFor(p, nearEnemies, castId);
 
       // t: server tick timestamp — the client uses real tick spacing (setInterval
       // drifts 45-60ms) to time snapshot playback at true velocity.
       // Payload is a binary ArrayBuffer — see shared/netcodec.js
-      this.io.to(p.socketId).emit('gameState', encodeGameState(playersOut, nearEnemies, now, this._nearEnemiesGen));
+      this.io.to(p.socketId).emit('gameState', encodeGameState(playersOut, nearEnemies, now, undefined));
     });
+
+    // Coarse dot feed for the full-map panel (the КАРТА tab), which draws the
+    // player's whole current arm — far more than the AOI stream above covers.
+    // Only goes to players who actually have that panel open, and only at
+    // MAP_BLIP_EVERY, because it's the one thing here that is still
+    // proportional to the whole world's enemy count.
+    if (castId % MAP_BLIP_EVERY === 0) this._broadcastMapBlips();
 
     // Update delta markers after all per-player emits
     this.enemies.forEach(e => {
       if (e.hp > 0) { e._sx = e.x; e._sy = e.y; e._shp = e.hp; e._atkPulse = false; }
     });
+  }
+
+  // Buckets alive non-boss enemies by ENEMY_GRID_CELL-sized cell. Cell arrays
+  // are emptied and refilled rather than reallocated — this runs 40x a second
+  // over several thousand enemies, and churning that many arrays showed up as
+  // GC pressure. Bosses are collected separately: they're never AOI-culled,
+  // so they don't belong in a spatial lookup at all.
+  _rebuildEnemyGrid() {
+    const grid = this._enemyGrid;
+    grid.forEach(arr => { arr.length = 0; });
+    this._bossBuf.length = 0;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.hp <= 0) continue;
+      if (e.isBoss) { this._bossBuf.push(e); continue; }
+      const key = Math.floor(e.x / ENEMY_GRID_CELL) * 100000 + Math.floor(e.y / ENEMY_GRID_CELL);
+      let cell = grid.get(key);
+      if (!cell) { cell = []; grid.set(key, cell); }
+      cell.push(e);
+    }
+  }
+
+  // Fills `out` with what this one player needs to hear about this tick:
+  // every boss, plus non-boss enemies within ENEMY_AOI_R. Each entry is
+  // either a full record (first time THIS player is being told about it) or
+  // a slim positional delta.
+  //
+  // The "have they already got this" bookkeeping is per player (p._eKnown)
+  // rather than the room-wide tracker this used to share, because with an
+  // interest radius two players no longer receive the same thing: an enemy
+  // that's been streaming to someone standing next to it is brand new to
+  // someone who just walked into range, and must be sent in full or their
+  // client has no id/name/sprite to attach the delta to.
+  _collectEnemiesFor(p, out, castId) {
+    out.length = 0;
+    const known = p._eKnown;
+
+    for (let i = 0; i < this._bossBuf.length; i++) this._pushEnemyEntry(this._bossBuf[i], known, out, castId);
+
+    const grid = this._enemyGrid;
+    const cx0 = Math.floor((p.x - ENEMY_AOI_R) / ENEMY_GRID_CELL);
+    const cx1 = Math.floor((p.x + ENEMY_AOI_R) / ENEMY_GRID_CELL);
+    const cy0 = Math.floor((p.y - ENEMY_AOI_R) / ENEMY_GRID_CELL);
+    const cy1 = Math.floor((p.y + ENEMY_AOI_R) / ENEMY_GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const cell = grid.get(cx * 100000 + cy);
+        if (!cell) continue;
+        for (let i = 0; i < cell.length; i++) {
+          const e = cell[i];
+          const dx = e.x - p.x, dy = e.y - p.y;
+          if (dx * dx + dy * dy > ENEMY_AOI_R2) continue;
+          this._pushEnemyEntry(e, known, out, castId);
+        }
+      }
+    }
+
+    // Forget enemies this player has walked away from. Everything still in
+    // range had its `seen` refreshed by the loops above, so anything left
+    // behind is out of range; EKNOWN_FORGET_CASTS of slack keeps an enemy
+    // hovering right on the boundary from being dropped and re-sent in full
+    // every other cast.
+    //
+    // This has to stay strictly *quicker* to forget than the client is to
+    // prune (ENEMY_AOI_R + 600, js/network.js): the server forgetting early
+    // only costs one redundant full record, whereas the reverse — the server
+    // still believing a player has an enemy their client already dropped —
+    // sends a positional delta for something they can't apply it to, and the
+    // enemy silently goes missing for them.
+    known.forEach((k, id) => { if (castId - k.seen >= EKNOWN_FORGET_CASTS) known.delete(id); });
+  }
+
+  _pushEnemyEntry(e, known, out, castId) {
+    const k = known.get(e.id);
+    if (!k) {
+      out.push(_fullEnemyEntry(e));
+      known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: castId });
+      return;
+    }
+    k.seen = castId;
+    // Compared against what was last sent to THIS player, which also covers
+    // the cases the old code needed an explicit _shp = -1 poke for (leash
+    // teleport, respawn): those move the enemy or change its hp, so they
+    // fall out of this same check.
+    if (!e._atkPulse && e.hp === k.hp && e.aggro === k.aggro &&
+        Math.abs(e.x - k.x) <= 0.5 && Math.abs(e.y - k.y) <= 0.5) return;
+    out.push({
+      id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
+      atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
+    });
+    k.x = e.x; k.y = e.y; k.hp = e.hp; k.aggro = e.aggro;
+  }
+
+  // Every alive non-boss enemy as a flat Int16 tile-coordinate pair list.
+  // ~4500 enemies is ~18KB, which is why only players with the map panel
+  // actually open get it, at MAP_BLIP_EVERY. Bosses are left out: they're in
+  // the normal stream from anywhere, so the panel's skull markers already
+  // have them.
+  _broadcastMapBlips() {
+    let any = false;
+    this.players.forEach(p => { if (p._mapOpen) any = true; });
+    if (!any) return;
+    let n = 0;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.hp > 0 && !e.isBoss) n++;
+    }
+    const buf = new Int16Array(n * 2);
+    let o = 0;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.hp <= 0 || e.isBoss) continue;
+      buf[o++] = Math.round(e.x / TILE);
+      buf[o++] = Math.round(e.y / TILE);
+    }
+    this.players.forEach(p => {
+      if (p._mapOpen) this.io.to(p.socketId).emit('mapBlips', buf.buffer);
+    });
+  }
+
+  setMapOpen(socketId, open) {
+    const p = this.players.get(socketId);
+    if (p) p._mapOpen = !!open;
+  }
+
+  // Called when an enemy leaves the world for good (event boss looted, arena
+  // guards despawned). Its per-player entries would be swept a second later
+  // anyway once they stopped being refreshed, but dropping them here keeps
+  // "known" meaning strictly "exists and I've told them about it".
+  _forgetEnemy(id) {
+    this.players.forEach(p => p._eKnown.delete(id));
   }
 
   addPlayer(socketId, username, clanName, clanIcon, telegramId) {
@@ -760,6 +904,10 @@ class Room {
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _known: new Map(),
+      // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
+      // sent, plus the cast it was last in range for. See _collectEnemiesFor.
+      _eKnown: new Map(),
+      _mapOpen: false,
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();
@@ -1067,7 +1215,7 @@ class Room {
     this.enemies = this.enemies.filter(e => {
       if (e.id !== id) return true;
       this._enemyMap.delete(e.id);
-      this._enemyKnown.delete(e.id);
+      this._forgetEnemy(e.id);
       return false;
     });
     this.enemies.forEach((e, i) => { e._idx = i; });
@@ -1140,7 +1288,7 @@ class Room {
     this.enemies = this.enemies.filter(e => {
       if (!ids.has(e.id)) return true;
       this._enemyMap.delete(e.id);
-      this._enemyKnown.delete(e.id);
+      this._forgetEnemy(e.id);
       return false;
     });
     this.enemies.forEach((e, i) => { e._idx = i; });

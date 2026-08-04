@@ -26,7 +26,12 @@ let otherPlayers = new Map();   // socketId → { x, y, type, facing, hp, maxHp,
 // enter/exit, which would drop pet ids the server only sends on join and on
 // change. Fed by the 'playerPets'/'playerPet' events (js/network.js).
 let otherPets = new Map();
-let serverEnemies = [];     // authoritative enemy list (server-driven)
+let serverEnemies = [];     // authoritative enemy list (server-driven, near the player only)
+// Flat Int16 [tileX, tileY, ...] of every alive non-boss enemy in the world,
+// for the КАРТА panel — which draws a whole arm, well past the radius
+// serverEnemies now covers. Pushed at 1Hz and only while that panel is open
+// (see 'mapView'/'mapBlips', js/network.js). null = nothing received yet.
+let _mapBlips = null;
 let serverEnemiesMap = new Map(); // id → enemy for O(1) lookup
 let netUsername = null;
 let netRoom = null;

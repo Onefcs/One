@@ -63,6 +63,9 @@ let _sessionHasRealData = false;
 let _svrTimeOffset = null; // null = not yet calibrated
 const _INTERP_MS  = 65;   // render others 65ms in the past (~1.3 player-cast intervals at 20Hz)
 const _SNAP_MAX   = 10;   // ~250ms of buffer
+// Staggers the out-of-range enemy sweep in the gameState handler — once a
+// second is plenty for something the server already stopped sending.
+let _aoiPruneTick = 0;
 
 // RTT ping measurement — updated every 2s, read by perf overlay
 let _pingMs = -1;
@@ -421,8 +424,30 @@ function netConnect(onReady) {
       });
     }
 
+    // Enemies outside ENEMY_AOI_R aren't streamed at all any more, so the ones
+    // we already hold out there would otherwise sit frozen forever as ghosts —
+    // drawn on the minimap, and worse, offered up by tap/cycle targeting at
+    // positions they left long ago. Dropping them on distance needs no extra
+    // traffic and matches exactly what the server stopped sending (the margin
+    // covers a player walking outward between sweeps). Bosses are exempt on
+    // both sides: they're streamed from anywhere, and the boss HP bar and the
+    // map's skull markers look them up by id.
+    if (player && (++_aoiPruneTick % 40) === 0) {
+      const cull = ENEMY_AOI_R + 600, cull2 = cull * cull;
+      for (let i = serverEnemies.length - 1; i >= 0; i--) {
+        const e = serverEnemies[i];
+        if (e.isBoss) continue;
+        const dx = e.x - player.x, dy = e.y - player.y;
+        if (dx * dx + dy * dy <= cull2) continue;
+        serverEnemies.splice(i, 1);
+        serverEnemiesMap.delete(e.id);
+        if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(e.id);
+      }
+    }
+
     // Delta update: only changed enemies arrive — add or update, never remove
-    // (removal happens via enemyKilled; respawn via re-add when hp > 0)
+    // (removal happens via enemyKilled, by the distance prune above, or when
+    // the server stops including them; respawn via re-add when hp > 0)
     enemies.forEach(se => {
       const ex = serverEnemiesMap.get(se.id);
       if (ex) {
@@ -484,6 +509,13 @@ function netConnect(onReady) {
     });
     _profSocketEvts++;
     _profSocketMs += performance.now() - _gs0;
+  });
+
+  socket.on('mapBlips', (buf) => {
+    _mapBlips = new Int16Array(buf);
+    // Arrives once a second while the panel is open — redraw so the dots
+    // actually move instead of freezing at whatever was there on open.
+    if (activeTab === 2 && typeof drawMapPanel === 'function') drawMapPanel();
   });
 
   socket.on('playerHurt', ({ id, hp, dmg }) => {
@@ -1249,6 +1281,16 @@ function netPartyLeave() {
 // (Room.publicProfile, server/game/Room.js) — see playerProfileResult above.
 function netRequestPlayerProfile(targetId) {
   if (socket?.connected) socket.emit('requestPlayerProfile', { targetId });
+}
+
+// Tells the server whether the КАРТА panel is on screen, so it only streams
+// the world-wide dot list (mapBlips) while someone is actually looking at it.
+let _mapViewSent = false;
+function netSetMapView(open) {
+  if (!socket?.connected || open === _mapViewSent) return;
+  _mapViewSent = open;
+  socket.emit('mapView', { open });
+  if (!open) _mapBlips = null;
 }
 
 // ── Special Quests ────────────────────────────────────────
