@@ -4769,7 +4769,13 @@ io.on('connection', socket => {
   safeOn('requestPlayerProfile', ({ targetId }) => {
     if (!authed || typeof targetId !== 'string') return;
     const targetSocket = io.sockets.sockets.get(targetId);
-    if (!targetSocket || !targetSocket.data?.username) return;
+    // Target already disconnected (a stale otherPlayers entry the requester
+    // hadn't been told to drop yet is the common case in a crowded spot) —
+    // answer with a null profile right away instead of leaving them hanging
+    // on a request nobody will ever reply to.
+    if (!targetSocket || !targetSocket.data?.username) {
+      return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
+    }
     targetSocket.emit('playerProfileRequested', { requesterId: socket.id });
   });
 

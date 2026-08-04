@@ -449,6 +449,8 @@ Object.assign(I18N_UI, {
   pvpOnLabel: { ru: 'ПК', en: 'PK', uk: 'ПК', es: 'JcJ', tr: 'PK', pt: 'JcJ' },
   pvpOffLabel: { ru: 'Мир', en: 'Peace', uk: 'Мир', es: 'Paz', tr: 'Barış', pt: 'Paz' },
   partyInviteBtnLbl: { ru: 'Пати+', en: 'Party+', uk: 'Паті+', es: 'Grupo+', tr: 'Grup+', pt: 'Grupo+' },
+  partyInfoBtnLbl: { ru: 'Инфо', en: 'Info', uk: 'Інфо', es: 'Info', tr: 'Bilgi', pt: 'Info' },
+  peerProfileUnavailable: { ru: 'Не удалось получить данные игрока', en: "Couldn't fetch player info", uk: 'Не вдалося отримати дані гравця', es: 'No se pudo obtener info del jugador', tr: 'Oyuncu bilgisi alınamadı', pt: 'Não foi possível obter dados do jogador' },
   partyLeaveBtnLbl: { ru: 'Выйти', en: 'Leave', uk: 'Вийти', es: 'Salir', tr: 'Ayrıl', pt: 'Sair' },
   partyInviteTitle: { ru: 'Приглашение в пати', en: 'Party invitation', uk: 'Запрошення в паті', es: 'Invitación de grupo', tr: 'Grup daveti', pt: 'Convite de grupo' },
   acceptBtn: { ru: 'Принять', en: 'Accept', uk: 'Прийняти', es: 'Aceptar', tr: 'Kabul Et', pt: 'Aceitar' },

@@ -58,12 +58,12 @@ function getPartyBtnPos() {
   return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
-// "i" button right next to Пати+ — view whoever is currently targeted
+// "Инфо" button right next to Пати+ — view whoever is currently targeted
 // (any nearby player, not just someone who invited you), see
 // showPeerProfileModal (js/ui.js) and netRequestPlayerProfile (js/network.js).
 function getPartyInfoBtnPos() {
   const pb = getPartyBtnPos();
-  return { x: pb.x + pb.w + 6, y: pb.y, w: pb.h, h: pb.h };
+  return { x: pb.x + pb.w + 6, y: pb.y, w: 52, h: pb.h };
 }
 
 // Potion is above the attack/target row; AUTO sits directly above Potion

@@ -721,7 +721,7 @@ function netConnect(onReady) {
   });
 
   // Someone we're currently targeted by wants to see our stats/equipment —
-  // see the "i" button next to Пати+ (getPartyInfoBtnPos, js/input.js /
+  // see the Инфо button next to Пати+ (getPartyInfoBtnPos, js/input.js /
   // drawPartyButton, js/ui.js). We're the only side that actually has them
   // (client-authoritative build), so answer with our own computed payload
   // instead of the server doing it.
@@ -732,6 +732,13 @@ function netConnect(onReady) {
   });
 
   socket.on('playerProfileResult', ({ fromId, fromName, profile }) => {
+    // Clears netRequestPlayerProfile's timeout fallback — this IS the answer,
+    // whether or not it actually carries a usable profile.
+    if (_peerProfileReqId === fromId) _peerProfileReqId = null;
+    if (!profile) {
+      if (player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('peerProfileUnavailable') : 'Не удалось получить данные игрока', '#f88');
+      return;
+    }
     if (typeof showPeerProfileModal === 'function') showPeerProfileModal(fromName, profile);
   });
 
@@ -1236,9 +1243,19 @@ function netPartyLeave() {
 // Stats/equipment are client-authoritative, so there's no server-side copy
 // of another player's loadout to fetch — the server only relays this
 // request to their client, which answers with _buildPeerProfilePayload()
-// (js/ui.js) below, and relays the answer back.
+// (js/player.js), and relays the answer back. The server answers
+// immediately if the target's already gone, but if their client is
+// connected yet just never replies (loading, not past char-select, etc.)
+// nothing else would ever tell us — hence the timeout fallback below.
 function netRequestPlayerProfile(targetId) {
-  if (socket?.connected) socket.emit('requestPlayerProfile', { targetId });
+  if (!socket?.connected) return;
+  socket.emit('requestPlayerProfile', { targetId });
+  _peerProfileReqId = targetId;
+  setTimeout(() => {
+    if (_peerProfileReqId !== targetId) return; // already answered
+    _peerProfileReqId = null;
+    if (player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('peerProfileUnavailable') : 'Не удалось получить данные игрока', '#f88');
+  }, 4000);
 }
 
 // ── Special Quests ────────────────────────────────────────

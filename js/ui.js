@@ -2165,16 +2165,16 @@ function drawPartyButton() {
   ctx.fillStyle = '#90d653';
   ctx.fillText(t('partyInviteBtnLbl'), pb.x + 23, pb.y + pb.h / 2);
 
-  // "i" — view this target's stats/equipment (works on anyone targeted,
+  // Инфо — view this target's stats/equipment (works on anyone targeted,
   // not just someone who invited you; see showPeerProfileModal, js/ui.js)
   const ib = getPartyInfoBtnPos();
   ctx.fillStyle = _uiBtnGrads.ptg0;
   roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.fill();
   ctx.strokeStyle = 'rgba(127,181,79,0.8)'; ctx.lineWidth = 1.5;
   roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.stroke();
-  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'center';
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center';
   ctx.fillStyle = '#90d653';
-  ctx.fillText('i', ib.x + ib.w / 2, ib.y + ib.h / 2 + 1);
+  ctx.fillText(t('partyInfoBtnLbl'), ib.x + ib.w / 2, ib.y + ib.h / 2 + 1);
 
   ctx.restore();
 }

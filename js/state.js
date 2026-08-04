@@ -123,6 +123,12 @@ let _a3RoundEndAt = 0;
 // as well as on the server (see _dbFrozen).
 let _dbFightAt = 0;
 
+// Outstanding "view profile" request (Инфо button, js/input.js) — the target
+// socketId we're waiting on an answer for, or null. Lets a request that never
+// gets a reply (target's client connected but not past character-select,
+// say) surface a toast instead of the button just silently doing nothing.
+let _peerProfileReqId = null;
+
 // 10-player corridor race (Забег) — queue-driven like the 3v3 arena, but a
 // free-for-all against one shared boss instead of a team match: everyone who
 // makes it to the boss room fights the SAME boss, and whoever dealt it the
