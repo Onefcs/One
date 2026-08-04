@@ -773,7 +773,15 @@ function update(dt, realDt) {
     const spd    = e.spd    || 70;
     const sz     = e.size   || 16;
 
-    if (dp < aggroR) e.aggro = true;
+    // Same rule the server uses (see the aggro test in Room.js's tick loop):
+    // distance alone isn't enough, the enemy has to actually be able to see
+    // the target. Without the line-of-sight check this woke up enemies on the
+    // far side of a wall, which the server never does — so the prediction
+    // below would shove them into that wall while the server held them still,
+    // and they'd play their run animation on the spot indefinitely.
+    // Only tested while not already aggro'd, so the raycast doesn't run every
+    // frame for enemies already chasing.
+    if (!e.aggro && dp < aggroR && hasLOS(e.x, e.y, closestTgt.x, closestTgt.y)) e.aggro = true;
     if (dp > aggroR * 2.2) e.aggro = false;
 
     if ((e.stunTimer || 0) > 0) {
@@ -793,9 +801,15 @@ function update(dt, realDt) {
       const spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
       const evx = nx * spd * spdMult * dt;
       const evy = ny * spd * spdMult * dt;
+      const _px = e.x, _py = e.y;
       if (canMoveX(e, evx, er)) e.x += evx;
       if (canMoveY(e, evy, er)) e.y += evy;
-      e._moveTimer = 0.2;
+      // Only claim to be walking if we actually got somewhere. _moveTimer is
+      // what selects the walk animation (see _updateEnemyObj, pixi-world.js),
+      // and setting it unconditionally here meant an enemy wedged against
+      // geometry — both axes refused by canMoveX/canMoveY — ran on the spot
+      // forever instead of standing idle.
+      if (e.x !== _px || e.y !== _py) e._moveTimer = 0.2;
     }
 
     // Server correction — squared fast-reject avoids sqrt when error < 10px.
