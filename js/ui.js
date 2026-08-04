@@ -1347,7 +1347,11 @@ function setTab(n) {
     if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) switchSkillTab(_activeSkillSubTab); else updateInvUI(); }
     if (n === 2) { setMapTab(_mapTab); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
-    if (n === 4 && typeof updateClanUI === 'function') updateClanUI();
+    if (n === 4 && typeof updateClanUI === 'function') {
+      // Ask for current clan state as the panel opens — see netClanRequest.
+      if (typeof netClanRequest === 'function') netClanRequest();
+      updateClanUI();
+    }
     if (n === 5) switchProfileTab(window._profileTab || 'wallet');
   }
 }

@@ -117,6 +117,21 @@ const ENEMY_RESYNC_MAX = 40;
 // only ever touches a 2x2..3x3 block of cells.
 const ENEMY_AOI_R2 = ENEMY_AOI_R * ENEMY_AOI_R;
 const ENEMY_GRID_CELL = ENEMY_AOI_R;
+// Players get the same treatment as enemies, and for two callers: the AOI
+// candidate scan (which was a nested players.forEach, O(N²) per cast) and the
+// enemy AI's closest-target search (which scanned every player, per enemy).
+// Bucketing into PLAYER_AOI_R-sized cells means each query only looks at the
+// block of cells that can possibly contain someone in range.
+//
+// Sized to PLAYER_AOI_R so the broadcast query walks exactly 3x3 cells. The AI
+// search uses a per-enemy radius and walks however many cells that covers.
+const PLAYER_GRID_CELL = 600;
+// Shared by both spatial grids. Cell keys are Math.floor(coord / cell) which
+// can go negative near the world origin, so the multiplier has to be big
+// enough that no two distinct (cx, cy) pairs collide — the world is ~1000
+// tiles across, so ±50000 of headroom on each axis is ample.
+const GRID_KEY_STRIDE = 100000;
+function _gridKey(cx, cy) { return cx * GRID_KEY_STRIDE + cy; }
 // How long (in casts, which run every other tick — so ~150ms) an enemy may be
 // out of a player's range before the server forgets having told them about
 // it. Small on purpose: see the ordering requirement in _collectEnemiesFor.
@@ -209,7 +224,6 @@ class Room {
     // O(1) enemy lookup for attack handler
     this._enemyMap = new Map(this.enemies.map(e => [e.id, e]));
     // Reusable buffers — avoids array allocation every tick
-    this._alivePlayers = [];
     this._nearPlayersBuf = [];
     this._nearEnemiesBuf = [];
     this._candBuf = [];
@@ -219,8 +233,25 @@ class Room {
     // everyone regardless of distance.
     this._enemyGrid = new Map();
     this._bossBuf = [];
+    // Same idea for players — see PLAYER_GRID_CELL. Rebuilt every tick (the
+    // AI reads it too), not just on the casts that broadcast.
+    this._playerGrid = new Map();
+    // Pool of reusable {op, d2} slots for the capped nearest-N selection, so a
+    // busy hub doesn't allocate PLAYER_CAP objects per player per cast (at 200
+    // players that was ~80k short-lived objects a second, all of it GC work).
+    this._candPool = [];
+    // Reusable buffer for "who can currently see this enemy" fan-outs
+    // (enemyHurt/enemyKilled) — see viewersOfEnemy.
+    this._viewerBuf = [];
     this._tickNo = 0;
     this._pSeq = 0;
+    // Tick timing, exposed via stats() and the /health endpoint. A tick that
+    // regularly overruns TICK_MS is the direct cause of the whole room feeling
+    // sluggish, and until now nothing recorded it.
+    this._tickMsMax = 0;
+    this._tickMsSum = 0;
+    this._tickSamples = 0;
+    this._tickOverruns = 0;
     this.enemies.forEach((e, i) => { e._idx = i; });
     this._lastTick = Date.now();
     this._interval = null;
@@ -353,7 +384,13 @@ class Room {
     if (this._interval) return;
     this._lastTick = Date.now();
     this._interval = setInterval(() => {
+      const t0 = Date.now();
       try { this._tick(); } catch (err) { console.error(`[Room ${this.floor} tick]`, err); }
+      const ms = Date.now() - t0;
+      this._tickMsSum += ms;
+      this._tickSamples++;
+      if (ms > this._tickMsMax) this._tickMsMax = ms;
+      if (ms > TICK_MS) this._tickOverruns++;
     }, TICK_MS);
   }
 
@@ -361,6 +398,24 @@ class Room {
     if (!this._interval) return;
     clearInterval(this._interval);
     this._interval = null;
+  }
+
+  // Snapshot of how the loop is actually keeping up, for /health. Reading it
+  // resets the window so each poll describes the interval since the last one
+  // rather than an ever-flattening lifetime average.
+  stats() {
+    const s = {
+      floor: this.floor,
+      players: this.players.size,
+      enemies: this.enemies.length,
+      tickMsAvg: this._tickSamples ? +(this._tickMsSum / this._tickSamples).toFixed(2) : 0,
+      tickMsMax: this._tickMsMax,
+      tickOverruns: this._tickOverruns,
+      tickSamples: this._tickSamples,
+      tickBudgetMs: TICK_MS,
+    };
+    this._tickMsMax = 0; this._tickMsSum = 0; this._tickSamples = 0; this._tickOverruns = 0;
+    return s;
   }
 
   get dungeonData() {
@@ -454,28 +509,37 @@ class Room {
     this._lastTick = now;
     if (this.players.size === 0) return;
 
-    // Rebuild alive-players buffer without allocation (reuse arrays)
-    const alivePlayers = this._alivePlayers;
-    alivePlayers.length = 0;
     const nearPlayers = this._nearPlayersBuf;
     const nearEnemies = this._nearEnemiesBuf;
-    this.players.forEach(p => { if (p.hp > 0 && p.type) alivePlayers.push(p); });
+    // Built every tick, not just on cast ticks: the enemy AI's closest-target
+    // search queries it too, and that runs at the full 40Hz. It replaces the
+    // flat alive-players array the AI used to scan end-to-end per enemy, so
+    // that array is no longer built at all.
+    this._rebuildPlayerGrid();
 
-    // Detect players entering the safe zone — reset only enemies chasing that player
+    // Detect players entering the safe zone — reset only enemies chasing them.
+    // Collect the transitions first and make at most ONE pass over the enemy
+    // list for the whole set: this used to run a full enemies.forEach per
+    // entering player, so a group of ten stepping into the hub on the same
+    // tick cost ten sweeps of ~4500 enemies inside a 25ms budget.
+    let entered = null;
     this.players.forEach(p => {
       const nowIn = this._inSafeZone(p.x, p.y);
-      if (nowIn && !p._wasInSafeZone) {
-        this.enemies.forEach(e => {
-          if (e.hp <= 0 || e._targetId !== p.socketId) return;
-          if (e.ignoresSafeZone) return; // event boss keeps chasing into the hub
-          e.x = e.spawnX; e.y = e.spawnY;
-          e.aggro = false;
-          e._targetId = null;
-          e._shp = -1;
-        });
-      }
+      if (nowIn && !p._wasInSafeZone) (entered || (entered = new Set())).add(p.socketId);
       p._wasInSafeZone = nowIn;
     });
+    if (entered) {
+      for (let i = 0; i < this.enemies.length; i++) {
+        const e = this.enemies[i];
+        if (e.hp <= 0 || e.ignoresSafeZone) continue; // event boss chases into the hub
+        if (!e._targetId || !entered.has(e._targetId)) continue;
+        e.x = e.spawnX; e.y = e.spawnY;
+        e.aggro = false;
+        e._targetId = null;
+        e._cachedTarget = null;
+        e._shp = -1;
+      }
+    }
 
     // Enemy AI + respawn
     this._aiTickNo++;
@@ -558,17 +622,7 @@ class Room {
       const dueForSearch = (e._idx % AI_TARGET_SEARCH_EVERY) === (this._aiTickNo % AI_TARGET_SEARCH_EVERY);
       let closest = cachedStillValid ? cached : null;
       if (dueForSearch || !cachedStillValid) {
-        closest = null;
-        let bestD2 = Infinity;
-        for (let i = 0; i < alivePlayers.length; i++) {
-          const p = alivePlayers[i];
-          if (_sz && this._inSafeZone(p.x, p.y)) continue;
-          if (p._inRaid) continue;
-          if (p._invis) continue;
-          const dx = p.x - e.x, dy = p.y - e.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bestD2) { bestD2 = d2; closest = p; }
-        }
+        closest = this._closestTargetFor(e, _sz);
         e._cachedTarget = closest;
       }
       const closestD2 = closest ? (closest.x - e.x) * (closest.x - e.x) + (closest.y - e.y) * (closest.y - e.y) : Infinity;
@@ -595,7 +649,12 @@ class Room {
       // aggro doesn't cancel it (still purely distance-gated below) so a
       // player briefly ducking behind a corner mid-chase doesn't flicker
       // the enemy off and on.
-      if (closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      // `!e.aggro` first: losing LOS never cancels aggro (see above), so once
+      // an enemy is awake the sampled wall-walk in _hasLOS can only ever
+      // re-confirm what's already true. Skipping it there takes the single
+      // most expensive call in this loop off every already-chasing enemy,
+      // every tick — which in a busy arm is most of them.
+      if (!e.aggro && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
@@ -694,21 +753,67 @@ class Room {
     // that player instead of all ~4500 enemies (which at 200 players would be
     // ~900k distance checks every 25ms).
     this._rebuildEnemyGrid();
+    // The player grid was already rebuilt at the top of this tick for the AI
+    // target search, and nothing has moved players since — reuse it.
 
     this.players.forEach(p => {
       nearPlayers.length = 0;
       cand.length = 0;
-      this.players.forEach(op => {
-        if (op.socketId === p.socketId) return;
-        const dx = op.x - p.x, dy = op.y - p.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 > PLAYER_AOI_R2) return;
-        cand.push({ op, d2 });
-      });
-      if (cand.length > PLAYER_CAP) {
-        cand.sort((a, b) => a.d2 - b.d2);
-        cand.length = PLAYER_CAP;
+      // Same 3x3-cell interest query the enemies use, for the same reason —
+      // see PLAYER_GRID_CELL.
+      //
+      // Only the PLAYER_CAP nearest survive, and they are selected as we go
+      // rather than collected and sorted afterwards. The old version pushed
+      // every candidate into an array and ran Array.sort on the lot: in a
+      // crowded hub a single 600px radius holds well over a hundred other
+      // players, so that was a ~150-element comparator sort per player per
+      // cast. Profiling a 300-player room measured it at 58% of the entire
+      // tick — comfortably the largest single cost in the whole loop, larger
+      // than the enemy AI and the packet encoding put together.
+      //
+      // Bounded insertion instead: `cand` is kept sorted ascending by d2 and
+      // never grows past the cap, so once it is full the common case is a
+      // single compare against the current worst and a skip. Slots come from a
+      // pool, so this allocates nothing at all.
+      const pgrid = this._playerGrid;
+      const pcx0 = Math.floor((p.x - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+      const pcx1 = Math.floor((p.x + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+      const pcy0 = Math.floor((p.y - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+      const pcy1 = Math.floor((p.y + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+      let nCand = 0;
+      for (let pcx = pcx0; pcx <= pcx1; pcx++) {
+        for (let pcy = pcy0; pcy <= pcy1; pcy++) {
+          const cell = pgrid.get(_gridKey(pcx, pcy));
+          if (!cell) continue;
+          for (let ci = 0; ci < cell.length; ci++) {
+            const op = cell[ci];
+            if (op.socketId === p.socketId) continue;
+            const dx = op.x - p.x, dy = op.y - p.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > PLAYER_AOI_R2) continue;
+            // Full, and no closer than the furthest one we're keeping — the
+            // branch that takes almost every candidate in a busy hub.
+            if (nCand === PLAYER_CAP && d2 >= cand[PLAYER_CAP - 1].d2) continue;
+            let slot;
+            if (nCand < PLAYER_CAP) {
+              // Pool slots are claimed by index 0..nCand-1, so this index has
+              // not been handed out yet in this player's pass, wherever the
+              // insertion below ends up moving the earlier ones to.
+              slot = this._candPool[nCand];
+              if (!slot) { slot = { op: null, d2: 0 }; this._candPool[nCand] = slot; }
+              cand[nCand] = slot;
+              nCand++;
+            } else {
+              slot = cand[PLAYER_CAP - 1]; // evict the current worst, reuse its slot
+            }
+            slot.op = op; slot.d2 = d2;
+            let j = nCand - 1;
+            while (j > 0 && cand[j - 1].d2 > d2) { cand[j] = cand[j - 1]; j--; }
+            cand[j] = slot;
+          }
+        }
       }
+      cand.length = nCand;
       for (let i = 0; i < cand.length; i++) {
         const op = cand[i].op;
         const k = p._known.get(op.socketId);
@@ -744,7 +849,24 @@ class Room {
       // t: server tick timestamp — the client uses real tick spacing (setInterval
       // drifts 45-60ms) to time snapshot playback at true velocity.
       // Payload is a binary ArrayBuffer — see shared/netcodec.js
-      this.io.to(p.socketId).emit('gameState', encodeGameState(playersOut, nearEnemies, now, undefined));
+      //
+      // Sent straight down the socket rather than via io.to(id): the room
+      // form builds a BroadcastOperator plus a rooms Set and goes through the
+      // adapter on every call, which at 20 casts/s × every player is pure
+      // overhead for what is always a single known recipient.
+      //
+      // ...and *volatile*, which is the fix for the stalls this stream causes
+      // on a flaky mobile link. A plain emit to a socket whose send buffer is
+      // backed up (radio asleep, tunnel hiccup, the Telegram WebView
+      // backgrounded) queues the packet; at 20 packets/s a few seconds of
+      // that is a queue the client then receives as one flood of stale world
+      // states, which is exactly what "иногда тупит" looks like from the
+      // inside. Volatile drops those instead, and dropping is safe here
+      // precisely because this stream is self-healing: enemies a client ends
+      // up missing are re-sent in full by ENEMY_REFRESH_CASTS or pulled back
+      // on demand by its own enemyResync, and players by FULL_REFRESH_TICKS.
+      const sock = this._socketFor(p);
+      if (sock) sock.volatile.emit('gameState', encodeGameState(playersOut, nearEnemies, now, undefined));
     });
 
     // Coarse dot feed for the full-map panel (the КАРТА tab), which draws the
@@ -773,11 +895,105 @@ class Room {
       const e = this.enemies[i];
       if (e.hp <= 0) continue;
       if (e.isBoss) { this._bossBuf.push(e); continue; }
-      const key = Math.floor(e.x / ENEMY_GRID_CELL) * 100000 + Math.floor(e.y / ENEMY_GRID_CELL);
+      const key = _gridKey(Math.floor(e.x / ENEMY_GRID_CELL), Math.floor(e.y / ENEMY_GRID_CELL));
       let cell = grid.get(key);
       if (!cell) { cell = []; grid.set(key, cell); }
       cell.push(e);
     }
+  }
+
+  // The closest player this enemy is allowed to chase, or null if there isn't
+  // one worth considering. `sz` is false only for the event boss, which alone
+  // may target players standing in the hub.
+  //
+  // This was a linear scan of every alive player, run per enemy — and with
+  // AI_TARGET_SEARCH_EVERY = 4 at 40 ticks/s that is ten full player sweeps
+  // per enemy per second. Across ~4500 enemies and a few hundred players it
+  // works out to eight figures of distance checks a second, and it was by far
+  // the largest single cost in the loop: profiling a 300-player room put the
+  // AI at ~15ms of a 25ms budget, essentially all of it here, and it grew
+  // strictly linearly with the player count. It is also the only part of the
+  // tick that got slower purely because the game got more popular.
+  //
+  // Bounding the search is behaviour-preserving, not an approximation. A
+  // target further than aggroR * 2.2 is already discarded by the de-aggro
+  // rule immediately below the call site, which takes the same branch as
+  // "no target at all" — so anything outside that radius could never have
+  // survived the search anyway, and refusing to look at it costs nothing.
+  _closestTargetFor(e, sz) {
+    // The de-aggro threshold, plus a cell of slack. The floor matters for
+    // enemies with a tiny (or zero) aggro radius, which would otherwise never
+    // see anyone even standing on top of them.
+    const R = Math.max((e.aggroR || 0) * 2.2, 300);
+    const R2 = R * R;
+    const grid = this._playerGrid;
+    const cx0 = Math.floor((e.x - R) / PLAYER_GRID_CELL);
+    const cx1 = Math.floor((e.x + R) / PLAYER_GRID_CELL);
+    const cy0 = Math.floor((e.y - R) / PLAYER_GRID_CELL);
+    const cy1 = Math.floor((e.y + R) / PLAYER_GRID_CELL);
+    let closest = null, bestD2 = R2;
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const cell = grid.get(_gridKey(cx, cy));
+        if (!cell) continue;
+        for (let i = 0; i < cell.length; i++) {
+          const p = cell[i];
+          // The grid holds every player in the room, so the alive/eligible
+          // filtering the old alivePlayers scan did up front happens here.
+          if (p.hp <= 0 || !p.type) continue;
+          if (sz && this._inSafeZone(p.x, p.y)) continue;
+          if (p._inRaid) continue;
+          if (p._invis) continue;
+          const dx = p.x - e.x, dy = p.y - e.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) { bestD2 = d2; closest = p; }
+        }
+      }
+    }
+    return closest;
+  }
+
+  // Player equivalent of _rebuildEnemyGrid — same empty-and-refill discipline
+  // so a busy hub doesn't churn one array per occupied cell per cast.
+  _rebuildPlayerGrid() {
+    const grid = this._playerGrid;
+    grid.forEach(arr => { arr.length = 0; });
+    this.players.forEach(p => {
+      const key = _gridKey(Math.floor(p.x / PLAYER_GRID_CELL), Math.floor(p.y / PLAYER_GRID_CELL));
+      let cell = grid.get(key);
+      if (!cell) { cell = []; grid.set(key, cell); }
+      cell.push(p);
+    });
+  }
+
+  // The live Socket for a player, memoised on the player record. Looked up
+  // lazily rather than stored at addPlayer time so a socket that reconnects
+  // under the same entry can't leave a dead reference behind, and dropped
+  // again the moment it stops being connected.
+  _socketFor(p) {
+    const s = p._socket;
+    if (s && s.connected) return s;
+    const fresh = this.io.sockets.sockets.get(p.socketId) || null;
+    p._socket = fresh;
+    return fresh;
+  }
+
+  // socketIds of everyone who currently has this enemy streamed to them, i.e.
+  // everyone who can actually see it on screen. Combat events (enemyHurt /
+  // enemyKilled) used to go to the whole floor on every single swing, so the
+  // cost of one player hitting one monster scaled with the total number of
+  // players online — hundreds of packets describing an enemy almost none of
+  // the recipients had ever been told about. The result buffer is reused, so
+  // callers must consume it before the next call.
+  viewersOfEnemy(enemyId, exceptSocketId) {
+    const out = this._viewerBuf;
+    out.length = 0;
+    this.players.forEach(p => {
+      if (p.socketId === exceptSocketId) return;
+      if (!p._eKnown.has(enemyId)) return;
+      out.push(p.socketId);
+    });
+    return out;
   }
 
   // Fills `out` with what this one player needs to hear about this tick:
@@ -804,7 +1020,7 @@ class Room {
     const cy1 = Math.floor((p.y + ENEMY_AOI_R) / ENEMY_GRID_CELL);
     for (let cx = cx0; cx <= cx1; cx++) {
       for (let cy = cy0; cy <= cy1; cy++) {
-        const cell = grid.get(cx * 100000 + cy);
+        const cell = grid.get(_gridKey(cx, cy));
         if (!cell) continue;
         for (let i = 0; i < cell.length; i++) {
           const e = cell[i];
@@ -889,7 +1105,12 @@ class Room {
       buf[o++] = Math.round(e.y / TILE);
     }
     this.players.forEach(p => {
-      if (p._mapOpen) this.io.to(p.socketId).emit('mapBlips', buf.buffer);
+      if (!p._mapOpen) return;
+      // Volatile for the same reason gameState is: a ~18KB dot dump is the
+      // last thing that should be queuing up behind a stalled client, and the
+      // next one is a second away regardless.
+      const sock = this._socketFor(p);
+      if (sock) sock.volatile.emit('mapBlips', buf.buffer);
     });
   }
 
@@ -936,6 +1157,8 @@ class Room {
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
       _eKnown: new Map(),
       _mapOpen: false,
+      // Memoised live Socket — see _socketFor.
+      _socket: null,
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();

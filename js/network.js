@@ -1356,6 +1356,12 @@ function netClanDisband() {
 function netClanSearch(query) {
   if (socket?.connected) socket.emit('clanSearch', { query: (query || '').slice(0, 20) });
 }
+// Pull fresh clan state (XP bar, member list, applications) when the panel is
+// opened. The server used to push this on every monster kill to keep it live,
+// which cost a clan read and a full packet per kill, server-wide.
+function netClanRequest() {
+  if (socket?.connected && clanData) socket.emit('clanRequest');
+}
 
 // ── Auth ──────────────────────────────────────────────────────
 function showAuthError(msg) {

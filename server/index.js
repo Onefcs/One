@@ -1268,7 +1268,23 @@ app.get('/api/special-quests', async (req, res) => {
 // state, which would otherwise report "healthy" even with Mongo down.
 app.get('/health', (req, res) => {
   const dbOk = mongoose.connection.readyState === 1; // 1 = connected
-  res.status(dbOk ? 200 : 503).json({ ok: dbOk, db: mongoose.connection.readyState });
+  // Room tick timings alongside the DB state. "Иногда тупит" reports were
+  // previously unanswerable because nothing recorded whether the 25ms world
+  // loop was actually making its budget; tickOverruns/tickMsMax say so
+  // directly. Reading resets the window, so each poll describes the interval
+  // since the last one (see Room.stats).
+  const rooms = [];
+  floorRooms.forEach(r => { try { rooms.push(r.stats()); } catch {} });
+  const mem = process.memoryUsage();
+  res.status(dbOk ? 200 : 503).json({
+    ok: dbOk,
+    db: mongoose.connection.readyState,
+    sockets: io.engine.clientsCount,
+    uptimeS: Math.round(process.uptime()),
+    heapMb: Math.round(mem.heapUsed / 1048576),
+    rssMb: Math.round(mem.rss / 1048576),
+    rooms,
+  });
 });
 
 // Images: cache 30 days — sprites never change between deploys
@@ -2817,6 +2833,156 @@ if (mongoose.connection.readyState === 1) {
   }, 2000);
 }
 
+// ── Clan helpers ─────────────────────────────────────────────────────────────
+// The live socket for an account. Every clan fan-out used to find this with
+// `[...io.sockets.sockets.values()].find(s => s.data.telegramId === ...)` —
+// a full copy of the socket table, per member, per notification. activeSessions
+// is already the authoritative telegramId -> socketId index; use it.
+function _socketForTelegramId(telegramId) {
+  const sid = activeSessions.get(telegramId);
+  if (!sid) return null;
+  return io.sockets.sockets.get(sid) || null;
+}
+
+// One bm read for the whole clan. _clanDataFor does this lookup itself, and it
+// was being called once per member inside a notification loop — so telling a
+// 50-member clan anything meant 50 sequential queries that each read the same
+// 50 documents. Split out so a fan-out can do it once and reuse the result.
+async function _clanBmMap(clan) {
+  const memberIds = clan.members.map(m => m.telegramId);
+  const docs = await PlayerModel.find({ telegramId: { $in: memberIds } }, { telegramId: 1, bm: 1 })
+    .lean().catch(() => []);
+  const bmMap = {};
+  docs.forEach(d => { bmMap[d.telegramId] = d.bm || 0; });
+  return bmMap;
+}
+
+function _clanDataWith(clan, telegramId, bmMap) {
+  const myRole = clan.members.find(m => m.telegramId === telegramId)?.role || null;
+  return {
+    _id:          clan._id,
+    name:         clan.name,
+    icon:         clan.icon,
+    level:        clan.level,
+    xp:           clan.xp,
+    members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role, bm: bmMap[m.telegramId] || 0 })),
+    applications: myRole === 'leader' ? clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
+    myRole,
+  };
+}
+
+async function _clanDataFor(clan, telegramId) {
+  return _clanDataWith(clan, telegramId, await _clanBmMap(clan));
+}
+
+async function _notifyClan(clan) {
+  const bmMap = await _clanBmMap(clan);
+  for (const m of clan.members) {
+    const target = _socketForTelegramId(m.telegramId);
+    if (!target) continue;
+    target.emit('clanData', _clanDataWith(clan, m.telegramId, bmMap));
+    // Membership changes are made on the LEADER's socket, so the member's own
+    // connection has no idea it now belongs to a clan. It used to find out
+    // only on its next kill, because the per-kill XP path happened to re-read
+    // the clan and refresh these — which also meant a freshly approved member
+    // ran around with no clan tag over their head until they hit something.
+    // Now that the kill path is a pure counter bump, refresh it here, where
+    // the member is already being told about the change.
+    target.data._setClanIdentity?.(clan._id, clan.name, clan.icon);
+  }
+}
+
+// ── Clan XP batching ─────────────────────────────────────────────────────────
+// Clan XP is +1 per monster kill. It used to be applied inline on every single
+// kill: a findOne on an unindexed embedded field, a full-document clan.save(),
+// a second query over every member's bm, and a whole clanData packet — four
+// round trips of work for one point, hundreds of times a second across the
+// server, all sharing a 10-connection pool with everyone's progress saves.
+// That is the single biggest reason ordinary actions would intermittently hang.
+//
+// Kills now just increment an in-memory counter. A timer folds each clan's
+// accumulated points into one atomic $inc, and members only hear about it when
+// the level actually changes — which is the only part of it they can see. A
+// concurrent $inc is also correct under load in a way clan.save() never was:
+// two members of the same clan killing at once each read-modify-wrote the whole
+// document, so one of the two increments was simply lost.
+const CLAN_XP_LEVELS = [0, 500, 1500, 4000, 10000, 25000, 60000, 150000, 350000, 800000];
+const CLAN_MAX_LEVEL = 10;
+const CLAN_XP_FLUSH_MS = 20000;
+const _clanXpPending = new Map(); // clanId string -> accumulated xp
+
+function _clanXpAdd(clanId, amount) {
+  if (!clanId || amount <= 0) return;
+  const k = String(clanId);
+  _clanXpPending.set(k, (_clanXpPending.get(k) || 0) + amount);
+}
+
+async function _flushClanXp() {
+  if (!_clanXpPending.size) return;
+  const batch = [..._clanXpPending];
+  _clanXpPending.clear();
+  for (const [clanId, xp] of batch) {
+    if (xp <= 0) continue;
+    try {
+      // level filter mirrors the old early-return: a maxed clan stops earning.
+      const clan = await ClanModel.findOneAndUpdate(
+        { _id: clanId, level: { $lt: CLAN_MAX_LEVEL } },
+        { $inc: { xp } },
+        { new: true },
+      );
+      if (!clan) continue;
+      // A batch can carry a clan across more than one threshold at once, which
+      // the old one-point-at-a-time path never had to consider.
+      let lvl = clan.level;
+      while (lvl < CLAN_MAX_LEVEL && clan.xp >= CLAN_XP_LEVELS[lvl]) lvl++;
+      if (lvl === clan.level) continue;
+      clan.level = lvl;
+      await ClanModel.updateOne({ _id: clan._id }, { $set: { level: lvl } });
+      // Everyone gets the level-up, not just whoever happened to land the kill
+      // that crossed the line — the client shows a toast off exactly this.
+      await _notifyClan(clan);
+    } catch (err) { console.error('_flushClanXp:', err); }
+  }
+}
+setInterval(() => { _flushClanXp().catch(() => {}); }, CLAN_XP_FLUSH_MS).unref();
+
+// ── Combat fan-out ───────────────────────────────────────────────────────────
+// enemyHurt/enemyKilled describe ONE enemy, and they used to go to the whole
+// floor on every swing. The world is a single shared floor, so the cost of one
+// player hitting one monster scaled with everyone online: at a few hundred
+// players each landing a handful of hits a second, that is six figures of
+// outbound packets a second, almost all of them about an enemy the recipient
+// has never been told exists and prunes on arrival. The AOI stream already
+// knows exactly who can see a given enemy (Room._eKnown, via viewersOfEnemy),
+// so address these to that set instead.
+//
+// Returns the recipient list, or null when nobody is left to tell — callers
+// skip the emit entirely in that case rather than paying for an empty
+// broadcast. `exclude` is for the recipients that already got a richer,
+// personally-addressed copy (the attacker, their party).
+function _enemyViewers(room, enemyId, exclude) {
+  if (!room) return null;
+  const viewers = room.viewersOfEnemy(enemyId);
+  if (!viewers.length) return null;
+  // Copy: viewersOfEnemy hands back a buffer it reuses on the next call.
+  const out = [];
+  for (let i = 0; i < viewers.length; i++) {
+    const id = viewers[i];
+    if (exclude && exclude.includes(id)) continue;
+    out.push(id);
+  }
+  return out.length ? out : null;
+}
+
+// Emits `event` to everyone currently able to see `enemyId`, minus `exclude`.
+// io.to(idArray) resolves each socket id as its own room and encodes the
+// payload once for the whole set, so this stays a single serialization.
+function _emitToEnemyViewers(room, enemyId, event, payload, exclude) {
+  const ids = _enemyViewers(room, enemyId, exclude);
+  if (!ids) return;
+  io.to(ids).emit(event, payload);
+}
+
 io.on('connection', socket => {
   let authed = null;
   let currentRoom = null;
@@ -2825,6 +2991,20 @@ io.on('connection', socket => {
   let _autoSaveInterval = null;
   let _myClanName = null;
   let _myClanIcon = null;
+  // The clan's _id, kept beside the name/icon so the per-kill XP tally can be
+  // a pure in-memory increment instead of re-resolving the clan from the DB on
+  // every single monster death — see _onKillClanXp and _clanXpAdd.
+  let _myClanId = null;
+
+  // Lets another connection (a clan leader approving/kicking, the XP flusher
+  // announcing a level-up) update THIS session's clan identity — see
+  // _notifyClan. Passing nulls clears it, which is what a kick/disband does.
+  socket.data._setClanIdentity = (clanId, name, icon) => {
+    _myClanId   = clanId ? String(clanId) : null;
+    _myClanName = name || null;
+    _myClanIcon = icon || null;
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
+  };
   // Per-socket MIRROR of the account's balances — NOT the source of truth.
   // _gramBalanceCache/_nexumBalanceCache (keyed by telegramId) are, because
   // several credit paths run in a *different* connection's closure — or in no
@@ -2865,6 +3045,34 @@ io.on('connection', socket => {
   }
   let _lastMarketListAt = 0;
   let _saveDebounceTimer = null;
+
+  // ── Coalesced balance writes ──────────────────────────────────────────────
+  // Kill drops (Liberty on a few percent of kills, GRAM on 30% of them) used
+  // to hit Mongo the instant they landed — one findByIdAndUpdate per drop, per
+  // player. At a few hundred players farming that is hundreds of writes a
+  // second, each persisting a fraction of a coin, all queued through the same
+  // 10-connection pool as every real progress save; the queueing is felt as
+  // the whole server going syrupy for a moment.
+  //
+  // Every one of those writes was also redundant. The authoritative live value
+  // is _gramBalanceCache/_nexumBalanceCache (see _liveGram/_liveNexum), and the
+  // balances already ride the 60s autosave, the 3s debounced saveProgress and
+  // the disconnect flush. So a drop now just marks the balances dirty and one
+  // coalesced write covers the whole burst.
+  const BALANCE_PERSIST_MS = 10000;
+  let _balancePersistTimer = null;
+  let _balancesDirty = false;
+  function _flushBalances() {
+    if (_balancePersistTimer) { clearTimeout(_balancePersistTimer); _balancePersistTimer = null; }
+    if (!_balancesDirty || !authed) return;
+    _balancesDirty = false;
+    return _persistSavedFields(authed, { gramBalance: _liveGram(), nexumBalance: _liveNexum() });
+  }
+  function _persistBalancesSoon() {
+    _balancesDirty = true;
+    if (_balancePersistTimer) return;
+    _balancePersistTimer = setTimeout(() => { _balancePersistTimer = null; _flushBalances(); }, BALANCE_PERSIST_MS);
+  }
   let _lastChatAt = 0;
   // Simple per-second rate limiter for attack events
   let _atkCount = 0, _atkResetAt = 0;
@@ -2885,7 +3093,7 @@ io.on('connection', socket => {
     'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
     'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
     'getReferrals', 'getRating', 'completeSpecialQuest', 'claimVipRewards',
-    'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline',
+    'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband',
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
@@ -2921,11 +3129,17 @@ io.on('connection', socket => {
   // later, persisted it right back over the real progress.
   socket.data._flushNow = async () => {
     if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
+    if (_balancePersistTimer) { clearTimeout(_balancePersistTimer); _balancePersistTimer = null; }
     if (authed && _lastStats) {
+      _balancesDirty = false; // the write below carries both balances
       await _persistSavedFields(authed,
         { ..._lastStats, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
         { bm: authed.bm });
+      return;
     }
+    // No saved blob for this session yet (logged in, killed something, left
+    // before any saveProgress) — the coalesced drop balances still have to land.
+    await _flushBalances();
   };
 
   // ── Admin inventory editing on a LIVE session ────────────────────────────
@@ -3065,6 +3279,7 @@ io.on('connection', socket => {
       }
       const bmNow = calcBM(_lastStats);
       authed.bm = bmNow;
+      _balancesDirty = false; // saveData carries both balances
       _persistSavedFields(authed, saveData, { bm: bmNow });
     }, 60000);
   }
@@ -3074,15 +3289,35 @@ io.on('connection', socket => {
   // global uncaughtException/unhandledRejection handler calls process.exit()
   // shortly after logging, which would otherwise drop every connected
   // player's connection over one bad packet in one handler.
+  //
+  // Logging is throttled per event. console.error is a SYNCHRONOUS write and
+  // formatting an Error means building its stack string, so a client sending
+  // malformed packets in a loop turned every one of them into blocking I/O on
+  // the same thread the world loop runs on — a handful of junk clients could
+  // stall the tick for everyone without ever tripping the rate limiter's
+  // budget. One line per event per _ERR_LOG_MS says the same thing.
+  const _ERR_LOG_MS = 5000;
+  const _errLoggedAt = new Map();
+  function _logHandlerErr(event, err) {
+    const now = Date.now();
+    const last = _errLoggedAt.get(event) || 0;
+    if (now - last < _ERR_LOG_MS) return;
+    _errLoggedAt.set(event, now);
+    console.error(`[socket:${event}]`, err);
+  }
   function safeOn(event, handler) {
     socket.on(event, (...args) => {
+      // A client can send an explicit null where a handler expects a payload
+      // object; `({ x } = {})` defaults only cover undefined, so normalise it
+      // here and let those defaults do their job for both cases.
+      if (args.length && args[0] === null) args[0] = undefined;
       try {
         const ret = handler(...args);
         if (ret && typeof ret.catch === 'function') {
-          ret.catch(err => console.error(`[socket:${event}]`, err));
+          ret.catch(err => _logHandlerErr(event, err));
         }
       } catch (err) {
-        console.error(`[socket:${event}]`, err);
+        _logHandlerErr(event, err);
       }
     });
   }
@@ -3155,6 +3390,7 @@ io.on('connection', socket => {
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
+      _myClanId   = _clan ? String(_clan._id) : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
       _setVipAura(doc.username, socket.data.vipLevel);
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
@@ -3212,6 +3448,7 @@ io.on('connection', socket => {
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
       _myClanName = _clanInfo ? _clanInfo.name : null;
       _myClanIcon = _clanInfo ? _clanInfo.icon : null;
+      _myClanId   = _clan ? String(_clan._id) : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
       _setVipAura(doc.username, socket.data.vipLevel);
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
@@ -4108,7 +4345,7 @@ io.on('connection', socket => {
     }
   });
 
-  safeOn('playerMove', ({ x, y, facing, hp }) => {
+  safeOn('playerMove', ({ x, y, facing, hp } = {}) => {
     if (!currentRoom) return;
     // Frozen entrants stay exactly where they were dropped. Facing/hp still
     // sync so the countdown doesn't look like a frozen screen.
@@ -4125,15 +4362,15 @@ io.on('connection', socket => {
   // sends a coarse dot list for it (Room._broadcastMapBlips). Off by default
   // and off again the moment the panel closes: it's the one feed still
   // proportional to the world's whole enemy count.
-  safeOn('mapView', ({ open }) => {
+  safeOn('mapView', ({ open } = {}) => {
     if (currentRoom) currentRoom.setMapOpen(socket.id, !!open);
   });
 
-  safeOn('usePotion', ({ amount }) => {
+  safeOn('usePotion', ({ amount } = {}) => {
     if (currentRoom) currentRoom.healPlayer(socket.id, Math.min(amount || 60, 200));
   });
 
-  safeOn('statsUpdate', ({ atk, def, maxHp, critChance, critPower }) => {
+  safeOn('statsUpdate', ({ atk, def, maxHp, critChance, critPower } = {}) => {
     if (currentRoom) currentRoom.updatePlayerStats(socket.id, { atk, def, maxHp, critChance, critPower });
   });
 
@@ -4161,14 +4398,15 @@ io.on('connection', socket => {
     // enemyKilled handler plays the death animation and removes the corpse —
     // otherwise the boss would just freeze on screen since _race10Finish
     // despawns it server-side before the next tick ever reports hp: 0.
-    io.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+    _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+      { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
     let winnerId = null, best = -1;
     _race10.dmg.forEach((d, sid) => { if (d > best) { best = d; winnerId = sid; } });
     _race10Finish(winnerId, false);
     return true;
   }
 
-  safeOn('attack', ({ enemyId }) => {
+  safeOn('attack', ({ enemyId } = {}) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id)) return;
@@ -4186,7 +4424,8 @@ io.on('connection', socket => {
       // enemyKilled handler plays the death animation and removes the corpse
       // — otherwise the boss would just freeze on screen since _a3Finish
       // despawns it server-side before the next tick ever reports hp: 0.
-      io.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+      _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+        { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       _a3Finish(result.a3Team === 'A' ? 'B' : 'A', false);
       return;
     }
@@ -4223,11 +4462,11 @@ io.on('connection', socket => {
 
       if (nexumDrop > 0) {
         _setNexum(_liveNexum() + nexumDrop);
-        _persistSavedFields(authed, { nexumBalance: _nexumBalance });
+        _persistBalancesSoon();
       }
       if (gramDrop > 0) {
         _setGram(_round7(_liveGram() + gramDrop));
-        _persistSavedFields(authed, { gramBalance: _gramBalance });
+        _persistBalancesSoon();
       }
 
       if (memberIds.length > 0) {
@@ -4260,10 +4499,11 @@ io.on('connection', socket => {
             blessStone: lootWinnerId === mid ? blessStone : 0,
           });
         });
-        // Visual only to the rest of the floor
-        socket.to(`floor_${currentFloor}`).except(memberIds).emit('enemyKilled', {
-          id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
-        });
+        // Visual only, and only to the players who can actually see it — the
+        // attacker and the party members above already got their own copies.
+        _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+          { id: enemyId, ex: result.ex, ey: result.ey, color: result.color },
+          [socket.id, ...memberIds]);
       } else {
         // No party: attacker gets full reward and loot
         socket.emit('enemyKilled', {
@@ -4271,11 +4511,10 @@ io.on('connection', socket => {
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon, boxRare, normStone, blessStone, nexum: nexumDrop, gram: gramDrop,
         });
-        socket.to(`floor_${currentFloor}`).emit('enemyKilled', {
-          id: enemyId, ex: result.ex, ey: result.ey, color: result.color,
-        });
+        _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+          { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id]);
       }
-      _onKillClanXp().catch(() => {});
+      _onKillClanXp();
     } else {
       // Only the attacker is told how hard the hit landed. dmg is what drives
       // the floating damage number, vampirism and the client's optimistic kill
@@ -4285,11 +4524,12 @@ io.on('connection', socket => {
       // Everyone else still gets hp so health bars and the hit flash stay in
       // sync. Mirrors the split enemyKilled above already uses.
       socket.emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
-      socket.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp });
+      _emitToEnemyViewers(currentRoom, enemyId, 'enemyHurt',
+        { id: enemyId, hp: result.hp }, [socket.id]);
     }
   });
 
-  safeOn('skillAttack', ({ enemyId, multiplier }) => {
+  safeOn('skillAttack', ({ enemyId, multiplier } = {}) => {
     if (!_atkAllowed()) return;
     if (_pvpFrozen(socket.id)) return;
     const rId = playerRaid.get(socket.id);
@@ -4330,7 +4570,8 @@ io.on('connection', socket => {
       // enemyKilled handler plays the death animation and removes the corpse
       // — otherwise the boss would just freeze on screen since _a3Finish
       // despawns it server-side before the next tick ever reports hp: 0.
-      io.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+      _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+        { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
       _a3Finish(result.a3Team === 'A' ? 'B' : 'A', false);
       return;
     }
@@ -4360,11 +4601,11 @@ io.on('connection', socket => {
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
       if (nexumDrop2 > 0) {
         _setNexum(_liveNexum() + nexumDrop2);
-        _persistSavedFields(authed, { nexumBalance: _nexumBalance });
+        _persistBalancesSoon();
       }
       if (gramDrop2 > 0) {
         _setGram(_round7(_liveGram() + gramDrop2));
-        _persistSavedFields(authed, { gramBalance: _gramBalance });
+        _persistBalancesSoon();
       }
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -4390,24 +4631,27 @@ io.on('connection', socket => {
           normStone:  lootWinnerId === mid ? normStone  : 0,
           blessStone: lootWinnerId === mid ? blessStone : 0,
         }));
-        socket.to(`floor_${currentFloor}`).except(memberIds).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+        _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+          { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
       } else {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
           gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon: boxUncommon2, boxRare: boxRare2, normStone, blessStone, nexum: nexumDrop2, gram: gramDrop2,
         });
-        socket.to(`floor_${currentFloor}`).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+        _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
+          { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id]);
       }
-      _onKillClanXp().catch(() => {});
+      _onKillClanXp();
     } else {
       // dmg only to the attacker — see the same split in the attack handler.
       socket.emit('enemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
-      socket.to(`floor_${currentFloor}`).emit('enemyHurt', { id: enemyId, hp: result.hp });
+      _emitToEnemyViewers(currentRoom, enemyId, 'enemyHurt',
+        { id: enemyId, hp: result.hp }, [socket.id]);
     }
   });
 
-  safeOn('skillEffect', ({ enemyId, enemyIds, type, duration }) => {
+  safeOn('skillEffect', ({ enemyId, enemyIds, type, duration } = {}) => {
     const rId = playerRaid.get(socket.id);
     if (rId) {
       const rr = raidRooms.get(rId);
@@ -4423,13 +4667,13 @@ io.on('connection', socket => {
     socket.to(`floor_${currentFloor}`).emit('enemyCC', { enemyId, enemyIds, type, duration });
   });
 
-  safeOn('playerInvis', ({ invis }) => {
+  safeOn('playerInvis', ({ invis } = {}) => {
     if (!currentRoom) return;
     const p = currentRoom.players.get(socket.id);
     if (p) p._invis = !!invis;
   });
 
-  safeOn('faithShield', ({ duration }) => {
+  safeOn('faithShield', ({ duration } = {}) => {
     if (!currentRoom) return;
     const partyId = playerParty.get(socket.id);
     const partyMap = partyId ? parties.get(partyId) : null;
@@ -4465,7 +4709,7 @@ io.on('connection', socket => {
     return false;
   }
 
-  safeOn('pvpAttack', ({ targetId }) => {
+  safeOn('pvpAttack', ({ targetId } = {}) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
@@ -4480,7 +4724,7 @@ io.on('connection', socket => {
     if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId); }
   });
 
-  safeOn('pvpSkillAttack', ({ targetId, multiplier }) => {
+  safeOn('pvpSkillAttack', ({ targetId, multiplier } = {}) => {
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
@@ -4491,7 +4735,7 @@ io.on('connection', socket => {
     if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId); }
   });
 
-  safeOn('pvpSkillCC', ({ targetId, type, duration }) => {
+  safeOn('pvpSkillCC', ({ targetId, type, duration } = {}) => {
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
@@ -4665,7 +4909,7 @@ io.on('connection', socket => {
     socket.emit('deathBattleState', { ..._dbPublicState(), registered: _db.reg.has(socket.id) });
   });
 
-  safeOn('setPvpMode', ({ pvpMode }) => {
+  safeOn('setPvpMode', ({ pvpMode } = {}) => {
     if (currentRoom) currentRoom.setPlayerPvpMode(socket.id, pvpMode);
   });
 
@@ -4679,7 +4923,7 @@ io.on('connection', socket => {
     socket.to(`floor_${currentFloor}`).emit('spawnAoe', data);
   });
 
-  safeOn('healParty', ({ amount }) => {
+  safeOn('healParty', ({ amount } = {}) => {
     if (!authed || !currentRoom) return;
     const healAmt = Math.max(0, Math.min(Math.floor(amount), 9999));
     const partyId = playerParty.get(socket.id);
@@ -4696,7 +4940,7 @@ io.on('connection', socket => {
     });
   });
 
-  safeOn('chat', ({ text }) => {
+  safeOn('chat', ({ text } = {}) => {
     if (!authed || !text || typeof text !== 'string') return;
     const now = Date.now();
     if (now - _lastChatAt < 3000) return;
@@ -4720,7 +4964,7 @@ io.on('connection', socket => {
     _lastChatAt = now;
     _recordClanChat(clan._id, authed.username, msg);
     for (const m of clan.members) {
-      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      const target = _socketForTelegramId(m.telegramId);
       if (target) target.emit('clanChatMsg', { username: authed.username, text: msg });
     }
   });
@@ -4758,7 +5002,7 @@ io.on('connection', socket => {
     socket.emit('privMsgHistory', { withUsername: target.username, messages: dmHistory.get(_dmKey(authed.telegramId, target.telegramId)) || [] });
   });
 
-  safeOn('saveProgress', ({ stats }) => {
+  safeOn('saveProgress', ({ stats } = {}) => {
     if (!authed) return;
     // Sanitize the client blob before it becomes the server's source of truth
     // for BM/combat stats and before it's persisted (anti-cheat — see
@@ -4817,6 +5061,7 @@ io.on('connection', socket => {
     clearTimeout(_saveDebounceTimer);
     _saveDebounceTimer = setTimeout(() => {
       if (!authed) return;
+      _balancesDirty = false; // this write carries both balances
       _persistSavedFields(authed,
         { ...clean, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
         { bm: authed.bm });
@@ -4897,31 +5142,9 @@ io.on('connection', socket => {
   });
 
   // ── Clan handlers ─────────────────────────────────────────────
-  async function _clanDataFor(clan, telegramId) {
-    const myRole = clan.members.find(m => m.telegramId === telegramId)?.role || null;
-    const memberIds = clan.members.map(m => m.telegramId);
-    const playerDocs = await PlayerModel.find({ telegramId: { $in: memberIds } }, { telegramId: 1, bm: 1 }).lean().catch(() => []);
-    const bmMap = {};
-    playerDocs.forEach(d => { bmMap[d.telegramId] = d.bm || 0; });
-    return {
-      _id:          clan._id,
-      name:         clan.name,
-      icon:         clan.icon,
-      level:        clan.level,
-      xp:           clan.xp,
-      members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role, bm: bmMap[m.telegramId] || 0 })),
-      applications: myRole === 'leader' ? clan.applications.map(a => ({ telegramId: a.telegramId, username: a.username })) : [],
-      myRole,
-    };
-  }
-
-  async function _notifyClan(clan) {
-    for (const m of clan.members) {
-      // Find active socket for this member by iterating connected sockets
-      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
-      if (target) target.emit('clanData', await _clanDataFor(clan, m.telegramId));
-    }
-  }
+  // _clanDataFor / _notifyClan now live at module scope (see the clan helpers
+  // block above) — they take no closure state, and the batched XP flusher
+  // needs them too.
 
   safeOn('clanCreate', async ({ name, icon }) => {
     if (!authed) return;
@@ -4939,6 +5162,7 @@ io.on('connection', socket => {
       socket.emit('clanData', _cd);
       _myClanName = _cd ? _cd.name : null;
       _myClanIcon = _cd ? _cd.icon : null;
+      _myClanId   = _cd ? String(_cd._id) : null;
       currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
     } catch (e) {
       if (e.code === 11000) socket.emit('clanError', { msg: 'Название занято' });
@@ -4985,6 +5209,19 @@ io.on('connection', socket => {
     await _notifyClan(clan);
   });
 
+  // On-demand clan refresh, for when the player opens the clan tab. Replaces
+  // what the per-kill clanData push used to do by accident — it kept the XP
+  // bar live at the cost of a full clan read + packet on every monster death.
+  // One read when the panel is actually being looked at is the same
+  // information for a rounding error of the cost. Rate-limited as a heavy
+  // event like every other clan handler.
+  safeOn('clanRequest', async () => {
+    if (!authed || !_myClanId) return;
+    const clan = await ClanModel.findById(_myClanId).catch(() => null);
+    if (!clan) return socket.emit('clanData', null);
+    socket.emit('clanData', await _clanDataFor(clan, authed.telegramId));
+  });
+
   safeOn('clanApprove', async ({ telegramId }) => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
@@ -5015,6 +5252,7 @@ io.on('connection', socket => {
     socket.emit('clanData', _cdDecl);
     _myClanName = _cdDecl ? _cdDecl.name : null;
     _myClanIcon = _cdDecl ? _cdDecl.icon : null;
+    _myClanId   = _cdDecl ? String(_cdDecl._id) : null;
     currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
   });
 
@@ -5028,12 +5266,12 @@ io.on('connection', socket => {
     await clan.save().catch(() => {});
     await _notifyClan(clan);
     // Notify kicked player
-    const kicked = [...io.sockets.sockets.values()].find(s => s.data.telegramId === telegramId);
+    const kicked = _socketForTelegramId(telegramId);
     if (kicked) {
       kicked.emit('clanData', null);
-      const _kFloor = playerFloorMap.get(kicked.id);
-      const _kRoom = _kFloor !== undefined ? floorRooms.get(_kFloor) : null;
-      if (_kRoom) _kRoom.setPlayerClan(kicked.id, null, null);
+      // Clears their _myClanId/_myClanName/_myClanIcon and the room clan tag
+      // in one go — see _setClanIdentity.
+      kicked.data._setClanIdentity?.(null, null, null);
     }
   });
 
@@ -5062,6 +5300,7 @@ io.on('connection', socket => {
     socket.emit('clanData', null);
     _myClanName = null;
     _myClanIcon = null;
+    _myClanId   = null;
     currentRoom?.setPlayerClan(socket.id, null, null);
   });
 
@@ -5072,31 +5311,23 @@ io.on('connection', socket => {
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
     // Notify all members first and clear their room clan state
     for (const m of clan.members) {
-      const target = [...io.sockets.sockets.values()].find(s => s.data.telegramId === m.telegramId);
+      const target = _socketForTelegramId(m.telegramId);
       if (target) {
         target.emit('clanData', null);
-        const _tFloor = playerFloorMap.get(target.id);
-        const _tRoom = _tFloor !== undefined ? floorRooms.get(_tFloor) : null;
-        if (_tRoom) _tRoom.setPlayerClan(target.id, null, null);
+        target.data._setClanIdentity?.(null, null, null);
       }
     }
     await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
   });
 
-  async function _onKillClanXp() {
-    if (!authed || !_myClanName) return;
-    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
-    if (!clan || clan.level >= 10) return;
-    clan.xp += 1;
-    const LEVELS = [0,500,1500,4000,10000,25000,60000,150000,350000,800000];
-    const nextLvl = clan.level < 10 ? LEVELS[clan.level] : Infinity;
-    if (clan.xp >= nextLvl) clan.level = Math.min(10, clan.level + 1);
-    await clan.save().catch(() => {});
-    const _cdKill = await _clanDataFor(clan, authed.telegramId);
-    socket.emit('clanData', _cdKill);
-    _myClanName = _cdKill ? _cdKill.name : null;
-    _myClanIcon = _cdKill ? _cdKill.icon : null;
-    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
+  // One point of clan XP for the kill — now a Map increment and nothing else.
+  // See the clan XP batching block at module scope for why: this used to be
+  // four DB round trips and a full clanData packet on every monster death.
+  // Deliberately not async any more; the call sites' `.catch(() => {})` is
+  // harmless on undefined-returning calls but has been dropped where it stood.
+  function _onKillClanXp() {
+    if (!authed || !_myClanId) return;
+    _clanXpAdd(_myClanId, 1);
   }
 
   // ── Raid ───────────────────────────────────────────────────────────────────
@@ -5206,13 +5437,13 @@ io.on('connection', socket => {
   });
 
   // ── Raid game ─────────────────────────────────────────────────────────────
-  safeOn('raidMove', ({ x, y, hp }) => {
+  safeOn('raidMove', ({ x, y, hp } = {}) => {
     const rId = playerRaid.get(socket.id);
     const rr  = rId ? raidRooms.get(rId) : null;
     if (rr) rr.updatePlayerPos(socket.id, x, y, hp);
   });
 
-  safeOn('raidAttack', ({ enemyId }) => {
+  safeOn('raidAttack', ({ enemyId } = {}) => {
     const rId = playerRaid.get(socket.id);
     const rr  = rId ? raidRooms.get(rId) : null;
     if (!rr) return;
@@ -5360,7 +5591,7 @@ io.on('connection', socket => {
     _pdLobbyBroadcast();
   });
 
-  safeOn('partyDungeonMove', ({ x, y, facing, hp }) => {
+  safeOn('partyDungeonMove', ({ x, y, facing, hp } = {}) => {
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
     if (pd) pd.updatePlayerPos(socket.id, x, y, facing, hp);
@@ -5375,7 +5606,7 @@ io.on('connection', socket => {
     if (cp) pd.updatePlayerStats(socket.id, { atk: cp.atk, def: cp.def, maxHp: cp.maxHp, critChance: cp.critChance, critPower: cp.critPower });
   }
 
-  safeOn('partyDungeonAttack', ({ enemyId }) => {
+  safeOn('partyDungeonAttack', ({ enemyId } = {}) => {
     if (!_atkAllowed()) return;
     const pdId = playerPartyDungeon.get(socket.id);
     const pd = pdId ? pdRooms.get(pdId) : null;
@@ -5485,6 +5716,10 @@ io.on('connection', socket => {
 
   safeOn('disconnect', () => {
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
+    // _flushNow (below, via _pendingFlush) clears this too and writes whatever
+    // the coalesced drop balances are owed — clearing here as well just makes
+    // sure no timer outlives the socket in the paths that don't reach it.
+    if (_balancePersistTimer) { clearTimeout(_balancePersistTimer); _balancePersistTimer = null; }
     // Flush any pending debounced save immediately (same logic socket.data
     // ._flushNow exposes for a reconnecting session to await synchronously).
     // Registered in _pendingFlush (keyed by account, not socket) so a login
@@ -5557,6 +5792,9 @@ async function _gracefulShutdown(signal) {
   console.log(`${signal}: shutting down...`);
   // Stop all floor game loops
   floorRooms.forEach(r => r._stopLoop());
+  // Land whatever clan XP has accumulated since the last 20s flush, so a
+  // redeploy doesn't quietly discard it.
+  await _flushClanXp().catch(() => {});
   // Disconnect all sockets — triggers disconnect event per socket which flushes pending saves
   io.close();
   // Wait 2s for in-flight DB writes to complete
