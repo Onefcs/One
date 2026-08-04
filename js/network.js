@@ -720,10 +720,11 @@ function netConnect(onReady) {
     // partyUpdated (or disconnect) will clear the member list; don't wipe here
   });
 
-  // Someone (the party inviter, currently — see the info button on the
-  // invite popup, js/ui.js/js/input.js) wants to see our stats/equipment.
-  // We're the only side that actually has them (client-authoritative build),
-  // so answer with our own computed payload instead of the server doing it.
+  // Someone we're currently targeted by wants to see our stats/equipment —
+  // see the "i" button next to Пати+ (getPartyInfoBtnPos, js/input.js /
+  // drawPartyButton, js/ui.js). We're the only side that actually has them
+  // (client-authoritative build), so answer with our own computed payload
+  // instead of the server doing it.
   socket.on('playerProfileRequested', ({ requesterId }) => {
     if (!player || !requesterId) return;
     const profile = typeof _buildPeerProfilePayload === 'function' ? _buildPeerProfilePayload() : null;

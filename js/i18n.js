@@ -366,7 +366,6 @@ Object.assign(I18N_UI, {
   statCritPower: { ru: 'Крит сила', en: 'Crit power', uk: 'Сила криту', es: 'Poder crítico', tr: 'Kritik gücü', pt: 'Poder crítico' },
   statHpRegen: { ru: 'HP реген', en: 'HP regen', uk: 'HP реген', es: 'Regen HP', tr: 'HP yenilenme', pt: 'Regen HP' },
   peerEquipHdr: { ru: 'Экипировка', en: 'Equipment', uk: 'Екіпіровка', es: 'Equipo', tr: 'Ekipman', pt: 'Equipamento' },
-  peerProfileHint: { ru: 'Смотреть профиль', en: 'View profile', uk: 'Переглянути профіль', es: 'Ver perfil', tr: 'Profili görüntüle', pt: 'Ver perfil' },
   skillPointsFmt: { ru: 'Очки навыка: {n}', en: 'Skill points: {n}', uk: 'Очки навички: {n}', es: 'Puntos de habilidad: {n}', tr: 'Yetenek puanı: {n}', pt: 'Pontos de habilidade: {n}' },
   spAbbrev: { ru: 'ОН', en: 'SP', uk: 'ОН', es: 'PH', tr: 'YP', pt: 'PH' },
   selectCharacterHint: { ru: 'Выберите персонажа', en: 'Select a character', uk: 'Оберіть персонажа', es: 'Selecciona un personaje', tr: 'Bir karakter seç', pt: 'Selecione um personagem' },

@@ -58,6 +58,14 @@ function getPartyBtnPos() {
   return { x: W / 2 - 40, y: HEADER_H + 52, w: 80, h: 26 };
 }
 
+// "i" button right next to Пати+ — view whoever is currently targeted
+// (any nearby player, not just someone who invited you), see
+// showPeerProfileModal (js/ui.js) and netRequestPlayerProfile (js/network.js).
+function getPartyInfoBtnPos() {
+  const pb = getPartyBtnPos();
+  return { x: pb.x + pb.w + 6, y: pb.y, w: pb.h, h: pb.h };
+}
+
 // Potion is above the attack/target row; AUTO sits directly above Potion
 function getPotionBtnPos() {
   const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
@@ -75,9 +83,6 @@ function getAutoBtnPos() {
 // Invite accept/decline buttons (for popup)
 function getPartyAcceptPos()  { return { x: W / 2 - 68, y: H / 2 + 18, w: 58, h: 26 }; }
 function getPartyDeclinePos() { return { x: W / 2 + 10, y: H / 2 + 18, w: 58, h: 26 }; }
-// "i" button on the invite popup — lets the invitee check the inviter's
-// stats/equipment before accepting (see showPeerProfileModal, js/ui.js).
-function getPartyInviteInfoPos() { const pw = 220; return { x: W / 2 + pw / 2 - 18, y: H / 2 - 24, r: 10 }; }
 
 function _isOnScreen(wx, wy) {
   return wx >= _vL && wx <= _vR && wy >= _vT && wy <= _vB;
@@ -237,8 +242,19 @@ function _checkPartyLeaveBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkPartyInfoBtnTouch(cx, cy) {
+  if (!player || !targetIsPlayer || !targetId) return false;
+  const ib = getPartyInfoBtnPos();
+  if (cx >= ib.x && cx <= ib.x + ib.w && cy >= ib.y && cy <= ib.y + ib.h) {
+    if (typeof netRequestPlayerProfile === 'function') netRequestPlayerProfile(targetId);
+    return true;
+  }
+  return false;
+}
+
 function _checkPartyBtnTouch(cx, cy) {
   if (!player) return false;
+  if (_checkPartyInfoBtnTouch(cx, cy)) return true;
   const pb = getPartyBtnPos();
   if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
     if (targetIsPlayer && targetId) {
@@ -251,11 +267,6 @@ function _checkPartyBtnTouch(cx, cy) {
 
 function _checkPartyInviteTouch(cx, cy) {
   if (!partyInvitePending) return false;
-  const ip = getPartyInviteInfoPos();
-  if (Math.hypot(cx - ip.x, cy - ip.y) <= ip.r + 4) {
-    if (typeof netRequestPlayerProfile === 'function') netRequestPlayerProfile(partyInvitePending.fromId);
-    return true;
-  }
   const ac = getPartyAcceptPos(), dc = getPartyDeclinePos();
   if (cx >= ac.x && cx <= ac.x + ac.w && cy >= ac.y && cy <= ac.y + ac.h) {
     if (typeof netPartyAccept === 'function') netPartyAccept(partyInvitePending.fromId);

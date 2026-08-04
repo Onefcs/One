@@ -2165,6 +2165,17 @@ function drawPartyButton() {
   ctx.fillStyle = '#90d653';
   ctx.fillText(t('partyInviteBtnLbl'), pb.x + 23, pb.y + pb.h / 2);
 
+  // "i" — view this target's stats/equipment (works on anyone targeted,
+  // not just someone who invited you; see showPeerProfileModal, js/ui.js)
+  const ib = getPartyInfoBtnPos();
+  ctx.fillStyle = _uiBtnGrads.ptg0;
+  roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(127,181,79,0.8)'; ctx.lineWidth = 1.5;
+  roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.stroke();
+  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'center';
+  ctx.fillStyle = '#90d653';
+  ctx.fillText('i', ib.x + ib.w / 2, ib.y + ib.h / 2 + 1);
+
   ctx.restore();
 }
 
@@ -2271,17 +2282,6 @@ function drawPartyInvitePopup() {
   ctx.fillText(t('partyInviteTitle'), px + 34, py + 14);
   ctx.font = `10px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
-
-  // Info button — check the inviter's stats/equipment before accepting
-  const ip = getPartyInviteInfoPos();
-  ctx.fillStyle = 'rgba(144,214,83,0.15)';
-  ctx.beginPath(); ctx.arc(ip.x, ip.y, ip.r, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(144,214,83,0.7)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(ip.x, ip.y, ip.r, 0, Math.PI * 2); ctx.stroke();
-  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#90d653';
-  ctx.fillText('i', ip.x, ip.y + 1);
-  ctx.textBaseline = 'alphabetic';
 
   // Accept button
   const ac = getPartyAcceptPos();
