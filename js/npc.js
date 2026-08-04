@@ -440,16 +440,46 @@ function onStoneCraftError(msg) {
   if (idx !== null) openCraftModal(idx);
 }
 
-// Which of the three candidate pets the player has tapped to inspect. The
-// three share hp/atk/def and differ only in a fourth stat, so which one you
-// end up with actually matters — this is what lets you see that before
-// spending. Cleared when the rarity changes so it can't show a pet that
-// isn't among the ones on screen.
-let _petPreviewId = null;
+// Read-only twin of the inventory item modal (openInvItemModal, js/ui.js) —
+// same imod-* shell so a pet looks the same here as it does once owned. The
+// three candidates of a rarity share hp/atk/def and differ only in a fourth
+// stat, so being able to read that before paying for the roll is the point.
+// No enhance block and no buttons: this pet isn't owned yet.
+function openPetStatsModal(petId) {
+  const p = ITEM_DEF.find(i => i.id === petId);
+  if (!p) return;
+  const rc = RARITY_COLOR[p.rarity] || '#aea599';
 
-function _selectPetPreview(petId, idx) {
-  _petPreviewId = _petPreviewId === petId ? null : petId;
-  openPetCraftModal(idx);
+  const statRows = [];
+  if (p.atk) statRows.push(`ATK <b>+${p.atk}</b>`);
+  if (p.def) statRows.push(`DEF <b>+${p.def}</b>`);
+  if (p.hp)  statRows.push(`HP <b>+${p.hp}</b>`);
+  if (p.critChance) statRows.push(`${t('statCritInline')} <b>${(p.critChance * 100).toFixed(0)}%</b>`);
+  if (p.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(p.atkSpeed * 100).toFixed(0)}%</b>`);
+  if (p.hpPct)      statRows.push(`HP% <b>+${(p.hpPct * 100).toFixed(0)}%</b>`);
+
+  closePetStatsModal();
+  const ov = document.createElement('div');
+  ov.id = 'pet-stats-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closePetStatsModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
+    <div class="imod-hdr">
+      <span class="imod-big-icon">${_itemIcon(p, 52)}</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${p.name}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[p.rarity] || p.rarity}</span> · ${_SLOT_NAMES[p.slot] || p.slot}</div>
+      </div>
+      <button class="npc-close" onclick="closePetStatsModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function closePetStatsModal() {
+  const el = document.getElementById('pet-stats-modal-ov');
+  if (el) el.remove();
 }
 
 function openPetCraftModal(idx) {
@@ -461,25 +491,13 @@ function openPetCraftModal(idx) {
   const nexumBal = window._nexumBalance || 0;
   const pending = _pendingPetCraftIdx === idx;
 
-  if (_petPreviewId && !pets.some(p => p.id === _petPreviewId)) _petPreviewId = null;
-
-  const candidatesHtml = pets.map(p => {
-    const on = p.id === _petPreviewId;
-    return `
-    <div class="pet-pick${on ? ' on' : ''}" onclick="_selectPetPreview('${p.id}', ${idx})"
-         style="${on ? `border-color:${rc};background:${rc}1a` : ''}">
+  const candidatesHtml = pets.map(p => `
+    <div class="pet-pick" onclick="openPetStatsModal('${p.id}')">
       <div>${_itemIcon(p, 44)}</div>
       <div style="font-size:11px;color:${rc};margin-top:2px">${p.name}</div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 
-  const previewPet = _petPreviewId ? pets.find(p => p.id === _petPreviewId) : null;
-  const previewHtml = previewPet
-    ? `<div class="pet-preview">
-         <div class="pet-preview-name" style="color:${rc}">${previewPet.name}</div>
-         <div class="pet-preview-stats">${statStr(previewPet) || '—'}</div>
-       </div>`
-    : `<div class="pet-preview-hint">${typeof t === 'function' ? t('craftPetTapHint') : 'Нажмите на питомца — характеристики'}</div>`;
+  const previewHtml = `<div class="pet-preview-hint">${typeof t === 'function' ? t('craftPetTapHint') : 'Нажмите на питомца — характеристики'}</div>`;
 
   const costRow = `<div class="craft-req-row">
     <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
