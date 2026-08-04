@@ -26,6 +26,7 @@ const {
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_WINDOW_MS,
+  ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
 } = require('../shared/definitions');
 
@@ -1971,6 +1972,10 @@ const _EVENT_TEXT = {
     soon: (m) => `🏃 <b>Кровавая Башня</b>\n\nОкно регистрации откроется через ${m} мин. — с 20:00 до 21:00 по Москве.\nПобеждает тот, кто нанесёт общему боссу больше всего урона.`,
     now:  () => '🏃 <b>Кровавая Башня открыта!</b>\n\nЗаписывайся в игре — как наберётся 10 человек, старт. Окно открыто до 21:00 по Москве.',
   },
+  a3: {
+    soon: (m) => `⚔️ <b>Арена 3х3</b>\n\nОкно регистрации откроется через ${m} мин. — с 21:00 до 22:00 по Москве.`,
+    now:  () => '⚔️ <b>Арена 3х3 открыта!</b>\n\nЗаписывайся в игре — как наберётся 6 человек, старт. Окно открыто до 22:00 по Москве.',
+  },
 };
 
 // Each occurrence is announced at most once per process. _dbSchedule and
@@ -2249,6 +2254,7 @@ const ARENA3_REWARD      = 10;          // Liberty (Nexum) per winner
 const ARENA3_ROUND_MS    = 3 * 60 * 1000;
 
 const _a3 = {
+  phase: 'idle',       // 'idle' → 'reg' (21:00–22:00 MSK window) → 'idle'
   queue: new Map(),   // socketId -> { name, lvl }
   live: false,
   starting: false,    // guards the async attempt re-check inside _a3TryStart
@@ -2259,14 +2265,23 @@ const _a3 = {
   roundEndAt: 0,       // fightAt + ARENA3_ROUND_MS — pushed to clients so they can show a countdown
   freezeTimer: null,
   roundTimer: null,
+  openTimer: null, closeTimer: null, notifyTimer: null,
 };
 
 function _socketTid(socketId) {
   return io.sockets.sockets.get(socketId)?.data?.telegramId || null;
 }
 
+// Next scheduled window open, in UTC ms — every day, 21:00 Moscow. Same
+// nextEventStartAt helper the death battle/world boss/race10 schedules use.
+function _a3NextOpenAt(from = Date.now()) {
+  return nextEventStartAt(ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, from);
+}
+
 function _a3PublicState() {
   return {
+    phase:   _a3.phase,
+    nextAt:  _a3NextOpenAt(),
     queued: _a3.queue.size,
     needed: ARENA3_NEEDED,
     live: _a3.live,
@@ -2282,6 +2297,44 @@ function _a3Broadcast() {
   const st = _a3PublicState();
   _a3.queue.forEach((_, sid) => io.to(sid).emit('arena3State', { ...st, registered: true }));
   _a3.names.forEach((_, sid) => io.to(sid).emit('arena3State', st));
+}
+
+// Arms the next daily window (21:00 MSK) plus its 30-minute warning. Called
+// at boot and after every window closes — same shape as _race10Schedule.
+function _a3Schedule() {
+  clearTimeout(_a3.openTimer);
+  clearTimeout(_a3.notifyTimer);
+  _a3.phase = 'idle';
+  const openAt = _a3NextOpenAt();
+  _a3.openTimer = setTimeout(() => _a3OpenWindow(openAt), Math.max(0, openAt - Date.now()));
+  const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+  if (warnIn > 0) _a3.notifyTimer = setTimeout(() => notifyEventSoon('a3', openAt), warnIn);
+}
+
+// Opens the hour-long registration window. Like race10, the queue keeps
+// trying for the whole hour — more than one match can fire if enough
+// players keep signing up.
+function _a3OpenWindow(openAt) {
+  _a3.phase = 'reg';
+  notifyEventStarted('a3', openAt);
+  clearTimeout(_a3.closeTimer);
+  _a3.closeTimer = setTimeout(_a3CloseWindow, ARENA3_WINDOW_MS);
+  _a3Broadcast();
+  _a3TryStartSafe();
+}
+
+// Closes the window at 22:00 MSK. Anyone still only queued is bumped back to
+// "not registered" — a match already under way keeps running on its own
+// ARENA3_ROUND_MS clock regardless.
+function _a3CloseWindow() {
+  _a3.phase = 'idle';
+  [..._a3.queue.keys()].forEach(sid => {
+    io.to(sid).emit('arena3Registered', { registered: false });
+    io.to(sid).emit('arena3Error', { msg: 'Окно арены 3х3 закрылось — до встречи в 21:00' });
+  });
+  _a3.queue.clear();
+  _a3Schedule();
+  _a3Broadcast();
 }
 
 function _a3Frozen(socketId) {
@@ -2635,6 +2688,11 @@ async function _race10Deploy(ready, room) {
   _race10.alive.clear(); _race10.names.clear(); _race10.dmg.clear();
   _race10.fightAt = Date.now() + RACE10_FREEZE_MS;
 
+  // Every lane's monsters have to be back at full strength before this race
+  // starts — they don't respawn on their own (see Room.js's tick loop), so a
+  // second race later in the same window would otherwise find them still
+  // dead from the first one.
+  room.resetRaceMonsters();
   const placed = room.raceDeploy(picked);
   _race10.bossId = room.spawnRaceBoss();
 
@@ -3931,6 +3989,7 @@ io.on('connection', socket => {
       eventBoss: eventBossState(),
       deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
       race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
+      arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
     });
     // MUST come after gameStart: its client handler rebuilds otherPlayers from
     // scratch (`otherPlayers = new Map()`), so a roster delivered before it was
@@ -4365,6 +4424,7 @@ io.on('connection', socket => {
   safeOn('arena3Register', async () => {
     if (!authed) return;
     if (_a3.live && _a3.teams.has(socket.id)) return;
+    if (_a3.phase !== 'reg') return socket.emit('arena3Error', { msg: 'Арена 3х3 открыта с 21:00 до 22:00 по Москве' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('arena3Error', { msg: 'Выберите персонажа' });
     if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
@@ -4374,6 +4434,12 @@ io.on('connection', socket => {
     // of a running 3v3 (or the reverse) mid-fight.
     if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    // The two windows are adjacent (Кровавая Башня 20:00–21:00, this one
+    // 21:00–22:00) with its own 15-minute overrun grace period, so a race
+    // can genuinely still be live right as this one opens.
+    if (_race10.alive.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы сейчас в Кровавой Башне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < ARENA3_MIN_LEVEL) {
@@ -5339,9 +5405,11 @@ server.listen(PORT, () => {
   _dbSchedule();
   _wbSchedule();
   _race10Schedule();
+  _a3Schedule();
   console.log('next death battle:', new Date(_dbNextStartAt()).toISOString(),
               '| next world boss:', new Date(_wbNextStartAt()).toISOString(),
-              '| next Bloody Tower window:', new Date(_race10NextOpenAt()).toISOString());
+              '| next Bloody Tower window:', new Date(_race10NextOpenAt()).toISOString(),
+              '| next 3v3 window:', new Date(_a3NextOpenAt()).toISOString());
 });
 
 // ── Error handlers ────────────────────────────────────────────────────────────

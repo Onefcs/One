@@ -3049,8 +3049,9 @@ function _renderEventsBody() {
 // many of the six are waiting. Everything here comes from _a3State, pushed by
 // the server (see _initArena3Handlers in js/network.js).
 function _arena3BodyHTML() {
-  const st = (typeof _a3State !== 'undefined' && _a3State) || { queued: 0, needed: 6, minLevel: 15, reward: 10 };
+  const st = (typeof _a3State !== 'undefined' && _a3State) || { phase: 'idle', nextAt: 0, queued: 0, needed: 6, minLevel: 15, reward: 10 };
   const inMatch = typeof _a3InMatch !== 'undefined' && _a3InMatch;
+  const open = st.phase === 'reg';
   const lvl = (player && player.lvl) || 1;
   const tooLow = lvl < (st.minLevel || 15);
 
@@ -3062,6 +3063,9 @@ function _arena3BodyHTML() {
   if (inMatch) {
     phaseTxt = t('a3PhaseFighting');
     action = `<button class="db-action" disabled>${t('a3PhaseFighting')}</button>`;
+  } else if (!open) {
+    phaseTxt = t('a3PhaseClosed');
+    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
   } else if (tooLow) {
     phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
     action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
@@ -3076,20 +3080,25 @@ function _arena3BodyHTML() {
     action = `<button class="db-action" onclick="netArena3Register()">${t('dbJoinBtn')}</button>`;
   }
 
+  // Idle (window closed) counts down to the next daily window, open/in-match
+  // stay on the plain queue count.
+  const countdown = !open && !inMatch ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now())) : `${st.queued}/${st.needed}`;
   const score = inMatch
     ? `<div class="db-count">${tVars('a3ScoreFmt', { a: _a3Score.a, b: _a3Score.b })}</div>`
-    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined
-        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>` : '');
+    : open && st.attemptsLeft !== null && st.attemptsLeft !== undefined
+        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
+        : (!open && st.nextAt ? `<div class="db-count">${_fmtEventWhen(st.nextAt)}</div>` : '');
 
   return `
     <div style="padding:16px">
-      <div class="db-countdown">${st.queued}/${st.needed}</div>
+      <div class="db-countdown">${countdown}</div>
       <div class="db-phase">${phaseTxt}</div>
       ${score}
       ${action}
       <div class="db-rules">
         ${t('dbRulesHdr')}
         <ul>
+          <li>${t('a3RuleSchedule')}</li>
           <li>${tVars('a3Rule1', { n: st.needed })}</li>
           <li>${t('a3Rule2')}</li>
           <li>${t('a3Rule3')}</li>
@@ -3167,6 +3176,7 @@ function _race10BodyHTML() {
           <li>${t('race10Rule3')}</li>
           <li>${t('race10Rule4')}</li>
           <li>${t('race10Rule5')}</li>
+          <li>${t('race10Rule7')}</li>
           <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
           <li>${tVars('a3Rule6', { n: st.maxAttempts })}</li>
         </ul>
@@ -3228,6 +3238,7 @@ function closeRace10Result() {
 
 // Called from the network handlers on every server push.
 function onArena3State() {
+  _updateEventsBtnHighlight();
   if (_eventsPanelOpen() && _eventTab === 'a3') _renderEventsBody();
 }
 
@@ -3326,7 +3337,39 @@ function _worldBossBodyHTML() {
           <li>${t('wbRule3')}</li>
         </ul>
       </div>
+      <div class="db-rewards-hdr">${t('wbRewardsHdr')}</div>
+      <div class="db-rewards">${_worldBossDropRows()}</div>
     </div>`;
+}
+
+// Static description of EVENT_BOSS's drop table (rollEventBossDrops, shared/
+// definitions.js) — every quantity here is fixed on every single kill (the
+// whole table lands on the floor at once, first come first served); only
+// WHICH specific item fills the three "random" slots varies, so those show
+// as a category with a placeholder icon rather than a concrete item.
+function _worldBossDropRows() {
+  const mat = id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === id) : null);
+  const rows = [];
+  const row = (img, name, qty) => rows.push(
+    `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}
+     <span>${name}</span><span class="db-reward-qty">×${qty}</span></div>`);
+
+  const key = mat('key_uncommon');
+  if (key) row(key.img, key.name, 10);
+
+  (typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.filter(i => i.slot === 'buff_potion') : [])
+    .forEach(bp => row(bp.img, bp.name, 5));
+
+  row(null, t('wbDropUncommonArmor'), 1);
+  row(null, t('wbDropUncommonWeapon'), 1);
+  row(null, t('wbDropCommonItems'), 5);
+
+  const bless = mat('bless_stone');
+  if (bless) row(bless.img, bless.name, 5);
+  const norm = mat('norm_stone');
+  if (norm) row(norm.img, norm.name, 10);
+
+  return rows.join('');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3346,7 +3389,8 @@ function _updateEventsBtnHighlight() {
   if (!btn) return;
   const dbOpen = typeof _dbState !== 'undefined' && _dbState.phase === 'reg';
   const raceOpen = typeof _race10State !== 'undefined' && _race10State.phase === 'reg';
-  const open = dbOpen || raceOpen;
+  const a3Open = typeof _a3State !== 'undefined' && _a3State.phase === 'reg';
+  const open = dbOpen || raceOpen || a3Open;
   btn.classList.toggle('db-open', open);
   const label = document.getElementById('events-btn-text');
   if (label) label.textContent = open ? t('dbBtnOpen') : t('eventsBtn');

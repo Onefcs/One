@@ -107,6 +107,13 @@ const RACE10_TIER_GAP     = 4;   // tiles between the level-5 line and the level
 const RACE10_LEAD_IN      = 9;   // (9-2)*40 = 280px clearance
 const RACE10_LEAD_OUT     = 6;   // last monster to the shared boss room
 const RACE10_LANE_LEN     = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT;
+// Barrier positions (tile x, relative to RACE10_X0) — centred in the gap
+// after each tier's monster line, so the player runs into it right where the
+// line ends rather than partway through empty corridor. Client-side only
+// (see _isRaceBarrierBlocked, js/game.js) — same trust model as the level
+// gates elsewhere in the open world (dungeon.corridorGates).
+const RACE10_BARRIER1_X = RACE10_LEAD_IN + RACE10_TIER_LEN + RACE10_TIER_GAP / 2;
+const RACE10_BARRIER2_X = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT / 2;
 const RACE10_BOSS_ROOM    = 44;  // shared room, square
 const RACE10_X0 = ARENA_X0;
 const RACE10_Y0 = A3_Y0 + A3_H + 5;
@@ -383,6 +390,14 @@ function generateOpenWorld() {
         x: race10BossCx * TILE + TILE / 2, y: race10BossCy * TILE + TILE / 2,
       },
       bounds: { x0: RACE10_X0, y0: RACE10_Y0, x1: race10BossRoomX0 + RACE10_BOSS_ROOM, y1: RACE10_Y0 + RACE10_H },
+      // One barrier pair per lane: tier 0 blocks until every level-5 monster
+      // in that lane is dead, tier 1 until every level-10 one is. lane/tier
+      // let the client match a barrier to the right slice of serverEnemies
+      // (ids are `race10_<lane>_<n>`, rlvl is 5 or 10 — see spawnRace10Tier).
+      barriers: race10LaneRows.flatMap((cy, lane) => [
+        { x: (RACE10_X0 + RACE10_BARRIER1_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 0 },
+        { x: (RACE10_X0 + RACE10_BARRIER2_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 1 },
+      ]),
     },
     armEntries,
     corridorGates,

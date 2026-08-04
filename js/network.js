@@ -205,7 +205,7 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs, race10: r10s }) => {
+  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs, race10: r10s, arena3: a3s }) => {
     dungeonLvl = floor;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     if (typeof _buildArmGates === 'function') _buildArmGates();
@@ -247,6 +247,18 @@ function netConnect(onReady) {
       };
       _race10Registered = !!r10s.registered;
       if (typeof onRace10State === 'function') onRace10State();
+    }
+    // 3v3 arena: same idea — joining before/during the 21:00–22:00 MSK window
+    // shows the live phase and countdown instead of "not known yet".
+    if (a3s) {
+      _a3State = {
+        queued: a3s.queued || 0, needed: a3s.needed || 6, live: !!a3s.live,
+        minLevel: a3s.minLevel || 15, reward: a3s.reward || 10,
+        maxAttempts: a3s.maxAttempts || 3, attemptsLeft: null,
+        phase: a3s.phase || 'idle', nextAt: a3s.nextAt || 0,
+      };
+      _a3Registered = !!a3s.registered;
+      if (typeof onArena3State === 'function') onArena3State();
     }
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
@@ -2079,6 +2091,9 @@ function _initArena3Handlers(s) {
       // told us rather than resetting the counter to "unknown" every time
       // somebody else joins the queue.
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _a3State.attemptsLeft,
+      // 'idle' outside the 21:00–22:00 MSK window, 'reg' while it's open —
+      // nextAt is the next window's open time, used for the countdown.
+      phase: st.phase || 'idle', nextAt: st.nextAt || 0,
     };
     if (st.registered !== undefined) _a3Registered = !!st.registered;
     if (st.inMatch !== undefined) _a3InMatch = !!st.inMatch;

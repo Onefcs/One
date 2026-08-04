@@ -222,8 +222,8 @@ function update(dt, realDt) {
         // (inputDir() normalizes them), so no inp.len factor here.
         const vx = inp.dx * player.speed * _spdMult * dt;
         const vy = inp.dy * player.speed * _spdMult * dt;
-        if (canMoveX(player, vx, 12) && !_isGateBlocked(player.x + vx, player.y)) player.x += vx;
-        if (canMoveY(player, vy, 12) && !_isGateBlocked(player.x, player.y + vy)) player.y += vy;
+        if (canMoveX(player, vx, 12) && !_isGateBlocked(player.x + vx, player.y) && !_isRaceBarrierBlocked(player.x + vx, player.y)) player.x += vx;
+        if (canMoveY(player, vy, 12) && !_isGateBlocked(player.x, player.y + vy) && !_isRaceBarrierBlocked(player.x, player.y + vy)) player.y += vy;
         // 8-way facing from joystick angle, with hysteresis: near a sector
         // boundary, tiny input jitter would otherwise flip facing (and
         // restart the run animation) every frame. The new angle must move
@@ -243,8 +243,8 @@ function update(dt, realDt) {
           if (_clen > (player.charDef.atkRange + _chR) * 0.85) {
             const nvx = (_cdx / _clen) * player.speed * _spdMult * dt;
             const nvy = (_cdy / _clen) * player.speed * _spdMult * dt;
-            if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y)) player.x += nvx;
-            if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy)) player.y += nvy;
+            if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y) && !_isRaceBarrierBlocked(player.x + nvx, player.y)) player.x += nvx;
+            if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy) && !_isRaceBarrierBlocked(player.x, player.y + nvy)) player.y += nvy;
             faceTowards(_chEnt.x, _chEnt.y);
             player._chasing = true;
           } else {
@@ -324,6 +324,7 @@ function update(dt, realDt) {
   }
 
   _updateArmGates(dt);
+  _updateRaceBarriers(dt);
   _updateTeleportPads(dt);
 
   // Advance sprite animation frame
@@ -1091,6 +1092,7 @@ function render(dt, ts) {
   if (player && dungeon) _drawPlayerNameOnUI();
   if (dungeon) _drawOtherPlayerNamesOnUI();
   if (player && dungeon) drawArmGates();
+  if (player && dungeon) drawRaceBarriers();
   if (player && dungeon) drawTeleportPads();
   if (activeTab === 0) drawJoystick();
 
@@ -1297,6 +1299,8 @@ function inSafeZone(px, py) {
 // Rebuilt any time `dungeon` changes (see _buildArmGates() call sites in
 // network.js/game.js).
 let _armGates = null;
+let _raceBarriers = null;
+let _raceGateMsgCd = 0;
 const _enteredArms = new Set();
 let _gateMsgCd = 0;
 function _armLabel(dir) { return typeof t === 'function' ? t({ left:'armLeft', top:'armTop', bottom:'armBottom', right:'armRight' }[dir]) : ({ left:'левый', top:'верхний', bottom:'нижний', right:'правый' }[dir]); }
@@ -1328,10 +1332,14 @@ let _evtBossState = { spawnAt: 0, alive: false, nextAt: 0 };
 let _evtHpCd = 0;
 
 function _buildArmGates() {
-  if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; return; }
+  if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; _raceBarriers = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
   ));
+  // Кровавая Башня barriers — pixel coords already come from the server
+  // (dungeon.race10.barriers); see _isRaceBarrierBlocked for how "cleared"
+  // is decided.
+  _raceBarriers = (dungeon.race10 && dungeon.race10.barriers) || [];
 
   const entries = dungeon.armEntries || [];
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
@@ -1486,6 +1494,48 @@ function _updateArmGates(dt) {
   }
 }
 
+// Кровавая Башня (race10) barriers — same box-collision shape as the arm
+// gates above, but "unlocked" means "every monster this lane's tier spawned
+// is dead" instead of a level check. Counted live off serverEnemies rather
+// than tracked incrementally: ids are `race10_<lane>_<n>` and rlvl is
+// exactly 5 (tier 0) or 10 (tier 1) — see spawnRace10Tier, server/game/
+// dungeon.js — so a lane+tier's survivors are a cheap filter, and this only
+// ever runs for a barrier the player is actually standing next to.
+const RACE_BARRIER_THICK  = 22;
+const RACE_BARRIER_HALF_W = TILE * 2;
+function _raceLaneTierAlive(lane, tier) {
+  if (typeof serverEnemies === 'undefined') return true;
+  const rlvl = tier === 0 ? 5 : 10;
+  const prefix = `race10_${lane}_`;
+  for (let i = 0; i < serverEnemies.length; i++) {
+    const e = serverEnemies[i];
+    if ((e.hp || 0) > 0 && e.rlvl === rlvl && e.id.startsWith(prefix)) return true;
+  }
+  return false;
+}
+function _isRaceBarrierBlocked(wx, wy) {
+  if (!_raceBarriers || !_raceBarriers.length) return false;
+  for (const b of _raceBarriers) {
+    if (Math.abs(wx - b.x) >= RACE_BARRIER_THICK || Math.abs(wy - b.y) >= RACE_BARRIER_HALF_W) continue;
+    if (_raceLaneTierAlive(b.lane, b.tier)) return true;
+  }
+  return false;
+}
+
+// Called once per frame from update(): throttled "clear the monsters first"
+// message while standing at a still-blocked barrier.
+function _updateRaceBarriers(dt) {
+  if (!player || !_raceBarriers || !_raceBarriers.length) return;
+  if (_raceGateMsgCd > 0) _raceGateMsgCd -= dt;
+  for (const b of _raceBarriers) {
+    if (dist(player.x, player.y, b.x, b.y) >= 90) continue;
+    if (_raceLaneTierAlive(b.lane, b.tier) && _raceGateMsgCd <= 0) {
+      dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('raceBarrierLockedMsg') : 'Убейте всех монстров', '#f17e8b');
+      _raceGateMsgCd = 1.5;
+    }
+  }
+}
+
 function drawArmGates() {
   if (!player || !_armGates || !_armGates.length) return;
   const t = _nowMs / 1000;
@@ -1517,6 +1567,41 @@ function drawArmGates() {
       ctx.fillStyle = locked ? '#f17e8b' : '#a8e9ff';
       ctx.fillText(lbl, sx, sy + baseR + 14);
     }
+  }
+}
+
+// A solid pulsing wall across the corridor while its tier still has
+// survivors — reads as "physically blocked", not just another level-gate
+// pad, since a barrier spans the whole 3-tile width rather than sitting as a
+// circle in its centre. Drops out entirely once the tier's cleared: there's
+// nothing left to explain at that point.
+function drawRaceBarriers() {
+  if (!player || !_raceBarriers || !_raceBarriers.length) return;
+  const tSec = _nowMs / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(tSec * 2.4);
+  for (const b of _raceBarriers) {
+    if (!_raceLaneTierAlive(b.lane, b.tier)) continue;
+    const sx = (b.x - _lastCamX) * ZOOM;
+    const sy = (b.y - _lastCamY) * ZOOM + HEADER_H;
+    const halfW = RACE_BARRIER_THICK * ZOOM, halfH = RACE_BARRIER_HALF_W * ZOOM;
+    if (sx + halfW < -20 || sx - halfW > W + 20 || sy + halfH < -20 || sy - halfH > H + 20) continue;
+
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.15 * pulse;
+    ctx.fillStyle = '#eb4e61';
+    ctx.fillRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
+    ctx.globalAlpha = 0.7 + 0.3 * pulse;
+    ctx.strokeStyle = '#f7b0b8';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
+    ctx.restore();
+
+    ctx.font = 'bold 20px system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+    ctx.strokeText('🔒', sx, sy);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('🔒', sx, sy);
   }
 }
 

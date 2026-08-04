@@ -419,6 +419,11 @@ class Room {
         // calls despawnRaceBoss() in the same tick it dies (no loot table,
         // the reward is a Liberty payout to whoever dealt it the most damage).
         if (e.raceBoss) return;
+        // Race10 corridor monsters: stay dead until resetRaceMonsters() revives
+        // the whole lane for the next race — a 12s auto-respawn (the normal
+        // rule below) would let an early kill come back mid-run and the
+        // client's "all dead" barrier check (js/game.js) would never pass.
+        if (e.arm === 'race10') return;
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -1009,6 +1014,23 @@ class Room {
     });
     this.enemies.forEach((e, i) => { e._idx = i; });
     this._raceBossId = null;
+  }
+
+  // Revives every race10 corridor monster to full HP at its spawn point.
+  // Called once per race, right before deploying entrants (server/index.js
+  // _race10Deploy) — race10 monsters never respawn on their own (see the
+  // tick loop's hp<=0 branch below), so without this the second race of the
+  // day would find every lane already cleared out by the first one.
+  resetRaceMonsters() {
+    this.enemies.forEach(e => {
+      if (e.arm !== 'race10') return;
+      e.hp = e.maxHp;
+      e.x = e.spawnX; e.y = e.spawnY;
+      e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
+      e.stunTimer = 0; e.slowTimer = 0;
+      e._shp = -1;
+      delete e.respawnTimer;
+    });
   }
 
   // Spawns the two stationary guard bosses for a 3v3 match — same identity as

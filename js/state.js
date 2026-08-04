@@ -103,7 +103,7 @@ let _dbInFight = false;
 // attemptsLeft is only refreshed by an explicit sync (opening the panel, a
 // registration, a match ending) — the frequent queue-count pushes leave it
 // alone, so it starts as null meaning "not known yet" rather than 0.
-let _a3State = { queued: 0, needed: 6, live: false, minLevel: 15, reward: 10, attemptsLeft: null, maxAttempts: 3 };
+let _a3State = { phase: 'idle', nextAt: 0, queued: 0, needed: 6, live: false, minLevel: 15, reward: 10, attemptsLeft: null, maxAttempts: 3 };
 let _a3Registered = false;
 let _a3InMatch = false;
 let _a3Team = null;

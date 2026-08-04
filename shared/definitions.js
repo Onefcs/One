@@ -685,6 +685,14 @@ const RACE10_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
 const RACE10_HOURS_MSK = [20];
 const RACE10_WINDOW_MS = 60 * 60 * 1000;
 
+// ── 3v3 arena schedule ───────────────────────────────────────────────────────
+// Every day, 21:00–22:00 by Moscow time — same reg-window shape as the
+// corridor race just above (see _a3Schedule, server/index.js), one hour
+// later so the two events don't overlap.
+const ARENA3_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
+const ARENA3_HOURS_MSK = [21];
+const ARENA3_WINDOW_MS = 60 * 60 * 1000;
+
 // Both events warn everyone over the bot this far ahead, then again on start.
 const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;
 
@@ -832,5 +840,6 @@ if (typeof module !== 'undefined') module.exports = {
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_WINDOW_MS,
+  ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
 };
