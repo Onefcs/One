@@ -2878,7 +2878,7 @@ io.on('connection', socket => {
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'playerProfileResponse',
+    'requestPlayerProfile',
   ]);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
@@ -4762,28 +4762,20 @@ io.on('connection', socket => {
 
   safeOn('partyDecline', () => { /* no cleanup needed */ });
 
-  // Stats/equipment are client-authoritative (see the build in js/player.js),
-  // so the server never has another player's full loadout to hand over —
-  // it just relays the request to that player's own client and relays their
-  // answer back, the same shape as the partyInvite round trip above.
+  // Answered straight from this Room's own record of the target (see
+  // Room.publicProfile) instead of relaying to their client — that earlier
+  // approach could go unanswered forever if their client was slow, on a
+  // menu, or gone. The requester can only ever target someone currently
+  // rendered in their own view, so they're guaranteed to be in this same
+  // Room; the null case below is just the rare race of them disconnecting
+  // in the instant between being targeted and the tap landing.
   safeOn('requestPlayerProfile', ({ targetId }) => {
-    if (!authed || typeof targetId !== 'string') return;
-    const targetSocket = io.sockets.sockets.get(targetId);
-    // Target already disconnected (a stale otherPlayers entry the requester
-    // hadn't been told to drop yet is the common case in a crowded spot) —
-    // answer with a null profile right away instead of leaving them hanging
-    // on a request nobody will ever reply to.
-    if (!targetSocket || !targetSocket.data?.username) {
-      return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
-    }
-    targetSocket.emit('playerProfileRequested', { requesterId: socket.id });
-  });
-
-  safeOn('playerProfileResponse', ({ targetId, profile }) => {
-    if (!authed || typeof targetId !== 'string' || !profile) return;
-    const targetSocket = io.sockets.sockets.get(targetId);
-    if (!targetSocket) return;
-    targetSocket.emit('playerProfileResult', { fromId: socket.id, fromName: authed.username, profile });
+    if (!authed || typeof targetId !== 'string' || !currentRoom) return;
+    const raw = currentRoom.publicProfile(targetId);
+    if (!raw) return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
+    const { upgrades, ...profile } = raw;
+    profile.bm = calcBM({ lvl: raw.lvl, atk: raw.atk, def: raw.def, maxHp: raw.maxHp, upgrades });
+    socket.emit('playerProfileResult', { fromId: targetId, fromName: raw.name, profile });
   });
 
   safeOn('partyLeave', () => {

@@ -857,35 +857,6 @@ function restoreFromSave(data) {
   player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }
 
-// Answer to another player's "view profile" request (see netRequestPlayerProfile
-// / playerProfileRequested, js/network.js). Stats/equipment are entirely
-// client-authoritative, so this is the one place that actually has them —
-// only plain, JSON-safe fields go in, since it's relayed through the server
-// to a stranger's client.
-function _buildPeerProfilePayload() {
-  if (!player) return null;
-  const eq = {};
-  EQ_SLOTS.forEach(({ slot }) => {
-    const it = player.equipment[slot];
-    if (!it) return;
-    eq[slot] = {
-      name: it.name, img: it.img || null, icon: it.icon || null, rarity: it.rarity || null,
-      enhance: it.enhance || 0,
-      atk: it.atk || 0, def: it.def || 0, hp: it.hp || 0,
-      critChance: it.critChance || 0, atkSpeed: it.atkSpeed || 0, hpPct: it.hpPct || 0,
-    };
-  });
-  return {
-    name: (typeof netUsername !== 'undefined' && netUsername) || player.charDef.name,
-    charIcon: player.charDef.icon, charColor: player.charDef.color, className: player.charDef.name,
-    lvl: player.lvl, bm: typeof calcBM === 'function' ? calcBM(player) : 0,
-    hp: Math.ceil(player.hp), maxHp: player.maxHp,
-    atk: player.atk, def: player.def, atkSpeed: player.atkSpeed,
-    critChance: player.critChance, critPower: player.critPower, hpRegen: player.hpRegen,
-    equipment: eq,
-  };
-}
-
 function statStr(it) {
   const p = [];
   if (it.atk)       p.push('ATK+' + it.atk);

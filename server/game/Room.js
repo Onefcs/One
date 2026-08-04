@@ -26,7 +26,7 @@ function computeStats(sd, cd, type) {
   let a = (sd.baseAtk   ?? cd.baseAtk) + (u.atk || 0) * 1;
   let d = (sd.baseDef   ?? cd.baseDef) + (u.def || 0) * 1;
   let h = (sd.baseMaxHp ?? cd.baseHP)  + (u.hp  || 0) * 10;
-  let hpPct = 0, extraCrit = 0;
+  let hpPct = 0, extraCrit = 0, extraAS = 0;
   Object.values(sd.equipment || {}).forEach(it => {
     if (!it) return;
     // Enhancement (+N) is part of an item's real stats — see _canonSavedItem
@@ -37,6 +37,7 @@ function computeStats(sd, cd, type) {
     h     += (it.hp  || 0) + (eb.hp  || 0);
     hpPct += it.hpPct || 0;
     if (it.critChance) extraCrit += it.critChance;
+    if (it.atkSpeed)   extraAS   += it.atkSpeed;
   });
   // Passive skills (shared/definitions.js). passiveBonusTotal clamps every
   // level to PASSIVE_MAX_LEVEL and only reads known passive ids, so a client
@@ -46,6 +47,7 @@ function computeStats(sd, cd, type) {
   h = Math.floor(h * (1 + hpPct));
   a = Math.floor(a * (1 + pt.atkPct));
   d = Math.floor(d * (1 + pt.defPct));
+  extraAS += (cd.atkSpeed || 0) * pt.atkSpeedPct;
   const lvl = (sd.lvl || 1) - 1;
   return {
     atk: a,
@@ -53,6 +55,10 @@ function computeStats(sd, cd, type) {
     maxHp: h,
     critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit),
     critPower:  1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + pt.critPowerFlat,
+    // Permanent-only — mirrors recompute() (js/player.js) minus its buff/skill
+    // timer terms, same as every other field here (see the file header note).
+    atkSpeed: (cd.atkSpeed || 0) * (1 + lvl * 0.015) + (u.atkSpeed || 0) * 0.05 + extraAS,
+    hpRegen:  lvl * 0.02 + (u.hpRegen || 0) * 0.1 + pt.hpRegenFlat,
   };
 }
 
@@ -1125,6 +1131,40 @@ class Room {
     // the server-derived truth, never whatever the client claims.
     p.critChance = trueBase.critChance;
     p.critPower  = trueBase.critPower;
+  }
+
+  // Answers the "view profile" (Инфо button) request entirely server-side —
+  // see requestPlayerProfile, server/index.js. Deriving straight from this
+  // player's own already-validated p._sd (kept in sync by
+  // updatePlayerSavedData on every saveProgress) means it never depends on
+  // the target's own client being responsive, unlike an earlier version that
+  // asked their client to answer and could go unanswered indefinitely. Both
+  // players are guaranteed to be in this same Room already — the requester
+  // can only ever target someone currently rendered in their own AOI.
+  publicProfile(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const cd = CHAR_DEF[p.type] || {};
+    const sd = p._sd || {};
+    const stats = computeStats(sd, cd, p.type);
+    const equipment = {};
+    Object.entries(sd.equipment || {}).forEach(([slot, it]) => {
+      if (!it) return;
+      equipment[slot] = {
+        name: it.name, img: it.img || null, icon: it.icon || null, rarity: it.rarity || null,
+        enhance: it.enhance || 0,
+        atk: it.atk || 0, def: it.def || 0, hp: it.hp || 0,
+        critChance: it.critChance || 0, atkSpeed: it.atkSpeed || 0, hpPct: it.hpPct || 0,
+      };
+    });
+    return {
+      name: p.username, charIcon: cd.icon || null, charColor: cd.color || null, className: cd.name || p.type,
+      lvl: p.lvl, upgrades: sd.upgrades || {},
+      hp: Math.ceil(p.hp), maxHp: stats.maxHp,
+      atk: stats.atk, def: stats.def, atkSpeed: stats.atkSpeed,
+      critChance: stats.critChance, critPower: stats.critPower, hpRegen: stats.hpRegen,
+      equipment,
+    };
   }
 
   attackEnemy(socketId, enemyId) {
