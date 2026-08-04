@@ -240,6 +240,7 @@ const I18N_UI = {
   craftBoxesHdr:    { ru: 'Боксы', en: 'Boxes', uk: 'Бокси', es: 'Cajas', tr: 'Kutular', pt: 'Caixas' },
   craftPetsHdr:     { ru: 'Питомцы', en: 'Pets', uk: 'Улюбленці', es: 'Mascotas', tr: 'Evcil Hayvanlar', pt: 'Mascotes' },
   craftPetPickOneOf: { ru: 'Один случайный из 3', en: 'One random of 3', uk: 'Один випадковий з 3', es: 'Uno al azar de 3', tr: '3 üzerinden rastgele biri', pt: 'Um aleatório entre 3' },
+  craftPetTapHint: { ru: 'Нажмите на питомца — увидите характеристики', en: 'Tap a pet to see its stats', uk: 'Натисніть на улюбленця — побачите характеристики', es: 'Toca una mascota para ver sus estadísticas', tr: 'Özelliklerini görmek için bir evcil hayvana dokun', pt: 'Toque em um mascote para ver seus atributos' },
   rarityGroupUncommon:  { ru: 'Необычные',   en: 'Uncommon',   uk: 'Незвичайні',   es: 'Poco Comunes', tr: 'Nadir Olmayanlar', pt: 'Incomuns' },
   rarityGroupRare:      { ru: 'Редкие',      en: 'Rare',       uk: 'Рідкісні',     es: 'Raros',        tr: 'Nadirler',          pt: 'Raros' },
   rarityGroupEpic:      { ru: 'Эпические',   en: 'Epic',       uk: 'Епічні',       es: 'Épicos',       tr: 'Efsanevi Öncesi',   pt: 'Épicos' },

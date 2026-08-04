@@ -440,6 +440,18 @@ function onStoneCraftError(msg) {
   if (idx !== null) openCraftModal(idx);
 }
 
+// Which of the three candidate pets the player has tapped to inspect. The
+// three share hp/atk/def and differ only in a fourth stat, so which one you
+// end up with actually matters — this is what lets you see that before
+// spending. Cleared when the rarity changes so it can't show a pet that
+// isn't among the ones on screen.
+let _petPreviewId = null;
+
+function _selectPetPreview(petId, idx) {
+  _petPreviewId = _petPreviewId === petId ? null : petId;
+  openPetCraftModal(idx);
+}
+
 function openPetCraftModal(idx) {
   const rec = PET_CRAFT_RECIPES[idx];
   if (!rec || !player) return;
@@ -449,11 +461,25 @@ function openPetCraftModal(idx) {
   const nexumBal = window._nexumBalance || 0;
   const pending = _pendingPetCraftIdx === idx;
 
-  const candidatesHtml = pets.map(p => `
-    <div style="text-align:center;flex:1">
+  if (_petPreviewId && !pets.some(p => p.id === _petPreviewId)) _petPreviewId = null;
+
+  const candidatesHtml = pets.map(p => {
+    const on = p.id === _petPreviewId;
+    return `
+    <div class="pet-pick${on ? ' on' : ''}" onclick="_selectPetPreview('${p.id}', ${idx})"
+         style="${on ? `border-color:${rc};background:${rc}1a` : ''}">
       <div>${_itemIcon(p, 44)}</div>
       <div style="font-size:11px;color:${rc};margin-top:2px">${p.name}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
+  const previewPet = _petPreviewId ? pets.find(p => p.id === _petPreviewId) : null;
+  const previewHtml = previewPet
+    ? `<div class="pet-preview">
+         <div class="pet-preview-name" style="color:${rc}">${previewPet.name}</div>
+         <div class="pet-preview-stats">${statStr(previewPet) || '—'}</div>
+       </div>`
+    : `<div class="pet-preview-hint">${typeof t === 'function' ? t('craftPetTapHint') : 'Нажмите на питомца — характеристики'}</div>`;
 
   const costRow = `<div class="craft-req-row">
     <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
@@ -472,6 +498,7 @@ function openPetCraftModal(idx) {
       </div>
     </div>
     <div style="display:flex;gap:6px;margin:8px 0">${candidatesHtml}</div>
+    ${previewHtml}
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">${costRow}</div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftPet(${idx})">${pending ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
