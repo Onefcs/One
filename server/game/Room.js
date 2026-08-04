@@ -825,11 +825,22 @@ class Room {
       return;
     }
     k.seen = castId;
-    // Compared against what was last sent to THIS player, which also covers
-    // the cases the old code needed an explicit _shp = -1 poke for (leash
-    // teleport, respawn): those move the enemy or change its hp, so they
-    // fall out of this same check.
-    if (!e._atkPulse && e.hp === k.hp && e.aggro === k.aggro &&
+    // An aggro'd enemy is re-sent every cast even when it hasn't actually
+    // moved. That looks wasteful, but the client runs its own copy of the
+    // chase AI between packets (js/game.js) and its aggro test is a plain
+    // distance check with no line-of-sight and no safe-zone rule — so it
+    // will happily push an enemy the server is deliberately holding still.
+    // The stream of authoritative positions is what keeps that prediction
+    // reconciled; without it the client walks the enemy forward, the
+    // correction snaps it back, and it jogs on the spot with its run
+    // animation stuck on. Only enemies actually chasing someone within this
+    // player's radius pay for it, which is a small fraction of the world.
+    //
+    // Everything else is compared against what was last sent to THIS player,
+    // which also covers the cases the old code needed an explicit _shp = -1
+    // poke for (leash teleport, respawn): those move the enemy or change its
+    // hp, so they fall out of this same check.
+    if (!e.aggro && !e._atkPulse && e.hp === k.hp && e.aggro === k.aggro &&
         Math.abs(e.x - k.x) <= 0.5 && Math.abs(e.y - k.y) <= 0.5) return;
     out.push({
       id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
