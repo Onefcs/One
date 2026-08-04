@@ -36,6 +36,32 @@ const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
 const MARKET_MAX_ACTIVE  = 20;     // active listings per seller
 const MARKET_MAX_QTY     = 9999;   // sanity bound on a stackable listing's quantity
 const MARKET_LIST_COOLDOWN_MS = 3000;
+// Per-category floors, below the generic MARKET_MIN_PRICE above — these items
+// are cheap/plentiful enough that the flat 0.1 GRAM floor overpriced them
+// relative to how easy they are to farm. Keys/recipes/stones are PER UNIT
+// (the listing's price covers its whole stack, see _canonicalMarketItem's
+// qty); rare gear is a flat per-listing floor since it isn't stackable.
+const MARKET_MIN_PRICE_KEY         = 0.01; // key_uncommon / key_rare, per key
+const MARKET_MIN_PRICE_RECIPE      = 0.01; // slot:'recipe' (recu/recr/rece/recl), per scroll
+const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
+const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
+const MARKET_MIN_PRICE_BOX         = 2;    // box_uncommon / box_rare (BOX_DEF), per box
+const MARKET_MIN_PRICE_RARE_GEAR   = 5;    // rarity:'rare' armor/weapon, flat
+
+// The floor a listing's price has to clear — item-specific where one of the
+// categories above applies (scaled by qty for the stackable ones), the
+// generic MARKET_MIN_PRICE otherwise. Takes the already-canonicalized item
+// (see _canonicalMarketItem) so id/slot/rarity/qty are all trustworthy.
+function _marketMinPrice(item) {
+  const qty = item.qty || 1;
+  if (item.id === 'norm_stone') return MARKET_MIN_PRICE_STONE * qty;
+  if (item.id === 'bless_stone') return MARKET_MIN_PRICE_BLESS_STONE * qty;
+  if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY * qty;
+  if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
+  if (item.slot === 'box') return MARKET_MIN_PRICE_BOX * qty;
+  if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
+  return MARKET_MIN_PRICE;
+}
 function _round2(n) { return Math.round(n * 100) / 100; }
 // GRAM *balances* carry 7 decimals — kill drops accrue at GRAM_PER_LEVEL
 // (0.0000001) per mob level and the client renders every balance with
@@ -59,7 +85,7 @@ function _round7(n) { return Math.round(n * 1e7) / 1e7; }
 function _canonicalMarketItem(rawItem) {
   if (!rawItem || typeof rawItem !== 'object') return null;
   const id = rawItem.id;
-  const base = ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id);
+  const base = ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id);
   if (!base) return null;
   const item = { ...base };
   if (ENHANCEABLE_SLOTS.has(base.slot)) {
@@ -3488,15 +3514,18 @@ io.on('connection', socket => {
     if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
       return socket.emit('marketListError', { msg: 'Слишком часто — подождите немного' });
     }
-    const p = Number(price);
-    if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
-      return socket.emit('marketListError', { msg: `Цена должна быть от ${MARKET_MIN_PRICE} до ${MARKET_MAX_PRICE} GRAM` });
-    }
     // Only id + enhance are trusted from the client — every other field
     // (stats, rarity, name, img...) is rebuilt from the canonical catalog.
+    // Computed before the price check below: the minimum price depends on
+    // which item this actually is (see _marketMinPrice).
     const canonItem = _canonicalMarketItem(item);
     if (!canonItem) {
       return socket.emit('marketListError', { msg: 'Такого предмета не существует' });
+    }
+    const p = Number(price);
+    const minPrice = _marketMinPrice(canonItem);
+    if (!Number.isFinite(p) || p < minPrice || p > MARKET_MAX_PRICE) {
+      return socket.emit('marketListError', { msg: `Цена должна быть от ${minPrice} до ${MARKET_MAX_PRICE} GRAM` });
     }
     // Claim the cooldown slot BEFORE the first await. Setting it after the
     // countDocuments round-trip let two listings sent back-to-back both read

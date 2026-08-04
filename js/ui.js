@@ -2906,6 +2906,21 @@ function _vipItemDesc(lvl) {
 const MARKET_MIN_PRICE = 0.1;
 const MARKET_MAX_PRICE = 1000;
 const MARKET_FEE_PCT   = 0.10; // burned — mirrors server; display only, not authoritative
+// Per-category floors — mirrors _marketMinPrice (server/index.js) exactly;
+// display/pre-check only, the server is the real authority. Keys/recipes/
+// stones are per unit (scaled by however many are in this listing), rare
+// gear is a flat per-listing floor.
+function _marketMinPriceFor(it, qty) {
+  if (!it) return MARKET_MIN_PRICE;
+  const n = qty || it.qty || 1;
+  if (it.id === 'norm_stone') return 0.40 * n;
+  if (it.id === 'bless_stone') return 1.5 * n;
+  if (it.id && it.id.startsWith('key_')) return 0.01 * n;
+  if (it.slot === 'recipe') return 0.01 * n;
+  if (it.slot === 'box') return 2 * n;
+  if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 5;
+  return MARKET_MIN_PRICE;
+}
 
 let _marketTab    = 'lots';
 let _marketLots    = [];
@@ -3800,7 +3815,7 @@ function openMarketSellPicker() {
           <input type="number" id="market-qty-input" min="1" step="1" value="1"
             style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
         </div>
-        <div style="font-size:11px;color:#a3957c;margin-bottom:5px">${tVars('priceForAllFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE })}</div>
+        <div style="font-size:11px;color:#a3957c;margin-bottom:5px" id="market-price-hint">${tVars('priceForAllFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE })}</div>
         <input type="number" id="market-price-input" min="${MARKET_MIN_PRICE}" max="${MARKET_MAX_PRICE}" step="0.1" value="1"
           style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;margin-bottom:6px;box-sizing:border-box" oninput="_updateMarketFeePreview()">
         <div id="market-fee-preview" style="font-size:11px;color:#a3957c;margin-bottom:14px"></div>
@@ -3831,6 +3846,31 @@ function _renderMarketPickGrid() {
   }).join('');
 }
 
+// Current pick's item + however many units this listing covers right now
+// (the qty input when it's showing, otherwise 1) — the one place both the
+// hint and the validation read the live minimum from.
+function _currentMarketMinPrice() {
+  const idx = _marketSellPick;
+  const it  = idx !== null && player ? player.inventory[idx] : null;
+  if (!it) return MARKET_MIN_PRICE;
+  const qtyInput = document.getElementById('market-qty-input');
+  const qtyRow   = document.getElementById('market-qty-row');
+  const qty = (qtyRow && qtyRow.style.display !== 'none' && qtyInput) ? (Number(qtyInput.value) || 1) : 1;
+  return _marketMinPriceFor(it, qty);
+}
+
+// Refreshes the price input's floor (both the hint text and its `min`
+// attribute) for whatever's picked right now — called on pick and on every
+// qty change, since keys/recipes/stones price per unit.
+function _updateMarketPriceHint() {
+  const hint  = document.getElementById('market-price-hint');
+  const input = document.getElementById('market-price-input');
+  if (!hint || !input) return;
+  const min = _currentMarketMinPrice();
+  hint.textContent = tVars('priceForAllFmt', { min, max: MARKET_MAX_PRICE });
+  input.min = min;
+}
+
 function _pickMarketSellItem(idx) {
   _marketSellPick = idx;
   _renderMarketPickGrid();
@@ -3853,6 +3893,7 @@ function _pickMarketSellItem(idx) {
       if (qtyInput) { qtyInput.max = have; qtyInput.value = have; } // default: list the whole stack
     }
   }
+  _updateMarketPriceHint();
   _updateMarketFeePreview();
 }
 
@@ -3866,15 +3907,18 @@ function _clampMarketQtyInput() {
   if (!Number.isFinite(v) || v < 1) v = 1;
   if (v > have) v = have;
   input.value = v;
+  _updateMarketPriceHint();
+  _updateMarketFeePreview();
 }
 
 function _updateMarketFeePreview() {
   const el    = document.getElementById('market-fee-preview');
   const input = document.getElementById('market-price-input');
   if (!el || !input) return;
+  const min = _currentMarketMinPrice();
   const p = Number(input.value);
-  if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
-    el.textContent = tVars('priceRangeFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE });
+  if (!Number.isFinite(p) || p < min || p > MARKET_MAX_PRICE) {
+    el.textContent = tVars('priceRangeFmt', { min, max: MARKET_MAX_PRICE });
     el.style.color = '#ee6676';
     return;
   }
@@ -3892,8 +3936,9 @@ function _confirmMarketList() {
   if (_marketSellPick === null || !player || _pendingSellItem) return;
   const priceInput = document.getElementById('market-price-input');
   const p = Number(priceInput?.value);
-  if (!Number.isFinite(p) || p < MARKET_MIN_PRICE || p > MARKET_MAX_PRICE) {
-    _marketToast(tVars('priceRangeFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE }), 'err');
+  const minPrice = _currentMarketMinPrice();
+  if (!Number.isFinite(p) || p < minPrice || p > MARKET_MAX_PRICE) {
+    _marketToast(tVars('priceRangeFmt', { min: minPrice, max: MARKET_MAX_PRICE }), 'err');
     return;
   }
   const idx = _marketSellPick;
