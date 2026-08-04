@@ -4,7 +4,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "nodemon server/index.js"
+    "dev": "nodemon server/index.js",
+    "dev:local": "node dev/local.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -15,6 +16,7 @@
     "socket.io": "^4.7.2"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^11.2.0",
     "playwright": "^1.61.1",
     "socket.io-client": "^4.8.3"
   }

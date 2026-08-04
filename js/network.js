@@ -1393,7 +1393,31 @@ function _initTelegramWidget() {
     return;
   }
 
-  // Opened outside Telegram — overlay a "play in Telegram" prompt over the splash
+  // Local dev (dev/local.js): opened in a desktop browser against the local
+  // server, so there is no Telegram and no initData. That server — and only
+  // that server, it's behind DEV_LOCAL — will sign one for the account named
+  // in ?dev=<name>, which then logs in through the same path as above. On any
+  // other host the route doesn't exist and this falls through to the splash.
+  if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+    fetch('/dev/init-data' + location.search)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(({ initData, user }) => {
+        // Stand-in for the SDK object: initData for the login, initDataUnsafe
+        // because the per-account localStorage save backup is keyed off the
+        // user id (see _tgUserId), so two dev accounts don't share one.
+        window.Telegram = { ...window.Telegram, WebApp: { initData, initDataUnsafe: { user } } };
+        netConnect(() => socket.emit('loginTelegramWebApp', { initData }));
+      })
+      .catch(() => _showTelegramOnlySplash());
+    return;
+  }
+
+  _showTelegramOnlySplash();
+}
+
+// The "Доступно только в Telegram" screen shown when the game is opened
+// anywhere other than inside the Mini App.
+function _showTelegramOnlySplash() {
   const loginScreen = document.getElementById('login-screen');
   if (!loginScreen) return;
   fetch('/tg-botname')

@@ -669,7 +669,9 @@ function verifyTelegramWebApp(initData) {
   } catch { return null; }
 }
 
-if (!_tgBotUsername) {
+// Without a token there is no bot to ask, so the call can only ever 404 —
+// skipping it keeps a tokenless run (local dev) off the network entirely.
+if (!_tgBotUsername && _TG_TOKEN) {
   fetch(`https://api.telegram.org/bot${_TG_TOKEN}/getMe`)
     .then(r => r.json())
     .then(d => { if (d.ok) { _tgBotUsername = d.result.username; console.log('TG bot:', _tgBotUsername); } })
@@ -1338,6 +1340,48 @@ app.get('/tg-botname', (req, res) => {
     })
     .catch(() => res.status(503).json({ error: 'bot not resolved' }));
 });
+
+// ── Local development login ───────────────────────────────────────────────────
+// Only ever mounted by dev/local.js (which sets DEV_LOCAL=1 alongside a
+// throwaway MONGODB_URI and its own dummy TG_BOT_TOKEN) — in every normal
+// deployment this route does not exist at all.
+//
+// The game authenticates with Telegram Mini App initData, which a desktop
+// browser opened outside Telegram simply doesn't have, so there is nothing to
+// log in with locally. Rather than add a bypass to the login handler, this
+// signs a real initData with the same HMAC Telegram uses (verifyTelegramWebApp
+// above validates it like any other): the local browser then goes through the
+// unmodified loginTelegramWebApp path. With the dev token that signature is
+// worthless anywhere else — a production server, holding the real bot token,
+// rejects it.
+if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
+  console.log('DEV_LOCAL: /dev/init-data enabled (local browser login)');
+  app.get('/dev/init-data', async (req, res) => {
+    const username = String(req.query.dev || 'dev').slice(0, 32).replace(/[^\w-]/g, '') || 'dev';
+    // Reuse the seeded account's id when the name matches one, so
+    // /?dev=hero always lands on the same character; anything else gets a
+    // stable id derived from the name, i.e. a new account on first use that
+    // is still the same account on every later run.
+    const doc = await PlayerModel.findOne({ username }, 'telegramId').lean().catch(() => null);
+    const telegramId = doc
+      ? doc.telegramId
+      : '9' + parseInt(crypto.createHash('sha1').update(username).digest('hex').slice(0, 10), 16)
+          .toString().slice(0, 9);
+    const user = { id: Number(telegramId), username, first_name: username };
+    const params = new URLSearchParams({
+      user: JSON.stringify(user),
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: 'DEV',
+    });
+    const checkStr = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(_TG_TOKEN).digest();
+    params.set('hash', crypto.createHmac('sha256', secret).update(checkStr).digest('hex'));
+    res.json({ initData: params.toString(), user });
+  });
+}
 
 // One permanent Room for the whole open world — pre-created at startup, never
 // destroyed. All players share the one world (no sub-instances, no capacity
@@ -5766,7 +5810,11 @@ io.on('connection', socket => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server on port ${PORT}`);
-  _pollTg();
+  // Same reasoning as the getMe call above: getUpdates can only 404 without a
+  // real token, and _pollTg re-arms itself every 500ms, so an unconfigured
+  // instance — or a local dev one, whose token is a dummy used purely to sign
+  // its own initData — would hammer api.telegram.org for nothing.
+  if (_TG_TOKEN && process.env.DEV_LOCAL !== '1') _pollTg();
   _dbSchedule();
   _wbSchedule();
   _race10Schedule();
