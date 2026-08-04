@@ -56,15 +56,39 @@ const CHAR_DEF = {
 // damage to a boring "always 1".
 const MONSTER_HP1  = 12; // HP at level 1, before archetype/boss multipliers
 const MONSTER_ATK1 = 10; // ATK at level 1, before archetype/boss multipliers (halved)
+
+// From MONSTER_GROWTH_FROM upward, HP and ATK compound by MONSTER_GROWTH per
+// level instead of continuing the flat "level N = N x the level-1 stat" line.
+//
+// The line described above still holds below that point, and the curve is
+// anchored to exactly what level MONSTER_GROWTH_FROM already produced, so
+// levels 1-20 and the entry into the second zone are unchanged. What it fixes
+// is further in: because the old growth was a fixed *absolute* step on a
+// growing base, its relative size decayed the deeper you went — +4.8% from
+// level 21 to 22 but only +2.6% from 38 to 39 — so monsters stopped feeling
+// like they were keeping up within a zone. Compounding keeps every level a
+// consistent step over the one below it.
+//
+// DEF deliberately stays on the linear formula below: it is subtracted from
+// player damage directly, so growing it faster than players grow ATK floors
+// every hit at 1.
+const MONSTER_GROWTH      = 1.07;
+const MONSTER_GROWTH_FROM = 21;
+// What the pre-existing formula produced at the anchor level (the x15 step
+// that the second zone's monsters have always started from).
+const _MONSTER_HP_ANCHOR  = MONSTER_HP1  * MONSTER_GROWTH_FROM * 15;
+const _MONSTER_ATK_ANCHOR = MONSTER_ATK1 * MONSTER_GROWTH_FROM;
+
 function monsterDEFAtLevel(lvl) { return Math.max(0, Math.round(1 * Math.max(1, lvl || 1))); } // doubled
 function monsterHPAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  const mult = lvl > 20 ? 15 : 1;
-  return MONSTER_HP1 * lvl * mult;
+  if (lvl < MONSTER_GROWTH_FROM) return MONSTER_HP1 * lvl;
+  return Math.round(_MONSTER_HP_ANCHOR * Math.pow(MONSTER_GROWTH, lvl - MONSTER_GROWTH_FROM));
 }
 function monsterATKAtLevel(lvl) {
   lvl = Math.max(1, lvl || 1);
-  return MONSTER_ATK1 * lvl;
+  if (lvl < MONSTER_GROWTH_FROM) return MONSTER_ATK1 * lvl;
+  return Math.round(_MONSTER_ATK_ANCHOR * Math.pow(MONSTER_GROWTH, lvl - MONSTER_GROWTH_FROM));
 }
 // Archetype flavor: "страж"(guard) trades damage for HP, "воин"(warrior) the
 // reverse, so the two pool monsters per zone play differently instead of
