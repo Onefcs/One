@@ -1867,6 +1867,12 @@ function _buildChunk(cx, cy) {
 
 
 function playerDie() {
+  // Guarded because several paths can report the same death (a playerHurt
+  // and a pvpDamage for the killing blow, plus the server re-announcing an
+  // unacknowledged death — see updatePlayerPos, server/game/Room.js). Only
+  // the first one should count: re-running this would restart the 5-minute
+  // XP penalty from scratch every time.
+  if (state === 'dead') return;
   state = 'dead';
   const modal = document.getElementById('death-modal');
   if (!modal) return;
@@ -1915,7 +1921,12 @@ function respawnPlayer() {
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
   dmgNum(player.x, player.y - 30, typeof t === 'function' ? t('deathXpPenalty') : '−50% XP (5 мин)', '#c4838a');
-  socket?.emit('playerMove', { x: player.x, y: player.y, facing: player.facing });
+  // 'respawn' first, and no playerMove alongside it: the server's own
+  // respawnPlayer() puts us back at the same spawn point this function just
+  // moved to, so the move was always redundant — and sending it while the
+  // server still has us at hp<=0 now bounces a "you're dead" notice straight
+  // back at us (see updatePlayerPos, server/game/Room.js), which would land
+  // just after this and kill us again the instant we respawned.
   if (socket?.connected) socket.emit('respawn');
   netSaveProgress();
 }

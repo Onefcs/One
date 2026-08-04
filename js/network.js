@@ -488,8 +488,24 @@ function netConnect(onReady) {
 
   socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
-      if (typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) return;
-      player.hp = (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
+      // No safe-zone check here on purpose. The server decides who can be
+      // hit and has ALREADY applied this damage to its own copy of our hp
+      // (see the enemy attack in Room.js's tick loop); regular monsters skip
+      // safe-zone players there every tick, and the world boss is
+      // deliberately exempt so it can be fought in the hub. Dropping the
+      // packet because we believe we're standing somewhere safe therefore
+      // can't prevent the damage — it only desyncs us, and once the server's
+      // copy hits 0 it stops accepting our movement and hp entirely, so
+      // everyone else sees a frozen corpse while we walk around.
+      //
+      // Damage itself still applies to our own hp rather than to whatever
+      // the server reports, so a heal it hasn't caught up on yet (level-up,
+      // a self-heal skill — syncPlayerHp rate-limits increases) isn't undone
+      // by one hit. Its verdict on DEATH is final though: the server won't
+      // take our hp or position back once it has us at 0, so ignoring that
+      // is what strands us as the frozen corpse above.
+      player.hp = (hp != null && hp <= 0) ? 0
+                : (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
       player.hurtTimer = 0.1;
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
     } else {

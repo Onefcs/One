@@ -890,12 +890,27 @@ class Room {
 
   updatePlayerPos(socketId, x, y, facing) {
     const p = this.players.get(socketId);
+    if (!p) return;
     // A dead player's own client can keep sending playerMove (e.g. its "you
     // died" flow never ran because the tab was backgrounded for the fatal
     // hit) — without this, the server kept applying it, so the player could
     // walk and fight normally while every other client correctly rendered
     // them as dead (hp stuck at 0, since nothing ever prompted a respawn).
-    if (!p || p.hp <= 0) return;
+    //
+    // Refusing the move alone left that split permanent, though: hp<=0 also
+    // makes syncPlayerHp/healPlayer no-ops, and only a client-sent 'respawn'
+    // clears it — which a client that never noticed it died will never send.
+    // The player kept playing while everyone else saw a frozen corpse until
+    // they happened to reconnect. So re-announce the death (throttled, it
+    // arrives once per second at most) until their client acts on it.
+    if (p.hp <= 0) {
+      const now = Date.now();
+      if (now - (p._deathResendAt || 0) >= 1000) {
+        p._deathResendAt = now;
+        this.io.to(socketId).emit('playerHurt', { id: socketId, hp: 0 });
+      }
+      return;
+    }
     p.x = x; p.y = y; p.facing = facing;
   }
 
