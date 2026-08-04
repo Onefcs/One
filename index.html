@@ -770,10 +770,6 @@ document.addEventListener('keydown', e => {
 </script>
 <!-- Socket.io client -->
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<!-- Fallback to the copy socket.io serves itself when the CDN is unreachable
-     (an offline local dev run, a blocked CDN) — without it the bundle below
-     loads into a page with no `io` and the game never connects. -->
-<script>window.io || document.write('<script src="/socket.io/socket.io.js"><\/script>');</script>
 <!-- PixiJS v7 WebGL renderer -->
 <script src="/js/pixi.min.js"></script>
 <!-- TON Connect (wallet connect for GRAM deposit/withdraw) — self-hosted so it works under this app's CSP -->

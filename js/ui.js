@@ -245,7 +245,7 @@ function showPeerProfileModal(fromName, profile) {
   ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-height:82vh;overflow-y:auto;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-size:15px;font-weight:800;color:#90d653">${_escHtml(fromName || profile.name || '')}</div>
+      <div style="font-size:15px;font-weight:800;color:#90d653">${fromName || profile.name}</div>
       <button onclick="document.getElementById('peer-profile-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div class="prof-hero">
@@ -2868,16 +2868,12 @@ function _renderRatingBody() {
       const rankCls = rank === 1 ? 'rating-rank-1' : rank === 2 ? 'rating-rank-2' : rank === 3 ? 'rating-rank-3' : '';
       const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
       const isMe = r.username === myUsername || r.isSelf;
-      // Escaped for the same reason as the market row above — a player whose
-      // Telegram account has no @handle carries their first_name here, and
-      // every row of this table lands in innerHTML.
-      const init = _escHtml((r.username || '?')[0].toUpperCase());
-      const uname = _escHtml(r.username || '');
+      const init = (r.username || '?')[0].toUpperCase();
       html += `<div class="rating-row${isMe ? ' rating-me' : ''}">
         <div class="rating-rank ${rankCls}">${medal}</div>
         <div class="rating-avatar">${init}</div>
         <div style="flex:1;min-width:0">
-          <div class="rating-name">@${uname}${isMe ? ` <span style="font-size:10px;color:#ebaa49;opacity:.7">${t('youMarker')}</span>` : ''}</div>
+          <div class="rating-name">@${r.username}${isMe ? ` <span style="font-size:10px;color:#ebaa49;opacity:.7">${t('youMarker')}</span>` : ''}</div>
           <div class="rating-sub">${t('levelAbbrev')} ${r.level || 1}</div>
         </div>
         <div class="rating-bm">
@@ -3734,11 +3730,7 @@ function _marketRowHtml(l, mode) {
   const it = l.item || {};
   const rc = RARITY_COLOR[it.rarity] || '#aea599';
   const qtySuffix = it.qty > 1 ? ` ×${it.qty}` : '';
-  // Seller name escaped: it comes from the seller's Telegram account, which
-  // falls back to first_name when no @handle is set — arbitrary text, and
-  // this string is written straight into innerHTML below. Same reasoning as
-  // _escAttr's comment in js/network.js.
-  const sub = mode === 'buy' ? `@${_escHtml(l.sellerUsername || '?')}` : (statStr(it) || '');
+  const sub = mode === 'buy' ? `@${l.sellerUsername || '?'}` : (statStr(it) || '');
   const action = mode === 'buy'
     ? `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">${t('buyBtn')}</button>`
     : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">${t('cancelListingBtn')}</button>`;
@@ -3975,7 +3967,7 @@ function openMarketBuyConfirm(listingId) {
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${it.qty > 1 ? ' ×' + it.qty : ''}</div>
           <div style="font-size:11px;color:#a3957c;margin-top:2px">${statStr(it) || '&nbsp;'}</div>
-          <div style="font-size:11px;color:#a3957c;margin-top:2px">${tVars('sellerLbl', { u: _escHtml(l.sellerUsername || '?') })}</div>
+          <div style="font-size:11px;color:#a3957c;margin-top:2px">${tVars('sellerLbl', { u: l.sellerUsername || '?' })}</div>
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#b2a288">${t('priceLbl')}</span><span style="font-weight:700;color:#90d653">${l.price.toFixed(2)} GRAM</span></div>
@@ -4618,10 +4610,10 @@ function updateFriendsUI() {
       ${friends.length === 0
         ? `<div class="ref-empty">${t('noFriendsInvitedHint')}<br><span style="font-size:12px">${t('sendLinkHint')}</span></div>`
         : friends.map(f => {
-            const init = _escHtml((f.username || '?')[0].toUpperCase());
+            const init = (f.username || '?')[0].toUpperCase();
             return `<div class="ref-friend-row">
               <div class="ref-friend-avatar">${init}</div>
-              <div class="ref-friend-name">@${f.username ? _escHtml(f.username) : t('playerFallbackLbl')}</div>
+              <div class="ref-friend-name">@${f.username || t('playerFallbackLbl')}</div>
               <div class="ref-friend-bonus">+${(f.bonus || 0).toFixed(2)} GRAM</div>
             </div>`;
           }).join('')

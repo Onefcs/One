@@ -81,17 +81,6 @@ const HP_BUFF_HEADROOM   = 1.5;
 // faithShield/party heal, respawn) all go through their own dedicated,
 // server-applied paths and are never gated by this.
 const MAX_HP_REGEN_PER_SEC = 30;
-// Largest position change accepted from one playerMove packet (see
-// updatePlayerPos). ~30 tiles: two orders of magnitude above real movement,
-// so only a deliberate teleport reaches it.
-const MAX_STEP = 1200;
-// Server-side minimum gap between two skill hits from the same player. The
-// real cooldowns are seconds long and enforced by the client; this only has to
-// be tight enough that spamming the event isn't worth anything.
-const SKILL_CD_MS = 400;
-// Upper bound on how many enemies one crowd-control packet may name (see
-// applySkillEffectMany).
-const MAX_CC_TARGETS = 64;
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
@@ -1217,13 +1206,6 @@ class Room {
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
     if (attacker.hp <= 0) return null;
-    // Same server-side floor as skillAttackEnemy — and it matters more here:
-    // this handler doesn't go through the attack limiter in server/index.js at
-    // all, so it sat in the 300 events/s bucket with a ×10 multiplier, which
-    // is an instant kill on anyone.
-    const _nowCd = Date.now();
-    if (_nowCd - (attacker._lastSkillAtk || 0) < SKILL_CD_MS) return null;
-    attacker._lastSkillAtk = _nowCd;
     if (target.hp <= 0) return null;
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
     if (this._inSafeZone(target.x, target.y)) return null;
@@ -1328,34 +1310,12 @@ class Room {
       }
       return;
     }
-    // Positions arrive straight from the client and used to be stored with no
-    // checks at all. Two things have to be refused here:
-    //   • non-finite values — Math.floor(NaN) is NaN, which drops the player
-    //     out of the spatial grid entirely (invisible to everyone, untargetable
-    //     by enemy AI) and poisons every distance comparison,
-    //   • a jump no amount of lag can explain. MAX_STEP is deliberately huge
-    //     next to real movement (the fastest class covers ~175px/s and sends
-    //     ~10 packets/s, i.e. ~18px per packet), so ordinary play — including
-    //     a long stall followed by a burst — never trips it, while a teleport
-    //     across the map to farm a distant boss or skip a level-gated arm does.
-    // Server-side teleports (respawn, arena deploys, leash) write p.x/p.y
-    // directly and never come through here, so they're unaffected.
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const dx = x - p.x, dy = y - p.y;
-    if (dx * dx + dy * dy > MAX_STEP * MAX_STEP) {
-      // Snap the client back rather than accepting it: silently ignoring the
-      // packet would leave the two copies disagreeing until the next accepted
-      // move, which is exactly how a rubber-banding loop starts.
-      this.io.to(socketId).emit('posCorrection', { x: p.x, y: p.y });
-      return;
-    }
     p.x = x; p.y = y; p.facing = facing;
   }
 
   syncPlayerHp(socketId, clientHp) {
     const p = this.players.get(socketId);
     if (!p || p.hp <= 0) return;
-    if (!Number.isFinite(clientHp)) return;
     const requested = Math.min(p.maxHp, Math.max(0, clientHp));
     // Decreases are always trusted immediately — they can never help a
     // cheater. Increases (passive HP regen ticking up between potions/heals)
@@ -1373,16 +1333,10 @@ class Room {
     p.hp = Math.min(requested, p.hp + elapsed * MAX_HP_REGEN_PER_SEC, p.maxHp);
   }
 
-  // Every heal path funnels through here and healPartyMember below, so this is
-  // the one place that has to refuse a non-finite amount: NaN written to hp is
-  // absorbing (all later comparisons, including the `hp <= 0` death check,
-  // return false) and would leave the player alive but unkillable. Callers
-  // validate too — this is the backstop so a future one can't reintroduce it.
   healPlayer(socketId, amount) {
     const p = this.players.get(socketId);
     if (!p || p.hp <= 0) return;
-    if (!Number.isFinite(amount)) return;
-    p.hp = Math.min(p.maxHp, p.hp + Math.max(0, amount));
+    p.hp = Math.min(p.maxHp, p.hp + amount);
   }
 
   respawnPlayer(socketId) {
@@ -1718,18 +1672,6 @@ class Room {
   skillAttackEnemy(socketId, enemyId, multiplier) {
     const attacker = this.players.get(socketId);
     if (!attacker) return null;
-    // Dead attackers can't cast — attackEnemy has refused this for basic hits
-    // for the same reason (a client that never noticed it died keeps firing).
-    if (attacker.hp <= 0) return null;
-    // Real skill cooldowns (12–20s) live in the client, which makes them
-    // advisory. This is the server's own floor: without it the only limit was
-    // the socket-level 20 events/s, and each of those can carry a ×10
-    // multiplier — roughly thirty times the intended damage output. SKILL_CD_MS
-    // is far below any real cooldown, so legitimate play never reaches it; it
-    // exists purely to bound a modified client.
-    const now = Date.now();
-    if (now - (attacker._lastSkillAtk || 0) < SKILL_CD_MS) return null;
-    attacker._lastSkillAtk = now;
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
@@ -1768,21 +1710,14 @@ class Room {
     else if (type === 'slow') enemy.slowTimer = Math.min(duration, 6);
   }
 
-  // Capped: the id list comes straight from a client packet (up to the 512 KB
-  // socket.io message limit) and this loop runs on the same thread as the world
-  // tick, so an oversized array is a direct way to stall the whole room. No
-  // real AoE touches anywhere near this many enemies.
   applySkillEffectMany(enemyIds, type, duration) {
-    if (!Array.isArray(enemyIds)) return;
-    const n = Math.min(enemyIds.length, MAX_CC_TARGETS);
-    for (let i = 0; i < n; i++) this.applySkillEffect(enemyIds[i], type, duration);
+    for (const id of enemyIds) this.applySkillEffect(id, type, duration);
   }
 
   healPartyMember(socketId, amount) {
     const p = this.players.get(socketId);
     if (!p || p.hp <= 0) return false;
-    if (!Number.isFinite(amount)) return false;   // see healPlayer above
-    p.hp = Math.min(p.maxHp, p.hp + Math.max(0, amount));
+    p.hp = Math.min(p.maxHp, p.hp + amount);
     return true;
   }
 

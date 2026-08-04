@@ -814,9 +814,7 @@ async function loadGram() {
   try {
     const r = await api('/admin/transactions');
     const d = await r.json();
-    // The endpoint answers { txs } — reading d.transactions meant this tab was
-    // permanently empty, whatever was actually pending.
-    const txs = d.txs || [];
+    const txs = d.transactions || [];
     el.innerHTML = txs.length ? txs.map(t=>`
       <div class="tx-row">
         <div>

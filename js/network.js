@@ -523,15 +523,6 @@ function netConnect(onReady) {
     if (activeTab === 2 && typeof drawMapPanel === 'function') drawMapPanel();
   });
 
-  // The server refused a movement packet as too large a jump (see MAX_STEP in
-  // server/game/Room.js) and is telling us where it still thinks we are. Only
-  // reachable through a modified client or a genuinely broken frame, but
-  // adopting it keeps the two copies from drifting apart if it ever fires.
-  socket.on('posCorrection', ({ x, y } = {}) => {
-    if (!player || !isFinite(x) || !isFinite(y)) return;
-    player.x = x; player.y = y;
-  });
-
   socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
       // No safe-zone check here on purpose. The server decides who can be
@@ -1402,31 +1393,7 @@ function _initTelegramWidget() {
     return;
   }
 
-  // Local dev (dev/local.js): opened in a desktop browser against the local
-  // server, so there is no Telegram and no initData. That server — and only
-  // that server, it's behind DEV_LOCAL — will sign one for the account named
-  // in ?dev=<name>, which then logs in through the same path as above. On any
-  // other host the route doesn't exist and this falls through to the splash.
-  if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
-    fetch('/dev/init-data' + location.search)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(({ initData, user }) => {
-        // Stand-in for the SDK object: initData for the login, initDataUnsafe
-        // because the per-account localStorage save backup is keyed off the
-        // user id (see _tgUserId), so two dev accounts don't share one.
-        window.Telegram = { ...window.Telegram, WebApp: { initData, initDataUnsafe: { user } } };
-        netConnect(() => socket.emit('loginTelegramWebApp', { initData }));
-      })
-      .catch(() => _showTelegramOnlySplash());
-    return;
-  }
-
-  _showTelegramOnlySplash();
-}
-
-// The "Доступно только в Telegram" screen shown when the game is opened
-// anywhere other than inside the Mini App.
-function _showTelegramOnlySplash() {
+  // Opened outside Telegram — overlay a "play in Telegram" prompt over the splash
   const loginScreen = document.getElementById('login-screen');
   if (!loginScreen) return;
   fetch('/tg-botname')

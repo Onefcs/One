@@ -1304,22 +1304,16 @@ function applyLocale(lang) {
   // uncaught throw here would abort every top-level statement after it in
   // network.js — including _initTelegramWidget(), i.e. the whole game would
   // never start. Hit exactly this with _activeQuestTab (js/quests.js).
-  // Each call is guarded on its own rather than sharing one try/catch: the
-  // _activeQuestTab TDZ throw described above aborted the whole block, so at
-  // page load the two calls after it (the VIP panel and the language picker)
-  // never ran either. Per-call isolation keeps one not-yet-initialised binding
-  // from silently skipping unrelated re-renders.
-  const _try = (label, fn) => {
-    try { fn(); } catch (err) { console.error('[i18n] applyLocale: ' + label + ' skipped:', err); }
-  };
-  _try('inventory',  () => { if (typeof updateInvUI === 'function') updateInvUI(); });
-  _try('profile',    () => { if (typeof updateProfileUI === 'function') updateProfileUI(); });
-  _try('quests',     () => { if (typeof updateQuestUI === 'function') updateQuestUI(); });
-  _try('specialQuests', () => {
+  try {
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof updateProfileUI === 'function') updateProfileUI();
+    if (typeof updateQuestUI === 'function') updateQuestUI();
     if (typeof updateSpecialQuestUI === 'function' && typeof _activeQuestTab !== 'undefined' && _activeQuestTab === 'special') updateSpecialQuestUI();
-  });
-  _try('vip',        () => { if (typeof renderVipPanel === 'function' && typeof window._vipData !== 'undefined') renderVipPanel(); });
-  _try('langPicker', () => { if (typeof _renderLangPicker === 'function') _renderLangPicker(); });
+    if (typeof renderVipPanel === 'function' && typeof window._vipData !== 'undefined') renderVipPanel();
+    if (typeof _renderLangPicker === 'function') _renderLangPicker();
+  } catch (err) {
+    console.error('[i18n] applyLocale re-render skipped:', err);
+  }
 }
 
 // Persisted via localStorage immediately (works even before login) and

@@ -204,11 +204,6 @@ class PartyDungeonRoom {
   skillAttackEnemy(socketId, enemyId, multiplier) {
     const attacker = this.players.get(socketId);
     if (!attacker || attacker.hp <= 0) return null;
-    // Server-side floor on skill rate — see SKILL_CD_MS in server/game/Room.js
-    // for why the client's own cooldowns can't be the only limit.
-    const _now = Date.now();
-    if (_now - (attacker._lastSkillAtk || 0) < 400) return null;
-    attacker._lastSkillAtk = _now;
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
@@ -236,21 +231,14 @@ class PartyDungeonRoom {
     else if (type === 'slow') enemy.slowTimer = Math.min(duration, 6);
   }
 
-  // Capped for the same reason as Room.js's copy — the list is client-supplied
-  // and this runs on the instance's tick thread.
   applySkillEffectMany(enemyIds, type, duration) {
-    if (!Array.isArray(enemyIds)) return;
-    const n = Math.min(enemyIds.length, 64);
-    for (let i = 0; i < n; i++) this.applySkillEffect(enemyIds[i], type, duration);
+    for (const id of enemyIds) this.applySkillEffect(id, type, duration);
   }
 
   healPartyMember(socketId, amount) {
     const p = this.players.get(socketId);
     if (!p || p.hp <= 0) return false;
-    // NaN written to hp is absorbing and makes the player unkillable — see the
-    // matching guard in Room.js's healPlayer.
-    if (!Number.isFinite(amount)) return false;
-    p.hp = Math.min(p.maxHp, p.hp + Math.max(0, amount));
+    p.hp = Math.min(p.maxHp, p.hp + amount);
     return true;
   }
 
