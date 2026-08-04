@@ -3366,9 +3366,9 @@ function _worldBossDropRows() {
   row(null, t('wbDropCommonItems'), 5);
 
   const bless = mat('bless_stone');
-  if (bless) row(bless.img, bless.name, 5);
+  if (bless) row(bless.img, bless.name, 2);
   const norm = mat('norm_stone');
-  if (norm) row(norm.img, norm.name, 10);
+  if (norm) row(norm.img, norm.name, 5);
 
   return rows.join('');
 }

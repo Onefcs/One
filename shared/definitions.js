@@ -634,8 +634,8 @@ function rollEventBossDrops(rand) {
   const commons = ITEM_DEF.filter(i => i.rarity === 'common' &&
     (i.slot === 'weapon' || _EVENT_BOSS_ARMOR_SLOTS.includes(i.slot)));
   for (let i = 0; i < 5; i++) add(pick(commons), 1);               // 5 случайных common
-  add(mat('bless_stone'), 5);                                      // 5 безопасных заточек
-  add(mat('norm_stone'), 10);                                      // 10 обычных заточек
+  add(mat('bless_stone'), 2);                                      // 2 безопасных заточек
+  add(mat('norm_stone'), 5);                                       // 5 обычных заточек
   return out;
 }
 
