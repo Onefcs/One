@@ -153,23 +153,42 @@ function _bossRespawnSecs() {
 }
 
 class Room {
-  constructor(floor, io) {
+  // bossState: { [arm]: respawnAtMs } — this floor's persisted per-arm boss
+  // deadlines (server/index.js loads BossState from Mongo before creating
+  // any Room). onBossDeath(arm, respawnAtMs) is called every time a per-arm
+  // boss actually dies, so index.js can persist the new deadline the same
+  // way — see attackEnemy/skillAttackEnemy below, the only two places a
+  // per-arm boss's hp reaches 0.
+  constructor(floor, io, bossState = {}, onBossDeath = null) {
     this.floor = floor;
     this.io = io;
+    this._onBossDeath = onBossDeath;
     this.players = new Map();
     this._dungeon = generateOpenWorld();
     this._gridPacked = packGrid(this._dungeon.grid, this._dungeon.w, this._dungeon.h);
-    // Per-arm bosses start already "dead" with the same random 1-2h
-    // respawnTimer a normal kill sets (see the tick loop below) — otherwise
-    // every restart/deploy dropped every arm's boss onto the map instantly at
-    // full HP with no cooldown at all, since a fresh Room had no kill to
-    // start a respawn timer from.
-    this.enemies = this._dungeon.enemies.map(e => ({
-      ...e, hp: e.isBoss ? 0 : e.maxHp, aggro: false,
-      atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
-      _sx: e.x, _sy: e.y, _shp: e.isBoss ? 0 : e.maxHp,
-      ...(e.isBoss ? { respawnTimer: _bossRespawnSecs() } : {}),
-    }));
+    const _now = Date.now();
+    this.enemies = this._dungeon.enemies.map(e => {
+      if (!e.isBoss) {
+        return { ...e, hp: e.maxHp, aggro: false, atkTimer: 1 + Math.random(),
+          hurtTimer: 0, atkAnimTimer: 0, _sx: e.x, _sy: e.y, _shp: e.maxHp };
+      }
+      const savedAt = bossState[e.arm];
+      // Three cases for a per-arm boss at startup:
+      //  - a persisted deadline that's still in the future: dead, resume the
+      //    real remaining cooldown instead of losing it to the restart.
+      //  - a persisted deadline already in the past: the whole cooldown
+      //    elapsed while the server was down, so it's alive again now.
+      //  - no record at all (first boot ever for this arm): fall back to
+      //    dead with a fresh random 1-2h wait — the original fix for every
+      //    restart otherwise dropping a full-HP boss on the map instantly.
+      const hp = (savedAt != null && savedAt <= _now) ? e.maxHp : 0;
+      const respawnTimer = hp > 0 ? undefined : (savedAt != null ? (savedAt - _now) / 1000 : _bossRespawnSecs());
+      return {
+        ...e, hp, aggro: false, atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
+        _sx: e.x, _sy: e.y, _shp: hp,
+        ...(respawnTimer !== undefined ? { respawnTimer } : {}),
+      };
+    });
     // O(1) enemy lookup for attack handler
     this._enemyMap = new Map(this.enemies.map(e => [e.id, e]));
     // Reusable buffers — avoids array allocation every tick
@@ -454,7 +473,15 @@ class Room {
           }
           return;
         }
-        if (e.respawnTimer === undefined) { e.respawnTimer = e.isBoss ? _bossRespawnSecs() : 12; return; }
+        // Defensive fallback only — attackEnemy/skillAttackEnemy already
+        // assign a per-arm boss's respawnTimer (and persist it) the instant
+        // it dies, so this branch only ever fires for regular enemies' 12s
+        // timer, or for a boss killed through some other path.
+        if (e.respawnTimer === undefined) {
+          e.respawnTimer = e.isBoss ? _bossRespawnSecs() : 12;
+          if (e.isBoss && this._onBossDeath) this._onBossDeath(e.arm, Date.now() + e.respawnTimer * 1000);
+          return;
+        }
         e.respawnTimer -= dt;
         if (e.respawnTimer <= 0) {
           e.hp = e.maxHp;
@@ -1211,7 +1238,18 @@ class Room {
       // race's winner, so raceBoss has to come back on non-kills too (below).
       if (enemy.raceBoss) return { killed: true, dmg, isCrit, raceBoss: true, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
+      // Assigned right here rather than left for the AI tick loop to notice
+      // next frame — that gap is what forced an earlier version to guess an
+      // independent random ETA for the immediate bossStatus broadcast
+      // (server/index.js), which could disagree with what the tick loop
+      // then actually assigned.
+      let respawnAt;
+      if (enemy.isBoss) {
+        enemy.respawnTimer = _bossRespawnSecs();
+        respawnAt = Date.now() + enemy.respawnTimer * 1000;
+        if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
+      }
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, respawnAt };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -1234,7 +1272,18 @@ class Room {
       if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
       if (enemy.raceBoss) return { killed: true, dmg, isCrit, raceBoss: true, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm };
+      // Assigned right here rather than left for the AI tick loop to notice
+      // next frame — that gap is what forced an earlier version to guess an
+      // independent random ETA for the immediate bossStatus broadcast
+      // (server/index.js), which could disagree with what the tick loop
+      // then actually assigned.
+      let respawnAt;
+      if (enemy.isBoss) {
+        enemy.respawnTimer = _bossRespawnSecs();
+        respawnAt = Date.now() + enemy.respawnTimer * 1000;
+        if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
+      }
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, respawnAt };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -1273,12 +1322,5 @@ class Room {
 
   stop() { clearInterval(this._interval); }
 }
-
-// Exposed so server/index.js can broadcast a bossStatus notice with the same
-// random 1-2h window right at kill time, one tick before the AI loop
-// (above) actually assigns the enemy's own respawnTimer — without this
-// they'd disagree, showing players a "1 hour" ETA that then jumps once the
-// real timer kicks in.
-Room.randomBossRespawnMs = () => _bossRespawnSecs() * 1000;
 
 module.exports = Room;

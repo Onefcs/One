@@ -14,6 +14,7 @@ const MarketListingModel= require('./models/MarketListing');
 const SpecialQuestModel = require('./models/SpecialQuest');
 const PlayerLogModel    = require('./models/PlayerLog');
 const ChatMessageModel  = require('./models/ChatMessage');
+const BossStateModel    = require('./models/BossState');
 const Room = require('./game/Room');
 const { RaidRoom } = require('./game/RaidRoom');
 const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
@@ -2776,11 +2777,29 @@ async function _race10Finish(winnerId, timedOut) {
 }
 
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
-// safe to trigger from more than one path below.
-function _initFloorRooms() {
-  if (floorRooms.size > 0) return;
+// safe to trigger from more than one path below — _floorRoomsStarted is set
+// synchronously (before the first await) so two calls racing in before
+// either finishes can't both pass the guard and double-init.
+let _floorRoomsStarted = false;
+async function _initFloorRooms() {
+  if (floorRooms.size > 0 || _floorRoomsStarted) return;
+  _floorRoomsStarted = true;
+  // Per-arm boss cooldowns survive a restart from here: load whatever was
+  // last persisted (see the onBossDeath hook passed to each Room below) so
+  // a boss that was mid-cooldown resumes the real remaining time instead of
+  // restarting a fresh random 1-2h wait on every deploy.
+  const bossDocs = await BossStateModel.find({}).lean().catch(() => []);
+  const bossStateByFloor = new Map();
+  bossDocs.forEach(d => {
+    if (!bossStateByFloor.has(d.floor)) bossStateByFloor.set(d.floor, {});
+    bossStateByFloor.get(d.floor)[d.arm] = d.respawnAt;
+  });
   for (let f = 1; f <= MAX_FLOOR; f++) {
-    floorRooms.set(f, new Room(f, io));
+    const onBossDeath = (arm, respawnAt) => {
+      BossStateModel.updateOne({ floor: f, arm }, { $set: { respawnAt } }, { upsert: true })
+        .catch(err => console.error('[BossState] persist failed', f, arm, err));
+    };
+    floorRooms.set(f, new Room(f, io, bossStateByFloor.get(f) || {}, onBossDeath));
   }
   console.log('Floor rooms initialized');
   // Needs Mongo, so it starts here rather than at require time.
@@ -4078,7 +4097,7 @@ io.on('connection', socket => {
       return;
     }
     if (result.killed) {
-      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + Room.randomBossRespawnMs() });
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: result.respawnAt });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
 
@@ -4222,7 +4241,7 @@ io.on('connection', socket => {
       return;
     }
     if (result.killed) {
-      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: Date.now() + Room.randomBossRespawnMs() });
+      if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: result.respawnAt });
       const partyId    = playerParty.get(socket.id);
       const partyMap   = partyId ? parties.get(partyId) : null;
       // Same proximity requirement as the basic-attack kill above.
