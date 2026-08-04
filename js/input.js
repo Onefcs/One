@@ -107,7 +107,11 @@ function cycleTarget() {
     if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y) && !_a3Unselectable(e.id))
       candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
   });
-  if (pvpMode && isOnline) {
+  // Selectable regardless of pvpMode: locking onto a player this way is only
+  // ever used for viewing their profile or inviting them to a party — the
+  // actual attack logic (js/game.js) refuses to swing at a targetIsPlayer
+  // target unless pvpMode is separately on, so there's nothing to guard here.
+  if (isOnline) {
     otherPlayers.forEach((op, id) => {
       if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y) && !_a3Unselectable(id))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
