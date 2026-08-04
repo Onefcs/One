@@ -250,10 +250,13 @@ const ITEM_CRAFT_RECIPES = [
   { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
   { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80 },
   { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80 },
-  // ── Enchant stones ───────────────────────────────────────
-  { matId:'norm_stone',  mats:[{id:'recu',n:50}], goldCost:500,  chance:1.0 },
-  { matId:'bless_stone', mats:[{id:'recr',n:50}], goldCost:5000, chance:1.0 },
 ];
+
+// Enchant stones are defined in shared/definitions.js instead — they cost
+// Liberty, which only the server can spend, so both sides have to read one
+// copy of the recipe. Appended here so the craftsman's Материалы tab keeps
+// listing them with everything else (it filters this array on rec.matId).
+if (typeof STONE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...STONE_CRAFT_RECIPES);
 
 // Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)
 const MAT_UPGRADE_RECIPES = [

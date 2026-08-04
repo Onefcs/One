@@ -21,8 +21,8 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
-  armIndexForLevel, EVENT_BOSS_ANNOUNCE_MS,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
+  armIndexForLevel,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
@@ -1180,8 +1180,8 @@ async function tgBroadcastAll(text) {
   return sent;
 }
 
-// Summon the world-event boss (shared/definitions.js EVENT_BOSS). Announces
-// it to everyone immediately and spawns it EVENT_BOSS_ANNOUNCE_MS later.
+// Summon the world-event boss (shared/definitions.js EVENT_BOSS) — it appears
+// on the map immediately.
 app.post('/admin/event-boss', adminAuth, (req, res) => {
   const r = scheduleEventBoss();
   if (r.error) return res.status(409).json({ error: r.error });
@@ -2004,13 +2004,14 @@ function notifyEventStarted(kind, at) {
 }
 
 // ── Event boss scheduling ───────────────────────────────────────────────────
-// An admin summon doesn't spawn the boss straight away: everyone gets a
-// countdown banner first (EVENT_BOSS_ANNOUNCE_MS), then it appears. The
-// pending time is module state rather than per-socket so a player who logs in
-// mid-countdown still sees the timer (sent from gameStart, see selectChar).
-let _eventBossSpawnAt = 0;
-let _eventBossTimer   = null;
-
+// The boss appears the moment it is summoned. There used to be a five-minute
+// countdown banner in between, which meant the schedule said 20:00 and the
+// boss actually turned up at 20:05. The 30-minute "coming soon" broadcast
+// (notifyEventSoon below) is the warning now, so the advertised time is the
+// time it lands.
+//
+// spawnAt is kept in the wire shape and pinned at 0: the client still has the
+// countdown UI wired to it, and 0 is what tells it there's nothing pending.
 function _wbNextStartAt(from = Date.now()) {
   return nextEventStartAt(WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, from);
 }
@@ -2018,7 +2019,7 @@ function _wbNextStartAt(from = Date.now()) {
 function eventBossState() {
   const room = getRoom(1);
   return {
-    spawnAt: _eventBossSpawnAt > Date.now() ? _eventBossSpawnAt : 0,
+    spawnAt: 0,
     alive: !!(room && room.isEventBossAlive()),
     // The Events panel counts down to this, so it has to travel with the rest
     // of the boss state rather than being computed client-side from a
@@ -2032,18 +2033,10 @@ function scheduleEventBoss() {
   const room = getRoom(1);
   if (!room) return { error: 'Мир ещё не инициализирован' };
   if (room.isEventBossAlive()) return { error: 'Босс уже на карте' };
-  if (_eventBossSpawnAt > Date.now()) return { error: 'Босс уже вызван — идёт отсчёт' };
-  _eventBossSpawnAt = Date.now() + EVENT_BOSS_ANNOUNCE_MS;
-  io.to('floor_1').emit('eventBossAnnounce', { spawnAt: _eventBossSpawnAt });
-  clearTimeout(_eventBossTimer);
-  _eventBossTimer = setTimeout(() => {
-    _eventBossSpawnAt = 0;
-    const r = getRoom(1);
-    if (!r) return;
-    const boss = r.spawnEventBoss();
-    if (boss) io.to('floor_1').emit('eventBossSpawned', { x: boss.x, y: boss.y });
-  }, EVENT_BOSS_ANNOUNCE_MS);
-  return { ok: true, spawnAt: _eventBossSpawnAt };
+  const boss = room.spawnEventBoss();
+  if (!boss) return { error: 'Не удалось призвать босса' };
+  io.to('floor_1').emit('eventBossSpawned', { x: boss.x, y: boss.y });
+  return { ok: true, spawnAt: 0 };
 }
 
 // Arms the next scheduled summon (понедельник/среда/пятница/воскресенье в
@@ -2897,7 +2890,7 @@ io.on('connection', socket => {
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'resetUpgrades', 'craftPet',
+    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone',
   ]);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
@@ -3498,6 +3491,62 @@ io.on('connection', socket => {
     } catch (err) {
       console.error('resetUpgrades:', err);
       socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
+    }
+  });
+
+  // ── Enchant stone crafting (Кузнец → Материалы → Камни заточки) ────────────
+  // Priced in Liberty, so — like craftPet below — the whole exchange has to
+  // happen here: the client can't be trusted to spend a balance it isn't the
+  // source of truth for. Both the materials and the resulting stone move
+  // server-side too, so the recipe can't be half-applied.
+  safeOn('craftStone', ({ matId } = {}) => {
+    if (!authed) return;
+    try {
+      const rec = STONE_CRAFT_RECIPES.find(r => r.matId === matId);
+      if (!rec) return socket.emit('craftStoneError', { msg: 'Неизвестный рецепт' });
+      const stone = CRAFT_MATS.find(c => c.id === rec.matId);
+      if (!stone) return socket.emit('craftStoneError', { msg: 'Камень не найден' });
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('craftStoneError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      if (_liveNexum() < rec.nexumCost) {
+        return socket.emit('craftStoneError', { msg: `Нужно ${rec.nexumCost} Liberty` });
+      }
+      const inv = _lastStats.inventory;
+      // Count across stacks rather than assuming one: stackables normally
+      // merge into a single entry, but a save from before that behaviour (or
+      // any future split) would otherwise read as "not enough".
+      const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+      for (const m of rec.mats) {
+        if (countOf(m.id) < m.n) {
+          const md = CRAFT_MATS.find(c => c.id === m.id);
+          return socket.emit('craftStoneError', {
+            msg: `Нужно ${m.n} × ${md ? md.name : m.id} (есть ${countOf(m.id)})`,
+          });
+        }
+      }
+      // Nothing is mutated until every requirement above has passed.
+      for (const m of rec.mats) {
+        let left = m.n;
+        for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+          const e = inv[i];
+          if (!e || e.id !== m.id) continue;
+          const have = e.qty || 1;
+          if (have > left) { e.qty = have - left; left = 0; }
+          else { left -= have; inv.splice(i, 1); }
+        }
+      }
+      if (!_invAdd(inv, { ...stone, qty: 1 })) {
+        return socket.emit('craftStoneError', { msg: 'Инвентарь полон' });
+      }
+      _setNexum(_liveNexum() - rec.nexumCost);
+      _persistSavedFields(authed, { nexumBalance: _nexumBalance });
+      _commitServerItems(inv, null, 'stone_craft', { matId, cost: rec.nexumCost });
+      socket.emit('stoneCrafted', { matId, newNexumBalance: _nexumBalance });
+    } catch (err) {
+      console.error('craftStone:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'stone_craft', err, { matId });
+      socket.emit('craftStoneError', { msg: 'Ошибка сервера' });
     }
   });
 

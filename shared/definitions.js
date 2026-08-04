@@ -541,6 +541,16 @@ const ITEM_DEF = [
 // _nexumBalanceCache in server/index.js) — unlike gold, a client can't be
 // trusted to deduct it itself, so the craft has to be a server round-trip
 // (server/index.js 'craftPet') and the server needs this table too.
+// Enchant stones. These live here rather than beside the rest of the craft
+// recipes in js/definitions.js because they're paid for in Liberty, and
+// Liberty is server-authoritative — so the server has to validate the very
+// same recipe the craftsman UI showed. js/definitions.js appends them to
+// ITEM_CRAFT_RECIPES so the UI still lists them alongside everything else.
+const STONE_CRAFT_RECIPES = [
+  { matId:'norm_stone',  mats:[{ id:'recu', n:50 }], nexumCost:20, chance:1.0 },
+  { matId:'bless_stone', mats:[{ id:'recr', n:50 }], nexumCost:40, chance:1.0 },
+];
+
 const PET_CRAFT_RECIPES = [
   { rarity:'common',   nexumCost:500,  chance:1.0 },
   { rarity:'uncommon', nexumCost:2000, chance:1.0 },
@@ -877,7 +887,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,

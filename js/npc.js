@@ -183,6 +183,7 @@ function _craftsmanItemsTab() {
     entries.forEach(({ rec, idx, item }) => {
       const canCraft = invHasSpace() &&
         rec.mats.every(m => _matAvailable(m)) &&
+        (window._nexumBalance || 0) >= (rec.nexumCost || 0) &&
         player.gold >= (rec.goldCost || 0);
       const enhance = _craftResultEnhance(rec);
       const enhBadge = enhance ? `<span style="position:absolute;top:1px;right:3px;font-size:8px;color:#e69419;font-weight:bold">+${enhance}</span>` : '';
@@ -244,7 +245,12 @@ function openCraftModal(idx) {
     </div>`;
   }).join('');
 
-  const goldRow = rec.goldCost ? `<div class="craft-req-row">
+  const _nx = window._nexumBalance || 0;
+  const costRow = rec.nexumCost ? `<div class="craft-req-row">
+    <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
+    <span class="craft-req-name">Liberty</span>
+    <span class="craft-req-count" style="color:${_nx >= rec.nexumCost ? '#98e456' : '#eb4e61'}">${_nx}/${rec.nexumCost}</span>
+  </div>` : rec.goldCost ? `<div class="craft-req-row">
     <span class="craft-req-icon">${iconHTML('coin', 20, '#e3941d')}</span>
     <span class="craft-req-name">${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}</span>
     <span class="craft-req-count" style="color:${player.gold >= rec.goldCost ? '#98e456' : '#eb4e61'}">${Math.floor(player.gold)}/${rec.goldCost}</span>
@@ -252,7 +258,8 @@ function openCraftModal(idx) {
 
   const canCraft = invHasSpace() &&
     rec.mats.every(m => _matAvailable(m)) &&
-    player.gold >= (rec.goldCost || 0);
+    player.gold >= (rec.goldCost || 0) &&
+    _nx >= (rec.nexumCost || 0);
 
   const resultIconHtml = item ? _itemIcon(item, 52) : _matIcon(mat, 52);
   const statsHtml = item ? (statStr(_itemWithEnhance(item, resultEnhance)) || '—') : '';
@@ -269,7 +276,7 @@ function openCraftModal(idx) {
       </div>
     </div>
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
-    <div class="craft-reqs-list">${matsHtml}${goldRow}</div>
+    <div class="craft-reqs-list">${matsHtml}${costRow}</div>
     <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
@@ -286,6 +293,19 @@ function craftSpecificItem(idx) {
     _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return;
   }
   if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+
+  // Liberty-priced recipes (the enchant stones) are settled entirely by the
+  // server — it owns that balance, so it also has to be the one to take the
+  // materials and hand back the stone. The checks above still run first so an
+  // obviously-impossible craft is refused without a round trip.
+  if (rec.nexumCost) {
+    if ((window._nexumBalance || 0) < rec.nexumCost) {
+      _shopMsg(tVars('craftNeedLiberty', { n: rec.nexumCost })); return;
+    }
+    _pendingStoneCraftIdx = idx;
+    if (typeof netCraftStone === 'function') netCraftStone(rec.matId);
+    return;
+  }
 
   for (const m of rec.mats) {
     if (m.minEnhance != null) removeEnhancedItem(m.id, m.n, m.minEnhance);
@@ -339,6 +359,7 @@ function _craftsmanMatsTab() {
       const rc = RARITY_COLOR[mat.rarity] || '#aea599';
       const canCraft = invHasSpace() &&
         rec.mats.every(m => _matAvailable(m)) &&
+        (window._nexumBalance || 0) >= (rec.nexumCost || 0) &&
         player.gold >= (rec.goldCost || 0);
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_matIcon(mat, 32)}</div>
@@ -396,6 +417,28 @@ function _nexumIconHtml(size) {
 }
 
 let _pendingPetCraftIdx = null; // recipe idx awaiting a server response
+// Same idea for the Liberty-priced enchant stones: which craft modal to
+// re-render once the server answers (see craftSpecificItem above).
+let _pendingStoneCraftIdx = null;
+
+// The server took the materials and added the stone itself, and its
+// inventorySync has already landed — so there's nothing to add here, only the
+// panel to refresh with the new balance and material counts.
+function onStoneCrafted(matId) {
+  const idx = _pendingStoneCraftIdx;
+  _pendingStoneCraftIdx = null;
+  const mat = CRAFT_MATS.find(m => m.id === matId);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (mat ? mat.name : matId));
+  if (idx !== null) openCraftModal(idx);
+}
+
+function onStoneCraftError(msg) {
+  const idx = _pendingStoneCraftIdx;
+  _pendingStoneCraftIdx = null;
+  _shopMsg(msg || 'Ошибка');
+  if (idx !== null) openCraftModal(idx);
+}
 
 function openPetCraftModal(idx) {
   const rec = PET_CRAFT_RECIPES[idx];

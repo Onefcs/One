@@ -2014,6 +2014,10 @@ function netCraftPet(rarity) {
   if (socket?.connected) socket.emit('craftPet', { rarity });
 }
 
+function netCraftStone(matId) {
+  if (socket?.connected) socket.emit('craftStone', { matId });
+}
+
 // Charged in Liberty, so the server does the whole thing and answers with
 // 'upgradesReset' — see the handler above.
 function netResetUpgrades() {
@@ -2476,6 +2480,18 @@ function _initPetCraftHandlers(s) {
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
+  });
+
+  // Enchant stones. Materials and the stone itself both move server-side (it
+  // costs Liberty), so the authoritative inventory arrives via inventorySync
+  // and there's nothing for this side to add or remove by hand.
+  s.on('stoneCrafted', ({ matId, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (player) player.nexumBalance = newNexumBalance;
+    if (typeof onStoneCrafted === 'function') onStoneCrafted(matId);
+  });
+  s.on('craftStoneError', ({ msg }) => {
+    if (typeof onStoneCraftError === 'function') onStoneCraftError(msg);
   });
 
   // Upgrade reset. The server has already charged the Liberty and cleared its

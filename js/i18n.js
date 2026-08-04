@@ -368,6 +368,7 @@ Object.assign(I18N_UI, {
   peerEquipHdr: { ru: 'Экипировка', en: 'Equipment', uk: 'Екіпіровка', es: 'Equipo', tr: 'Ekipman', pt: 'Equipamento' },
   skillPointsFmt: { ru: 'Очки навыка: {n}', en: 'Skill points: {n}', uk: 'Очки навички: {n}', es: 'Puntos de habilidad: {n}', tr: 'Yetenek puanı: {n}', pt: 'Pontos de habilidade: {n}' },
   cancelBtn: { ru: 'Отмена', en: 'Cancel', uk: 'Скасувати', es: 'Cancelar', tr: 'İptal', pt: 'Cancelar' },
+  craftNeedLiberty: { ru: 'Нужно {n} Liberty', en: 'Need {n} Liberty', uk: 'Потрібно {n} Liberty', es: 'Se necesitan {n} Liberty', tr: '{n} Liberty gerekli', pt: 'Precisa de {n} Liberty' },
   upgResetBtn: { ru: 'Сбросить улучшения', en: 'Reset upgrades', uk: 'Скинути покращення', es: 'Restablecer mejoras', tr: 'Geliştirmeleri sıfırla', pt: 'Redefinir melhorias' },
   upgResetHint: { ru: 'Вернётся очков навыка: {n}', en: 'Skill points returned: {n}', uk: 'Повернеться очок навички: {n}', es: 'Puntos de habilidad devueltos: {n}', tr: 'İade edilecek yetenek puanı: {n}', pt: 'Pontos de habilidade devolvidos: {n}' },
   upgResetNothing: { ru: 'Улучшений пока нет', en: 'No upgrades yet', uk: 'Покращень поки немає', es: 'Aún no hay mejoras', tr: 'Henüz geliştirme yok', pt: 'Ainda sem melhorias' },
