@@ -957,18 +957,22 @@ function updateFloorUI() {
 // uses), so the reference list always matches what's actually in the world.
 function _liveEnemy(base, lvl, localLvl, isBoss, maxLocalLvl) {
   const stats = monsterStatsAtLevel(lvl, isBoss ? 'boss' : base.eType);
-  // Same hp/atk multipliers spawnRoomEnemies applies (server/game/dungeon.js):
+  // Same hp/atk/spd multipliers spawnRoomEnemies applies (server/game/dungeon.js):
   // regular monsters spawn in packs so their stats are halved individually,
-  // and the level-20 starting-arm boss gets an extra x10 HP. Without these
-  // the reference list showed 2x the real HP/ATK for every regular monster
-  // (and 1/10th for that one boss) versus what actually spawns.
+  // the level-20 starting-arm boss gets an extra x10 HP, and every monster
+  // past level 20 (floors 2-4) moves x1.5 faster. Without these the reference
+  // list showed 2x the real HP/ATK for every regular monster (1/10th for that
+  // one boss), and the un-boosted base speed for anything on floor 2+.
   const weakMult = isBoss ? 1 : 0.5;
-  const boss20HpMult = (isBoss && lvl === 20) ? 10 : 1;
+  const isLvl20Boss = isBoss && lvl === 20;
+  const boss20HpMult = isLvl20Boss ? 10 : 1;
+  const spdMult = (lvl > 20 || isLvl20Boss) ? 1.5 : 1;
   return {
     ...base, isBoss,
     name: monsterNameAtLevel(base.name, localLvl, isBoss, base.fem, maxLocalLvl),
     color: monsterColorAtLevel(base.color, base.endColor, localLvl, isBoss, maxLocalLvl),
     hp: Math.floor(stats.hp * weakMult * boss20HpMult), atk: Math.floor(stats.atk * weakMult), def: stats.def,
+    spd: base.spd * spdMult,
     xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
   };
 }
