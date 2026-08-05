@@ -2634,7 +2634,8 @@ function sellCommonItem(idx) {
 
 // ── Loot boxes ────────────────────────────────────────────
 function _boxCandidates(rarity) {
-  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'cloak', 'artifact'];
+  // No 'cloak' — craft-only, matches the kill-drop pool in js/combat.js.
+  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'artifact'];
   return ITEM_DEF.filter(d => d.rarity === rarity && gearSlots.includes(d.slot) &&
     (d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type))));
 }
