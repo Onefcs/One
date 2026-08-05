@@ -83,8 +83,13 @@ const HP_BUFF_HEADROOM   = 1.5;
 const MAX_HP_REGEN_PER_SEC = 30;
 // Largest position change accepted from one playerMove packet (see
 // updatePlayerPos). ~30 tiles: two orders of magnitude above real movement,
-// so only a deliberate teleport reaches it.
+// so only a deliberate teleport reaches it. A jump past it is still allowed
+// when it lands on a teleport destination — see _isTeleportDest.
 const MAX_STEP = 1200;
+// How close to a known teleport landing spot an over-long jump has to land to
+// be accepted. 6 tiles: comfortably more than the client's own rounding and a
+// step or two of movement, far less than "anywhere".
+const TELEPORT_SNAP_R2 = (6 * 40) * (6 * 40);
 // Server-side minimum gap between two skill hits from the same player. The
 // real cooldowns are seconds long and enforced by the client; this only has to
 // be tight enough that spamming the event isn't worth anything.
@@ -442,6 +447,46 @@ class Room {
   _inSafeZone(x, y) {
     const sz = this._dungeon.safeZone;
     return x >= sz.x1 && x <= sz.x2 && y >= sz.y1 && y <= sz.y2;
+  }
+
+  // Every spot a player can legitimately be teleported to, derived from the
+  // same dungeon data the client builds its pads from (_buildArmGates,
+  // js/game.js) so the two can't disagree:
+  //   • the hub spawn — where all four return pads and the arena exit send you,
+  //   • each arm entry, offset two tiles down the corridor exactly as the
+  //     hub-side pad's targetX is,
+  //   • each arm entry itself — the return pads sit on it, and the pad list is
+  //     also what the client teleports *to* when arriving,
+  //   • the event arena's entry and exit.
+  // Built once per room: the world is generated at startup and never changes.
+  get _teleportDests() {
+    if (this._tpDests) return this._tpDests;
+    const d = this._dungeon;
+    const out = [];
+    if (d.spawn) out.push({ x: d.spawn.x, y: d.spawn.y });
+    (d.armEntries || []).forEach(e => {
+      out.push({ x: e.x + TILE * 2, y: e.y });
+      out.push({ x: e.x, y: e.y });
+    });
+    if (d.arena) {
+      out.push({ x: d.arena.entryX, y: d.arena.entryY });
+      out.push({ x: d.arena.exitX,  y: d.arena.exitY });
+    }
+    this._tpDests = out;
+    return out;
+  }
+
+  // Is this position a landing spot rather than an impossible stride? The
+  // radius is generous on purpose — the client applies its own rounding and
+  // may have taken a step or two since arriving — but it is still a handful of
+  // tiles around a fixed set of points, not a licence to appear anywhere.
+  _isTeleportDest(x, y) {
+    const dests = this._teleportDests;
+    for (let i = 0; i < dests.length; i++) {
+      const dx = x - dests[i].x, dy = y - dests[i].y;
+      if (dx * dx + dy * dy <= TELEPORT_SNAP_R2) return true;
+    }
+    return false;
   }
 
   isPlayerInSafeZone(socketId) {
@@ -1328,24 +1373,29 @@ class Room {
       }
       return;
     }
-    // Positions arrive straight from the client and used to be stored with no
-    // checks at all. Two things have to be refused here:
-    //   • non-finite values — Math.floor(NaN) is NaN, which drops the player
-    //     out of the spatial grid entirely (invisible to everyone, untargetable
-    //     by enemy AI) and poisons every distance comparison,
-    //   • a jump no amount of lag can explain. MAX_STEP is deliberately huge
-    //     next to real movement (the fastest class covers ~175px/s and sends
-    //     ~10 packets/s, i.e. ~18px per packet), so ordinary play — including
-    //     a long stall followed by a burst — never trips it, while a teleport
-    //     across the map to farm a distant boss or skip a level-gated arm does.
-    // Server-side teleports (respawn, arena deploys, leash) write p.x/p.y
-    // directly and never come through here, so they're unaffected.
+    // Non-finite values are always refused: Math.floor(NaN) is NaN, which drops
+    // the player out of the spatial grid entirely (invisible to everyone,
+    // untargetable by enemy AI) and poisons every distance comparison.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    // A jump no amount of lag can explain is refused too — but only when it
+    // doesn't land on one of this world's own teleport destinations.
+    //
+    // This game moves players across the map legitimately and constantly: the
+    // hub's four arm pads, the return pad at each arm entrance, and the event
+    // arena's two portals (_updateTeleportPads, js/game.js). Every one of them
+    // is client-driven — the client sets its own position and reports it here
+    // — so a blanket distance cap doesn't just block cheating, it breaks the
+    // game: the jump is rejected, the client is snapped back onto the pad it
+    // is standing on, the pad fires again, and the player is stuck in a loop
+    // of teleport banners while never leaving the hub. That is exactly what a
+    // cap without this exemption did in production.
+    //
+    // Server-side teleports (respawn, arena/race deploys, leash) write p.x/p.y
+    // directly and never come through here, so they're unaffected either way.
     const dx = x - p.x, dy = y - p.y;
-    if (dx * dx + dy * dy > MAX_STEP * MAX_STEP) {
-      // Snap the client back rather than accepting it: silently ignoring the
-      // packet would leave the two copies disagreeing until the next accepted
-      // move, which is exactly how a rubber-banding loop starts.
+    if (dx * dx + dy * dy > MAX_STEP * MAX_STEP && !this._isTeleportDest(x, y)) {
+      // Snap the client back rather than ignoring the packet: leaving the two
+      // copies disagreeing is its own kind of desync.
       this.io.to(socketId).emit('posCorrection', { x: p.x, y: p.y });
       return;
     }
