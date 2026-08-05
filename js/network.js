@@ -2051,6 +2051,10 @@ function netCraftStone(matId) {
   if (socket?.connected) socket.emit('craftStone', { matId });
 }
 
+function netCraftGear(itemId) {
+  if (socket?.connected) socket.emit('craftGear', { itemId });
+}
+
 // Charged in Liberty, so the server does the whole thing and answers with
 // 'upgradesReset' — see the handler above.
 function netResetUpgrades() {
@@ -2527,6 +2531,19 @@ function _initPetCraftHandlers(s) {
   });
   s.on('craftStoneError', ({ msg }) => {
     if (typeof onStoneCraftError === 'function') onStoneCraftError(msg);
+  });
+
+  // Epic/legendary gear (Liberty-priced tiers). Same shape as stoneCrafted
+  // above, plus `success`: unlike stones this can genuinely roll a failure —
+  // mats and Liberty are gone either way (inventorySync already reflects
+  // that), only the item itself depends on the roll.
+  s.on('gearCrafted', ({ itemId, success, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (player) player.nexumBalance = newNexumBalance;
+    if (typeof onGearCrafted === 'function') onGearCrafted(itemId, success);
+  });
+  s.on('craftGearError', ({ msg }) => {
+    if (typeof onGearCraftError === 'function') onGearCraftError(msg);
   });
 
   // Upgrade reset. The server has already charged the Liberty and cleared its

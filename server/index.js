@@ -21,7 +21,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -3553,7 +3553,7 @@ io.on('connection', socket => {
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone',
+    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear',
   ]);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
@@ -4301,6 +4301,97 @@ io.on('connection', socket => {
       console.error('craftStone:', err);
       logPlayerErr(authed.telegramId, authed.username, 'stone_craft', err, { matId });
       socket.emit('craftStoneError', { msg: 'Ошибка сервера' });
+    }
+    });
+  });
+
+  // ── Epic/legendary gear crafting (Кузнец → Предметы → эпика/легенда) ───────
+  // Same reasoning as craftStone above — these two tiers cost Liberty
+  // (GEAR_CRAFT_RECIPES, shared/definitions.js) on top of the usual mats, so
+  // the whole exchange has to happen here rather than being client-computed.
+  // Unlike stones (chance:1.0), these can genuinely roll a failure — on a
+  // miss the mats and the Liberty are still spent (same "materials lost"
+  // rule every gold/mat-only recipe already applies), only the item isn't.
+  safeOn('craftGear', async ({ itemId } = {}) => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+    try {
+      const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId);
+      if (!rec) return socket.emit('craftGearError', { msg: 'Неизвестный рецепт' });
+      const resultDef = ITEM_DEF.find(i => i.id === rec.itemId);
+      if (!resultDef) return socket.emit('craftGearError', { msg: 'Предмет не найден' });
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('craftGearError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      const inv = _lastStats.inventory;
+      // A full inventory dooms the craft regardless of how the roll lands —
+      // refuse up front rather than spend mats/Liberty on an attempt that
+      // could never have delivered the item.
+      if (inv.length >= SERVER_INV_MAX) {
+        return socket.emit('craftGearError', { msg: 'Инвентарь полон' });
+      }
+      // Enhanced-gear mats (minEnhance set) are non-stackable items matched
+      // by id+enhance, like removeEnhancedItem/countEnhancedItem client-side
+      // (js/player.js); plain mats (recipe scrolls) are counted by qty like
+      // craftStone's countOf above.
+      const matCount = m => m.minEnhance != null
+        ? inv.reduce((s, i) => s + (i && i.id === m.id && (i.enhance || 0) >= m.minEnhance ? 1 : 0), 0)
+        : inv.reduce((s, i) => s + (i && i.id === m.id ? (i.qty || 1) : 0), 0);
+      const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || {}).name || id;
+      for (const m of rec.mats) {
+        if (matCount(m) < m.n) {
+          return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${matCount(m)})` });
+        }
+      }
+      // Charged before anything is consumed, and atomically — see craftStone.
+      await _flushBalances();
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+      if (_bal === null) {
+        return socket.emit('craftGearError', { msg: `Нужно ${rec.nexumCost} Liberty` });
+      }
+      _nexumBalance = _bal;
+      // Re-checked after the await, same reasoning as craftStone.
+      for (const m of rec.mats) {
+        if (matCount(m) < m.n) {
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${matCount(m)})` });
+        }
+      }
+      for (const m of rec.mats) {
+        let left = m.n;
+        for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+          const e = inv[i];
+          if (!e || e.id !== m.id) continue;
+          if (m.minEnhance != null) {
+            if ((e.enhance || 0) < m.minEnhance) continue;
+            inv.splice(i, 1); left--;
+          } else {
+            const have = e.qty || 1;
+            if (have > left) { e.qty = have - left; left = 0; }
+            else { left -= have; inv.splice(i, 1); }
+          }
+        }
+      }
+      // Result enhance mirrors _craftResultEnhance (js/npc.js): comes out 2
+      // levels below whatever the consumed base item was required to be.
+      const baseMat = rec.mats.find(m => m.minEnhance != null);
+      const resultEnhance = baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
+      const success = Math.random() < rec.chance;
+      if (success) {
+        // Space was already guaranteed above, so this can only fail if the
+        // check there and this add somehow disagree — treat as the same
+        // "inventory's full, but the roll already happened" edge case
+        // craftStone accepts rather than trying to re-roll or fabricate a
+        // refund policy for a case that shouldn't be reachable.
+        _invAdd(inv, resultEnhance > 0 ? { ...resultDef, enhance: resultEnhance } : { ...resultDef });
+      }
+      _commitServerItems(inv, null, 'gear_craft', { itemId, cost: rec.nexumCost, success });
+      socket.emit('gearCrafted', { itemId, success, resultEnhance: success ? resultEnhance : 0, newNexumBalance: _nexumBalance });
+    } catch (err) {
+      console.error('craftGear:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'gear_craft', err, { itemId });
+      socket.emit('craftGearError', { msg: 'Ошибка сервера' });
     }
     });
   });

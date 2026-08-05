@@ -294,16 +294,22 @@ function craftSpecificItem(idx) {
   }
   if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
 
-  // Liberty-priced recipes (the enchant stones) are settled entirely by the
-  // server — it owns that balance, so it also has to be the one to take the
-  // materials and hand back the stone. The checks above still run first so an
-  // obviously-impossible craft is refused without a round trip.
+  // Liberty-priced recipes (enchant stones, and the epic/legendary gear
+  // tiers) are settled entirely by the server — it owns that balance, so it
+  // also has to be the one to take the materials and hand back the result.
+  // The checks above still run first so an obviously-impossible craft is
+  // refused without a round trip.
   if (rec.nexumCost) {
     if ((window._nexumBalance || 0) < rec.nexumCost) {
       _shopMsg(tVars('craftNeedLiberty', { n: rec.nexumCost })); return;
     }
-    _pendingStoneCraftIdx = idx;
-    if (typeof netCraftStone === 'function') netCraftStone(rec.matId);
+    if (rec.itemId) {
+      _pendingGearCraftIdx = idx;
+      if (typeof netCraftGear === 'function') netCraftGear(rec.itemId);
+    } else {
+      _pendingStoneCraftIdx = idx;
+      if (typeof netCraftStone === 'function') netCraftStone(rec.matId);
+    }
     return;
   }
 
@@ -436,6 +442,27 @@ function onStoneCrafted(matId) {
 function onStoneCraftError(msg) {
   const idx = _pendingStoneCraftIdx;
   _pendingStoneCraftIdx = null;
+  _shopMsg(msg || 'Ошибка');
+  if (idx !== null) openCraftModal(idx);
+}
+
+// Same idea for the Liberty-priced epic/legendary gear tiers, which the
+// server settles too — but unlike a stone (chance:1.0) this can genuinely
+// fail, so the message branches on `success`.
+let _pendingGearCraftIdx = null;
+function onGearCrafted(itemId, success) {
+  const idx = _pendingGearCraftIdx;
+  _pendingGearCraftIdx = null;
+  const item = ITEM_DEF.find(i => i.id === itemId);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _shopMsg(success
+    ? (typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (item ? item.name : itemId)
+    : (typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.'));
+  if (idx !== null) openCraftModal(idx);
+}
+function onGearCraftError(msg) {
+  const idx = _pendingGearCraftIdx;
+  _pendingGearCraftIdx = null;
   _shopMsg(msg || 'Ошибка');
   if (idx !== null) openCraftModal(idx);
 }
