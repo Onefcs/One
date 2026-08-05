@@ -238,12 +238,6 @@ const ITEM_CRAFT_RECIPES = [
   // ── Belts ────────────────────────────────────────────────
   { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
   { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Cloaks ───────────────────────────────────────────────
-  { itemId:'cl2', mats:[{id:'cl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'cl3', mats:[{id:'cl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Artifacts ────────────────────────────────────────────
-  { itemId:'af2', mats:[{id:'af1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'af3', mats:[{id:'af2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
 ];
 
 // Enchant stones and epic/legendary gear are defined in shared/definitions.js

@@ -504,29 +504,11 @@ const ITEM_DEF = [
   { id:'nd3', name:'Пояс тьмы',        slot:'belt',   img:'/images/acs/rp.png', atk:8,  hp:30,  rarity:'rare'     },
   { id:'nd4', name:'Пояс героя',       slot:'belt',   img:'/images/acs/ep.png', atk:16, hp:80,  rarity:'epic'     },
   { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:24, hp:120, rarity:'legendary'},
-  // ── Cloak ────────────────────────────────────────────────
-  // Def-leaning like boots/gloves — no art yet, so no `img`: _itemIcon
-  // (js/ui.js) falls back to the `icon` glyph (js/icons.js) tinted by
-  // rarity, same as it would for any item missing its image.
-  { id:'cl1', name:'Дорожный плащ',    slot:'cloak',  icon:'cloak', def:3,           rarity:'common'   },
-  { id:'cl2', name:'Плащ странника',   slot:'cloak',  icon:'cloak', def:7,           rarity:'uncommon' },
-  { id:'cl3', name:'Плащ ветра',       slot:'cloak',  icon:'cloak', def:13, atk:4,  rarity:'rare'     },
-  { id:'cl4', name:'Плащ героя',       slot:'cloak',  icon:'cloak', def:22, atk:7,  rarity:'epic'     },
-  { id:'cl5', name:'Плащ легенды',     slot:'cloak',  icon:'cloak', def:32, atk:12, hp:40, rarity:'legendary'},
-  // ── Artifact ─────────────────────────────────────────────
-  // Crit-leaning accessory (ring/belt already cover flat atk/def/hp combos) —
-  // same no-art icon fallback as cloak above.
-  { id:'af1', name:'Осколок силы',     slot:'artifact', icon:'artifact', atk:3,  critChance:0.02,          rarity:'common'   },
-  { id:'af2', name:'Талисман удачи',   slot:'artifact', icon:'artifact', atk:6,  critChance:0.03,          rarity:'uncommon' },
-  { id:'af3', name:'Реликвия бури',    slot:'artifact', icon:'artifact', atk:10, critChance:0.04, hp:30,  rarity:'rare'     },
-  { id:'af4', name:'Артефакт героя',   slot:'artifact', icon:'artifact', atk:16, critChance:0.05, def:6,  rarity:'epic'     },
-  { id:'af5', name:'Артефакт легенды', slot:'artifact', icon:'artifact', atk:24, critChance:0.07, def:10, hp:60, rarity:'legendary'},
   // ── Class cloaks & artifacts (salvage-craft) ──────────────
-  // Additional to the generic cl1-5/af1-5 progression above: one flavor per
-  // class, common+uncommon only, marked with `classItem` so
-  // CLASS_GEAR_SALVAGE_RECIPES below can pool them separately from the
-  // generic chain. Crafted at the blacksmith by salvaging junk gear of the
-  // target rarity (plus a flat Liberty cost) rather than bought/dropped.
+  // One flavor per class, common+uncommon only, marked with `classItem` so
+  // CLASS_GEAR_SALVAGE_RECIPES below can pool them. Crafted at the blacksmith
+  // by salvaging junk gear of the target rarity (plus a flat Liberty cost)
+  // rather than bought/dropped.
   // Stats started as a straight copy of the pet tier baseline (hp/atk/def +
   // one class-varying stat) then were halved, but the per-class 4th stat
   // (crit/atk-speed/hp%) made otherwise-identical items feel arbitrarily
@@ -626,8 +608,6 @@ const GEAR_CRAFT_RECIPES = [
   { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
   { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
   { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'cl4', mats:[{id:'cl3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'af4', mats:[{id:'af3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
   { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
@@ -638,8 +618,6 @@ const GEAR_CRAFT_RECIPES = [
   { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'cl5', mats:[{id:'cl4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'af5', mats:[{id:'af4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
 ];
 
 const PET_CRAFT_RECIPES = [

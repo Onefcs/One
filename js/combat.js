@@ -115,9 +115,8 @@ function applyLootToInventory(eid, rlvl) {
   // Weapons are no longer restricted to the killing player's own class —
   // any class's weapon can drop for anyone, same as armor/accessories
   // always could (and same as skill books, see below).
-  // No 'cloak'/'artifact' here — both slots (the generic cl1-5/af1-5 chains
-  // and the class-specific salvage-craft items) are craft-only now, not mob
-  // loot.
+  // No 'cloak'/'artifact' here — those slots are class-specific salvage-craft
+  // items only, not mob loot.
   if (typeof itemDropChanceAtLevel === 'function') {
     const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
     if (Math.random() * 100 < _itemChance) {
