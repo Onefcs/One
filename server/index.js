@@ -1385,6 +1385,24 @@ app.get('/admin/event-boss', adminAuth, (req, res) => {
   res.json({ spawnAt: st.spawnAt, alive: st.alive, dropsOnGround: st.drops.length });
 });
 
+// Force-opens the Кровавая Башня registration window right now, same
+// RACE10_REG_MS window as the normal 20:00 MSK schedule — for whenever an
+// admin wants to run it off-schedule. _race10OpenWindow/_race10PublicState
+// are defined further down the file; safe to reference here since this
+// callback only runs once a request arrives, well after the whole module
+// (and the const _race10 it closes over) has finished loading — same
+// pattern the DEV_LOCAL-only /dev/race10/open route above already relies on.
+app.post('/admin/race10/open', adminAuth, (req, res) => {
+  if (_race10.phase === 'reg') return res.status(409).json({ error: 'Регистрация уже открыта' });
+  if (_race10.live) return res.status(409).json({ error: 'Забег уже идёт' });
+  _race10OpenWindow(Date.now());
+  res.json({ ok: true, startAt: _race10.startAt });
+});
+
+app.get('/admin/race10', adminAuth, (req, res) => {
+  res.json(_race10PublicState());
+});
+
 app.get('/admin/market', adminAuth, async (req, res) => {
   try {
     const { page = 1, tab = 'active' } = req.query;

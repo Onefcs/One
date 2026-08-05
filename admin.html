@@ -264,6 +264,15 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           Добыча падает на пол для всех — кто успел, тот забрал.
         </div>
       </div>
+      <div class="card">
+        <h3>🗼 Кровавая Башня</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="race10-status">—</div>
+        <button class="btn btn-primary" id="race10-btn" onclick="openRace10()">Открыть регистрацию сейчас</button>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Обычно открывается в 20:00 по Москве на 5 минут. Эта кнопка запускает то же
+          самое окно регистрации немедленно, вне расписания.
+        </div>
+      </div>
       <div class="tops-grid" id="tops-grid">
         <div class="top-card"><h4>🏆 По BM</h4><div id="top-bm"></div></div>
         <div class="top-card"><h4>⚡ По уровню</h4><div id="top-lvl"></div></div>
@@ -518,6 +527,7 @@ async function loadDashboard() {
     renderTops(d.tops || { bm:[], lvl:[], gold:[], nexum:[] });
   } catch(e) { console.error(e); }
   loadEventBoss();
+  loadRace10();
 }
 
 // ── World event boss ──────────────────────────────────────
@@ -549,6 +559,40 @@ async function summonEventBoss() {
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadEventBoss();
+}
+
+// ── Кровавая Башня ──────────────────────────────────────
+async function loadRace10() {
+  const el = document.getElementById('race10-status');
+  const btn = document.getElementById('race10-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/race10')).json();
+    let txt, busy = false;
+    if (d.live) { txt = '🔴 Забег идёт сейчас'; busy = true; }
+    else if (d.phase === 'reg') {
+      const left = Math.max(0, Math.round((d.startAt - Date.now()) / 1000));
+      txt = '⏳ Регистрация открыта, старт через ' + Math.floor(left/60) + ':' + String(left%60).padStart(2,'0')
+          + ' · записано ' + d.queued + '/' + d.capacity;
+      busy = true;
+    } else {
+      txt = '⚪ Не запущена — можно открыть регистрацию';
+      if (d.nextAt) txt += ' · по расписанию: ' + new Date(d.nextAt).toLocaleString('ru-RU');
+    }
+    el.textContent = txt;
+    if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '.5' : '1'; }
+  } catch(e) { el.textContent = '—'; }
+}
+
+async function openRace10() {
+  if (!confirm('Открыть регистрацию в Кровавую Башню сейчас? Окно вне расписания, длится как обычно 5 минут.')) return;
+  try {
+    const r = await api('/admin/race10/open', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Регистрация открыта');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadRace10();
 }
 
 function refreshOnline() {
