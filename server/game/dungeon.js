@@ -36,6 +36,12 @@ const LARGE = 14;         // 14×14 → 10 monsters
 const CW = 1;             // main corridor half-width (3 tiles wide total)
 const BW = 1;             // branch corridor half-width (3 tiles wide total)
 const STUB = 6;           // branch length between the main corridor / each chained room
+const GAUNTLET_STUB = 12; // wider branch spacing for the local-level-19 pre-boss gauntlet
+                          // rooms (see HAS_LVL19_GAUNTLET below) — the default STUB (6 tiles
+                          // = 240px) is barely past a monster's max aggro radius (175 + 55 =
+                          // 230px), so a player on auto-attack/chase could get dragged clean
+                          // out of one gauntlet room into the next one's fight; double the gap
+                          // there so that can't happen.
 const PITCH = 20;         // tile spacing between consecutive room-pair positions
 const LEAD_IN = 10;       // distance from a zone's entrance to its first position
 const MARGIN = 10;        // outer wall padding
@@ -45,8 +51,10 @@ const ZONE_GAP = 30;      // gap (tiles) between zones/hub — comfortably more 
                           // neighboring zones' rooms can never touch
 
 const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the zone width; shorter arms just end sooner
-const ZONE_LEN = LEAD_IN + (MAX_ARM_PAIRS - 1) * PITCH + Math.floor(PITCH / 2) + LARGE;
-const REACH = CW + ROOM_CHAIN_LEN * (STUB + LARGE); // max perpendicular room-chain reach from the corridor centerline
+// +1 extra PITCH: room for the second local-level-19 gauntlet corridor (see
+// HAS_LVL19_GAUNTLET) that sits one position past the last regular one.
+const ZONE_LEN = LEAD_IN + MAX_ARM_PAIRS * PITCH + Math.floor(PITCH / 2) + LARGE;
+const REACH = CW + ROOM_CHAIN_LEN * (GAUNTLET_STUB + LARGE); // max perpendicular room-chain reach from the corridor centerline (sized off the wider gauntlet stub, the deepest any chain gets)
 const ZONE_H = REACH * 2 + 4; // both sides plus a little pad
 
 const HUB_X0 = MARGIN, HUB_Y0 = MARGIN;
@@ -248,6 +256,11 @@ function generateOpenWorld() {
     const pairs = ARM_ROOM_PAIRS[armIdx - 1];
     const roomCount = roomsInArm(armIdx);
     const maxLocalLvl = roomCount - 1; // last room is the boss; ranks/colors ramp to this
+    // True for every arm whose pre-boss position lands exactly on local level
+    // 19 (left/top/bottom; 'right' is one pair short and never reaches it).
+    // Those arms get a second 6-large-room level-19 gauntlet corridor one
+    // more position further out, past the boss junction — see below.
+    const HAS_LVL19_GAUNTLET = (pairs - 1) * 2 + 1 === 19;
     function pickEnemy(isBoss, localLvl) {
       if (isBoss) return _enemyByEid.get(fe.boss);
       const pool = bandForLocalLevel(fe, localLvl).pool;
@@ -259,7 +272,8 @@ function generateOpenWorld() {
     const zoneY0 = ZONES_Y0 + zoneIndex * (ZONE_H + ZONE_GAP);
     const fixedCoord = zoneY0 + Math.floor(ZONE_H / 2);
     const mainStart = MARGIN;
-    const mainEnd = mainStart + LEAD_IN + (pairs - 1) * PITCH + Math.floor(PITCH / 2);
+    const lastPos = HAS_LVL19_GAUNTLET ? pairs : pairs - 1; // one extra PITCH for the second level-19 gauntlet
+    const mainEnd = mainStart + LEAD_IN + lastPos * PITCH + Math.floor(PITCH / 2);
     paintRect(mainStart, fixedCoord - CW, mainEnd, fixedCoord + CW);
 
     // Level-gated checkpoints between each room-pair position — same
@@ -321,7 +335,7 @@ function generateOpenWorld() {
     // corridor itself never gets any longer/wider. All rooms in the chain
     // share the same localLvl/monsterLvl (more room to fight the same
     // level's monsters, not more levels).
-    function buildRoomChain(pos, side, localLvl, chainLen, isBoss) {
+    function buildRoomChain(pos, side, localLvl, chainLen, isBoss, stub = STUB) {
       const alongCenter = mainStart + LEAD_IN + pos * PITCH;
       let cursor = side < 0 ? (fixedCoord - CW) : (fixedCoord + CW); // outer edge of whatever it's linking from
 
@@ -334,7 +348,7 @@ function generateOpenWorld() {
         const size = (roomIsBoss || localLvl === 19) ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
 
         const x = alongCenter - Math.floor(size / 2);
-        const y = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
+        const y = side < 0 ? (cursor - stub - size) : (cursor + stub);
         const branchX0 = alongCenter - BW, branchX1 = alongCenter + BW;
         const branchY0 = side < 0 ? (y + size) : cursor;
         const branchY1 = side < 0 ? (cursor - 1) : (y - 1);
@@ -358,8 +372,17 @@ function generateOpenWorld() {
     for (let pos = 0; pos < pairs; pos++) {
       const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
       const lvlBIsBossSlot = lvlB === roomCount;
-      buildRoomChain(pos, -1, lvlA, ROOM_CHAIN_LEN, false);
+      buildRoomChain(pos, -1, lvlA, ROOM_CHAIN_LEN, false, lvlA === 19 ? GAUNTLET_STUB : STUB);
       buildRoomChain(pos, 1, lvlB, lvlBIsBossSlot ? 1 : ROOM_CHAIN_LEN, lvlBIsBossSlot);
+    }
+
+    if (HAS_LVL19_GAUNTLET) {
+      // Second level-19 gauntlet: an identical 6-large-room chain one more
+      // corridor position past the boss junction (near side only — the far
+      // side here just stays plain corridor, nothing needs it). Doubles the
+      // farming space at the level everyone bottlenecks on right before the
+      // level-20 gate.
+      buildRoomChain(pairs, -1, 19, ROOM_CHAIN_LEN, false, GAUNTLET_STUB);
     }
 
     // Where a teleport into this arm drops the player — right at the start
