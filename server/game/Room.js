@@ -1,4 +1,5 @@
-const { generateOpenWorld, TILE, WALL } = require('./dungeon');
+const { generateOpenWorld, zoneAt, ZONES, TILE, WALL } = require('./dungeon');
+const ZONE_KEYS = ZONES.map(z => z.key);
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
@@ -259,7 +260,16 @@ class Room {
     this._tickMsSum = 0;
     this._tickSamples = 0;
     this._tickOverruns = 0;
-    this.enemies.forEach((e, i) => { e._idx = i; });
+    this.enemies.forEach((e, i) => { e._idx = i; e.zone = zoneAt(e.spawnX, e.spawnY); });
+    // ── Zones ────────────────────────────────────────────────────────────────
+    // The world is a set of locations with no walkable path between them (hub,
+    // boss arena, 3v3 arena, tower, one band per arm — see ZONES in
+    // dungeon.js). Only zones with somebody standing in them are simulated;
+    // the rest hold perfectly still and cost nothing but the loop counter.
+    // Players never see across a zone boundary either, in any direction:
+    // not each other, not monsters, not projectiles.
+    this._activeZones = new Set();
+    this._sleptZones = new Set();
     this._lastTick = Date.now();
     this._interval = null;
     // Counts _tick() calls, purely to stagger the closest-target re-search
@@ -304,6 +314,7 @@ class Room {
       _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
       _idx: this.enemies.length,
     };
+    e.zone = zoneAt(e.x, e.y);
     this.enemies.push(e);
     this._enemyMap.set(e.id, e);
     this._eventBossId = e.id;
@@ -364,11 +375,16 @@ class Room {
   resendEnemies(socketId, ids) {
     if (!this.players.has(socketId) || !Array.isArray(ids) || !ids.length) return;
     const out = [];
-    const known = this.players.get(socketId)?._eKnown;
+    const p = this.players.get(socketId);
+    const known = p?._eKnown;
     for (const id of ids) {
       if (out.length >= ENEMY_RESYNC_MAX) break;
       const e = this._enemyMap.get(id);
       if (!e || e.hp <= 0) continue;
+      // Asking by id is the one path that bypasses the interest query, so it
+      // needs the same two filters applied by hand — otherwise a client could
+      // name any enemy in the world and be told where it is.
+      if (e.zone !== p._zone || !this._raceVisible(p, e)) continue;
       out.push(_fullEnemyEntry(e));
       // Record it as sent, or the next tick would spend another full entry on
       // the same enemy before any slim delta could be used for it.
@@ -641,6 +657,13 @@ class Room {
       // walked 40 times a second to answer "is anyone near?" with "no".
       if (e.arm === 'race10' && !e.raceBoss && !this._raceActive) return;
 
+      // Nobody in this location — nothing here has anyone to see, chase or
+      // hit, and _rebuildPlayerGrid already put it back on its spawn mark
+      // when the last player left. This is what makes an empty zone free:
+      // the world can hold every arm, the arena and the whole tower at once
+      // and still only pay for the handful of places people are standing in.
+      if (!this._activeZones.has(e.zone)) return;
+
       // Tick CC timers
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
       if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
@@ -658,6 +681,7 @@ class Room {
       const _sz = !e.ignoresSafeZone;
       const cached = e._cachedTarget;
       const cachedStillValid = cached && cached.hp > 0 && this.players.get(cached.socketId) === cached &&
+        cached._zone === e.zone &&
         !(_sz && this._inSafeZone(cached.x, cached.y)) && !cached._inRaid && !cached._invis;
       const dueForSearch = (e._idx % AI_TARGET_SEARCH_EVERY) === (this._aiTickNo % AI_TARGET_SEARCH_EVERY);
       let closest = cachedStillValid ? cached : null;
@@ -839,6 +863,7 @@ class Room {
             const op = cell[ci];
             if (op.socketId === p.socketId) continue;
             if (op._inRaid) continue;   // in an instance — see the skip above
+            if (op._zone !== p._zone) continue;   // another location entirely
             const dx = op.x - p.x, dy = op.y - p.y;
             const d2 = dx * dx + dy * dy;
             if (d2 > PLAYER_AOI_R2) continue;
@@ -945,6 +970,9 @@ class Room {
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.hp <= 0) continue;
+      // Asleep — nobody can be within interest range of it, since interest
+      // never crosses a zone boundary (see _collectEnemiesFor).
+      if (!this._activeZones.has(e.zone)) continue;
       if (e.isBoss) { this._bossBuf.push(e); continue; }
       const key = _gridKey(Math.floor(e.x / ENEMY_GRID_CELL), Math.floor(e.y / ENEMY_GRID_CELL));
       let cell = grid.get(key);
@@ -992,6 +1020,7 @@ class Room {
           // The grid holds every player in the room, so the alive/eligible
           // filtering the old alivePlayers scan did up front happens here.
           if (p.hp <= 0 || !p.type) continue;
+          if (p._zone !== e.zone) continue;   // never aggro across locations
           if (sz && this._inSafeZone(p.x, p.y)) continue;
           if (p._inRaid) continue;
           if (p._invis) continue;
@@ -1012,12 +1041,58 @@ class Room {
   _rebuildPlayerGrid() {
     const grid = this._playerGrid;
     grid.forEach(arr => { arr.length = 0; });
+    // Same pass re-derives which zone everyone is standing in, and from that
+    // the set of zones that need simulating at all this tick. Doing it here
+    // rather than in updatePlayerPos means no teleport, respawn, arena
+    // placement or corridor deployment can ever forget to update it — they
+    // all just move x/y and are picked up on the next tick.
+    const active = this._activeZones;
+    active.clear();
     this.players.forEach(p => {
+      p._zone = zoneAt(p.x, p.y);
+      // Someone off in a raid or the labyrinth is not in the world: they must
+      // not hold their old zone awake, and _syncZoneChannel drops them out of
+      // its broadcast channel for as long as they are away.
+      if (!p._inRaid) active.add(p._zone);
+      this._syncZoneChannel(p);
       const key = _gridKey(Math.floor(p.x / PLAYER_GRID_CELL), Math.floor(p.y / PLAYER_GRID_CELL));
       let cell = grid.get(key);
       if (!cell) { cell = []; grid.set(key, cell); }
       cell.push(p);
     });
+    // A zone that just emptied gets its monsters put back where they belong
+    // before it goes quiet — otherwise the last player to leave would freeze
+    // whatever was chasing them halfway down a corridor, and it would still
+    // be standing there mid-lunge whenever somebody next walked in.
+    let toSleep = null;
+    for (let i = 0; i < ZONE_KEYS.length; i++) {
+      const z = ZONE_KEYS[i];
+      if (active.has(z)) { this._sleptZones.delete(z); continue; }
+      if (this._sleptZones.has(z)) continue;
+      this._sleptZones.add(z);
+      (toSleep || (toSleep = new Set())).add(z);
+    }
+    if (toSleep) {
+      for (let i = 0; i < this.enemies.length; i++) {
+        const e = this.enemies[i];
+        if (e.hp <= 0 || !toSleep.has(e.zone)) continue;
+        e.x = e.spawnX; e.y = e.spawnY;
+        e.aggro = false; e._targetId = null; e._cachedTarget = null; e._shp = -1;
+      }
+    }
+  }
+
+  // Keeps a player's socket in exactly one zone broadcast channel, which is
+  // what scopes the client-driven visual relays (spawnProj / spawnAoe /
+  // enemyCC — see server/index.js) to the location they were fired in.
+  _syncZoneChannel(p) {
+    const want = p._inRaid ? null : (p._zone ? `z_${p._zone}` : null);
+    if (p._zoneChannel === want) return;
+    const sock = this._socketFor(p);
+    if (!sock) return;
+    if (p._zoneChannel) sock.leave(p._zoneChannel);
+    if (want) sock.join(want);
+    p._zoneChannel = want;
   }
 
   // The live Socket for a player, memoised on the player record. Looked up
@@ -1072,6 +1147,7 @@ class Room {
     // it only clutters their target list.
     for (let i = 0; i < this._bossBuf.length; i++) {
       const b = this._bossBuf[i];
+      if (b.zone !== p._zone) continue;
       if (!this._raceVisible(p, b)) continue;
       this._pushEnemyEntry(b, known, out, castId);
     }
@@ -1087,6 +1163,7 @@ class Room {
         if (!cell) continue;
         for (let i = 0; i < cell.length; i++) {
           const e = cell[i];
+          if (e.zone !== p._zone) continue;
           const dx = e.x - p.x, dy = e.y - p.y;
           if (dx * dx + dy * dy > ENEMY_AOI_R2) continue;
           // The corridor next door is well inside the AOI radius. Filtering
@@ -1155,24 +1232,33 @@ class Room {
   // the normal stream from anywhere, so the panel's skull markers already
   // have them.
   _broadcastMapBlips() {
-    let any = false;
-    this.players.forEach(p => { if (p._mapOpen) any = true; });
-    if (!any) return;
-    let n = 0;
-    for (let i = 0; i < this.enemies.length; i++) {
-      const e = this.enemies[i];
-      if (e.hp > 0 && !e.isBoss) n++;
-    }
-    const buf = new Int16Array(n * 2);
-    let o = 0;
-    for (let i = 0; i < this.enemies.length; i++) {
-      const e = this.enemies[i];
-      if (e.hp <= 0 || e.isBoss) continue;
-      buf[o++] = Math.round(e.x / TILE);
-      buf[o++] = Math.round(e.y / TILE);
-    }
+    // One buffer per zone somebody actually has the map open in — the panel
+    // has no business plotting monsters in a location you cannot see, and
+    // per-zone dumps are a fraction of the size the whole-world one was.
+    let zones = null;
+    this.players.forEach(p => { if (p._mapOpen && !p._inRaid) (zones || (zones = new Set())).add(p._zone); });
+    if (!zones) return;
+    const bufs = new Map();
+    zones.forEach(z => {
+      let n = 0;
+      for (let i = 0; i < this.enemies.length; i++) {
+        const e = this.enemies[i];
+        if (e.hp > 0 && !e.isBoss && e.zone === z) n++;
+      }
+      const buf = new Int16Array(n * 2);
+      let o = 0;
+      for (let i = 0; i < this.enemies.length; i++) {
+        const e = this.enemies[i];
+        if (e.hp <= 0 || e.isBoss || e.zone !== z) continue;
+        buf[o++] = Math.round(e.x / TILE);
+        buf[o++] = Math.round(e.y / TILE);
+      }
+      bufs.set(z, buf);
+    });
     this.players.forEach(p => {
-      if (!p._mapOpen) return;
+      if (!p._mapOpen || p._inRaid) return;
+      const buf = bufs.get(p._zone);
+      if (!buf) return;
       // Volatile for the same reason gameState is: a ~18KB dot dump is the
       // last thing that should be queuing up behind a stalled client, and the
       // next one is a second away regardless.
@@ -1220,6 +1306,10 @@ class Room {
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
+      // Location this player is standing in — re-derived from x/y every tick
+      // in _rebuildPlayerGrid; seeded here so anything that reads it between
+      // joining and the next tick sees the hub rather than undefined.
+      _zone: zoneAt(spawn.x, spawn.y), _zoneChannel: null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -1400,6 +1490,15 @@ class Room {
     // worth less than the risk of a movement rule mis-firing on real players.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     p.x = x; p.y = y; p.facing = facing;
+    // Zone changes take effect on the move itself, not on the next tick. A
+    // teleport pad puts a player in another location and their client fires
+    // its first shot from there within the same 25ms — long enough for one
+    // arrow to be relayed to the location they just left if this waited for
+    // _rebuildPlayerGrid to notice. That still runs, as the catch-all for
+    // every position the server sets itself (respawns, arena placements,
+    // corridor deployment); this is just the fast path.
+    const z = zoneAt(x, y);
+    if (z !== p._zone) { p._zone = z; this._syncZoneChannel(p); }
   }
 
   syncPlayerHp(socketId, clientHp) {
@@ -1564,6 +1663,7 @@ class Room {
       _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
       _idx: this.enemies.length,
     };
+    e.zone = zoneAt(e.x, e.y);
     this.enemies.push(e);
     this._enemyMap.set(e.id, e);
     this._raceBossId = e.id;
@@ -1636,6 +1736,7 @@ class Room {
         _sx: spot.x, _sy: spot.y, _shp: ARENA3_BOSS_HP,
         _idx: this.enemies.length,
       };
+      e.zone = zoneAt(e.x, e.y);
       this.enemies.push(e);
       this._enemyMap.set(e.id, e);
       return e;

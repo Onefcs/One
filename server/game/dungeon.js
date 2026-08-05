@@ -133,6 +133,58 @@ const ZONES_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 const DW = Math.max(MARGIN * 2 + ZONE_LEN, RACE10_X0 + RACE10_W + MARGIN);
 
+// ── Zones ────────────────────────────────────────────────────────────────────
+// Everything above is laid out as a set of rooms with no walkable connection
+// between them: the hub, the boss arena, the 3v3 arena, the tower, and one
+// band per arm. You only ever travel between them by teleport. That makes
+// them true locations, and the server treats them as such — see _zoneOf and
+// _activeZones in Room.js. A zone with nobody in it costs nothing: its
+// monsters stop being simulated, stop being bucketed into the spatial grid,
+// and stop being streamed to anyone.
+//
+// Rectangles are in pixels and padded by a couple of tiles, which is enough
+// to keep every walkable tile of a zone inside its own box while staying far
+// clear of the next one (the tightest gap in the whole map is the 5 tiles
+// between the 3v3 arena and the tower).
+const _ZONE_PAD = TILE * 2;
+const _rect = (key, tx0, ty0, tx1, ty1) => ({
+  key,
+  x1: tx0 * TILE - _ZONE_PAD, y1: ty0 * TILE - _ZONE_PAD,
+  x2: tx1 * TILE + _ZONE_PAD, y2: ty1 * TILE + _ZONE_PAD,
+  cx: (tx0 + tx1) / 2 * TILE, cy: (ty0 + ty1) / 2 * TILE,
+});
+const ZONES = [
+  _rect('hub',    HUB_X0,     HUB_Y0,     HUB_X0 + HUB,       HUB_Y0 + HUB),
+  _rect('arena',  ARENA_X0,   ARENA_Y0,   ARENA_X0 + ARENA,   ARENA_Y0 + ARENA),
+  _rect('a3',     A3_X0,      A3_Y0,      A3_X0 + A3_W,       A3_Y0 + A3_H),
+  _rect('race10', RACE10_X0,  RACE10_Y0,  RACE10_X0 + RACE10_W, RACE10_Y0 + RACE10_H),
+  // Arms are full-width horizontal bands: nothing else lives at these rows,
+  // and a band leaves no seam between the main corridor and the room chains
+  // hanging off it. The half-gap padding means the bands tile the strip.
+  ...ARM_NAMES.map((dir, i) => _rect(dir, 0, ZONES_Y0 + i * (ZONE_H + ZONE_GAP) - ZONE_GAP / 2,
+    DW, ZONES_Y0 + i * (ZONE_H + ZONE_GAP) + ZONE_H + ZONE_GAP / 2)),
+];
+
+// Which zone a world position belongs to. Containment answers it for every
+// reachable tile; the nearest-centre fallback exists so a position that lands
+// in the dead space between zones (nothing walkable is there, but a teleport
+// or a bad client could still put someone there) still resolves to a real
+// zone instead of leaving that player in a limbo where they see nobody.
+function zoneAt(x, y) {
+  for (let i = 0; i < ZONES.length; i++) {
+    const z = ZONES[i];
+    if (x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2) return z.key;
+  }
+  let best = ZONES[0].key, bestD2 = Infinity;
+  for (let i = 0; i < ZONES.length; i++) {
+    const z = ZONES[i];
+    const dx = x - z.cx, dy = y - z.cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; best = z.key; }
+  }
+  return best;
+}
+
 function generateOpenWorld() {
   const rng = seededRng(2026 * 1337 + 777);
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
@@ -421,4 +473,4 @@ function generateOpenWorld() {
   };
 }
 
-module.exports = { generateOpenWorld, TILE, WALL, FLOOR };
+module.exports = { generateOpenWorld, zoneAt, ZONES, TILE, WALL, FLOOR };

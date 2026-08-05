@@ -5161,7 +5161,8 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     if (enemyId) currentRoom.applySkillEffect(enemyId, type, duration);
     if (enemyIds) currentRoom.applySkillEffectMany(enemyIds, type, duration);
-    socket.to(`floor_${currentFloor}`).emit('enemyCC', { enemyId, enemyIds, type, duration });
+    const ch = _fxChannel();
+    if (ch) socket.to(ch).emit('enemyCC', { enemyId, enemyIds, type, duration });
   });
 
   safeOn('playerInvis', ({ invis } = {}) => {
@@ -5247,7 +5248,11 @@ io.on('connection', socket => {
     if (!target || target.hp <= 0) return;
     if (currentRoom.isPlayerInSafeZone(targetId)) return;
     const dur = Math.max(0, Math.min(duration, 6));
-    io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration: dur });
+    // Attacker and target are in contact, so they share a zone — the caster's
+    // channel is the right audience, and it is the only one that can see
+    // either of them.
+    const ch = _fxChannel();
+    if (ch) io.to(ch).emit('pvpPlayerCC', { targetId, type, duration: dur });
   });
 
   safeOn('respawn', () => {
@@ -5431,16 +5436,22 @@ io.on('connection', socket => {
   // plain hex literal is replaced rather than passed through.
   const _color = v => (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v)) ? v : '#ffffff';
 
-  // Visual-only relays. The client fires these from the same code path in the
-  // world and inside an instance, so the destination has to be decided here:
-  // a shot fired in the maze must stay in the maze, not fly across the hub.
-  const _fxChannel = () => {
+  // Visual-only relays. The client fires these from the same code path
+  // everywhere, so the destination has to be decided here: a shot fired in
+  // the maze must stay in the maze, and one fired in the tower must not be
+  // drawn across the hub. Zone channels are maintained by the Room itself —
+  // see _syncZoneChannel.
+  // Declared, not assigned to a const: the handlers above call it too, and a
+  // const arrow here would be in its temporal dead zone for any of them that
+  // somehow fired first.
+  function _fxChannel() {
     const pdId = playerPartyDungeon.get(socket.id);
     if (pdId) return pdRooms.get(pdId)?.channel || null;
     const rId = playerRaid.get(socket.id);
     if (rId) return raidRooms.has(rId) ? rId : null;
-    return `floor_${currentFloor}`;
-  };
+    const zone = currentRoom?.players.get(socket.id)?._zone;
+    return zone ? `z_${zone}` : null;
+  }
 
   safeOn('spawnProj', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
