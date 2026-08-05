@@ -58,6 +58,7 @@ const I18N_UI = {
   chatPlaceholderDmEmpty: { ru: '@ник сообщение...', en: '@nick message...', uk: '@нік повідомлення...', es: '@nick mensaje...', tr: '@kullanıcı mesaj...', pt: '@nick mensagem...' },
   chatPlaceholderDmActive: { ru: 'Сообщение @{u}...', en: 'Message @{u}...', uk: 'Повідомлення @{u}...', es: 'Mensaje a @{u}...', tr: '@{u} mesaj...', pt: 'Mensagem @{u}...' },
   chatDmNoPartner: { ru: 'Выберите беседу выше или отметьте @ник', en: 'Pick a conversation above or mention @nick', uk: 'Оберіть бесіду вище або відмітьте @нік', es: 'Elige una conversación arriba o menciona a @nick', tr: 'Yukarıdan bir sohbet seç ya da @kullanıcı etiketle', pt: 'Escolha uma conversa acima ou mencione @nick' },
+  chatTranslateError: { ru: 'Не удалось перевести', en: 'Translation failed', uk: 'Не вдалося перекласти', es: 'No se pudo traducir', tr: 'Çeviri başarısız', pt: 'Falha ao traduzir' },
 
   deathTitle:   { ru: 'ВЫ ПАЛИ', en: 'YOU DIED', uk: 'ВИ ЗАГИНУЛИ', es: 'HAS MUERTO', tr: 'ÖLDÜN', pt: 'VOCÊ MORREU' },
   deathRespawn: { ru: 'Возродиться (10% HP)', en: 'Respawn (10% HP)', uk: 'Відродитися (10% HP)', es: 'Reaparecer (10% HP)', tr: 'Yeniden Doğ (%10 HP)', pt: 'Reviver (10% HP)' },

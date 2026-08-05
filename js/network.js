@@ -832,6 +832,11 @@ function netConnect(onReady) {
   socket.on('privMsgError', ({ msg }) => _chatChannelError(msg));
   socket.on('chatError', ({ msg }) => _chatChannelError(msg));
 
+  // "Translate" button on a chat bubble — reqId (set in _chatTranslateRow,
+  // js/network.js below) maps the reply back to the row that asked for it,
+  // since several translate clicks can be in flight across different rows.
+  socket.on('translateChatResult', ({ reqId, text, error }) => _onChatTranslateResult(reqId, text, error));
+
   // ── Clan listeners ────────────────────────────────────────
   socket.on('clanData', data => {
     if (typeof onClanData === 'function') onClanData(data);
@@ -1717,8 +1722,63 @@ function _renderChatRow(el, username, text, time) {
   const isMe = myName && username === myName;
   const row = document.createElement('div');
   row.className = 'chat-row';
-  row.innerHTML = `<div class="chat-row-hdr"><span class="chat-name${isMe ? ' is-me' : ''}">${_escHtml(username)}</span><span class="chat-time">${time}</span></div><div class="chat-text">${_escHtml(text)}</div>`;
+  row.dataset.origText = text;
+  row.innerHTML = `<div class="chat-row-hdr">
+      <span class="chat-name${isMe ? ' is-me' : ''}">${_escHtml(username)}</span>
+      <span class="chat-time">${time}</span>
+      <button class="chat-translate-btn" onclick="_chatTranslateRow(this)" title="Перевести">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </button>
+    </div>
+    <div class="chat-text">${_escHtml(text)}</div>
+    <div class="chat-translation" style="display:none"></div>`;
   el.appendChild(row);
+}
+
+// ── Chat translation ("🌐" button on each bubble) ──────────────────────────
+// Translates to whichever language is currently selected in the app (i18n.js
+// currentLang), via a server-side proxy to Google Translate's free endpoint
+// (server has no way to know which channel a row's message came from, nor
+// does it need to — same request shape for global/clan/DM).
+let _chatTranslateSeq = 0;
+const _chatTranslatePending = new Map(); // reqId -> row element
+
+function _chatTranslateRow(btn) {
+  const row = btn.closest('.chat-row');
+  if (!row) return;
+  const box = row.querySelector('.chat-translation');
+  if (!box) return;
+
+  // Already fetched once — clicking again just toggles it back into view,
+  // no need to hit the network (or the server's rate limit) a second time.
+  if (row.dataset.translated) {
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    return;
+  }
+  if (row.dataset.translating) return;
+  row.dataset.translating = '1';
+  box.style.display = 'block';
+  box.textContent = '…';
+
+  const reqId = String(++_chatTranslateSeq);
+  _chatTranslatePending.set(reqId, row);
+  const target = (typeof currentLang !== 'undefined' && currentLang) || 'en';
+  socket?.emit('translateChat', { text: row.dataset.origText, target, reqId });
+}
+
+function _onChatTranslateResult(reqId, text, error) {
+  const row = _chatTranslatePending.get(reqId);
+  if (!row) return;
+  _chatTranslatePending.delete(reqId);
+  delete row.dataset.translating;
+  const box = row.querySelector('.chat-translation');
+  if (!box) return;
+  if (error || typeof text !== 'string') {
+    box.textContent = typeof t === 'function' ? t('chatTranslateError') : 'Не удалось перевести';
+    return;
+  }
+  row.dataset.translated = '1';
+  box.textContent = text;
 }
 
 // Re-renders #chat-msgs from scratch using whichever channel/conversation

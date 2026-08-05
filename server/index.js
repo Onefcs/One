@@ -1816,6 +1816,23 @@ function _sanitizeSavedStats(raw) {
 // can't inject regex operators (ReDoS / catastrophic backtracking on the DB).
 function _escapeRegex(s) { return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Chat "translate" button (js/network.js netTranslateChat) — Google
+// Translate's public web endpoint, same one translate.google.com's own page
+// calls (client=gtx). No API key/account needed, but it's an undocumented
+// endpoint, not the billed Cloud Translation API — Google is free to
+// rate-limit or change its shape without notice. sl=auto lets it detect the
+// source language instead of us guessing it from arbitrary chat text.
+async function _translateText(text, targetLang) {
+  const url = 'https://translate.googleapis.com/translate_a/single'
+    + '?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(text);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('translate http ' + res.status);
+  const data = await res.json();
+  // Response shape: [[[translatedChunk, originalChunk, null, null, ...], ...], null, sourceLang]
+  const chunks = Array.isArray(data) && Array.isArray(data[0]) ? data[0] : [];
+  return chunks.map(c => c[0]).join('');
+}
+
 // Last line of defense against a client-side race (e.g. a save firing before
 // restoreFromSave has populated the real character — the exact shape of the
 // bug fixed in "stop wiping saved progress on refresh when savedData.type is
@@ -3563,6 +3580,7 @@ io.on('connection', socket => {
     }, BALANCE_PERSIST_MS);
   }
   let _lastChatAt = 0;
+  let _lastTranslateAt = 0;
   // Simple per-second rate limiter for attack events
   let _atkCount = 0, _atkResetAt = 0;
   function _atkAllowed() {
@@ -5696,6 +5714,26 @@ io.on('connection', socket => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     socket.emit('clanChatHistory', { messages: clan ? (clanChatHistory.get(String(clan._id)) || []) : [] });
+  });
+
+  // "Translate" button on a chat bubble (global/clan/DM alike — this only
+  // ever sees the message text, never which channel it came from). Keyed by
+  // reqId so a reply can't land on the wrong bubble if the player fires off
+  // several translate clicks before any of them come back.
+  safeOn('translateChat', async ({ text, target, reqId } = {}) => {
+    if (!authed || !text || typeof text !== 'string') return;
+    const now = Date.now();
+    if (now - _lastTranslateAt < 1000) return;
+    _lastTranslateAt = now;
+    const msg = text.slice(0, 200);
+    const lang = (typeof target === 'string' && /^[a-z]{2}$/.test(target)) ? target : 'en';
+    try {
+      const translated = await _translateText(msg, lang);
+      socket.emit('translateChatResult', { reqId, text: translated });
+    } catch (err) {
+      _logHandlerErr('translateChat', err);
+      socket.emit('translateChatResult', { reqId, error: true });
+    }
   });
 
   // ── Private messages — @mention-addressed 1:1 conversation. Resolved via
