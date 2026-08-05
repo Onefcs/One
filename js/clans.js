@@ -975,6 +975,11 @@ function onClanData(data) {
   if (!data && prevClan) {
     _clanView = 'main';
   }
+  // Joining/leaving a clan or its level changing all move the "Атака" perk
+  // percentage recompute() reads via getClanBonus() — without this the new
+  // atk multiplier wouldn't take effect until some unrelated gear/level-up
+  // trigger happened to call recompute() on its own.
+  if (typeof recompute === 'function' && typeof player !== 'undefined' && player) recompute();
   if (activeTab === 4) updateClanUI();
 }
 

@@ -240,6 +240,14 @@ function recompute() {
     extraAS += (player.charDef.atkSpeed || 0) * pt.atkSpeedPct;
   }
 
+  // Clan "Атака" perk (js/definitions.js CLAN_LEVELS, cumulative % at the
+  // clan's current level) — was only ever shown in the clan panel and never
+  // actually multiplied into combat atk anywhere. getClanBonus() lives in
+  // js/clans.js; guarded the same way pt/battleCryTimer etc. are here since
+  // this file doesn't otherwise depend on clans.js loading first.
+  const clanBonus = typeof getClanBonus === 'function' ? getClanBonus() : null;
+  if (clanBonus && clanBonus.atk > 0) a = Math.floor(a * (1 + clanBonus.atk / 100));
+
   // Active skill buffs (timers live in js/state.js, ticked in js/game.js).
   // Derived here rather than mutating player.atk/def at cast time: this
   // function rebuilds both fields from scratch, so any unrelated recompute()
