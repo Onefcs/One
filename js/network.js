@@ -1221,7 +1221,7 @@ function netConnect(onReady) {
       // Same blank-template merge restoreFromSave uses — every slot key has to
       // exist (equipItem/recompute index into them by name), and only the
       // filled ones come from the payload.
-      const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null };
+      const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null };
       const rebuilt = {};
       Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
       player.equipment = { ...blank, ...rebuilt };
@@ -1548,8 +1548,8 @@ function _clearSaveBackup() {
 // makePlayer in js/player.js), so a plain Object.keys().length — which is
 // what the server's copy of this check can safely use, since
 // _sanitizeSavedStats drops the nulls before it ever sees the object —
-// reads 8 here even for a brand-new blank character and would silently
-// never fire.
+// reads EQ_SLOTS.length here even for a brand-new blank character and would
+// silently never fire.
 function _looksBlankSave(s) {
   if (!s) return true;
   const equipped = Object.values(s.equipment || {}).filter(Boolean).length;

@@ -42,10 +42,11 @@ function updateInvUI() {
   const p = player;
   const inv = p.inventory;
 
-  // Equipment diamond: left column = weapon/helmet/body/gloves, right column
-  // = boots/ring/belt/pet (EQ_SLOTS' own order, see js/definitions.js), with
-  // the animated portrait (eq-center-canvas) floating between them — see
-  // _startInvPortraitAnim below.
+  // Equipment diamond: left column = weapon/helmet/body/gloves/cloak, right
+  // column = boots/ring/belt/pet/artifact (EQ_SLOTS' own order, see
+  // js/definitions.js — first half/second half), with the animated portrait
+  // (eq-center-canvas) floating between them — see _startInvPortraitAnim
+  // below.
   const _eqCellHtml = ({ slot, label, emptyIcon }) => {
     const it = p.equipment[slot];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '';
@@ -53,13 +54,14 @@ function updateInvUI() {
     return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `openEqItemModal('${slot}')` : ''}"
       title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
       style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
-      <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#6c6354')}</div>
+      <div class="cell-icon">${it ? _itemIcon(it, 34) : iconHTML(emptyIcon, 27, '#6c6354')}</div>
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
       ${enhBadge}
     </div>`;
   };
-  document.getElementById('eq-col-left').innerHTML  = EQ_SLOTS.slice(0, 4).map(_eqCellHtml).join('');
-  document.getElementById('eq-col-right').innerHTML = EQ_SLOTS.slice(4).map(_eqCellHtml).join('');
+  const _eqHalf = EQ_SLOTS.length / 2;
+  document.getElementById('eq-col-left').innerHTML  = EQ_SLOTS.slice(0, _eqHalf).map(_eqCellHtml).join('');
+  document.getElementById('eq-col-right').innerHTML = EQ_SLOTS.slice(_eqHalf).map(_eqCellHtml).join('');
   _startInvPortraitAnim();
 
   // Character preview
@@ -1097,7 +1099,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     const rarity = itemRarityForLevel(lvl);
     const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
     const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
-    const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+    const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'cloak', 'artifact'];
     const candidates = ITEM_DEF.filter(d => d.rarity === rarity && GEAR_SLOTS.includes(d.slot));
     const perItemPct = candidates.length ? pct / candidates.length : 0;
     const rows = candidates.map(it => _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b style="color:${rc}">${_pctText(perItemPct)}</b>`, rc)).join('');
@@ -2499,7 +2501,7 @@ function _enhStonesBlock(actionFn, param) {
   </div>`;
 }
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
-const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
 
 function openInvItemModal(idx) {
   if (!player) return;
@@ -2632,7 +2634,7 @@ function sellCommonItem(idx) {
 
 // ── Loot boxes ────────────────────────────────────────────
 function _boxCandidates(rarity) {
-  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'cloak', 'artifact'];
   return ITEM_DEF.filter(d => d.rarity === rarity && gearSlots.includes(d.slot) &&
     (d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type))));
 }
@@ -3847,6 +3849,8 @@ const _MARKET_CATEGORIES = [
   { key: 'boots',     get label() { return t('catBoots'); },     match: it => it.slot === 'boots' },
   { key: 'ring',      get label() { return t('catRing'); },      match: it => it.slot === 'ring' },
   { key: 'belt',      get label() { return t('catBelt'); },      match: it => it.slot === 'belt' },
+  { key: 'cloak',     get label() { return t('catCloak'); },     match: it => it.slot === 'cloak' },
+  { key: 'artifact',  get label() { return t('catArtifact'); },  match: it => it.slot === 'artifact' },
   { key: 'books',     get label() { return t('catBooks'); },     match: it => (it.id || '').startsWith('book_') },
   { key: 'potions',   get label() { return t('catPotions'); },   match: it => it.slot === 'use' || it.slot === 'buff_potion' },
   { key: 'materials', get label() { return t('catMaterials'); }, match: it => it.slot === 'material' || it.slot === 'recipe' },

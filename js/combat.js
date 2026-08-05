@@ -119,7 +119,7 @@ function applyLootToInventory(eid, rlvl) {
     const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
     if (Math.random() * 100 < _itemChance) {
       const rarity = itemRarityForLevel(rlvl);
-      const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+      const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'cloak', 'artifact'];
       const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot));
       if (candidates.length) {
         const it = candidates[Math.floor(Math.random() * candidates.length)];

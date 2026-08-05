@@ -511,6 +511,8 @@ Object.assign(I18N_UI, {
   catBoots: { ru: 'Ботинки', en: 'Boots', uk: 'Черевики', es: 'Botas', tr: 'Botlar', pt: 'Botas' },
   catRing: { ru: 'Кольца', en: 'Rings', uk: 'Кільця', es: 'Anillos', tr: 'Yüzükler', pt: 'Anéis' },
   catBelt: { ru: 'Пояса', en: 'Belts', uk: 'Пояси', es: 'Cinturones', tr: 'Kemerler', pt: 'Cintos' },
+  catCloak: { ru: 'Плащи', en: 'Cloaks', uk: 'Плащі', es: 'Capas', tr: 'Pelerinler', pt: 'Capas' },
+  catArtifact: { ru: 'Артефакты', en: 'Artifacts', uk: 'Артефакти', es: 'Artefactos', tr: 'Eserler', pt: 'Artefatos' },
   catBooks: { ru: 'Книги', en: 'Books', uk: 'Книги', es: 'Libros', tr: 'Kitaplar', pt: 'Livros' },
   catPotions: { ru: 'Расходники', en: 'Consumables', uk: 'Витратні', es: 'Consumibles', tr: 'Tüketilenler', pt: 'Consumíveis' },
   catMaterials: { ru: 'Материалы', en: 'Materials', uk: 'Матеріали', es: 'Materiales', tr: 'Malzemeler', pt: 'Materiais' },
@@ -830,6 +832,8 @@ const I18N_SLOTS = {
   ring:    { en: 'Ring',     uk: 'Каблучка', es: 'Anillo',      tr: 'Yüzük',     pt: 'Anel' },
   belt:    { en: 'Belt',     uk: 'Пояс',     es: 'Cinturón',    tr: 'Kemer',     pt: 'Cinto' },
   pet:     { en: 'Pet',      uk: 'Улюбленець', es: 'Mascota',   tr: 'Evcil Hayvan', pt: 'Mascote' },
+  cloak:   { en: 'Cloak',    uk: 'Плащ',     es: 'Capa',        tr: 'Pelerin',   pt: 'Capa' },
+  artifact:{ en: 'Artifact', uk: 'Артефакт', es: 'Artefacto',   tr: 'Eser',      pt: 'Artefato' },
   use:     { en: 'Consumable', uk: 'Витратний матеріал', es: 'Consumible', tr: 'Sarf Malzemesi', pt: 'Consumível' },
   material:{ en: 'Material', uk: 'Матеріал', es: 'Material',    tr: 'Malzeme',   pt: 'Material' },
   recipe:  { en: 'Recipe',   uk: 'Рецепт',   es: 'Receta',      tr: 'Tarif',     pt: 'Receita' },
@@ -850,6 +854,8 @@ const I18N_EQ_SLOT_LABELS = {
   ring:    { en: 'Ring',    uk: 'Каблучка', es: 'Anillo',   tr: 'Yüzük',   pt: 'Anel' },
   belt:    { en: 'Belt',    uk: 'Пояс',     es: 'Cinturón', tr: 'Kemer',   pt: 'Cinto' },
   pet:     { en: 'Pet',     uk: 'Улюбленець', es: 'Mascota', tr: 'Evcil Hayvan', pt: 'Mascote' },
+  cloak:   { en: 'Cloak',   uk: 'Плащ',     es: 'Capa',     tr: 'Pelerin', pt: 'Capa' },
+  artifact:{ en: 'Artifact',uk: 'Артефакт', es: 'Artefacto',tr: 'Eser',    pt: 'Artefato' },
 };
 
 const I18N_UPGRADES = {

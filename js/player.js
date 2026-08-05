@@ -125,7 +125,7 @@ function makePlayer(type) {
     facing: 'front', atkAnimTimer: 0, castDuration: 0, animFrame: 0, animTimer: 0,
     pendingAttack: null, attackFired: false,
     equipment: {
-      weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null,
+      weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null,
     },
     inventory: [],
     storage: [],
@@ -867,7 +867,7 @@ function restoreFromSave(data) {
   if (rawEq.armor && !rawEq.body) rawEq.body = rawEq.armor;
   delete rawEq.armor;
 
-  const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null };
+  const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null };
   // strip removed slots from old saves
   const { offhand:_, legs:__, pendant:___, ...cleanEq } = rawEq;
   const rebuiltEq = {};
