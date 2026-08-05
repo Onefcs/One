@@ -204,11 +204,17 @@ class PartyDungeonRoom {
   skillAttackEnemy(socketId, enemyId, multiplier) {
     const attacker = this.players.get(socketId);
     if (!attacker || attacker.hp <= 0) return null;
-    // Server-side floor on skill rate — see SKILL_CD_MS in server/game/Room.js
-    // for why the client's own cooldowns can't be the only limit.
+    // Server-side floor on skill rate — see SKILL_CD_MS/SKILL_BURST_MS in
+    // server/game/Room.js for why the client's own cooldowns can't be the
+    // only limit, and why an AOE cast's several near-simultaneous hits don't
+    // gate each other (a flat per-hit floor here left only the first enemy
+    // an AOE press touched taking any damage).
     const _now = Date.now();
-    if (_now - (attacker._lastSkillAtk || 0) < 400) return null;
-    attacker._lastSkillAtk = _now;
+    const _castStart = attacker._lastSkillAtk || 0;
+    if (_now - _castStart > 150) {
+      if (_now - _castStart < 400) return null;
+      attacker._lastSkillAtk = _now;
+    }
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;

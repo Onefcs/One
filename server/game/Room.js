@@ -81,10 +81,20 @@ const HP_BUFF_HEADROOM   = 1.5;
 // faithShield/party heal, respawn) all go through their own dedicated,
 // server-applied paths and are never gated by this.
 const MAX_HP_REGEN_PER_SEC = 30;
-// Server-side minimum gap between two skill hits from the same player. The
+// Server-side minimum gap between two skill CASTS from the same player. The
 // real cooldowns are seconds long and enforced by the client; this only has to
 // be tight enough that spamming the event isn't worth anything.
 const SKILL_CD_MS = 400;
+// An AOE skill (_skillAOEMult/_skillDirMult, js/player.js) fires one
+// skillAttack/pvpSkillAttack event per enemy caught in its radius, all in the
+// same client-side pass — they land here within a few ms of each other, not
+// spread out. Hits arriving within this window of the current cast's first
+// hit are treated as the same cast and don't gate each other; a hit outside
+// the window starts a new cast and is judged against SKILL_CD_MS as before.
+// Without this, only the first enemy an AOE press touched ever took damage —
+// every other hit from the same cast landed inside the old floor and was
+// silently dropped.
+const SKILL_BURST_MS = 150;
 // Upper bound on how many enemies one crowd-control packet may name (see
 // applySkillEffectMany).
 const MAX_CC_TARGETS = 64;
@@ -1298,10 +1308,14 @@ class Room {
     // Same server-side floor as skillAttackEnemy — and it matters more here:
     // this handler doesn't go through the attack limiter in server/index.js at
     // all, so it sat in the 300 events/s bucket with a ×10 multiplier, which
-    // is an instant kill on anyone.
+    // is an instant kill on anyone. See SKILL_BURST_MS above for why this
+    // isn't a flat per-hit gate.
     const _nowCd = Date.now();
-    if (_nowCd - (attacker._lastSkillAtk || 0) < SKILL_CD_MS) return null;
-    attacker._lastSkillAtk = _nowCd;
+    const _castStart = attacker._lastSkillAtk || 0;
+    if (_nowCd - _castStart > SKILL_BURST_MS) {
+      if (_nowCd - _castStart < SKILL_CD_MS) return null;
+      attacker._lastSkillAtk = _nowCd;
+    }
     if (target.hp <= 0) return null;
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
     if (this._inSafeZone(target.x, target.y)) return null;
@@ -1823,10 +1837,14 @@ class Room {
     // the socket-level 20 events/s, and each of those can carry a ×10
     // multiplier — roughly thirty times the intended damage output. SKILL_CD_MS
     // is far below any real cooldown, so legitimate play never reaches it; it
-    // exists purely to bound a modified client.
+    // exists purely to bound a modified client. See SKILL_BURST_MS above for
+    // why one AOE cast's several hits don't gate each other.
     const now = Date.now();
-    if (now - (attacker._lastSkillAtk || 0) < SKILL_CD_MS) return null;
-    attacker._lastSkillAtk = now;
+    const castStart = attacker._lastSkillAtk || 0;
+    if (now - castStart > SKILL_BURST_MS) {
+      if (now - castStart < SKILL_CD_MS) return null;
+      attacker._lastSkillAtk = now;
+    }
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
