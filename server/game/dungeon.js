@@ -418,6 +418,16 @@ function generateOpenWorld() {
     armEntries,
     corridorGates,
     enemies: enemyList,
+    // Per-arm Y span (px, world coords) — arms are stacked purely by Y with
+    // ZONE_GAP of solid wall between them and everything else (see the file
+    // header comment), so a player's Y alone unambiguously places them in at
+    // most one arm. Lets Room.js cheaply know which arms currently have
+    // nobody in them, without tracking per-player arm state anywhere else.
+    armBounds: ARM_NAMES.reduce((acc, dir, i) => {
+      const zoneY0 = ZONES_Y0 + i * (ZONE_H + ZONE_GAP);
+      acc[dir] = { y0: zoneY0 * TILE, y1: (zoneY0 + ZONE_H) * TILE };
+      return acc;
+    }, {}),
   };
 }
 

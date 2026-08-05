@@ -200,6 +200,12 @@ class Room {
     this.players = new Map();
     this._dungeon = generateOpenWorld();
     this._gridPacked = packGrid(this._dungeon.grid, this._dungeon.w, this._dungeon.h);
+    // Which arms currently have >=1 player, recomputed once per tick (see
+    // _tick's players.forEach) — lets the enemy AI and grid-rebuild loops
+    // skip regular arm enemies nobody is there to see, same idea as the
+    // existing race10-idle skip below.
+    this._armBounds = this._dungeon.armBounds;
+    this._armPresent = new Set();
     const _now = Date.now();
     this.enemies = this._dungeon.enemies.map(e => {
       if (!e.isBoss) {
@@ -555,10 +561,18 @@ class Room {
     // entering player, so a group of ten stepping into the hub on the same
     // tick cost ten sweeps of ~4500 enemies inside a 25ms budget.
     let entered = null;
+    const armPresent = this._armPresent;
+    armPresent.clear();
     this.players.forEach(p => {
       const nowIn = this._inSafeZone(p.x, p.y);
       if (nowIn && !p._wasInSafeZone) (entered || (entered = new Set())).add(p.socketId);
       p._wasInSafeZone = nowIn;
+      // Arms are stacked by Y with no overlap (see dungeon.js's armBounds
+      // comment) — at most one of these can match, so break on the first hit.
+      for (let i = 0; i < ARM_NAMES.length; i++) {
+        const b = this._armBounds[ARM_NAMES[i]];
+        if (p.y >= b.y0 && p.y < b.y1) { armPresent.add(ARM_NAMES[i]); break; }
+      }
     });
     if (entered) {
       for (let i = 0; i < this.enemies.length; i++) {
@@ -640,6 +654,15 @@ class Room {
       // sizeable share of the world's enemies, and every one of them was being
       // walked 40 times a second to answer "is anyone near?" with "no".
       if (e.arm === 'race10' && !e.raceBoss && !this._raceActive) return;
+
+      // Same idea, applied to the 4 open-world arms: a regular (non-boss)
+      // enemy whose arm currently has zero players can't have anyone to
+      // aggro onto or be seen by (armPresent is recomputed every tick above,
+      // from live player positions) — skip its target search/movement/attack
+      // entirely. Bosses are excluded: there are only 4 of them, so the cost
+      // is negligible, and skipping would also skip their leash/respawn-
+      // adjacent state below in ways not worth reasoning about here.
+      if (!e.isBoss && this._armBounds[e.arm] && !armPresent.has(e.arm)) return;
 
       // Tick CC timers
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
@@ -935,10 +958,15 @@ class Room {
     const grid = this._enemyGrid;
     grid.forEach(arr => { arr.length = 0; });
     this._bossBuf.length = 0;
+    const armPresent = this._armPresent;
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.hp <= 0) continue;
       if (e.isBoss) { this._bossBuf.push(e); continue; }
+      // Same empty-arm skip as the AI loop above: nobody in that arm could
+      // possibly have it inside their AOI query, so indexing it here would
+      // be pure waste.
+      if (this._armBounds[e.arm] && !armPresent.has(e.arm)) continue;
       const key = _gridKey(Math.floor(e.x / ENEMY_GRID_CELL), Math.floor(e.y / ENEMY_GRID_CELL));
       let cell = grid.get(key);
       if (!cell) { cell = []; grid.set(key, cell); }
