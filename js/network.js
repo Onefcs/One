@@ -2404,10 +2404,12 @@ function _initArena3Handlers(s) {
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     if (typeof hideArena3Timer === 'function') hideArena3Timer();
     pvpMode = false;
-    if (reward) {
-      window._nexumBalance = (window._nexumBalance || 0) + reward;
-      if (player) player.nexumBalance = window._nexumBalance;
-    }
+    // No local balance bump here: the server's _a3GrantWin already sent an
+    // authoritative 'nexumBalanceUpdate' for this exact reward just before
+    // this event (see server/index.js), so adding `reward` again on top of it
+    // double-counted the win — displaying balance+20 for a real +10, which
+    // then "corrected" itself back down on the next legitimate sync and
+    // looked like Liberty being taken away.
     if (typeof showArena3Result === 'function') showArena3Result(!!won, !!wedged, reward || 0);
     // The attempt was spent when the match started; re-sync so the panel shows
     // the new count instead of the one from before the match.
@@ -2508,10 +2510,10 @@ function _initRace10Handlers(s) {
     _race10Lane = null;
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
-    if (reward) {
-      window._nexumBalance = (window._nexumBalance || 0) + reward;
-      if (player) player.nexumBalance = window._nexumBalance;
-    }
+    // No local balance bump here — same reasoning as arena3Result above: the
+    // server's _race10GrantWin already sent an authoritative
+    // 'nexumBalanceUpdate' for this reward, so adding it again double-counted
+    // the win client-side.
     if (typeof showRace10Result === 'function') showRace10Result(!!won, winnerName, myDamage || 0, !!timedOut, reward || 0);
     if (typeof netRace10Sync === 'function') netRace10Sync();
     if (typeof onRace10State === 'function') onRace10State();
