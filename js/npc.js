@@ -462,9 +462,12 @@ function openClassGearCraftModal(idx) {
 
   const previewHtml = `<div class="pet-preview-hint">${typeof t === 'function' ? t('craftPetTapHint') : 'Нажмите на предмет — характеристики'}</div>`;
 
+  const matLabel = rec.costRarity === 'uncommon'
+    ? (typeof t === 'function' ? t('craftUncommonItemLbl') : 'Необычный предмет')
+    : (typeof t === 'function' ? t('craftCommonItemLbl') : 'Обычный предмет');
   const costRow = `<div class="craft-req-row">
-    <span class="craft-req-icon">${iconHTML('storage', 20, rc)}</span>
-    <span class="craft-req-name">${_RARITY_NAMES[rec.costRarity] || rec.costRarity}</span>
+    <span class="craft-req-icon">${iconHTML('inventory', 20, rc)}</span>
+    <span class="craft-req-name">${matLabel}</span>
     <span class="craft-req-count" style="color:${okMats ? '#98e456' : '#eb4e61'}">${have}/${rec.costCount}</span>
   </div>
   <div class="craft-req-row">
@@ -474,13 +477,14 @@ function openClassGearCraftModal(idx) {
   </div>`;
 
   const canCraft = !pending && okMats && okNexum;
+  const pickOneOfN = typeof tVars === 'function' ? tVars('craftPickOneOfN', { n: pool.length }) : `Один случайный из ${pool.length}`;
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
     <div class="craft-detail-header">
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${(rec.resultSlot === 'cloak' ? (_SLOT_NAMES.cloak || 'Плащ') : (_SLOT_NAMES.artifact || 'Артефакт'))} · ${_RARITY_NAMES[rec.resultRarity] || rec.resultRarity}</div>
-        <div class="craft-detail-stats">${typeof t === 'function' ? t('craftPetPickOneOf') : 'Один случайный из 5'}</div>
+        <div class="craft-detail-stats">${pickOneOfN}</div>
       </div>
     </div>
     <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">${candidatesHtml}</div>
