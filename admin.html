@@ -243,6 +243,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
     <button class="tab-btn" onclick="setTab('market')">🏪 Маркет</button>
     <button class="tab-btn" onclick="setTab('quests')">⭐ Квесты</button>
     <button class="tab-btn" onclick="setTab('suspicious')">🚨 Подозр.</button>
+    <button class="tab-btn" onclick="setTab('referrals')">🔗 Рефералы</button>
   </div>
 
   <div id="content">
@@ -429,6 +430,14 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
       </div>
     </div>
 
+    <!-- Referrals -->
+    <div id="tab-referrals" class="tab-panel">
+      <div class="card">
+        <h3>Топ по рефералам</h3>
+        <div id="referrals-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </div><!-- /app -->
 
@@ -505,7 +514,7 @@ function setTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   const btns = document.querySelectorAll('.tab-btn');
-  const names = ['dashboard','players','gram','clans','chat','broadcast','market','quests','suspicious'];
+  const names = ['dashboard','players','gram','clans','chat','broadcast','market','quests','suspicious','referrals'];
   const idx = names.indexOf(name);
   if(idx>=0) btns[idx].classList.add('active');
   _currentTab = name;
@@ -516,6 +525,7 @@ function setTab(name) {
   else if (name==='market') loadMarket();
   else if (name==='quests') loadQuests();
   else if (name==='suspicious') loadSuspicious();
+  else if (name==='referrals') loadReferrals();
 }
 
 // ── Dashboard ─────────────────────────────────────────────
@@ -1111,6 +1121,33 @@ async function banSus(tid) {
 }
 
 function openSusPlayer(tid) {
+  setTab('players');
+  _currentPlayerId = tid;
+  setTimeout(() => openPlayer(tid), 100);
+}
+
+// ── Referrals ─────────────────────────────────────────────
+async function loadReferrals() {
+  const el = document.getElementById('referrals-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/top-referrals');
+    const d = await r.json();
+    const rows = d.referrers || [];
+    if (!rows.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">Рефералов пока нет</p>'; return; }
+    el.innerHTML = `<div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>#</th><th>Ник</th><th>Приглашено</th><th>Заработано GRAM</th></tr></thead>
+      <tbody>${rows.map((p,i)=>`<tr style="cursor:pointer" onclick="openReferralPlayer('${p.telegramId}')">
+        <td>${i+1}</td>
+        <td>${esc(p.username)}<br><span style="color:var(--text2);font-size:11px">${p.telegramId}</span></td>
+        <td>${p.count}</td>
+        <td>${fmt(p.bonusEarned)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+function openReferralPlayer(tid) {
   setTab('players');
   _currentPlayerId = tid;
   setTimeout(() => openPlayer(tid), 100);

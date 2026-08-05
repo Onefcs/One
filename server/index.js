@@ -1125,6 +1125,40 @@ app.get('/admin/players', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Top referrers — ranked by how many accounts list them in `referredBy`,
+// same 5%-of-confirmed-deposits bonus math as the player-facing 'getReferrals'
+// handler above, just summed across every referral instead of one player's own.
+app.get('/admin/top-referrals', adminAuth, async (req, res) => {
+  try {
+    const rows = await PlayerModel.aggregate([
+      { $match: { referredBy: { $ne: null } } },
+      { $group: { _id: '$referredBy', count: { $sum: 1 }, referredIds: { $push: '$telegramId' } } },
+      { $sort: { count: -1 } },
+      { $limit: 50 },
+    ]);
+    if (!rows.length) return res.json({ referrers: [] });
+
+    const referrers = await PlayerModel.find({ telegramId: { $in: rows.map(r => r._id) } }, 'username telegramId').lean();
+    const nameByTid = {};
+    referrers.forEach(r => { nameByTid[r.telegramId] = r.username; });
+
+    const deposits = await GramTxModel.find({
+      telegramId: { $in: rows.flatMap(r => r.referredIds) }, type: 'deposit', status: 'confirmed',
+    }, 'telegramId amount').lean();
+    const depositSumByTid = {};
+    deposits.forEach(d => { depositSumByTid[d.telegramId] = (depositSumByTid[d.telegramId] || 0) + d.amount; });
+
+    res.json({
+      referrers: rows.map(r => ({
+        telegramId: r._id,
+        username: nameByTid[r._id] || r._id,
+        count: r.count,
+        bonusEarned: Math.round(r.referredIds.reduce((s, tid) => s + (depositSumByTid[tid] || 0), 0) * 0.05 * 100) / 100,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/admin/player/:tid', adminAuth, async (req, res) => {
   try {
     const p = await PlayerModel.findOne({ telegramId: req.params.tid }).lean();
