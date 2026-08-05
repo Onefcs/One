@@ -1271,7 +1271,7 @@ function exitPartyDungeonMode() {
 
 function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
-  try { localStorage.setItem('_lastCharType', type); } catch (_) {}
+  try { localStorage.setItem(_lastCharTypeKey(), type); } catch (_) {}
   player = makePlayer(type);
   dungeonLvl = 1;
   // A single account has one savedData blob, not per-type save slots — gating
@@ -1956,7 +1956,7 @@ function respawnPlayer() {
 
 function restartGame() {
   if (state !== 'dead') return;
-  try { localStorage.removeItem('_lastCharType'); } catch (_) {}
+  try { localStorage.removeItem(_lastCharTypeKey()); } catch (_) {}
   if (typeof _clearSaveBackup === 'function') _clearSaveBackup();
   document.getElementById('death-modal').style.display = 'none';
   targetId = null; targetIsPlayer = false; pvpMode = false; autoAttackMode = false;

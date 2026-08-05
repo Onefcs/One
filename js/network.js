@@ -113,7 +113,7 @@ function netConnect(onReady) {
     // and _showCharSelect's fallback don't resurrect the old (deleted)
     // character from this device's local cache.
     if (isNewAccount) {
-      try { localStorage.removeItem('_lastCharType'); } catch (_) {}
+      try { localStorage.removeItem(_lastCharTypeKey()); } catch (_) {}
       if (typeof _clearSaveBackup === 'function') _clearSaveBackup();
     }
     // Only ever widens (never resets to false on a later authOk): once the
@@ -1447,7 +1447,7 @@ function _showCharSelect(savedData) {
   // Prefer server savedData, fall back to localStorage for fast refresh
   // before the first DB write completes (race condition on reconnect).
   const type = savedData?.type || (() => {
-    try { return localStorage.getItem('_lastCharType'); } catch (_) { return null; }
+    try { return localStorage.getItem(_lastCharTypeKey()); } catch (_) { return null; }
   })();
   if (type) {
     const el = document.getElementById('char-select');
@@ -1519,6 +1519,19 @@ function _tgUserId() {
 function _saveBackupKey() {
   const id = _tgUserId();
   return id ? `_saveBackup_${id}` : '_saveBackup';
+}
+// Same per-account keying as _saveBackupKey above — '_lastCharType' used to
+// be one flat key shared by every Telegram account that ever opened the game
+// on a given device/browser. An account with a DB record but no savedData.type
+// yet (e.g. they connected once and closed the app mid char-select, so
+// isNewAccount is false on their next login and the localStorage-remembered-
+// class clear in the authOk handler never fires for them) fell through
+// _showCharSelect's fallback and inherited whatever class the PREVIOUS
+// account on that device had picked — auto-creating that same character
+// without ever showing them the selection screen.
+function _lastCharTypeKey() {
+  const id = _tgUserId();
+  return id ? `_lastCharType_${id}` : '_lastCharType';
 }
 function _writeSaveBackup(stats) {
   try { localStorage.setItem(_saveBackupKey(), JSON.stringify(stats)); } catch (_) {}
