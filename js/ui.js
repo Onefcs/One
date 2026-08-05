@@ -1092,14 +1092,14 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   // rarity — every class's weapon competes alongside every armor/accessory
   // slot now (js/combat.js no longer restricts weapons to the killing
   // player's own class), so each item's share is 1-in-candidates.length,
-  // not a fixed 1-in-7. No 'cloak' — craft-only, matches js/combat.js.
+  // not a fixed 1-in-7. No 'cloak'/'artifact' — craft-only, matches js/combat.js.
   let gearSection = '';
   if (typeof itemDropChanceAtLevel === 'function') {
     const pct = Math.min(100, itemDropChanceAtLevel(lvl) * (isBoss ? BOSS_ITEM_DROP_MULT : 1));
     const rarity = itemRarityForLevel(lvl);
     const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
     const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
-    const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'artifact'];
+    const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
     const candidates = ITEM_DEF.filter(d => d.rarity === rarity && GEAR_SLOTS.includes(d.slot));
     const perItemPct = candidates.length ? pct / candidates.length : 0;
     const rows = candidates.map(it => _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b style="color:${rc}">${_pctText(perItemPct)}</b>`, rc)).join('');
@@ -2634,8 +2634,8 @@ function sellCommonItem(idx) {
 
 // ── Loot boxes ────────────────────────────────────────────
 function _boxCandidates(rarity) {
-  // No 'cloak' — craft-only, matches the kill-drop pool in js/combat.js.
-  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'artifact'];
+  // No 'cloak'/'artifact' — craft-only, matches the kill-drop pool in js/combat.js.
+  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
   return ITEM_DEF.filter(d => d.rarity === rarity && gearSlots.includes(d.slot) &&
     (d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type))));
 }
