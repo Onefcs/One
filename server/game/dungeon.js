@@ -81,17 +81,26 @@ const A3_SPAWN_YS = [4, 13, 22];
 const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corridor
 const A3_BOSS_DX = 2;                       // guard boss sits this many tiles inside the base's back wall
 
-// ── 10-player corridor race ("Забег") ────────────────────────────────────────
-// Ten players each run their own sealed lane: 60 level-5 monsters packed
+// ── Corridor race ("Кровавая Башня") ─────────────────────────────────────────
+// Every entrant runs their own sealed lane: 60 level-5 monsters packed
 // shoulder-to-shoulder, a short gap, then 60 level-10 monsters the same way —
-// "впритык", so there's no way past them except fighting through. All ten
-// lanes open into ONE shared room at the far end holding a single boss (same
+// "впритык", so there's no way past them except fighting through. All lanes
+// open into ONE shared room at the far end holding a single boss (same
 // identity as the world EVENT_BOSS — see spawnRaceBoss, server/game/Room.js).
 // Whoever has dealt it the most damage when it dies wins; dying anywhere in a
 // lane eliminates that player from the run (see the 'respawn' handler,
 // server/index.js). Sits below the 3v3 arena, same sealed-off rules: the only
 // way in is being placed there by the event.
-const RACE10_LANES        = 10;
+//
+// The event takes however many players register, one lane each — but the world
+// is generated once at startup and its geometry never changes, so the lanes
+// have to exist before anyone signs up. This is the ceiling on entrants
+// (RACE10_MAX_ENTRANTS, server/index.js reads it from here): raising it costs
+// RACE10_LANE_PITCH tiles of map height and RACE10_MOB_PER_TIER*2 monsters,
+// and those monsters are skipped by the AI loop entirely while no race is
+// running (see the race10 branch in Room.js's _tick), so an unused lane costs
+// nothing per tick.
+const RACE10_LANES        = 30;
 const RACE10_LANE_HW      = 1;   // half-width — 3 tiles wide, same convention as every other corridor
 const RACE10_LANE_GAP     = 2;   // wall tiles between adjacent lanes
 const RACE10_LANE_PITCH   = RACE10_LANE_HW * 2 + 1 + RACE10_LANE_GAP; // 5 tiles, row to row
@@ -204,6 +213,13 @@ function generateOpenWorld() {
       const ex = baseX + i * RACE10_MOB_SPACING + TILE / 2;
       enemyList.push({
         id: `race10_${laneIdx}_${eid++}`, ...d, isBoss: false, arm: 'race10',
+        // Which lane this monster belongs to. The id has carried it all along
+        // (the client slices it out to match barriers), but the server needs it
+        // as a field: it is what keeps a monster from ever seeing — or being
+        // seen by — a player running a different corridor. Lanes are 5 tiles
+        // apart and aggro reaches up to 230px, so without it every monster
+        // within two rows was fair game across a solid wall.
+        lane: laneIdx,
         rlvl: lvl,
         name: monsterNameAtLevel(d.name, lvl, false, d.fem, 20),
         color: monsterColorAtLevel(d.color, d.endColor, lvl, false, 20),

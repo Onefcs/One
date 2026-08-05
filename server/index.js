@@ -1600,6 +1600,16 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
     params.set('hash', crypto.createHmac('sha256', secret).update(checkStr).digest('hex'));
     res.json({ initData: params.toString(), user });
   });
+
+  // Opens the Кровавая Башня registration window on the spot, with a short
+  // registration period, so the event can actually be played through locally
+  // instead of only at 20:00 Moscow time. Same gate as the login helper above:
+  // this route does not exist in a normal deployment.
+  app.post('/dev/race10/open', (req, res) => {
+    const regMs = Math.max(1000, Math.min(Number(req.query.reg) || 5000, 300000));
+    _race10OpenWindow(Date.now(), regMs);
+    res.json({ ok: true, regMs, startsAt: _race10.startAt });
+  });
 }
 
 // One permanent Room for the whole open world — pre-created at startup, never
@@ -2100,16 +2110,29 @@ function _lockDailyAttempt(socketId, field) {
   }]).catch(() => {});
 }
 
+// How many runs a day each event allows. They share one helper but not one
+// pool — the Кровавая Башня has a single start per day now, so a single
+// attempt is what makes that start the whole of the opportunity.
+//
+// Read inside the function rather than from a table built up here:
+// RACE10_ATTEMPTS is declared further down the file, and a `const` table
+// evaluated at load time would hit its temporal dead zone and take the whole
+// process down on boot.
+function _attemptCap(field) {
+  return field === 'race10Attempts' ? RACE10_ATTEMPTS : DAILY_DUNGEON_ATTEMPTS;
+}
+
 async function _dailyAttemptsLeft(socketId, field) {
   const s = io.sockets.sockets.get(socketId);
   const tid = s?.data?.telegramId;
-  if (tid == null) return DAILY_DUNGEON_ATTEMPTS;
+  const cap = _attemptCap(field);
+  if (tid == null) return cap;
   try {
     const doc = await PlayerModel.findOne({ telegramId: tid }).select(`savedData.${field}`).lean();
     const rec = doc?.savedData?.[field];
-    if (!rec || rec.date !== _todayStr()) return DAILY_DUNGEON_ATTEMPTS;
-    return Math.max(0, DAILY_DUNGEON_ATTEMPTS - rec.count);
-  } catch (e) { return DAILY_DUNGEON_ATTEMPTS; }
+    if (!rec || rec.date !== _todayStr()) return cap;
+    return Math.max(0, cap - rec.count);
+  } catch (e) { return cap; }
 }
 
 function _lockPartyDungeonDaily(socketId)            { _lockDailyAttempt(socketId, 'partyDungeonAttempts'); }
@@ -2841,18 +2864,30 @@ async function _a3Finish(winner, wedged) {
   _a3TryStartSafe();
 }
 
-// ── 10-Player Corridor Race (Забег) ─────────────────────────────────────────
-// Queue-driven like the 3v3 arena: ten players sign up, and once ten are
-// ready each is dropped into their own sealed lane (server/game/dungeon.js
-// race10) — 60 level-5 monsters then 60 level-10 monsters, packed shoulder to
-// shoulder, no way past but through. Every lane ends at the same shared room
-// and the same single boss (spawnRaceBoss, server/game/Room.js): whoever has
-// dealt it the most cumulative damage when it dies wins Liberty. Dying
-// anywhere in a lane is an elimination — handled by the existing 'respawn'
-// handler via _pvpEliminate, the same wiring the death battle and 3v3 arena
-// already share, so a monster kill in the corridor counts exactly like a PvP
-// kill would.
-const RACE10_NEEDED    = 10;
+// ── Кровавая Башня (corridor race) ──────────────────────────────────────────
+// Registration opens at 20:00 MSK and everyone who signs up runs — no fixed
+// headcount. RACE10_REG_MS later the whole field starts at once, one sealed
+// lane each (server/game/dungeon.js race10): 60 level-5 monsters then 60
+// level-10, packed shoulder to shoulder, no way past but through. Every lane
+// ends at the same shared room and the same single boss (spawnRaceBoss,
+// server/game/Room.js): whoever has dealt it the most cumulative damage when
+// it dies wins Liberty. Dying anywhere in a lane is an elimination — handled
+// by the existing 'respawn' handler via _pvpEliminate, the same wiring the
+// death battle and 3v3 arena already share, so a monster kill in the corridor
+// counts exactly like a PvP kill would.
+//
+// It used to fire the moment ten players were queued, and could run several
+// times in the hour. One start with everyone in it replaces that, which is
+// also what makes a single daily attempt fair: miss the five minutes and you
+// miss the day, rather than losing your one attempt to a race that filled up
+// without you.
+//
+// How many can enter is a property of the map, not of this file: lanes are
+// carved at world generation and never change, so the ceiling is however many
+// exist (read below from the dungeon, not hardcoded here).
+const RACE10_MIN_PLAYERS = 2;            // a race of one has nobody to race
+const RACE10_REG_MS    = 5 * 60 * 1000;  // registration window before the start
+const RACE10_ATTEMPTS  = 1;              // per UTC day — its own limit, not the shared dungeon pool
 const RACE10_MIN_LEVEL = 10;
 const RACE10_FREEZE_MS = 10 * 1000;
 const RACE10_REWARD    = 10;             // Liberty (Nexum) to the top damage-dealer only — the boss drops no loot
@@ -2860,6 +2895,13 @@ const RACE10_REWARD    = 10;             // Liberty (Nexum) to the top damage-de
 // race with no winner if the boss just never comes down, so the one shared
 // instance can't be tied up forever.
 const RACE10_MAX_MS    = 15 * 60 * 1000;
+
+// The map's lane count — the hard ceiling on entrants. Read once the world
+// exists; before that (nobody can register yet) it reports 0.
+function _race10Capacity() {
+  const room = getRoom(1);
+  return room?.dungeonData?.race10?.lanes?.length || 0;
+}
 
 const _race10 = {
   phase: 'idle',        // 'idle' → 'reg' (20:00–21:00 MSK window) → 'idle'
@@ -2871,8 +2913,10 @@ const _race10 = {
   dmg: new Map(),      // socketId -> cumulative damage dealt to the shared boss
   bossId: null,
   fightAt: 0,
+  startAt: 0,          // when the field is deployed — registration closes then
   freezeTimer: null,
   maxTimer: null,
+  startTimer: null,
   openTimer: null, closeTimer: null, notifyTimer: null,
 };
 
@@ -2888,11 +2932,15 @@ function _race10PublicState() {
     phase:   _race10.phase,
     nextAt:  _race10NextOpenAt(),
     queued: _race10.queue.size,
-    needed: RACE10_NEEDED,
+    // No headcount to reach any more; the client shows the queue size and
+    // counts down to startAt instead. `capacity` is the lane ceiling.
+    startAt: _race10.startAt,
+    capacity: _race10Capacity(),
+    minPlayers: RACE10_MIN_PLAYERS,
     live: _race10.live,
     minLevel: RACE10_MIN_LEVEL,
     reward: RACE10_REWARD,
-    maxAttempts: DAILY_DUNGEON_ATTEMPTS,
+    maxAttempts: RACE10_ATTEMPTS,
   };
 }
 
@@ -2916,25 +2964,31 @@ function _race10Schedule() {
   if (warnIn > 0) _race10.notifyTimer = setTimeout(() => notifyEventSoon('race10', openAt), warnIn);
 }
 
-// Opens the hour-long registration window. Unlike the death battle's single
-// scheduled start, the queue keeps trying for the whole hour — however many
-// times 10 players gather, each one fires off its own race.
-function _race10OpenWindow(openAt) {
+// Opens registration at 20:00 MSK and arms the single start RACE10_REG_MS
+// later. Everyone signed up by then runs; there is no headcount to reach and
+// no second race in the same window, so the five minutes are the whole of the
+// opportunity — which is what the 30-minute warning broadcast is for.
+// regMs is only ever passed by the local dev opener (see the DEV_LOCAL block
+// near the top of this file) so the event can be exercised without waiting for
+// 20:00; the scheduled path always uses RACE10_REG_MS.
+function _race10OpenWindow(openAt, regMs = RACE10_REG_MS) {
   _race10.phase = 'reg';
+  _race10.startAt = Date.now() + regMs;
   notifyEventStarted('race10', openAt);
   clearTimeout(_race10.closeTimer);
   _race10.closeTimer = setTimeout(_race10CloseWindow, RACE10_WINDOW_MS);
+  clearTimeout(_race10.startTimer);
+  _race10.startTimer = setTimeout(_race10StartSafe, regMs);
   _race10Broadcast();
-  // Covers the (unlikely) case of stragglers still parked in the queue from
-  // a previous window — safe no-op if nobody's waiting.
-  _race10TryStartSafe();
 }
 
-// Closes the window at 21:00 MSK. Anyone still only queued (never made it to
-// 10) is bumped back to "not registered" — a race already under way keeps
-// running on its own RACE10_MAX_MS clock regardless.
+// Closes the window at 21:00 MSK. Anyone still queued (a start that was
+// cancelled for want of players, say) is bumped back to "not registered" — a
+// race already under way keeps running on its own RACE10_MAX_MS clock.
 function _race10CloseWindow() {
   _race10.phase = 'idle';
+  _race10.startAt = 0;
+  clearTimeout(_race10.startTimer);
   [..._race10.queue.keys()].forEach(sid => {
     io.to(sid).emit('race10Registered', { registered: false });
     io.to(sid).emit('race10Error', { msg: 'Окно Кровавой Башни закрылось — до встречи в 20:00' });
@@ -2948,18 +3002,32 @@ function _race10Frozen(socketId) {
   return _race10.live && Date.now() < _race10.fightAt && _race10.alive.has(socketId);
 }
 
-// _race10TryStart is async (re-checks daily attempts against the DB); every
-// caller fires it without awaiting, same reasoning as _a3TryStartSafe above.
-function _race10TryStartSafe() { _race10TryStart().catch(err => console.error('_race10TryStart:', err)); }
+// The scheduled start fires once per window; async because it re-checks daily
+// attempts against the DB, and never awaited by its caller (a timer), so the
+// rejection has to be caught here.
+function _race10StartSafe() { _race10Start().catch(err => console.error('_race10Start:', err)); }
 
-async function _race10TryStart() {
+async function _race10Start() {
   if (_race10.live || _race10.starting) return;
+  _race10.startAt = 0;
   const room = getRoom(1);
   if (!room) return;
+  // Only entrants still connected and still standing in the world can be
+  // deployed; anyone else is dropped rather than counted.
   const ready = [..._race10.queue.keys()].filter(sid =>
     io.sockets.sockets.get(sid) && room.players.get(sid));
   [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
-  if (ready.length < RACE10_NEEDED) return;
+  if (ready.length < RACE10_MIN_PLAYERS) {
+    // Not enough showed up. Nobody is charged an attempt (that happens on
+    // deploy), and registration stays open for the rest of the window in case
+    // the panel is still in front of someone — but there is no second start,
+    // so this is effectively "not today".
+    ready.forEach(sid => io.to(sid).emit('race10Error', {
+      msg: `Забег отменён — нужно минимум ${RACE10_MIN_PLAYERS} участника`,
+    }));
+    _race10Broadcast();
+    return;
+  }
 
   _race10.starting = true;
   try {
@@ -2970,20 +3038,36 @@ async function _race10TryStart() {
 }
 
 async function _race10Deploy(ready, room) {
-  const picked = ready.slice(0, RACE10_NEEDED);
+  // Everyone who registered, capped only by how many corridors the map has.
+  // Anyone past that is told plainly rather than being silently dropped into
+  // somebody else's lane.
+  const capacity = room.dungeonData.race10?.lanes?.length || 0;
+  const picked = ready.slice(0, capacity);
+  ready.slice(capacity).forEach(sid => {
+    _race10.queue.delete(sid);
+    io.to(sid).emit('race10Registered', { registered: false });
+    io.to(sid).emit('race10Error', { msg: `В Башне только ${capacity} коридоров — сегодня не хватило места` });
+  });
 
   // Re-checked against fresh DB state right before launch, not just at
   // sign-up — same reasoning as the 3v3 arena's own re-check.
   const spent = await Promise.all(picked.map(sid => _race10AttemptsLeft(sid)));
   const outOfAttempts = picked.filter((sid, i) => spent[i] <= 0);
-  if (outOfAttempts.length) {
-    outOfAttempts.forEach(sid => {
-      _race10.queue.delete(sid);
-      io.to(sid).emit('race10Error', { msg: 'Попытки в Кровавую Башню на сегодня закончились' });
-      io.to(sid).emit('race10Registered', { registered: false });
-    });
+  // Anyone who used their attempt elsewhere since signing up is dropped, and
+  // the race goes ahead with the rest — there is only one start per window, so
+  // retrying the whole launch (as the queue-driven version did) would just
+  // cancel the event for everybody.
+  const running = picked.filter((sid, i) => spent[i] > 0);
+  outOfAttempts.forEach(sid => {
+    _race10.queue.delete(sid);
+    io.to(sid).emit('race10Error', { msg: 'Попытки в Кровавую Башню на сегодня закончились' });
+    io.to(sid).emit('race10Registered', { registered: false });
+  });
+  if (running.length < RACE10_MIN_PLAYERS) {
+    running.forEach(sid => io.to(sid).emit('race10Error', {
+      msg: `Забег отменён — нужно минимум ${RACE10_MIN_PLAYERS} участника`,
+    }));
     _race10Broadcast();
-    setImmediate(_race10TryStartSafe);
     return;
   }
 
@@ -2996,7 +3080,7 @@ async function _race10Deploy(ready, room) {
   // second race later in the same window would otherwise find them still
   // dead from the first one.
   room.resetRaceMonsters();
-  const placed = room.raceDeploy(picked);
+  const placed = room.raceDeploy(running);
   _race10.bossId = room.spawnRaceBoss();
 
   placed.forEach(({ socketId, lane }) => {
@@ -3073,9 +3157,8 @@ async function _race10Finish(winnerId, timedOut) {
     });
   }
   _race10Broadcast();
-  // A queue that filled up while this race ran starts the next one straight
-  // away rather than waiting for someone to press register again.
-  _race10TryStartSafe();
+  // No follow-up race: the window holds exactly one start (see
+  // _race10OpenWindow), so anyone who missed it waits for tomorrow.
 }
 
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
@@ -5247,10 +5330,11 @@ io.on('connection', socket => {
     if (left <= 0) {
       return socket.emit('race10Error', { msg: 'Попытки в Кровавую Башню на сегодня закончились' });
     }
+    // Registering no longer risks starting the race — it begins on its own
+    // timer with whoever is signed up by then.
     _race10.queue.set(socket.id, { name: authed.username, lvl });
     socket.emit('race10Registered', { registered: true, attemptsLeft: left });
     _race10Broadcast();
-    _race10TryStartSafe();
   });
 
   safeOn('race10Unregister', () => {

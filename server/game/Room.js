@@ -498,6 +498,31 @@ class Room {
 
   // Same sampling algorithm as the client's hasLOS() (combat.js) — kept in
   // lockstep so a shot the client thinks is clear doesn't get rejected here.
+  // ── Кровавая Башня: lane isolation ────────────────────────────────────────
+  // Lanes sit RACE10_LANE_PITCH (5 tiles = 200px) apart and monsters aggro out
+  // to 230px, so on distance alone a monster reaches two rows either side —
+  // straight through a solid wall. The line-of-sight test only gates the FIRST
+  // aggro, and losing sight never drops it (a deliberate rule everywhere else
+  // in the world), so a monster pulled by its own runner would then chase
+  // whoever was nearest afterwards, wall or no wall, and stand there grinding
+  // into it. The same radius on the client's side is what let a player's
+  // auto-target lock a monster in the next corridor and run at it.
+  //
+  // Distance can't separate corridors, so identity does: every corridor
+  // monster carries the lane it was generated in, every entrant carries the
+  // lane they were deployed into, and the two only interact when those match.
+  // Both the AI's target search and the per-player enemy stream go through
+  // these, so a monster in another lane is not merely unreachable — the client
+  // is never told it exists, and therefore cannot target it.
+  //
+  // The boss is deliberately laneless: it stands in the one shared room every
+  // corridor opens into, and every entrant must be able to see and fight it.
+  _raceVisible(p, e) {
+    if (e.arm !== 'race10') return p._raceLane == null;
+    if (p._raceLane == null) return false;       // not in the tower: sees none of it
+    return e.lane == null || e.lane === p._raceLane;
+  }
+
   _hasLOS(x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.hypot(dx, dy);
@@ -608,6 +633,14 @@ class Room {
       // this loop at all.
       if (e.a3Passive) return;
 
+      // Corridor monsters while no race is running: there is nobody inside the
+      // tower to see, so the target search below can only ever come back empty.
+      // Skipping them outright is what makes a large number of pre-generated
+      // lanes free — with RACE10_LANES lanes at 120 monsters each they are a
+      // sizeable share of the world's enemies, and every one of them was being
+      // walked 40 times a second to answer "is anyone near?" with "no".
+      if (e.arm === 'race10' && !e.raceBoss && !this._raceActive) return;
+
       // Tick CC timers
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
       if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
@@ -673,7 +706,11 @@ class Room {
       }
 
       if (e.aggro) {
-        if (closestD > e.size + 14) {
+        // `stationary` holds an enemy on its spawn point while leaving the
+        // rest of its behaviour alone — it still aggros, still swings at
+        // anyone who steps into reach. Used by the tower's boss (see
+        // spawnRaceBoss); everything else moves as before.
+        if (!e.stationary && closestD > e.size + 14) {
           const spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
           const nx = (closest.x - e.x) / closestD;
           const ny = (closest.y - e.y) / closestD;
@@ -951,6 +988,9 @@ class Room {
           if (sz && this._inSafeZone(p.x, p.y)) continue;
           if (p._inRaid) continue;
           if (p._invis) continue;
+          // Corridor monsters only ever see their own runner; world monsters
+          // never see anyone inside the tower — see _raceVisible.
+          if (!this._raceVisible(p, e)) continue;
           const dx = p.x - e.x, dy = p.y - e.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < bestD2) { bestD2 = d2; closest = p; }
@@ -1018,7 +1058,16 @@ class Room {
     out.length = 0;
     const known = p._eKnown;
 
-    for (let i = 0; i < this._bossBuf.length; i++) this._pushEnemyEntry(this._bossBuf[i], known, out, castId);
+    // Bosses go to everyone regardless of distance, which needs the same
+    // two-way filter as everything else: the tower's boss only to its
+    // entrants, and the world's arm bosses to everyone EXCEPT them — someone
+    // running a corridor has no use for a boss on the far side of the map, and
+    // it only clutters their target list.
+    for (let i = 0; i < this._bossBuf.length; i++) {
+      const b = this._bossBuf[i];
+      if (!this._raceVisible(p, b)) continue;
+      this._pushEnemyEntry(b, known, out, castId);
+    }
 
     const grid = this._enemyGrid;
     const cx0 = Math.floor((p.x - ENEMY_AOI_R) / ENEMY_GRID_CELL);
@@ -1033,6 +1082,10 @@ class Room {
           const e = cell[i];
           const dx = e.x - p.x, dy = e.y - p.y;
           if (dx * dx + dy * dy > ENEMY_AOI_R2) continue;
+          // The corridor next door is well inside the AOI radius. Filtering
+          // here is what stops the client ever seeing — and so auto-targeting
+          // — a monster it cannot reach.
+          if (!this._raceVisible(p, e)) continue;
           this._pushEnemyEntry(e, known, out, castId);
         }
       }
@@ -1159,6 +1212,7 @@ class Room {
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
+      _raceLane: null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -1448,17 +1502,25 @@ class Room {
     const race = this._dungeon.race10;
     if (!race) return [];
     const placed = [];
-    socketIds.forEach((sid, i) => {
+    // One lane per entrant, never shared: two players in the same corridor
+    // would fight the same monsters and re-create exactly the cross-lane mess
+    // the isolation above removes. The caller caps the list at lanes.length.
+    socketIds.slice(0, race.lanes.length).forEach((sid, i) => {
       const p = this.players.get(sid);
       if (!p) return;
-      const spot = race.lanes[i % race.lanes.length];
+      const spot = race.lanes[i];
       let x = spot.x, y = spot.y;
       if (this._isWall(x, y)) { x = race.boss.x; y = race.boss.y; }
       p.x = x; p.y = y;
       p.hp = p.maxHp;
+      // Their lane for as long as the run lasts — read by _raceVisible on both
+      // the targeting and the streaming side. Cleared when they leave, in
+      // deathBattleReturn (every exit path goes through it) and removePlayer.
+      p._raceLane = i;
       p._profileRev++;
       placed.push({ socketId: sid, x, y, hp: p.hp, lane: i });
     });
+    this._raceActive = placed.length > 0;
     return placed;
   }
 
@@ -1485,6 +1547,13 @@ class Room {
       atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
       aggro: false, aggroR: 900,
       raceBoss: true,
+      // Holds its ground in the middle of the shared room instead of chasing.
+      // Unlike the 3v3 guard bosses (a3Passive) it is NOT inert: it still
+      // aggros and still hits whoever comes into reach — see the stationary
+      // branch in _tick. Chasing made it drag the fight back down whichever
+      // corridor it happened to pick, which is neither fair to that runner nor
+      // to the ones it walked away from.
+      stationary: true,
       _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
       _idx: this.enemies.length,
     };
@@ -1496,6 +1565,11 @@ class Room {
 
   // Removes the race10 boss (dead or still standing) once the race ends.
   despawnRaceBoss() {
+    // Also the end of the race as far as the tick loop is concerned: corridor
+    // monsters go back to being skipped entirely (see the race10 branch in
+    // _tick). Called from _race10Finish on every ending — win, timeout or
+    // nobody left standing.
+    this._raceActive = false;
     if (!this._raceBossId) return;
     const id = this._raceBossId;
     this.enemies = this.enemies.filter(e => {
@@ -1584,12 +1658,18 @@ class Room {
   // Sends a player back to the hub with PvP off — used both for entrants
   // knocked out of a round and for the winner once they close the reward
   // modal. Returns the landing spot so the caller can tell that client.
+  // Every exit from an event — eliminated, finished, the round ending under
+  // them — comes back through here, which makes it the one place that has to
+  // clear the tower lane as well as the PvP flag. Leaving it set would keep
+  // the player invisible to ordinary world monsters (and them to it) for the
+  // rest of the session, since that is exactly what _raceVisible keys on.
   deathBattleReturn(socketId) {
     const p = this.players.get(socketId);
     if (!p) return null;
     p.x = this._dungeon.spawn.x;
     p.y = this._dungeon.spawn.y;
     p.pvpMode = false;
+    p._raceLane = null;
     p._profileRev++;
     return { x: p.x, y: p.y };
   }

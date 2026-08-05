@@ -3283,7 +3283,7 @@ function _arena3BodyHTML() {
 // same reg/idle phase shape as _deathBattleBodyHTML above, plus the queue
 // count and team-less damage race once the window is open.
 function _race10BodyHTML() {
-  const st = (typeof _race10State !== 'undefined' && _race10State) || { phase: 'idle', nextAt: 0, queued: 0, needed: 10, minLevel: 10, reward: 10 };
+  const st = (typeof _race10State !== 'undefined' && _race10State) || { phase: 'idle', nextAt: 0, queued: 0, startAt: 0, capacity: 0, minLevel: 10, reward: 10 };
   const inMatch = typeof _race10InMatch !== 'undefined' && _race10InMatch;
   const open = st.phase === 'reg';
   const lvl = (player && player.lvl) || 1;
@@ -3311,14 +3311,22 @@ function _race10BodyHTML() {
     action = `<button class="db-action" onclick="netRace10Register()">${t('dbJoinBtn')}</button>`;
   }
 
-  // Idle counts down to the next daily window (can be many hours away), open/
-  // in-match stay on a plain queue count or the live damage race.
-  const countdown = !open && !inMatch ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now())) : `${st.queued}/${st.needed}`;
+  // Idle counts down to the next daily window (can be many hours away). While
+  // registration is open the number that matters is the time left to sign up —
+  // there is no headcount to fill any more, everyone who registers runs.
+  const countdown = inMatch
+    ? `${st.queued}`
+    : !open
+        ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
+        : _fmtEventEta(Math.max(0, (st.startAt || 0) - Date.now()));
   const score = inMatch
     ? `<div class="db-count">${tVars('race10ScoreFmt', { dmg: Math.floor(_race10MyDamage || 0), rank: _race10Rank || 0, total: _race10Total || 0 })}</div>`
-    : open && st.attemptsLeft !== null && st.attemptsLeft !== undefined
-        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
-        : (!open && st.nextAt ? `<div class="db-count">${_fmtEventWhen(st.nextAt)}</div>` : '');
+    : open
+        ? `<div class="db-count">${tVars('race10Waiting', { n: st.queued || 0 })}${
+            st.attemptsLeft !== null && st.attemptsLeft !== undefined
+              ? ' · ' + tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })
+              : ''}</div>`
+        : (st.nextAt ? `<div class="db-count">${_fmtEventWhen(st.nextAt)}</div>` : '');
 
   return `
     <div style="padding:16px">
@@ -3330,7 +3338,8 @@ function _race10BodyHTML() {
         ${t('dbRulesHdr')}
         <ul>
           <li>${t('race10Rule6')}</li>
-          <li>${tVars('race10Rule1', { n: st.needed })}</li>
+          <li>${t('race10Rule1')}</li>
+          <li>${t('race10Rule8')}</li>
           <li>${t('race10Rule2')}</li>
           <li>${t('race10Rule3')}</li>
           <li>${t('race10Rule4')}</li>
