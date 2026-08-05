@@ -1399,6 +1399,17 @@ app.post('/admin/race10/open', adminAuth, (req, res) => {
   res.json({ ok: true, startAt: _race10.startAt });
 });
 
+// Cancels an open registration window early — same effect as the normal
+// 21:00 MSK auto-close (_race10CloseWindow): bumps everyone still queued
+// back to "not registered" and re-arms the scheduler for the next regular
+// 20:00 window. Does not touch an already-running race (_race10.live) —
+// there is nothing left in the queue by the time a race starts anyway.
+app.post('/admin/race10/close', adminAuth, (req, res) => {
+  if (_race10.phase !== 'reg') return res.status(409).json({ error: 'Регистрация не открыта' });
+  _race10CloseWindow();
+  res.json({ ok: true });
+});
+
 app.get('/admin/race10', adminAuth, (req, res) => {
   res.json(_race10PublicState());
 });

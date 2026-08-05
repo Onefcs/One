@@ -267,10 +267,14 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
       <div class="card">
         <h3>🗼 Кровавая Башня</h3>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="race10-status">—</div>
-        <button class="btn btn-primary" id="race10-btn" onclick="openRace10()">Открыть регистрацию сейчас</button>
+        <div class="action-grid">
+          <button class="btn btn-primary" id="race10-open-btn" onclick="openRace10()">Открыть регистрацию</button>
+          <button class="btn btn-red" id="race10-close-btn" onclick="closeRace10()">Закрыть регистрацию</button>
+        </div>
         <div style="font-size:11px;color:var(--text2);margin-top:8px">
-          Обычно открывается в 20:00 по Москве на 5 минут. Эта кнопка запускает то же
-          самое окно регистрации немедленно, вне расписания.
+          Обычно открывается в 20:00 по Москве на 5 минут. Первая кнопка запускает то же
+          самое окно регистрации немедленно, вне расписания; вторая закрывает уже открытое
+          окно раньше срока и возвращает записавшихся в "не зарегистрирован".
         </div>
       </div>
       <div class="tops-grid" id="tops-grid">
@@ -564,23 +568,27 @@ async function summonEventBoss() {
 // ── Кровавая Башня ──────────────────────────────────────
 async function loadRace10() {
   const el = document.getElementById('race10-status');
-  const btn = document.getElementById('race10-btn');
+  const openBtn = document.getElementById('race10-open-btn');
+  const closeBtn = document.getElementById('race10-close-btn');
   if (!el) return;
   try {
     const d = await (await api('/admin/race10')).json();
-    let txt, busy = false;
+    let txt, isReg = false, busy = false;
     if (d.live) { txt = '🔴 Забег идёт сейчас'; busy = true; }
     else if (d.phase === 'reg') {
       const left = Math.max(0, Math.round((d.startAt - Date.now()) / 1000));
       txt = '⏳ Регистрация открыта, старт через ' + Math.floor(left/60) + ':' + String(left%60).padStart(2,'0')
           + ' · записано ' + d.queued + '/' + d.capacity;
-      busy = true;
+      isReg = true; busy = true;
     } else {
       txt = '⚪ Не запущена — можно открыть регистрацию';
       if (d.nextAt) txt += ' · по расписанию: ' + new Date(d.nextAt).toLocaleString('ru-RU');
     }
     el.textContent = txt;
-    if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '.5' : '1'; }
+    // Open only makes sense when nothing is running yet; close only while
+    // registration itself is the open thing (not once a race is live).
+    if (openBtn)  { openBtn.disabled = busy;   openBtn.style.opacity  = busy   ? '.5' : '1'; }
+    if (closeBtn) { closeBtn.disabled = !isReg; closeBtn.style.opacity = !isReg ? '.5' : '1'; }
   } catch(e) { el.textContent = '—'; }
 }
 
@@ -590,6 +598,17 @@ async function openRace10() {
     const r = await api('/admin/race10/open', { method:'POST' });
     const d = await r.json();
     if (r.ok) toast('Регистрация открыта');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadRace10();
+}
+
+async function closeRace10() {
+  if (!confirm('Закрыть регистрацию в Кровавую Башню? Все записавшиеся будут возвращены в "не зарегистрирован", забег не начнётся.')) return;
+  try {
+    const r = await api('/admin/race10/close', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Регистрация закрыта');
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadRace10();
