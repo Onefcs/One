@@ -239,6 +239,16 @@ function _balanceCache(field) {
 async function _incBalance(telegramId, field, delta) {
   if (!telegramId || !Number.isFinite(delta) || delta === 0) return null;
   try {
+    // An account that only ever pressed /start in the bot has savedData: null
+    // (the bot creates the row, the game initialises the object), and a dotted
+    // $inc against a null parent throws rather than creating it. That account
+    // can still be owed money — it may be someone's referrer, or a seller whose
+    // lot was bought — so give it an object first. The filter makes this a
+    // no-op for everyone else, i.e. one cheap extra write only in that case.
+    await PlayerModel.updateOne(
+      { telegramId: String(telegramId), savedData: null },
+      { $set: { savedData: {} } },
+    );
     const doc = await PlayerModel.findOneAndUpdate(
       { telegramId: String(telegramId) },
       { $inc: { [`savedData.${field}`]: delta } },
