@@ -3359,6 +3359,27 @@ async function _notifyClan(clan) {
   }
 }
 
+// Withdraws every pending application this telegramId has anywhere except
+// (optionally) one clan — called whenever their clan status is about to
+// change: applying elsewhere, getting approved, or founding their own. Without
+// this a stale application could sit in some other clan's queue indefinitely
+// and, if that leader later approved it, put the player in two clans at once
+// (nothing at the DB level stops that — see server/models/Clan.js).
+async function _clearOtherClanApplications(telegramId, exceptClanId = null) {
+  const filter = { 'applications.telegramId': telegramId };
+  if (exceptClanId) filter._id = { $ne: exceptClanId };
+  const others = await ClanModel.find(filter).catch(() => []);
+  if (!others.length) return;
+  await ClanModel.updateMany(
+    { _id: { $in: others.map(c => c._id) } },
+    { $pull: { applications: { telegramId } } }
+  ).catch(() => {});
+  for (const c of others) {
+    c.applications = c.applications.filter(a => a.telegramId !== telegramId);
+    await _notifyClan(c);
+  }
+}
+
 // ── Clan XP batching ─────────────────────────────────────────────────────────
 // Clan XP is +1 per monster kill. It used to be applied inline on every single
 // kill: a findOne on an unindexed embedded field, a full-document clan.save(),
@@ -5940,6 +5961,10 @@ io.on('connection', socket => {
       _myClanIcon = _cd ? _cd.icon : null;
       _myClanId   = _cd ? String(_cd._id) : null;
       currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
+      // Founding a clan makes any application still pending elsewhere moot —
+      // without this it could sit in that other clan's queue and get approved
+      // later, leaving this account in two clans at once.
+      await _clearOtherClanApplications(authed.telegramId);
     } catch (e) {
       if (e.code === 11000) socket.emit('clanError', { msg: 'Название занято' });
       else socket.emit('clanError', { msg: 'Ошибка создания' });
@@ -5965,23 +5990,15 @@ io.on('connection', socket => {
     // Only one pending application at a time — applying to a new clan
     // withdraws any application still pending elsewhere, so a leader never
     // approves someone who already joined a different clan in the meantime.
-    const otherPending = await ClanModel.find(
-      { _id: { $ne: clan._id }, 'applications.telegramId': authed.telegramId }
-    ).catch(() => []);
-    if (otherPending.length) {
-      await ClanModel.updateMany(
-        { _id: { $in: otherPending.map(c => c._id) } },
-        { $pull: { applications: { telegramId: authed.telegramId } } }
-      ).catch(() => {});
-      for (const c of otherPending) {
-        c.applications = c.applications.filter(a => a.telegramId !== authed.telegramId);
-        await _notifyClan(c);
-      }
-    }
+    await _clearOtherClanApplications(authed.telegramId, clan._id);
     if (clan.applications.find(a => a.telegramId === authed.telegramId)) return;
     clan.applications.push({ telegramId: authed.telegramId, username: authed.username });
     await clan.save().catch(() => {});
-    socket.emit('clanError', { msg: '✓ Заявка отправлена' });
+    // Dedicated event rather than piggybacking the generic 'clanError' channel
+    // with a checkmark-prefixed message — the client needs to tell this success
+    // apart from an actual error to give the applied button its own confirmed
+    // state instead of a toast that reads as a warning.
+    socket.emit('clanApplySent', { clanId: String(clan._id) });
     await _notifyClan(clan);
   });
 
@@ -6027,6 +6044,12 @@ io.on('connection', socket => {
     if (!_approved || !_approved.modifiedCount) {
       return socket.emit('clanError', { msg: 'Заявку уже обработали' });
     }
+    // Defensive: clanApply already keeps a player down to one pending
+    // application at a time, so there normally isn't anything left to clear
+    // here — but belt-and-suspenders against any future path (or a
+    // pre-existing stale row) that leaves a second one sitting in some other
+    // clan's queue, which a leader there could otherwise still approve.
+    await _clearOtherClanApplications(telegramId, clan._id);
     const _fresh = await ClanModel.findById(clan._id).catch(() => null);
     await _notifyClan(_fresh || clan);
   });

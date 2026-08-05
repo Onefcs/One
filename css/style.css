@@ -978,6 +978,7 @@ canvas { display:block; width:100%; height:100%; }
 .clan-btn-danger   { background:rgba(169,41,56,0.25); border:1px solid rgba(209,71,87,0.4); color:#ed5a6b; width:100%; padding:11px 0; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; }
 .clan-btn-sm       { padding:5px 10px; border:none; border-radius:7px; background:rgba(184,144,76,0.3); border:1px solid rgba(234,181,89,0.4); color:#eece94; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
 .clan-btn-sm.clan-btn-danger { background:rgba(171,49,64,0.25); border-color:rgba(209,79,94,0.4); color:#f17e8b; }
+.clan-btn-sm:disabled { opacity:.6; cursor:default; }
 .clan-form         { padding:0 0 16px; }
 .clan-back         { background:none; border:none; color:#be9f68; font-size:13px; cursor:pointer; padding:0 0 12px; touch-action:manipulation; }
 .clan-form-title   { font-size:16px; font-weight:800; color:#eece94; margin-bottom:14px; }

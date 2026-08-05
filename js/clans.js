@@ -608,6 +608,11 @@ let _clanHomeTab = 0;            // 0=клан, 1=участники, 2=навы
 // responds. Gold isn't server-tracked like GRAM, so this is enforced the
 // same way every other gold-spending action in this game already is.
 let _pendingClanCreateGold = false;
+// Clan id of an in-flight (or just-confirmed) application — drives the
+// "Отправка.../Отправлено" button state in the search results so clicking
+// "Вступить" gives instant feedback instead of the button just sitting there
+// until the round-trip completes.
+let _clanApplyPendingId = null;
 
 // "12/30" — the cap comes from shared/definitions.js so it can't drift from
 // what clanApprove actually enforces server-side. Rendered through the
@@ -705,6 +710,26 @@ function _clanSubmitCreate() {
 }
 
 // ── Search screen ─────────────────────────────────────────
+// Shared by _renderSearch's initial paint and onClanSearchResults' refresh
+// (the server round-trip that fills #clan-search-results in once results
+// actually arrive) so the pending/sent button state stays consistent
+// regardless of which of the two just re-rendered the row.
+function _clanResultRowHTML(c) {
+  const pending = _clanApplyPendingId === c._id;
+  const label = pending
+    ? (typeof t === 'function' ? t('clanApplySending') : 'Отправка...')
+    : (typeof t === 'function' ? t('clanJoinBtn') : 'Вступить');
+  return `
+    <div class="clan-result">
+      <div class="clan-result-icon">${clanIconSVG(c.icon, 36)}</div>
+      <div class="clan-result-info">
+        <div class="clan-result-name">${_esc(c.name)}</div>
+        <div class="clan-result-meta">${typeof tVars === 'function' ? tVars('clanLevelMembersFmt', { lvl: c.level, n: c.members }) : 'Ур. ' + c.level + ' · ' + c.members + ' участников'}</div>
+      </div>
+      <button class="clan-btn-sm" data-clan-id="${c._id}" ${pending ? 'disabled' : ''} onclick="_clanApplyTo('${c._id}')">${label}</button>
+    </div>`;
+}
+
 function _renderSearch(el) {
   let results;
   if (_clanSearchResults === null) {
@@ -712,15 +737,7 @@ function _renderSearch(el) {
   } else if (_clanSearchResults.length === 0) {
     results = '<div class="clan-nores">' + (typeof t === 'function' ? t('clanNotFound') : 'Кланы не найдены') + '</div>';
   } else {
-    results = _clanSearchResults.map(c => `
-    <div class="clan-result">
-      <div class="clan-result-icon">${clanIconSVG(c.icon, 36)}</div>
-      <div class="clan-result-info">
-        <div class="clan-result-name">${_esc(c.name)}</div>
-        <div class="clan-result-meta">${typeof tVars === 'function' ? tVars('clanLevelMembersFmt', { lvl: c.level, n: c.members }) : 'Ур. ' + c.level + ' · ' + c.members + ' участников'}</div>
-      </div>
-      <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">${typeof t === 'function' ? t('clanJoinBtn') : 'Вступить'}</button>
-    </div>`).join('');
+    results = _clanSearchResults.map(_clanResultRowHTML).join('');
   }
 
   el.innerHTML = `
@@ -915,10 +932,48 @@ function onClanData(data) {
   if (activeTab === 4) updateClanUI();
 }
 
+// Looks up the still-rendered "Вступить" button for a clan id, if the
+// search results happen to still be on screen — the apply can resolve after
+// the player has already navigated elsewhere, so every caller treats a miss
+// here as normal, not an error.
+function _clanApplyBtn(clanId) {
+  return document.querySelector(`.clan-btn-sm[data-clan-id="${clanId}"]`);
+}
+
+// Instant feedback the moment "Вступить" is tapped, instead of the button
+// just sitting there identical until the round-trip completes (which is what
+// made applying look like it did nothing). Targets the one button directly
+// rather than a full re-render, so it doesn't blow away whatever the player
+// has typed into the search box.
+function _clanApplyTo(clanId) {
+  if (_clanApplyPendingId) return; // one application in flight at a time
+  _clanApplyPendingId = clanId;
+  const btn = _clanApplyBtn(clanId);
+  if (btn) { btn.disabled = true; btn.textContent = typeof t === 'function' ? t('clanApplySending') : 'Отправка...'; }
+  netClanApply(clanId);
+}
+
+// Server confirmed the application landed (see the dedicated 'clanApplySent'
+// event, server/index.js) — leaves the button showing "Отправлено" rather
+// than reverting to "Вступить", so it's obvious afterwards which clan this
+// went to.
+function onClanApplySent(clanId) {
+  _clanApplyPendingId = null;
+  const btn = _clanApplyBtn(clanId);
+  if (btn) { btn.textContent = '✓ ' + (typeof t === 'function' ? t('clanApplySentBtn') : 'Отправлено'); }
+}
+
 function onClanError(msg) {
   if (_pendingClanCreateGold) {
     _pendingClanCreateGold = false;
     if (player) { player.gold += CLAN_CREATE_COST; if (typeof updateInvUI === 'function') updateInvUI(); }
+  }
+  // An apply that failed (already in a clan, clan vanished, etc.) — put the
+  // button back rather than leaving it stuck on "Отправка...".
+  if (_clanApplyPendingId) {
+    const btn = _clanApplyBtn(_clanApplyPendingId);
+    if (btn) { btn.disabled = false; btn.textContent = typeof t === 'function' ? t('clanJoinBtn') : 'Вступить'; }
+    _clanApplyPendingId = null;
   }
   const errEl = document.getElementById('clan-create-err');
   if (errEl) { errEl.textContent = msg; return; }
@@ -937,14 +992,6 @@ function onClanSearchResults(results) {
   const el = document.getElementById('clan-search-results');
   if (!el) return;
   el.innerHTML = results.length
-    ? results.map(c => `
-      <div class="clan-result">
-        <div class="clan-result-icon">${clanIconSVG(c.icon, 36)}</div>
-        <div class="clan-result-info">
-          <div class="clan-result-name">${_esc(c.name)}</div>
-          <div class="clan-result-meta">${typeof tVars === 'function' ? tVars('clanLevelMembersFmt', { lvl: c.level, n: c.members }) : 'Ур. ' + c.level + ' · ' + c.members + ' участников'}</div>
-        </div>
-        <button class="clan-btn-sm" onclick="netClanApply('${c._id}')">${typeof t === 'function' ? t('clanJoinBtn') : 'Вступить'}</button>
-      </div>`).join('')
+    ? results.map(_clanResultRowHTML).join('')
     : `<div class="clan-nores">${typeof t === 'function' ? t('clanNotFound') : 'Кланы не найдены'}</div>`;
 }

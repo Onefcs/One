@@ -848,6 +848,9 @@ function netConnect(onReady) {
   socket.on('clanSearchResults', results => {
     if (typeof onClanSearchResults === 'function') onClanSearchResults(results);
   });
+  socket.on('clanApplySent', ({ clanId }) => {
+    if (typeof onClanApplySent === 'function') onClanApplySent(clanId);
+  });
 
   // ── Raid listeners ────────────────────────────────────────
   socket.on('raidError', ({ msg }) => {

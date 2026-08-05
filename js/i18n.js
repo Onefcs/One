@@ -291,6 +291,8 @@ const I18N_UI = {
   clanNotFound:    { ru: 'Кланы не найдены', en: 'No clans found', uk: 'Клани не знайдено', es: 'No se encontraron clanes', tr: 'Klan bulunamadı', pt: 'Nenhum clã encontrado' },
   clanLevelMembersFmt: { ru: 'Ур. {lvl} · {n} участников', en: 'Lvl. {lvl} · {n} members', uk: 'Рів. {lvl} · {n} учасників', es: 'Niv. {lvl} · {n} miembros', tr: 'Sv. {lvl} · {n} üye', pt: 'Nív. {lvl} · {n} membros' },
   clanJoinBtn:     { ru: 'Вступить', en: 'Join', uk: 'Вступити', es: 'Unirse', tr: 'Katıl', pt: 'Entrar' },
+  clanApplySending:{ ru: 'Отправка...', en: 'Sending...', uk: 'Надсилання...', es: 'Enviando...', tr: 'Gönderiliyor...', pt: 'Enviando...' },
+  clanApplySentBtn:{ ru: 'Отправлено', en: 'Sent', uk: 'Надіслано', es: 'Enviado', tr: 'Gönderildi', pt: 'Enviado' },
   clanSearchTitle: { ru: 'Найти клан', en: 'Find Clan', uk: 'Знайти клан', es: 'Buscar Clan', tr: 'Klan Bul', pt: 'Buscar Clã' },
   clanNamePlaceholder2: { ru: 'Название клана...', en: 'Clan name...', uk: 'Назва клану...', es: 'Nombre del clan...', tr: 'Klan adı...', pt: 'Nome do clã...' },
   clanSearchBtn:   { ru: 'Найти', en: 'Search', uk: 'Знайти', es: 'Buscar', tr: 'Ara', pt: 'Buscar' },
