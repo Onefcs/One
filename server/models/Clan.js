@@ -16,6 +16,7 @@ const applicationSchema = new mongoose.Schema({
 const clanSchema = new mongoose.Schema({
   name:         { type: String, required: true, unique: true, maxlength: 10 },
   icon:         { type: Number, required: true, min: 1, max: 30 },
+  description:  { type: String, default: '', maxlength: 200 },
   members:      [memberSchema],
   applications: [applicationSchema],
   level:        { type: Number, default: 1, min: 1, max: 10 },

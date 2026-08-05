@@ -21,7 +21,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -768,6 +768,15 @@ function _sanitizeName(raw) {
 // called "tg_something" isn't mistaken for the fallback.
 function _safeUsername(raw, telegramId) {
   return _sanitizeName(raw) || `tg_${telegramId}`;
+}
+// Same character-stripping as _sanitizeName, but for the clan description
+// (CLAN_DESC_MAX_CHARS, well past _sanitizeName's 32-char username cap)
+// rather than a display name.
+function _sanitizeClanDesc(raw) {
+  return String(raw == null ? '' : raw)
+    .replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '')
+    .trim()
+    .slice(0, CLAN_DESC_MAX_CHARS);
 }
 
 // Login Widget verification (browser button)
@@ -3330,6 +3339,7 @@ function _clanDataWith(clan, telegramId, bmMap) {
     _id:          clan._id,
     name:         clan.name,
     icon:         clan.icon,
+    description:  clan.description || '',
     level:        clan.level,
     xp:           clan.xp,
     members:      clan.members.map(m => ({ telegramId: m.telegramId, username: m.username, role: m.role, bm: bmMap[m.telegramId] || 0 })),
@@ -3633,7 +3643,7 @@ io.on('connection', socket => {
     'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
     'getReferrals', 'getRating', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
-    'clanKick', 'clanLeave', 'clanDisband',
+    'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
@@ -5969,6 +5979,16 @@ io.on('connection', socket => {
       if (e.code === 11000) socket.emit('clanError', { msg: 'Название занято' });
       else socket.emit('clanError', { msg: 'Ошибка создания' });
     }
+  });
+
+  safeOn('clanSetDescription', async ({ description } = {}) => {
+    if (!authed) return;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    clan.description = _sanitizeClanDesc(description);
+    await clan.save().catch(() => {});
+    await _notifyClan(clan);
   });
 
   safeOn('clanSearch', async ({ query }) => {

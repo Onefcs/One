@@ -1355,6 +1355,9 @@ function netClanDecline(telegramId) {
 function netClanKick(telegramId) {
   if (socket?.connected) socket.emit('clanKick', { telegramId });
 }
+function netClanSetDescription(description) {
+  if (socket?.connected) socket.emit('clanSetDescription', { description });
+}
 function netClanLeave() {
   if (socket?.connected) socket.emit('clanLeave');
   clanData = null;

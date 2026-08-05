@@ -613,6 +613,11 @@ let _pendingClanCreateGold = false;
 // "Вступить" gives instant feedback instead of the button just sitting there
 // until the round-trip completes.
 let _clanApplyPendingId = null;
+// Leader-only clan description editing (Клан tab) — draft is seeded from the
+// live description each time editing starts, so cancelling never loses
+// anything and re-opening the editor always starts from what's actually saved.
+let _clanDescEditing = false;
+let _clanDescDraft = '';
 
 // "12/30" — the cap comes from shared/definitions.js so it can't drift from
 // what clanApprove actually enforces server-side. Rendered through the
@@ -760,6 +765,27 @@ function _clanDoSearch() {
 // ── Clan home screen ──────────────────────────────────────
 function _setClanHomeTab(n) { _clanHomeTab = n; updateClanUI(); }
 
+function _clanDescStartEdit() {
+  _clanDescDraft = (clanData && clanData.description) || '';
+  _clanDescEditing = true;
+  updateClanUI();
+}
+function _clanDescCancelEdit() {
+  _clanDescEditing = false;
+  updateClanUI();
+}
+function _clanDescSave() {
+  const inp = document.getElementById('clan-desc-inp');
+  const text = inp ? inp.value.trim() : _clanDescDraft.trim();
+  _clanDescEditing = false;
+  netClanSetDescription(text);
+  // Optimistic: the server will echo the (sanitized) real value back via
+  // clanData shortly, but there's no reason to wait for that round-trip to
+  // stop showing the editor.
+  if (clanData) clanData.description = text;
+  updateClanUI();
+}
+
 function _renderClanHome(el) {
   const c = clanData;
   const lvlDef = CLAN_LEVELS[(c.level || 1) - 1];
@@ -788,8 +814,28 @@ function _renderClanHome(el) {
 
   let bodyHtml = '';
   if (_clanHomeTab === 0) {
-    // ── Клан tab: info + XP bar + leave/disband ────────────
+    // ── Клан tab: description + XP bar + leave/disband ────────────
+    const descMax = typeof CLAN_DESC_MAX_CHARS !== 'undefined' ? CLAN_DESC_MAX_CHARS : 200;
+    let descHtml;
+    if (_clanDescEditing) {
+      descHtml = `
+        <div class="clan-desc-edit">
+          <textarea class="clan-input clan-desc-input" id="clan-desc-inp" maxlength="${descMax}"
+                    placeholder="${typeof t === 'function' ? t('clanDescPlaceholder') : 'Расскажите о клане...'}">${_esc(_clanDescDraft)}</textarea>
+          <div class="clan-desc-actions">
+            <button class="clan-btn-sm" onclick="_clanDescSave()">${typeof t === 'function' ? t('clanSaveBtn') : 'Сохранить'}</button>
+            <button class="clan-btn-sm clan-btn-danger" onclick="_clanDescCancelEdit()">${typeof t === 'function' ? t('clanCancelBtn') : 'Отмена'}</button>
+          </div>
+        </div>`;
+    } else {
+      descHtml = `
+        <div class="clan-desc${c.description ? '' : ' clan-desc-empty'}">
+          <span class="clan-desc-text">${c.description ? _esc(c.description) : (typeof t === 'function' ? t('clanDescEmpty') : 'Описание клана пока не добавлено')}</span>
+          ${isLeader ? `<button class="clan-desc-edit-btn" onclick="_clanDescStartEdit()" title="${typeof t === 'function' ? t('clanDescEditTitle') : 'Изменить описание'}">✎</button>` : ''}
+        </div>`;
+    }
     bodyHtml = `
+      ${descHtml}
       <div class="clan-xp-block">
         <div class="clan-xp-label">
           ${typeof t === 'function' ? t('clanPointsLbl') : 'Очки клана'}: ${c.xp.toLocaleString()}

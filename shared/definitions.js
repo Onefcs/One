@@ -645,6 +645,11 @@ const CLASS_GEAR_SALVAGE_RECIPES = [
 // clan is before approving an application.
 const CLAN_MAX_MEMBERS = 30;
 
+// Clan description cap. Enforced server-side in clanSetDescription; the
+// client uses it as the textarea's maxlength so the leader sees the limit
+// while typing instead of finding out only after saving.
+const CLAN_DESC_MAX_CHARS = 200;
+
 // Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
 const ENHANCE_MAX = 15;
 // Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js)
@@ -970,7 +975,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
