@@ -26,7 +26,7 @@ const {
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
-  RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_WINDOW_MS,
+  RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
 } = require('../shared/definitions');
@@ -1420,7 +1420,7 @@ app.get('/admin/event-boss', adminAuth, (req, res) => {
 });
 
 // Force-opens the Кровавая Башня registration window right now, same
-// RACE10_REG_MS window as the normal 20:00 MSK schedule — for whenever an
+// RACE10_REG_MS window as the normal 20:30 MSK schedule — for whenever an
 // admin wants to run it off-schedule. _race10OpenWindow/_race10PublicState
 // are defined further down the file; safe to reference here since this
 // callback only runs once a request arrives, well after the whole module
@@ -1434,10 +1434,11 @@ app.post('/admin/race10/open', adminAuth, (req, res) => {
 });
 
 // Cancels an open registration window early — same effect as the normal
-// 21:00 MSK auto-close (_race10CloseWindow): bumps everyone still queued
-// back to "not registered" and re-arms the scheduler for the next regular
-// 20:00 window. Does not touch an already-running race (_race10.live) —
-// there is nothing left in the queue by the time a race starts anyway.
+// close once the 5-minute registration period runs out (_race10CloseWindow):
+// bumps everyone still queued back to "not registered" and re-arms the
+// scheduler for the next regular 20:30 window. Does not touch an
+// already-running race (_race10.live) — there is nothing left in the queue
+// by the time a race starts anyway.
 app.post('/admin/race10/close', adminAuth, (req, res) => {
   if (_race10.phase !== 'reg') return res.status(409).json({ error: 'Регистрация не открыта' });
   _race10CloseWindow();
@@ -1666,7 +1667,7 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
 
   // Opens the Кровавая Башня registration window on the spot, with a short
   // registration period, so the event can actually be played through locally
-  // instead of only at 20:00 Moscow time. Same gate as the login helper above:
+  // instead of only at 20:30 Moscow time. Same gate as the login helper above:
   // this route does not exist in a normal deployment.
   app.post('/dev/race10/open', (req, res) => {
     const regMs = Math.max(1000, Math.min(Number(req.query.reg) || 5000, 300000));
@@ -2382,8 +2383,8 @@ const _EVENT_TEXT = {
     now:  () => '🗡 <b>Битва на смерть</b>\n\nРегистрация открыта — заходи и записывайся, бой начнётся через 5 минут.\nПосле старта присоединиться уже нельзя.',
   },
   race10: {
-    soon: (m) => `🏃 <b>Кровавая Башня</b>\n\nОкно регистрации откроется через ${m} мин. — с 20:00 до 21:00 по Москве.\nПобеждает тот, кто нанесёт общему боссу больше всего урона.`,
-    now:  () => '🏃 <b>Кровавая Башня открыта!</b>\n\nЗаписывайся в игре — как наберётся 10 человек, старт. Окно открыто до 21:00 по Москве.',
+    soon: (m) => `🏃 <b>Кровавая Башня</b>\n\nОкно регистрации откроется через ${m} мин. — в 20:30 по Москве, всего на 5 минут.\nПобеждает тот, кто нанесёт общему боссу больше всего урона.`,
+    now:  () => '🏃 <b>Кровавая Башня открыта!</b>\n\nЗаписывайся в игре — старт через 5 минут со всеми, кто успел.',
   },
   a3: {
     soon: (m) => `⚔️ <b>Арена 3х3</b>\n\nОкно регистрации откроется через ${m} мин. — с 21:00 до 22:00 по Москве.`,
@@ -2945,7 +2946,7 @@ async function _a3Finish(winner, wedged) {
 }
 
 // ── Кровавая Башня (corridor race) ──────────────────────────────────────────
-// Registration opens at 20:00 MSK and everyone who signs up runs — no fixed
+// Registration opens at 20:30 MSK and everyone who signs up runs — no fixed
 // headcount. RACE10_REG_MS later the whole field starts at once, one sealed
 // lane each (server/game/dungeon.js race10): 60 level-5 monsters then 60
 // level-10, packed shoulder to shoulder, no way past but through. Every lane
@@ -2984,7 +2985,7 @@ function _race10Capacity() {
 }
 
 const _race10 = {
-  phase: 'idle',        // 'idle' → 'reg' (20:00–21:00 MSK window) → 'idle'
+  phase: 'idle',        // 'idle' → 'reg' (20:30 MSK, RACE10_REG_MS window) → 'idle'
   queue: new Map(),    // socketId -> { name, lvl }
   live: false,
   starting: false,     // guards the async attempt re-check inside _race10TryStart
@@ -2997,10 +2998,10 @@ const _race10 = {
   freezeTimer: null,
   maxTimer: null,
   startTimer: null,
-  openTimer: null, closeTimer: null, notifyTimer: null,
+  openTimer: null, notifyTimer: null,
 };
 
-// Next scheduled window open, in UTC ms — every day, 20:00 Moscow. Lives in
+// Next scheduled window open, in UTC ms — every day, 20:30 Moscow. Lives in
 // shared/definitions.js (RACE10_DAYS_MSK/HOURS_MSK) so it's computed the
 // same way the death battle's and world boss's own schedules are.
 function _race10NextOpenAt(from = Date.now()) {
@@ -3030,7 +3031,7 @@ function _race10Broadcast() {
   _race10.names.forEach((_, sid) => io.to(sid).emit('race10State', st));
 }
 
-// Arms the next daily window (20:00 MSK) plus its 30-minute warning. Called
+// Arms the next daily window (20:30 MSK) plus its 30-minute warning. Called
 // at boot and after every window closes; if the process starts inside the
 // window itself the open-timeout is already due and fires immediately with
 // whatever time is left, same as _dbSchedule.
@@ -3044,35 +3045,41 @@ function _race10Schedule() {
   if (warnIn > 0) _race10.notifyTimer = setTimeout(() => notifyEventSoon('race10', openAt), warnIn);
 }
 
-// Opens registration at 20:00 MSK and arms the single start RACE10_REG_MS
+// Opens registration at 20:30 MSK and arms the single start RACE10_REG_MS
 // later. Everyone signed up by then runs; there is no headcount to reach and
 // no second race in the same window, so the five minutes are the whole of the
-// opportunity — which is what the 30-minute warning broadcast is for.
+// opportunity — which is what the 30-minute warning broadcast is for. The
+// window closes itself the moment that single start attempt is processed
+// (_race10Start below calls _race10CloseWindow once it's done, win or no
+// players) — there's nothing left to wait around for after that.
 // regMs is only ever passed by the local dev opener (see the DEV_LOCAL block
 // near the top of this file) so the event can be exercised without waiting for
-// 20:00; the scheduled path always uses RACE10_REG_MS.
+// 20:30; the scheduled path always uses RACE10_REG_MS.
 function _race10OpenWindow(openAt, regMs = RACE10_REG_MS) {
   _race10.phase = 'reg';
   _race10.startAt = Date.now() + regMs;
   notifyEventStarted('race10', openAt);
-  clearTimeout(_race10.closeTimer);
-  _race10.closeTimer = setTimeout(_race10CloseWindow, RACE10_WINDOW_MS);
   clearTimeout(_race10.startTimer);
   _race10.startTimer = setTimeout(_race10StartSafe, regMs);
   _race10Broadcast();
 }
 
-// Closes the window at 21:00 MSK. Anyone still queued (a start that was
-// cancelled for want of players, say) is bumped back to "not registered" — a
-// race already under way keeps running on its own RACE10_MAX_MS clock.
-function _race10CloseWindow() {
+// Closes registration early — either RACE10_REG_MS after opening, once
+// _race10Start has processed the day's one attempt (silent: true, since
+// anyone still queued by then already got a more specific message about why),
+// or from an admin's manual "close now" (server-authoritative, no silent
+// flag — those callers want the generic notice). Either way there is no
+// second start left in this window, so this always re-arms tomorrow's.
+function _race10CloseWindow(opts = {}) {
   _race10.phase = 'idle';
   _race10.startAt = 0;
   clearTimeout(_race10.startTimer);
-  [..._race10.queue.keys()].forEach(sid => {
-    io.to(sid).emit('race10Registered', { registered: false });
-    io.to(sid).emit('race10Error', { msg: 'Окно Кровавой Башни закрылось — до встречи в 20:00' });
-  });
+  if (!opts.silent) {
+    [..._race10.queue.keys()].forEach(sid => {
+      io.to(sid).emit('race10Registered', { registered: false });
+      io.to(sid).emit('race10Error', { msg: 'Окно Кровавой Башни закрылось — до встречи в 20:30' });
+    });
+  }
   _race10.queue.clear();
   _race10Schedule();
   _race10Broadcast();
@@ -3091,7 +3098,7 @@ async function _race10Start() {
   if (_race10.live || _race10.starting) return;
   _race10.startAt = 0;
   const room = getRoom(1);
-  if (!room) return;
+  if (!room) { _race10CloseWindow({ silent: true }); return; }
   // Only entrants still connected and still standing in the world can be
   // deployed; anyone else is dropped rather than counted.
   const ready = [..._race10.queue.keys()].filter(sid =>
@@ -3099,13 +3106,13 @@ async function _race10Start() {
   [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
   if (ready.length < RACE10_MIN_PLAYERS) {
     // Not enough showed up. Nobody is charged an attempt (that happens on
-    // deploy), and registration stays open for the rest of the window in case
-    // the panel is still in front of someone — but there is no second start,
-    // so this is effectively "not today".
+    // deploy) — there is no second start, so this is "not today" and
+    // registration closes right along with it (silent: already told these
+    // exact sockets why, above).
     ready.forEach(sid => io.to(sid).emit('race10Error', {
       msg: `Забег отменён — нужно минимум ${RACE10_MIN_PLAYERS} участника`,
     }));
-    _race10Broadcast();
+    _race10CloseWindow({ silent: true });
     return;
   }
 
@@ -3114,6 +3121,10 @@ async function _race10Start() {
     await _race10Deploy(ready, room);
   } finally {
     _race10.starting = false;
+    // One start per window, successful or not — close registration the
+    // moment it's been attempted (queue is already drained by _race10Deploy
+    // either way, so this is just phase/reschedule bookkeeping by now).
+    _race10CloseWindow();
   }
 }
 
@@ -5499,9 +5510,10 @@ io.on('connection', socket => {
     if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы уже записаны на битву на смерть' });
     }
-    // The two windows are adjacent (Кровавая Башня 20:00–21:00, this one
-    // 21:00–22:00) with its own 15-minute overrun grace period, so a race
-    // can genuinely still be live right as this one opens.
+    // Кровавая Башня's 5-minute registration (20:30) and its own 15-minute
+    // overrun grace period normally wrap up well before this window opens at
+    // 21:00, but an admin can force-open either one off-schedule, so a race
+    // can in principle still be live right as this one opens.
     if (_race10.alive.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы сейчас в Кровавой Башне' });
     }
@@ -5541,7 +5553,7 @@ io.on('connection', socket => {
   safeOn('race10Register', async () => {
     if (!authed) return;
     if (_race10.live && _race10.alive.has(socket.id)) return;
-    if (_race10.phase !== 'reg') return socket.emit('race10Error', { msg: 'Кровавая Башня открыта с 20:00 до 21:00 по Москве' });
+    if (_race10.phase !== 'reg') return socket.emit('race10Error', { msg: 'Кровавая Башня открыта в 20:30 по Москве, всего на 5 минут' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('race10Error', { msg: 'Выберите персонажа' });
     if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {

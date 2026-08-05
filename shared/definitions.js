@@ -812,13 +812,13 @@ const WORLD_BOSS_DAYS_MSK  = [1, 3, 5, 0];
 const WORLD_BOSS_HOURS_MSK = [20];
 
 // ── Corridor race schedule ───────────────────────────────────────────────────
-// Every day, 20:00–21:00 by Moscow time — registration is only open inside
-// this window (see _race10Schedule, server/index.js). Unlike the death
-// battle (one scheduled start) the queue can fire off more than one race
-// during the hour if enough players keep signing up.
+// Every day, registration opens at 20:30 Moscow time for RACE10_REG_MS (5
+// minutes, server/index.js) and then closes for the day — there is exactly
+// one start per window (see _race10Start there), so leaving registration
+// open any longer than that would just accept sign-ups for a race that
+// already ran.
 const RACE10_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
-const RACE10_HOURS_MSK = [20];
-const RACE10_WINDOW_MS = 60 * 60 * 1000;
+const RACE10_HOURS_MSK = [20.5];
 
 // ── 3v3 arena schedule ───────────────────────────────────────────────────────
 // Every day, 21:00–22:00 by Moscow time — same reg-window shape as the
@@ -981,7 +981,7 @@ if (typeof module !== 'undefined') module.exports = {
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
-  RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_WINDOW_MS,
+  RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
 };

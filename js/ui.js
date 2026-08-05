@@ -3367,9 +3367,9 @@ function _arena3BodyHTML() {
 }
 
 // ── Кровавая Башня tab (10-player corridor race) ────────────────────────────
-// Open every day 20:00–21:00 MSK (see _race10Schedule, server/index.js) —
-// same reg/idle phase shape as _deathBattleBodyHTML above, plus the queue
-// count and team-less damage race once the window is open.
+// Open every day at 20:30 MSK for 5 minutes (see _race10Schedule,
+// server/index.js) — same reg/idle phase shape as _deathBattleBodyHTML
+// above, plus the queue count and team-less damage race once open.
 function _race10BodyHTML() {
   const st = (typeof _race10State !== 'undefined' && _race10State) || { phase: 'idle', nextAt: 0, queued: 0, startAt: 0, capacity: 0, minLevel: 10, reward: 10 };
   const inMatch = typeof _race10InMatch !== 'undefined' && _race10InMatch;

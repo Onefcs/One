@@ -239,8 +239,9 @@ function netConnect(onReady) {
       _dbRegistered = !!dbs.registered;
       if (typeof onDeathBattleState === 'function') onDeathBattleState();
     }
-    // Кровавая Башня: same idea — joining before/during the 20:00–21:00 MSK
-    // window shows the live phase and countdown instead of "not known yet".
+    // Кровавая Башня: same idea — joining before/during the 20:30 MSK,
+    // 5-minute window shows the live phase and countdown instead of "not
+    // known yet".
     if (r10s) {
       _race10State = {
         queued: r10s.queued || 0, needed: r10s.needed || 10, live: !!r10s.live,
@@ -2438,7 +2439,7 @@ function _initRace10Handlers(s) {
       minLevel: st.minLevel || 10, reward: st.reward || 50,
       maxAttempts: st.maxAttempts || _race10State.maxAttempts || 3,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _race10State.attemptsLeft,
-      // 'idle' outside the 20:00–21:00 MSK window, 'reg' while it's open —
+      // 'idle' outside the 20:30 MSK, 5-minute window, 'reg' while it's open —
       // nextAt is the next window's open time; startAt is when registration
       // closes and the run itself starts, used for the countdown while
       // phase is 'reg' (see _race10BodyHTML, js/ui.js).
