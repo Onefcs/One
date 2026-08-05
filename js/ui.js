@@ -42,8 +42,11 @@ function updateInvUI() {
   const p = player;
   const inv = p.inventory;
 
-  // Equipment grid (5 columns × 2 rows)
-  document.getElementById('eq-grid').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }) => {
+  // Equipment diamond: left column = weapon/helmet/body/gloves, right column
+  // = boots/ring/belt/pet (EQ_SLOTS' own order, see js/definitions.js), with
+  // the animated portrait (eq-center-canvas) floating between them — see
+  // _startInvPortraitAnim below.
+  const _eqCellHtml = ({ slot, label, emptyIcon }) => {
     const it = p.equipment[slot];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '';
     const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
@@ -54,7 +57,10 @@ function updateInvUI() {
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
       ${enhBadge}
     </div>`;
-  }).join('');
+  };
+  document.getElementById('eq-col-left').innerHTML  = EQ_SLOTS.slice(0, 4).map(_eqCellHtml).join('');
+  document.getElementById('eq-col-right').innerHTML = EQ_SLOTS.slice(4).map(_eqCellHtml).join('');
+  _startInvPortraitAnim();
 
   // Character preview
   const _bag = p.potionBag || {};
@@ -112,6 +118,74 @@ function updateInvUI() {
       ${enh}${cntBadge}
     </div>`;
   }).join('');
+}
+
+// ── Inventory portrait (eq-center-canvas) ──────────────────
+// Always shows the player's frontleft-idle animation, looping, instead of a
+// static class icon — same rasterize-then-draw approach as the char-select
+// preview (_csDrawFrame, js/charselect.js), just pinned to one direction/
+// state rather than switching with input. Self-terminating: each tick checks
+// the panel is still open before scheduling the next frame, so leaving the
+// Персонаж tab (or the Инвентарь sub-tab) stops it within one frame without
+// needing an explicit stop call anywhere panels get switched.
+let _invPortraitRAF = null;
+let _invPortraitState = { frame: 0, timer: 0, type: null };
+const _INV_PORTRAIT_ANIM = 'frontleft-idle';
+
+function _startInvPortraitAnim() {
+  if (_invPortraitRAF) return;
+  let last = performance.now();
+  function tick(now) {
+    const panel = document.getElementById('panel-inv');
+    const canvas = document.getElementById('eq-center-canvas');
+    if (!panel || !panel.classList.contains('open') || _invTab !== 0 || !canvas) {
+      _invPortraitRAF = null;
+      return;
+    }
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    _drawInvPortraitFrame(canvas, dt);
+    _invPortraitRAF = requestAnimationFrame(tick);
+  }
+  _invPortraitRAF = requestAnimationFrame(tick);
+}
+
+function _drawInvPortraitFrame(canvas, dt) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const type = player && player.type;
+  const def = type && SPRITE_DEF[type];
+  const animDef = def && def.anims[_INV_PORTRAIT_ANIM];
+  if (!type || !def || !animDef) return;
+
+  if (_invPortraitState.type !== type) _invPortraitState = { frame: 0, timer: 0, type };
+  const s = _invPortraitState;
+  const fps = animDef.fps || 7;
+  s.timer += dt;
+  while (s.timer >= 1 / fps) { s.timer -= 1 / fps; s.frame = (s.frame + 1) % animDef.n; }
+
+  const img = spriteCache[type] && spriteCache[type][_INV_PORTRAIT_ANIM];
+  if (img && _sheetReady(img)) {
+    const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
+    const col = s.frame % animDef.cols;
+    const row = Math.floor(s.frame / animDef.cols);
+    ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, W, H);
+    return;
+  }
+  // Sheet not loaded/rasterized yet (shouldn't normally happen — loadSprites
+  // runs for the player's own type at gameStart) — kick off loading and show
+  // the class-colored fallback the char-select canvas uses meanwhile.
+  if (typeof loadSprites === 'function') loadSprites(type, () => {});
+  const cd = CHAR_DEF[type];
+  if (!cd) return;
+  ctx.fillStyle = cd.color + 'aa';
+  ctx.beginPath();
+  ctx.arc(W / 2, H / 2, Math.min(W, H) * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = cd.color;
+  ctx.lineWidth = 3;
+  ctx.stroke();
 }
 
 // ─────────────────────────────────────────────────────────
