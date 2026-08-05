@@ -246,7 +246,7 @@ function netConnect(onReady) {
         queued: r10s.queued || 0, needed: r10s.needed || 10, live: !!r10s.live,
         minLevel: r10s.minLevel || 10, reward: r10s.reward || 50,
         maxAttempts: r10s.maxAttempts || 3, attemptsLeft: null,
-        phase: r10s.phase || 'idle', nextAt: r10s.nextAt || 0,
+        phase: r10s.phase || 'idle', nextAt: r10s.nextAt || 0, startAt: r10s.startAt || 0,
       };
       _race10Registered = !!r10s.registered;
       if (typeof onRace10State === 'function') onRace10State();
@@ -2358,8 +2358,10 @@ function _initRace10Handlers(s) {
       maxAttempts: st.maxAttempts || _race10State.maxAttempts || 3,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _race10State.attemptsLeft,
       // 'idle' outside the 20:00–21:00 MSK window, 'reg' while it's open —
-      // nextAt is the next window's open time, used for the countdown.
-      phase: st.phase || 'idle', nextAt: st.nextAt || 0,
+      // nextAt is the next window's open time; startAt is when registration
+      // closes and the run itself starts, used for the countdown while
+      // phase is 'reg' (see _race10BodyHTML, js/ui.js).
+      phase: st.phase || 'idle', nextAt: st.nextAt || 0, startAt: st.startAt || 0,
     };
     if (st.registered !== undefined) _race10Registered = !!st.registered;
     if (st.inMatch !== undefined) _race10InMatch = !!st.inMatch;
