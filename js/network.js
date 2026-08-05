@@ -523,15 +523,6 @@ function netConnect(onReady) {
     if (activeTab === 2 && typeof drawMapPanel === 'function') drawMapPanel();
   });
 
-  // The server refused a movement packet as too large a jump (see MAX_STEP in
-  // server/game/Room.js) and is telling us where it still thinks we are. Only
-  // reachable through a modified client or a genuinely broken frame, but
-  // adopting it keeps the two copies from drifting apart if it ever fires.
-  socket.on('posCorrection', ({ x, y } = {}) => {
-    if (!player || !isFinite(x) || !isFinite(y)) return;
-    player.x = x; player.y = y;
-  });
-
   socket.on('playerHurt', ({ id, hp, dmg }) => {
     if (player && id === socket.id) {
       // No safe-zone check here on purpose. The server decides who can be

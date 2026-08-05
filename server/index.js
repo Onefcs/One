@@ -189,7 +189,32 @@ const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram ch
 const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
 let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
 
-// In-memory gram balance cache: telegramId → balance (survives autosave overwrites)
+// ── Balances ──────────────────────────────────────────────────────────────────
+// GRAM and Liberty (Nexum) are real money, and the database is the only place
+// that decides what they are. Every movement goes through _incBalance or
+// _spendBalance below: one atomic $inc, keyed on the account, whose returned
+// value is then adopted everywhere else.
+//
+// What this replaces: every path used to read a balance, add to it in JavaScript
+// and write the whole number back with $set. Two credits landing in the same
+// window — a market sale while a deposit is being confirmed, a kill drop while a
+// purchase is in flight — each wrote a total computed before the other, so one of
+// them simply vanished. A player would watch GRAM arrive and then disappear.
+// $inc has no such window: the database applies the delta to whatever it holds
+// at that moment, and concurrent deltas add up instead of overwriting.
+//
+// Two rules follow from this and matter for anything added later:
+//   • never write savedData.gramBalance / savedData.nexumBalance with $set —
+//     that is what reintroduces the bug. The periodic save deliberately no
+//     longer carries either field (see _sanitizeSavedStats, which strips them
+//     from the client blob, and the save paths, which no longer add them back).
+//   • a spend must use _spendBalance, whose $gte filter makes "can they afford
+//     it" and "take it" a single operation. Checking the cached figure first
+//     and deducting afterwards is exactly the race this removes.
+//
+// The Maps below stay as a read cache for display and for spend decisions made
+// before the write; they are refreshed from the value the database returns, so
+// they can lag but never lead.
 const _gramBalanceCache = new Map();
 
 // Same pattern for Nexum. Nexum is server-granted only (mob drops, special-quest
@@ -199,6 +224,60 @@ const _gramBalanceCache = new Map();
 // between two saves). All server-side writers update this map; every persist
 // reads nexumBalance from here, never from the client payload.
 const _nexumBalanceCache = new Map();
+
+function _balanceCache(field) {
+  return field === 'gramBalance' ? _gramBalanceCache : _nexumBalanceCache;
+}
+
+// Adds `delta` (negative to subtract) and returns the resulting balance, or
+// null if the account could not be found. The returned figure is the database's
+// own, post-write, so callers must use it rather than their own arithmetic.
+//
+// $inc creates the field when it is missing, which is what a brand-new account
+// needs; it does throw when savedData itself is null, so the login paths
+// initialise savedData to {} before anyone can earn anything.
+async function _incBalance(telegramId, field, delta) {
+  if (!telegramId || !Number.isFinite(delta) || delta === 0) return null;
+  try {
+    const doc = await PlayerModel.findOneAndUpdate(
+      { telegramId: String(telegramId) },
+      { $inc: { [`savedData.${field}`]: delta } },
+      { new: true, projection: { [`savedData.${field}`]: 1 } },
+    ).lean();
+    if (!doc) return null;
+    // Rounded for the cache and for display only — the stored value keeps full
+    // precision. Repeated $inc of the 0.0000001 kill drop drifts by ~1e-10 over
+    // thousands of hits, far below the seventh decimal anything ever shows.
+    const v = _round7(doc.savedData?.[field] ?? 0);
+    _balanceCache(field).set(String(telegramId), v);
+    return v;
+  } catch (err) {
+    console.error(`_incBalance(${field}):`, err);
+    return null;
+  }
+}
+
+// Takes `amount` only if the stored balance covers it. Returns the new balance,
+// or null when there wasn't enough — in which case nothing was written at all.
+// The $gte filter is the whole point: affordability and deduction are one
+// operation, so two purchases sent together can't both pass the check.
+async function _spendBalance(telegramId, field, amount) {
+  if (!telegramId || !Number.isFinite(amount) || amount <= 0) return null;
+  try {
+    const doc = await PlayerModel.findOneAndUpdate(
+      { telegramId: String(telegramId), [`savedData.${field}`]: { $gte: amount } },
+      { $inc: { [`savedData.${field}`]: -amount } },
+      { new: true, projection: { [`savedData.${field}`]: 1 } },
+    ).lean();
+    if (!doc) return null;
+    const v = _round7(doc.savedData?.[field] ?? 0);
+    _balanceCache(field).set(String(telegramId), v);
+    return v;
+  } catch (err) {
+    console.error(`_spendBalance(${field}):`, err);
+    return null;
+  }
+}
 
 // Single-session enforcement: telegramId → socket.id of the active session
 const activeSessions = new Map();
@@ -447,27 +526,23 @@ async function _handleAdminCallback(cq) {
   if ((confirmed && tx.type === 'deposit') || (!confirmed && tx.type === 'withdraw')) {
     const doc = await PlayerModel.findOne({ telegramId: tx.telegramId });
     if (doc) {
-      // Base on _gramBalanceCache (live, up-to-the-second) rather than the DB's
-      // savedData snapshot, and write back with a targeted $set — a full-document
-      // findOne-then-save here can read a stale balance (the player's own
-      // gameplay autosave landing in between) and then clobber it, which is how
-      // an approved deposit could add its amount on top of the wrong base and
-      // wipe out balance changes that happened in the meantime.
-      const newBal = _round7((_gramBalanceCache.get(tx.telegramId) ?? (doc.savedData?.gramBalance || 0)) + tx.amount);
-      await PlayerModel.updateOne({ telegramId: tx.telegramId }, { $set: { 'savedData.gramBalance': newBal } });
-      _gramBalanceCache.set(tx.telegramId, newBal);
-      io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
-      _logBal = newBal;
+      // A confirmed deposit, or a rejected withdrawal being refunded. Both are
+      // a pure "+amount" against whatever the account holds when the write
+      // lands — the admin may well be pressing this button while the player is
+      // out farming, and neither side should be able to erase the other.
+      const newBal = await _incBalance(tx.telegramId, 'gramBalance', tx.amount);
+      if (newBal !== null) {
+        io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
+        _logBal = newBal;
+      }
 
       // 5% referral bonus on confirmed deposit
       if (confirmed && tx.type === 'deposit' && doc.referredBy) {
         const bonus = Math.round(tx.amount * 0.05 * 100) / 100;
         if (bonus > 0) {
           const refDoc = await PlayerModel.findOne({ telegramId: doc.referredBy });
-          if (refDoc) {
-            const refNewBal = _round7((_gramBalanceCache.get(doc.referredBy) ?? (refDoc.savedData?.gramBalance || 0)) + bonus);
-            await PlayerModel.updateOne({ telegramId: doc.referredBy }, { $set: { 'savedData.gramBalance': refNewBal } });
-            _gramBalanceCache.set(doc.referredBy, refNewBal);
+          const refNewBal = refDoc ? await _incBalance(doc.referredBy, 'gramBalance', bonus) : null;
+          if (refDoc && refNewBal !== null) {
             io.to(`tg_${doc.referredBy}`).emit('gramBalanceUpdate', { balance: refNewBal });
             io.to(`tg_${doc.referredBy}`).emit('refBonusReceived', {
               bonus,
@@ -1102,35 +1177,24 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     const _liveSock = io.sockets.sockets.get(activeSessions.get(String(req.params.tid)) || '');
     const _giveGoldLive = gold ? _liveSock?.data?._adminGiveGold : null;
     if (gold)  saved.gold          = (saved.gold || 0) + gold;
-    if (nexum) {
-      // If the player is online, base the grant on the live cache (authoritative)
-      // and update it, so their session's next save can't roll the grant back.
-      const curN = _nexumBalanceCache.has(p.telegramId)
-        ? _nexumBalanceCache.get(p.telegramId) : (saved.nexumBalance || 0);
-      const newN = curN + Number(nexum);
-      saved.nexumBalance = newN;
-      if (_nexumBalanceCache.has(p.telegramId)) _nexumBalanceCache.set(p.telegramId, newN);
-    }
+    // Both balances move by $inc against the live document — the player may be
+    // online and earning while the admin types, and neither side should
+    // overwrite the other. A negative figure is a valid way to take money back,
+    // which is why this uses _incBalance and not _spendBalance.
+    if (nexum) await _incBalance(p.telegramId, 'nexumBalance', nexum);
     if (gram) {
-      // Same live-cache-first pattern as nexum above — basing this on
-      // saved.gramBalance alone (a DB snapshot) could diverge from the
-      // player's actual live balance if they're currently online.
-      const curG = _gramBalanceCache.has(p.telegramId)
-        ? _gramBalanceCache.get(p.telegramId) : (saved.gramBalance || 0);
-      const newG = curG + Number(gram);
-      saved.gramBalance = newG;
-      _gramBalanceCache.set(p.telegramId, newG);
-      io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
+      const newG = await _incBalance(p.telegramId, 'gramBalance', gram);
+      if (newG !== null) io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
     }
     // Targeted $set on just the touched fields — a full-document save from
     // this snapshot would revert any other savedData field this account's
     // own gameplay autosave wrote in the same window.
+    // Only gold goes through $set here — the two real balances were already
+    // moved atomically above and must never be written as an absolute.
     const _giveSet = {};
     // Gold handled by the live session when the player is online (see above);
     // only write it here when nobody is holding a newer copy in memory.
     if (gold && !_giveGoldLive) _giveSet['savedData.gold'] = saved.gold;
-    if (nexum) _giveSet['savedData.nexumBalance'] = saved.nexumBalance;
-    if (gram)  _giveSet['savedData.gramBalance'] = saved.gramBalance;
     if (Object.keys(_giveSet).length) await PlayerModel.updateOne({ _id: p._id }, { $set: _giveSet });
     if (_giveGoldLive) await _giveGoldLive(gold);
     io.to(`tg_${p.telegramId}`).emit('adminGive', { gold, nexum, gram });
@@ -1687,10 +1751,20 @@ function _looksLikeCatastrophicReset(prev, next) {
   return isBlank;
 }
 
+// Progress writer. The two real-money balances are structurally excluded here
+// rather than merely omitted by every caller: this function takes a whole blob
+// (`{..._lastStats}`, the sanitized client save), and one future field slipping
+// into that blob would silently turn a periodic progress save back into an
+// absolute balance write — which is the entire bug the $inc migration removed.
+// Balances move only through _incBalance/_spendBalance.
+const _BALANCE_FIELDS = ['gramBalance', 'nexumBalance'];
 function _persistSavedFields(authed, fields, extra) {
   if (!authed) return;
   const set = {};
-  Object.keys(fields).forEach(k => { if (fields[k] !== undefined) set[`savedData.${k}`] = fields[k]; });
+  Object.keys(fields).forEach(k => {
+    if (fields[k] === undefined || _BALANCE_FIELDS.includes(k)) return;
+    set[`savedData.${k}`] = fields[k];
+  });
   if (extra) Object.keys(extra).forEach(k => { set[k] = extra[k]; });
   // Returns the write promise so callers that need the persist to actually
   // land before proceeding (see socket.data._flushNow above) can await it;
@@ -1973,17 +2047,11 @@ async function _grantPartyDungeonNexum(winnerSocketId, amount) {
   const s = io.sockets.sockets.get(winnerSocketId);
   const tid = s?.data?.telegramId;
   if (tid == null) return;
-  try {
-    const updated = await PlayerModel.findOneAndUpdate(
-      { telegramId: tid },
-      { $inc: { 'savedData.nexumBalance': amount } },
-      { new: true }
-    ).select('savedData.nexumBalance');
-    if (!updated) return;
-    const newBal = updated.savedData?.nexumBalance || 0;
-    _nexumBalanceCache.set(tid, newBal);
-    io.to(winnerSocketId).emit('partyDungeonNexum', { amount, balance: newBal });
-  } catch (e) { console.error('party dungeon nexum grant:', e); }
+  // This path was already atomic before the rest of the economy caught up with
+  // it; it now shares the same helper as everything else.
+  const newBal = await _incBalance(tid, 'nexumBalance', amount);
+  if (newBal === null) return;
+  io.to(winnerSocketId).emit('partyDungeonNexum', { amount, balance: newBal });
 }
 
 // Both the raid ("Подземелье 1") and the party dungeon ("Лабиринт") allow
@@ -3291,24 +3359,52 @@ io.on('connection', socket => {
   // 10-connection pool as every real progress save; the queueing is felt as
   // the whole server going syrupy for a moment.
   //
-  // Every one of those writes was also redundant. The authoritative live value
-  // is _gramBalanceCache/_nexumBalanceCache (see _liveGram/_liveNexum), and the
-  // balances already ride the 60s autosave, the 3s debounced saveProgress and
-  // the disconnect flush. So a drop now just marks the balances dirty and one
-  // coalesced write covers the whole burst.
+  // So a burst of drops is accumulated here and lands as ONE write. What is
+  // accumulated is the DELTA, not the resulting total: the flush is an $inc, so
+  // whatever else credited the account meanwhile (a market sale, an admin
+  // deposit) is added to rather than replaced. The mirror is advanced
+  // optimistically as drops land so the HUD stays live, then reconciled with
+  // the figure the database returns on flush.
   const BALANCE_PERSIST_MS = 10000;
   let _balancePersistTimer = null;
-  let _balancesDirty = false;
-  function _flushBalances() {
+  let _gramPending = 0;    // GRAM earned since the last flush
+  let _nexumPending = 0;   // Liberty earned since the last flush
+  async function _flushBalances() {
     if (_balancePersistTimer) { clearTimeout(_balancePersistTimer); _balancePersistTimer = null; }
-    if (!_balancesDirty || !authed) return;
-    _balancesDirty = false;
-    return _persistSavedFields(authed, { gramBalance: _liveGram(), nexumBalance: _liveNexum() });
+    if (!authed) return;
+    const g = _gramPending, n = _nexumPending;
+    // Cleared before the awaits so drops landing during the write are counted
+    // toward the NEXT flush instead of being written twice.
+    _gramPending = 0; _nexumPending = 0;
+    if (g > 0) {
+      const v = await _incBalance(authed.telegramId, 'gramBalance', g);
+      if (v !== null) _gramBalance = v;
+    }
+    if (n > 0) {
+      const v = await _incBalance(authed.telegramId, 'nexumBalance', n);
+      if (v !== null) _nexumBalance = v;
+    }
+  }
+  // Adds an earned amount: visible immediately, persisted within
+  // BALANCE_PERSIST_MS.
+  function _earnGram(amount) {
+    if (!(amount > 0)) return;
+    _gramPending = _round7(_gramPending + amount);
+    _setGram(_round7(_liveGram() + amount));
+    _persistBalancesSoon();
+  }
+  function _earnNexum(amount) {
+    if (!(amount > 0)) return;
+    _nexumPending = _round7(_nexumPending + amount);
+    _setNexum(_round7(_liveNexum() + amount));
+    _persistBalancesSoon();
   }
   function _persistBalancesSoon() {
-    _balancesDirty = true;
     if (_balancePersistTimer) return;
-    _balancePersistTimer = setTimeout(() => { _balancePersistTimer = null; _flushBalances(); }, BALANCE_PERSIST_MS);
+    _balancePersistTimer = setTimeout(() => {
+      _balancePersistTimer = null;
+      _flushBalances().catch(err => console.error('_flushBalances:', err));
+    }, BALANCE_PERSIST_MS);
   }
   let _lastChatAt = 0;
   // Simple per-second rate limiter for attack events
@@ -3366,17 +3462,13 @@ io.on('connection', socket => {
   // later, persisted it right back over the real progress.
   socket.data._flushNow = async () => {
     if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
-    if (_balancePersistTimer) { clearTimeout(_balancePersistTimer); _balancePersistTimer = null; }
-    if (authed && _lastStats) {
-      _balancesDirty = false; // the write below carries both balances
-      await _persistSavedFields(authed,
-        { ..._lastStats, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
-        { bm: authed.bm });
-      return;
-    }
-    // No saved blob for this session yet (logged in, killed something, left
-    // before any saveProgress) — the coalesced drop balances still have to land.
+    // Balances are their own write and are never part of the progress blob —
+    // see the balance block at the top of this file. Whatever this session has
+    // earned since the last flush has to land either way.
     await _flushBalances();
+    if (authed && _lastStats) {
+      await _persistSavedFields(authed, { ..._lastStats }, { bm: authed.bm });
+    }
   };
 
   // ── Admin inventory editing on a LIVE session ────────────────────────────
@@ -3481,8 +3573,8 @@ io.on('connection', socket => {
     const items = deathBattleRewards();
     const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
     if (inv) items.forEach(it => _invAdd(inv, it));
-    _setGram(_round7(_liveGram() + DEATH_BATTLE_GRAM_REWARD));
-    await _persistSavedFields(authed, { gramBalance: _liveGram() });
+    const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD);
+    if (_dbBal !== null) { _gramBalance = _dbBal; socket.emit('gramBalanceUpdate', { balance: _dbBal }); }
     if (inv) await _commitServerItems(inv, null, 'death_battle_win',
       { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD });
     logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
@@ -3495,8 +3587,8 @@ io.on('connection', socket => {
   // so the result screen can't claim a reward that didn't land.
   socket.data._a3GrantWin = async () => {
     if (!authed) return 0;
-    _setNexum(_round7(_liveNexum() + ARENA3_REWARD));
-    await _persistSavedFields(authed, { nexumBalance: _liveNexum() });
+    const _a3Bal = await _incBalance(authed.telegramId, 'nexumBalance', ARENA3_REWARD);
+    if (_a3Bal !== null) _nexumBalance = _a3Bal;
     socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
     logPlayer(authed.telegramId, authed.username, 'arena3_reward',
       { nexum: ARENA3_REWARD, balance: _liveNexum() });
@@ -3506,8 +3598,8 @@ io.on('connection', socket => {
   // Pays out a race10 win — same reasoning as _a3GrantWin above.
   socket.data._race10GrantWin = async () => {
     if (!authed) return 0;
-    _setNexum(_round7(_liveNexum() + RACE10_REWARD));
-    await _persistSavedFields(authed, { nexumBalance: _liveNexum() });
+    const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', RACE10_REWARD);
+    if (_rcBal !== null) _nexumBalance = _rcBal;
     socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
     logPlayer(authed.telegramId, authed.username, 'race10_reward',
       { nexum: RACE10_REWARD, balance: _liveNexum() });
@@ -3525,14 +3617,16 @@ io.on('connection', socket => {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = setInterval(() => {
       if (!authed || !_lastStats) return;
-      const saveData = { ..._lastStats, floor: currentFloor, gramBalance: _liveGram(), nexumBalance: _liveNexum() };
+      // Progress only. Balances are moved by $inc from their own paths and must
+      // never be written as an absolute from here — that is precisely what let
+      // a periodic save undo a credit that arrived seconds earlier.
+      const saveData = { ..._lastStats, floor: currentFloor };
       if (currentRoom) {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
       }
       const bmNow = calcBM(_lastStats);
       authed.bm = bmNow;
-      _balancesDirty = false; // saveData carries both balances
       _persistSavedFields(authed, saveData, { bm: bmNow });
     }, 60000);
   }
@@ -3737,38 +3831,42 @@ io.on('connection', socket => {
   safeOn('gramWithdrawRequest', async ({ amount, address }) => {
     if (!authed || !amount || amount < GRAM_MIN_WITHDRAW || !address) return;
     try {
-      if (amount > _liveGram()) return socket.emit('gramError', { msg: 'Недостаточно средств' });
+      const amt = Number(amount);
+      if (!Number.isFinite(amt) || amt <= 0) return;
+      // Any pending drop earnings have to reach the database before the balance
+      // is tested, or a player could be told they can't afford a withdrawal
+      // they've already earned the GRAM for.
+      await _flushBalances();
 
-      // The request row is created BEFORE the balance moves. The other order
-      // deducted first, and a failed insert (a DB blip) then left the player
-      // short with no request to refund from — recoverable only by hand, from
-      // the log line below.
-      const tx = await GramTxModel.create({
-        telegramId: authed.telegramId,
-        username:   authed.username,
-        type: 'withdraw',
-        amount: Number(amount),
-        address: String(address).slice(0, 128),
-      });
+      // The deduction IS the affordability check: _spendBalance only writes if
+      // the stored balance covers the amount, so two withdrawal requests sent
+      // together can't both succeed against the same funds. Refunded in full if
+      // the admin rejects the request (see _handleAdminCallback).
+      const newBal = await _spendBalance(authed.telegramId, 'gramBalance', amt);
+      if (newBal === null) return socket.emit('gramError', { msg: 'Недостаточно средств' });
+      _gramBalance = newBal;
 
-      // Deduct immediately — refunded on rejection. Based on _liveGram() so a
-      // credit that landed through another code path since this socket logged
-      // in (market sale payout, admin deposit confirmation, referral bonus)
-      // isn't erased by writing back a stale mirror — see _liveGram's comment.
-      _setGram(_round7(_liveGram() - amount));
-      // Targeted $set instead of a findById-then-save round trip — this
-      // value is already the live authoritative figure (_gramBalance), so
-      // there's nothing to read first, and a full-document save would risk
-      // clobbering any other savedData field this account's own autosave
-      // writes in the same window.
-      await PlayerModel.updateOne(
-        { _id: authed._id },
-        { $set: { 'savedData.gramBalance': _gramBalance } },
-      );
+      let tx;
+      try {
+        tx = await GramTxModel.create({
+          telegramId: authed.telegramId,
+          username:   authed.username,
+          type: 'withdraw',
+          amount: amt,
+          address: String(address).slice(0, 128),
+        });
+      } catch (err) {
+        // The money is already out of the account and there is now no request
+        // to refund it from — put it back rather than leave the player short.
+        const back = await _incBalance(authed.telegramId, 'gramBalance', amt);
+        if (back !== null) _gramBalance = back;
+        logPlayerErr(authed.telegramId, authed.username, 'gram_withdraw_request', err, { amount: amt, refunded: true });
+        return socket.emit('gramError', { msg: 'Не удалось создать заявку — средства возвращены' });
+      }
 
       socket.emit('gramTxCreated', { tx: _txData(tx), newBalance: _gramBalance });
       logPlayer(authed.telegramId, authed.username, 'gram_withdraw_request',
-        { amount: Number(amount), newBalance: _gramBalance, tx: tx._id.toString() });
+        { amount: amt, newBalance: _gramBalance, tx: tx._id.toString() });
       notifyAdminGram(tx).catch(() => {});
     } catch (err) {
       console.error('gramWithdrawRequest:', err);
@@ -3795,11 +3893,9 @@ io.on('connection', socket => {
 
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
-      // Re-checked after the await: the lock above already serializes this
-      // handler, but a credit/debit from another path (a market purchase, a
-      // withdrawal) can still land in that window, and the deduction below
-      // must never be based on a balance read before it.
-      if (_liveGram() < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
+      // Drop earnings first, so the price is tested against everything the
+      // player has actually earned.
+      await _flushBalances();
       const saved = doc.savedData || {};
       const charClass = saved.type || 'lev';
       const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
@@ -3823,9 +3919,13 @@ io.on('connection', socket => {
         });
       }
 
-      // Deduct GRAM
-      _setGram(_round7(_liveGram() - pkg.gram));
-      saved.gramBalance = _gramBalance;
+      // The deduction is the affordability check — _spendBalance writes only
+      // if the stored balance covers the price (see the balance block at the
+      // top of this file), so nothing here can spend GRAM the account doesn't
+      // have, whatever the cached figure said a moment ago.
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', pkg.gram);
+      if (_paid === null) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
+      _gramBalance = _paid;
 
       // Gold
       saved.gold = (saved.gold || 0) + pkg.gold;
@@ -3888,10 +3988,10 @@ io.on('connection', socket => {
       // Bonus skill points
       if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
 
-      // Liberty (Nexum) bonus
+      // Liberty (Nexum) bonus — atomic, like every other balance move.
       if (pkg.nexum > 0) {
-        _setNexum(_round7(_liveNexum() + pkg.nexum));
-        saved.nexumBalance = _nexumBalance;
+        const _nb = await _incBalance(authed.telegramId, 'nexumBalance', pkg.nexum);
+        if (_nb !== null) _nexumBalance = _nb;
       }
 
       // VIP progress from purchase
@@ -3918,8 +4018,9 @@ io.on('connection', socket => {
       // account's own gameplay autosave landing in between), and overwriting
       // the whole savedData blob with it would silently revert whatever else
       // changed (equipment, hp, position...) in that window.
+      // No balance fields here: both were already moved with $inc above, and
+      // writing an absolute would undo anything that landed in between.
       const _shopSet = {
-        'savedData.gramBalance': saved.gramBalance,
         'savedData.gold': saved.gold,
         'savedData.inventory': inv,
         'savedData.vipLevel': _vipLvl,
@@ -3927,7 +4028,6 @@ io.on('connection', socket => {
         'savedData.vipPending': _vipPend,
       };
       if (pkg.bonusSP > 0) _shopSet['savedData.bonusSP'] = saved.bonusSP;
-      if (pkg.nexum > 0) _shopSet['savedData.nexumBalance'] = saved.nexumBalance;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _shopSet });
 
       if (_lastStats) {
@@ -3973,7 +4073,7 @@ io.on('connection', socket => {
   // upgrade levels (getAvailableSkillPoints, js/player.js). Emptying the map
   // therefore hands back every point ever put into it, however many that was.
   // Gold spent on those upgrades is deliberately not refunded.
-  safeOn('resetUpgrades', () => {
+  safeOn('resetUpgrades', async () => {
     if (!authed) return;
     try {
       const cur = (_lastStats && _lastStats.upgrades) || {};
@@ -3981,15 +4081,19 @@ io.on('connection', socket => {
       if (spent <= 0) {
         return socket.emit('resetUpgradesError', { msg: 'Улучшений нет — сбрасывать нечего' });
       }
-      if (_liveNexum() < UPGRADE_RESET_COST) {
+      await _flushBalances();
+      // Charged atomically: the write only happens if the balance covers the
+      // cost, so the upgrades below are never cleared for free.
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', UPGRADE_RESET_COST);
+      if (_bal === null) {
         return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
       }
-      _setNexum(_liveNexum() - UPGRADE_RESET_COST);
+      _nexumBalance = _bal;
       if (_lastStats) _lastStats.upgrades = {};
       // Keep the room's anti-cheat baseline in step, or its computeStats would
       // go on crediting the cleared upgrades until the next saveProgress.
       if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
-      _persistSavedFields(authed, { upgrades: {}, nexumBalance: _nexumBalance });
+      _persistSavedFields(authed, { upgrades: {} });
       logPlayer(authed.telegramId, authed.username, 'upgrades_reset',
         { pointsReturned: spent, cost: UPGRADE_RESET_COST });
       socket.emit('upgradesReset', { pointsReturned: spent, newNexumBalance: _nexumBalance });
@@ -4004,8 +4108,12 @@ io.on('connection', socket => {
   // happen here: the client can't be trusted to spend a balance it isn't the
   // source of truth for. Both the materials and the resulting stone move
   // server-side too, so the recipe can't be half-applied.
-  safeOn('craftStone', ({ matId } = {}) => {
+  safeOn('craftStone', async ({ matId } = {}) => {
     if (!authed) return;
+    // Serialized with the other spend handlers: this one now awaits mid-way
+    // (see the charge below), and two crafts overlapping there would each work
+    // from the other's half-applied inventory.
+    await _withEconLock(async () => {
     try {
       const rec = STONE_CRAFT_RECIPES.find(r => r.matId === matId);
       if (!rec) return socket.emit('craftStoneError', { msg: 'Неизвестный рецепт' });
@@ -4013,9 +4121,6 @@ io.on('connection', socket => {
       if (!stone) return socket.emit('craftStoneError', { msg: 'Камень не найден' });
       if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
         return socket.emit('craftStoneError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
-      }
-      if (_liveNexum() < rec.nexumCost) {
-        return socket.emit('craftStoneError', { msg: `Нужно ${rec.nexumCost} Liberty` });
       }
       const inv = _lastStats.inventory;
       // Count across stacks rather than assuming one: stackables normally
@@ -4030,7 +4135,27 @@ io.on('connection', socket => {
           });
         }
       }
-      // Nothing is mutated until every requirement above has passed.
+      // Charged before anything is consumed, and atomically: the write only
+      // lands if the balance covers it, so two crafts sent together can't both
+      // be paid for out of the same Liberty.
+      await _flushBalances();
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+      if (_bal === null) {
+        return socket.emit('craftStoneError', { msg: `Нужно ${rec.nexumCost} Liberty` });
+      }
+      _nexumBalance = _bal;
+      // Re-checked after the await — the materials could have been spent by
+      // another craft while this one was paying.
+      for (const m of rec.mats) {
+        if (countOf(m.id) < m.n) {
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+          if (back !== null) _nexumBalance = back;
+          const md = CRAFT_MATS.find(c => c.id === m.id);
+          return socket.emit('craftStoneError', {
+            msg: `Нужно ${m.n} × ${md ? md.name : m.id} (есть ${countOf(m.id)})`,
+          });
+        }
+      }
       for (const m of rec.mats) {
         let left = m.n;
         for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
@@ -4042,10 +4167,12 @@ io.on('connection', socket => {
         }
       }
       if (!_invAdd(inv, { ...stone, qty: 1 })) {
+        // Materials are already gone, so the Liberty goes back rather than the
+        // player paying for nothing.
+        const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+        if (back !== null) _nexumBalance = back;
         return socket.emit('craftStoneError', { msg: 'Инвентарь полон' });
       }
-      _setNexum(_liveNexum() - rec.nexumCost);
-      _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       _commitServerItems(inv, null, 'stone_craft', { matId, cost: rec.nexumCost });
       socket.emit('stoneCrafted', { matId, newNexumBalance: _nexumBalance });
     } catch (err) {
@@ -4053,6 +4180,7 @@ io.on('connection', socket => {
       logPlayerErr(authed.telegramId, authed.username, 'stone_craft', err, { matId });
       socket.emit('craftStoneError', { msg: 'Ошибка сервера' });
     }
+    });
   });
 
   // ── Pet crafting (Кузнец → Материалы → Питомцы) ────────────────────────────
@@ -4063,14 +4191,15 @@ io.on('connection', socket => {
   // source of truth for. Mirrors gramShopBuy below: server checks the live
   // balance, deducts it, and picks+returns the random result itself — the
   // client only ever displays what this event reports back.
-  safeOn('craftPet', ({ rarity } = {}) => {
+  safeOn('craftPet', async ({ rarity } = {}) => {
     if (!authed) return;
+    // Serialized like the other spend handlers — the charge below is a DB
+    // round trip, and two crafts overlapping across it would interleave their
+    // inventory writes.
+    await _withEconLock(async () => {
     try {
       const rec = PET_CRAFT_RECIPES.find(r => r.rarity === rarity);
       if (!rec) return socket.emit('petCraftError', { msg: 'Неизвестная редкость питомца' });
-      if (_liveNexum() < rec.nexumCost) {
-        return socket.emit('petCraftError', { msg: 'Недостаточно Liberty' });
-      }
       if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
         return socket.emit('petCraftError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
       }
@@ -4080,14 +4209,18 @@ io.on('connection', socket => {
       const candidates = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity);
       if (!candidates.length) return socket.emit('petCraftError', { msg: 'Питомцы этой редкости не найдены' });
 
-      _setNexum(_liveNexum() - rec.nexumCost);
+      // Atomic charge — the roll below only happens if the Liberty was really
+      // taken. A failed craft (rec.chance) still costs, as it always has.
+      await _flushBalances();
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+      if (_bal === null) return socket.emit('petCraftError', { msg: 'Недостаточно Liberty' });
+      _nexumBalance = _bal;
 
       let resultPet = null, _delivered = false;
       if (Math.random() < rec.chance) {
         resultPet = { ...candidates[Math.floor(Math.random() * candidates.length)] };
         _delivered = _invAdd(_lastStats.inventory, resultPet);
       }
-      _persistSavedFields(authed, { nexumBalance: _nexumBalance });
       _commitServerItems(_lastStats.inventory, null, 'pet_craft',
         { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null });
 
@@ -4099,6 +4232,7 @@ io.on('connection', socket => {
       logPlayerErr(authed.telegramId, authed.username, 'pet_craft', err, { rarity });
       socket.emit('petCraftError', { msg: 'Ошибка сервера' });
     }
+    });
   });
 
   // ── Market ────────────────────────────────────────────────────────────────
@@ -4317,15 +4451,6 @@ io.on('connection', socket => {
       );
       if (!claimed) return socket.emit('marketError', { msg: 'Лот уже продан или снят' });
 
-      // Re-check and deduct with no `await` in between — a rapid double-buy on
-      // this same connection (two overlapping marketBuy handlers) would otherwise
-      // both pass the earlier balance check before either deduction landed and
-      // together spend more than the account holds, same risk the gap between
-      // check and write would create in gramWithdrawRequest if it awaited there.
-      if (claimed.price > _liveGram()) {
-        await _releaseClaim(listingId);
-        return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
-      }
       // Room for the item BEFORE any money moves. The client used to just
       // report "инвентарь полон, предмет потерян" after the fact — the GRAM
       // was already gone and the item was destroyed with the listing marked
@@ -4335,57 +4460,36 @@ io.on('connection', socket => {
         await _releaseClaim(listingId);
         return socket.emit('marketError', { msg: 'Инвентарь полон' });
       }
-      _setGram(_round7(_liveGram() - claimed.price));
-      // Atomic $set on just this one nested field — a full-document
-      // findOne-then-save (as this used to do) reads a savedData snapshot
-      // that can already be stale by the time it writes back (the player's
-      // own debounced saveProgress autosave landing in between), silently
-      // reverting whatever else changed in savedData since that snapshot.
-      // Deliver the item server-side in the same write as the payment, so a
-      // marketBought event that never reaches the client (disconnect, lost
-      // packet) can't leave the buyer having paid for nothing.
-      const _buyerSet = { 'savedData.gramBalance': _gramBalance };
+      // Payment is the affordability check: _spendBalance only writes if the
+      // balance covers the price, so two purchases in flight can't be paid for
+      // out of the same GRAM. Pending drop earnings are flushed first so the
+      // player can spend what they've just farmed.
+      await _flushBalances();
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', claimed.price);
+      if (_paid === null) {
+        await _releaseClaim(listingId);
+        return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
+      }
+      _gramBalance = _paid;
+      // The item is delivered server-side so a marketBought event that never
+      // reaches the client (disconnect, lost packet) can't leave the buyer
+      // having paid for nothing.
       const _delivered = !!(_buyerInv && _invAdd(_buyerInv, claimed.item));
       if (_delivered) {
-        _buyerSet['savedData.inventory'] = _buyerInv;
-        // Bundled into the single $set below for atomicity, so this only does
-        // the live-copy/revision/sync/log half. Without the revision bump a
-        // client autosave queued before the purchase could still revert it.
         _commitServerItems(_buyerInv, null, 'market_buy',
           { item: claimed.item && claimed.item.id, price: claimed.price,
-            seller: claimed.sellerId, listingId: String(listingId) },
-          { persist: false });
+            seller: claimed.sellerId, listingId: String(listingId) });
       }
-      await PlayerModel.updateOne(
-        { _id: authed._id },
-        { $set: _buyerSet },
-      ).catch(err => console.error('marketBuy buyer persist:', err));
 
-      // Credit seller (10% fee burned — not paid to anyone), whether online or not.
-      // Base the payout on _gramBalanceCache (the live, up-to-the-second balance
-      // for anyone active this server process) rather than the DB's savedData
-      // snapshot, which can lag behind the seller's own actions (gram drops,
-      // deposits) — adding the payout on top of that stale figure, then having
-      // this write clobber the true live value, is exactly what caused sold
-      // items to sometimes not credit anything, or to reset the balance to a
-      // wrong number. Only offline sellers (no live cache entry) fall back to
-      // the DB figure, which is safe since nothing else can be mutating it.
+      // Credit the seller (10% fee burned — not paid to anyone), online or not.
+      // A plain "+payout" against the live document: the seller may be farming,
+      // spending or being paid by someone else at this very moment, and this is
+      // the pattern that stops any of those erasing the sale — the reported
+      // "продал лот, а GRAM не пришли / баланс перезаписался".
       const payout = _round7(claimed.price * (1 - MARKET_FEE_PCT));
       try {
-        const hasLive = _gramBalanceCache.has(claimed.sellerId);
-        const sellerBase = hasLive
-          ? _gramBalanceCache.get(claimed.sellerId)
-          : ((await PlayerModel.findOne({ telegramId: claimed.sellerId }, 'savedData.gramBalance').lean())?.savedData?.gramBalance || 0);
-        const sellerNewBal = _round7(sellerBase + payout);
-        // DB first, cache second: if the write throws, the cache must not be
-        // left advertising a credit that was never persisted (the seller's
-        // session would then keep building on a number the DB never had, and
-        // lose it all on their next login).
-        await PlayerModel.updateOne(
-          { telegramId: claimed.sellerId },
-          { $set: { 'savedData.gramBalance': sellerNewBal } },
-        );
-        _gramBalanceCache.set(claimed.sellerId, sellerNewBal);
+        const sellerNewBal = await _incBalance(claimed.sellerId, 'gramBalance', payout);
+        if (sellerNewBal === null) throw new Error('seller not found');
         io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
         io.to(`tg_${claimed.sellerId}`).emit('marketSold', {
           itemName: claimed.item?.name || '', price: claimed.price, payout,
@@ -4745,14 +4849,9 @@ io.on('connection', socket => {
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
 
-      if (nexumDrop > 0) {
-        _setNexum(_liveNexum() + nexumDrop);
-        _persistBalancesSoon();
-      }
-      if (gramDrop > 0) {
-        _setGram(_round7(_liveGram() + gramDrop));
-        _persistBalancesSoon();
-      }
+      // Accumulated as a delta and flushed as one $inc — see _earnGram.
+      if (nexumDrop > 0) _earnNexum(nexumDrop);
+      if (gramDrop > 0) _earnGram(gramDrop);
 
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -4884,14 +4983,9 @@ io.on('connection', socket => {
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
-      if (nexumDrop2 > 0) {
-        _setNexum(_liveNexum() + nexumDrop2);
-        _persistBalancesSoon();
-      }
-      if (gramDrop2 > 0) {
-        _setGram(_round7(_liveGram() + gramDrop2));
-        _persistBalancesSoon();
-      }
+      // Same delta accumulation as the basic-attack path above.
+      if (nexumDrop2 > 0) _earnNexum(nexumDrop2);
+      if (gramDrop2 > 0) _earnGram(gramDrop2);
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
@@ -5383,10 +5477,10 @@ io.on('connection', socket => {
     clearTimeout(_saveDebounceTimer);
     _saveDebounceTimer = setTimeout(() => {
       if (!authed) return;
-      _balancesDirty = false; // this write carries both balances
-      _persistSavedFields(authed,
-        { ...clean, gramBalance: _liveGram(), nexumBalance: _liveNexum() },
-        { bm: authed.bm });
+      // Progress only — balances move by $inc from their own paths. `clean` has
+      // already had both stripped by _sanitizeSavedStats, so nothing here can
+      // reintroduce a client-supplied figure either.
+      _persistSavedFields(authed, { ...clean }, { bm: authed.bm });
     }, 3000);
   });
 
@@ -6019,12 +6113,10 @@ io.on('connection', socket => {
         return;
       }
       const newDone = [...done, String(questId)];
-      // Nexum is server-authoritative — base the reward on the live balance
-      // (cache), never on the possibly-stale savedData snapshot, so a quest
-      // reward can't wipe nexum earned from drops earlier this session.
-      const _newNexum = quest.reward.nexum
-        ? (_liveNexum() + quest.reward.nexum)
-        : null;
+      // The Liberty reward is NOT part of the writes below: it is credited with
+      // its own $inc once the completion has been claimed, so it adds to
+      // whatever the account holds instead of overwriting it. The claim itself
+      // is what makes it once-only.
       // Build the per-field update using the in-memory savedData when available,
       // falling back to the DB current values when savedData is null (new player
       // who has never saved yet). In either case use $set on the whole savedData
@@ -6033,7 +6125,6 @@ io.on('connection', socket => {
       if (authed.savedData) {
         const upd = { 'savedData.specialQuestsDone': newDone };
         if (quest.reward.gold)  upd['savedData.gold']         = (authed.savedData.gold         || 0) + quest.reward.gold;
-        if (_newNexum != null)  upd['savedData.nexumBalance'] = _newNexum;
         if (quest.reward.xp)    upd['savedData.xp']           = (authed.savedData.xp           || 0) + quest.reward.xp;
         // The `$ne` on the filter is what makes the reward once-only. The
         // `done.includes` check above reads authed.savedData, which is only
@@ -6050,14 +6141,12 @@ io.on('connection', socket => {
         }
         authed.savedData.specialQuestsDone = newDone;
         if (quest.reward.gold)  authed.savedData.gold         = (authed.savedData.gold         || 0) + quest.reward.gold;
-        if (_newNexum != null)  authed.savedData.nexumBalance = _newNexum;
         if (quest.reward.xp)    authed.savedData.xp           = (authed.savedData.xp           || 0) + quest.reward.xp;
       } else {
         // savedData is null (brand-new player who hasn't saved yet): initialise
         // it as a plain object so dotted-path $set won't error on null parent.
         const freshData = { specialQuestsDone: newDone };
         if (quest.reward.gold)  freshData.gold         = quest.reward.gold;
-        if (_newNexum != null)  freshData.nexumBalance = _newNexum;
         if (quest.reward.xp)    freshData.xp           = quest.reward.xp;
         // Same once-only guard as the branch above, expressed against the null
         // savedData this branch exists for.
@@ -6071,13 +6160,18 @@ io.on('connection', socket => {
         }
         authed.savedData = freshData;
       }
-      if (_newNexum != null) {
-        _setNexum(_newNexum);
+      // Credited only after the claim above succeeded, so a duplicate request
+      // that lost the race pays nothing.
+      if (quest.reward.nexum) {
+        const _qb = await _incBalance(authed.telegramId, 'nexumBalance', quest.reward.nexum);
+        if (_qb !== null) {
+          _nexumBalance = _qb;
+          socket.emit('nexumBalanceUpdate', { balance: _qb });
+        }
       }
       if (_lastStats) {
         _lastStats.specialQuestsDone = newDone;
         if (quest.reward.gold)  _lastStats.gold         = (authed.savedData.gold         || 0);
-        if (_newNexum != null)  _lastStats.nexumBalance = _newNexum;
         if (quest.reward.xp)    _lastStats.xp           = (authed.savedData.xp           || 0);
       }
       logPlayer(authed.telegramId, authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });
@@ -6106,8 +6200,17 @@ io.on('connection', socket => {
       _pendingFlush.set(_tid, _p);
       if (activeSessions.get(_tid) === socket.id) {
         activeSessions.delete(_tid);
-        _gramBalanceCache.delete(_tid);
-        _nexumBalanceCache.delete(_tid);
+        // The cache entries are dropped only once the flush above has landed:
+        // that flush ends in an $inc whose result repopulates them, so clearing
+        // them first would leave a stale figure behind for an account that is
+        // no longer online. A reconnect that arrives in the meantime re-reads
+        // the balance from the database anyway (see the login handlers).
+        _p.finally(() => {
+          if (activeSessions.get(_tid) === socket.id || !activeSessions.has(_tid)) {
+            _gramBalanceCache.delete(_tid);
+            _nexumBalanceCache.delete(_tid);
+          }
+        });
         // Drop their aura from the roster — but only when this socket is
         // still the account's active session. On a reconnect the new socket
         // has already claimed it (and re-registered the aura), and clearing
