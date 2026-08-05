@@ -4461,11 +4461,16 @@ io.on('connection', socket => {
     try {
       const rec = CLASS_GEAR_SALVAGE_RECIPES.find(r => r.resultSlot === slot && r.resultRarity === rarity);
       if (!rec) return socket.emit('craftClassGearError', { msg: 'Неизвестный рецепт' });
-      const candidates = ITEM_DEF.filter(d => d.classItem && d.slot === rec.resultSlot && d.rarity === rec.resultRarity);
-      if (!candidates.length) return socket.emit('craftClassGearError', { msg: 'Предметы этой редкости не найдены' });
       if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
         return socket.emit('craftClassGearError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
       }
+      // Only the caller's own class — these items are class-locked on equip
+      // (forClass, shared/definitions.js), so picking from every class here
+      // would hand out gear the player can't wear most of the time.
+      const charClass = _lastStats.type || 'lev';
+      const candidates = ITEM_DEF.filter(d => d.classItem && d.slot === rec.resultSlot && d.rarity === rec.resultRarity
+        && d.forClass && d.forClass.includes(charClass));
+      if (!candidates.length) return socket.emit('craftClassGearError', { msg: 'Предметы этой редкости не найдены' });
       const inv = _lastStats.inventory;
       if (inv.length >= SERVER_INV_MAX) {
         return socket.emit('craftClassGearError', { msg: 'Инвентарь полон' });

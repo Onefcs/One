@@ -434,7 +434,8 @@ function _craftsmanMatsTab() {
 // onClassGearCraftError (netCraftClassGear/'classGearCrafted' in
 // js/network.js).
 function _classGearOfRarity(slot, rarity) {
-  return ITEM_DEF.filter(d => d.classItem && d.slot === slot && d.rarity === rarity);
+  return ITEM_DEF.filter(d => d.classItem && d.slot === slot && d.rarity === rarity &&
+    d.forClass && player && d.forClass.includes(player.type));
 }
 function _salvageMatCount(rarity) {
   return player.inventory.filter(it => !_isStackable(it) && it.rarity === rarity).length;

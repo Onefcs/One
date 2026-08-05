@@ -367,7 +367,7 @@ function equipItem(idx) {
   const it = player.inventory[idx]; if (!it) return;
   if (_isStackable(it) || it.slot === 'use') return;
   if (it.forClass && player.type && !it.forClass.includes(player.type)) {
-    _invMsg('Это оружие не для вашего класса');
+    _invMsg('Этот предмет не для вашего класса');
     return;
   }
   const old = player.equipment[it.slot];
