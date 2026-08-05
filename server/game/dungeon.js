@@ -211,6 +211,13 @@ function generateOpenWorld() {
       if (!d) continue;
       const stats = monsterStatsAtLevel(lvl, d.eType);
       const ex = baseX + i * RACE10_MOB_SPACING + TILE / 2;
+      // Same halving buildArm's spawnRoomEnemies applies to every regular
+      // room monster ("regular monsters spawn in packs — halved
+      // individually") — race10's lines are packed even tighter (60 per
+      // tier, RACE10_MOB_SPACING=30px apart, vs. 5-10 spread across a whole
+      // room), so full monsterStatsAtLevel() here hit far harder than
+      // anywhere else a player meets a level 5 or 10 monster.
+      const weakMult = 0.5;
       enemyList.push({
         id: `race10_${laneIdx}_${eid++}`, ...d, isBoss: false, arm: 'race10',
         // Which lane this monster belongs to. The id has carried it all along
@@ -223,8 +230,8 @@ function generateOpenWorld() {
         rlvl: lvl,
         name: monsterNameAtLevel(d.name, lvl, false, d.fem, 20),
         color: monsterColorAtLevel(d.color, d.endColor, lvl, false, 20),
-        maxHp: stats.hp, hp: stats.hp,
-        atk: stats.atk, def: stats.def, spd: d.spd,
+        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
         xp: xpAtLevel(lvl) * RACE10_XP_MULT, gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
