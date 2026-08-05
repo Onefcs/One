@@ -320,7 +320,11 @@ function generateOpenWorld() {
 
       for (let i = 0; i < chainLen; i++) {
         const roomIsBoss = isBoss && i === chainLen - 1;
-        const size = roomIsBoss ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
+        // Local level 19 — the row right before the level-20 boss slot in
+        // every arm that reaches it — is the pre-boss gauntlet: all 6 rooms
+        // large (10 monsters each) instead of the usual random small/large
+        // mix, same treatment as a boss room.
+        const size = (roomIsBoss || localLvl === 19) ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
 
         const x = alongCenter - Math.floor(size / 2);
         const y = side < 0 ? (cursor - STUB - size) : (cursor + STUB);
