@@ -812,31 +812,34 @@ canvas { display:block; width:100%; height:100%; }
   grid-template-columns:repeat(5,1fr);
   gap:5px;
 }
-/* One 5-column grid, same column math as .inv-grid below (repeat(5,1fr),
-   5px gap) so equipment cells come out exactly the same size as the
-   inventory grid's — same label wrapping room, nothing to clip. Left
-   slots (weapon/helmet/body/gloves/cloak) pinned to column 1, right slots
-   (boots/ring/belt/pet/artifact) to column 5, row = DOM order within each
-   .eq-diamond-col (display:contents, so its .eq-cell children are grid
-   items of .eq-diamond directly). Columns 2-4 are left empty on purpose —
-   the portrait sits over them via absolute positioning, sized to that
-   space, not overlapping either slot column. */
+/* 5-track grid: outer margin | cell column | portrait | cell column |
+   outer margin. The cell-column tracks use the exact same width formula
+   .inv-grid's repeat(5,1fr)+5px-gap cells resolve to (both grids share the
+   same container width), so equipment cells come out pixel-identical to
+   inventory cells — full label, nothing clipped. The two outer-margin
+   tracks are what actually fixes the "columns drifted to the far edges"
+   look a plain repeat(5,1fr) had: pinning cells straight to columns 1/5
+   of a 5-column grid dumps ALL the leftover width (3 whole columns, ~60%)
+   into one gap in the middle. Reserving real margin tracks on the outside
+   instead splits that space properly, so the portrait's own track ends up
+   a sane ~1/3 of the width instead of well over half. */
 .eq-diamond {
-  position:relative;
   display:grid;
-  grid-template-columns:repeat(5,1fr);
-  grid-auto-rows:1fr;
+  grid-template-columns: 12% calc((100% - 20px) / 5) 1fr calc((100% - 20px) / 5) 12%;
+  grid-template-rows: repeat(5, 1fr);
+  align-items:center;
   gap:5px;
   padding:4px 0 8px;
 }
 .eq-diamond-col { display:contents; }
-#eq-col-left  .eq-cell { grid-column:1; }
-#eq-col-right .eq-cell { grid-column:5; }
+#eq-col-left  .eq-cell { grid-column:2; }
+#eq-col-right .eq-cell { grid-column:4; }
 .eq-center {
-  position:absolute;
-  left:50%; top:50%;
-  transform:translate(-50%,-50%);
-  width:60%;
+  grid-column:3;
+  grid-row:1 / -1;
+  justify-self:center;
+  align-self:center;
+  width:88%;
   aspect-ratio:1;
   display:flex; align-items:center; justify-content:center;
   pointer-events:none;
