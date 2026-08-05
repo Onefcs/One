@@ -2119,16 +2119,33 @@ function loop(ts) {
   const _steps = Math.min(_PHYS_STEPS_MAX, Math.max(1, Math.ceil(dt / _PHYS_STEP_MAX)));
   const _stepDt = dt / _steps;
   const _stepRealDt = realDt / _steps;
-  for (let i = 0; i < _steps; i++) update(_stepDt, _stepRealDt);
-  const _t1 = performance.now();
-  render(dt, ts);
-  const _t2 = performance.now();
-  _profUpdate = _t1 - _t0;
-  _profRender = _t2 - _t1;
-  _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
-  _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
-  if (_uiCtx) _drawPerf(frameMs);
-  requestAnimationFrame(loop);
+  // update()/render() used to run unguarded — one exception on one frame (a
+  // specific class/pet/zone edge case, an unloaded texture, whatever) threw
+  // out of loop() before reaching the requestAnimationFrame(loop) call below,
+  // so it was never rescheduled: the whole client froze on the last frame
+  // that DID render (which, since pixiWorldRender runs before the HUD canvas
+  // is cleared/redrawn in render(), often left a perfectly normal-looking
+  // HUD on screen forever while the world behind it stopped updating —
+  // "game won't load" reports with an otherwise fine-looking header/HUD
+  // match this exactly). Catch here so a bad frame logs instead of
+  // permanently killing every frame after it; the try/finally keeps
+  // rescheduling unconditionally so the loop self-heals next frame if the
+  // failure was transient/state-dependent.
+  try {
+    for (let i = 0; i < _steps; i++) update(_stepDt, _stepRealDt);
+    const _t1 = performance.now();
+    render(dt, ts);
+    const _t2 = performance.now();
+    _profUpdate = _t1 - _t0;
+    _profRender = _t2 - _t1;
+  } catch (err) {
+    console.error('[loop] frame crashed, continuing:', err);
+  } finally {
+    _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
+    _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
+    if (_uiCtx) _drawPerf(frameMs);
+    requestAnimationFrame(loop);
+  }
 }
 
 window.addEventListener('beforeunload', () => { netSaveProgressNow(); });
@@ -2151,8 +2168,20 @@ window.addEventListener('load', () => {
   _uiOverlay = document.getElementById('ui-canvas');
   const appEl = document.getElementById('app');
 
-  // Initialise PixiJS on the world canvas
-  pixiInit(canvas);
+  // Initialise PixiJS on the world canvas. Guarded: WebGL context creation
+  // can fail outright on some devices/WebViews (GPU blocklisted, hardware
+  // acceleration off, too many contexts already open) — an uncaught throw
+  // here used to abort the rest of this listener before it reached resize(),
+  // initInput() or the requestAnimationFrame(loop) call at the bottom, so
+  // literally nothing rendered or responded to input. Now it at least logs
+  // and lets the rest of startup continue; the world stays blank and the
+  // in-loop try/catch (see loop()) keeps every later pixi call from being
+  // fatal, but HUD and input still come up instead of a completely dead page.
+  try {
+    pixiInit(canvas);
+  } catch (err) {
+    console.error('[pixiInit] failed, world will not render:', err);
+  }
 
   const resize = () => {
     DPR = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
