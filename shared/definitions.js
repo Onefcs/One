@@ -30,7 +30,7 @@ const ENEMY_AOI_R = 1400;
 // Class colors kept as a deliberate, distinct identity per class (steel /
 // forest / arcane violet / holy gold / wine / cool steel) rather than run
 // through the general dark-fantasy recolor pass — matches the same picks
-// made for .cs-tab-*/.cs-btn-* in css/style.css. projColor (ranged attack
+// made for .cs-dot-*/.cs-btn-* in css/style.css. projColor (ranged attack
 // visuals) is left alone; combat-FX readability matters more there than
 // theme purity.
 const CHAR_DEF = {

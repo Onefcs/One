@@ -1,11 +1,13 @@
 // ── Character Select ──────────────────────────────────────────
 
 const _CS_TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock'];
+const _CS_CARD_GAP = 150; // px between adjacent card centers in the carousel
 
 let _csRAF = null;
 let _csState = {};
 let _csActiveType = 'lev';
 let _csSavedData  = null;
+let _csDragWired  = false;
 
 // Emoji prefixes are language-neutral; only the trailing word is translated
 // (see js/i18n.js's csBadgeMelee/csBadgeRanged/csBadgeSupport).
@@ -53,16 +55,12 @@ function _csSwitchChar(type) {
   _csActiveType = type;
   const cd = CHAR_DEF[type];
 
-  // Tabs
-  document.querySelectorAll('.cs-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.type === type);
+  // Dots
+  document.querySelectorAll('.cs-dot').forEach(d => {
+    d.classList.toggle('active', d.dataset.type === type);
   });
 
-  // Canvases
-  _CS_TYPES.forEach(t => {
-    const c = document.getElementById('cs-canvas-' + t);
-    if (c) c.style.display = t === type ? 'block' : 'none';
-  });
+  _csRenderCarousel();
 
   // Name + badge
   const nameEl  = document.getElementById('cs-active-name');
@@ -95,6 +93,89 @@ function _csSwitchChar(type) {
   }
 }
 
+// ── Carousel: active card centered, neighbors peeking at the edges ───────
+function _csIndexOf(type) { return _CS_TYPES.indexOf(type); }
+
+// Shortest circular distance from index `a` to `b` over the 5-class ring
+// (e.g. lev→warlock is -1, not +4) — lets the carousel wrap both ways.
+function _csShortestDelta(a, b) {
+  const n = _CS_TYPES.length;
+  let d = (b - a) % n;
+  if (d > n / 2) d -= n;
+  if (d < -n / 2) d += n;
+  return d;
+}
+
+function _csRenderCarousel(dragPx) {
+  const activeIdx = _csIndexOf(_csActiveType);
+  document.querySelectorAll('.cs-card').forEach(card => {
+    const idx = _csIndexOf(card.dataset.type);
+    const delta = _csShortestDelta(activeIdx, idx);
+    const ad = Math.abs(delta);
+    const x = delta * _CS_CARD_GAP + (dragPx || 0);
+    const scale = ad === 0 ? 1 : ad === 1 ? 0.66 : 0.46;
+    const opacity = ad === 0 ? 1 : ad === 1 ? 0.45 : 0;
+    card.style.transform = `translate(-50%,-50%) translateX(${x}px) scale(${scale})`;
+    card.style.opacity = opacity;
+    card.style.zIndex = 10 - ad;
+    card.classList.toggle('cs-peek', ad === 1);
+    card.style.pointerEvents = ad <= 1 ? 'auto' : 'none';
+  });
+}
+
+function _csGoTo(type) {
+  if (!CHAR_DEF[type] || type === _csActiveType) return;
+  _csSwitchChar(type);
+}
+function _csPrev() { _csGoTo(_CS_TYPES[(_csIndexOf(_csActiveType) - 1 + _CS_TYPES.length) % _CS_TYPES.length]); }
+function _csNext() { _csGoTo(_CS_TYPES[(_csIndexOf(_csActiveType) + 1) % _CS_TYPES.length]); }
+
+// Swipe/drag on the stage — live-follows the finger, then either commits to
+// the neighboring card or snaps back, same threshold feel as a native carousel.
+function _csWireDrag() {
+  if (_csDragWired) return;
+  _csDragWired = true;
+  const stage = document.getElementById('cs-stage');
+  if (!stage) return;
+  let dragging = false, startX = 0, curX = 0, justDragged = false;
+
+  const onDown = x => { dragging = true; startX = x; curX = x; };
+  const onMove = x => {
+    if (!dragging) return;
+    curX = x;
+    // Committing the drag re-snaps every card into its post-navigation spot
+    // *before* the browser's own follow-up 'click' event fires on whatever
+    // now sits under the pointer — without this flag that click lands on a
+    // peek card that just slid into place and immediately navigates again,
+    // undoing the swipe. Any real movement (not just past the nav threshold)
+    // sets it, so a drag never leaves a stray click behind.
+    if (Math.abs(curX - startX) > 5) justDragged = true;
+    _csRenderCarousel((curX - startX) * 0.9);
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    const dx = curX - startX;
+    if (Math.abs(dx) > 46) { dx > 0 ? _csPrev() : _csNext(); }
+    else _csRenderCarousel();
+  };
+
+  stage.addEventListener('mousedown', e => onDown(e.clientX));
+  window.addEventListener('mousemove', e => onMove(e.clientX));
+  window.addEventListener('mouseup', onUp);
+  stage.addEventListener('touchstart', e => onDown(e.touches[0].clientX), { passive: true });
+  stage.addEventListener('touchmove', e => onMove(e.touches[0].clientX), { passive: true });
+  stage.addEventListener('touchend', onUp);
+
+  // Peek cards (immediate neighbors) are clickable shortcuts straight to that class
+  document.querySelectorAll('.cs-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (justDragged) { justDragged = false; return; }
+      if (card.classList.contains('cs-peek')) _csGoTo(card.dataset.type);
+    });
+  });
+}
+
 function csShow(savedData) {
   _csSavedData = savedData || null;
   const el = document.getElementById('char-select');
@@ -117,6 +198,7 @@ function csShow(savedData) {
   const savedType = savedData && savedData.type;
   const startType = (savedType && CHAR_DEF[savedType]) ? savedType : 'lev';
   _csSwitchChar(startType);
+  _csWireDrag();
   _csStartAnim();
 }
 
@@ -134,8 +216,10 @@ function _csStartAnim() {
     if (!el || el.style.display === 'none') { _csRAF = null; return; }
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
-    // Only animate the active canvas
-    _csDrawFrame(_csActiveType, dt);
+    // The carousel keeps the active card plus its two peeking neighbors
+    // visible at once, so all of them need to keep animating, not just
+    // whichever one is currently centered.
+    _CS_TYPES.forEach(type => _csDrawFrame(type, dt));
     _csRAF = requestAnimationFrame(tick);
   }
   _csRAF = requestAnimationFrame(tick);
@@ -147,7 +231,7 @@ function _csStopAnim() {
 
 function _csDrawFrame(type, dt) {
   const canvas = document.getElementById('cs-canvas-' + type);
-  if (!canvas || canvas.style.display === 'none') return;
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
