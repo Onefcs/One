@@ -42,8 +42,8 @@ const ICON_SVG = {
   belt:      `<rect x="2" y="10" width="20" height="4" rx="1"/><rect x="10" y="9" width="4" height="6" rx="0.5"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>`,
   pendant:   `<path d="M12 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/><path d="M9.5 7.5L7 22h10L14.5 7.5"/>`,
   pet:       `<circle cx="7" cy="6" r="1.8"/><circle cx="12" cy="4.5" r="1.8"/><circle cx="17" cy="6" r="1.8"/><circle cx="19" cy="10.5" r="1.8"/><path d="M8.5 21c-2 0-3.5-1.4-3.5-3.4 0-3.6 3.6-6.6 7-6.6s7 3 7 6.6c0 2-1.5 3.4-3.5 3.4-1.3 0-2-.5-3.5-.5s-2.2.5-3.5.5z"/>`,
-  cloak:     `<path d="M9 3h6l3 5-2.5 1.3V19a2 2 0 0 1-2 2h-3.5a2 2 0 0 1-2-2V9.3L6 8z"/><circle cx="12" cy="4" r="1.1"/>`,
-  artifact:  `<polygon points="12,2 19,9 12,22 5,9"/><line x1="5" y1="9" x2="19" y2="9"/><line x1="12" y1="2" x2="9" y2="9"/><line x1="12" y1="2" x2="15" y2="9"/>`,
+  cloak:     `<path d="M12 4a4 4 0 0 0-4 4v1L4.5 20h15L16 9V8a4 4 0 0 0-4-4z"/>`,
+  artifact:  `<polygon points="12,4 20,11 12,20 4,11"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="12" y1="4" x2="9" y2="11"/><line x1="12" y1="4" x2="15" y2="11"/>`,
 
   // ── Skills — Warrior ───────────────────────────────────────────────────────
   shieldBash: `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9,12 11,14 15,10"/>`,
