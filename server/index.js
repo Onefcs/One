@@ -2031,6 +2031,26 @@ function _cleanupPdLobby(socketId) {
   }
 }
 
+// ── Instance ↔ world isolation ───────────────────────────────────────────────
+// An instance player keeps their world record (stats, position, party) but
+// must stop hearing the world floor channel while they are away: spawnProj,
+// spawnAoe, enemyCC and the join/char notices are all broadcast to
+// `floor_${N}`, so without this a fight in the hub draws arrows across the
+// maze, and a maze fight draws them across the safe zone. Leaving the room is
+// what isolates the *incoming* half; the outgoing half is handled at the
+// emit sites, which address the instance channel instead of the floor.
+function _detachFromFloor(socketId) {
+  const s = io.sockets.sockets.get(socketId);
+  const fl = playerFloorMap.get(socketId);
+  if (s && fl !== undefined) s.leave(`floor_${fl}`);
+}
+
+function _reattachToFloor(socketId) {
+  const s = io.sockets.sockets.get(socketId);
+  const fl = playerFloorMap.get(socketId);
+  if (s && fl !== undefined) s.join(`floor_${fl}`);
+}
+
 // Removes a player from a live party-dungeon instance's bookkeeping (does
 // NOT touch the instance itself — caller handles that separately since the
 // instance may need to keep running for the rest of the party).
@@ -2038,6 +2058,7 @@ function _cleanupPartyDungeonPlayer(socketId, channel) {
   playerPartyDungeon.delete(socketId);
   const s = io.sockets.sockets.get(socketId);
   if (s && channel) s.leave(channel);
+  _reattachToFloor(socketId);
   const fl = playerFloorMap.get(socketId);
   if (fl !== undefined) {
     const fr = floorRooms.get(fl);
@@ -2230,7 +2251,11 @@ function _cleanupLobby(socketId) {
 // (FULL_REFRESH_TICKS in Room.js), which is what actually resynced returning
 // players all along, since this line never once succeeded.
 function _cleanupRaidPlayer(socketId) {
+  const rId = playerRaid.get(socketId);
   playerRaid.delete(socketId);
+  const s = io.sockets.sockets.get(socketId);
+  if (s && rId) s.leave(rId);
+  _reattachToFloor(socketId);
   const fl = playerFloorMap.get(socketId);
   if (fl !== undefined) {
     const fr = floorRooms.get(fl);
@@ -5406,9 +5431,22 @@ io.on('connection', socket => {
   // plain hex literal is replaced rather than passed through.
   const _color = v => (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v)) ? v : '#ffffff';
 
+  // Visual-only relays. The client fires these from the same code path in the
+  // world and inside an instance, so the destination has to be decided here:
+  // a shot fired in the maze must stay in the maze, not fly across the hub.
+  const _fxChannel = () => {
+    const pdId = playerPartyDungeon.get(socket.id);
+    if (pdId) return pdRooms.get(pdId)?.channel || null;
+    const rId = playerRaid.get(socket.id);
+    if (rId) return raidRooms.has(rId) ? rId : null;
+    return `floor_${currentFloor}`;
+  };
+
   safeOn('spawnProj', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
-    socket.to(`floor_${currentFloor}`).emit('spawnProj', {
+    const ch = _fxChannel();
+    if (!ch) return;
+    socket.to(ch).emit('spawnProj', {
       x:        _num(data.x, -1e5, 1e5, 0),
       y:        _num(data.y, -1e5, 1e5, 0),
       vx:       _num(data.vx, -5000, 5000, 0),
@@ -5423,7 +5461,9 @@ io.on('connection', socket => {
 
   safeOn('spawnAoe', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
-    socket.to(`floor_${currentFloor}`).emit('spawnAoe', {
+    const ch = _fxChannel();
+    if (!ch) return;
+    socket.to(ch).emit('spawnAoe', {
       x: _num(data.x, -1e5, 1e5, 0),
       y: _num(data.y, -1e5, 1e5, 0),
       r: _num(data.r, 1, 400, 80),
@@ -5965,6 +6005,11 @@ io.on('connection', socket => {
       const mfl = playerFloorMap.get(mid);
       const mRoom = mfl !== undefined ? floorRooms.get(mfl) : null;
       const mp = mRoom?.players.get(mid);
+      // The raid id doubles as the instance's socket.io channel — see
+      // _detachFromFloor. Nothing joined it before, which is why the
+      // enemyCC relay in skillEffect has never reached anyone.
+      io.sockets.sockets.get(mid)?.join(raidId);
+      _detachFromFloor(mid);
       if (mp) {
         mp._inRaid = true;
         raidRoom.addPlayer(mid, { maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type, username: mp.username || lb.members.get(mid)?.name || '' });
@@ -6117,6 +6162,7 @@ io.on('connection', socket => {
       const mp = mRoom?.players.get(mid);
       const mSocket = io.sockets.sockets.get(mid);
       if (mSocket) mSocket.join(pd.channel);
+      _detachFromFloor(mid);
       if (mp) {
         mp._inRaid = true;
         pd.addPlayer(mid, mp.username || lb.members.get(mid)?.name || '', {

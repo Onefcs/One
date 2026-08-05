@@ -801,6 +801,12 @@ class Room {
     // target search, and nothing has moved players since — reuse it.
 
     this.players.forEach(p => {
+      // Players inside an instance (raid / party dungeon) stay registered here
+      // so their world record survives the trip, but they are not *in* the
+      // world any more: they neither see it nor appear in it. Without this
+      // they stream the hub while standing in the maze, and their frozen
+      // world position keeps haunting the safe zone they walked in from.
+      if (p._inRaid) return;
       nearPlayers.length = 0;
       cand.length = 0;
       // Same 3x3-cell interest query the enemies use, for the same reason —
@@ -832,6 +838,7 @@ class Room {
           for (let ci = 0; ci < cell.length; ci++) {
             const op = cell[ci];
             if (op.socketId === p.socketId) continue;
+            if (op._inRaid) continue;   // in an instance — see the skip above
             const dx = op.x - p.x, dy = op.y - p.y;
             const d2 = dx * dx + dy * dy;
             if (d2 > PLAYER_AOI_R2) continue;
