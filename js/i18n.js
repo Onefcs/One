@@ -241,6 +241,7 @@ const I18N_UI = {
   craftEnchantStonesHdr: { ru: 'Камни заточки', en: 'Enchant Stones', uk: 'Камені гартування', es: 'Piedras de Encantamiento', tr: 'Büyü Taşları', pt: 'Pedras de Encantamento' },
   craftBoxesHdr:    { ru: 'Боксы', en: 'Boxes', uk: 'Бокси', es: 'Cajas', tr: 'Kutular', pt: 'Caixas' },
   craftPetsHdr:     { ru: 'Питомцы', en: 'Pets', uk: 'Улюбленці', es: 'Mascotas', tr: 'Evcil Hayvanlar', pt: 'Mascotes' },
+  craftClassGearHdr: { ru: 'Плащи и артефакты классов', en: 'Class Cloaks & Artifacts', uk: 'Плащі та артефакти класів', es: 'Capas y Artefactos de Clase', tr: 'Sınıf Pelerinleri ve Eserleri', pt: 'Capas e Artefatos de Classe' },
   craftPetPickOneOf: { ru: 'Один случайный из 3', en: 'One random of 3', uk: 'Один випадковий з 3', es: 'Uno al azar de 3', tr: '3 üzerinden rastgele biri', pt: 'Um aleatório entre 3' },
   craftPetTapHint: { ru: 'Нажмите на питомца — увидите характеристики', en: 'Tap a pet to see its stats', uk: 'Натисніть на улюбленця — побачите характеристики', es: 'Toca una mascota para ver sus estadísticas', tr: 'Özelliklerini görmek için bir evcil hayvana dokun', pt: 'Toque em um mascote para ver seus atributos' },
   rarityGroupUncommon:  { ru: 'Необычные',   en: 'Uncommon',   uk: 'Незвичайні',   es: 'Poco Comunes', tr: 'Nadir Olmayanlar', pt: 'Incomuns' },

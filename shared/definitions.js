@@ -521,6 +521,37 @@ const ITEM_DEF = [
   { id:'af3', name:'Реликвия бури',    slot:'artifact', icon:'artifact', atk:10, critChance:0.04, hp:30,  rarity:'rare'     },
   { id:'af4', name:'Артефакт героя',   slot:'artifact', icon:'artifact', atk:16, critChance:0.05, def:6,  rarity:'epic'     },
   { id:'af5', name:'Артефакт легенды', slot:'artifact', icon:'artifact', atk:24, critChance:0.07, def:10, hp:60, rarity:'legendary'},
+  // ── Class cloaks & artifacts (salvage-craft) ──────────────
+  // Additional to the generic cl1-5/af1-5 progression above: one flavor per
+  // class, common+uncommon only, marked with `classItem` so
+  // CLASS_GEAR_SALVAGE_RECIPES (js/definitions.js) can pool them separately
+  // from the generic chain. Crafted at the blacksmith by salvaging junk gear
+  // of the target rarity rather than bought/dropped, so stats mirror the pet
+  // tier baseline (hp/atk/def by rarity + one differentiating stat, see
+  // PET_CRAFT_RECIPES below) instead of the def/crit progression above. Same
+  // name across both tiers of a class — the cloak art already carries the
+  // tier (images/cloak/<class>_c|u.png) and the artifact art has no tier
+  // variant at all (images/artifact/<class>.png, reused for both).
+  { id:'cloak_c_lev',         name:'Плащ танка',          slot:'cloak', classItem:true, img:'/images/cloak/lev_c.png',         hp:150, atk:10, def:10, hpPct:0.15,       rarity:'common'   },
+  { id:'cloak_c_deathknight', name:'Плащ рыцаря смерти',  slot:'cloak', classItem:true, img:'/images/cloak/deathknight_c.png', hp:150, atk:10, def:10, critChance:0.10,  rarity:'common'   },
+  { id:'cloak_c_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, img:'/images/cloak/ranger_c.png',      hp:150, atk:10, def:10, atkSpeed:0.10,    rarity:'common'   },
+  { id:'cloak_c_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, img:'/images/cloak/mage_c.png',        hp:150, atk:10, def:10, critChance:0.10,  rarity:'common'   },
+  { id:'cloak_c_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, img:'/images/cloak/warlock_c.png',     hp:150, atk:10, def:10, hpPct:0.15,       rarity:'common'   },
+  { id:'cloak_u_lev',         name:'Плащ танка',          slot:'cloak', classItem:true, img:'/images/cloak/lev_u.png',         hp:300, atk:25, def:20, hpPct:0.25,       rarity:'uncommon' },
+  { id:'cloak_u_deathknight', name:'Плащ рыцаря смерти',  slot:'cloak', classItem:true, img:'/images/cloak/deathknight_u.png', hp:300, atk:25, def:20, critChance:0.175, rarity:'uncommon' },
+  { id:'cloak_u_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, img:'/images/cloak/ranger_u.png',      hp:300, atk:25, def:20, atkSpeed:0.175,   rarity:'uncommon' },
+  { id:'cloak_u_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, img:'/images/cloak/mage_u.png',        hp:300, atk:25, def:20, critChance:0.175, rarity:'uncommon' },
+  { id:'cloak_u_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, img:'/images/cloak/warlock_u.png',     hp:300, atk:25, def:20, hpPct:0.25,       rarity:'uncommon' },
+  { id:'artifact_c_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, img:'/images/artifact/lev.png',         hp:150, atk:10, def:10, hpPct:0.15,       rarity:'common'   },
+  { id:'artifact_c_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, img:'/images/artifact/deathknight.png', hp:150, atk:10, def:10, critChance:0.10,  rarity:'common'   },
+  { id:'artifact_c_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, img:'/images/artifact/ranger.png',      hp:150, atk:10, def:10, atkSpeed:0.10,    rarity:'common'   },
+  { id:'artifact_c_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, img:'/images/artifact/mage.png',        hp:150, atk:10, def:10, critChance:0.10,  rarity:'common'   },
+  { id:'artifact_c_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, img:'/images/artifact/warlock.png',     hp:150, atk:10, def:10, hpPct:0.15,       rarity:'common'   },
+  { id:'artifact_u_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, img:'/images/artifact/lev.png',         hp:300, atk:25, def:20, hpPct:0.25,       rarity:'uncommon' },
+  { id:'artifact_u_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, img:'/images/artifact/deathknight.png', hp:300, atk:25, def:20, critChance:0.175, rarity:'uncommon' },
+  { id:'artifact_u_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, img:'/images/artifact/ranger.png',      hp:300, atk:25, def:20, atkSpeed:0.175,   rarity:'uncommon' },
+  { id:'artifact_u_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, img:'/images/artifact/mage.png',        hp:300, atk:25, def:20, critChance:0.175, rarity:'uncommon' },
+  { id:'artifact_u_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, img:'/images/artifact/warlock.png',     hp:300, atk:25, def:20, hpPct:0.25,       rarity:'uncommon' },
   // ── Pets ─────────────────────────────────────────────────
   // Own equip slot (EQ_SLOTS 'pet', js/definitions.js), crafted at the forge
   // for Liberty/Nexum (PET_CRAFT_RECIPES below) — not a mob/box drop. Base

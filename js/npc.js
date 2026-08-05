@@ -405,7 +405,98 @@ function _craftsmanMatsTab() {
     html += '</div>';
   }
 
+  if (typeof CLASS_GEAR_SALVAGE_RECIPES !== 'undefined' && CLASS_GEAR_SALVAGE_RECIPES.length) {
+    html += `<div class="craft-group-hdr" style="color:#c98a4b">${typeof t === 'function' ? t('craftClassGearHdr') : 'Плащи и артефакты классов'}</div><div class="craft-items-grid">`;
+    CLASS_GEAR_SALVAGE_RECIPES.forEach((rec, idx) => {
+      const pool = _classGearOfRarity(rec.resultSlot, rec.resultRarity);
+      if (!pool.length) return;
+      const rc = RARITY_COLOR[rec.resultRarity] || '#aea599';
+      const canCraft = _salvageMatCount(rec.costRarity) >= rec.costCount;
+      const label = (rec.resultSlot === 'cloak' ? (_SLOT_NAMES.cloak || 'Плащ') : (_SLOT_NAMES.artifact || 'Артефакт'))
+        + ' · ' + (_RARITY_NAMES[rec.resultRarity] || rec.resultRarity);
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openClassGearCraftModal(${idx})" style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_itemIcon(pool[0], 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${label}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
   return html;
+}
+
+// ── Class cloak/artifact salvage-crafting (no Liberty — fully client-trusted,
+// see CLASS_GEAR_SALVAGE_RECIPES in js/definitions.js). Pays in junk gear of
+// the target rarity instead of a scroll/gold combo, and picks one random
+// class-flavored result the same way pet crafting picks one random skin.
+function _classGearOfRarity(slot, rarity) {
+  return ITEM_DEF.filter(d => d.classItem && d.slot === slot && d.rarity === rarity);
+}
+function _salvageMatCount(rarity) {
+  return player.inventory.filter(it => !_isStackable(it) && it.rarity === rarity).length;
+}
+
+function openClassGearCraftModal(idx) {
+  const rec = CLASS_GEAR_SALVAGE_RECIPES[idx];
+  if (!rec || !player) return;
+  const pool = _classGearOfRarity(rec.resultSlot, rec.resultRarity);
+  if (!pool.length) return;
+  const rc = RARITY_COLOR[rec.resultRarity] || '#aea599';
+  const have = _salvageMatCount(rec.costRarity);
+  const ok = have >= rec.costCount;
+
+  const candidatesHtml = pool.map(p => `
+    <div class="pet-pick" onclick="openPetStatsModal('${p.id}')">
+      <div>${_itemIcon(p, 44)}</div>
+      <div style="font-size:11px;color:${rc};margin-top:2px">${p.name}</div>
+    </div>`).join('');
+
+  const previewHtml = `<div class="pet-preview-hint">${typeof t === 'function' ? t('craftPetTapHint') : 'Нажмите на предмет — характеристики'}</div>`;
+
+  const costRow = `<div class="craft-req-row">
+    <span class="craft-req-icon">${iconHTML('storage', 20, rc)}</span>
+    <span class="craft-req-name">${_RARITY_NAMES[rec.costRarity] || rec.costRarity}</span>
+    <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${rec.costCount}</span>
+  </div>`;
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${(rec.resultSlot === 'cloak' ? (_SLOT_NAMES.cloak || 'Плащ') : (_SLOT_NAMES.artifact || 'Артефакт'))} · ${_RARITY_NAMES[rec.resultRarity] || rec.resultRarity}</div>
+        <div class="craft-detail-stats">${typeof t === 'function' ? t('craftPetPickOneOf') : 'Один случайный из 5'}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">${candidatesHtml}</div>
+    ${previewHtml}
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
+    <div class="craft-reqs-list">${costRow}</div>
+    <button class="shop-btn craft-do-btn${ok ? '' : ' disabled'}" onclick="craftClassGear(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
+  `;
+}
+
+// Costs only non-stackable junk of the target rarity, no Liberty — resolves
+// instantly and locally, unlike craftPet/craftGear which wait on the server.
+function craftClassGear(idx) {
+  const rec = CLASS_GEAR_SALVAGE_RECIPES[idx];
+  if (!rec || !player) return;
+  const pool = _classGearOfRarity(rec.resultSlot, rec.resultRarity);
+  if (!pool.length) return;
+  if (_salvageMatCount(rec.costRarity) < rec.costCount) { _shopMsg('Недостаточно предметов!'); return; }
+
+  // Removing costCount (20-30) items and adding back 1 always frees net
+  // space, so no invHasSpace() gate is needed here (unlike other crafts).
+  let removed = 0;
+  for (let i = player.inventory.length - 1; i >= 0 && removed < rec.costCount; i--) {
+    const it = player.inventory[i];
+    if (!_isStackable(it) && it.rarity === rec.costRarity) { player.inventory.splice(i, 1); removed++; }
+  }
+  const result = pool[Math.floor(Math.random() * pool.length)];
+  addToInventory({ ...result });
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + result.name);
+  netSaveProgress();
+  openClassGearCraftModal(idx);
 }
 
 // ── Pet crafting (Liberty/Nexum-only; result is random among that rarity's
