@@ -21,7 +21,7 @@ const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -3553,7 +3553,7 @@ io.on('connection', socket => {
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
     'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear',
+    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear',
   ]);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
@@ -4444,6 +4444,65 @@ io.on('connection', socket => {
       console.error('craftPet:', err);
       logPlayerErr(authed.telegramId, authed.username, 'pet_craft', err, { rarity });
       socket.emit('petCraftError', { msg: 'Ошибка сервера' });
+    }
+    });
+  });
+
+  // ── Class cloak/artifact crafting (Кузнец → Материалы → Плащи и артефакты
+  // классов) ──────────────────────────────────────────────────────────────
+  // Costs Liberty on top of salvaging junk gear of the target rarity
+  // (CLASS_GEAR_SALVAGE_RECIPES, shared/definitions.js) — same reasoning as
+  // craftStone/craftGear above: Liberty is server-authoritative, so the whole
+  // exchange (material count + Liberty charge + random item grant) has to
+  // happen here rather than being client-computed.
+  safeOn('craftClassGear', async ({ slot, rarity } = {}) => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+    try {
+      const rec = CLASS_GEAR_SALVAGE_RECIPES.find(r => r.resultSlot === slot && r.resultRarity === rarity);
+      if (!rec) return socket.emit('craftClassGearError', { msg: 'Неизвестный рецепт' });
+      const candidates = ITEM_DEF.filter(d => d.classItem && d.slot === rec.resultSlot && d.rarity === rec.resultRarity);
+      if (!candidates.length) return socket.emit('craftClassGearError', { msg: 'Предметы этой редкости не найдены' });
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('craftClassGearError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      const inv = _lastStats.inventory;
+      if (inv.length >= SERVER_INV_MAX) {
+        return socket.emit('craftClassGearError', { msg: 'Инвентарь полон' });
+      }
+      // Salvage material: any non-stackable item of the matching rarity —
+      // same "junk gear" definition the client's inventory panel uses.
+      const matCount = () => inv.reduce((s, i) => s + (i && !isStackableItem(i) && i.rarity === rec.costRarity ? 1 : 0), 0);
+      if (matCount() < rec.costCount) {
+        return socket.emit('craftClassGearError', { msg: `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${matCount()})` });
+      }
+      // Charged before anything is consumed, and atomically — see craftStone.
+      await _flushBalances();
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+      if (_bal === null) {
+        return socket.emit('craftClassGearError', { msg: `Нужно ${rec.nexumCost} Liberty` });
+      }
+      _nexumBalance = _bal;
+      // Re-checked after the await, same reasoning as craftStone/craftGear.
+      if (matCount() < rec.costCount) {
+        const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+        if (back !== null) _nexumBalance = back;
+        return socket.emit('craftClassGearError', { msg: `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${matCount()})` });
+      }
+      let left = rec.costCount;
+      for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+        const e = inv[i];
+        if (e && !isStackableItem(e) && e.rarity === rec.costRarity) { inv.splice(i, 1); left--; }
+      }
+      const resultItem = { ...candidates[Math.floor(Math.random() * candidates.length)] };
+      const _delivered = _invAdd(inv, resultItem);
+      _commitServerItems(inv, null, 'class_gear_craft',
+        { slot: rec.resultSlot, rarity: rec.resultRarity, cost: rec.nexumCost, got: resultItem.id });
+      socket.emit('classGearCrafted', { item: resultItem, newNexumBalance: _nexumBalance, delivered: _delivered });
+    } catch (err) {
+      console.error('craftClassGear:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'class_gear_craft', err, { slot, rarity });
+      socket.emit('craftClassGearError', { msg: 'Ошибка сервера' });
     }
     });
   });

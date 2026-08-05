@@ -253,19 +253,11 @@ const ITEM_CRAFT_RECIPES = [
 if (typeof STONE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...STONE_CRAFT_RECIPES);
 if (typeof GEAR_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_CRAFT_RECIPES);
 
-// Class cloaks & artifacts: salvage junk gear of a rarity into one random
-// class-flavored cloak/artifact of that same rarity (ITEM_DEF entries with
-// `classItem:true`, shared/definitions.js). No Liberty involved — unlike
-// STONE_CRAFT_RECIPES/GEAR_CRAFT_RECIPES above, this stays fully
-// client-trusted and lives here rather than shared/definitions.js, mirroring
-// PET_CRAFT_RECIPES's "pick one random result from a pool" shape but paid in
-// salvage material (non-stackable items of the target rarity) instead.
-const CLASS_GEAR_SALVAGE_RECIPES = [
-  { resultSlot:'cloak',    resultRarity:'common',   costRarity:'common',   costCount:30 },
-  { resultSlot:'cloak',    resultRarity:'uncommon', costRarity:'uncommon', costCount:20 },
-  { resultSlot:'artifact', resultRarity:'common',   costRarity:'common',   costCount:30 },
-  { resultSlot:'artifact', resultRarity:'uncommon', costRarity:'uncommon', costCount:20 },
-];
+// CLASS_GEAR_SALVAGE_RECIPES (class cloaks/artifacts) lives in
+// shared/definitions.js, not here — it costs Liberty on top of the salvage
+// materials, and Liberty is server-authoritative, so the server needs its own
+// copy of the recipe to charge against (same reasoning as GEAR_CRAFT_RECIPES
+// above).
 
 // Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)
 const MAT_UPGRADE_RECIPES = [

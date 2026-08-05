@@ -524,11 +524,12 @@ const ITEM_DEF = [
   // ── Class cloaks & artifacts (salvage-craft) ──────────────
   // Additional to the generic cl1-5/af1-5 progression above: one flavor per
   // class, common+uncommon only, marked with `classItem` so
-  // CLASS_GEAR_SALVAGE_RECIPES (js/definitions.js) can pool them separately
-  // from the generic chain. Crafted at the blacksmith by salvaging junk gear
-  // of the target rarity rather than bought/dropped, so stats mirror the pet
-  // tier baseline (hp/atk/def by rarity + one differentiating stat, see
-  // PET_CRAFT_RECIPES below) instead of the def/crit progression above. Same
+  // CLASS_GEAR_SALVAGE_RECIPES below can pool them separately from the
+  // generic chain. Crafted at the blacksmith by salvaging junk gear of the
+  // target rarity (plus a flat Liberty cost) rather than bought/dropped, so
+  // stats mirror the pet tier baseline (hp/atk/def by rarity + one
+  // differentiating stat, see PET_CRAFT_RECIPES below) instead of the
+  // def/crit progression above. Same
   // name across both tiers of a class — the cloak art already carries the
   // tier (images/cloak/<class>_c|u.png) and the artifact art has no tier
   // variant at all (images/artifact/<class>.png, reused for both).
@@ -640,6 +641,20 @@ const PET_CRAFT_RECIPES = [
   { rarity:'common',   nexumCost:500,  chance:1.0 },
   { rarity:'uncommon', nexumCost:2000, chance:1.0 },
   { rarity:'rare',     nexumCost:5000, chance:1.0 },
+];
+
+// Class cloaks & artifacts: salvage junk gear of a rarity into one random
+// class-flavored cloak/artifact of that same rarity (ITEM_DEF entries with
+// `classItem:true` above), plus a flat Liberty cost. Priced in Liberty, which
+// is server-authoritative (see PET_CRAFT_RECIPES above), so — unlike a pure
+// gold/mats recipe — the whole exchange (material count check + Liberty
+// charge + item grant) has to happen server-side; the client only shows this
+// table and waits for the result.
+const CLASS_GEAR_SALVAGE_RECIPES = [
+  { resultSlot:'cloak',    resultRarity:'common',   costRarity:'common',   costCount:30, nexumCost:300  },
+  { resultSlot:'cloak',    resultRarity:'uncommon', costRarity:'uncommon', costCount:20, nexumCost:1500 },
+  { resultSlot:'artifact', resultRarity:'common',   costRarity:'common',   costCount:30, nexumCost:300  },
+  { resultSlot:'artifact', resultRarity:'uncommon', costRarity:'uncommon', costCount:20, nexumCost:1500 },
 ];
 
 // Clan membership cap. Enforced server-side in clanApprove; the client
@@ -972,7 +987,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLAN_MAX_MEMBERS,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,

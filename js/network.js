@@ -2068,6 +2068,10 @@ function netCraftGear(itemId) {
   if (socket?.connected) socket.emit('craftGear', { itemId });
 }
 
+function netCraftClassGear(slot, rarity) {
+  if (socket?.connected) socket.emit('craftClassGear', { slot, rarity });
+}
+
 // Charged in Liberty, so the server does the whole thing and answers with
 // 'upgradesReset' — see the handler above.
 function netResetUpgrades() {
@@ -2557,6 +2561,19 @@ function _initPetCraftHandlers(s) {
   });
   s.on('craftGearError', ({ msg }) => {
     if (typeof onGearCraftError === 'function') onGearCraftError(msg);
+  });
+
+  // Class cloaks/artifacts (salvage + Liberty). Same "delivered" shape as
+  // petCrafted above: inventorySync (mats removed + item added) normally
+  // lands before this event on the same socket, so `delivered` is mostly a
+  // defensive fallback for the rare case the grant itself couldn't land.
+  s.on('classGearCrafted', ({ item, newNexumBalance, delivered }) => {
+    window._nexumBalance = newNexumBalance;
+    if (player) player.nexumBalance = newNexumBalance;
+    if (typeof onClassGearCrafted === 'function') onClassGearCrafted(item, delivered);
+  });
+  s.on('craftClassGearError', ({ msg }) => {
+    if (typeof onClassGearCraftError === 'function') onClassGearCraftError(msg);
   });
 
   // Upgrade reset. The server has already charged the Liberty and cleared its
