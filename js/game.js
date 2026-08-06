@@ -717,7 +717,18 @@ function update(dt, realDt) {
       op.y += (op.targetY - op.y) * _lf;
     }
     const _mdx = op.x - prevX, _mdy = op.y - prevY;
-    op.moving = _mdx * _mdx + _mdy * _mdy > 0.1;
+    // Held briefly rather than read per frame. Any single interval without
+    // fresh data — a dropped packet (the world stream is volatile by design),
+    // a cast that arrived with nothing new, a hitch on the sender — makes this
+    // delta zero for a frame or two. Flipping `moving` off on that alone
+    // switches the animation key from run to idle and back, and every switch
+    // resets animFrame to 0, so the run cycle restarts: on screen the other
+    // player twitches or looks like they turned on the spot. The hold is
+    // shorter than the time it takes to actually stop being seen as moving,
+    // so a player who genuinely stands still still settles into idle.
+    if (_mdx * _mdx + _mdy * _mdy > 0.1) op._movingHold = 0.2;
+    else op._movingHold = Math.max(0, (op._movingHold || 0) - dt);
+    op.moving = (op._movingHold || 0) > 0;
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
     if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
     if ((op._swingTimer || 0) > 0) op._swingTimer -= dt;

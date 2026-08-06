@@ -1683,10 +1683,24 @@ function _finishOnlineStart() {
 // ── Move throttle ─────────────────────────────────────────────
 let _lastMoveSend = 0;
 let _lastSentX = null, _lastSentY = null, _lastSentFacing = null, _lastSentHp = null;
-// The world is broadcast every OTHER server tick (20Hz — see castPlayers in
-// Room.js), so a position arriving faster than that cannot reach anyone any
-// sooner. 40Hz was double what the server could ever act on.
-const _MOVE_SEND_MS = 50;
+// Has to stay comfortably ABOVE the server's 20Hz cast rate, not equal to it.
+//
+// This was briefly set to 50ms on the reasoning that the world is broadcast
+// every other tick, so a position sent faster could not reach anyone sooner.
+// That misses two things. First, netSendMove is called from the frame loop, so
+// the threshold is quantised to frame boundaries: at 60fps a 50ms limit
+// actually sends every 66.7ms — about 15Hz, BELOW the cast rate. Second, when
+// the sender is slower than the caster, some casts have no new position to
+// report and repeat the previous one; the receiver's interpolation then has
+// nothing to advance towards for that 50ms window, so the other player stands
+// still for a frame and jumps on the next — and because the animation key
+// flips run->idle->run, their run cycle restarts from frame 0 each time, which
+// reads on screen as the character twitching or turning on the spot.
+//
+// Measured with dev/snapshot-check.js, share of snapshots that repeated the
+// previous position while running: 15Hz -> 20.9%, 20Hz -> 1.5%, 30Hz -> 0%.
+// At 25ms both 30fps and 60fps devices land on 30Hz.
+const _MOVE_SEND_MS = 25;
 // Even a perfectly still player re-states their position this often. Two
 // reasons: the packet below is volatile (dropped rather than queued on a
 // stalled link), so the one that says "I stopped here" can be lost, and the

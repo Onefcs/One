@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+'use strict';
+// Do the position snapshots of a running player actually advance every cast?
+//
+// One bot runs in a straight line at a fixed send rate; another decodes the
+// world stream and looks at the sequence of positions it is given for them. A
+// snapshot that repeats the previous position is a 50ms window in which the
+// watcher's interpolation has nothing to move towards — on screen that is the
+// character standing still for a frame and then jumping, and the run animation
+// restarting from frame 0. It happens when the sender's rate is not comfortably
+// above the server's cast rate: the two clocks drift against each other, and
+// every so often a cast lands with no new position to report.
+//
+//   npm run dev:local     (in another terminal)
+//   node dev/snapshot-check.js [seconds]
+//     MOVE_HZ=20   sender's rate (the server casts at 20Hz)
+
+const { io } = require('socket.io-client');
+const { decodeGameState } = require('../shared/netcodec');
+
+const URL = process.env.URL || 'http://localhost:3000';
+const SECS = Number(process.argv[2] || 15);
+const MOVE_HZ = Number(process.env.MOVE_HZ || 20);
+
+async function connect(name, type) {
+  const { initData } = await (await fetch(`${URL}/dev/init-data?dev=${name}`)).json();
+  const s = io(URL, { transports: ['websocket'], upgrade: false });
+  s.on('connect', () => s.emit('loginTelegramWebApp', { initData }));
+  s.on('authOk', () => s.emit('selectChar', { type, savedStats: null }));
+  await new Promise(res => s.on('gameStart', res));
+  return s;
+}
+
+(async () => {
+  const runner = await connect('snapRunner', 'lev');
+  const watcher = await connect('snapWatcher', 'lev');
+
+  // Side by side in open world, well outside the safe zone.
+  const X0 = 700, Y0 = 13380;
+  watcher.volatile.emit('mv', [(X0 + 120) * 2, Y0 * 2, 0, 200]);
+
+  // The watcher's view of the runner: one entry per cast that mentions them.
+  const seen = [];
+  watcher.on('gameState', buf => {
+    const st = decodeGameState(buf instanceof ArrayBuffer ? buf
+      : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    if (!st.players) return;
+    for (const p of st.players) {
+      if (p.id === watcher.id) continue;
+      seen.push({ t: st.t, x: p.x, y: p.y });
+    }
+  });
+
+  // A circle rather than a straight line: constant speed, no direction
+  // reversals to mistake for stalls, and the runner never leaves the watcher's
+  // 600px interest radius (a straight run leaves it in about three seconds and
+  // the stream correctly goes quiet).
+  const R = 150, speed = 200; // px/s, roughly a character's run
+  const step = 1000 / MOVE_HZ;
+  let th = 0;
+  const timer = setInterval(() => {
+    th += (speed / R) * (step / 1000);
+    const x = X0 + Math.cos(th) * R, y = Y0 + Math.sin(th) * R;
+    runner.volatile.emit('mv', [Math.round(x * 2), Math.round(y * 2), 3, 200]);
+  }, step);
+  // Keep the watcher's own position fresh so the server keeps them in the room.
+  const keep = setInterval(() => watcher.volatile.emit('mv', [(X0 + 120) * 2, Y0 * 2, 0, 200]), 500);
+
+  await new Promise(r => setTimeout(r, 2000));
+  seen.length = 0;
+  await new Promise(r => setTimeout(r, SECS * 1000));
+  clearInterval(timer); clearInterval(keep);
+
+  let dupes = 0, gaps = 0;
+  const deltas = [];
+  for (let i = 1; i < seen.length; i++) {
+    const d = Math.hypot(seen[i].x - seen[i - 1].x, seen[i].y - seen[i - 1].y);
+    deltas.push(d);
+    if (d < 0.01) dupes++;
+    if (d > 15) gaps++; // two casts' worth of movement in one step
+  }
+  const secs = seen.length ? (seen[seen.length - 1].t - seen[0].t) / 1000 : 0;
+  const avg = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
+
+  console.log(JSON.stringify({
+    senderHz: MOVE_HZ,
+    seconds: +secs.toFixed(1),
+    snapshots: seen.length,
+    snapshotsPerSec: +(seen.length / secs).toFixed(1),
+    repeatedPositions: dupes,
+    repeatedPct: +(dupes / Math.max(1, deltas.length) * 100).toFixed(1),
+    doubleSteps: gaps,
+    avgPxPerSnapshot: +avg.toFixed(2),
+  }, null, 2));
+
+  runner.disconnect(); watcher.disconnect();
+  process.exit(0);
+})();
