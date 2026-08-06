@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const { generateOpenWorld, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
@@ -145,26 +144,6 @@ const FULL_REFRESH_TICKS = 80;
 // server to encode the whole world on demand.
 const ENEMY_RESYNC_MAX = 40;
 
-// Radius for purely visual combat fan-out (projectiles, AOE rings, the CC
-// flash on a monster) — see nearbyPlayerIds and its callers in server/index.js.
-// Wider than PLAYER_AOI_R2 because a projectile outlives the frame it was
-// fired in: the fastest one travels ~400px/s for 1.8s, so a shot aimed away
-// from the shooter can end up well past the radius the shooter themselves is
-// streamed within. Everything beyond this is unreachable on screen anyway —
-// the client is never told the shooter exists, so a projectile arriving from
-// there would be a bolt out of empty space.
-const VISUAL_FANOUT_R = 1000;
-const VISUAL_FANOUT_R2 = VISUAL_FANOUT_R * VISUAL_FANOUT_R;
-// Upper bound on recipients of one visual, for the case the radius can't
-// bound on its own: a hundred players standing on the same hub tile are all
-// legitimately "in range" of each other. See nearbyPlayerIds.
-const VISUAL_FANOUT_CAP = 24;
-
-// A player receiving nothing at all still gets one packet this often, purely
-// so their clock offset (js/network.js's _svrTimeOffset EMA) keeps tracking
-// the server. At 20 casts/s this is once a second.
-const IDLE_HEARTBEAT_CASTS = 20;
-
 // Enemy interest management. ENEMY_AOI_R (shared/definitions.js — the client
 // prunes against the same number) is the radius each player is streamed
 // enemies within; the grid cell is sized to match it so the per-player query
@@ -303,10 +282,6 @@ class Room {
     // Reusable buffer for "who can currently see this enemy" fan-outs
     // (enemyHurt/enemyKilled) — see viewersOfEnemy.
     this._viewerBuf = [];
-    // Second buffer plus a rotating offset, for the capped visual fan-out —
-    // see nearbyPlayerIds.
-    this._fanoutWin = [];
-    this._fanoutRot = 0;
     this._tickNo = 0;
     this._pSeq = 0;
     // Tick timing, exposed via stats() and the /health endpoint. A tick that
@@ -480,38 +455,6 @@ class Room {
     };
     this._tickMsMax = 0; this._tickMsSum = 0; this._tickSamples = 0; this._tickOverruns = 0;
     return s;
-  }
-
-  // The map as one self-contained buffer, plus a content hash naming it.
-  //
-  // The world is generated from a FIXED seed (see generateOpenWorld in
-  // server/game/dungeon.js), so every process builds a byte-identical map:
-  // the hash is stable across restarts and redeploys, which is what makes it
-  // safe to serve this over HTTP with an immutable, effectively permanent
-  // cache. Before this, the whole thing — 52KB of packed grid plus ~79KB of
-  // room JSON — was serialized into gameStart for every single join, and a
-  // join happens on every socket.io reconnect, not just at login. A restart
-  // reconnects everyone at once, and 150 simultaneous joins stretched a 25ms
-  // tick to 125ms.
-  //
-  // Layout: u32 JSON byte length, the JSON (everything except the grid), then
-  // the raw packed grid. Decoded by _decodeWorldMap in js/network.js.
-  get mapPayload() {
-    if (this._mapPayload) return this._mapPayload;
-    const d = this.dungeonData;
-    const meta = { ...d, gridPacked: undefined };
-    delete meta.gridPacked;
-    const json = Buffer.from(JSON.stringify(meta), 'utf8');
-    const head = Buffer.alloc(4);
-    head.writeUInt32LE(json.length, 0);
-    this._mapPayload = Buffer.concat([head, json, d.gridPacked]);
-    this._mapVersion = crypto.createHash('sha1').update(this._mapPayload).digest('hex').slice(0, 12);
-    return this._mapPayload;
-  }
-
-  get mapVersion() {
-    if (!this._mapVersion) this.mapPayload; // builds both
-    return this._mapVersion;
   }
 
   get dungeonData() {
@@ -832,12 +775,9 @@ class Room {
           e._atkPulse = true;
           const dmg = Math.max(1, e.atk - (closest.def || 0));
           closest.hp = Math.max(0, closest.hp - dmg);
-          // Straight down the victim's own socket, not io.to(id): the room
-          // form builds a BroadcastOperator plus a rooms Set on every call,
-          // and this runs inside the 40Hz AI loop on every monster swing —
-          // the same reasoning the gameState emit below already follows.
-          const vsock = this._socketFor(closest);
-          if (vsock) vsock.emit('playerHurt', { id: closest.socketId, hp: closest.hp, dmg });
+          this.io.to(closest.socketId).emit('playerHurt', {
+            id: closest.socketId, hp: closest.hp, dmg,
+          });
         }
       }
 
@@ -1018,25 +958,6 @@ class Room {
       // precisely because this stream is self-healing: enemies a client ends
       // up missing are re-sent in full by ENEMY_REFRESH_CASTS or pulled back
       // on demand by its own enemyResync, and players by FULL_REFRESH_TICKS.
-      // Nothing to say to this player: nobody in range, no enemy moved or
-      // changed inside their radius. That is the steady state for anyone
-      // playing alone in a corridor, standing in the hub with the market
-      // open, or idling in a menu — and it used to cost a packet anyway, 20
-      // times a second, forever. Each one is TWO WebSocket frames (socket.io
-      // sends a JSON envelope plus the binary attachment) of which ~79% of
-      // the bytes are the envelope, and one writev syscall — measured as the
-      // single largest entry in the server's CPU profile.
-      //
-      // One empty packet still has to go out after a non-empty one: the
-      // client prunes players it stops hearing about (see the gameState
-      // handler in js/network.js), so going silent immediately would freeze
-      // whoever just walked out of range on their screen. After that, silence
-      // until something happens — with a heartbeat every IDLE_HEARTBEAT_CASTS
-      // so the clock-offset EMA keeps tracking.
-      const empty = playersOut.length === 0 && nearEnemies.length === 0;
-      if (empty && p._lastSentEmpty && (castId - p._lastSentAt) < IDLE_HEARTBEAT_CASTS * 2) return;
-      p._lastSentEmpty = empty;
-      p._lastSentAt = castId;
       const sock = this._socketFor(p);
       if (sock) sock.volatile.emit('gameState', encodeGameState(playersOut, nearEnemies, now, undefined));
     });
@@ -1155,72 +1076,6 @@ class Room {
     const fresh = this.io.sockets.sockets.get(p.socketId) || null;
     p._socket = fresh;
     return fresh;
-  }
-
-  // socketIds of everyone close enough to (x, y) to actually see something
-  // happen there, minus `exceptSocketId`. For visual-only combat fan-out:
-  // projectiles, AOE rings and the crowd-control flash used to go to the whole
-  // floor, and the world is a single floor — so one archer's auto-attack cost
-  // one packet per player online, and the total cost of the feature grew as
-  // the square of the population. Measured at 150 players firing twice a
-  // second it was 37% of a CPU core on its own, more than the entire world
-  // simulation. The same spatial index the broadcast already maintains answers
-  // "who could possibly see this" in a couple of cell lookups.
-  //
-  // `lane` is the caster's _raceLane: corridors in the tower sit 200px apart,
-  // well inside the radius, so without it a runner would see arrows flying
-  // through the wall from the next lane over. Same two-way rule as everything
-  // else — see _raceVisible.
-  //
-  // The result buffer is reused, so callers must consume it before calling
-  // again.
-  nearbyPlayerIds(x, y, exceptSocketId, lane) {
-    const out = this._viewerBuf;
-    out.length = 0;
-    const grid = this._playerGrid;
-    // Cell range from the RADIUS, not the cell size: the fan-out radius is
-    // wider than one cell, so a ±1 cell walk would silently miss everyone in
-    // the outer ring.
-    const R = VISUAL_FANOUT_R;
-    const cx0 = Math.floor((x - R) / PLAYER_GRID_CELL);
-    const cx1 = Math.floor((x + R) / PLAYER_GRID_CELL);
-    const cy0 = Math.floor((y - R) / PLAYER_GRID_CELL);
-    const cy1 = Math.floor((y + R) / PLAYER_GRID_CELL);
-    for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cy = cy0; cy <= cy1; cy++) {
-        const cell = grid.get(_gridKey(cx, cy));
-        if (!cell) continue;
-        for (let i = 0; i < cell.length; i++) {
-          const p = cell[i];
-          if (p.socketId === exceptSocketId) continue;
-          if ((p._raceLane ?? null) !== (lane ?? null)) continue;
-          const dx = p.x - x, dy = p.y - y;
-          if (dx * dx + dy * dy > VISUAL_FANOUT_R2) continue;
-          out.push(p.socketId);
-        }
-      }
-    }
-    // A packed hub puts everyone inside the radius, which is precisely the
-    // situation the radius was meant to bound — so cap the fan-out as well.
-    // The cap is above PLAYER_CAP: a client is only ever streamed its 20
-    // nearest players, so a projectile from someone outside that set already
-    // has no visible owner on their screen. Which slice is dropped rotates per
-    // call, so the same players aren't systematically the ones missing out.
-    if (out.length > VISUAL_FANOUT_CAP) {
-      const win = this._fanoutWin;
-      win.length = 0;
-      const start = this._fanoutRot++ % out.length;
-      for (let i = 0; i < VISUAL_FANOUT_CAP; i++) win.push(out[(start + i) % out.length]);
-      return win;
-    }
-    return out;
-  }
-
-  // The lane a player is currently deployed into, or null — lets server/
-  // index.js scope a visual fan-out without reaching into player records.
-  laneOf(socketId) {
-    const p = this.players.get(socketId);
-    return p ? (p._raceLane ?? null) : null;
   }
 
   // socketIds of everyone who currently has this enemy streamed to them, i.e.
@@ -1349,55 +1204,26 @@ class Room {
     let any = false;
     this.players.forEach(p => { if (p._mapOpen) any = true; });
     if (!any) return;
-    // Built per arm, and only for the arms someone is actually looking at.
-    // The panel draws the viewer's own arm, so the other three were never
-    // going to be rendered — and the tower's 3600 corridor monsters were
-    // being sent to everyone even though _raceVisible forbids showing them
-    // outside a race. That was ~7100 dots (14KB) a second per viewer where
-    // ~900 (3.6KB) is the whole truth.
-    // Keyed by arm, and inside the tower by lane as well: a runner may only
-    // ever see their own corridor (see _raceVisible), so sending them all
-    // RACE10_LANES corridors at once would be both wrong and the single
-    // biggest packet in the game.
-    const cache = new Map();
-    const bufFor = (arm, lane) => {
-      const key = arm === 'race10' ? `race10#${lane}` : arm;
-      let b = cache.get(key);
-      if (b !== undefined) return b;
-      const want = e => e.hp > 0 && !e.isBoss && e.arm === arm &&
-        (arm !== 'race10' || e.lane == null || e.lane === lane);
-      let n = 0;
-      for (let i = 0; i < this.enemies.length; i++) if (want(this.enemies[i])) n++;
-      const buf = new Int16Array(n * 2);
-      let o = 0;
-      for (let i = 0; i < this.enemies.length; i++) {
-        const e = this.enemies[i];
-        if (!want(e)) continue;
-        buf[o++] = Math.round(e.x / TILE);
-        buf[o++] = Math.round(e.y / TILE);
-      }
-      cache.set(key, buf.buffer);
-      return buf.buffer;
-    };
-    // Which arm a viewer is standing in — the same Y-band test the tick uses.
-    const armAt = y => {
-      for (let i = 0; i < ARM_NAMES.length; i++) {
-        const b = this._armBounds[ARM_NAMES[i]];
-        if (b && y >= b.y0 && y < b.y1) return ARM_NAMES[i];
-      }
-      return null;
-    };
+    let n = 0;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.hp > 0 && !e.isBoss) n++;
+    }
+    const buf = new Int16Array(n * 2);
+    let o = 0;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.hp <= 0 || e.isBoss) continue;
+      buf[o++] = Math.round(e.x / TILE);
+      buf[o++] = Math.round(e.y / TILE);
+    }
     this.players.forEach(p => {
       if (!p._mapOpen) return;
-      const arm = p._raceLane != null ? 'race10' : armAt(p.y);
-      // In the hub (or anywhere outside an arm) there are no regular monsters
-      // to plot, so there is nothing to send at all.
-      if (!arm) return;
-      // Volatile for the same reason gameState is: a dot dump is the last
-      // thing that should be queuing up behind a stalled client, and the next
-      // one is a second away regardless.
+      // Volatile for the same reason gameState is: a ~18KB dot dump is the
+      // last thing that should be queuing up behind a stalled client, and the
+      // next one is a second away regardless.
       const sock = this._socketFor(p);
-      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, p._raceLane));
+      if (sock) sock.volatile.emit('mapBlips', buf.buffer);
     });
   }
 
@@ -1445,10 +1271,6 @@ class Room {
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
       _eKnown: new Map(),
       _mapOpen: false,
-      // Idle-stream bookkeeping — see the `empty` check in _tick. Starting
-      // "not empty" guarantees the first cast after joining is always sent.
-      _lastSentEmpty: false,
-      _lastSentAt: 0,
       // Memoised live Socket — see _socketFor.
       _socket: null,
       _profileRev: 1, _seq: ++this._pSeq,

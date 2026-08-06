@@ -181,22 +181,13 @@ function updateCamera(dt) {
 
 // Returns the room (from dungeon.rooms) that contains world-pixel point (wx,wy),
 // or null if the point is in a corridor or no room data exists.
-let _lastRoomHit = null;
 function _getRoomAt(wx, wy) {
   if (!dungeon || !dungeon.rooms) return null;
   const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
-  // The world has ~470 rooms and this is called several times per frame, from
-  // update() and from the HUD — but the answer almost never changes between
-  // calls, because a player takes seconds to walk out of a room and most calls
-  // in a frame are for the same point. Check last frame's answer first and the
-  // scan below turns into two comparisons for all but the handful of frames
-  // where the player actually crosses a boundary.
-  const c = _lastRoomHit;
-  if (c && tx >= c.x && tx < c.x + c.size && ty >= c.y && ty < c.y + c.size) return c;
   for (let i = 0; i < dungeon.rooms.length; i++) {
     const r = dungeon.rooms[i];
     if (!r.size) continue; // old-format rooms without size field
-    if (tx >= r.x && tx < r.x + r.size && ty >= r.y && ty < r.y + r.size) { _lastRoomHit = r; return r; }
+    if (tx >= r.x && tx < r.x + r.size && ty >= r.y && ty < r.y + r.size) return r;
   }
   return null;
 }
