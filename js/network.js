@@ -894,6 +894,9 @@ function netConnect(onReady) {
 
   socket.on('disconnect', () => {
     _authOkReceived = false;
+    // The reconnect gets a fresh server-side player seeded from the save, so
+    // our record of what the server knows about our position is now wrong.
+    netResetMoveDedup();
     // A marketList request may be in flight right now (item already spliced
     // out of the local inventory optimistically, see _confirmMarketList in
     // js/ui.js). The only rollback path, marketListError, comes over this
@@ -1575,14 +1578,52 @@ function _finishOnlineStart() {
 
 // ── Move throttle ─────────────────────────────────────────────
 let _lastMoveSend = 0;
+// Last state actually put on the wire, for the change gate below. Reset (to
+// values nothing can compare equal to) on disconnect — see netResetMoveDedup.
+let _sentX = NaN, _sentY = NaN, _sentFacing = null, _sentHp = NaN;
+
+// Forget what the server "knows" about our position. Must run on every
+// disconnect: the reconnect builds a *fresh* room-side player (makePlayer,
+// server/index.js) seeded from the saved profile, so the server's idea of
+// where we are is whatever that seed says — not what we last sent over the
+// dead socket. Without this reset, a player who reconnects while standing
+// still matches the stale dedup state and never sends a position at all, so
+// the server keeps them at the spawn point: invisible to the people actually
+// around them, and attacked by enemies nowhere near them.
+function netResetMoveDedup() {
+  _sentX = NaN; _sentY = NaN; _sentFacing = null; _sentHp = NaN;
+  _lastMoveSend = 0;
+}
+
 function netSendMove() {
   if (!socket?.connected || !player) return;
   const now = Date.now();
   // Server ticks at 25ms (40Hz) — sending faster than that is pure waste:
   // extra emits cost JSON serialization + radio wakeups on mobile.
   if (now - _lastMoveSend < 25) return;
+  const x = player.x, y = player.y, facing = player.facing, hp = player.hp;
+  // Nothing changed since the last packet, so the server already holds this
+  // exact state (it stores what we send verbatim — updatePlayerPos, Room.js —
+  // and never moves us on its own). This is the common case by a wide margin:
+  // the call site (js/game.js) runs every frame the player isn't mid-attack,
+  // whether or not there was any input, so standing in the hub, reading chat,
+  // or browsing the market/inventory panels used to emit ~30-40 identical
+  // packets a second forever. Each one is a radio wakeup on mobile (the single
+  // biggest battery cost of an idle client) and, multiplied by every idle
+  // player on a busy server, a continuous inbound packet flood that buys
+  // exactly nothing.
+  //
+  // hp <= 0 is deliberately exempt: while dead, the repeated playerMove is
+  // load-bearing. The server answers it by re-emitting 'playerHurt' (throttled
+  // to 1/s, see updatePlayerPos) until the client acknowledges the death, and
+  // that resend is the only thing that unsticks a client which missed the
+  // fatal hit while backgrounded. Deduping it away would leave that player
+  // walking around live on their own screen and frozen as a corpse on
+  // everyone else's — permanently.
+  if (hp > 0 && x === _sentX && y === _sentY && facing === _sentFacing && hp === _sentHp) return;
   _lastMoveSend = now;
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
+  _sentX = x; _sentY = y; _sentFacing = facing; _sentHp = hp;
+  socket.emit('playerMove', { x, y, facing, hp });
 }
 
 function netUsePotion(amount) {
