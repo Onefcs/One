@@ -694,15 +694,16 @@ function _openDmConvo(username) {
 }
 
 // Clicking a username on a message (global/clan/DM alike, see _renderChatRow
-// in js/network.js) preps a reply to them — same "@nick " prefix _chatSend
-// already knows to route as a private message and switch to Беседа, just
-// typed in for the player instead of by hand. Doesn't send or switch tabs by
-// itself, so glancing at someone's name never leaves whatever channel was
-// being read.
+// in js/network.js) preps a public reply to them — stays in whatever channel
+// is currently open (Общий/Клан/Беседа) rather than starting a private
+// conversation. Deliberately NOT the "@nick " form: that prefix is
+// _chatSend's own trigger for switching to a DM (see the mention regex
+// there), and a reply typed from a public channel should stay visible to
+// everyone in it, not go private just because it names someone.
 function _chatReplyTo(username) {
   const inp = document.getElementById('chat-input');
   if (!inp || !username) return;
-  inp.value = '@' + username + ' ';
+  inp.value = username + ', ';
   inp.focus();
   inp.setSelectionRange(inp.value.length, inp.value.length);
 }
