@@ -595,6 +595,8 @@
 .chat-row-hdr { display:flex; align-items:baseline; gap:6px; }
 .chat-name { font-size:11px; font-weight:700; color:#f90; }
 .chat-name.is-me { color:#3ef07a; }
+.chat-name-clickable { cursor:pointer; touch-action:manipulation; }
+.chat-name-clickable:active { text-decoration:underline; }
 .chat-time { font-size:10px; color:#3a3a5a; }
 .chat-text { font-size:13px; color:#ccc; line-height:1.45; word-break:break-word; }
 .chat-translate-btn {
@@ -690,6 +692,24 @@ function _openDmConvo(username) {
   _setActiveDmUser(username);
   if (typeof netRequestDmHistory === 'function') netRequestDmHistory(username);
 }
+
+// Clicking a username on a message (global/clan/DM alike, see _renderChatRow
+// in js/network.js) preps a reply to them — same "@nick " prefix _chatSend
+// already knows to route as a private message and switch to Беседа, just
+// typed in for the player instead of by hand. Doesn't send or switch tabs by
+// itself, so glancing at someone's name never leaves whatever channel was
+// being read.
+function _chatReplyTo(username) {
+  const inp = document.getElementById('chat-input');
+  if (!inp || !username) return;
+  inp.value = '@' + username + ' ';
+  inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
+}
+document.getElementById('chat-msgs')?.addEventListener('click', e => {
+  const nameEl = e.target.closest('[data-user]');
+  if (nameEl) _chatReplyTo(nameEl.dataset.user);
+});
 
 // Removes a conversation from the list entirely (client-side only — the
 // server keeps its own rolling history regardless, so if that person writes
