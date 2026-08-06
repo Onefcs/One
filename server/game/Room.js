@@ -981,13 +981,13 @@ class Room {
           nearPlayers.push({
             id: op.socketId, seq: op._seq, username: op.username, type: op.type,
             x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
-            pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0,
+            pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
             clanName: op.clanName || null, clanIcon: op.clanIcon || null,
           });
         } else {
           nearPlayers.push({
             id: op.socketId, seq: op._seq, x: op.x, y: op.y, facing: op.facing,
-            hp: op.hp, atkSeq: op.lastAtkSeq || 0,
+            hp: op.hp, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
           });
         }
         if (k) { k.rev = op._profileRev; k.seen = castId; }
@@ -1489,7 +1489,7 @@ class Room {
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
-      x: spawn.x, y: spawn.y, facing: 'front',
+      x: spawn.x, y: spawn.y, facing: 'front', moving: false,
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
@@ -1648,7 +1648,7 @@ class Room {
     return out;
   }
 
-  updatePlayerPos(socketId, x, y, facing) {
+  updatePlayerPos(socketId, x, y, facing, moving) {
     const p = this.players.get(socketId);
     if (!p) return;
     // A dead player's own client can keep sending playerMove (e.g. its "you
@@ -1686,6 +1686,9 @@ class Room {
     // worth less than the risk of a movement rule mis-firing on real players.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     p.x = x; p.y = y; p.facing = facing;
+    // undefined (older client, pre-moving-flag 'mv' packet) leaves whatever
+    // was last known rather than stomping it to false every packet.
+    if (moving !== undefined) p.moving = moving;
   }
 
   syncPlayerHp(socketId, clientHp) {

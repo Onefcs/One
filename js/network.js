@@ -483,7 +483,7 @@ function netConnect(onReady) {
         if (!otherPlayers.has(p.id)) {
           otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
             _buf: [{ x: p.x, y: p.y, t }],
-            animFrame: 0, animTimer: 0, moving: false });
+            animFrame: 0, animTimer: 0, moving: !!p.moving });
           if (p.type) loadSprites(p.type, () => {});
         } else {
           const op = otherPlayers.get(p.id);
@@ -494,6 +494,12 @@ function netConnect(onReady) {
           if (p.maxHp    !== undefined) op.maxHp    = p.maxHp;
           if (p.pvpMode  !== undefined) op.pvpMode  = p.pvpMode || false;
           op.hp = p.hp; op.facing = p.facing;
+          // Authoritative — straight from the sender's own input state (see
+          // netSendMove). No hold/debounce needed: unlike a value re-derived
+          // from position deltas every frame, this only changes when a new
+          // packet actually says so, so a dropped or late packet just leaves
+          // the last known value in place instead of flickering it.
+          op.moving = !!p.moving;
           if (op.x === undefined) { op.x = p.x; op.y = p.y; }
 
           // Snapshot ring buffer
@@ -1682,7 +1688,7 @@ function _finishOnlineStart() {
 
 // ── Move throttle ─────────────────────────────────────────────
 let _lastMoveSend = 0;
-let _lastSentX = null, _lastSentY = null, _lastSentFacing = null, _lastSentHp = null;
+let _lastSentX = null, _lastSentY = null, _lastSentFacing = null, _lastSentHp = null, _lastSentMoving = null;
 // Has to stay comfortably ABOVE the server's 20Hz cast rate, not equal to it.
 //
 // This was briefly set to 50ms on the reasoning that the world is broadcast
@@ -1710,6 +1716,16 @@ function netSendMove() {
   if (!socket?.connected || !player) return;
   const now = Date.now();
   if (now - _lastMoveSend < _MOVE_SEND_MS) return;
+  // Authoritative moving state — the same read the local animation itself
+  // uses (getSpriteAnimKey, js/sprites.js), not something a receiver has to
+  // infer later from position deltas. Deltas are noisy by the time they've
+  // gone through the network and the interpolation buffer (a dropped packet,
+  // a late one, the render clock sitting _INTERP_MS in the past all zero one
+  // out for a frame), which used to flip the run/idle animation key on and
+  // off and reset the run cycle — the "twitching" other players stuttered.
+  // Sending the true value directly means a stop is exact and immediate for
+  // everyone watching, not eventually true once their render catches up.
+  const moving = (typeof inputDir === 'function' && inputDir().len > 0.05) || !!player._chasing;
   // Standing still — in a menu, at a vendor, reading chat — used to cost 40
   // packets a second forever, and receiving them was measured at 18.5% of a
   // CPU core with 150 players online. Nothing in them ever differed from the
@@ -1717,11 +1733,11 @@ function netSendMove() {
   // dropped "I stopped" still gets corrected.
   const moved = _lastSentX === null ||
     Math.abs(player.x - _lastSentX) > 0.5 || Math.abs(player.y - _lastSentY) > 0.5 ||
-    player.facing !== _lastSentFacing || player.hp !== _lastSentHp;
+    player.facing !== _lastSentFacing || player.hp !== _lastSentHp || moving !== _lastSentMoving;
   if (!moved && now - _lastMoveSend < _MOVE_KEEPALIVE_MS) return;
   _lastMoveSend = now;
   _lastSentX = player.x; _lastSentY = player.y;
-  _lastSentFacing = player.facing; _lastSentHp = player.hp;
+  _lastSentFacing = player.facing; _lastSentHp = player.hp; _lastSentMoving = moving;
   // Volatile: on a link that has stalled (backgrounded WebView, radio asleep,
   // tunnel hiccup) a plain emit queues, and the queue is then delivered as one
   // burst of stale positions — which the server applies in order, so the
@@ -1741,6 +1757,7 @@ function netSendMove() {
   socket.volatile.emit('mv', [
     Math.round(player.x * 2), Math.round(player.y * 2),
     Math.max(0, NC_FACING.indexOf(player.facing)), Math.round(player.hp),
+    moving ? 1 : 0,
   ]);
 }
 

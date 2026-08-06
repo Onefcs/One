@@ -25,7 +25,7 @@
 //   u8  flags            bit0 = packet has players array
 //   f64 t                server tick timestamp
 //   [players] u8 count (capped well under 255 by PLAYER_CAP, Room.js), per entry:
-//     u8  flags          bit0 = full
+//     u8  flags          bit0 = full, bit1 = moving
 //     u16 seq            player handle
 //     u32 x*2, u32 y*2
 //     u8  facing         index into NC_FACING
@@ -165,7 +165,13 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
       const p = players[i];
       _ncEnsure(o, _NC_ENTRY_HEADROOM);
       const full = p.username !== undefined;
-      _ncDV.setUint8(o, full ? 1 : 0); o += 1;
+      // moving rides the spare bit in the flags byte the receiver already
+      // reads — no extra bytes. It's the sender's own input state (see
+      // netSendMove, js/network.js), not something derived from position
+      // deltas after the fact: those go stale and noisy by the time they've
+      // crossed the network and sat in the interpolation buffer, which used
+      // to flip the run/idle animation key on a dropped or late packet.
+      _ncDV.setUint8(o, (full ? 1 : 0) | (p.moving ? 2 : 0)); o += 1;
       _ncDV.setUint16(o, p.seq & 0xffff, true); o += 2;
       _ncDV.setUint32(o, _ncQPos(p.x), true); o += 4;
       _ncDV.setUint32(o, _ncQPos(p.y), true); o += 4;
@@ -290,6 +296,7 @@ function decodeGameState(data) {
     const n = dv.getUint8(o); o += 1;
     for (let i = 0; i < n; i++) {
       const f = dv.getUint8(o); o += 1;
+      const moving = !!(f & 2);
       const seq = dv.getUint16(o, true); o += 2;
       const x = dv.getUint32(o, true) / 2; o += 4;
       const y = dv.getUint32(o, true) / 2; o += 4;
@@ -306,13 +313,13 @@ function decodeGameState(data) {
         const clanIcon = dv.getUint8(o) || null; o += 1;
         _ncPIdMap.set(seq, id);
         players.push({ id, username, type: ti === 255 ? null : NC_CHAR_TYPES[ti],
-          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon });
+          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon, moving });
       } else {
         const id = _ncPIdMap.get(seq);
         // Unknown handle (map lost) — skip; the periodic full refresh
         // re-establishes the mapping within ~2s
         if (id !== undefined)
-          players.push({ id, x, y, facing, hp, atkSeq });
+          players.push({ id, x, y, facing, hp, atkSeq, moving });
       }
     }
   }
