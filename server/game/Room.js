@@ -1685,10 +1685,21 @@ class Room {
     // was written and tested, then removed again by choice: teleport-hacking is
     // worth less than the risk of a movement rule mis-firing on real players.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    p.x = x; p.y = y; p.facing = facing;
-    // undefined (older client, pre-moving-flag 'mv' packet) leaves whatever
-    // was last known rather than stomping it to false every packet.
-    if (moving !== undefined) p.moving = moving;
+    // undefined means a client still running the pre-authoritative-flag
+    // bundle (mid-rollout, tab open since before the deploy) — its 'mv'
+    // packet has no 5th element at all. Leaving p.moving untouched in that
+    // case sticks it at whatever it was when the connection started (false,
+    // set at spawn) for as long as that tab stays open: position keeps
+    // updating normally, but every other client reads a permanent 'idle'
+    // for a player who is plainly running. Fall back to inferring it from
+    // the position change since the last packet instead — the same idea the
+    // client used to do, but on two known-good, un-buffered points 25ms
+    // apart rather than through the render-side interpolation lag.
+    if (moving === undefined) {
+      const ddx = x - p.x, ddy = y - p.y;
+      moving = (ddx * ddx + ddy * ddy) > 0.1;
+    }
+    p.x = x; p.y = y; p.facing = facing; p.moving = moving;
   }
 
   syncPlayerHp(socketId, clientHp) {
