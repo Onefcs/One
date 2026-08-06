@@ -262,10 +262,9 @@ const MAT_UPGRADE_RECIPES = [
 
 // Battle Power — reflects the player's overall combat strength.
 // Keep in sync with the identical calcBM in server/index.js, which stores this
-// for the rating and reports it in raid/party-dungeon lobbies. The level field
-// is `lvl` on both the live player object and save blobs; reading `p.level`
-// matched nothing, so the level term silently collapsed to its `|| 1` fallback
-// and BM ignored levels entirely.
+// for the rating. The level field is `lvl` on both the live player object and
+// save blobs; reading `p.level` matched nothing, so the level term silently
+// collapsed to its `|| 1` fallback and BM ignored levels entirely.
 function calcBM(p) {
   if (!p) return 0;
   const upg = p.upgrades || {};

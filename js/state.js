@@ -22,9 +22,9 @@ let transTimer = 0;
 let socket = null;
 let otherPlayers = new Map();   // socketId → { x, y, type, facing, hp, maxHp, username }
 // socketId → equipped pet id, kept OUTSIDE otherPlayers on purpose: that map
-// is rebuilt from scratch on gameStart and on every raid/party-dungeon
-// enter/exit, which would drop pet ids the server only sends on join and on
-// change. Fed by the 'playerPets'/'playerPet' events (js/network.js).
+// is rebuilt from scratch on gameStart, which would drop pet ids the server
+// only sends on join and on change. Fed by the 'playerPets'/'playerPet'
+// events (js/network.js).
 let otherPets = new Map();
 let serverEnemies = [];     // authoritative enemy list (server-driven, near the player only)
 // Flat Int16 [tileX, tileY, ...] of every alive non-boss enemy in the world,
@@ -76,26 +76,6 @@ let autoAttackMode = false;
 // Clan state (null = not in a clan)
 let clanData = null;
 
-// Raid state
-let inRaid = false;
-let _normalDungeon = null;
-let _normalDungeonLvl = 1;
-let _normalPlayerX = null;
-let _normalPlayerY = null;
-// The rest of the open world's own contents, parked while an instance
-// (raid arena / party-dungeon maze) is on screen. NPCs and event-boss
-// ground loot belong to the world, not to the instance — without this
-// they kept rendering (and the NPCs stayed interactable) inside the maze.
-let _normalNpcs = null;
-let _normalWorldDrops = null;
-let _raidWaveNotif = null; // { text, timer }
-
-// Raid lobby state
-let _raidLobbyList = [];     // [{ id, creatorName, dungeonId, members: [{id,name,bm,lvl}] }]
-let _myLobbyId    = null;
-let _isLobbyCreator = false;
-let _myLobbyMembers = [];    // [{id,name,bm,lvl}]
-
 // Death Battle (Битва на смерть) — scheduled free-for-all, see the handlers
 // in js/network.js and the panel in js/ui.js.
 let _dbState = { phase: 'idle', startAt: 0, nextAt: 0, count: 0 };
@@ -139,10 +119,3 @@ let _race10Registered = false;
 let _race10InMatch = false;
 let _race10Lane = null;
 let _race10MyDamage = 0;
-
-// Party dungeon (maze + boss) state
-let inPartyDungeon = false;
-let _pdLobbyList = [];       // [{ id, creatorName, members: [{id,name,bm,lvl}] }]
-let _myPdLobbyId = null;
-let _isPdLobbyCreator = false;
-let _myPdLobbyMembers = [];  // [{id,name,bm,lvl}]

@@ -1131,23 +1131,6 @@ function render(dt, ts) {
     _uiCtx.fillText(lbl, W / 2, HEADER_H + 20);
   }
 
-  // Raid wave notification
-  if (_raidWaveNotif && _raidWaveNotif.timer > 0) {
-    _raidWaveNotif.timer -= dt;
-    const alpha = Math.min(1, _raidWaveNotif.timer * 2);
-    const lbl = _raidWaveNotif.text;
-    _uiCtx.font = 'bold 20px system-ui, Arial';
-    _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
-    const lw = _uiCtx.measureText(lbl).width;
-    _uiCtx.globalAlpha = alpha;
-    _uiCtx.fillStyle = 'rgba(0,0,0,0.65)';
-    _uiCtx.fillRect(W / 2 - lw / 2 - 14, H / 2 - 40, lw + 28, 34);
-    _uiCtx.fillStyle = '#d1ccc5';
-    _uiCtx.fillText(lbl, W / 2, H / 2 - 12);
-    _uiCtx.globalAlpha = 1;
-    if (_raidWaveNotif.timer <= 0) _raidWaveNotif = null;
-  }
-
   // Transition flash (topmost layer)
   if (transTimer > 0) {
     _uiCtx.fillStyle = `rgba(180,120,255,${Math.min(1, transTimer * 3)})`;
@@ -1158,117 +1141,6 @@ function render(dt, ts) {
 // ─────────────────────────────────────────────────────────
 //  GAME FLOW
 // ─────────────────────────────────────────────────────────
-// ── Instance zones (raid arena / party-dungeon maze) ─────────────────────
-// Both are separate locations swapped in over the open world on the same
-// client. Everything world-scoped has to travel with that swap or it bleeds
-// through into the instance: NPCs kept rendering inside the maze — on the
-// minimap and the map panel too — and stayed close enough to trigger the
-// "Поговорить" prompt, and event-boss ground loot came along with them.
-
-// Snapshot the open world before an instance replaces it. Guarded, and that
-// guard is the point: entering an instance while already inside one (a second
-// partyDungeonStart, or a raidStart arriving mid-maze) would otherwise stash
-// the INSTANCE's map as "the world", so the eventual exit restored the maze
-// on top of the world and left the player in a hybrid zone.
-function _stashWorldZone() {
-  if (inRaid || inPartyDungeon) return; // already holding a world snapshot
-  _normalDungeon    = dungeon;
-  _normalDungeonLvl = dungeonLvl;
-  _normalPlayerX    = player?.x ?? null;
-  _normalPlayerY    = player?.y ?? null;
-  _normalNpcs       = npcs;
-  _normalWorldDrops = worldDrops;
-}
-
-function _restoreWorldZone() {
-  if (_normalDungeon) {
-    dungeon    = _normalDungeon;
-    dungeonLvl = _normalDungeonLvl;
-    _normalDungeon = null;
-    if (player) {
-      player.x = _normalPlayerX ?? dungeon.spawn.x;
-      player.y = _normalPlayerY ?? dungeon.spawn.y;
-      camera.x = player.x - W / (2 * ZOOM);
-      camera.y = player.y - _visH() / 2;
-      clampCamera();
-    }
-  }
-  npcs       = _normalNpcs || [];
-  worldDrops = _normalWorldDrops || new Map();
-  _normalNpcs = null; _normalWorldDrops = null;
-  _normalPlayerX = null; _normalPlayerY = null;
-}
-
-// Entities are per-zone: none of them may survive a switch in either
-// direction. Shared by all four transitions so the two zones can't drift.
-function _resetZoneEntities() {
-  if (typeof buildTileCanvas === 'function') buildTileCanvas();
-  if (typeof _buildArmGates === 'function') _buildArmGates();
-  serverEnemies.length = 0; serverEnemiesMap.clear();
-  otherPlayers = new Map();
-  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
-  nearNpc = null;
-}
-
-// Everything an instance zone must NOT inherit from the world.
-function _clearWorldOnlyEntities() {
-  npcs = [];
-  worldDrops = new Map();
-  nearNpc = null;
-}
-
-function enterRaidMode(data) {
-  _stashWorldZone();          // before the flag flips — see the guard inside
-  inRaid = true;
-  dungeon = { ...data.dungeon, enemies: [] };
-  if (player) {
-    player.x = data.dungeon.spawn.x;
-    player.y = data.dungeon.spawn.y;
-    camera.x = player.x - W / (2 * ZOOM);
-    camera.y = player.y - _visH() / 2;
-    clampCamera();
-  }
-  _clearWorldOnlyEntities();
-  _resetZoneEntities();
-  setTab(0);
-}
-
-function exitRaidMode() {
-  inRaid = false;
-  _restoreWorldZone();
-  _resetZoneEntities();
-  _raidWaveNotif = null;
-}
-
-// Party dungeon (maze + boss): unlike the raid arena, this dungeon has real
-// walls/rooms (generated server-side by mazeDungeon.js) in the exact same
-// {grid, rooms, w, h, spawn, safeZone} shape a normal floor uses, so the
-// normal floor renderer (buildTileCanvas, wall/prop drawing, minimap) just
-// works without any raid-arena-style special casing. Forcing dungeonLvl to
-// 5 makes every theme lookup (getTheme) render it with floor 5's tileset.
-function enterPartyDungeonMode(data) {
-  _stashWorldZone();          // before the flag flips — see the guard inside
-  inPartyDungeon = true;
-  dungeon = { ...data.dungeon, enemies: [] };
-  dungeonLvl = 5;
-  if (player) {
-    player.x = data.dungeon.spawn.x;
-    player.y = data.dungeon.spawn.y;
-    camera.x = player.x - W / (2 * ZOOM);
-    camera.y = player.y - _visH() / 2;
-    clampCamera();
-  }
-  _clearWorldOnlyEntities();
-  _resetZoneEntities();
-  setTab(0);
-}
-
-function exitPartyDungeonMode() {
-  inPartyDungeon = false;
-  _restoreWorldZone();
-  _resetZoneEntities();
-}
-
 function selectChar(type) {
   joy.active = false; joy.dx = 0; joy.dy = 0;
   try { localStorage.setItem(_lastCharTypeKey(), type); } catch (_) {}
@@ -1924,14 +1796,6 @@ function playerDie() {
 
 function respawnPlayer() {
   if (!player || state !== 'dead') return;
-  // Respawning always lands in the open world, so leave whichever instance
-  // zone we died in. The party-dungeon case used to be missing here — dying
-  // there normally exits via partyDungeonEliminated, but if that event was
-  // lost the player respawned still flagged as inside the maze, which stops
-  // every floor update from being applied (the gameState handler bails while
-  // inPartyDungeon is set).
-  if (inPartyDungeon) exitPartyDungeonMode();
-  else if (inRaid) exitRaidMode();
   targetId = null; targetIsPlayer = false; _chaseArmed = false;
   player.hp = Math.max(1, Math.floor(player.maxHp * 0.1));
   player.hurtTimer = 0;

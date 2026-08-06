@@ -1185,201 +1185,15 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     ${passiveBookSection}`;
 }
 
-function updateRaidPanelUI() {
-  const body = document.getElementById('raid-panel-body');
-  if (!body) return;
-  const RARITY_COL = { common: '#aea599', uncommon: '#90d653' };
-  const plvl = player?.lvl || 1;
-  const lvlOk = plvl >= 3;
-
-  if (inRaid) {
-    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">${t('inBattleHint')}</div>`;
-    return;
-  }
-
-  // Inside a lobby
-  if (_myLobbyId) {
-    const memberRows = (_myLobbyMembers || []).map(m =>
-      `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
-        <span>👤 ${m.name}</span>
-        <span style="color:#a2988a;font-size:11px">${tVars('memberStatsFmt', { lvl: m.lvl, bm: m.bm })}</span>
-      </div>`).join('');
-    const canStart = _isLobbyCreator && (_myLobbyMembers?.length || 0) >= 2;
-    body.innerHTML = `
-      <div class="raid-dungeon-card">
-        <div class="raid-dungeon-name">${t('dungeon1Name')}</div>
-        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">${tVars('yourGroupFmt', { n: _myLobbyMembers?.length || 1 })}</div>
-        <div style="margin-bottom:10px">${memberRows}</div>
-        ${_isLobbyCreator
-          ? `<div class="raid-hint" style="margin-bottom:8px">${t('creatorWaitHint')}</div>
-             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartLobby()' : ''}">${t('startRaidBtn')}</button>`
-          : `<div class="raid-hint">${t('waitingStartHint')}</div>`}
-      </div>
-      <button onclick="netLeaveLobby();updateRaidPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">${t('leaveGroupBtn')}</button>
-    `;
-    return;
-  }
-
-  // Lobby list
-  const dungeonCard = `
-    <div class="raid-dungeon-card" style="margin-bottom:10px">
-      <div class="raid-dungeon-name">${t('dungeon1Name')}</div>
-      <div class="raid-dungeon-desc">${tVars('monsterWavesFmt', { lvl: 3, w: 6 })}</div>
-      <div class="raid-dungeon-rewards">
-        <span>💰 500 ${t('goldShortSuffix')}</span><span>⭐ 500 ${t('xpShortSuffix')}</span>
-        <span style="color:${RARITY_COL.common}">30% ${_RARITY_NAMES.common}</span>
-        <span style="color:${RARITY_COL.uncommon}">5% ${_RARITY_NAMES.uncommon}</span>
-      </div>
-      <div style="font-size:11px;color:#eaa742;margin-top:4px">${tVars('availableTimesPerDayFmt', { n: 3 })}</div>
-    </div>`;
-
-  const createBtn = lvlOk
-    ? `<button class="raid-enter-btn" onclick="netCreateLobby(1);netGetLobbyList()" style="margin-bottom:12px">${t('createGroupBtn')}</button>`
-    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">${tVars('lockedNeedLevel', { n: 3 })}</button>`;
-
-  const lobbies = _raidLobbyList || [];
-  let lobbyListHtml = '';
-  if (lobbies.length === 0) {
-    lobbyListHtml = `<div class="raid-hint">${t('noOpenGroupsHint')}</div>`;
-  } else {
-    lobbyListHtml = lobbies.map(lb => {
-      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">${t('levelAbbrev')}${m.lvl}</span> ${m.name}`).join(', ');
-      const full = (lb.members?.length || 0) >= 5;
-      return `
-        <div class="raid-dungeon-card" style="margin-bottom:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:13px;font-weight:700;color:#d1ccc5">${lb.creatorName}</span>
-            <span style="font-size:11px;color:#968a7a">${lb.members?.length || 1} / 5</span>
-          </div>
-          <div style="font-size:11px;color:#a2988a;margin-bottom:8px">${mList}</div>
-          <button class="raid-enter-btn${full ? ' disabled' : ''}" style="padding:8px" onclick="${full ? '' : `netJoinLobby('${lb.id}')`}">${full ? t('fullLbl') : t('enterBtn')}</button>
-        </div>`;
-    }).join('');
-  }
-
-  body.innerHTML = dungeonCard + createBtn +
-    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">${t('openGroupsLbl')} <button onclick="netGetLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">${t('refreshBtn')}</button></div>` +
-    lobbyListHtml;
-}
-
-function showRaidComplete({ gold, xp, weaponName, weaponRarity }) {
-  const RARITY_COL = { common: '#aea599', uncommon: '#90d653' };
-  document.getElementById('raid-reward-body').innerHTML =
-    `<div>${tVars('goldRewardFmt', { gold })}</div>` +
-    `<div>${tVars('xpRewardFmt', { xp })}</div>` +
-    (weaponName
-      ? `<div style="margin-top:6px;color:${RARITY_COL[weaponRarity] || '#aea599'}">🗡 ${weaponName}</div>`
-      : '');
-  document.getElementById('raid-complete-modal').style.display = 'flex';
-}
-
-function showRaidFailed() {
-  document.getElementById('raid-failed-modal').style.display = 'flex';
-}
-
-function updatePartyDungeonPanelUI() {
-  const body = document.getElementById('pd-panel-body');
-  if (!body) return;
-
-  if (inPartyDungeon) {
-    body.innerHTML = `<div class="raid-hint" style="text-align:center;padding:20px 0">${t('inMazeHint')}</div>`;
-    return;
-  }
-
-  if (_myPdLobbyId) {
-    const memberRows = (_myPdLobbyMembers || []).map(m =>
-      `<div class="raid-member" style="display:flex;justify-content:space-between;align-items:center">
-        <span>👤 ${m.name}</span>
-        <span style="color:#a2988a;font-size:11px">${tVars('memberStatsFmt', { lvl: m.lvl, bm: m.bm })}</span>
-      </div>`).join('');
-    const canStart = _isPdLobbyCreator && (_myPdLobbyMembers?.length || 0) >= 3;
-    body.innerHTML = `
-      <div class="raid-dungeon-card">
-        <div class="raid-dungeon-name">${t('mazeName')}</div>
-        <div style="font-size:12px;color:#968a7a;margin-bottom:8px">${tVars('yourGroupMinFmt', { n: _myPdLobbyMembers?.length || 1 })}</div>
-        <div style="margin-bottom:10px">${memberRows}</div>
-        ${_isPdLobbyCreator
-          ? `<div class="raid-hint" style="margin-bottom:8px">${t('creatorNeedMin3Hint')}</div>
-             <button class="raid-enter-btn${canStart ? '' : ' disabled'}" onclick="${canStart ? 'netStartPdLobby()' : ''}">${t('startBtn')}</button>`
-          : `<div class="raid-hint">${t('waitingStartHint')}</div>`}
-      </div>
-      <button onclick="netLeavePdLobby();updatePartyDungeonPanelUI()" style="width:100%;margin-top:8px;padding:10px;background:rgba(235,73,92,.12);color:#ed5a6b;border:1px solid rgba(235,73,92,.25);border-radius:8px;font-size:13px;cursor:pointer">${t('leaveGroupBtn')}</button>
-    `;
-    return;
-  }
-
-  const dungeonCard = `
-    <div class="raid-dungeon-card" style="margin-bottom:10px">
-      <div class="raid-dungeon-name">${t('mazeName')}</div>
-      <div class="raid-dungeon-desc">${t('mazeDescFull')}</div>
-      <div class="raid-dungeon-rewards">
-        <span style="color:#b2864d">${t('libertyFromMonstersLbl')}</span>
-        <span style="color:#f17e8b">${t('enchantFromBossLbl')}</span>
-        <span style="color:#efc680">${t('safeEnchantFromBossLbl')}</span>
-      </div>
-      <div style="font-size:11px;color:#eaa742;margin-top:4px">${tVars('availableTimesPerDayFmt', { n: 3 })}</div>
-    </div>`;
-
-  const pdLvlOk = (player?.lvl || 1) >= 10;
-  const createBtn = pdLvlOk
-    ? `<button class="raid-enter-btn" onclick="netCreatePdLobby();netGetPdLobbyList()" style="margin-bottom:12px">${t('createGroupBtn')}</button>`
-    : `<button class="raid-enter-btn disabled" style="margin-bottom:12px">${tVars('lockedNeedLevel', { n: 10 })}</button>`;
-
-  const lobbies = _pdLobbyList || [];
-  let lobbyListHtml = '';
-  if (lobbies.length === 0) {
-    lobbyListHtml = `<div class="raid-hint">${t('noOpenGroupsHint')}</div>`;
-  } else {
-    lobbyListHtml = lobbies.map(lb => {
-      const mList = (lb.members || []).map(m => `<span style="font-size:10px;color:#968a7a">${t('levelAbbrev')}${m.lvl}</span> ${m.name}`).join(', ');
-      const full = (lb.members?.length || 0) >= 8;
-      const locked = !pdLvlOk;
-      const btnLabel = full ? t('fullLbl') : locked ? `🔒 ${t('minPlayersShort')}` : t('enterBtn');
-      return `
-        <div class="raid-dungeon-card" style="margin-bottom:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:13px;font-weight:700;color:#d1ccc5">${lb.creatorName}</span>
-            <span style="font-size:11px;color:#968a7a">${lb.members?.length || 1} / 8</span>
-          </div>
-          <div style="font-size:11px;color:#a2988a;margin-bottom:8px">${mList}</div>
-          <button class="raid-enter-btn${(full || locked) ? ' disabled' : ''}" style="padding:8px" onclick="${(full || locked) ? '' : `netJoinPdLobby('${lb.id}')`}">${btnLabel}</button>
-        </div>`;
-    }).join('');
-  }
-
-  body.innerHTML = dungeonCard + createBtn +
-    `<div style="font-size:12px;color:#72685a;margin-bottom:6px">${t('openGroupsLbl')} <button onclick="netGetPdLobbyList()" style="background:none;border:none;color:#e7b765;font-size:11px;cursor:pointer">${t('refreshBtn')}</button></div>` +
-    lobbyListHtml;
-}
-
-function showPartyDungeonComplete({ gold, xp }) {
-  document.getElementById('pd-reward-body').innerHTML =
-    `<div>${tVars('goldRewardFmt', { gold })}</div>` +
-    `<div>${tVars('xpRewardFmt', { xp })}</div>`;
-  document.getElementById('pd-complete-modal').style.display = 'flex';
-}
-
-function showPartyDungeonFailed() {
-  document.getElementById('pd-failed-modal').style.display = 'flex';
-}
-
 // ─────────────────────────────────────────────────────────
 //  TAB MANAGEMENT
 // ─────────────────────────────────────────────────────────
 let _invTab = 0;
-let _mapTab = 0;
 
-function setMapTab(n) {
-  _mapTab = n;
-  document.querySelectorAll('.map-tab').forEach((el, i) => el.classList.toggle('active', i === n));
-  document.getElementById('map-tab-content-0').style.display = n === 0 ? '' : 'none';
-  document.getElementById('map-tab-content-1').style.display = n === 1 ? '' : 'none';
-  if (typeof netSetMapView === 'function') netSetMapView(activeTab === 2 && n === 0);
-  if (n === 0) { updateFloorUI(); setTimeout(drawMapPanel, 320); }
-  if (n === 1) {
-    updateRaidPanelUI(); if (typeof netGetLobbyList === 'function') netGetLobbyList();
-    updatePartyDungeonPanelUI(); if (typeof netGetPdLobbyList === 'function') netGetPdLobbyList();
-  }
+function setMapTab() {
+  if (typeof netSetMapView === 'function') netSetMapView(activeTab === 2);
+  updateFloorUI();
+  setTimeout(drawMapPanel, 320);
 }
 
 function setInvTab(n) {
@@ -1424,7 +1238,7 @@ function setTab(n) {
     if (tb) tb.style.display = 'none';
   }
   // Leaving the map panel stops the world-wide dot feed (setMapTab turns it
-  // back on when the map sub-tab itself is the one showing).
+  // back on when the map panel itself is the one showing).
   if (n !== 2 && typeof netSetMapView === 'function') netSetMapView(false);
   const pid = ['', 'panel-inv', 'panel-map', 'panel-quests', 'panel-clans', 'panel-profile'][n];
   if (pid) {
@@ -1432,7 +1246,7 @@ function setTab(n) {
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); el.scrollTop = 0; });
     if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) switchSkillTab(_activeSkillSubTab); else updateInvUI(); }
-    if (n === 2) { setMapTab(_mapTab); }
+    if (n === 2) { setMapTab(); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') {
       // Ask for current clan state as the panel opens — see netClanRequest.

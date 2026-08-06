@@ -678,11 +678,11 @@ class Room {
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
       if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
 
-      // Find closest alive player not in safe zone, not in raid, not invisible
-      // — but only actually re-scan every AI_TARGET_SEARCH_EVERY ticks (see
-      // its comment above); otherwise reuse the cached target as long as
-      // it's still eligible, so a stale reference never keeps an enemy
-      // chasing someone who died/vanished/hid for multiple ticks.
+      // Find closest alive player not in safe zone, not invisible — but only
+      // actually re-scan every AI_TARGET_SEARCH_EVERY ticks (see its comment
+      // above); otherwise reuse the cached target as long as it's still
+      // eligible, so a stale reference never keeps an enemy chasing someone
+      // who died/vanished/hid for multiple ticks.
       // The event boss (shared/definitions.js EVENT_BOSS) is summoned INTO the
       // hub, which is the safe zone — the normal rules would leave it with no
       // eligible target forever. It alone may target players standing there;
@@ -691,7 +691,7 @@ class Room {
       const _sz = !e.ignoresSafeZone;
       const cached = e._cachedTarget;
       const cachedStillValid = cached && cached.hp > 0 && this.players.get(cached.socketId) === cached &&
-        !(_sz && this._inSafeZone(cached.x, cached.y)) && !cached._inRaid && !cached._invis;
+        !(_sz && this._inSafeZone(cached.x, cached.y)) && !cached._invis;
       const dueForSearch = (e._idx % AI_TARGET_SEARCH_EVERY) === (this._aiTickNo % AI_TARGET_SEARCH_EVERY);
       let closest = cachedStillValid ? cached : null;
       if (dueForSearch || !cachedStillValid) {
@@ -1024,7 +1024,6 @@ class Room {
           // filtering the old alivePlayers scan did up front happens here.
           if (p.hp <= 0 || !p.type) continue;
           if (sz && this._inSafeZone(p.x, p.y)) continue;
-          if (p._inRaid) continue;
           if (p._invis) continue;
           // Corridor monsters only ever see their own runner; world monsters
           // never see anyone inside the tower — see _raceVisible.

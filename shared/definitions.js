@@ -176,12 +176,10 @@ function monsterColorAtLevel(baseColor, endColor, localLvl, isBoss, maxLocalLvl)
 //
 // hp/atk/def/xp/gold below are monsterStatsAtLevel()/xpAtLevel()/goldAtLevel()
 // evaluated at a representative level for each species (or the arm's last
-// level for bosses) — a static snapshot used as-is by the Raid and
-// Party-dungeon modes (which don't have a room-progression concept of their
-// own) and as display fallback. The main open world (server/game/dungeon.js)
-// ignores these numbers entirely and calls the level functions fresh for the
-// enemy's actual room level, overriding name/color/hp/atk/def/xp/gold per
-// spawn.
+// level for bosses) — a static snapshot used as a display fallback. The main
+// open world (server/game/dungeon.js) ignores these numbers entirely and
+// calls the level functions fresh for the enemy's actual room level,
+// overriding name/color/hp/atk/def/xp/gold per spawn.
 // fem: grammatical gender of the base name's leading noun, for rank agreement
 // (Крыса/Лоза are feminine, the rest are masculine).
 // endColor: the tint monsterColorAtLevel ramps to at the arm's last non-boss

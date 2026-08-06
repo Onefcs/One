@@ -17,8 +17,6 @@ const PvpHistoryModel   = require('./models/PvpHistory');
 const ChatMessageModel  = require('./models/ChatMessage');
 const BossStateModel    = require('./models/BossState');
 const Room = require('./game/Room');
-const { RaidRoom } = require('./game/RaidRoom');
-const { PartyDungeonRoom } = require('./game/PartyDungeonRoom');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
@@ -1905,9 +1903,8 @@ function _persistSavedFields(authed, fields, extra) {
 }
 
 // Keep in sync with the identical calcBM in js/definitions.js — the client
-// renders this number in the HUD and clan panel, the server stores it for the
-// rating and reports it in raid/party-dungeon lobbies, and the two disagreeing
-// is immediately visible to players.
+// renders this number in the HUD and clan panel, the server stores it for
+// the rating, and the two disagreeing is immediately visible to players.
 // The level field is `lvl` everywhere (save blobs and the live player object
 // alike); reading `s.level` matched nothing, so the level term silently
 // collapsed to its `|| 1` fallback and BM ignored levels entirely.
@@ -2095,104 +2092,12 @@ const playerParty = new Map();
 // socketId -> current floor number (for proximity check)
 const playerFloorMap = new Map();
 
-// ── Raid state ────────────────────────────────────────────────────────────────
-// raidId -> RaidRoom
-const raidRooms  = new Map();
-// socketId -> raidId
-const playerRaid = new Map();
-
-// ── Raid lobby state ─────────────────────────────────────────────────────────
-// lobbyId -> { id, creatorId, creatorName, dungeonId, members: Map<sid, {name, bm, lvl}> }
-const raidLobbies = new Map();
-// socketId -> lobbyId
-const playerLobby = new Map();
-
-// ── Party dungeon state (maze + boss instance, min 3 players, 1x/day) ─────────
-// pdId -> PartyDungeonRoom
-const pdRooms = new Map();
-// socketId -> pdId
-const playerPartyDungeon = new Map();
-// pdLobbyId -> { id, creatorId, creatorName, members: Map<sid, {name, bm, lvl}> }
-const pdLobbies = new Map();
-// socketId -> pdLobbyId
-const playerPdLobby = new Map();
-const PARTY_DUNGEON_MIN_MEMBERS = 3;
-const PARTY_DUNGEON_MAX_MEMBERS = 8;
-
-function _pdLobbyBroadcast() {
-  const list = [...pdLobbies.values()].map(lb => ({
-    id: lb.id, creatorName: lb.creatorName,
-    members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
-  }));
-  io.emit('pdLobbyList', { lobbies: list });
-}
-
-function _cleanupPdLobby(socketId) {
-  const lobbyId = playerPdLobby.get(socketId);
-  if (!lobbyId) return;
-  const lb = pdLobbies.get(lobbyId);
-  if (!lb) { playerPdLobby.delete(socketId); return; }
-  lb.members.delete(socketId);
-  playerPdLobby.delete(socketId);
-  if (lb.members.size === 0 || lb.creatorId === socketId) {
-    lb.members.forEach((_, mid) => { playerPdLobby.delete(mid); io.to(mid).emit('pdLobbyLeft', { reason: 'disbanded' }); });
-    pdLobbies.delete(lobbyId);
-    _pdLobbyBroadcast();
-  } else {
-    _pdLobbyBroadcast();
-  }
-}
-
-// Removes a player from a live party-dungeon instance's bookkeeping (does
-// NOT touch the instance itself — caller handles that separately since the
-// instance may need to keep running for the rest of the party).
-function _cleanupPartyDungeonPlayer(socketId, channel) {
-  playerPartyDungeon.delete(socketId);
-  const s = io.sockets.sockets.get(socketId);
-  if (s && channel) s.leave(channel);
-  const fl = playerFloorMap.get(socketId);
-  if (fl !== undefined) {
-    const fr = floorRooms.get(fl);
-    const p = fr?.players.get(socketId);
-    if (p) p._inRaid = false;
-  }
-}
-
-function _cleanupPartyDungeon(socketId) {
-  const pdId = playerPartyDungeon.get(socketId);
-  if (!pdId) return;
-  const pd = pdRooms.get(pdId);
-  const channel = pd ? pd.channel : null;
-  _cleanupPartyDungeonPlayer(socketId, channel);
-  if (pd) {
-    pd.removePlayer(socketId);
-    if (pd.players.size === 0) { pd.stop(); pdRooms.delete(pdId); }
-  }
-}
-
-// Atomically credits Nexum to an arbitrary (possibly-not-the-caller) online
-// player by socketId, keyed through their telegramId — this is how party
-// dungeon loot can be awarded to a random party member rather than only the
-// player whose attack landed the kill.
-async function _grantPartyDungeonNexum(winnerSocketId, amount) {
-  if (!(amount > 0)) return;
-  const s = io.sockets.sockets.get(winnerSocketId);
-  const tid = s?.data?.telegramId;
-  if (tid == null) return;
-  // This path was already atomic before the rest of the economy caught up with
-  // it; it now shares the same helper as everything else.
-  const newBal = await _incBalance(tid, 'nexumBalance', amount);
-  if (newBal === null) return;
-  io.to(winnerSocketId).emit('partyDungeonNexum', { amount, balance: newBal });
-}
-
-// Both the raid ("Подземелье 1") and the party dungeon ("Лабиринт") allow
-// DAILY_DUNGEON_ATTEMPTS runs per UTC day — each gets its own savedData
-// field (see the wrapper functions below) so their attempt pools are
-// independent. The attempt is consumed on entry (start*Lobby), not on a
-// successful clear, so dying/failing doesn't refund it. Written straight to
-// Mongo by telegramId so it works regardless of which member's socket
-// triggered it.
+// Arena 3v3 and the Кровавая Башня allow DAILY_DUNGEON_ATTEMPTS runs per UTC
+// day — each gets its own savedData field (see the wrapper functions below)
+// so their attempt pools are independent. The attempt is consumed on entry,
+// not on a successful clear, so dying/failing doesn't refund it. Written
+// straight to Mongo by telegramId so it works regardless of which member's
+// socket triggered it.
 const DAILY_DUNGEON_ATTEMPTS = 3;
 function _todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -2247,122 +2152,10 @@ async function _dailyAttemptsLeft(socketId, field) {
   } catch (e) { return cap; }
 }
 
-function _lockPartyDungeonDaily(socketId)            { _lockDailyAttempt(socketId, 'partyDungeonAttempts'); }
-async function _partyDungeonLockedToday(socketId)    { return (await _dailyAttemptsLeft(socketId, 'partyDungeonAttempts')) <= 0; }
-function _lockRaidDaily(socketId)                    { _lockDailyAttempt(socketId, 'raidAttempts'); }
-async function _raidLockedToday(socketId)            { return (await _dailyAttemptsLeft(socketId, 'raidAttempts')) <= 0; }
 function _lockArena3Daily(socketId)                  { _lockDailyAttempt(socketId, 'arena3Attempts'); }
 async function _arena3AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'arena3Attempts'); }
 function _lockRace10Daily(socketId)                  { _lockDailyAttempt(socketId, 'race10Attempts'); }
 async function _race10AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'race10Attempts'); }
-
-// Shared by partyDungeonAttack/partyDungeonSkillAttack — mirrors the normal
-// attack/skillAttack handlers' kill-reward flow, but rewards split across
-// the *whole instance roster* (every member is, by construction, "the
-// party" here) instead of the ambient party system, and with this
-// dungeon's own drop rates: 50% Nexum per regular kill, 50%/10% enchant
-// stones on the boss kill — both to one random member, not the killer.
-function _handlePartyDungeonKillResult(pd, attackerId, enemyId, result) {
-  if (!result.killed) {
-    // dmg only to the attacker — see the enemyHurt split in the normal attack
-    // handler for why (floating number / vampirism / kill prediction).
-    io.to(attackerId).emit('partyDungeonEnemyHurt', { id: enemyId, hp: result.hp, dmg: result.dmg, isCrit: result.isCrit });
-    io.to(pd.channel).except(attackerId).emit('partyDungeonEnemyHurt', { id: enemyId, hp: result.hp });
-    return;
-  }
-  const mids = [...pd.memberIds];
-  const n = Math.max(1, mids.length);
-  const xpShare = Math.max(1, Math.round(result.xp / n)), goldShare = Math.round(result.gold / n);
-  const nexumDrop  = !result.isBoss && Math.random() < 0.50 ? 1 : 0;
-  const normStone  = result.isBoss && Math.random() < 0.50 ? 1 : 0;
-  const blessStone = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-  const lootWinnerId = mids[Math.floor(Math.random() * n)];
-
-  mids.forEach(mid => {
-    io.to(mid).emit('partyDungeonEnemyKilled', {
-      id: enemyId, xp: xpShare, gold: goldShare,
-      dmg: mid === attackerId ? result.dmg : undefined,
-      isCrit: mid === attackerId ? result.isCrit : undefined,
-      ex: result.ex, ey: result.ey, color: result.color, eid: result.eid, isBoss: result.isBoss,
-      normStone:  mid === lootWinnerId ? normStone  : 0,
-      blessStone: mid === lootWinnerId ? blessStone : 0,
-    });
-  });
-  if (nexumDrop > 0) _grantPartyDungeonNexum(lootWinnerId, nexumDrop);
-
-  if (result.isBoss) {
-    pd.state = 'complete';
-    pd.stop();
-    mids.forEach(mid => {
-      io.to(mid).emit('partyDungeonComplete', { gold: goldShare, xp: xpShare });
-      _cleanupPartyDungeonPlayer(mid, pd.channel);
-    });
-    pdRooms.delete(pd.id);
-  }
-}
-
-function _lobbyBroadcast() {
-  const list = [...raidLobbies.values()].map(lb => ({
-    id: lb.id, creatorName: lb.creatorName, dungeonId: lb.dungeonId,
-    members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
-  }));
-  io.emit('lobbyList', { lobbies: list });
-}
-
-function _cleanupLobby(socketId) {
-  const lobbyId = playerLobby.get(socketId);
-  if (!lobbyId) return;
-  const lb = raidLobbies.get(lobbyId);
-  if (!lb) { playerLobby.delete(socketId); return; }
-  lb.members.delete(socketId);
-  playerLobby.delete(socketId);
-  if (lb.members.size === 0 || lb.creatorId === socketId) {
-    lb.members.forEach((_, mid) => { playerLobby.delete(mid); io.to(mid).emit('lobbyLeft', { reason: 'disbanded' }); });
-    raidLobbies.delete(lobbyId);
-    _lobbyBroadcast();
-  } else {
-    _lobbyBroadcast();
-  }
-}
-
-// NB: this used to also call `p._knownE.clear()` to "force a full enemy
-// refresh on next gameState". That field never existed on a room player
-// (Room.addPlayer only ever created `_known`, for other *players*) — enemy
-// known-state is room-level, not per-player (`Room._enemyKnown`), and has
-// been since enemies stopped being AOI-filtered. So the call was dead code
-// that threw TypeError every single time it ran, taking the whole process
-// down whenever it was reached from a timer instead of a guarded handler:
-//   [uncaughtException] TypeError: Cannot read properties of undefined
-//     at _cleanupRaidPlayer ... at RaidRoom.onEnd ... at RaidRoom._complete
-// It also aborted its own callers midway — _cleanupRaid never got to remove
-// the player from the raid room or delete a finished one, and the raid/party
-// -dungeon completion loops never got past their first member, leaving the
-// rest of the party stuck in an instance the server had already ended.
-// Nothing replaces it: enemies re-send full entries on a stagger anyway
-// (FULL_REFRESH_TICKS in Room.js), which is what actually resynced returning
-// players all along, since this line never once succeeded.
-function _cleanupRaidPlayer(socketId) {
-  playerRaid.delete(socketId);
-  const fl = playerFloorMap.get(socketId);
-  if (fl !== undefined) {
-    const fr = floorRooms.get(fl);
-    if (fr) {
-      const p = fr.players.get(socketId);
-      if (p) p._inRaid = false;
-    }
-  }
-}
-
-function _cleanupRaid(socketId) {
-  const rId = playerRaid.get(socketId);
-  if (!rId) return;
-  _cleanupRaidPlayer(socketId);
-  const rr = raidRooms.get(rId);
-  if (rr) {
-    rr.removePlayer(socketId);
-    if (rr.memberIds.length === 0) { rr._stop(); raidRooms.delete(rId); }
-  }
-}
 
 // Remove leaverId from their party; notify remaining members.
 // If only 1 member remains the party dissolves entirely.
@@ -2596,14 +2389,8 @@ function _dbOpenReg(startAt) {
 function _dbStart() {
   const room = getRoom(1);
   // Only entrants who are still connected and still in the world can fight.
-  // Registering doesn't block later joining a raid/party dungeon (those flows
-  // only check the other direction), and a player deep in either still has a
-  // live room.players entry — so without this, deploy would yank them into
-  // the arena mid-run and leave the client straddling two instances at once,
-  // exactly the "hybrid zone" _stashWorldZone's guard exists to prevent.
   const ids = [..._db.reg.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room && room.players.get(sid) &&
-    !playerRaid.has(sid) && !playerPartyDungeon.has(sid));
+    io.sockets.sockets.get(sid) && room && room.players.get(sid));
   if (!room || ids.length < DEATH_BATTLE_MIN_PLAYERS) {
     io.to('floor_1').emit('deathBattleCancelled', { reason: 'notEnough' });
     _db.reg.clear();
@@ -2861,12 +2648,8 @@ async function _a3TryStart() {
   if (!room) return;
   // Only entrants still connected and still standing in the world can be
   // deployed; anyone else is dropped from the queue rather than counted.
-  // Also excludes anyone who joined a raid/party dungeon after queueing here —
-  // see the matching comment in _dbStart for why a live room.players entry
-  // alone isn't enough to know they're still free to fight.
   const ready = [..._a3.queue.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room.players.get(sid) &&
-    !playerRaid.has(sid) && !playerPartyDungeon.has(sid));
+    io.sockets.sockets.get(sid) && room.players.get(sid));
   [..._a3.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _a3.queue.delete(sid); });
   if (ready.length < ARENA3_NEEDED) return;
 
@@ -2938,9 +2721,9 @@ async function _a3Deploy(ready, room) {
     _a3.alive.set(socketId, { name, team });
     _a3.names.set(socketId, name);
     _a3.queue.delete(socketId);
-    // The attempt is spent the moment the match starts, win or lose — same
-    // rule as the raid and the maze. Only players actually deployed are
-    // charged, so a cancelled launch costs nobody anything.
+    // The attempt is spent the moment the match starts, win or lose. Only
+    // players actually deployed are charged, so a cancelled launch costs
+    // nobody anything.
     _lockArena3Daily(socketId);
   });
   // Rosters are only known once everyone is placed, so this is a second pass.
@@ -3197,12 +2980,9 @@ async function _race10Start() {
   const room = getRoom(1);
   if (!room) { _race10CloseWindow({ silent: true }); return; }
   // Only entrants still connected and still standing in the world can be
-  // deployed; anyone else is dropped rather than counted. Also excludes
-  // anyone who joined a raid/party dungeon after queueing here — see the
-  // matching comment in _dbStart.
+  // deployed; anyone else is dropped rather than counted.
   const ready = [..._race10.queue.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room.players.get(sid) &&
-    !playerRaid.has(sid) && !playerPartyDungeon.has(sid));
+    io.sockets.sockets.get(sid) && room.players.get(sid));
   [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
   if (ready.length < RACE10_MIN_PLAYERS) {
     // Not enough showed up. Nobody is charged an attempt (that happens on
@@ -3281,7 +3061,7 @@ async function _race10Deploy(ready, room) {
     _race10.dmg.set(socketId, 0);
     _race10.queue.delete(socketId);
     // Attempt spent the moment the race starts, win or lose — same rule as
-    // the raid, the maze and the 3v3 arena.
+    // the 3v3 arena.
     _lockRace10Daily(socketId);
   });
 
@@ -3609,8 +3389,7 @@ io.on('connection', socket => {
   //   • a market sale's payout to the seller (marketBuy runs on the BUYER's
   //     socket),
   //   • an admin confirming a deposit, and the 5% referral bonus it pays,
-  //   • POST /admin/player/:tid/give,
-  //   • _grantPartyDungeonNexum (credits an arbitrary party member).
+  //   • POST /admin/player/:tid/give.
   // All of those write the cache and push a gramBalanceUpdate to the client,
   // so the player SEES the credit — but this socket's mirror stays at the old
   // number. Anything that then based a new value on the mirror (a gram drop,
@@ -3743,8 +3522,6 @@ io.on('connection', socket => {
     'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
-    'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
-    'createPartyDungeonLobby', 'joinPartyDungeonLobby', 'startPartyDungeonLobby', 'getPartyDungeonLobbyList',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear',
   ]);
@@ -5392,32 +5169,6 @@ io.on('connection', socket => {
   safeOn('skillAttack', ({ enemyId, multiplier } = {}) => {
     if (!_atkAllowed()) return;
     if (_pvpFrozen(socket.id)) return;
-    const rId = playerRaid.get(socket.id);
-    if (rId) {
-      const rr = raidRooms.get(rId);
-      if (!rr) return;
-      const cp = currentRoom?.players.get(socket.id);
-      const targetEnemy = rr._enemyMap.get(enemyId);
-      const result = rr.skillAttackEnemy(socket.id, enemyId, cp?.atk || 10, multiplier, cp?.critChance || 0.05, cp?.critPower || 1.5);
-      if (!result) return;
-      if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));
-      if (result.killed) {
-        const rNorm  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-        const rBless = result.isBoss && Math.random() < 0.01 ? 1 : 0;
-        rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyKilled', {
-          id: enemyId, ex: result.ex, ey: result.ey, isBoss: result.isBoss,
-          normStone:  mid === socket.id ? rNorm  : 0,
-          blessStone: mid === socket.id ? rBless : 0,
-        }));
-      } else {
-        // dmg only to the attacker (0 reads as "not mine" client-side) — same
-        // reasoning as the enemyHurt split in the normal attack handler.
-        rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', {
-          id: enemyId, hp: result.hp, dmg: mid === socket.id ? result.dmg : 0,
-        }));
-      }
-      return;
-    }
     if (!currentRoom) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const _a3TargetEnemy2 = currentRoom._enemyMap.get(enemyId);
@@ -5507,15 +5258,6 @@ io.on('connection', socket => {
   });
 
   safeOn('skillEffect', ({ enemyId, enemyIds, type, duration } = {}) => {
-    const rId = playerRaid.get(socket.id);
-    if (rId) {
-      const rr = raidRooms.get(rId);
-      if (!rr) return;
-      if (enemyId) rr.applySkillEffect(enemyId, type, duration);
-      if (enemyIds) rr.applySkillEffectMany(enemyIds, type, duration);
-      socket.to(rId).emit('enemyCC', { enemyId, enemyIds, type, duration });
-      return;
-    }
     if (!currentRoom) return;
     if (enemyId) currentRoom.applySkillEffect(enemyId, type, duration);
     if (enemyIds) currentRoom.applySkillEffectMany(enemyIds, type, duration);
@@ -5621,9 +5363,6 @@ io.on('connection', socket => {
     if (_db.phase !== 'reg') return socket.emit('deathBattleError', { msg: 'Регистрация закрыта' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('deathBattleError', { msg: 'Выберите персонажа' });
-    if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
-      return socket.emit('deathBattleError', { msg: 'Нельзя записаться из рейда или подземелья' });
-    }
     _db.reg.set(socket.id, { name: authed.username });
     socket.emit('deathBattleRegistered', { registered: true });
     _dbBroadcast();
@@ -5643,9 +5382,6 @@ io.on('connection', socket => {
     if (_a3.phase !== 'reg') return socket.emit('arena3Error', { msg: 'Арена 3х3 открыта с 21:00 до 22:00 по Москве' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('arena3Error', { msg: 'Выберите персонажа' });
-    if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
-      return socket.emit('arena3Error', { msg: 'Нельзя записаться из рейда или подземелья' });
-    }
     // Signing up for both at once would have the death battle yank someone out
     // of a running 3v3 (or the reverse) mid-fight.
     if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
@@ -5697,9 +5433,6 @@ io.on('connection', socket => {
     if (_race10.phase !== 'reg') return socket.emit('race10Error', { msg: 'Кровавая Башня открыта в 20:30 по Москве, всего на 5 минут' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('race10Error', { msg: 'Выберите персонажа' });
-    if (playerRaid.has(socket.id) || playerPartyDungeon.has(socket.id)) {
-      return socket.emit('race10Error', { msg: 'Нельзя записаться из рейда или подземелья' });
-    }
     if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
       return socket.emit('race10Error', { msg: 'Вы уже записаны на битву на смерть' });
     }
@@ -6292,327 +6025,6 @@ io.on('connection', socket => {
     _clanXpAdd(_myClanId, 1);
   }
 
-  // ── Raid ───────────────────────────────────────────────────────────────────
-  // ── Raid lobbies ──────────────────────────────────────────────────────────
-  safeOn('getLobbyList', () => {
-    const list = [...raidLobbies.values()].map(lb => ({
-      id: lb.id, creatorName: lb.creatorName, dungeonId: lb.dungeonId,
-      members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
-    }));
-    socket.emit('lobbyList', { lobbies: list });
-  });
-
-  safeOn('createRaidLobby', async ({ dungeonId }) => {
-    if (!authed) return;
-    if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
-    if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
-    const cp = currentRoom?.players.get(socket.id);
-    if (!cp || (cp.lvl || 1) < 3) return socket.emit('lobbyError', { msg: 'Нужен 3 уровень' });
-    if (await _raidLockedToday(socket.id)) return socket.emit('lobbyError', { msg: 'Попытки в рейд на сегодня закончились' });
-    const bm = calcBM(_lastStats);
-    const lobbyId = 'lb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
-    const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
-      dungeonId: dungeonId || 1,
-      members: new Map([[socket.id, { name: authed.username, bm, lvl: cp.lvl || 1 }]]) };
-    raidLobbies.set(lobbyId, lb);
-    playerLobby.set(socket.id, lobbyId);
-    socket.emit('lobbyJoined', { lobbyId, isCreator: true,
-      members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })) });
-    _lobbyBroadcast();
-  });
-
-  safeOn('joinRaidLobby', async ({ lobbyId }) => {
-    if (!authed) return;
-    const lb = raidLobbies.get(lobbyId);
-    if (!lb) return socket.emit('lobbyError', { msg: 'Группа не найдена' });
-    if (lb.members.size >= 5) return socket.emit('lobbyError', { msg: 'Группа полна (5/5)' });
-    if (playerRaid.has(socket.id)) return socket.emit('lobbyError', { msg: 'Вы уже в рейде' });
-    if (await _raidLockedToday(socket.id)) return socket.emit('lobbyError', { msg: 'Попытки в рейд на сегодня закончились' });
-    if (playerLobby.has(socket.id)) _cleanupLobby(socket.id);
-    const cp = currentRoom?.players.get(socket.id);
-    const bm = calcBM(_lastStats);
-    lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
-    playerLobby.set(socket.id, lobbyId);
-    const memberList = [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl }));
-    lb.members.forEach((_, mid) => io.to(mid).emit('lobbyJoined', { lobbyId, isCreator: mid === lb.creatorId, members: memberList }));
-    _lobbyBroadcast();
-  });
-
-  safeOn('leaveRaidLobby', () => {
-    if (!playerLobby.has(socket.id)) return;
-    _cleanupLobby(socket.id);
-    socket.emit('lobbyLeft', {});
-    _lobbyBroadcast();
-  });
-
-  safeOn('startRaidLobby', async () => {
-    if (!authed) return;
-    const lobbyId = playerLobby.get(socket.id);
-    const lb = raidLobbies.get(lobbyId);
-    if (!lb || lb.creatorId !== socket.id) return socket.emit('lobbyError', { msg: 'Вы не создатель группы' });
-    if (lb.members.size < 2) return socket.emit('lobbyError', { msg: 'Нужно минимум 2 игрока' });
-    const memberIds = [...lb.members.keys()];
-    for (const mid of memberIds) {
-      if (playerRaid.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то уже в рейде' });
-      // Leaving a live 3v3 for a raid would strand the match: the arena has no
-      // timer, so the side left behind could never finish anyone off.
-      if (_a3.teams.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
-      // Same idea for the corridor race — pulling someone out of a live lane
-      // leaves them stuck straddling two instances at once.
-      if (_race10.alive.has(mid)) return socket.emit('lobbyError', { msg: 'Кто-то сейчас в Кровавой Башне' });
-    }
-    // Re-check the daily lock against fresh DB state for every member right
-    // before launch (not just at queue time) — someone could have used up
-    // their attempts in another session between joining and starting.
-    const lockChecks = await Promise.all(memberIds.map(mid => _raidLockedToday(mid)));
-    const lockedIdx = lockChecks.findIndex(Boolean);
-    if (lockedIdx !== -1) {
-      const nm = lb.members.get(memberIds[lockedIdx])?.name || 'Игрок';
-      return socket.emit('lobbyError', { msg: `У ${nm} закончились попытки в рейд на сегодня` });
-    }
-    raidLobbies.delete(lobbyId);
-    memberIds.forEach(mid => playerLobby.delete(mid));
-    const raidId = 'raid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    const raidRoom = new RaidRoom(raidId, io, memberIds, (mids) => {
-      mids.forEach(mid => _cleanupRaidPlayer(mid));
-      raidRooms.delete(raidId);
-    });
-    raidRooms.set(raidId, raidRoom);
-    for (const mid of memberIds) {
-      playerRaid.set(mid, raidId);
-      // The daily attempt is used up the moment the run starts, not on a
-      // successful clear — entering counts, win or lose.
-      _lockRaidDaily(mid);
-      const mfl = playerFloorMap.get(mid);
-      const mRoom = mfl !== undefined ? floorRooms.get(mfl) : null;
-      const mp = mRoom?.players.get(mid);
-      if (mp) {
-        mp._inRaid = true;
-        raidRoom.addPlayer(mid, { maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type, username: mp.username || lb.members.get(mid)?.name || '' });
-      } else {
-        raidRoom.addPlayer(mid, { maxHp: 100, atk: 10, def: 0, type: 'lev', username: lb.members.get(mid)?.name || '' });
-      }
-      io.to(mid).emit('raidStart', { raidId, dungeon: raidRoom.dungeonData });
-    }
-    raidRoom.start();
-    _lobbyBroadcast();
-  });
-
-  // ── Raid game ─────────────────────────────────────────────────────────────
-  safeOn('raidMove', ({ x, y, hp } = {}) => {
-    const rId = playerRaid.get(socket.id);
-    const rr  = rId ? raidRooms.get(rId) : null;
-    if (rr) rr.updatePlayerPos(socket.id, x, y, hp);
-  });
-
-  safeOn('raidAttack', ({ enemyId } = {}) => {
-    const rId = playerRaid.get(socket.id);
-    const rr  = rId ? raidRooms.get(rId) : null;
-    if (!rr) return;
-    const cp = currentRoom?.players.get(socket.id);
-    const targetEnemy = rr._enemyMap.get(enemyId);
-    const result = rr.attackEnemy(socket.id, enemyId, cp?.atk || 10, cp?.critChance || 0.05, cp?.critPower || 1.5);
-    if (!result) return;
-    // Broadcast attacker animation to all members
-    if (targetEnemy) rr.memberIds.forEach(mid => io.to(mid).emit('raidPlayerAtk', { playerId: socket.id, tx: targetEnemy.x, ty: targetEnemy.y }));
-    if (result.killed) {
-      const rNorm  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-      const rBless = result.isBoss && Math.random() < 0.01 ? 1 : 0;
-      rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyKilled', {
-        id: enemyId, ex: result.ex, ey: result.ey, isBoss: result.isBoss,
-        normStone:  mid === socket.id ? rNorm  : 0,
-        blessStone: mid === socket.id ? rBless : 0,
-      }));
-    } else {
-      // dmg only to the attacker — see the enemyHurt split in the normal
-      // attack handler.
-      rr.memberIds.forEach(mid => io.to(mid).emit('raidEnemyHurt', {
-        id: enemyId, hp: result.hp, dmg: mid === socket.id ? result.dmg : 0,
-      }));
-    }
-  });
-
-  safeOn('leaveRaid', () => { _cleanupRaid(socket.id); });
-
-  // ── Party dungeon (maze + boss, min 3 players, 1x/day) ─────────────────────
-  safeOn('getPartyDungeonLobbyList', () => {
-    const list = [...pdLobbies.values()].map(lb => ({
-      id: lb.id, creatorName: lb.creatorName,
-      members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })),
-    }));
-    socket.emit('pdLobbyList', { lobbies: list });
-  });
-
-  safeOn('createPartyDungeonLobby', async () => {
-    if (!authed) return;
-    if (playerPdLobby.has(socket.id)) _cleanupPdLobby(socket.id);
-    if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
-    const cp = currentRoom?.players.get(socket.id);
-    if (!cp) return socket.emit('pdLobbyError', { msg: 'Выберите персонажа' });
-    if ((cp.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
-    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
-    const bm = calcBM(_lastStats);
-    const lobbyId = 'pdlb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
-    const lb = { id: lobbyId, creatorId: socket.id, creatorName: authed.username,
-      members: new Map([[socket.id, { name: authed.username, bm, lvl: cp.lvl || 1 }]]) };
-    pdLobbies.set(lobbyId, lb);
-    playerPdLobby.set(socket.id, lobbyId);
-    socket.emit('pdLobbyJoined', { lobbyId, isCreator: true,
-      members: [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl })) });
-    _pdLobbyBroadcast();
-  });
-
-  safeOn('joinPartyDungeonLobby', async ({ lobbyId }) => {
-    if (!authed) return;
-    const lb = pdLobbies.get(lobbyId);
-    if (!lb) return socket.emit('pdLobbyError', { msg: 'Группа не найдена' });
-    if (lb.members.size >= PARTY_DUNGEON_MAX_MEMBERS) return socket.emit('pdLobbyError', { msg: 'Группа полна' });
-    if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
-    if (playerPdLobby.has(socket.id)) _cleanupPdLobby(socket.id);
-    const cp = currentRoom?.players.get(socket.id);
-    if (!cp) return socket.emit('pdLobbyError', { msg: 'Выберите персонажа' });
-    if ((cp.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
-    if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
-    const bm = calcBM(_lastStats);
-    lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
-    playerPdLobby.set(socket.id, lobbyId);
-    const memberList = [...lb.members.entries()].map(([sid, m]) => ({ id: sid, name: m.name, bm: m.bm, lvl: m.lvl }));
-    lb.members.forEach((_, mid) => io.to(mid).emit('pdLobbyJoined', { lobbyId, isCreator: mid === lb.creatorId, members: memberList }));
-    _pdLobbyBroadcast();
-  });
-
-  safeOn('leavePartyDungeonLobby', () => {
-    if (!playerPdLobby.has(socket.id)) return;
-    _cleanupPdLobby(socket.id);
-    socket.emit('pdLobbyLeft', {});
-    _pdLobbyBroadcast();
-  });
-
-  safeOn('startPartyDungeonLobby', async () => {
-    if (!authed) return;
-    const lobbyId = playerPdLobby.get(socket.id);
-    const lb = pdLobbies.get(lobbyId);
-    if (!lb || lb.creatorId !== socket.id) return socket.emit('pdLobbyError', { msg: 'Вы не создатель группы' });
-    if (lb.members.size < PARTY_DUNGEON_MIN_MEMBERS) return socket.emit('pdLobbyError', { msg: `Нужно минимум ${PARTY_DUNGEON_MIN_MEMBERS} игрока` });
-    const memberIds = [...lb.members.keys()];
-    for (const mid of memberIds) {
-      if (playerRaid.has(mid) || playerPartyDungeon.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то уже в подземелье' });
-      // Same reason as the raid guard above: the 3v3 has no timer, so a member
-      // walking out of a live match would leave it unable to finish.
-      if (_a3.teams.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас на арене 3х3' });
-      if (_race10.alive.has(mid)) return socket.emit('pdLobbyError', { msg: 'Кто-то сейчас в Кровавой Башне' });
-    }
-    // Re-check the daily lock against fresh DB state for every member right
-    // before launch (not just at queue time) — someone could have cleared
-    // it in another session between joining the lobby and starting.
-    const lockChecks = await Promise.all(memberIds.map(mid => _partyDungeonLockedToday(mid)));
-    const lockedIdx = lockChecks.findIndex(Boolean);
-    if (lockedIdx !== -1) {
-      const nm = lb.members.get(memberIds[lockedIdx])?.name || 'Игрок';
-      return socket.emit('pdLobbyError', { msg: `У ${nm} закончились попытки в лабиринт на сегодня` });
-    }
-    pdLobbies.delete(lobbyId);
-    memberIds.forEach(mid => playerPdLobby.delete(mid));
-    const pdId = 'pd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    const pd = new PartyDungeonRoom(pdId, io, memberIds, (mids) => {
-      mids.forEach(mid => _cleanupPartyDungeonPlayer(mid, pd.channel));
-      pdRooms.delete(pdId);
-    }, (deadMid) => {
-      // Death kicks the player out of the dungeon entirely (no respawn-in-
-      // place) — tell their client to leave, and drop our own bookkeeping.
-      // Do NOT call pd.removePlayer here: PartyDungeonRoom._ejectPlayer()
-      // already removed them internally, and if they were the last one
-      // left, the room's own next-tick "nobody alive" check needs to see
-      // that and run _fail() (proper notification + onFail cleanup) rather
-      // than this callback silently stop()-ing it first.
-      io.to(deadMid).emit('partyDungeonEliminated', {});
-      _cleanupPartyDungeonPlayer(deadMid, pd.channel);
-    });
-    pdRooms.set(pdId, pd);
-    for (const mid of memberIds) {
-      playerPartyDungeon.set(mid, pdId);
-      // The daily attempt is used up the moment the run starts, not on a
-      // successful clear — entering counts, win or lose.
-      _lockPartyDungeonDaily(mid);
-      const mfl = playerFloorMap.get(mid);
-      const mRoom = mfl !== undefined ? floorRooms.get(mfl) : null;
-      const mp = mRoom?.players.get(mid);
-      const mSocket = io.sockets.sockets.get(mid);
-      if (mSocket) mSocket.join(pd.channel);
-      if (mp) {
-        mp._inRaid = true;
-        pd.addPlayer(mid, mp.username || lb.members.get(mid)?.name || '', {
-          maxHp: mp.maxHp, atk: mp.atk, def: mp.def, type: mp.type,
-          critChance: mp.critChance, critPower: mp.critPower,
-        });
-      } else {
-        pd.addPlayer(mid, lb.members.get(mid)?.name || '', { maxHp: 100, atk: 10, def: 0, type: 'lev' });
-      }
-      io.to(mid).emit('partyDungeonStart', { pdId, dungeon: pd.dungeonData, enemies: pd.enemySnapshot() });
-    }
-    pd.start();
-    _pdLobbyBroadcast();
-  });
-
-  safeOn('partyDungeonMove', ({ x, y, facing, hp } = {}) => {
-    const pdId = playerPartyDungeon.get(socket.id);
-    const pd = pdId ? pdRooms.get(pdId) : null;
-    if (pd) pd.updatePlayerPos(socket.id, x, y, facing, hp);
-  });
-
-  // Sync this player's live stats (level-ups, gear, upgrades) into the
-  // instance right before resolving damage — the player never actually
-  // leaves their floor Room while in here (same convention raids use), so
-  // currentRoom always holds their freshest server-computed stats.
-  function _syncPdStats(pd) {
-    const cp = currentRoom?.players.get(socket.id);
-    if (cp) pd.updatePlayerStats(socket.id, { atk: cp.atk, def: cp.def, maxHp: cp.maxHp, critChance: cp.critChance, critPower: cp.critPower });
-  }
-
-  safeOn('partyDungeonAttack', ({ enemyId } = {}) => {
-    if (!_atkAllowed()) return;
-    const pdId = playerPartyDungeon.get(socket.id);
-    const pd = pdId ? pdRooms.get(pdId) : null;
-    if (!pd) return;
-    _syncPdStats(pd);
-    const result = pd.attackEnemy(socket.id, enemyId);
-    if (!result) return;
-    _handlePartyDungeonKillResult(pd, socket.id, enemyId, result);
-  });
-
-  safeOn('partyDungeonSkillAttack', ({ enemyId, multiplier }) => {
-    if (!_atkAllowed()) return;
-    const pdId = playerPartyDungeon.get(socket.id);
-    const pd = pdId ? pdRooms.get(pdId) : null;
-    if (!pd) return;
-    _syncPdStats(pd);
-    const result = pd.skillAttackEnemy(socket.id, enemyId, multiplier);
-    if (!result) return;
-    _handlePartyDungeonKillResult(pd, socket.id, enemyId, result);
-  });
-
-  safeOn('partyDungeonSkillEffect', ({ enemyId, enemyIds, type, duration }) => {
-    const pdId = playerPartyDungeon.get(socket.id);
-    const pd = pdId ? pdRooms.get(pdId) : null;
-    if (!pd) return;
-    if (enemyId) pd.applySkillEffect(enemyId, type, duration);
-    if (enemyIds) pd.applySkillEffectMany(enemyIds, type, duration);
-    io.to(pd.channel).emit('enemyCC', { enemyId, enemyIds, type, duration });
-  });
-
-  safeOn('partyDungeonHealParty', ({ amount }) => {
-    const pdId = playerPartyDungeon.get(socket.id);
-    const pd = pdId ? pdRooms.get(pdId) : null;
-    if (!pd) return;
-    const healAmt = Math.max(0, Math.min(Math.floor(amount) || 0, 9999));
-    pd.players.forEach((_, mid) => {
-      if (mid === socket.id) return;
-      if (pd.healPartyMember(mid, healAmt)) io.to(mid).emit('healPartyMember', { amount: healAmt });
-    });
-  });
-
-  safeOn('leavePartyDungeon', () => { _cleanupPartyDungeon(socket.id); });
-
   // ── Special Quests ────────────────────────────────────────────────────────
   safeOn('completeSpecialQuest', async ({ questId } = {}) => {
     if (!authed || !questId) return;
@@ -6736,10 +6148,6 @@ io.on('connection', socket => {
     } else {
       socket.data._flushNow?.();
     }
-    _cleanupRaid(socket.id);
-    _cleanupLobby(socket.id);
-    _cleanupPartyDungeon(socket.id);
-    _cleanupPdLobby(socket.id);
     // Leaving mid-round counts as being knocked out, so a round can't hang
     // waiting on someone who closed the app. The 3v3 has no timer at all, so
     // this is the only thing that stops a closed app from holding the arena.
