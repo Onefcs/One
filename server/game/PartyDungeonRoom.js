@@ -185,7 +185,12 @@ class PartyDungeonRoom {
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
-    if (rdx * rdx + rdy * rdy > 350 * 350) return null;
+    // enemy.size is added because this is measured to its centre — without it
+    // a large enemy shrinks the usable window by its own radius, same fix as
+    // Room.js's attackEnemy (there it was discovered via the size-165 event
+    // boss; here it's the maze's own boss, sizes 22-32, being spongy to hit).
+    const _reach = 350 + (enemy.size || 0);
+    if (rdx * rdx + rdy * rdy > _reach * _reach) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     const base = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);

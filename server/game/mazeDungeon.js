@@ -8,7 +8,7 @@
 // Room.js/the client renderer already expect, so nothing downstream needs
 // to know this wasn't produced by generateDungeon().
 const { TILE, WALL, FLOOR } = require('./dungeon');
-const { ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel } = require('../../shared/definitions');
+const { ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, xpAtLevel, goldAtLevel } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -200,6 +200,14 @@ function generatePartyDungeon(seed) {
         maxHp: Math.floor(stats.hp * mobWeakMult), hp: Math.floor(stats.hp * mobWeakMult),
         atk:   Math.floor(stats.atk * mobWeakMult),
         def:   stats.def,
+        // ENEMY_DEF's own xp/gold are a flat per-species snapshot (rat: 1,
+        // slime: 11, ...), not scaled to MAZE_LEVEL — the normal dungeon
+        // (server/game/dungeon.js) always overrides both at spawn for exactly
+        // this reason. calcGoldDrop already re-derives gold from rlvl at kill
+        // time regardless, but xp was left pointing at the stale field, so
+        // every maze kill paid out its species' base-level XP instead of a
+        // level-10 kill's.
+        xp: xpAtLevel(MAZE_LEVEL), gold: goldAtLevel(MAZE_LEVEL),
         x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,
         atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
       });
@@ -215,6 +223,8 @@ function generatePartyDungeon(seed) {
       maxHp: bossStats.hp, hp: bossStats.hp,
       atk:   bossStats.atk,
       def:   bossStats.def,
+      // See the regular-mob comment above — same stale-xp/gold issue.
+      xp: xpAtLevel(MAZE_LEVEL), gold: goldAtLevel(MAZE_LEVEL),
       x: pos.x, y: pos.y, spawnX: pos.x, spawnY: pos.y,
       atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
     });

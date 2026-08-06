@@ -2596,8 +2596,14 @@ function _dbOpenReg(startAt) {
 function _dbStart() {
   const room = getRoom(1);
   // Only entrants who are still connected and still in the world can fight.
+  // Registering doesn't block later joining a raid/party dungeon (those flows
+  // only check the other direction), and a player deep in either still has a
+  // live room.players entry — so without this, deploy would yank them into
+  // the arena mid-run and leave the client straddling two instances at once,
+  // exactly the "hybrid zone" _stashWorldZone's guard exists to prevent.
   const ids = [..._db.reg.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room && room.players.get(sid));
+    io.sockets.sockets.get(sid) && room && room.players.get(sid) &&
+    !playerRaid.has(sid) && !playerPartyDungeon.has(sid));
   if (!room || ids.length < DEATH_BATTLE_MIN_PLAYERS) {
     io.to('floor_1').emit('deathBattleCancelled', { reason: 'notEnough' });
     _db.reg.clear();
@@ -2855,8 +2861,12 @@ async function _a3TryStart() {
   if (!room) return;
   // Only entrants still connected and still standing in the world can be
   // deployed; anyone else is dropped from the queue rather than counted.
+  // Also excludes anyone who joined a raid/party dungeon after queueing here —
+  // see the matching comment in _dbStart for why a live room.players entry
+  // alone isn't enough to know they're still free to fight.
   const ready = [..._a3.queue.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room.players.get(sid));
+    io.sockets.sockets.get(sid) && room.players.get(sid) &&
+    !playerRaid.has(sid) && !playerPartyDungeon.has(sid));
   [..._a3.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _a3.queue.delete(sid); });
   if (ready.length < ARENA3_NEEDED) return;
 
@@ -3187,9 +3197,12 @@ async function _race10Start() {
   const room = getRoom(1);
   if (!room) { _race10CloseWindow({ silent: true }); return; }
   // Only entrants still connected and still standing in the world can be
-  // deployed; anyone else is dropped rather than counted.
+  // deployed; anyone else is dropped rather than counted. Also excludes
+  // anyone who joined a raid/party dungeon after queueing here — see the
+  // matching comment in _dbStart.
   const ready = [..._race10.queue.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room.players.get(sid));
+    io.sockets.sockets.get(sid) && room.players.get(sid) &&
+    !playerRaid.has(sid) && !playerPartyDungeon.has(sid));
   [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
   if (ready.length < RACE10_MIN_PLAYERS) {
     // Not enough showed up. Nobody is charged an attempt (that happens on
@@ -6457,7 +6470,8 @@ io.on('connection', socket => {
     if (playerPartyDungeon.has(socket.id)) return socket.emit('pdLobbyError', { msg: 'Вы уже в подземелье' });
     if (playerPdLobby.has(socket.id)) _cleanupPdLobby(socket.id);
     const cp = currentRoom?.players.get(socket.id);
-    if ((cp?.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
+    if (!cp) return socket.emit('pdLobbyError', { msg: 'Выберите персонажа' });
+    if ((cp.lvl || 1) < 10) return socket.emit('pdLobbyError', { msg: 'Нужен 10 уровень' });
     if (await _partyDungeonLockedToday(socket.id)) return socket.emit('pdLobbyError', { msg: 'Попытки в лабиринт на сегодня закончились' });
     const bm = calcBM(_lastStats);
     lb.members.set(socket.id, { name: authed.username, bm, lvl: cp?.lvl || 1 });
