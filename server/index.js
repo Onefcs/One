@@ -5075,14 +5075,17 @@ io.on('connection', socket => {
   // moving normally.
   safeOn('mv', a => {
     if (!currentRoom || !Array.isArray(a)) return;
-    _applyMove(a[0] / 2, a[1] / 2, NC_FACING[a[2]] || 'front', a[3]);
+    // 5th element is new (moving flag) — a[4] is undefined against an older
+    // client's 4-element packet, which _applyMove treats as "unknown, leave
+    // whatever we already had" rather than stomping it to false.
+    _applyMove(a[0] / 2, a[1] / 2, NC_FACING[a[2]] || 'front', a[3], a.length > 4 ? !!a[4] : undefined);
   });
 
-  safeOn('playerMove', ({ x, y, facing, hp } = {}) => {
-    _applyMove(x, y, facing, hp);
+  safeOn('playerMove', ({ x, y, facing, hp, moving } = {}) => {
+    _applyMove(x, y, facing, hp, moving);
   });
 
-  function _applyMove(x, y, facing, hp) {
+  function _applyMove(x, y, facing, hp, moving) {
     if (!currentRoom) return;
     // Frozen entrants stay exactly where they were dropped. Facing/hp still
     // sync so the countdown doesn't look like a frozen screen.
@@ -5090,7 +5093,7 @@ io.on('connection', socket => {
       if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
       return;
     }
-    currentRoom.updatePlayerPos(socket.id, x, y, facing);
+    currentRoom.updatePlayerPos(socket.id, x, y, facing, moving);
     if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
   }
 

@@ -696,7 +696,10 @@ function update(dt, realDt) {
     : 0;
   otherPlayers.forEach((op, id) => {
     const buf = op._buf;
-    const prevX = op.x, prevY = op.y;
+    // op.moving is authoritative — set directly from the sender's own input
+    // state on packet arrival (see js/network.js), not derived here from
+    // position deltas. Position is still smoothed for the eye below; the
+    // animation key no longer rides along with it.
     if (buf && buf.length >= 2 && _renderT > 0) {
       // Walk back to find the two snapshots that bracket _renderT
       let i = buf.length - 2;
@@ -716,19 +719,6 @@ function update(dt, realDt) {
       op.x += (op.targetX - op.x) * _lf;
       op.y += (op.targetY - op.y) * _lf;
     }
-    const _mdx = op.x - prevX, _mdy = op.y - prevY;
-    // Held briefly rather than read per frame. Any single interval without
-    // fresh data — a dropped packet (the world stream is volatile by design),
-    // a cast that arrived with nothing new, a hitch on the sender — makes this
-    // delta zero for a frame or two. Flipping `moving` off on that alone
-    // switches the animation key from run to idle and back, and every switch
-    // resets animFrame to 0, so the run cycle restarts: on screen the other
-    // player twitches or looks like they turned on the spot. The hold is
-    // shorter than the time it takes to actually stop being seen as moving,
-    // so a player who genuinely stands still still settles into idle.
-    if (_mdx * _mdx + _mdy * _mdy > 0.1) op._movingHold = 0.2;
-    else op._movingHold = Math.max(0, (op._movingHold || 0) - dt);
-    op.moving = (op._movingHold || 0) > 0;
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
     if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
     if ((op._swingTimer || 0) > 0) op._swingTimer -= dt;
