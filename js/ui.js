@@ -4604,6 +4604,7 @@ function onGramShopError(msg) {
 
 let _gramTxList = [];
 let _refFriendsList = [];
+let _pvpHistoryList = [];
 
 function switchProfileTab(tab) {
   window._profileTab = tab;
@@ -4613,6 +4614,7 @@ function switchProfileTab(tab) {
   if (tab === 'wallet') updateGramUI();
   else if (tab === 'lang') _renderLangPicker();
   else if (tab === 'sound') _renderSoundPicker();
+  else if (tab === 'history') updatePvpHistoryUI();
   else updateFriendsUI();
 }
 
@@ -4768,6 +4770,61 @@ function onRefBonusReceived(data) {
   toast.textContent = tVars('refBonusReceivedToast', { n: data.bonus.toFixed(2), u: data.fromUsername });
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
+}
+
+function _pvpHistoryModeLbl(mode) {
+  return mode === 'arena3' ? t('pvpModeArena3')
+    : mode === 'race10' ? t('pvpModeRace10')
+    : t('pvpModeDeathBattle');
+}
+
+function _pvpHistoryRowHTML(row) {
+  const opponent = row.opponent ? _escHtml(row.opponent) : '';
+  let icon, cls, text;
+  if (row.kind === 'kill') {
+    icon = '⚔️'; cls = 'pvp-hist-kill';
+    text = opponent ? tVars('pvpHistKillFmt', { u: opponent }) : t('pvpHistKill');
+  } else if (row.kind === 'death') {
+    icon = '💀'; cls = 'pvp-hist-death';
+    text = opponent ? tVars('pvpHistDeathFmt', { u: opponent }) : t('pvpHistDeath');
+  } else if (row.kind === 'win') {
+    icon = '🏆'; cls = 'pvp-hist-win';
+    text = t('pvpHistWin');
+  } else {
+    icon = '❌'; cls = 'pvp-hist-lose';
+    text = t('pvpHistLose');
+  }
+  const date = new Date(row.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return `<div class="pvp-hist-row">
+    <div class="pvp-hist-icon ${cls}">${icon}</div>
+    <div class="pvp-hist-info">
+      <div class="pvp-hist-text ${cls}">${text}</div>
+      <div class="pvp-hist-meta">${_pvpHistoryModeLbl(row.mode)} · ${date}</div>
+    </div>
+  </div>`;
+}
+
+function updatePvpHistoryUI() {
+  const el = document.getElementById('gram-body');
+  if (!el) return;
+  const rows = _pvpHistoryList;
+
+  el.innerHTML = `
+    <div class="gram-section-title" style="margin-bottom:8px">${t('pvpHistoryHdr')}</div>
+    <div id="pvp-history-list">
+      ${rows.length === 0
+        ? `<div class="ref-empty">${t('noPvpHistoryHint')}</div>`
+        : rows.map(_pvpHistoryRowHTML).join('')
+      }
+    </div>
+  `;
+
+  if (typeof netGetPvpHistory === 'function') netGetPvpHistory();
+}
+
+function onPvpHistoryResult(history) {
+  _pvpHistoryList = history || [];
+  if (window._profileTab === 'history') updatePvpHistoryUI();
 }
 
 function updateGramUI() {

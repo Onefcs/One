@@ -1459,6 +1459,29 @@ canvas { display:block; width:100%; height:100%; }
 .ref-friend-bonus { font-size: 12px; color: #89ba5f; font-weight: 600; }
 .ref-empty { text-align: center; padding: 30px 0; color: #82745b; font-size: 13px; }
 
+.pvp-hist-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(209,204,197,.05);
+}
+.pvp-hist-row:last-child { border-bottom: none; }
+.pvp-hist-icon {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(209,204,197,.06);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.pvp-hist-info { flex: 1; min-width: 0; }
+.pvp-hist-text { font-size: 14px; font-weight: 600; }
+.pvp-hist-meta { font-size: 11px; color: #82745b; margin-top: 2px; }
+.pvp-hist-kill { color: #89ba5f; }
+.pvp-hist-death { color: #ee6676; }
+.pvp-hist-win { color: #e6ac19; }
+.pvp-hist-lose { color: #a3957c; }
+
 /* ── Rating button ────────────────────────────────────────────────────────── */
 #rating-btn {
   position: absolute;

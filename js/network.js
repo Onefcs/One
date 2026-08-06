@@ -2106,6 +2106,10 @@ function netGetReferrals() {
   if (socket?.connected) socket.emit('getReferrals');
 }
 
+function netGetPvpHistory() {
+  if (socket?.connected) socket.emit('getPvpHistory');
+}
+
 // ── Market ──────────────────────────────────────────────────────────────────
 function netMarketBrowse() {
   if (socket?.connected) socket.emit('marketBrowse');
@@ -2572,6 +2576,9 @@ function _initGramHandlers(s) {
   });
   s.on('refData', (data) => {
     if (typeof onRefData === 'function') onRefData(data);
+  });
+  s.on('pvpHistoryResult', ({ history }) => {
+    if (typeof onPvpHistoryResult === 'function') onPvpHistoryResult(history || []);
   });
   s.on('friendJoined', (data) => {
     if (typeof onFriendJoined === 'function') onFriendJoined(data);

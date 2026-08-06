@@ -13,6 +13,7 @@ const GramTxModel       = require('./models/GramTx');
 const MarketListingModel= require('./models/MarketListing');
 const SpecialQuestModel = require('./models/SpecialQuest');
 const PlayerLogModel    = require('./models/PlayerLog');
+const PvpHistoryModel   = require('./models/PvpHistory');
 const ChatMessageModel  = require('./models/ChatMessage');
 const BossStateModel    = require('./models/BossState');
 const Room = require('./game/Room');
@@ -1000,6 +1001,25 @@ function logPlayerErr(telegramId, username, where, err, meta) {
     message: err && err.message ? err.message : String(err || ''),
     ...(meta || {}),
   });
+}
+
+// ── PvP history (profile → История tab) ──────────────────────────────────────
+// Its own small collection, own trim — see server/models/PvpHistory.js for
+// why this doesn't just piggyback on the log above.
+const PVP_HISTORY_KEEP = 50;
+const PVP_HISTORY_TRIM_EVERY = 10;
+const _pvpHistoryWritesSinceTrim = new Map();
+async function _recordPvpHistory(telegramId, kind, mode, opponent) {
+  if (!telegramId) return;
+  try {
+    await PvpHistoryModel.create({ telegramId, kind, mode, opponent: opponent || null });
+    const n = (_pvpHistoryWritesSinceTrim.get(telegramId) || 0) + 1;
+    if (n < PVP_HISTORY_TRIM_EVERY) { _pvpHistoryWritesSinceTrim.set(telegramId, n); return; }
+    _pvpHistoryWritesSinceTrim.set(telegramId, 0);
+    const stale = await PvpHistoryModel.find({ telegramId }, '_id')
+      .sort({ at: -1 }).skip(PVP_HISTORY_KEEP).lean();
+    if (stale.length) await PvpHistoryModel.deleteMany({ _id: { $in: stale.map(d => d._id) } });
+  } catch {}
 }
 
 // ── Admin login brute-force limiter ────────────────────────────────────────────
@@ -2610,13 +2630,23 @@ function _dbStart() {
 
 // Drops one entrant out of a running round. Safe to call for a socket that
 // isn't in the round (a normal PvP kill elsewhere, an unrelated disconnect) —
-// it returns immediately.
-function _dbEliminate(socketId) {
+// it returns immediately. killerSocketId is only ever set when this came from
+// an actual pvpAttack/pvpSkillAttack hit (see _pvpEliminate) — dying to a
+// monster mid-round (the 'respawn' path) or a disconnect leaves it undefined,
+// and no kill/death pair is recorded for those.
+function _dbEliminate(socketId, killerSocketId) {
   if (_db.phase !== 'live') return;
+  const victim = _db.alive.get(socketId);
   if (!_db.alive.delete(socketId)) return;
   const room = getRoom(1);
   const spot = room ? room.dbReturnToPrevSpot(socketId) : null;
   io.to(socketId).emit('deathBattleEliminated', { left: _db.alive.size, x: spot?.x, y: spot?.y });
+  if (killerSocketId) {
+    const killer = _db.alive.get(killerSocketId);
+    const victimTid = _socketTid(socketId), killerTid = _socketTid(killerSocketId);
+    if (victimTid) _recordPvpHistory(victimTid, 'death', 'death_battle', killer?.name || null);
+    if (killerTid) _recordPvpHistory(killerTid, 'kill', 'death_battle', victim?.name || null);
+  }
   _dbBroadcast();
   if (_db.alive.size <= 1) _dbFinish(false);
 }
@@ -2638,6 +2668,12 @@ async function _dbFinish(timedOut) {
   _db.alive.clear();
   _db.winnerId = winnerId;
   if (winnerId) {
+    // Everyone else in this match already has a 'death' history row from
+    // _dbEliminate on their way out — the winner is the only one who still
+    // needs an outcome recorded here. A timeout with no winner records
+    // nothing (nobody won or lost, the clock just ran out).
+    const winnerTid = _socketTid(winnerId);
+    if (winnerTid) _recordPvpHistory(winnerTid, 'win', 'death_battle', null);
     const s = io.sockets.sockets.get(winnerId);
     // The prize is granted through the winner's own socket closure, which is
     // where its inventory/GRAM copies live (same reasoning as pickupWorldDrop).
@@ -2780,7 +2816,11 @@ function _a3Enemies(a, b) {
 // these two functions, not every attack handler. Each half no-ops for a
 // socket that isn't in that mode.
 function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId) || _race10Frozen(socketId); }
-function _pvpEliminate(socketId) { _dbEliminate(socketId); _a3Eliminate(socketId); _race10Eliminate(socketId); }
+// killerSocketId is only passed by the actual PvP attack handlers below —
+// the 'respawn' and disconnect call sites leave it undefined, since dying to
+// a monster mid-round (or just leaving) isn't a kill by another player.
+// race10 has no player-vs-player damage at all, so it never needs it.
+function _pvpEliminate(socketId, killerSocketId) { _dbEliminate(socketId, killerSocketId); _a3Eliminate(socketId, killerSocketId); _race10Eliminate(socketId); }
 
 // _a3TryStart is async now (it re-checks daily attempts against the DB), and
 // every caller fires it without waiting — this keeps a failed launch from
@@ -2896,7 +2936,10 @@ async function _a3Deploy(ready, room) {
 
 // Knocks one player out. Safe to call for anyone not in a match — a normal PvP
 // kill elsewhere, an unrelated disconnect — it returns immediately.
-function _a3Eliminate(socketId) {
+// killerSocketId (only set by an actual pvpAttack/pvpSkillAttack hit, see
+// _pvpEliminate) records the kill/death pair; a monster/disconnect
+// elimination leaves it undefined and records nothing.
+function _a3Eliminate(socketId, killerSocketId) {
   if (!_a3.live) return;
   const rec = _a3.alive.get(socketId);
   if (!rec) return;
@@ -2904,6 +2947,12 @@ function _a3Eliminate(socketId) {
   const room = getRoom(1);
   const spot = room ? room.deathBattleReturn(socketId) : null;
   io.to(socketId).emit('arena3Eliminated', { x: spot?.x, y: spot?.y });
+  if (killerSocketId) {
+    const killerRec = _a3.alive.get(killerSocketId);
+    const victimTid = _socketTid(socketId), killerTid = _socketTid(killerSocketId);
+    if (victimTid) _recordPvpHistory(victimTid, 'death', 'arena3', killerRec?.name || null);
+    if (killerTid) _recordPvpHistory(killerTid, 'kill', 'arena3', rec?.name || null);
+  }
   const aliveA = [..._a3.alive.values()].filter(r => r.team === 'A').length;
   const aliveB = [..._a3.alive.values()].filter(r => r.team === 'B').length;
   // Sent relative to each recipient — "mine" is always their own side, so the
@@ -2949,6 +2998,13 @@ async function _a3Finish(winner, wedged) {
     io.to(sid).emit('arena3Result', { won, winner, wedged: !!wedged, reward, team });
     logPlayer(_socketTid(sid), names.get(sid), 'arena3_end',
       { team, result: winner ? (won ? 'win' : 'lose') : (wedged ? 'wedged' : 'draw'), reward });
+    // Team result, independent of whether this player personally got
+    // eliminated mid-match (already its own 'death' row from _a3Eliminate if
+    // so) — a wedged/no-winner match records neither.
+    if (winner) {
+      const tid = _socketTid(sid);
+      if (tid) _recordPvpHistory(tid, won ? 'win' : 'lose', 'arena3', null);
+    }
   }
   _a3Broadcast();
   // A queue that filled up while this match ran starts the next one straight
@@ -3257,6 +3313,13 @@ async function _race10Finish(winnerId, timedOut) {
       result: winnerId ? (won ? 'win' : 'lose') : (timedOut ? 'timeout' : 'no_survivors'),
       dmg: dmg.get(sid) || 0, reward,
     });
+    // No player-vs-player damage in this mode (everyone fights the same
+    // shared boss/monsters), so only a win/lose result is recorded — never
+    // a kill/death. A timeout/no-survivors race records neither.
+    if (winnerId) {
+      const tid = _socketTid(sid);
+      if (tid) _recordPvpHistory(tid, won ? 'win' : 'lose', 'race10', null);
+    }
   }
   _race10Broadcast();
   // No follow-up race: the window holds exactly one start (see
@@ -3643,7 +3706,7 @@ io.on('connection', socket => {
   const _HEAVY_EVENTS = new Set([
     'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
     'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
-    'getReferrals', 'getRating', 'completeSpecialQuest', 'claimVipRewards',
+    'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
     'createRaidLobby', 'joinRaidLobby', 'startRaidLobby', 'getLobbyList',
@@ -4881,6 +4944,17 @@ io.on('connection', socket => {
     }
   });
 
+  safeOn('getPvpHistory', async () => {
+    if (!authed) return;
+    try {
+      const rows = await PvpHistoryModel.find({ telegramId: authed.telegramId })
+        .sort({ at: -1 }).limit(PVP_HISTORY_KEEP).lean();
+      socket.emit('pvpHistoryResult', {
+        history: rows.map(r => ({ kind: r.kind, mode: r.mode, opponent: r.opponent, at: r.at })),
+      });
+    } catch (err) { console.error('getPvpHistory:', err); }
+  });
+
   safeOn('getReferrals', async () => {
     if (!authed) return;
     try {
@@ -5468,7 +5542,7 @@ io.on('connection', socket => {
     // a modified client always report 0 and become unkillable.
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId); }
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id); }
   });
 
   safeOn('pvpSkillAttack', ({ targetId, multiplier } = {}) => {
@@ -5482,7 +5556,7 @@ io.on('connection', socket => {
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId); }
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id); }
   });
 
   safeOn('pvpSkillCC', ({ targetId, type, duration } = {}) => {
