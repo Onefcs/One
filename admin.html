@@ -747,7 +747,7 @@ function logClass(ev) {
   if (ev === 'error') return 'is-err';
   if (ev.startsWith('inv:') || ev.startsWith('save_')) return 'is-inv';
   if (ev.startsWith('market')) return 'is-market';
-  if (ev.startsWith('gram') || ev.startsWith('vip_') || ev.startsWith('admin')) return 'is-shop';
+  if (ev.startsWith('gram') || ev.startsWith('vip_') || ev.startsWith('admin') || ev.startsWith('special_pack')) return 'is-shop';
   return '';
 }
 function logMatches(ev) {
@@ -755,7 +755,7 @@ function logMatches(ev) {
   if (_logFilter === 'error') return ev === 'error';
   if (_logFilter === 'inv') return ev.startsWith('inv:') || ev.startsWith('save_');
   if (_logFilter === 'market') return ev.startsWith('market');
-  if (_logFilter === 'shop') return ev.startsWith('gram') || ev.startsWith('vip_') || ev.startsWith('admin');
+  if (_logFilter === 'shop') return ev.startsWith('gram') || ev.startsWith('vip_') || ev.startsWith('admin') || ev.startsWith('special_pack');
   return true;
 }
 // Meta reads far better as "key: value" pairs than as raw JSON — these rows

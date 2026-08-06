@@ -354,7 +354,7 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:null,       weapon:null,       bonusSP:0,  skillBooks:{ random:1 } },
   { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:1,  skillBooks:{ random:2 } },
   { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 },  enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:5, nexum:4000 },
+  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:0, nexum:4000 },
   { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
@@ -400,6 +400,73 @@ function _shopNewSlots(pkg, inv, charClass) {
     else if (pkg.skillBooks.random) classBooks.forEach(bk => need(bk.id, true));
   }
   if (pkg.boxes) Object.keys(pkg.boxes).forEach(boxId => need(boxId, true));
+  return slots;
+}
+
+// ── Special event packs ("Специальные" — one-time 12h sale) ────────────────
+// Unlike the death battle / world boss timers (shared/definitions.js), this
+// is a single one-off promotion: it opens the moment this server process
+// starts and stays up for SPECIAL_SALE_DURATION_MS, then is gone for good —
+// no repeat schedule, so there's nothing to recompute per request.
+const SPECIAL_SALE_START_AT   = Date.now();
+const SPECIAL_SALE_DURATION_MS = 12 * 60 * 60 * 1000;
+const SPECIAL_SALE_END_AT     = SPECIAL_SALE_START_AT + SPECIAL_SALE_DURATION_MS;
+function _specialSaleActive() { return Date.now() < SPECIAL_SALE_END_AT; }
+
+// Same shape/spirit as _GRAM_SHOP_PKGS above, sold from the Events panel
+// instead of the regular Gram Shop. blessStones/normStones map to
+// _STONE_DEFS' bless_stone/norm_stone (below); skillBooks.each grants that
+// many copies of EACH of the buyer's 4 class books (Q/W/E/R), same
+// convention as gramShopBuy's skillBooks.each.
+const _SPECIAL_PACKS = [
+  {
+    id: 'sp20', gram: 20,
+    nexum: 1000, blessStones: 5, normStones: 10, potions: 20,
+    armor: 'uncommon', weapon: 'uncommon', enhance: 3,
+    skillBooks: { each: 2 }, gold: 30000, cloak: true,
+  },
+  {
+    id: 'sp50', gram: 50,
+    nexum: 2000, blessStones: 10, normStones: 10, potions: 40,
+    armor: 'uncommon', weapon: 'uncommon', enhance: 7,
+    skillBooks: { each: 3 }, gold: 50000, bonusSP: 2, artifact: true,
+  },
+  {
+    id: 'sp100', gram: 100,
+    nexum: 4000, blessStones: 15, normStones: 15, potions: 70,
+    armor: 'rare', weapon: 'rare', enhance: 3,
+    skillBooks: { each: 5 }, gold: 300000, bonusSP: 5, cloak: true, artifact: true,
+  },
+];
+
+// Mirrors _shopNewSlots above for the special packs' extra item kinds
+// (enchant stones, class cloak/artifact) on top of the same potions/armor/
+// weapon/skillBooks shapes.
+function _specialNewSlots(pkg, inv, charClass) {
+  const has = id => inv.some(i => i && i.id === id);
+  const pending = new Set();
+  let slots = 0;
+  const need = (id, stackable) => {
+    if (stackable) {
+      if (has(id) || pending.has(id)) return;
+      pending.add(id);
+    }
+    slots++;
+  };
+  if (pkg.potions > 0) _VIP_BP.forEach(bp => need(bp.id, true));
+  if (pkg.blessStones > 0) need('bless_stone', true);
+  if (pkg.normStones > 0) need('norm_stone', true);
+  if (pkg.armor) (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(() => slots++);
+  if (pkg.weapon) {
+    const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
+    if (wepMap[pkg.weapon]) slots++;
+  }
+  if (pkg.skillBooks && pkg.skillBooks.each) {
+    const classBooks = CRAFT_MATS.filter(m => m.forClass === charClass && m.skillKey);
+    classBooks.forEach(bk => need(bk.id, true));
+  }
+  if (pkg.cloak) slots++;
+  if (pkg.artifact) slots++;
   return slots;
 }
 
@@ -3581,7 +3648,7 @@ io.on('connection', socket => {
   // in-memory limiter — matches this server's existing state model.
   const _HEAVY_EVENTS = new Set([
     'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
-    'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
+    'gramGetHistory', 'gramShopBuy', 'specialPackBuy', 'gramDepositRequest', 'gramWithdrawRequest',
     'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
@@ -4230,6 +4297,154 @@ io.on('connection', socket => {
     }
     });
     if (!_ran) socket.emit('gramShopError', { msg: 'Покупка уже обрабатывается' });
+  });
+
+  // ── Special event packs (Events → "Специальные") ────────────────────────────
+  // Same purchase shape as gramShopBuy above — GRAM-priced, inventory-space
+  // checked before the spend, spend gates on the live balance — plus the
+  // one-time sale window gate (_specialSaleActive). See _SPECIAL_PACKS /
+  // _specialNewSlots near _GRAM_SHOP_PKGS for the package contents.
+  safeOn('specialPackBuy', async ({ pkgId } = {}) => {
+    if (!authed || !pkgId) return;
+    const _ran = await _withEconLock(async () => {
+    try {
+      if (!_specialSaleActive()) return socket.emit('specialPackError', { msg: 'Акция завершена' });
+      const pkg = _SPECIAL_PACKS.find(p => p.id === pkgId);
+      if (!pkg) return socket.emit('specialPackError', { msg: 'Пакет не найден' });
+      if (_liveGram() < pkg.gram) return socket.emit('specialPackError', { msg: 'Недостаточно GRAM' });
+
+      const doc = await PlayerModel.findById(authed._id);
+      if (!doc) return;
+      // Drop earnings first, so the price is tested against everything the
+      // player has actually earned.
+      await _flushBalances();
+      const saved = doc.savedData || {};
+      const charClass = saved.type || 'lev';
+      const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
+      // Live copy first — a fresh DB read here is up to ~3s behind (the
+      // saveProgress debounce), so building the purchase on it rolled back
+      // anything picked up in that window.
+      const _liveInv = _liveInventory();
+      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
+
+      const _newSlots = _specialNewSlots(pkg, inv, charClass);
+      if (inv.length + _newSlots > SERVER_INV_MAX) {
+        logPlayer(authed.telegramId, authed.username, 'special_pack_refused',
+          { pkg: pkg.id, need: _newSlots, slots: `${inv.length}/${SERVER_INV_MAX}` });
+        return socket.emit('specialPackError', {
+          msg: `Нужно ${_newSlots} свободных мест в инвентаре (занято ${inv.length}/${SERVER_INV_MAX})`,
+        });
+      }
+
+      // The deduction is the affordability check — _spendBalance writes only
+      // if the stored balance covers the price, so nothing here can spend
+      // GRAM the account doesn't have, whatever the cached figure said.
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', pkg.gram);
+      if (_paid === null) return socket.emit('specialPackError', { msg: 'Недостаточно GRAM' });
+      _gramBalance = _paid;
+
+      // Gold
+      if (pkg.gold > 0) saved.gold = (saved.gold || 0) + pkg.gold;
+
+      // Buff potions — same 6 types as the Gram Shop, one bundle qty each.
+      if (pkg.potions > 0) {
+        _VIP_BP.forEach(bp => {
+          const existing = inv.find(i => i.id === bp.id);
+          if (existing) existing.qty = (existing.qty || 1) + pkg.potions;
+          else inv.push({ ...bp, qty: pkg.potions });
+        });
+      }
+
+      // Enchant stones (заточки)
+      const _addStone = (id, qty) => {
+        if (qty <= 0) return;
+        const base = _STONE_DEFS[id];
+        if (!base) return;
+        const existing = inv.find(i => i.id === id);
+        if (existing) existing.qty = (existing.qty || 1) + qty;
+        else inv.push({ ...base, qty });
+      };
+      _addStone('bless_stone', pkg.blessStones || 0);
+      _addStone('norm_stone', pkg.normStones || 0);
+
+      // Armor set, pre-enhanced to pkg.enhance
+      if (pkg.armor) {
+        (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(id => {
+          const base = ITEM_DEF.find(d => d.id === id);
+          if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
+        });
+      }
+
+      // Class weapon, pre-enhanced to pkg.enhance
+      if (pkg.weapon) {
+        const wepId = wepMap[pkg.weapon];
+        const base = ITEM_DEF.find(d => d.id === wepId);
+        if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
+      }
+
+      // Skill books — for the buyer's own class only
+      if (pkg.skillBooks && pkg.skillBooks.each) {
+        const classBooks = CRAFT_MATS.filter(m => m.forClass === charClass && m.skillKey);
+        classBooks.forEach(book => {
+          const existing = inv.find(i => i.id === book.id);
+          if (existing) existing.qty = (existing.qty || 1) + pkg.skillBooks.each;
+          else inv.push({ ...book, qty: pkg.skillBooks.each });
+        });
+      }
+
+      // Common cloak / artifact for the buyer's own class
+      if (pkg.cloak) {
+        const base = ITEM_DEF.find(d => d.id === `cloak_c_${charClass}`);
+        if (base) inv.push({ ...base });
+      }
+      if (pkg.artifact) {
+        const base = ITEM_DEF.find(d => d.id === `artifact_c_${charClass}`);
+        if (base) inv.push({ ...base });
+      }
+
+      // Bonus skill points
+      if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
+
+      // Liberty (Nexum) bonus — atomic, like every other balance move.
+      if (pkg.nexum > 0) {
+        const _nb = await _incBalance(authed.telegramId, 'nexumBalance', pkg.nexum);
+        if (_nb !== null) _nexumBalance = _nb;
+      }
+
+      saved.inventory = inv;
+      // Targeted $set on exactly the fields this purchase touched — see the
+      // identical comment in gramShopBuy above for why not a whole-doc save.
+      const _specialSet = {
+        'savedData.gold': saved.gold,
+        'savedData.inventory': inv,
+      };
+      if (pkg.bonusSP > 0) _specialSet['savedData.bonusSP'] = saved.bonusSP;
+      await PlayerModel.updateOne({ _id: doc._id }, { $set: _specialSet });
+
+      if (_lastStats) {
+        _lastStats.gold = saved.gold;
+        if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
+      }
+      // Bumps the revision, so a client autosave queued before this purchase
+      // can no longer land afterwards and wipe the items out.
+      _commitServerItems(inv, null, 'special_pack', { pkg: pkg.id, gram: pkg.gram });
+
+      socket.emit('specialPackResult', {
+        pkgId,
+        newBalance:  _gramBalance,
+        newGold:     saved.gold,
+        newInventory: inv,
+        invRev:      _invRev,
+        newBonusSP:  saved.bonusSP || 0,
+        newNexumBalance: _nexumBalance,
+      });
+      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
+    } catch (err) {
+      console.error('specialPackBuy:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'special_pack', err, { pkgId });
+    }
+    });
+    if (!_ran) socket.emit('specialPackError', { msg: 'Покупка уже обрабатывается' });
   });
 
   // ── Reset stat upgrades (Улучшения → Сбросить) ─────────────────────────────
@@ -5055,6 +5270,8 @@ io.on('connection', socket => {
       deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
       race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
       arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
+      // One-time 12h sale (Events → "Специальные") — see _specialSaleActive.
+      specialSale: { endAt: SPECIAL_SALE_END_AT, active: _specialSaleActive() },
     });
     // MUST come after gameStart: its client handler rebuilds otherPlayers from
     // scratch (`otherPlayers = new Map()`), so a roster delivered before it was

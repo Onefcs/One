@@ -303,8 +303,13 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d) {
     const { floor, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, specialSale: sps } = payload;
     dungeonLvl = floor;
+    // One-time 12h "Специальные" sale — see SPECIAL_SALE_END_AT, server/
+    // index.js. Just a fixed end timestamp; showSpecialBtn/the panel's own
+    // countdown do the rest locally.
+    window._specialSaleEndAt = (sps && sps.endAt) || 0;
+    if (typeof showSpecialBtn === 'function') showSpecialBtn();
     // A fresh room attachment: whatever this session last told the server
     // about its position belongs to the old one.
     _lastSentX = null;
@@ -1680,6 +1685,7 @@ function _finishOnlineStart() {
   if (typeof showMarketBtn === 'function') showMarketBtn();
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showEventsBtn === 'function') showEventsBtn();
+  if (typeof showSpecialBtn === 'function') showSpecialBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type
@@ -1841,6 +1847,9 @@ function netGramWithdraw(amount, address) {
 }
 function netGramShopBuy(pkgId) {
   if (socket?.connected) socket.emit('gramShopBuy', { pkgId });
+}
+function netSpecialPackBuy(pkgId) {
+  if (socket?.connected) socket.emit('specialPackBuy', { pkgId });
 }
 function netGramHistory() {
   if (socket?.connected) socket.emit('gramGetHistory');
@@ -2357,6 +2366,13 @@ function _initGramHandlers(s) {
   });
   s.on('gramShopError', ({ msg }) => {
     if (typeof onGramShopError === 'function') onGramShopError(msg);
+  });
+  s.on('specialPackResult', (data) => {
+    if (typeof onSpecialPackResult === 'function') onSpecialPackResult(data);
+    netSaveProgressNow();
+  });
+  s.on('specialPackError', ({ msg }) => {
+    if (typeof onSpecialPackError === 'function') onSpecialPackError(msg);
   });
 }
 
