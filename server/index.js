@@ -7,9 +7,6 @@ const http = require('http');
 const helmet = require('helmet');
 const compression = require('compression');
 const { Server } = require('socket.io');
-// Shared with the client so both sides agree on what a facing index means —
-// see the 'mv' handler below.
-const { NC_FACING } = require('../shared/netcodec');
 const mongoose = require('mongoose');
 const PlayerModel       = require('./models/Player');
 const ClanModel         = require('./models/Clan');
@@ -5068,21 +5065,7 @@ io.on('connection', socket => {
     }
   });
 
-  // Compact position update: [x*2, y*2, facingIndex, hp] — see netSendMove in
-  // js/network.js for why it is an array of half-pixel integers rather than an
-  // object or a binary payload. 'playerMove' below is the same thing in the
-  // old shape, kept so a client that has not reloaded since the deploy keeps
-  // moving normally.
-  safeOn('mv', a => {
-    if (!currentRoom || !Array.isArray(a)) return;
-    _applyMove(a[0] / 2, a[1] / 2, NC_FACING[a[2]] || 'front', a[3]);
-  });
-
   safeOn('playerMove', ({ x, y, facing, hp } = {}) => {
-    _applyMove(x, y, facing, hp);
-  });
-
-  function _applyMove(x, y, facing, hp) {
     if (!currentRoom) return;
     // Frozen entrants stay exactly where they were dropped. Facing/hp still
     // sync so the countdown doesn't look like a frozen screen.
@@ -5092,7 +5075,7 @@ io.on('connection', socket => {
     }
     currentRoom.updatePlayerPos(socket.id, x, y, facing);
     if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
-  }
+  });
 
   // The КАРТА panel draws the player's whole current arm, which is far wider
   // than the enemy stream's interest radius — so while it's open the room
@@ -5660,17 +5643,15 @@ io.on('connection', socket => {
     io.to(ids).emit(event, payload);
   }
 
-  // Both now ride the addressed player's next world cast instead of going out
-  // as their own socket.io event — see Room.queueProjectile. The validation is
-  // unchanged; only the delivery moved. `angle` is no longer carried at all:
-  // the receiver derives it from the velocity, which is the same number.
   safeOn('spawnProj', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
-    currentRoom.queueProjectile(socket.id, {
-      x:        _num(data.x, -1e5, 1e5, 0),
-      y:        _num(data.y, -1e5, 1e5, 0),
+    const _px = _num(data.x, -1e5, 1e5, 0), _py = _num(data.y, -1e5, 1e5, 0);
+    _emitNearby(_px, _py, 'spawnProj', {
+      x:        _px,
+      y:        _py,
       vx:       _num(data.vx, -5000, 5000, 0),
       vy:       _num(data.vy, -5000, 5000, 0),
+      angle:    _num(data.angle, -Math.PI * 2, Math.PI * 2, 0),
       size:     _num(data.size, 1, 64, 5),
       life:     _num(data.life, 0, 10, 1.5),
       color:    _color(data.color),
@@ -5680,11 +5661,8 @@ io.on('connection', socket => {
 
   safeOn('spawnAoe', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
-    currentRoom.queueAoe(socket.id, {
-      x: _num(data.x, -1e5, 1e5, 0),
-      y: _num(data.y, -1e5, 1e5, 0),
-      r: _num(data.r, 1, 400, 80),
-    });
+    const x = _num(data.x, -1e5, 1e5, 0), y = _num(data.y, -1e5, 1e5, 0);
+    _emitNearby(x, y, 'spawnAoe', { x, y, r: _num(data.r, 1, 400, 80) });
   });
 
   safeOn('healParty', ({ amount } = {}) => {

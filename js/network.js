@@ -61,16 +61,7 @@ let _sessionHasRealData = false;
 
 // Snapshot interpolation state
 let _svrTimeOffset = null; // null = not yet calibrated
-// How far in the past other players are rendered. Snapshots arrive every 50ms
-// (the server casts at 20Hz), so this is also the budget for a late one: at 65
-// a packet arriving 15ms behind schedule already pushed the render clock past
-// the newest snapshot, the interpolation clamped, and the avatar froze until
-// the packet landed and then jumped. Mobile jitter is routinely 20-50ms, which
-// is why other players stuttered for some people at an otherwise fine ping.
-// 110 gives a full extra interval of slack. The cost is that everyone else is
-// seen 45ms further behind — about 10px of movement, against a 350px hit
-// radius on the server, so it changes nothing about whether shots land.
-const _INTERP_MS  = 110;
+const _INTERP_MS  = 65;   // render others 65ms in the past (~1.3 player-cast intervals at 20Hz)
 const _SNAP_MAX   = 10;   // ~250ms of buffer
 // Staggers the out-of-range enemy sweep in the gameState handler — once a
 // second is plenty for something the server already stopped sending.
@@ -609,15 +600,6 @@ function netConnect(onReady) {
         serverEnemiesMap.set(se.id, newE);
       }
     });
-    // Other players' projectiles and AOE rings, carried by the same packet
-    // (see shared/netcodec.js). The decoder has already advanced each one by
-    // however long it waited for this cast, so they start where they should be
-    // rather than at the muzzle.
-    const _sp = _st.projs;
-    if (_sp && _sp.length) for (let i = 0; i < _sp.length; i++) otherProjs.push(_sp[i]);
-    const _sa = _st.aoes;
-    if (_sa && _sa.length) for (let i = 0; i < _sa.length; i++) spawnAOE(_sa[i].x, _sa[i].y, _sa[i].r || 80);
-
     _profSocketEvts++;
     _profSocketMs += performance.now() - _gs0;
   });
@@ -855,13 +837,13 @@ function netConnect(onReady) {
     if (arm) bossStatus[arm] = { alive, respawnAt };
   });
 
-  // spawnProj/spawnAoe as their own events are gone — other players' arrows
-  // and rings now arrive inside the world cast (see the gameState handler and
-  // the format note in shared/netcodec.js). Kept as a receiver only for the
-  // window right after a deploy, when a client that has not reloaded may still
-  // be talking to a server that emits them.
-  socket.on('spawnProj', data => { otherProjs.push({ ...data }); });
-  socket.on('spawnAoe', ({ x, y, r }) => { spawnAOE(x, y, r || 80); });
+  socket.on('spawnProj', data => {
+    otherProjs.push({ ...data });
+  });
+
+  socket.on('spawnAoe', ({ x, y, r }) => {
+    spawnAOE(x, y, r || 80);
+  });
 
   socket.on('partyInviteReceived', ({ fromId, fromName }) => {
     if (partyMembers.length > 0) return; // already in party
@@ -1714,20 +1696,7 @@ function netSendMove() {
   // character visibly re-walks the path they took while frozen. Dropping them
   // is correct here: the next packet is a truthful 50ms away, and the
   // keepalive above guarantees one is coming even if the player never moves.
-  // Compact form. The old shape —
-  //   42["playerMove",{"x":1380.4321,"y":13380.1234,"facing":"front","hp":200}]
-  // — was 73 bytes, 20 times a second, and 83% of everything a player uploads.
-  // Almost all of it was packaging: the event name, the field names, a facing
-  // spelled out in full, and four decimal places on a coordinate the wire
-  // format rounds to a half pixel anyway. As a positional array of integers in
-  // half-pixel units it is ~26 bytes and still a single frame — a binary
-  // payload would have been smaller but socket.io puts binary in a SECOND
-  // frame behind a ~46-byte JSON envelope, which costs more than it saves at
-  // this size.
-  socket.volatile.emit('mv', [
-    Math.round(player.x * 2), Math.round(player.y * 2),
-    Math.max(0, NC_FACING.indexOf(player.facing)), Math.round(player.hp),
-  ]);
+  socket.volatile.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
 }
 
 function netUsePotion(amount) {

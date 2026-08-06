@@ -42,23 +42,7 @@
 //     u8  atkAnimTimer*100
 //     full only: str id, str eid, i32 maxHp, str name, str color,
 //                u8 size, u8 isBoss, f32 aggroR, u16 spd, u8 rlvl
-//   [projectiles] u16 count, per entry (19 bytes):
-//     u32 x*2, u32 y*2, i16 vx, i16 vy, u8 size, u8 life*20,
-//     u8 r, u8 g, u8 b, u8 flags (bit0 = arrow), u8 age (10ms units)
-//   [aoe rings]   u8 count, per entry (10 bytes): u32 x*2, u32 y*2, u16 radius
 //   str = u8 byteLength + UTF-8 bytes
-//
-//  The last two sections carry what used to be the 'spawnProj'/'spawnAoe'
-//  events — one JSON packet per arrow, per recipient, ~133 bytes each and 28%
-//  of everything a player downloaded during a fight. Riding the world cast
-//  instead costs no packet, no socket.io envelope and no extra syscall, and
-//  the entry is 19 bytes because most of that JSON was derivable: `angle` is
-//  atan2(vy, vx), and the rest is the shooter's own class constants.
-//
-//  Both sections are APPENDED, which is what makes the change safe to deploy
-//  without a flag day: a client running older code stops at the enemy list and
-//  ignores the trailing bytes, and a client running newer code against an
-//  older server finds the packet ended and treats both counts as zero.
 // ─────────────────────────────────────────────────────────
 
 const NC_FACING = ['front', 'back', 'left', 'right', 'frontright', 'frontleft', 'backleft', 'backright'];
@@ -138,21 +122,7 @@ function _ncQPos(v) { return Math.max(0, Math.min(4294967295, Math.round(v * 2))
 let _ncEnemiesCacheGen = NaN;
 let _ncEnemiesCacheBytes = null;
 
-// "#8fbf5a" / "#8f5" / "#8fbf5aff" -> [143, 191, 90]. Projectile colours are
-// authored as hex literals in js/player.js and js/combat.js and validated to
-// that shape by the server before they ever reach here, so three bytes is a
-// lossless representation of every colour the game actually sends.
-function _ncRgb(s) {
-  const h = typeof s === 'string' ? s.replace('#', '') : '';
-  if (h.length >= 6) return [parseInt(h.slice(0, 2), 16) || 0, parseInt(h.slice(2, 4), 16) || 0, parseInt(h.slice(4, 6), 16) || 0];
-  if (h.length >= 3) return [parseInt(h[0] + h[0], 16) || 0, parseInt(h[1] + h[1], 16) || 0, parseInt(h[2] + h[2], 16) || 0];
-  return [255, 255, 255];
-}
-function _ncHex(r, g, b) {
-  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
-}
-
-function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
+function encodeGameState(players, enemies, t, enemiesGen) {
   let o = 0;
   _ncEnsure(o, 16);
   _ncDV.setUint8(o, players ? 1 : 0); o += 1;
@@ -225,42 +195,6 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
       _ncEnemiesCacheBytes = _ncU8.slice(enemiesStart, o);
     }
   }
-
-  // Projectiles and AOE rings. Written after the enemy segment (and therefore
-  // outside its byte cache) because they are per-recipient: two players in the
-  // same fight see different arrows depending on who is within range of whom.
-  const np = projs ? Math.min(projs.length, 65535) : 0;
-  _ncEnsure(o, 2 + np * 19);
-  _ncDV.setUint16(o, np, true); o += 2;
-  for (let i = 0; i < np; i++) {
-    const p = projs[i];
-    _ncDV.setUint32(o, _ncQPos(p.x), true); o += 4;
-    _ncDV.setUint32(o, _ncQPos(p.y), true); o += 4;
-    _ncDV.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(p.vx))), true); o += 2;
-    _ncDV.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(p.vy))), true); o += 2;
-    _ncU8[o++] = Math.max(0, Math.min(255, Math.round(p.size)));
-    // life in 1/20s steps: the longest projectile in the game lives 2s, and
-    // the field tops out at 12.75s.
-    _ncU8[o++] = Math.max(0, Math.min(255, Math.round(p.life * 20)));
-    const rgb = _ncRgb(p.color);
-    _ncU8[o++] = rgb[0]; _ncU8[o++] = rgb[1]; _ncU8[o++] = rgb[2];
-    _ncU8[o++] = p.projType === 'arrow' ? 1 : 0;
-    // How long this has already been queued, so the receiver can advance it to
-    // where it should be by now instead of starting it late — a cast goes out
-    // every 50ms and the shot can have happened at any point inside that.
-    _ncU8[o++] = Math.max(0, Math.min(255, Math.round((p.ageMs || 0) / 10)));
-  }
-
-  const na = aoes ? Math.min(aoes.length, 255) : 0;
-  _ncEnsure(o, 1 + na * 10);
-  _ncU8[o++] = na;
-  for (let i = 0; i < na; i++) {
-    const a = aoes[i];
-    _ncDV.setUint32(o, _ncQPos(a.x), true); o += 4;
-    _ncDV.setUint32(o, _ncQPos(a.y), true); o += 4;
-    _ncDV.setUint16(o, Math.max(0, Math.min(65535, Math.round(a.r))), true); o += 2;
-  }
-
   // Copy — the scratch buffer is reused for the next recipient while
   // socket.io may still hold this payload for async transmission
   return _ncBuf.slice(0, o);
@@ -348,43 +282,7 @@ function decodeGameState(data) {
     }
   }
 
-  // Trailing sections. A server running older code simply ends the packet
-  // here, so their absence is not an error — see the format note at the top.
-  const projs = [];
-  const aoes = [];
-  if (o + 2 <= dv.byteLength) {
-    const pn = dv.getUint16(o, true); o += 2;
-    for (let i = 0; i < pn && o + 19 <= dv.byteLength; i++) {
-      const x = dv.getUint32(o, true) / 2; o += 4;
-      const y = dv.getUint32(o, true) / 2; o += 4;
-      const vx = dv.getInt16(o, true); o += 2;
-      const vy = dv.getInt16(o, true); o += 2;
-      const size = u8[o++];
-      const life = u8[o++] / 20;
-      const r = u8[o++], g = u8[o++], b = u8[o++];
-      const arrow = u8[o++] & 1;
-      const age = u8[o++] / 100; // seconds
-      // Advance to where it should be by now, and take the elapsed time off
-      // its lifespan, so a projectile queued mid-cast doesn't visibly lag the
-      // shot that produced it.
-      projs.push({
-        x: x + vx * age, y: y + vy * age, vx, vy, size,
-        life: Math.max(0, life - age), color: _ncHex(r, g, b),
-        projType: arrow ? 'arrow' : 'ball', angle: Math.atan2(vy, vx),
-      });
-    }
-    if (o < dv.byteLength) {
-      const an = u8[o++];
-      for (let i = 0; i < an && o + 10 <= dv.byteLength; i++) {
-        const x = dv.getUint32(o, true) / 2; o += 4;
-        const y = dv.getUint32(o, true) / 2; o += 4;
-        const r = dv.getUint16(o, true); o += 2;
-        aoes.push({ x, y, r });
-      }
-    }
-  }
-
-  return { players, enemies, t, projs, aoes };
+  return { players, enemies, t };
 }
 
 // ── Dungeon grid packing ─────────────────────────────────────────────────────
@@ -421,4 +319,4 @@ function unpackGrid(packed, w, h) {
 }
 
 if (typeof module !== 'undefined')
-  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, packGrid, unpackGrid, NC_FACING };
+  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, packGrid, unpackGrid };

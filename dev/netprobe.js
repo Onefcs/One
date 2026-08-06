@@ -16,7 +16,6 @@
 // the neighbours so the probe sees a realistic amount of company.
 
 const { io } = require('socket.io-client');
-const { decodeGameState } = require('../shared/netcodec');
 
 const URL = process.env.URL || 'http://localhost:3000';
 const NEIGH = Number(process.argv[2] || 20);
@@ -67,11 +66,7 @@ function walker(c, ox, oy, opts = {}) {
     x += Math.cos(ang) * 3.2; y += Math.sin(ang) * 3.2;
     const dx = x - ox, dy = y - oy;
     if (dx * dx + dy * dy > 300 * 300) ang += Math.PI;
-    // Same compact form the real client sends (netSendMove, js/network.js):
-    // [x*2, y*2, facingIndex, hp]. LEGACY_MOVE=1 sends the old object shape
-    // instead, which is how the before/after comparison was measured.
-    if (process.env.LEGACY_MOVE === '1') c.s.volatile.emit('playerMove', { x, y, facing: 'front', hp: 200 });
-    else c.s.volatile.emit('mv', [Math.round(x * 2), Math.round(y * 2), 0, 200]);
+    c.s.volatile.emit('playerMove', { x, y, facing: 'front', hp: 200 });
     if (opts.onMove) opts.onMove(x, y);
   }, 50));
   const proj = Number(process.env.PROJ ?? 2);
@@ -118,20 +113,10 @@ function walker(c, ox, oy, opts = {}) {
   let inFrames = 0, inFrameBytes = 0, outFrames = 0, outFrameBytes = 0;
   probe.s.io.engine.on('packet', p => { inFrames++; inFrameBytes += sizeOf(p.data); });
   probe.s.io.engine.on('packetCreate', p => { outFrames++; outFrameBytes += sizeOf(p.data); });
-  let carriedProjs = 0, carriedAoes = 0;
   probe.s.onAny((ev, ...args) => {
     const b = args.reduce((s, a) => s + sizeOf(a), 0);
     bump(inEvents, ev, b);
-    if (ev === 'gameState') {
-      gsSizes.push(b);
-      const a = args[0];
-      try {
-        const st = decodeGameState(a instanceof ArrayBuffer ? a
-          : a.buffer.slice(a.byteOffset, a.byteOffset + a.byteLength));
-        carriedProjs += (st.projs || []).length;
-        carriedAoes += (st.aoes || []).length;
-      } catch (_) { /* not our format */ }
-    }
+    if (ev === 'gameState') gsSizes.push(b);
   });
   probe.s.onAnyOutgoing((ev, ...args) => bump(outEvents, ev, args.reduce((s, a) => s + sizeOf(a), 0)));
 
@@ -174,9 +159,6 @@ function walker(c, ox, oy, opts = {}) {
       wireBytesPerSec: Math.round(inFrameBytes / secs),
       framingOverheadPct: +(100 - inPayload / inFrameBytes * 100).toFixed(1),
       gameStatePayloadBytes: { p50: q(0.5), p90: q(0.9), max: sorted[sorted.length - 1] || 0 },
-      // Combat visuals delivered inside the cast rather than as their own
-      // events — the same things that used to show up as spawnProj/spawnAoe.
-      carriedInCastPerSec: { projectiles: +(carriedProjs / secs).toFixed(1), aoe: +(carriedAoes / secs).toFixed(1) },
     },
     up: {
       events: table(outEvents),
