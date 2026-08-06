@@ -775,6 +775,19 @@ async function _handleBotMessage(msg) {
     ? `\n🎁 Вас пригласил @${_tgEsc(referrerUsername)} — играйте вместе и зарабатывайте бонусы!`
     : '';
 
+  // Loading-screen preview — sent as its own message just ahead of the
+  // welcome text, for both organic /start and a /start ref_ referral link
+  // (both reach this same shared send path, so one call covers either).
+  // sendPhoto needs a real public HTTPS URL to fetch the image from; without
+  // GAME_URL there's nothing here that serves it publicly, so it's skipped
+  // rather than sent broken.
+  if (gameUrl) {
+    await tgApi('sendPhoto', {
+      chat_id: fromId,
+      photo: `${gameUrl.replace(/\/$/, '')}/images/splash-liberty.jpg`,
+    }).catch(() => {});
+  }
+
   await tgApi('sendMessage', {
     chat_id: fromId,
     parse_mode: 'HTML',
