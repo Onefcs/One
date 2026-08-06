@@ -53,6 +53,7 @@ const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
 const MARKET_MIN_PRICE_BOX         = 2;    // box_uncommon / box_rare (BOX_DEF), per box
 const MARKET_MIN_PRICE_RARE_GEAR   = 5;    // rarity:'rare' armor/weapon, flat
+const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
 const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any rarity below 'rare'
 
 // The floor a listing's price has to clear — item-specific where one of the
@@ -66,8 +67,14 @@ function _marketMinPrice(item) {
   if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY * qty;
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'box') return MARKET_MIN_PRICE_BOX * qty;
-  if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
+  // Cloak/artifact have their own flat floor at every rarity below 'rare'
+  // (there's no 'rare' tier for either), so this has to win over the
+  // rarity-based gear checks below rather than the other way around —
+  // otherwise an uncommon cloak (cloak_u_<class>) would fall through to the
+  // cheaper uncommon-gear floor instead.
   if (item.slot === 'cloak' || item.slot === 'artifact') return MARKET_MIN_PRICE_CLOAK_ARTIFACT;
+  if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
+  if (item.rarity === 'uncommon' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_UNCOMMON_GEAR;
   return MARKET_MIN_PRICE;
 }
 function _round2(n) { return Math.round(n * 100) / 100; }
