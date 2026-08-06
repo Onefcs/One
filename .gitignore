@@ -2,4 +2,3 @@ node_modules/
 .env
 .dev-mongo/
 prof/
-dev-smoke.png

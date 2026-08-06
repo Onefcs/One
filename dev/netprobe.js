@@ -73,11 +73,7 @@ function walker(c, ox, oy, opts = {}) {
     if (process.env.LEGACY_MOVE === '1') c.s.volatile.emit('playerMove', { x, y, facing: 'front', hp: 200 });
     else c.s.volatile.emit('mv', [Math.round(x * 2), Math.round(y * 2), 0, 200]);
     if (opts.onMove) opts.onMove(x, y);
-    // 33ms, not 50: that is what the real client's 25ms threshold works out to
-    // once it is quantised to frame boundaries (see _MOVE_SEND_MS in
-    // js/network.js), and the send rate has to stay above the server's 20Hz
-    // cast rate or casts start repeating positions.
-  }, 33));
+  }, 50));
   const proj = Number(process.env.PROJ ?? 2);
   if (proj > 0) timers.push(setInterval(() => {
     c.s.emit('spawnProj', { x, y, vx: 300, vy: 40, color: '#8fbf5a',
