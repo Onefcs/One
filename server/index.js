@@ -49,6 +49,7 @@ const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
 const MARKET_MIN_PRICE_BOX         = 2;    // box_uncommon / box_rare (BOX_DEF), per box
 const MARKET_MIN_PRICE_RARE_GEAR   = 5;    // rarity:'rare' armor/weapon, flat
+const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any rarity below 'rare'
 
 // The floor a listing's price has to clear — item-specific where one of the
 // categories above applies (scaled by qty for the stackable ones), the
@@ -62,6 +63,7 @@ function _marketMinPrice(item) {
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'box') return MARKET_MIN_PRICE_BOX * qty;
   if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
+  if (item.slot === 'cloak' || item.slot === 'artifact') return MARKET_MIN_PRICE_CLOAK_ARTIFACT;
   return MARKET_MIN_PRICE;
 }
 function _round2(n) { return Math.round(n * 100) / 100; }

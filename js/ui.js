@@ -3166,6 +3166,7 @@ function _marketMinPriceFor(it, qty) {
   if (it.slot === 'recipe') return 0.01 * n;
   if (it.slot === 'box') return 2 * n;
   if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 5;
+  if (it.slot === 'cloak' || it.slot === 'artifact') return 2;
   return MARKET_MIN_PRICE;
 }
 
