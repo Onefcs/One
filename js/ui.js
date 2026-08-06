@@ -4661,6 +4661,7 @@ function onSpecialPackResult(data) {
     if (data.newBonusSP != null) player.bonusSP = data.newBonusSP;
     if (data.newNexumBalance != null) player.nexumBalance = data.newNexumBalance;
   }
+  if (data.vipData) window._vipData = data.vipData;
   const pkg = _SPECIAL_PACKS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');

@@ -4411,12 +4411,33 @@ io.on('connection', socket => {
         if (_nb !== null) _nexumBalance = _nb;
       }
 
+      // VIP progress from purchase — same GRAM-spent-toward-VIP rule as the
+      // regular Gram Shop (gramShopBuy above).
+      let _vipLvl = saved.vipLevel || 0;
+      let _vipDep = saved.vipDeposited || 0;
+      const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
+      const _prevVipLvl = _vipLvl;
+      if (_vipLvl < 10) {
+        _vipDep += pkg.gram;
+        while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
+          _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
+          _vipLvl++;
+          _vipPend.push(_vipLvl);
+        }
+        saved.vipLevel = _vipLvl;
+        saved.vipDeposited = _vipDep;
+        saved.vipPending = _vipPend;
+      }
+
       saved.inventory = inv;
       // Targeted $set on exactly the fields this purchase touched — see the
       // identical comment in gramShopBuy above for why not a whole-doc save.
       const _specialSet = {
         'savedData.gold': saved.gold,
         'savedData.inventory': inv,
+        'savedData.vipLevel': _vipLvl,
+        'savedData.vipDeposited': _vipDep,
+        'savedData.vipPending': _vipPend,
       };
       if (pkg.bonusSP > 0) _specialSet['savedData.bonusSP'] = saved.bonusSP;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _specialSet });
@@ -4428,6 +4449,8 @@ io.on('connection', socket => {
       // Bumps the revision, so a client autosave queued before this purchase
       // can no longer land afterwards and wipe the items out.
       _commitServerItems(inv, null, 'special_pack', { pkg: pkg.id, gram: pkg.gram });
+      socket.data.vipLevel = _vipLvl;
+      _setVipAura(authed.username, _vipLvl);
 
       socket.emit('specialPackResult', {
         pkgId,
@@ -4437,8 +4460,13 @@ io.on('connection', socket => {
         invRev:      _invRev,
         newBonusSP:  saved.bonusSP || 0,
         newNexumBalance: _nexumBalance,
+        vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
+        leveled: _vipLvl > _prevVipLvl,
       });
       io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
+      if (_vipLvl > _prevVipLvl) {
+        socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
+      }
     } catch (err) {
       console.error('specialPackBuy:', err);
       logPlayerErr(authed.telegramId, authed.username, 'special_pack', err, { pkgId });
