@@ -70,6 +70,12 @@ let _aoiPruneTick = 0;
 // RTT ping measurement — updated every 2s, read by perf overlay
 let _pingMs = -1;
 let _pingTimer = null;
+// Watchdog state — see the ping loop in netConnect. Eight seconds is four
+// missed round trips: long enough that a brief stall or a GC pause on either
+// side can't trip it, short enough that a player is back in the game in
+// seconds instead of the two minutes the protocol timeout allows.
+let _lastPongAt = 0;
+const _PONG_SILENCE_MS = 8000;
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
@@ -82,10 +88,31 @@ function netConnect(onReady) {
 
   socket.on('connect', () => {
     if (onReady) onReady();
+    // A fresh socket knows nothing about what we last told the server —
+    // force the next netSendMove to send rather than compare against a
+    // position the old connection reported.
+    _lastSentX = null;
+    _lastPongAt = Date.now();
     // Start RTT ping loop
     if (_pingTimer) clearInterval(_pingTimer);
     _pingTimer = setInterval(() => {
-      if (socket?.connected) socket.volatile.emit('_ping', Date.now());
+      if (!socket?.connected) return;
+      // Watchdog. engine.io only gives up after pingInterval + pingTimeout,
+      // and a link that black-holes (Wi-Fi to LTE handover, a sleeping radio,
+      // the WebView suspended in the background) does not close the TCP
+      // connection — it just goes quiet. Until the protocol timeout fires the
+      // client believes it is online and shows a frozen world without even
+      // trying to reconnect. We already round-trip every 2s for the latency
+      // readout, so silence here is a far faster and more truthful signal:
+      // reconnect immediately instead of waiting out the protocol.
+      if (_lastPongAt && Date.now() - _lastPongAt > _PONG_SILENCE_MS) {
+        _lastPongAt = Date.now(); // don't re-fire every tick while it reconnects
+        _pingMs = -1;
+        socket.disconnect();
+        socket.connect();
+        return;
+      }
+      socket.volatile.emit('_ping', Date.now());
     }, 2000);
   });
 
@@ -94,7 +121,7 @@ function netConnect(onReady) {
   _initPetCraftHandlers(socket);
   _initEventBossHandlers(socket);
 
-  socket.on('_pong', t0 => { _pingMs = Date.now() - t0; });
+  socket.on('_pong', t0 => { _pingMs = Date.now() - t0; _lastPongAt = Date.now(); });
 
   socket.on('connect_error', () => {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
@@ -208,8 +235,70 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('gameStart', ({ floor, dungeon: d, enemies: initialEnemies, bossStatus: bs, eventBoss: evb, deathBattle: dbs, race10: r10s, arena3: a3s }) => {
+  // ── World map ──────────────────────────────────────────────────────────────
+  // gameStart no longer carries the map (~132KB); it names a version and the
+  // map comes from /api/world-map, which is immutable and cached by the
+  // browser. That matters most on reconnect: selectChar re-runs on every
+  // socket.io reconnect, so a phone that changes network used to re-download
+  // and re-parse the whole world every time.
+  //
+  // Held in memory across reconnects too, so the common case doesn't even
+  // reach the HTTP cache.
+  let _mapCache = null;      // { version, data }
+  function _decodeWorldMap(buf) {
+    const u8 = new Uint8Array(buf);
+    const dv = new DataView(buf);
+    const jsonLen = dv.getUint32(0, true);
+    const meta = JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + jsonLen)));
+    meta.gridPacked = u8.subarray(4 + jsonLen);
+    return meta;
+  }
+  async function _loadWorldMap(version) {
+    if (_mapCache && _mapCache.version === version) return _mapCache.data;
+    try {
+      const res = await fetch(`/api/world-map/${encodeURIComponent(version)}`);
+      if (!res.ok) throw new Error(`map ${res.status}`);
+      const data = _decodeWorldMap(await res.arrayBuffer());
+      _mapCache = { version, data };
+      return data;
+    } catch (err) {
+      // Proxy ate it, cache handed back a 404, offline for a moment — fall
+      // back to the socket, which is by definition still working since this
+      // code only runs in response to a gameStart that arrived on it.
+      console.warn('[map] HTTP fetch failed, falling back to socket:', err);
+      const data = await new Promise((resolve, reject) => {
+        const to = setTimeout(() => reject(new Error('map timeout')), 15000);
+        socket.once('worldMap', buf => { clearTimeout(to); resolve(_decodeWorldMap(
+          buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))); });
+        socket.emit('worldMapInline');
+      });
+      _mapCache = { version, data };
+      return data;
+    }
+  }
+
+  socket.on('gameStart', payload => {
+    // Fast path kept strictly synchronous: once this session has the map (i.e.
+    // every reconnect, which is when gameStart actually matters for stability)
+    // the handler runs start to finish in the same task, exactly as it did
+    // when the map travelled inline. Only a genuinely first-time load defers.
+    const cached = (_mapCache && _mapCache.version === payload.mapVersion) ? _mapCache.data : null;
+    if (cached) return _applyGameStart(payload, cached);
+    _loadWorldMap(payload.mapVersion)
+      .then(d => _applyGameStart(payload, d))
+      .catch(err => {
+        console.error('[map] could not load world map:', err);
+        showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
+      });
+  });
+
+  function _applyGameStart(payload, d) {
+    const { floor, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
+            deathBattle: dbs, race10: r10s, arena3: a3s } = payload;
     dungeonLvl = floor;
+    // A fresh room attachment: whatever this session last told the server
+    // about its position belongs to the old one.
+    _lastSentX = null;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     if (typeof _buildArmGates === 'function') _buildArmGates();
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
@@ -337,7 +426,7 @@ function netConnect(onReady) {
     // prior unload couldn't flush), push it straight back so the server and DB
     // catch up to the recovered state.
     if (_restoredFromBackup) { _restoredFromBackup = false; netSaveProgressNow(); }
-  });
+  }
 
   // Enemies we've been told about but have no record of. Batched into one
   // request per _ENEMY_RESYNC_MS so a burst (e.g. a whole corridor coming
@@ -1575,14 +1664,39 @@ function _finishOnlineStart() {
 
 // ── Move throttle ─────────────────────────────────────────────
 let _lastMoveSend = 0;
+let _lastSentX = null, _lastSentY = null, _lastSentFacing = null, _lastSentHp = null;
+// The world is broadcast every OTHER server tick (20Hz — see castPlayers in
+// Room.js), so a position arriving faster than that cannot reach anyone any
+// sooner. 40Hz was double what the server could ever act on.
+const _MOVE_SEND_MS = 50;
+// Even a perfectly still player re-states their position this often. Two
+// reasons: the packet below is volatile (dropped rather than queued on a
+// stalled link), so the one that says "I stopped here" can be lost, and the
+// server has no other way to notice it is holding a stale position.
+const _MOVE_KEEPALIVE_MS = 1000;
 function netSendMove() {
   if (!socket?.connected || !player) return;
   const now = Date.now();
-  // Server ticks at 25ms (40Hz) — sending faster than that is pure waste:
-  // extra emits cost JSON serialization + radio wakeups on mobile.
-  if (now - _lastMoveSend < 25) return;
+  if (now - _lastMoveSend < _MOVE_SEND_MS) return;
+  // Standing still — in a menu, at a vendor, reading chat — used to cost 40
+  // packets a second forever, and receiving them was measured at 18.5% of a
+  // CPU core with 150 players online. Nothing in them ever differed from the
+  // packet before. Send on actual change instead, with a keepalive so a
+  // dropped "I stopped" still gets corrected.
+  const moved = _lastSentX === null ||
+    Math.abs(player.x - _lastSentX) > 0.5 || Math.abs(player.y - _lastSentY) > 0.5 ||
+    player.facing !== _lastSentFacing || player.hp !== _lastSentHp;
+  if (!moved && now - _lastMoveSend < _MOVE_KEEPALIVE_MS) return;
   _lastMoveSend = now;
-  socket.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
+  _lastSentX = player.x; _lastSentY = player.y;
+  _lastSentFacing = player.facing; _lastSentHp = player.hp;
+  // Volatile: on a link that has stalled (backgrounded WebView, radio asleep,
+  // tunnel hiccup) a plain emit queues, and the queue is then delivered as one
+  // burst of stale positions — which the server applies in order, so the
+  // character visibly re-walks the path they took while frozen. Dropping them
+  // is correct here: the next packet is a truthful 50ms away, and the
+  // keepalive above guarantees one is coming even if the player never moves.
+  socket.volatile.emit('playerMove', { x: player.x, y: player.y, facing: player.facing, hp: player.hp });
 }
 
 function netUsePotion(amount) {

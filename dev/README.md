@@ -96,3 +96,21 @@ TOKEN=$(curl -s -X POST localhost:3000/admin/login -H 'Content-Type: application
   -d '{"username":"admin","password":"admin"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
 curl -s localhost:3000/health -H "Authorization: Bearer $TOKEN"
 ```
+
+### Проверки после оптимизаций
+
+```bash
+node dev/fanout-check.js     # снаряды: сосед видит, дальний — нет
+CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome \
+  node dev/smoke.js hero     # реальный клиент в браузере + переподключение
+```
+
+`dev/fanout-check.js` сторожит рассылку боевых визуалов по радиусу
+(`_emitNearby`): три клиента, один стреляет, соседний обязан получить всё,
+дальний — ничего. Падает, если оптимизация начнёт «съедать» чужие эффекты.
+
+`dev/smoke.js` поднимает настоящий клиент в headless-браузере: логин, выбор
+класса, движение, затем принудительное переподключение — и проверяет, что мир
+на месте, а карта **не** скачивается заново (`refetchedMap: 0`). Пишет скриншот
+(`SHOT=путь.png`) и выходит с ненулевым кодом, если клиент не доехал до игры.
+`CHROMIUM_PATH` нужен там, где браузер лежит не по версионному пути Playwright.
