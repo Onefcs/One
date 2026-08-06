@@ -4775,6 +4775,7 @@ function onRefBonusReceived(data) {
 function _pvpHistoryModeLbl(mode) {
   return mode === 'arena3' ? t('pvpModeArena3')
     : mode === 'race10' ? t('pvpModeRace10')
+    : mode === 'open_pvp' ? t('pvpModeOpenPvp')
     : t('pvpModeDeathBattle');
 }
 

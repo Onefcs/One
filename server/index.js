@@ -2635,9 +2635,9 @@ function _dbStart() {
 // monster mid-round (the 'respawn' path) or a disconnect leaves it undefined,
 // and no kill/death pair is recorded for those.
 function _dbEliminate(socketId, killerSocketId) {
-  if (_db.phase !== 'live') return;
+  if (_db.phase !== 'live') return false;
   const victim = _db.alive.get(socketId);
-  if (!_db.alive.delete(socketId)) return;
+  if (!_db.alive.delete(socketId)) return false;
   const room = getRoom(1);
   const spot = room ? room.dbReturnToPrevSpot(socketId) : null;
   io.to(socketId).emit('deathBattleEliminated', { left: _db.alive.size, x: spot?.x, y: spot?.y });
@@ -2649,6 +2649,7 @@ function _dbEliminate(socketId, killerSocketId) {
   }
   _dbBroadcast();
   if (_db.alive.size <= 1) _dbFinish(false);
+  return true;
 }
 
 async function _dbFinish(timedOut) {
@@ -2820,7 +2821,25 @@ function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId
 // the 'respawn' and disconnect call sites leave it undefined, since dying to
 // a monster mid-round (or just leaving) isn't a kill by another player.
 // race10 has no player-vs-player damage at all, so it never needs it.
-function _pvpEliminate(socketId, killerSocketId) { _dbEliminate(socketId, killerSocketId); _a3Eliminate(socketId, killerSocketId); _race10Eliminate(socketId); }
+// room is the attacker's Room, only needed to resolve names for the open-world
+// fallback below — the three mode-specific eliminates already know names from
+// their own alive maps.
+function _pvpEliminate(socketId, killerSocketId, room) {
+  const dbHandled = _dbEliminate(socketId, killerSocketId);
+  const a3Handled = _a3Eliminate(socketId, killerSocketId);
+  const r10Handled = _race10Eliminate(socketId);
+  // A PvP kill (setPvpMode duel) that isn't part of any live Death
+  // Battle/Arena3/race10 round falls through all three above untouched —
+  // they only record when the victim was in their own alive map. Without
+  // this, open-world PvP kills/deaths never appeared in the История tab.
+  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled) {
+    const victimTid = _socketTid(socketId), killerTid = _socketTid(killerSocketId);
+    const victim = room?.players.get(socketId);
+    const killer = room?.players.get(killerSocketId);
+    if (victimTid) _recordPvpHistory(victimTid, 'death', 'open_pvp', killer?.username || null);
+    if (killerTid) _recordPvpHistory(killerTid, 'kill', 'open_pvp', victim?.username || null);
+  }
+}
 
 // _a3TryStart is async now (it re-checks daily attempts against the DB), and
 // every caller fires it without waiting — this keeps a failed launch from
@@ -2940,9 +2959,9 @@ async function _a3Deploy(ready, room) {
 // _pvpEliminate) records the kill/death pair; a monster/disconnect
 // elimination leaves it undefined and records nothing.
 function _a3Eliminate(socketId, killerSocketId) {
-  if (!_a3.live) return;
+  if (!_a3.live) return false;
   const rec = _a3.alive.get(socketId);
-  if (!rec) return;
+  if (!rec) return false;
   _a3.alive.delete(socketId);
   const room = getRoom(1);
   const spot = room ? room.deathBattleReturn(socketId) : null;
@@ -2967,6 +2986,7 @@ function _a3Eliminate(socketId, killerSocketId) {
   if (aliveA === 0 || aliveB === 0) {
     _a3Finish(aliveA === 0 && aliveB === 0 ? null : (aliveA === 0 ? 'B' : 'A'), false);
   }
+  return true;
 }
 
 async function _a3Finish(winner, wedged) {
@@ -3274,13 +3294,14 @@ async function _race10Deploy(ready, room) {
 // immediately. Their damage tally survives them: "most damage dealt" doesn't
 // require surviving to the end.
 function _race10Eliminate(socketId) {
-  if (!_race10.live) return;
-  if (!_race10.alive.has(socketId)) return;
+  if (!_race10.live) return false;
+  if (!_race10.alive.has(socketId)) return false;
   _race10.alive.delete(socketId);
   io.to(socketId).emit('race10Eliminated', {});
   // Nobody left standing anywhere and the boss is still up — no one can ever
   // land another hit, so there's no point riding out RACE10_MAX_MS.
   if (_race10.alive.size === 0) _race10Finish(null, false);
+  return true;
 }
 
 async function _race10Finish(winnerId, timedOut) {
@@ -5542,7 +5563,7 @@ io.on('connection', socket => {
     // a modified client always report 0 and become unkillable.
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id); }
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id, currentRoom); }
   });
 
   safeOn('pvpSkillAttack', ({ targetId, multiplier } = {}) => {
@@ -5556,7 +5577,7 @@ io.on('connection', socket => {
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
-    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id); }
+    if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id, currentRoom); }
   });
 
   safeOn('pvpSkillCC', ({ targetId, type, duration } = {}) => {

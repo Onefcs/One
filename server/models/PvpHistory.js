@@ -10,7 +10,8 @@ const PvpHistorySchema = new mongoose.Schema({
   telegramId: { type: String, required: true, index: true },
   // 'kill' | 'death' | 'win' | 'lose'
   kind:       { type: String, required: true },
-  // 'death_battle' | 'arena3' | 'race10'
+  // 'death_battle' | 'arena3' | 'race10' | 'open_pvp' (a setPvpMode duel
+  // outside any organized event)
   mode:       { type: String, required: true },
   // The other account involved, when one is known — always set for a
   // kill/death (that's who did it/who it was done to); a match-level

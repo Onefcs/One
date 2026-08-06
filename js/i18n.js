@@ -74,6 +74,7 @@ const I18N_UI = {
   pvpModeDeathBattle:{ ru: 'Битва на смерть', en: 'Death Battle', uk: 'Битва на смерть', es: 'Batalla a muerte', tr: 'Ölüm Savaşı', pt: 'Batalha mortal' },
   pvpModeArena3:     { ru: 'Арена 3х3', en: 'Arena 3v3', uk: 'Арена 3х3', es: 'Arena 3v3', tr: 'Arena 3v3', pt: 'Arena 3x3' },
   pvpModeRace10:     { ru: 'Кровавая Башня', en: 'Blood Tower', uk: 'Кривава Вежа', es: 'Torre de Sangre', tr: 'Kan Kulesi', pt: 'Torre de Sangue' },
+  pvpModeOpenPvp:    { ru: 'PvP', en: 'PvP', uk: 'PvP', es: 'PvP', tr: 'PvP', pt: 'PvP' },
   pvpHistKillFmt:    { ru: 'Вы убили {u}', en: 'You killed {u}', uk: 'Ви вбили {u}', es: 'Mataste a {u}', tr: '{u} adlı oyuncuyu öldürdün', pt: 'Você matou {u}' },
   pvpHistKill:       { ru: 'Убийство', en: 'Kill', uk: 'Вбивство', es: 'Asesinato', tr: 'Öldürme', pt: 'Assassinato' },
   pvpHistDeathFmt:   { ru: 'Вас убил {u}', en: '{u} killed you', uk: 'Вас вбив {u}', es: '{u} te mató', tr: '{u} seni öldürdü', pt: '{u} te matou' },
