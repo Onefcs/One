@@ -1882,6 +1882,14 @@ class Room {
     const mult = Math.max(1, Math.min(multiplier || 1, 10));
     const base = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    // Missing here (unlike attackEnemy/pvpAttack/pvpSkillAttack, which all
+    // bump this) meant every skill cast against a monster that doesn't also
+    // fire its own netSpawnProj/netSpawnAoe — Пинок, Кувырок, Оковы тьмы —
+    // was completely invisible to other nearby players: no swing, no effect,
+    // just the monster's hp dropping. The generic swing this drives isn't a
+    // perfect match for every skill, but it beats showing nothing at all,
+    // and matches what pvpSkillAttack already does for the exact same case.
+    attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
