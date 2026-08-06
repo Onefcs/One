@@ -1,11 +1,15 @@
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const crypto = require('crypto');
 const express = require('express');
 const http = require('http');
 const helmet = require('helmet');
 const compression = require('compression');
 const { Server } = require('socket.io');
+// Shared with the client so both sides agree on what a facing index means —
+// see the 'mv' handler below.
+const { NC_FACING } = require('../shared/netcodec');
 const mongoose = require('mongoose');
 const PlayerModel       = require('./models/Player');
 const ClanModel         = require('./models/Clan');
@@ -868,14 +872,29 @@ const BUNDLE_FILES = [
 
 const jsBundle = BUNDLE_FILES.map(f => fs.readFileSync(f, 'utf8')).join('\n;\n');
 const jsBundleEtag = `"${crypto.createHash('sha1').update(jsBundle).digest('hex').slice(0, 8)}"`;
+// Compressed once, here, instead of by the compression() middleware on every
+// request. The bundle is ~1.07MB of text (301KB gzipped) and never changes
+// while the process lives, so re-deflating it per client was pure repeated
+// work — ~30-50ms of CPU each, and after a redeploy every player online comes
+// back for it at the same time.
+const jsBundleGz = zlib.gzipSync(jsBundle, { level: 9 });
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
   transports: ['websocket'],
-  pingTimeout: 90000,
-  pingInterval: 30000,
+  // A silent link (Wi-Fi to LTE handover, a sleeping radio, a suspended
+  // WebView) does not close the TCP connection — it just stops delivering, so
+  // the heartbeat is the only thing that notices. At 30s/90s the protocol let
+  // that state persist for pingInterval + pingTimeout = two minutes, during
+  // which the player watched a frozen world without the client even trying to
+  // reconnect, and the server kept a ghost in the room for monsters and PvP to
+  // hit. 15s/25s brings the worst case to ~40s; js/network.js's own 2s
+  // round-trip watchdog usually catches it within 8s, and this is the backstop
+  // for the reverse direction (the server noticing a client that is gone).
+  pingTimeout: 25000,
+  pingInterval: 15000,
   maxHttpBufferSize: 512 * 1024,  // 512 KB max per socket message
 });
 
@@ -1602,6 +1621,34 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ── World map ────────────────────────────────────────────────────────────────
+// The map used to ride inside gameStart: ~132KB (52KB packed grid + ~79KB of
+// room JSON) serialized per join. A join is not rare — every socket.io
+// reconnect re-runs selectChar, so a phone switching between Wi-Fi and LTE
+// paid for the whole map each time, and a redeploy made every client online
+// do it within the same second (measured: 150 simultaneous joins stretched a
+// 25ms tick to 125ms and pushed p99 latency from 26ms to 146ms).
+//
+// It is the same bytes for everyone and, because the world generator runs off
+// a fixed seed, the same bytes across restarts too. So: serve it once, name it
+// by content hash, and let the browser cache do the rest. gameStart now
+// carries only mapVersion; the client fetches this URL and, after the first
+// time, never asks again.
+app.get('/api/world-map/:ver', (req, res) => {
+  const room = floorRooms.get(1);
+  if (!room) return res.status(503).json({ error: 'not ready' });
+  // The version lives in the URL and the response is immutable, so a request
+  // naming a different version must not be answered with these bytes — that
+  // would poison the cache under the wrong key. It can only happen to a
+  // client still running pre-deploy JS, which recovers via the socket
+  // fallback below.
+  if (req.params.ver !== room.mapVersion) return res.status(404).json({ error: 'stale version' });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('ETag', `"${room.mapVersion}"`);
+  res.send(room.mapPayload);
+});
+
 // Images: cache 30 days — sprites never change between deploys
 app.use('/images', express.static(path.join(__dirname, '..', 'images'), { maxAge: '30d', immutable: true }));
 // Audio: same treatment — background music/sfx assets don't change between deploys.
@@ -1636,6 +1683,13 @@ app.get('/bundle.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('ETag', jsBundleEtag);
   res.setHeader('Cache-Control', 'no-cache');
+  // Setting Content-Encoding ourselves is also what makes compression() skip
+  // this response instead of compressing it a second time.
+  res.setHeader('Vary', 'Accept-Encoding');
+  if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+    res.setHeader('Content-Encoding', 'gzip');
+    return res.send(jsBundleGz);
+  }
   res.send(jsBundle);
 });
 
@@ -3534,8 +3588,18 @@ io.on('connection', socket => {
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear',
   ]);
+  // A third bucket for the events that are cheap to ASK for and expensive to
+  // ANSWER. enemyResync is the amplifier: one request makes the server encode
+  // and send up to ENEMY_RESYNC_MAX (40) full enemy records, strings and all,
+  // and in the fast bucket a client was allowed 300 of those a second — 12000
+  // full records/s off a few bytes of request. The real client sends at most
+  // two a second (_ENEMY_RESYNC_MS = 500, js/network.js), so 10 per 5s window
+  // is five times what honest play needs. worldMapInline is here for the same
+  // reason: it answers with the entire map.
+  const _AMPLIFYING_EVENTS = new Set(['enemyResync', 'worldMapInline']);
   const _rlHeavy = { n: 0, reset: 0 };
   const _rlFast  = { n: 0, reset: 0 };
+  const _rlAmp   = { n: 0, reset: 0 };
   function _rlBump(bucket, max) {
     const now = Date.now();
     if (now > bucket.reset) { bucket.n = 0; bucket.reset = now + 5000; }
@@ -3543,11 +3607,13 @@ io.on('connection', socket => {
   }
   socket.use((packet, next) => {
     const ev = packet && packet[0];
-    const bucket = _HEAVY_EVENTS.has(ev) ? _rlHeavy : _rlFast;
-    // per 5s window. Heavy (DB/query/broadcast) kept tight; fast (movement/
-    // combat, sent per-frame) set high enough to never throttle real play —
-    // it only exists to cut a scripted flood.
-    const max    = _HEAVY_EVENTS.has(ev) ? 40 : 1500;
+    // per 5s window. Heavy (DB/query/broadcast) kept tight; amplifying ones
+    // tighter still; fast (movement/combat, sent per-frame) set high enough to
+    // never throttle real play — it only exists to cut a scripted flood.
+    let bucket, max;
+    if (_AMPLIFYING_EVENTS.has(ev))  { bucket = _rlAmp;   max = 10; }
+    else if (_HEAVY_EVENTS.has(ev))  { bucket = _rlHeavy; max = 40; }
+    else                             { bucket = _rlFast;  max = 1500; }
     if (!_rlBump(bucket, max)) return; // drop silently — over budget
     next();
   });
@@ -4499,6 +4565,15 @@ io.on('connection', socket => {
   // The client got position deltas for enemies it has no record of and is
   // asking for their full details. Rate-limited like any other client-driven
   // request; the room caps how many it will answer at once.
+  // Fallback for a client that cannot fetch /api/world-map (a proxy eating the
+  // request, a cache serving a 404 for a version this process no longer has).
+  // Delivers the same buffer down the socket so the game still starts; the
+  // normal path costs the server nothing per join and this one is rare.
+  safeOn('worldMapInline', () => {
+    const room = currentRoom || getRoom(currentFloor);
+    if (room) socket.emit('worldMap', room.mapPayload);
+  });
+
   safeOn('enemyResync', ({ ids } = {}) => {
     if (!currentRoom || !Array.isArray(ids)) return;
     currentRoom.resendEnemies(socket.id, ids);
@@ -4969,7 +5044,9 @@ io.on('connection', socket => {
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
     socket.emit('gameStart', {
       floor: currentFloor,
-      dungeon: currentRoom.dungeonData,
+      // The map itself is fetched over HTTP and cached by the browser — see
+      // /api/world-map above. Only its name travels here.
+      mapVersion: currentRoom.mapVersion,
       enemies: currentRoom.enemySnapshot(socket.id),
       bossStatus: currentRoom.getBossStatus(),
       // So someone logging in mid-countdown still sees the timer, and someone
@@ -4991,7 +5068,21 @@ io.on('connection', socket => {
     }
   });
 
+  // Compact position update: [x*2, y*2, facingIndex, hp] — see netSendMove in
+  // js/network.js for why it is an array of half-pixel integers rather than an
+  // object or a binary payload. 'playerMove' below is the same thing in the
+  // old shape, kept so a client that has not reloaded since the deploy keeps
+  // moving normally.
+  safeOn('mv', a => {
+    if (!currentRoom || !Array.isArray(a)) return;
+    _applyMove(a[0] / 2, a[1] / 2, NC_FACING[a[2]] || 'front', a[3]);
+  });
+
   safeOn('playerMove', ({ x, y, facing, hp } = {}) => {
+    _applyMove(x, y, facing, hp);
+  });
+
+  function _applyMove(x, y, facing, hp) {
     if (!currentRoom) return;
     // Frozen entrants stay exactly where they were dropped. Facing/hp still
     // sync so the countdown doesn't look like a frozen screen.
@@ -5001,7 +5092,7 @@ io.on('connection', socket => {
     }
     currentRoom.updatePlayerPos(socket.id, x, y, facing);
     if (hp != null && isFinite(hp)) currentRoom.syncPlayerHp(socket.id, hp);
-  });
+  }
 
   // The КАРТА panel draws the player's whole current arm, which is far wider
   // than the enemy stream's interest radius — so while it's open the room
@@ -5272,7 +5363,14 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     if (enemyId) currentRoom.applySkillEffect(enemyId, type, duration);
     if (enemyIds) currentRoom.applySkillEffectMany(enemyIds, type, duration);
-    socket.to(`floor_${currentFloor}`).emit('enemyCC', { enemyId, enemyIds, type, duration });
+    // Visual only (the freeze/stun tint on a monster), so it goes to whoever
+    // is close enough to see that monster rather than to the whole world —
+    // see _emitNearby. The caster's own position is the anchor: every CC in
+    // the game is cast on something the caster is standing next to, and it
+    // saves resolving a list of enemy ids to coordinates on a hot path.
+    const _me = currentRoom.players.get(socket.id);
+    if (!_me) return;
+    _emitNearby(_me.x, _me.y, 'enemyCC', { enemyId, enemyIds, type, duration });
   });
 
   safeOn('playerInvis', ({ invis } = {}) => {
@@ -5358,7 +5456,12 @@ io.on('connection', socket => {
     if (!target || target.hp <= 0) return;
     if (currentRoom.isPlayerInSafeZone(targetId)) return;
     const dur = Math.max(0, Math.min(duration, 6));
-    io.to(`floor_${currentFloor}`).emit('pvpPlayerCC', { targetId, type, duration: dur });
+    // Anchored on the TARGET, and including the caster: the target's own
+    // client is what applies the freeze/stun, so it must be in the recipient
+    // set, and it always is — it sits at distance 0 from the anchor. Everyone
+    // else nearby gets it for the visual. See _emitNearby for why this is no
+    // longer a floor-wide broadcast.
+    _emitNearby(target.x, target.y, 'pvpPlayerCC', { targetId, type, duration: dur }, true);
   });
 
   safeOn('respawn', () => {
@@ -5539,14 +5642,35 @@ io.on('connection', socket => {
   // plain hex literal is replaced rather than passed through.
   const _color = v => (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v)) ? v : '#ffffff';
 
+  // Recipients for a visual-only combat event: everyone close enough to see
+  // the point it happens at. These used to go to `floor_${currentFloor}`,
+  // which — with one shared world floor — means every player online, so a
+  // single archer's auto-attack cost one packet per player and the feature's
+  // total cost grew as the square of the population (measured: 37% of a CPU
+  // core at 150 players firing twice a second, more than the world simulation
+  // itself). Same treatment enemyHurt/enemyKilled already get, see
+  // _emitToEnemyViewers.
+  // `includeSelf` is for the events the caster's own client does NOT render
+  // locally and therefore has to be told about like everyone else.
+  function _emitNearby(x, y, event, payload, includeSelf) {
+    if (!currentRoom) return;
+    const ids = currentRoom.nearbyPlayerIds(x, y, includeSelf ? null : socket.id,
+      currentRoom.laneOf(socket.id));
+    if (!ids.length) return;
+    io.to(ids).emit(event, payload);
+  }
+
+  // Both now ride the addressed player's next world cast instead of going out
+  // as their own socket.io event — see Room.queueProjectile. The validation is
+  // unchanged; only the delivery moved. `angle` is no longer carried at all:
+  // the receiver derives it from the velocity, which is the same number.
   safeOn('spawnProj', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
-    socket.to(`floor_${currentFloor}`).emit('spawnProj', {
+    currentRoom.queueProjectile(socket.id, {
       x:        _num(data.x, -1e5, 1e5, 0),
       y:        _num(data.y, -1e5, 1e5, 0),
       vx:       _num(data.vx, -5000, 5000, 0),
       vy:       _num(data.vy, -5000, 5000, 0),
-      angle:    _num(data.angle, -Math.PI * 2, Math.PI * 2, 0),
       size:     _num(data.size, 1, 64, 5),
       life:     _num(data.life, 0, 10, 1.5),
       color:    _color(data.color),
@@ -5556,7 +5680,7 @@ io.on('connection', socket => {
 
   safeOn('spawnAoe', data => {
     if (!currentRoom || !data || typeof data !== 'object') return;
-    socket.to(`floor_${currentFloor}`).emit('spawnAoe', {
+    currentRoom.queueAoe(socket.id, {
       x: _num(data.x, -1e5, 1e5, 0),
       y: _num(data.y, -1e5, 1e5, 0),
       r: _num(data.r, 1, 400, 80),
@@ -6165,6 +6289,14 @@ io.on('connection', socket => {
     // Leaving mid-round counts as being knocked out, so a round can't hang
     // waiting on someone who closed the app. The 3v3 has no timer at all, so
     // this is the only thing that stops a closed app from holding the arena.
+    // Both of these are keyed by account and only count writes since the last
+    // trim — nothing needed them to outlive the session, and nothing ever
+    // deleted an entry, so they grew by one row per distinct account for the
+    // whole uptime of the process.
+    if (authed) {
+      _logWritesSinceTrim.delete(authed.telegramId);
+      _pvpHistoryWritesSinceTrim.delete(authed.telegramId);
+    }
     _db.reg.delete(socket.id);
     if (_a3.queue.delete(socket.id)) _a3Broadcast();
     if (_race10.queue.delete(socket.id)) _race10Broadcast();

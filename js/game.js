@@ -181,13 +181,22 @@ function updateCamera(dt) {
 
 // Returns the room (from dungeon.rooms) that contains world-pixel point (wx,wy),
 // or null if the point is in a corridor or no room data exists.
+let _lastRoomHit = null;
 function _getRoomAt(wx, wy) {
   if (!dungeon || !dungeon.rooms) return null;
   const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+  // The world has ~470 rooms and this is called several times per frame, from
+  // update() and from the HUD — but the answer almost never changes between
+  // calls, because a player takes seconds to walk out of a room and most calls
+  // in a frame are for the same point. Check last frame's answer first and the
+  // scan below turns into two comparisons for all but the handful of frames
+  // where the player actually crosses a boundary.
+  const c = _lastRoomHit;
+  if (c && tx >= c.x && tx < c.x + c.size && ty >= c.y && ty < c.y + c.size) return c;
   for (let i = 0; i < dungeon.rooms.length; i++) {
     const r = dungeon.rooms[i];
     if (!r.size) continue; // old-format rooms without size field
-    if (tx >= r.x && tx < r.x + r.size && ty >= r.y && ty < r.y + r.size) return r;
+    if (tx >= r.x && tx < r.x + r.size && ty >= r.y && ty < r.y + r.size) { _lastRoomHit = r; return r; }
   }
   return null;
 }
@@ -708,7 +717,18 @@ function update(dt, realDt) {
       op.y += (op.targetY - op.y) * _lf;
     }
     const _mdx = op.x - prevX, _mdy = op.y - prevY;
-    op.moving = _mdx * _mdx + _mdy * _mdy > 0.1;
+    // Held briefly rather than read per frame. Any single interval without
+    // fresh data — a dropped packet (the world stream is volatile by design),
+    // a cast that arrived with nothing new, a hitch on the sender — makes this
+    // delta zero for a frame or two. Flipping `moving` off on that alone
+    // switches the animation key from run to idle and back, and every switch
+    // resets animFrame to 0, so the run cycle restarts: on screen the other
+    // player twitches or looks like they turned on the spot. The hold is
+    // shorter than the time it takes to actually stop being seen as moving,
+    // so a player who genuinely stands still still settles into idle.
+    if (_mdx * _mdx + _mdy * _mdy > 0.1) op._movingHold = 0.2;
+    else op._movingHold = Math.max(0, (op._movingHold || 0) - dt);
+    op.moving = (op._movingHold || 0) > 0;
     if ((op.hurtTimer || 0) > 0) op.hurtTimer -= dt;
     if ((op.atkAnimTimer || 0) > 0) op.atkAnimTimer -= dt;
     if ((op._swingTimer || 0) > 0) op._swingTimer -= dt;
