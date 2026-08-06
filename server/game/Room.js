@@ -160,6 +160,11 @@ const VISUAL_FANOUT_R2 = VISUAL_FANOUT_R * VISUAL_FANOUT_R;
 // legitimately "in range" of each other. See nearbyPlayerIds.
 const VISUAL_FANOUT_CAP = 24;
 
+// Ceiling on one player's pending combat visuals between two casts. Only
+// reachable when their casts are being dropped for backpressure while a fight
+// rages next to them — in which case the oldest few are the ones worth having.
+const VISUAL_QUEUE_MAX = 48;
+
 // A player receiving nothing at all still gets one packet this often, purely
 // so their clock offset (js/network.js's _svrTimeOffset EMA) keeps tracking
 // the server. At 20 casts/s this is once a second.
@@ -1033,12 +1038,22 @@ class Room {
       // whoever just walked out of range on their screen. After that, silence
       // until something happens — with a heartbeat every IDLE_HEARTBEAT_CASTS
       // so the clock-offset EMA keeps tracking.
-      const empty = playersOut.length === 0 && nearEnemies.length === 0;
+      const projQ = p._projQ, aoeQ = p._aoeQ;
+      const empty = playersOut.length === 0 && nearEnemies.length === 0 &&
+        projQ.length === 0 && aoeQ.length === 0;
       if (empty && p._lastSentEmpty && (castId - p._lastSentAt) < IDLE_HEARTBEAT_CASTS * 2) return;
       p._lastSentEmpty = empty;
       p._lastSentAt = castId;
+      // Age is stamped now, not when queued, so it measures the real wait.
+      // Written in place: every recipient's cast runs inside this same tick,
+      // so the value is identical for all of them and the entry can stay one
+      // shared object rather than a copy per player.
+      for (let i = 0; i < projQ.length; i++) projQ[i].ageMs = now - projQ[i].at;
       const sock = this._socketFor(p);
-      if (sock) sock.volatile.emit('gameState', encodeGameState(playersOut, nearEnemies, now, undefined));
+      if (sock) sock.volatile.emit('gameState',
+        encodeGameState(playersOut, nearEnemies, now, undefined, projQ, aoeQ));
+      projQ.length = 0;
+      aoeQ.length = 0;
     });
 
     // Coarse dot feed for the full-map panel (the КАРТА tab), which draws the
@@ -1221,6 +1236,44 @@ class Room {
   laneOf(socketId) {
     const p = this.players.get(socketId);
     return p ? (p._raceLane ?? null) : null;
+  }
+
+  // ── Combat visuals ────────────────────────────────────────────────────────
+  // A projectile or AOE ring is dropped into the queue of every player near
+  // enough to see it, and rides out with their next world cast (at most 50ms
+  // later, and the entry carries its own age so the receiver can catch it up).
+  //
+  // This replaces a socket.io event per recipient per shot. The packet was the
+  // expensive part, not the data: ~133 bytes of JSON in its own frame, 40 of
+  // them a second for a player standing in a fight, which came to 28% of
+  // everything they downloaded. In the cast it is 19 bytes and no packet at
+  // all.
+  queueProjectile(fromSocketId, proj) {
+    const from = this.players.get(fromSocketId);
+    if (!from) return;
+    const ids = this.nearbyPlayerIds(proj.x, proj.y, fromSocketId, from._raceLane ?? null);
+    if (!ids.length) return;
+    const entry = { ...proj, at: Date.now() };
+    for (let i = 0; i < ids.length; i++) {
+      const p = this.players.get(ids[i]);
+      if (!p) continue;
+      // Bounded: a cast drains the queue every 50ms, so this only ever holds
+      // one interval's worth. The cap is there for the case a client's casts
+      // are being dropped (volatile) while shots keep arriving.
+      if (p._projQ.length >= VISUAL_QUEUE_MAX) continue;
+      p._projQ.push(entry);
+    }
+  }
+
+  queueAoe(fromSocketId, aoe) {
+    const from = this.players.get(fromSocketId);
+    if (!from) return;
+    const ids = this.nearbyPlayerIds(aoe.x, aoe.y, fromSocketId, from._raceLane ?? null);
+    for (let i = 0; i < ids.length; i++) {
+      const p = this.players.get(ids[i]);
+      if (!p || p._aoeQ.length >= VISUAL_QUEUE_MAX) continue;
+      p._aoeQ.push(aoe);
+    }
   }
 
   // socketIds of everyone who currently has this enemy streamed to them, i.e.
@@ -1449,6 +1502,10 @@ class Room {
       // "not empty" guarantees the first cast after joining is always sent.
       _lastSentEmpty: false,
       _lastSentAt: 0,
+      // Combat visuals waiting for this player's next cast — see
+      // queueProjectile/queueAoe.
+      _projQ: [],
+      _aoeQ: [],
       // Memoised live Socket — see _socketFor.
       _socket: null,
       _profileRev: 1, _seq: ++this._pSeq,

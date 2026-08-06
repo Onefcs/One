@@ -9,14 +9,25 @@
 //   node dev/fanout-check.js
 
 const { io } = require('socket.io-client');
+const { decodeGameState } = require('../shared/netcodec');
 const URL = process.env.URL || 'http://localhost:3000';
 
 async function bot(name) {
   const { initData } = await (await fetch(`${URL}/dev/init-data?dev=${name}`)).json();
   const s = io(URL, { transports: ['websocket'], upgrade: false });
+  // Projectiles and AOE rings ride the world cast now (shared/netcodec.js),
+  // so they are counted out of the decoded gameState rather than off their own
+  // events. The legacy events are still counted, so this check keeps working
+  // whichever delivery a server is using.
   const got = { proj: 0, aoe: 0 };
   s.on('spawnProj', () => got.proj++);
   s.on('spawnAoe', () => got.aoe++);
+  s.on('gameState', buf => {
+    const st = decodeGameState(buf instanceof ArrayBuffer ? buf
+      : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    got.proj += (st.projs || []).length;
+    got.aoe  += (st.aoes  || []).length;
+  });
   const spawn = await new Promise(resolve => {
     s.on('connect', () => s.emit('loginTelegramWebApp', { initData }));
     s.on('authOk', () => s.emit('selectChar', { type: 'ranger', savedStats: null }));
