@@ -1496,6 +1496,10 @@ class Room {
     socketIds.forEach((sid, i) => {
       const p = this.players.get(sid);
       if (!p) return;
+      // Remembered so dbReturnToPrevSpot can send this entrant back to
+      // wherever they actually were instead of the shared hub spawn
+      // deathBattleReturn always uses (arena3/race10 never set this).
+      p._dbPrevX = p.x; p._dbPrevY = p.y;
       const ang = (i / n) * Math.PI * 2;
       let x = ar.cx + Math.cos(ang) * R;
       let y = ar.cy + Math.sin(ang) * R;
@@ -1507,6 +1511,31 @@ class Room {
       placed.push({ socketId: sid, x, y, hp: p.hp });
     });
     return placed;
+  }
+
+  // Death-battle-only sibling of deathBattleReturn (above): sends this
+  // entrant back to wherever they were standing right before deployment
+  // (saved on p._dbPrevX/Y by deathBattleDeploy) instead of the fixed hub
+  // spawn — arena3 and race10 keep using deathBattleReturn/the hub spawn
+  // unchanged. Falls back to the hub spawn if no saved spot exists (e.g.
+  // this socket was never actually deployed), so it never leaves a player
+  // stranded with an undefined position.
+  dbReturnToPrevSpot(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    if (p._dbPrevX != null && p._dbPrevY != null) {
+      p.x = p._dbPrevX;
+      p.y = p._dbPrevY;
+    } else {
+      p.x = this._dungeon.spawn.x;
+      p.y = this._dungeon.spawn.y;
+    }
+    p._dbPrevX = null;
+    p._dbPrevY = null;
+    p.pvpMode = false;
+    p._raceLane = null;
+    p._profileRev++;
+    return { x: p.x, y: p.y };
   }
 
   // Places a 3v3 match: one side per base, one player per lane, full HP and
@@ -1697,14 +1726,15 @@ class Room {
     this._a3BossIds = null;
   }
 
-  // Sends a player back to the hub with PvP off — used both for entrants
-  // knocked out of a round and for the winner once they close the reward
-  // modal. Returns the landing spot so the caller can tell that client.
-  // Every exit from an event — eliminated, finished, the round ending under
-  // them — comes back through here, which makes it the one place that has to
-  // clear the tower lane as well as the PvP flag. Leaving it set would keep
-  // the player invisible to ordinary world monsters (and them to it) for the
-  // rest of the session, since that is exactly what _raceVisible keys on.
+  // Sends a player back to the hub with PvP off — shared exit path for
+  // arena3 and race10 (eliminated, the match finishing, the round ending
+  // under them). The death battle uses its own dbReturnToPrevSpot instead
+  // (below) so its entrants land back where they actually were rather than
+  // the hub. Returns the landing spot so the caller can tell that client.
+  // Clears the tower lane as well as the PvP flag — leaving either set would
+  // keep the player invisible to ordinary world monsters (and them to it)
+  // for the rest of the session, since that is exactly what _raceVisible
+  // keys on.
   deathBattleReturn(socketId) {
     const p = this.players.get(socketId);
     if (!p) return null;

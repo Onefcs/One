@@ -2615,7 +2615,7 @@ function _dbEliminate(socketId) {
   if (_db.phase !== 'live') return;
   if (!_db.alive.delete(socketId)) return;
   const room = getRoom(1);
-  const spot = room ? room.deathBattleReturn(socketId) : null;
+  const spot = room ? room.dbReturnToPrevSpot(socketId) : null;
   io.to(socketId).emit('deathBattleEliminated', { left: _db.alive.size, x: spot?.x, y: spot?.y });
   _dbBroadcast();
   if (_db.alive.size <= 1) _dbFinish(false);
@@ -2632,7 +2632,7 @@ async function _dbFinish(timedOut) {
   const winnerId = (!timedOut && _db.alive.size === 1) ? [..._db.alive.keys()][0] : null;
   _db.alive.forEach((_, sid) => {
     if (sid === winnerId) return;
-    const spot = room ? room.deathBattleReturn(sid) : null;
+    const spot = room ? room.dbReturnToPrevSpot(sid) : null;
     io.to(sid).emit('deathBattleEliminated', { left: 0, x: spot?.x, y: spot?.y });
   });
   _db.alive.clear();
@@ -5648,13 +5648,18 @@ io.on('connection', socket => {
     if (spot) socket.emit('deathBattleReturned', spot);
   });
 
-  // Sent once the winner closes the reward modal — everyone else is already
-  // back in the hub, the winner is left standing in the arena until this.
+  // Sent once the winner closes the reward modal — everyone else was already
+  // sent back (to wherever they each were, see dbReturnToPrevSpot) the
+  // moment they were eliminated; the winner is left standing in the arena
+  // until this. Own event name (not the shared 'deathBattleReturned'
+  // arena3Return/race10Return use) so the client can label this teleport
+  // correctly — it lands somewhere different (the winner's own pre-battle
+  // spot) from what that event means for those other two.
   safeOn('deathBattleReturn', () => {
     if (_db.winnerId !== socket.id) return; // see _db.winnerId — not a free teleport home
     _db.winnerId = null;
-    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
-    if (spot) socket.emit('deathBattleReturned', spot);
+    const spot = currentRoom ? currentRoom.dbReturnToPrevSpot(socket.id) : null;
+    if (spot) socket.emit('deathBattleReturnedPrev', spot);
   });
 
   safeOn('deathBattleSync', () => {

@@ -2266,7 +2266,10 @@ function _initDeathBattleHandlers(s) {
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     pvpMode = false;
     if (player && x != null && y != null) {
-      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
+      // Lands back wherever this player actually was before the battle
+      // (server's dbReturnToPrevSpot), not the hub — hence its own label
+      // rather than centralHall.
+      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbReturnPrevLbl'));
       else { player.x = x; player.y = y; }
     }
     if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('dbEliminatedFmt', { n: left }), '#f07886');
@@ -2296,6 +2299,15 @@ function _initDeathBattleHandlers(s) {
   s.on('deathBattleReturned', ({ x, y }) => {
     if (!player) return;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
+    else { player.x = x; player.y = y; }
+  });
+
+  // Death-battle winner closing the reward modal — own event (not the
+  // shared deathBattleReturned above) since this lands the winner back at
+  // their own pre-battle spot, not the hub.
+  s.on('deathBattleReturnedPrev', ({ x, y }) => {
+    if (!player) return;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbReturnPrevLbl'));
     else { player.x = x; player.y = y; }
   });
 }

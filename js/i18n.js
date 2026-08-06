@@ -184,7 +184,8 @@ const I18N_UI = {
   dbPvpLockedToast: { ru: 'В битве ПК отключить нельзя', en: 'PvP cannot be turned off in a battle', uk: 'У битві ПК вимкнути не можна', es: 'No puedes desactivar PvP en la batalla', tr: 'Savaşta PvP kapatılamaz', pt: 'Não é possível desligar o PvP na batalha' },
   dbWinTitle:   { ru: 'ПОБЕДА', en: 'VICTORY', uk: 'ПЕРЕМОГА', es: 'VICTORIA', tr: 'ZAFER', pt: 'VITÓRIA' },
   dbWinSub:     { ru: 'Вы последний выживший', en: 'You are the last survivor', uk: 'Ви останній вцілілий', es: 'Eres el último superviviente', tr: 'Son hayatta kalansın', pt: 'Você é o último sobrevivente' },
-  dbWinClose:   { ru: 'Забрать и вернуться в зал', en: 'Claim and return to the hall', uk: 'Забрати й повернутися до залу', es: 'Reclamar y volver al salón', tr: 'Al ve salona dön', pt: 'Receber e voltar ao salão' },
+  dbWinClose:   { ru: 'Забрать награду', en: 'Claim reward', uk: 'Забрати нагороду', es: 'Reclamar recompensa', tr: 'Ödülü al', pt: 'Receber recompensa' },
+  dbReturnPrevLbl: { ru: 'Прежнее место', en: 'Previous spot', uk: 'Попереднє місце', es: 'Lugar anterior', tr: 'Önceki konum', pt: 'Local anterior' },
   langPickerHint:    { ru: 'Изменения применяются сразу', en: 'Changes apply immediately', uk: 'Зміни застосовуються одразу', es: 'Los cambios se aplican de inmediato', tr: 'Değişiklikler hemen uygulanır', pt: 'As alterações se aplicam imediatamente' },
 
   // ── Character select ──
