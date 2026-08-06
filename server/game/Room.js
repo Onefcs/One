@@ -21,7 +21,20 @@ const { encodeGameState, packGrid } = require('../../shared/netcodec');
 // ones actually rolled in combat — a crit landed for a different multiplier
 // than the sheet showed, and "Кровавая ярость" (+4% crit power per level) did
 // nothing at all because passives never reached the server.
-function computeStats(sd, cd, type) {
+// clanAtkBonusPct is the caller's clan's current % atk bonus (shared/
+// definitions.js's clanAtkBonusPct(level), already resolved by server/
+// index.js since Room.js has no access to clan state) — recompute()
+// (js/player.js) applies the identical multiplier, and it was missing here
+// entirely until now: setPlayerChar/updatePlayerStats/publicProfile all
+// route through this function, so every one of them silently dropped a
+// clan's attack bonus, and setPlayerChar in particular re-runs on every
+// selectChar — including the one a reconnect (background tab, brief network
+// drop) sends automatically — resetting a clan member's combat atk back
+// down until their own client happened to recompute() again for an
+// unrelated reason. That's what made the same hit against the same monster
+// swing between two different numbers depending on whether a reconnect had
+// just clobbered it.
+function computeStats(sd, cd, type, clanAtkBonusPct) {
   const u = sd.upgrades || {};
   let a = (sd.baseAtk   ?? cd.baseAtk) + (u.atk || 0) * 1;
   let d = (sd.baseDef   ?? cd.baseDef) + (u.def || 0) * 1;
@@ -47,6 +60,9 @@ function computeStats(sd, cd, type) {
   h = Math.floor(h * (1 + hpPct));
   a = Math.floor(a * (1 + pt.atkPct));
   d = Math.floor(d * (1 + pt.defPct));
+  // Same multiplier recompute() applies via getClanBonus() — after passives,
+  // like there.
+  if (clanAtkBonusPct > 0) a = Math.floor(a * (1 + clanAtkBonusPct / 100));
   extraAS += (cd.atkSpeed || 0) * pt.atkSpeedPct;
   const lvl = (sd.lvl || 1) - 1;
   return {
@@ -1224,7 +1240,7 @@ class Room {
     this.players.forEach(p => p._eKnown.delete(id));
   }
 
-  addPlayer(socketId, username, clanName, clanIcon, telegramId) {
+  addPlayer(socketId, username, clanName, clanIcon, clanAtkBonus, telegramId) {
     // A reconnect (network blip, backgrounded tab) can occasionally leave the
     // old socket's entry in this room a moment longer than its own disconnect
     // cleanup takes to land — the new connection would then render as a
@@ -1245,7 +1261,7 @@ class Room {
     const spawn = this._dungeon.spawn;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
-      clanName: clanName || null, clanIcon: clanIcon || null,
+      clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
       x: spawn.x, y: spawn.y, facing: 'front',
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
@@ -1263,11 +1279,12 @@ class Room {
     return { spawn, staleSocketId };
   }
 
-  setPlayerClan(socketId, clanName, clanIcon) {
+  setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus) {
     const p = this.players.get(socketId);
     if (!p) return;
     p.clanName = clanName || null;
     p.clanIcon = clanIcon || null;
+    p.clanAtkBonus = clanAtkBonus || 0;
     p._profileRev++;
   }
 
@@ -1343,7 +1360,7 @@ class Room {
     p.pvpMode = false;
     p._profileRev++;
     if (savedStats) {
-      const s = computeStats(savedStats, cd, type);
+      const s = computeStats(savedStats, cd, type, p.clanAtkBonus);
       p.atk        = s.atk;
       p.def        = s.def;
       p.maxHp      = s.maxHp;
@@ -1756,7 +1773,7 @@ class Room {
     // claimed last time — a self-referential cap ("min(x, prev*1.5+100)")
     // ratchets up to its ceiling in ~10 calls regardless of what prev
     // actually was, since the client controls prev too.
-    const trueBase = computeStats(p._sd || {}, cd, p.type);
+    const trueBase = computeStats(p._sd || {}, cd, p.type, p.clanAtkBonus);
     if (atk  >  0) p.atk  = Math.min(atk,  trueBase.atk * STAT_BUFF_HEADROOM);
     if (def  >= 0) p.def  = Math.min(def,  trueBase.def * STAT_BUFF_HEADROOM);
     if (maxHp > 0) {
@@ -1783,7 +1800,7 @@ class Room {
     if (!p) return null;
     const cd = CHAR_DEF[p.type] || {};
     const sd = p._sd || {};
-    const stats = computeStats(sd, cd, p.type);
+    const stats = computeStats(sd, cd, p.type, p.clanAtkBonus);
     const equipment = {};
     Object.entries(sd.equipment || {}).forEach(([slot, it]) => {
       if (!it) return;

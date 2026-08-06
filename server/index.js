@@ -28,6 +28,7 @@ const {
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
+  clanAtkBonusPct,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -3243,8 +3244,11 @@ async function _notifyClan(clan) {
     // the clan and refresh these — which also meant a freshly approved member
     // ran around with no clan tag over their head until they hit something.
     // Now that the kill path is a pure counter bump, refresh it here, where
-    // the member is already being told about the change.
-    target.data._setClanIdentity?.(clan._id, clan.name, clan.icon);
+    // the member is already being told about the change. Also covers a level-
+    // up (this is the only path _flushClanXp goes through), so the new atk%
+    // reaches every online member's Room player immediately instead of
+    // waiting for their client to happen to recompute() on its own.
+    target.data._setClanIdentity?.(clan._id, clan.name, clan.icon, clan.level);
   }
 }
 
@@ -3372,15 +3376,20 @@ io.on('connection', socket => {
   // a pure in-memory increment instead of re-resolving the clan from the DB on
   // every single monster death — see _onKillClanXp and _clanXpAdd.
   let _myClanId = null;
+  // The clan's current level, kept purely so its atk% (clanAtkBonusPct) can be
+  // pushed onto the Room player object below — Room.js's computeStats needs
+  // it synchronously and has no DB access of its own.
+  let _myClanLevel = null;
 
   // Lets another connection (a clan leader approving/kicking, the XP flusher
   // announcing a level-up) update THIS session's clan identity — see
   // _notifyClan. Passing nulls clears it, which is what a kick/disband does.
-  socket.data._setClanIdentity = (clanId, name, icon) => {
-    _myClanId   = clanId ? String(clanId) : null;
-    _myClanName = name || null;
-    _myClanIcon = icon || null;
-    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
+  socket.data._setClanIdentity = (clanId, name, icon, level) => {
+    _myClanId    = clanId ? String(clanId) : null;
+    _myClanName  = name || null;
+    _myClanIcon  = icon || null;
+    _myClanLevel = level || null;
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel));
   };
   // Per-socket MIRROR of the account's balances — NOT the source of truth.
   // _gramBalanceCache/_nexumBalanceCache (keyed by telegramId) are, because
@@ -3827,9 +3836,10 @@ io.on('connection', socket => {
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
-      _myClanName = _clanInfo ? _clanInfo.name : null;
-      _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      _myClanId   = _clan ? String(_clan._id) : null;
+      _myClanName  = _clanInfo ? _clanInfo.name : null;
+      _myClanIcon  = _clanInfo ? _clanInfo.icon : null;
+      _myClanId    = _clan ? String(_clan._id) : null;
+      _myClanLevel = _clanInfo ? _clanInfo.level : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
       _setVipAura(doc.username, socket.data.vipLevel);
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
@@ -3885,9 +3895,10 @@ io.on('connection', socket => {
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
       const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
-      _myClanName = _clanInfo ? _clanInfo.name : null;
-      _myClanIcon = _clanInfo ? _clanInfo.icon : null;
-      _myClanId   = _clan ? String(_clan._id) : null;
+      _myClanName  = _clanInfo ? _clanInfo.name : null;
+      _myClanIcon  = _clanInfo ? _clanInfo.icon : null;
+      _myClanId    = _clan ? String(_clan._id) : null;
+      _myClanLevel = _clanInfo ? _clanInfo.level : null;
       socket.data.vipLevel = doc.savedData?.vipLevel || 0;
       _setVipAura(doc.username, socket.data.vipLevel);
       socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
@@ -4945,7 +4956,7 @@ io.on('connection', socket => {
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
-      const { staleSocketId } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, authed.telegramId);
+      const { staleSocketId } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId);
       // A stale room entry for this same account (see addPlayer's comment)
       // was just dropped — tell other clients immediately instead of waiting
       // for that old socket's own (possibly delayed) disconnect to do it, so
@@ -5815,10 +5826,11 @@ io.on('connection', socket => {
       });
       const _cd = await _clanDataFor(clan, authed.telegramId);
       socket.emit('clanData', _cd);
-      _myClanName = _cd ? _cd.name : null;
-      _myClanIcon = _cd ? _cd.icon : null;
-      _myClanId   = _cd ? String(_cd._id) : null;
-      currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
+      _myClanName  = _cd ? _cd.name : null;
+      _myClanIcon  = _cd ? _cd.icon : null;
+      _myClanId    = _cd ? String(_cd._id) : null;
+      _myClanLevel = _cd ? _cd.level : null;
+      currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel));
       // Founding a clan makes any application still pending elsewhere moot —
       // without this it could sit in that other clan's queue and get approved
       // later, leaving this account in two clans at once.
@@ -5931,10 +5943,11 @@ io.on('connection', socket => {
     await clan.save().catch(() => {});
     const _cdDecl = await _clanDataFor(clan, authed.telegramId);
     socket.emit('clanData', _cdDecl);
-    _myClanName = _cdDecl ? _cdDecl.name : null;
-    _myClanIcon = _cdDecl ? _cdDecl.icon : null;
-    _myClanId   = _cdDecl ? String(_cdDecl._id) : null;
-    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon);
+    _myClanName  = _cdDecl ? _cdDecl.name : null;
+    _myClanIcon  = _cdDecl ? _cdDecl.icon : null;
+    _myClanId    = _cdDecl ? String(_cdDecl._id) : null;
+    _myClanLevel = _cdDecl ? _cdDecl.level : null;
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel));
   });
 
   safeOn('clanKick', async ({ telegramId }) => {
@@ -5993,10 +6006,11 @@ io.on('connection', socket => {
       await _notifyClan(clan);
     }
     socket.emit('clanData', null);
-    _myClanName = null;
-    _myClanIcon = null;
-    _myClanId   = null;
-    currentRoom?.setPlayerClan(socket.id, null, null);
+    _myClanName  = null;
+    _myClanIcon  = null;
+    _myClanId    = null;
+    _myClanLevel = null;
+    currentRoom?.setPlayerClan(socket.id, null, null, 0);
   });
 
   safeOn('clanDisband', async () => {

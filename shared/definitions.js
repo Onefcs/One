@@ -959,9 +959,35 @@ const VIP_BONUSES = [
   { xp:100, gold:100, drop:100 }, // VIP 10
 ];
 
+// ── Clan levels & cumulative bonuses ──────────────────────────
+// Each level's bonus is the CUMULATIVE total at that level (not the increment).
+// Shared (not just js/definitions.js) because the server needs the same atk%
+// the client's recompute() applies — see clanAtkBonusPct below and its
+// callers in server/game/Room.js's computeStats.
+const CLAN_LEVELS = [
+  { lvl:1,  xpReq:0,      bonus:{ gold:0,  xp:0,  atk:0  }, label:'Новообразованный' },
+  { lvl:2,  xpReq:500,    bonus:{ gold:5,  xp:0,  atk:0  }, label:'Слаженный'        },
+  { lvl:3,  xpReq:1500,   bonus:{ gold:5,  xp:5,  atk:0  }, label:'Сплочённый'       },
+  { lvl:4,  xpReq:4000,   bonus:{ gold:10, xp:5,  atk:0  }, label:'Опытный'          },
+  { lvl:5,  xpReq:10000,  bonus:{ gold:10, xp:5,  atk:5  }, label:'Именитый'         },
+  { lvl:6,  xpReq:25000,  bonus:{ gold:10, xp:10, atk:5  }, label:'Прославленный'    },
+  { lvl:7,  xpReq:60000,  bonus:{ gold:15, xp:10, atk:5  }, label:'Легендарный'      },
+  { lvl:8,  xpReq:150000, bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
+  { lvl:9,  xpReq:350000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
+  { lvl:10, xpReq:800000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
+];
+// The % attack bonus for a clan currently at `level` — used identically by
+// the client (recompute(), js/player.js) and the server (computeStats below)
+// so a player's effective atk can't drift depending on which side computed
+// it last.
+function clanAtkBonusPct(level) {
+  return CLAN_LEVELS[(level || 1) - 1]?.bonus.atk || 0;
+}
+
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel,
+  CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
