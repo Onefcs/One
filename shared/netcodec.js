@@ -2,14 +2,24 @@
 //  Binary codec for gameState packets (shared client/server)
 //
 //  JSON gameState entries cost ~70-130 bytes each; the binary form is
-//  ~11 bytes for a slim player and ~12 for a slim enemy (8-10x less),
+//  ~13 bytes for a slim player and ~14 for a slim enemy (still 6-9x less),
 //  plus far cheaper parsing than JSON on mobile.
 //
 //  Entries reference entities by small numeric handles (player _seq /
 //  enemy _idx); the string ids travel only inside FULL entries, and the
 //  decoder keeps handle→id maps that the periodic full refresh repairs
-//  if they ever diverge. Coordinates quantize to 0.5px (u16), the enemy
+//  if they ever diverge. Coordinates quantize to 0.5px (u32), the enemy
 //  attack timer to 10ms (u8).
+//
+//  Coordinates are u32, not u16: the open world's arms are stacked by Y
+//  (server/game/dungeon.js) and the map is ~66000px tall, well past what
+//  0.5px-quantized u16 can hold (max 32767.5px) — anything deeper than
+//  that (roughly the second half of the 'top' arm, and all of 'bottom'/
+//  'right') used to have every x/y silently clamped to the same maxed-out
+//  value on the wire, so those entities rendered pinned to one spot
+//  (enemies looked frozen/"running in place") wherever they actually were
+//  on the server, while still hitting players normally since the server's
+//  own AI/attack logic never went through this codec at all.
 //
 //  Layout (little-endian):
 //   u8  flags            bit0 = packet has players array
@@ -17,7 +27,7 @@
 //   [players] u8 count (capped well under 255 by PLAYER_CAP, Room.js), per entry:
 //     u8  flags          bit0 = full
 //     u16 seq            player handle
-//     u16 x*2, u16 y*2
+//     u32 x*2, u32 y*2
 //     u8  facing         index into NC_FACING
 //     i32 hp
 //     u16 atkSeq
@@ -26,7 +36,7 @@
 //   [enemies] u16 count (a shared open world can hold hundreds), per entry:
 //     u8  flags          bit0 = full
 //     u16 idx            enemy handle
-//     u16 x*2, u16 y*2
+//     u32 x*2, u32 y*2
 //     i32 hp
 //     u8  aggro
 //     u8  atkAnimTimer*100
@@ -92,7 +102,9 @@ function _ncWStr(o, s) {
   return o + 1 + b.length;
 }
 
-function _ncQ16(v) { return Math.max(0, Math.min(65535, Math.round(v * 2))); }
+// 0.5px quantization for a coordinate, clamped to what a u32 field can hold —
+// see the file header for why this needs the full 32 bits, not 16.
+function _ncQPos(v) { return Math.max(0, Math.min(4294967295, Math.round(v * 2))); }
 
 // Caches the encoded ENEMIES segment across calls within the same tick —
 // Room.js broadcasts the identical nearEnemies snapshot to every connected
@@ -125,8 +137,8 @@ function encodeGameState(players, enemies, t, enemiesGen) {
       const full = p.username !== undefined;
       _ncDV.setUint8(o, full ? 1 : 0); o += 1;
       _ncDV.setUint16(o, p.seq & 0xffff, true); o += 2;
-      _ncDV.setUint16(o, _ncQ16(p.x), true); o += 2;
-      _ncDV.setUint16(o, _ncQ16(p.y), true); o += 2;
+      _ncDV.setUint32(o, _ncQPos(p.x), true); o += 4;
+      _ncDV.setUint32(o, _ncQPos(p.y), true); o += 4;
       _ncDV.setUint8(o, Math.max(0, NC_FACING.indexOf(p.facing))); o += 1;
       _ncDV.setInt32(o, p.hp | 0, true); o += 4;
       _ncDV.setUint16(o, (p.atkSeq || 0) & 0xffff, true); o += 2;
@@ -160,8 +172,8 @@ function encodeGameState(players, enemies, t, enemiesGen) {
       const full = e.eid !== undefined;
       _ncDV.setUint8(o, full ? 1 : 0); o += 1;
       _ncDV.setUint16(o, e.idx & 0xffff, true); o += 2;
-      _ncDV.setUint16(o, _ncQ16(e.x), true); o += 2;
-      _ncDV.setUint16(o, _ncQ16(e.y), true); o += 2;
+      _ncDV.setUint32(o, _ncQPos(e.x), true); o += 4;
+      _ncDV.setUint32(o, _ncQPos(e.y), true); o += 4;
       _ncDV.setInt32(o, e.hp | 0, true); o += 4;
       _ncDV.setUint8(o, e.aggro ? 1 : 0); o += 1;
       _ncDV.setUint8(o, Math.max(0, Math.min(255, Math.round((e.atkAnimTimer || 0) * 100)))); o += 1;
@@ -213,8 +225,8 @@ function decodeGameState(data) {
     for (let i = 0; i < n; i++) {
       const f = dv.getUint8(o); o += 1;
       const seq = dv.getUint16(o, true); o += 2;
-      const x = dv.getUint16(o, true) / 2; o += 2;
-      const y = dv.getUint16(o, true) / 2; o += 2;
+      const x = dv.getUint32(o, true) / 2; o += 4;
+      const y = dv.getUint32(o, true) / 2; o += 4;
       const facing = NC_FACING[dv.getUint8(o)] || 'front'; o += 1;
       const hp = dv.getInt32(o, true); o += 4;
       const atkSeq = dv.getUint16(o, true); o += 2;
@@ -244,8 +256,8 @@ function decodeGameState(data) {
   for (let i = 0; i < en; i++) {
     const f = dv.getUint8(o); o += 1;
     const idx = dv.getUint16(o, true); o += 2;
-    const x = dv.getUint16(o, true) / 2; o += 2;
-    const y = dv.getUint16(o, true) / 2; o += 2;
+    const x = dv.getUint32(o, true) / 2; o += 4;
+    const y = dv.getUint32(o, true) / 2; o += 4;
     const hp = dv.getInt32(o, true); o += 4;
     const aggro = !!dv.getUint8(o); o += 1;
     const atkAnimTimer = dv.getUint8(o) / 100; o += 1;
