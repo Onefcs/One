@@ -529,6 +529,7 @@ Object.assign(I18N_UI, {
   noItemsInCategoryHint: { ru: 'Нет предметов в этой категории', en: 'No items in this category', uk: 'Немає предметів у цій категорії', es: 'No hay objetos en esta categoría', tr: 'Bu kategoride eşya yok', pt: 'Nenhum item nesta categoria' },
   nobodySellingHint: { ru: 'Пока никто ничего не продаёт', en: 'Nobody is selling anything yet', uk: 'Поки ніхто нічого не продає', es: 'Nadie está vendiendo nada todavía', tr: 'Henüz kimse bir şey satmıyor', pt: 'Ninguém está vendendo nada ainda' },
   addListingBtn: { ru: '+ Выставить лот', en: '+ List Item', uk: '+ Виставити лот', es: '+ Publicar Artículo', tr: '+ İlan Ver', pt: '+ Anunciar Item' },
+  marketListVipRequiredToast: { ru: 'Продажа на маркете доступна с VIP 1', en: 'Selling on the market requires VIP 1', uk: 'Продаж на маркеті доступний з VIP 1', es: 'Vender en el mercado requiere VIP 1', tr: 'Pazarda satış VIP 1 gerektirir', pt: 'Vender no mercado requer VIP 1' },
   noActiveLotsHint: { ru: 'У вас нет активных лотов', en: "You don't have active listings", uk: 'У вас немає активних лотів', es: 'No tienes publicaciones activas', tr: 'Aktif ilanın yok', pt: 'Você não tem anúncios ativos' },
   historyEmptyHint: { ru: 'История пуста', en: 'History is empty', uk: 'Історія порожня', es: 'El historial está vacío', tr: 'Geçmiş boş', pt: 'O histórico está vazio' },
   cancelledLbl: { ru: 'Снято', en: 'Cancelled', uk: 'Знято', es: 'Cancelado', tr: 'Kaldırıldı', pt: 'Cancelado' },

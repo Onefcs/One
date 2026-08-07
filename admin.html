@@ -387,6 +387,9 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         <button id="mktab-active" onclick="loadMarket('active')" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">Активные</button>
         <button id="mktab-history" onclick="loadMarket('history')" style="flex:1;padding:8px;border:none;background:none;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer">История покупок</button>
       </div>
+      <div id="market-cancel-all-wrap" style="margin-bottom:12px">
+        <button class="btn btn-sm btn-red" onclick="cancelAllListings()">🗑 Снять все лоты</button>
+      </div>
       <div class="card">
         <div id="market-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
@@ -986,6 +989,8 @@ async function loadMarket(tab) {
       btnA.style.background = 'none'; btnA.style.color = 'var(--text2)';
     }
   }
+  const cancelAllWrap = document.getElementById('market-cancel-all-wrap');
+  if (cancelAllWrap) cancelAllWrap.style.display = (_mktab === 'active') ? 'block' : 'none';
   const el = document.getElementById('market-list');
   el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
   try {
@@ -1019,9 +1024,32 @@ async function loadMarket(tab) {
           <div style="color:var(--text2);font-size:10px">${fmtDate(l.createdAt)}</div>
         </div>
         <span class="mv">${fmt(l.price)} 💎</span>
+        <button class="btn btn-sm btn-red" style="margin-left:8px" onclick="cancelListing('${l._id}')">Снять</button>
       </div>`;
     }).join('');
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+}
+
+async function cancelListing(id) {
+  if (!confirm('Снять лот? Предмет вернётся владельцу.')) return;
+  try {
+    const r = await api('/admin/market/'+id+'/cancel', { method:'POST' });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Ошибка', false); return; }
+    toast(d.delivered ? 'Лот снят, предмет возвращён' : 'Лот снят, но у продавца полон инвентарь');
+    loadMarket();
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function cancelAllListings() {
+  if (!confirm('Снять ВСЕ активные лоты? Предметы вернутся владельцам.')) return;
+  try {
+    const r = await api('/admin/market/cancel-all', { method:'POST' });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Ошибка', false); return; }
+    toast(`Снято лотов: ${d.total} (возвращено: ${d.delivered}${d.failed ? ', не доставлено: '+d.failed : ''})`);
+    loadMarket();
+  } catch(e) { toast('Ошибка', false); }
 }
 
 function rarityColor(r) {

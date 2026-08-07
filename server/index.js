@@ -1690,6 +1690,80 @@ app.get('/admin/market', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Cancels one active listing and returns its item to the seller — same
+// mechanics as the player's own marketCancel (server/index.js), just
+// initiated by an admin and for a seller who is very likely offline. Checks
+// for room BEFORE flipping the listing's status, same "never destroy the
+// item" rule marketCancel follows, so a full inventory refuses the cancel
+// entirely rather than cancelling and losing the item.
+async function _adminCancelListing(listingId) {
+  const pre = await MarketListingModel.findOne({ _id: listingId, status: 'active' }).lean();
+  if (!pre) return { ok: false, error: 'Лот не найден или уже закрыт' };
+
+  const liveSocket = io.sockets.sockets.get(activeSessions.get(String(pre.sellerId)) || '');
+  const live = liveSocket && liveSocket.data && liveSocket.data._adminApplyItems;
+  let sellerDoc = null, sellerInv, sellerEq;
+  if (live) {
+    const base = liveSocket.data._adminReadItems();
+    sellerInv = base.inventory.slice();
+    sellerEq = base.equipment;
+  } else {
+    sellerDoc = await PlayerModel.findOne({ telegramId: pre.sellerId });
+    if (!sellerDoc) return { ok: false, error: 'Продавец не найден' };
+    const saved = sellerDoc.savedData || {};
+    sellerInv = Array.isArray(saved.inventory) ? saved.inventory.slice() : [];
+  }
+  if (!isStackableItem(pre.item) && sellerInv.length >= SERVER_INV_MAX) {
+    return { ok: false, error: 'У продавца полон инвентарь' };
+  }
+
+  const listing = await MarketListingModel.findOneAndUpdate(
+    { _id: listingId, status: 'active' },
+    { status: 'cancelled', soldAt: new Date() },
+    { new: false }, // pre-update doc, still carries the item
+  );
+  if (!listing) return { ok: false, error: 'Лот не найден или уже закрыт' };
+
+  const delivered = _invAdd(sellerInv, listing.item);
+  if (delivered) {
+    if (live) await liveSocket.data._adminApplyItems(sellerInv, sellerEq);
+    else await PlayerModel.updateOne({ _id: sellerDoc._id }, { $set: { 'savedData.inventory': sellerInv } });
+  }
+  io.to(`tg_${listing.sellerId}`).emit('marketCancelled', {
+    listingId: String(listing._id), item: listing.item, delivered,
+  });
+  logPlayer(listing.sellerId, listing.sellerUsername, 'admin_market_cancel',
+    { listingId: String(listing._id), item: listing.item && listing.item.id, delivered });
+  return { ok: true, delivered };
+}
+
+app.post('/admin/market/:id/cancel', adminAuth, async (req, res) => {
+  try {
+    const result = await _adminCancelListing(req.params.id);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Cancels every currently active listing, one at a time — same per-listing
+// safety (room check, item return) as the single-cancel endpoint above, just
+// looped. Not a hot path (an admin action, run rarely), so sequential is
+// fine and keeps each listing's DB round trip isolated from the others.
+app.post('/admin/market/cancel-all', adminAuth, async (req, res) => {
+  try {
+    const listings = await MarketListingModel.find({ status: 'active' }, '_id').lean();
+    let delivered = 0, failed = 0;
+    for (const l of listings) {
+      const result = await _adminCancelListing(l._id);
+      if (result.ok && result.delivered) delivered++;
+      else failed++;
+    }
+    // Each cancellation already logged itself individually (_adminCancelListing
+    // above) against its own seller — nothing aggregate to add here.
+    res.json({ ok: true, total: listings.length, delivered, failed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/admin/suspicious', adminAuth, async (req, res) => {
   try {
     const weekAgo = new Date(Date.now() - 7 * 86400000);
@@ -5230,6 +5304,9 @@ io.on('connection', socket => {
   // error that happens to land while a listing request is in flight.
   safeOn('marketList', async ({ item, price } = {}) => {
     if (!authed) return;
+    if ((socket.data.vipLevel || 0) < 1) {
+      return socket.emit('marketListError', { msg: 'Продажа на маркете доступна с VIP 1' });
+    }
     const now = Date.now();
     if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
       return socket.emit('marketListError', { msg: 'Слишком часто — подождите немного' });

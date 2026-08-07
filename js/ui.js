@@ -3901,6 +3901,12 @@ function marketCancelListing(listingId) {
 // ── Sell flow ───────────────────────────────────────────────
 function openMarketSellPicker() {
   if (!player) return;
+  // Display-only pre-check — the server enforces the real gate (marketList,
+  // server/index.js) and rejects with marketListError regardless of this.
+  if ((window._vipData?.level || 0) < 1) {
+    _marketToast(t('marketListVipRequiredToast'), 'err');
+    return;
+  }
   const existing = document.getElementById('market-sell-ov');
   if (existing) existing.remove();
   _marketSellPick = null;
