@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { generateOpenWorld, TILE, WALL, FLOOR } = require('./dungeon');
+const { generateOpenWorld, TILE, WALL } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
@@ -179,6 +179,12 @@ const IDLE_HEARTBEAT_CASTS = 20;
 // inside fearSpawnWave below, so they stay local.
 const FEAR_WAVE_MOBS = 20;  // monsters per wave
 const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
+// A wave spawns in a ring this far from the entry point (px) — see
+// fearSpawnWave. Kept well inside _closestTargetFor's own search radius
+// (max(aggroR*2.2, 300), aggroR tops out at 230 so that's ~506px) so every
+// monster in the wave is guaranteed to find the player on its first AI tick.
+const FEAR_SPAWN_RING_MIN = 80;
+const FEAR_SPAWN_RING_MAX = 280;
 // Species/stat lookup by eid, built once — same table server/game/dungeon.js
 // builds locally for the open world's own spawns (`_enemyByEid` there), needed
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
@@ -446,17 +452,24 @@ class Room {
     const fe = FLOOR_ENEMIES[armIdx];
     const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
     const maxLocalLvl = roomsInArm(armIdx) - 1;
-    const grid = this._dungeon.grid;
     let spawned = 0;
     for (let n = 0; n < FEAR_WAVE_MOBS; n++) {
       const pool = bandForLocalLevel(fe, localLvl).pool;
       const d = _FEAR_ENEMY_BY_EID.get(pool[Math.floor(Math.random() * pool.length)]);
       if (!d) continue;
+      // In a ring around the entry point (not scattered across the whole
+      // room the way buildArm's open-world spawnRoomEnemies does) — a wave
+      // is supposed to swarm the player the instant it appears, not sit in a
+      // far corner waiting to be walked into. FEAR_SPAWN_RING_MAX is well
+      // inside _closestTargetFor's own search radius (aggroR*2.2, ~500px),
+      // so every monster in the wave is guaranteed to actually find the
+      // player on its very first AI tick.
       let ex = room.entryX, ey = room.entryY;
       for (let attempt = 0; attempt < 40; attempt++) {
-        const gx = room.x0 + 1 + Math.floor(Math.random() * Math.max(1, room.size - 2));
-        const gy = room.y0 + 1 + Math.floor(Math.random() * Math.max(1, room.size - 2));
-        if (grid[gy] && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+        const ang = Math.random() * Math.PI * 2;
+        const ring = FEAR_SPAWN_RING_MIN + Math.random() * (FEAR_SPAWN_RING_MAX - FEAR_SPAWN_RING_MIN);
+        const tx = room.entryX + Math.cos(ang) * ring, ty = room.entryY + Math.sin(ang) * ring;
+        if (!this._isWall(tx, ty)) { ex = tx; ey = ty; break; }
       }
       const stats = monsterStatsAtLevel(lvl, d.eType);
       // Same halving buildArm's spawnRoomEnemies applies to every regular
@@ -473,7 +486,10 @@ class Room {
         atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
         xp: xpAtLevel(lvl) * FEAR_XP_MULT, gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + Math.random(), aggro: false, aggroR: 175 + Math.random() * 55,
+        // Pre-aggroed straight out of the spawn (unlike every other monster
+        // in the game, which only wakes up once a player crosses its aggroR)
+        // — waves are meant to charge in immediately, not wait to be pulled.
+        atkTimer: 1 + Math.random(), aggro: true, aggroR: 175 + Math.random() * 55,
       };
       this.enemies.push(e);
       this._enemyMap.set(e.id, e);
