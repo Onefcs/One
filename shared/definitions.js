@@ -375,7 +375,13 @@ const QUEST_DEF = [
   { id:'f1q12', floor:1, title:'Мясник',              desc:'Убей 100 Бес воин',          type:'kill',         enemies:['Бес воин'],         count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q13', floor:1, title:'Берсерк',             desc:'Убей 100 Бес страж',         type:'kill',         enemies:['Бес страж'],        count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q14', floor:1, title:'В гильдию!',          desc:'Вступи в гильдию',           type:'join_guild',                                 reward:{ xp:500,  gold:250 } },
-  { id:'f1q9',  floor:1, title:'Изгоняющий бесов',    desc:'Убей Босс бесов',            type:'kill',         enemies:['Босс бесов'],       count:1,   reward:{ xp:300,  gold:150 } },
+  // Sits right before the "go to the top corridor" quest, and the top arm's
+  // own gate needs level 20 anyway (ARM_LEVEL_REQ.top) — so this milestone
+  // lines up with what the player has to reach to continue regardless.
+  // Kept at this array position and under its original id: questIdx is a
+  // POSITIONAL index into this table, so moving or removing an entry would
+  // silently shift every player already past it onto a different quest.
+  { id:'f1q9',  floor:1, title:'Мастер',              desc:'Достигни 20 уровня',         type:'level',        level:20,                     reward:{ xp:300,  gold:150 } },
   { id:'f1q15', floor:1, title:'Следующий уровень',   desc:'Дойди до верхнего коридора', type:'goto_floor',   targetFloor:2,                reward:{ xp:600,  gold:300, items:_BUFF_POTION_IDS } },
 
   // ── Верхний коридор · Гнилые топи (квесты 16-30) · награда ×2 ──
