@@ -1682,18 +1682,32 @@ app.post('/admin/market/:id/cancel', adminAuth, async (req, res) => {
 // safety (room check, item return) as the single-cancel endpoint above, just
 // looped. Not a hot path (an admin action, run rarely), so sequential is
 // fine and keeps each listing's DB round trip isolated from the others.
+// Each iteration is caught on its own: one listing throwing (a malformed
+// item, a lookup failure) used to abort the whole res.json below with a bare
+// 500, silently leaving every listing after it in the list still active with
+// no visible reason why. Now a bad one is just one more "failed" entry and
+// the rest still get processed.
 app.post('/admin/market/cancel-all', adminAuth, async (req, res) => {
   try {
     const listings = await MarketListingModel.find({ status: 'active' }, '_id').lean();
     let delivered = 0, failed = 0;
+    const errors = [];
     for (const l of listings) {
-      const result = await _adminCancelListing(l._id);
-      if (result.ok && result.delivered) delivered++;
-      else failed++;
+      try {
+        const result = await _adminCancelListing(l._id);
+        if (result.ok && result.delivered) delivered++;
+        else { failed++; errors.push({ id: String(l._id), error: result.error || 'Инвентарь полон' }); }
+      } catch (e) {
+        failed++;
+        errors.push({ id: String(l._id), error: e.message });
+        console.error('admin_market_cancel_all item failed:', l._id, e);
+      }
     }
-    // Each cancellation already logged itself individually (_adminCancelListing
-    // above) against its own seller — nothing aggregate to add here.
-    res.json({ ok: true, total: listings.length, delivered, failed });
+    // Each successful cancellation already logged itself individually
+    // (_adminCancelListing above) against its own seller — nothing aggregate
+    // to add here beyond the failures, capped so a bad batch can't bloat the
+    // response.
+    res.json({ ok: true, total: listings.length, delivered, failed, errors: errors.slice(0, 20) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

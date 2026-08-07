@@ -1047,7 +1047,13 @@ async function cancelAllListings() {
     const r = await api('/admin/market/cancel-all', { method:'POST' });
     const d = await r.json();
     if (!r.ok) { toast(d.error || 'Ошибка', false); return; }
-    toast(`Снято лотов: ${d.total} (возвращено: ${d.delivered}${d.failed ? ', не доставлено: '+d.failed : ''})`);
+    if (!d.failed) {
+      toast(`Снято лотов: ${d.total} (возвращено: ${d.delivered})`);
+    } else {
+      const reason = (d.errors && d.errors[0]) ? d.errors[0].error : '?';
+      toast(`Снято: ${d.delivered}/${d.total}, не удалось: ${d.failed} (${reason})`, false);
+      console.warn('cancel-all failures:', d.errors);
+    }
     loadMarket();
   } catch(e) { toast('Ошибка', false); }
 }
