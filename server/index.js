@@ -3546,6 +3546,16 @@ function _fearTrackKill(socketId, result) {
   if (!run || run.lane !== result.lane) return;
   const room = getRoom(1);
   if (!room) return;
+  // The run record is only trustworthy while the player is still actually
+  // standing in that hall. Several handlers unrelated to this event
+  // (race10Return/arena3Return/deathBattleReturn) call Room.deathBattleReturn
+  // unconditionally, which hands the hall back as a side effect — so a stale
+  // record here could otherwise be counting kills against a hall that now
+  // belongs to somebody else's run.
+  if (room.fearLaneOf(socketId) !== run.lane || room.fearOwnerOf(run.lane) !== socketId) {
+    _fear.delete(socketId);
+    return;
+  }
   const left = room.fearRegisterKill(result.lane);
   if (left > 0) return;
   if (run.wave >= FEAR_MAX_WAVE) { _fearFinish(socketId, true); return; }
@@ -3562,11 +3572,14 @@ function _fearFinish(socketId, cleared) {
   const room = getRoom(1);
   // deathBattleReturn releases the hall as part of the teleport home, but
   // ONLY while the player record still exists — it bails out early otherwise,
-  // which is exactly the case when this is reached from a disconnect. Release
-  // the hall off the run record (which always knows its lane) so a player
-  // dropping mid-run can never strand it as permanently occupied.
+  // which is exactly the case when this is reached from a disconnect. So the
+  // hall is also released off the run record, which always knows its lane —
+  // but only while it is still THIS socket's hall. Releasing it unconditionally
+  // would let a stale run record (see _fearTrackKill) wipe the wave of
+  // whoever had since been given that hall.
+  const ownedBefore = room ? room.fearOwnerOf(run.lane) === socketId : false;
   const spot = room ? room.deathBattleReturn(socketId) : null;
-  if (room) room.fearReleaseLane(run.lane);
+  if (room && ownedBefore) room.fearReleaseLane(run.lane);
   io.to(socketId).emit('fearFinished', { cleared, wave: run.wave, x: spot?.x, y: spot?.y });
 }
 

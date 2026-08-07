@@ -195,6 +195,10 @@ const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
 // wave visibly closes real distance before the first swing lands.
 const FEAR_SPAWN_RING_MIN = 140;
 const FEAR_SPAWN_RING_MAX = 190;
+// Aggro radius for a Fear wave — see the comment at the spawn site. Sized so
+// aggroR * 2.2 (the de-aggro/leash and target-search threshold) clears the
+// room's own diagonal (12 tiles ≈ 679px) with room to spare.
+const FEAR_AGGRO_R = 500;
 // Species/stat lookup by eid, built once — same table server/game/dungeon.js
 // builds locally for the open world's own spawns (`_enemyByEid` there), needed
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
@@ -512,6 +516,16 @@ class Room {
   // Fear wave at level 12 looks and hits exactly like an open-world level-12
   // room would.
   fearSpawnWave(lane, lvl) {
+    // Clear out the wave that just fell before laying down the next one.
+    // Fear monsters are exempt from the tick loop's 12s respawn (they must
+    // stay dead for fearRegisterKill's count to ever reach zero), so without
+    // this every corpse of the run stayed in this.enemies until the lane was
+    // released — 780 dead objects per full 39-wave run, times however many
+    // halls are busy, walked by the AI loop and the enemy-grid rebuild forty
+    // times a second on top of the ~7000 the world already has. That is a
+    // cost paid by every player on the server, not just the one in here.
+    // Their handles go back to the pool at the same time.
+    this._fearPurgeDead(lane);
     const room = this._dungeon.fear.lanes[lane];
     if (!room) return;
     const armIdx = armIndexForLevel(lvl);
@@ -555,7 +569,21 @@ class Room {
         // Pre-aggroed straight out of the spawn (unlike every other monster
         // in the game, which only wakes up once a player crosses its aggroR)
         // — waves are meant to charge in immediately, not wait to be pulled.
-        atkTimer: 1 + Math.random(), aggro: true, aggroR: 175 + Math.random() * 55,
+        //
+        // aggroR is deliberately far wider than the open world's 175-230, and
+        // it is what keeps the wave working AS a wave. Two separate rules key
+        // off aggroR * 2.2: the AI de-aggros and teleports an enemy back to
+        // its spawn past that distance, and _closestTargetFor won't even look
+        // for a target beyond it. At the open-world value that threshold
+        // (385-506px) is SHORTER than this room's own diagonal (~679px), so a
+        // player simply walking to the far corner made every monster spawned
+        // on the opposite side snap home and stand there — the leash exists to
+        // stop players dragging monsters across a corridor, and there is
+        // nowhere to drag anything in a sealed 12-tile room. FEAR_AGGRO_R puts
+        // that threshold (1100px) well outside the room, so the whole wave
+        // stays on the player wherever they go. The client runs the identical
+        // rule off this same field (js/game.js), so both sides agree.
+        atkTimer: 1 + Math.random(), aggro: true, aggroR: FEAR_AGGRO_R,
         // Every other runtime spawn (spawnEventBoss, spawnRaceBoss,
         // spawnPvpArenaBosses) sets this at push time — without it, every
         // monster in the wave shared the same `undefined` _idx, which drives
@@ -571,6 +599,43 @@ class Room {
       spawned++;
     }
     this._fearAlive.set(lane, spawned);
+  }
+
+  // Who currently owns this hall, or null. Lets server/index.js confirm that
+  // a run record still refers to the hall it thinks it does before acting on
+  // it — several unrelated handlers (race10Return, arena3Return, the death
+  // battle's own return) call deathBattleReturn unconditionally, and that
+  // releases a Fear hall as a side effect. Without this check a run record
+  // left behind by one of those could purge, or count kills against, whatever
+  // player had since been given that hall.
+  fearOwnerOf(lane) {
+    return this._fearOwner.get(lane) ?? null;
+  }
+
+  // The hall a player is currently inside, or null.
+  fearLaneOf(socketId) {
+    const p = this.players.get(socketId);
+    return p ? (p._fearLane ?? null) : null;
+  }
+
+  // Drops the corpses of a lane's finished wave. Split out from
+  // fearReleaseLane because that one also hands the hall back; this is the
+  // between-waves sweep. The client has already removed these itself off
+  // their enemyKilled events, so nothing needs to be told about it.
+  _fearPurgeDead(lane) {
+    let found = false;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.arm === 'fear' && e.lane === lane && e.hp <= 0) { found = true; break; }
+    }
+    if (!found) return;
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'fear' || e.lane !== lane || e.hp > 0) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      this._releaseIdx(e);
+      return false;
+    });
   }
 
   // Called by server/index.js right after a kill lands on a `fear`-tagged
