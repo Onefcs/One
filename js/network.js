@@ -1046,6 +1046,12 @@ function netConnect(onReady) {
     if (typeof onQuestClaimError === 'function') onQuestClaimError(msg);
   });
 
+  // The server's authoritative quest counter, pushed whenever it sees ours
+  // has drifted — see onQuestSync (js/quests.js).
+  socket.on('questSync', (data) => {
+    if (typeof onQuestSync === 'function') onQuestSync(data || {});
+  });
+
   socket.on('disconnect', () => {
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced

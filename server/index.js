@@ -5270,12 +5270,23 @@ io.on('connection', socket => {
       return socket.emit('questClaimError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
     const cur = Math.max(0, Math.floor(Number(_lastStats.questIdx)) || 0);
-    // The claim names the quest it means, so a save still in flight (the
-    // client advances its own questIdx immediately) can't make this grant the
-    // NEXT quest's reward by accident.
+    // The claim names the quest it means, so a save still in flight can't
+    // make this grant the NEXT quest's reward by accident.
+    //
+    // A mismatch is NOT necessarily an attempt at anything — the usual cause
+    // is the client never hearing the questClaimed that advanced this
+    // counter (a disconnect right after the grant, a reload mid-flight). The
+    // client then sits on the old index and re-sends it forever, and refusing
+    // without saying what the real index is left the player permanently
+    // unable to claim anything again. So the refusal carries the
+    // authoritative counter and the client catches up from it.
     const want = Math.floor(Number(idx));
     if (!Number.isFinite(want) || want !== cur) {
-      return socket.emit('questClaimError', { msg: 'Квест уже получен' });
+      socket.emit('questSync', { questIdx: cur, questKills: _lastStats.questKills || {} });
+      logPlayer(authed.telegramId, authed.username, 'quest_claim_desync', { sent: want, server: cur });
+      return socket.emit('questClaimError', {
+        msg: want < cur ? 'Награда уже получена — список обновлён' : 'Прогресс квестов обновлён — попробуйте снова',
+      });
     }
     const q = QUEST_DEF[cur];
     if (!q) return socket.emit('questClaimError', { msg: 'Квест не найден' });
@@ -6739,6 +6750,12 @@ io.on('connection', socket => {
         // questKills belongs to whichever quest is current, so it has to come
         // back with it rather than being carried over from the rewound one.
         clean.questKills = _lastStats.questKills || {};
+        // And the client has to be told, or it keeps its rewound counter and
+        // every claim from here on names a quest the server considers done —
+        // which is the same permanent dead end the claim handler guards
+        // against. Overwhelmingly this is an ordinary stale save rather than
+        // anything deliberate, so it is corrected, not punished.
+        socket.emit('questSync', { questIdx: _prevQ, questKills: clean.questKills });
       }
     }
 

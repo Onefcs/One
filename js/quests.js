@@ -69,15 +69,36 @@ function claimQuest() {
   if (!q || !isQuestComplete(q)) return;
   if (_questClaimPending) return;   // one claim in flight at a time
   _questClaimPending = true;
+  // Released on the server's answer, but never left latched if that answer
+  // is lost (a dropped connection mid-claim): a stuck flag would make the
+  // claim button silently do nothing for the rest of the session.
+  clearTimeout(_questClaimTimer);
+  _questClaimTimer = setTimeout(() => { _questClaimPending = false; updateQuestUI(); }, 8000);
   if (typeof netClaimQuest === 'function') netClaimQuest(player.questIdx);
 }
 
 let _questClaimPending = false;
+let _questClaimTimer = null;
+
+// The server's authoritative quest counter, sent whenever it notices ours
+// has drifted from it — normally because a questClaimed never arrived (a
+// disconnect right after the grant) and we have been re-claiming an index
+// the server already moved past ever since. Catching up here is what lets
+// the next claim actually work instead of failing forever.
+function onQuestSync({ questIdx, questKills } = {}) {
+  clearTimeout(_questClaimTimer);
+  _questClaimPending = false;
+  if (!player) return;
+  if (Number.isFinite(questIdx)) player.questIdx = questIdx;
+  if (questKills && typeof questKills === 'object') player.questKills = questKills;
+  updateQuestUI();
+}
 
 // Server confirmed the grant: the items are already in player.inventory via
 // the inventorySync that preceded this, so only the numbers are left. XP is
 // added flat because the server sent the exact figure it recorded.
 function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
+  clearTimeout(_questClaimTimer);
   _questClaimPending = false;
   if (!player) return;
   const q = QUEST_DEF[idx];
@@ -92,6 +113,7 @@ function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
 }
 
 function onQuestClaimError(msg) {
+  clearTimeout(_questClaimTimer);
   _questClaimPending = false;
   if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   updateQuestUI();
