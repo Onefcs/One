@@ -326,6 +326,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           <div class="action-grid">
             <button class="btn btn-sm btn-red" id="ban-btn" onclick="banPlayer()">Заблокировать</button>
             <button class="btn btn-sm btn-green" id="unban-btn" onclick="unbanPlayer()">Разблокировать</button>
+            <button class="btn btn-sm" onclick="resetFearAttempts()">Сбросить попытки «Страх»</button>
           </div>
         </div>
         <div class="card">
@@ -727,6 +728,15 @@ async function unbanPlayer() {
     await api('/admin/player/'+_currentPlayerId+'/unban', { method:'POST' });
     toast('Игрок разблокирован');
     openPlayer(_currentPlayerId);
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function resetFearAttempts() {
+  if (!_currentPlayerId) return;
+  try {
+    const r = await api('/admin/player/'+_currentPlayerId+'/reset-fear-attempts', { method:'POST' });
+    if (r.ok) toast('Попытки «Страх» сброшены');
+    else { const d=await r.json(); toast(d.error||'Ошибка', false); }
   } catch(e) { toast('Ошибка', false); }
 }
 

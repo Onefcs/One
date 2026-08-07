@@ -1345,6 +1345,34 @@ app.post('/admin/player/:tid/unban', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Wipes today's Страх (Fear) attempt counter for one player, back to the
+// full daily cap — same "unset the tracked record" trick _lockDailyAttempt's
+// own shape relies on: _dailyAttemptsLeft treats a missing/stale record as
+// "nothing spent today" (see server/index.js's _dailyAttemptsLeft), so this
+// doesn't need to know the current count at all, just clear it.
+app.post('/admin/player/:tid/reset-fear-attempts', adminAuth, async (req, res) => {
+  try {
+    const p = await PlayerModel.findOneAndUpdate(
+      { telegramId: req.params.tid },
+      { $unset: { 'savedData.fearAttempts': '' } },
+      { new: true },
+    );
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    logPlayer(p.telegramId, p.username, 'admin_reset_fear_attempts', { by: 'admin' });
+    // Live-refresh the Events panel for anyone with it open right now —
+    // otherwise they'd see the old attemptsLeft until their next fearSync
+    // (opening/reopening the panel).
+    const target = _socketForTelegramId(req.params.tid);
+    if (target) {
+      target.emit('fearState', {
+        maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
+        attemptsLeft: FEAR_ATTEMPTS, inRun: _fear.has(target.id), wave: _fear.get(target.id)?.wave || 0,
+      });
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
   try {
     // Validated before anything is added: an unparseable figure used to reach
