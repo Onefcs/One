@@ -500,6 +500,15 @@ class Room {
         // in the game, which only wakes up once a player crosses its aggroR)
         // — waves are meant to charge in immediately, not wait to be pulled.
         atkTimer: 1 + Math.random(), aggro: true, aggroR: 175 + Math.random() * 55,
+        // Every other runtime spawn (spawnEventBoss, spawnRaceBoss,
+        // spawnPvpArenaBosses) sets this at push time — without it, every
+        // monster in the wave shared the same `undefined` _idx, which drives
+        // BOTH the AI target-recheck stagger (_closestTargetFor's caller) AND
+        // the network stream's per-enemy refresh cadence (_pushEnemyEntry).
+        // With all 20 sharing one value they moved in synchronized lockstep
+        // instead of independently — this is what read as "frozen, then all
+        // jump together."
+        _idx: this.enemies.length,
       };
       this.enemies.push(e);
       this._enemyMap.set(e.id, e);
@@ -2392,10 +2401,19 @@ class Room {
   // party heal in server/index.js — the world is a single shared floor, so
   // "same floor" was never a real proximity check and a party member parked
   // anywhere on the map still collected a full share.
+  //
+  // Distance alone isn't enough once private instances exist: adjacent
+  // race10/Fear lanes sit only PARTY_SHARE_R-ish apart in world space (walls
+  // between them are what keeps a player from actually reaching their
+  // neighbour, not distance), so two party members in neighbouring — but
+  // otherwise fully isolated — lanes could still "share" kills through the
+  // wall. _playerLaneKey is the same identity _raceVisible/nearbyPlayerIds
+  // already gate visibility on; requiring it to match here closes that gap.
   arePlayersNear(socketIdA, socketIdB) {
     const a = this.players.get(socketIdA);
     const b = this.players.get(socketIdB);
     if (!a || !b) return false;
+    if (this._playerLaneKey(a) !== this._playerLaneKey(b)) return false;
     const dx = a.x - b.x, dy = a.y - b.y;
     return dx * dx + dy * dy <= PARTY_SHARE_R2;
   }

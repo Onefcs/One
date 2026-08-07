@@ -148,7 +148,7 @@ const RACE10_W  = RACE10_LANE_LEN + RACE10_BOSS_ROOM;
 // lane's entry point directly.
 const FEAR_LANES = 8;      // max concurrent Fear runs
 const FEAR_ROOM   = 12;    // room size (tiles) — tight enough that a wave doesn't feel spread thin
-const FEAR_GAP    = 6;     // wall padding between stacked lanes
+const FEAR_GAP    = 8;     // wall padding between stacked lanes
 const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
 const FEAR_X0 = ARENA_X0;
 const FEAR_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
