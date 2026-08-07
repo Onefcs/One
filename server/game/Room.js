@@ -185,8 +185,16 @@ const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
 // monster in the wave is guaranteed to find the player on its first AI tick,
 // and inside the FEAR_ROOM=12 room's own walls (dungeon.js) with a tile of
 // margin to spare (half-width 240px, minus the 1-tile border ≈ 200px).
-const FEAR_SPAWN_RING_MIN = 40;
-const FEAR_SPAWN_RING_MAX = 150;
+//
+// The floor (140) matters as much as the ceiling: the tick loop only ever
+// moves an aggro'd enemy while closestD > e.size + 14 (~30-46px depending on
+// species/level) — spawning any closer than that leaves it already standing
+// in melee range on frame one, with nothing to visibly walk across, which is
+// exactly what read as "they're just standing there" once the room shrank.
+// Starting the whole ring past that threshold means every monster in the
+// wave visibly closes real distance before the first swing lands.
+const FEAR_SPAWN_RING_MIN = 140;
+const FEAR_SPAWN_RING_MAX = 190;
 // Species/stat lookup by eid, built once — same table server/game/dungeon.js
 // builds locally for the open world's own spawns (`_enemyByEid` there), needed
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
