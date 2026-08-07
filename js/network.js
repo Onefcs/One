@@ -1895,6 +1895,10 @@ function netCraftGear(itemId) {
   if (socket?.connected) socket.emit('craftGear', { itemId });
 }
 
+function netEnhanceItem(id, enhance, stoneType, slot) {
+  if (socket?.connected) socket.emit('enhanceItem', { id, enhance, stoneType, slot: slot || null });
+}
+
 function netCraftClassGear(slot, rarity) {
   if (socket?.connected) socket.emit('craftClassGear', { slot, rarity });
 }
@@ -2425,6 +2429,18 @@ function _initPetCraftHandlers(s) {
   });
   s.on('craftClassGearError', ({ msg }) => {
     if (typeof onClassGearCraftError === 'function') onClassGearCraftError(msg);
+  });
+
+  // Enhance / заточка. inventorySync (the plain socket.on above) always lands
+  // first on this same socket and already applied the mutated inventory/
+  // equipment; this only carries the user-facing outcome (see onEnhanceResult,
+  // js/ui.js) so the modal can show the right toast and reopen at the item's
+  // new state.
+  s.on('enhanceResult', (data) => {
+    if (typeof onEnhanceResult === 'function') onEnhanceResult(data);
+  });
+  s.on('enhanceError', ({ msg }) => {
+    if (typeof onEnhanceError === 'function') onEnhanceError(msg);
   });
 
   // Upgrade reset. The server has already charged the Liberty and cleared its

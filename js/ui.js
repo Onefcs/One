@@ -2534,42 +2534,21 @@ function openLootBox(idx) {
   updateInvUI();
 }
 
+// Enhancing used to be resolved entirely here (roll the chance, spend the
+// stone, bump .enhance) and only reach the server on the next autosave —
+// which is exactly how an item could show up already at max enhance without
+// ever touching a stone. The roll now happens server-side (see 'enhanceItem'
+// in server/index.js); this just asks and waits for onEnhanceResult to apply
+// whatever the server actually did.
 function enhanceItem(idx, stoneType) {
   if (!player) return;
   const it = player.inventory[idx];
   if (!it) return;
   const enh = it.enhance || 0;
   if (enh >= _ENH_MAX) return;
-
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
-  let stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
-  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
-
-  const stoneItem = player.inventory[stoneIdx];
-  if ((stoneItem.qty || 1) <= 1) {
-    player.inventory.splice(stoneIdx, 1);
-    if (stoneIdx < idx) idx--;
-  } else {
-    stoneItem.qty--;
-  }
-
-  const success = Math.random() * 100 < _enhSuccessRate(enh);
-  if (success) {
-    it.enhance = enh + 1;
-    recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: it.enhance }), '#e69419');
-    openInvItemModal(idx);
-  } else if (stoneType === 'bless') {
-    recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, t('enhFailedToast'), '#f17e8b');
-    openInvItemModal(idx);
-  } else {
-    player.inventory.splice(idx, 1);
-    recompute(); netSaveProgress();
-    closeInvItemModal();
-    dmgNum(player.x, player.y - 30, t('itemBurnedToast'), '#eb4e61');
-  }
-  updateInvUI();
+  if (_enhStoneQty(stoneId) <= 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
+  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, null);
 }
 
 function openEqItemModal(slot) {
@@ -2644,38 +2623,45 @@ function unequipFromModal(slot) {
   unequipItem(slot);
 }
 
+// Same server round-trip as enhanceItem above, targeting an equipped slot
+// instead of an inventory index.
 function enhanceEqItem(slot, stoneType) {
   if (!player) return;
   const it = player.equipment[slot];
   if (!it) return;
   const enh = it.enhance || 0;
   if (enh >= _ENH_MAX) return;
-
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
-  const stoneIdx = player.inventory.findIndex(s => s.id === stoneId && (s.qty || 1) > 0);
-  if (stoneIdx < 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
+  if (_enhStoneQty(stoneId) <= 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
+  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, slot);
+}
 
-  const stoneItem = player.inventory[stoneIdx];
-  if ((stoneItem.qty || 1) <= 1) { player.inventory.splice(stoneIdx, 1); }
-  else { stoneItem.qty--; }
-
-  const success = Math.random() * 100 < _enhSuccessRate(enh);
-  if (success) {
-    it.enhance = enh + 1;
-    recompute(); netSaveProgress();
-    dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: it.enhance }), '#e69419');
-    openEqItemModal(slot);
-  } else if (stoneType === 'bless') {
-    recompute(); netSaveProgress();
+// Applies whatever server/index.js's 'enhanceItem' handler actually rolled.
+// inventorySync (js/network.js) lands first on the same socket and already
+// wrote the new inventory/equipment into `player` — this only handles the
+// user-facing side: toast, and reopening the item modal at its new state (or
+// closing it, on a burn).
+function onEnhanceResult({ id, slot, outcome, newEnhance } = {}) {
+  if (!player) return;
+  if (outcome === 'success') {
+    dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: newEnhance }), '#e69419');
+  } else if (outcome === 'fail') {
     dmgNum(player.x, player.y - 30, t('enhFailedToast'), '#f17e8b');
-    openEqItemModal(slot);
   } else {
-    player.equipment[slot] = null;
-    recompute(); netSaveProgress();
-    closeInvItemModal();
     dmgNum(player.x, player.y - 30, t('itemBurnedToast'), '#eb4e61');
   }
-  updateInvUI();
+  if (outcome === 'burned') {
+    closeInvItemModal();
+  } else if (slot) {
+    openEqItemModal(slot);
+  } else {
+    const idx = player.inventory.findIndex(i => i && i.id === id && (i.enhance || 0) === newEnhance);
+    if (idx >= 0) openInvItemModal(idx);
+  }
+}
+
+function onEnhanceError(msg) {
+  _marketToast(msg || t('purchaseErrorLbl'), 'err');
 }
 
 // ─────────────────────────────────────────────────────────

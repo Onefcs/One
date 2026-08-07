@@ -3673,7 +3673,7 @@ io.on('connection', socket => {
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear',
+    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
@@ -4704,6 +4704,85 @@ io.on('connection', socket => {
       socket.emit('craftGearError', { msg: 'Ошибка сервера' });
     }
     });
+  });
+
+  // ── Enhance / заточка (inventory item modal + equipped item modal) ─────────
+  // Used to be entirely client-computed (js/ui.js's enhanceItem/enhanceEqItem
+  // rolled the success chance themselves and only ever reached the server via
+  // the next saveProgress blob) — which is exactly the "items appearing out
+  // of nowhere" hole: _canonSavedItem (above) trusts any enhance 0..
+  // ENHANCE_MAX on a valid item id, so a modified client could just claim any
+  // item already at max enhance without ever spending a stone. The roll, the
+  // stone spend and the mutation all happen here now; the client only shows
+  // what this event reports.
+  //
+  // No DB round trip happens before the mutation (stones are paid for out of
+  // the in-memory _lastStats.inventory, not a server-tracked balance), so
+  // unlike the Liberty-spending crafts above this handler never awaits — it
+  // runs start to finish in one tick, which rules out the same-account double
+  // -submit race those needed _withEconLock for.
+  //
+  // Target identity: an equipped slot is unambiguous, but a non-stackable
+  // inventory item has no id of its own — id+current-enhance is the same
+  // matching scheme craftGear already uses for its minEnhance-gated mats
+  // (two copies of the same weapon at the same enhance are interchangeable,
+  // so matching the first one found is correct either way).
+  safeOn('enhanceItem', ({ id, enhance, stoneType, slot } = {}) => {
+    if (!authed) return;
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      return socket.emit('enhanceError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    const inv = _lastStats.inventory;
+    const curEnh = Math.max(0, Math.floor(Number(enhance)) || 0);
+    if (curEnh >= ENHANCE_MAX) return socket.emit('enhanceError', { msg: 'Уже максимальная заточка' });
+
+    let target, targetIdx = -1;
+    if (slot) {
+      const eq = _lastStats.equipment || {};
+      target = eq[slot];
+      if (!target || target.id !== id || (target.enhance || 0) !== curEnh) {
+        return socket.emit('enhanceError', { msg: 'Предмет не найден' });
+      }
+    } else {
+      targetIdx = inv.findIndex(i => i && i.id === id && (i.enhance || 0) === curEnh);
+      if (targetIdx < 0) return socket.emit('enhanceError', { msg: 'Предмет не найден' });
+      target = inv[targetIdx];
+    }
+    if (!ENHANCEABLE_SLOTS.has(target.slot) || target.slot === 'pet') {
+      return socket.emit('enhanceError', { msg: 'Этот предмет нельзя точить' });
+    }
+
+    const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
+    const stoneIdx = inv.findIndex(s => s && s.id === stoneId && (s.qty || 1) > 0);
+    if (stoneIdx < 0) return socket.emit('enhanceError', { msg: 'Нет камня заточки' });
+
+    const stoneItem = inv[stoneIdx];
+    if ((stoneItem.qty || 1) <= 1) {
+      inv.splice(stoneIdx, 1);
+      if (!slot && stoneIdx < targetIdx) targetIdx--;
+    } else {
+      stoneItem.qty--;
+    }
+
+    // Mirrors _enhSuccessRate (js/ui.js) exactly.
+    const rate = Math.max(10, 80 - curEnh * 10);
+    const success = Math.random() * 100 < rate;
+    let outcome, newEnhance = curEnh;
+    if (success) {
+      target.enhance = curEnh + 1;
+      newEnhance = curEnh + 1;
+      outcome = 'success';
+    } else if (stoneType === 'bless') {
+      outcome = 'fail'; // safe stone: item survives a miss
+    } else {
+      outcome = 'burned'; // normal stone: item is destroyed on a miss
+      if (slot) _lastStats.equipment[slot] = null;
+      else inv.splice(targetIdx, 1);
+    }
+
+    _commitServerItems(inv, slot ? _lastStats.equipment : null, 'enhance',
+      { id, stoneType, outcome, fromEnhance: curEnh });
+    socket.emit('enhanceResult', { id, slot: slot || null, outcome, newEnhance });
   });
 
   // ── Pet crafting (Кузнец → Материалы → Питомцы) ────────────────────────────
