@@ -3808,46 +3808,6 @@ io.on('connection', socket => {
   let currentRoom = null;
   let currentFloor = 1;
   let _lastStats = null;
-  // ── Gold ceiling ──────────────────────────────────────────────────────────
-  // Gold is the one progression number still added up by the client (kill
-  // gold arrives as a server-computed figure the client then applies its own
-  // clan%/potion multipliers to, so the server cannot simply own the total
-  // the way it owns GRAM/Liberty). Left unchecked that made saveProgress a
-  // gold faucet in exactly the way it was an item faucet.
-  //
-  // So instead of trusting or re-deriving it, bound it: this is the highest
-  // total the player could legitimately be holding. It starts at whatever
-  // was loaded, rises ONLY when the server itself authorises gold, and
-  // follows the real balance back down as it is spent. A save above the
-  // ceiling is clamped to it.
-  //
-  // null = not established yet (nothing loaded), which disables the check
-  // rather than pinning the player to 0.
-  let _goldCeiling = null;
-  // Kill gold is credited at the pre-multiplier figure the server computed,
-  // so the ceiling has to leave room for what the client legitimately adds
-  // on top: the clan gold bonus (max +20%, CLAN_LEVELS) and the x2 gold
-  // potion. 2.4x is the true worst case; 3 leaves margin so ordinary play
-  // never brushes the limit, while still bounding minting to a small
-  // multiple of gold actually earned rather than anything at all.
-  const _GOLD_MULT_HEADROOM = 3;
-  function _creditGold(amount) {
-    const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) return;
-    if (_goldCeiling === null) return;
-    _goldCeiling += n * _GOLD_MULT_HEADROOM;
-  }
-  // For the paths that add gold to _lastStats directly (shop packs, VIP
-  // rewards, quest rewards, admin grants): the balance itself is already
-  // authoritative there, so the ceiling just has to catch up to it.
-  function _syncGoldCeiling() {
-    if (_lastStats && Number.isFinite(Number(_lastStats.gold))) {
-      const g = Number(_lastStats.gold);
-      if (_goldCeiling === null || g > _goldCeiling) _goldCeiling = g;
-    }
-  }
-  socket.data._creditGold = _creditGold;
-  socket.data._syncGoldCeiling = _syncGoldCeiling;
   let _autoSaveInterval = null;
   let _myClanName = null;
   let _myClanIcon = null;
@@ -4184,7 +4144,6 @@ io.on('connection', socket => {
     if (!authed || !Number.isFinite(amount) || amount === 0) return;
     if (!_lastStats) _lastStats = {};
     _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + amount);
-    _syncGoldCeiling();
     await _persistSavedFields(authed, { gold: _lastStats.gold });
     logPlayer(authed.telegramId, authed.username, 'admin_give_gold_live',
       { amount, balance: _lastStats.gold });
@@ -4661,8 +4620,7 @@ io.on('connection', socket => {
 
       if (_lastStats) {
         _lastStats.gold = saved.gold;
-        _syncGoldCeiling();
-        if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
+            if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
       }
       // Bumps the revision, so a client autosave queued before this purchase
       // can no longer land afterwards and wipe the items out.
@@ -5282,8 +5240,7 @@ io.on('connection', socket => {
         inv.splice(i, 1);
         if (!_lastStats) _lastStats = {};
         _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + SELL_COMMON_PRICE);
-        _syncGoldCeiling();
-        _commitServerItems(inv, null, 'sell_common', { itemId: it.id, gold: SELL_COMMON_PRICE });
+            _commitServerItems(inv, null, 'sell_common', { itemId: it.id, gold: SELL_COMMON_PRICE });
         await _persistSavedFields(authed, { gold: _lastStats.gold });
         socket.emit('itemSold', { gold: SELL_COMMON_PRICE, newGold: _lastStats.gold });
       } catch (err) {
@@ -5714,7 +5671,7 @@ io.on('connection', socket => {
       const _vipSet = { 'savedData.inventory': inv, 'savedData.vipPending': [] };
       if (goldReward > 0) _vipSet['savedData.gold'] = saved.gold;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _vipSet });
-      if (_lastStats && goldReward > 0) { _lastStats.gold = saved.gold; _syncGoldCeiling(); }
+      if (_lastStats && goldReward > 0) _lastStats.gold = saved.gold;
       _commitServerItems(inv, null, 'vip_rewards', { levels: pending, gold: goldReward });
       socket.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
     } catch (err) {
@@ -5775,18 +5732,8 @@ io.on('connection', socket => {
         console.error(`[selectChar] Rejected minted items for telegramId=${authed.telegramId}` +
           ` (${_over.key}: had ${_over.had}, claimed ${_over.sent})`);
       }
-      const _dbGold = Number(_dbBase && _dbBase.gold) || 0;
-      if ((Number(effectiveSaved.gold) || 0) > _dbGold) {
-        logPlayer(authed.telegramId, authed.username, 'select_gold_forged', {
-          sent: Number(effectiveSaved.gold) || 0, had: _dbGold,
-        });
-        effectiveSaved.gold = _dbGold;
-      }
       _lastStats = effectiveSaved;
     }
-    // Anchor the gold ceiling to what was actually loaded — everything the
-    // player legitimately earns from here is credited on top of this.
-    _syncGoldCeiling();
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
     PlayerModel.updateOne(
@@ -5993,9 +5940,6 @@ io.on('connection', socket => {
         const xpShare   = Math.max(1, Math.round(result.xp / totalMembers));
         const goldShare = Math.round(result.gold / totalMembers);
 
-        // Authorised gold, for the anti-minting ceiling — credited to each
-        // recipient's OWN session, since that is where their save is checked.
-        _creditGold(goldShare);
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
@@ -6004,7 +5948,6 @@ io.on('connection', socket => {
           nexum: nexumDrop, gram: gramDrop,
         });
         memberIds.forEach(mid => {
-          io.sockets.sockets.get(mid)?.data?._creditGold?.(goldShare);
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
@@ -6019,7 +5962,6 @@ io.on('connection', socket => {
           [socket.id, ...memberIds]);
       } else {
         // No party: attacker gets full reward and loot
-        _creditGold(result.gold);
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
@@ -6100,8 +6042,6 @@ io.on('connection', socket => {
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
-        // See the same credit in the basic-attack handler above.
-        _creditGold(goldShare);
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
@@ -6110,7 +6050,6 @@ io.on('connection', socket => {
           nexum: nexumDrop2, gram: gramDrop2,
         });
         memberIds.forEach(mid => {
-          io.sockets.sockets.get(mid)?.data?._creditGold?.(goldShare);
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
@@ -6121,7 +6060,6 @@ io.on('connection', socket => {
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
       } else {
-        _creditGold(result.gold);
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
@@ -6696,23 +6634,6 @@ io.on('connection', socket => {
       });
     }
 
-    // Gold ceiling — see _goldCeiling. Spending lowers it (so the next
-    // legitimate earn is measured from where the player actually is), while
-    // anything above it is minted and gets clamped away.
-    if (_goldCeiling !== null) {
-      const _g = Number(clean.gold) || 0;
-      if (_g > _goldCeiling) {
-        logPlayer(authed.telegramId, authed.username, 'save_gold_forged', {
-          sent: _g, ceiling: Math.floor(_goldCeiling), had: (_lastStats && _lastStats.gold) || 0,
-        });
-        console.error(`[saveProgress] Clamped minted gold for telegramId=${authed.telegramId}` +
-          ` (save claimed ${_g}, ceiling ${Math.floor(_goldCeiling)})`);
-        clean.gold = Math.floor(_goldCeiling);
-      } else {
-        _goldCeiling = _g;
-      }
-    }
-
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
       logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {
         hadLvl: _lastStats.lvl, hadGold: _lastStats.gold,
@@ -7133,7 +7054,7 @@ io.on('connection', socket => {
       }
       if (_lastStats) {
         _lastStats.specialQuestsDone = newDone;
-        if (quest.reward.gold) { _lastStats.gold = (authed.savedData.gold || 0); _syncGoldCeiling(); }
+        if (quest.reward.gold) _lastStats.gold = (authed.savedData.gold || 0);
         if (quest.reward.xp)    _lastStats.xp           = (authed.savedData.xp           || 0);
       }
       logPlayer(authed.telegramId, authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });
