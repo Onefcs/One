@@ -2507,6 +2507,10 @@ function openBoxModal(idx) {
   document.getElementById('app').appendChild(ov);
 }
 
+// Settled server-side ('openLootBox', server/index.js) — used to roll both
+// the rarity and the resulting item right here, reaching the server only via
+// the next saveProgress. The server owns both rolls and the grant now; this
+// just asks and waits for onBoxOpened to report what it got.
 function openLootBox(idx) {
   if (!player) return;
   const it = player.inventory[idx];
@@ -2514,24 +2518,17 @@ function openLootBox(idx) {
   const boxDef = BOX_DEF.find(b => b.id === it.id);
   if (!boxDef) return;
   if (!invHasSpace()) { dmgNum(player.x, player.y - 30, t('invFull'), '#f17e8b'); return; }
-
-  if ((it.qty || 1) <= 1) player.inventory.splice(idx, 1);
-  else it.qty--;
-
-  const r = Math.random();
-  let acc = 0, resultRarity = boxDef.odds[boxDef.odds.length - 1].rarity;
-  for (const o of boxDef.odds) {
-    acc += o.chance;
-    if (r < acc) { resultRarity = o.rarity; break; }
-  }
-  const cands = _boxCandidates(resultRarity);
-  const wonItem = cands[Math.floor(Math.random() * cands.length)];
-  if (wonItem && addToInventory({ ...wonItem })) {
-    dmgNum(player.x, player.y - 30, '+ ' + wonItem.name, RARITY_COLOR[wonItem.rarity] || '#c4a276');
-  }
-  netSaveProgress();
+  if (typeof netOpenLootBox === 'function') netOpenLootBox(it.id);
   closeInvItemModal();
-  updateInvUI();
+}
+
+function onBoxOpened({ item } = {}) {
+  if (!player || !item) return;
+  dmgNum(player.x, player.y - 30, '+ ' + item.name, RARITY_COLOR[item.rarity] || '#c4a276');
+}
+
+function onOpenBoxError(msg) {
+  _marketToast(msg || t('purchaseErrorLbl'), 'err');
 }
 
 // Enhancing used to be resolved entirely here (roll the chance, spend the

@@ -1907,6 +1907,10 @@ function netCraftMatUpgrade(from) {
   if (socket?.connected) socket.emit('craftMatUpgrade', { from });
 }
 
+function netOpenLootBox(id) {
+  if (socket?.connected) socket.emit('openLootBox', { id });
+}
+
 function netCraftClassGear(slot, rarity) {
   if (socket?.connected) socket.emit('craftClassGear', { slot, rarity });
 }
@@ -2466,6 +2470,15 @@ function _initPetCraftHandlers(s) {
   });
   s.on('craftMatUpgradeError', ({ msg }) => {
     if (typeof onMatUpgradeError === 'function') onMatUpgradeError(msg);
+  });
+
+  // Loot box opening — same "inventorySync already landed" shape as the
+  // crafting events above; this only carries which item (if any) it won.
+  s.on('boxOpened', (data) => {
+    if (typeof onBoxOpened === 'function') onBoxOpened(data);
+  });
+  s.on('openBoxError', ({ msg }) => {
+    if (typeof onOpenBoxError === 'function') onOpenBoxError(msg);
   });
 
   // Upgrade reset. The server has already charged the Liberty and cleared its

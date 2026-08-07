@@ -3675,7 +3675,7 @@ io.on('connection', socket => {
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
-    'craftBox', 'craftMatUpgrade',
+    'craftBox', 'craftMatUpgrade', 'openLootBox',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
@@ -4876,6 +4876,50 @@ io.on('connection', socket => {
     if (success) _invAdd(inv, { ...toMat, qty: 1 });
     _commitServerItems(inv, null, 'mat_upgrade', { from: rec.from, to: rec.to, success });
     socket.emit('matUpgraded', { from: rec.from, to: rec.to, success });
+  });
+
+  // ── Loot box opening (inventory item modal → "Открыть") ─────────────────────
+  // Rolls a rarity off the box's own odds table, then a random gear item
+  // within that rarity — the exact two-step roll js/ui.js's openLootBox used
+  // to do itself (weighted rarity, then uniform pick among that rarity's
+  // craft-only gear pool), reaching the server only via the next saveProgress
+  // blob. The server now owns both rolls and the grant; the pool mirrors
+  // _boxCandidates (js/ui.js) exactly — no cloak/artifact (craft-only), and a
+  // weapon only comes up for the buyer's own class.
+  safeOn('openLootBox', ({ id } = {}) => {
+    if (!authed) return;
+    const boxDef = BOX_DEF.find(b => b.id === id);
+    if (!boxDef) return socket.emit('openBoxError', { msg: 'Неизвестный бокс' });
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      return socket.emit('openBoxError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    const inv = _lastStats.inventory;
+    const boxIdx = inv.findIndex(i => i && i.id === id);
+    if (boxIdx < 0) return socket.emit('openBoxError', { msg: 'Бокс не найден' });
+
+    // The box is spent whether or not the pool below turns out to have
+    // anything in it — same "spent regardless of outcome" rule every other
+    // recipe here follows.
+    const boxItem = inv[boxIdx];
+    if ((boxItem.qty || 1) <= 1) inv.splice(boxIdx, 1);
+    else boxItem.qty--;
+
+    const r = Math.random();
+    let acc = 0, resultRarity = boxDef.odds[boxDef.odds.length - 1].rarity;
+    for (const o of boxDef.odds) {
+      acc += o.chance;
+      if (r < acc) { resultRarity = o.rarity; break; }
+    }
+
+    const charClass = _lastStats.type || 'lev';
+    const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+    const cands = ITEM_DEF.filter(d => d.rarity === resultRarity && gearSlots.includes(d.slot) &&
+      (d.slot !== 'weapon' || (d.forClass && d.forClass.includes(charClass))));
+    const wonItem = cands.length ? cands[Math.floor(Math.random() * cands.length)] : null;
+    const granted = wonItem ? _invAdd(inv, { ...wonItem }) : false;
+
+    _commitServerItems(inv, null, 'box_open', { boxId: id, wonItemId: wonItem ? wonItem.id : null, granted });
+    socket.emit('boxOpened', { boxId: id, item: granted ? wonItem : null });
   });
 
   // ── Pet crafting (Кузнец → Материалы → Питомцы) ────────────────────────────
