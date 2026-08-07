@@ -1019,6 +1019,22 @@ function netConnect(onReady) {
     if (typeof updateInvUI === 'function') updateInvUI();
   });
 
+  // Merchant sale confirmed — the item is already gone via the
+  // inventorySync that precedes this; only the balance is left to apply,
+  // and it comes as the server's authoritative total rather than a delta.
+  socket.on('itemSold', ({ gold, newGold } = {}) => {
+    if (!player) return;
+    if (Number.isFinite(newGold)) player.gold = newGold;
+    if (gold && typeof dmgNum === 'function') {
+      dmgNum(player.x, player.y - 36, '+' + gold + 'g', '#ff0');
+    }
+    if (typeof updateInvUI === 'function') updateInvUI();
+  });
+
+  socket.on('sellItemError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
   socket.on('disconnect', () => {
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced
@@ -2397,6 +2413,13 @@ function netDeathBattleSync()       { if (socket?.connected) socket.emit('deathB
 
 function netPickupWorldDrop(id) {
   if (socket?.connected) socket.emit('pickupWorldDrop', { id });
+}
+
+// Sell a common item to the merchant. The server removes it and credits the
+// gold (see the sellItem handler) — nothing is applied locally, the result
+// arrives as inventorySync + itemSold.
+function netSellItem(idx) {
+  if (socket?.connected) socket.emit('sellItem', { idx });
 }
 
 // Incoming GRAM events

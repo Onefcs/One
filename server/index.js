@@ -2037,6 +2037,53 @@ function _canonSavedItem(raw) {
   return item;
 }
 
+// ── Anti-duplication: the item census ───────────────────────────────────────
+// _canonSavedItem above rebuilds an item from the catalog, so a save can only
+// ever carry REAL items — but it says nothing about whether the player was
+// ever entitled to them, and saveProgress took the resulting array as the new
+// truth. That is the hole every "items out of nowhere" report comes back to:
+// a modified client appends a legendary at +15, echoes the invRev the server
+// itself just told it, and the save is accepted. invRev is an ordering token
+// (it tells a save composed before a grant from one composed after), never an
+// authorisation one — the client is the one that supplies it.
+//
+// What closes it is an invariant rather than another per-feature check: every
+// legitimate CLIENT-side operation on items either moves one (equip/unequip,
+// inventory <-> storage) or destroys one (sell, discard, consume a potion/
+// book/key). Not one of them creates an item or raises an enhance level —
+// every path that does is already server-side and goes through
+// _commitServerItems. So across inventory + equipment + storage combined, a
+// client save may only ever SHRINK. Anything that grew was minted.
+//
+// The key is what makes "+15 copy of a +0 sword" a different thing to own
+// rather than the same sword with a bigger number: enhance is part of the
+// identity for gear, while stackables collapse to one key counted by qty.
+function _itemCensus(stats) {
+  const out = new Map();
+  const add = raw => {
+    const it = _canonSavedItem(raw);
+    if (!it) return;
+    const stack = isStackableItem(it);
+    const key = stack ? it.id : `${it.id}@${it.enhance || 0}`;
+    out.set(key, (out.get(key) || 0) + (stack ? (it.qty || 1) : 1));
+  };
+  if (Array.isArray(stats?.inventory)) stats.inventory.forEach(add);
+  if (Array.isArray(stats?.storage)) stats.storage.forEach(add);
+  const eq = stats?.equipment;
+  if (eq && typeof eq === 'object' && !Array.isArray(eq)) Object.values(eq).forEach(add);
+  return out;
+}
+
+// The first key `incoming` holds more of than `baseline` does, or null when
+// nothing grew. Returned rather than a bare boolean so the rejection log
+// names the item that gave it away.
+function _censusOverflow(incoming, baseline) {
+  for (const [key, n] of incoming) {
+    if (n > (baseline.get(key) || 0)) return { key, had: baseline.get(key) || 0, sent: n };
+  }
+  return null;
+}
+
 function _clampNum(v, min, max, dflt) {
   const n = Number(v);
   if (!Number.isFinite(n)) return dflt;
@@ -3761,6 +3808,46 @@ io.on('connection', socket => {
   let currentRoom = null;
   let currentFloor = 1;
   let _lastStats = null;
+  // ── Gold ceiling ──────────────────────────────────────────────────────────
+  // Gold is the one progression number still added up by the client (kill
+  // gold arrives as a server-computed figure the client then applies its own
+  // clan%/potion multipliers to, so the server cannot simply own the total
+  // the way it owns GRAM/Liberty). Left unchecked that made saveProgress a
+  // gold faucet in exactly the way it was an item faucet.
+  //
+  // So instead of trusting or re-deriving it, bound it: this is the highest
+  // total the player could legitimately be holding. It starts at whatever
+  // was loaded, rises ONLY when the server itself authorises gold, and
+  // follows the real balance back down as it is spent. A save above the
+  // ceiling is clamped to it.
+  //
+  // null = not established yet (nothing loaded), which disables the check
+  // rather than pinning the player to 0.
+  let _goldCeiling = null;
+  // Kill gold is credited at the pre-multiplier figure the server computed,
+  // so the ceiling has to leave room for what the client legitimately adds
+  // on top: the clan gold bonus (max +20%, CLAN_LEVELS) and the x2 gold
+  // potion. 2.4x is the true worst case; 3 leaves margin so ordinary play
+  // never brushes the limit, while still bounding minting to a small
+  // multiple of gold actually earned rather than anything at all.
+  const _GOLD_MULT_HEADROOM = 3;
+  function _creditGold(amount) {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (_goldCeiling === null) return;
+    _goldCeiling += n * _GOLD_MULT_HEADROOM;
+  }
+  // For the paths that add gold to _lastStats directly (shop packs, VIP
+  // rewards, quest rewards, admin grants): the balance itself is already
+  // authoritative there, so the ceiling just has to catch up to it.
+  function _syncGoldCeiling() {
+    if (_lastStats && Number.isFinite(Number(_lastStats.gold))) {
+      const g = Number(_lastStats.gold);
+      if (_goldCeiling === null || g > _goldCeiling) _goldCeiling = g;
+    }
+  }
+  socket.data._creditGold = _creditGold;
+  socket.data._syncGoldCeiling = _syncGoldCeiling;
   let _autoSaveInterval = null;
   let _myClanName = null;
   let _myClanIcon = null;
@@ -4097,6 +4184,7 @@ io.on('connection', socket => {
     if (!authed || !Number.isFinite(amount) || amount === 0) return;
     if (!_lastStats) _lastStats = {};
     _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + amount);
+    _syncGoldCeiling();
     await _persistSavedFields(authed, { gold: _lastStats.gold });
     logPlayer(authed.telegramId, authed.username, 'admin_give_gold_live',
       { amount, balance: _lastStats.gold });
@@ -4573,6 +4661,7 @@ io.on('connection', socket => {
 
       if (_lastStats) {
         _lastStats.gold = saved.gold;
+        _syncGoldCeiling();
         if (pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
       }
       // Bumps the revision, so a client autosave queued before this purchase
@@ -5165,6 +5254,46 @@ io.on('connection', socket => {
     currentRoom.resendEnemies(socket.id, ids);
   });
 
+  // ── Selling a common item to the merchant ─────────────────────────────────
+  // Used to be entirely client-side (js/ui.js's sellCommonItem removed the
+  // item and added the gold locally, reaching the server only through the
+  // next saveProgress). The item half of that was already covered once the
+  // save path stopped accepting item growth, but the gold half was a plain
+  // faucet — and with the ceiling now bounding gold, a client-side credit
+  // would be clamped away and the player would lose the sale. So the whole
+  // transaction moves here.
+  const SELL_COMMON_PRICE = 100;
+  safeOn('sellItem', async ({ idx } = {}) => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+      try {
+        const inv = _liveInventory();
+        if (!inv) return socket.emit('sellItemError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        const i = Math.floor(Number(idx));
+        if (!Number.isFinite(i) || i < 0 || i >= inv.length) return;
+        const it = inv[i];
+        if (!it) return;
+        // Re-derived from the catalog rather than read off the entry, so the
+        // price can't be unlocked for a rarity that isn't actually sellable.
+        const base = _catalogBase(it.id);
+        if (!base || base.rarity !== 'common' || isStackableItem(base)) {
+          return socket.emit('sellItemError', { msg: 'Этот предмет нельзя продать' });
+        }
+        inv.splice(i, 1);
+        if (!_lastStats) _lastStats = {};
+        _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + SELL_COMMON_PRICE);
+        _syncGoldCeiling();
+        _commitServerItems(inv, null, 'sell_common', { itemId: it.id, gold: SELL_COMMON_PRICE });
+        await _persistSavedFields(authed, { gold: _lastStats.gold });
+        socket.emit('itemSold', { gold: SELL_COMMON_PRICE, newGold: _lastStats.gold });
+      } catch (err) {
+        console.error('sellItem:', err);
+        logPlayerErr(authed.telegramId, authed.username, 'sell_common', err, { idx });
+        socket.emit('sellItemError', { msg: 'Ошибка сервера' });
+      }
+    });
+  });
+
   // where _lastStats — the server's own inventory copy — lives; same pattern
   // as the market, so a dropped worldDropTaken event or a disconnect mid-
   // pickup can't lose the item.
@@ -5575,7 +5704,7 @@ io.on('connection', socket => {
       const _vipSet = { 'savedData.inventory': inv, 'savedData.vipPending': [] };
       if (goldReward > 0) _vipSet['savedData.gold'] = saved.gold;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _vipSet });
-      if (_lastStats && goldReward > 0) _lastStats.gold = saved.gold;
+      if (_lastStats && goldReward > 0) { _lastStats.gold = saved.gold; _syncGoldCeiling(); }
       _commitServerItems(inv, null, 'vip_rewards', { levels: pending, gold: goldReward });
       socket.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
     } catch (err) {
@@ -5609,7 +5738,45 @@ io.on('connection', socket => {
     const effectiveSaved = blankOverReal
       ? _sanitizeSavedStats(authed.savedData)
       : (sanitized || _sanitizeSavedStats(authed.savedData || null));
-    if (effectiveSaved) _lastStats = effectiveSaved;
+    // This blob becomes _lastStats, which is the BASELINE every later
+    // saveProgress is checked against — so accepting the client's items and
+    // gold here unchecked would simply move the forgery one step earlier and
+    // launder it: every subsequent save would then validate cleanly against
+    // it. The stored record is the only trustworthy starting point.
+    //
+    // Nothing legitimate is lost by pinning items to it. Every path that
+    // GRANTS an item is server-side and persists immediately through
+    // _commitServerItems, so a real grant is already in the DB by the time
+    // this runs; only client-side removals/moves (equip, consume) ride the
+    // 3s-debounced save, and losing one of those merely means the item is
+    // still there. Gold is capped the same way, which costs at most the last
+    // few seconds of kill gold on an unclean disconnect — the same window
+    // the debounce always risked.
+    if (effectiveSaved) {
+      const _dbBase = _sanitizeSavedStats(authed.savedData) || null;
+      const _over = _censusOverflow(_itemCensus(effectiveSaved), _itemCensus(_dbBase));
+      if (_over) {
+        effectiveSaved.inventory = (_dbBase && _dbBase.inventory) || [];
+        effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
+        effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
+        logPlayer(authed.telegramId, authed.username, 'select_items_forged', {
+          item: _over.key, had: _over.had, sent: _over.sent,
+        });
+        console.error(`[selectChar] Rejected minted items for telegramId=${authed.telegramId}` +
+          ` (${_over.key}: had ${_over.had}, claimed ${_over.sent})`);
+      }
+      const _dbGold = Number(_dbBase && _dbBase.gold) || 0;
+      if ((Number(effectiveSaved.gold) || 0) > _dbGold) {
+        logPlayer(authed.telegramId, authed.username, 'select_gold_forged', {
+          sent: Number(effectiveSaved.gold) || 0, had: _dbGold,
+        });
+        effectiveSaved.gold = _dbGold;
+      }
+      _lastStats = effectiveSaved;
+    }
+    // Anchor the gold ceiling to what was actually loaded — everything the
+    // player legitimately earns from here is credited on top of this.
+    _syncGoldCeiling();
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
     PlayerModel.updateOne(
@@ -5816,6 +5983,9 @@ io.on('connection', socket => {
         const xpShare   = Math.max(1, Math.round(result.xp / totalMembers));
         const goldShare = Math.round(result.gold / totalMembers);
 
+        // Authorised gold, for the anti-minting ceiling — credited to each
+        // recipient's OWN session, since that is where their save is checked.
+        _creditGold(goldShare);
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
@@ -5824,6 +5994,7 @@ io.on('connection', socket => {
           nexum: nexumDrop, gram: gramDrop,
         });
         memberIds.forEach(mid => {
+          io.sockets.sockets.get(mid)?.data?._creditGold?.(goldShare);
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
@@ -5838,6 +6009,7 @@ io.on('connection', socket => {
           [socket.id, ...memberIds]);
       } else {
         // No party: attacker gets full reward and loot
+        _creditGold(result.gold);
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
@@ -5918,6 +6090,8 @@ io.on('connection', socket => {
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
+        // See the same credit in the basic-attack handler above.
+        _creditGold(goldShare);
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
@@ -5925,15 +6099,19 @@ io.on('connection', socket => {
           ...(lootWinnerId === socket.id ? lootResult : null),
           nexum: nexumDrop2, gram: gramDrop2,
         });
-        memberIds.forEach(mid => io.to(mid).emit('enemyKilled', {
-          id: enemyId, xp: xpShare, gold: goldShare,
-          ex: result.ex, ey: result.ey, color: result.color,
-          eid: result.eid, rlvl: result.rlvl,
-          ...(lootWinnerId === mid ? lootResult : null),
-        }));
+        memberIds.forEach(mid => {
+          io.sockets.sockets.get(mid)?.data?._creditGold?.(goldShare);
+          io.to(mid).emit('enemyKilled', {
+            id: enemyId, xp: xpShare, gold: goldShare,
+            ex: result.ex, ey: result.ey, color: result.color,
+            eid: result.eid, rlvl: result.rlvl,
+            ...(lootWinnerId === mid ? lootResult : null),
+          });
+        });
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
       } else {
+        _creditGold(result.gold);
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
@@ -6477,6 +6655,54 @@ io.on('connection', socket => {
         inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
       });
     }
+    // Anti-duplication. Enforced on EVERY save, including ones whose invRev
+    // matched — that token only orders saves against grants, it never proves
+    // entitlement (the client is what supplies it). See _itemCensus.
+    //
+    // Baseline is this session's live copy, or the stored one when the save
+    // arrives before selectChar has established it. A brand-new character
+    // legitimately owns nothing at all (js/player.js starts inventory,
+    // equipment and storage empty — the free potions live in potionBag, not
+    // in items), so an absent baseline is an EMPTY census rather than a free
+    // pass: the very first save of a new account can't smuggle items in
+    // either.
+    const _itemBase = _lastStats || _sanitizeSavedStats(authed.savedData) || null;
+    const _grew = _censusOverflow(_itemCensus(clean), _itemCensus(_itemBase));
+    if (_grew) {
+      // Items are dropped as a set rather than trimmed to the legal subset:
+      // once a save is known to be forged there is nothing in its item
+      // fields worth salvaging, and the authoritative copy is right here.
+      clean.inventory = (_itemBase && _itemBase.inventory) || [];
+      clean.equipment = (_itemBase && _itemBase.equipment) || {};
+      clean.storage   = (_itemBase && _itemBase.storage)   || [];
+      logPlayer(authed.telegramId, authed.username, 'save_items_forged', {
+        item: _grew.key, had: _grew.had, sent: _grew.sent,
+        clientRev: _clientRev, serverRev: _invRev,
+      });
+      console.error(`[saveProgress] Rejected minted items for telegramId=${authed.telegramId}` +
+        ` (${_grew.key}: had ${_grew.had}, save claimed ${_grew.sent})`);
+      socket.emit('inventorySync', {
+        inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
+      });
+    }
+
+    // Gold ceiling — see _goldCeiling. Spending lowers it (so the next
+    // legitimate earn is measured from where the player actually is), while
+    // anything above it is minted and gets clamped away.
+    if (_goldCeiling !== null) {
+      const _g = Number(clean.gold) || 0;
+      if (_g > _goldCeiling) {
+        logPlayer(authed.telegramId, authed.username, 'save_gold_forged', {
+          sent: _g, ceiling: Math.floor(_goldCeiling), had: (_lastStats && _lastStats.gold) || 0,
+        });
+        console.error(`[saveProgress] Clamped minted gold for telegramId=${authed.telegramId}` +
+          ` (save claimed ${_g}, ceiling ${Math.floor(_goldCeiling)})`);
+        clean.gold = Math.floor(_goldCeiling);
+      } else {
+        _goldCeiling = _g;
+      }
+    }
+
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
       logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {
         hadLvl: _lastStats.lvl, hadGold: _lastStats.gold,
@@ -6897,7 +7123,7 @@ io.on('connection', socket => {
       }
       if (_lastStats) {
         _lastStats.specialQuestsDone = newDone;
-        if (quest.reward.gold)  _lastStats.gold         = (authed.savedData.gold         || 0);
+        if (quest.reward.gold) { _lastStats.gold = (authed.savedData.gold || 0); _syncGoldCeiling(); }
         if (quest.reward.xp)    _lastStats.xp           = (authed.savedData.xp           || 0);
       }
       logPlayer(authed.telegramId, authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });

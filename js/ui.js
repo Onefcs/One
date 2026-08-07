@@ -2446,15 +2446,18 @@ function equipFromModal(idx) {
 }
 
 const SELL_COMMON_PRICE = 100;
+// Server-side now (see the sellItem handler, server/index.js): it owns both
+// halves of the trade. Removing the item and adding the gold locally, then
+// relying on the next saveProgress to carry it, is exactly the pattern the
+// save path no longer accepts — the item removal would land but the gold
+// would be clamped back off, i.e. the player would sell for nothing.
+// The inventory and the balance both come back over inventorySync/itemSold.
 function sellCommonItem(idx) {
   if (!player) return;
   const it = player.inventory[idx];
   if (!it || it.rarity !== 'common') return;
-  player.inventory.splice(idx, 1);
-  player.gold += SELL_COMMON_PRICE;
-  netSaveProgress();
+  if (typeof netSellItem === 'function') netSellItem(idx);
   closeInvItemModal();
-  dmgNum(player.x, player.y - 36, '+' + SELL_COMMON_PRICE + 'g', '#ff0');
 }
 
 // ── Loot boxes ────────────────────────────────────────────
