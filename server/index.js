@@ -4916,19 +4916,43 @@ io.on('connection', socket => {
     const curEnh = Math.max(0, Math.floor(Number(enhance)) || 0);
     if (curEnh >= ENHANCE_MAX) return socket.emit('enhanceError', { msg: 'Уже максимальная заточка' });
 
+    // "Предмет не найден" means the client is holding something this server
+    // does not have — the two inventories have drifted apart. Erroring and
+    // stopping there leaves the player stuck on a dead end they cannot clear
+    // themselves (every retry re-reads the same stale item), so push the
+    // authoritative set back at the same time: the UI corrects itself and a
+    // retry works. The log records what the server actually holds for that
+    // id, which is what makes the drift diagnosable rather than a guess.
+    const _enhNotFound = where => {
+      logPlayer(authed.telegramId, authed.username, 'enhance_not_found', {
+        id, wantEnhance: curEnh, where, rev: _invRev, invLen: inv.length,
+        serverHas: inv.filter(i => i && i.id === id).map(i => i.enhance || 0),
+      });
+      socket.emit('inventorySync', {
+        inventory: inv, equipment: _lastStats.equipment || {}, invRev: _invRev,
+      });
+      return socket.emit('enhanceError', { msg: 'Предмет не найден' });
+    };
+
     let target, targetIdx = -1;
     if (slot) {
       const eq = _lastStats.equipment || {};
       target = eq[slot];
       if (!target || target.id !== id || (target.enhance || 0) !== curEnh) {
-        return socket.emit('enhanceError', { msg: 'Предмет не найден' });
+        return _enhNotFound('equipped:' + slot);
       }
     } else {
       targetIdx = inv.findIndex(i => i && i.id === id && (i.enhance || 0) === curEnh);
-      if (targetIdx < 0) return socket.emit('enhanceError', { msg: 'Предмет не найден' });
+      if (targetIdx < 0) return _enhNotFound('inventory');
       target = inv[targetIdx];
     }
-    if (!ENHANCEABLE_SLOTS.has(target.slot) || target.slot === 'pet') {
+    // Pets are enhanceable and always have been — the client has offered it
+    // for every slot since long before this handler existed (canEnh in
+    // js/ui.js is a pure enhance < max test), and players hold pets at +3
+    // and above that were enhanced back when the roll happened client-side.
+    // Excluding them here made every one of those attempts fail, which is
+    // the regression behind the reports about enhancing suddenly breaking.
+    if (!ENHANCEABLE_SLOTS.has(target.slot)) {
       return socket.emit('enhanceError', { msg: 'Этот предмет нельзя точить' });
     }
 
