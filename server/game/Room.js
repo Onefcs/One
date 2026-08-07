@@ -182,9 +182,11 @@ const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
 // A wave spawns in a ring this far from the entry point (px) — see
 // fearSpawnWave. Kept well inside _closestTargetFor's own search radius
 // (max(aggroR*2.2, 300), aggroR tops out at 230 so that's ~506px) so every
-// monster in the wave is guaranteed to find the player on its first AI tick.
-const FEAR_SPAWN_RING_MIN = 80;
-const FEAR_SPAWN_RING_MAX = 280;
+// monster in the wave is guaranteed to find the player on its first AI tick,
+// and inside the FEAR_ROOM=12 room's own walls (dungeon.js) with a tile of
+// margin to spare (half-width 240px, minus the 1-tile border ≈ 200px).
+const FEAR_SPAWN_RING_MIN = 40;
+const FEAR_SPAWN_RING_MAX = 150;
 // Species/stat lookup by eid, built once — same table server/game/dungeon.js
 // builds locally for the open world's own spawns (`_enemyByEid` there), needed
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
