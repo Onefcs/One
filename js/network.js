@@ -2316,6 +2316,7 @@ function _initFearHandlers(s) {
     _fearState = {
       maxAttempts: st.maxAttempts || _fearState.maxAttempts || 2,
       maxWave: st.maxWave || _fearState.maxWave || 39,
+      minLevel: st.minLevel || _fearState.minLevel || 10,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _fearState.attemptsLeft,
     };
     _fearInRun = !!st.inRun;

@@ -3256,20 +3256,25 @@ function _race10BodyHTML() {
 }
 
 // ── Страх (Fear) tab ─────────────────────────────────────────────────────────
-// On-demand: no schedule, no queue, no min level — the only gate is whether
-// today's attempts are used up. Entering IS starting (no separate register
-// step), so the action button either starts a run or shows it's already
-// running. Headline number is the current wave while running, otherwise how
-// many of the daily attempts are left.
+// On-demand: no schedule, no queue — the only gates are the min level and
+// whether today's attempts are used up. Entering IS starting (no separate
+// register step), so the action button either starts a run or shows it's
+// already running. Headline number is the current wave while running,
+// otherwise how many of the daily attempts are left.
 function _fearBodyHTML() {
-  const st = (typeof _fearState !== 'undefined' && _fearState) || { attemptsLeft: null, maxAttempts: 2, maxWave: 39 };
+  const st = (typeof _fearState !== 'undefined' && _fearState) || { attemptsLeft: null, maxAttempts: 2, maxWave: 39, minLevel: 10 };
   const inRun = typeof _fearInRun !== 'undefined' && _fearInRun;
   const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = !inRun && lvl < (st.minLevel || 10);
 
   let phaseTxt, action;
   if (inRun) {
     phaseTxt = tVars('fearPhaseFighting', { wave: _fearWave || 1, max: st.maxWave });
     action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
   } else if (spent) {
     phaseTxt = t('a3NoAttempts');
     action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
@@ -3294,6 +3299,7 @@ function _fearBodyHTML() {
       <div class="db-rules">
         ${t('dbRulesHdr')}
         <ul>
+          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
           <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
           <li>${t('fearRule2')}</li>
           <li>${tVars('fearRule3', { n: st.maxWave })}</li>

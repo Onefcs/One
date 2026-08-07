@@ -3442,6 +3442,7 @@ async function _race10Finish(winnerId, timedOut) {
 // Dying or clearing the last wave both send the player home — there is no
 // way to fail out and keep the attempt, and no way to "win" beyond that.
 const FEAR_ATTEMPTS = 2;
+const FEAR_MIN_LEVEL = 10;
 
 // socketId -> { lane, wave } for whoever currently has a run going — read by
 // the attack/skillAttack handlers to advance the run one kill at a time, by
@@ -6168,6 +6169,10 @@ io.on('connection', socket => {
     if (_race10.live && _race10.alive.has(socket.id)) {
       return socket.emit('fearError', { msg: 'Вы сейчас в Кровавой Башне' });
     }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < FEAR_MIN_LEVEL) {
+      return socket.emit('fearError', { msg: `Нужен ${FEAR_MIN_LEVEL} уровень` });
+    }
     const left = await _fearAttemptsLeft(socket.id);
     if (left <= 0) {
       return socket.emit('fearError', { msg: 'Попытки в Страх на сегодня закончились' });
@@ -6184,7 +6189,7 @@ io.on('connection', socket => {
   safeOn('fearSync', async () => {
     const run = _fear.get(socket.id);
     socket.emit('fearState', {
-      maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE,
+      maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
       attemptsLeft: await _fearAttemptsLeft(socket.id),
       inRun: !!run, wave: run?.wave || 0,
     });
