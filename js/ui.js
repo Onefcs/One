@@ -3278,6 +3278,12 @@ function _fearBodyHTML() {
   } else if (spent) {
     phaseTxt = t('a3NoAttempts');
     action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+  } else if (st.freeLanes === 0) {
+    // Every hall is running someone else's attempt. Refused up front rather
+    // than on click, so nobody burns a tap only to be told to wait — the
+    // server refuses this case too, without spending an attempt.
+    phaseTxt = t('fearAllBusy');
+    action = `<button class="db-action disabled" disabled>${t('fearAllBusy')}</button>`;
   } else {
     phaseTxt = t('fearPhaseIdle');
     action = `<button class="db-action" onclick="netFearEnter()">${t('fearEnterBtn')}</button>`;
@@ -3286,8 +3292,11 @@ function _fearBodyHTML() {
   const countdown = inRun
     ? `${_fearWave || 1}/${st.maxWave}`
     : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
+  const lanesLine = !inRun && st.freeLanes !== null && st.freeLanes !== undefined && st.totalLanes
+    ? ` · ${tVars('fearLanesFmt', { n: st.freeLanes, max: st.totalLanes })}`
+    : '';
   const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
-    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
+    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}${lanesLine}</div>`
     : '';
 
   return `

@@ -352,6 +352,23 @@ class Room {
     this._tickSamples = 0;
     this._tickOverruns = 0;
     this.enemies.forEach((e, i) => { e._idx = i; });
+    // ── Enemy network handles (_idx) ────────────────────────────────────────
+    // _idx is NOT an array position — it is the u16 handle the wire protocol
+    // identifies an enemy by (shared/netcodec.js), and every client keeps a
+    // persistent idx -> id map that slim delta entries are resolved through.
+    // So an _idx must stay pinned to one enemy for as long as that enemy
+    // exists, and may only be reused once it's gone (the first packet naming
+    // a reused handle is always a FULL entry, which repairs the map).
+    //
+    // Renumbering the array after a removal — which is what every despawn
+    // path here used to do — silently repointed EVERY client's map at the
+    // wrong enemy, world-wide: positions landed on the wrong monster and the
+    // real one stopped updating, i.e. monsters that "vanish" or "stand
+    // frozen" for players nowhere near whatever was actually removed.
+    // Handing new spawns `this.enemies.length` had the same effect from the
+    // other end, colliding with a live enemy's handle after any removal.
+    this._idxNext = this.enemies.length;
+    this._idxFree = [];
     this._lastTick = Date.now();
     this._interval = null;
     // Counts _tick() calls, purely to stagger the closest-target re-search
@@ -402,7 +419,7 @@ class Room {
       // this size idle unless someone walked right into it.
       aggroR: 900,
       _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
-      _idx: this.enemies.length,
+      _idx: this._allocIdx(),
     };
     this.enemies.push(e);
     this._enemyMap.set(e.id, e);
@@ -423,6 +440,37 @@ class Room {
   // nearbyPlayerIds, mapBlips), keyed off p._fearLane instead of p._raceLane;
   // see those for the actual filtering.
 
+  // Reclaims halls whose owner is no longer actually in one — a socket that
+  // went away without any exit path running, or a record left behind by a
+  // reconnect. Every individual leak this covers is separately fixed at its
+  // source (removePlayer, _fearFinish), but a hall stuck occupied is
+  // invisible to players and permanently costs everyone a slot, so the claim
+  // path re-derives the truth from live state rather than trusting the
+  // bookkeeping it has been keeping.
+  _fearReconcile() {
+    if (!this._fearOwner.size) return;
+    for (const [lane, sid] of [...this._fearOwner]) {
+      const owner = this.players.get(sid);
+      if (owner && owner._fearLane === lane) continue;
+      // The owner is gone, or has already been moved out of this hall by
+      // some other path — either way nobody is running it any more.
+      if (owner) owner._fearLane = null;
+      this.fearReleaseLane(lane);
+    }
+  }
+
+  // How many halls are free right now, for the caller's own capacity check /
+  // player-facing message. Reconciles first so it never reports a leak as
+  // genuine occupancy.
+  fearFreeLaneCount() {
+    this._fearReconcile();
+    const occupied = new Set(this._fearOwner.keys());
+    this.players.forEach(op => { if (op._fearLane != null) occupied.add(op._fearLane); });
+    return this._dungeon.fear.lanes.length - occupied.size;
+  }
+
+  fearLaneCount() { return this._dungeon.fear.lanes.length; }
+
   // Claims the first unoccupied lane and places the player at its entry
   // point, full HP, in one step — the single-entrant sibling of raceDeploy.
   // Deliberately not split into a separate "find a free lane" + "deploy into
@@ -434,8 +482,16 @@ class Room {
     const p = this.players.get(socketId);
     if (!p) return null;
     const lanes = this._dungeon.fear.lanes;
+    this._fearReconcile();
+    // Occupancy is asserted from TWO independent sources, not just the
+    // ownership table: a hall counts as taken if _fearOwner claims it OR if
+    // any live player is physically standing in it. Either one going stale on
+    // its own is what would put a second player inside somebody else's run,
+    // and that is the one failure this must never allow.
+    const occupied = new Set(this._fearOwner.keys());
+    this.players.forEach(op => { if (op._fearLane != null) occupied.add(op._fearLane); });
     let lane = -1;
-    for (let i = 0; i < lanes.length; i++) if (!this._fearOwner.has(i)) { lane = i; break; }
+    for (let i = 0; i < lanes.length; i++) if (!occupied.has(i)) { lane = i; break; }
     if (lane === -1) return null;
     const spot = lanes[lane];
     p.x = spot.entryX; p.y = spot.entryY;
@@ -508,7 +564,7 @@ class Room {
         // With all 20 sharing one value they moved in synchronized lockstep
         // instead of independently — this is what read as "frozen, then all
         // jump together."
-        _idx: this.enemies.length,
+        _idx: this._allocIdx(),
       };
       this.enemies.push(e);
       this._enemyMap.set(e.id, e);
@@ -531,9 +587,19 @@ class Room {
   // still standing) — called on every exit path: death, clearing wave
   // FEAR_MAX_WAVE, or a disconnect mid-run. Idempotent: safe to call on a
   // lane that's already been released.
+  //
+  // Also clears the owner's own _fearLane, which is what makes it safe to
+  // call from any path rather than only from deathBattleReturn. Leaving that
+  // set on a player whose hall no longer exists was its own quiet disaster:
+  // _raceVisible keys isolation off it, so the player stayed sealed into a
+  // hall that wasn't there — every world monster and every other player
+  // silently invisible to them for the rest of the session, and the hall
+  // itself still counted against the 8.
   fearReleaseLane(lane) {
     if (lane == null || !this._fearOwner.has(lane)) return;
     const ownerSid = this._fearOwner.get(lane);
+    const owner = this.players.get(ownerSid);
+    if (owner && owner._fearLane === lane) owner._fearLane = null;
     this._fearOwner.delete(lane);
     this._fearAlive.delete(lane);
     const removedIds = [];
@@ -541,10 +607,10 @@ class Room {
       if (e.arm !== 'fear' || e.lane !== lane) return true;
       this._enemyMap.delete(e.id);
       this._forgetEnemy(e.id);
+      this._releaseIdx(e);
       removedIds.push(e.id);
       return false;
     });
-    this.enemies.forEach((e, i) => { e._idx = i; });
     // _forgetEnemy only clears the SERVER's per-player _eKnown — it never
     // tells the client anything. A run interrupted by death (wave not fully
     // cleared) purges monsters that were still alive a moment ago, and
@@ -1075,17 +1141,16 @@ class Room {
 
     // Drop a defeated event boss out of the world for good. Deferred to here
     // because splicing this.enemies inside the forEach above would skip an
-    // element and leave every _idx (used for the AI target-search stagger and
-    // the per-player delta trackers) pointing at the wrong enemy.
+    // element.
     if (this._evtPurge) {
       this._evtPurge = false;
       this.enemies = this.enemies.filter(e => {
         if (!e._evtRemove) return true;
         this._enemyMap.delete(e.id);
         this._forgetEnemy(e.id);
+        this._releaseIdx(e);
         return false;
       });
-      this.enemies.forEach((e, i) => { e._idx = i; });
     }
 
     // Expire ground loot nobody picked up in time.
@@ -1154,6 +1219,16 @@ class Room {
       const pcy0 = Math.floor((p.y - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
       const pcy1 = Math.floor((p.y + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
       let nCand = 0;
+      // The instance a player is standing in, if any — everyone streamed to
+      // them has to be in the same one. Distance cannot separate instances
+      // on its own: Fear halls sit one lane pitch (800px) apart and are
+      // 480px wide, so two players hugging opposite sides of the same shared
+      // wall are only ~320px from each other, well inside PLAYER_AOI_R.
+      // Without this they rendered through the wall and — the actual
+      // complaint — the target/assist button happily cycled onto whoever was
+      // running the hall next door. Same two-way rule _raceVisible applies
+      // to enemies.
+      const pLane = this._playerLaneKey(p);
       for (let pcx = pcx0; pcx <= pcx1; pcx++) {
         for (let pcy = pcy0; pcy <= pcy1; pcy++) {
           const cell = pgrid.get(_gridKey(pcx, pcy));
@@ -1161,6 +1236,7 @@ class Room {
           for (let ci = 0; ci < cell.length; ci++) {
             const op = cell[ci];
             if (op.socketId === p.socketId) continue;
+            if (this._playerLaneKey(op) !== pLane) continue;
             const dx = op.x - p.x, dy = op.y - p.y;
             const d2 = dx * dx + dy * dy;
             if (d2 > PLAYER_AOI_R2) continue;
@@ -1683,6 +1759,26 @@ class Room {
     this.players.forEach(p => p._eKnown.delete(id));
   }
 
+  // A free network handle for a newly spawned enemy — see the _idxNext/
+  // _idxFree comment in the constructor. Reused handles are safe because a
+  // spawn is always new to every player, so the first entry naming it is a
+  // FULL one (_pushEnemyEntry), which re-points their idx -> id map.
+  //
+  // The wire field is u16, so the counter must not run past 65535; the
+  // free-list is what keeps a long-lived room (Fear waves alone are 20
+  // monsters per wave, 39 waves per run) from ever getting there.
+  _allocIdx() {
+    if (this._idxFree.length) return this._idxFree.pop();
+    return this._idxNext++;
+  }
+
+  // Returns a removed enemy's handle to the pool. MUST be paired with every
+  // permanent removal from this.enemies — never with a mere death, since a
+  // corpse still owns its handle until it respawns or is purged.
+  _releaseIdx(e) {
+    if (e && e._idx != null && e._idx < 0xffff) this._idxFree.push(e._idx);
+  }
+
   addPlayer(socketId, username, clanName, clanIcon, clanAtkBonus, telegramId) {
     // A reconnect (network blip, backgrounded tab) can occasionally leave the
     // old socket's entry in this room a moment longer than its own disconnect
@@ -1798,8 +1894,19 @@ class Room {
   }
 
   removePlayer(socketId) {
+    // Hand back a Fear hall before the player record goes: every other exit
+    // path (death, clearing the last wave) releases it through
+    // deathBattleReturn, but a player who simply vanishes — a disconnect, or
+    // the stale entry addPlayer drops on a reconnect — never reaches one.
+    // That left the hall owned by a socket that no longer exists, and since
+    // deathBattleReturn bails out early when the player record is already
+    // gone, the eventual disconnect couldn't reclaim it either: the halls
+    // leaked one at a time until all 8 looked occupied and nobody could
+    // enter at all.
+    const p = this.players.get(socketId);
+    if (p && p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
     this.players.delete(socketId);
-    this.players.forEach(p => p._known.delete(socketId));
+    this.players.forEach(p2 => p2._known.delete(socketId));
     if (this.players.size === 0) this._stopLoop();
   }
 
@@ -2109,7 +2216,7 @@ class Room {
       // to the ones it walked away from.
       stationary: true,
       _sx: x, _sy: y, _shp: EVENT_BOSS.hp,
-      _idx: this.enemies.length,
+      _idx: this._allocIdx(),
     };
     this.enemies.push(e);
     this._enemyMap.set(e.id, e);
@@ -2130,9 +2237,9 @@ class Room {
       if (e.id !== id) return true;
       this._enemyMap.delete(e.id);
       this._forgetEnemy(e.id);
+      this._releaseIdx(e);
       return false;
     });
-    this.enemies.forEach((e, i) => { e._idx = i; });
     this._raceBossId = null;
   }
 
@@ -2181,7 +2288,7 @@ class Room {
         aggro: false, aggroR: 0,
         a3Team: team, a3Passive: true,
         _sx: spot.x, _sy: spot.y, _shp: ARENA3_BOSS_HP,
-        _idx: this.enemies.length,
+        _idx: this._allocIdx(),
       };
       this.enemies.push(e);
       this._enemyMap.set(e.id, e);
@@ -2203,9 +2310,9 @@ class Room {
       if (!ids.has(e.id)) return true;
       this._enemyMap.delete(e.id);
       this._forgetEnemy(e.id);
+      this._releaseIdx(e);
       return false;
     });
-    this.enemies.forEach((e, i) => { e._idx = i; });
     this._a3BossIds = null;
   }
 

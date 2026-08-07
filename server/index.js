@@ -3505,17 +3505,21 @@ function _fearTrackKill(socketId, result) {
   _fearStartWave(room, socketId, result.lane, run.wave + 1);
 }
 
-// Sends the player home and frees their lane (via Room.deathBattleReturn,
-// which releases p._fearLane along with the teleport — see Room.js) — either
-// because they cleared FEAR_MAX_WAVE (cleared: true) or died mid-run
-// (cleared: false, called from _fearEliminate). Safe to call on someone not
-// currently in a run.
+// Sends the player home and frees their lane — either because they cleared
+// FEAR_MAX_WAVE (cleared: true) or died mid-run (cleared: false, called from
+// _fearEliminate). Safe to call on someone not currently in a run.
 function _fearFinish(socketId, cleared) {
   const run = _fear.get(socketId);
   if (!run) return;
   _fear.delete(socketId);
   const room = getRoom(1);
+  // deathBattleReturn releases the hall as part of the teleport home, but
+  // ONLY while the player record still exists — it bails out early otherwise,
+  // which is exactly the case when this is reached from a disconnect. Release
+  // the hall off the run record (which always knows its lane) so a player
+  // dropping mid-run can never strand it as permanently occupied.
   const spot = room ? room.deathBattleReturn(socketId) : null;
+  if (room) room.fearReleaseLane(run.lane);
   io.to(socketId).emit('fearFinished', { cleared, wave: run.wave, x: spot?.x, y: spot?.y });
 }
 
@@ -6205,9 +6209,14 @@ io.on('connection', socket => {
     if (left <= 0) {
       return socket.emit('fearError', { msg: 'Попытки в Страх на сегодня закончились' });
     }
+    // Checked before the attempt is spent, and again implicitly by
+    // fearDeploy itself (which re-derives occupancy from live state) — a
+    // refusal here must never cost the player one of their two runs.
     const spot = currentRoom.fearDeploy(socket.id);
     if (!spot) {
-      return socket.emit('fearError', { msg: 'Все залы заняты — попробуйте чуть позже' });
+      return socket.emit('fearError', {
+        msg: `Все ${currentRoom.fearLaneCount()} залов заняты — дождитесь, пока кто-нибудь выйдет`,
+      });
     }
     _lockFearDaily(socket.id);
     _fearStartWave(currentRoom, socket.id, spot.lane, 1);
@@ -6220,6 +6229,8 @@ io.on('connection', socket => {
       maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
       attemptsLeft: await _fearAttemptsLeft(socket.id),
       inRun: !!run, wave: run?.wave || 0,
+      freeLanes: currentRoom ? currentRoom.fearFreeLaneCount() : null,
+      totalLanes: currentRoom ? currentRoom.fearLaneCount() : null,
     });
   });
 
