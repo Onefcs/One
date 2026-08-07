@@ -618,6 +618,59 @@ const GEAR_CRAFT_RECIPES = [
   { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
 ];
 
+// Uncommon/rare gear tiers — used to live purely in js/definitions.js's
+// client-only ITEM_CRAFT_RECIPES and be trusted outright: the client rolled
+// the chance, spent the materials, and granted the result itself, reaching
+// the server only via the next saveProgress blob (which _canonSavedItem
+// trusts for any valid id+enhance). Moved here so craftGear (server/
+// index.js) can validate and roll these the same way it already does
+// GEAR_CRAFT_RECIPES above — no currency involved, only materials, so there's
+// no nexumCost/goldCost field on any of these. js/definitions.js splices this
+// into ITEM_CRAFT_RECIPES so the craftsman UI keeps listing every tier from
+// one place.
+const GEAR_TIER_CRAFT_RECIPES = [
+  // ── Assassin knives ──────────────────────────────────────
+  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Warrior axes ─────────────────────────────────────────
+  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Archer bows ──────────────────────────────────────────
+  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Staves ───────────────────────────────────────────────
+  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Helmets ──────────────────────────────────────────────
+  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Body armor ───────────────────────────────────────────
+  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Gloves ───────────────────────────────────────────────
+  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Boots ────────────────────────────────────────────────
+  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Rings ────────────────────────────────────────────────
+  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  // ── Belts ────────────────────────────────────────────────
+  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
+  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+];
+
+// Recipe-scroll tier-up (recu→recr→rece→recl): 20 of the lower rarity → 1 of
+// the higher, 80% chance. Moved here from js/definitions.js for the same
+// reason as GEAR_TIER_CRAFT_RECIPES above — craftMatUpgrade (server/
+// index.js) now rolls this itself instead of trusting the client's roll.
+const MAT_UPGRADE_RECIPES = [
+  { from:'recu', to:'recr', count:20, chance:0.80 },
+  { from:'recr', to:'rece', count:20, chance:0.80 },
+  { from:'rece', to:'recl', count:20, chance:0.80 },
+];
+
 const PET_CRAFT_RECIPES = [
   { rarity:'common',   nexumCost:500,  chance:1.0 },
   { rarity:'uncommon', nexumCost:2000, chance:1.0 },
@@ -999,7 +1052,8 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,

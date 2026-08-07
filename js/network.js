@@ -1899,6 +1899,14 @@ function netEnhanceItem(id, enhance, stoneType, slot) {
   if (socket?.connected) socket.emit('enhanceItem', { id, enhance, stoneType, slot: slot || null });
 }
 
+function netCraftBox(boxId) {
+  if (socket?.connected) socket.emit('craftBox', { boxId });
+}
+
+function netCraftMatUpgrade(from) {
+  if (socket?.connected) socket.emit('craftMatUpgrade', { from });
+}
+
 function netCraftClassGear(slot, rarity) {
   if (socket?.connected) socket.emit('craftClassGear', { slot, rarity });
 }
@@ -2441,6 +2449,23 @@ function _initPetCraftHandlers(s) {
   });
   s.on('enhanceError', ({ msg }) => {
     if (typeof onEnhanceError === 'function') onEnhanceError(msg);
+  });
+
+  // Box crafting (keys → box, 100% success) and material tier-up (recipe
+  // scroll → next tier, can fail) — both server round trips now, same
+  // "inventorySync already landed, this only carries the outcome" shape as
+  // stoneCrafted/gearCrafted above.
+  s.on('boxCrafted', ({ boxId }) => {
+    if (typeof onBoxCrafted === 'function') onBoxCrafted(boxId);
+  });
+  s.on('craftBoxError', ({ msg }) => {
+    if (typeof onBoxCraftError === 'function') onBoxCraftError(msg);
+  });
+  s.on('matUpgraded', ({ from, to, success }) => {
+    if (typeof onMatUpgraded === 'function') onMatUpgraded(from, to, success);
+  });
+  s.on('craftMatUpgradeError', ({ msg }) => {
+    if (typeof onMatUpgradeError === 'function') onMatUpgradeError(msg);
   });
 
   // Upgrade reset. The server has already charged the Liberty and cleared its

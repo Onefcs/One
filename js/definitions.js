@@ -188,47 +188,14 @@ const MERCHANT_SHOP = [
 
 // Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll
 // Stone recipes: recipe scrolls + gold → enchant stone
-// Epic (*4) and legendary (*5) tiers are defined in shared/definitions.js
-// (GEAR_CRAFT_RECIPES) instead, and appended below — they additionally cost
-// Liberty, which is server-authoritative, so the server needs its own copy
-// of that recipe to charge against.
-const ITEM_CRAFT_RECIPES = [
-  // ── Assassin knives ──────────────────────────────────────
-  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Warrior axes ─────────────────────────────────────────
-  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Archer bows ──────────────────────────────────────────
-  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Staves ───────────────────────────────────────────────
-  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Helmets ──────────────────────────────────────────────
-  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Body armor ───────────────────────────────────────────
-  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Gloves ───────────────────────────────────────────────
-  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Boots ────────────────────────────────────────────────
-  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Rings ────────────────────────────────────────────────
-  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-  // ── Belts ────────────────────────────────────────────────
-  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
-];
-
-// Enchant stones and epic/legendary gear are defined in shared/definitions.js
-// instead — they cost Liberty, which only the server can spend, so both sides
-// have to read one copy of the recipe. Appended here so the craftsman's tabs
-// keep listing them with everything else (filtered on rec.matId/rec.itemId).
+// GEAR_TIER_CRAFT_RECIPES (uncommon/rare), STONE_CRAFT_RECIPES and
+// GEAR_CRAFT_RECIPES (epic/legendary) all now live in shared/definitions.js —
+// the server rolls and validates every one of them (craftGear/craftStone,
+// server/index.js), not just the Liberty-priced tiers, so it needs the same
+// single copy of each recipe the client shows. Spliced together here purely
+// so the craftsman UI keeps listing every tier from one place.
+const ITEM_CRAFT_RECIPES = [];
+if (typeof GEAR_TIER_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_TIER_CRAFT_RECIPES);
 if (typeof STONE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...STONE_CRAFT_RECIPES);
 if (typeof GEAR_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_CRAFT_RECIPES);
 
@@ -238,12 +205,8 @@ if (typeof GEAR_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_C
 // copy of the recipe to charge against (same reasoning as GEAR_CRAFT_RECIPES
 // above).
 
-// Recipe upgrade: 20 of lower rarity → 1 of higher rarity (80% chance)
-const MAT_UPGRADE_RECIPES = [
-  { from:'recu', to:'recr', count:20, chance:0.80 },
-  { from:'recr', to:'rece', count:20, chance:0.80 },
-  { from:'rece', to:'recl', count:20, chance:0.80 },
-];
+// MAT_UPGRADE_RECIPES (recipe-scroll tier-up) also moved to shared/
+// definitions.js — see the comment there for why.
 
 // Battle Power — reflects the player's overall combat strength.
 // Keep in sync with the identical calcBM in server/index.js, which stores this

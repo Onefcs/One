@@ -24,7 +24,8 @@ const Room = require('./game/Room');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
+  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -3674,6 +3675,7 @@ io.on('connection', socket => {
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
+    'craftBox', 'craftMatUpgrade',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
@@ -4615,18 +4617,23 @@ io.on('connection', socket => {
     });
   });
 
-  // ── Epic/legendary gear crafting (Кузнец → Предметы → эпика/легенда) ───────
-  // Same reasoning as craftStone above — these two tiers cost Liberty
-  // (GEAR_CRAFT_RECIPES, shared/definitions.js) on top of the usual mats, so
-  // the whole exchange has to happen here rather than being client-computed.
-  // Unlike stones (chance:1.0), these can genuinely roll a failure — on a
-  // miss the mats and the Liberty are still spent (same "materials lost"
-  // rule every gold/mat-only recipe already applies), only the item isn't.
+  // ── Gear crafting (Кузнец → Предметы → все тиры) ───────────────────────────
+  // Covers both GEAR_TIER_CRAFT_RECIPES (uncommon/rare — materials only, no
+  // nexumCost) and GEAR_CRAFT_RECIPES (epic/legendary — same shape plus a
+  // Liberty cost). The uncommon/rare tiers used to be entirely client-
+  // computed (js/npc.js's craftSpecificItem rolled the chance and granted the
+  // result itself, only ever reaching the server via the next saveProgress
+  // blob) — exactly the "items appearing out of nowhere" hole this closes:
+  // _canonSavedItem trusts any valid id+enhance on save, no matter how it got
+  // there. Unlike stones (chance:1.0), these can genuinely roll a failure —
+  // on a miss the mats (and Liberty, where the recipe has one) are still
+  // spent, same "materials lost" rule every recipe already applies, only the
+  // item isn't granted.
   safeOn('craftGear', async ({ itemId } = {}) => {
     if (!authed) return;
     await _withEconLock(async () => {
     try {
-      const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId);
+      const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId) || GEAR_TIER_CRAFT_RECIPES.find(r => r.itemId === itemId);
       if (!rec) return socket.emit('craftGearError', { msg: 'Неизвестный рецепт' });
       const resultDef = ITEM_DEF.find(i => i.id === rec.itemId);
       if (!resultDef) return socket.emit('craftGearError', { msg: 'Предмет не найден' });
@@ -4654,17 +4661,23 @@ io.on('connection', socket => {
         }
       }
       // Charged before anything is consumed, and atomically — see craftStone.
-      await _flushBalances();
-      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
-      if (_bal === null) {
-        return socket.emit('craftGearError', { msg: `Нужно ${rec.nexumCost} Liberty` });
+      // Uncommon/rare recipes have no nexumCost, so this (and the re-check
+      // right after) is skipped entirely for them — nothing to charge.
+      if (rec.nexumCost) {
+        await _flushBalances();
+        const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+        if (_bal === null) {
+          return socket.emit('craftGearError', { msg: `Нужно ${rec.nexumCost} Liberty` });
+        }
+        _nexumBalance = _bal;
       }
-      _nexumBalance = _bal;
       // Re-checked after the await, same reasoning as craftStone.
       for (const m of rec.mats) {
         if (matCount(m) < m.n) {
-          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
-          if (back !== null) _nexumBalance = back;
+          if (rec.nexumCost) {
+            const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+            if (back !== null) _nexumBalance = back;
+          }
           return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${matCount(m)})` });
         }
       }
@@ -4783,6 +4796,86 @@ io.on('connection', socket => {
     _commitServerItems(inv, slot ? _lastStats.equipment : null, 'enhance',
       { id, stoneType, outcome, fromEnhance: curEnh });
     socket.emit('enhanceResult', { id, slot: slot || null, outcome, newEnhance });
+  });
+
+  // ── Box crafting (Кузнец → Материалы → Боксы, e.g. box_rare from key_rare) ──
+  // No currency involved — just an exchange of keys for a box, 100% success —
+  // but this was still entirely client-computed (js/npc.js's craftBox),
+  // reaching the server only via the next saveProgress blob. Synchronous, no
+  // await anywhere, so — like enhanceItem above — there's no window for a
+  // double-submit race to land in.
+  safeOn('craftBox', ({ boxId } = {}) => {
+    if (!authed) return;
+    const box = BOX_DEF.find(b => b.id === boxId);
+    if (!box) return socket.emit('craftBoxError', { msg: 'Неизвестный бокс' });
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      return socket.emit('craftBoxError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    const inv = _lastStats.inventory;
+    const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+    const have = countOf(box.keyId);
+    if (have < box.keyCost) {
+      const keyName = (CRAFT_MATS.find(m => m.id === box.keyId) || {}).name || box.keyId;
+      return socket.emit('craftBoxError', { msg: `Нужно ${box.keyCost} × ${keyName} (есть ${have})` });
+    }
+    // A box stacks into an existing entry for free — a new slot is only
+    // needed for the first one, same rule _shopNewSlots/_specialNewSlots use.
+    const hasBoxAlready = inv.some(i => i && i.id === box.id);
+    if (!hasBoxAlready && inv.length >= SERVER_INV_MAX) {
+      return socket.emit('craftBoxError', { msg: 'Инвентарь полон' });
+    }
+    let left = box.keyCost;
+    for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+      const e = inv[i];
+      if (!e || e.id !== box.keyId) continue;
+      const qty = e.qty || 1;
+      if (qty > left) { e.qty = qty - left; left = 0; }
+      else { left -= qty; inv.splice(i, 1); }
+    }
+    _invAdd(inv, { ...box, qty: 1 });
+    _commitServerItems(inv, null, 'box_craft', { boxId });
+    socket.emit('boxCrafted', { boxId });
+  });
+
+  // ── Material tier-up (Кузнец → Материалы → Рецепты, e.g. recu→recr) ────────
+  // 20 of the lower recipe scroll → 80% chance at 1 of the next tier —
+  // MAT_UPGRADE_RECIPES, shared/definitions.js. Same closing as craftBox
+  // above: was entirely client-computed (js/npc.js's craftMatUpgrade), no
+  // currency involved, synchronous handler so no double-submit race window.
+  safeOn('craftMatUpgrade', ({ from } = {}) => {
+    if (!authed) return;
+    const rec = MAT_UPGRADE_RECIPES.find(r => r.from === from);
+    if (!rec) return socket.emit('craftMatUpgradeError', { msg: 'Неизвестный рецепт' });
+    const toMat = CRAFT_MATS.find(m => m.id === rec.to);
+    if (!toMat) return socket.emit('craftMatUpgradeError', { msg: 'Материал не найден' });
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      return socket.emit('craftMatUpgradeError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    const inv = _lastStats.inventory;
+    const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+    const have = countOf(rec.from);
+    if (have < rec.count) {
+      const fromMat = CRAFT_MATS.find(m => m.id === rec.from);
+      return socket.emit('craftMatUpgradeError', {
+        msg: `Нужно ${rec.count} × ${fromMat ? fromMat.name : rec.from} (есть ${have})`,
+      });
+    }
+    const hasToAlready = inv.some(i => i && i.id === toMat.id);
+    if (!hasToAlready && inv.length >= SERVER_INV_MAX) {
+      return socket.emit('craftMatUpgradeError', { msg: 'Инвентарь полон' });
+    }
+    let left = rec.count;
+    for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+      const e = inv[i];
+      if (!e || e.id !== rec.from) continue;
+      const qty = e.qty || 1;
+      if (qty > left) { e.qty = qty - left; left = 0; }
+      else { left -= qty; inv.splice(i, 1); }
+    }
+    const success = Math.random() < rec.chance;
+    if (success) _invAdd(inv, { ...toMat, qty: 1 });
+    _commitServerItems(inv, null, 'mat_upgrade', { from: rec.from, to: rec.to, success });
+    socket.emit('matUpgraded', { from: rec.from, to: rec.to, success });
   });
 
   // ── Pet crafting (Кузнец → Материалы → Питомцы) ────────────────────────────

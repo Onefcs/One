@@ -282,6 +282,14 @@ function openCraftModal(idx) {
   `;
 }
 
+// Every item/mat recipe — Liberty-priced or not — is now settled entirely by
+// the server (craftGear/craftStone, server/index.js): it owns the material
+// (and Liberty, where the recipe has one) spend and the roll. This used to
+// branch on rec.nexumCost and, for the gold/mats-only tiers, roll and grant
+// the result right here — reaching the server only via the next saveProgress
+// blob, which trusts any valid item id+enhance outright. The checks below
+// still run first so an obviously-impossible craft is refused without a
+// round trip; the actual craft always goes through the network now.
 function craftSpecificItem(idx) {
   const rec = ITEM_CRAFT_RECIPES[idx];
   if (!rec || !player) return;
@@ -292,50 +300,18 @@ function craftSpecificItem(idx) {
   if ((rec.goldCost || 0) > 0 && player.gold < rec.goldCost) {
     _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return;
   }
+  if ((rec.nexumCost || 0) > 0 && (window._nexumBalance || 0) < rec.nexumCost) {
+    _shopMsg(tVars('craftNeedLiberty', { n: rec.nexumCost })); return;
+  }
   if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
 
-  // Liberty-priced recipes (enchant stones, and the epic/legendary gear
-  // tiers) are settled entirely by the server — it owns that balance, so it
-  // also has to be the one to take the materials and hand back the result.
-  // The checks above still run first so an obviously-impossible craft is
-  // refused without a round trip.
-  if (rec.nexumCost) {
-    if ((window._nexumBalance || 0) < rec.nexumCost) {
-      _shopMsg(tVars('craftNeedLiberty', { n: rec.nexumCost })); return;
-    }
-    if (rec.itemId) {
-      _pendingGearCraftIdx = idx;
-      if (typeof netCraftGear === 'function') netCraftGear(rec.itemId);
-    } else {
-      _pendingStoneCraftIdx = idx;
-      if (typeof netCraftStone === 'function') netCraftStone(rec.matId);
-    }
-    return;
+  if (rec.itemId) {
+    _pendingGearCraftIdx = idx;
+    if (typeof netCraftGear === 'function') netCraftGear(rec.itemId);
+  } else if (rec.matId) {
+    _pendingStoneCraftIdx = idx;
+    if (typeof netCraftStone === 'function') netCraftStone(rec.matId);
   }
-
-  for (const m of rec.mats) {
-    if (m.minEnhance != null) removeEnhancedItem(m.id, m.n, m.minEnhance);
-    else removeFromInventory(m.id, m.n);
-  }
-  if (rec.goldCost) player.gold -= rec.goldCost;
-
-  if (Math.random() < rec.chance) {
-    if (rec.matId) {
-      const mat = CRAFT_MATS.find(m => m.id === rec.matId);
-      if (mat) { addToInventory({ ...mat }); _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + mat.name); }
-    } else {
-      const item = ITEM_DEF.find(i => i.id === rec.itemId);
-      if (item) {
-        const enhance = _craftResultEnhance(rec);
-        addToInventory(enhance > 0 ? { ...item, enhance } : { ...item });
-        _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name + (enhance ? ' +' + enhance : ''));
-      }
-    }
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
-  }
-  netSaveProgress();
-  openCraftModal(idx);
 }
 
 function _craftsmanMatsTab() {
@@ -745,18 +721,35 @@ function openBoxCraftModal(boxId) {
   `;
 }
 
+// Settled server-side (craftBox, server/index.js) — same reasoning as
+// craftSpecificItem above. The checks here just refuse an obviously-
+// impossible craft before the round trip.
 function craftBox(boxId) {
   const box = BOX_DEF.find(b => b.id === boxId);
   if (!box || !player) return;
   const have = countMaterial(box.keyId);
   if (have < box.keyCost) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughKeys') : 'Недостаточно ключей!'); return; }
   if (!invHasSpace())     { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  _pendingBoxCraftId = boxId;
+  if (typeof netCraftBox === 'function') netCraftBox(boxId);
+}
 
-  removeFromInventory(box.keyId, box.keyCost);
-  addToInventory({ ...box });
-  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + box.name);
-  netSaveProgress();
-  openBoxCraftModal(boxId);
+// The server took the keys and added the box itself, and its inventorySync
+// has already landed — nothing to add here, only the panel to refresh.
+let _pendingBoxCraftId = null;
+function onBoxCrafted(boxId) {
+  const id = _pendingBoxCraftId;
+  _pendingBoxCraftId = null;
+  const box = BOX_DEF.find(b => b.id === boxId);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (box ? box.name : boxId));
+  if (id !== null) openBoxCraftModal(id);
+}
+function onBoxCraftError(msg) {
+  const id = _pendingBoxCraftId;
+  _pendingBoxCraftId = null;
+  _shopMsg(msg || 'Ошибка');
+  if (id !== null) openBoxCraftModal(id);
 }
 
 function openMatModal(idx) {
@@ -792,26 +785,38 @@ function openMatModal(idx) {
   `;
 }
 
+// Settled server-side (craftMatUpgrade, server/index.js) — same reasoning as
+// craftSpecificItem above. The checks here just refuse an obviously-
+// impossible craft before the round trip.
 function craftMatUpgrade(idx) {
   const recipe = MAT_UPGRADE_RECIPES[idx];
   if (!recipe || !player) return;
   const fromHave = countMaterial(recipe.from);
   if (fromHave < recipe.count)  { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
   if (!invHasSpace())           { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  _pendingMatUpgradeIdx = idx;
+  if (typeof netCraftMatUpgrade === 'function') netCraftMatUpgrade(recipe.from);
+}
 
-  removeFromInventory(recipe.from, recipe.count);
-
-  if (Math.random() < recipe.chance) {
-    const mat = CRAFT_MATS.find(m => m.id === recipe.to);
-    if (mat) {
-      addToInventory({ ...mat });
-      _shopMsg((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + mat.name);
-    }
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
-  }
-  netSaveProgress();
-  openMatModal(idx);
+// The server took the lower-tier scrolls and, on success, added the higher
+// tier itself; its inventorySync has already landed — nothing to add here,
+// only the panel to refresh with the right message for the roll's outcome.
+let _pendingMatUpgradeIdx = null;
+function onMatUpgraded(from, to, success) {
+  const idx = _pendingMatUpgradeIdx;
+  _pendingMatUpgradeIdx = null;
+  const mat = CRAFT_MATS.find(m => m.id === to);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _shopMsg(success
+    ? (typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (mat ? mat.name : to)
+    : (typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.'));
+  if (idx !== null) openMatModal(idx);
+}
+function onMatUpgradeError(msg) {
+  const idx = _pendingMatUpgradeIdx;
+  _pendingMatUpgradeIdx = null;
+  _shopMsg(msg || 'Ошибка');
+  if (idx !== null) openMatModal(idx);
 }
 
 // ── Storage ─────────────────────────────────────────────
