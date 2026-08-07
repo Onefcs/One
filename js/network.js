@@ -754,28 +754,23 @@ function netConnect(onReady) {
     }
   });
 
-  function _addStoneToInv(stoneId, qty, px, py) {
-    const def = CRAFT_MATS.find(m => m.id === stoneId);
-    if (!def || !player) return;
-    const ex2 = player.inventory.find(i => i.id === stoneId);
-    if (ex2) { ex2.qty = (ex2.qty || 1) + qty; }
-    else { player.inventory.push({ ...def, qty }); }
+  // Floating-text feedback only — the server has already rolled AND granted
+  // every one of these (mob loot table, and on a boss kill the box/enchant-
+  // stone drops below) via socket.data._grantKillLoot before this event was
+  // even sent; inventorySync (the plain socket.on above) landed first on
+  // this same socket and already applied them to player.inventory.
+  function _showStoneLoot(stoneId, qty, px, py) {
     const label = typeof t === 'function' ? (stoneId === 'bless_stone' ? t('safeStoneLbl') : t('enchantStoneLbl')) : (stoneId === 'bless_stone' ? 'Безоп. камень' : 'Камень заточки');
     dmgNum(px, py - 52, `+${qty}× ${label}`, stoneId === 'bless_stone' ? '#88f' : '#fa8');
-    netSaveProgress();
   }
 
-  function _addBoxToInv(boxId, qty, px, py) {
+  function _showBoxLoot(boxId, qty, px, py) {
     const def = BOX_DEF.find(b => b.id === boxId);
-    if (!def || !player) return;
-    const ex2 = player.inventory.find(i => i.id === boxId);
-    if (ex2) { ex2.qty = (ex2.qty || 1) + qty; }
-    else { player.inventory.push({ ...def, qty }); }
+    if (!def) return;
     dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#5dade2' : '#98e456');
-    netSaveProgress();
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, gotLoot, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -815,18 +810,17 @@ function netConnect(onReady) {
       if (_eDef) onEnemyKill(_eDef.name);
     }
     if (rlvl && player && typeof onEnterArm === 'function') onEnterArm(rlvl);
-    if (gotLoot && player) {
-      applyLootToInventory(eid, rlvl);
+    if (items && items.length && player) {
+      items.forEach(it => {
+        const label = (it.qty && it.qty > 1 ? `+${it.qty}× ` : '+ ') + it.name;
+        dmgNum(px, py - 70, label, RARITY_COLOR[it.rarity] || '#c4a276');
+      });
       if (typeof Sound !== 'undefined' && _seen) Sound.loot();
-      // VIP drop bonus: extra loot roll proportional to drop%
-      const _vipDrop = (window._vipData?.level > 0 && typeof VIP_BONUSES !== 'undefined')
-        ? (VIP_BONUSES[window._vipData.level] || VIP_BONUSES[0]).drop : 0;
-      if (_vipDrop > 0 && Math.random() * 100 < _vipDrop) applyLootToInventory(eid, rlvl);
     }
-    if (boxUncommon) _addBoxToInv('box_uncommon', boxUncommon, px, py);
-    if (boxRare)     _addBoxToInv('box_rare',      boxRare,     px, py - 16);
-    if (normStone)  _addStoneToInv('norm_stone',  normStone,  px, py - 32);
-    if (blessStone) _addStoneToInv('bless_stone', blessStone, px, py - 48);
+    if (boxUncommon) _showBoxLoot('box_uncommon', boxUncommon, px, py);
+    if (boxRare)     _showBoxLoot('box_rare',      boxRare,     px, py - 16);
+    if (normStone)  _showStoneLoot('norm_stone',  normStone,  px, py - 32);
+    if (blessStone) _showStoneLoot('bless_stone', blessStone, px, py - 48);
     if (gold && player) {
       // Clan bonus first, then the ×2 potion on top — same order the server
       // already applies the VIP gold bonus in (it multiplies result.gold

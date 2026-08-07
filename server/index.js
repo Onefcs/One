@@ -24,9 +24,12 @@ const Room = require('./game/Room');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ENEMY_DEF,
   PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
-  armIndexForLevel,
+  armIndexForLevel, armLocalLevel,
+  BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
+  roomDropMult, roomKeyChance, roomEnchantStoneChance,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
@@ -176,6 +179,81 @@ function _invAdd(inv, item) {
   if (inv.length >= SERVER_INV_MAX) return false;
   inv.push({ ...item });
   return true;
+}
+
+// ── Mob kill loot roll ──────────────────────────────────────────────────────
+// Mirrors applyLootToInventory (js/combat.js) exactly — recipe/equipment/
+// room-key/enchant-stone/skill-book/passive-book drops on a regular kill.
+// This used to be entirely client-rolled and only ever reached the server via
+// the next saveProgress blob (which _canonSavedItem trusts for any valid id+
+// enhance+qty) — the single biggest "items appearing out of nowhere" vector,
+// since it fires on every kill in the game. Mutates `inv` in place via
+// _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
+// for (loot-winner arbitration among a party) and reports the result back.
+function _rollMobLoot(inv, eid, rlvl) {
+  const eDef = ENEMY_DEF.find(e => e.eid === eid);
+  const eType = eDef ? eDef.eType : null;
+  const granted = [];
+
+  function addMat(id, qty) {
+    const mat = CRAFT_MATS.find(m => m.id === id);
+    if (mat && _invAdd(inv, { ...mat, qty })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty });
+  }
+
+  // Same drop multiplier as the client used: corridor arm × room-level growth.
+  const _localLvl = armLocalLevel(rlvl);
+  const _dropMult = armIndexForLevel(rlvl) * roomDropMult(_localLvl);
+
+  // Recipe drop (all non-boss enemies)
+  if (eType && eType !== 'boss') {
+    const r = Math.random();
+    if      (r < 0.00001 * _dropMult) addMat('recl', 1);
+    else if (r < 0.00021 * _dropMult) addMat('rece', 1);
+    else if (r < 0.00071 * _dropMult) addMat('recr', 1);
+    else if (r < 0.00171 * _dropMult) addMat('recu', 1);
+  }
+
+  // Equipment drop — no cloak/artifact (craft-only), weapons unrestricted by
+  // class (same as js/combat.js: any class's weapon can drop for anyone).
+  const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
+  if (Math.random() * 100 < _itemChance) {
+    const rarity = itemRarityForLevel(rlvl);
+    const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot));
+    if (candidates.length) {
+      const it = candidates[Math.floor(Math.random() * candidates.length)];
+      if (_invAdd(inv, { ...it })) granted.push({ id: it.id, name: it.name, rarity: it.rarity, qty: 1 });
+    }
+  }
+
+  // Room-level key drops (forge box-crafting)
+  if (Math.random() < roomKeyChance(_localLvl, 'uncommon')) addMat('key_uncommon', 1);
+  if (Math.random() < roomKeyChance(_localLvl, 'rare'))     addMat('key_rare', 1);
+
+  // Room-level enchant-stone drop
+  if (Math.random() < roomEnchantStoneChance(_localLvl)) addMat('norm_stone', 1);
+
+  // Skill books — any class's book can drop for anyone (see js/combat.js).
+  const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
+  if (_allBooks.length) {
+    if (eType === 'boss') {
+      if (Math.random() < 0.001) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
+      addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 1);
+    }
+  }
+
+  // Passive skill books — own independent roll/pool, same odds as above.
+  const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
+  if (_allPassiveBooks.length) {
+    if (eType === 'boss') {
+      if (Math.random() < 0.001) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
+      addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 1);
+    }
+  }
+
+  return granted;
 }
 
 function _marketListingData(l) {
@@ -3803,6 +3881,39 @@ io.on('connection', socket => {
     await _commitServerItems(inventory, equipment, 'admin');
   };
 
+  // Cross-socket kill-loot grant. A party member other than the attacker can
+  // win a kill's loot (random pick among party + attacker — see 'attack'/
+  // 'skillAttack' below), and their inventory only lives in THEIR OWN
+  // socket's closure, not the attacker's whose handler is actually running.
+  // Same pattern as _adminApplyItems above: exposed on socket.data so a
+  // different connection's handler can invoke it and land the grant where it
+  // belongs. Rolls and grants everything itself (the mob loot table, the VIP
+  // drop-bonus reroll, and — for a boss kill — the box/enchant-stone drops
+  // that used to be rolled by the caller but only ever granted by the
+  // client) so the caller only has to decide who won and relay what comes
+  // back for that player's floating-text feedback.
+  socket.data._grantKillLoot = ({ eid, rlvl, isBoss }) => {
+    const empty = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
+    if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
+    const inv = _lastStats.inventory;
+    const items = _rollMobLoot(inv, eid, rlvl);
+    const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
+    if (_vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
+      items.push(..._rollMobLoot(inv, eid, rlvl));
+    }
+    let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
+    if (isBoss) {
+      if (Math.random() < 0.50) { boxUncommon = 1; _invAdd(inv, { ...BOX_DEF.find(b => b.id === 'box_uncommon'), qty: 1 }); }
+      if (Math.random() < 0.10) { boxRare = 1; _invAdd(inv, { ...BOX_DEF.find(b => b.id === 'box_rare'), qty: 1 }); }
+      if (Math.random() < 0.10) { normStone = 1; _invAdd(inv, { ..._STONE_DEFS.norm_stone, qty: 1 }); }
+      if (Math.random() < 0.01) { blessStone = 1; _invAdd(inv, { ..._STONE_DEFS.bless_stone, qty: 1 }); }
+    }
+    if (items.length || boxUncommon || boxRare || normStone || blessStone) {
+      _commitServerItems(inv, null, 'mob_loot', { eid, rlvl, n: items.length, boxUncommon, boxRare, normStone, blessStone });
+    }
+    return { items, boxUncommon, boxRare, normStone, blessStone };
+  };
+
   // Gold granted by an admin to a player who is online. It has to land in
   // _lastStats, not just in the database: this session's 60s autosave writes
   // _lastStats wholesale, so a grant written only to Mongo was reverted the
@@ -5678,10 +5789,6 @@ io.on('connection', socket => {
       }
 
       const _arm = armIndexForLevel(result.rlvl);
-      const boxUncommon = result.isBoss && Math.random() < 0.50 ? 1 : 0;
-      const boxRare     = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-      const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-      const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0) ? 1 : 0;
       const gramDrop   = Math.random() < GRAM_DROP_CHANCE ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
@@ -5692,34 +5799,35 @@ io.on('connection', socket => {
       if (nexumDrop > 0) _earnNexum(nexumDrop);
       if (gramDrop > 0) _earnGram(gramDrop);
 
+      // Loot winner: random pick among party + attacker (just the attacker
+      // when solo). The roll AND the grant both happen inside the winner's
+      // own socket closure (socket.data._grantKillLoot) — a party member's
+      // inventory isn't reachable from this handler, only from theirs.
+      const allIds = memberIds.length > 0 ? [socket.id, ...memberIds] : [socket.id];
+      const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
+      const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
+      const lootResult = winnerSocket?.data?._grantKillLoot
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss })
+        : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
+
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare   = Math.max(1, Math.round(result.xp / totalMembers));
         const goldShare = Math.round(result.gold / totalMembers);
 
-        // Random loot recipient among party + attacker
-        const allIds = [socket.id, ...memberIds];
-        const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
-
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === socket.id, eid: result.eid, rlvl: result.rlvl,
-          boxUncommon: lootWinnerId === socket.id ? boxUncommon : 0,
-          boxRare:    lootWinnerId === socket.id ? boxRare    : 0,
-          normStone:  lootWinnerId === socket.id ? normStone  : 0,
-          blessStone: lootWinnerId === socket.id ? blessStone : 0,
+          eid: result.eid, rlvl: result.rlvl,
+          ...(lootWinnerId === socket.id ? lootResult : null),
           nexum: nexumDrop, gram: gramDrop,
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
             id: enemyId, xp: xpShare, gold: goldShare,
             ex: result.ex, ey: result.ey, color: result.color,
-            gotLoot: lootWinnerId === mid, eid: result.eid, rlvl: result.rlvl,
-            boxUncommon: lootWinnerId === mid ? boxUncommon : 0,
-            boxRare:    lootWinnerId === mid ? boxRare    : 0,
-            normStone:  lootWinnerId === mid ? normStone  : 0,
-            blessStone: lootWinnerId === mid ? blessStone : 0,
+            eid: result.eid, rlvl: result.rlvl,
+            ...(lootWinnerId === mid ? lootResult : null),
           });
         });
         // Visual only, and only to the players who can actually see it — the
@@ -5732,7 +5840,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold,
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon, boxRare, normStone, blessStone, nexum: nexumDrop, gram: gramDrop,
+          eid: result.eid, rlvl: result.rlvl, ...lootResult, nexum: nexumDrop, gram: gramDrop,
         });
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id]);
@@ -5787,10 +5895,6 @@ io.on('connection', socket => {
         });
       }
       const _arm2 = armIndexForLevel(result.rlvl);
-      const boxUncommon2 = result.isBoss && Math.random() < 0.50 ? 1 : 0;
-      const boxRare2     = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-      const normStone  = result.isBoss && Math.random() < 0.10 ? 1 : 0;
-      const blessStone = result.isBoss && Math.random() < 0.01 ? 1 : 0;
       const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0) ? 1 : 0;
       const gramDrop2  = Math.random() < GRAM_DROP_CHANCE ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
@@ -5799,29 +5903,28 @@ io.on('connection', socket => {
       // Same delta accumulation as the basic-attack path above.
       if (nexumDrop2 > 0) _earnNexum(nexumDrop2);
       if (gramDrop2 > 0) _earnGram(gramDrop2);
+      // Same cross-socket loot-winner grant as the basic-attack path above.
+      const allIds = memberIds.length > 0 ? [socket.id, ...memberIds] : [socket.id];
+      const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
+      const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
+      const lootResult = winnerSocket?.data?._grantKillLoot
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss })
+        : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
-        const allIds = [socket.id, ...memberIds];
-        const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === socket.id, eid: result.eid, rlvl: result.rlvl,
-          boxUncommon: lootWinnerId === socket.id ? boxUncommon2 : 0,
-          boxRare:    lootWinnerId === socket.id ? boxRare2    : 0,
-          normStone:  lootWinnerId === socket.id ? normStone  : 0,
-          blessStone: lootWinnerId === socket.id ? blessStone : 0,
+          eid: result.eid, rlvl: result.rlvl,
+          ...(lootWinnerId === socket.id ? lootResult : null),
           nexum: nexumDrop2, gram: gramDrop2,
         });
         memberIds.forEach(mid => io.to(mid).emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: lootWinnerId === mid, eid: result.eid, rlvl: result.rlvl,
-          boxUncommon: lootWinnerId === mid ? boxUncommon2 : 0,
-          boxRare:    lootWinnerId === mid ? boxRare2    : 0,
-          normStone:  lootWinnerId === mid ? normStone  : 0,
-          blessStone: lootWinnerId === mid ? blessStone : 0,
+          eid: result.eid, rlvl: result.rlvl,
+          ...(lootWinnerId === mid ? lootResult : null),
         }));
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
@@ -5829,7 +5932,7 @@ io.on('connection', socket => {
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
-          gotLoot: true, eid: result.eid, rlvl: result.rlvl, boxUncommon: boxUncommon2, boxRare: boxRare2, normStone, blessStone, nexum: nexumDrop2, gram: gramDrop2,
+          eid: result.eid, rlvl: result.rlvl, ...lootResult, nexum: nexumDrop2, gram: gramDrop2,
         });
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id]);
