@@ -2081,6 +2081,26 @@ function _sanitizeSavedStats(raw) {
   // client-supplied number — _persistSavedFields skips undefined values.
   delete s.gramBalance;
   delete s.nexumBalance;
+  // VIP progress is set only by gramShopBuy's own targeted $set (server/
+  // index.js) after a real GRAM spend, never by this general save path — but
+  // unlike the balances above, nothing here ever stripped it, so a crafted
+  // saveProgress carrying e.g. vipPending:[1..10] was accepted verbatim and
+  // claimVipRewards (which reads it straight back from the DB) would then
+  // hand out every VIP tier's items and gold for free, plus the permanent
+  // per-kill xp/gold/drop bonuses that come with a fake vipLevel — without a
+  // single GRAM ever being spent. Same reasoning as gramBalance/nexumBalance:
+  // drop it here so the DB write below leaves whatever the real purchase
+  // flow last set untouched.
+  delete s.vipLevel;
+  delete s.vipDeposited;
+  delete s.vipPending;
+  // specialQuestsDone gates completeSpecialQuest's once-only claim via a DB
+  // $ne filter against this very array — but the array itself came from this
+  // same client-trusted save path, so a saveProgress that simply omitted an
+  // id (or reset the whole array) let that quest's reward be claimed again.
+  // Stripped for the same reason as vipPending: the server already owns this
+  // field via completeSpecialQuest's own targeted $set.
+  delete s.specialQuestsDone;
   return s;
 }
 
