@@ -24,7 +24,7 @@ const Room = require('./game/Room');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  ENEMY_DEF,
+  ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
@@ -1983,7 +1983,7 @@ const floorRooms = new Map();
 // runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
 const _SANITIZE_MAX = {
   gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6,
-  maxHp: 1e7, atk: 1e6, def: 1e6, baseStat: 1e6, hpBase: 1e7, invLen: 500, storageLen: 200, qty: 9999,
+  maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 200, qty: 9999,
 };
 
 function _catalogBase(id) {
@@ -2058,15 +2058,37 @@ function _sanitizeSavedStats(raw) {
   if (s.hp        != null) s.hp        = _clampNum(s.hp,        0, s.maxHp ?? _SANITIZE_MAX.maxHp, 0);
   if (s.atk       != null) s.atk       = _clampNum(s.atk,       0, _SANITIZE_MAX.atk, 0);
   if (s.def       != null) s.def       = _clampNum(s.def,       0, _SANITIZE_MAX.def, 0);
-  if (s.baseAtk   != null) s.baseAtk   = _clampNum(s.baseAtk,   0, _SANITIZE_MAX.baseStat, 0);
-  if (s.baseDef   != null) s.baseDef   = _clampNum(s.baseDef,   0, _SANITIZE_MAX.baseStat, 0);
-  if (s.baseMaxHp != null) s.baseMaxHp = _clampNum(s.baseMaxHp, 1, _SANITIZE_MAX.hpBase, 100);
+  // baseAtk/baseDef/baseMaxHp are a pure function of class + level — gainXP
+  // (js/player.js) starts them at the class's CHAR_DEF stats and adds a flat
+  // +1/+1/+20 on every level-up, nothing else ever changes them. They used
+  // to be trusted straight from the client here (just clamped to a huge
+  // ceiling), which was a direct line to real, server-enforced PvE *and*
+  // PvP combat power: these three feed computeStats (server/game/Room.js)
+  // with no relationship to whether the reported level actually earned
+  // them. Derived here instead of trusted, so the client's own copy of
+  // these fields is simply ignored.
+  const _cd = CHAR_DEF[s.type] || CHAR_DEF.lev;
+  s.baseAtk   = _cd.baseAtk + (s.lvl - 1);
+  s.baseDef   = _cd.baseDef + (s.lvl - 1);
+  s.baseMaxHp = _cd.baseHP  + (s.lvl - 1) * 20;
   if (s.autoHpPct != null) s.autoHpPct = _clampNum(s.autoHpPct, 0, 1, 0.5);
 
+  // Upgrade points spent must not exceed what the (now server-derived) lvl/
+  // bonusSP could actually have earned — getAvailableSkillPoints (js/
+  // player.js) computes this identical budget client-side to gate
+  // upgradeStats(), but nothing enforced it here, so a crafted save could
+  // report any upgrades total up to the per-stat ceiling regardless of
+  // level, and — same as baseAtk/baseDef above — these feed real combat
+  // power via computeStats. A legitimate client can never violate this
+  // budget, so a save that does is treated the same as an untrusted item
+  // id: the whole map is dropped rather than guessing which entries (if
+  // any) were legitimate.
   if (s.upgrades && typeof s.upgrades === 'object' && !Array.isArray(s.upgrades)) {
     const u = {};
     for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
-    s.upgrades = u;
+    const _spent = Object.values(u).reduce((sum, v) => sum + v, 0);
+    const _budget = s.lvl * 3 + s.bonusSP;
+    s.upgrades = _spent <= _budget ? u : {};
   }
   // Freshness stamp used only to pick the newer of {DB, client localStorage
   // backup} on reload. Clamp to a sane range so a client can't write a
