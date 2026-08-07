@@ -92,18 +92,6 @@ const I18N_UI = {
   eventsBtn:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },
   eventsHdr:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },
   worldBossTab: { ru: 'Мировой босс', en: 'World boss', uk: 'Світовий бос', es: 'Jefe mundial', tr: 'Dünya patronu', pt: 'Chefe mundial' },
-  // ── Special packs panel (Специальные) — one-time 12h GRAM sale ──────────
-  specialBtn:            { ru: 'Специальные', en: 'Special', uk: 'Спеціальні', es: 'Especiales', tr: 'Özel', pt: 'Especiais' },
-  specialHdr:             { ru: 'Специальные наборы', en: 'Special packs', uk: 'Спеціальні набори', es: 'Paquetes especiales', tr: 'Özel paketler', pt: 'Pacotes especiais' },
-  specialSaleTimeLeftFmt: { ru: 'Осталось: {time}', en: 'Time left: {time}', uk: 'Залишилось: {time}', es: 'Tiempo restante: {time}', tr: 'Kalan süre: {time}', pt: 'Tempo restante: {time}' },
-  specialSaleExpiredLbl:  { ru: 'Акция завершена', en: 'Sale ended', uk: 'Акція завершена', es: 'Oferta finalizada', tr: 'Kampanya sona erdi', pt: 'Oferta encerrada' },
-  specialPkgLabel_sp20:   { ru: 'Набор I', en: 'Pack I', uk: 'Набір I', es: 'Paquete I', tr: 'Paket I', pt: 'Pacote I' },
-  specialPkgLabel_sp50:   { ru: 'Набор II', en: 'Pack II', uk: 'Набір II', es: 'Paquete II', tr: 'Paket II', pt: 'Pacote II' },
-  specialPkgLabel_sp100:  { ru: 'Набор III', en: 'Pack III', uk: 'Набір III', es: 'Paquete III', tr: 'Paket III', pt: 'Pacote III' },
-  safeStonesShortLbl:     { ru: 'камней безопасной заточки', en: 'safe enchant stones', uk: 'каменів безпечного гартування', es: 'piedras de encantamiento seguro', tr: 'güvenli güçlendirme taşı', pt: 'pedras de encantamento seguro' },
-  normalStonesShortLbl:   { ru: 'камней обычной заточки', en: 'normal enchant stones', uk: 'каменів звичайного гартування', es: 'piedras de encantamiento normal', tr: 'normal güçlendirme taşı', pt: 'pedras de encantamento normal' },
-  classCloakShortLbl:     { ru: 'Плащ на класс', en: 'Class cloak', uk: 'Плащ на клас', es: 'Capa de clase', tr: 'Sınıf pelerini', pt: 'Capa de classe' },
-  classArtifactShortLbl:  { ru: 'Артефакт на класс', en: 'Class artifact', uk: 'Артефакт на клас', es: 'Artefacto de clase', tr: 'Sınıf artefaktı', pt: 'Artefato de classe' },
   // Day names for the "next event" line, indexed by Date#getDay() — Sunday
   // first, matching JS, not the Russian week.
   eventWeekdays:{ ru: 'Вс,Пн,Вт,Ср,Чт,Пт,Сб', en: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat', uk: 'Нд,Пн,Вт,Ср,Чт,Пт,Сб', es: 'Dom,Lun,Mar,Mié,Jue,Vie,Sáb', tr: 'Paz,Pzt,Sal,Çar,Per,Cum,Cmt', pt: 'Dom,Seg,Ter,Qua,Qui,Sex,Sáb' },
