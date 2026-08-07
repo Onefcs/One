@@ -5307,7 +5307,17 @@ io.on('connection', socket => {
     // on the floor for someone else — same ordering as the market's buy path.
     const peek = currentRoom.worldDrops.get(id);
     if (!peek) return;
-    if (inv && !isStackableItem(peek.item) && inv.length >= SERVER_INV_MAX) {
+    // Exactly the condition _invAdd would refuse on, checked BEFORE the claim
+    // consumes the pile: a stackable only rides in for free when a stack of
+    // it already exists, so one with no existing stack needs a slot just like
+    // a non-stackable does. Testing only the non-stackable case (as this used
+    // to) meant a stackable drop landing on a full inventory was claimed off
+    // the floor and then dropped on the way in — destroyed rather than left
+    // for someone else. The client used to paper over that by adding it
+    // locally on delivered:false, which is precisely the kind of client-side
+    // grant the save path no longer accepts.
+    const _wouldStack = inv && isStackableItem(peek.item) && inv.some(i => i && i.id === peek.item.id);
+    if (inv && !_wouldStack && inv.length >= SERVER_INV_MAX) {
       return socket.emit('worldDropError', { msg: 'Инвентарь полон' });
     }
     const drop = currentRoom.claimWorldDrop(id, p.x, p.y);

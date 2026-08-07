@@ -487,12 +487,18 @@ function onClassGearCrafted(item, delivered) {
   const idx = _pendingClassGearCraftIdx;
   _pendingClassGearCraftIdx = null;
   if (item) {
-    // delivered: the server already added it (and removed the salvage mats)
-    // via the inventorySync that landed before this event — adding it again
-    // here would craft two items for one price.
-    if (!delivered) addToInventory({ ...item });
+    // The server owns the grant: it added the item (and removed the salvage
+    // mats) and its inventorySync landed before this event. delivered:false
+    // means it could NOT hand it over — there was no room — so the honest
+    // thing is to say so. Adding it here instead, as this used to, both
+    // duplicated it when the server HAD delivered and forged one when it
+    // hadn't; the save path now rejects the latter outright.
+    if (delivered) {
+      _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name);
+    } else {
+      _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
+    }
     if (typeof updateInvUI === 'function') updateInvUI();
-    _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name);
   } else {
     _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }
@@ -664,11 +670,14 @@ function onPetCrafted(pet, delivered) {
   const idx = _pendingPetCraftIdx;
   _pendingPetCraftIdx = null;
   if (pet) {
-    // delivered: the server already added it and its inventorySync landed
-    // before this event, so adding it here would craft two pets for one price.
-    if (!delivered) addToInventory({ ...pet });
+    // Same rule as onClassGearCrafted above — the server owns the grant, and
+    // delivered:false means it had no room to hand the pet over.
+    if (delivered) {
+      _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
+    } else {
+      _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
+    }
     if (typeof updateInvUI === 'function') updateInvUI();
-    _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
   } else {
     _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }

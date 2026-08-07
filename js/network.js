@@ -1980,10 +1980,14 @@ function _initEventBossHandlers(s) {
     worldDrops.delete(id);
     _worldDropPending.delete(id);
     if (!player || !item) return;
-    // delivered means the server already put it in AND pushed the result down
-    // via inventorySync (which arrives before this event) — mirroring it again
-    // here handed out a second copy. Only add it when the server could not.
-    if (!delivered && typeof addToInventoryQty === 'function') addToInventoryQty(item, item.qty || 1);
+    // The server owns the grant and pushes it down via inventorySync, which
+    // arrives before this event. delivered:false means it could not hand the
+    // pile over at all — adding it here would be forging an item the server
+    // refused, which the save path now rejects.
+    if (!delivered) {
+      if (typeof _marketToast === 'function') _marketToast(t('invFull'), 'err');
+      return;
+    }
     if (typeof updateInvUI === 'function') updateInvUI();
     if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, '+ ' + item.name, (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[item.rarity]) || '#c4a276');
     if (typeof Sound !== 'undefined') Sound.loot();
@@ -2076,14 +2080,10 @@ function _initDeathBattleHandlers(s) {
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     pvpMode = false;
-    // Only mirror when the server could NOT put the prize in itself — when it
-    // did (delivered), its inventorySync already arrived with the items and
-    // adding them here would double the reward.
-    if (!delivered) {
-      (items || []).forEach(it => {
-        if (typeof addToInventoryQty === 'function') addToInventoryQty(it, it.qty || 1);
-      });
-    }
+    // The server owns the prize and its inventorySync has already arrived
+    // with it. delivered:false means it had no live inventory to put it in —
+    // mirroring it locally would be forging items the server never granted,
+    // which the save path now rejects.
     if (gram) window._gramBalance = (window._gramBalance || 0) + gram;
     if (typeof updateInvUI === 'function') updateInvUI();
     netSaveProgress();

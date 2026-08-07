@@ -4197,20 +4197,13 @@ function onMarketListed(listing) {
 }
 function onMarketCancelled(listingId, item, delivered) {
   _marketMine = _marketMine.filter(l => l.id !== listingId);
-  // delivered: the server already put the item back and its inventorySync has
-  // arrived, so it's in player.inventory right now — adding it again here
-  // would give a free second copy of every cancelled listing.
-  //
-  // Only when it could NOT (no room server-side) do we add it locally, and
-  // then the return value MUST be checked — an unchecked failure is what
-  // destroyed items: the add silently fails on a full inventory and the
-  // unconditional netSaveProgressNow() below shipped an inventory without the
-  // returned item, overwriting the server's copy which did have it. On failure
-  // skip the save and let the server's inventorySync bring us back in line.
-  const stored = (delivered || !item) ? true : addToInventoryQty(item, item.qty || 1);
+  // The server owns the return: it puts the item back and its inventorySync
+  // has already arrived, so it is in player.inventory right now. delivered:
+  // false means it had no room — the listing stays put rather than the item
+  // being conjured here, which the save path would reject anyway.
   updateInvUI();
   if (_marketTab === 'mine') _renderMarketBody();
-  if (!stored) {
+  if (item && !delivered) {
     _marketToast(t('invFullItemLostToast'), 'err');
     return;
   }
@@ -4219,10 +4212,10 @@ function onMarketCancelled(listingId, item, delivered) {
 }
 function onMarketBought(listingId, item, delivered) {
   _marketLots = _marketLots.filter(l => l.id !== listingId);
-  // delivered: already in player.inventory via the inventorySync that came
-  // with this purchase. Adding it again handed out a free duplicate of every
-  // bought lot — which is how a bought skill book survived being spent.
-  if (!delivered && item && !addToInventoryQty(item, item.qty || 1)) {
+  // Already in player.inventory via the inventorySync that came with this
+  // purchase — the server owns the grant. delivered:false means it could not
+  // hand it over; forging it here is exactly what the save path now rejects.
+  if (item && !delivered) {
     _marketToast(t('invFullItemLostToast'), 'err');
   }
   updateInvUI();
