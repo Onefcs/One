@@ -137,7 +137,24 @@ const RACE10_Y0 = A3_Y0 + A3_H + 5;
 const RACE10_H  = RACE10_LANES * RACE10_LANE_PITCH;
 const RACE10_W  = RACE10_LANE_LEN + RACE10_BOSS_ROOM;
 
-const ZONES_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
+// ── Страх (Fear) — private wave-survival instances ──────────────────────────
+// FEAR_LANES identical sealed square rooms, one per concurrent entrant —
+// unlike race10's corridors these hold no baked-in monsters: each wave (20
+// monsters, escalating one global level at a time) is spawned dynamically at
+// runtime by Room.js's fearSpawnWave once the player is deployed, and removed
+// once the lane is released, so only geometry needs to exist ahead of time.
+// Sealed off from everything else the same way arena/pvpArena/race10 are —
+// the only way in is server.js's fearEnter handler placing a player at a
+// lane's entry point directly.
+const FEAR_LANES = 8;      // max concurrent Fear runs
+const FEAR_ROOM   = 24;    // room size (tiles) — comfortable room for 20 scattered monsters
+const FEAR_GAP    = 6;     // wall padding between stacked lanes
+const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
+const FEAR_X0 = ARENA_X0;
+const FEAR_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
+const FEAR_H  = FEAR_LANES * FEAR_PITCH;
+
+const ZONES_Y0 = FEAR_Y0 + FEAR_H + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 const DW = Math.max(MARGIN * 2 + ZONE_LEN, RACE10_X0 + RACE10_W + MARGIN);
 
@@ -194,6 +211,21 @@ function generateOpenWorld() {
   paintRect(race10BossRoomX0, RACE10_Y0, race10BossRoomX0 + RACE10_BOSS_ROOM - 1, RACE10_Y0 + RACE10_H - 1);
   const race10BossCx = race10BossRoomX0 + Math.floor(RACE10_BOSS_ROOM / 2);
   const race10BossCy = RACE10_Y0 + Math.floor(RACE10_H / 2);
+
+  // Страх: FEAR_LANES plain sealed rooms stacked one per row, entry point
+  // dead centre of each. Room.js scatters that lane's wave inside these same
+  // tile bounds (x0/y0/size) the same way buildArm's spawnRoomEnemies picks a
+  // random FLOOR tile within a room's bounds, below.
+  const fearLanes = [];
+  for (let i = 0; i < FEAR_LANES; i++) {
+    const x0 = FEAR_X0, y0 = FEAR_Y0 + i * FEAR_PITCH;
+    paintRect(x0, y0, x0 + FEAR_ROOM - 1, y0 + FEAR_ROOM - 1);
+    fearLanes.push({
+      x0, y0, size: FEAR_ROOM,
+      entryX: (x0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
+      entryY: (y0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
+    });
+  }
 
   const rooms = [hub, arena, a3];
   const enemyList = [];
@@ -449,6 +481,12 @@ function generateOpenWorld() {
         { x: (RACE10_X0 + RACE10_BARRIER2_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 1 },
       ]),
     },
+    // Страх (Fear): lane geometry only — Room.js reaches into this directly
+    // (this._dungeon.fear), it is deliberately NOT part of Room.dungeonData
+    // (below), since the client needs no rendering/tinting hints for it: entry
+    // and every wave transition are server-pushed teleports, not something the
+    // client discovers by walking around.
+    fear: { lanes: fearLanes },
     armEntries,
     corridorGates,
     enemies: enemyList,

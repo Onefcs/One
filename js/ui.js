@@ -3065,6 +3065,7 @@ function openEventsPanel() {
   if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
   if (typeof netArena3Sync === 'function') netArena3Sync();
   if (typeof netRace10Sync === 'function') netRace10Sync();
+  if (typeof netFearSync === 'function') netFearSync();
   _renderEventsBody();
 }
 
@@ -3090,6 +3091,7 @@ function _renderEventsBody() {
   body.innerHTML = _eventTab === 'boss'    ? _worldBossBodyHTML()
                  : _eventTab === 'a3'      ? _arena3BodyHTML()
                  : _eventTab === 'race10'  ? _race10BodyHTML()
+                 : _eventTab === 'fear'    ? _fearBodyHTML()
                  : _deathBattleBodyHTML();
 }
 
@@ -3251,6 +3253,61 @@ function _race10BodyHTML() {
         </div>
       </div>
     </div>`;
+}
+
+// ── Страх (Fear) tab ─────────────────────────────────────────────────────────
+// On-demand: no schedule, no queue, no min level — the only gate is whether
+// today's attempts are used up. Entering IS starting (no separate register
+// step), so the action button either starts a run or shows it's already
+// running. Headline number is the current wave while running, otherwise how
+// many of the daily attempts are left.
+function _fearBodyHTML() {
+  const st = (typeof _fearState !== 'undefined' && _fearState) || { attemptsLeft: null, maxAttempts: 2, maxWave: 39 };
+  const inRun = typeof _fearInRun !== 'undefined' && _fearInRun;
+  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+
+  let phaseTxt, action;
+  if (inRun) {
+    phaseTxt = tVars('fearPhaseFighting', { wave: _fearWave || 1, max: st.maxWave });
+    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+  } else if (spent) {
+    phaseTxt = t('a3NoAttempts');
+    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+  } else {
+    phaseTxt = t('fearPhaseIdle');
+    action = `<button class="db-action" onclick="netFearEnter()">${t('fearEnterBtn')}</button>`;
+  }
+
+  const countdown = inRun
+    ? `${_fearWave || 1}/${st.maxWave}`
+    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
+  const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
+    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
+    : '';
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${countdown}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${score}
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
+          <li>${t('fearRule2')}</li>
+          <li>${tVars('fearRule3', { n: st.maxWave })}</li>
+          <li>${t('fearRule4')}</li>
+          <li>${t('fearRule5')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+// Called from the network handlers on every server push.
+function onFearState() {
+  _updateEventsBtnHighlight();
+  if (_eventsPanelOpen() && _eventTab === 'fear') _renderEventsBody();
 }
 
 // Called from the network handlers on every server push.

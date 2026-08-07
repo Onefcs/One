@@ -1959,6 +1959,7 @@ function _initEventBossHandlers(s) {
   _initDeathBattleHandlers(s);
   _initArena3Handlers(s);
   _initRace10Handlers(s);
+  _initFearHandlers(s);
 }
 
 // ── Death Battle (Битва на смерть) ──────────────────────────────────────────
@@ -2296,6 +2297,71 @@ function _initRace10Handlers(s) {
     if (typeof showRace10Result === 'function') showRace10Result(!!won, winnerName, myDamage || 0, !!timedOut, reward || 0);
     if (typeof netRace10Sync === 'function') netRace10Sync();
     if (typeof onRace10State === 'function') onRace10State();
+  });
+}
+
+function netFearEnter()  { if (socket?.connected) socket.emit('fearEnter'); }
+function netFearSync()   { if (socket?.connected) socket.emit('fearSync'); }
+// Sent once the result banner has been shown for a cleared run — see the
+// fearFinished handler below. Same round-trip race10Return/arena3Return use:
+// the server already moved this player back to the hub when the run ended,
+// this just makes the client catch up visually.
+function netFearReturn() { if (socket?.connected) socket.emit('fearReturn'); }
+
+// ── Страх (Fear) ─────────────────────────────────────────────────────────────
+// On-demand, solo wave-survival instance: entering IS starting (fearStarted),
+// so unlike arena3/race10 above there is no separate register/queue step.
+function _initFearHandlers(s) {
+  s.on('fearState', (st) => {
+    _fearState = {
+      maxAttempts: st.maxAttempts || _fearState.maxAttempts || 2,
+      maxWave: st.maxWave || _fearState.maxWave || 39,
+      attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _fearState.attemptsLeft,
+    };
+    _fearInRun = !!st.inRun;
+    _fearWave = st.wave || 0;
+    if (typeof onFearState === 'function') onFearState();
+  });
+
+  s.on('fearError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  s.on('fearStarted', ({ x, y, hp, maxWave, attemptsLeft }) => {
+    if (!player) return;
+    _fearInRun = true;
+    _fearWave = 1;
+    if (maxWave) _fearState = { ..._fearState, maxWave };
+    if (attemptsLeft !== undefined) _fearState = { ..._fearState, attemptsLeft };
+    if (hp) player.hp = hp;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('fearLbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('fearWaveMsg', { wave: 1, max: _fearState.maxWave }), '#8a3ffc');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof onFearState === 'function') onFearState();
+  });
+
+  // The previous wave fell and the next one just spawned in the same lane —
+  // a HUD update only, no teleport: the player stays exactly where they are.
+  s.on('fearWave', ({ wave, maxWave }) => {
+    _fearWave = wave || 0;
+    if (maxWave) _fearState = { ..._fearState, maxWave };
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('fearWaveMsg', { wave: _fearWave, max: _fearState.maxWave }), '#8a3ffc');
+    if (typeof onFearState === 'function') onFearState();
+  });
+
+  // Run over — either died mid-wave (cleared: false) or beat FEAR_MAX_WAVE
+  // (cleared: true). A death already sends the player home through the
+  // generic death/respawn flow (js/game.js's respawnPlayer), so only the
+  // "cleared" case still needs an explicit return trip.
+  s.on('fearFinished', ({ cleared, wave }) => {
+    _fearInRun = false;
+    _fearWave = 0;
+    const msg = cleared ? t('fearClearedMsg') : tVars('fearDiedMsg', { wave: wave || 0, max: _fearState.maxWave });
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
+    if (cleared && typeof netFearReturn === 'function') netFearReturn();
+    if (typeof netFearSync === 'function') netFearSync();
+    if (typeof onFearState === 'function') onFearState();
   });
 }
 

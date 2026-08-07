@@ -37,6 +37,7 @@ const {
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct,
+  FEAR_MAX_WAVE,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -2416,11 +2417,13 @@ function _lockDailyAttempt(socketId, field) {
 // attempt is what makes that start the whole of the opportunity.
 //
 // Read inside the function rather than from a table built up here:
-// RACE10_ATTEMPTS is declared further down the file, and a `const` table
-// evaluated at load time would hit its temporal dead zone and take the whole
-// process down on boot.
+// RACE10_ATTEMPTS/FEAR_ATTEMPTS are declared further down the file, and a
+// `const` table evaluated at load time would hit their temporal dead zone
+// and take the whole process down on boot.
 function _attemptCap(field) {
-  return field === 'race10Attempts' ? RACE10_ATTEMPTS : DAILY_DUNGEON_ATTEMPTS;
+  if (field === 'race10Attempts') return RACE10_ATTEMPTS;
+  if (field === 'fearAttempts') return FEAR_ATTEMPTS;
+  return DAILY_DUNGEON_ATTEMPTS;
 }
 
 async function _dailyAttemptsLeft(socketId, field) {
@@ -2440,6 +2443,8 @@ function _lockArena3Daily(socketId)                  { _lockDailyAttempt(socketI
 async function _arena3AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'arena3Attempts'); }
 function _lockRace10Daily(socketId)                  { _lockDailyAttempt(socketId, 'race10Attempts'); }
 async function _race10AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'race10Attempts'); }
+function _lockFearDaily(socketId)                    { _lockDailyAttempt(socketId, 'fearAttempts'); }
+async function _fearAttemptsLeft(socketId)           { return _dailyAttemptsLeft(socketId, 'fearAttempts'); }
 
 // Remove leaverId from their party; notify remaining members.
 // If only 1 member remains the party dissolves entirely.
@@ -2905,11 +2910,12 @@ function _pvpEliminate(socketId, killerSocketId, room) {
   const dbHandled = _dbEliminate(socketId, killerSocketId);
   const a3Handled = _a3Eliminate(socketId, killerSocketId);
   const r10Handled = _race10Eliminate(socketId);
+  const fearHandled = _fearEliminate(socketId);
   // A PvP kill (setPvpMode duel) that isn't part of any live Death
-  // Battle/Arena3/race10 round falls through all three above untouched —
+  // Battle/Arena3/race10/Fear round falls through all four above untouched —
   // they only record when the victim was in their own alive map. Without
   // this, open-world PvP kills/deaths never appeared in the История tab.
-  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled) {
+  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !fearHandled) {
     const victimTid = _socketTid(socketId), killerTid = _socketTid(killerSocketId);
     const victim = room?.players.get(socketId);
     const killer = room?.players.get(killerSocketId);
@@ -3422,6 +3428,76 @@ async function _race10Finish(winnerId, timedOut) {
   _race10Broadcast();
   // No follow-up race: the window holds exactly one start (see
   // _race10OpenWindow), so anyone who missed it waits for tomorrow.
+}
+
+// ── Страх (Fear) ─────────────────────────────────────────────────────────────
+// A private, on-demand wave-survival instance: no scheduled window and no
+// registration queue, unlike arena3/race10 above — a player spends one of
+// FEAR_ATTEMPTS daily attempts the instant they enter (fearEnter, below the
+// socket handlers further down this file), same "spent on entry, not on a
+// successful clear" rule the shared daily-attempts pool already follows for
+// arena3/race10. Waves escalate one global monster level at a time, 20
+// monsters per wave (server/game/Room.js's FEAR_WAVE_MOBS), up to
+// FEAR_MAX_WAVE (shared/definitions.js, read by both here and Room.js).
+// Dying or clearing the last wave both send the player home — there is no
+// way to fail out and keep the attempt, and no way to "win" beyond that.
+const FEAR_ATTEMPTS = 2;
+
+// socketId -> { lane, wave } for whoever currently has a run going — read by
+// the attack/skillAttack handlers to advance the run one kill at a time, by
+// _fearEliminate on death, and by the disconnect handler if they drop
+// mid-run. A player can only ever be in one lane at once (fearEnter refuses
+// a second entry while this already has them), so a flat map is enough.
+const _fear = new Map();
+
+// Spawns wave `wave` in `lane` and tells the client — split out since both
+// fearEnter (wave 1) and _fearTrackKill (every wave after) need it.
+function _fearStartWave(room, socketId, lane, wave) {
+  room.fearSpawnWave(lane, wave);
+  _fear.set(socketId, { lane, wave });
+  io.to(socketId).emit('fearWave', { wave, maxWave: FEAR_MAX_WAVE });
+}
+
+// Called right after a kill lands on a `fear`-tagged enemy (see the attack/
+// skillAttack handlers, alongside the existing _race10TrackHit call). The kill
+// itself already paid out xp/gold through the normal reward path — this only
+// owns the wave-progression side effect: advance to the next wave once the
+// current one's last monster falls, or finish the run if that was
+// FEAR_MAX_WAVE.
+function _fearTrackKill(socketId, result) {
+  if (result.arm !== 'fear') return;
+  const run = _fear.get(socketId);
+  if (!run || run.lane !== result.lane) return;
+  const room = getRoom(1);
+  if (!room) return;
+  const left = room.fearRegisterKill(result.lane);
+  if (left > 0) return;
+  if (run.wave >= FEAR_MAX_WAVE) { _fearFinish(socketId, true); return; }
+  _fearStartWave(room, socketId, result.lane, run.wave + 1);
+}
+
+// Sends the player home and frees their lane (via Room.deathBattleReturn,
+// which releases p._fearLane along with the teleport — see Room.js) — either
+// because they cleared FEAR_MAX_WAVE (cleared: true) or died mid-run
+// (cleared: false, called from _fearEliminate). Safe to call on someone not
+// currently in a run.
+function _fearFinish(socketId, cleared) {
+  const run = _fear.get(socketId);
+  if (!run) return;
+  _fear.delete(socketId);
+  const room = getRoom(1);
+  const spot = room ? room.deathBattleReturn(socketId) : null;
+  io.to(socketId).emit('fearFinished', { cleared, wave: run.wave, x: spot?.x, y: spot?.y });
+}
+
+// Wired into _pvpEliminate's fan-out (mirrors _race10Eliminate) — dying
+// anywhere while in a Fear lane ends the run on the spot. Only a lane's own
+// monsters can ever reach a player there, but this covers the death path
+// generically the same way the other instanced events do.
+function _fearEliminate(socketId) {
+  if (!_fear.has(socketId)) return false;
+  _fearFinish(socketId, false);
+  return true;
 }
 
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
@@ -5646,6 +5722,10 @@ io.on('connection', socket => {
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (_race10TrackHit(socket.id, enemyId, result)) return;
+    // Fear kills still pay out xp/gold through the normal path below — this
+    // only advances the wave counter (spawns the next wave, or ends the run
+    // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
+    if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -5758,6 +5838,10 @@ io.on('connection', socket => {
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
     if (!result) return;
     if (_race10TrackHit(socket.id, enemyId, result)) return;
+    // Fear kills still pay out xp/gold through the normal path below — this
+    // only advances the wave counter (spawns the next wave, or ends the run
+    // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
+    if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -5952,6 +6036,7 @@ io.on('connection', socket => {
     if (_db.phase !== 'reg') return socket.emit('deathBattleError', { msg: 'Регистрация закрыта' });
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('deathBattleError', { msg: 'Выберите персонажа' });
+    if (_fear.has(socket.id)) return socket.emit('deathBattleError', { msg: 'Вы сейчас в Страхе' });
     _db.reg.set(socket.id, { name: authed.username });
     socket.emit('deathBattleRegistered', { registered: true });
     _dbBroadcast();
@@ -5982,6 +6067,9 @@ io.on('connection', socket => {
     // can in principle still be live right as this one opens.
     if (_race10.alive.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    if (_fear.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы сейчас в Страхе' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < ARENA3_MIN_LEVEL) {
@@ -6028,6 +6116,9 @@ io.on('connection', socket => {
     if (_a3.live && _a3.teams.has(socket.id)) {
       return socket.emit('race10Error', { msg: 'Вы сейчас на арене 3х3' });
     }
+    if (_fear.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы сейчас в Страхе' });
+    }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < RACE10_MIN_LEVEL) {
       return socket.emit('race10Error', { msg: `Нужен ${RACE10_MIN_LEVEL} уровень` });
@@ -6056,6 +6147,56 @@ io.on('connection', socket => {
       inMatch: _race10.alive.has(socket.id),
       attemptsLeft: await _race10AttemptsLeft(socket.id),
     });
+  });
+
+  // ── Страх (Fear) ──────────────────────────────────────────────────────────
+  // On-demand: no registration queue, no scheduled window — entering IS
+  // starting, so this single handler does everything arena3Register/
+  // race10Register + their deploy step do together.
+  safeOn('fearEnter', async () => {
+    if (!authed) return;
+    if (_fear.has(socket.id)) return; // already running — the client shouldn't offer the button
+    if (!currentRoom) return;
+    const cp = currentRoom.players.get(socket.id);
+    if (!cp) return socket.emit('fearError', { msg: 'Выберите персонажа' });
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('fearError', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    if (_a3.live && _a3.teams.has(socket.id)) {
+      return socket.emit('fearError', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.live && _race10.alive.has(socket.id)) {
+      return socket.emit('fearError', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    const left = await _fearAttemptsLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('fearError', { msg: 'Попытки в Страх на сегодня закончились' });
+    }
+    const spot = currentRoom.fearDeploy(socket.id);
+    if (!spot) {
+      return socket.emit('fearError', { msg: 'Все залы заняты — попробуйте чуть позже' });
+    }
+    _lockFearDaily(socket.id);
+    _fearStartWave(currentRoom, socket.id, spot.lane, 1);
+    socket.emit('fearStarted', { x: spot.x, y: spot.y, hp: cp.hp, maxWave: FEAR_MAX_WAVE, attemptsLeft: left - 1 });
+  });
+
+  safeOn('fearSync', async () => {
+    const run = _fear.get(socket.id);
+    socket.emit('fearState', {
+      maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE,
+      attemptsLeft: await _fearAttemptsLeft(socket.id),
+      inRun: !!run, wave: run?.wave || 0,
+    });
+  });
+
+  // Sent once the player closes the fear result modal — same reasoning as
+  // race10Return/arena3Return: server-side position was already reset when
+  // the run ended (_fearFinish), this just makes the client catch up
+  // visually if it somehow missed the fearFinished payload's x/y.
+  safeOn('fearReturn', () => {
+    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    if (spot) socket.emit('deathBattleReturned', spot);
   });
 
   // Sent once the player closes the race10 result modal — same reasoning as

@@ -354,6 +354,15 @@ function armNameForLevel(lvl) {
 // the entrance doubles as a gate matching where the PREVIOUS arm tops out.
 const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 
+// ── Страх (Fear) event ───────────────────────────────────────────────────────
+// A private, on-demand wave-survival instance (server/game/dungeon.js's
+// `fear` lanes, server/game/Room.js's fearSpawnWave/fearRegisterKill): wave N
+// is N monsters at global level N, 20 per wave, N running 1..FEAR_MAX_WAVE.
+// Shared between Room.js (spawning + the wave-clear check) and server/
+// index.js (the UI's wave counter), so it lives here rather than being
+// duplicated in both.
+const FEAR_MAX_WAVE = 39;
+
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
 // and server-side validation (e.g. the Market only ever stores a listing's
@@ -1042,7 +1051,7 @@ if (typeof module !== 'undefined') module.exports = {
   xpAtLevel, goldAtLevel,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ,
+  armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

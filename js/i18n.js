@@ -154,6 +154,22 @@ const I18N_UI = {
   race10DefeatSub:{ ru: 'Победил {name} — ваш урон боссу: {dmg}', en: '{name} won — your damage to the boss: {dmg}', uk: 'Переміг {name} — ваша шкода босу: {dmg}', es: '{name} ganó — tu daño al jefe: {dmg}', tr: '{name} kazandı — patrona verdiğin hasar: {dmg}', pt: '{name} venceu — seu dano ao chefe: {dmg}' },
   race10NoResultSub:{ ru: 'Забег закрыт: никто не одолел босса вовремя', en: 'Race closed: nobody brought the boss down in time', uk: 'Забіг закрито: ніхто не здолав боса вчасно', es: 'Carrera cerrada: nadie derrotó al jefe a tiempo', tr: 'Yarış kapandı: kimse patronu zamanında yenemedi', pt: 'Corrida encerrada: ninguém derrotou o chefe a tempo' },
 
+  // ── Страх (Fear): private wave-survival instance ──────────────────────────
+  fearTab:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },
+  fearLbl:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },
+  fearPhaseIdle:{ ru: 'Войдите, чтобы начать', en: 'Enter to begin', uk: 'Увійдіть, щоб почати', es: 'Entra para empezar', tr: 'Başlamak için gir', pt: 'Entre para começar' },
+  fearPhaseFighting: { ru: 'Волна {wave}/{max}', en: 'Wave {wave}/{max}', uk: 'Хвиля {wave}/{max}', es: 'Oleada {wave}/{max}', tr: 'Dalga {wave}/{max}', pt: 'Onda {wave}/{max}' },
+  fearInRunBtn: { ru: 'В бою', en: 'Fighting', uk: 'У бою', es: 'En combate', tr: 'Savaşta', pt: 'Em combate' },
+  fearEnterBtn: { ru: 'Войти', en: 'Enter', uk: 'Увійти', es: 'Entrar', tr: 'Gir', pt: 'Entrar' },
+  fearWaveMsg:  { ru: 'Волна {wave} из {max}', en: 'Wave {wave} of {max}', uk: 'Хвиля {wave} з {max}', es: 'Oleada {wave} de {max}', tr: 'Dalga {wave}/{max}', pt: 'Onda {wave} de {max}' },
+  fearClearedMsg: { ru: 'Все волны пройдены!', en: 'All waves cleared!', uk: 'Усі хвилі пройдено!', es: '¡Todas las oleadas superadas!', tr: 'Tüm dalgalar tamamlandı!', pt: 'Todas as ondas superadas!' },
+  fearDiedMsg:  { ru: 'Вы погибли на волне {wave} из {max}', en: 'You died on wave {wave} of {max}', uk: 'Ви загинули на хвилі {wave} з {max}', es: 'Moriste en la oleada {wave} de {max}', tr: '{wave}/{max}. dalgada öldün', pt: 'Você morreu na onda {wave} de {max}' },
+  fearRule1:    { ru: '{n} попытки в день, тратится при входе', en: '{n} attempts a day, spent on entry', uk: '{n} спроби на день, витрачається при вході', es: '{n} intentos al día, se gasta al entrar', tr: 'Günde {n} hak, girişte harcanır', pt: '{n} tentativas por dia, gasta ao entrar' },
+  fearRule2:    { ru: 'Монстры приходят волнами по 20, уровень волны растёт с каждой', en: 'Monsters arrive in waves of 20, the level rising with every wave', uk: 'Монстри приходять хвилями по 20, рівень хвилі зростає з кожною', es: 'Los monstruos llegan en oleadas de 20, subiendo de nivel en cada una', tr: 'Canavarlar her dalgada seviyesi artan 20\'şer kişilik gruplar halinde gelir', pt: 'Monstros chegam em ondas de 20, com o nível subindo a cada onda' },
+  fearRule3:    { ru: 'Дойдите до волны {n}, чтобы пройти испытание целиком', en: 'Reach wave {n} to clear the whole gauntlet', uk: 'Дійдіть до хвилі {n}, щоб пройти випробування повністю', es: 'Llega a la oleada {n} para superar todo el desafío', tr: 'Tüm bu zorlu sınavı tamamlamak için {n}. dalgaya ulaş', pt: 'Chegue à onda {n} para vencer o desafio inteiro' },
+  fearRule4:    { ru: 'Смерть выбрасывает из подземелья в центральный зал', en: 'Dying kicks you out of the dungeon, back to the central hall', uk: 'Смерть викидає з підземелля до центрального залу', es: 'Morir te expulsa de la mazmorra, de vuelta al salón central', tr: 'Ölmek seni zindandan atıp merkez salona geri gönderir', pt: 'Morrer te expulsa da masmorra, de volta ao salão central' },
+  fearRule5:    { ru: 'Опыт с монстров увеличен в 10 раз', en: 'XP from monsters is multiplied by 10', uk: 'Досвід з монстрів збільшено у 10 разів', es: 'La XP de los monstruos se multiplica por 10', tr: 'Canavarlardan gelen tecrübe 10 kat artırıldı', pt: 'XP dos monstros multiplicada por 10' },
+
   wbPhaseAlive: { ru: 'Босс на карте', en: 'Boss is on the map', uk: 'Бос на карті', es: 'El jefe está en el mapa', tr: 'Patron haritada', pt: 'O chefe está no mapa' },
   wbPhaseSummon:{ ru: 'До появления босса', en: 'Boss appears in', uk: 'До появи боса', es: 'El jefe aparece en', tr: 'Patron geliyor', pt: 'O chefe aparece em' },
   wbPhaseIdle:  { ru: 'До следующего босса', en: 'Next boss in', uk: 'До наступного боса', es: 'Próximo jefe en', tr: 'Sonraki patrona', pt: 'Próximo chefe em' },

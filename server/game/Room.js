@@ -1,7 +1,10 @@
 const crypto = require('crypto');
-const { generateOpenWorld, TILE, WALL } = require('./dungeon');
+const { generateOpenWorld, TILE, WALL, FLOOR } = require('./dungeon');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal } = require('../../shared/definitions');
+        ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
+        ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
+        monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
+        FEAR_MAX_WAVE } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server
@@ -169,6 +172,17 @@ const VISUAL_QUEUE_MAX = 48;
 // so their clock offset (js/network.js's _svrTimeOffset EMA) keeps tracking
 // the server. At 20 casts/s this is once a second.
 const IDLE_HEARTBEAT_CASTS = 20;
+
+// ── Страх (Fear) tuning ──────────────────────────────────────────────────────
+// FEAR_MAX_WAVE (the last wave's level) is shared with server/index.js for the
+// UI's wave counter (shared/definitions.js); these two are only ever read
+// inside fearSpawnWave below, so they stay local.
+const FEAR_WAVE_MOBS = 20;  // monsters per wave
+const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
+// Species/stat lookup by eid, built once — same table server/game/dungeon.js
+// builds locally for the open world's own spawns (`_enemyByEid` there), needed
+// here too since Fear's waves are spawned at runtime instead of at world-gen.
+const _FEAR_ENEMY_BY_EID = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
 // Enemy interest management. ENEMY_AOI_R (shared/definitions.js — the client
 // prunes against the same number) is the radius each player is streamed
@@ -338,6 +352,14 @@ class Room {
     this.worldDrops = new Map();
     this._dropSeq = 0;
     this._eventBossId = null;
+    // ── Страх (Fear) lane bookkeeping ───────────────────────────────────────
+    // lane index -> socketId currently occupying it (fearDeploy/
+    // fearReleaseLane), and lane index -> monsters still alive in that lane's
+    // CURRENT wave (fearSpawnWave/fearRegisterKill) — server/index.js reads
+    // the latter indirectly via fearRegisterKill's return value to decide
+    // whether to advance to the next wave.
+    this._fearOwner = new Map();
+    this._fearAlive = new Map();
   }
 
   // ── Event boss ────────────────────────────────────────────────────────────
@@ -375,6 +397,116 @@ class Room {
   isEventBossAlive() {
     const e = this._eventBossId ? this._enemyMap.get(this._eventBossId) : null;
     return !!(e && e.hp > 0);
+  }
+
+  // ── Страх (Fear) ─────────────────────────────────────────────────────────
+  // A private wave-survival instance, one lane per concurrent entrant
+  // (server/game/dungeon.js's `fear.lanes`, sealed rooms with no baked-in
+  // monsters). Isolation from the rest of the world — and between lanes —
+  // reuses the exact same machinery race10 lanes rely on (_raceVisible,
+  // nearbyPlayerIds, mapBlips), keyed off p._fearLane instead of p._raceLane;
+  // see those for the actual filtering.
+
+  // Claims the first unoccupied lane and places the player at its entry
+  // point, full HP, in one step — the single-entrant sibling of raceDeploy.
+  // Deliberately not split into a separate "find a free lane" + "deploy into
+  // it" pair: with no reservation in between, two calls racing between those
+  // steps could both pick the same lane. Returns null if every lane is
+  // currently in use. Wave 1 is spawned separately (fearSpawnWave) right
+  // after this, by the caller.
+  fearDeploy(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const lanes = this._dungeon.fear.lanes;
+    let lane = -1;
+    for (let i = 0; i < lanes.length; i++) if (!this._fearOwner.has(i)) { lane = i; break; }
+    if (lane === -1) return null;
+    const spot = lanes[lane];
+    p.x = spot.entryX; p.y = spot.entryY;
+    p.hp = p.maxHp;
+    p._fearLane = lane;
+    p._raceLane = null;
+    p._profileRev++;
+    this._fearOwner.set(lane, socketId);
+    return { x: p.x, y: p.y, lane };
+  }
+
+  // Spawns FEAR_WAVE_MOBS monsters at global level `lvl`, scattered inside
+  // lane `lane`'s room — same random-floor-tile placement buildArm's
+  // spawnRoomEnemies uses (server/game/dungeon.js), just done at runtime
+  // since a private instance's monsters can't be pre-baked into the shared
+  // world map the way race10's corridors are. Reuses the same global-level
+  // species/name/color/stat functions the open world's own rooms use, so a
+  // Fear wave at level 12 looks and hits exactly like an open-world level-12
+  // room would.
+  fearSpawnWave(lane, lvl) {
+    const room = this._dungeon.fear.lanes[lane];
+    if (!room) return;
+    const armIdx = armIndexForLevel(lvl);
+    const fe = FLOOR_ENEMIES[armIdx];
+    const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
+    const maxLocalLvl = roomsInArm(armIdx) - 1;
+    const grid = this._dungeon.grid;
+    let spawned = 0;
+    for (let n = 0; n < FEAR_WAVE_MOBS; n++) {
+      const pool = bandForLocalLevel(fe, localLvl).pool;
+      const d = _FEAR_ENEMY_BY_EID.get(pool[Math.floor(Math.random() * pool.length)]);
+      if (!d) continue;
+      let ex = room.entryX, ey = room.entryY;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = room.x0 + 1 + Math.floor(Math.random() * Math.max(1, room.size - 2));
+        const gy = room.y0 + 1 + Math.floor(Math.random() * Math.max(1, room.size - 2));
+        if (grid[gy] && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      // Same halving buildArm's spawnRoomEnemies applies to every regular
+      // room's monster pack — a fresh-level-1 player facing 20 full-strength
+      // level-1 monsters at once is a much rougher fight than the same
+      // player would ever meet in a 5-10-monster open-world room.
+      const weakMult = 0.5;
+      const e = {
+        id: `fear_${lane}_${this._fearSeq = (this._fearSeq || 0) + 1}`,
+        ...d, isBoss: false, arm: 'fear', lane, rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl) * FEAR_XP_MULT, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + Math.random(), aggro: false, aggroR: 175 + Math.random() * 55,
+      };
+      this.enemies.push(e);
+      this._enemyMap.set(e.id, e);
+      spawned++;
+    }
+    this._fearAlive.set(lane, spawned);
+  }
+
+  // Called by server/index.js right after a kill lands on a `fear`-tagged
+  // enemy. Returns the lane's remaining alive count (0 means the wave is
+  // clear and the caller should spawn the next one, or finish the run if the
+  // wave that just fell was FEAR_MAX_WAVE).
+  fearRegisterKill(lane) {
+    const left = Math.max(0, (this._fearAlive.get(lane) || 0) - 1);
+    this._fearAlive.set(lane, left);
+    return left;
+  }
+
+  // Frees a lane and clears out whatever is left of its current wave (dead or
+  // still standing) — called on every exit path: death, clearing wave
+  // FEAR_MAX_WAVE, or a disconnect mid-run. Idempotent: safe to call on a
+  // lane that's already been released.
+  fearReleaseLane(lane) {
+    if (lane == null || !this._fearOwner.has(lane)) return;
+    this._fearOwner.delete(lane);
+    this._fearAlive.delete(lane);
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'fear' || e.lane !== lane) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      return false;
+    });
+    this.enemies.forEach((e, i) => { e._idx = i; });
   }
 
   // Scatters `items` on the floor around (cx, cy) as individually claimable
@@ -611,10 +743,25 @@ class Room {
   //
   // The boss is deliberately laneless: it stands in the one shared room every
   // corridor opens into, and every entrant must be able to see and fight it.
+  // Also covers Страх (Fear): its lanes are isolated by the same rule, just
+  // keyed off p._fearLane/e.arm === 'fear' instead of the tower's own fields
+  // — a player can only ever be in at most one of the two instance types at
+  // once, so the two checks never both apply.
   _raceVisible(p, e) {
-    if (e.arm !== 'race10') return p._raceLane == null;
-    if (p._raceLane == null) return false;       // not in the tower: sees none of it
-    return e.lane == null || e.lane === p._raceLane;
+    if (e.arm === 'race10') return p._raceLane != null && (e.lane == null || e.lane === p._raceLane);
+    if (e.arm === 'fear') return p._fearLane != null && (e.lane == null || e.lane === p._fearLane);
+    return p._raceLane == null && p._fearLane == null;
+  }
+
+  // The composite lane identity used to scope visual fan-out (nearbyPlayerIds/
+  // queueProjectile/queueAoe/laneOf) — distinguishes "not in any instance",
+  // "tower lane N" and "Fear lane N" with one comparable value, since a raw
+  // _raceLane number and a raw _fearLane number would otherwise collide (lane
+  // 0 of one instance type must never see lane 0 of the other).
+  _playerLaneKey(p) {
+    if (p._raceLane != null) return 'r' + p._raceLane;
+    if (p._fearLane != null) return 'f' + p._fearLane;
+    return null;
   }
 
   _hasLOS(x1, y1, x2, y2) {
@@ -693,6 +840,12 @@ class Room {
         // rule below) would let an early kill come back mid-run and the
         // client's "all dead" barrier check (js/game.js) would never pass.
         if (e.arm === 'race10') return;
+        // Fear wave monsters: same reasoning — stay dead until the wave
+        // clears and fearReleaseLane purges them (or fearSpawnWave replaces
+        // them with the next wave's fresh batch). A 12s auto-respawn here
+        // would let an early kill silently come back and never let
+        // fearRegisterKill's count reach zero.
+        if (e.arm === 'fear') return;
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -1182,10 +1335,11 @@ class Room {
   // simulation. The same spatial index the broadcast already maintains answers
   // "who could possibly see this" in a couple of cell lookups.
   //
-  // `lane` is the caster's _raceLane: corridors in the tower sit 200px apart,
-  // well inside the radius, so without it a runner would see arrows flying
-  // through the wall from the next lane over. Same two-way rule as everything
-  // else — see _raceVisible.
+  // `lane` is the caster's _playerLaneKey(): corridors in the tower sit 200px
+  // apart, well inside the radius, so without it a runner would see arrows
+  // flying through the wall from the next lane over (Fear lanes are isolated
+  // the same way, just via _fearLane instead). Same two-way rule as
+  // everything else — see _raceVisible.
   //
   // The result buffer is reused, so callers must consume it before calling
   // again.
@@ -1208,7 +1362,7 @@ class Room {
         for (let i = 0; i < cell.length; i++) {
           const p = cell[i];
           if (p.socketId === exceptSocketId) continue;
-          if ((p._raceLane ?? null) !== (lane ?? null)) continue;
+          if (this._playerLaneKey(p) !== (lane ?? null)) continue;
           const dx = p.x - x, dy = p.y - y;
           if (dx * dx + dy * dy > VISUAL_FANOUT_R2) continue;
           out.push(p.socketId);
@@ -1235,7 +1389,7 @@ class Room {
   // index.js scope a visual fan-out without reaching into player records.
   laneOf(socketId) {
     const p = this.players.get(socketId);
-    return p ? (p._raceLane ?? null) : null;
+    return p ? this._playerLaneKey(p) : null;
   }
 
   // ── Combat visuals ────────────────────────────────────────────────────────
@@ -1251,7 +1405,7 @@ class Room {
   queueProjectile(fromSocketId, proj) {
     const from = this.players.get(fromSocketId);
     if (!from) return;
-    const ids = this.nearbyPlayerIds(proj.x, proj.y, fromSocketId, from._raceLane ?? null);
+    const ids = this.nearbyPlayerIds(proj.x, proj.y, fromSocketId, this._playerLaneKey(from));
     if (!ids.length) return;
     const entry = { ...proj, at: Date.now() };
     for (let i = 0; i < ids.length; i++) {
@@ -1268,7 +1422,7 @@ class Room {
   queueAoe(fromSocketId, aoe) {
     const from = this.players.get(fromSocketId);
     if (!from) return;
-    const ids = this.nearbyPlayerIds(aoe.x, aoe.y, fromSocketId, from._raceLane ?? null);
+    const ids = this.nearbyPlayerIds(aoe.x, aoe.y, fromSocketId, this._playerLaneKey(from));
     for (let i = 0; i < ids.length; i++) {
       const p = this.players.get(ids[i]);
       if (!p || p._aoeQ.length >= VISUAL_QUEUE_MAX) continue;
@@ -1414,11 +1568,11 @@ class Room {
     // biggest packet in the game.
     const cache = new Map();
     const bufFor = (arm, lane) => {
-      const key = arm === 'race10' ? `race10#${lane}` : arm;
+      const key = (arm === 'race10' || arm === 'fear') ? `${arm}#${lane}` : arm;
       let b = cache.get(key);
       if (b !== undefined) return b;
       const want = e => e.hp > 0 && !e.isBoss && e.arm === arm &&
-        (arm !== 'race10' || e.lane == null || e.lane === lane);
+        ((arm !== 'race10' && arm !== 'fear') || e.lane == null || e.lane === lane);
       let n = 0;
       for (let i = 0; i < this.enemies.length; i++) if (want(this.enemies[i])) n++;
       const buf = new Int16Array(n * 2);
@@ -1442,7 +1596,7 @@ class Room {
     };
     this.players.forEach(p => {
       if (!p._mapOpen) return;
-      const arm = p._raceLane != null ? 'race10' : armAt(p.y);
+      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : armAt(p.y));
       // In the hub (or anywhere outside an arm) there are no regular monsters
       // to plot, so there is nothing to send at all.
       if (!arm) return;
@@ -1450,7 +1604,7 @@ class Room {
       // thing that should be queuing up behind a stalled client, and the next
       // one is a second away regardless.
       const sock = this._socketFor(p);
-      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, p._raceLane));
+      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, arm === 'fear' ? p._fearLane : p._raceLane));
     });
   }
 
@@ -1493,6 +1647,7 @@ class Room {
       hp: 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
+      _fearLane: null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -1799,6 +1954,7 @@ class Room {
     p._dbPrevY = null;
     p.pvpMode = false;
     p._raceLane = null;
+    if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
     p._profileRev++;
     return { x: p.x, y: p.y };
   }
@@ -1992,14 +2148,14 @@ class Room {
   }
 
   // Sends a player back to the hub with PvP off — shared exit path for
-  // arena3 and race10 (eliminated, the match finishing, the round ending
-  // under them). The death battle uses its own dbReturnToPrevSpot instead
-  // (below) so its entrants land back where they actually were rather than
-  // the hub. Returns the landing spot so the caller can tell that client.
-  // Clears the tower lane as well as the PvP flag — leaving either set would
-  // keep the player invisible to ordinary world monsters (and them to it)
-  // for the rest of the session, since that is exactly what _raceVisible
-  // keys on.
+  // arena3, race10 and Fear (eliminated, the match/wave-run finishing, the
+  // round ending under them). The death battle uses its own
+  // dbReturnToPrevSpot instead (below) so its entrants land back where they
+  // actually were rather than the hub. Returns the landing spot so the
+  // caller can tell that client. Clears the tower lane (and releases a Fear
+  // lane, if any) as well as the PvP flag — leaving either set would keep
+  // the player invisible to ordinary world monsters (and them to it) for the
+  // rest of the session, since that is exactly what _raceVisible keys on.
   deathBattleReturn(socketId) {
     const p = this.players.get(socketId);
     if (!p) return null;
@@ -2007,6 +2163,7 @@ class Room {
     p.y = this._dungeon.spawn.y;
     p.pvpMode = false;
     p._raceLane = null;
+    if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
     p._profileRev++;
     return { x: p.x, y: p.y };
   }
@@ -2115,7 +2272,7 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, respawnAt };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -2173,7 +2330,7 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, respawnAt };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

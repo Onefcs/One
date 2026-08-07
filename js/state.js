@@ -119,3 +119,11 @@ let _race10Registered = false;
 let _race10InMatch = false;
 let _race10Lane = null;
 let _race10MyDamage = 0;
+
+// Страх (Fear) — on-demand, solo wave-survival instance: no registration
+// queue and no scheduled window, unlike the arena/race above — entering IS
+// starting (see js/network.js's netFearEnter/fearStarted). wave/maxWave
+// track progress through the current run, pushed by fearWave/fearStarted.
+let _fearState = { attemptsLeft: null, maxAttempts: 2, maxWave: 39 };
+let _fearInRun = false;
+let _fearWave = 0;
