@@ -837,6 +837,26 @@ function netConnect(onReady) {
     }
   });
 
+  // Enemies that left the room without dying on screen — currently only
+  // Room.js's fearReleaseLane, for whatever a Fear wave hadn't killed yet
+  // when the run ended (death cut it short). No animation/rewards, just a
+  // silent drop — otherwise these would sit as unremovable ghosts (still
+  // selectable/targetable) until the client's own distance prune caught up.
+  socket.on('enemiesRemoved', ({ ids } = {}) => {
+    if (!Array.isArray(ids) || !ids.length) return;
+    const idSet = new Set(ids);
+    idSet.forEach(id => {
+      if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
+      serverEnemiesMap.delete(id);
+      if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(id);
+    });
+    let j = 0;
+    for (let i = 0; i < serverEnemies.length; i++) {
+      if (!idSet.has(serverEnemies[i].id)) serverEnemies[j++] = serverEnemies[i];
+    }
+    serverEnemies.length = j;
+  });
+
   // Rating leader changed — whoever this is now wears the aura (pixi-world.js).
   // Sent to everyone, so the glow moves the moment the top spot does.
   socket.on('topPlayer', ({ username } = {}) => {

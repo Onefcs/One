@@ -533,15 +533,25 @@ class Room {
   // lane that's already been released.
   fearReleaseLane(lane) {
     if (lane == null || !this._fearOwner.has(lane)) return;
+    const ownerSid = this._fearOwner.get(lane);
     this._fearOwner.delete(lane);
     this._fearAlive.delete(lane);
+    const removedIds = [];
     this.enemies = this.enemies.filter(e => {
       if (e.arm !== 'fear' || e.lane !== lane) return true;
       this._enemyMap.delete(e.id);
       this._forgetEnemy(e.id);
+      removedIds.push(e.id);
       return false;
     });
     this.enemies.forEach((e, i) => { e._idx = i; });
+    // _forgetEnemy only clears the SERVER's per-player _eKnown — it never
+    // tells the client anything. A run interrupted by death (wave not fully
+    // cleared) purges monsters that were still alive a moment ago, and
+    // without this the owner's client would keep them as unremovable ghosts
+    // — still selectable/targetable — until its own distance-based prune
+    // eventually caught up (js/network.js's _aoiPruneTick).
+    if (ownerSid && removedIds.length) this.io.to(ownerSid).emit('enemiesRemoved', { ids: removedIds });
   }
 
   // Scatters `items` on the floor around (cx, cy) as individually claimable
@@ -591,13 +601,20 @@ class Room {
   // enemies actually missing. Encoded as an ordinary gameState (players: null)
   // so the client's existing merge path handles it with no new format.
   resendEnemies(socketId, ids) {
-    if (!this.players.has(socketId) || !Array.isArray(ids) || !ids.length) return;
+    const p = this.players.get(socketId);
+    if (!p || !Array.isArray(ids) || !ids.length) return;
     const out = [];
-    const known = this.players.get(socketId)?._eKnown;
+    const known = p._eKnown;
     for (const id of ids) {
       if (out.length >= ENEMY_RESYNC_MAX) break;
       const e = this._enemyMap.get(id);
       if (!e || e.hp <= 0) continue;
+      // Same two-way rule every other enemy-list path enforces (see
+      // _raceVisible) — without it, a client that somehow ended up holding an
+      // id from another race10/Fear lane (e.g. a stale reference) could just
+      // ask for it back and get a straight answer, bypassing every other
+      // isolation check in the room.
+      if (!this._raceVisible(p, e)) continue;
       out.push(_fullEnemyEntry(e));
       // Record it as sent, or the next tick would spend another full entry on
       // the same enemy before any slim delta could be used for it.
@@ -710,7 +727,9 @@ class Room {
   // the same reason the live stream is (see _collectEnemiesFor): unscoped
   // this was ~960KB of JSON on every single login, essentially all of it
   // describing enemies on the far side of the world that the very next tick
-  // would prune again. Bosses are always included, wherever they are.
+  // would prune again. Bosses are always included, wherever they are —
+  // except an instance's own boss (race10) to everyone NOT in it, and vice
+  // versa, same as the live stream.
   //
   // Also records what it sent in the player's _eKnown, so the first tick
   // after this doesn't immediately repeat all of it as "first sight".
@@ -720,6 +739,14 @@ class Room {
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.hp <= 0) continue;
+      // _collectEnemiesFor (the live per-cast stream) gates every enemy on
+      // this same check; without it here too, a player's very first enemy
+      // list on join/reconnect — sent before the live stream's own AOI grid
+      // has had a chance to run — could include a neighbouring race10/Fear
+      // lane's monsters within plain AOI distance (lanes sit well inside
+      // ENEMY_AOI_R apart), which is exactly what let a player standing in
+      // one Fear lane target/assist into the one next door.
+      if (p && !this._raceVisible(p, e)) continue;
       if (p && !e.isBoss) {
         const dx = e.x - p.x, dy = e.y - p.y;
         if (dx * dx + dy * dy > ENEMY_AOI_R2) continue;
