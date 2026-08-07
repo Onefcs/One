@@ -57,22 +57,43 @@ function checkQuestComplete() {
   }
 }
 
+// The reward itself is granted by the server (see the claimQuest handler,
+// server/index.js) — gold and the reward items both. Handing them out here
+// and relying on the next saveProgress to carry them stopped working when
+// the save path refused to let a client's item list grow: the potions were
+// rejected as forged and the player lost them. Nothing is applied locally
+// now; onQuestClaimed below applies whatever the server actually granted.
 function claimQuest() {
   if (!player) return;
   const q = getCurrentQuest();
   if (!q || !isQuestComplete(q)) return;
-  if (q.reward.xp > 0) gainXP(q.reward.xp);
-  gainGold(q.reward.gold);
-  if (q.reward.items) {
-    q.reward.items.forEach(id => {
-      const def = ITEM_DEF.find(d => d.id === id);
-      if (def) addToInventoryQty(def, 1);
-    });
-  }
-  showQuestComplete(q);
-  player.questIdx++;
+  if (_questClaimPending) return;   // one claim in flight at a time
+  _questClaimPending = true;
+  if (typeof netClaimQuest === 'function') netClaimQuest(player.questIdx);
+}
+
+let _questClaimPending = false;
+
+// Server confirmed the grant: the items are already in player.inventory via
+// the inventorySync that preceded this, so only the numbers are left. XP is
+// added flat because the server sent the exact figure it recorded.
+function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
+  _questClaimPending = false;
+  if (!player) return;
+  const q = QUEST_DEF[idx];
+  if (Number.isFinite(newGold)) player.gold = newGold;
+  else if (gold) gainGold(gold, true);
+  if (xp > 0 && typeof gainXP === 'function') gainXP(xp, true);
+  player.questIdx = Number.isFinite(questIdx) ? questIdx : (player.questIdx + 1);
   player.questKills = {};
-  netSaveProgress();
+  if (q) showQuestComplete(q);
+  if (typeof updateHUD === 'function') updateHUD();
+  updateQuestUI();
+}
+
+function onQuestClaimError(msg) {
+  _questClaimPending = false;
+  if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   updateQuestUI();
 }
 

@@ -37,7 +37,7 @@ const {
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct,
-  FEAR_MAX_WAVE,
+  FEAR_MAX_WAVE, QUEST_DEF,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -5212,6 +5212,61 @@ io.on('connection', socket => {
     currentRoom.resendEnemies(socket.id, ids);
   });
 
+  // ── Story quest reward ────────────────────────────────────────────────────
+  // The reward used to be handed out entirely client-side (js/quests.js's
+  // claimQuest added the gold and pushed the items into its own inventory,
+  // reaching the server only through the next saveProgress). That stopped
+  // working the moment the save path refused to let a client's item list
+  // grow — the reward potions were rejected as forged and the player simply
+  // lost them, which is what the save_items_forged entries for bp_hp were.
+  //
+  // Progress itself stays client-tracked (questKills lives in the save blob
+  // and nothing server-side counts it), so this is not a completion check —
+  // it is a grant. What it does own is the part that mints value: the reward
+  // comes from QUEST_DEF here, not from the client, and questIdx is what
+  // makes it once-only. A client can still claim a quest it hasn't finished,
+  // exactly as before; it cannot claim one twice, claim out of order, or
+  // choose its own reward.
+  safeOn('claimQuest', ({ idx } = {}) => {
+    if (!authed) return;
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      return socket.emit('questClaimError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    const cur = Math.max(0, Math.floor(Number(_lastStats.questIdx)) || 0);
+    // The claim names the quest it means, so a save still in flight (the
+    // client advances its own questIdx immediately) can't make this grant the
+    // NEXT quest's reward by accident.
+    const want = Math.floor(Number(idx));
+    if (!Number.isFinite(want) || want !== cur) {
+      return socket.emit('questClaimError', { msg: 'Квест уже получен' });
+    }
+    const q = QUEST_DEF[cur];
+    if (!q) return socket.emit('questClaimError', { msg: 'Квест не найден' });
+
+    const inv = _lastStats.inventory;
+    const rewardIds = Array.isArray(q.reward.items) ? q.reward.items : [];
+    const items = [];
+    rewardIds.forEach(id => {
+      const def = ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id);
+      if (def && _invAdd(inv, { ...def, qty: 1 })) items.push({ id: def.id, name: def.name, rarity: def.rarity });
+    });
+    const gold = Math.max(0, Math.floor(Number(q.reward.gold)) || 0);
+    if (gold) _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + gold);
+    // Advancing here is what closes the replay: a second claim finds
+    // questIdx already past this quest and is refused above. questKills is
+    // reset for the same reason the client resets it — the next quest counts
+    // from zero.
+    _lastStats.questIdx = cur + 1;
+    _lastStats.questKills = {};
+    _commitServerItems(inv, null, 'quest_reward', { questId: q.id, idx: cur, gold, items: items.map(i => i.id) });
+    _persistSavedFields(authed, { gold: _lastStats.gold, questIdx: _lastStats.questIdx, questKills: {} });
+    logPlayer(authed.telegramId, authed.username, 'quest_reward', { questId: q.id, idx: cur, gold, xp: q.reward.xp || 0 });
+    socket.emit('questClaimed', {
+      idx: cur, questId: q.id, gold, xp: Math.max(0, Math.floor(Number(q.reward.xp)) || 0),
+      items, newGold: _lastStats.gold, questIdx: _lastStats.questIdx,
+    });
+  });
+
   // ── Selling a common item to the merchant ─────────────────────────────────
   // Used to be entirely client-side (js/ui.js's sellCommonItem removed the
   // item and added the gold locally, reaching the server only through the
@@ -6632,6 +6687,22 @@ io.on('connection', socket => {
       socket.emit('inventorySync', {
         inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
       });
+    }
+
+    // Story progress only ever moves forward. questIdx is what makes a quest
+    // reward once-only (see the claimQuest handler), and it rides in on this
+    // same client blob — so a save that rewinds it would let the same quest
+    // be claimed for its reward again and again. It also keeps a save that
+    // was composed before a claim from undoing the advance.
+    if (_lastStats) {
+      const _prevQ = Math.floor(Number(_lastStats.questIdx)) || 0;
+      const _newQ = Math.floor(Number(clean.questIdx)) || 0;
+      if (_newQ < _prevQ) {
+        clean.questIdx = _prevQ;
+        // questKills belongs to whichever quest is current, so it has to come
+        // back with it rather than being carried over from the rewound one.
+        clean.questKills = _lastStats.questKills || {};
+      }
     }
 
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {

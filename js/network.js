@@ -1035,6 +1035,17 @@ function netConnect(onReady) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
+  // Story quest reward — items already arrived via inventorySync, this
+  // carries the gold/xp/questIdx the server actually recorded.
+  socket.on('questClaimed', (data) => {
+    if (typeof onQuestClaimed === 'function') onQuestClaimed(data || {});
+    netSaveProgress();
+  });
+
+  socket.on('questClaimError', ({ msg } = {}) => {
+    if (typeof onQuestClaimError === 'function') onQuestClaimError(msg);
+  });
+
   socket.on('disconnect', () => {
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced
@@ -2420,6 +2431,12 @@ function netPickupWorldDrop(id) {
 // arrives as inventorySync + itemSold.
 function netSellItem(idx) {
   if (socket?.connected) socket.emit('sellItem', { idx });
+}
+
+// Claim the current story quest's reward. `idx` names the quest so a save
+// still in flight can't make the server grant the next one's reward.
+function netClaimQuest(idx) {
+  if (socket?.connected) socket.emit('claimQuest', { idx });
 }
 
 // Incoming GRAM events
