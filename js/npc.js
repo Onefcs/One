@@ -330,26 +330,10 @@ function _craftsmanMatsTab() {
   });
   html += '</div>';
 
-  const stoneEntries = ITEM_CRAFT_RECIPES
-    .map((rec, idx) => ({ rec, idx }))
-    .filter(({ rec }) => rec.matId);
-  if (stoneEntries.length) {
-    html += `<div class="craft-group-hdr" style="color:#ebab4b">${typeof t === 'function' ? t('craftEnchantStonesHdr') : 'Камни заточки'}</div><div class="craft-items-grid">`;
-    stoneEntries.forEach(({ rec, idx }) => {
-      const mat = CRAFT_MATS.find(m => m.id === rec.matId);
-      if (!mat) return;
-      const rc = RARITY_COLOR[mat.rarity] || '#aea599';
-      const canCraft = invHasSpace() &&
-        rec.mats.every(m => _matAvailable(m)) &&
-        (window._nexumBalance || 0) >= (rec.nexumCost || 0) &&
-        player.gold >= (rec.goldCost || 0);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66">
-        <div class="craft-item-cell-icon">${_matIcon(mat, 32)}</div>
-        <div class="craft-item-cell-name" style="color:${rc}">${mat.name}</div>
-      </div>`;
-    });
-    html += '</div>';
-  }
+  // Камни заточки stood here. They are no longer craftable anywhere — the
+  // recipes are gone from shared/definitions.js and the server refuses the
+  // craft. Stones still drop from monsters, come with VIP levels and are sold
+  // in the season packs.
 
   if (typeof BOX_DEF !== 'undefined' && BOX_DEF.length) {
     html += `<div class="craft-group-hdr" style="color:#e5a546">${typeof t === 'function' ? t('craftBoxesHdr') : 'Боксы'}</div><div class="craft-items-grid">`;

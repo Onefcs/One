@@ -121,16 +121,16 @@ const MERCHANT_SHOP = [
 ];
 
 // Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll
-// Stone recipes: recipe scrolls + gold → enchant stone
-// GEAR_TIER_CRAFT_RECIPES (uncommon/rare), STONE_CRAFT_RECIPES and
-// GEAR_CRAFT_RECIPES (epic/legendary) all now live in shared/definitions.js —
-// the server rolls and validates every one of them (craftGear/craftStone,
-// server/index.js), not just the Liberty-priced tiers, so it needs the same
-// single copy of each recipe the client shows. Spliced together here purely
-// so the craftsman UI keeps listing every tier from one place.
+// GEAR_TIER_CRAFT_RECIPES (uncommon/rare) and GEAR_CRAFT_RECIPES (epic/
+// legendary) both now live in shared/definitions.js — the server rolls and
+// validates every one of them (craftGear, server/index.js), not just the
+// Liberty-priced tiers, so it needs the same single copy of each recipe the
+// client shows. Spliced together here purely so the craftsman UI keeps
+// listing every tier from one place.
+// Enchant stones used to be spliced in here too; they are no longer craftable
+// at all (see shared/definitions.js).
 const ITEM_CRAFT_RECIPES = [];
 if (typeof GEAR_TIER_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_TIER_CRAFT_RECIPES);
-if (typeof STONE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...STONE_CRAFT_RECIPES);
 if (typeof GEAR_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_CRAFT_RECIPES);
 
 // CLASS_GEAR_SALVAGE_RECIPES (class cloaks/artifacts) lives in

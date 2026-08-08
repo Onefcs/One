@@ -25,7 +25,7 @@ const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   ENEMY_DEF, CHAR_DEF,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
@@ -4779,84 +4779,21 @@ io.on('connection', socket => {
     }
   });
 
-  // ── Enchant stone crafting (Кузнец → Материалы → Камни заточки) ────────────
-  // Priced in Liberty, so — like craftPet below — the whole exchange has to
-  // happen here: the client can't be trusted to spend a balance it isn't the
-  // source of truth for. Both the materials and the resulting stone move
-  // server-side too, so the recipe can't be half-applied.
-  safeOn('craftStone', async ({ matId } = {}) => {
+  // ── Enchant stone crafting — REMOVED ──────────────────────────────────────
+  // Stones are no longer craftable at the forge: the recipes are gone from
+  // shared/definitions.js and the craftsman UI no longer lists them. The
+  // handler stays registered on purpose — a client running a cached bundle
+  // still shows the old cell, and answering it with a clear message beats
+  // leaving its craft button spinning forever. It grants nothing and charges
+  // nothing.
+  //
+  // Stones themselves are untouched: they still drop from monsters
+  // (roomEnchantStoneChance), come with VIP level rewards and are sold in the
+  // season packs — only this one route is closed.
+  safeOn('craftStone', ({ matId } = {}) => {
     if (!authed) return;
-    // Serialized with the other spend handlers: this one now awaits mid-way
-    // (see the charge below), and two crafts overlapping there would each work
-    // from the other's half-applied inventory.
-    await _withEconLock(async () => {
-    try {
-      const rec = STONE_CRAFT_RECIPES.find(r => r.matId === matId);
-      if (!rec) return socket.emit('craftStoneError', { msg: 'Неизвестный рецепт' });
-      const stone = CRAFT_MATS.find(c => c.id === rec.matId);
-      if (!stone) return socket.emit('craftStoneError', { msg: 'Камень не найден' });
-      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
-        return socket.emit('craftStoneError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
-      }
-      const inv = _lastStats.inventory;
-      // Count across stacks rather than assuming one: stackables normally
-      // merge into a single entry, but a save from before that behaviour (or
-      // any future split) would otherwise read as "not enough".
-      const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
-      for (const m of rec.mats) {
-        if (countOf(m.id) < m.n) {
-          const md = CRAFT_MATS.find(c => c.id === m.id);
-          return socket.emit('craftStoneError', {
-            msg: `Нужно ${m.n} × ${md ? md.name : m.id} (есть ${countOf(m.id)})`,
-          });
-        }
-      }
-      // Charged before anything is consumed, and atomically: the write only
-      // lands if the balance covers it, so two crafts sent together can't both
-      // be paid for out of the same Liberty.
-      await _flushBalances();
-      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
-      if (_bal === null) {
-        return socket.emit('craftStoneError', { msg: `Нужно ${rec.nexumCost} Liberty` });
-      }
-      _nexumBalance = _bal;
-      // Re-checked after the await — the materials could have been spent by
-      // another craft while this one was paying.
-      for (const m of rec.mats) {
-        if (countOf(m.id) < m.n) {
-          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
-          if (back !== null) _nexumBalance = back;
-          const md = CRAFT_MATS.find(c => c.id === m.id);
-          return socket.emit('craftStoneError', {
-            msg: `Нужно ${m.n} × ${md ? md.name : m.id} (есть ${countOf(m.id)})`,
-          });
-        }
-      }
-      for (const m of rec.mats) {
-        let left = m.n;
-        for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
-          const e = inv[i];
-          if (!e || e.id !== m.id) continue;
-          const have = e.qty || 1;
-          if (have > left) { e.qty = have - left; left = 0; }
-          else { left -= have; inv.splice(i, 1); }
-        }
-      }
-      if (!_invAdd(inv, { ...stone, qty: 1 })) {
-        // Materials are already gone, so the Liberty goes back rather than the
-        // player paying for nothing.
-        const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
-        if (back !== null) _nexumBalance = back;
-        return socket.emit('craftStoneError', { msg: 'Инвентарь полон' });
-      }
-      _commitServerItems(inv, null, 'stone_craft', { matId, cost: rec.nexumCost });
-      socket.emit('stoneCrafted', { matId, newNexumBalance: _nexumBalance });
-    } catch (err) {
-      console.error('craftStone:', err);
-      logPlayerErr(authed.telegramId, authed.username, 'stone_craft', err, { matId });
-      socket.emit('craftStoneError', { msg: 'Ошибка сервера' });
-    }
-    });
+    logPlayer(authed.telegramId, authed.username, 'stone_craft_removed', { matId });
+    socket.emit('craftStoneError', { msg: 'Камни заточки больше не создаются в кузнице' });
   });
 
   // ── Gear crafting (Кузнец → Предметы → все тиры) ───────────────────────────

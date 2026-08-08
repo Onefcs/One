@@ -742,18 +742,16 @@ const ITEM_DEF = [
 // _nexumBalanceCache in server/index.js) — unlike gold, a client can't be
 // trusted to deduct it itself, so the craft has to be a server round-trip
 // (server/index.js 'craftPet') and the server needs this table too.
-// Enchant stones. These live here rather than beside the rest of the craft
-// recipes in js/definitions.js because they're paid for in Liberty, and
-// Liberty is server-authoritative — so the server has to validate the very
-// same recipe the craftsman UI showed. js/definitions.js appends them to
-// ITEM_CRAFT_RECIPES so the UI still lists them alongside everything else.
-const STONE_CRAFT_RECIPES = [
-  { matId:'norm_stone',  mats:[{ id:'recu', n:50 }], nexumCost:20, chance:1.0 },
-  { matId:'bless_stone', mats:[{ id:'recr', n:50 }], nexumCost:40, chance:1.0 },
-];
+// Enchant stones are no longer craftable. They used to have recipes here
+// (recipe scrolls + Liberty at the forge); the table is gone rather than
+// emptied so nothing can quietly resurrect it. Stones still drop from
+// monsters (roomEnchantStoneChance below), come with VIP level rewards and
+// are sold in the season packs — only the forge route is closed.
+// The craftStone handler in server/index.js still exists and refuses, so a
+// client running a cached bundle gets a clear message instead of silence.
 
-// Epic/legendary gear tiers, same reasoning as STONE_CRAFT_RECIPES above:
-// these two tiers additionally cost Liberty on top of the usual mats, and
+// Epic/legendary gear tiers: these two additionally cost Liberty on top of
+// the usual mats, and
 // Liberty is server-authoritative, so the recipe the server charges against
 // has to live here rather than in js/definitions.js's client-only
 // ITEM_CRAFT_RECIPES — a client can't be trusted to report its own spend.
@@ -1223,7 +1221,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  PET_CRAFT_RECIPES, STONE_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
