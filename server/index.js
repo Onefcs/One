@@ -27,7 +27,7 @@ const {
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
-  CLAN_STORAGE_MIN_DAYS,
+  CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
@@ -4180,7 +4180,7 @@ io.on('connection', socket => {
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
     // Clan storage — every one of these reads and writes the clan document.
     'clanStorageSync', 'clanStorageDeposit', 'clanStorageGive',
-    'clanStorageCancel', 'clanStorageClaim',
+    'clanStorageCancel', 'clanStorageClaim', 'clanStorageUnlock',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
@@ -7913,6 +7913,7 @@ io.on('connection', socket => {
   function _clanStoragePayload(clan, telegramId) {
     const isLeader = clan.members.find(m => m.telegramId === telegramId)?.role === 'leader';
     const days = _clanDaysIn(clan, telegramId);
+    const unlocked = !!clan.storageUnlocked;
     const shardName = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).name || id;
     const shardImg  = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).img || null;
     return {
@@ -7920,7 +7921,12 @@ io.on('connection', socket => {
       // Rounded down, so "9.9 days" reads as 9 and the number never claims
       // eligibility the check itself would refuse.
       daysIn: days === Infinity ? null : Math.floor(Math.max(0, days || 0)),
+      // canUse is the DAY gate alone. `unlocked` is separate on purpose: the
+      // panel has to be able to say which of the two is missing, and a member
+      // who is past 10 days still can't do anything until it is bought.
       canUse: _clanStorageOk(clan, telegramId),
+      unlocked,
+      unlockCost: CLAN_STORAGE_UNLOCK_GOLD,
       isLeader,
       storage: (clan.storage || [])
         .filter(e => e && e.qty > 0)
@@ -7960,6 +7966,49 @@ io.on('connection', socket => {
     socket.emit('clanStorage', _clanStoragePayload(clan, authed.telegramId));
   });
 
+  // The leader buys the storage for the clan, once, out of their own gold.
+  //
+  // Gold is the one currency the server does not own outright — it rides in on
+  // the client's save blob — so the deduction has to be told to the client as
+  // an absolute (newGold) the way the merchant sale does, or their next
+  // autosave would put the million straight back.
+  safeOn('clanStorageUnlock', async () => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+      const clan = await _myClan();
+      if (!clan) return socket.emit('clanStorageError', { msg: 'Вы не в клане' });
+      if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') {
+        return socket.emit('clanStorageError', { msg: 'Открыть хранилище может только лидер' });
+      }
+      if (clan.storageUnlocked) {
+        return socket.emit('clanStorageError', { msg: 'Хранилище уже открыто' });
+      }
+      if (!_lastStats) return socket.emit('clanStorageError', { msg: 'Данные ещё не загружены — попробуйте ещё раз' });
+      const gold = Math.floor(Number(_lastStats.gold) || 0);
+      if (gold < CLAN_STORAGE_UNLOCK_GOLD) {
+        return socket.emit('clanStorageError', {
+          msg: `Нужно ${CLAN_STORAGE_UNLOCK_GOLD.toLocaleString('ru-RU')} золота (есть ${gold.toLocaleString('ru-RU')})`,
+        });
+      }
+      // Claim the unlock BEFORE charging: the filter only matches while it is
+      // still locked, so two taps can't both go through and bill twice. If it
+      // matched nothing somebody else already bought it and no gold moves.
+      const claimed = await ClanModel.findOneAndUpdate(
+        { _id: clan._id, storageUnlocked: { $ne: true } },
+        { $set: { storageUnlocked: true } },
+        { new: true },
+      ).catch(() => null);
+      if (!claimed) return socket.emit('clanStorageError', { msg: 'Хранилище уже открыто' });
+
+      _lastStats.gold = Math.max(0, gold - CLAN_STORAGE_UNLOCK_GOLD);
+      await _persistSavedFields(authed, { gold: _lastStats.gold });
+      logPlayer(authed.telegramId, authed.username, 'clan_storage_unlock',
+        { clan: clan.name, cost: CLAN_STORAGE_UNLOCK_GOLD, goldLeft: _lastStats.gold });
+      socket.emit('clanStorageUnlocked', { newGold: _lastStats.gold, cost: CLAN_STORAGE_UNLOCK_GOLD });
+      await _clanStoragePush(claimed);
+    });
+  });
+
   safeOn('clanStorageDeposit', async ({ id, qty } = {}) => {
     if (!authed) return;
     await _withEconLock(async () => {
@@ -7973,6 +8022,11 @@ io.on('connection', socket => {
       }
       const clan = await _myClan();
       if (!clan) return socket.emit('clanStorageError', { msg: 'Вы не в клане' });
+      // Locked clans have no storage at all — nothing goes in, nothing comes
+      // out, and the pool stays empty until the leader buys it.
+      if (!clan.storageUnlocked) {
+        return socket.emit('clanStorageError', { msg: 'Хранилище клана ещё не открыто' });
+      }
       if (!_clanStorageOk(clan, authed.telegramId)) {
         return socket.emit('clanStorageError', {
           msg: `Хранилище доступно после ${CLAN_STORAGE_MIN_DAYS} дней в клане`,
@@ -8038,6 +8092,9 @@ io.on('connection', socket => {
     if (!Number.isFinite(n) || n <= 0) return;
     const clan = await _myClan();
     if (!clan) return;
+    if (!clan.storageUnlocked) {
+      return socket.emit('clanStorageError', { msg: 'Хранилище клана ещё не открыто' });
+    }
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') {
       return socket.emit('clanStorageError', { msg: 'Распределять может только лидер' });
     }
@@ -8113,6 +8170,9 @@ io.on('connection', socket => {
     await _withEconLock(async () => {
       const clan = await _myClan();
       if (!clan) return;
+      if (!clan.storageUnlocked) {
+        return socket.emit('clanStorageError', { msg: 'Хранилище клана ещё не открыто' });
+      }
       if (!_clanStorageOk(clan, authed.telegramId)) {
         return socket.emit('clanStorageError', {
           msg: `Хранилище доступно после ${CLAN_STORAGE_MIN_DAYS} дней в клане`,

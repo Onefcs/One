@@ -849,6 +849,9 @@ const GEAR_CRAFT_RECIPES = [
 // otherwise a freshly invited alt is a way to walk the pool straight out of
 // the clan.
 const CLAN_STORAGE_MIN_DAYS = 10;
+// What the leader pays, once, out of their own gold to open the storage for
+// the whole clan. Paid once per clan, never refunded.
+const CLAN_STORAGE_UNLOCK_GOLD = 1000000;
 
 const UNIQUE_SHARD_MIN_LEVEL = 15;        // monsters below this level never drop one
 const UNIQUE_SHARD_CHANCE    = 0.000001;  // per SHARD KIND, rolled independently on every kill
@@ -1382,7 +1385,7 @@ if (typeof module !== 'undefined') module.exports = {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
-  CLAN_STORAGE_MIN_DAYS,
+  CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,

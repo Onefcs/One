@@ -945,6 +945,27 @@ function _clanStorageHTML() {
     return `<div class="clan-empty">${typeof t === 'function' ? t('clanStorageLoading') : 'Загрузка...'}</div>`;
   }
 
+  // Not bought yet — that is the whole tab until it is. The leader gets the
+  // button (with what it costs and what they hold); everyone else is told who
+  // can open it, so nobody is left guessing why the tab is empty.
+  if (!s.unlocked) {
+    const cost = s.unlockCost || 0;
+    const gold = (player && player.gold) || 0;
+    const afford = gold >= cost;
+    return `
+      <div class="clan-storage-gate">${tVars('clanStorageLockedFmt', { n: _num(cost) })}</div>
+      ${s.isLeader
+        ? `<div class="clan-storage-row">
+             <span class="clan-storage-name">${t('clanStorageYourGold')}</span>
+             <span class="clan-storage-qty" style="color:${afford ? '#8fbf7a' : '#eb4e61'}">${_num(gold)}</span>
+           </div>
+           <button class="clan-btn${afford ? '' : ' clan-btn-disabled'}"
+                   onclick="${afford ? '_clanStorageUnlockConfirm()' : ''}">
+             ${tVars('clanStorageUnlockBtn', { n: _num(cost) })}
+           </button>`
+        : `<div class="clan-empty">${t('clanStorageLockedMember')}</div>`}`;
+  }
+
   const gate = s.canUse ? '' : `
     <div class="clan-storage-gate">
       ${tVars('clanStorageGateFmt', { d: s.minDays, cur: s.daysIn == null ? 0 : s.daysIn })}
@@ -1013,6 +1034,16 @@ function _myTelegramId() {
   if (!clanData || !netUsername) return null;
   const me = (clanData.members || []).find(m => m.username === netUsername);
   return me ? me.telegramId : null;
+}
+
+// Thousands separators, so a seven-figure price is readable at a glance.
+function _num(n) { return Number(n || 0).toLocaleString('ru-RU'); }
+
+function _clanStorageUnlockConfirm() {
+  const s = _clanStorage;
+  if (!s || s.unlocked) return;
+  if (!confirm(tVars('clanStorageUnlockAsk', { n: _num(s.unlockCost || 0) }))) return;
+  netClanStorageUnlock();
 }
 
 function _clanStorageDepositPrompt(id, name, max) {

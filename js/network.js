@@ -987,6 +987,15 @@ function netConnect(onReady) {
   socket.on('clanStorageOk', ({ msg } = {}) => {
     if (typeof _marketToast === 'function' && msg) _marketToast(msg, 'ok');
   });
+  // The unlock was charged server-side. newGold is an absolute, not a delta —
+  // applying it here is what stops this client's next autosave from writing
+  // the pre-purchase figure back (same reasoning as 'itemSold').
+  socket.on('clanStorageUnlocked', ({ newGold, cost } = {}) => {
+    if (player && Number.isFinite(newGold)) player.gold = newGold;
+    if (typeof _marketToast === 'function') _marketToast(t('clanStorageUnlockedToast'), 'ok');
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+  });
   // The shards are already in the inventory via the inventorySync that
   // preceded this; this only reports what arrived.
   socket.on('clanStorageClaimed', ({ items } = {}) => {
@@ -1279,6 +1288,9 @@ function netClanStorageCancel(telegramId, id) {
 }
 function netClanStorageClaim() {
   if (socket?.connected) socket.emit('clanStorageClaim');
+}
+function netClanStorageUnlock() {
+  if (socket?.connected) socket.emit('clanStorageUnlock');
 }
 
 // ── Auth ──────────────────────────────────────────────────────

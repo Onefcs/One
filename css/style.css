@@ -991,6 +991,9 @@ canvas { display:block; width:100%; height:100%; }
                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clan-storage-who  { color: #8fbf7a; }
 .clan-storage-qty  { font-size: 13px; font-weight: 700; color: #e6c88a; flex: 0 0 auto; }
+/* Unlock button while the leader can't afford it — still readable, clearly
+   inert, and it carries no onclick either (see _clanStorageHTML). */
+.clan-btn-disabled { opacity: .45; cursor: default; }
 
 .clan-empty        { display:flex; flex-direction:column; align-items:center; padding:28px 16px; gap:10px; }
 .clan-empty-icon   { opacity:0.6; margin-bottom:4px; }

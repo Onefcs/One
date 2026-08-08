@@ -43,6 +43,10 @@ const clanSchema = new mongoose.Schema({
   description:  { type: String, default: '', maxlength: 200 },
   members:      [memberSchema],
   applications: [applicationSchema],
+  // Storage is off until the leader buys it (CLAN_STORAGE_UNLOCK_GOLD). Absent
+  // on every clan that existed before the feature, which reads as false — so
+  // they all start locked, which is what a paid unlock has to mean.
+  storageUnlocked: { type: Boolean, default: false },
   storage:      [clanStorageSchema],
   allocations:  [clanAllocSchema],
   level:        { type: Number, default: 1, min: 1, max: 10 },
