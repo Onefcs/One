@@ -6600,7 +6600,26 @@ io.on('connection', socket => {
       // was just dropped — tell other clients immediately instead of waiting
       // for that old socket's own (possibly delayed) disconnect to do it, so
       // this account never briefly renders as two players on screen.
-      if (staleSocketId) socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: staleSocketId });
+      if (staleSocketId) {
+        socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: staleSocketId });
+        // The real 'disconnect' handler below also drops the old socket out of
+        // any live PvP instance (race10/arena3/deathBattle/Fear) — addPlayer's
+        // stale-entry cleanup only drops its ROOM record, not that bookkeeping,
+        // since Room has no visibility into the instance Maps kept here. Without
+        // this, a reconnect mid-Bloody-Tower-run (a Wi-Fi/LTE handover, a
+        // suspended WebView — see the pingTimeout comment above) leaves the old
+        // socketId as a ghost "still alive" entrant that nothing ever clears:
+        // the new socket starts back at the hub with _raceLane null, so every
+        // corridor monster is invisible to it (_raceVisible, server/game/
+        // Room.js) — reading exactly like "the monsters disappeared" — while
+        // the ghost entry blocks the race from ever finishing for anyone else.
+        // Same class of bug as the one already fixed for Fear halls in
+        // removePlayer's comment; race10/arena3/deathBattle just never got the
+        // parallel fix.
+        if (_a3.queue.delete(staleSocketId)) _a3Broadcast();
+        if (_race10.queue.delete(staleSocketId)) _race10Broadcast();
+        _pvpEliminate(staleSocketId);
+      }
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
       if (globalChatHistory.length) socket.emit('chatHistory', _publicChatHistory());
     }
