@@ -40,7 +40,7 @@ const {
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -5323,7 +5323,9 @@ io.on('connection', socket => {
       endAt: SEASON_END_AT,
       active: seasonActive(),
       points: _seasonPoints,
-      quest: q ? { sp: q.sp, name: def ? def.name : q.sp, kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS) } : null,
+      quest: q ? { sp: q.sp, name: def ? def.name : q.sp,
+                   levels: SEASON_SPECIES_LEVELS[q.sp] || [],
+                   kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS) } : null,
       target: SEASON_QUEST_KILLS,
       questPoints: SEASON_QUEST_POINTS,
       minLvl: SEASON_MIN_LVL, maxLvl: SEASON_MAX_LVL,
@@ -5355,7 +5357,7 @@ io.on('connection', socket => {
   // Called on every kill. Progress lives in _lastStats and is only written out
   // every SEASON_FLUSH_EVERY kills (and on completion) — a 5000-kill quest
   // would otherwise be 5000 database writes per player.
-  const SEASON_FLUSH_EVERY = 25;
+  const SEASON_FLUSH_EVERY = 10;
   function _seasonTrackKill(result) {
     if (!authed || !_lastStats || !seasonActive()) return;
     if (!result || !result.eid) return;
@@ -5384,7 +5386,8 @@ io.on('connection', socket => {
       const def = SEASON_SPECIES.find(s => s.sp === next.sp);
       socket.emit('seasonQuestDone', {
         sp: doneSp, points: SEASON_QUEST_POINTS, total: total ?? null,
-        next: { sp: next.sp, name: def ? def.name : next.sp, kills: 0 },
+        next: { sp: next.sp, name: def ? def.name : next.sp,
+                levels: SEASON_SPECIES_LEVELS[next.sp] || [], kills: 0 },
       });
     });
   }

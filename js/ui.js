@@ -2759,6 +2759,15 @@ function _seasonPrizesHTML() {
     </div>`;
 }
 
+// The exact levels this species can be found at — see SEASON_SPECIES_LEVELS.
+// Naming the band instead would point players at rooms that cannot contain
+// the monster they were asked for.
+function _seasonLevelsText(q) {
+  const ls = (q && q.levels) || [];
+  if (!ls.length) return '?';
+  return ls.length === 1 ? String(ls[0]) : ls.join(', ');
+}
+
 function _seasonQuestsHTML() {
   const st = _seasonState || {};
   const q = st.quest;
@@ -2773,7 +2782,7 @@ function _seasonQuestsHTML() {
     ? `<div class="db-phase">${t('seasonEnded')}</div>`
     : q
       ? `<div class="imod-enh-block">
-           <div class="imod-enh-title">${tVars('seasonQuestFmt', { name: q.name, n: target, a: st.minLvl, b: st.maxLvl })}</div>
+           <div class="imod-enh-title">${tVars('seasonQuestFmt', { name: q.name, n: target, lv: _seasonLevelsText(q) })}</div>
            <div class="season-bar"><i style="width:${pct}%"></i></div>
            <div class="imod-enh-preview">${done} / ${target} · ${pct}%</div>
            <div class="imod-enh-chance">${tVars('seasonQuestRewardFmt', { n: st.questPoints || 100 })}</div>

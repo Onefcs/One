@@ -410,6 +410,22 @@ const SEASON_PRIZES = [
 ];
 function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 
+// The levels inside the band each species actually appears at. The quest text
+// names these instead of the band itself: the band spans 10-23, but zombies
+// only live at 21 and orcs only at 23, so "kill zombies, levels 10-23" sends
+// the player hunting through rooms that cannot contain one.
+const SEASON_SPECIES_LEVELS = (() => {
+  const out = {};
+  for (let lvl = SEASON_MIN_LVL; lvl <= SEASON_MAX_LVL; lvl++) {
+    const arm = armIndexForLevel(lvl);
+    const fe = FLOOR_ENEMIES[arm];
+    if (!fe) continue;
+    const sp = bandForLocalLevel(fe, lvl - ARM_OFFSETS[arm - 1]).eid.split('_')[0];
+    (out[sp] = out[sp] || []).push(lvl);
+  }
+  return out;
+})();
+
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
 // the client to add them to its own inventory (see the claimQuest handler,
@@ -1194,7 +1210,7 @@ if (typeof module !== 'undefined') module.exports = {
   QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

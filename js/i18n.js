@@ -164,7 +164,7 @@ const I18N_UI = {
   seasonEndsIn:   { ru: 'До конца сезона: {t}', en: 'Season ends in {t}', uk: 'До кінця сезону: {t}', es: 'La temporada acaba en {t}', tr: 'Sezon bitişine {t}', pt: 'A temporada acaba em {t}' },
   seasonEnded:    { ru: 'Сезон завершён', en: 'Season is over', uk: 'Сезон завершено', es: 'La temporada terminó', tr: 'Sezon bitti', pt: 'A temporada acabou' },
   seasonLoading:  { ru: 'Загрузка...', en: 'Loading...', uk: 'Завантаження...', es: 'Cargando...', tr: 'Yükleniyor...', pt: 'Carregando...' },
-  seasonQuestFmt: { ru: 'Убей {n} — {name} (ур. {a}-{b})', en: 'Kill {n} {name} (lvl {a}-{b})', uk: 'Вбий {n} — {name} (рів. {a}-{b})', es: 'Mata {n} {name} (nivel {a}-{b})', tr: '{n} {name} öldür (sv. {a}-{b})', pt: 'Mate {n} {name} (nível {a}-{b})' },
+  seasonQuestFmt: { ru: 'Убей {n} — {name} (ур. {lv})', en: 'Kill {n} {name} (lvl {lv})', uk: 'Вбий {n} — {name} (рів. {lv})', es: 'Mata {n} {name} (nivel {lv})', tr: '{n} {name} öldür (sv. {lv})', pt: 'Mate {n} {name} (nível {lv})' },
   seasonQuestRewardFmt: { ru: 'Награда: {n} очков сезона', en: 'Reward: {n} season points', uk: 'Нагорода: {n} очок сезону', es: 'Recompensa: {n} puntos', tr: 'Ödül: {n} sezon puanı', pt: 'Recompensa: {n} pontos' },
   seasonQuestDoneMsg: { ru: '✓ Квест сезона выполнен! +{n} очков', en: '✓ Season quest complete! +{n} points', uk: '✓ Квест сезону виконано! +{n} очок', es: '✓ ¡Misión de temporada completada! +{n} puntos', tr: '✓ Sezon görevi tamam! +{n} puan', pt: '✓ Missão da temporada concluída! +{n} pontos' },
   seasonTasksHdr: { ru: 'Задания сезона:', en: 'Season tasks:', uk: 'Завдання сезону:', es: 'Tareas de temporada:', tr: 'Sezon görevleri:', pt: 'Tarefas da temporada:' },
