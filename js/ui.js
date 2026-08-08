@@ -2323,7 +2323,8 @@ function _enhStonesBlock(actionFn, param) {
     <button class="imod-enh-stone-btn imod-enh-stone-bless${blessQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'bless')" title="${t('enhFailKeepHint')}">
       <img src="/images/bless.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">${tVars('safeStoneBtnFmt', { n: blessQty })}
     </button>
-  </div>`;
+  </div>
+  <div class="imod-enh-warn">${t('enhBurnWarn')}</div>`;
 }
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
 const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };

@@ -63,6 +63,13 @@ const EQ_SLOTS = [
 // icon = SVG fallback (js/icons.js); img = the real skill artwork from
 // images/skill/ — both the HUD canvas buttons (drawSkillButtons) and the
 // skill-upgrade modal already prefer img over icon when it's set.
+//
+// `auto:false` marks a skill the auto-cast (VIP 2, see _autoCastSkills in
+// js/game.js) must never fire on its own. Every one of them displaces the
+// character — a dash, a jump or a teleport — and having those go off by
+// themselves means being thrown across the room, into a gate or out of a
+// Страх hall while the player is doing something else. They stay fully
+// available on the buttons; only the automation leaves them alone.
 const SKILL_DEF = {
   // lev <-> deathknight skill sets swapped (name/icon/img/cd/desc only —
   // useSkill()'s per-key mechanics in js/player.js were already identical
@@ -71,25 +78,25 @@ const SKILL_DEF = {
     { key:'Q', name:'Ледяной удар',   icon:'shieldBash', img:'/images/skill/wstun_v2.png',   cd:18, desc:'×2 урон по цели + стан 3 сек' },
     { key:'W', name:'Смерч клинков',  icon:'whirlwind',  img:'/images/skill/wvixr_v2.png',   cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Гнев мертвеца',  icon:'battleCry',  img:'/images/skill/wboevoy_v2.png', cd:20, desc:'+80% защиты на 10 сек'         },
-    { key:'R', name:'Рывок света',    icon:'dash',       img:'/images/skill/wrivok_v2.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
+    { key:'R', name:'Рывок света',    icon:'dash',       img:'/images/skill/wrivok_v2.png',  cd:15, desc:'Прыгает к цели нанося урон', auto:false },
   ],
   deathknight: [
     { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim_v2.png',      cd:28, desc:'Вампиризм 10% от удара на 10 сек' },
     { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible_v2.png', cd:20, desc:'+20% атака на 5 сек'           },
-    { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон'    },
+    { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон', auto:false },
   ],
   ranger: [
     { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   img:'/images/skill/lmulti.png',    cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
     { key:'W', name:'Комбо стрела',   icon:'poisonArrow', img:'/images/skill/lkombo.png',    cd:10, desc:'3 стрелы ×1 урон'             },
-    { key:'E', name:'Прыжок',         icon:'roll',        img:'/images/skill/lprijok.png',   cd:8,  desc:'Рывок 80px'                   },
+    { key:'E', name:'Прыжок',         icon:'roll',        img:'/images/skill/lprijok.png',   cd:8,  desc:'Рывок 80px', auto:false },
     { key:'R', name:'Скорость атаки', icon:'arrowRain',   img:'/images/skill/latkspeed.png', cd:20, desc:'×1.5 скорость атаки на 5 сек' },
   ],
   mage: [
     { key:'Q', name:'Ледяной шар',  icon:'fireball', img:'/images/skill/mshar_v2.png',  cd:5,  desc:'Снаряд ×2 урона'               },
     { key:'W', name:'Ледяная нова', icon:'iceNova',  img:'/images/skill/mnova.png',     cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
     { key:'E', name:'Барьер',       icon:'barrier',  img:'/images/skill/mbarier.png',   cd:18, desc:'Защита +50% на 3 сек'           },
-    { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 180px по направлению'     },
+    { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 180px по направлению', auto:false },
   ],
   warlock: [
     { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP'                    },

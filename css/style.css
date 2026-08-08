@@ -749,6 +749,15 @@ canvas { display:block; width:100%; height:100%; }
 .imod-enh-cost { font-size:11px; color:#bab2a8; }
 .imod-enh-chance { font-size:11px; color:#bab2a8; }
 .imod-enh-stones { display:flex; gap:6px; margin-top:4px; }
+/* The item-burns warning. It used to be a title= tooltip on the normal-stone
+   button, which on a touch device is never shown at all — so the one thing a
+   player has to know before spending a stone was invisible on the platform
+   the game is actually played on. */
+.imod-enh-warn {
+  margin-top: 7px; padding: 6px 8px; border-radius: 6px;
+  background: rgba(235,78,97,.10); border: 1px solid rgba(235,78,97,.3);
+  color: #f0949f; font-size: 11px; line-height: 1.35; text-align: center;
+}
 .imod-enh-stone-btn {
   flex:1; padding:7px 6px; border:none; border-radius:8px; font-size:12px;
   font-weight:bold; cursor:pointer; touch-action:manipulation;

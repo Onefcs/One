@@ -202,6 +202,69 @@ function _getRoomAt(wx, wy) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  АВТО-НАВЫКИ (VIP 2)
+// ─────────────────────────────────────────────────────────
+// Rides the same АВТО toggle as auto-attack, and the same VIP requirement
+// gating it (_checkAutoBtnTouch, js/input.js) — turning auto on with VIP 2
+// now means "fight for me", skills included, rather than plain swinging.
+//
+// What it will NOT do is anything that moves the character: dashes, jumps and
+// teleports are marked `auto:false` in SKILL_DEF and are left to the player.
+// Firing those unattended throws you across the room, through a gate or out
+// of a Страх hall, none of which the player asked for.
+const AUTO_SKILL_VIP_MIN = 2;
+// Spacing between two auto-casts. Without it every cooldown that came up in
+// the same frame would be dumped at once, and each cast locks the attack
+// animation for ~0.68s — the character would stand there casting instead of
+// hitting anything.
+const AUTO_SKILL_GAP = 1.2;
+// Healing skills are wasted at (or near) full HP — they are on long
+// cooldowns, so spending one for nothing is worse than waiting.
+const AUTO_SKILL_HEAL_BELOW = 0.7;
+let _autoSkillTimer = 0;
+
+function _autoCastSkills(dt) {
+  if (_autoSkillTimer > 0) _autoSkillTimer -= dt;
+  if (!autoAttackMode || !player || state !== 'playing') return;
+  // Re-checked here rather than trusted from when the toggle was flipped: the
+  // mode persists across sessions and the VIP level can lapse.
+  if ((window._vipData?.level || 0) < AUTO_SKILL_VIP_MIN) return;
+  if (_autoSkillTimer > 0) return;
+  if ((player.stunTimer || 0) > 0) return;
+  if (typeof _dbFrozen === 'function' && _dbFrozen()) return;
+  // Never interrupt a swing or another cast that is already playing.
+  if ((player.atkAnimTimer || 0) > 0) return;
+  // Nor an approach. A cast locks atkAnimTimer for ~0.68s and the chase loop
+  // only moves while that is clear, so casting mid-run would stutter the
+  // character to a halt every time a cooldown came up.
+  if (player._chasing) return;
+
+  // Only in a fight. Without a live enemy nearby this would burn every
+  // cooldown on empty corridors, so the buffs are never up when they matter.
+  const tgt = (targetId && !targetIsPlayer)
+    ? serverEnemiesMap.get(targetId)
+    : null;
+  const foe = (tgt && (tgt.hp || 0) > 0) ? tgt : nearestEnemy();
+  if (!foe) return;
+  // Roughly the chase radius — close enough that the fight is actually on.
+  if (dist(foe.x, foe.y, player.x, player.y) > 420) return;
+
+  const skills = SKILL_DEF[player.type] || [];
+  const hpFrac = player.maxHp > 0 ? (player.hp / player.maxHp) : 1;
+  const bonusTypes = (typeof SKILL_BONUS_TYPE !== 'undefined' && SKILL_BONUS_TYPE[player.type]) || {};
+  for (let i = 0; i < skills.length; i++) {
+    const sk = skills[i];
+    if (sk.auto === false) continue;                       // dash / jump / teleport
+    if (_skillLvl(sk.key) <= 0) continue;                  // not learned
+    if ((player.skillCooldowns[sk.key] || 0) > 0) continue;
+    if (bonusTypes[sk.key] === 'heal' && hpFrac > AUTO_SKILL_HEAL_BELOW) continue;
+    useSkill(i);
+    _autoSkillTimer = AUTO_SKILL_GAP;
+    return;                                                // one per gap
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 //  UPDATE
 // ─────────────────────────────────────────────────────────
 function update(dt, realDt) {
@@ -486,6 +549,8 @@ function update(dt, realDt) {
       player.attackFired = false;
     }
   }
+
+  _autoCastSkills(dt);
 
   // Advance projectiles — visual only; server is authoritative for hit detection
   {
