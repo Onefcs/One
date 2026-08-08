@@ -371,6 +371,14 @@ function _invMsg(msg) {
   setTimeout(() => el.remove(), 2500);
 }
 
+// Equipping and unequipping both save. They used to rely on some later
+// autosave carrying the change along, which is fine while grinding (kills and
+// loot fire one constantly) but not in the hub: standing at the forge there
+// is nothing to trigger a save at all, so the server could go on believing a
+// just-equipped item was still loose in the inventory for minutes. That gap
+// is what made enhancing a freshly-crafted pet fail with "Предмет не найден"
+// — the enhance roll is server-side now (see 'enhanceItem', server/index.js)
+// and it looks the target up in the server's own copy, not the client's.
 function equipItem(idx) {
   const it = player.inventory[idx]; if (!it) return;
   if (_isStackable(it) || it.slot === 'use') return;
@@ -383,6 +391,7 @@ function equipItem(idx) {
   player.inventory.splice(idx, 1);
   if (old) player.inventory.push(old);
   recompute(); updateInvUI();
+  netSaveProgress();
 }
 
 function unequipItem(slot) {
@@ -391,6 +400,7 @@ function unequipItem(slot) {
   player.inventory.push(it);
   player.equipment[slot] = null;
   recompute(); updateInvUI();
+  netSaveProgress();
 }
 
 function usePotion() {

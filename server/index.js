@@ -5009,17 +5009,72 @@ io.on('connection', socket => {
       return socket.emit('enhanceError', { msg: 'Предмет не найден' });
     };
 
-    let target, targetIdx = -1;
-    if (slot) {
-      const eq = _lastStats.equipment || {};
+    // Where the item currently sits can legitimately differ between the two
+    // sides. equip/unequip only move it in the CLIENT's copy and reach the
+    // server on a save — and in the hub, with nothing to kill, that save may
+    // be seconds away or (on an older client, which never saved on equip at
+    // all) not coming. Trusting the client's `slot` and stopping there is
+    // exactly what made enhancing a just-crafted, just-equipped pet fail with
+    // "Предмет не найден" every single time.
+    //
+    // So resolve by IDENTITY first — id + current enhance, the same matching
+    // scheme used above — and reconcile the location afterwards. Relocating an
+    // item between the inventory and an equip slot creates and destroys
+    // nothing, so this stays inside the census invariant saveProgress enforces
+    // (_itemCensus counts both together); it cannot be used to conjure or
+    // upgrade anything, only to agree on where a thing already owned is kept.
+    const eq = _lastStats.equipment || {};
+    const _matches = it => it && it.id === id && (it.enhance || 0) === curEnh;
+
+    let target = null, targetIdx = -1, targetSlot = null;
+    if (slot && _matches(eq[slot])) {
       target = eq[slot];
-      if (!target || target.id !== id || (target.enhance || 0) !== curEnh) {
-        return _enhNotFound('equipped:' + slot);
-      }
+      targetSlot = slot;
     } else {
-      targetIdx = inv.findIndex(i => i && i.id === id && (i.enhance || 0) === curEnh);
-      if (targetIdx < 0) return _enhNotFound('inventory');
-      target = inv[targetIdx];
+      targetIdx = inv.findIndex(_matches);
+      if (targetIdx >= 0) {
+        target = inv[targetIdx];
+      } else {
+        // Mirror image: the client has it loose, the server still has it
+        // equipped — an unequip that has not been saved yet.
+        const found = Object.keys(eq).find(sl => _matches(eq[sl]));
+        if (found) { target = eq[found]; targetSlot = found; }
+      }
+    }
+    if (!target) return _enhNotFound(slot ? 'equipped:' + slot : 'inventory');
+
+    // An item may only ever be enhanced in its OWN slot. Without this the
+    // relocation below would honour whatever slot name the request carried and
+    // file, say, a pet under `weapon` — and since a client sums the stats of
+    // every equipment entry regardless of which key it sits under, that is a
+    // way to wear one item twice over.
+    if (slot && target.slot !== slot) {
+      logPlayer(authed.telegramId, authed.username, 'enhance_slot_mismatch',
+        { id, claimed: slot, actual: target.slot });
+      return _enhNotFound('slot_mismatch:' + slot);
+    }
+
+    // The client's placement wins where the two disagree — it is the one the
+    // player is looking at — so move the item before the roll below writes the
+    // result back. Only the inventory <-> equip-slot direction is reconciled:
+    // an item found in a DIFFERENT equip slot than the one named is left where
+    // it is (there is nothing sensible to swap it with, and the sync below
+    // corrects the client either way). Every move here is one item out of one
+    // place and into another, so the totals are unchanged.
+    if (slot && targetIdx >= 0) {
+      const displaced = eq[slot];
+      eq[slot] = target;
+      inv.splice(targetIdx, 1);
+      if (displaced) inv.push(displaced);   // straight swap, so no slot growth
+      _lastStats.equipment = eq;
+      targetIdx = -1;
+      targetSlot = slot;
+    } else if (!slot && targetSlot && inv.length < SERVER_INV_MAX) {
+      eq[targetSlot] = null;
+      inv.push(target);
+      _lastStats.equipment = eq;
+      targetIdx = inv.length - 1;
+      targetSlot = null;
     }
     // Pets are enhanceable and always have been — the client has offered it
     // for every slot since long before this handler existed (canEnh in
@@ -5038,7 +5093,7 @@ io.on('connection', socket => {
     const stoneItem = inv[stoneIdx];
     if ((stoneItem.qty || 1) <= 1) {
       inv.splice(stoneIdx, 1);
-      if (!slot && stoneIdx < targetIdx) targetIdx--;
+      if (!targetSlot && stoneIdx < targetIdx) targetIdx--;
     } else {
       stoneItem.qty--;
     }
@@ -5055,12 +5110,16 @@ io.on('connection', socket => {
       outcome = 'fail'; // safe stone: item survives a miss
     } else {
       outcome = 'burned'; // normal stone: item is destroyed on a miss
-      if (slot) _lastStats.equipment[slot] = null;
+      if (targetSlot) _lastStats.equipment[targetSlot] = null;
       else inv.splice(targetIdx, 1);
     }
 
-    _commitServerItems(inv, slot ? _lastStats.equipment : null, 'enhance',
-      { id, stoneType, outcome, fromEnhance: curEnh });
+    // Equipment goes along unconditionally: the reconciliation above can have
+    // moved the item even when the roll targeted a loose one, and the client
+    // rebuilds both halves from this sync — sending only the inventory would
+    // leave the two disagreeing again the moment they were made to agree.
+    _commitServerItems(inv, _lastStats.equipment || {}, 'enhance',
+      { id, stoneType, outcome, fromEnhance: curEnh, slot: targetSlot || null });
     // Season points for a successful enhance. The rarity is re-read from the
     // catalog rather than taken off the entry, so a crafted request cannot
     // claim a common item is worth an uncommon's points. A miss pays nothing.
@@ -5072,7 +5131,9 @@ io.on('connection', socket => {
           .then(total => socket.emit('seasonEventDone', { task: 'enhance', points: _ep, total: total ?? null }));
       }
     }
-    socket.emit('enhanceResult', { id, slot: slot || null, outcome, newEnhance });
+    // targetSlot, not the requested slot: it names where the item actually
+    // ended up, which is what the client reopens the modal on.
+    socket.emit('enhanceResult', { id, slot: targetSlot || null, outcome, newEnhance });
   });
 
   // ── Box crafting (Кузнец → Материалы → Боксы, e.g. box_rare from key_rare) ──
