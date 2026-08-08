@@ -459,6 +459,12 @@ const _SEASON_SHOP_PKGS = [
   { id:'sp10', gram:10, season:true, stones:{ norm_stone:10, bless_stone:2  } },
   { id:'sp20', gram:20, season:true, stones:{ norm_stone:15, bless_stone:5  } },
   { id:'sp50', gram:50, season:true, stones:{ norm_stone:35, bless_stone:15 } },
+  // Liberty + a full set of buff potions. `potions: N` grants N of EVERY buff
+  // potion (see _VIP_BP and the purchase handler), which is what "N банок
+  // бафов всех" means — not N split across them.
+  { id:'sl10', gram:10, season:true, nexum:1000, potions:10 },
+  { id:'sl20', gram:20, season:true, nexum:2200, potions:20 },
+  { id:'sl50', gram:50, season:true, nexum:6000, potions:60 },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)

@@ -2741,7 +2741,9 @@ function switchSeasonTab(tab) {
 function _renderSeasonBody() {
   const body = document.getElementById('season-panel-body');
   if (!body) return;
-  body.innerHTML = _seasonTab === 'rating' ? _seasonRatingHTML() : _seasonQuestsHTML();
+  body.innerHTML = _seasonTab === 'rating' ? _seasonRatingHTML()
+                 : _seasonTab === 'packs'  ? _seasonPacksHTML()
+                 : _seasonQuestsHTML();
 }
 
 // Prize table — display only, the payout itself happens outside the game.
@@ -2830,6 +2832,18 @@ function _seasonQuestsHTML() {
       ${burnBlock}
       ${_seasonPrizesHTML()}
     </div>`;
+}
+
+// Сезонные паки. Priced in GRAM, so the balance is shown here the same way
+// the GRAM shop shows it — otherwise the disabled buttons have no explanation.
+function _seasonPacksHTML() {
+  const bal = window._gramBalance || 0;
+  return `<div style="padding:16px">
+    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
+      ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
+    </div>
+    ${_SEASON_SHOP_PKGS_UI.map(pkg => _seasonShopPkgHtml(pkg, bal)).join('')}
+  </div>`;
 }
 
 function _seasonRatingHTML() {
@@ -4482,30 +4496,55 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
 
-// Сезонные паки — только камни заточки. Rendered separately from the regular
-// packages: those carry gold/potions/armour/books and their card is built
-// around that, while these are a short list of two stack types.
+// Сезонные паки — shown in the Паки tab of the Сезон panel, not in the GRAM
+// shop. Mirror of _SEASON_SHOP_PKGS on the server (which is what actually
+// grants them); this copy only exists to draw the cards. Keep the two in sync.
 const _SEASON_SHOP_PKGS_UI = [
   { id:'sp1',  gram:1,  stones:{ norm_stone:5  } },
   { id:'sp5',  gram:5,  stones:{ norm_stone:10 } },
   { id:'sp10', gram:10, stones:{ norm_stone:10, bless_stone:2  } },
   { id:'sp20', gram:20, stones:{ norm_stone:15, bless_stone:5  } },
   { id:'sp50', gram:50, stones:{ norm_stone:35, bless_stone:15 } },
+  { id:'sl10', gram:10, nexum:1000, potions:10 },
+  { id:'sl20', gram:20, nexum:2200, potions:20 },
+  { id:'sl50', gram:50, nexum:6000, potions:60 },
 ];
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
+// Every buff potion — `potions: N` on a package means N of EACH of these,
+// matching what the server grants (_VIP_BP).
+const _BUFF_POTION_IMGS = ['hp','exp','gold','regen','atkspeed','atk'].map(k => '/images/potion/' + k + '.png');
+
+// What a package actually contains, as icon rows plus a one-line summary.
+// Shared by the card and its confirm dialog so the two can never disagree.
+function _seasonPkgContents(pkg) {
+  const icons = [];
+  const parts = [];
+  Object.entries(pkg.stones || {}).forEach(([id, qty]) => {
+    icons.push({ img: _STONE_IMG[id], label: '×' + qty });
+    parts.push(`${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`);
+  });
+  if (pkg.nexum) {
+    icons.push({ img: '/images/nexum-coin_v2.png', label: '×' + pkg.nexum });
+    parts.push(`${pkg.nexum} Liberty`);
+  }
+  if (pkg.potions) {
+    _BUFF_POTION_IMGS.forEach(img => icons.push({ img, label: '×' + pkg.potions }));
+    parts.push(tVars('seasonPkgPotionsFmt', { n: pkg.potions }));
+  }
+  return { icons, line: parts.join(', ') };
+}
 
 function _seasonShopPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
-  const rows = Object.entries(pkg.stones).map(([id, qty]) =>
-    `<div class="vip-ri"><img class="vip-ri-img" src="${_STONE_IMG[id]}"><span class="vip-ri-label">×${qty}</span></div>`
+  const { icons, line } = _seasonPkgContents(pkg);
+  const rows = icons.map(r =>
+    `<div class="vip-ri"><img class="vip-ri-img" src="${r.img}"><span class="vip-ri-label">${r.label}</span></div>`
   ).join('');
-  const line = Object.entries(pkg.stones).map(([id, qty]) =>
-    `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ');
   return `
     <div class="gram-shop-card" style="border-color:rgba(80,175,149,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
         <b style="color:#7ee0c0;font-size:14px">${pkg.gram} GRAM</b>
-        <span style="color:#a3957c;font-size:11.5px">${line}</span>
+        <span style="color:#a3957c;font-size:11.5px;text-align:right">${line}</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${rows}</div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
@@ -4516,17 +4555,15 @@ function _seasonShopPkgHtml(pkg, bal) {
     </div>`;
 }
 
-// Reuses the regular confirm dialog's shape — the purchase itself goes
-// through the very same server handler (netGramShopBuy), which now resolves
-// season package ids too.
+// The purchase goes through the very same server handler as the regular GRAM
+// shop (netGramShopBuy), which resolves season package ids too — so the
+// atomic spend and inventory-space check are the shared ones.
 function openSeasonShopConfirm(pkgId) {
   const pkg = _SEASON_SHOP_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
   if (bal < pkg.gram) return;
-  const line = Object.entries(pkg.stones).map(([id, qty]) =>
-    `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ');
-  if (!confirm(tVars('seasonShopConfirm', { g: pkg.gram, items: line }))) return;
+  if (!confirm(tVars('seasonShopConfirm', { g: pkg.gram, items: _seasonPkgContents(pkg).line }))) return;
   if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId);
 }
 
@@ -4556,8 +4593,6 @@ function _renderGramShopPanel() {
       ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
     </div>
     ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
-    <div style="margin:18px 0 10px;color:#7ee0c0;font-size:13px;font-weight:700;letter-spacing:.4px">${t('seasonShopHdr')}</div>
-    ${_SEASON_SHOP_PKGS_UI.map(pkg => _seasonShopPkgHtml(pkg, bal)).join('')}
   `;
 }
 
@@ -4728,10 +4763,19 @@ function onGramShopResult(data) {
   }
   if (data.vipData) window._vipData = data.vipData;
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
-  const lbl = pkg ? pkg.label : t('packageFallbackLbl');
+  // Season packages live in their own list and have no label of their own —
+  // name them by price so the toast still says what was bought.
+  const spkg = pkg ? null : _SEASON_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
+  const lbl = pkg ? pkg.label
+            : spkg ? tVars('seasonPkgLabelFmt', { g: spkg.gram })
+            : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
+  // Season packs are bought from the Сезон panel, which shows the same GRAM
+  // balance — redraw it too or the buttons keep the pre-purchase state.
+  const spanel = document.getElementById('season-panel');
+  if (spanel && spanel.style.display !== 'none' && _seasonTab === 'packs') _renderSeasonBody();
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
   if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
