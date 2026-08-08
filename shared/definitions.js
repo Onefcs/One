@@ -354,6 +354,40 @@ function armNameForLevel(lvl) {
 // the entrance doubles as a gate matching where the PREVIOUS arm tops out.
 const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 
+// ── Сезон ───────────────────────────────────────────────────────────────────
+// A time-boxed points race. Points come from two places and both are counted
+// server-side only (SEASON_* fields are stripped from client saves the same
+// way balances are — see _sanitizeSavedStats): an endless rotation of kill
+// quests, and burning junk gear.
+//
+// The kill quests are deliberately drawn from the level 1-19 band, which is
+// the starting corridor — so the race is about volume, not about how far into
+// the world a player has already got.
+const SEASON_END_AT   = Date.UTC(2026, 7, 20, 15, 0, 0); // 20 Aug 2026, 18:00 MSK (UTC+3)
+const SEASON_MIN_LVL  = 1;
+const SEASON_MAX_LVL  = 19;
+const SEASON_QUEST_KILLS  = 5000;
+const SEASON_QUEST_POINTS = 100;
+// One quest is active at a time; clearing it rolls the next at random from
+// this list. Every species here lives inside the level band above (arm 1's
+// rotation, see FLOOR_ENEMIES) — `sp` is the eid prefix, so both the guard
+// and the warrior variant of a species count toward the same quest.
+const SEASON_SPECIES = [
+  { sp: 'rat',   name: 'Крысы'  },
+  { sp: 'slime', name: 'Слизни' },
+  { sp: 'imp',   name: 'Бесы'   },
+];
+// Burning destroys the item outright — no gold, no materials back, only
+// points. Anything not listed here cannot be burned at all.
+const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
+// Paid out manually off-chain; the game only ranks players and shows this.
+const SEASON_PRIZES = [
+  { place: 1, usdt: 100 },
+  { place: 2, usdt: 50  },
+  { place: 3, usdt: 30  },
+];
+function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
+
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
 // the client to add them to its own inventory (see the claimQuest handler,
@@ -1136,6 +1170,8 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
   QUEST_DEF,
+  SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
+  SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

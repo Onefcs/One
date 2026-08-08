@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 2000" width="2000" height="2000">
+  <!-- Tether (USDT) mark — season prize currency. Kept as SVG rather than a
+       raster so it stays crisp in the reward rows, where it renders at 12-16px
+       next to the Liberty/GRAM coins. -->
+  <path fill="#50AF95" d="M1000 1880 L8 892 L378 128 H1622 L1992 892 Z"/>
+  <g fill="#FFFFFF">
+    <!-- crossbar -->
+    <rect x="512" y="356" width="976" height="228"/>
+    <!-- stem -->
+    <rect x="878" y="356" width="244" height="1128"/>
+  </g>
+  <!-- the ring the stem passes through -->
+  <ellipse cx="1000" cy="878" rx="612" ry="172" fill="none" stroke="#FFFFFF" stroke-width="92"/>
+  <!-- stem redrawn over the ring so it reads as one continuous shape -->
+  <rect x="878" y="356" width="244" height="1128" fill="#FFFFFF"/>
+</svg>
