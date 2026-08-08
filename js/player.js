@@ -165,11 +165,17 @@ function _enhBonus(it) { return _enhBonusAt(it, it.enhance || 0); }
 
 // ── Skill level helpers ───────────────────────────────────────
 function _skillLvl(key) { return (player && player.skillLevels && player.skillLevels[key]) || 0; }
-function _skillDmgMult(key)    { return 1 + _skillLvl(key) * 0.01; }
+// Сила навыков from equipment (recompute() above). Multiplies the magnitude
+// of a skill — its damage and its healing — on top of the +1%/level the skill
+// itself already gives. Durations are not touched: those are seconds, and a
+// percentage of a duration is a different kind of number to a percentage of a
+// hit.
+function _skillPowerMult()     { return 1 + ((player && player.skillPct) || 0); }
+function _skillDmgMult(key)    { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
 function _skillBuffSec(key)    { return _skillLvl(key); }
 function _skillBarrierSec(key) { return _skillLvl(key) * 0.2; }
 function _skillInvisSec(key)   { return _skillLvl(key) * 0.2; }
-function _skillHealMult(key)   { return 1 + _skillLvl(key) * 0.01; }
+function _skillHealMult(key)   { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 
 // Вампиризм (deathknight Q) — heals a % of any damage the player deals
@@ -210,7 +216,7 @@ function recompute() {
   let a = player.baseAtk + (u.atk || 0) * 1;
   let d = player.baseDef + (u.def || 0) * 1;
   let h = player.baseMaxHp + (u.hp || 0) * 10;
-  let extraCrit = 0, extraAS = 0, hpPct = 0;
+  let extraCrit = 0, extraAS = 0, hpPct = 0, skillPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
     const eb = _enhBonus(it);
@@ -220,7 +226,15 @@ function recompute() {
     if (it.critChance) extraCrit += it.critChance;
     if (it.atkSpeed)   extraAS   += it.atkSpeed;
     if (it.hpPct)      hpPct     += it.hpPct;
+    // Сила навыков — only the unique weapons carry it today, but it is summed
+    // over every slot like any other stat so a future item can grant it too.
+    if (it.skillPct)   skillPct  += it.skillPct;
   });
+  // Read by _skillDmgMult/_skillHealMult below. Stored on the player rather
+  // than recomputed at cast time so it follows the same rebuild-from-scratch
+  // rule as atk/def/maxHp — every equip, unequip and enhance already calls
+  // recompute(), so it can never go stale.
+  player.skillPct = skillPct;
 
   // Passive skills (shared/definitions.js) — class-exclusive pair + six
   // universal ones, bought with gold in the Skills → Passive tab (js/ui.js).
@@ -906,5 +920,6 @@ function statStr(it) {
   if (it.critChance) p.push('Крит+' + (it.critChance * 100).toFixed(0) + '%');
   if (it.atkSpeed)   p.push('Скор+' + (it.atkSpeed   * 100).toFixed(0) + '%');
   if (it.hpPct)      p.push('HP+' +  (it.hpPct       * 100).toFixed(0) + '%макс');
+  if (it.skillPct)   p.push('Навыки+' + (it.skillPct * 100).toFixed(0) + '%');
   return p.join('  ');
 }

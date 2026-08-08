@@ -541,6 +541,7 @@ Object.assign(I18N_UI, {
   activeRemainingFmt: { ru: '✓ Активно · осталось ~{n} мин', en: '✓ Active · ~{n} min left', uk: '✓ Активно · залишилось ~{n} хв', es: '✓ Activo · quedan ~{n} min', tr: '✓ Aktif · ~{n} dk kaldı', pt: '✓ Ativo · restam ~{n} min' },
   alreadyActiveLbl: { ru: 'Уже активно', en: 'Already active', uk: 'Вже активно', es: 'Ya activo', tr: 'Zaten aktif', pt: 'Já ativo' },
   statCritInline: { ru: 'Крит', en: 'Crit', uk: 'Крит', es: 'Crít', tr: 'Kritik', pt: 'Crít' },
+  statSkillPowerInline: { ru: 'Сила навыков', en: 'Skill power', uk: 'Сила навичок', es: 'Poder de habilidad', tr: 'Beceri gücü', pt: 'Poder de habilidade' },
   statSpeedInline: { ru: 'Скор', en: 'Spd', uk: 'Швид', es: 'Vel', tr: 'Hız', pt: 'Vel' },
   enhanceTitleFmt: { ru: 'Заточка: {cur} → {next}', en: 'Enchant: {cur} → {next}', uk: 'Гартування: {cur} → {next}', es: 'Encantamiento: {cur} → {next}', tr: 'Büyü: {cur} → {next}', pt: 'Encantamento: {cur} → {next}' },
   enhChanceFmt: { ru: 'Шанс: {rate}%', en: 'Chance: {rate}%', uk: 'Шанс: {rate}%', es: 'Probabilidad: {rate}%', tr: 'Şans: %{rate}', pt: 'Chance: {rate}%' },

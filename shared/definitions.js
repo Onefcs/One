@@ -875,26 +875,34 @@ const UNIQUE_SHARDS = [
   { id:'shard_void',     name:'Осколок пустоты',  img:'/images/uniq/shard/void.png'     },
 ];
 
-// The weapons themselves. Every stat is exactly twice the same class's
-// ordinary weapon at that rarity (sw4/sw5, tw4/tw5, bw4/bw5, st4/st5) — see
-// ITEM_DEF above. Warlocks share the staff line for stats but get their own
-// artwork and entry here, since the unique set ships a healer weapon.
+// The weapons themselves. Every stat carried over from the ordinary line is
+// exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
+// bw4/bw5, st4/st5) — see ITEM_DEF above. Warlocks share the staff line for
+// stats but get their own artwork and entry here, since the unique set ships
+// a healer weapon.
+//
+// On top of that, both tiers carry two things no ordinary weapon has:
+//   hp       — flat max HP, like a piece of armour
+//   skillPct — skill power: +% to skill DAMAGE and HEALING (see
+//              _skillDmgMult/_skillHealMult, js/player.js). Buff durations are
+//              measured in seconds and are deliberately left alone — a
+//              percentage of a duration is a different kind of number.
 const UNIQUE_WEAPONS = [
   // Рыцарь смерти — ×2 of sw4 (atk 44, crit .10) / sw5 (atk 65, crit .25)
-  { id:'uq_sword_e', name:'Меч бездны',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/uniq/e_sword.png',  atk:88,  critChance:0.20, rarity:'epic'      },
-  { id:'uq_sword_l', name:'Меч первых',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/uniq/l_sword.png',  atk:130, critChance:0.50, rarity:'legendary' },
+  { id:'uq_sword_e', name:'Меч бездны',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/uniq/e_sword.png',  atk:88,  critChance:0.20, hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_sword_l', name:'Меч первых',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/uniq/l_sword.png',  atk:130, critChance:0.50, hp:1000, skillPct:0.50, rarity:'legendary' },
   // Танк — ×2 of tw4 (atk 44, def 16) / tw5 (atk 65, def 24)
-  { id:'uq_axe_e',   name:'Топор бездны',    slot:'weapon', forClass:['lev'],         img:'/images/wep/uniq/e_axe.png',    atk:88,  def:32,          rarity:'epic'      },
-  { id:'uq_axe_l',   name:'Топор первых',    slot:'weapon', forClass:['lev'],         img:'/images/wep/uniq/l_axe.png',    atk:130, def:48,          rarity:'legendary' },
+  { id:'uq_axe_e',   name:'Топор бездны',    slot:'weapon', forClass:['lev'],         img:'/images/wep/uniq/e_axe.png',    atk:88,  def:32,          hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_axe_l',   name:'Топор первых',    slot:'weapon', forClass:['lev'],         img:'/images/wep/uniq/l_axe.png',    atk:130, def:48,          hp:1000, skillPct:0.50, rarity:'legendary' },
   // Лучник — ×2 of bw4 (atk 60, aspd .10) / bw5 (atk 100, aspd .15, crit .10)
-  { id:'uq_bow_e',   name:'Лук бездны',      slot:'weapon', forClass:['ranger'],      img:'/images/wep/uniq/e_bow.png',    atk:120, atkSpeed:0.20,   rarity:'epic'      },
-  { id:'uq_bow_l',   name:'Лук первых',      slot:'weapon', forClass:['ranger'],      img:'/images/wep/uniq/l_bow.png',    atk:200, atkSpeed:0.30, critChance:0.20, rarity:'legendary' },
+  { id:'uq_bow_e',   name:'Лук бездны',      slot:'weapon', forClass:['ranger'],      img:'/images/wep/uniq/e_bow.png',    atk:120, atkSpeed:0.20,   hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_bow_l',   name:'Лук первых',      slot:'weapon', forClass:['ranger'],      img:'/images/wep/uniq/l_bow.png',    atk:200, atkSpeed:0.30, critChance:0.20, hp:1000, skillPct:0.50, rarity:'legendary' },
   // Маг — ×2 of st4 (atk 60, hp% .10) / st5 (atk 120, hp% .20, crit .10)
-  { id:'uq_staff_e', name:'Посох бездны',    slot:'weapon', forClass:['mage'],        img:'/images/wep/uniq/e_staff.png',  atk:120, hpPct:0.20,      rarity:'epic'      },
-  { id:'uq_staff_l', name:'Посох первых',    slot:'weapon', forClass:['mage'],        img:'/images/wep/uniq/l_staff.png',  atk:240, hpPct:0.40, critChance:0.20, rarity:'legendary' },
+  { id:'uq_staff_e', name:'Посох бездны',    slot:'weapon', forClass:['mage'],        img:'/images/wep/uniq/e_staff.png',  atk:120, hpPct:0.20,      hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_staff_l', name:'Посох первых',    slot:'weapon', forClass:['mage'],        img:'/images/wep/uniq/l_staff.png',  atk:240, hpPct:0.40, critChance:0.20, hp:1000, skillPct:0.50, rarity:'legendary' },
   // Целитель — same numbers as the mage staff it replaces for warlocks
-  { id:'uq_heal_e',  name:'Жезл бездны',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/e_healer.png', atk:120, hpPct:0.20,      rarity:'epic'      },
-  { id:'uq_heal_l',  name:'Жезл первых',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/l_healer.png', atk:240, hpPct:0.40, critChance:0.20, rarity:'legendary' },
+  { id:'uq_heal_e',  name:'Жезл бездны',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/e_healer.png', atk:120, hpPct:0.20,      hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_heal_l',  name:'Жезл первых',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/l_healer.png', atk:240, hpPct:0.40, critChance:0.20, hp:1000, skillPct:0.50, rarity:'legendary' },
 ];
 
 // One recipe per weapon: every shard kind at the tier's cost, nothing else.

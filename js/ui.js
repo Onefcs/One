@@ -2411,6 +2411,7 @@ function openInvItemModal(idx) {
   if (it.critChance) statRows.push(`${t('statCritInline')} <b>${(it.critChance*100).toFixed(0)}%</b>`);
   if (it.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
+  if (it.skillPct)   statRows.push(`${t('statSkillPowerInline')} <b>+${(it.skillPct*100).toFixed(0)}%</b>`);
 
   // Next enhance preview
   const canEnh = enh < _ENH_MAX;
@@ -2616,6 +2617,7 @@ function openEqItemModal(slot) {
   if (it.critChance) statRows.push(`${t('statCritInline')} <b>${(it.critChance*100).toFixed(0)}%</b>`);
   if (it.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
   if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
+  if (it.skillPct)   statRows.push(`${t('statSkillPowerInline')} <b>+${(it.skillPct*100).toFixed(0)}%</b>`);
 
   const canEnh = enh < _ENH_MAX;
   const nextParts = [];
