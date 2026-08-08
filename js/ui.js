@@ -2885,7 +2885,7 @@ function _seasonQuestsHTML() {
       <ul style="margin-top:6px">
         <li>${tVars('seasonEnhCommon',   { n: (st.enhance || {}).common   || 10 })}</li>
         <li>${tVars('seasonEnhUncommon', { n: (st.enhance || {}).uncommon || 50 })}</li>
-        <li>${tVars('seasonEnhRare',     { n: (st.enhance || {}).rare     || 20 })}</li>
+        <li>${tVars('seasonEnhRare',     { n: (st.enhance || {}).rare     || 80 })}</li>
       </ul>
       <ul style="margin-top:6px">
         <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>

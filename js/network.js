@@ -987,14 +987,31 @@ function netConnect(onReady) {
   socket.on('clanStorageOk', ({ msg } = {}) => {
     if (typeof _marketToast === 'function' && msg) _marketToast(msg, 'ok');
   });
-  // The unlock was charged server-side. newGold is an absolute, not a delta —
-  // applying it here is what stops this client's next autosave from writing
-  // the pre-purchase figure back (same reasoning as 'itemSold').
+  // The unlock was charged server-side. newGold is an absolute, not a delta.
+  //
+  // The flush is immediate (netSaveProgressNow), not the usual debounced one,
+  // and it runs before any UI call so nothing can throw ahead of it. Both
+  // matter: a debounced save leaves up to two seconds in which a save composed
+  // BEFORE the purchase can land and hand the gold back, and the same call is
+  // what rewrites this device's localStorage backup — which the next load
+  // compares against the server copy by savedAt, and would otherwise restore
+  // at the pre-purchase figure.
   socket.on('clanStorageUnlocked', ({ newGold, cost } = {}) => {
-    if (player && Number.isFinite(newGold)) player.gold = newGold;
     if (typeof _marketToast === 'function') _marketToast(t('clanStorageUnlockedToast'), 'ok');
+  });
+
+  // The server changed this account's gold on its own authority (a spend it
+  // charged, or a correction to a save that predated one). Absolute, not a
+  // delta. Flushed immediately rather than on the usual 2s debounce so the
+  // figure reaches both the server and this device's localStorage backup
+  // before anything else can save the old one over it.
+  socket.on('goldSync', ({ gold } = {}) => {
+    if (!player || !Number.isFinite(gold)) return;
+    if (player.gold === gold) return;
+    player.gold = gold;
+    if (typeof netSaveProgressNow === 'function') netSaveProgressNow();
     if (typeof updateInvUI === 'function') updateInvUI();
-    if (typeof netSaveProgress === 'function') netSaveProgress();
+    if (typeof updateClanUI === 'function') updateClanUI();
   });
   // The shards are already in the inventory via the inventorySync that
   // preceded this; this only reports what arrived.

@@ -437,7 +437,7 @@ const SEASON_EVENT_TASKS = [
 // Points for a SUCCESSFUL enhance, by the item's own rarity. A miss costs the
 // stone and pays nothing — the task is to enhance, not to attempt. Keyed the
 // same way burning is, so anything not listed here earns nothing.
-const SEASON_ENHANCE_POINTS = { common: 10, uncommon: 50, rare: 20 };
+const SEASON_ENHANCE_POINTS = { common: 10, uncommon: 50, rare: 80 };
 
 // Bringing in a player who then reaches SEASON_REF_LEVEL. Paid to the
 // REFERRER, once per invited friend ever — the claim flips a flag on the

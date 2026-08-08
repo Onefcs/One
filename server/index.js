@@ -4017,6 +4017,41 @@ io.on('connection', socket => {
   let currentFloor = 1;
   let _lastStats = null;
   let _autoSaveInterval = null;
+
+  // ── Server-side gold spend ────────────────────────────────────────────────
+  // Gold is the one currency the server does not own: it rides in on the
+  // client's save blob and the next saveProgress replaces _lastStats wholesale.
+  // So deducting it here is not enough on its own — a save composed BEFORE the
+  // deduction, arriving after it, carries the pre-spend figure and hands the
+  // money straight back. That is why "золото не снимает" for the clan storage
+  // unlock: the charge landed and was then quietly undone.
+  //
+  // The fix is to remember the spend until a save that actually accounts for it
+  // arrives. saveProgress re-applies it to any save stamped EARLIER than the
+  // spend (see the _pendingGoldSpend block there) — savedAt is what separates
+  // "composed before" from "composed after", so a player who legitimately
+  // earned gold in between is never charged twice. One-shot and time-bounded:
+  // it can correct at most one save, and expires either way.
+  let _pendingGoldSpend = null;
+
+  async function _serverSpendGold(amount, reason) {
+    if (!authed || !_lastStats || !(amount > 0)) return null;
+    const before = Math.floor(Number(_lastStats.gold) || 0);
+    const after = Math.max(0, before - amount);
+    _lastStats.gold = after;
+    // savedAt moves with it: the client compares its localStorage backup
+    // against the stored blob by this stamp (_pickFreshestSave, js/network.js),
+    // and a write that left savedAt behind could be beaten by a device cache
+    // still holding the pre-spend figure.
+    _lastStats.savedAt = Date.now();
+    _pendingGoldSpend = { amount, after, at: _lastStats.savedAt, reason,
+                          until: Date.now() + 60000 };
+    await _persistSavedFields(authed, { gold: after, savedAt: _lastStats.savedAt });
+    socket.emit('goldSync', { gold: after });
+    logPlayer(authed.telegramId, authed.username, 'gold_spend',
+      { reason, amount, before, after });
+    return after;
+  }
   let _myClanName = null;
   let _myClanIcon = null;
   // The clan's _id, kept beside the name/icon so the per-kill XP tally can be
@@ -7480,6 +7515,28 @@ io.on('connection', socket => {
       }
     }
 
+    // A server-side gold spend the client may not have known about yet. Only a
+    // save composed BEFORE the spend is corrected — savedAt is the client's own
+    // "when I built this blob" stamp, so a later save has already had the
+    // deduction applied to it (or the player has earned since, which is theirs
+    // to keep). Either way the pending spend is cleared: it corrects at most
+    // one save, so it can never charge twice.
+    if (_pendingGoldSpend) {
+      if (Date.now() > _pendingGoldSpend.until) {
+        _pendingGoldSpend = null;
+      } else if ((Math.floor(Number(clean.savedAt)) || 0) < _pendingGoldSpend.at) {
+        const was = Math.floor(Number(clean.gold) || 0);
+        clean.gold = Math.max(0, was - _pendingGoldSpend.amount);
+        logPlayer(authed.telegramId, authed.username, 'gold_spend_reapplied',
+          { reason: _pendingGoldSpend.reason, amount: _pendingGoldSpend.amount,
+            saveHad: was, now: clean.gold });
+        socket.emit('goldSync', { gold: clean.gold });
+        _pendingGoldSpend = null;
+      } else {
+        _pendingGoldSpend = null;   // this save already accounts for the spend
+      }
+    }
+
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
       logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {
         hadLvl: _lastStats.lvl, hadGold: _lastStats.gold,
@@ -8000,10 +8057,9 @@ io.on('connection', socket => {
       ).catch(() => null);
       if (!claimed) return socket.emit('clanStorageError', { msg: 'Хранилище уже открыто' });
 
-      _lastStats.gold = Math.max(0, gold - CLAN_STORAGE_UNLOCK_GOLD);
-      await _persistSavedFields(authed, { gold: _lastStats.gold });
+      await _serverSpendGold(CLAN_STORAGE_UNLOCK_GOLD, 'clan_storage_unlock');
       logPlayer(authed.telegramId, authed.username, 'clan_storage_unlock',
-        { clan: clan.name, cost: CLAN_STORAGE_UNLOCK_GOLD, goldLeft: _lastStats.gold });
+        { clan: clan.name, cost: CLAN_STORAGE_UNLOCK_GOLD, goldBefore: gold, goldLeft: _lastStats.gold });
       socket.emit('clanStorageUnlocked', { newGold: _lastStats.gold, cost: CLAN_STORAGE_UNLOCK_GOLD });
       await _clanStoragePush(claimed);
     });
