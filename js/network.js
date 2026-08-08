@@ -1104,6 +1104,14 @@ function netConnect(onReady) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
+  // An admin moved this account's season points by hand. The session's own
+  // copy is authoritative for the panel, so it has to be told rather than left
+  // showing a stale figure until the next reconnect.
+  socket.on('seasonRefresh', ({ total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
   // An invited friend reached the level that pays the referrer. This arrives
   // on the REFERRER's socket, triggered by somebody else's session, so the
   // total comes with it rather than being derived from anything local.

@@ -1144,6 +1144,19 @@ const LOG_KEEP_PER_PLAYER = 100;
 const LOG_TRIM_EVERY = 25;
 const _logWritesSinceTrim = new Map(); // telegramId -> writes since last trim
 
+// Season point movements are trimmed on their own, much longer, budget.
+// Sharing the 100-row window with everything else made them effectively
+// invisible: `inv:mob_loot` fires on most kills, so a quest award from a
+// 5000-kill grind was pushed out of the log within minutes of earning it —
+// which is exactly why "очки не начислились" reports could not be checked.
+// These are the rows that decide who takes a prize, so they outlive the rest.
+const LOG_SEASON_EVENTS = [
+  'season_points', 'season_points_failed',
+  'season_quest_done', 'season_quest_award_failed',
+  'admin_season_points',
+];
+const LOG_KEEP_SEASON_PER_PLAYER = 1000;
+
 async function logPlayer(telegramId, username, event, meta) {
   if (!telegramId) return;
   try {
@@ -1151,9 +1164,16 @@ async function logPlayer(telegramId, username, event, meta) {
     const n = (_logWritesSinceTrim.get(telegramId) || 0) + 1;
     if (n < LOG_TRIM_EVERY) { _logWritesSinceTrim.set(telegramId, n); return; }
     _logWritesSinceTrim.set(telegramId, 0);
-    const stale = await PlayerLogModel.find({ telegramId }, '_id')
-      .sort({ at: -1 }).skip(LOG_KEEP_PER_PLAYER).lean();
-    if (stale.length) await PlayerLogModel.deleteMany({ _id: { $in: stale.map(d => d._id) } });
+    // Two independent windows, so a flood of ordinary rows can never evict a
+    // season one (and vice versa).
+    const [stale, staleSeason] = await Promise.all([
+      PlayerLogModel.find({ telegramId, event: { $nin: LOG_SEASON_EVENTS } }, '_id')
+        .sort({ at: -1 }).skip(LOG_KEEP_PER_PLAYER).lean(),
+      PlayerLogModel.find({ telegramId, event: { $in: LOG_SEASON_EVENTS } }, '_id')
+        .sort({ at: -1 }).skip(LOG_KEEP_SEASON_PER_PLAYER).lean(),
+    ]);
+    const doomed = [...stale, ...staleSeason].map(d => d._id);
+    if (doomed.length) await PlayerLogModel.deleteMany({ _id: { $in: doomed } });
   } catch {}
 }
 
@@ -1359,11 +1379,20 @@ app.get('/admin/player/:tid', adminAuth, async (req, res) => {
   try {
     const p = await PlayerModel.findOne({ telegramId: req.params.tid }).lean();
     if (!p) return res.status(404).json({ error: 'Not found' });
-    const [logs, referrer] = await Promise.all([
+    // Season rows come back as their own list. Folding them into `logs` would
+    // hide them again the moment a player has 100 newer ordinary rows, which
+    // after any real farming session is always.
+    const [logs, seasonLogs, referrer] = await Promise.all([
       PlayerLogModel.find({ telegramId: req.params.tid }).sort({ at: -1 }).limit(LOG_KEEP_PER_PLAYER).lean(),
+      PlayerLogModel.find({ telegramId: req.params.tid, event: { $in: LOG_SEASON_EVENTS } })
+        .sort({ at: -1 }).limit(LOG_KEEP_SEASON_PER_PLAYER).lean(),
       p.referredBy ? PlayerModel.findOne({ telegramId: p.referredBy }, 'username').lean() : null,
     ]);
-    res.json({ player: p, logs, referrerUsername: referrer?.username || null });
+    res.json({
+      player: p, logs, seasonLogs,
+      seasonPoints: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints) || 0)),
+      referrerUsername: referrer?.username || null,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1468,6 +1497,46 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     io.to(`tg_${p.telegramId}`).emit('adminGive', { gold, nexum, gram });
     logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram });
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Admin: season points ─────────────────────────────────────────────────────
+// Hands out (or takes back) season points by hand — for compensating an award
+// that failed, and for anything else the automatic paths can't cover.
+// $inc against the live document for the same reason the balances use it: the
+// player may be earning while the admin types, and neither side should
+// overwrite the other. A negative figure is a valid way to correct a mistake.
+app.post('/admin/player/:tid/season-points', adminAuth, async (req, res) => {
+  try {
+    const raw = Number((req.body || {}).points);
+    if (!Number.isFinite(raw) || Math.trunc(raw) === 0) {
+      return res.status(400).json({ error: 'Укажи количество очков' });
+    }
+    const points = Math.trunc(raw);
+    const note = String((req.body || {}).note || '').slice(0, 200);
+    const p = await PlayerModel.findOne({ telegramId: req.params.tid }, 'telegramId username savedData.seasonPoints');
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    // savedData may be null on an account that only ever pressed /start — a
+    // dotted $inc through a null parent throws (see _incBalance).
+    await PlayerModel.updateOne({ _id: p._id, savedData: null }, { $set: { savedData: {} } });
+    const doc = await PlayerModel.findOneAndUpdate(
+      { _id: p._id },
+      { $inc: { 'savedData.seasonPoints': points } },
+      { new: true, projection: { 'savedData.seasonPoints': 1 } },
+    ).lean();
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    // Never below zero: a correction bigger than the balance would otherwise
+    // leave a negative total sitting in the leaderboard.
+    let total = Math.floor(Number(doc.savedData?.seasonPoints) || 0);
+    if (total < 0) {
+      await PlayerModel.updateOne({ _id: p._id }, { $set: { 'savedData.seasonPoints': 0 } });
+      total = 0;
+    }
+    logPlayer(p.telegramId, p.username, 'admin_season_points', { add: points, total, note });
+    // The player's live session holds its own copy of the total; tell it to
+    // refetch rather than letting the panel show a number their game doesn't.
+    io.to(`tg_${p.telegramId}`).emit('seasonRefresh', { total });
+    res.json({ ok: true, total });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5437,6 +5506,10 @@ io.on('connection', socket => {
   let _seasonQuests = {};
   let _seasonTierCur = SEASON_TIER_DEFAULT;
   let _seasonKillsUnsaved = 0;
+  // True while a completed quest's award is mid-flight. The award is async and
+  // kills keep arriving, so without this several of them would each fire their
+  // own award for the same finished quest.
+  let _seasonQuestAwarding = false;
 
   // The selected band, demoted to the default if the player is not (or is no
   // longer) high enough for it.
@@ -5512,18 +5585,48 @@ io.on('connection', socket => {
   // reconnect overlapping its predecessor) must not lose each other's points.
   async function _seasonAddPoints(n, reason, meta) {
     if (!authed || !Number.isFinite(n) || n <= 0) return null;
-    if (!seasonActive()) return null;
+    if (!seasonActive()) {
+      logPlayer(authed.telegramId, authed.username, 'season_points_failed',
+        { add: n, reason, why: 'season_over', ...(meta || {}) });
+      return null;
+    }
     try {
+      // An account that only ever pressed /start has savedData: null, and a
+      // dotted $inc against a null parent THROWS instead of creating it — the
+      // same trap _incBalance documents. Without this the award was lost and
+      // the only trace was a console line.
+      await PlayerModel.updateOne(
+        { telegramId: String(authed.telegramId), savedData: null },
+        { $set: { savedData: {} } },
+      );
       const doc = await PlayerModel.findOneAndUpdate(
         { telegramId: String(authed.telegramId) },
         { $inc: { 'savedData.seasonPoints': n } },
         { new: true, projection: { 'savedData.seasonPoints': 1 } },
       ).lean();
+      // No document matched: nothing was incremented. This used to fall
+      // through to `total = 0`, which both reported success to the caller AND
+      // wiped the running total held in memory — a failed award turned into a
+      // reset to zero. Report the failure instead and leave _seasonPoints be.
+      if (!doc) {
+        logPlayer(authed.telegramId, authed.username, 'season_points_failed',
+          { add: n, reason, why: 'player_not_found', ...(meta || {}) });
+        return null;
+      }
       const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
       _seasonPoints = total;
       logPlayer(authed.telegramId, authed.username, 'season_points', { add: n, total, reason, ...(meta || {}) });
       return total;
-    } catch (err) { console.error('_seasonAddPoints:', err); return null; }
+    } catch (err) {
+      console.error('_seasonAddPoints:', err);
+      // Both rows on purpose: the 'error' one so it shows under Ошибки with a
+      // stack message, and the durable season one so it survives the ordinary
+      // log's 100-row window like every other points movement.
+      logPlayerErr(authed.telegramId, authed.username, 'season_points', err, { add: n, reason, ...(meta || {}) });
+      logPlayer(authed.telegramId, authed.username, 'season_points_failed',
+        { add: n, reason, why: 'db_error', message: err && err.message, ...(meta || {}) });
+      return null;
+    }
   }
 
   // Called on every kill. Progress lives in _lastStats and is only written out
@@ -5553,18 +5656,45 @@ io.on('connection', socket => {
       }
       return;
     }
-    // Cleared — award, then roll the next species (never the one just done).
-    const doneSp = q.sp;
-    const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl, tid), kills: 0 };
-    _seasonQuests[tid] = next;
+    // Cleared. The award has to LAND before the quest is replaced: this used
+    // to roll the next species and persist it first, so any failed write —
+    // and _seasonAddPoints could fail silently in three different ways — ate
+    // 5000 kills and paid nothing, with no way for the player to retry. That
+    // is the "квест выполнен, очки не начислились" report.
+    //
+    // Leaving the finished quest in place on failure makes the next kill try
+    // again (kills is already at the target, so it re-enters this branch), and
+    // the count is flushed on the way out, so it survives a disconnect too.
+    if (_seasonQuestAwarding) return;   // one award in flight at a time
+    _seasonQuestAwarding = true;
     _seasonKillsUnsaved = 0;
     _persistSavedFields(authed, { seasonQuests: _seasonQuests });
-    _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp, tier: tid }).then(total => {
-      socket.emit('seasonQuestDone', {
-        sp: doneSp, points: SEASON_QUEST_POINTS, total: total ?? null,
-        next: _seasonQuestPublic(next, tid),
+    const doneSp = q.sp;
+    _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp, tier: tid, kills: q.kills })
+      .then(total => {
+        _seasonQuestAwarding = false;
+        if (total === null) {
+          // Not rolled over — the player keeps the completed quest and the
+          // next kill retries the award.
+          logPlayer(authed.telegramId, authed.username, 'season_quest_award_failed',
+            { sp: doneSp, tier: tid, points: SEASON_QUEST_POINTS, kills: q.kills });
+          return;
+        }
+        const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl, tid), kills: 0 };
+        _seasonQuests[tid] = next;
+        _seasonKillsUnsaved = 0;
+        _persistSavedFields(authed, { seasonQuests: _seasonQuests });
+        logPlayer(authed.telegramId, authed.username, 'season_quest_done',
+          { sp: doneSp, tier: tid, points: SEASON_QUEST_POINTS, total, next: next.sp });
+        socket.emit('seasonQuestDone', {
+          sp: doneSp, points: SEASON_QUEST_POINTS, total,
+          next: _seasonQuestPublic(next, tid),
+        });
+      })
+      .catch(err => {
+        _seasonQuestAwarding = false;
+        logPlayerErr(authed.telegramId, authed.username, 'season_quest_award', err, { sp: doneSp, tier: tid });
       });
-    });
   }
   socket.data._seasonTrackKill = _seasonTrackKill;
 
@@ -5576,9 +5706,13 @@ io.on('connection', socket => {
   function _seasonAwardEvent(taskId) {
     if (!authed || !seasonActive()) return;
     if (!SEASON_EVENT_TASKS.some(t => t.id === taskId)) return;
+    // A failed award is only reported to the client as `total: null`, which
+    // it cannot distinguish from "no total to show" — so the miss is recorded
+    // here as well, where an admin can actually find it.
     _seasonAddPoints(SEASON_EVENT_POINTS, 'event', { task: taskId }).then(total => {
-      socket.emit('seasonEventDone', { task: taskId, points: SEASON_EVENT_POINTS, total: total ?? null });
-    });
+      if (total === null) return;   // _seasonAddPoints already logged why
+      socket.emit('seasonEventDone', { task: taskId, points: SEASON_EVENT_POINTS, total });
+    }).catch(err => logPlayerErr(authed.telegramId, authed.username, 'season_event', err, { task: taskId }));
   }
   socket.data._seasonAwardEvent = _seasonAwardEvent;
 
@@ -5591,8 +5725,9 @@ io.on('connection', socket => {
     const pts = SEASON_WIN_POINTS[taskId] || 0;
     if (pts <= 0) return;
     _seasonAddPoints(pts, 'win', { task: taskId }).then(total => {
-      socket.emit('seasonEventDone', { task: taskId, points: pts, total: total ?? null, win: true });
-    });
+      if (total === null) return;   // _seasonAddPoints already logged why
+      socket.emit('seasonEventDone', { task: taskId, points: pts, total, win: true });
+    }).catch(err => logPlayerErr(authed.telegramId, authed.username, 'season_win', err, { task: taskId }));
   }
   socket.data._seasonAwardWin = _seasonAwardWin;
 

@@ -330,6 +330,17 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           </div>
         </div>
         <div class="card">
+          <h3>Очки сезона</h3>
+          <div id="season-points-info"></div>
+          <div class="give-row" style="margin-top:8px">
+            <input id="season-points-add" type="number" placeholder="Очки (можно минус)">
+            <input id="season-points-note" type="text" placeholder="Причина (в лог)">
+          </div>
+          <div style="margin-top:8px"><button class="btn btn-sm btn-green" onclick="giveSeasonPoints()">Начислить</button></div>
+          <div class="inv-sub">История начислений</div>
+          <div id="season-logs"></div>
+        </div>
+        <div class="card">
           <h3>Последние 100 событий</h3>
           <div class="log-filter">
             <button class="on" onclick="setLogFilter('all',this)">Все</button>
@@ -699,6 +710,9 @@ async function openPlayer(tid) {
     `;
     _curLogs = pd.logs || [];
     renderLogs();
+    _curSeasonLogs = pd.seasonLogs || [];
+    _curSeasonPoints = pd.seasonPoints || 0;
+    renderSeasonPoints();
     _curInv = Array.isArray(sd.inventory) ? sd.inventory : [];
     _curEq  = (sd.equipment && typeof sd.equipment === 'object') ? sd.equipment : {};
     renderPlayerItems();
@@ -750,6 +764,65 @@ async function givePlayer() {
     const r = await api('/admin/player/'+_currentPlayerId+'/give', { method:'POST', body:JSON.stringify({ gold, nexum, gram }) });
     if (r.ok) { toast('Выдано!'); ['give-gold','give-nexum','give-gram'].forEach(id=>document.getElementById(id).value=''); }
     else { const d=await r.json(); toast(d.error||'Ошибка', false); }
+  } catch(e) { toast('Ошибка', false); }
+}
+
+// ── Season points ─────────────────────────────────────────
+// Its own card rather than a filter over the main log: season rows are kept
+// on a separate, much longer retention window server-side precisely because
+// the ordinary log is flooded by kill loot, and folding them back into the
+// same 100-row view would undo that.
+let _curSeasonLogs = [], _curSeasonPoints = 0;
+
+const SEASON_EV_RU = {
+  season_quest_done:        'Квест выполнен',
+  season_points:            'Начисление',
+  season_points_failed:     'НЕ начислено',
+  season_quest_award_failed:'Квест: награда не выдана',
+  admin_season_points:      'Выдано админом',
+};
+
+function renderSeasonPoints() {
+  document.getElementById('season-points-info').innerHTML =
+    `<div class="prow"><span class="k">Всего очков</span><span><b>${fmt(_curSeasonPoints)}</b></span></div>`;
+
+  const rows = _curSeasonLogs;
+  document.getElementById('season-logs').innerHTML = rows.length
+    ? rows.map(l => {
+        const ev = l.event || '';
+        const failed = ev.indexOf('failed') >= 0;
+        const m = l.meta || {};
+        const add = Number(m.add);
+        const amount = Number.isFinite(add)
+          ? `<b style="color:${add < 0 ? 'var(--red)' : 'var(--green)'}">${add > 0 ? '+' : ''}${add}</b>`
+          : '';
+        return `<div class="log-item ${failed ? 'is-err' : ''}">
+          <span class="le">${esc(SEASON_EV_RU[ev] || ev)}</span>
+          ${amount ? ' · ' + amount : ''}
+          <span class="lt"> · ${fmtDate(l.at)}</span>
+          ${l.meta ? `<div class="lm">${logMeta(l.meta)}</div>` : ''}
+        </div>`;
+      }).join('')
+    : '<p style="color:var(--text2);font-size:12px">Начислений нет</p>';
+}
+
+async function giveSeasonPoints() {
+  if (!_currentPlayerId) return;
+  const points = Math.trunc(Number(document.getElementById('season-points-add').value) || 0);
+  const note   = document.getElementById('season-points-note').value || '';
+  if (!points) { toast('Укажи количество очков', false); return; }
+  try {
+    const r = await api('/admin/player/'+_currentPlayerId+'/season-points',
+      { method:'POST', body:JSON.stringify({ points, note }) });
+    const d = await r.json();
+    if (r.ok) {
+      toast('Начислено!');
+      document.getElementById('season-points-add').value = '';
+      document.getElementById('season-points-note').value = '';
+      // Reopen so the new total and the new log row are both real values from
+      // the server rather than a guess made here.
+      openPlayer(_currentPlayerId);
+    } else { toast(d.error || 'Ошибка', false); }
   } catch(e) { toast('Ошибка', false); }
 }
 
