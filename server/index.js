@@ -2144,6 +2144,88 @@ function _catalogBase(id) {
   return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
 }
 
+// ── Progress guard: gold and level ──────────────────────────────────────────
+// Items stopped being forgeable once the census refused a save whose item
+// count grew (see _itemCensus). Gold and level had no equivalent: both ride in
+// on the client blob and were only clamped to an absurd ceiling, so a crafted
+// save could claim 1e12 gold and level 999 outright — and level is not
+// cosmetic, it DERIVES baseAtk/baseDef/baseMaxHp just below, which feed
+// computeStats (server/game/Room.js) and therefore real, server-enforced PvE
+// and PvP damage.
+//
+// The rule here is the census idea applied to two numbers instead of a
+// collection: the server already computes every coin and every point of XP it
+// hands out (result.gold / result.xp on each kill, quest rewards), so a save
+// may raise gold — and cross a level boundary — only as far as what this
+// session was actually granted. Everything else about the save is untouched.
+//
+// Grants are accumulated as an ALLOWANCE that carries forward rather than
+// being reset per save: gold earned between a save being composed on the
+// client and arriving here belongs to the next save, and zeroing the counter
+// would make the player lose it. A save that claims less than it may keep the
+// rest of its budget.
+//
+// The client legitimately multiplies what it is handed before storing it:
+// the clan bonus (max +20% gold and +20% xp, CLAN_LEVELS) and the ×2
+// gold/xp potion stack, i.e. 2.4× at the very most. EARN_HEADROOM is the
+// margin this guard allows on top of the server's own figure, deliberately
+// above that so a future balance change to either bonus cannot start
+// punishing honest players before anyone notices.
+const EARN_HEADROOM = 3;
+// One-off slack per session, in gold — NOT per save. Two things need it: a
+// failed clanCreate hands CLAN_CREATE_COST back (100) after the client already
+// spent it optimistically, and a localStorage backup that is newer than the
+// stored record (an unclean disconnect, the case _pickFreshestSave exists for)
+// arrives carrying a few kills the database never saw. Granted once and drawn
+// down like any other allowance: per-save it would be a faucet, since the rate
+// limiter still permits 40 saves every 5 seconds. A kill pays goldAtLevel()
+// = the monster's level, so this is hundreds of kills' worth either way.
+const GOLD_SLACK = 1000;
+// Same idea for XP. A shortfall here is self-correcting rather than lossy: it
+// only delays a level boundary until the next kill tops the allowance up.
+const XP_SLACK = 300;
+// Emergency off switch. If this guard ever misjudges honest play, setting
+// PROGRESS_GUARD=off restores the previous behaviour without a code change —
+// every clamp is logged either way, so the logs answer whether it is misfiring.
+const PROGRESS_GUARD = process.env.PROGRESS_GUARD !== 'off';
+
+// baseAtk/baseDef/baseMaxHp are a pure function of class + level. Kept as its
+// own function because the level itself can be clamped AFTER sanitising (see
+// _guardProgress), and these three have to follow it down.
+function _applyDerivedBase(s) {
+  const cd = CHAR_DEF[s.type] || CHAR_DEF.lev;
+  s.baseAtk   = cd.baseAtk + (s.lvl - 1);
+  s.baseDef   = cd.baseDef + (s.lvl - 1);
+  s.baseMaxHp = cd.baseHP  + (s.lvl - 1) * 20;
+}
+
+// XP needed to leave `lvl`. Mirrors gainXP (js/player.js) exactly — the two
+// disagreeing would make the ceiling below either leaky or unfair.
+function _xpNextFor(lvl) {
+  const base = Math.floor(100 * Math.pow(1.38, lvl - 1));
+  let mult = lvl > 5 ? 3 : 1;
+  if (lvl > 20) mult *= 1.6;
+  return Math.floor(base * mult);
+}
+// Total XP it takes to get from (lvl, xp) to (toLvl, toXp) — the in-level
+// progress plus every boundary crossed. Negative when the save reports less
+// than it had, which simply means nothing was earned.
+function _xpSpanned(lvl, xp, toLvl, toXp) {
+  let total = toXp - xp;
+  for (let l = lvl; l < toLvl; l++) total += _xpNextFor(l);
+  return total;
+}
+// Highest level reachable from (lvl, xp) on `budget` further XP.
+function _maxLevelFrom(lvl, xp, budget) {
+  let l = lvl, x = xp + Math.max(0, budget);
+  while (l < _SANITIZE_MAX.lvl) {
+    const need = _xpNextFor(l);
+    if (x < need) break;
+    x -= need; l++;
+  }
+  return l;
+}
+
 // Rebuild one inventory/equipment entry from the canonical catalog, trusting the
 // client only for id, enhance level and (stackables) qty. Unknown id → null.
 function _canonSavedItem(raw) {
@@ -2318,10 +2400,7 @@ function _sanitizeSavedStats(raw) {
   // with no relationship to whether the reported level actually earned
   // them. Derived here instead of trusted, so the client's own copy of
   // these fields is simply ignored.
-  const _cd = CHAR_DEF[s.type] || CHAR_DEF.lev;
-  s.baseAtk   = _cd.baseAtk + (s.lvl - 1);
-  s.baseDef   = _cd.baseDef + (s.lvl - 1);
-  s.baseMaxHp = _cd.baseHP  + (s.lvl - 1) * 20;
+  _applyDerivedBase(s);
   if (s.autoHpPct != null) s.autoHpPct = _clampNum(s.autoHpPct, 0, 1, 0.5);
 
   // Upgrade points spent must not exceed what the (now server-derived) lvl/
@@ -4198,6 +4277,79 @@ io.on('connection', socket => {
   // atomic claims instead). Applied at safeOn() so the handler body — with
   // its many early `return socket.emit(...)` paths — needs no reshaping.
   const itemOp = handler => (...args) => _withItemOp(() => handler(...args));
+
+  // ── Earned-progress allowance ─────────────────────────────────────────────
+  // How much gold / XP this session may still legitimately claim in a save.
+  // Topped up by the server's own kill and quest awards (with EARN_HEADROOM
+  // for the client-side clan and potion multipliers), drawn down by whatever
+  // a save actually claims. See the block around EARN_HEADROOM for why.
+  let _goldAllowance = 0;
+  let _xpAllowance = 0;
+  let _slackGiven = false;
+  function _grantEarn(gold, xp) {
+    if (gold > 0) _goldAllowance += gold * EARN_HEADROOM;
+    if (xp   > 0) _xpAllowance   += xp   * EARN_HEADROOM;
+  }
+  // A party kill pays every member, and their sockets are not reachable from
+  // the killer's closure — same reason _grantKillLoot is exposed here.
+  socket.data._grantEarn = _grantEarn;
+
+  // Applies the ceiling to a sanitized blob, in place. `base` is what the
+  // account is known to have had (this session's last accepted save, or the
+  // stored record at selectChar); `budget` is 0 at selectChar, where the
+  // session has been granted nothing yet. Returns a reason string when it
+  // clamped anything, null otherwise.
+  function _guardProgress(clean, base, where) {
+    if (!PROGRESS_GUARD || !base) return null;
+    // The session's one-off slack, handed out at the first save rather than at
+    // selectChar: selectChar is measured against the stored record and must
+    // stay exact, or reconnecting in a loop would mint a slack every time.
+    if (where !== 'selectChar' && !_slackGiven) {
+      _slackGiven = true;
+      _goldAllowance += GOLD_SLACK;
+      _xpAllowance   += XP_SLACK;
+    }
+    const hits = [];
+
+    const prevGold = Math.floor(Number(base.gold) || 0);
+    const gain = (Math.floor(Number(clean.gold) || 0)) - prevGold;
+    const goldCap = Math.floor(_goldAllowance);
+    if (gain > goldCap) {
+      hits.push(`gold ${prevGold}+${gain}>${goldCap}`);
+      clean.gold = prevGold + goldCap;
+      _goldAllowance = 0;
+      socket.emit('goldSync', { gold: clean.gold });
+    } else if (gain > 0) {
+      _goldAllowance = Math.max(0, _goldAllowance - gain);
+    }
+
+    const prevLvl = Math.max(1, Math.floor(Number(base.lvl) || 1));
+    const prevXp  = Math.max(0, Math.floor(Number(base.xp)  || 0));
+    const maxLvl = _maxLevelFrom(prevLvl, prevXp, _xpAllowance);
+    if (clean.lvl > maxLvl) {
+      hits.push(`lvl ${prevLvl}->${clean.lvl}>${maxLvl}`);
+      clean.lvl = maxLvl;
+      // The in-level progress has to come down with the level, or the next
+      // save starts from a number that would carry the same jump again.
+      clean.xp = Math.min(Math.floor(Number(clean.xp) || 0), _xpNextFor(maxLvl) - 1);
+      _xpAllowance = 0;
+      // Never leave the client believing it is a level it is not: it would
+      // keep resending the same figure and keep being clamped.
+      socket.emit('progressSync', { lvl: clean.lvl, xp: clean.xp });
+    } else {
+      const spent = _xpSpanned(prevLvl, prevXp, clean.lvl, Math.floor(Number(clean.xp) || 0));
+      if (spent > 0) _xpAllowance = Math.max(0, _xpAllowance - spent);
+    }
+    // The three combat stats are derived from the level, so a clamped level
+    // has to take them with it — otherwise the forged figure survives in the
+    // one place that actually matters (computeStats, server/game/Room.js).
+    if (hits.length) {
+      _applyDerivedBase(clean);
+      logPlayer(authed.telegramId, authed.username, 'progress_clamped',
+        { where, hits: hits.join(' ') });
+    }
+    return hits.length ? hits.join(' ') : null;
+  }
   let _saveDebounceTimer = null;
 
   // ── Coalesced balance writes ──────────────────────────────────────────────
@@ -6088,6 +6240,11 @@ io.on('connection', socket => {
     // from zero.
     _lastStats.questIdx = cur + 1;
     _lastStats.questKills = {};
+    // The quest's XP is never written into _lastStats — it is emitted and the
+    // client adds it (gainXP(xp, true), js/quests.js) — so it has to be
+    // authorised here or the guard would read the level-up it causes as a
+    // forged jump. Gold needs nothing: it went into _lastStats.gold above.
+    _xpAllowance += Math.max(0, Math.floor(Number(q.reward.xp)) || 0) * EARN_HEADROOM;
     _commitServerItems(inv, null, 'quest_reward', { questId: q.id, idx: cur, gold, items: items.map(i => i.id) });
     _persistSavedFields(authed, { gold: _lastStats.gold, questIdx: _lastStats.questIdx, questKills: {} });
     logPlayer(authed.telegramId, authed.username, 'quest_reward', { questId: q.id, idx: cur, gold, xp: q.reward.xp || 0 });
@@ -6617,6 +6774,15 @@ io.on('connection', socket => {
         console.error(`[selectChar] Rejected minted items for telegramId=${authed.telegramId}` +
           ` (${_over.key}: had ${_over.had}, claimed ${_over.sent})`);
       }
+      // Same reasoning as the item census right above, for the two numbers it
+      // does not cover. The comment there already claims gold is "capped the
+      // same way" — it never was, and neither was the level, so a client could
+      // simply open the session holding 1e12 gold at level 999 and every later
+      // save would then validate cleanly against it. Nothing has been earned
+      // this session yet, so the stored record is the whole budget; the cost
+      // is at most the last debounced save on an unclean disconnect, exactly
+      // what pinning the items here already accepts.
+      _guardProgress(effectiveSaved, _dbBase, 'selectChar');
       _lastStats = effectiveSaved;
     }
     // Season state is read straight off the stored record. It is never part of
@@ -6973,6 +7139,9 @@ io.on('connection', socket => {
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
+        // Authorised progress for everyone paid — see the basic-attack path.
+        _grantEarn(goldShare, xpShare);
+        memberIds.forEach(mid => io.sockets.sockets.get(mid)?.data?._grantEarn?.(goldShare, xpShare));
         socket.emit('enemyKilled', {
           id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
@@ -6991,6 +7160,7 @@ io.on('connection', socket => {
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
       } else {
+        _grantEarn(result.gold, result.xp);
         socket.emit('enemyKilled', {
           id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
@@ -7627,6 +7797,11 @@ io.on('connection', socket => {
         _pendingGoldSpend = null;   // this save already accounts for the spend
       }
     }
+
+    // Gold and level: a save may only claim what this session was actually
+    // granted (see _guardProgress / EARN_HEADROOM). Runs after the item checks
+    // so a single save that forges both is caught on both counts.
+    _guardProgress(clean, _lastStats, 'save');
 
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
       logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {

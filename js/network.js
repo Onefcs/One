@@ -1099,6 +1099,32 @@ function netConnect(onReady) {
     if (typeof onQuestSync === 'function') onQuestSync(data || {});
   });
 
+  // The server refused a level/XP figure this client reported and is sending
+  // back the one it will actually honour (see _guardProgress, server/index.js).
+  // Adopting it matters for the same reason questSync does: without it the
+  // client keeps resending the rejected number and keeps being corrected, and
+  // the two never agree. xpNext and the level-derived base stats are rebuilt
+  // from the accepted level so the HUD and combat maths stay consistent.
+  socket.on('progressSync', ({ lvl, xp } = {}) => {
+    if (!player || !Number.isFinite(lvl) || lvl < 1) return;
+    if (lvl === player.lvl && xp === player.xp) return;
+    player.lvl = lvl;
+    if (Number.isFinite(xp) && xp >= 0) player.xp = xp;
+    const _base = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
+    let _mult = player.lvl > 5 ? 3 : 1;
+    if (player.lvl > 20) _mult *= 1.6;
+    player.xpNext = Math.floor(_base * _mult);
+    const _cd = typeof CHAR_DEF !== 'undefined' ? CHAR_DEF[player.type] : null;
+    if (_cd) {
+      player.baseAtk   = _cd.baseAtk + (player.lvl - 1);
+      player.baseDef   = _cd.baseDef + (player.lvl - 1);
+      player.baseMaxHp = _cd.baseHP  + (player.lvl - 1) * 20;
+      if (typeof recompute === 'function') recompute();
+    }
+    if (typeof updateHUD === 'function') updateHUD();
+    if (typeof updateProfileUI === 'function') updateProfileUI();
+  });
+
   // ── Сезон ─────────────────────────────────────────────────────────────────
   socket.on('seasonState', (st) => {
     if (!st) return;
