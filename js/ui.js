@@ -1111,7 +1111,9 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
     const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
     const GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && GEAR_SLOTS.includes(d.slot));
+    // !d.noDrop matches the server's own pool (_rollMobLoot, server/index.js):
+    // the unique weapons are craft-only and must not be advertised as drops.
+    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && GEAR_SLOTS.includes(d.slot));
     const perItemPct = candidates.length ? pct / candidates.length : 0;
     const rows = candidates.map(it => _dropRow(_itemIcon(it, 16), it.name, `&times;1 · <b style="color:${rc}">${_pctText(perItemPct)}</b>`, rc)).join('');
     gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">${tVars('gearRarityFmt', { rn })}</div><div class="fi-drops">${rows}</div>`;
@@ -1154,6 +1156,21 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     }
   }
 
+  // Осколки уникального оружия. Listed for the same reason every other roll
+  // is: this panel promises a complete picture of what an enemy drops, so a
+  // roll that exists and isn't shown makes the rest of it untrustworthy.
+  // Below the level gate there is nothing to show at all.
+  let shardSection = '';
+  if (typeof UNIQUE_SHARDS !== 'undefined' && lvl >= UNIQUE_SHARD_MIN_LEVEL) {
+    const rows = UNIQUE_SHARDS.map(sh => {
+      const def = CRAFT_MATS.find(m => m.id === sh.id) || sh;
+      return _dropRow(_itemIcon(def, 16), def.name,
+        `&times;1–${UNIQUE_SHARD_MAX_QTY} · <b style="color:#d9b3ff">${_pctText(UNIQUE_SHARD_CHANCE * 100)}</b>`,
+        '#d9b3ff');
+    }).join('');
+    shardSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('uniqueShardsHdr')}</div><div class="fi-drops">${rows}</div>`;
+  }
+
   return `
     <div class="fi-mstats">
       <span>HP <b>${hp}</b></span>
@@ -1182,7 +1199,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     ${keySection}
     ${gearSection}
     ${bookSection}
-    ${passiveBookSection}`;
+    ${passiveBookSection}
+    ${shardSection}`;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2485,7 +2503,7 @@ function sellCommonItem(idx) {
 function _boxCandidates(rarity) {
   // No 'cloak'/'artifact' — craft-only, matches the kill-drop pool in js/combat.js.
   const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-  return ITEM_DEF.filter(d => d.rarity === rarity && gearSlots.includes(d.slot) &&
+  return ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && gearSlots.includes(d.slot) &&
     (d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type))));
 }
 

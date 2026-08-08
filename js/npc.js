@@ -175,7 +175,9 @@ function _craftsmanItemsTab() {
   RARITIES.forEach(r => {
     const entries = ITEM_CRAFT_RECIPES
       .map((rec, idx) => ({ rec, idx, item: rec.itemId ? ITEM_DEF.find(i => i.id === rec.itemId) : null }))
-      .filter(({ item }) => item && item.rarity === r.key);
+      // Unique weapons are epic/legendary too, but they get their own group
+      // below rather than sitting among the ordinary tiers of that rarity.
+      .filter(({ rec, item }) => item && item.rarity === r.key && !rec.unique);
     if (!entries.length) return;
 
     const rc = RARITY_COLOR[r.key] || '#aea599';
@@ -196,6 +198,36 @@ function _craftsmanItemsTab() {
     html += '</div>';
   });
 
+  html += _uniqueCraftGroupHTML();
+
+  return html;
+}
+
+// Уникальное оружие — its own group at the bottom of the Предметы tab.
+// Filtered to the player's own class: each weapon is single-class, so showing
+// all ten would be eight cells nobody can ever equip. The shard requirement is
+// the same for every class anyway, so nothing is hidden by narrowing it.
+function _uniqueCraftGroupHTML() {
+  if (typeof UNIQUE_CRAFT_RECIPES === 'undefined' || !player) return '';
+  const entries = ITEM_CRAFT_RECIPES
+    .map((rec, idx) => ({ rec, idx, item: rec.itemId ? ITEM_DEF.find(i => i.id === rec.itemId) : null }))
+    .filter(({ rec, item }) => rec.unique && item &&
+      (!item.forClass || item.forClass.includes(player.type)));
+  if (!entries.length) return '';
+
+  let html = `<div class="craft-group-hdr" style="color:#d9b3ff">${typeof t === 'function' ? t('craftUniqueHdr') : 'Уникальное оружие'}</div>`;
+  const _lv = typeof UNIQUE_SHARD_MIN_LEVEL !== 'undefined' ? UNIQUE_SHARD_MIN_LEVEL : 15;
+  html += `<div class="craft-mats-info">${typeof tVars === 'function' ? tVars('craftUniqueNote', { lv: _lv }) : ''}</div>`;
+  html += '<div class="craft-items-grid">';
+  entries.forEach(({ rec, idx, item }) => {
+    const rc = RARITY_COLOR[item.rarity] || '#aea599';
+    const canCraft = invHasSpace() && rec.mats.every(m => _matAvailable(m));
+    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66;position:relative">
+      <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
+      <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
+    </div>`;
+  });
+  html += '</div>';
   return html;
 }
 

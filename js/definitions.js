@@ -139,6 +139,11 @@ const MERCHANT_SHOP = [
 const ITEM_CRAFT_RECIPES = [];
 if (typeof GEAR_TIER_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_TIER_CRAFT_RECIPES);
 if (typeof GEAR_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_CRAFT_RECIPES);
+// Уникальное оружие. In the same list so openCraftModal's index-based lookup
+// and the whole craft flow work unchanged, but flagged `unique` so the
+// craftsman renders them under their own heading instead of mixing them into
+// the epic/legendary groups — they are a separate line, not another tier.
+if (typeof UNIQUE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...UNIQUE_CRAFT_RECIPES);
 
 // CLASS_GEAR_SALVAGE_RECIPES (class cloaks/artifacts) lives in
 // shared/definitions.js, not here — it costs Liberty on top of the salvage

@@ -836,6 +836,95 @@ const GEAR_CRAFT_RECIPES = [
   { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
 ];
 
+// ── Уникальное оружие ───────────────────────────────────────────────────────
+// A separate, top-end weapon line that is not part of the common→legendary
+// upgrade chain: it cannot be dropped, bought or upgraded into, only crafted
+// from Осколки, and those come from nothing but killing monsters. Two tiers,
+// each strictly twice the corresponding tier of the ordinary line.
+//
+// Осколки are ordinary stackable materials, so they sell on the market and
+// merge into one inventory slot per kind like every other material.
+const UNIQUE_SHARD_MIN_LEVEL = 15;      // monsters below this level never drop one
+const UNIQUE_SHARD_CHANCE    = 0.0001;  // per SHARD KIND, rolled independently on every kill
+const UNIQUE_SHARD_MAX_QTY   = 5;       // most of one kind a single kill can yield
+// How many of EVERY kind one weapon costs. All 20 are required, so the two
+// numbers below mean 20 000 and 100 000 shards respectively.
+const UNIQUE_SHARD_COST = { epic: 1000, legendary: 5000 };
+
+// The 20 kinds. Order is display order (forge recipe list, inventory).
+const UNIQUE_SHARDS = [
+  { id:'shard_amethyst', name:'Осколок аметиста', img:'/images/uniq/shard/amethyst.png' },
+  { id:'shard_dusk',     name:'Осколок сумрака',  img:'/images/uniq/shard/dusk.png'     },
+  { id:'shard_gold',     name:'Осколок золота',   img:'/images/uniq/shard/gold.png'     },
+  { id:'shard_lilac',    name:'Осколок сирени',   img:'/images/uniq/shard/lilac.png'    },
+  { id:'shard_azure',    name:'Осколок лазури',   img:'/images/uniq/shard/azure.png'    },
+  { id:'shard_verdant',  name:'Осколок листвы',   img:'/images/uniq/shard/verdant.png'  },
+  { id:'shard_ember',    name:'Осколок углей',    img:'/images/uniq/shard/ember.png'    },
+  { id:'shard_amber',    name:'Осколок янтаря',   img:'/images/uniq/shard/amber.png'    },
+  { id:'shard_star',     name:'Осколок звезды',   img:'/images/uniq/shard/star.png'     },
+  { id:'shard_copper',   name:'Осколок меди',     img:'/images/uniq/shard/copper.png'   },
+  { id:'shard_onyx',     name:'Осколок оникса',   img:'/images/uniq/shard/onyx.png'     },
+  { id:'shard_pearl',    name:'Осколок жемчуга',  img:'/images/uniq/shard/pearl.png'    },
+  { id:'shard_ruby',     name:'Осколок рубина',   img:'/images/uniq/shard/ruby.png'     },
+  { id:'shard_arcane',   name:'Осколок чар',      img:'/images/uniq/shard/arcane.png'   },
+  { id:'shard_rune',     name:'Осколок руны',     img:'/images/uniq/shard/rune.png'     },
+  { id:'shard_frost',    name:'Осколок инея',     img:'/images/uniq/shard/frost.png'    },
+  { id:'shard_flame',    name:'Осколок пламени',  img:'/images/uniq/shard/flame.png'    },
+  { id:'shard_sunset',   name:'Осколок заката',   img:'/images/uniq/shard/sunset.png'   },
+  { id:'shard_thunder',  name:'Осколок грозы',    img:'/images/uniq/shard/thunder.png'  },
+  { id:'shard_void',     name:'Осколок пустоты',  img:'/images/uniq/shard/void.png'     },
+];
+
+// The weapons themselves. Every stat is exactly twice the same class's
+// ordinary weapon at that rarity (sw4/sw5, tw4/tw5, bw4/bw5, st4/st5) — see
+// ITEM_DEF above. Warlocks share the staff line for stats but get their own
+// artwork and entry here, since the unique set ships a healer weapon.
+const UNIQUE_WEAPONS = [
+  // Рыцарь смерти — ×2 of sw4 (atk 44, crit .10) / sw5 (atk 65, crit .25)
+  { id:'uq_sword_e', name:'Меч бездны',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/uniq/e_sword.png',  atk:88,  critChance:0.20, rarity:'epic'      },
+  { id:'uq_sword_l', name:'Меч первых',      slot:'weapon', forClass:['deathknight'], img:'/images/wep/uniq/l_sword.png',  atk:130, critChance:0.50, rarity:'legendary' },
+  // Танк — ×2 of tw4 (atk 44, def 16) / tw5 (atk 65, def 24)
+  { id:'uq_axe_e',   name:'Топор бездны',    slot:'weapon', forClass:['lev'],         img:'/images/wep/uniq/e_axe.png',    atk:88,  def:32,          rarity:'epic'      },
+  { id:'uq_axe_l',   name:'Топор первых',    slot:'weapon', forClass:['lev'],         img:'/images/wep/uniq/l_axe.png',    atk:130, def:48,          rarity:'legendary' },
+  // Лучник — ×2 of bw4 (atk 60, aspd .10) / bw5 (atk 100, aspd .15, crit .10)
+  { id:'uq_bow_e',   name:'Лук бездны',      slot:'weapon', forClass:['ranger'],      img:'/images/wep/uniq/e_bow.png',    atk:120, atkSpeed:0.20,   rarity:'epic'      },
+  { id:'uq_bow_l',   name:'Лук первых',      slot:'weapon', forClass:['ranger'],      img:'/images/wep/uniq/l_bow.png',    atk:200, atkSpeed:0.30, critChance:0.20, rarity:'legendary' },
+  // Маг — ×2 of st4 (atk 60, hp% .10) / st5 (atk 120, hp% .20, crit .10)
+  { id:'uq_staff_e', name:'Посох бездны',    slot:'weapon', forClass:['mage'],        img:'/images/wep/uniq/e_staff.png',  atk:120, hpPct:0.20,      rarity:'epic'      },
+  { id:'uq_staff_l', name:'Посох первых',    slot:'weapon', forClass:['mage'],        img:'/images/wep/uniq/l_staff.png',  atk:240, hpPct:0.40, critChance:0.20, rarity:'legendary' },
+  // Целитель — same numbers as the mage staff it replaces for warlocks
+  { id:'uq_heal_e',  name:'Жезл бездны',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/e_healer.png', atk:120, hpPct:0.20,      rarity:'epic'      },
+  { id:'uq_heal_l',  name:'Жезл первых',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/l_healer.png', atk:240, hpPct:0.40, critChance:0.20, rarity:'legendary' },
+];
+
+// One recipe per weapon: every shard kind at the tier's cost, nothing else.
+// No Liberty, no recipe scrolls and chance 1.0 — at these quantities a failed
+// roll would destroy months of farming, which is not a risk worth offering.
+// Shape matches GEAR_CRAFT_RECIPES so craftGear (server/index.js) validates,
+// charges and grants these through exactly the same path.
+const UNIQUE_CRAFT_RECIPES = UNIQUE_WEAPONS.map(w => ({
+  itemId: w.id,
+  unique: true,
+  mats: UNIQUE_SHARDS.map(s => ({ id: s.id, n: UNIQUE_SHARD_COST[w.rarity] })),
+  chance: 1.0,
+}));
+
+// Spliced into the shared catalogs rather than written inline among the
+// ordinary gear, so the whole unique line stays readable in one block.
+// Everything that resolves an item by id — _catalogBase and _canonSavedItem
+// (server), _canonicalMarketItem (market), itemCatalogBase (client) — reads
+// these arrays at call time, so appending here is what makes the entries real
+// everywhere at once.
+//
+// `noDrop` keeps the weapons out of every random pool that picks by rarity:
+// the mob loot roll and the loot boxes both do `ITEM_DEF.filter(d => d.rarity
+// === ... )`, and without the flag a legendary unique would start falling off
+// high-level monsters — the exact opposite of a craft-only reward.
+CRAFT_MATS.push(...UNIQUE_SHARDS.map(sh => ({
+  ...sh, slot: 'material', rarity: 'epic', uniqueShard: true,
+})));
+ITEM_DEF.push(...UNIQUE_WEAPONS.map(w => ({ ...w, noDrop: true, unique: true })));
+
 // Uncommon/rare gear tiers — used to live purely in js/definitions.js's
 // client-only ITEM_CRAFT_RECIPES and be trusted outright: the client rolled
 // the chance, spent the materials, and granted the result itself, reaching
@@ -1278,6 +1367,8 @@ if (typeof module !== 'undefined') module.exports = {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
+  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,

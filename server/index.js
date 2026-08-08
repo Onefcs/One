@@ -26,6 +26,8 @@ const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
+  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
@@ -226,7 +228,9 @@ function _rollMobLoot(inv, eid, rlvl) {
   if (Math.random() * 100 < _itemChance) {
     const rarity = itemRarityForLevel(rlvl);
     const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && _gearSlots.includes(d.slot));
+    // !d.noDrop excludes the unique weapons: they are epic/legendary `weapon`
+    // entries like any other, so without it they would simply start dropping.
+    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && _gearSlots.includes(d.slot));
     if (candidates.length) {
       const it = candidates[Math.floor(Math.random() * candidates.length)];
       if (_invAdd(inv, { ...it })) granted.push({ id: it.id, name: it.name, rarity: it.rarity, qty: 1 });
@@ -239,6 +243,20 @@ function _rollMobLoot(inv, eid, rlvl) {
 
   // Room-level enchant-stone drop
   if (Math.random() < roomEnchantStoneChance(_localLvl)) addMat('norm_stone', 1);
+
+  // Осколки для уникального оружия. Every kind rolls on its own, so one kill
+  // can yield several different shards but never more than
+  // UNIQUE_SHARD_MAX_QTY of the same one. Deliberately flat: no arm/room
+  // multiplier and no boss bonus — the only gate is the monster's level, so
+  // the drop reads the same everywhere past it and cannot be farmed faster by
+  // finding a favourable room.
+  if (rlvl >= UNIQUE_SHARD_MIN_LEVEL) {
+    for (const sh of UNIQUE_SHARDS) {
+      if (Math.random() < UNIQUE_SHARD_CHANCE) {
+        addMat(sh.id, 1 + Math.floor(Math.random() * UNIQUE_SHARD_MAX_QTY));
+      }
+    }
+  }
 
   // Skill books — any class's book can drop for anyone (see js/combat.js).
   const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
@@ -2038,7 +2056,12 @@ const floorRooms = new Map();
 // runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
 const _SANITIZE_MAX = {
   gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6,
-  maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 200, qty: 9999,
+  maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 200,
+  // Raised from 9999 for the Осколки: a unique legendary costs 5000 of every
+  // kind, so a player working toward a second one legitimately holds well
+  // past the old ceiling. See _canonSavedItem for why going over it now
+  // clamps instead of resetting.
+  qty: 1e6,
 };
 
 function _catalogBase(id) {
@@ -2058,7 +2081,13 @@ function _canonSavedItem(raw) {
   }
   if (isStackableItem(base)) {
     const qty = Math.floor(Number(raw.qty));
-    item.qty = (Number.isFinite(qty) && qty >= 1 && qty <= _SANITIZE_MAX.qty) ? qty : 1;
+    // Over the ceiling CLAMPS rather than resetting to 1. The old reset was a
+    // trap once stacks got big: a legitimate pile one over the bound was
+    // destroyed outright, and destroying goods is a far worse failure than
+    // capping a forged number — the census in saveProgress is what actually
+    // stops items being minted, and it compares against the stored baseline,
+    // so a clamped value cannot smuggle anything past it either.
+    item.qty = Number.isFinite(qty) && qty >= 1 ? Math.min(qty, _SANITIZE_MAX.qty) : 1;
   }
   return item;
 }
@@ -4861,7 +4890,9 @@ io.on('connection', socket => {
     if (!authed) return;
     await _withEconLock(async () => {
     try {
-      const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId) || GEAR_TIER_CRAFT_RECIPES.find(r => r.itemId === itemId);
+      const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId)
+               || GEAR_TIER_CRAFT_RECIPES.find(r => r.itemId === itemId)
+               || UNIQUE_CRAFT_RECIPES.find(r => r.itemId === itemId);
       if (!rec) return socket.emit('craftGearError', { msg: 'Неизвестный рецепт' });
       const resultDef = ITEM_DEF.find(i => i.id === rec.itemId);
       if (!resultDef) return socket.emit('craftGearError', { msg: 'Предмет не найден' });
@@ -5237,7 +5268,7 @@ io.on('connection', socket => {
 
     const charClass = _lastStats.type || 'lev';
     const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-    const cands = ITEM_DEF.filter(d => d.rarity === resultRarity && gearSlots.includes(d.slot) &&
+    const cands = ITEM_DEF.filter(d => d.rarity === resultRarity && !d.noDrop && gearSlots.includes(d.slot) &&
       (d.slot !== 'weapon' || (d.forClass && d.forClass.includes(charClass))));
     const wonItem = cands.length ? cands[Math.floor(Math.random() * cands.length)] : null;
     const granted = wonItem ? _invAdd(inv, { ...wonItem }) : false;
