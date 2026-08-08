@@ -2042,9 +2042,16 @@ function _canonSavedItem(raw) {
 // Picks the next season quest's species, never repeating the one just
 // finished — back-to-back identical quests read like the reward simply did
 // not register.
-function _seasonRollSpecies(prevSp) {
-  const pool = SEASON_SPECIES.filter(s => s.sp !== prevSp);
-  const from = pool.length ? pool : SEASON_SPECIES;
+function _seasonRollSpecies(prevSp, playerLvl) {
+  const lvl = Math.max(1, Math.floor(Number(playerLvl)) || 1);
+  // Only species the player can actually reach. The band crosses into the top
+  // corridor, which is gated at level 20 — handing a level-12 player "kill
+  // 5000 zombies" would leave them unable to progress the season at all,
+  // since they cannot walk into the corridor those live in.
+  const reachable = SEASON_SPECIES.filter(s => (s.req || 0) <= lvl);
+  const base = reachable.length ? reachable : SEASON_SPECIES.filter(s => !(s.req || 0));
+  const pool = base.filter(s => s.sp !== prevSp);
+  const from = pool.length ? pool : base;
   return from[Math.floor(Math.random() * from.length)].sp;
 }
 
@@ -5277,8 +5284,10 @@ io.on('connection', socket => {
   function _seasonQuest() {
     if (!_lastStats) return null;
     const q = _lastStats.seasonQuest;
-    if (q && typeof q === 'object' && SEASON_SPECIES.some(s => s.sp === q.sp)) return q;
-    const fresh = { sp: _seasonRollSpecies(null), kills: 0 };
+    const lvl = Math.max(1, Math.floor(Number(_lastStats.lvl)) || 1);
+    const def = q && typeof q === 'object' ? SEASON_SPECIES.find(s => s.sp === q.sp) : null;
+    if (def && (def.req || 0) <= lvl) return q;
+    const fresh = { sp: _seasonRollSpecies(null, _lastStats.lvl), kills: 0 };
     _lastStats.seasonQuest = fresh;
     _persistSavedFields(authed, { seasonQuest: fresh });
     return fresh;
@@ -5342,7 +5351,7 @@ io.on('connection', socket => {
     }
     // Cleared — award, then roll the next species (never the one just done).
     const doneSp = q.sp;
-    const next = { sp: _seasonRollSpecies(doneSp), kills: 0 };
+    const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl), kills: 0 };
     _lastStats.seasonQuest = next;
     _seasonKillsUnsaved = 0;
     _persistSavedFields(authed, { seasonQuest: next });

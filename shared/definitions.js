@@ -364,18 +364,27 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // the starting corridor — so the race is about volume, not about how far into
 // the world a player has already got.
 const SEASON_END_AT   = Date.UTC(2026, 7, 20, 15, 0, 0); // 20 Aug 2026, 18:00 MSK (UTC+3)
-const SEASON_MIN_LVL  = 1;
-const SEASON_MAX_LVL  = 19;
+const SEASON_MIN_LVL  = 10;
+const SEASON_MAX_LVL  = 23;
 const SEASON_QUEST_KILLS  = 5000;
 const SEASON_QUEST_POINTS = 100;
 // One quest is active at a time; clearing it rolls the next at random from
-// this list. Every species here lives inside the level band above (arm 1's
-// rotation, see FLOOR_ENEMIES) — `sp` is the eid prefix, so both the guard
-// and the warrior variant of a species count toward the same quest.
+// this list. `sp` is the eid prefix, so both the guard and the warrior
+// variant of a species count toward the same quest.
+//
+// `req` is the character level needed to reach that species inside the band
+// (ARM_LEVEL_REQ for the corridor it lives in). The band spans two corridors:
+// levels 10-20 are the starting one, 21-23 the top one — and the top one is
+// gated at level 20. Rolling a top-corridor species for someone who cannot
+// walk in there yet would hard-block their season, so the roll filters on
+// this (see _seasonRollSpecies, server/index.js).
 const SEASON_SPECIES = [
-  { sp: 'rat',   name: 'Крысы'  },
-  { sp: 'slime', name: 'Слизни' },
-  { sp: 'imp',   name: 'Бесы'   },
+  { sp: 'rat',       name: 'Крысы',  req: 0  },  // levels 10, 13, 16, 19
+  { sp: 'slime',     name: 'Слизни', req: 0  },  // levels 11, 14, 17, 20
+  { sp: 'imp',       name: 'Бесы',   req: 0  },  // levels 12, 15, 18
+  { sp: 'zombie',    name: 'Зомби',  req: 20 },  // level 21
+  { sp: 'lizardman', name: 'Ящеры',  req: 20 },  // level 22
+  { sp: 'orc',       name: 'Орки',   req: 20 },  // level 23
 ];
 // Burning destroys the item outright — no gold, no materials back, only
 // points. Anything not listed here cannot be burned at all.
