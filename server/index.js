@@ -2136,6 +2136,9 @@ const _SANITIZE_MAX = {
   // clamps instead of resetting.
   qty: 1e6,
 };
+// Mirrors POTION_CAP in js/npc.js — the merchant's own per-kind ceiling, and
+// the only way HP potions ever enter a bag.
+const POTION_BAG_MAX = 999;
 
 function _catalogBase(id) {
   return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
@@ -2342,6 +2345,19 @@ function _sanitizeSavedStats(raw) {
   // backup} on reload. Clamp to a sane range so a client can't write a
   // far-future value that would make its record permanently "win".
   if (s.savedAt != null) s.savedAt = _clampInt(s.savedAt, 0, Date.now() + 60000, 0);
+  // HP potions (pt1/pt2). Unlike everything else a player owns these do NOT
+  // live in the inventory, so the item census never sees them and nothing
+  // here validated them at all — a crafted save could claim any number and
+  // the account simply never ran out of healing again. They are bought from
+  // the merchant, which caps a bag at POTION_BAG_MAX and refuses to go past
+  // it (buyPotion, js/npc.js), so a figure above that cannot have been
+  // reached by playing. Clamped rather than zeroed: a legitimate bag is the
+  // common case and destroying it over a bad key would be the worse failure.
+  if (s.potionBag && typeof s.potionBag === 'object' && !Array.isArray(s.potionBag)) {
+    const bag = {};
+    for (const k of ['pt1', 'pt2']) bag[k] = _clampInt(s.potionBag[k], 0, POTION_BAG_MAX, 0);
+    s.potionBag = bag;
+  }
   // Real-money balances are server-authoritative and are NEVER taken from the
   // client blob — they live in _gramBalanceCache/_nexumBalanceCache and are
   // re-attached explicitly by every persist path (see _liveGram/_liveNexum).
@@ -4130,9 +4146,58 @@ io.on('connection', socket => {
   async function _withEconLock(fn) {
     if (_econBusy) return false;
     _econBusy = true;
-    try { await fn(); } finally { _econBusy = false; }
+    // Every econ-locked handler moves items, and all of them do it across an
+    // await — so the item fence below has to cover them too. See _withItemOp.
+    try { await _withItemOp(fn); } finally { _econBusy = false; }
     return true;
   }
+
+  // ── Item-operation fence ──────────────────────────────────────────────────
+  // A server-side item change that spans an `await` is NOT atomic against
+  // saveProgress: the save is a synchronous handler, so it runs to completion
+  // in the middle of the operation and REPLACES _lastStats wholesale. What
+  // happens next is the duplication hole this closes:
+  //
+  //   1. craftGear/craftClassGear/marketBuy/... take `inv = _lastStats.
+  //      inventory` and then await (a balance $inc, a clan write, a listing
+  //      claim).
+  //   2. A saveProgress lands inside that window. It passes the census — the
+  //      client merely MOVED its materials from `inventory` into `storage`,
+  //      which grows nothing — and installs a new _lastStats whose inventory
+  //      is empty and whose storage holds the materials.
+  //   3. The handler resumes, consumes the materials out of its own (now
+  //      detached) array and hands the result to _commitServerItems, which
+  //      writes that array back as _lastStats.inventory.
+  //
+  // Step 3 undoes step 2's half of the move while step 2's storage stays —
+  // so the materials are in storage AND back in the inventory, minus the ones
+  // the craft consumed, plus the crafted item. Repeat: unlimited materials,
+  // i.e. crafting at the forge for free. Equipment works as the parking spot
+  // just as well as storage, since most callers pass equipment = null and
+  // _commitServerItems then leaves whatever the racing save wrote.
+  //
+  // The census cannot see any of this: it validates the SAVE (which was
+  // legitimate on its own) and never runs again afterwards, and by the time
+  // the items are persisted they are genuinely in the account.
+  //
+  // The fence makes the three item fields move as one unit relative to a
+  // server-side item change: while an operation is in flight, a save's
+  // inventory/equipment/storage are all treated as composed-before-the-grant
+  // and dropped together, exactly as an invRev mismatch already does. That is
+  // the same rule _invRev encodes, extended from "before the grant landed" to
+  // "while the grant is landing". Operations are one DB round trip long and
+  // client autosaves are seconds apart, so a collision is rare, costs nothing
+  // (the client resends on its next autosave) and self-corrects either way.
+  let _itemOpDepth = 0;
+  async function _withItemOp(fn) {
+    _itemOpDepth++;
+    try { return await fn(); } finally { _itemOpDepth--; }
+  }
+  // Registration-time wrapper for the item-moving handlers that do NOT go
+  // through _withEconLock (the market ones, which serialize on their own
+  // atomic claims instead). Applied at safeOn() so the handler body — with
+  // its many early `return socket.emit(...)` paths — needs no reshaping.
+  const itemOp = handler => (...args) => _withItemOp(() => handler(...args));
   let _saveDebounceTimer = null;
 
   // ── Coalesced balance writes ──────────────────────────────────────────────
@@ -4219,6 +4284,13 @@ io.on('connection', socket => {
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
+    // Every one of these writes to the database on each call — a saved-fields
+    // persist, a season-points $inc, a chat/DM history record — and none of
+    // them is anything a player taps more than a few times a second. Left in
+    // the fast bucket they were allowed 300/s per socket, which is a Mongo
+    // write amplifier off a few bytes of request.
+    'sellItem', 'seasonBurn', 'seasonBurnAll', 'claimQuest', 'pickupWorldDrop',
+    'clanChat', 'clanChatHistory', 'privMsg', 'privMsgHistory',
     // Both hit the database on every call — seasonRating sorts the whole
     // player collection, seasonSetTier writes the selected band.
     'seasonRating', 'seasonSetTier',
@@ -6133,7 +6205,7 @@ io.on('connection', socket => {
   // round-trip completes, and needs to know specifically that THIS request
   // failed to roll that back, without misfiring on an unrelated buy/cancel
   // error that happens to land while a listing request is in flight.
-  safeOn('marketList', async ({ item, price } = {}) => {
+  safeOn('marketList', itemOp(async ({ item, price } = {}) => {
     if (!authed) return;
     if ((socket.data.vipLevel || 0) < 1) {
       return socket.emit('marketListError', { msg: 'Продажа на маркете доступна с VIP 1' });
@@ -6206,9 +6278,9 @@ io.on('connection', socket => {
         { item: canonItem && canonItem.id });
       socket.emit('marketListError', { msg: 'Ошибка сервера' });
     }
-  });
+  }));
 
-  safeOn('marketCancel', async ({ listingId } = {}) => {
+  safeOn('marketCancel', itemOp(async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
     try {
       // Peek at the item before cancelling: if there's nowhere to put it back,
@@ -6248,7 +6320,7 @@ io.on('connection', socket => {
       console.error('marketCancel:', err);
       logPlayerErr(authed.telegramId, authed.username, 'market_cancel', err, { listingId: String(listingId) });
     }
-  });
+  }));
 
   // Undoes THIS buyer's claim only. The old unconditional update-by-_id would
   // happily flip a listing back to 'active' regardless of who currently held
@@ -6261,7 +6333,7 @@ io.on('connection', socket => {
     ).catch(err => console.error('marketBuy release claim:', err));
   }
 
-  safeOn('marketBuy', async ({ listingId } = {}) => {
+  safeOn('marketBuy', itemOp(async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
     try {
       const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
@@ -6337,7 +6409,7 @@ io.on('connection', socket => {
       console.error('marketBuy:', err);
       logPlayerErr(authed.telegramId, authed.username, 'market_buy', err, { listingId: String(listingId) });
     }
-  });
+  }));
 
   safeOn('getPvpHistory', async () => {
     if (!authed) return;
@@ -7371,9 +7443,15 @@ io.on('connection', socket => {
     if (now - _lastChatAt < 3000) return;
     const msg = text.trim().slice(0, 100);
     if (!msg) return;
-    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
-    if (!clan) return socket.emit('chatError', { channel: 'clan', msg: 'Вы не состоите в клане' });
+    // Claim the slot BEFORE the DB round trip, not after it — the same
+    // ordering marketList uses and for the same reason: a burst sent in one
+    // tick all reads the old timestamp and passes the check while the first
+    // one is still awaiting, so the 3s floor held back nothing. Restored on
+    // the bail-out below so a failed send doesn't cost the player 3s.
+    const _prevChatAt = _lastChatAt;
     _lastChatAt = now;
+    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+    if (!clan) { _lastChatAt = _prevChatAt; return socket.emit('chatError', { channel: 'clan', msg: 'Вы не состоите в клане' }); }
     _recordClanChat(clan._id, authed.username, msg);
     for (const m of clan.members) {
       const target = _socketForTelegramId(m.telegramId);
@@ -7416,10 +7494,12 @@ io.on('connection', socket => {
     if (now - _lastChatAt < 3000) return;
     const msg = text.trim().slice(0, 100);
     if (!msg) return;
-    const target = await _resolveUsername(toUsername);
-    if (!target) return socket.emit('privMsgError', { msg: 'Пользователь @' + toUsername + ' не найден' });
-    if (target.telegramId === authed.telegramId) return socket.emit('privMsgError', { msg: 'Нельзя написать самому себе' });
+    // Claimed before the lookup — see the matching comment in clanChat.
+    const _prevChatAt = _lastChatAt;
     _lastChatAt = now;
+    const target = await _resolveUsername(toUsername);
+    if (!target) { _lastChatAt = _prevChatAt; return socket.emit('privMsgError', { msg: 'Пользователь @' + toUsername + ' не найден' }); }
+    if (target.telegramId === authed.telegramId) { _lastChatAt = _prevChatAt; return socket.emit('privMsgError', { msg: 'Нельзя написать самому себе' }); }
     _recordDm(authed.telegramId, target.telegramId, authed.username, msg);
     socket.emit('privMsg', { withUsername: target.username, username: authed.username, text: msg });
     const targetSocketId = activeSessions.get(target.telegramId);
@@ -7446,16 +7526,27 @@ io.on('connection', socket => {
     // server's copy for those two fields, accept everything else in the save
     // (position, hp, xp... are all still current), and push the authoritative
     // items back so the client stops resending the stale set.
+    // _itemOpDepth extends the same rule to a grant that is still IN FLIGHT:
+    // the save was composed before it too, and applying it would be undone
+    // halfway by the operation's own write-back. See _withItemOp for the
+    // duplication that closes.
     const _clientRev = Math.floor(Number(stats && stats.invRev)) || 0;
-    if (_clientRev !== _invRev && _lastStats) {
+    const _midItemOp = _itemOpDepth > 0;
+    if ((_clientRev !== _invRev || _midItemOp) && _lastStats) {
       const _rejected = Array.isArray(clean.inventory) ? clean.inventory.length : 0;
+      // All THREE item fields, not just two. The census counts inventory,
+      // equipment and storage together, so keeping one of them from the save
+      // and overruling the others is precisely how a plain move turns into a
+      // copy — the item stays where the save put it and comes back where the
+      // server had it. They are one unit or they are nothing.
       clean.inventory = _lastStats.inventory || [];
       clean.equipment = _lastStats.equipment || {};
+      clean.storage   = _lastStats.storage   || [];
       // The single most useful line when a player says an item vanished: it
       // records that a save arrived carrying a pre-grant inventory and was
       // overruled, rather than that happening invisibly.
       logPlayer(authed.telegramId, authed.username, 'save_stale_items', {
-        clientRev: _clientRev, serverRev: _invRev,
+        clientRev: _clientRev, serverRev: _invRev, midOp: _midItemOp,
         rejectedSlots: _rejected, keptSlots: clean.inventory.length,
       });
       socket.emit('inventorySync', {
@@ -7822,7 +7913,7 @@ io.on('connection', socket => {
     }
   });
 
-  safeOn('clanLeave', async () => {
+  safeOn('clanLeave', itemOp(async () => {
     if (!authed) return;
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
@@ -7885,7 +7976,7 @@ io.on('connection', socket => {
     _myClanId    = null;
     _myClanLevel = null;
     currentRoom?.setPlayerClan(socket.id, null, null, 0);
-  });
+  }));
 
   safeOn('clanDisband', async () => {
     if (!authed) return;
@@ -8146,6 +8237,14 @@ io.on('connection', socket => {
     if (!authed) return;
     const n = Math.floor(Number(qty));
     if (!Number.isFinite(n) || n <= 0) return;
+    // Same whitelist the deposit side applies. It is not only about which
+    // kinds may be handed out: `id` goes straight into the $elemMatch filter
+    // below, so an object like {$ne: null} would match SOME OTHER row of the
+    // pool and decrement that instead — and be pushed into `allocations` as
+    // an id nothing can ever resolve, i.e. shards deleted outright.
+    if (!UNIQUE_SHARDS.some(s => s.id === id)) {
+      return socket.emit('clanStorageError', { msg: 'В хранилище лежат только Осколки' });
+    }
     const clan = await _myClan();
     if (!clan) return;
     if (!clan.storageUnlocked) {
