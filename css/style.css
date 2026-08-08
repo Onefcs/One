@@ -2259,11 +2259,25 @@ canvas { display:block; width:100%; height:100%; }
 #season-panel {
   position: absolute;
   inset: 0;
+  z-index: 120;
+  background: rgba(15,11,4,.97);
   display: flex;
   flex-direction: column;
-  background: var(--bg1, #0d0b07);
-  z-index: 120;
+  overflow: hidden;
 }
+#season-panel, #season-panel * { touch-action: pan-y; pointer-events: auto; }
+/* Same reason as the events panel above: .vip-header and .vip-body are both
+   absolutely positioned, so the tab strip has to be placed under the 50px
+   header explicitly and the body pushed below it. Relying on flex order
+   instead put the tabs BEHIND the header — which is why the Рейтинг tab was
+   neither visible nor clickable. */
+#season-panel .rating-tabs {
+  position: absolute;
+  top: 54px; left: 16px; right: 16px;
+  margin: 0;
+  z-index: 1;
+}
+#season-panel .vip-body { top: 100px; }
 .season-row {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 12px; border-radius: 8px;
