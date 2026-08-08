@@ -38,6 +38,8 @@ const {
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct,
   FEAR_MAX_WAVE, QUEST_DEF,
+  SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
+  SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -2037,6 +2039,15 @@ function _canonSavedItem(raw) {
   return item;
 }
 
+// Picks the next season quest's species, never repeating the one just
+// finished — back-to-back identical quests read like the reward simply did
+// not register.
+function _seasonRollSpecies(prevSp) {
+  const pool = SEASON_SPECIES.filter(s => s.sp !== prevSp);
+  const from = pool.length ? pool : SEASON_SPECIES;
+  return from[Math.floor(Math.random() * from.length)].sp;
+}
+
 // ── Anti-duplication: the item census ───────────────────────────────────────
 // _canonSavedItem above rebuilds an item from the catalog, so a save can only
 // ever carry REAL items — but it says nothing about whether the player was
@@ -2199,6 +2210,11 @@ function _sanitizeSavedStats(raw) {
   // Stripped for the same reason as vipPending: the server already owns this
   // field via completeSpecialQuest's own targeted $set.
   delete s.specialQuestsDone;
+  // Season points and quest progress decide who takes a real prize, so they
+  // are owned exclusively by the handlers that award them — same rule the
+  // currency balances and vipPending already follow.
+  delete s.seasonPoints;
+  delete s.seasonQuest;
   return s;
 }
 
@@ -5249,6 +5265,194 @@ io.on('connection', socket => {
     currentRoom.resendEnemies(socket.id, ids);
   });
 
+  // ── Сезон ─────────────────────────────────────────────────────────────────
+  // Every point is added right here. seasonPoints/seasonQuest never travel in
+  // from a client save (_sanitizeSavedStats drops them, same as the balances),
+  // so the leaderboard the prizes are read off cannot be written to by the
+  // people competing on it.
+  let _seasonKillsUnsaved = 0;
+
+  // The active quest, created on first use. An unknown species (a save from
+  // before this existed, or a table change) is re-rolled rather than trusted.
+  function _seasonQuest() {
+    if (!_lastStats) return null;
+    const q = _lastStats.seasonQuest;
+    if (q && typeof q === 'object' && SEASON_SPECIES.some(s => s.sp === q.sp)) return q;
+    const fresh = { sp: _seasonRollSpecies(null), kills: 0 };
+    _lastStats.seasonQuest = fresh;
+    _persistSavedFields(authed, { seasonQuest: fresh });
+    return fresh;
+  }
+
+  function _seasonPublicState() {
+    const q = _seasonQuest();
+    const def = q ? SEASON_SPECIES.find(s => s.sp === q.sp) : null;
+    return {
+      endAt: SEASON_END_AT,
+      active: seasonActive(),
+      points: Math.max(0, Math.floor(Number(_lastStats && _lastStats.seasonPoints) || 0)),
+      quest: q ? { sp: q.sp, name: def ? def.name : q.sp, kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS) } : null,
+      target: SEASON_QUEST_KILLS,
+      questPoints: SEASON_QUEST_POINTS,
+      minLvl: SEASON_MIN_LVL, maxLvl: SEASON_MAX_LVL,
+      burn: SEASON_BURN_POINTS,
+      prizes: SEASON_PRIZES,
+    };
+  }
+
+  // Atomic, like the currency balances — two sockets for one account (a
+  // reconnect overlapping its predecessor) must not lose each other's points.
+  async function _seasonAddPoints(n, reason, meta) {
+    if (!authed || !Number.isFinite(n) || n <= 0) return null;
+    if (!seasonActive()) return null;
+    try {
+      const doc = await PlayerModel.findOneAndUpdate(
+        { telegramId: String(authed.telegramId) },
+        { $inc: { 'savedData.seasonPoints': n } },
+        { new: true, projection: { 'savedData.seasonPoints': 1 } },
+      ).lean();
+      const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
+      if (_lastStats) _lastStats.seasonPoints = total;
+      logPlayer(authed.telegramId, authed.username, 'season_points', { add: n, total, reason, ...(meta || {}) });
+      return total;
+    } catch (err) { console.error('_seasonAddPoints:', err); return null; }
+  }
+
+  // Called on every kill. Progress lives in _lastStats and is only written out
+  // every SEASON_FLUSH_EVERY kills (and on completion) — a 5000-kill quest
+  // would otherwise be 5000 database writes per player.
+  const SEASON_FLUSH_EVERY = 25;
+  function _seasonTrackKill(result) {
+    if (!authed || !_lastStats || !seasonActive()) return;
+    if (!result || !result.eid) return;
+    const lvl = result.rlvl || 0;
+    if (lvl < SEASON_MIN_LVL || lvl > SEASON_MAX_LVL) return;
+    const q = _seasonQuest();
+    if (!q) return;
+    // Both the guard and the warrior variant of a species count.
+    if (String(result.eid).split('_')[0] !== q.sp) return;
+
+    q.kills = (q.kills || 0) + 1;
+    if (q.kills < SEASON_QUEST_KILLS) {
+      if (++_seasonKillsUnsaved >= SEASON_FLUSH_EVERY) {
+        _seasonKillsUnsaved = 0;
+        _persistSavedFields(authed, { seasonQuest: q });
+      }
+      return;
+    }
+    // Cleared — award, then roll the next species (never the one just done).
+    const doneSp = q.sp;
+    const next = { sp: _seasonRollSpecies(doneSp), kills: 0 };
+    _lastStats.seasonQuest = next;
+    _seasonKillsUnsaved = 0;
+    _persistSavedFields(authed, { seasonQuest: next });
+    _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp }).then(total => {
+      const def = SEASON_SPECIES.find(s => s.sp === next.sp);
+      socket.emit('seasonQuestDone', {
+        sp: doneSp, points: SEASON_QUEST_POINTS, total: total ?? null,
+        next: { sp: next.sp, name: def ? def.name : next.sp, kills: 0 },
+      });
+    });
+  }
+  socket.data._seasonTrackKill = _seasonTrackKill;
+
+  safeOn('seasonSync', () => {
+    if (!authed) return;
+    socket.emit('seasonState', _seasonPublicState());
+  });
+
+  // Top 50 by points, plus this player's own rank when they are not in it —
+  // same shape (and same reasoning) as the BM rating above.
+  safeOn('seasonRating', async () => {
+    if (!authed) return;
+    try {
+      const rows = await PlayerModel.find(
+        { 'savedData.seasonPoints': { $gt: 0 } },
+        'username savedData.seasonPoints',
+      ).sort({ 'savedData.seasonPoints': -1 }).limit(50).lean();
+      const list = rows.map((p, i) => ({
+        place: i + 1, username: p.username,
+        points: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints) || 0)),
+      }));
+      const mine = Math.max(0, Math.floor(Number(_lastStats && _lastStats.seasonPoints) || 0));
+      let myPlace = list.findIndex(r => r.username === authed.username) + 1;
+      if (!myPlace && mine > 0) {
+        myPlace = await PlayerModel.countDocuments({ 'savedData.seasonPoints': { $gt: mine } }) + 1;
+      }
+      socket.emit('seasonRatingData', {
+        list, me: { username: authed.username, points: mine, place: myPlace || 0 },
+        endAt: SEASON_END_AT, active: seasonActive(), prizes: SEASON_PRIZES,
+      });
+    } catch (err) { console.error('seasonRating:', err); }
+  });
+
+  // ── Сжигание ──────────────────────────────────────────────────────────────
+  // Destroys gear outright for points — no gold, no materials back. Only the
+  // rarities in SEASON_BURN_POINTS can be burned, and the rarity is re-read
+  // from the catalog rather than taken from the entry, so a crafted request
+  // cannot claim a common item is worth an uncommon's points.
+  function _burnValue(it) {
+    const base = it && _catalogBase(it.id);
+    if (!base || isStackableItem(base)) return 0;
+    return SEASON_BURN_POINTS[base.rarity] || 0;
+  }
+
+  safeOn('seasonBurn', async ({ idx } = {}) => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+      try {
+        if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
+        const inv = _liveInventory();
+        if (!inv) return socket.emit('seasonBurnError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        const i = Math.floor(Number(idx));
+        if (!Number.isFinite(i) || i < 0 || i >= inv.length) return;
+        const pts = _burnValue(inv[i]);
+        if (!pts) return socket.emit('seasonBurnError', { msg: 'Этот предмет нельзя сжечь' });
+        const burned = inv[i];
+        inv.splice(i, 1);
+        _commitServerItems(inv, null, 'season_burn', { itemId: burned.id, points: pts });
+        const total = await _seasonAddPoints(pts, 'burn', { itemId: burned.id, n: 1 });
+        socket.emit('seasonBurned', { burned: 1, points: pts, total: total ?? null });
+      } catch (err) {
+        console.error('seasonBurn:', err);
+        logPlayerErr(authed.telegramId, authed.username, 'season_burn', err, { idx });
+        socket.emit('seasonBurnError', { msg: 'Ошибка сервера' });
+      }
+    });
+  });
+
+  // Bulk form — burning a full inventory one tap at a time is not a real
+  // option. Equipped items are untouched: this only ever walks the inventory.
+  safeOn('seasonBurnAll', async ({ rarity } = {}) => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+      try {
+        if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
+        if (!SEASON_BURN_POINTS[rarity]) return socket.emit('seasonBurnError', { msg: 'Эту редкость нельзя сжечь' });
+        const inv = _liveInventory();
+        if (!inv) return socket.emit('seasonBurnError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        let burned = 0, pts = 0;
+        for (let i = inv.length - 1; i >= 0; i--) {
+          const it = inv[i];
+          const base = it && _catalogBase(it.id);
+          if (!base || base.rarity !== rarity) continue;
+          const v = _burnValue(it);
+          if (!v) continue;
+          inv.splice(i, 1);
+          burned++; pts += v;
+        }
+        if (!burned) return socket.emit('seasonBurnError', { msg: 'Нечего сжигать' });
+        _commitServerItems(inv, null, 'season_burn_all', { rarity, burned, points: pts });
+        const total = await _seasonAddPoints(pts, 'burn_all', { rarity, n: burned });
+        socket.emit('seasonBurned', { burned, points: pts, total: total ?? null });
+      } catch (err) {
+        console.error('seasonBurnAll:', err);
+        logPlayerErr(authed.telegramId, authed.username, 'season_burn_all', err, { rarity });
+        socket.emit('seasonBurnError', { msg: 'Ошибка сервера' });
+      }
+    });
+  });
+
   // ── Story quest reward ────────────────────────────────────────────────────
   // The reward used to be handed out entirely client-side (js/quests.js's
   // claimQuest added the gold and pushed the items into its own inventory,
@@ -5986,6 +6190,7 @@ io.on('connection', socket => {
     // only advances the wave counter (spawns the next wave, or ends the run
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
+    if (result.killed) _seasonTrackKill(result);
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -6102,6 +6307,7 @@ io.on('connection', socket => {
     // only advances the wave counter (spawns the next wave, or ends the run
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
+    if (result.killed) _seasonTrackKill(result);
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse

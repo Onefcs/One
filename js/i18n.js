@@ -154,6 +154,33 @@ const I18N_UI = {
   race10DefeatSub:{ ru: 'Победил {name} — ваш урон боссу: {dmg}', en: '{name} won — your damage to the boss: {dmg}', uk: 'Переміг {name} — ваша шкода босу: {dmg}', es: '{name} ganó — tu daño al jefe: {dmg}', tr: '{name} kazandı — patrona verdiğin hasar: {dmg}', pt: '{name} venceu — seu dano ao chefe: {dmg}' },
   race10NoResultSub:{ ru: 'Забег закрыт: никто не одолел босса вовремя', en: 'Race closed: nobody brought the boss down in time', uk: 'Забіг закрито: ніхто не здолав боса вчасно', es: 'Carrera cerrada: nadie derrotó al jefe a tiempo', tr: 'Yarış kapandı: kimse patronu zamanında yenemedi', pt: 'Corrida encerrada: ninguém derrotou o chefe a tempo' },
 
+
+  // ── Сезон ─────────────────────────────────────────────────────────────────
+  seasonBtn:      { ru: 'Сезон', en: 'Season', uk: 'Сезон', es: 'Temporada', tr: 'Sezon', pt: 'Temporada' },
+  seasonHdr:      { ru: 'Сезон', en: 'Season', uk: 'Сезон', es: 'Temporada', tr: 'Sezon', pt: 'Temporada' },
+  seasonTabQuests:{ ru: 'Квесты', en: 'Quests', uk: 'Квести', es: 'Misiones', tr: 'Görevler', pt: 'Missões' },
+  seasonTabRating:{ ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
+  seasonPointsLbl:{ ru: 'Очки сезона', en: 'Season points', uk: 'Очки сезону', es: 'Puntos de temporada', tr: 'Sezon puanı', pt: 'Pontos da temporada' },
+  seasonEndsIn:   { ru: 'До конца сезона: {t}', en: 'Season ends in {t}', uk: 'До кінця сезону: {t}', es: 'La temporada acaba en {t}', tr: 'Sezon bitişine {t}', pt: 'A temporada acaba em {t}' },
+  seasonEnded:    { ru: 'Сезон завершён', en: 'Season is over', uk: 'Сезон завершено', es: 'La temporada terminó', tr: 'Sezon bitti', pt: 'A temporada acabou' },
+  seasonLoading:  { ru: 'Загрузка...', en: 'Loading...', uk: 'Завантаження...', es: 'Cargando...', tr: 'Yükleniyor...', pt: 'Carregando...' },
+  seasonQuestFmt: { ru: 'Убей {n} — {name} (ур. {a}-{b})', en: 'Kill {n} {name} (lvl {a}-{b})', uk: 'Вбий {n} — {name} (рів. {a}-{b})', es: 'Mata {n} {name} (nivel {a}-{b})', tr: '{n} {name} öldür (sv. {a}-{b})', pt: 'Mate {n} {name} (nível {a}-{b})' },
+  seasonQuestRewardFmt: { ru: 'Награда: {n} очков сезона', en: 'Reward: {n} season points', uk: 'Нагорода: {n} очок сезону', es: 'Recompensa: {n} puntos', tr: 'Ödül: {n} sezon puanı', pt: 'Recompensa: {n} pontos' },
+  seasonQuestDoneMsg: { ru: '✓ Квест сезона выполнен! +{n} очков', en: '✓ Season quest complete! +{n} points', uk: '✓ Квест сезону виконано! +{n} очок', es: '✓ ¡Misión de temporada completada! +{n} puntos', tr: '✓ Sezon görevi tamam! +{n} puan', pt: '✓ Missão da temporada concluída! +{n} pontos' },
+  seasonBurnHdr:  { ru: 'Сжигание снаряжения:', en: 'Burning gear:', uk: 'Спалювання спорядження:', es: 'Quemar equipo:', tr: 'Ekipman yakma:', pt: 'Queimar equipamento:' },
+  seasonBurnCommon:   { ru: 'Обычное — {n} очко за предмет', en: 'Common — {n} point per item', uk: 'Звичайне — {n} очко за предмет', es: 'Común — {n} punto por objeto', tr: 'Sıradan — parça başına {n} puan', pt: 'Comum — {n} ponto por item' },
+  seasonBurnUncommon: { ru: 'Необычное — {n} очков за предмет', en: 'Uncommon — {n} points per item', uk: 'Незвичайне — {n} очок за предмет', es: 'Poco común — {n} puntos por objeto', tr: 'Nadir — parça başına {n} puan', pt: 'Incomum — {n} pontos por item' },
+  seasonBurnNote: { ru: 'Предмет уничтожается безвозвратно — золота и материалов не вернуть', en: 'The item is destroyed for good — no gold or materials back', uk: 'Предмет знищується назавжди — золота й матеріалів не повернути', es: 'El objeto se destruye para siempre: no devuelve oro ni materiales', tr: 'Eşya kalıcı olarak yok olur — altın ya da materyal geri gelmez', pt: 'O item é destruído para sempre — sem ouro ou materiais de volta' },
+  seasonBurnBtn:  { ru: 'Сжечь (+{n})', en: 'Burn (+{n})', uk: 'Спалити (+{n})', es: 'Quemar (+{n})', tr: 'Yak (+{n})', pt: 'Queimar (+{n})' },
+  seasonBurnAllCommon:   { ru: 'Сжечь все обычные', en: 'Burn all common', uk: 'Спалити всі звичайні', es: 'Quemar todos los comunes', tr: 'Tüm sıradanları yak', pt: 'Queimar todos comuns' },
+  seasonBurnAllUncommon: { ru: 'Сжечь все необычные', en: 'Burn all uncommon', uk: 'Спалити всі незвичайні', es: 'Quemar todos los poco comunes', tr: 'Tüm nadirleri yak', pt: 'Queimar todos incomuns' },
+  seasonBurnAllConfirm:  { ru: 'Сжечь {n} предметов и получить {p} очков? Отменить будет нельзя.', en: 'Burn {n} items for {p} points? This cannot be undone.', uk: 'Спалити {n} предметів і отримати {p} очок? Скасувати не вийде.', es: '¿Quemar {n} objetos por {p} puntos? No se puede deshacer.', tr: '{n} eşyayı {p} puan için yak? Geri alınamaz.', pt: 'Queimar {n} itens por {p} pontos? Não dá para desfazer.' },
+  seasonBurnedToast: { ru: 'Сожжено: {n} · +{p} очков', en: 'Burned: {n} · +{p} points', uk: 'Спалено: {n} · +{p} очок', es: 'Quemados: {n} · +{p} puntos', tr: 'Yakıldı: {n} · +{p} puan', pt: 'Queimados: {n} · +{p} pontos' },
+  seasonNothingToBurn: { ru: 'Нечего сжигать', en: 'Nothing to burn', uk: 'Нема чого спалювати', es: 'Nada que quemar', tr: 'Yakacak bir şey yok', pt: 'Nada para queimar' },
+  seasonNoPlayers: { ru: 'Пока никто не набрал очков', en: 'Nobody has scored yet', uk: 'Поки ніхто не набрав очок', es: 'Nadie ha puntuado aún', tr: 'Henüz kimse puan almadı', pt: 'Ninguém pontuou ainda' },
+  seasonPrizesHdr: { ru: 'Награды сезона:', en: 'Season prizes:', uk: 'Нагороди сезону:', es: 'Premios de temporada:', tr: 'Sezon ödülleri:', pt: 'Prêmios da temporada:' },
+  seasonPlaceFmt: { ru: '{n} место', en: 'Place {n}', uk: '{n} місце', es: 'Puesto {n}', tr: '{n}. sıra', pt: '{n}º lugar' },
+
   // ── Страх (Fear): private wave-survival instance ──────────────────────────
   fearTab:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },
   fearLbl:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },

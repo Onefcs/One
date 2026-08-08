@@ -1052,6 +1052,43 @@ function netConnect(onReady) {
     if (typeof onQuestSync === 'function') onQuestSync(data || {});
   });
 
+  // ── Сезон ─────────────────────────────────────────────────────────────────
+  socket.on('seasonState', (st) => {
+    if (!st) return;
+    _seasonState = { ..._seasonState, ...st };
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
+  socket.on('seasonRatingData', (data) => {
+    _seasonRating = data || { list: [], me: null };
+    if (typeof onSeasonRating === 'function') onSeasonRating();
+  });
+
+  // A quest finished: points already added server-side, the next one is here.
+  socket.on('seasonQuestDone', ({ points, total, next } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (next) _seasonState = { ..._seasonState, quest: next };
+    if (typeof showEventBossBanner === 'function' && points) {
+      showEventBossBanner(tVars('seasonQuestDoneMsg', { n: points }), '#50af95');
+    }
+    if (typeof Sound !== 'undefined') Sound.loot?.();
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
+  // Items are already gone via the inventorySync that preceded this.
+  socket.on('seasonBurned', ({ burned, points, total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof _marketToast === 'function') {
+      _marketToast(tVars('seasonBurnedToast', { n: burned || 0, p: points || 0 }), 'ok');
+    }
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
+  socket.on('seasonBurnError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
   socket.on('disconnect', () => {
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced
@@ -1727,6 +1764,7 @@ function _finishOnlineStart() {
   if (typeof showMarketBtn === 'function') showMarketBtn();
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showEventsBtn === 'function') showEventsBtn();
+  if (typeof showSeasonBtn === 'function') showSeasonBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type
@@ -2444,6 +2482,14 @@ function netSellItem(idx) {
 function netClaimQuest(idx) {
   if (socket?.connected) socket.emit('claimQuest', { idx });
 }
+
+// ── Сезон ───────────────────────────────────────────────────────────────────
+function netSeasonSync()   { if (socket?.connected) socket.emit('seasonSync'); }
+function netSeasonRating() { if (socket?.connected) socket.emit('seasonRating'); }
+// Burning destroys the item for season points — the server owns both halves,
+// nothing is applied locally.
+function netSeasonBurn(idx)       { if (socket?.connected) socket.emit('seasonBurn', { idx }); }
+function netSeasonBurnAll(rarity) { if (socket?.connected) socket.emit('seasonBurnAll', { rarity }); }
 
 // Incoming GRAM events
 function _initGramHandlers(s) {

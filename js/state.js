@@ -127,3 +127,10 @@ let _race10MyDamage = 0;
 let _fearState = { attemptsLeft: null, maxAttempts: 2, maxWave: 39, minLevel: 10, freeLanes: null, totalLanes: null };
 let _fearInRun = false;
 let _fearWave = 0;
+
+// Сезон — points race with a fixed end date. Everything here is pushed by the
+// server (points and quest progress are server-owned, see the seasonSync
+// handler in server/index.js); nothing is computed locally.
+let _seasonState = { endAt: 0, active: false, points: 0, quest: null, target: 5000,
+                     questPoints: 100, minLvl: 1, maxLvl: 19, burn: { common: 1, uncommon: 5 }, prizes: [] };
+let _seasonRating = null;   // null = not fetched yet

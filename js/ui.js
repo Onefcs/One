@@ -1211,7 +1211,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -2430,6 +2430,7 @@ function openInvItemModal(idx) {
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">${t('equipBtn')}</button>
       ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
+      ${_seasonBurnPts(it) ? `<button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0" onclick="burnItemForSeason(${idx})">${tVars('seasonBurnBtn', { n: _seasonBurnPts(it) })}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -2452,6 +2453,25 @@ const SELL_COMMON_PRICE = 100;
 // save path no longer accepts — the item removal would land but the gold
 // would be clamped back off, i.e. the player would sell for nothing.
 // The inventory and the balance both come back over inventorySync/itemSold.
+// Season points this item is worth if burned, or 0 when it cannot be burned.
+// Mirrors the server's own rule (SEASON_BURN_POINTS, and non-stackable only)
+// — the server re-checks it anyway, this just decides whether to offer it.
+function _seasonBurnPts(it) {
+  if (!it || typeof _seasonState === 'undefined') return 0;
+  if (!_seasonState.active) return 0;
+  if (typeof _isStackable === 'function' && _isStackable(it)) return 0;
+  return (_seasonState.burn || {})[it.rarity] || 0;
+}
+
+// The server destroys the item and adds the points — nothing local.
+function burnItemForSeason(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!_seasonBurnPts(it)) return;
+  if (typeof netSeasonBurn === 'function') netSeasonBurn(idx);
+  closeInvItemModal();
+}
+
 function sellCommonItem(idx) {
   if (!player) return;
   const it = player.inventory[idx];
@@ -2662,6 +2682,173 @@ function onEnhanceResult({ id, slot, outcome, newEnhance } = {}) {
 
 function onEnhanceError(msg) {
   _marketToast(msg || t('purchaseErrorLbl'), 'err');
+}
+
+
+// ─────────────────────────────────────────────────────────
+//  СЕЗОН — rotating kill quests + points leaderboard
+// ─────────────────────────────────────────────────────────
+// Points and quest progress are server-owned (see the season handlers in
+// server/index.js); everything here renders what arrived and asks for a
+// refresh, it never computes a point itself.
+function _positionSeasonBtn() {
+  const evBtn = document.getElementById('events-btn');
+  const btn   = document.getElementById('season-btn');
+  if (!btn || !evBtn) return;
+  const eTop = parseFloat(evBtn.style.top) || 0;
+  btn.style.top       = (eTop + 28 + 4) + 'px';
+  btn.style.left      = evBtn.style.left;
+  btn.style.width     = evBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showSeasonBtn() {
+  const btn = document.getElementById('season-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSeasonBtn(); }
+}
+
+let _seasonTab = 'quests';
+
+function openSeasonPanel() {
+  const panel = document.getElementById('season-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  if (typeof netSeasonSync === 'function') netSeasonSync();
+  if (_seasonTab === 'rating' && typeof netSeasonRating === 'function') netSeasonRating();
+  _renderSeasonBody();
+}
+
+function closeSeasonPanel() {
+  const panel = document.getElementById('season-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _seasonPanelOpen() {
+  return document.getElementById('season-panel')?.style.display === 'flex';
+}
+
+function switchSeasonTab(tab) {
+  _seasonTab = tab;
+  document.querySelectorAll('#season-panel .rating-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('stab-' + tab)?.classList.add('active');
+  // The leaderboard is a database query, so it is fetched on demand rather
+  // than pushed — asking for it here keeps it fresh without polling.
+  if (tab === 'rating' && typeof netSeasonRating === 'function') netSeasonRating();
+  _renderSeasonBody();
+}
+
+function _renderSeasonBody() {
+  const body = document.getElementById('season-panel-body');
+  if (!body) return;
+  body.innerHTML = _seasonTab === 'rating' ? _seasonRatingHTML() : _seasonQuestsHTML();
+}
+
+// Prize table — display only, the payout itself happens outside the game.
+function _seasonPrizesHTML() {
+  const st = _seasonState || {};
+  const prizes = (st.prizes && st.prizes.length) ? st.prizes
+    : [{ place: 1, usdt: 100 }, { place: 2, usdt: 50 }, { place: 3, usdt: 30 }];
+  return `<div class="db-rewards-hdr">${t('seasonPrizesHdr')}</div>
+    <div class="db-rewards">
+      ${prizes.map(p => `<div class="db-reward-row">
+        <img src="/images/usdt.svg" alt="">
+        <span>${tVars('seasonPlaceFmt', { n: p.place })}</span>
+        <span class="db-reward-qty">${p.usdt} USDT</span>
+      </div>`).join('')}
+    </div>`;
+}
+
+function _seasonQuestsHTML() {
+  const st = _seasonState || {};
+  const q = st.quest;
+  const left = Math.max(0, (st.endAt || 0) - Date.now());
+  const ended = !st.active || left <= 0;
+  const target = st.target || 5000;
+  const done = q ? Math.min(q.kills || 0, target) : 0;
+  const pct = target ? Math.min(100, Math.round(done / target * 100)) : 0;
+  const bp = st.burn || { common: 1, uncommon: 5 };
+
+  const questBlock = ended
+    ? `<div class="db-phase">${t('seasonEnded')}</div>`
+    : q
+      ? `<div class="imod-enh-block">
+           <div class="imod-enh-title">${tVars('seasonQuestFmt', { name: q.name, n: target, a: st.minLvl, b: st.maxLvl })}</div>
+           <div class="season-bar"><i style="width:${pct}%"></i></div>
+           <div class="imod-enh-preview">${done} / ${target} · ${pct}%</div>
+           <div class="imod-enh-chance">${tVars('seasonQuestRewardFmt', { n: st.questPoints || 100 })}</div>
+         </div>`
+      : `<div class="db-phase">${t('seasonLoading')}</div>`;
+
+  const burnBlock = ended ? '' : `
+    <div class="db-rules">
+      ${t('seasonBurnHdr')}
+      <ul>
+        <li>${tVars('seasonBurnCommon', { n: bp.common })}</li>
+        <li>${tVars('seasonBurnUncommon', { n: bp.uncommon })}</li>
+        <li>${t('seasonBurnNote')}</li>
+      </ul>
+      <div class="season-burn-grid">
+        <button class="db-action" onclick="_seasonBurnAllConfirm('common')">${t('seasonBurnAllCommon')}</button>
+        <button class="db-action" onclick="_seasonBurnAllConfirm('uncommon')">${t('seasonBurnAllUncommon')}</button>
+      </div>
+    </div>`;
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${st.points || 0}</div>
+      <div class="db-phase">${t('seasonPointsLbl')}</div>
+      <div class="db-count">${ended ? t('seasonEnded') : tVars('seasonEndsIn', { t: _fmtEventEta(left) })}</div>
+      ${questBlock}
+      ${burnBlock}
+      ${_seasonPrizesHTML()}
+    </div>`;
+}
+
+function _seasonRatingHTML() {
+  const r = _seasonRating;
+  if (!r) return `<div style="padding:16px"><div class="db-phase">${t('seasonLoading')}</div></div>`;
+  const rows = (r.list || []).map(x => {
+    const mine = r.me && x.username === r.me.username;
+    const pc = x.place <= 3 ? ' p' + x.place : '';
+    return `<div class="season-row${mine ? ' me' : ''}">
+      <span class="season-place${pc}">${x.place}</span>
+      <span class="season-name">${_esc(x.username)}</span>
+      <span class="season-pts">${x.points}</span>
+    </div>`;
+  }).join('');
+  const meOutside = r.me && r.me.place > 0 && !(r.list || []).some(x => x.username === r.me.username);
+  const meRow = meOutside
+    ? `<div class="season-row me" style="margin-top:10px">
+         <span class="season-place">${r.me.place}</span>
+         <span class="season-name">${_esc(r.me.username)}</span>
+         <span class="season-pts">${r.me.points}</span>
+       </div>`
+    : '';
+  return `<div style="padding:16px">
+    ${rows || `<div class="db-phase">${t('seasonNoPlayers')}</div>`}
+    ${meRow}
+    ${_seasonPrizesHTML()}
+  </div>`;
+}
+
+// Bulk burn is destructive and irreversible, so it asks first and says
+// exactly how many items are about to go.
+function _seasonBurnAllConfirm(rarity) {
+  if (!player) return;
+  const n = (player.inventory || []).filter(i => i && i.rarity === rarity && !_isStackable(i)).length;
+  if (!n) { _marketToast(t('seasonNothingToBurn'), 'err'); return; }
+  const pts = n * ((_seasonState.burn || {})[rarity] || 0);
+  if (!confirm(tVars('seasonBurnAllConfirm', { n, p: pts }))) return;
+  if (typeof netSeasonBurnAll === 'function') netSeasonBurnAll(rarity);
+}
+
+// Pushed by the server on every points change.
+function onSeasonState() {
+  if (_seasonPanelOpen() && _seasonTab === 'quests') _renderSeasonBody();
+}
+function onSeasonRating() {
+  if (_seasonPanelOpen() && _seasonTab === 'rating') _renderSeasonBody();
 }
 
 // ─────────────────────────────────────────────────────────
