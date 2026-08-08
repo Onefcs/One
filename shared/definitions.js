@@ -423,6 +423,11 @@ function seasonTier(id) {
 // the events themselves (daily attempts, fixed schedules, one boss at a
 // time) are what keep them from being farmed.
 const SEASON_EVENT_POINTS = 50;
+// Paid to the WINNER(s) on top of the participation points above — taking the
+// match is worth more than turning up for it. Keyed by the same task ids.
+// Everyone on the winning 3v3 side gets the full amount each; it is a team
+// result, not a pot to divide.
+const SEASON_WIN_POINTS = { deathbattle: 150, arena3: 30 };
 const SEASON_EVENT_TASKS = [
   { id: 'arena3',     name: 'Участвовать в Арене 3х3' },
   { id: 'deathbattle', name: 'Участвовать в Битве на смерть' },
@@ -1260,6 +1265,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
+  SEASON_WIN_POINTS,
   SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,

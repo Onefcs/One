@@ -138,5 +138,8 @@ let _seasonState = { endAt: 0, active: false, points: 0, quest: null, target: 50
                      // Both are pushed by the server (seasonState); `locked`
                      // on a band means this character is not high enough yet.
                      tier: '10', tiers: [],
+                     // Extra points for WINNING an event, keyed by task id —
+                     // paid on top of eventPoints for turning up.
+                     win: { deathbattle: 150, arena3: 30 },
                      ref: { points: 200, level: 20 } };
 let _seasonRating = null;   // null = not fetched yet

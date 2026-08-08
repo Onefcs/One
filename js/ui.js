@@ -2762,6 +2762,22 @@ function _seasonPrizesHTML() {
     </div>`;
 }
 
+// The season points a WIN in one of the PvP events pays, as a row for that
+// event's reward list. Read straight off the shared table the server awards
+// from (SEASON_WIN_POINTS), so the advertised figure and the paid one cannot
+// drift apart. Nothing is shown once the season is over — the row would be
+// promising points that can no longer be earned.
+function _seasonWinRewardRow(taskId) {
+  if (typeof SEASON_WIN_POINTS === 'undefined') return '';
+  if (typeof seasonActive === 'function' && !seasonActive()) return '';
+  const n = SEASON_WIN_POINTS[taskId] || 0;
+  if (n <= 0) return '';
+  return `<div class="db-reward-row">
+    <span class="db-reward-fallback">🏆</span>
+    <span>${t('seasonPointsLbl')}</span><span class="db-reward-qty">+${n}</span>
+  </div>`;
+}
+
 // The exact levels this species can be found at — see SEASON_SPECIES_LEVELS.
 // Naming the band instead would point players at rooms that cannot contain
 // the monster they were asked for.
@@ -2834,7 +2850,14 @@ function _seasonQuestsHTML() {
     <div class="db-rules">
       ${t('seasonTasksHdr')}
       <ul>
-        ${tasks.map(x => `<li>${_esc(x.name)} — <b style="color:#7ee0c0">+${st.eventPoints || 50}</b></li>`).join('')}
+        ${tasks.map(x => {
+          // Two of these also pay a win bonus on top of turning up, so the
+          // line says both rather than understating what the event is worth.
+          const w = (st.win || {})[x.id] || 0;
+          return `<li>${_esc(x.name)} — <b style="color:#7ee0c0">+${st.eventPoints || 50}</b>` +
+                 (w ? ` <span style="opacity:.8">${tVars('seasonWinBonusFmt', { n: w })}</span>` : '') +
+                 `</li>`;
+        }).join('')}
       </ul>
       <div class="imod-enh-chance">${t('seasonTasksRepeat')}</div>
       <ul style="margin-top:6px">
@@ -3437,6 +3460,7 @@ function _arena3BodyHTML() {
           <img src="/images/nexum-coin_v2.png" alt="">
           <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
         </div>
+        ${_seasonWinRewardRow('arena3')}
       </div>
     </div>`;
 }
@@ -3866,6 +3890,7 @@ function _dbRewardRows(gram, items) {
       <img src="/images/gram-icon.png" alt="">
       <span>GRAM</span><span class="db-reward-qty">+${g}</span></div>`);
   }
+  rows.push(_seasonWinRewardRow('deathbattle'));
   list.forEach(it => {
     // Items carry their own inventory icon; the emoji is only a stand-in for a
     // prize that somehow has no art rather than a broken image.

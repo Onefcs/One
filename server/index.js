@@ -41,6 +41,7 @@ const {
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
+  SEASON_WIN_POINTS,
   SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
 } = require('../shared/definitions');
@@ -2917,6 +2918,11 @@ async function _dbFinish(timedOut) {
     // The prize is granted through the winner's own socket closure, which is
     // where its inventory/GRAM copies live (same reasoning as pickupWorldDrop).
     const won = s?.data?._dbGrantWin ? await s.data._dbGrantWin() : null;
+    // Season points for taking the match, on top of the participation ones
+    // already paid at deploy. Awarded here rather than inside _dbGrantWin so
+    // it lands on a timed-out-but-still-won match too, and stays next to the
+    // 3v3 equivalent in _a3Finish.
+    s?.data?._seasonAwardWin?.('deathbattle');
     if (s) s.emit('deathBattleWon', {
       gram: DEATH_BATTLE_GRAM_REWARD,
       items: (won && won.items) || [],
@@ -3257,6 +3263,9 @@ async function _a3Finish(winner, wedged) {
     if (won && s?.data?._a3GrantWin) {
       reward = await s.data._a3GrantWin();
     }
+    // Every player on the winning side gets the full amount — it is a team
+    // result, not a pot split three ways.
+    if (won) s?.data?._seasonAwardWin?.('arena3');
     io.to(sid).emit('arena3Result', { won, winner, wedged: !!wedged, reward, team });
     logPlayer(_socketTid(sid), names.get(sid), 'arena3_end',
       { team, result: winner ? (won ? 'win' : 'lose') : (wedged ? 'wedged' : 'draw'), reward });
@@ -5459,6 +5468,7 @@ io.on('connection', socket => {
       eventTasks: SEASON_EVENT_TASKS,
       enhance: SEASON_ENHANCE_POINTS,
       eventPoints: SEASON_EVENT_POINTS,
+      win: SEASON_WIN_POINTS,
       ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
       prizes: SEASON_PRIZES,
     };
@@ -5537,6 +5547,20 @@ io.on('connection', socket => {
     });
   }
   socket.data._seasonAwardEvent = _seasonAwardEvent;
+
+  // Winning one, on top of the participation points above. Called from the
+  // match-end paths (_dbFinish / _a3Finish), which already know who took it —
+  // this side only turns that into points, so there is no way to claim a win
+  // from a client message.
+  function _seasonAwardWin(taskId) {
+    if (!authed || !seasonActive()) return;
+    const pts = SEASON_WIN_POINTS[taskId] || 0;
+    if (pts <= 0) return;
+    _seasonAddPoints(pts, 'win', { task: taskId }).then(total => {
+      socket.emit('seasonEventDone', { task: taskId, points: pts, total: total ?? null, win: true });
+    });
+  }
+  socket.data._seasonAwardWin = _seasonAwardWin;
 
   // Which world boss this session has already been paid for. The boss keeps
   // one id for its whole appearance, so remembering the last one paid is
