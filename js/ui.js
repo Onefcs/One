@@ -1162,10 +1162,12 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   // Below the level gate there is nothing to show at all.
   let shardSection = '';
   if (typeof UNIQUE_SHARDS !== 'undefined' && lvl >= UNIQUE_SHARD_MIN_LEVEL) {
+    // "×1" rather than "×1–1" when a kill can only ever yield one.
+    const qtyText = UNIQUE_SHARD_MAX_QTY > 1 ? `1–${UNIQUE_SHARD_MAX_QTY}` : '1';
     const rows = UNIQUE_SHARDS.map(sh => {
       const def = CRAFT_MATS.find(m => m.id === sh.id) || sh;
       return _dropRow(_itemIcon(def, 16), def.name,
-        `&times;1–${UNIQUE_SHARD_MAX_QTY} · <b style="color:#d9b3ff">${_pctText(UNIQUE_SHARD_CHANCE * 100)}</b>`,
+        `&times;${qtyText} · <b style="color:#d9b3ff">${_pctText(UNIQUE_SHARD_CHANCE * 100)}</b>`,
         '#d9b3ff');
     }).join('');
     shardSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('uniqueShardsHdr')}</div><div class="fi-drops">${rows}</div>`;

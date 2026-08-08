@@ -844,9 +844,9 @@ const GEAR_CRAFT_RECIPES = [
 //
 // Осколки are ordinary stackable materials, so they sell on the market and
 // merge into one inventory slot per kind like every other material.
-const UNIQUE_SHARD_MIN_LEVEL = 15;      // monsters below this level never drop one
-const UNIQUE_SHARD_CHANCE    = 0.0001;  // per SHARD KIND, rolled independently on every kill
-const UNIQUE_SHARD_MAX_QTY   = 5;       // most of one kind a single kill can yield
+const UNIQUE_SHARD_MIN_LEVEL = 15;        // monsters below this level never drop one
+const UNIQUE_SHARD_CHANCE    = 0.000001;  // per SHARD KIND, rolled independently on every kill
+const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can yield
 // How many of EVERY kind one weapon costs. All 20 are required, so the two
 // numbers below mean 20 000 and 100 000 shards respectively.
 const UNIQUE_SHARD_COST = { epic: 1000, legendary: 5000 };

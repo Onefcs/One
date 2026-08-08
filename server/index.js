@@ -250,6 +250,9 @@ function _rollMobLoot(inv, eid, rlvl) {
   // multiplier and no boss bonus — the only gate is the monster's level, so
   // the drop reads the same everywhere past it and cannot be farmed faster by
   // finding a favourable room.
+  //
+  // Math.random() has ~2^-53 granularity, so a chance this small is still
+  // rolled honestly rather than collapsing to never/always.
   if (rlvl >= UNIQUE_SHARD_MIN_LEVEL) {
     for (const sh of UNIQUE_SHARDS) {
       if (Math.random() < UNIQUE_SHARD_CHANCE) {
