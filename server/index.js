@@ -6595,13 +6595,22 @@ io.on('connection', socket => {
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
-      const { staleSocketId } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId);
+      const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId);
       // A stale room entry for this same account (see addPlayer's comment)
       // was just dropped — tell other clients immediately instead of waiting
       // for that old socket's own (possibly delayed) disconnect to do it, so
       // this account never briefly renders as two players on screen.
       if (staleSocketId) {
         socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: staleSocketId });
+        // A Fear run was carried onto this socket (addPlayer already moved
+        // Room's own _fearOwner over) — move the matching module-level run
+        // record here too, and do it BEFORE _pvpEliminate below so it doesn't
+        // find the old socketId still holding it and end the run out from
+        // under the player it was just resumed for.
+        if (fearCarry) {
+          const staleRun = _fear.get(staleSocketId);
+          if (staleRun) { _fear.set(socket.id, staleRun); _fear.delete(staleSocketId); }
+        }
         // The real 'disconnect' handler below also drops the old socket out of
         // any live PvP instance (race10/arena3/deathBattle/Fear) — addPlayer's
         // stale-entry cleanup only drops its ROOM record, not that bookkeeping,
@@ -6615,7 +6624,7 @@ io.on('connection', socket => {
         // the ghost entry blocks the race from ever finishing for anyone else.
         // Same class of bug as the one already fixed for Fear halls in
         // removePlayer's comment; race10/arena3/deathBattle just never got the
-        // parallel fix.
+        // parallel fix, and now carry their own Fear-specific resume above.
         if (_a3.queue.delete(staleSocketId)) _a3Broadcast();
         if (_race10.queue.delete(staleSocketId)) _race10Broadcast();
         _pvpEliminate(staleSocketId);

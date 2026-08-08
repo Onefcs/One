@@ -1855,22 +1855,43 @@ class Room {
     // Returns the removed stale socketId (if any) so the caller can also
     // tell other clients to drop it immediately, instead of waiting for its
     // disconnect event.
+    //
+    // A stale entry still holding a Fear (Страх) lane is a special case:
+    // dropping it the normal way (removePlayer releasing the hall) would end
+    // the run and purge its monsters as a side effect of nothing more than a
+    // network blip (Wi-Fi/LTE handover, a suspended WebView — see the
+    // pingTimeout comment in server/index.js), which the reconnecting player
+    // never asked for and isn't told about: their next enemy snapshot just
+    // comes back empty, reading as monsters that vanished mid-fight. Fear is
+    // a private, single-owner room with no cross-player bookkeeping, so it's
+    // safe to simply hand the same lane to the new socket instead — unlike
+    // race10/arena3/deathBattle, which stay on the clean-eliminate path
+    // (server/index.js) since those are shared/competitive instances a lone
+    // reconnect can't resume into on its own.
     let staleSocketId = null;
+    let fearCarry = null;
     if (telegramId) {
       for (const [sid, p] of this.players) {
         if (sid !== socketId && p.telegramId === telegramId) { staleSocketId = sid; break; }
       }
-      if (staleSocketId) this.removePlayer(staleSocketId);
+      if (staleSocketId) {
+        const stale = this.players.get(staleSocketId);
+        if (stale && stale._fearLane != null && this._fearOwner.get(stale._fearLane) === staleSocketId) {
+          fearCarry = { lane: stale._fearLane, x: stale.x, y: stale.y, hp: stale.hp };
+          this._fearOwner.set(fearCarry.lane, socketId);
+        }
+        this.removePlayer(staleSocketId, !!fearCarry);
+      }
     }
     const spawn = this._dungeon.spawn;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
-      x: spawn.x, y: spawn.y, facing: 'front', moving: false,
-      hp: 200, maxHp: 200, atk: 5, def: 5,
+      x: fearCarry ? fearCarry.x : spawn.x, y: fearCarry ? fearCarry.y : spawn.y, facing: 'front', moving: false,
+      hp: fearCarry ? fearCarry.hp : 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
-      _fearLane: null,
+      _fearLane: fearCarry ? fearCarry.lane : null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -1889,7 +1910,7 @@ class Room {
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();
-    return { spawn, staleSocketId };
+    return { spawn, staleSocketId, fearCarry };
   }
 
   setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus) {
@@ -1958,7 +1979,11 @@ class Room {
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
-  removePlayer(socketId) {
+  // keepFearLane: true when addPlayer already handed this socket's Fear lane
+  // to the reconnecting one (_fearOwner was repointed there before this ran)
+  // — releasing it here would tear the hall right back out from under the
+  // new owner instead of the stale record it's meant for.
+  removePlayer(socketId, keepFearLane = false) {
     // Hand back a Fear hall before the player record goes: every other exit
     // path (death, clearing the last wave) releases it through
     // deathBattleReturn, but a player who simply vanishes — a disconnect, or
@@ -1969,7 +1994,7 @@ class Room {
     // leaked one at a time until all 8 looked occupied and nobody could
     // enter at all.
     const p = this.players.get(socketId);
-    if (p && p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
+    if (p && p._fearLane != null && !keepFearLane) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
     this.players.delete(socketId);
     this.players.forEach(p2 => p2._known.delete(socketId));
     if (this.players.size === 0) this._stopLoop();
