@@ -2199,6 +2199,19 @@ function _applyDerivedBase(s) {
   s.baseMaxHp = cd.baseHP  + (s.lvl - 1) * 20;
 }
 
+// Upgrade points spent must not exceed what lvl/bonusSP could have earned.
+// Its own function because both lvl and bonusSP can be clamped AFTER the
+// sanitizer has already run once (see _guardProgress), and the budget has to
+// be re-tested against the corrected figures rather than the claimed ones.
+function _applyUpgradeBudget(s) {
+  if (!s.upgrades || typeof s.upgrades !== 'object' || Array.isArray(s.upgrades)) return;
+  const u = {};
+  for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
+  const spent = Object.values(u).reduce((sum, v) => sum + v, 0);
+  const budget = (Math.floor(Number(s.lvl)) || 1) * 3 + (Math.floor(Number(s.bonusSP)) || 0);
+  s.upgrades = spent <= budget ? u : {};
+}
+
 // XP needed to leave `lvl`. Mirrors gainXP (js/player.js) exactly — the two
 // disagreeing would make the ceiling below either leaky or unfair.
 function _xpNextFor(lvl) {
@@ -2413,13 +2426,7 @@ function _sanitizeSavedStats(raw) {
   // budget, so a save that does is treated the same as an untrusted item
   // id: the whole map is dropped rather than guessing which entries (if
   // any) were legitimate.
-  if (s.upgrades && typeof s.upgrades === 'object' && !Array.isArray(s.upgrades)) {
-    const u = {};
-    for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
-    const _spent = Object.values(u).reduce((sum, v) => sum + v, 0);
-    const _budget = s.lvl * 3 + s.bonusSP;
-    s.upgrades = _spent <= _budget ? u : {};
-  }
+  _applyUpgradeBudget(s);
   // Freshness stamp used only to pick the newer of {DB, client localStorage
   // backup} on reload. Clamp to a sane range so a client can't write a
   // far-future value that would make its record permanently "win".
@@ -4340,11 +4347,45 @@ io.on('connection', socket => {
       const spent = _xpSpanned(prevLvl, prevXp, clean.lvl, Math.floor(Number(clean.xp) || 0));
       if (spent > 0) _xpAllowance = Math.max(0, _xpAllowance - spent);
     }
+    // ── Bought skill points ───────────────────────────────────────────────
+    // bonusSP is handed out by exactly one thing: a GRAM package (gramShopBuy
+    // writes it straight into _lastStats). It rode in on the client blob and
+    // was only clamped to 1e6, and it is not cosmetic — it is the second term
+    // of the upgrade budget below, and upgrades feed computeStats. A save
+    // claiming bonusSP: 1e6 buys 1e6 upgrade points, i.e. every paid package
+    // in the game for free plus the combat power that comes with them. It can
+    // only ever GROW through a purchase, so a save is free to report less
+    // (nothing does) and never more.
+    const prevSP = Math.max(0, Math.floor(Number(base.bonusSP) || 0));
+    if ((Math.floor(Number(clean.bonusSP)) || 0) > prevSP) {
+      hits.push(`bonusSP ${prevSP}->${clean.bonusSP}`);
+      clean.bonusSP = prevSP;
+    }
+
+    // ── Story quest progress ──────────────────────────────────────────────
+    // questIdx is what makes a quest reward once-only (see claimQuest), and it
+    // is the server that advances it — but at selectChar it was taken from the
+    // client blob wholesale, so opening a session with questIdx: 0 made every
+    // reward claimable again. Three passes on the stand paid 3 × 42 000 gold
+    // and 3 × 48 potions. saveProgress already refuses a rewind mid-session;
+    // this is the same rule applied to the value the session STARTS from.
+    const prevQ = Math.max(0, Math.floor(Number(base.questIdx) || 0));
+    if ((Math.floor(Number(clean.questIdx)) || 0) < prevQ) {
+      hits.push(`questIdx ${clean.questIdx}<${prevQ}`);
+      clean.questIdx = prevQ;
+      clean.questKills = base.questKills || {};
+      socket.emit('questSync', { questIdx: prevQ, questKills: clean.questKills });
+    }
+
     // The three combat stats are derived from the level, so a clamped level
     // has to take them with it — otherwise the forged figure survives in the
     // one place that actually matters (computeStats, server/game/Room.js).
+    // The upgrade budget is re-tested for the same reason: the sanitizer
+    // already checked it, but against the level and bonusSP the client
+    // claimed rather than the ones that survived this function.
     if (hits.length) {
       _applyDerivedBase(clean);
+      _applyUpgradeBudget(clean);
       logPlayer(authed.telegramId, authed.username, 'progress_clamped',
         { where, hits: hits.join(' ') });
     }
@@ -6763,11 +6804,23 @@ io.on('connection', socket => {
     // the debounce always risked.
     if (effectiveSaved) {
       const _dbBase = _sanitizeSavedStats(authed.savedData) || null;
-      const _over = _censusOverflow(_itemCensus(effectiveSaved), _itemCensus(_dbBase));
+      // What this session is measured against. authed.savedData is read once
+      // at login and never refreshed — every server-side grant since then
+      // (claimQuest, a craft, a market buy) went to the database through its
+      // own targeted write and left that snapshot behind. So on a REPEAT
+      // selectChar the stored snapshot is stale in both directions: it would
+      // re-open the once-only rewards the session already paid out, and it
+      // would treat the items the session already granted as forged and
+      // destroy them. The live copy is the honest baseline whenever there is
+      // one — and at the FIRST selectChar the live copy IS that snapshot
+      // (_lastStats = doc.savedData at login), so the client still cannot
+      // supply its own starting point.
+      const _base = (_lastStats && _lastStats !== authed.savedData) ? _lastStats : _dbBase;
+      const _over = _censusOverflow(_itemCensus(effectiveSaved), _itemCensus(_base));
       if (_over) {
-        effectiveSaved.inventory = (_dbBase && _dbBase.inventory) || [];
-        effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
-        effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
+        effectiveSaved.inventory = (_base && _base.inventory) || [];
+        effectiveSaved.equipment = (_base && _base.equipment) || {};
+        effectiveSaved.storage   = (_base && _base.storage)   || [];
         logPlayer(authed.telegramId, authed.username, 'select_items_forged', {
           item: _over.key, had: _over.had, sent: _over.sent,
         });
@@ -6782,7 +6835,11 @@ io.on('connection', socket => {
       // this session yet, so the stored record is the whole budget; the cost
       // is at most the last debounced save on an unclean disconnect, exactly
       // what pinning the items here already accepts.
-      _guardProgress(effectiveSaved, _dbBase, 'selectChar');
+      // Same baseline, same reason — see _base above. Without it a second
+      // selectChar carrying questIdx: 0 re-opened every story-quest reward,
+      // and kept doing it: three passes on the stand paid 3 × 42 000 gold and
+      // 3 × 48 potions.
+      _guardProgress(effectiveSaved, _base, 'selectChar');
       _lastStats = effectiveSaved;
     }
     // Season state is read straight off the stored record. It is never part of
