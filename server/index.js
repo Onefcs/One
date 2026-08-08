@@ -5277,18 +5277,27 @@ io.on('connection', socket => {
   // from a client save (_sanitizeSavedStats drops them, same as the balances),
   // so the leaderboard the prizes are read off cannot be written to by the
   // people competing on it.
+  // Held here rather than on _lastStats: that object is REPLACED wholesale by
+  // every saveProgress with the sanitized client blob, and the sanitizer
+  // deletes both season fields (they must never arrive from a client). Keeping
+  // them there meant each save silently wiped the running total and the quest
+  // progress from memory — the panel fell back to 0 and a fresh quest was
+  // rolled every few seconds. Same reason the currency balances live in their
+  // own closure variables.
+  let _seasonPoints = 0;
+  let _seasonQuestCur = null;
   let _seasonKillsUnsaved = 0;
 
   // The active quest, created on first use. An unknown species (a save from
   // before this existed, or a table change) is re-rolled rather than trusted.
   function _seasonQuest() {
     if (!_lastStats) return null;
-    const q = _lastStats.seasonQuest;
+    const q = _seasonQuestCur;
     const lvl = Math.max(1, Math.floor(Number(_lastStats.lvl)) || 1);
     const def = q && typeof q === 'object' ? SEASON_SPECIES.find(s => s.sp === q.sp) : null;
     if (def && (def.req || 0) <= lvl) return q;
     const fresh = { sp: _seasonRollSpecies(null, _lastStats.lvl), kills: 0 };
-    _lastStats.seasonQuest = fresh;
+    _seasonQuestCur = fresh;
     _persistSavedFields(authed, { seasonQuest: fresh });
     return fresh;
   }
@@ -5299,7 +5308,7 @@ io.on('connection', socket => {
     return {
       endAt: SEASON_END_AT,
       active: seasonActive(),
-      points: Math.max(0, Math.floor(Number(_lastStats && _lastStats.seasonPoints) || 0)),
+      points: _seasonPoints,
       quest: q ? { sp: q.sp, name: def ? def.name : q.sp, kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS) } : null,
       target: SEASON_QUEST_KILLS,
       questPoints: SEASON_QUEST_POINTS,
@@ -5321,7 +5330,7 @@ io.on('connection', socket => {
         { new: true, projection: { 'savedData.seasonPoints': 1 } },
       ).lean();
       const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
-      if (_lastStats) _lastStats.seasonPoints = total;
+      _seasonPoints = total;
       logPlayer(authed.telegramId, authed.username, 'season_points', { add: n, total, reason, ...(meta || {}) });
       return total;
     } catch (err) { console.error('_seasonAddPoints:', err); return null; }
@@ -5352,7 +5361,7 @@ io.on('connection', socket => {
     // Cleared — award, then roll the next species (never the one just done).
     const doneSp = q.sp;
     const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl), kills: 0 };
-    _lastStats.seasonQuest = next;
+    _seasonQuestCur = next;
     _seasonKillsUnsaved = 0;
     _persistSavedFields(authed, { seasonQuest: next });
     _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp }).then(total => {
@@ -5383,7 +5392,7 @@ io.on('connection', socket => {
         place: i + 1, username: p.username,
         points: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints) || 0)),
       }));
-      const mine = Math.max(0, Math.floor(Number(_lastStats && _lastStats.seasonPoints) || 0));
+      const mine = _seasonPoints;
       let myPlace = list.findIndex(r => r.username === authed.username) + 1;
       if (!myPlace && mine > 0) {
         myPlace = await PlayerModel.countDocuments({ 'savedData.seasonPoints': { $gt: mine } }) + 1;
@@ -6049,6 +6058,18 @@ io.on('connection', socket => {
           ` (${_over.key}: had ${_over.had}, claimed ${_over.sent})`);
       }
       _lastStats = effectiveSaved;
+    }
+    // Season state is read straight off the stored record. It is never part of
+    // the client blob — the sanitizer strips both fields so they can't be
+    // written by the people competing for the prize — so this is the only
+    // point at which it enters the session.
+    {
+      const _sd = authed.savedData || {};
+      _seasonPoints = Math.max(0, Math.floor(Number(_sd.seasonPoints) || 0));
+      const _sq = _sd.seasonQuest;
+      _seasonQuestCur = (_sq && typeof _sq === 'object' && SEASON_SPECIES.some(x => x.sp === _sq.sp))
+        ? { sp: _sq.sp, kills: Math.max(0, Math.floor(Number(_sq.kills) || 0)) }
+        : null;
     }
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
