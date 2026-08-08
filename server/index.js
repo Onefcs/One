@@ -40,6 +40,7 @@ const {
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -2791,6 +2792,7 @@ function _dbStart() {
   const placed = room.deathBattleDeploy(ids);
   placed.forEach(({ socketId, x, y, hp }) => {
     _db.alive.set(socketId, _db.reg.get(socketId) || { name: '?' });
+    io.sockets.sockets.get(socketId)?.data?._seasonAwardEvent?.('deathbattle');
     io.to(socketId).emit('deathBattleStarted', { x, y, hp, total: placed.length, fightAt: _db.fightAt });
   });
   _db.reg.clear();
@@ -3113,6 +3115,9 @@ async function _a3Deploy(ready, room) {
     // players actually deployed are charged, so a cancelled launch costs
     // nobody anything.
     _lockArena3Daily(socketId);
+    // Same moment the attempt is charged: they are in the match, so the
+    // season task for taking part is earned.
+    io.sockets.sockets.get(socketId)?.data?._seasonAwardEvent?.('arena3');
   });
   // Rosters are only known once everyone is placed, so this is a second pass.
   const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
@@ -5323,6 +5328,8 @@ io.on('connection', socket => {
       questPoints: SEASON_QUEST_POINTS,
       minLvl: SEASON_MIN_LVL, maxLvl: SEASON_MAX_LVL,
       burn: SEASON_BURN_POINTS,
+      eventTasks: SEASON_EVENT_TASKS,
+      eventPoints: SEASON_EVENT_POINTS,
       prizes: SEASON_PRIZES,
     };
   }
@@ -5382,6 +5389,34 @@ io.on('connection', socket => {
     });
   }
   socket.data._seasonTrackKill = _seasonTrackKill;
+
+  // Repeatable event tasks (SEASON_EVENT_TASKS). Each pays once per
+  // occurrence and then arms again — the caller decides what "an occurrence"
+  // is, because only it knows: one 3v3 match, one death-battle round, one
+  // world-boss appearance. Nothing is stored per task beyond what is needed
+  // to stop a single occurrence paying twice.
+  function _seasonAwardEvent(taskId) {
+    if (!authed || !seasonActive()) return;
+    if (!SEASON_EVENT_TASKS.some(t => t.id === taskId)) return;
+    _seasonAddPoints(SEASON_EVENT_POINTS, 'event', { task: taskId }).then(total => {
+      socket.emit('seasonEventDone', { task: taskId, points: SEASON_EVENT_POINTS, total: total ?? null });
+    });
+  }
+  socket.data._seasonAwardEvent = _seasonAwardEvent;
+
+  // Which world boss this session has already been paid for. The boss keeps
+  // one id for its whole appearance, so remembering the last one paid is
+  // enough to make it once-per-boss no matter how many times it is hit —
+  // otherwise every swing would be worth points.
+  let _seasonBossPaid = null;
+  function _seasonTrackBossHit(enemyId) {
+    if (!authed || !seasonActive() || !enemyId) return;
+    if (!String(enemyId).startsWith('evtboss_')) return;
+    if (_seasonBossPaid === enemyId) return;
+    _seasonBossPaid = enemyId;
+    _seasonAwardEvent('worldboss');
+  }
+  socket.data._seasonTrackBossHit = _seasonTrackBossHit;
 
   safeOn('seasonSync', () => {
     if (!authed) return;
@@ -6230,6 +6265,9 @@ io.on('connection', socket => {
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
     if (result.killed) _seasonTrackKill(result);
+    // "Ударить Мирового босса" — any landed hit counts, and it pays once
+    // per boss appearance rather than once per swing.
+    _seasonTrackBossHit(enemyId);
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -6347,6 +6385,9 @@ io.on('connection', socket => {
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
     if (result.killed) _seasonTrackKill(result);
+    // "Ударить Мирового босса" — any landed hit counts, and it pays once
+    // per boss appearance rather than once per swing.
+    _seasonTrackBossHit(enemyId);
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse

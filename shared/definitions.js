@@ -386,6 +386,19 @@ const SEASON_SPECIES = [
   { sp: 'lizardman', name: 'Ящеры',  req: 20 },  // level 22
   { sp: 'orc',       name: 'Орки',   req: 20 },  // level 23
 ];
+// Repeatable one-off tasks alongside the kill quest. Each pays out once per
+// occurrence of the thing it names — once per 3v3 match, once per death
+// battle round, once per world-boss appearance — and then arms again, so
+// they can be earned over and over across the season. The natural limits of
+// the events themselves (daily attempts, fixed schedules, one boss at a
+// time) are what keep them from being farmed.
+const SEASON_EVENT_POINTS = 50;
+const SEASON_EVENT_TASKS = [
+  { id: 'arena3',     name: 'Участвовать в Арене 3х3' },
+  { id: 'deathbattle', name: 'Участвовать в Битве на смерть' },
+  { id: 'worldboss',  name: 'Ударить Мирового босса' },
+];
+
 // Burning destroys the item outright — no gold, no materials back, only
 // points. Anything not listed here cannot be burned at all.
 const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
@@ -1181,6 +1194,7 @@ if (typeof module !== 'undefined') module.exports = {
   QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

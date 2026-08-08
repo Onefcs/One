@@ -2780,6 +2780,19 @@ function _seasonQuestsHTML() {
          </div>`
       : `<div class="db-phase">${t('seasonLoading')}</div>`;
 
+  // The repeatable event tasks, listed under the kill quest. They are always
+  // available — each pays once per match / round / boss appearance and then
+  // arms again — so there is no per-task progress to show, only what to do.
+  const tasks = (st.eventTasks && st.eventTasks.length) ? st.eventTasks : [];
+  const tasksBlock = (ended || !tasks.length) ? '' : `
+    <div class="db-rules">
+      ${t('seasonTasksHdr')}
+      <ul>
+        ${tasks.map(x => `<li>${_esc(x.name)} — <b style="color:#7ee0c0">+${st.eventPoints || 50}</b></li>`).join('')}
+      </ul>
+      <div class="imod-enh-chance">${t('seasonTasksRepeat')}</div>
+    </div>`;
+
   const burnBlock = ended ? '' : `
     <div class="db-rules">
       ${t('seasonBurnHdr')}
@@ -2800,6 +2813,7 @@ function _seasonQuestsHTML() {
       <div class="db-phase">${t('seasonPointsLbl')}</div>
       <div class="db-count">${ended ? t('seasonEnded') : tVars('seasonEndsIn', { t: _fmtEventEta(left) })}</div>
       ${questBlock}
+      ${tasksBlock}
       ${burnBlock}
       ${_seasonPrizesHTML()}
     </div>`;

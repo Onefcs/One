@@ -132,5 +132,6 @@ let _fearWave = 0;
 // server (points and quest progress are server-owned, see the seasonSync
 // handler in server/index.js); nothing is computed locally.
 let _seasonState = { endAt: 0, active: false, points: 0, quest: null, target: 5000,
-                     questPoints: 100, minLvl: 1, maxLvl: 19, burn: { common: 1, uncommon: 5 }, prizes: [] };
+                     questPoints: 100, minLvl: 1, maxLvl: 19, burn: { common: 1, uncommon: 5 }, prizes: [],
+                     eventTasks: [], eventPoints: 50 };
 let _seasonRating = null;   // null = not fetched yet

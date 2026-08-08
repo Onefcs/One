@@ -1085,6 +1085,15 @@ function netConnect(onReady) {
     if (typeof onSeasonState === 'function') onSeasonState();
   });
 
+  // A repeatable event task paid out (3v3 / death battle / world boss).
+  socket.on('seasonEventDone', ({ points, total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof showEventBossBanner === 'function' && points) {
+      showEventBossBanner(tVars('seasonEventDoneMsg', { n: points }), '#50af95');
+    }
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
   socket.on('seasonBurnError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
