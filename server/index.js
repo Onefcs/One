@@ -27,6 +27,7 @@ const {
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
+  CLAN_STORAGE_MIN_DAYS,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
@@ -4177,6 +4178,9 @@ io.on('connection', socket => {
     'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
+    // Clan storage — every one of these reads and writes the clan document.
+    'clanStorageSync', 'clanStorageDeposit', 'clanStorageGive',
+    'clanStorageCancel', 'clanStorageClaim',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
@@ -7743,6 +7747,9 @@ io.on('connection', socket => {
     if (!clan) return;
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
     if (telegramId === authed.telegramId) return;
+    // Their unclaimed shards return to the pool first — once the member row is
+    // gone nobody can collect them and they would be stuck in the document.
+    await _clanReclaimAllocations(clan._id, telegramId);
     // Atomic $pull — see clanApprove above for why a full-document save here
     // drops concurrent changes.
     await ClanModel.updateOne({ _id: clan._id }, { $pull: { members: { telegramId } } }).catch(() => {});
@@ -7764,6 +7771,9 @@ io.on('connection', socket => {
     if (!clan) return;
     const myEntry = clan.members.find(m => m.telegramId === authed.telegramId);
     if (!myEntry) return;
+    // Same as clanKick: hand anything still allocated back to the clan rather
+    // than walking out with it locked in the document.
+    await _clanReclaimAllocations(clan._id, authed.telegramId);
     if (myEntry.role === 'leader') {
       // Promote next member or disband
       const others = clan.members.filter(m => m.telegramId !== authed.telegramId);
@@ -7782,6 +7792,26 @@ io.on('connection', socket => {
         const _fresh = await ClanModel.findById(clan._id).catch(() => null);
         await _notifyClan(_fresh || clan);
       } else {
+        // Last member out: the clan document (and the shard pool inside it) is
+        // about to be deleted. Everything in that pool was put there by this
+        // same account — they are the only member — so it goes back to them
+        // rather than being destroyed.
+        const _pool = await ClanModel.findById(clan._id, 'storage').lean().catch(() => null);
+        const _rows = (_pool?.storage || []).filter(e => e && e.qty > 0);
+        if (_rows.length) {
+          const inv = _liveInventory();
+          if (!inv) return socket.emit('clanError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+          const newSlots = _rows.filter(e => !inv.some(i => i && i.id === e.id)).length;
+          if (inv.length + newSlots > SERVER_INV_MAX) {
+            return socket.emit('clanError', { msg: 'Освободите место в инвентаре — в хранилище остались Осколки' });
+          }
+          const _got = [];
+          for (const e of _rows) {
+            const base = CRAFT_MATS.find(m => m.id === e.id);
+            if (base && _invAdd(inv, { ...base, qty: e.qty })) _got.push(`${e.id}x${e.qty}`);
+          }
+          _commitServerItems(inv, null, 'clan_storage_return', { clan: clan.name, items: _got.join(',') });
+        }
         await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
       }
     } else {
@@ -7805,6 +7835,17 @@ io.on('connection', socket => {
     const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (!clan) return;
     if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    // Disbanding deletes the clan document, and the shard pool lives in it —
+    // so an unemptied storage would be destroyed with no warning and no way
+    // back. Refuse until it has been handed out; the leader can give it all to
+    // themselves in a few taps if they just want to leave.
+    const _held = (clan.storage || []).reduce((s, e) => s + (e.qty || 0), 0)
+                + (clan.allocations || []).reduce((s, a) => s + (a.qty || 0), 0);
+    if (_held > 0) {
+      return socket.emit('clanError', {
+        msg: `Сначала раздайте Осколки из хранилища (осталось ${_held})`,
+      });
+    }
     // Notify all members first and clear their room clan state
     for (const m of clan.members) {
       const target = _socketForTelegramId(m.telegramId);
@@ -7814,6 +7855,312 @@ io.on('connection', socket => {
       }
     }
     await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
+  });
+
+  // Anything still allocated to someone who is leaving goes back into the
+  // pool. Without this it would sit in the clan document forever: only that
+  // account can claim it, and it no longer can.
+  async function _clanReclaimAllocations(clanId, telegramId) {
+    const pulled = await ClanModel.findOneAndUpdate(
+      { _id: clanId, 'allocations.telegramId': String(telegramId) },
+      { $pull: { allocations: { telegramId: String(telegramId) } } },
+      { new: false },
+    ).catch(() => null);
+    if (!pulled) return;
+    const back = new Map();
+    for (const a of (pulled.allocations || [])) {
+      if (a.telegramId !== String(telegramId) || !(a.qty > 0)) continue;
+      back.set(a.id, (back.get(a.id) || 0) + a.qty);
+    }
+    for (const [id, qty] of back) {
+      const bumped = await ClanModel.updateOne(
+        { _id: clanId, 'storage.id': id }, { $inc: { 'storage.$.qty': qty } },
+      ).catch(() => ({ matchedCount: 1 }));
+      if (!bumped.matchedCount) {
+        await ClanModel.updateOne(
+          { _id: clanId, 'storage.id': { $ne: id } }, { $push: { storage: { id, qty } } },
+        ).catch(() => {});
+      }
+    }
+  }
+
+  // ── Хранилище клана ───────────────────────────────────────────────────────
+  // A shared pool of Осколки: members deposit, the leader decides who gets
+  // what. Shards do NOT go straight from the pool into the recipient's
+  // inventory — the leader allocates, the member collects. The recipient is
+  // usually offline when a leader hands things out, and writing items into an
+  // offline account's saved inventory races that account's own next login;
+  // making the member collect means every grant lands through their own live
+  // session and _commitServerItems, the same path all other server-side item
+  // grants use.
+  //
+  // Every mutation below is a single conditional Mongo update rather than
+  // read-modify-write: two members depositing, or a leader handing out the
+  // same stack twice from two taps, must not be able to interleave.
+
+  // Days this account has been in the clan, or null if it is not a member.
+  function _clanDaysIn(clan, telegramId) {
+    const m = clan.members.find(x => x.telegramId === telegramId);
+    if (!m) return null;
+    const joined = m.joinedAt ? new Date(m.joinedAt).getTime() : 0;
+    // A member row written before joinedAt existed has no date; treat that as
+    // "has been here since the beginning" rather than locking them out forever.
+    if (!joined) return Infinity;
+    return (Date.now() - joined) / 86400000;
+  }
+  const _clanStorageOk = (clan, tid) => (_clanDaysIn(clan, tid) ?? -1) >= CLAN_STORAGE_MIN_DAYS;
+
+  function _clanStoragePayload(clan, telegramId) {
+    const isLeader = clan.members.find(m => m.telegramId === telegramId)?.role === 'leader';
+    const days = _clanDaysIn(clan, telegramId);
+    const shardName = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).name || id;
+    const shardImg  = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).img || null;
+    return {
+      minDays: CLAN_STORAGE_MIN_DAYS,
+      // Rounded down, so "9.9 days" reads as 9 and the number never claims
+      // eligibility the check itself would refuse.
+      daysIn: days === Infinity ? null : Math.floor(Math.max(0, days || 0)),
+      canUse: _clanStorageOk(clan, telegramId),
+      isLeader,
+      storage: (clan.storage || [])
+        .filter(e => e && e.qty > 0)
+        .map(e => ({ id: e.id, name: shardName(e.id), img: shardImg(e.id), qty: e.qty })),
+      // A leader sees every outstanding allocation, a member only their own.
+      allocations: (clan.allocations || [])
+        .filter(a => isLeader || a.telegramId === telegramId)
+        .map(a => ({
+          telegramId: a.telegramId, username: a.username,
+          id: a.id, name: shardName(a.id), img: shardImg(a.id),
+          qty: a.qty, byUsername: a.byUsername || null, at: a.at,
+        })),
+      // Who the leader may hand shards to — members past the same gate.
+      members: isLeader
+        ? clan.members
+            .filter(m => _clanStorageOk(clan, m.telegramId))
+            .map(m => ({ telegramId: m.telegramId, username: m.username }))
+        : [],
+    };
+  }
+
+  async function _clanStoragePush(clan) {
+    for (const m of clan.members) {
+      const target = _socketForTelegramId(m.telegramId);
+      if (target) target.emit('clanStorage', _clanStoragePayload(clan, m.telegramId));
+    }
+  }
+
+  async function _myClan() {
+    if (!authed) return null;
+    return ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
+  }
+
+  safeOn('clanStorageSync', async () => {
+    const clan = await _myClan();
+    if (!clan) return socket.emit('clanStorage', null);
+    socket.emit('clanStorage', _clanStoragePayload(clan, authed.telegramId));
+  });
+
+  safeOn('clanStorageDeposit', async ({ id, qty } = {}) => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+      const n = Math.floor(Number(qty));
+      if (!Number.isFinite(n) || n <= 0) return;
+      // Only Осколки. The pool is a flat id→count list precisely because
+      // everything in it is interchangeable and stackable; letting gear in
+      // would need per-item identity and enhance levels it cannot hold.
+      if (!UNIQUE_SHARDS.some(s => s.id === id)) {
+        return socket.emit('clanStorageError', { msg: 'В хранилище можно класть только Осколки' });
+      }
+      const clan = await _myClan();
+      if (!clan) return socket.emit('clanStorageError', { msg: 'Вы не в клане' });
+      if (!_clanStorageOk(clan, authed.telegramId)) {
+        return socket.emit('clanStorageError', {
+          msg: `Хранилище доступно после ${CLAN_STORAGE_MIN_DAYS} дней в клане`,
+        });
+      }
+      const inv = _liveInventory();
+      if (!inv) return socket.emit('clanStorageError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      const have = inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+      if (have < n) return socket.emit('clanStorageError', { msg: `Недостаточно Осколков (есть ${have})` });
+
+      // Take from the inventory in memory first, then write the clan. If the
+      // clan write fails the items go straight back and nothing is persisted —
+      // the reverse order would have to un-write the clan instead, and a
+      // failure there would leave the shards in neither place.
+      const _removed = [];
+      let left = n;
+      for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+        const e = inv[i];
+        if (!e || e.id !== id) continue;
+        const q = e.qty || 1;
+        if (q > left) { e.qty = q - left; _removed.push({ i, qty: left, spliced: false }); left = 0; }
+        else { left -= q; _removed.push({ i, qty: q, spliced: true, entry: e }); inv.splice(i, 1); }
+      }
+      const restore = () => {
+        for (const r of _removed.reverse()) {
+          if (r.spliced) inv.splice(r.i, 0, r.entry);
+          else inv[r.i].qty = (inv[r.i].qty || 0) + r.qty;
+        }
+      };
+
+      try {
+        // Bump an existing row, or create it when the clan has none of this
+        // kind yet. Two updates rather than one because Mongo has no "increment
+        // or push" — the second only runs when the first matched nothing.
+        const bumped = await ClanModel.updateOne(
+          { _id: clan._id, 'storage.id': id },
+          { $inc: { 'storage.$.qty': n } },
+        );
+        if (!bumped.matchedCount) {
+          await ClanModel.updateOne(
+            { _id: clan._id, 'storage.id': { $ne: id } },
+            { $push: { storage: { id, qty: n } } },
+          );
+        }
+      } catch (err) {
+        restore();
+        logPlayerErr(authed.telegramId, authed.username, 'clan_storage_deposit', err, { id, qty: n });
+        return socket.emit('clanStorageError', { msg: 'Ошибка сервера' });
+      }
+
+      _commitServerItems(inv, null, 'clan_storage_deposit', { id, qty: n, clan: clan.name });
+      const fresh = await _myClan();
+      if (fresh) await _clanStoragePush(fresh);
+      socket.emit('clanStorageOk', { msg: `Передано в хранилище: ${n}` });
+    });
+  });
+
+  // Leader hands part of the pool to a member. Nothing reaches their inventory
+  // here — it becomes an allocation they collect (see clanStorageClaim).
+  safeOn('clanStorageGive', async ({ telegramId, id, qty } = {}) => {
+    if (!authed) return;
+    const n = Math.floor(Number(qty));
+    if (!Number.isFinite(n) || n <= 0) return;
+    const clan = await _myClan();
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') {
+      return socket.emit('clanStorageError', { msg: 'Распределять может только лидер' });
+    }
+    const target = clan.members.find(m => m.telegramId === String(telegramId));
+    if (!target) return socket.emit('clanStorageError', { msg: 'Участник не найден' });
+    // The recipient is held to the same gate as a depositor: without it a
+    // day-old alt is a way to walk the whole pool out of the clan.
+    if (!_clanStorageOk(clan, target.telegramId)) {
+      return socket.emit('clanStorageError', {
+        msg: `${target.username}: в клане меньше ${CLAN_STORAGE_MIN_DAYS} дней`,
+      });
+    }
+    // One conditional update does the whole move: it only matches while the
+    // pool still holds n of that kind, so two taps cannot hand out the same
+    // shards twice.
+    const upd = await ClanModel.findOneAndUpdate(
+      { _id: clan._id, storage: { $elemMatch: { id, qty: { $gte: n } } } },
+      {
+        $inc: { 'storage.$.qty': -n },
+        $push: { allocations: {
+          telegramId: target.telegramId, username: target.username,
+          id, qty: n, byUsername: authed.username, at: new Date(),
+        } },
+      },
+      { new: true },
+    ).catch(() => null);
+    if (!upd) return socket.emit('clanStorageError', { msg: 'В хранилище столько нет' });
+    logPlayer(authed.telegramId, authed.username, 'clan_storage_give',
+      { to: target.username, toTid: target.telegramId, id, qty: n, clan: clan.name });
+    await _clanStoragePush(upd);
+    socket.emit('clanStorageOk', { msg: `Выдано ${target.username}: ${n}` });
+  });
+
+  // Leader takes an unclaimed allocation back into the pool — the only way to
+  // undo a mis-tap, since the recipient may simply never collect it.
+  safeOn('clanStorageCancel', async ({ telegramId, id } = {}) => {
+    if (!authed) return;
+    const clan = await _myClan();
+    if (!clan) return;
+    if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') return;
+    const alloc = (clan.allocations || []).find(a => a.telegramId === String(telegramId) && a.id === id);
+    if (!alloc) return socket.emit('clanStorageError', { msg: 'Выдача не найдена' });
+    const pulled = await ClanModel.findOneAndUpdate(
+      { _id: clan._id, allocations: { $elemMatch: { telegramId: String(telegramId), id } } },
+      { $pull: { allocations: { telegramId: String(telegramId), id } } },
+      { new: false },
+    ).catch(() => null);
+    if (!pulled) return socket.emit('clanStorageError', { msg: 'Выдача не найдена' });
+    // Sum what was actually pulled from the pre-image rather than trusting the
+    // copy read above — another tap may have changed it in between.
+    const back = (pulled.allocations || [])
+      .filter(a => a.telegramId === String(telegramId) && a.id === id)
+      .reduce((s, a) => s + (a.qty || 0), 0);
+    if (back > 0) {
+      const bumped = await ClanModel.updateOne(
+        { _id: clan._id, 'storage.id': id }, { $inc: { 'storage.$.qty': back } },
+      );
+      if (!bumped.matchedCount) {
+        await ClanModel.updateOne(
+          { _id: clan._id, 'storage.id': { $ne: id } }, { $push: { storage: { id, qty: back } } },
+        );
+      }
+    }
+    const fresh = await _myClan();
+    if (fresh) await _clanStoragePush(fresh);
+  });
+
+  // Member collects everything allocated to them. Pulled first so a second tap
+  // finds nothing, then granted; if the inventory can't take it, the
+  // allocation goes back exactly as it was.
+  safeOn('clanStorageClaim', async () => {
+    if (!authed) return;
+    await _withEconLock(async () => {
+      const clan = await _myClan();
+      if (!clan) return;
+      if (!_clanStorageOk(clan, authed.telegramId)) {
+        return socket.emit('clanStorageError', {
+          msg: `Хранилище доступно после ${CLAN_STORAGE_MIN_DAYS} дней в клане`,
+        });
+      }
+      const inv = _liveInventory();
+      if (!inv) return socket.emit('clanStorageError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+
+      const pulled = await ClanModel.findOneAndUpdate(
+        { _id: clan._id, 'allocations.telegramId': authed.telegramId },
+        { $pull: { allocations: { telegramId: authed.telegramId } } },
+        { new: false },
+      ).catch(() => null);
+      const mine = pulled
+        ? (pulled.allocations || []).filter(a => a.telegramId === authed.telegramId)
+        : [];
+      if (!mine.length) return socket.emit('clanStorageError', { msg: 'Для вас ничего не выдано' });
+
+      const putBack = async () => {
+        await ClanModel.updateOne({ _id: clan._id }, { $push: { allocations: { $each: mine } } }).catch(() => {});
+      };
+
+      // Merge by kind first, so "5 + 7 рубина" needs one inventory slot rather
+      // than being counted as two.
+      const byId = new Map();
+      for (const a of mine) byId.set(a.id, (byId.get(a.id) || 0) + (a.qty || 0));
+      // Space check before anything is added: a shard the player already holds
+      // merges into that stack and costs nothing, a new kind costs one slot.
+      const newSlots = [...byId.keys()].filter(id => !inv.some(i => i && i.id === id)).length;
+      if (inv.length + newSlots > SERVER_INV_MAX) {
+        await putBack();
+        return socket.emit('clanStorageError', { msg: 'Инвентарь полон' });
+      }
+      const granted = [];
+      for (const [id, q] of byId) {
+        const base = CRAFT_MATS.find(m => m.id === id);
+        if (!base || q <= 0) continue;
+        if (!_invAdd(inv, { ...base, qty: q })) continue;
+        granted.push({ id, name: base.name, qty: q });
+      }
+      if (!granted.length) { await putBack(); return socket.emit('clanStorageError', { msg: 'Инвентарь полон' }); }
+
+      _commitServerItems(inv, null, 'clan_storage_claim',
+        { clan: clan.name, items: granted.map(g => `${g.id}x${g.qty}`).join(',') });
+      const fresh = await _myClan();
+      if (fresh) await _clanStoragePush(fresh);
+      socket.emit('clanStorageClaimed', { items: granted });
+    });
   });
 
   // One point of clan XP for the kill — now a Map increment and nothing else.

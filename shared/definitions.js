@@ -844,6 +844,12 @@ const GEAR_CRAFT_RECIPES = [
 //
 // Осколки are ordinary stackable materials, so they sell on the market and
 // merge into one inventory slot per kind like every other material.
+// Clan storage: how long someone must have been in the clan before they can
+// put shards in or be handed any. Both halves are gated, not just depositing —
+// otherwise a freshly invited alt is a way to walk the pool straight out of
+// the clan.
+const CLAN_STORAGE_MIN_DAYS = 10;
+
 const UNIQUE_SHARD_MIN_LEVEL = 15;        // monsters below this level never drop one
 const UNIQUE_SHARD_CHANCE    = 0.000001;  // per SHARD KIND, rolled independently on every kill
 const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can yield
@@ -1376,6 +1382,7 @@ if (typeof module !== 'undefined') module.exports = {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
+  CLAN_STORAGE_MIN_DAYS,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,

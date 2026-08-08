@@ -973,6 +973,27 @@ function netConnect(onReady) {
   socket.on('clanSearchResults', results => {
     if (typeof onClanSearchResults === 'function') onClanSearchResults(results);
   });
+
+  // ── Хранилище клана ───────────────────────────────────────
+  // Pushed to every online member on any change, so a leader handing shards
+  // out and a member depositing see each other's effect without reopening.
+  socket.on('clanStorage', data => {
+    _clanStorage = data || null;
+    if (typeof onClanStorage === 'function') onClanStorage();
+  });
+  socket.on('clanStorageError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+  socket.on('clanStorageOk', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function' && msg) _marketToast(msg, 'ok');
+  });
+  // The shards are already in the inventory via the inventorySync that
+  // preceded this; this only reports what arrived.
+  socket.on('clanStorageClaimed', ({ items } = {}) => {
+    const n = (items || []).reduce((s, i) => s + (i.qty || 0), 0);
+    if (typeof _marketToast === 'function') _marketToast(tVars('clanStorageClaimedToast', { n }), 'ok');
+    if (typeof updateInvUI === 'function') updateInvUI();
+  });
   socket.on('clanApplySent', ({ clanId }) => {
     if (typeof onClanApplySent === 'function') onClanApplySent(clanId);
   });
@@ -1241,6 +1262,23 @@ function netClanSearch(query) {
 // which cost a clan read and a full packet per kill, server-wide.
 function netClanRequest() {
   if (socket?.connected && clanData) socket.emit('clanRequest');
+}
+
+// ── Хранилище клана ───────────────────────────────────────────
+function netClanStorageSync() {
+  if (socket?.connected && clanData) socket.emit('clanStorageSync');
+}
+function netClanStorageDeposit(id, qty) {
+  if (socket?.connected) socket.emit('clanStorageDeposit', { id, qty });
+}
+function netClanStorageGive(telegramId, id, qty) {
+  if (socket?.connected) socket.emit('clanStorageGive', { telegramId, id, qty });
+}
+function netClanStorageCancel(telegramId, id) {
+  if (socket?.connected) socket.emit('clanStorageCancel', { telegramId, id });
+}
+function netClanStorageClaim() {
+  if (socket?.connected) socket.emit('clanStorageClaim');
 }
 
 // ── Auth ──────────────────────────────────────────────────────

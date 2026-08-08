@@ -807,6 +807,7 @@ function _renderClanHome(el) {
     typeof t === 'function' ? t('clanTabHome') : 'Клан',
     typeof t === 'function' ? t('clanTabMembers') : 'Участники',
     typeof t === 'function' ? t('clanTabPerks') : 'Навыки',
+    typeof t === 'function' ? t('clanTabStorage') : 'Хранилище',
   ];
   const tabHtml = tabs.map((t, i) =>
     `<div class="clan-tab${_clanHomeTab === i ? ' active' : ''}" onclick="_setClanHomeTab(${i})">${t}</div>`
@@ -881,7 +882,7 @@ function _renderClanHome(el) {
       <div class="clan-section-hdr">${typeof tVars === 'function' ? tVars('clanMembersByBmFmt', { n: _clanMemberCount(c) }) : 'Участники (' + _clanMemberCount(c) + ') · по БМ'}</div>
       ${membersHtml}
       ${appsHtml}`;
-  } else {
+  } else if (_clanHomeTab === 2) {
     // ── Навыки tab: perk tree by level ────────────────────
     const PERKS_RU = [
       { lvl:2,  icon:'💰', label:'Золото', desc:'+5% к золоту с врагов'   },
@@ -914,6 +915,8 @@ function _renderClanHome(el) {
     bodyHtml = `
       <div class="clan-section-hdr">${typeof t === 'function' ? t('clanPerksHdr') : 'Бонусы клана по уровням'}</div>
       <div class="clan-perks">${perksHtml}</div>`;
+  } else if (_clanHomeTab === 3) {
+    bodyHtml = _clanStorageHTML();
   }
 
   el.innerHTML = `
@@ -928,6 +931,127 @@ function _renderClanHome(el) {
       <div class="clan-tabs">${tabHtml}</div>
       ${bodyHtml}
     </div>`;
+}
+
+// ── Хранилище клана ───────────────────────────────────────
+// Everything rendered here is server state (_clanStorage, pushed on every
+// change); this file only draws it and sends intents back. The eligibility
+// gate is shown rather than hidden — a member who cannot use it yet should be
+// able to see how long is left, not just find the tab empty.
+function _clanStorageHTML() {
+  const s = _clanStorage;
+  if (!s) {
+    if (typeof netClanStorageSync === 'function') netClanStorageSync();
+    return `<div class="clan-empty">${typeof t === 'function' ? t('clanStorageLoading') : 'Загрузка...'}</div>`;
+  }
+
+  const gate = s.canUse ? '' : `
+    <div class="clan-storage-gate">
+      ${tVars('clanStorageGateFmt', { d: s.minDays, cur: s.daysIn == null ? 0 : s.daysIn })}
+    </div>`;
+
+  // What the clan is holding.
+  const poolRows = (s.storage || []).length
+    ? s.storage.map(e => `
+        <div class="clan-storage-row">
+          ${e.img ? `<img class="clan-storage-img" src="${_esc(e.img)}" alt="">` : ''}
+          <span class="clan-storage-name">${_esc(e.name)}</span>
+          <span class="clan-storage-qty">${e.qty}</span>
+          ${s.isLeader && s.canUse
+            ? `<button class="clan-btn-sm" onclick="_clanStorageGivePrompt('${_esc(e.id)}','${_esc(e.name)}',${e.qty})">${t('clanStorageGiveBtn')}</button>`
+            : ''}
+        </div>`).join('')
+    : `<div class="clan-empty">${t('clanStorageEmpty')}</div>`;
+
+  // What is waiting to be collected. A member sees only their own, so for them
+  // this doubles as the collect button.
+  const mine = (s.allocations || []).filter(a => !s.isLeader || a.telegramId === _myTelegramId());
+  const allocRows = (s.allocations || []).length
+    ? s.allocations.map(a => `
+        <div class="clan-storage-row">
+          ${a.img ? `<img class="clan-storage-img" src="${_esc(a.img)}" alt="">` : ''}
+          <span class="clan-storage-name">${_esc(a.name)}${s.isLeader ? ` <span class="clan-storage-who">→ ${_esc(a.username || '')}</span>` : ''}</span>
+          <span class="clan-storage-qty">${a.qty}</span>
+          ${s.isLeader
+            ? `<button class="clan-btn-sm clan-btn-danger" onclick="_clanStorageCancel('${_esc(a.telegramId)}','${_esc(a.id)}')">${t('clanStorageCancelBtn')}</button>`
+            : ''}
+        </div>`).join('')
+    : `<div class="clan-empty">${t('clanStorageNoAlloc')}</div>`;
+
+  const claimBtn = (mine.length && s.canUse)
+    ? `<button class="clan-btn" onclick="netClanStorageClaim()">${t('clanStorageClaimBtn')}</button>`
+    : '';
+
+  // Deposit — only the shards actually in the player's bag are offered, so
+  // there is no way to pick something they don't have.
+  const held = (player && player.inventory || [])
+    .filter(i => i && typeof UNIQUE_SHARDS !== 'undefined' && UNIQUE_SHARDS.some(u => u.id === i.id));
+  const depositRows = !s.canUse ? '' : (held.length
+    ? held.map(i => `
+        <div class="clan-storage-row">
+          ${i.img ? `<img class="clan-storage-img" src="${_esc(i.img)}" alt="">` : ''}
+          <span class="clan-storage-name">${_esc(i.name)}</span>
+          <span class="clan-storage-qty">${i.qty || 1}</span>
+          <button class="clan-btn-sm" onclick="_clanStorageDepositPrompt('${_esc(i.id)}','${_esc(i.name)}',${i.qty || 1})">${t('clanStorageDepositBtn')}</button>
+        </div>`).join('')
+    : `<div class="clan-empty">${t('clanStorageNoShards')}</div>`);
+
+  return `
+    ${gate}
+    <div class="clan-section-hdr">${t('clanStorageHdr')}</div>
+    <div class="clan-storage-list">${poolRows}</div>
+    <div class="clan-section-hdr">${s.isLeader ? t('clanStorageAllocHdrLeader') : t('clanStorageAllocHdr')}</div>
+    <div class="clan-storage-list">${allocRows}</div>
+    ${claimBtn}
+    ${s.canUse ? `<div class="clan-section-hdr">${t('clanStorageDepositHdr')}</div>
+    <div class="clan-storage-list">${depositRows}</div>` : ''}`;
+}
+
+// The clan payload keys members by telegramId, which this client otherwise
+// never needs — read it off the member row that matches our own username.
+function _myTelegramId() {
+  if (!clanData || !netUsername) return null;
+  const me = (clanData.members || []).find(m => m.username === netUsername);
+  return me ? me.telegramId : null;
+}
+
+function _clanStorageDepositPrompt(id, name, max) {
+  const raw = prompt(tVars('clanStorageDepositAsk', { name, max }), String(max));
+  if (raw == null) return;
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n <= 0) return;
+  if (n > max) { _marketToast(tVars('clanStorageTooMany', { max }), 'err'); return; }
+  netClanStorageDeposit(id, n);
+}
+
+function _clanStorageGivePrompt(id, name, max) {
+  const s = _clanStorage;
+  if (!s || !s.members || !s.members.length) {
+    _marketToast(t('clanStorageNoEligible'), 'err');
+    return;
+  }
+  const list = s.members.map((m, i) => `${i + 1}. ${m.username}`).join('\n');
+  const pick = prompt(tVars('clanStorageGiveWho', { name, list }), '1');
+  if (pick == null) return;
+  const idx = Math.floor(Number(pick)) - 1;
+  const target = s.members[idx];
+  if (!target) { _marketToast(t('clanStorageBadPick'), 'err'); return; }
+  const raw = prompt(tVars('clanStorageGiveHowMany', { name, who: target.username, max }), String(max));
+  if (raw == null) return;
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n <= 0) return;
+  if (n > max) { _marketToast(tVars('clanStorageTooMany', { max }), 'err'); return; }
+  netClanStorageGive(target.telegramId, id, n);
+}
+
+function _clanStorageCancel(telegramId, id) {
+  if (!confirm(t('clanStorageCancelAsk'))) return;
+  netClanStorageCancel(telegramId, id);
+}
+
+// Server pushed new storage state — redraw only when that tab is showing.
+function onClanStorage() {
+  if (_clanHomeTab === 3) updateClanUI();
 }
 
 function _clanConfirmLeave() {

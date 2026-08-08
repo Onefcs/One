@@ -75,6 +75,10 @@ let autoAttackMode = false;
 
 // Clan state (null = not in a clan)
 let clanData = null;
+// Хранилище клана — pushed by the server on every change (see 'clanStorage',
+// js/network.js). null = not fetched yet, or not in a clan. Everything in it
+// is server-owned; nothing here is computed locally.
+let _clanStorage = null;
 
 // Death Battle (Битва на смерть) — scheduled free-for-all, see the handlers
 // in js/network.js and the panel in js/ui.js.
