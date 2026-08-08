@@ -2800,6 +2800,10 @@ function _seasonQuestsHTML() {
         ${tasks.map(x => `<li>${_esc(x.name)} — <b style="color:#7ee0c0">+${st.eventPoints || 50}</b></li>`).join('')}
       </ul>
       <div class="imod-enh-chance">${t('seasonTasksRepeat')}</div>
+      <ul style="margin-top:6px">
+        <li>${tVars('seasonEnhCommon',   { n: (st.enhance || {}).common   || 10 })}</li>
+        <li>${tVars('seasonEnhUncommon', { n: (st.enhance || {}).uncommon || 50 })}</li>
+      </ul>
     </div>`;
 
   const burnBlock = ended ? '' : `
@@ -4478,6 +4482,54 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
 
+// Сезонные паки — только камни заточки. Rendered separately from the regular
+// packages: those carry gold/potions/armour/books and their card is built
+// around that, while these are a short list of two stack types.
+const _SEASON_SHOP_PKGS_UI = [
+  { id:'sp1',  gram:1,  stones:{ norm_stone:5  } },
+  { id:'sp5',  gram:5,  stones:{ norm_stone:10 } },
+  { id:'sp10', gram:10, stones:{ norm_stone:10, bless_stone:2  } },
+  { id:'sp20', gram:20, stones:{ norm_stone:15, bless_stone:5  } },
+  { id:'sp50', gram:50, stones:{ norm_stone:35, bless_stone:15 } },
+];
+const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
+
+function _seasonShopPkgHtml(pkg, bal) {
+  const canAfford = bal >= pkg.gram;
+  const rows = Object.entries(pkg.stones).map(([id, qty]) =>
+    `<div class="vip-ri"><img class="vip-ri-img" src="${_STONE_IMG[id]}"><span class="vip-ri-label">×${qty}</span></div>`
+  ).join('');
+  const line = Object.entries(pkg.stones).map(([id, qty]) =>
+    `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ');
+  return `
+    <div class="gram-shop-card" style="border-color:rgba(80,175,149,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
+        <b style="color:#7ee0c0;font-size:14px">${pkg.gram} GRAM</b>
+        <span style="color:#a3957c;font-size:11.5px">${line}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${rows}</div>
+      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
+              style="border-color:#50af95;color:${canAfford ? '#7ee0c0' : '#645f57'}"
+              onclick="${canAfford ? `openSeasonShopConfirm('${pkg.id}')` : ''}">
+        ${canAfford ? t('affordableBuyBtn') : t('notEnoughBtn')}
+      </button>
+    </div>`;
+}
+
+// Reuses the regular confirm dialog's shape — the purchase itself goes
+// through the very same server handler (netGramShopBuy), which now resolves
+// season package ids too.
+function openSeasonShopConfirm(pkgId) {
+  const pkg = _SEASON_SHOP_PKGS_UI.find(p => p.id === pkgId);
+  if (!pkg) return;
+  const bal = window._gramBalance || 0;
+  if (bal < pkg.gram) return;
+  const line = Object.entries(pkg.stones).map(([id, qty]) =>
+    `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ');
+  if (!confirm(tVars('seasonShopConfirm', { g: pkg.gram, items: line }))) return;
+  if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId);
+}
+
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionGramShopBtn(); }
@@ -4504,6 +4556,8 @@ function _renderGramShopPanel() {
       ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
     </div>
     ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
+    <div style="margin:18px 0 10px;color:#7ee0c0;font-size:13px;font-weight:700;letter-spacing:.4px">${t('seasonShopHdr')}</div>
+    ${_SEASON_SHOP_PKGS_UI.map(pkg => _seasonShopPkgHtml(pkg, bal)).join('')}
   `;
 }
 

@@ -40,7 +40,7 @@ const {
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -447,6 +447,20 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:0, nexum:4000 },
   { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
+// ── Сезонные паки ────────────────────────────────────────────────────────────
+// Enhance stones only, priced in GRAM. Kept in the same shape as the regular
+// packages (and bought through the same handler) so the purchase path — the
+// atomic spend, the inventory-space check, the single commit — is shared
+// rather than duplicated. `stones` maps a CRAFT_MATS id to a quantity; both
+// stones stack, so a pack needs at most one new slot per kind.
+const _SEASON_SHOP_PKGS = [
+  { id:'sp1',  gram:1,  season:true, stones:{ norm_stone:5  } },
+  { id:'sp5',  gram:5,  season:true, stones:{ norm_stone:10 } },
+  { id:'sp10', gram:10, season:true, stones:{ norm_stone:10, bless_stone:2  } },
+  { id:'sp20', gram:20, season:true, stones:{ norm_stone:15, bless_stone:5  } },
+  { id:'sp50', gram:50, season:true, stones:{ norm_stone:35, bless_stone:15 } },
+];
+
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
   lev:         { common:'tw1', uncommon:'tw2', rare:'tw3' },
@@ -490,6 +504,7 @@ function _shopNewSlots(pkg, inv, charClass) {
     else if (pkg.skillBooks.random) classBooks.forEach(bk => need(bk.id, true));
   }
   if (pkg.boxes) Object.keys(pkg.boxes).forEach(boxId => need(boxId, true));
+  if (pkg.stones) Object.keys(pkg.stones).forEach(sid => need(sid, true));
   return slots;
 }
 
@@ -4525,7 +4540,8 @@ io.on('connection', socket => {
     if (!authed || !pkgId) return;
     const _ran = await _withEconLock(async () => {
     try {
-      const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
+      const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId)
+                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
       if (_liveGram() < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
 
@@ -4565,8 +4581,11 @@ io.on('connection', socket => {
       if (_paid === null) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
       _gramBalance = _paid;
 
-      // Gold
-      saved.gold = (saved.gold || 0) + pkg.gold;
+      // Gold. Defaulted rather than added raw: the season packages carry no
+      // gold at all, and `x + undefined` is NaN — which _sanitizeSavedStats
+      // then clamps to 0, i.e. buying a stone pack would have wiped the
+      // buyer's gold. Same reasoning for the potion count below.
+      saved.gold = (saved.gold || 0) + (pkg.gold || 0);
 
       // Buff potions (bp_hp/bp_exp/... — ITEM_DEF slot 'buff_potion') are
       // stackable inventory items, not potionBag entries. potionBag only
@@ -4574,7 +4593,7 @@ io.on('connection', socket => {
       // via removeFromInventory() against player.inventory, so writing them
       // into potionBag instead — as this used to — meant they were paid for
       // and deducted but never actually reachable anywhere in the UI.
-      _VIP_BP.forEach(bp => {
+      if (pkg.potions > 0) _VIP_BP.forEach(bp => {
         const existing = inv.find(i => i.id === bp.id);
         if (existing) existing.qty = (existing.qty || 1) + pkg.potions;
         else inv.push({ ...bp, qty: pkg.potions });
@@ -4618,6 +4637,19 @@ io.on('connection', socket => {
           const base = BOX_DEF.find(b => b.id === boxId);
           if (!base) return;
           const existing = inv.find(i => i.id === boxId);
+          if (existing) existing.qty = (existing.qty || 1) + qty;
+          else inv.push({ ...base, qty });
+        });
+      }
+
+      // Enhance stones (сезонные паки). _STONE_DEFS is the same catalog the
+      // loot roll grants them from, so a bought stone is identical to a
+      // dropped one.
+      if (pkg.stones) {
+        Object.entries(pkg.stones).forEach(([sid, qty]) => {
+          const base = _STONE_DEFS[sid] || CRAFT_MATS.find(m => m.id === sid);
+          if (!base) return;
+          const existing = inv.find(i => i.id === sid);
           if (existing) existing.qty = (existing.qty || 1) + qty;
           else inv.push({ ...base, qty });
         });
@@ -5023,6 +5055,17 @@ io.on('connection', socket => {
 
     _commitServerItems(inv, slot ? _lastStats.equipment : null, 'enhance',
       { id, stoneType, outcome, fromEnhance: curEnh });
+    // Season points for a successful enhance. The rarity is re-read from the
+    // catalog rather than taken off the entry, so a crafted request cannot
+    // claim a common item is worth an uncommon's points. A miss pays nothing.
+    if (outcome === 'success') {
+      const _eb = _catalogBase(id);
+      const _ep = _eb ? (SEASON_ENHANCE_POINTS[_eb.rarity] || 0) : 0;
+      if (_ep > 0 && seasonActive()) {
+        _seasonAddPoints(_ep, 'enhance', { id, rarity: _eb.rarity, to: newEnhance })
+          .then(total => socket.emit('seasonEventDone', { task: 'enhance', points: _ep, total: total ?? null }));
+      }
+    }
     socket.emit('enhanceResult', { id, slot: slot || null, outcome, newEnhance });
   });
 
@@ -5331,6 +5374,7 @@ io.on('connection', socket => {
       minLvl: SEASON_MIN_LVL, maxLvl: SEASON_MAX_LVL,
       burn: SEASON_BURN_POINTS,
       eventTasks: SEASON_EVENT_TASKS,
+      enhance: SEASON_ENHANCE_POINTS,
       eventPoints: SEASON_EVENT_POINTS,
       prizes: SEASON_PRIZES,
     };

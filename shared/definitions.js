@@ -399,6 +399,11 @@ const SEASON_EVENT_TASKS = [
   { id: 'worldboss',  name: 'Ударить Мирового босса' },
 ];
 
+// Points for a SUCCESSFUL enhance, by the item's own rarity. A miss costs the
+// stone and pays nothing — the task is to enhance, not to attempt. Keyed the
+// same way burning is, so anything not listed here earns nothing.
+const SEASON_ENHANCE_POINTS = { common: 10, uncommon: 50 };
+
 // Burning destroys the item outright — no gold, no materials back, only
 // points. Anything not listed here cannot be burned at all.
 const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
@@ -1210,7 +1215,7 @@ if (typeof module !== 'undefined') module.exports = {
   QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
