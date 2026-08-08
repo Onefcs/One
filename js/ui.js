@@ -4500,7 +4500,6 @@ const _GRAM_SHOP_PKGS_UI = [
 // shop. Mirror of _SEASON_SHOP_PKGS on the server (which is what actually
 // grants them); this copy only exists to draw the cards. Keep the two in sync.
 const _SEASON_SHOP_PKGS_UI = [
-  { id:'sp1',  gram:1,  stones:{ norm_stone:5  } },
   { id:'sp5',  gram:5,  stones:{ norm_stone:10 } },
   { id:'sp10', gram:10, stones:{ norm_stone:10, bless_stone:2  } },
   { id:'sp20', gram:20, stones:{ norm_stone:15, bless_stone:5  } },

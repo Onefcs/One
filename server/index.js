@@ -454,7 +454,6 @@ const _GRAM_SHOP_PKGS = [
 // rather than duplicated. `stones` maps a CRAFT_MATS id to a quantity; both
 // stones stack, so a pack needs at most one new slot per kind.
 const _SEASON_SHOP_PKGS = [
-  { id:'sp1',  gram:1,  season:true, stones:{ norm_stone:5  } },
   { id:'sp5',  gram:5,  season:true, stones:{ norm_stone:10 } },
   { id:'sp10', gram:10, season:true, stones:{ norm_stone:10, bless_stone:2  } },
   { id:'sp20', gram:20, season:true, stones:{ norm_stone:15, bless_stone:5  } },
