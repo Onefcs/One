@@ -4058,6 +4058,15 @@ io.on('connection', socket => {
     if (authed && _lastStats) {
       await _persistSavedFields(authed, { ..._lastStats }, { bm: authed.bm });
     }
+    // Season quest progress is deliberately NOT part of _lastStats (the
+    // sanitizer strips it, so the blob above cannot carry it) and is only
+    // batched to the database every SEASON_FLUSH_EVERY kills. Without this it
+    // was never written on the way out, so every disconnect, refresh or closed
+    // tab threw away whatever had accumulated since the last batch.
+    if (authed && _seasonQuestCur) {
+      await _persistSavedFields(authed, { seasonQuest: _seasonQuestCur });
+      _seasonKillsUnsaved = 0;
+    }
   };
 
   // ── Admin inventory editing on a LIVE session ────────────────────────────
