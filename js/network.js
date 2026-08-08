@@ -1098,6 +1098,24 @@ function netConnect(onReady) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
+  // Refused band switch (below the level it needs) and anything else the
+  // season panel can be told "no" about.
+  socket.on('seasonError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  // An invited friend reached the level that pays the referrer. This arrives
+  // on the REFERRER's socket, triggered by somebody else's session, so the
+  // total comes with it rather than being derived from anything local.
+  socket.on('seasonRefBonus', ({ points, friend, total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof showEventBossBanner === 'function' && points) {
+      showEventBossBanner(tVars('seasonRefBonusMsg', { n: points, name: friend || '' }), '#50af95');
+    }
+    if (typeof Sound !== 'undefined') Sound.loot?.();
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
   socket.on('disconnect', () => {
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced
@@ -2495,6 +2513,9 @@ function netClaimQuest(idx) {
 // ── Сезон ───────────────────────────────────────────────────────────────────
 function netSeasonSync()   { if (socket?.connected) socket.emit('seasonSync'); }
 function netSeasonRating() { if (socket?.connected) socket.emit('seasonRating'); }
+// Switch the quest band (10+ / 20+). The server answers with a full
+// seasonState, or a seasonError when the level isn't there yet.
+function netSeasonSetTier(tier) { if (socket?.connected) socket.emit('seasonSetTier', { tier }); }
 // Burning destroys the item for season points — the server owns both halves,
 // nothing is applied locally.
 function netSeasonBurn(idx)       { if (socket?.connected) socket.emit('seasonBurn', { idx }); }

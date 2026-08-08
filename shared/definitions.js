@@ -384,6 +384,38 @@ const SEASON_SPECIES = [
   { sp: 'slime', name: 'Слизни', req: 0 },  // levels 11, 14, 17
   { sp: 'imp',   name: 'Бесы',   req: 0 },  // levels 12, 15, 18
 ];
+
+// Two quest bands the player switches between in the Сезон panel. One quest
+// is active at a time and it belongs to whichever band is selected; each band
+// keeps its own progress, so switching across and back resumes rather than
+// rerolls (and so switching cannot be used to skip a species you dislike).
+//
+// `reqLvl` is what the player needs to select the band at all. For 20+ it is
+// not a balance knob: the top corridor itself is gated at level 20
+// (ARM_LEVEL_REQ.top), so a lower-level player literally cannot walk in to
+// find a single one of those monsters.
+//
+// The 20+ band starts at 21, not 20 — level 20 is still the last room of the
+// starting corridor (slimes), so including it would put a 10+ species inside
+// the 20+ band.
+const SEASON_TIERS = [
+  {
+    id: '10', label: '10+', reqLvl: SEASON_MIN_LVL, minLvl: 10, maxLvl: 19,
+    species: SEASON_SPECIES,
+  },
+  {
+    id: '20', label: '20+', reqLvl: 20, minLvl: 21, maxLvl: 23,
+    species: [
+      { sp: 'zombie',    name: 'Зомби',  req: 20 },  // level 21
+      { sp: 'lizardman', name: 'Ящеры',  req: 20 },  // level 22
+      { sp: 'orc',       name: 'Орки',   req: 20 },  // level 23
+    ],
+  },
+];
+const SEASON_TIER_DEFAULT = '10';
+function seasonTier(id) {
+  return SEASON_TIERS.find(x => x.id === id) || SEASON_TIERS[0];
+}
 // Repeatable one-off tasks alongside the kill quest. Each pays out once per
 // occurrence of the thing it names — once per 3v3 match, once per death
 // battle round, once per world-boss appearance — and then arms again, so
@@ -400,7 +432,14 @@ const SEASON_EVENT_TASKS = [
 // Points for a SUCCESSFUL enhance, by the item's own rarity. A miss costs the
 // stone and pays nothing — the task is to enhance, not to attempt. Keyed the
 // same way burning is, so anything not listed here earns nothing.
-const SEASON_ENHANCE_POINTS = { common: 10, uncommon: 50 };
+const SEASON_ENHANCE_POINTS = { common: 10, uncommon: 50, rare: 20 };
+
+// Bringing in a player who then reaches SEASON_REF_LEVEL. Paid to the
+// REFERRER, once per invited friend ever — the claim flips a flag on the
+// friend's own document, so it cannot be collected twice by relogging, and
+// it lands whether or not the referrer happens to be online at the time.
+const SEASON_REF_POINTS = 200;
+const SEASON_REF_LEVEL  = 20;
 
 // Burning destroys the item outright — no gold, no materials back, only
 // points. Anything not listed here cannot be burned at all.
@@ -413,21 +452,30 @@ const SEASON_PRIZES = [
 ];
 function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 
-// The levels inside the band each species actually appears at. The quest text
-// names these instead of the band itself: the band spans 10-23, but zombies
-// only live at 21 and orcs only at 23, so "kill zombies, levels 10-23" sends
-// the player hunting through rooms that cannot contain one.
-const SEASON_SPECIES_LEVELS = (() => {
+// The levels each species actually appears at, computed per band. The quest
+// text names these instead of the band itself: the 20+ band spans 21-23, but
+// zombies only live at 21 and orcs only at 23, so "kill zombies, levels 21-23"
+// would send the player hunting through rooms that cannot contain one.
+//
+// Derived from the world tables rather than written out by hand, so a change
+// to FLOOR_ENEMIES can't leave a quest pointing at the wrong rooms.
+const SEASON_TIER_SPECIES_LEVELS = (() => {
   const out = {};
-  for (let lvl = SEASON_MIN_LVL; lvl <= SEASON_MAX_LVL; lvl++) {
-    const arm = armIndexForLevel(lvl);
-    const fe = FLOOR_ENEMIES[arm];
-    if (!fe) continue;
-    const sp = bandForLocalLevel(fe, lvl - ARM_OFFSETS[arm - 1]).eid.split('_')[0];
-    (out[sp] = out[sp] || []).push(lvl);
+  for (const tier of SEASON_TIERS) {
+    const m = out[tier.id] = {};
+    for (let lvl = tier.minLvl; lvl <= tier.maxLvl; lvl++) {
+      const arm = armIndexForLevel(lvl);
+      const fe = FLOOR_ENEMIES[arm];
+      if (!fe) continue;
+      const sp = bandForLocalLevel(fe, lvl - ARM_OFFSETS[arm - 1]).eid.split('_')[0];
+      (m[sp] = m[sp] || []).push(lvl);
+    }
   }
   return out;
 })();
+// Kept for the 10+ band alone, which is what everything referred to before
+// there were two.
+const SEASON_SPECIES_LEVELS = SEASON_TIER_SPECIES_LEVELS[SEASON_TIER_DEFAULT];
 
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
@@ -1212,6 +1260,8 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
+  SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
+  SEASON_REF_POINTS, SEASON_REF_LEVEL,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

@@ -41,6 +41,8 @@ const {
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
+  SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
+  SEASON_REF_POINTS, SEASON_REF_LEVEL,
 } = require('../shared/definitions');
 
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
@@ -2060,20 +2062,48 @@ function _canonSavedItem(raw) {
   return item;
 }
 
-// Picks the next season quest's species, never repeating the one just
-// finished — back-to-back identical quests read like the reward simply did
-// not register.
-function _seasonRollSpecies(prevSp, playerLvl) {
+// Picks the next season quest's species within a band, never repeating the
+// one just finished — back-to-back identical quests read like the reward
+// simply did not register.
+function _seasonRollSpecies(prevSp, playerLvl, tierId) {
   const lvl = Math.max(1, Math.floor(Number(playerLvl)) || 1);
-  // Only species the player can actually reach. The band crosses into the top
+  const list = seasonTier(tierId).species;
+  // Only species the player can actually reach. The 20+ band lives in the top
   // corridor, which is gated at level 20 — handing a level-12 player "kill
   // 5000 zombies" would leave them unable to progress the season at all,
   // since they cannot walk into the corridor those live in.
-  const reachable = SEASON_SPECIES.filter(s => (s.req || 0) <= lvl);
-  const base = reachable.length ? reachable : SEASON_SPECIES.filter(s => !(s.req || 0));
+  const reachable = list.filter(s => (s.req || 0) <= lvl);
+  const base = reachable.length ? reachable : list.filter(s => !(s.req || 0));
+  if (!base.length) return list[0].sp;
   const pool = base.filter(s => s.sp !== prevSp);
   const from = pool.length ? pool : base;
   return from[Math.floor(Math.random() * from.length)].sp;
+}
+
+// Which band a player is allowed to select. The 20+ one needs the level that
+// opens the corridor its monsters live in; everything else is always open.
+function _seasonTierAllowed(tierId, playerLvl) {
+  const t = seasonTier(tierId);
+  return (Math.floor(Number(playerLvl)) || 1) >= (t.reqLvl || 0);
+}
+
+// Adds season points to ANY account by telegramId, online or not. The
+// per-socket _seasonAddPoints below is the same write for the player holding
+// the socket; this one exists because the referral bonus is paid to someone
+// else, who is usually not the one who triggered it.
+async function _seasonAddPointsTo(telegramId, n, reason, meta) {
+  if (!telegramId || !Number.isFinite(n) || n <= 0 || !seasonActive()) return null;
+  try {
+    const doc = await PlayerModel.findOneAndUpdate(
+      { telegramId: String(telegramId) },
+      { $inc: { 'savedData.seasonPoints': n } },
+      { new: true, projection: { 'savedData.seasonPoints': 1, username: 1 } },
+    ).lean();
+    if (!doc) return null;
+    const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
+    logPlayer(telegramId, doc.username, 'season_points', { add: n, total, reason, ...(meta || {}) });
+    return total;
+  } catch (err) { console.error('_seasonAddPointsTo:', err); return null; }
 }
 
 // ── Anti-duplication: the item census ───────────────────────────────────────
@@ -2243,6 +2273,12 @@ function _sanitizeSavedStats(raw) {
   // currency balances and vipPending already follow.
   delete s.seasonPoints;
   delete s.seasonQuest;
+  delete s.seasonQuests;
+  delete s.seasonTier;
+  // "This invited friend has already been counted." Lives on the friend's own
+  // record, so without this they could clear it and have their referrer paid
+  // the 200 again on the next login.
+  delete s.seasonRefPaid;
   return s;
 }
 
@@ -4034,6 +4070,9 @@ io.on('connection', socket => {
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
+    // Both hit the database on every call — seasonRating sorts the whole
+    // player collection, seasonSetTier writes the selected band.
+    'seasonRating', 'seasonSetTier',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
@@ -4088,8 +4127,10 @@ io.on('connection', socket => {
     // batched to the database every SEASON_FLUSH_EVERY kills. Without this it
     // was never written on the way out, so every disconnect, refresh or closed
     // tab threw away whatever had accumulated since the last batch.
-    if (authed && _seasonQuestCur) {
-      await _persistSavedFields(authed, { seasonQuest: _seasonQuestCur });
+    if (authed && _seasonQuests && Object.keys(_seasonQuests).length) {
+      await _persistSavedFields(authed, {
+        seasonQuests: _seasonQuests, seasonTier: _seasonTierCur,
+      });
       _seasonKillsUnsaved = 0;
     }
   };
@@ -5345,40 +5386,80 @@ io.on('connection', socket => {
   // rolled every few seconds. Same reason the currency balances live in their
   // own closure variables.
   let _seasonPoints = 0;
-  let _seasonQuestCur = null;
+  // One quest per band, keyed by tier id, plus which band is selected. Both
+  // are kept rather than a single active quest so that switching bands and
+  // back resumes where the player left off — otherwise the switch would be a
+  // free reroll of a species someone didn't like, and 5000 kills of progress
+  // would evaporate on a mis-tap.
+  let _seasonQuests = {};
+  let _seasonTierCur = SEASON_TIER_DEFAULT;
   let _seasonKillsUnsaved = 0;
 
-  // The active quest, created on first use. An unknown species (a save from
-  // before this existed, or a table change) is re-rolled rather than trusted.
+  // The selected band, demoted to the default if the player is not (or is no
+  // longer) high enough for it.
+  function _seasonTierId() {
+    const lvl = _lastStats ? _lastStats.lvl : 1;
+    return _seasonTierAllowed(_seasonTierCur, lvl) ? _seasonTierCur : SEASON_TIER_DEFAULT;
+  }
+
+  // The active band's quest, created on first use. An unknown species (a save
+  // from before this existed, or a table change) is re-rolled rather than
+  // trusted.
   function _seasonQuest() {
     if (!_lastStats) return null;
-    const q = _seasonQuestCur;
+    const tid = _seasonTierId();
+    const q = _seasonQuests[tid];
     const lvl = Math.max(1, Math.floor(Number(_lastStats.lvl)) || 1);
-    const def = q && typeof q === 'object' ? SEASON_SPECIES.find(s => s.sp === q.sp) : null;
+    const def = q && typeof q === 'object' ? seasonTier(tid).species.find(s => s.sp === q.sp) : null;
     if (def && (def.req || 0) <= lvl) return q;
-    const fresh = { sp: _seasonRollSpecies(null, _lastStats.lvl), kills: 0 };
-    _seasonQuestCur = fresh;
-    _persistSavedFields(authed, { seasonQuest: fresh });
+    const fresh = { sp: _seasonRollSpecies(null, _lastStats.lvl, tid), kills: 0 };
+    _seasonQuests[tid] = fresh;
+    _persistSavedFields(authed, { seasonQuests: _seasonQuests, seasonTier: tid });
     return fresh;
   }
 
+  // A quest as the client renders it: the species' display name and the exact
+  // levels it can be found at, which is what the quest text names instead of
+  // the band (zombies only live at 21, so "21-23" would send players through
+  // rooms that cannot contain one).
+  function _seasonQuestPublic(q, tid) {
+    if (!q) return null;
+    const def = seasonTier(tid).species.find(s => s.sp === q.sp);
+    return {
+      sp: q.sp,
+      name: def ? def.name : q.sp,
+      levels: (SEASON_TIER_SPECIES_LEVELS[tid] || {})[q.sp] || [],
+      kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS),
+      tier: tid,
+    };
+  }
+
   function _seasonPublicState() {
+    const tid = _seasonTierId();
     const q = _seasonQuest();
-    const def = q ? SEASON_SPECIES.find(s => s.sp === q.sp) : null;
+    const lvl = _lastStats ? (Math.floor(Number(_lastStats.lvl)) || 1) : 1;
+    const t = seasonTier(tid);
     return {
       endAt: SEASON_END_AT,
       active: seasonActive(),
       points: _seasonPoints,
-      quest: q ? { sp: q.sp, name: def ? def.name : q.sp,
-                   levels: SEASON_SPECIES_LEVELS[q.sp] || [],
-                   kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS) } : null,
+      quest: _seasonQuestPublic(q, tid),
       target: SEASON_QUEST_KILLS,
       questPoints: SEASON_QUEST_POINTS,
-      minLvl: SEASON_MIN_LVL, maxLvl: SEASON_MAX_LVL,
+      // The selected band's own range, so the panel describes what is actually
+      // being hunted rather than the 10+ one it used to hard-code.
+      minLvl: t.minLvl, maxLvl: t.maxLvl,
+      tier: tid,
+      tiers: SEASON_TIERS.map(x => ({
+        id: x.id, label: x.label, reqLvl: x.reqLvl,
+        minLvl: x.minLvl, maxLvl: x.maxLvl,
+        locked: lvl < (x.reqLvl || 0),
+      })),
       burn: SEASON_BURN_POINTS,
       eventTasks: SEASON_EVENT_TASKS,
       enhance: SEASON_ENHANCE_POINTS,
       eventPoints: SEASON_EVENT_POINTS,
+      ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
       prizes: SEASON_PRIZES,
     };
   }
@@ -5408,8 +5489,13 @@ io.on('connection', socket => {
   function _seasonTrackKill(result) {
     if (!authed || !_lastStats || !seasonActive()) return;
     if (!result || !result.eid) return;
+    // Only the SELECTED band counts. Kills in the other one are ignored
+    // rather than banked, which is the whole point of the switch: one quest
+    // is active at a time, and the player chooses which.
+    const tid = _seasonTierId();
+    const t = seasonTier(tid);
     const lvl = result.rlvl || 0;
-    if (lvl < SEASON_MIN_LVL || lvl > SEASON_MAX_LVL) return;
+    if (lvl < t.minLvl || lvl > t.maxLvl) return;
     const q = _seasonQuest();
     if (!q) return;
     // Both the guard and the warrior variant of a species count.
@@ -5419,22 +5505,20 @@ io.on('connection', socket => {
     if (q.kills < SEASON_QUEST_KILLS) {
       if (++_seasonKillsUnsaved >= SEASON_FLUSH_EVERY) {
         _seasonKillsUnsaved = 0;
-        _persistSavedFields(authed, { seasonQuest: q });
+        _persistSavedFields(authed, { seasonQuests: _seasonQuests });
       }
       return;
     }
     // Cleared — award, then roll the next species (never the one just done).
     const doneSp = q.sp;
-    const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl), kills: 0 };
-    _seasonQuestCur = next;
+    const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl, tid), kills: 0 };
+    _seasonQuests[tid] = next;
     _seasonKillsUnsaved = 0;
-    _persistSavedFields(authed, { seasonQuest: next });
-    _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp }).then(total => {
-      const def = SEASON_SPECIES.find(s => s.sp === next.sp);
+    _persistSavedFields(authed, { seasonQuests: _seasonQuests });
+    _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp, tier: tid }).then(total => {
       socket.emit('seasonQuestDone', {
         sp: doneSp, points: SEASON_QUEST_POINTS, total: total ?? null,
-        next: { sp: next.sp, name: def ? def.name : next.sp,
-                levels: SEASON_SPECIES_LEVELS[next.sp] || [], kills: 0 },
+        next: _seasonQuestPublic(next, tid),
       });
     });
   }
@@ -5468,10 +5552,88 @@ io.on('connection', socket => {
   }
   socket.data._seasonTrackBossHit = _seasonTrackBossHit;
 
-  safeOn('seasonSync', () => {
+  // Re-reads the running total from the database. Points can now be added by
+  // somebody ELSE's session — the referral bonus is paid to the referrer, who
+  // may well be online at the time — so the closure copy is no longer the only
+  // writer and a stale one would show the panel a number that is too low.
+  async function _seasonReloadPoints() {
+    if (!authed) return _seasonPoints;
+    try {
+      const doc = await PlayerModel.findById(authed._id, 'savedData.seasonPoints').lean();
+      const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
+      _seasonPoints = total;
+    } catch (err) { console.error('_seasonReloadPoints:', err); }
+    return _seasonPoints;
+  }
+
+  safeOn('seasonSync', async () => {
     if (!authed) return;
+    await _seasonReloadPoints();
     socket.emit('seasonState', _seasonPublicState());
   });
+
+  // Switching the quest band (10+ / 20+). The other band's quest is left
+  // untouched, so coming back resumes it — see _seasonQuests.
+  safeOn('seasonSetTier', ({ tier } = {}) => {
+    if (!authed || !_lastStats) return;
+    const t = SEASON_TIERS.find(x => x.id === String(tier));
+    if (!t) return;
+    if (!_seasonTierAllowed(t.id, _lastStats.lvl)) {
+      return socket.emit('seasonError', { msg: `Нужен ${t.reqLvl} уровень` });
+    }
+    if (_seasonTierCur !== t.id) {
+      // Whatever the old band had counted since its last flush would be lost
+      // otherwise: the counter is per-session, not per-band.
+      if (_seasonKillsUnsaved > 0) {
+        _seasonKillsUnsaved = 0;
+        _persistSavedFields(authed, { seasonQuests: _seasonQuests });
+      }
+      _seasonTierCur = t.id;
+      _persistSavedFields(authed, { seasonTier: t.id });
+    }
+    socket.emit('seasonState', _seasonPublicState());
+  });
+
+  // ── Приведи друга ─────────────────────────────────────────────────────────
+  // Paid to the REFERRER when someone they invited reaches SEASON_REF_LEVEL.
+  // The claim is the flag flip itself: only the update that actually changes
+  // seasonRefPaid from unset to true goes on to pay, so two sessions racing
+  // (or one player relogging) cannot collect twice. The flag lives on the
+  // FRIEND's document because that is what "this friend has been counted"
+  // is about — and _sanitizeSavedStats strips it from client saves, so the
+  // friend cannot clear their own.
+  //
+  // Checked at most once per session: the level only ever goes up, so if it
+  // is not there yet at login the next login will catch it.
+  let _seasonRefChecked = false;
+  async function _seasonCheckRefFriend() {
+    if (_seasonRefChecked || !authed || !_lastStats || !seasonActive()) return;
+    const lvl = Math.floor(Number(_lastStats.lvl)) || 1;
+    if (lvl < SEASON_REF_LEVEL) return;
+    _seasonRefChecked = true;
+    try {
+      const me = await PlayerModel.findOneAndUpdate(
+        {
+          _id: authed._id,
+          referredBy: { $nin: [null, ''] },
+          'savedData.seasonRefPaid': { $ne: true },
+        },
+        { $set: { 'savedData.seasonRefPaid': true } },
+        { new: false, projection: { referredBy: 1 } },
+      ).lean();
+      if (!me || !me.referredBy) return;   // no referrer, or already paid
+      const total = await _seasonAddPointsTo(me.referredBy, SEASON_REF_POINTS,
+        'ref_lvl20', { friend: authed.username, lvl });
+      if (total === null) return;
+      // The referrer is usually a different session, and may be offline —
+      // the room emit reaches every device they have open and is simply
+      // dropped when there are none.
+      io.to(`tg_${me.referredBy}`).emit('seasonRefBonus', {
+        points: SEASON_REF_POINTS, friend: authed.username, total,
+      });
+    } catch (err) { console.error('_seasonCheckRefFriend:', err); }
+  }
+  socket.data._seasonCheckRefFriend = _seasonCheckRefFriend;
 
   // Top 50 by points, plus this player's own rank when they are not in it —
   // same shape (and same reasoning) as the BM rating above.
@@ -6160,11 +6322,37 @@ io.on('connection', socket => {
     {
       const _sd = authed.savedData || {};
       _seasonPoints = Math.max(0, Math.floor(Number(_sd.seasonPoints) || 0));
-      const _sq = _sd.seasonQuest;
-      _seasonQuestCur = (_sq && typeof _sq === 'object' && SEASON_SPECIES.some(x => x.sp === _sq.sp))
-        ? { sp: _sq.sp, kills: Math.max(0, Math.floor(Number(_sq.kills) || 0)) }
-        : null;
+      // One quest per band. Each is validated against ITS OWN band's species
+      // list, so a stored quest naming a species that has since moved (or that
+      // never belonged to that band) is dropped and re-rolled rather than
+      // becoming an unfinishable "kill 5000 of something that isn't there".
+      const _readQuest = (raw, tid) => {
+        if (!raw || typeof raw !== 'object') return null;
+        if (!seasonTier(tid).species.some(x => x.sp === raw.sp)) return null;
+        return { sp: raw.sp, kills: Math.max(0, Math.floor(Number(raw.kills) || 0)) };
+      };
+      _seasonQuests = {};
+      const _sqs = _sd.seasonQuests;
+      if (_sqs && typeof _sqs === 'object') {
+        for (const tier of SEASON_TIERS) {
+          const q = _readQuest(_sqs[tier.id], tier.id);
+          if (q) _seasonQuests[tier.id] = q;
+        }
+      }
+      // Migration: before the bands existed there was a single seasonQuest,
+      // and it was always a 10+ one. Carried across so nobody loses progress
+      // to the upgrade.
+      if (!_seasonQuests[SEASON_TIER_DEFAULT]) {
+        const q = _readQuest(_sd.seasonQuest, SEASON_TIER_DEFAULT);
+        if (q) _seasonQuests[SEASON_TIER_DEFAULT] = q;
+      }
+      _seasonTierCur = SEASON_TIERS.some(x => x.id === _sd.seasonTier)
+        ? _sd.seasonTier : SEASON_TIER_DEFAULT;
     }
+    // A friend invited by someone else may have crossed level 20 while this
+    // session was away; the check is a no-op below that level and runs at most
+    // once per session.
+    _seasonCheckRefFriend();
     // Persist the chosen character type immediately so a page refresh
     // before the first full saveProgress doesn't show the char select again.
     PlayerModel.updateOne(
@@ -7108,6 +7296,10 @@ io.on('connection', socket => {
     }
     _lastStats = clean;
     authed.bm = calcBM(clean);
+    // Catches the friend crossing level 20 mid-session rather than only at the
+    // next login. Self-limiting: it returns immediately below level 20 and
+    // runs at most once per session above it.
+    _seasonCheckRefFriend();
     // Keeps the Room's basis for statsUpdate's true-base recomputation
     // (server/game/Room.js updatePlayerStats) in sync with the player's
     // actual equipment/upgrades/level as they change mid-session.

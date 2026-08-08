@@ -133,5 +133,10 @@ let _fearWave = 0;
 // handler in server/index.js); nothing is computed locally.
 let _seasonState = { endAt: 0, active: false, points: 0, quest: null, target: 5000,
                      questPoints: 100, minLvl: 1, maxLvl: 19, burn: { common: 1, uncommon: 5 }, prizes: [],
-                     eventTasks: [], eventPoints: 50, enhance: { common: 10, uncommon: 50 } };
+                     eventTasks: [], eventPoints: 50, enhance: { common: 10, uncommon: 50, rare: 20 },
+                     // Which kill-quest band is selected, and what is on offer.
+                     // Both are pushed by the server (seasonState); `locked`
+                     // on a band means this character is not high enough yet.
+                     tier: '10', tiers: [],
+                     ref: { points: 200, level: 20 } };
 let _seasonRating = null;   // null = not fetched yet

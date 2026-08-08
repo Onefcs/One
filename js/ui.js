@@ -2770,6 +2770,39 @@ function _seasonLevelsText(q) {
   return ls.length === 1 ? String(ls[0]) : ls.join(', ');
 }
 
+// The 10+ / 20+ band switch. One quest is active at a time and it belongs to
+// the selected band; each band keeps its own progress server-side, so tapping
+// across and back resumes rather than rerolls. A band above the character's
+// level is shown but refused — the monsters live behind a level gate, so
+// hiding the row would just make the requirement invisible.
+function _seasonTierBarHTML() {
+  const st = _seasonState || {};
+  const tiers = st.tiers || [];
+  if (tiers.length < 2) return '';
+  return `<div class="season-tier-bar">
+    ${tiers.map(x => `
+      <button class="season-tier${x.id === st.tier ? ' active' : ''}${x.locked ? ' locked' : ''}"
+              onclick="switchSeasonTier('${x.id}')">
+        ${_esc(x.label)}
+        <span>${x.locked ? tVars('seasonTierLockedFmt', { n: x.reqLvl })
+                          : tVars('seasonTierLvlFmt', { a: x.minLvl, b: x.maxLvl })}</span>
+      </button>`).join('')}
+  </div>`;
+}
+
+function switchSeasonTier(tier) {
+  const st = _seasonState || {};
+  if (st.tier === tier) return;
+  const def = (st.tiers || []).find(x => x.id === tier);
+  // Answered locally when it obviously cannot work, so the tap gives feedback
+  // without a round trip. The server checks it again regardless.
+  if (def && def.locked) {
+    _marketToast(tVars('seasonTierLockedMsg', { n: def.reqLvl }), 'err');
+    return;
+  }
+  if (typeof netSeasonSetTier === 'function') netSeasonSetTier(tier);
+}
+
 function _seasonQuestsHTML() {
   const st = _seasonState || {};
   const q = st.quest;
@@ -2783,7 +2816,8 @@ function _seasonQuestsHTML() {
   const questBlock = ended
     ? `<div class="db-phase">${t('seasonEnded')}</div>`
     : q
-      ? `<div class="imod-enh-block">
+      ? `${_seasonTierBarHTML()}
+         <div class="imod-enh-block">
            <div class="imod-enh-title">${tVars('seasonQuestFmt', { name: q.name, n: target, lv: _seasonLevelsText(q) })}</div>
            <div class="season-bar"><i style="width:${pct}%"></i></div>
            <div class="imod-enh-preview">${done} / ${target} · ${pct}%</div>
@@ -2805,7 +2839,12 @@ function _seasonQuestsHTML() {
       <ul style="margin-top:6px">
         <li>${tVars('seasonEnhCommon',   { n: (st.enhance || {}).common   || 10 })}</li>
         <li>${tVars('seasonEnhUncommon', { n: (st.enhance || {}).uncommon || 50 })}</li>
+        <li>${tVars('seasonEnhRare',     { n: (st.enhance || {}).rare     || 20 })}</li>
       </ul>
+      <ul style="margin-top:6px">
+        <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>
+      </ul>
+      <div class="imod-enh-chance">${t('seasonRefNote')}</div>
     </div>`;
 
   const burnBlock = ended ? '' : `
