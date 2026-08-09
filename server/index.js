@@ -494,6 +494,45 @@ const _SEASON_SHOP_PKGS = [
   { id:'sl50', gram:50, season:true, nexum:6000, potions:60 },
 ];
 
+// ── Специальная акция (Special Sale) ────────────────────────────────────────
+// A one-shot, admin-triggered 12-hour sale — no recurring schedule like
+// race10/arena3/guild war, just an "open now" that auto-closes itself
+// (_specialSaleClose) and can also be closed early from the admin panel.
+// Bought through the same gramShopBuy handler as the regular/season packages
+// (see the pkg lookup there), gated on _specialSale.active so a client that
+// cached the tab from before it closed can't still buy from it.
+// classArtifact/classCloak resolve to the buyer's own class (every artifact/
+// cloak in ITEM_DEF is class-locked — there is no non-class version), same
+// as `weapon` already does via _SHOP_CLASS_WEAPONS. petChoice lets the buyer
+// pick which specific pet of that rarity they want (see the petId handling
+// in gramShopBuy) rather than a random one, unlike everything else in the
+// GRAM shop.
+const SPECIAL_SALE_DURATION_MS = 12 * 60 * 60 * 1000;
+const _SPECIAL_SHOP_PKGS = [
+  { id:'sale50',  gram:50,  special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8 },
+  { id:'sale100', gram:100, special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 } },
+];
+const _specialSale = { active: false, endsAt: 0, closeTimer: null };
+
+function _specialSalePublicState() {
+  return { active: _specialSale.active, endsAt: _specialSale.endsAt };
+}
+
+function _specialSaleOpen() {
+  clearTimeout(_specialSale.closeTimer);
+  _specialSale.active = true;
+  _specialSale.endsAt = Date.now() + SPECIAL_SALE_DURATION_MS;
+  _specialSale.closeTimer = setTimeout(_specialSaleClose, SPECIAL_SALE_DURATION_MS);
+  io.emit('specialSaleState', _specialSalePublicState());
+}
+
+function _specialSaleClose() {
+  clearTimeout(_specialSale.closeTimer);
+  _specialSale.active = false;
+  _specialSale.endsAt = 0;
+  io.emit('specialSaleState', _specialSalePublicState());
+}
+
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
   lev:         { common:'tw1', uncommon:'tw2', rare:'tw3' },
@@ -538,6 +577,9 @@ function _shopNewSlots(pkg, inv, charClass) {
   }
   if (pkg.boxes) Object.keys(pkg.boxes).forEach(boxId => need(boxId, true));
   if (pkg.stones) Object.keys(pkg.stones).forEach(sid => need(sid, true));
+  if (pkg.classArtifact) slots++;
+  if (pkg.classCloak) slots++;
+  if (pkg.petChoice) slots++;
   return slots;
 }
 
@@ -1778,6 +1820,28 @@ app.post('/admin/guildwar/close', adminAuth, (req, res) => {
 
 app.get('/admin/guildwar', adminAuth, (req, res) => {
   res.json(_gwPublicState());
+});
+
+// Специальная акция: one-shot 12-hour GRAM shop sale, no recurring schedule
+// — open starts the 12h auto-close timer right now, close ends it early.
+// _specialSaleOpen/_specialSaleClose/_specialSalePublicState are defined
+// earlier in the file (near _SPECIAL_SHOP_PKGS), same reasoning as the
+// race10/guildwar routes referencing their own functions defined nearby:
+// this callback only runs once a request arrives.
+app.post('/admin/specialsale/open', adminAuth, (req, res) => {
+  if (_specialSale.active) return res.status(409).json({ error: 'Акция уже идёт' });
+  _specialSaleOpen();
+  res.json({ ok: true, endsAt: _specialSale.endsAt });
+});
+
+app.post('/admin/specialsale/close', adminAuth, (req, res) => {
+  if (!_specialSale.active) return res.status(409).json({ error: 'Акция не запущена' });
+  _specialSaleClose();
+  res.json({ ok: true });
+});
+
+app.get('/admin/specialsale', adminAuth, (req, res) => {
+  res.json(_specialSalePublicState());
 });
 
 app.get('/admin/market', adminAuth, async (req, res) => {
@@ -5028,13 +5092,28 @@ io.on('connection', socket => {
     } catch (err) { console.error('gramGetHistory:', err); }
   });
 
-  safeOn('gramShopBuy', async ({ pkgId } = {}) => {
+  safeOn('gramShopBuy', async ({ pkgId, petId } = {}) => {
     if (!authed || !pkgId) return;
     const _ran = await _withEconLock(async () => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId)
-                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId);
+                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId)
+                || _SPECIAL_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
+      // The active check has to run before anything else touches GRAM/
+      // inventory — a client that had the Специальные tab cached from
+      // before an admin closed the sale must not still be able to buy from it.
+      if (pkg.special && !_specialSale.active) {
+        return socket.emit('gramShopError', { msg: 'Акция уже закрыта' });
+      }
+      // petChoice packages need a valid pick of the right rarity BEFORE any
+      // GRAM is spent — refusing here (rather than after the deduction) means
+      // a missing/invalid choice never costs the player anything.
+      let _chosenPet = null;
+      if (pkg.petChoice) {
+        _chosenPet = ITEM_DEF.find(d => d.id === petId && d.slot === 'pet' && d.rarity === pkg.petChoice);
+        if (!_chosenPet) return socket.emit('gramShopError', { msg: 'Выберите питомца' });
+      }
       if (_liveGram() < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
 
       const doc = await PlayerModel.findById(authed._id);
@@ -5105,6 +5184,20 @@ io.on('connection', socket => {
         const base = ITEM_DEF.find(d => d.id === wepId);
         if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
       }
+
+      // Специальная акция: class-locked artifact/cloak (every entry in
+      // ITEM_DEF for these two slots has a forClass, there is no generic
+      // version) and, for the buyer's own choice, a specific pet — chosen and
+      // validated (_chosenPet) before any GRAM was spent, above.
+      if (pkg.classArtifact) {
+        const base = ITEM_DEF.find(d => d.slot === 'artifact' && d.rarity === pkg.classArtifact && d.forClass && d.forClass.includes(charClass));
+        if (base) inv.push({ ...base, enhance: 0 });
+      }
+      if (pkg.classCloak) {
+        const base = ITEM_DEF.find(d => d.slot === 'cloak' && d.rarity === pkg.classCloak && d.forClass && d.forClass.includes(charClass));
+        if (base) inv.push({ ...base, enhance: 0 });
+      }
+      if (_chosenPet) inv.push({ ..._chosenPet });
 
       // Skill books — for the buyer's own class only (see charClass above)
       if (pkg.skillBooks) {
@@ -6991,6 +7084,7 @@ io.on('connection', socket => {
       race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
       arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
       guildWar: _gwPublicState(),
+      specialSale: _specialSalePublicState(),
       // Unlike the three above, Fear has no scheduled window/queue to report
       // when nothing's running — only present at all when a run is live for
       // this socket, which after a reconnect (see fearGrace/_fearGraceClaim)

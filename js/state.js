@@ -131,6 +131,11 @@ let _race10MyDamage = 0;
 // Pushed by js/network.js's guildWarState handler and by gameStart.
 let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0, towerHp: 300000 };
 
+// Специальная акция (Special Sale) — one-shot, admin-triggered 12h GRAM shop
+// sale (the "Специальные" tab of the GRAM shop panel), no recurring schedule.
+// Pushed by js/network.js's specialSaleState handler and by gameStart.
+let _specialSaleState = { active: false, endsAt: 0 };
+
 // Страх (Fear) — on-demand, solo wave-survival instance: no registration
 // queue and no scheduled window, unlike the arena/race above — entering IS
 // starting (see js/network.js's netFearEnter/fearStarted). wave/maxWave

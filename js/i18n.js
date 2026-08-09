@@ -177,6 +177,13 @@ const I18N_UI = {
   seasonShopConfirm: { ru: 'Купить за {g} GRAM: {items}?', en: 'Buy for {g} GRAM: {items}?', uk: 'Купити за {g} GRAM: {items}?', es: '¿Comprar por {g} GRAM: {items}?', tr: '{g} GRAM karşılığında al: {items}?', pt: 'Comprar por {g} GRAM: {items}?' },
   normStoneLbl:    { ru: 'обычных заточек', en: 'normal stones', uk: 'звичайних заточок', es: 'piedras normales', tr: 'normal taş', pt: 'pedras normais' },
   blessStoneLbl:   { ru: 'безопасных заточек', en: 'safe stones', uk: 'безпечних заточок', es: 'piedras seguras', tr: 'güvenli taş', pt: 'pedras seguras' },
+
+  gramShopTabMain:    { ru: 'Магазин', en: 'Shop', uk: 'Магазин', es: 'Tienda', tr: 'Mağaza', pt: 'Loja' },
+  gramShopTabSpecial: { ru: 'Специальные', en: 'Special', uk: 'Спеціальні', es: 'Especiales', tr: 'Özel', pt: 'Especiais' },
+  specialSaleNoneLbl: { ru: 'Сейчас нет активной акции — загляните позже', en: 'No active sale right now — check back later', uk: 'Зараз немає активної акції — загляньте пізніше', es: 'No hay oferta activa ahora mismo — vuelve más tarde', tr: 'Şu anda aktif bir kampanya yok — daha sonra tekrar bakın', pt: 'Sem oferta ativa no momento — volte mais tarde' },
+  specialSaleEndsInFmt: { ru: 'Акция заканчивается через {t}', en: 'Sale ends in {t}', uk: 'Акція закінчується через {t}', es: 'La oferta termina en {t}', tr: 'Kampanya {t} içinde bitiyor', pt: 'A oferta termina em {t}' },
+  specialSalePkgLabelFmt: { ru: 'Специальный набор ({g} GRAM)', en: 'Special bundle ({g} GRAM)', uk: 'Спеціальний набір ({g} GRAM)', es: 'Paquete especial ({g} GRAM)', tr: 'Özel paket ({g} GRAM)', pt: 'Pacote especial ({g} GRAM)' },
+  specialSalePickPetLbl: { ru: 'Выберите питомца', en: 'Choose a pet', uk: 'Виберіть улюбленця', es: 'Elige una mascota', tr: 'Bir evcil hayvan seç', pt: 'Escolha um mascote' },
   seasonEnhCommon:   { ru: 'Заточка обычного предмета — +{n} очков', en: 'Enhancing a common item — +{n} points', uk: 'Заточка звичайного предмета — +{n} очок', es: 'Mejorar un objeto común: +{n} puntos', tr: 'Sıradan eşya geliştirme — +{n} puan', pt: 'Aprimorar item comum — +{n} pontos' },
   seasonEnhUncommon: { ru: 'Заточка необычного предмета — +{n} очков', en: 'Enhancing an uncommon item — +{n} points', uk: 'Заточка незвичайного предмета — +{n} очок', es: 'Mejorar un objeto poco común: +{n} puntos', tr: 'Nadir eşya geliştirme — +{n} puan', pt: 'Aprimorar item incomum — +{n} pontos' },
   seasonWinBonusFmt: { ru: '(за победу +{n})', en: '(+{n} for a win)', uk: '(за перемогу +{n})', es: '(+{n} por victoria)', tr: '(kazanınca +{n})', pt: '(+{n} por vitória)' },

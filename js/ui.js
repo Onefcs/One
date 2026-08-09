@@ -4768,6 +4768,8 @@ function showGramShopBtn() {
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionGramShopBtn(); }
 }
 
+let _gramShopTab = 'main';
+
 function openGramShopPanel() {
   const panel = document.getElementById('gram-shop-panel');
   if (!panel) return;
@@ -4780,9 +4782,17 @@ function closeGramShopPanel() {
   if (panel) panel.style.display = 'none';
 }
 
+function switchGramShopTab(tab) {
+  _gramShopTab = tab;
+  document.querySelectorAll('#gram-shop-panel .rating-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('gshop-tab-' + tab)?.classList.add('active');
+  _renderGramShopPanel();
+}
+
 function _renderGramShopPanel() {
   const el = document.getElementById('gram-shop-body');
   if (!el) return;
+  if (_gramShopTab === 'special') { _renderSpecialShopTab(el); return; }
   const bal = window._gramBalance || 0;
   el.innerHTML = `
     <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
@@ -4959,11 +4969,13 @@ function onGramShopResult(data) {
   }
   if (data.vipData) window._vipData = data.vipData;
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
-  // Season packages live in their own list and have no label of their own —
-  // name them by price so the toast still says what was bought.
+  // Season/special packages live in their own lists and have no label of
+  // their own — name them by price so the toast still says what was bought.
   const spkg = pkg ? null : _SEASON_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
+  const spec = pkg || spkg ? null : _SPECIAL_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label
             : spkg ? tVars('seasonPkgLabelFmt', { g: spkg.gram })
+            : spec ? tVars('seasonPkgLabelFmt', { g: spec.gram })
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
   const panel = document.getElementById('gram-shop-panel');
@@ -4975,6 +4987,186 @@ function onGramShopResult(data) {
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
   if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
+}
+
+// ── Специальная акция (Special Sale) ────────────────────────────────────────
+// A one-shot, admin-triggered 12h sale — its own tab in the GRAM shop panel
+// (see switchGramShopTab above), gated entirely on _specialSaleState.active
+// (pushed by gameStart and the live specialSaleState broadcast). Bought
+// through the exact same gramShopBuy/netGramShopBuy round-trip as every
+// other package; server/index.js's _SPECIAL_SHOP_PKGS is the source of
+// truth this mirrors for display.
+const _SPECIAL_SHOP_PKGS_UI = [
+  { id:'sale50',  gram:50,  classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8 },
+  { id:'sale100', gram:100, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 } },
+];
+
+function onSpecialSaleState() {
+  const panel = document.getElementById('gram-shop-panel');
+  if (panel && panel.style.display !== 'none' && _gramShopTab === 'special') _renderGramShopPanel();
+}
+
+// The buyer's own class's artifact/cloak/weapon at the given rarity — every
+// entry in ITEM_DEF for these three slots is class-locked (no generic
+// version exists), same lookup server/index.js's gramShopBuy uses to grant
+// them, so the card can never show an item this account couldn't equip.
+function _classItemFor(slot, rarity) {
+  const cls = player?.type;
+  if (typeof ITEM_DEF === 'undefined' || !cls) return null;
+  return ITEM_DEF.find(d => d.slot === slot && d.rarity === rarity && d.forClass && d.forClass.includes(cls));
+}
+
+function _rarePets() {
+  return typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === 'rare') : [];
+}
+
+function _renderSpecialShopTab(el) {
+  const st = (typeof _specialSaleState !== 'undefined' && _specialSaleState) || { active: false, endsAt: 0 };
+  if (!st.active) {
+    el.innerHTML = `
+      <div style="padding:32px 16px;text-align:center;color:#968a7a;font-size:13px">
+        ${t('specialSaleNoneLbl')}
+      </div>`;
+    return;
+  }
+  const bal = window._gramBalance || 0;
+  const left = Math.max(0, st.endsAt - Date.now());
+  el.innerHTML = `
+    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
+      ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
+    </div>
+    <div style="text-align:center;font-size:12px;color:#eb4e61;font-weight:700;margin-bottom:14px">
+      ${tVars('specialSaleEndsInFmt', { t: _fmtEventEta(left) })}
+    </div>
+    ${_SPECIAL_SHOP_PKGS_UI.map(pkg => _specialShopPkgHtml(pkg, bal)).join('')}
+  `;
+}
+
+function _specialShopPkgHtml(pkg, bal) {
+  const canAfford = bal >= pkg.gram;
+  function ri(img, label, cls) {
+    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+  }
+  const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
+  let rows = '';
+  const art = _classItemFor('artifact', pkg.classArtifact);
+  if (art) rows += ri(art.img, '', pkg.classArtifact);
+  const cloak = _classItemFor('cloak', pkg.classCloak);
+  if (cloak) rows += ri(cloak.img, '', pkg.classCloak);
+  const wep = _classItemFor('weapon', pkg.weapon);
+  if (wep) rows += ri(wep.img, enhLbl, pkg.weapon);
+  if (pkg.petChoice) {
+    rows += _rarePets().map(p => ri(p.img, '', pkg.petChoice)).join('');
+  }
+  if (pkg.stones) {
+    Object.entries(pkg.stones).forEach(([id, qty]) => {
+      rows += ri(_STONE_IMG[id] || '', `×${qty}`, '');
+    });
+  }
+  return `<div class="gram-shop-card" style="border-color:#eb4e6144">
+    <div class="gram-shop-card-head">
+      <div>
+        <div class="gram-shop-title" style="color:#eb4e61">${tVars('specialSalePkgLabelFmt', { g: pkg.gram })}</div>
+        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+      </div>
+      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
+        style="border-color:#eb4e61;color:${canAfford ? '#eb4e61' : '#645f57'}"
+        onclick="${canAfford ? `openSpecialShopConfirm('${pkg.id}')` : ''}">
+        ${canAfford ? t('affordableBuyBtn') : t('notEnoughBtn')}
+      </button>
+    </div>
+    <div class="vip-items-row">${rows}</div>
+  </div>`;
+}
+
+// Picking a pet (sale100 only) happens INSIDE the confirm modal — the buy
+// button stays disabled until one is chosen, so a purchase can never fire
+// with no valid pet selected (the server refuses that anyway, see
+// gramShopBuy's petChoice validation, but this avoids the round-trip).
+let _specialShopChosenPet = null;
+
+function openSpecialShopConfirm(pkgId) {
+  const pkg = _SPECIAL_SHOP_PKGS_UI.find(p => p.id === pkgId);
+  if (!pkg) return;
+  const bal = window._gramBalance || 0;
+  if (bal < pkg.gram) return;
+  _specialShopChosenPet = null;
+  const existing = document.getElementById('special-shop-confirm-ov');
+  if (existing) existing.remove();
+
+  const cls = player?.type;
+  const className = (typeof CHAR_DEF !== 'undefined' && CHAR_DEF[cls]) ? CHAR_DEF[cls].name : '';
+  const art = _classItemFor('artifact', pkg.classArtifact);
+  const cloak = _classItemFor('cloak', pkg.classCloak);
+  const wep = _classItemFor('weapon', pkg.weapon);
+  const enhSuffix = pkg.enhance ? ` +${pkg.enhance}` : '';
+  const lines = [];
+  if (art) lines.push(`<div style="color:#c5bfb7">${art.name}${className ? ` (${className})` : ''}</div>`);
+  if (cloak) lines.push(`<div style="color:#c5bfb7">${cloak.name}${className ? ` (${className})` : ''}</div>`);
+  if (wep) lines.push(`<div style="color:#c5bfb7">${wep.name}${enhSuffix}</div>`);
+  if (pkg.stones) {
+    Object.entries(pkg.stones).forEach(([id, qty]) => {
+      lines.push(`<div style="color:#c5bfb7">${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}</div>`);
+    });
+  }
+
+  const petPicker = pkg.petChoice ? `
+    <div style="margin:4px 0 14px">
+      <div style="color:#b2a288;font-size:12px;margin-bottom:8px">${t('specialSalePickPetLbl')}</div>
+      <div id="special-shop-pet-grid" style="display:flex;gap:10px;justify-content:center">
+        ${_rarePets().map(p => `
+          <div class="special-shop-pet-opt" data-pet="${p.id}" onclick="_pickSpecialShopPet('${p.id}')"
+               style="border:2px solid rgba(209,204,197,.15);border-radius:10px;padding:6px;cursor:pointer;text-align:center;width:64px">
+            <img src="${p.img}" style="width:44px;height:44px;object-fit:contain">
+            <div style="font-size:10px;color:#c5bfb7;margin-top:2px">${p.name}</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'special-shop-confirm-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800;color:#eb4e61">${tVars('specialSalePkgLabelFmt', { g: pkg.gram })} — ${pkg.gram} GRAM</div>
+        <button onclick="document.getElementById('special-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
+        ${lines.join('')}
+      </div>
+      ${petPicker}
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
+        <span style="color:#b2a288">${t('costLbl')}</span>
+        <span style="font-weight:700;color:#eb4e61">${pkg.gram} GRAM</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
+        <span style="color:#b2a288">${t('yourBalanceLbl')}</span>
+        <span style="font-weight:700;color:#f5dbae">${bal.toFixed(7)} GRAM</span>
+      </div>
+      <button class="gram-btn gram-btn-green" id="special-shop-buy-btn" style="width:100%;padding:13px"
+        ${pkg.petChoice ? 'disabled' : ''}
+        onclick="_confirmSpecialShopBuy('${pkgId}')">${tVars('buyForFmt', { price: pkg.gram })}</button>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function _pickSpecialShopPet(petId) {
+  _specialShopChosenPet = petId;
+  document.querySelectorAll('.special-shop-pet-opt').forEach(el => {
+    el.style.borderColor = el.dataset.pet === petId ? '#eb4e61' : 'rgba(209,204,197,.15)';
+  });
+  const btn = document.getElementById('special-shop-buy-btn');
+  if (btn) btn.disabled = false;
+}
+
+function _confirmSpecialShopBuy(pkgId) {
+  const pkg = _SPECIAL_SHOP_PKGS_UI.find(p => p.id === pkgId);
+  if (pkg && pkg.petChoice && !_specialShopChosenPet) return;
+  const ov = document.getElementById('special-shop-confirm-ov');
+  if (ov) ov.remove();
+  if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId, _specialShopChosenPet);
 }
 
 function onGramShopError(msg) {
