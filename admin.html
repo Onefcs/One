@@ -618,11 +618,11 @@ async function loadRace10() {
 }
 
 async function openRace10() {
-  if (!confirm('Открыть регистрацию в Кровавую Башню сейчас? Окно вне расписания, длится как обычно 5 минут.')) return;
+  if (!confirm('Открыть регистрацию в Кровавую Башню сейчас? Окно вне расписания, длится как обычно 5 минут. Всем, включая тех, кто уже использовал попытку на сегодня, начислится +1 попытка на этот забег.')) return;
   try {
     const r = await api('/admin/race10/open', { method:'POST' });
     const d = await r.json();
-    if (r.ok) toast('Регистрация открыта');
+    if (r.ok) toast('Регистрация открыта, всем начислена +1 попытка на сегодня');
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadRace10();

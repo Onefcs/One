@@ -1720,11 +1720,19 @@ app.get('/admin/event-boss', adminAuth, (req, res) => {
 // callback only runs once a request arrives, well after the whole module
 // (and the const _race10 it closes over) has finished loading — same
 // pattern the DEV_LOCAL-only /dev/race10/open route above already relies on.
+//
+// Also grants everyone a bonus daily attempt for today (_race10BonusReset/
+// _race10BonusCount, near _attemptCap above) — an extra, unscheduled window
+// is worthless to anyone who already spent their one regular attempt in the
+// normal 20:30 slot (or an earlier admin open) unless it comes with a fresh
+// attempt to spend on it.
 app.post('/admin/race10/open', adminAuth, (req, res) => {
   if (_race10.phase === 'reg') return res.status(409).json({ error: 'Регистрация уже открыта' });
   if (_race10.live) return res.status(409).json({ error: 'Забег уже идёт' });
+  _race10BonusReset();
+  _race10BonusCount++;
   _race10OpenWindow(Date.now());
-  res.json({ ok: true, startAt: _race10.startAt });
+  res.json({ ok: true, startAt: _race10.startAt, bonusAttempts: _race10BonusCount });
 });
 
 // Cancels an open registration window early — same effect as the normal
@@ -2670,16 +2678,30 @@ function _lockDailyAttempt(socketId, field) {
   }]).catch(() => {});
 }
 
+// An admin-forced Tower open (/admin/race10/open) grants everyone a bonus
+// daily attempt on top of RACE10_ATTEMPTS for the day it opens on, so an
+// account that already spent today's regular one isn't locked out of this
+// extra race. Cumulative across more than one admin open the same day;
+// rolls back to 0 the moment the UTC date changes, same boundary
+// _dailyAttemptsLeft's own per-player records reset on (_todayStr).
+let _race10BonusDate = null;
+let _race10BonusCount = 0;
+function _race10BonusReset() {
+  const today = _todayStr();
+  if (_race10BonusDate !== today) { _race10BonusDate = today; _race10BonusCount = 0; }
+}
+
 // How many runs a day each event allows. They share one helper but not one
 // pool — the Кровавая Башня has a single start per day now, so a single
-// attempt is what makes that start the whole of the opportunity.
+// attempt is what makes that start the whole of the opportunity (plus
+// whatever _race10BonusCount an admin has granted today).
 //
 // Read inside the function rather than from a table built up here:
 // RACE10_ATTEMPTS/FEAR_ATTEMPTS are declared further down the file, and a
 // `const` table evaluated at load time would hit their temporal dead zone
 // and take the whole process down on boot.
 function _attemptCap(field) {
-  if (field === 'race10Attempts') return RACE10_ATTEMPTS;
+  if (field === 'race10Attempts') { _race10BonusReset(); return RACE10_ATTEMPTS + _race10BonusCount; }
   if (field === 'fearAttempts') return FEAR_ATTEMPTS;
   return DAILY_DUNGEON_ATTEMPTS;
 }
