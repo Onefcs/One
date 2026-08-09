@@ -2575,16 +2575,26 @@ class Room {
   // across a capture would silently repoint every connected client's handle
   // map at the wrong enemy, the same class of bug the _idx comment in the
   // constructor above documents in detail.
+  //
+  // isBoss is deliberately false: `isBoss: true` also opts an enemy out of
+  // AOI culling entirely (see _rebuildEnemyGrid's _bossBuf, which is streamed
+  // to EVERY connected player every tick, not just nearby ones) — that's
+  // right for the one-of-a-kind world/arm bosses, but it meant this tower's
+  // HP bar sat pinned on every player's screen everywhere in the world,
+  // forever, even for players nowhere near the Guild War zone. Regular
+  // (non-boss) enemies size at 6.75x instead of a boss's 4.5x
+  // (js/pixi-world.js), so `size` is scaled down from 90 to 60 to keep the
+  // exact same on-screen footprint.
   spawnGuildWarTower(owner) {
     const gw = this._dungeon.guildWar;
     if (!gw) return null;
     const x = gw.cx, y = gw.cy;
     const e = {
       id: 'guildwar_castle', eid: 'guildwar_castle',
-      name: 'Замок гильдий', color: '#c9a24b', size: 90,
+      name: 'Замок гильдий', color: '#c9a24b', size: 60,
       maxHp: GUILD_WAR_TOWER_HP, hp: GUILD_WAR_TOWER_HP,
       atk: 0, def: 0, spd: 0, xp: 0, gold: 0,
-      isBoss: true, eType: 'boss',
+      isBoss: false,
       x, y, spawnX: x, spawnY: y,
       atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
       aggro: false, aggroR: 0,
