@@ -1702,6 +1702,20 @@ function _isRace10Tile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
+// Война гильдий gets its own palette too — a near-black, war-torn indigo
+// courtyard rather than the default biome floor, so the siege ground under
+// the tower actually reads as its own place instead of just more dungeon.
+// The violet undertone echoes the tower's crystal roof gems; ember stains
+// stand in for the blood ones race10 gets, since this is a structure siege,
+// not a gore-fest.
+const _GW_WALL    = '#170f24';
+const _GW_FLOOR_A = '#221733';
+const _GW_FLOOR_B = '#120c1c';
+function _isGuildWarTile(tx, ty) {
+  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.guildWar && dungeon.guildWar.bounds;
+  return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -1733,13 +1747,15 @@ function _buildChunk(cx, cy) {
   c.fillRect(x0 - _CHUNK_G, y0 - _CHUNK_G, cv.width, cv.height);
   const mortarWall = _shadeHexColor(th.wallColor, -0.45);
   const mortarWallRace10 = _shadeHexColor(_RACE10_WALL, -0.45);
+  const mortarWallGw = _shadeHexColor(_GW_WALL, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       const x = tx * TILE, y = ty * TILE;
       const inTower = _isRace10Tile(tx, ty);
-      const wallBase = inTower ? _RACE10_WALL : th.wallColor;
-      const mortar = inTower ? mortarWallRace10 : mortarWall;
+      const inGw = !inTower && _isGuildWarTile(tx, ty);
+      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : th.wallColor;
+      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : mortarWall;
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -1758,14 +1774,16 @@ function _buildChunk(cx, cy) {
   // edge, occasional cracks, and occasional grime/blood stains.
   const mortarFloor = _shadeHexColor(th.floorA, -0.35);
   const mortarFloorRace10 = _shadeHexColor(_RACE10_FLOOR_A, -0.35);
+  const mortarFloorGw = _shadeHexColor(_GW_FLOOR_A, -0.35);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
       const inTower = _isRace10Tile(tx, ty);
-      const floorA = inTower ? _RACE10_FLOOR_A : th.floorA;
-      const floorB = inTower ? _RACE10_FLOOR_B : th.floorB;
-      const mortar = inTower ? mortarFloorRace10 : mortarFloor;
+      const inGw = !inTower && _isGuildWarTile(tx, ty);
+      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : th.floorA;
+      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : th.floorB;
+      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : mortarFloor;
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -1784,6 +1802,22 @@ function _buildChunk(cx, cy) {
         const sy = y + TILE * (0.3 + _tileHash(tx, ty, 6) * 0.4);
         _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, inTower ? 'rgba(140,10,10,0.55)' : 'rgba(60,10,10,0.35)');
       }
+      // Guild War: scorched siege ground — frequent dark ash patches, plus a
+      // rare glowing violet ember that echoes the tower's crystal roof gems,
+      // so the courtyard reads as "battlefield under a haunted tower" rather
+      // than a copy-pasted dungeon floor.
+      if (inGw) {
+        if (_tileHash(tx, ty, 14) < 0.22) {
+          const sx = x + TILE * (0.25 + _tileHash(tx, ty, 15) * 0.5);
+          const sy = y + TILE * (0.25 + _tileHash(tx, ty, 16) * 0.5);
+          _drawStain(c, sx, sy, 7 + _tileHash(tx, ty, 17) * 6, 'rgba(6,4,10,0.6)');
+        }
+        if (_tileHash(tx, ty, 18) < 0.035) {
+          const sx = x + TILE * (0.3 + _tileHash(tx, ty, 19) * 0.4);
+          const sy = y + TILE * (0.3 + _tileHash(tx, ty, 20) * 0.4);
+          _drawStain(c, sx, sy, 5 + _tileHash(tx, ty, 21) * 3, 'rgba(168,85,247,0.5)');
+        }
+      }
     }
   }
 
@@ -1794,7 +1828,8 @@ function _buildChunk(cx, cy) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL : th.wallColor;
+      const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
+        : _isGuildWarTile(tx, ty) ? _GW_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));
