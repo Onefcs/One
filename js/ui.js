@@ -5000,16 +5000,6 @@ function onGramShopResult(data) {
             : spec ? tVars('seasonPkgLabelFmt', { g: spec.gram })
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
-  // The special-sale packages also pay season points — server already added
-  // them (see gramShopBuy's seasonPoints branch), this just mirrors the total
-  // into the local season state so the Сезон panel doesn't show a stale figure.
-  if (data.seasonPointsAwarded > 0 && Number.isFinite(data.newSeasonPoints)) {
-    if (typeof _seasonState !== 'undefined') _seasonState = { ..._seasonState, points: data.newSeasonPoints };
-    if (typeof showEventBossBanner === 'function') {
-      showEventBossBanner(tVars('specialSaleSeasonPtsFmt', { n: data.seasonPointsAwarded }), '#50af95');
-    }
-    if (typeof onSeasonState === 'function') onSeasonState();
-  }
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
   const specPanel = document.getElementById('special-panel');
@@ -5029,10 +5019,10 @@ function onGramShopResult(data) {
 // the live specialSaleState broadcast). Bought through the exact same
 // gramShopBuy/netGramShopBuy round-trip as every other package;
 // server/index.js's _SPECIAL_SHOP_PKGS is the source of truth this mirrors
-// for display, including the seasonPoints bonus each package pays out.
+// for display.
 const _SPECIAL_SHOP_PKGS_UI = [
-  { id:'sale50',  gram:50,  classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'uncommon', seasonPoints:500 },
-  { id:'sale100', gram:100, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 }, seasonPoints:1000 },
+  { id:'sale50',  gram:50,  classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'uncommon' },
+  { id:'sale100', gram:100, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 } },
 ];
 
 function onSpecialSaleState() {
@@ -5101,9 +5091,6 @@ function _specialShopPkgHtml(pkg, bal) {
       rows += ri(_STONE_IMG[id] || '', `×${qty}`, '');
     });
   }
-  const spLine = pkg.seasonPoints > 0
-    ? `<div style="text-align:center;font-size:12px;color:#7ee0c0;font-weight:700;margin-top:8px">${tVars('specialSaleSeasonPtsFmt', { n: pkg.seasonPoints })}</div>`
-    : '';
   return `<div class="gram-shop-card" style="border-color:#eb4e6144">
     <div class="gram-shop-card-head">
       <div>
@@ -5117,7 +5104,6 @@ function _specialShopPkgHtml(pkg, bal) {
       </button>
     </div>
     <div class="vip-items-row">${rows}</div>
-    ${spLine}
   </div>`;
 }
 
@@ -5150,9 +5136,6 @@ function openSpecialShopConfirm(pkgId) {
     Object.entries(pkg.stones).forEach(([id, qty]) => {
       lines.push(`<div style="color:#c5bfb7">${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}</div>`);
     });
-  }
-  if (pkg.seasonPoints > 0) {
-    lines.push(`<div style="color:#7ee0c0">${tVars('specialSaleSeasonPtsFmt', { n: pkg.seasonPoints })}</div>`);
   }
 
   const petPicker = pkg.petChoice ? `

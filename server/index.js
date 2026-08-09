@@ -507,12 +507,11 @@ const _SEASON_SHOP_PKGS = [
 // as `weapon` already does via _SHOP_CLASS_WEAPONS. petChoice lets the buyer
 // pick which specific pet of that rarity they want (see the petId handling
 // in gramShopBuy) rather than a random one, unlike everything else in the
-// GRAM shop. seasonPoints pays a flat season-points bonus on top of the
-// items, via the same _seasonAddPoints every other point award goes through.
+// GRAM shop.
 const SPECIAL_SALE_DURATION_MS = 12 * 60 * 60 * 1000;
 const _SPECIAL_SHOP_PKGS = [
-  { id:'sale50',  gram:50,  special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'uncommon', seasonPoints:500 },
-  { id:'sale100', gram:100, special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 }, seasonPoints:1000 },
+  { id:'sale50',  gram:50,  special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'uncommon' },
+  { id:'sale100', gram:100, special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 } },
 ];
 const _specialSale = { active: false, endsAt: 0, closeTimer: null };
 
@@ -5297,16 +5296,6 @@ io.on('connection', socket => {
       socket.data.vipLevel = _vipLvl;
       _setVipAura(authed.username, _vipLvl);
 
-      // Special-sale packages also carry a flat season-points bonus. Awarded
-      // after the GRAM/item side of the purchase already landed, so a season
-      // award failure (e.g. season just ended) never rolls back or blocks the
-      // items the player already paid for — see _seasonAddPoints's own
-      // failure logging for why a null here is not re-surfaced as an error.
-      let _newSeasonPoints = null;
-      if (pkg.seasonPoints > 0) {
-        _newSeasonPoints = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
-      }
-
       socket.emit('gramShopResult', {
         pkgId,
         newBalance:  _gramBalance,
@@ -5317,8 +5306,6 @@ io.on('connection', socket => {
         newNexumBalance: _nexumBalance,
         vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
         leveled: _vipLvl > _prevVipLvl,
-        newSeasonPoints: _newSeasonPoints,
-        seasonPointsAwarded: pkg.seasonPoints > 0 ? pkg.seasonPoints : 0,
       });
       io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
       if (_vipLvl > _prevVipLvl) {
