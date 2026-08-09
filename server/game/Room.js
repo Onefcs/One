@@ -1195,8 +1195,23 @@ class Room {
       // Leash: too far from spawn → full HP reset back to spawn. Skipped for
       // the event boss: LEASH_R2 is only 420px and the hub is 48 tiles across,
       // so players circling it would repeatedly reset its 100k HP to full.
+      //
+      // Also skipped for Fear (arm === 'fear'): this is a separate mechanism
+      // from the aggroR*2.2 de-aggro/target-search radius above, which is the
+      // one FEAR_AGGRO_R (500) was widened for — that fix left this flat,
+      // aggro-independent 420px check untouched. A Fear hall's own diagonal
+      // is ~679px (12 tiles) and monsters spawn up to ~190px off-centre
+      // (FEAR_SPAWN_RING_MAX), so simply fighting across the room — completely
+      // ordinary play against a 20-monster swarm in a sealed 12-tile room —
+      // routinely exceeds 420px from a monster's spawn point. It would then
+      // snap back to its spawn tile at full HP mid-fight: damage already
+      // dealt undone and the monster gone from wherever the player was just
+      // fighting it, which is exactly the "monsters disappear" symptom. Same
+      // "nowhere to drag anything in a sealed room" reasoning as the aggroR
+      // widening — the hall has walls, so there's nothing left for a leash to
+      // protect against here.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
-      if (!e.ignoresSafeZone && ldx * ldx + ldy * ldy > LEASH_R2) {
+      if (!e.ignoresSafeZone && e.arm !== 'fear' && ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;
