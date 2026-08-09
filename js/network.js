@@ -26,10 +26,6 @@ let _authOkReceived = false;
 // Set by the authOk reconnect-guard, consumed by the gameStart handler —
 // see comment there for why a reconnect must not reposition/restore.
 let _isReconnectRejoin = false;
-// Set when authOk picked the local (localStorage) backup over the server's
-// savedData because the backup was newer — the gameStart restore then pushes
-// it back so the DB catches up. See _pickFreshestSave / the unload-save note.
-let _restoredFromBackup = false;
 // True only once gameStart's non-reconnect branch has actually run
 // restoreFromSave() (or made the deliberate "no data yet, start fresh" call
 // for a genuinely new account) at least once this session. The authOk
@@ -53,9 +49,9 @@ let _playerRestored = false;
 // way to tell "this character legitimately has nothing yet" apart from "the
 // character has progress but this session failed to load it." _sessionHasRealData
 // records whether the restore that actually ran carried anything. Together
-// they let _emitSaveProgress refuse to write a blank save (to the DB *or* to
-// the localStorage backup) for an account the server says already exists —
-// the write that turned the load-time race below into permanent data loss.
+// they let _emitSaveProgress refuse to write a blank save to the DB for an
+// account the server says already exists — the write that turned the
+// load-time race below into permanent data loss.
 let _accountIsNew = false;
 let _sessionHasRealData = false;
 
@@ -144,13 +140,11 @@ function netConnect(onReady) {
     window._topPlayer = topPlayer || null;
     // The server had no record for this telegramId — either a genuine first
     // login, or an account that existed before but was deleted from the DB
-    // (e.g. by an admin). Either way there's nothing to resume: clear any
-    // localStorage save backup / remembered class so _pickFreshestSave below
-    // and _showCharSelect's fallback don't resurrect the old (deleted)
-    // character from this device's local cache.
+    // (e.g. by an admin). Either way there's nothing to resume: clear the
+    // remembered class so _showCharSelect's fallback doesn't resurrect the
+    // old (deleted) character's class from this device's local cache.
     if (isNewAccount) {
       try { localStorage.removeItem(_lastCharTypeKey()); } catch (_) {}
-      if (typeof _clearSaveBackup === 'function') _clearSaveBackup();
     }
     // Only ever widens (never resets to false on a later authOk): once the
     // server has told us this account is brand new, a reconnect's authOk
@@ -184,7 +178,7 @@ function netConnect(onReady) {
       return;
     }
 
-    _savedData = _pickFreshestSave(savedData || null);
+    _savedData = savedData || null;
     const _ls = document.getElementById('login-screen');
     if (_ls) {
       _ls.classList.add('splash-out');
@@ -443,10 +437,6 @@ function netConnect(onReady) {
     // _playerRestored's declaration for the race this closes.
     _playerRestored = true;
     csOnServerReady();
-    // If the restore came from the local backup (server DB was behind because a
-    // prior unload couldn't flush), push it straight back so the server and DB
-    // catch up to the recovered state.
-    if (_restoredFromBackup) { _restoredFromBackup = false; netSaveProgressNow(); }
   }
 
   // Enemies we've been told about but have no record of. Batched into one
@@ -1455,8 +1445,9 @@ function _buildSaveStats() {
     passiveLevels: player.passiveLevels || {},
     bonusSP: player.bonusSP || 0,
     lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
-    // Freshness stamp so a reload can tell which of {server DB, local backup}
-    // holds the most recent state (see _pickFreshestSave).
+    // When this blob was composed — the server uses it to tell a save that
+    // predates a since-applied gold spend from one that already accounts for
+    // it (_pendingGoldSpend, server/index.js). Not otherwise interpreted here.
     savedAt: Date.now(),
     // Echoed back untouched — the server uses it to tell a save composed
     // before its last item grant from one composed after (see _invRev in
@@ -1465,59 +1456,36 @@ function _buildSaveStats() {
   };
 }
 
-// ── Local save backup ─────────────────────────────────────────────────────
-// A page unload/close usually cannot flush the final saveProgress over the
-// WebSocket in time — the socket is torn down before the frame is written — so
-// the DB keeps a slightly older snapshot and the player reloads to find their
-// last actions rolled back. localStorage.setItem, by contrast, completes
-// synchronously and survives unload, so we mirror every save into it and, on
-// the next load, adopt it when it is newer than what the server returned.
-// Keyed per Telegram user id so a shared device never restores account A's
-// progress into account B.
+// No local save backup any more — a hand-edited localStorage blob had no way
+// to be told apart from a real one once _pickFreshestSave decided it was
+// "newer" and the gameStart restore pushed it straight back to the server as
+// the new saveProgress. The server's own anti-forgery checks (item census,
+// gold growth cap — see server/index.js) are what actually have to hold the
+// line regardless of what a client claims, so this was pure client-side
+// upside (recovering the last couple of unsaved seconds on an unclean tab
+// close) bought at the cost of trusting arbitrary local storage content.
+// Keyed per Telegram user id so a shared device never mixes accounts up.
 function _tgUserId() {
   try { return String(window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ''); }
   catch (_) { return ''; }
 }
-function _saveBackupKey() {
-  const id = _tgUserId();
-  return id ? `_saveBackup_${id}` : '_saveBackup';
-}
-// Same per-account keying as _saveBackupKey above — '_lastCharType' used to
-// be one flat key shared by every Telegram account that ever opened the game
-// on a given device/browser. An account with a DB record but no savedData.type
-// yet (e.g. they connected once and closed the app mid char-select, so
-// isNewAccount is false on their next login and the localStorage-remembered-
-// class clear in the authOk handler never fires for them) fell through
-// _showCharSelect's fallback and inherited whatever class the PREVIOUS
-// account on that device had picked — auto-creating that same character
-// without ever showing them the selection screen.
+// '_lastCharType' used to be one flat key shared by every Telegram account
+// that ever opened the game on a given device/browser. An account with a DB
+// record but no savedData.type yet (e.g. they connected once and closed the
+// app mid char-select, so isNewAccount is false on their next login and the
+// localStorage-remembered-class clear in the authOk handler never fires for
+// them) fell through _showCharSelect's fallback and inherited whatever class
+// the PREVIOUS account on that device had picked — auto-creating that same
+// character without ever showing them the selection screen.
 function _lastCharTypeKey() {
   const id = _tgUserId();
   return id ? `_lastCharType_${id}` : '_lastCharType';
 }
-function _writeSaveBackup(stats) {
-  try { localStorage.setItem(_saveBackupKey(), JSON.stringify(stats)); } catch (_) {}
-}
-function _readSaveBackup() {
-  try { const raw = localStorage.getItem(_saveBackupKey()); return raw ? JSON.parse(raw) : null; }
-  catch (_) { return null; }
-}
-function _clearSaveBackup() {
-  try { localStorage.removeItem(_saveBackupKey()); } catch (_) {}
-}
-// Choose the freshest of the server's savedData and the local backup. The
-// backup only wins when it is strictly newer by its savedAt stamp, so a save
-// that did reach the server (newer server savedAt) is always preferred and
-// multi-device play resolves correctly by wall-clock.
-// Mirrors the server's _looksLikeCatastrophicReset (server/index.js) —
-// same "lvl 1, no gold, nothing in inventory/equipment" shape check, applied
-// client-side. A backup that looks like a fresh/blank character must not be
-// allowed to beat a server save with real progress just because its savedAt
-// stamp is newer: that's exactly what got written locally by
-// _emitSaveProgress's (synchronous) _writeSaveBackup call during the
-// poisoned-reconnect race the _playerRestored guard above now closes —
-// without this check, a backup left over from before that fix landed would
-// keep re-infecting every future login even after the race itself is gone.
+// Whether a save/restore blob has no real progress behind it. Used to tell
+// "this character legitimately has nothing yet" apart from "this session
+// failed to load real data" (_sessionHasRealData below) and to stop
+// _emitSaveProgress from persisting a blank state over an existing account's
+// real one.
 // NB: counts only FILLED equipment slots, not keys. The client's live
 // player.equipment always carries all EQ_SLOTS keys with null values (see
 // makePlayer in js/player.js), so a plain Object.keys().length — which is
@@ -1531,15 +1499,6 @@ function _looksBlankSave(s) {
   return (s.lvl || 1) <= 1 && (s.gold || 0) === 0 &&
     (s.inventory || []).length === 0 && equipped === 0;
 }
-function _pickFreshestSave(srv) {
-  const bak = _readSaveBackup();
-  if (bak && bak.type && (bak.savedAt || 0) > (srv?.savedAt || 0)) {
-    if (_looksBlankSave(bak) && !_looksBlankSave(srv)) return srv;
-    _restoredFromBackup = true;
-    return bak;
-  }
-  return srv;
-}
 
 function _emitSaveProgress() {
   if (!player || state !== 'playing') return;
@@ -1548,17 +1507,14 @@ function _emitSaveProgress() {
   // 'playing' after gameStart ran the restore), so it costs nothing — but it
   // is the single choke point every save path in the game funnels through,
   // and blank-save-over-real-progress is exactly the failure that cost a
-  // player their character. The DB half is already guarded server-side
-  // (_looksLikeCatastrophicReset in saveProgress/selectChar); this also stops
-  // the *localStorage backup* from being overwritten with the blank state,
-  // which is what made that loss survive a reload and outlive the fix.
+  // player their character. The DB half is already guarded server-side too
+  // (_looksLikeCatastrophicReset in saveProgress/selectChar).
   // _accountIsNew accounts are exempt: their first save legitimately is blank.
   const stats = _buildSaveStats();
   if (!_accountIsNew && !_sessionHasRealData && _looksBlankSave(stats)) {
     console.warn('[save] refusing to persist a blank save for an existing account — no real data loaded this session');
     return;
   }
-  _writeSaveBackup(stats); // synchronous — lands even when the emit below is lost to unload
   if (socket?.connected) socket.emit('saveProgress', { stats });
 }
 

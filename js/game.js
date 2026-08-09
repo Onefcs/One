@@ -1896,7 +1896,6 @@ function respawnPlayer() {
 function restartGame() {
   if (state !== 'dead') return;
   try { localStorage.removeItem(_lastCharTypeKey()); } catch (_) {}
-  if (typeof _clearSaveBackup === 'function') _clearSaveBackup();
   document.getElementById('death-modal').style.display = 'none';
   targetId = null; targetIsPlayer = false; pvpMode = false; autoAttackMode = false;
   serverEnemies = []; otherPlayers = new Map();

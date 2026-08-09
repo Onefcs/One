@@ -2153,11 +2153,12 @@ const _SANITIZE_MAX = {
 // shrink" rule would reject ordinary earning. But nothing bounded how FAST
 // it's allowed to grow either: _serverSpendGold's own comment already says
 // the quiet part — "gold is the one currency the server does not own... the
-// next saveProgress replaces _lastStats wholesale" — so a forged save (a
-// modified client, or a localStorage backup hand-edited and pushed back by
-// the gameStart restore — see _pickFreshestSave, js/network.js) could claim
-// any figure up to _SANITIZE_MAX.gold and the server adopted it outright as
-// the new truth.
+// next saveProgress replaces _lastStats wholesale" — so a forged save (any
+// modified client — the game used to also mirror every save into a
+// localStorage backup and adopt it back on the next load if newer, which
+// briefly made a hand-edited local value an even easier way in; that backup
+// is gone now) could claim any figure up to _SANITIZE_MAX.gold and the
+// server adopted it outright as the new truth.
 //
 // GOLD_MAX_EARN_PER_SEC is picked well above the fastest legitimate combo:
 // goldAtLevel tops out around the global level ceiling (~120/kill), stacked
@@ -4126,10 +4127,10 @@ io.on('connection', socket => {
     const before = Math.floor(Number(_lastStats.gold) || 0);
     const after = Math.max(0, before - amount);
     _lastStats.gold = after;
-    // savedAt moves with it: the client compares its localStorage backup
-    // against the stored blob by this stamp (_pickFreshestSave, js/network.js),
-    // and a write that left savedAt behind could be beaten by a device cache
-    // still holding the pre-spend figure.
+    // savedAt moves with it: _pendingGoldSpend.at (below) is stamped from this
+    // value, and that is what the next saveProgress compares its own
+    // clean.savedAt against to tell "composed before this spend" (needs the
+    // deduction re-applied) from "composed after" (already accounts for it).
     _lastStats.savedAt = Date.now();
     _pendingGoldSpend = { amount, after, at: _lastStats.savedAt, reason,
                           until: Date.now() + 60000 };
