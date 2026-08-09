@@ -2236,6 +2236,12 @@ class Room {
         p.x = x; p.y = y;
         p.hp = p.maxHp;
         p.pvpMode = true;
+        // Defensive: fearEnter's own registration-time check is what's meant
+        // to keep these two from ever overlapping, but a deploy pulling
+        // someone out of their Fear hall without releasing it is exactly the
+        // leaked-hall/"monsters disappeared" bug that guard exists to
+        // prevent — belt and suspenders against any other path in.
+        if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
         p._profileRev++;
         placed.push({ socketId: sid, x, y, hp: p.hp, team });
       });
@@ -2268,6 +2274,15 @@ class Room {
       // the targeting and the streaming side. Cleared when they leave, in
       // deathBattleReturn (every exit path goes through it) and removePlayer.
       p._raceLane = i;
+      // Defensive: fearEnter's own registration-time check is what's meant to
+      // keep these two from ever overlapping (register for the Tower, then
+      // start a Fear run while waiting for it to open), but landing here with
+      // a Fear lane still set would otherwise leak that hall forever — nothing
+      // downstream releases it — while its monsters silently drop off this
+      // player's screen the moment they're moved here (out of AOI range),
+      // reading as "the monsters disappeared". Belt and suspenders against any
+      // other path in.
+      if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
       p._profileRev++;
       placed.push({ socketId: sid, x, y, hp: p.hp, lane: i });
     });

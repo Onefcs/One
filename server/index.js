@@ -7208,10 +7208,24 @@ io.on('connection', socket => {
     if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
       return socket.emit('fearError', { msg: 'Вы уже записаны на битву на смерть' });
     }
-    if (_a3.live && _a3.teams.has(socket.id)) {
+    // Checked against the QUEUE too, not just live participation: race10/
+    // arena3 registration opens minutes before the match actually deploys
+    // (race10Register/arena3Register), and neither of those two checked Fear
+    // the other way around before this. A player could register, then start
+    // a Fear run while waiting, and get yanked into the race/match the
+    // moment it deployed — raceDeploy/arena3's own deploy only ever set
+    // _raceLane, never checked or cleared an existing _fearLane, so the
+    // player ended up with BOTH set at once. Their Fear hall was never
+    // released (fearReleaseLane never ran) — a leaked, permanently-occupied
+    // slot — while the AOI distance check silently dropped its monsters off
+    // their screen the instant they were teleported to the race lane: from
+    // their side that reads as "the monsters just disappeared". Death battle
+    // registration already checked `.reg` (not just `.alive`) for exactly
+    // this reason; race10/arena3 just never got the same treatment.
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
       return socket.emit('fearError', { msg: 'Вы сейчас на арене 3х3' });
     }
-    if (_race10.live && _race10.alive.has(socket.id)) {
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
       return socket.emit('fearError', { msg: 'Вы сейчас в Кровавой Башне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
