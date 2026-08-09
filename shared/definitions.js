@@ -1208,6 +1208,30 @@ const ARENA3_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
 const ARENA3_HOURS_MSK = [21];
 const ARENA3_WINDOW_MS = 60 * 60 * 1000;
 
+// ── Guild War ("Война гильдий") schedule ─────────────────────────────────────
+// Every day, 22:00–23:00 Moscow time — one sealed zone, one stationary tower.
+// Whichever clan lands the killing blow owns it until another clan re-fights
+// it down to 0 (full HP reset on every capture). Ownership itself has no
+// schedule — it persists across the closed 23:00-22:00 gap, only the zone's
+// combat access opens and closes on this window.
+const GUILD_WAR_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
+const GUILD_WAR_HOURS_MSK = [22];
+const GUILD_WAR_WINDOW_MS = 60 * 60 * 1000;
+
+// Between ARENA3_BOSS_HP (30k, solo-killable in one 3v3) and EVENT_BOSS.hp
+// (1M, a whole server's worth of damage) — meant to take a sustained
+// multi-clan push, not one raid. A starting placeholder pending real
+// multi-clan playtesting; easy to retune since it's one constant read by
+// both Room.spawnGuildWarTower and the client's HP bar.
+const GUILD_WAR_TOWER_HP = 300000;
+
+// Passive income while owned: a random total of 10-30 shard units per hour,
+// spread across UNIQUE_SHARDS' kinds (see _rollGuildWarIncome, server/
+// index.js), credited 24/7 regardless of whether the zone is currently open.
+const GUILD_WAR_SHARD_MIN = 10;
+const GUILD_WAR_SHARD_MAX = 30;
+const GUILD_WAR_INCOME_INTERVAL_MS = 60 * 60 * 1000;
+
 // Both events warn everyone over the bot this far ahead, then again on start.
 const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;
 
@@ -1400,5 +1424,7 @@ if (typeof module !== 'undefined') module.exports = {
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
+  GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
+  GUILD_WAR_TOWER_HP, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
 };

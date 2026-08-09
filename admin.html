@@ -278,6 +278,19 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           окно раньше срока и возвращает записавшихся в "не зарегистрирован".
         </div>
       </div>
+      <div class="card">
+        <h3>🏰 Война гильдий</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="gw-status">—</div>
+        <div class="action-grid">
+          <button class="btn btn-primary" id="gw-open-btn" onclick="openGuildWar()">Открыть сейчас</button>
+          <button class="btn btn-red" id="gw-close-btn" onclick="closeGuildWar()">Закрыть сейчас</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Обычно открывается в 22:00 по Москве на 1 час. Эти кнопки управляют только доступом
+          для боя — владение замком и почасовые осколки в хранилище клана не зависят от
+          расписания и продолжают начисляться, даже когда локация закрыта.
+        </div>
+      </div>
       <div class="tops-grid" id="tops-grid">
         <div class="top-card"><h4>🏆 По BM</h4><div id="top-bm"></div></div>
         <div class="top-card"><h4>⚡ По уровню</h4><div id="top-lvl"></div></div>
@@ -557,6 +570,7 @@ async function loadDashboard() {
   } catch(e) { console.error(e); }
   loadEventBoss();
   loadRace10();
+  loadGuildWar();
 }
 
 // ── World event boss ──────────────────────────────────────
@@ -637,6 +651,50 @@ async function closeRace10() {
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadRace10();
+}
+
+// ── Война гильдий ─────────────────────────────────────────
+async function loadGuildWar() {
+  const el = document.getElementById('gw-status');
+  const openBtn = document.getElementById('gw-open-btn');
+  const closeBtn = document.getElementById('gw-close-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/guildwar')).json();
+    const owner = d.ownerClanName ? ('владеет «' + d.ownerClanName + '»') : 'замок ничей';
+    let txt;
+    if (d.phase === 'live') txt = '🟢 Локация открыта — ' + owner;
+    else {
+      txt = '⚪ Локация закрыта — ' + owner;
+      if (d.nextAt) txt += ' · по расписанию: ' + new Date(d.nextAt).toLocaleString('ru-RU');
+    }
+    el.textContent = txt;
+    const live = d.phase === 'live';
+    if (openBtn)  { openBtn.disabled = live;   openBtn.style.opacity  = live   ? '.5' : '1'; }
+    if (closeBtn) { closeBtn.disabled = !live; closeBtn.style.opacity = !live ? '.5' : '1'; }
+  } catch(e) { el.textContent = '—'; }
+}
+
+async function openGuildWar() {
+  if (!confirm('Открыть локацию Войны гильдий сейчас на 1 час, вне расписания?')) return;
+  try {
+    const r = await api('/admin/guildwar/open', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Локация открыта');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadGuildWar();
+}
+
+async function closeGuildWar() {
+  if (!confirm('Закрыть локацию Войны гильдий сейчас? Все, кто внутри, будут перенесены в мир; владение замком не изменится.')) return;
+  try {
+    const r = await api('/admin/guildwar/close', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Локация закрыта');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadGuildWar();
 }
 
 function refreshOnline() {

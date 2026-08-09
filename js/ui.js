@@ -3404,10 +3404,11 @@ function _eventsPanelOpen() {
 function _renderEventsBody() {
   const body = document.getElementById('events-panel-body');
   if (!body) return;
-  body.innerHTML = _eventTab === 'boss'    ? _worldBossBodyHTML()
-                 : _eventTab === 'a3'      ? _arena3BodyHTML()
-                 : _eventTab === 'race10'  ? _race10BodyHTML()
-                 : _eventTab === 'fear'    ? _fearBodyHTML()
+  body.innerHTML = _eventTab === 'boss'      ? _worldBossBodyHTML()
+                 : _eventTab === 'a3'        ? _arena3BodyHTML()
+                 : _eventTab === 'race10'    ? _race10BodyHTML()
+                 : _eventTab === 'fear'      ? _fearBodyHTML()
+                 : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
                  : _deathBattleBodyHTML();
 }
 
@@ -3750,6 +3751,41 @@ function hideArena3Timer() {
 // World boss: alive right now, mid-summon countdown, or waiting for its next
 // scheduled appearance. _evtBossState is filled from gameStart and the
 // eventBoss* pushes (see network.js).
+// ── Guild War (Война гильдий) tab ────────────────────────────────────────────
+// _gwState is pushed by js/network.js's guildWarState handler (and seeded by
+// gameStart) — phase/nextAt drive the countdown the same way the world boss
+// tab does, ownerClanName/capturedAt describe who currently holds the tower
+// regardless of whether the zone is open right now (ownership has no
+// schedule of its own, only combat access does — see server/index.js's _gw).
+function _guildWarBodyHTML() {
+  const st = (typeof _gwState !== 'undefined' && _gwState) || {};
+  const open = st.phase === 'live';
+  const timeTxt = open
+    ? '🏰'
+    : (st.nextAt ? _fmtEventEta(st.nextAt - Date.now()) : '—');
+  const phaseTxt = open ? t('guildWarPhaseOpen') : t('guildWarPhaseClosed');
+  const note = open ? t('guildWarNoteOpen') : (st.nextAt ? _fmtEventWhen(st.nextAt) : '');
+  const ownerLine = st.ownerClanName
+    ? `<div class="db-count">${t('guildWarOwnerLbl')}: <b>${st.ownerClanName}</b></div>`
+    : `<div class="db-count">${t('guildWarNoOwnerLbl')}</div>`;
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${timeTxt}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${note ? `<div class="db-count">${note}</div>` : ''}
+      ${ownerLine}
+      <div class="db-rules">
+        ${t('guildWarScheduleHdr')}
+        <ul>
+          <li>${t('guildWarRule1')}</li>
+          <li>${t('guildWarRule2')}</li>
+          <li>${t('guildWarRule3')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
 function _worldBossBodyHTML() {
   const st = (typeof _evtBossState !== 'undefined' && _evtBossState) || {};
   const alive   = !!(typeof _evtBossAlive !== 'undefined' ? _evtBossAlive : st.alive);
@@ -4236,6 +4272,80 @@ function showEventBossBanner(text, color) {
   clearTimeout(showEventBossBanner._t);
   showEventBossBanner._t = setTimeout(() => { el.style.display = 'none'; }, 8000);
 }
+
+// ── Guild War (Война гильдий) HP bar + capture banner ────────────────────────
+// Own elements rather than reusing evt-boss-hp/evt-boss-banner above: this is
+// ownership state (an owner name/icon line), not a countdown, and the zone
+// being sealed doesn't guarantee a player can never also be near the world
+// boss's arena at the same time.
+function _gwHpEl() {
+  let el = document.getElementById('gw-tower-hp');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'gw-tower-hp';
+    el.style.cssText = 'position:fixed;top:110px;left:50%;transform:translateX(-50%);' +
+      'width:min(420px,92vw);z-index:340;pointer-events:none;display:none;text-align:center';
+    el.innerHTML =
+      '<div id="gw-hp-name" style="font-size:12px;font-weight:800;color:#f5dbae;text-shadow:0 1px 3px #000;margin-bottom:3px"></div>' +
+      '<div style="height:14px;background:rgba(10,8,4,.85);border:1px solid #6b4f22;border-radius:7px;overflow:hidden">' +
+      '<div id="gw-hp-fill" style="height:100%;width:100%;background:linear-gradient(90deg,#7a5a1f,#c9a24b);transition:width .18s linear"></div>' +
+      '</div>' +
+      '<div id="gw-hp-num" style="font-size:11px;color:#d9c9a8;text-shadow:0 1px 3px #000;margin-top:2px;font-variant-numeric:tabular-nums"></div>';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// Called from the game loop (throttled, see js/game.js's _updateTeleportPads)
+// — reads the live enemy snapshot for hp/maxHp, and _gwState (kept in sync by
+// js/network.js's guildWarState handler) for the owner name, since netcodec's
+// fixed-shape enemy wire encoding has no room for arbitrary extra fields like
+// ownerClanName.
+function updateGuildWarHpBar() {
+  const el = _gwHpEl();
+  const b = (typeof serverEnemies !== 'undefined') ? serverEnemies.find(e => e.eid === 'guildwar_castle') : null;
+  if (!b) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const pct = Math.max(0, Math.min(1, b.hp / (b.maxHp || 1)));
+  const owner = _gwState && _gwState.ownerClanName;
+  document.getElementById('gw-hp-name').textContent =
+    (b.name || 'Замок гильдий') + (owner ? ` · ${owner}` : '');
+  document.getElementById('gw-hp-fill').style.width = (pct * 100).toFixed(2) + '%';
+  document.getElementById('gw-hp-num').textContent =
+    Math.ceil(b.hp).toLocaleString('ru-RU') + ' / ' + (b.maxHp || 0).toLocaleString('ru-RU') +
+    '  ·  ' + (pct * 100).toFixed(1) + '%';
+}
+
+function _gwBannerEl() {
+  let el = document.getElementById('gw-captured-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'gw-captured-banner';
+    el.style.cssText = 'position:fixed;top:74px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(22,18,10,.94);border:1px solid #c9a24b;color:#f5dbae;' +
+      'padding:8px 16px;border-radius:10px;font-size:13px;font-weight:700;z-index:350;' +
+      'pointer-events:none;max-width:88vw;text-align:center;display:none;' +
+      'box-shadow:0 4px 18px rgba(0,0,0,.5)';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function showGuildWarCapturedBanner(newOwnerClanName, newOwnerClanIcon, prevOwnerClanName) {
+  const el = _gwBannerEl();
+  el.style.display = 'block';
+  el.textContent = prevOwnerClanName
+    ? `🏰 Замок гильдий захвачен кланом «${newOwnerClanName}» (был у «${prevOwnerClanName}»)`
+    : `🏰 Замок гильдий захвачен кланом «${newOwnerClanName}»`;
+  clearTimeout(showGuildWarCapturedBanner._t);
+  showGuildWarCapturedBanner._t = setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
+
+// Refresh hook for js/network.js's guildWarState handler — currently just a
+// placeholder for a future Events-panel status entry (owner/countdown), same
+// role onRace10State/onArena3State play for their own panels; the HP bar
+// above already updates on its own throttled cadence and doesn't need this.
+function onGuildWarState() {}
 
 // ── Buy flow ────────────────────────────────────────────────
 function openMarketBuyConfirm(listingId) {

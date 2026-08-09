@@ -297,7 +297,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d) {
     const { floor, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws } = payload;
     dungeonLvl = floor;
     // A fresh room attachment: whatever this session last told the server
     // about its position belongs to the old one.
@@ -356,6 +356,16 @@ function netConnect(onReady) {
       _a3Registered = !!a3s.registered;
       if (typeof onArena3State === 'function') onArena3State();
     }
+    // Война гильдий: unlike race10/a3 above there's no queue/registration to
+    // restore — just the live phase/countdown and whoever currently owns the
+    // tower, sent unconditionally (never gated on a live run for this socket,
+    // unlike Fear below) since ownership persists whether or not anyone is
+    // even in the zone.
+    if (gws) {
+      _gwState = { ..._gwState, ...gws };
+      _gwPhase = _gwState.phase;
+      if (typeof onGuildWarState === 'function') onGuildWarState();
+    }
     // Страх: only sent at all when a run is live for this socket (see the
     // server-side comment) — the case that matters here is a reconnect that
     // landed back in a held hall (fearGrace), where the run and its monsters
@@ -387,6 +397,10 @@ function netConnect(onReady) {
     // only on the map during an event, and the announce gives five minutes'
     // warning — far more than the sheets need to arrive.
     if (evb && (evb.alive || evb.spawnAt)) loadEnemySprites('demon_event_boss');
+    // The tower persists forever (see server/game/Room.js's spawnGuildWarTower
+    // comment), so unlike the event boss's sheets there's no "only during an
+    // event" window to gate this behind — load it every session.
+    loadEnemySprites('guildwar_castle');
     if (_isReconnectRejoin) {
       // Resuming after a socket.io reconnect (see authOk guard above) — the
       // dungeon/enemy resync above is still needed since this is a fresh
@@ -2137,6 +2151,7 @@ function _initEventBossHandlers(s) {
   _initArena3Handlers(s);
   _initRace10Handlers(s);
   _initFearHandlers(s);
+  _initGuildWarHandlers(s);
 }
 
 // ── Death Battle (Битва на смерть) ──────────────────────────────────────────
@@ -2470,6 +2485,29 @@ function _initRace10Handlers(s) {
     if (typeof showRace10Result === 'function') showRace10Result(!!won, winnerName, myDamage || 0, !!timedOut, reward || 0);
     if (typeof netRace10Sync === 'function') netRace10Sync();
     if (typeof onRace10State === 'function') onRace10State();
+  });
+}
+
+// ── Война гильдий (Guild War) ────────────────────────────────────────────────
+// No queue/registration like race10/arena3 above — the zone is an open walk-in
+// (see js/game.js's _gwPad), so the only live pushes are the phase/ownership
+// state itself, a capture announcement, and a generic action-refused error
+// (no clan, or trying to hit your own tower).
+function _initGuildWarHandlers(s) {
+  s.on('guildWarState', (st) => {
+    _gwState = { ..._gwState, ...st };
+    _gwPhase = _gwState.phase;
+    if (typeof onGuildWarState === 'function') onGuildWarState();
+  });
+
+  s.on('guildWarCaptured', ({ newOwnerClanName, newOwnerClanIcon, prevOwnerClanName }) => {
+    if (typeof showGuildWarCapturedBanner === 'function') {
+      showGuildWarCapturedBanner(newOwnerClanName, newOwnerClanIcon, prevOwnerClanName);
+    }
+  });
+
+  s.on('guildWarError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 }
 

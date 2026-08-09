@@ -4,7 +4,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
-        FEAR_MAX_WAVE } = require('../../shared/definitions');
+        FEAR_MAX_WAVE, GUILD_WAR_TOWER_HP } = require('../../shared/definitions');
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server
@@ -896,7 +896,10 @@ class Room {
     // the portal never appears no matter what the event state says.
     // race10.bounds is what lets the client tint that zone's floor/walls to
     // look like "Кровавая Башня" (see _buildChunk, js/game.js).
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10 };
+    // guildWar is the same case as arena — _buildArmGates builds _gwPad/
+    // _gwReturnPad from it, so omitting it would leave the Guild War portal
+    // permanently missing no matter what guildWarState says.
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar };
   }
 
   _inSafeZone(x, y) {
@@ -1075,6 +1078,7 @@ class Room {
     let entered = null;
     const armPresent = this._armPresent;
     armPresent.clear();
+    const gw = this._dungeon.guildWar;
     this.players.forEach(p => {
       const nowIn = this._inSafeZone(p.x, p.y);
       if (nowIn && !p._wasInSafeZone) (entered || (entered = new Set())).add(p.socketId);
@@ -1084,6 +1088,20 @@ class Room {
       for (let i = 0; i < ARM_NAMES.length; i++) {
         const b = this._armBounds[ARM_NAMES[i]];
         if (p.y >= b.y0 && p.y < b.y1) { armPresent.add(ARM_NAMES[i]); break; }
+      }
+      // Guild War: pvpMode is driven continuously off live position, for as
+      // long as a player is physically inside the zone bounds — unlike every
+      // other zone's pvpMode flip (duel toggle, arena deploy, hub eviction),
+      // all of which are one-shot events. Leaving turns it back off; nobody
+      // can walk in already mid-duel, so this can never clobber a real one.
+      if (gw) {
+        const nowInGw = p.x >= gw.bounds.x0 * TILE && p.x < gw.bounds.x1 * TILE
+                      && p.y >= gw.bounds.y0 * TILE && p.y < gw.bounds.y1 * TILE;
+        if (nowInGw !== !!p._guildWarZone) {
+          p._guildWarZone = nowInGw;
+          p.pvpMode = nowInGw;
+          p._profileRev++;
+        }
       }
     });
     if (entered) {
@@ -1108,6 +1126,11 @@ class Room {
         // which calls despawnPvpArenaBosses() in the same tick it dies) — it
         // never lingers here long enough to loot or respawn.
         if (e.a3Team) return;
+        // Guild War tower: same reasoning — the capture branch in
+        // attackEnemy/skillAttackEnemy resets its hp to maxHp in the same
+        // tick it would otherwise hit 0, so this is a defensive no-op in
+        // practice, not a real path.
+        if (e.guildWar) return;
         // Race10 boss: same reasoning — server/index.js ends the race and
         // calls despawnRaceBoss() in the same tick it dies (no loot table,
         // the reward is a Liberty payout to whoever dealt it the most damage).
@@ -1164,6 +1187,11 @@ class Room {
       // normally via attackEnemy/skillAttackEnemy, which don't go through
       // this loop at all.
       if (e.a3Passive) return;
+
+      // Guild War tower: stationary for the Room's entire lifetime — no
+      // targeting, no movement, no attack, no leash. Damage/capture applies
+      // via attackEnemy/skillAttackEnemy, which don't go through this loop.
+      if (e.guildWar) return;
 
       // Corridor monsters while no race is running: there is nobody inside the
       // tower to see, so the target search below can only ever come back empty.
@@ -1960,7 +1988,7 @@ class Room {
     if (e && e._idx != null && e._idx < 0xffff) this._idxFree.push(e._idx);
   }
 
-  addPlayer(socketId, username, clanName, clanIcon, clanAtkBonus, telegramId) {
+  addPlayer(socketId, username, clanName, clanIcon, clanAtkBonus, telegramId, clanId) {
     // A reconnect (network blip, backgrounded tab) can occasionally leave the
     // old socket's entry in this room a moment longer than its own disconnect
     // cleanup takes to land — the new connection would then render as a
@@ -2002,6 +2030,7 @@ class Room {
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
+      clanId: clanId || null,
       x: fearCarry ? fearCarry.x : spawn.x, y: fearCarry ? fearCarry.y : spawn.y, facing: 'front', moving: false,
       hp: fearCarry ? fearCarry.hp : 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
@@ -2028,12 +2057,13 @@ class Room {
     return { spawn, staleSocketId, fearCarry };
   }
 
-  setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus) {
+  setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus, clanId) {
     const p = this.players.get(socketId);
     if (!p) return;
     p.clanName = clanName || null;
     p.clanIcon = clanIcon || null;
     p.clanAtkBonus = clanAtkBonus || 0;
+    p.clanId = clanId || null;
     p._profileRev++;
   }
 
@@ -2534,6 +2564,76 @@ class Room {
     this._a3BossIds = null;
   }
 
+  // Война гильдий (Guild War): spawns the one stationary tower/castle at the
+  // zone's centre, called once at Room construction (owner: this Room's
+  // slice of server/index.js's persisted _gw state, { ownerClanId,
+  // ownerClanName, ownerClanIcon }). Unlike every other stationary boss in
+  // this file, this enemy is NEVER despawned/respawned for the Room's entire
+  // lifetime — attackEnemy/skillAttackEnemy's capture branch (below) resets
+  // its hp and reassigns ownership in place, on the exact same object, so
+  // its id/_idx (the wire-protocol handle) never changes. Renumbering it
+  // across a capture would silently repoint every connected client's handle
+  // map at the wrong enemy, the same class of bug the _idx comment in the
+  // constructor above documents in detail.
+  spawnGuildWarTower(owner) {
+    const gw = this._dungeon.guildWar;
+    if (!gw) return null;
+    const x = gw.cx, y = gw.cy;
+    const e = {
+      id: 'guildwar_castle', eid: 'guildwar_castle',
+      name: 'Замок гильдий', color: '#c9a24b', size: 90,
+      maxHp: GUILD_WAR_TOWER_HP, hp: GUILD_WAR_TOWER_HP,
+      atk: 0, def: 0, spd: 0, xp: 0, gold: 0,
+      isBoss: true, eType: 'boss',
+      x, y, spawnX: x, spawnY: y,
+      atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
+      aggro: false, aggroR: 0,
+      guildWar: true,
+      ownerClanId: (owner && owner.ownerClanId) || null,
+      ownerClanName: (owner && owner.ownerClanName) || null,
+      ownerClanIcon: (owner && owner.ownerClanIcon) || null,
+      _sx: x, _sy: y, _shp: GUILD_WAR_TOWER_HP,
+      _idx: this._allocIdx(),
+    };
+    this.enemies.push(e);
+    this._enemyMap.set(e.id, e);
+    this._gwTowerId = e.id;
+    return e;
+  }
+
+  // Guild War in-zone respawn: the first "die and come back inside the same
+  // fight" path in this file — every other zone (respawnPlayer,
+  // deathBattleReturn, dbReturnToPrevSpot below) ejects the player out on
+  // death. Picks a random point off the zone's own spawn ring (dungeon.js's
+  // guildWar.spawns, the same ring used for initial entry). Deliberately
+  // leaves p._guildWarZone/p.pvpMode untouched — the per-tick bounds check in
+  // _tick re-confirms both next frame regardless (see the guild-war block
+  // there), and clearing them here would just be a one-frame flicker.
+  guildWarRespawn(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const gw = this._dungeon.guildWar;
+    if (!gw || !gw.spawns || !gw.spawns.length) { this.respawnPlayer(socketId); return p ? { x: p.x, y: p.y } : null; }
+    const spot = gw.spawns[Math.floor(Math.random() * gw.spawns.length)];
+    p.hp = p.maxHp;
+    p.x = spot.x; p.y = spot.y;
+    p._profileRev++;
+    return { x: p.x, y: p.y };
+  }
+
+  // Forces a player out of the Guild War zone to the hub — used when the
+  // 22:00-23:00 window hard-closes (server/index.js iterates every player
+  // still flagged _guildWarZone and calls this for each). Reuses
+  // deathBattleReturn's hub-eject (pvpMode=false, hub spawn) and additionally
+  // clears _guildWarZone so the per-tick bounds check doesn't immediately
+  // flip pvpMode back on before the client's next position update arrives.
+  guildWarEvict(socketId) {
+    const spot = this.deathBattleReturn(socketId);
+    const p = this.players.get(socketId);
+    if (p) p._guildWarZone = false;
+    return spot;
+  }
+
   // Sends a player back to the hub with PvP off — shared exit path for
   // arena3, race10 and Fear (eliminated, the match/wave-run finishing, the
   // round ending under them). The death battle uses its own
@@ -2633,12 +2733,36 @@ class Room {
     const _reach = 350 + (enemy.size || 0);
     if (rdx * rdx + rdy * rdy > _reach * _reach) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
+    // Guild War tower: only a clanned attacker from a DIFFERENT clan than the
+    // current owner may damage it — checked here, inside Room.js, unlike
+    // a3Team's equivalent check which lives in server/index.js, since this
+    // needs to run before damage is computed rather than after.
+    if (enemy.guildWar) {
+      if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
+      if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
+    }
     const base = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
+      // Guild War tower: never actually "dies" — capture resets its hp to
+      // maxHp in place, on the exact same enemy object, and hands ownership
+      // to the attacker's clan. See spawnGuildWarTower's comment for why
+      // this must never despawn/recreate the enemy instead.
+      if (enemy.guildWar) {
+        const prevOwnerClanName = enemy.ownerClanName;
+        enemy.hp = enemy.maxHp;
+        enemy.ownerClanId = attacker.clanId || null;
+        enemy.ownerClanName = attacker.clanName || null;
+        enemy.ownerClanIcon = attacker.clanIcon || null;
+        return {
+          killed: true, captured: true, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color,
+          newOwnerClanId: enemy.ownerClanId, newOwnerClanName: enemy.ownerClanName,
+          newOwnerClanIcon: enemy.ownerClanIcon, prevOwnerClanName,
+        };
+      }
       // 3v3 guard boss: no xp/gold/loot, just enough (ex/ey/color) for the
       // caller to still show the death visually — it ends the match off
       // a3Team instead of running the normal kill-reward flow.
@@ -2689,6 +2813,10 @@ class Room {
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     if (rdx * rdx + rdy * rdy > 600 * 600) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
+    if (enemy.guildWar) {
+      if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
+      if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
+    }
     const mult = Math.max(1, Math.min(multiplier || 1, 10));
     const base = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
@@ -2703,6 +2831,18 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
     if (enemy.hp <= 0) {
+      if (enemy.guildWar) {
+        const prevOwnerClanName = enemy.ownerClanName;
+        enemy.hp = enemy.maxHp;
+        enemy.ownerClanId = attacker.clanId || null;
+        enemy.ownerClanName = attacker.clanName || null;
+        enemy.ownerClanIcon = attacker.clanIcon || null;
+        return {
+          killed: true, captured: true, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color,
+          newOwnerClanId: enemy.ownerClanId, newOwnerClanName: enemy.ownerClanName,
+          newOwnerClanIcon: enemy.ownerClanIcon, prevOwnerClanName,
+        };
+      }
       if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
       if (enemy.raceBoss) return { killed: true, dmg, isCrit, raceBoss: true, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);

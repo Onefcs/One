@@ -154,7 +154,24 @@ const FEAR_X0 = ARENA_X0;
 const FEAR_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
 const FEAR_H  = FEAR_LANES * FEAR_PITCH;
 
-const ZONES_Y0 = FEAR_Y0 + FEAR_H + ZONE_GAP;
+// ── Война гильдий (Guild War) ────────────────────────────────────────────────
+// One square sealed zone with a single stationary tower/castle dead centre.
+// Whichever clan lands the killing blow owns it (Room.js's capture logic
+// resets its HP in place — it is never despawned/respawned, see
+// Room.spawnGuildWarTower). No matchmaking/capacity cap ("Без ограничений —
+// открытая зона"), so sized generously like the boss ARENA rather than
+// tightly like a sealed instance — a big simultaneous crowd from multiple
+// clans shouldn't feel like a mosh pit around one tile. `spawns` is a ring of
+// entry points used both for initial placement and for in-zone respawn while
+// the window is live (Room.guildWarRespawn) — dying here doesn't eject you,
+// unlike every other sealed zone.
+const GW_SIZE = 60;
+const GW_X0 = ARENA_X0;
+const GW_Y0 = FEAR_Y0 + FEAR_H + ZONE_GAP;
+const GW_SPAWN_COUNT = 8;
+const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
+
+const ZONES_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 const DW = Math.max(MARGIN * 2 + ZONE_LEN, RACE10_X0 + RACE10_W + MARGIN);
 
@@ -226,6 +243,14 @@ function generateOpenWorld() {
       entryY: (y0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
     });
   }
+
+  const guildWar = {
+    x: GW_X0, y: GW_Y0, size: GW_SIZE,
+    bx1: GW_X0 - 1, by1: GW_Y0 - 1, bx2: GW_X0 + GW_SIZE + 1, by2: GW_Y0 + GW_SIZE + 1,
+    cx: GW_X0 + Math.floor(GW_SIZE / 2), cy: GW_Y0 + Math.floor(GW_SIZE / 2),
+    isGuildWar: true,
+  };
+  paintRect(guildWar.x, guildWar.y, guildWar.x + guildWar.size - 1, guildWar.y + guildWar.size - 1);
 
   const rooms = [hub, arena, a3];
   const enemyList = [];
@@ -493,6 +518,25 @@ function generateOpenWorld() {
     // and every wave transition are server-pushed teleports, not something the
     // client discovers by walking around.
     fear: { lanes: fearLanes },
+    // Война гильдий (Guild War): one sealed zone, one tower dead centre.
+    // spawns is a ring of entry points reused both for initial placement
+    // (js/game.js's teleport pad) and in-zone respawn while the window is
+    // live (Room.guildWarRespawn) — see the const block above for why.
+    // bounds lets the client tint the zone's floor/walls, same purpose as
+    // race10.bounds above.
+    guildWar: {
+      cx: guildWar.cx * TILE + TILE / 2, cy: guildWar.cy * TILE + TILE / 2,
+      entryX: (GW_X0 + 6) * TILE + TILE / 2, entryY: guildWar.cy * TILE + TILE / 2,
+      exitX:  (GW_X0 + 3) * TILE + TILE / 2, exitY:  (GW_Y0 + 3) * TILE + TILE / 2,
+      spawns: Array.from({ length: GW_SPAWN_COUNT }, (_, i) => {
+        const ang = (i / GW_SPAWN_COUNT) * Math.PI * 2;
+        return {
+          x: guildWar.cx * TILE + TILE / 2 + Math.cos(ang) * GW_SPAWN_R * TILE,
+          y: guildWar.cy * TILE + TILE / 2 + Math.sin(ang) * GW_SPAWN_R * TILE,
+        };
+      }),
+      bounds: { x0: GW_X0, y0: GW_Y0, x1: GW_X0 + GW_SIZE, y1: GW_Y0 + GW_SIZE },
+    },
     armEntries,
     corridorGates,
     enemies: enemyList,

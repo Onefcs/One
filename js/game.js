@@ -1295,6 +1295,14 @@ let _returnPads = null;   // zone-side: {dir, x, y, targetX, targetY} — back t
 const _EVENT_PAD_DX = -8;
 let _evtPad = null, _evtReturnPad = null;
 let _evtBossAlive = false;
+// Guild War zone pads — same shape as the event-boss pads just above, own
+// offset (-10) so the two don't overlap in the hub's NPC-free row. Gated on
+// _gwOpen() (22:00-23:00 MSK) instead of _evtArenaOpen(); _gwPhase is set by
+// js/network.js's guildWarState handler and by the gameStart payload.
+const _GW_PAD_DX = -10;
+let _gwPad = null, _gwReturnPad = null;
+let _gwPhase = 'closed';
+function _gwOpen() { return _gwPhase === 'live'; }
 // World boss state as the server last reported it: spawnAt is a summon already
 // counting down, nextAt the next scheduled appearance (пн/ср/пт/вс 20:00 МСК).
 // Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
@@ -1332,6 +1340,15 @@ function _buildArmGates() {
     _evtReturnPad = { x: ar.exitX, y: ar.exitY, targetX: sx, targetY: sy };
   } else {
     _evtPad = null; _evtReturnPad = null;
+  }
+
+  // Guild War zone pads — same reasoning as the event-boss ones above.
+  const gw = dungeon.guildWar;
+  if (gw) {
+    _gwPad = { x: sx + _GW_PAD_DX * TILE, y: sy, targetX: gw.entryX, targetY: gw.entryY };
+    _gwReturnPad = { x: gw.exitX, y: gw.exitY, targetX: sx, targetY: sy };
+  } else {
+    _gwPad = null; _gwReturnPad = null;
   }
 }
 
@@ -1385,6 +1402,16 @@ function _updateTeleportPads(dt) {
   if (_evtReturnPad && dist(player.x, player.y, _evtReturnPad.x, _evtReturnPad.y) < TRIGGER_R) {
     _teleportTo(_evtReturnPad.targetX, _evtReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   }
+  if (typeof updateGuildWarHpBar === 'function') updateGuildWarHpBar();
+  if (_gwOpen() && _gwPad && dist(player.x, player.y, _gwPad.x, _gwPad.y) < TRIGGER_R) {
+    _teleportTo(_gwPad.targetX, _gwPad.targetY, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
+  }
+  // Stays usable even when the window is closed — nobody should still be
+  // inside by then (the server evicts everyone at 23:00), but a reconnect
+  // mid-eviction shouldn't leave anyone with no way out.
+  if (_gwReturnPad && dist(player.x, player.y, _gwReturnPad.x, _gwReturnPad.y) < TRIGGER_R) {
+    _teleportTo(_gwReturnPad.targetX, _gwReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+  }
 }
 
 function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
@@ -1422,6 +1449,8 @@ function drawTeleportPads() {
   // not just another level gate.
   if (_evtArenaOpen() && _evtPad) _drawTeleportPad(_evtPad.x, _evtPad.y, 0, t('evtArenaLbl'), '#eb4e61', '#ff8a4a');
   if (_evtReturnPad) _drawTeleportPad(_evtReturnPad.x, _evtReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
+  if (_gwOpen() && _gwPad) _drawTeleportPad(_gwPad.x, _gwPad.y, 0, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', '#eb4e61', '#c9a24b');
+  if (_gwReturnPad) _drawTeleportPad(_gwReturnPad.x, _gwReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',

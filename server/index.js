@@ -20,6 +20,7 @@ const PlayerLogModel    = require('./models/PlayerLog');
 const PvpHistoryModel   = require('./models/PvpHistory');
 const ChatMessageModel  = require('./models/ChatMessage');
 const BossStateModel    = require('./models/BossState');
+const GuildWarStateModel = require('./models/GuildWarState');
 const Room = require('./game/Room');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
@@ -38,6 +39,8 @@ const {
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
+  GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP,
+  GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct,
   FEAR_MAX_WAVE, QUEST_DEF,
@@ -1751,6 +1754,32 @@ app.get('/admin/race10', adminAuth, (req, res) => {
   res.json(_race10PublicState());
 });
 
+// Guild War: force-opens the 22:00-23:00 MSK combat window right now. Unlike
+// race10's admin-open there's no per-player attempt counter to bump — the
+// zone has no capacity/attempt limit at all, so this behaves exactly like
+// the scheduled open (_gwOpenWindow always arms one GUILD_WAR_WINDOW_MS
+// closeTimer, admin-forced or not). Ownership/income are untouched by open/
+// close — these buttons only gate combat access. _gwOpenWindow/_gwCloseWindow
+// /_gwPublicState are defined further up the file; safe to reference here
+// since this callback only runs once a request arrives, same pattern
+// /admin/race10/open above already relies on.
+app.post('/admin/guildwar/open', adminAuth, (req, res) => {
+  if (_gw.phase === 'live') return res.status(409).json({ error: 'Уже открыто' });
+  clearTimeout(_gw.closeTimer);
+  _gwOpenWindow();
+  res.json({ ok: true });
+});
+
+app.post('/admin/guildwar/close', adminAuth, (req, res) => {
+  if (_gw.phase !== 'live') return res.status(409).json({ error: 'Уже закрыто' });
+  _gwCloseWindow();
+  res.json({ ok: true });
+});
+
+app.get('/admin/guildwar', adminAuth, (req, res) => {
+  res.json(_gwPublicState());
+});
+
 app.get('/admin/market', adminAuth, async (req, res) => {
   try {
     const { page = 1, tab = 'active' } = req.query;
@@ -2807,6 +2836,10 @@ const _EVENT_TEXT = {
     soon: (m) => `⚔️ <b>Арена 3х3</b>\n\nОкно регистрации откроется через ${m} мин. — с 21:00 до 22:00 по Москве.`,
     now:  () => '⚔️ <b>Арена 3х3 открыта!</b>\n\nЗаписывайся в игре — как наберётся 6 человек, старт. Окно открыто до 22:00 по Москве.',
   },
+  guildWar: {
+    soon: (m) => `🏰 <b>Война гильдий</b>\n\nЛокация с замком откроется через ${m} мин. — с 22:00 до 23:00 по Москве.\nКлан, который захватит замок, будет получать осколки каждый час, пока держит его.`,
+    now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗаходи в игру — локация с замком доступна до 23:00 по Москве.',
+  },
 };
 
 // Each occurrence is announced at most once per process. _dbSchedule and
@@ -3440,6 +3473,169 @@ async function _a3Finish(winner, wedged) {
   _a3TryStartSafe();
 }
 
+// ── Война гильдий (Guild War) ────────────────────────────────────────────────
+// One sealed zone, open daily 22:00-23:00 MSK, containing one stationary
+// tower (Room.spawnGuildWarTower). Whichever clan lands the killing blow
+// owns it — Room.attackEnemy/skillAttackEnemy reset its hp to maxHp in
+// place and reassign ownership the instant it happens (see result.captured,
+// handled below by _gwApplyCapture). Ownership itself has no schedule: it
+// persists across the closed 23:00-22:00 gap and pays out passive income
+// every hour, 24/7 (_gwGrantIncome), independent of whether the zone is
+// currently open for combat — only combat access follows the window.
+const _gw = {
+  phase: 'closed',      // 'closed' → 'live' (22:00-23:00 MSK) → 'closed'
+  ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0,
+  openTimer: null, closeTimer: null, notifyTimer: null, incomeTimer: null,
+};
+
+function _gwNextOpenAt(from = Date.now()) {
+  return nextEventStartAt(GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, from);
+}
+
+function _gwPublicState() {
+  return {
+    phase: _gw.phase,
+    nextAt: _gwNextOpenAt(),
+    ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName, ownerClanIcon: _gw.ownerClanIcon,
+    capturedAt: _gw.capturedAt,
+    towerHp: GUILD_WAR_TOWER_HP,
+  };
+}
+
+// Arms the next daily window (22:00 MSK) plus its 30-minute warning. Called
+// at boot and every time the window closes — same shape as _race10Schedule.
+function _gwSchedule() {
+  clearTimeout(_gw.openTimer);
+  clearTimeout(_gw.notifyTimer);
+  const openAt = _gwNextOpenAt();
+  _gw.openTimer = setTimeout(() => _gwOpenWindow(openAt), Math.max(0, openAt - Date.now()));
+  const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+  if (warnIn > 0) _gw.notifyTimer = setTimeout(() => notifyEventSoon('guildWar', openAt), warnIn);
+}
+
+function _gwOpenWindow(openAt = Date.now()) {
+  _gw.phase = 'live';
+  notifyEventStarted('guildWar', openAt);
+  clearTimeout(_gw.closeTimer);
+  _gw.closeTimer = setTimeout(_gwCloseWindow, GUILD_WAR_WINDOW_MS);
+  io.emit('guildWarState', _gwPublicState());
+}
+
+// Hard-closes combat access: whoever holds the tower right now keeps it
+// (ownership doesn't reset here, only the closeTimer/phase do) and everyone
+// still standing inside the zone is ejected to the hub. Re-arms tomorrow's
+// window immediately, same as _race10CloseWindow.
+function _gwCloseWindow() {
+  _gw.phase = 'closed';
+  clearTimeout(_gw.closeTimer);
+  const room = getRoom(1);
+  if (room) {
+    room.players.forEach((p, sid) => { if (p._guildWarZone) room.guildWarEvict(sid); });
+  }
+  io.emit('guildWarState', _gwPublicState());
+  _gwSchedule();
+}
+
+// Applies a capture result from Room.attackEnemy/skillAttackEnemy
+// (result.captured) — updates the in-memory owner, persists it, and tells
+// everyone. Module-level (not per-connection) since result is self-contained
+// and the hourly income job (below) needs the same _gw.ownerClanId it writes.
+function _gwApplyCapture(result) {
+  _gw.ownerClanId = result.newOwnerClanId;
+  _gw.ownerClanName = result.newOwnerClanName;
+  _gw.ownerClanIcon = result.newOwnerClanIcon;
+  _gw.capturedAt = Date.now();
+  GuildWarStateModel.updateOne(
+    { key: 'castle' },
+    { $set: { ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName, ownerClanIcon: _gw.ownerClanIcon, capturedAt: _gw.capturedAt } },
+    { upsert: true },
+  ).catch(err => console.error('[GuildWarState] persist failed', err));
+  io.emit('guildWarCaptured', {
+    newOwnerClanName: result.newOwnerClanName, newOwnerClanIcon: result.newOwnerClanIcon,
+    prevOwnerClanName: result.prevOwnerClanName,
+  });
+  io.emit('guildWarState', _gwPublicState());
+}
+
+// shardName/shardImg used to only exist inside io.on('connection', ...) (see
+// the per-connection clan-storage handlers further down) — moved to module
+// scope (unchanged) so the hourly income job below, which runs from a
+// top-level setTimeout chain with no socket in scope, can reach them too.
+const _gwShardName = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).name || id;
+const _gwShardImg  = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).img || null;
+
+// Same $inc-then-$push pattern already inlined a few times elsewhere for
+// clan storage credit (e.g. the deposit/allocation-return handlers further
+// down) — factored out here since the income job needs it and there was no
+// shared top-level version yet.
+async function _grantClanStorage(clanId, id, qty) {
+  const bumped = await ClanModel.updateOne({ _id: clanId, 'storage.id': id }, { $inc: { 'storage.$.qty': qty } });
+  if (!bumped.matchedCount) {
+    await ClanModel.updateOne({ _id: clanId, 'storage.id': { $ne: id } }, { $push: { storage: { id, qty } } });
+  }
+}
+
+// Pushes a fresh clanStorage payload to every online member — top-level twin
+// of the per-connection _clanStoragePush, needed for the same reason
+// shardName/shardImg were moved up: no socket in scope inside the income job.
+function _gwStoragePushToClan(clan) {
+  clan.members.forEach(m => {
+    const target = _socketForTelegramId(m.telegramId);
+    if (!target) return;
+    target.emit('clanStorage', {
+      storageUnlocked: !!clan.storageUnlocked,
+      storage: (clan.storage || []).filter(e => e && e.qty > 0)
+        .map(e => ({ id: e.id, name: _gwShardName(e.id), img: _gwShardImg(e.id), qty: e.qty })),
+    });
+  });
+}
+
+// A random total of GUILD_WAR_SHARD_MIN..MAX shard units, each an
+// independent uniform-random pick across UNIQUE_SHARDS' kinds — reads as
+// "assorted" without any rarity weighting, which nothing in the brief asked
+// for. Pure function, easy to sanity-check in isolation (see plan's
+// verification section).
+function _rollGuildWarIncome() {
+  const total = GUILD_WAR_SHARD_MIN + Math.floor(Math.random() * (GUILD_WAR_SHARD_MAX - GUILD_WAR_SHARD_MIN + 1));
+  const counts = new Map();
+  for (let i = 0; i < total; i++) {
+    const sh = UNIQUE_SHARDS[Math.floor(Math.random() * UNIQUE_SHARDS.length)];
+    counts.set(sh.id, (counts.get(sh.id) || 0) + 1);
+  }
+  return [...counts.entries()].map(([id, qty]) => ({ id, qty }));
+}
+
+// The first sub-daily recurring job in this codebase — every other scheduled
+// event is a daily (or less frequent) nextEventStartAt chain. Aligns to the
+// next wall-clock hour boundary (not "boot + 1h") so a mid-hour redeploy
+// doesn't reset the cadence, and re-reads the owning clan fresh from Mongo
+// on every fire (never trusts the cached name/icon) since it may have been
+// renamed, or disbanded (handled by the clanDisband hook releasing
+// _gw.ownerClanId) since the last grant. No retroactive back-pay for a
+// missed hour during downtime — it's simply skipped, matching how nothing
+// else in this codebase back-pays offline time.
+async function _gwGrantIncome() {
+  if (!_gw.ownerClanId) return;
+  const clan = await ClanModel.findById(_gw.ownerClanId).catch(() => null);
+  if (!clan) { _gw.ownerClanId = null; _gw.ownerClanName = null; _gw.ownerClanIcon = null; return; }
+  const grant = _rollGuildWarIncome();
+  for (const { id, qty } of grant) await _grantClanStorage(clan._id, id, qty);
+  const fresh = await ClanModel.findById(clan._id).catch(() => null);
+  if (fresh) _gwStoragePushToClan(fresh);
+}
+
+function _gwIncomeSafe() {
+  _gwGrantIncome().catch(err => console.error('_gwGrantIncome:', err));
+  _gw.incomeTimer = setTimeout(_gwIncomeSafe, GUILD_WAR_INCOME_INTERVAL_MS);
+}
+
+function _gwIncomeSchedule() {
+  clearTimeout(_gw.incomeTimer);
+  const now = Date.now();
+  const nextHour = Math.ceil(now / GUILD_WAR_INCOME_INTERVAL_MS) * GUILD_WAR_INCOME_INTERVAL_MS;
+  _gw.incomeTimer = setTimeout(_gwIncomeSafe, nextHour - now);
+}
+
 // ── Кровавая Башня (corridor race) ──────────────────────────────────────────
 // Registration opens at 20:30 MSK and everyone who signs up runs — no fixed
 // headcount. RACE10_REG_MS later the whole field starts at once, one sealed
@@ -3888,12 +4084,25 @@ async function _initFloorRooms() {
     if (!bossStateByFloor.has(d.floor)) bossStateByFloor.set(d.floor, {});
     bossStateByFloor.get(d.floor)[d.arm] = d.respawnAt;
   });
+  // Guild War ownership survives a restart the same way per-arm boss
+  // deadlines do (just above) — loaded once here, before any Room exists, so
+  // spawnGuildWarTower below can hand the tower its persisted owner instead
+  // of starting every restart unowned.
+  const gwDoc = await GuildWarStateModel.findOne({ key: 'castle' }).lean().catch(() => null);
+  if (gwDoc) {
+    _gw.ownerClanId = gwDoc.ownerClanId || null;
+    _gw.ownerClanName = gwDoc.ownerClanName || null;
+    _gw.ownerClanIcon = gwDoc.ownerClanIcon || null;
+    _gw.capturedAt = gwDoc.capturedAt || 0;
+  }
   for (let f = 1; f <= MAX_FLOOR; f++) {
     const onBossDeath = (arm, respawnAt) => {
       BossStateModel.updateOne({ floor: f, arm }, { $set: { respawnAt } }, { upsert: true })
         .catch(err => console.error('[BossState] persist failed', f, arm, err));
     };
-    floorRooms.set(f, new Room(f, io, bossStateByFloor.get(f) || {}, onBossDeath));
+    const room = new Room(f, io, bossStateByFloor.get(f) || {}, onBossDeath);
+    if (f === 1) room.spawnGuildWarTower(_gw);
+    floorRooms.set(f, room);
   }
   console.log('Floor rooms initialized');
   // Needs Mongo, so it starts here rather than at require time.
@@ -4159,7 +4368,7 @@ io.on('connection', socket => {
     _myClanName  = name || null;
     _myClanIcon  = icon || null;
     _myClanLevel = level || null;
-    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel));
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), _myClanId);
   };
   // Per-socket MIRROR of the account's balances — NOT the source of truth.
   // _gramBalanceCache/_nexumBalanceCache (keyed by telegramId) are, because
@@ -6705,7 +6914,7 @@ io.on('connection', socket => {
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
-      const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId);
+      const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
       // A stale room entry for this same account (see addPlayer's comment)
       // was just dropped — tell other clients immediately instead of waiting
       // for that old socket's own (possibly delayed) disconnect to do it, so
@@ -6781,6 +6990,7 @@ io.on('connection', socket => {
       deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
       race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
       arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
+      guildWar: _gwPublicState(),
       // Unlike the three above, Fear has no scheduled window/queue to report
       // when nothing's running — only present at all when a run is live for
       // this socket, which after a reconnect (see fearGrace/_fearGraceClaim)
@@ -6900,6 +7110,10 @@ io.on('connection', socket => {
     if (_a3TargetEnemy && _a3TargetEnemy.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy.a3Team) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
+    if (result.immune) {
+      socket.emit('guildWarError', { msg: result.reason === 'no_clan' ? 'Нужен клан, чтобы атаковать замок' : 'Нельзя атаковать свой замок' });
+      return;
+    }
     if (_race10TrackHit(socket.id, enemyId, result)) return;
     // Fear kills still pay out xp/gold through the normal path below — this
     // only advances the wave counter (spawns the next wave, or ends the run
@@ -6909,6 +7123,12 @@ io.on('connection', socket => {
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
     _seasonTrackBossHit(enemyId);
+    // Guild War tower: no xp/gold/loot — capture just flips ownership. The
+    // tower's hp already bounced back to maxHp inside Room.attackEnemy, so no
+    // enemyKilled/death-animation broadcast either, unlike a3Team below —
+    // the next tick's normal hp stream is enough, and js/sprites.js's
+    // guildwar_castle entry has no death sheet to play anyway.
+    if (result.captured) { _gwApplyCapture(result); return; }
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -7020,6 +7240,10 @@ io.on('connection', socket => {
     if (_a3TargetEnemy2 && _a3TargetEnemy2.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy2.a3Team) return;
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
     if (!result) return;
+    if (result.immune) {
+      socket.emit('guildWarError', { msg: result.reason === 'no_clan' ? 'Нужен клан, чтобы атаковать замок' : 'Нельзя атаковать свой замок' });
+      return;
+    }
     if (_race10TrackHit(socket.id, enemyId, result)) return;
     // Fear kills still pay out xp/gold through the normal path below — this
     // only advances the wave counter (spawns the next wave, or ends the run
@@ -7029,6 +7253,7 @@ io.on('connection', socket => {
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
     _seasonTrackBossHit(enemyId);
+    if (result.captured) { _gwApplyCapture(result); return; }
     if (result.a3Team) {
       // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
       // enemyKilled handler plays the death animation and removes the corpse
@@ -7145,6 +7370,18 @@ io.on('connection', socket => {
 
   // Returns true if attacker and target share a party or clan (PvP immune)
   function _isPvpImmune(attackerId, targetId) {
+    // Guild War: while both players are physically inside the zone, ordinary
+    // party/clan protection is suspended for anyone NOT sharing a clan — the
+    // zone's whole point is open PvP between different clans ("PvE +
+    // полноценный PvP"). Same-clan players inside the zone stay immune. This
+    // has to run before every other check below because it's conditional on
+    // live position, unlike the generic clan/party checks further down which
+    // apply everywhere with no zone awareness.
+    const gwA = currentRoom?.players.get(attackerId);
+    const gwT = currentRoom?.players.get(targetId);
+    if (gwA?._guildWarZone && gwT?._guildWarZone) {
+      return !!gwA.clanName && gwA.clanName === gwT.clanName;
+    }
     // In a 3v3 the teams are what matter, not who is whose friend: allies are
     // protected outright, and opponents can always be hit even if they happen
     // to share a party or a clan with the attacker.
@@ -7216,7 +7453,15 @@ io.on('connection', socket => {
     // Dying to anything at all during a round is an elimination — this covers
     // the paths the PvP kill hooks don't (the event boss, a stray mob).
     _pvpEliminate(socket.id);
-    if (currentRoom) currentRoom.respawnPlayer(socket.id);
+    const _gwP = currentRoom?.players.get(socket.id);
+    // Guild War: dying inside the zone while it's still live respawns back
+    // inside the fight instead of ejecting to the hub — the first "die and
+    // come back in the same zone" path in this game (every other zone's
+    // respawn/elimination ejects). The phase check covers dying right as
+    // 23:00 closes: a respawn click that lands after the window shut sends
+    // the player to the hub like normal instead of into a closed zone.
+    if (_gwP?._guildWarZone && _gw.phase === 'live') currentRoom.guildWarRespawn(socket.id);
+    else if (currentRoom) currentRoom.respawnPlayer(socket.id);
   });
 
   // ── Death Battle (Битва на смерть) ─────────────────────────────────────────
@@ -7895,7 +8140,7 @@ io.on('connection', socket => {
       _myClanIcon  = _cd ? _cd.icon : null;
       _myClanId    = _cd ? String(_cd._id) : null;
       _myClanLevel = _cd ? _cd.level : null;
-      currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel));
+      currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), _myClanId);
       // Founding a clan makes any application still pending elsewhere moot —
       // without this it could sit in that other clan's queue and get approved
       // later, leaving this account in two clans at once.
@@ -8012,7 +8257,7 @@ io.on('connection', socket => {
     _myClanIcon  = _cdDecl ? _cdDecl.icon : null;
     _myClanId    = _cdDecl ? String(_cdDecl._id) : null;
     _myClanLevel = _cdDecl ? _cdDecl.level : null;
-    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel));
+    currentRoom?.setPlayerClan(socket.id, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), _myClanId);
   });
 
   safeOn('clanKick', async ({ telegramId }) => {
@@ -8101,7 +8346,7 @@ io.on('connection', socket => {
     _myClanIcon  = null;
     _myClanId    = null;
     _myClanLevel = null;
-    currentRoom?.setPlayerClan(socket.id, null, null, 0);
+    currentRoom?.setPlayerClan(socket.id, null, null, 0, null);
   });
 
   safeOn('clanDisband', async () => {
@@ -8127,6 +8372,25 @@ io.on('connection', socket => {
         target.emit('clanData', null);
         target.data._setClanIdentity?.(null, null, null);
       }
+    }
+    // Guild War ownership is the one piece of clan-attributed state that
+    // lives OUTSIDE the Clan document (GuildWarState, keyed by clan _id) —
+    // everything else (storage/allocations/members) is deleted for free
+    // along with the document above. Without this, a disbanded clan would
+    // stay the tower's "owner" forever: nobody could ever capture it again
+    // (own_tower never matches a clanName that no longer exists, but the
+    // hourly income job would keep trying to pay a clan that's gone).
+    if (_gw.ownerClanId && String(_gw.ownerClanId) === String(clan._id)) {
+      _gw.ownerClanId = null; _gw.ownerClanName = null; _gw.ownerClanIcon = null; _gw.capturedAt = 0;
+      await GuildWarStateModel.updateOne(
+        { key: 'castle' },
+        { $set: { ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0 } },
+        { upsert: true },
+      ).catch(err => console.error('[GuildWarState] disband release failed', err));
+      const _gwRoom = getRoom(1);
+      const _gwTower = _gwRoom && _gwRoom._gwTowerId && _gwRoom._enemyMap.get(_gwRoom._gwTowerId);
+      if (_gwTower) { _gwTower.ownerClanId = null; _gwTower.ownerClanName = null; _gwTower.ownerClanIcon = null; }
+      io.emit('guildWarState', _gwPublicState());
     }
     await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
   });
@@ -8670,10 +8934,13 @@ server.listen(PORT, () => {
   _wbSchedule();
   _race10Schedule();
   _a3Schedule();
+  _gwSchedule();
+  _gwIncomeSchedule();
   console.log('next death battle:', new Date(_dbNextStartAt()).toISOString(),
               '| next world boss:', new Date(_wbNextStartAt()).toISOString(),
               '| next Bloody Tower window:', new Date(_race10NextOpenAt()).toISOString(),
-              '| next 3v3 window:', new Date(_a3NextOpenAt()).toISOString());
+              '| next 3v3 window:', new Date(_a3NextOpenAt()).toISOString(),
+              '| next Guild War window:', new Date(_gwNextOpenAt()).toISOString());
 });
 
 // ── Error handlers ────────────────────────────────────────────────────────────

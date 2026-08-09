@@ -506,6 +506,22 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
     }
   },
+  // Guild War tower/castle (server/game/Room.js spawnGuildWarTower) — a
+  // single static illustration, no facing/movement/attack of its own
+  // (guildWar enemies are permanently stationary, see Room.js's a3Passive-
+  // style tick-loop skip). The loader/rasterizer above hard-require 4 facing
+  // rows per sheet, so the one idle sheet is the same picture duplicated
+  // into all 4 rows (cols:1) rather than a pipeline change — it never turns
+  // to face anything, so every row draws identically anyway. No walk/attack
+  // /death sheets: aggro and atkAnimTimer are permanently false/0 for this
+  // enemy, so pixi-world.js's animation-key selector only ever resolves
+  // 'idle'.
+  guildwar_castle: {
+    frameW: 128, frameH: 128,
+    sheets: {
+      idle: { src: 'images/enemy/guildwar_castle.png', cols: 1, fps: 1, loop: false },
+    },
+  },
   // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) — same
   // reasoning as arena3_guard_boss above: visually the world boss, own eid so
   // it doesn't show up in the real world boss's HP-bar/alive tracking.
