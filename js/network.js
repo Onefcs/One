@@ -303,7 +303,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d) {
     const { floor, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs } = payload;
     dungeonLvl = floor;
     // A fresh room attachment: whatever this session last told the server
     // about its position belongs to the old one.
@@ -361,6 +361,18 @@ function netConnect(onReady) {
       };
       _a3Registered = !!a3s.registered;
       if (typeof onArena3State === 'function') onArena3State();
+    }
+    // Страх: only sent at all when a run is live for this socket (see the
+    // server-side comment) — the case that matters here is a reconnect that
+    // landed back in a held hall (fearGrace), where the run and its monsters
+    // resumed server-side but this client's own wave HUD/"in run" flag never
+    // got told. A fresh load or an ordinary reconnect outside any run leaves
+    // this null and touches nothing.
+    if (fs && fs.inRun) {
+      _fearInRun = true;
+      _fearWave = fs.wave || 0;
+      if (fs.maxWave) _fearState = { ..._fearState, maxWave: fs.maxWave };
+      if (typeof onFearState === 'function') onFearState();
     }
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them

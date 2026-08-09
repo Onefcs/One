@@ -179,6 +179,14 @@ const IDLE_HEARTBEAT_CASTS = 20;
 // inside fearSpawnWave below, so they stay local.
 const FEAR_WAVE_MOBS = 20;  // monsters per wave
 const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
+// How long a disconnected entrant's hall is held open before it's actually
+// released — see _fearGraceStart/_fearGraceClaim below and the matching
+// FEAR_RECONNECT_GRACE_MS in server/index.js (kept in sync by comment, not by
+// import, since Room.js has no reason to depend on that file). Comfortably
+// past js/network.js's own ~2s reconnect watchdog and the kind of brief
+// Wi-Fi/LTE handover or backgrounded-WebView blip that watchdog exists for,
+// short enough that a genuinely abandoned hall doesn't sit locked for long.
+const FEAR_RECONNECT_GRACE_MS = 15000;
 // A wave spawns in a ring this far from the entry point (px) — see
 // fearSpawnWave. Kept well inside _closestTargetFor's own search radius
 // (max(aggroR*2.2, 300), aggroR tops out at 230 so that's ~506px) so every
@@ -397,6 +405,9 @@ class Room {
     // whether to advance to the next wave.
     this._fearOwner = new Map();
     this._fearAlive = new Map();
+    // lane index -> { telegramId, timer, x, y, hp } for a hall whose owner
+    // just disconnected — see _fearGraceStart/_fearGraceClaim.
+    this._fearGrace = new Map();
   }
 
   // ── Event boss ────────────────────────────────────────────────────────────
@@ -451,9 +462,17 @@ class Room {
   // invisible to players and permanently costs everyone a slot, so the claim
   // path re-derives the truth from live state rather than trusting the
   // bookkeeping it has been keeping.
+  //
+  // A lane on hold in _fearGrace is deliberately left alone here: its player
+  // record is gone (removePlayer already ran), which is exactly the "owner
+  // is gone" case above, but the whole point of the grace window is that
+  // "gone" isn't final yet. Reconciling it away the moment anyone else calls
+  // fearDeploy/fearFreeLaneCount (i.e. within milliseconds, every time
+  // someone else opens the panel) would silently undo the hold.
   _fearReconcile() {
     if (!this._fearOwner.size) return;
     for (const [lane, sid] of [...this._fearOwner]) {
+      if (this._fearGrace.has(lane)) continue;
       const owner = this.players.get(sid);
       if (owner && owner._fearLane === lane) continue;
       // The owner is gone, or has already been moved out of this hall by
@@ -461,6 +480,42 @@ class Room {
       if (owner) owner._fearLane = null;
       this.fearReleaseLane(lane);
     }
+  }
+
+  // Holds a disconnecting entrant's hall open instead of releasing it on the
+  // spot — called from removePlayer whenever the departing player still owns
+  // a lane. The monsters and _fearOwner/_fearAlive bookkeeping are left
+  // exactly as they were (nothing here touches this.enemies), so a reconnect
+  // within the window comes back to the exact wave it left. Runs the real
+  // release once the window elapses with no reconnect. No telegramId (should
+  // be unreachable for a real login) means there's no account to reconnect
+  // against, so release immediately rather than hold a lane nobody can ever
+  // reclaim.
+  _fearGraceStart(p) {
+    const lane = p._fearLane;
+    if (lane == null) return;
+    if (!p.telegramId) { this.fearReleaseLane(lane); return; }
+    const timer = setTimeout(() => {
+      this._fearGrace.delete(lane);
+      this.fearReleaseLane(lane);
+    }, FEAR_RECONNECT_GRACE_MS);
+    this._fearGrace.set(lane, { telegramId: p.telegramId, timer, x: p.x, y: p.y, hp: p.hp });
+  }
+
+  // Reclaims a held hall for a reconnecting account — called from addPlayer.
+  // Covers both a same-tick race (the stale entry's removePlayer just started
+  // the grace a moment earlier in this exact call) and a genuine disconnect-
+  // then-reconnect within FEAR_RECONNECT_GRACE_MS. Returns the spot to resume
+  // at, or null if this account has no lane on hold.
+  _fearGraceClaim(telegramId, newSocketId) {
+    for (const [lane, g] of this._fearGrace) {
+      if (g.telegramId !== telegramId) continue;
+      clearTimeout(g.timer);
+      this._fearGrace.delete(lane);
+      this._fearOwner.set(lane, newSocketId);
+      return { lane, x: g.x, y: g.y, hp: g.hp };
+    }
+    return null;
   }
 
   // How many halls are free right now, for the caller's own capacity check /
@@ -1918,32 +1973,31 @@ class Room {
     // disconnect event.
     //
     // A stale entry still holding a Fear (Страх) lane is a special case:
-    // dropping it the normal way (removePlayer releasing the hall) would end
-    // the run and purge its monsters as a side effect of nothing more than a
-    // network blip (Wi-Fi/LTE handover, a suspended WebView — see the
-    // pingTimeout comment in server/index.js), which the reconnecting player
-    // never asked for and isn't told about: their next enemy snapshot just
-    // comes back empty, reading as monsters that vanished mid-fight. Fear is
-    // a private, single-owner room with no cross-player bookkeeping, so it's
-    // safe to simply hand the same lane to the new socket instead — unlike
-    // race10/arena3/deathBattle, which stay on the clean-eliminate path
-    // (server/index.js) since those are shared/competitive instances a lone
-    // reconnect can't resume into on its own.
+    // dropping it the normal way (removePlayer releasing the hall on the
+    // spot) would end the run and purge its monsters as a side effect of
+    // nothing more than a network blip (Wi-Fi/LTE handover, a suspended
+    // WebView — see the pingTimeout comment in server/index.js), which the
+    // reconnecting player never asked for and isn't told about: their next
+    // enemy snapshot just comes back empty, reading as monsters that
+    // vanished mid-fight. removePlayer below doesn't release a Fear lane
+    // immediately any more — it holds it open for FEAR_RECONNECT_GRACE_MS
+    // (see _fearGraceStart) — and _fearGraceClaim here picks it back up for
+    // this socket, whether the stale entry above was still live a moment ago
+    // (same-tick race) or the real disconnect ran first and this is a
+    // genuine reconnect within the window. Fear is a private, single-owner
+    // room with no cross-player bookkeeping, so it's safe to simply hand the
+    // same lane to the new socket — unlike race10/arena3/deathBattle, which
+    // stay on the clean-eliminate path (server/index.js) since those are
+    // shared/competitive instances a lone reconnect can't resume into on its
+    // own.
     let staleSocketId = null;
-    let fearCarry = null;
     if (telegramId) {
       for (const [sid, p] of this.players) {
         if (sid !== socketId && p.telegramId === telegramId) { staleSocketId = sid; break; }
       }
-      if (staleSocketId) {
-        const stale = this.players.get(staleSocketId);
-        if (stale && stale._fearLane != null && this._fearOwner.get(stale._fearLane) === staleSocketId) {
-          fearCarry = { lane: stale._fearLane, x: stale.x, y: stale.y, hp: stale.hp };
-          this._fearOwner.set(fearCarry.lane, socketId);
-        }
-        this.removePlayer(staleSocketId, !!fearCarry);
-      }
+      if (staleSocketId) this.removePlayer(staleSocketId);
     }
+    const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
     const spawn = this._dungeon.spawn;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
@@ -2040,22 +2094,20 @@ class Room {
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
-  // keepFearLane: true when addPlayer already handed this socket's Fear lane
-  // to the reconnecting one (_fearOwner was repointed there before this ran)
-  // — releasing it here would tear the hall right back out from under the
-  // new owner instead of the stale record it's meant for.
-  removePlayer(socketId, keepFearLane = false) {
-    // Hand back a Fear hall before the player record goes: every other exit
-    // path (death, clearing the last wave) releases it through
-    // deathBattleReturn, but a player who simply vanishes — a disconnect, or
-    // the stale entry addPlayer drops on a reconnect — never reaches one.
-    // That left the hall owned by a socket that no longer exists, and since
-    // deathBattleReturn bails out early when the player record is already
-    // gone, the eventual disconnect couldn't reclaim it either: the halls
-    // leaked one at a time until all 8 looked occupied and nobody could
-    // enter at all.
+  removePlayer(socketId) {
+    // Hold a Fear hall open before the player record goes, rather than
+    // releasing it on the spot — every other exit path (death, clearing the
+    // last wave) releases it through deathBattleReturn, but a player who
+    // simply vanishes — a disconnect, or the stale entry addPlayer drops on
+    // a reconnect — never reaches one. Un-held, that left the hall owned by
+    // a socket that no longer exists with nothing left to reclaim it (the
+    // eventual disconnect handler had already run this same function), so
+    // halls leaked one at a time until all 8 looked occupied and nobody
+    // could enter at all. See _fearGraceStart/_fearGraceClaim: a reconnect
+    // within the window gets the exact hall and wave back, and only a
+    // window that elapses with no reconnect turns into a real release.
     const p = this.players.get(socketId);
-    if (p && p._fearLane != null && !keepFearLane) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
+    if (p && p._fearLane != null) this._fearGraceStart(p);
     this.players.delete(socketId);
     this.players.forEach(p2 => p2._known.delete(socketId));
     if (this.players.size === 0) this._stopLoop();

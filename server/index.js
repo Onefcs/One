@@ -3170,11 +3170,20 @@ function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId
 // room is the attacker's Room, only needed to resolve names for the open-world
 // fallback below — the three mode-specific eliminates already know names from
 // their own alive maps.
-function _pvpEliminate(socketId, killerSocketId, room) {
+//
+// opts.fearGrace: true only from the two disconnect-class call sites (the
+// real 'disconnect' handler and the stale half of a same-account reconnect)
+// — routes the Fear half through _fearHoldOnDisconnect instead of
+// _fearEliminate, so an involuntary exit holds the run for a possible
+// reconnect instead of ending it on the spot. Every other caller (dying,
+// respawn) leaves this unset and gets the immediate, real elimination.
+function _pvpEliminate(socketId, killerSocketId, room, opts) {
   const dbHandled = _dbEliminate(socketId, killerSocketId);
   const a3Handled = _a3Eliminate(socketId, killerSocketId);
   const r10Handled = _race10Eliminate(socketId);
-  const fearHandled = _fearEliminate(socketId);
+  const fearHandled = (opts && opts.fearGrace)
+    ? _fearHoldOnDisconnect(socketId, opts.telegramId)
+    : _fearEliminate(socketId);
   // A PvP kill (setPvpMode duel) that isn't part of any live Death
   // Battle/Arena3/race10/Fear round falls through all four above untouched —
   // they only record when the victim was in their own alive map. Without
@@ -3785,6 +3794,33 @@ function _fearFinish(socketId, cleared) {
 function _fearEliminate(socketId) {
   if (!_fear.has(socketId)) return false;
   _fearFinish(socketId, false);
+  return true;
+}
+
+// How long a disconnected entrant's run record is held before it's dropped
+// for real — kept equal to Room.js's own FEAR_RECONNECT_GRACE_MS (not
+// imported: Room has no reason to depend on this file, so the two are kept
+// in sync by comment). Room's copy is what actually holds the hall/monsters;
+// this one is what lets fearSync/fearWave keep reporting the right wave to a
+// client that's mid-reconnect.
+const FEAR_RECONNECT_GRACE_MS = 15000;
+// telegramId -> { run: {lane, wave}, timer } — a Fear run held across a
+// disconnect. See _pvpEliminate's opts.fearGrace and the reconnect handling
+// in the login flow below (where a matching Room._fearGraceClaim result
+// reclaims this back onto the new socketId).
+const _fearDisconnectGrace = new Map();
+function _fearHoldOnDisconnect(socketId, telegramId) {
+  const run = _fear.get(socketId);
+  if (!run) return false;
+  _fear.delete(socketId);
+  const tid = telegramId || _socketTid(socketId);
+  // No account to reconnect against — Room's own grace still holds the hall
+  // briefly and releases it on its own timer regardless of what happens here.
+  if (!tid) return true;
+  const prior = _fearDisconnectGrace.get(tid);
+  if (prior) clearTimeout(prior.timer);
+  const timer = setTimeout(() => { _fearDisconnectGrace.delete(tid); }, FEAR_RECONNECT_GRACE_MS);
+  _fearDisconnectGrace.set(tid, { run, timer });
   return true;
 }
 
@@ -6602,27 +6638,18 @@ io.on('connection', socket => {
       // this account never briefly renders as two players on screen.
       if (staleSocketId) {
         socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: staleSocketId });
-        // A Fear run was carried onto this socket (addPlayer already moved
-        // Room's own _fearOwner over) — move the matching module-level run
-        // record here too, and do it BEFORE _pvpEliminate below so it doesn't
-        // find the old socketId still holding it and end the run out from
-        // under the player it was just resumed for.
-        if (fearCarry) {
-          const staleRun = _fear.get(staleSocketId);
-          if (staleRun) { _fear.set(socket.id, staleRun); _fear.delete(staleSocketId); }
-        }
-        // Pre-match REGISTRATION queues carry over the same way fearCarry does
-        // — race10Register/arena3Register/deathBattleRegister just record a
-        // name/level against a socketId and wait for the scheduled window
-        // (several minutes for race10) to deploy. A network blip in that
-        // window used to leave the entry parked under the now-dead old
-        // socketId: _race10Start/_a3Deploy's own "still connected" filter
-        // then silently dropped it at deploy time, so the player registered,
-        // waited, and simply never got thrown into the race/match — with no
-        // error telling them why. Doing this before gameStart is built further
-        // down means its own registered:_race10.queue.has(socket.id) (etc.)
-        // fields already reflect the transfer, so the client's UI just shows
-        // "you're registered" with no extra event needed.
+        // Pre-match REGISTRATION queues carry over — race10Register/
+        // arena3Register/deathBattleRegister just record a name/level against
+        // a socketId and wait for the scheduled window (several minutes for
+        // race10) to deploy. A network blip in that window used to leave the
+        // entry parked under the now-dead old socketId: _race10Start/
+        // _a3Deploy's own "still connected" filter then silently dropped it
+        // at deploy time, so the player registered, waited, and simply never
+        // got thrown into the race/match — with no error telling them why.
+        // Doing this before gameStart is built further down means its own
+        // registered:_race10.queue.has(socket.id) (etc.) fields already
+        // reflect the transfer, so the client's UI just shows "you're
+        // registered" with no extra event needed.
         const staleDb = _db.reg.get(staleSocketId);
         if (staleDb) { _db.reg.set(socket.id, staleDb); _db.reg.delete(staleSocketId); }
         const staleA3q = _a3.queue.get(staleSocketId);
@@ -6643,10 +6670,24 @@ io.on('connection', socket => {
         // monster is invisible to it (_raceVisible, server/game/Room.js) —
         // reading exactly like "the monsters disappeared" — while the ghost
         // entry blocks the race from ever finishing for anyone else. Same
-        // class of bug as the one already fixed for Fear halls in
-        // removePlayer's comment; race10/arena3/deathBattle just never got the
-        // parallel fix, and now carry their own Fear-specific resume above.
-        _pvpEliminate(staleSocketId);
+        // class of bug as the one already fixed for Fear halls; race10/
+        // arena3/deathBattle just never got the parallel fix, and Fear itself
+        // now goes through the same fearGrace hold as a real disconnect (see
+        // below) rather than a bespoke same-tick-only carry.
+        _pvpEliminate(staleSocketId, undefined, undefined, { fearGrace: true, telegramId: authed.telegramId });
+      }
+      // Reclaim a Fear hall/run held across a disconnect. Room's own
+      // _fearGraceClaim (inside addPlayer above) already reclaimed the hall
+      // and its monsters if it found one — fearCarry says whether it did —
+      // and the _pvpEliminate call just above (when staleSocketId existed)
+      // guarantees any run still sitting on the stale socketId has by now
+      // been moved into _fearDisconnectGrace. This check is independent of
+      // staleSocketId, though: a real disconnect can finish completely
+      // before this reconnect arrives, still inside the window, in which
+      // case there was never a stale room record left to find above at all.
+      if (fearCarry) {
+        const g = _fearDisconnectGrace.get(authed.telegramId);
+        if (g) { clearTimeout(g.timer); _fearDisconnectGrace.delete(authed.telegramId); _fear.set(socket.id, g.run); }
       }
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
       if (globalChatHistory.length) socket.emit('chatHistory', _publicChatHistory());
@@ -6666,6 +6707,15 @@ io.on('connection', socket => {
       deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
       race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
       arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
+      // Unlike the three above, Fear has no scheduled window/queue to report
+      // when nothing's running — only present at all when a run is live for
+      // this socket, which after a reconnect (see fearGrace/_fearGraceClaim)
+      // is exactly the case that otherwise left the client's own wave HUD
+      // and "in run" flag stuck on their pre-reconnect values (or unset, on
+      // a first load) even though the server-side run and its monsters came
+      // back fine. onFearState (js/network.js's _applyGameStart) picks this
+      // straight up, the same way it already does for the other three.
+      fear: _fear.has(socket.id) ? { inRun: true, wave: _fear.get(socket.id).wave, maxWave: FEAR_MAX_WAVE } : null,
     });
     // MUST come after gameStart: its client handler rebuilds otherPlayers from
     // scratch (`otherPlayers = new Map()`), so a roster delivered before it was
@@ -8497,7 +8547,12 @@ io.on('connection', socket => {
     _db.reg.delete(socket.id);
     if (_a3.queue.delete(socket.id)) _a3Broadcast();
     if (_race10.queue.delete(socket.id)) _race10Broadcast();
-    _pvpEliminate(socket.id);
+    // fearGrace: an actual disconnect (network blip, closed tab, backgrounded
+    // WebView) might just be a reconnect a moment away — hold the Fear run
+    // instead of ending it, same as Room's own removePlayer now holds the
+    // hall. Race10/arena3/deathBattle stay on the immediate path: they're
+    // shared/competitive instances a lone reconnect can't safely resume into.
+    _pvpEliminate(socket.id, undefined, undefined, { fearGrace: true, telegramId: authed?.telegramId });
     playerFloorMap.delete(socket.id);
     const partyId = playerParty.get(socket.id);
     if (partyId) _removeFromParty(partyId, socket.id);
