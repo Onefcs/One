@@ -366,16 +366,30 @@ function netConnect(onReady) {
       _gwPhase = _gwState.phase;
       if (typeof onGuildWarState === 'function') onGuildWarState();
     }
-    // Страх: only sent at all when a run is live for this socket (see the
-    // server-side comment) — the case that matters here is a reconnect that
-    // landed back in a held hall (fearGrace), where the run and its monsters
+    // Страх: fs is only sent at all when a run is live for this socket (see
+    // the server-side comment) — the common case is a reconnect that landed
+    // back in a held hall (fearGrace), where the run and its monsters
     // resumed server-side but this client's own wave HUD/"in run" flag never
-    // got told. A fresh load or an ordinary reconnect outside any run leaves
-    // this null and touches nothing.
+    // got told. The else branch matters just as much: netConnect's 'connect'
+    // handler re-sends the login (and so re-runs this whole function) on
+    // EVERY socket.io reconnect, not just a hard page refresh — a mobile
+    // network drop mid-run is exactly as common. If the reconnect's grace
+    // window had already lapsed (or the reclaim otherwise failed), the
+    // server correctly sends no fear field at all — meaning this player is
+    // NOT in a run any more, in the hub, with none of that lane's monsters —
+    // but _fearInRun is ordinary page-level JS state that survives a mere
+    // socket reconnect untouched. Left alone, it would still read "in run"
+    // from before the drop: the wave HUD and Events panel keep showing a
+    // fight that's already over server-side, with no monsters left to end
+    // it, reading exactly like "stuck".
     if (fs && fs.inRun) {
       _fearInRun = true;
       _fearWave = fs.wave || 0;
       if (fs.maxWave) _fearState = { ..._fearState, maxWave: fs.maxWave };
+      if (typeof onFearState === 'function') onFearState();
+    } else if (_fearInRun) {
+      _fearInRun = false;
+      _fearWave = 0;
       if (typeof onFearState === 'function') onFearState();
     }
     // Preload only the corridors this character can actually be in: arm 1,
