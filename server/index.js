@@ -2145,6 +2145,29 @@ const _SANITIZE_MAX = {
   qty: 1e6,
 };
 
+// ── Gold growth cap (anti-forgery) ───────────────────────────────────────
+// Gold has no census the way items do (_itemCensus/_censusOverflow below) —
+// it isn't discrete minted units, and legitimate play grows it constantly
+// through this very save path (kill/quest gold is computed client-side, see
+// gainGold in js/player.js, then reported here) — so a flat "can only
+// shrink" rule would reject ordinary earning. But nothing bounded how FAST
+// it's allowed to grow either: _serverSpendGold's own comment already says
+// the quiet part — "gold is the one currency the server does not own... the
+// next saveProgress replaces _lastStats wholesale" — so a forged save (a
+// modified client, or a localStorage backup hand-edited and pushed back by
+// the gameStart restore — see _pickFreshestSave, js/network.js) could claim
+// any figure up to _SANITIZE_MAX.gold and the server adopted it outright as
+// the new truth.
+//
+// GOLD_MAX_EARN_PER_SEC is picked well above the fastest legitimate combo:
+// goldAtLevel tops out around the global level ceiling (~120/kill), stacked
+// with max VIP (+100%), max clan (+20%) and a gold potion (×2) is under
+// 600/kill, and _atkAllowed caps attacks at 20/s — no real kill rate gets
+// close to that. GOLD_GROWTH_SLACK covers a save landing back-to-back with
+// the previous one (near-zero elapsed time) without being rejected outright.
+const GOLD_MAX_EARN_PER_SEC = 3000;
+const GOLD_GROWTH_SLACK = 5000;
+
 function _catalogBase(id) {
   return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
 }
@@ -4075,6 +4098,12 @@ io.on('connection', socket => {
   let currentFloor = 1;
   let _lastStats = null;
   let _autoSaveInterval = null;
+  // Wall-clock time this session last had a save accepted — used by the gold
+  // growth cap below (saveProgress). Deliberately server time, not the
+  // client's own savedAt: a forged save controls that field just as freely
+  // as the gold figure itself, so rate-limiting against it would let the
+  // same forgery just claim an earlier savedAt to buy a bigger allowance.
+  let _lastSaveAcceptedAt = 0;
 
   // ── Server-side gold spend ────────────────────────────────────────────────
   // Gold is the one currency the server does not own: it rides in on the
@@ -6603,7 +6632,29 @@ io.on('connection', socket => {
         console.error(`[selectChar] Rejected minted items for telegramId=${authed.telegramId}` +
           ` (${_over.key}: had ${_over.had}, claimed ${_over.sent})`);
       }
+      // Gold, capped to GOLD_GROWTH_SLACK over the stored DB figure — flat,
+      // not rate-over-elapsed-time like saveProgress's own check, because the
+      // gap since that DB record was written can legitimately be arbitrary
+      // offline time (this runs on every login/reconnect), none of which
+      // earned anything. The slack is exactly the "last few seconds of kill
+      // gold on an unclean disconnect" this function's own comment above
+      // already promised — it just never actually enforced it.
+      const _dbGold = Math.floor(Number(_dbBase && _dbBase.gold) || 0);
+      if (effectiveSaved.gold > _dbGold + GOLD_GROWTH_SLACK) {
+        logPlayer(authed.telegramId, authed.username, 'select_gold_forged', {
+          had: _dbGold, sent: effectiveSaved.gold, cappedTo: _dbGold + GOLD_GROWTH_SLACK,
+        });
+        console.error(`[selectChar] Capped suspicious gold for telegramId=${authed.telegramId}` +
+          ` (had ${_dbGold}, claimed ${effectiveSaved.gold})`);
+        effectiveSaved.gold = _dbGold + GOLD_GROWTH_SLACK;
+      }
       _lastStats = effectiveSaved;
+      // Baseline for saveProgress's own rate-based gold cap — without this,
+      // the time this session spends actually playing before its first
+      // autosave (real combat, real gold) would count as zero elapsed
+      // server-side time and that first save would be capped down to the
+      // same flat slack used here, rejecting gold that was earned honestly.
+      _lastSaveAcceptedAt = Date.now();
     }
     // Season state is read straight off the stored record. It is never part of
     // the client blob — the sanitizer strips both fields so they can't be
@@ -7669,6 +7720,28 @@ io.on('connection', socket => {
         _pendingGoldSpend = null;   // this save already accounts for the spend
       }
     }
+
+    // See the GOLD_MAX_EARN_PER_SEC comment above. Rate-limited against
+    // wall-clock time actually elapsed server-side, not clean.savedAt (the
+    // client's own stamp, which a forged save is just as free to inflate).
+    if (_lastStats) {
+      const prevGold = Math.floor(Number(_lastStats.gold) || 0);
+      if (clean.gold > prevGold) {
+        const elapsedSec = Math.max(0, (Date.now() - (_lastSaveAcceptedAt || Date.now())) / 1000);
+        const maxGrowth = GOLD_GROWTH_SLACK + Math.ceil(elapsedSec * GOLD_MAX_EARN_PER_SEC);
+        if (clean.gold - prevGold > maxGrowth) {
+          logPlayer(authed.telegramId, authed.username, 'save_gold_forged', {
+            had: prevGold, sent: clean.gold, cappedTo: prevGold + maxGrowth,
+            elapsedSec: Math.round(elapsedSec),
+          });
+          console.error(`[saveProgress] Capped suspicious gold growth for telegramId=${authed.telegramId}` +
+            ` (had ${prevGold}, claimed ${clean.gold}, capped to +${maxGrowth})`);
+          clean.gold = prevGold + maxGrowth;
+          socket.emit('goldSync', { gold: clean.gold });
+        }
+      }
+    }
+    _lastSaveAcceptedAt = Date.now();
 
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
       logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {
