@@ -1105,7 +1105,7 @@ const EVENT_BOSS = {
   // no bigger than a demon warrior (size 22). "5× a regular monster" therefore
   // means 5 * (22 * 6.75) / 4.5 ≈ 165, not simply 5 * 22.
   size: 165,
-  hp: 100000, atk: 20, def: 1, spd: 50,
+  hp: 1000000, atk: 20, def: 1, spd: 50,
   xp: 120, gold: 120,
   isBoss: true, eType: 'boss',
   // Exempts this one boss from three rules tuned for ordinary room-bound
