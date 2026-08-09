@@ -296,7 +296,7 @@ function netConnect(onReady) {
   });
 
   function _applyGameStart(payload, d) {
-    const { floor, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
+    const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
             deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, specialSale: sps } = payload;
     dungeonLvl = floor;
     // A fresh room attachment: whatever this session last told the server
@@ -454,7 +454,13 @@ function netConnect(onReady) {
       return;
     }
     if (player) {
-      player.x = d.spawn.x; player.y = d.spawn.y;
+      // srvSpawn is this socket's actual server-side position — the reclaimed
+      // Fear hall when a run was restored (see the matching comment on the
+      // server's gameStart emit), the map's ordinary spawn otherwise. Falling
+      // back to the map's static d.spawn only covers an old/cached payload
+      // that never carried the field; the normal case always has it.
+      const sp = srvSpawn || d.spawn;
+      player.x = sp.x; player.y = sp.y;
       camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
       clampCamera();
     }

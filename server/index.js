@@ -7071,11 +7071,23 @@ io.on('connection', socket => {
     }
     currentRoom.setPlayerChar(socket.id, type, effectiveSaved);
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
+    // The room's own record of where this socket actually stands — addPlayer
+    // (above) already resolved this to the reclaimed Fear hall (fearCarry.x/y)
+    // when a run was restored, or the map's ordinary spawn otherwise. Sent
+    // explicitly so js/network.js's _applyGameStart can place the player here
+    // instead of unconditionally snapping to the map's static spawn point on
+    // every fresh load: without this, a page refresh mid-Fear-run left the
+    // server correctly reporting `fear.inRun: true` (wave HUD/"in battle"
+    // showing, exactly right) while the client teleported the player back to
+    // the hub regardless — stuck "in battle" with no monsters in sight, at a
+    // spot with nothing to fight and no way out.
+    const _selfP = currentRoom.players.get(socket.id);
     socket.emit('gameStart', {
       floor: currentFloor,
       // The map itself is fetched over HTTP and cached by the browser — see
       // /api/world-map above. Only its name travels here.
       mapVersion: currentRoom.mapVersion,
+      spawn: _selfP ? { x: _selfP.x, y: _selfP.y } : undefined,
       enemies: currentRoom.enemySnapshot(socket.id),
       bossStatus: currentRoom.getBossStatus(),
       // So someone logging in mid-countdown still sees the timer, and someone
@@ -7102,9 +7114,8 @@ io.on('connection', socket => {
     // Whole roster to the arriving player, their own pet to everyone else —
     // same shape both ways, so a missed update self-heals on the next join.
     socket.emit('playerPets', { pets: currentRoom.petSnapshot() });
-    const _selfPet = currentRoom.players.get(socket.id);
-    if (_selfPet && _selfPet.petId) {
-      socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfPet.petId });
+    if (_selfP && _selfP.petId) {
+      socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfP.petId });
     }
   });
 
