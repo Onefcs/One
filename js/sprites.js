@@ -517,7 +517,7 @@ const ENEMY_SPRITE_DEF = {
   // enemy, so pixi-world.js's animation-key selector only ever resolves
   // 'idle'.
   guildwar_castle: {
-    frameW: 128, frameH: 128,
+    frameW: 70, frameH: 130,
     sheets: {
       idle: { src: 'images/enemy/guildwar_castle.png', cols: 1, fps: 1, loop: false },
     },

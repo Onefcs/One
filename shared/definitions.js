@@ -1218,12 +1218,11 @@ const GUILD_WAR_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
 const GUILD_WAR_HOURS_MSK = [22];
 const GUILD_WAR_WINDOW_MS = 60 * 60 * 1000;
 
-// Between ARENA3_BOSS_HP (30k, solo-killable in one 3v3) and EVENT_BOSS.hp
-// (1M, a whole server's worth of damage) — meant to take a sustained
-// multi-clan push, not one raid. A starting placeholder pending real
-// multi-clan playtesting; easy to retune since it's one constant read by
-// both Room.spawnGuildWarTower and the client's HP bar.
-const GUILD_WAR_TOWER_HP = 300000;
+// Same HP as the world event boss ("здоровье как у мирового босса") — a
+// whole server's worth of damage, meant to take a sustained multi-clan push,
+// not one raid. References EVENT_BOSS.hp directly (rather than copying the
+// number) so the two always stay in sync if that ever gets retuned again.
+const GUILD_WAR_TOWER_HP = EVENT_BOSS.hp;
 
 // Passive income while owned: a random total of 10-30 shard units per hour,
 // spread across UNIQUE_SHARDS' kinds (see _rollGuildWarIncome, server/
