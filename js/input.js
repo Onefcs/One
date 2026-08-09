@@ -101,6 +101,24 @@ function _a3Unselectable(id) {
   return (_a3Mates[_a3Team] || []).includes(id);
 }
 
+// True while racing (Кровавая Башня) for a racer in a different lane than
+// yours — visible (see the pIsRacer exception in Room.js's per-player
+// candidate filter, server/game/Room.js), but not selectable: every lane is
+// its own sealed corridor until the one shared room every lane opens into,
+// so a party invite or profile lookup across lanes has nobody real to reach.
+// Both being past bossRoomX0 (sent as part of dungeon.race10 — see
+// dungeonData, Room.js) is the same "converged" exception the server's own
+// visibility check already makes, so nothing here needs to track it
+// separately once both racers have actually arrived.
+function _raceUnselectable(id) {
+  if (typeof _race10Lane === 'undefined' || _race10Lane == null) return false;
+  const op = otherPlayers.get(id);
+  if (!op || op.raceLane == null || op.raceLane === _race10Lane) return false;
+  const bx = typeof dungeon !== 'undefined' && dungeon && dungeon.race10 && dungeon.race10.bossRoomX0;
+  if (bx != null && player.x >= bx && op.x >= bx) return false;
+  return true;
+}
+
 function cycleTarget() {
   if (!player) return;
   const isOnline = !!(socket?.connected);
@@ -116,7 +134,7 @@ function cycleTarget() {
   // target unless pvpMode is separately on, so there's nothing to guard here.
   if (isOnline) {
     otherPlayers.forEach((op, id) => {
-      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y) && !_a3Unselectable(id))
+      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y) && !_a3Unselectable(id) && !_raceUnselectable(id))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
     });
   }

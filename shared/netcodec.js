@@ -46,19 +46,33 @@
 //     u32 x*2, u32 y*2, i16 vx, i16 vy, u8 size, u8 life*20,
 //     u8 r, u8 g, u8 b, u8 flags (bit0 = arrow), u8 age (10ms units)
 //   [aoe rings]   u8 count, per entry (10 bytes): u32 x*2, u32 y*2, u16 radius
+//   [race lanes]  u8 count, per entry (3 bytes): u16 seq (player handle), u8 lane
 //   str = u8 byteLength + UTF-8 bytes
 //
-//  The last two sections carry what used to be the 'spawnProj'/'spawnAoe'
-//  events — one JSON packet per arrow, per recipient, ~133 bytes each and 28%
-//  of everything a player downloaded during a fight. Riding the world cast
-//  instead costs no packet, no socket.io envelope and no extra syscall, and
-//  the entry is 19 bytes because most of that JSON was derivable: `angle` is
-//  atan2(vy, vx), and the rest is the shooter's own class constants.
+//  The projectile/AOE sections carry what used to be the 'spawnProj'/
+//  'spawnAoe' events — one JSON packet per arrow, per recipient, ~133 bytes
+//  each and 28% of everything a player downloaded during a fight. Riding the
+//  world cast instead costs no packet, no socket.io envelope and no extra
+//  syscall, and the entry is 19 bytes because most of that JSON was
+//  derivable: `angle` is atan2(vy, vx), and the rest is the shooter's own
+//  class constants.
 //
-//  Both sections are APPENDED, which is what makes the change safe to deploy
-//  without a flag day: a client running older code stops at the enemy list and
-//  ignores the trailing bytes, and a client running newer code against an
-//  older server finds the packet ended and treats both counts as zero.
+//  Race lanes: one (seq, lane) pair per streamed player currently racing
+//  (Кровавая Башня), client-side only — see the pIsRacer exception in
+//  Room.js's per-player candidate filter for why a racer's own full/slim
+//  player entry no longer implies isolation the way it used to, and js/
+//  input.js's cycleTarget for what reads this back out. Kept as its own
+//  section rather than a field on every player entry (most players are never
+//  racing, so that field would be dead weight in every single packet) and
+//  only carries an entry when the corresponding player entry this same
+//  packet was full — a slim entry's lane hasn't changed, so the client just
+//  keeps what it already has.
+//
+//  All three trailing sections are APPENDED, which is what makes the change
+//  safe to deploy without a flag day: a client running older code stops at
+//  the enemy list (or wherever its own older layout ends) and ignores the
+//  trailing bytes, and a client running newer code against an older server
+//  finds the packet ended and treats every trailing count as zero.
 // ─────────────────────────────────────────────────────────
 
 const NC_FACING = ['front', 'back', 'left', 'right', 'frontright', 'frontleft', 'backleft', 'backright'];
@@ -267,6 +281,31 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
     _ncDV.setUint16(o, Math.max(0, Math.min(65535, Math.round(a.r))), true); o += 2;
   }
 
+  // Race lanes — see the format note at the top. One entry per player whose
+  // entry this packet is full — a slim entry never carries p.raceLane at all
+  // (Room.js only sets it on the full shape), so `undefined` correctly skips
+  // it there. 255 means "not currently racing", not just "no data" — a full
+  // entry always has one or the other, so this is what lets the client learn
+  // a racer just LEFT the race (their _raceLane went from a number to null)
+  // instead of keeping a stale lane number forever once nothing resends it.
+  let rlCount = 0;
+  if (players) {
+    _ncEnsure(o, 1);
+    const rlCountAt = o; o += 1;
+    for (let i = 0; i < players.length && rlCount < 255; i++) {
+      const p = players[i];
+      if (p.raceLane === undefined) continue;
+      _ncEnsure(o, 3);
+      _ncDV.setUint16(o, p.seq & 0xffff, true); o += 2;
+      _ncU8[o++] = p.raceLane == null ? 255 : Math.max(0, Math.min(254, p.raceLane));
+      rlCount++;
+    }
+    _ncU8[rlCountAt] = rlCount;
+  } else {
+    _ncEnsure(o, 1);
+    _ncU8[o++] = 0;
+  }
+
   // Copy — the scratch buffer is reused for the next recipient while
   // socket.io may still hold this payload for async transmission
   return _ncBuf.slice(0, o);
@@ -391,7 +430,21 @@ function decodeGameState(data) {
     }
   }
 
-  return { players, enemies, t, projs, aoes };
+  // Race lanes — see the format note at the top. Resolved through the same
+  // seq -> id map the player section above just fed (a hint for a player
+  // whose full entry is in this very packet resolves immediately).
+  const raceLaneById = new Map();
+  if (o < dv.byteLength) {
+    const rn = u8[o++];
+    for (let i = 0; i < rn && o + 3 <= dv.byteLength; i++) {
+      const seq = dv.getUint16(o, true); o += 2;
+      const laneRaw = u8[o++];
+      const id = _ncPIdMap.get(seq);
+      if (id !== undefined) raceLaneById.set(id, laneRaw === 255 ? null : laneRaw);
+    }
+  }
+
+  return { players, enemies, t, projs, aoes, raceLaneById };
 }
 
 // ── Dungeon grid packing ─────────────────────────────────────────────────────

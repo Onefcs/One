@@ -516,6 +516,18 @@ function netConnect(onReady) {
         }
       });
 
+      // Кровавая Башня lane hints (shared/netcodec.js's own trailing
+      // section, not part of the player entry itself — see its format note).
+      // Only present for a racer whose entry this packet was full, same
+      // "keep the last known value otherwise" rule slim updates already
+      // follow for clanName/pvpMode/etc — see _raceUnselectable, js/input.js.
+      if (_st.raceLaneById && _st.raceLaneById.size) {
+        _st.raceLaneById.forEach((lane, id) => {
+          const op = otherPlayers.get(id);
+          if (op) op.raceLane = lane;
+        });
+      }
+
       // Remove players that left AOI or disconnected
       const pids = new Set();
       for (let i = 0; i < players.length; i++) pids.add(players[i].id);

@@ -970,6 +970,22 @@ class Room {
     return null;
   }
 
+  // Authoritative check backing the client-side _raceUnselectable (js/
+  // input.js) — partyInvite/requestPlayerProfile (server/index.js) go
+  // through this rather than trusting a client to only ever ask about
+  // someone it was actually offered as a target, since race10 racers are now
+  // streamed to each other across lanes (see the pIsRacer exception above)
+  // purely to be visible, not to be interacted with. Same lane, not racing
+  // at all, or both already converged on the shared boss room are all fine;
+  // two different corridors still isn't, same rule _playerLaneKey applies.
+  racePairAllowed(aSocketId, bSocketId) {
+    const a = this.players.get(aSocketId), b = this.players.get(bSocketId);
+    if (!a || !b) return false;
+    if (a._raceLane == null || b._raceLane == null || a._raceLane === b._raceLane) return true;
+    const race = this._dungeon.race10;
+    return !!race && a.x >= race.bossRoomX0 && b.x >= race.bossRoomX0;
+  }
+
   _hasLOS(x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.hypot(dx, dy);
@@ -1321,7 +1337,18 @@ class Room {
       // complaint — the target/assist button happily cycled onto whoever was
       // running the hall next door. Same two-way rule _raceVisible applies
       // to enemies.
+      //
+      // race10 racers are the one deliberate exception: they're allowed to
+      // see every other racer regardless of which lane either is in — it's a
+      // 10-player race, and running it in total isolation from the other 9
+      // read as broken rather than intentional. What still isn't allowed is
+      // *acting* on a racer in another lane (party invite, profile lookup —
+      // see partyInvite/requestPlayerProfile, server/index.js), which enforce
+      // exact lane equality themselves. Fear keeps the strict same-key rule:
+      // every hall is a private, single-occupant room, so there's never
+      // anyone legitimate on the other side of one to see in the first place.
       const pLane = this._playerLaneKey(p);
+      const pIsRacer = p._raceLane != null;
       for (let pcx = pcx0; pcx <= pcx1; pcx++) {
         for (let pcy = pcy0; pcy <= pcy1; pcy++) {
           const cell = pgrid.get(_gridKey(pcx, pcy));
@@ -1329,7 +1356,7 @@ class Room {
           for (let ci = 0; ci < cell.length; ci++) {
             const op = cell[ci];
             if (op.socketId === p.socketId) continue;
-            if (this._playerLaneKey(op) !== pLane) continue;
+            if (!(pIsRacer && op._raceLane != null) && this._playerLaneKey(op) !== pLane) continue;
             const dx = op.x - p.x, dy = op.y - p.y;
             const d2 = dx * dx + dy * dy;
             if (d2 > PLAYER_AOI_R2) continue;
@@ -1367,6 +1394,12 @@ class Room {
             x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
             pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
             clanName: op.clanName || null, clanIcon: op.clanIcon || null,
+            // For the client's own target/assist filtering — see the pIsRacer
+            // exception above. null for anyone not currently racing; _raceLane
+            // itself already bumps _profileRev on change (raceDeploy/
+            // deathBattleReturn), so `full` picks up a lane change immediately
+            // rather than waiting for the periodic refresh.
+            raceLane: op._raceLane != null ? op._raceLane : null,
           });
         } else {
           nearPlayers.push({

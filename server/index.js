@@ -7653,6 +7653,10 @@ io.on('connection', socket => {
     }
     const targetSocket = io.sockets.sockets.get(targetId);
     if (!targetSocket || !targetSocket.data?.username) return;
+    // Authoritative — see racePairAllowed (Room.js): a race10 racer in
+    // another (still-corridor-bound) lane is now visible to invite from, but
+    // shouldn't actually be reachable until the shared boss room.
+    if (currentRoom && !currentRoom.racePairAllowed(socket.id, targetId)) return;
     targetSocket.emit('partyInviteReceived', { fromId: socket.id, fromName: authed.username });
   });
 
@@ -7701,6 +7705,12 @@ io.on('connection', socket => {
   // in the instant between being targeted and the tap landing.
   safeOn('requestPlayerProfile', ({ targetId }) => {
     if (!authed || typeof targetId !== 'string' || !currentRoom) return;
+    // Being rendered is no longer the same as being reachable: race10 racers
+    // in a different (still-corridor-bound) lane are visible to each other
+    // but not to each other's profile — see racePairAllowed, Room.js.
+    if (!currentRoom.racePairAllowed(socket.id, targetId)) {
+      return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
+    }
     const raw = currentRoom.publicProfile(targetId);
     if (!raw) return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
     const { upgrades, ...profile } = raw;
