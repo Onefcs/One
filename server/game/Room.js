@@ -951,8 +951,21 @@ class Room {
   // "tower lane N" and "Fear lane N" with one comparable value, since a raw
   // _raceLane number and a raw _fearLane number would otherwise collide (lane
   // 0 of one instance type must never see lane 0 of the other).
+  //
+  // A race10 racer past bossRoomX0 shares one key with every other racer
+  // there, regardless of which lane they ran — same "laneless" treatment the
+  // boss itself already gets (_raceVisible's `e.lane == null` clause). Without
+  // this every entrant kept their own per-lane key for the whole race,
+  // including inside the one room every lane opens into, so racers never saw
+  // each other even standing shoulder to shoulder on the same boss — every
+  // corridor still isolates its own lane from the one next door, this only
+  // stops isolating players from each other once they've actually converged.
   _playerLaneKey(p) {
-    if (p._raceLane != null) return 'r' + p._raceLane;
+    if (p._raceLane != null) {
+      const race = this._dungeon.race10;
+      if (race && p.x >= race.bossRoomX0) return 'race10boss';
+      return 'r' + p._raceLane;
+    }
     if (p._fearLane != null) return 'f' + p._fearLane;
     return null;
   }

@@ -472,6 +472,12 @@ function generateOpenWorld() {
         x: race10BossCx * TILE + TILE / 2, y: race10BossCy * TILE + TILE / 2,
       },
       bounds: { x0: RACE10_X0, y0: RACE10_Y0, x1: race10BossRoomX0 + RACE10_BOSS_ROOM, y1: RACE10_Y0 + RACE10_H },
+      // Where the shared boss room starts (px, world x) — every lane's
+      // corridor ends before this and the one shared room spans everything
+      // past it. Room.js uses this to tell "still in my own sealed corridor"
+      // apart from "reached the shared room", the same distinction the boss
+      // itself already gets (see spawnRaceBoss's `lane`-less enemy).
+      bossRoomX0: race10BossRoomX0 * TILE,
       // One barrier pair per lane: tier 0 blocks until every level-5 monster
       // in that lane is dead, tier 1 until every level-10 one is. lane/tier
       // let the client match a barrier to the right slice of serverEnemies

@@ -6611,22 +6611,41 @@ io.on('connection', socket => {
           const staleRun = _fear.get(staleSocketId);
           if (staleRun) { _fear.set(socket.id, staleRun); _fear.delete(staleSocketId); }
         }
+        // Pre-match REGISTRATION queues carry over the same way fearCarry does
+        // — race10Register/arena3Register/deathBattleRegister just record a
+        // name/level against a socketId and wait for the scheduled window
+        // (several minutes for race10) to deploy. A network blip in that
+        // window used to leave the entry parked under the now-dead old
+        // socketId: _race10Start/_a3Deploy's own "still connected" filter
+        // then silently dropped it at deploy time, so the player registered,
+        // waited, and simply never got thrown into the race/match — with no
+        // error telling them why. Doing this before gameStart is built further
+        // down means its own registered:_race10.queue.has(socket.id) (etc.)
+        // fields already reflect the transfer, so the client's UI just shows
+        // "you're registered" with no extra event needed.
+        const staleDb = _db.reg.get(staleSocketId);
+        if (staleDb) { _db.reg.set(socket.id, staleDb); _db.reg.delete(staleSocketId); }
+        const staleA3q = _a3.queue.get(staleSocketId);
+        if (staleA3q) { _a3.queue.set(socket.id, staleA3q); _a3.queue.delete(staleSocketId); _a3Broadcast(); }
+        const staleR10q = _race10.queue.get(staleSocketId);
+        if (staleR10q) { _race10.queue.set(socket.id, staleR10q); _race10.queue.delete(staleSocketId); _race10Broadcast(); }
         // The real 'disconnect' handler below also drops the old socket out of
-        // any live PvP instance (race10/arena3/deathBattle/Fear) — addPlayer's
-        // stale-entry cleanup only drops its ROOM record, not that bookkeeping,
-        // since Room has no visibility into the instance Maps kept here. Without
-        // this, a reconnect mid-Bloody-Tower-run (a Wi-Fi/LTE handover, a
-        // suspended WebView — see the pingTimeout comment above) leaves the old
-        // socketId as a ghost "still alive" entrant that nothing ever clears:
-        // the new socket starts back at the hub with _raceLane null, so every
-        // corridor monster is invisible to it (_raceVisible, server/game/
-        // Room.js) — reading exactly like "the monsters disappeared" — while
-        // the ghost entry blocks the race from ever finishing for anyone else.
-        // Same class of bug as the one already fixed for Fear halls in
+        // any LIVE PvP instance (race10/arena3/deathBattle/Fear) — separate
+        // Maps from the registration queues just transferred above (_db.alive/
+        // _a3.teams/_race10.alive vs. _db.reg/_a3.queue/_race10.queue), so this
+        // doesn't conflict with them. addPlayer's stale-entry cleanup only
+        // drops its ROOM record, not this bookkeeping, since Room has no
+        // visibility into the instance Maps kept here. Without this, a
+        // reconnect mid-Bloody-Tower-run (a Wi-Fi/LTE handover, a suspended
+        // WebView — see the pingTimeout comment above) leaves the old socketId
+        // as a ghost "still alive" entrant that nothing ever clears: the new
+        // socket starts back at the hub with _raceLane null, so every corridor
+        // monster is invisible to it (_raceVisible, server/game/Room.js) —
+        // reading exactly like "the monsters disappeared" — while the ghost
+        // entry blocks the race from ever finishing for anyone else. Same
+        // class of bug as the one already fixed for Fear halls in
         // removePlayer's comment; race10/arena3/deathBattle just never got the
         // parallel fix, and now carry their own Fear-specific resume above.
-        if (_a3.queue.delete(staleSocketId)) _a3Broadcast();
-        if (_race10.queue.delete(staleSocketId)) _race10Broadcast();
         _pvpEliminate(staleSocketId);
       }
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
