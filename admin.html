@@ -299,7 +299,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           <button class="btn btn-red" id="specialsale-close-btn" onclick="closeSpecialSale()">Закрыть сейчас</button>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:8px">
-          Без расписания — только вручную. Открывает вкладку "Специальные" в магазине GRAM
+          Без расписания — только вручную. Открывает кнопку "Специальные" в HUD (под кнопкой "Сезон")
           у всех игроков на 12 часов, после чего закрывается сама; вторая кнопка закрывает раньше.
         </div>
       </div>
@@ -732,7 +732,7 @@ async function loadSpecialSale() {
 }
 
 async function openSpecialSale() {
-  if (!confirm('Запустить специальную акцию на 12 часов? Вкладка "Специальные" в магазине GRAM откроется у всех игроков.')) return;
+  if (!confirm('Запустить специальную акцию на 12 часов? Кнопка "Специальные" в HUD откроется у всех игроков.')) return;
   try {
     const r = await api('/admin/specialsale/open', { method:'POST' });
     const d = await r.json();

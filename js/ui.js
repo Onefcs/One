@@ -1231,7 +1231,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'special-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -2729,6 +2729,38 @@ function _positionSeasonBtn() {
 function showSeasonBtn() {
   const btn = document.getElementById('season-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSeasonBtn(); }
+}
+
+// ─────────────────────────────────────────────────────────
+//  SPECIAL (Специальные) — admin-triggered special sale packs
+// ─────────────────────────────────────────────────────────
+function _positionSpecialBtn() {
+  const seasonBtn = document.getElementById('season-btn');
+  const btn       = document.getElementById('special-btn');
+  if (!btn || !seasonBtn) return;
+  const sTop = parseFloat(seasonBtn.style.top) || 0;
+  btn.style.top       = (sTop + 28 + 4) + 'px';
+  btn.style.left      = seasonBtn.style.left;
+  btn.style.width     = seasonBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showSpecialBtn() {
+  const btn = document.getElementById('special-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSpecialBtn(); }
+}
+
+function openSpecialPanel() {
+  const panel = document.getElementById('special-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  _renderSpecialPanel();
+}
+
+function closeSpecialPanel() {
+  const panel = document.getElementById('special-panel');
+  if (panel) panel.style.display = 'none';
 }
 
 let _seasonTab = 'quests';
@@ -4768,8 +4800,6 @@ function showGramShopBtn() {
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionGramShopBtn(); }
 }
 
-let _gramShopTab = 'main';
-
 function openGramShopPanel() {
   const panel = document.getElementById('gram-shop-panel');
   if (!panel) return;
@@ -4782,17 +4812,9 @@ function closeGramShopPanel() {
   if (panel) panel.style.display = 'none';
 }
 
-function switchGramShopTab(tab) {
-  _gramShopTab = tab;
-  document.querySelectorAll('#gram-shop-panel .rating-tab').forEach(b => b.classList.remove('active'));
-  document.getElementById('gshop-tab-' + tab)?.classList.add('active');
-  _renderGramShopPanel();
-}
-
 function _renderGramShopPanel() {
   const el = document.getElementById('gram-shop-body');
   if (!el) return;
-  if (_gramShopTab === 'special') { _renderSpecialShopTab(el); return; }
   const bal = window._gramBalance || 0;
   el.innerHTML = `
     <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
@@ -4978,8 +5000,20 @@ function onGramShopResult(data) {
             : spec ? tVars('seasonPkgLabelFmt', { g: spec.gram })
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
+  // The special-sale packages also pay season points — server already added
+  // them (see gramShopBuy's seasonPoints branch), this just mirrors the total
+  // into the local season state so the Сезон panel doesn't show a stale figure.
+  if (data.seasonPointsAwarded > 0 && Number.isFinite(data.newSeasonPoints)) {
+    if (typeof _seasonState !== 'undefined') _seasonState = { ..._seasonState, points: data.newSeasonPoints };
+    if (typeof showEventBossBanner === 'function') {
+      showEventBossBanner(tVars('specialSaleSeasonPtsFmt', { n: data.seasonPointsAwarded }), '#50af95');
+    }
+    if (typeof onSeasonState === 'function') onSeasonState();
+  }
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
+  const specPanel = document.getElementById('special-panel');
+  if (specPanel && specPanel.style.display !== 'none') _renderSpecialPanel();
   // Season packs are bought from the Сезон panel, which shows the same GRAM
   // balance — redraw it too or the buttons keep the pre-purchase state.
   const spanel = document.getElementById('season-panel');
@@ -4990,20 +5024,20 @@ function onGramShopResult(data) {
 }
 
 // ── Специальная акция (Special Sale) ────────────────────────────────────────
-// A one-shot, admin-triggered 12h sale — its own tab in the GRAM shop panel
-// (see switchGramShopTab above), gated entirely on _specialSaleState.active
-// (pushed by gameStart and the live specialSaleState broadcast). Bought
-// through the exact same gramShopBuy/netGramShopBuy round-trip as every
-// other package; server/index.js's _SPECIAL_SHOP_PKGS is the source of
-// truth this mirrors for display.
+// A one-shot, admin-triggered 12h sale — its own button in the HUD (below
+// Сезон), gated entirely on _specialSaleState.active (pushed by gameStart and
+// the live specialSaleState broadcast). Bought through the exact same
+// gramShopBuy/netGramShopBuy round-trip as every other package;
+// server/index.js's _SPECIAL_SHOP_PKGS is the source of truth this mirrors
+// for display, including the seasonPoints bonus each package pays out.
 const _SPECIAL_SHOP_PKGS_UI = [
-  { id:'sale50',  gram:50,  classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8 },
-  { id:'sale100', gram:100, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 } },
+  { id:'sale50',  gram:50,  classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'uncommon', seasonPoints:500 },
+  { id:'sale100', gram:100, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 }, seasonPoints:1000 },
 ];
 
 function onSpecialSaleState() {
-  const panel = document.getElementById('gram-shop-panel');
-  if (panel && panel.style.display !== 'none' && _gramShopTab === 'special') _renderGramShopPanel();
+  const panel = document.getElementById('special-panel');
+  if (panel && panel.style.display !== 'none') _renderSpecialPanel();
 }
 
 // The buyer's own class's artifact/cloak/weapon at the given rarity — every
@@ -5016,11 +5050,15 @@ function _classItemFor(slot, rarity) {
   return ITEM_DEF.find(d => d.slot === slot && d.rarity === rarity && d.forClass && d.forClass.includes(cls));
 }
 
-function _rarePets() {
-  return typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === 'rare') : [];
+// sale50 offers an uncommon pet, sale100 a rare one — same helper, keyed off
+// pkg.petChoice, mirroring how server/index.js's gramShopBuy validates petId.
+function _petsByRarity(rarity) {
+  return typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity) : [];
 }
 
-function _renderSpecialShopTab(el) {
+function _renderSpecialPanel() {
+  const el = document.getElementById('special-panel-body');
+  if (!el) return;
   const st = (typeof _specialSaleState !== 'undefined' && _specialSaleState) || { active: false, endsAt: 0 };
   if (!st.active) {
     el.innerHTML = `
@@ -5056,13 +5094,16 @@ function _specialShopPkgHtml(pkg, bal) {
   const wep = _classItemFor('weapon', pkg.weapon);
   if (wep) rows += ri(wep.img, enhLbl, pkg.weapon);
   if (pkg.petChoice) {
-    rows += _rarePets().map(p => ri(p.img, '', pkg.petChoice)).join('');
+    rows += _petsByRarity(pkg.petChoice).map(p => ri(p.img, '', pkg.petChoice)).join('');
   }
   if (pkg.stones) {
     Object.entries(pkg.stones).forEach(([id, qty]) => {
       rows += ri(_STONE_IMG[id] || '', `×${qty}`, '');
     });
   }
+  const spLine = pkg.seasonPoints > 0
+    ? `<div style="text-align:center;font-size:12px;color:#7ee0c0;font-weight:700;margin-top:8px">${tVars('specialSaleSeasonPtsFmt', { n: pkg.seasonPoints })}</div>`
+    : '';
   return `<div class="gram-shop-card" style="border-color:#eb4e6144">
     <div class="gram-shop-card-head">
       <div>
@@ -5076,6 +5117,7 @@ function _specialShopPkgHtml(pkg, bal) {
       </button>
     </div>
     <div class="vip-items-row">${rows}</div>
+    ${spLine}
   </div>`;
 }
 
@@ -5109,12 +5151,15 @@ function openSpecialShopConfirm(pkgId) {
       lines.push(`<div style="color:#c5bfb7">${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}</div>`);
     });
   }
+  if (pkg.seasonPoints > 0) {
+    lines.push(`<div style="color:#7ee0c0">${tVars('specialSaleSeasonPtsFmt', { n: pkg.seasonPoints })}</div>`);
+  }
 
   const petPicker = pkg.petChoice ? `
     <div style="margin:4px 0 14px">
       <div style="color:#b2a288;font-size:12px;margin-bottom:8px">${t('specialSalePickPetLbl')}</div>
       <div id="special-shop-pet-grid" style="display:flex;gap:10px;justify-content:center">
-        ${_rarePets().map(p => `
+        ${_petsByRarity(pkg.petChoice).map(p => `
           <div class="special-shop-pet-opt" data-pet="${p.id}" onclick="_pickSpecialShopPet('${p.id}')"
                style="border:2px solid rgba(209,204,197,.15);border-radius:10px;padding:6px;cursor:pointer;text-align:center;width:64px">
             <img src="${p.img}" style="width:44px;height:44px;object-fit:contain">

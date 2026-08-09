@@ -1882,6 +1882,7 @@ function _finishOnlineStart() {
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
+  if (typeof showSpecialBtn === 'function') showSpecialBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type
