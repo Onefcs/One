@@ -7500,10 +7500,30 @@ io.on('connection', socket => {
     _emitNearby(_me.x, _me.y, 'enemyCC', { enemyId, enemyIds, type, duration });
   });
 
-  safeOn('playerInvis', ({ invis } = {}) => {
+  // Clearing invisibility is the only thing this event may still do.
+  //
+  // It used to be `p._invis = !!invis` — an unauthenticated, unbounded,
+  // client-set flag that makes every monster in the room ignore you for as
+  // long as you like (see _invis in server/game/Room.js: it drops the player
+  // out of both the cached-target check and the proximity search). One
+  // `socket.emit('playerInvis', { invis: true })` from the console bought
+  // permanent PvE immunity — farm anything, including Страх waves and the
+  // tower, with nothing able to aggro you.
+  //
+  // No skill in the game grants invisibility. invisTimer (js/state.js) is only
+  // ever decremented and zeroed, never set to a positive value, and the helper
+  // written for it (_skillInvisSec, js/player.js) has no call sites — so the
+  // only `invis: true` that can reach this handler is a forged one. The two
+  // real call sites both send false (the timer draining out, and attacking
+  // while invisible), and they keep working.
+  //
+  // If the skill is ever actually implemented, the grant belongs here —
+  // server-side, gated on the caster's class owning it and expiring on a
+  // server-held timer — not on the client's say-so.
+  safeOn('playerInvis', () => {
     if (!currentRoom) return;
     const p = currentRoom.players.get(socket.id);
-    if (p) p._invis = !!invis;
+    if (p) p._invis = false;
   });
 
   safeOn('faithShield', ({ duration } = {}) => {

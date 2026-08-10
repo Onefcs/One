@@ -213,6 +213,59 @@ check('a dropped connection no longer restores a possibly-listed item',
     && /function onMarketListError\([\s\S]*?_clearPendingSell\(true\)/.test(uiSrc),
   'js/ui.js onMarketConnectionLost / onMarketListError');
 
+// ── Client-set combat flags ─────────────────────────────────────────────────
+// Two events let a console one-liner grant itself something no skill grants.
+
+// playerInvis took the client's word for it and made every monster in the room
+// ignore the sender indefinitely. Nothing in the client ever turns invisibility
+// ON — invisTimer is only decremented and zeroed — so any `invis: true` on the
+// wire is forged by definition, and the handler must not honour it.
+{
+  const handler = SRC.slice(SRC.indexOf("safeOn('playerInvis'"));
+  const body = handler.slice(0, handler.indexOf('});') + 3);
+  check('playerInvis cannot be switched on from the client',
+    !/_invis\s*=\s*!!/.test(body) && /_invis\s*=\s*false/.test(body),
+    body.replace(/\s+/g, ' ').slice(0, 120));
+
+  const stateSrc = fs.readFileSync(path.join(ROOT, 'js', 'state.js'), 'utf8')
+    + fs.readFileSync(path.join(ROOT, 'js', 'player.js'), 'utf8')
+    + fs.readFileSync(path.join(ROOT, 'js', 'game.js'), 'utf8')
+    + fs.readFileSync(path.join(ROOT, 'js', 'network.js'), 'utf8');
+  // The premise of the check above. If a skill ever does grant invisibility,
+  // this fails and says so, rather than the grant silently never working.
+  const grants = (stateSrc.match(/invisTimer\s*=\s*([^;]+);/g) || [])
+    .filter(a => !/=\s*0\s*;/.test(a));
+  check('no client code grants invisibility (premise of the handler fix)',
+    grants.length === 0,
+    `found: ${grants.join(' | ')} — invis is real now, so the server has to grant and expire it`);
+}
+
+// statsUpdate is clamped to the server's own computeStats times a headroom for
+// buffs it cannot see. One blanket ×3 let a forged packet sit at triple ATK
+// forever; the ceilings have to track what can actually stack in recompute().
+{
+  const roomSrc = fs.readFileSync(path.join(ROOT, 'server', 'game', 'Room.js'), 'utf8');
+  const num = name => {
+    const m = roomSrc.match(new RegExp(`^const ${name}\\s*=\\s*([0-9.]+)`, 'm'));
+    return m ? Number(m[1]) : null;
+  };
+  const atk = num('ATK_BUFF_HEADROOM'), def = num('DEF_BUFF_HEADROOM'), hp = num('HP_BUFF_HEADROOM');
+  // Real maxima from recompute() (js/player.js): ATK ×1.20 potion × ×1.20
+  // battleCry; DEF ×1.80 guard × ×1.50 faithShield; HP ×1.10 potion.
+  const bound = (label, got, real) =>
+    check(`statsUpdate ${label} headroom covers the real buffs without room to forge`,
+      got !== null && got >= real && got <= real * 1.12,
+      `ceiling ${got}, real stack ${real} — must sit between ${real} and ${(real * 1.12).toFixed(2)}`);
+  bound('ATK', atk, 1.44);
+  bound('DEF', def, 2.70);
+  bound('HP',  hp,  1.10);
+
+  check('statsUpdate never takes crit from the client',
+    /p\.critChance\s*=\s*trueBase\.critChance/.test(roomSrc)
+      && /p\.critPower\s*=\s*trueBase\.critPower/.test(roomSrc),
+    'Room.js updatePlayerStats');
+}
+
 const clientSrc = fs.readFileSync(path.join(ROOT, 'js', 'network.js'), 'utf8');
 check('client inventorySync applies the storage it is sent',
   /socket\.on\('inventorySync',\s*\(\{[^}]*storage/.test(clientSrc)

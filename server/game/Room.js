@@ -11,8 +11,8 @@ const { encodeGameState, packGrid } = require('../../shared/netcodec');
 // stats. Must stay step-for-step identical to recompute() (js/player.js) for
 // every PERMANENT stat source: base + upgrades + equipment (including its
 // enhancement) + passive skills. Temporary buffs (potions, skill buffs) are
-// deliberately left out — those are exactly what STAT_BUFF_HEADROOM below
-// leaves room for on top of this value.
+// deliberately left out — those are exactly what the *_BUFF_HEADROOM ceilings
+// below leave room for on top of this value.
 //
 // The per-point upgrade values are the ones UPGRADE_DEF advertises in the
 // upgrade UI (js/definitions.js): +1 ATK, +1 DEF, +10 MaxHP, +1% crit chance,
@@ -89,13 +89,30 @@ function _critDmg(base, critChance, critPower) {
 
 // How far above the server's own computed "true" stats (from validated
 // equipment/upgrades/level, see computeStats) a statsUpdate push is allowed
-// to land. Must cover every buff that can legitimately stack at once — the
-// biggest is a Танк's own +80% DEF plus a received party heal-shield's +50%
-// (≈2.7×) — with margin, while still closing off a client just claiming
-// arbitrary numbers (previously the cap ratcheted off the client's OWN prior
-// value, so repeated calls walked it up to 9999 in ~10 packets).
-const STAT_BUFF_HEADROOM = 3;
-const HP_BUFF_HEADROOM   = 1.5;
+// to land. Everything permanent — items, upgrades, level, passives, the clan
+// ATK perk — is already inside trueBase, so these only have to cover the
+// TEMPORARY buffs the server cannot see, and each one is a ceiling a forged
+// packet gets to sit at for free. So they are derived per stat from what can
+// actually stack in recompute() (js/player.js) rather than shared:
+//
+//   ATK  ×1.20 buff potion  ×1.20 battleCry/Гнев мертвеца        = 1.44
+//   DEF  ×1.80 guard (Танк) ×1.50 faithShield from a party mate  = 2.70
+//        (Барьер is ×1.50 too but belongs to another class, so it stacks
+//         with faithShield, not with guard — 2.25, under the same bound)
+//   HP   ×1.10 buff potion                                        = 1.10
+//
+// One blanket ×3 / ×1.5 covered all of that, which meant a single console
+// `socket.emit('statsUpdate', { atk: 1e6, maxHp: 1e9 })` parked the sender at
+// triple ATK and +50% HP permanently, with no buff running and nothing to
+// expire — the clamp was doing its job and the job was too generous. The
+// margins below are ~5% over the real maxima, enough to absorb the client's
+// own Math.floor rounding at each step without leaving room worth forging.
+//
+// (The earlier bug this replaced was worse still: the cap ratcheted off the
+// client's OWN prior value, so repeated calls walked it up to 9999.)
+const ATK_BUFF_HEADROOM = 1.5;
+const DEF_BUFF_HEADROOM = 2.85;
+const HP_BUFF_HEADROOM  = 1.15;
 // Passive-regen ceiling used to bound how fast a playerMove-reported HP
 // increase is allowed to land (see syncPlayerHp) — real heals (potions,
 // faithShield/party heal, respawn) all go through their own dedicated,
@@ -2677,8 +2694,8 @@ class Room {
     // ratchets up to its ceiling in ~10 calls regardless of what prev
     // actually was, since the client controls prev too.
     const trueBase = computeStats(p._sd || {}, cd, p.type, p.clanAtkBonus);
-    if (atk  >  0) p.atk  = Math.min(atk,  trueBase.atk * STAT_BUFF_HEADROOM);
-    if (def  >= 0) p.def  = Math.min(def,  trueBase.def * STAT_BUFF_HEADROOM);
+    if (atk  >  0) p.atk  = Math.min(atk,  trueBase.atk * ATK_BUFF_HEADROOM);
+    if (def  >= 0) p.def  = Math.min(def,  trueBase.def * DEF_BUFF_HEADROOM);
     if (maxHp > 0) {
       const cap = Math.min(maxHp, trueBase.maxHp * HP_BUFF_HEADROOM);
       p.hp = Math.min(p.hp, cap);
