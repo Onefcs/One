@@ -1297,7 +1297,7 @@ let _evtPad = null, _evtReturnPad = null;
 let _evtBossAlive = false;
 // Guild War zone pads — same shape as the event-boss pads just above, own
 // offset (-10) so the two don't overlap in the hub's NPC-free row. Gated on
-// _gwOpen() (22:00-23:00 MSK) instead of _evtArenaOpen(); _gwPhase is set by
+// _gwOpen() (22:00-22:15 MSK) instead of _evtArenaOpen(); _gwPhase is set by
 // js/network.js's guildWarState handler and by the gameStart payload.
 const _GW_PAD_DX = -10;
 let _gwPad = null, _gwReturnPad = null;
@@ -1407,7 +1407,7 @@ function _updateTeleportPads(dt) {
     _teleportTo(_gwPad.targetX, _gwPad.targetY, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
   }
   // Stays usable even when the window is closed — nobody should still be
-  // inside by then (the server evicts everyone at 23:00), but a reconnect
+  // inside by then (the server evicts everyone at 22:15), but a reconnect
   // mid-eviction shouldn't leave anyone with no way out.
   if (_gwReturnPad && dist(player.x, player.y, _gwReturnPad.x, _gwReturnPad.y) < TRIGGER_R) {
     _teleportTo(_gwReturnPad.targetX, _gwReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');

@@ -297,7 +297,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, specialSale: sps } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws } = payload;
     dungeonLvl = floor;
     // A fresh room attachment: whatever this session last told the server
     // about its position belongs to the old one.
@@ -365,13 +365,6 @@ function netConnect(onReady) {
       _gwState = { ..._gwState, ...gws };
       _gwPhase = _gwState.phase;
       if (typeof onGuildWarState === 'function') onGuildWarState();
-    }
-    // Специальная акция: same reasoning as guildWar above — no per-socket
-    // run to restore, just the current active/endsAt state, sent
-    // unconditionally so a reconnect mid-sale still sees the countdown.
-    if (sps) {
-      _specialSaleState = { ..._specialSaleState, ...sps };
-      if (typeof onSpecialSaleState === 'function') onSpecialSaleState();
     }
     // Страх: fs is only sent at all when a run is live for this socket (see
     // the server-side comment) — the common case is a reconnect that landed
@@ -1920,7 +1913,6 @@ function _finishOnlineStart() {
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
-  if (typeof showSpecialBtn === 'function') showSpecialBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type
@@ -2206,12 +2198,6 @@ function _initEventBossHandlers(s) {
   });
   s.on('worldDropError', ({ msg }) => {
     if (typeof _marketToast === 'function') _marketToast(msg, 'err');
-  });
-  // Специальная акция: pushed on open/close from the admin panel — see
-  // gameStart's own specialSale field (above) for the initial/reconnect value.
-  s.on('specialSaleState', (st) => {
-    _specialSaleState = { ..._specialSaleState, ...st };
-    if (typeof onSpecialSaleState === 'function') onSpecialSaleState();
   });
   _initDeathBattleHandlers(s);
   _initArena3Handlers(s);

@@ -1243,14 +1243,14 @@ const ARENA3_HOURS_MSK = [21];
 const ARENA3_WINDOW_MS = 60 * 60 * 1000;
 
 // ── Guild War ("Война гильдий") schedule ─────────────────────────────────────
-// Every day, 22:00–23:00 Moscow time — one sealed zone, one stationary tower.
+// Every day, 22:00–22:15 Moscow time — one sealed zone, one stationary tower.
 // Whichever clan lands the killing blow owns it until another clan re-fights
 // it down to 0 (full HP reset on every capture). Ownership itself has no
-// schedule — it persists across the closed 23:00-22:00 gap, only the zone's
+// schedule — it persists across the closed 22:15-22:00 gap, only the zone's
 // combat access opens and closes on this window.
 const GUILD_WAR_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
 const GUILD_WAR_HOURS_MSK = [22];
-const GUILD_WAR_WINDOW_MS = 60 * 60 * 1000;
+const GUILD_WAR_WINDOW_MS = 15 * 60 * 1000;
 
 // Same HP as the world event boss ("здоровье как у мирового босса") — a
 // whole server's worth of damage, meant to take a sustained multi-clan push,

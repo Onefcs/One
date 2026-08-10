@@ -494,46 +494,6 @@ const _SEASON_SHOP_PKGS = [
   { id:'sl50', gram:50, season:true, nexum:6000, potions:60 },
 ];
 
-// ── Специальная акция (Special Sale) ────────────────────────────────────────
-// A one-shot, admin-triggered 12-hour sale — no recurring schedule like
-// race10/arena3/guild war, just an "open now" that auto-closes itself
-// (_specialSaleClose) and can also be closed early from the admin panel.
-// Bought through the same gramShopBuy handler as the regular/season packages
-// (see the pkg lookup there), gated on _specialSale.active so a client that
-// cached its own "Специальные" HUD button state from before it closed can't
-// still buy from it.
-// classArtifact/classCloak resolve to the buyer's own class (every artifact/
-// cloak in ITEM_DEF is class-locked — there is no non-class version), same
-// as `weapon` already does via _SHOP_CLASS_WEAPONS. petChoice lets the buyer
-// pick which specific pet of that rarity they want (see the petId handling
-// in gramShopBuy) rather than a random one, unlike everything else in the
-// GRAM shop.
-const SPECIAL_SALE_DURATION_MS = 12 * 60 * 60 * 1000;
-const _SPECIAL_SHOP_PKGS = [
-  { id:'sale50',  gram:50,  special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'uncommon' },
-  { id:'sale100', gram:100, special:true, classArtifact:'uncommon', classCloak:'uncommon', weapon:'rare', enhance:8, petChoice:'rare', stones:{ bless_stone:10 } },
-];
-const _specialSale = { active: false, endsAt: 0, closeTimer: null };
-
-function _specialSalePublicState() {
-  return { active: _specialSale.active, endsAt: _specialSale.endsAt };
-}
-
-function _specialSaleOpen() {
-  clearTimeout(_specialSale.closeTimer);
-  _specialSale.active = true;
-  _specialSale.endsAt = Date.now() + SPECIAL_SALE_DURATION_MS;
-  _specialSale.closeTimer = setTimeout(_specialSaleClose, SPECIAL_SALE_DURATION_MS);
-  io.emit('specialSaleState', _specialSalePublicState());
-}
-
-function _specialSaleClose() {
-  clearTimeout(_specialSale.closeTimer);
-  _specialSale.active = false;
-  _specialSale.endsAt = 0;
-  io.emit('specialSaleState', _specialSalePublicState());
-}
-
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
   lev:         { common:'tw1', uncommon:'tw2', rare:'tw3' },
@@ -1797,7 +1757,7 @@ app.get('/admin/race10', adminAuth, (req, res) => {
   res.json(_race10PublicState());
 });
 
-// Guild War: force-opens the 22:00-23:00 MSK combat window right now. Unlike
+// Guild War: force-opens the 22:00-22:15 MSK combat window right now. Unlike
 // race10's admin-open there's no per-player attempt counter to bump — the
 // zone has no capacity/attempt limit at all, so this behaves exactly like
 // the scheduled open (_gwOpenWindow always arms one GUILD_WAR_WINDOW_MS
@@ -1821,28 +1781,6 @@ app.post('/admin/guildwar/close', adminAuth, (req, res) => {
 
 app.get('/admin/guildwar', adminAuth, (req, res) => {
   res.json(_gwPublicState());
-});
-
-// Специальная акция: one-shot 12-hour GRAM shop sale, no recurring schedule
-// — open starts the 12h auto-close timer right now, close ends it early.
-// _specialSaleOpen/_specialSaleClose/_specialSalePublicState are defined
-// earlier in the file (near _SPECIAL_SHOP_PKGS), same reasoning as the
-// race10/guildwar routes referencing their own functions defined nearby:
-// this callback only runs once a request arrives.
-app.post('/admin/specialsale/open', adminAuth, (req, res) => {
-  if (_specialSale.active) return res.status(409).json({ error: 'Акция уже идёт' });
-  _specialSaleOpen();
-  res.json({ ok: true, endsAt: _specialSale.endsAt });
-});
-
-app.post('/admin/specialsale/close', adminAuth, (req, res) => {
-  if (!_specialSale.active) return res.status(409).json({ error: 'Акция не запущена' });
-  _specialSaleClose();
-  res.json({ ok: true });
-});
-
-app.get('/admin/specialsale', adminAuth, (req, res) => {
-  res.json(_specialSalePublicState());
 });
 
 app.get('/admin/market', adminAuth, async (req, res) => {
@@ -2959,8 +2897,8 @@ const _EVENT_TEXT = {
     now:  () => '⚔️ <b>Арена 3х3 открыта!</b>\n\nЗаписывайся в игре — как наберётся 6 человек, старт. Окно открыто до 22:00 по Москве.',
   },
   guildWar: {
-    soon: (m) => `🏰 <b>Война гильдий</b>\n\nЛокация с замком откроется через ${m} мин. — с 22:00 до 23:00 по Москве.\nКлан, который захватит замок, будет получать осколки каждый час, пока держит его.`,
-    now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗаходи в игру — локация с замком доступна до 23:00 по Москве.',
+    soon: (m) => `🏰 <b>Война гильдий</b>\n\nЛокация с замком откроется через ${m} мин. — с 22:00 до 22:15 по Москве.\nКлан, который захватит замок, будет получать осколки каждый час, пока держит его.`,
+    now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗаходи в игру — локация с замком доступна до 22:15 по Москве.',
   },
 };
 
@@ -3596,16 +3534,16 @@ async function _a3Finish(winner, wedged) {
 }
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
-// One sealed zone, open daily 22:00-23:00 MSK, containing one stationary
+// One sealed zone, open daily 22:00-22:15 MSK, containing one stationary
 // tower (Room.spawnGuildWarTower). Whichever clan lands the killing blow
 // owns it — Room.attackEnemy/skillAttackEnemy reset its hp to maxHp in
 // place and reassign ownership the instant it happens (see result.captured,
 // handled below by _gwApplyCapture). Ownership itself has no schedule: it
-// persists across the closed 23:00-22:00 gap and pays out passive income
+// persists across the closed 22:15-22:00 gap and pays out passive income
 // every hour, 24/7 (_gwGrantIncome), independent of whether the zone is
 // currently open for combat — only combat access follows the window.
 const _gw = {
-  phase: 'closed',      // 'closed' → 'live' (22:00-23:00 MSK) → 'closed'
+  phase: 'closed',      // 'closed' → 'live' (22:00-22:15 MSK) → 'closed'
   ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0,
   openTimer: null, closeTimer: null, notifyTimer: null, incomeTimer: null,
 };
@@ -5185,15 +5123,8 @@ io.on('connection', socket => {
     const _ran = await _withEconLock(async () => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId)
-                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId)
-                || _SPECIAL_SHOP_PKGS.find(p => p.id === pkgId);
+                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
-      // The active check has to run before anything else touches GRAM/
-      // inventory — a client that had the Специальные tab cached from
-      // before an admin closed the sale must not still be able to buy from it.
-      if (pkg.special && !_specialSale.active) {
-        return socket.emit('gramShopError', { msg: 'Акция уже закрыта' });
-      }
       // petChoice packages need a valid pick of the right rarity BEFORE any
       // GRAM is spent — refusing here (rather than after the deduction) means
       // a missing/invalid choice never costs the player anything.
@@ -7267,7 +7198,6 @@ io.on('connection', socket => {
       race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
       arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
       guildWar: _gwPublicState(),
-      specialSale: _specialSalePublicState(),
       // Unlike the three above, Fear has no scheduled window/queue to report
       // when nothing's running — only present at all when a run is live for
       // this socket, which after a reconnect (see fearGrace/_fearGraceClaim)
@@ -7803,7 +7733,7 @@ io.on('connection', socket => {
     // inside the fight instead of ejecting to the hub — the first "die and
     // come back in the same zone" path in this game (every other zone's
     // respawn/elimination ejects). The phase check covers dying right as
-    // 23:00 closes: a respawn click that lands after the window shut sends
+    // 22:15 closes: a respawn click that lands after the window shut sends
     // the player to the hub like normal instead of into a closed zone.
     if (_gwP?._guildWarZone && _gw.phase === 'live') currentRoom.guildWarRespawn(socket.id);
     else if (currentRoom) currentRoom.respawnPlayer(socket.id);

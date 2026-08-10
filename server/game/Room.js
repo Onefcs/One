@@ -2649,7 +2649,7 @@ class Room {
   }
 
   // Forces a player out of the Guild War zone to the hub — used when the
-  // 22:00-23:00 window hard-closes (server/index.js iterates every player
+  // 22:00-22:15 window hard-closes (server/index.js iterates every player
   // still flagged _guildWarZone and calls this for each). Reuses
   // deathBattleReturn's hub-eject (pvpMode=false, hub spawn) and additionally
   // clears _guildWarZone so the per-tick bounds check doesn't immediately

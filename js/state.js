@@ -124,17 +124,12 @@ let _race10InMatch = false;
 let _race10Lane = null;
 let _race10MyDamage = 0;
 
-// Война гильдий (Guild War) — daily 22:00-23:00 MSK sealed zone with one
+// Война гильдий (Guild War) — daily 22:00-22:15 MSK sealed zone with one
 // stationary tower; whichever clan lands the killing blow owns it until
 // another clan re-fights it down to 0 (see server/game/Room.js's capture
 // logic). Combat access follows phase (open/closed); ownership/income don't.
 // Pushed by js/network.js's guildWarState handler and by gameStart.
 let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0, towerHp: 300000 };
-
-// Специальная акция (Special Sale) — one-shot, admin-triggered 12h GRAM shop
-// sale (the "Специальные" tab of the GRAM shop panel), no recurring schedule.
-// Pushed by js/network.js's specialSaleState handler and by gameStart.
-let _specialSaleState = { active: false, endsAt: 0 };
 
 // Страх (Fear) — on-demand, solo wave-survival instance: no registration
 // queue and no scheduled window, unlike the arena/race above — entering IS

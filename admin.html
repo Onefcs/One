@@ -286,21 +286,9 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           <button class="btn btn-red" id="gw-close-btn" onclick="closeGuildWar()">Закрыть сейчас</button>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:8px">
-          Обычно открывается в 22:00 по Москве на 1 час. Эти кнопки управляют только доступом
+          Обычно открывается в 22:00 по Москве на 15 минут. Эти кнопки управляют только доступом
           для боя — владение замком и почасовые осколки в хранилище клана не зависят от
           расписания и продолжают начисляться, даже когда локация закрыта.
-        </div>
-      </div>
-      <div class="card">
-        <h3>💎 Специальная акция</h3>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="specialsale-status">—</div>
-        <div class="action-grid">
-          <button class="btn btn-primary" id="specialsale-open-btn" onclick="openSpecialSale()">Запустить на 12ч</button>
-          <button class="btn btn-red" id="specialsale-close-btn" onclick="closeSpecialSale()">Закрыть сейчас</button>
-        </div>
-        <div style="font-size:11px;color:var(--text2);margin-top:8px">
-          Без расписания — только вручную. Открывает кнопку "Специальные" в HUD (под кнопкой "Сезон")
-          у всех игроков на 12 часов, после чего закрывается сама; вторая кнопка закрывает раньше.
         </div>
       </div>
       <div class="tops-grid" id="tops-grid">
@@ -583,7 +571,6 @@ async function loadDashboard() {
   loadEventBoss();
   loadRace10();
   loadGuildWar();
-  loadSpecialSale();
 }
 
 // ── World event boss ──────────────────────────────────────
@@ -708,49 +695,6 @@ async function closeGuildWar() {
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadGuildWar();
-}
-
-// ── Специальная акция ─────────────────────────────────────
-async function loadSpecialSale() {
-  const el = document.getElementById('specialsale-status');
-  const openBtn = document.getElementById('specialsale-open-btn');
-  const closeBtn = document.getElementById('specialsale-close-btn');
-  if (!el) return;
-  try {
-    const d = await (await api('/admin/specialsale')).json();
-    let txt;
-    if (d.active) {
-      const left = Math.max(0, Math.round((d.endsAt - Date.now()) / 60000));
-      txt = '🟢 Идёт — закроется через ' + Math.floor(left/60) + 'ч ' + (left%60) + 'м';
-    } else {
-      txt = '⚪ Не запущена';
-    }
-    el.textContent = txt;
-    if (openBtn)  { openBtn.disabled = d.active;   openBtn.style.opacity  = d.active   ? '.5' : '1'; }
-    if (closeBtn) { closeBtn.disabled = !d.active; closeBtn.style.opacity = !d.active ? '.5' : '1'; }
-  } catch(e) { el.textContent = '—'; }
-}
-
-async function openSpecialSale() {
-  if (!confirm('Запустить специальную акцию на 12 часов? Кнопка "Специальные" в HUD откроется у всех игроков.')) return;
-  try {
-    const r = await api('/admin/specialsale/open', { method:'POST' });
-    const d = await r.json();
-    if (r.ok) toast('Акция запущена на 12 часов');
-    else toast(d.error || 'Ошибка', false);
-  } catch(e) { toast('Ошибка', false); }
-  loadSpecialSale();
-}
-
-async function closeSpecialSale() {
-  if (!confirm('Закрыть акцию сейчас, раньше срока?')) return;
-  try {
-    const r = await api('/admin/specialsale/close', { method:'POST' });
-    const d = await r.json();
-    if (r.ok) toast('Акция закрыта');
-    else toast(d.error || 'Ошибка', false);
-  } catch(e) { toast('Ошибка', false); }
-  loadSpecialSale();
 }
 
 function refreshOnline() {
