@@ -2382,6 +2382,16 @@ function _censusOverflow(incoming, baseline) {
   return null;
 }
 
+// Do these two describe the same holdings? Unlike _censusOverflow this is
+// symmetric — it answers "does the client agree with the server about what
+// this account owns", which is what decides whether a join has to be handed a
+// correction (see the end of the selectChar handler).
+function _censusEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const [key, n] of a) { if ((b.get(key) || 0) !== n) return false; }
+  return true;
+}
+
 function _clampNum(v, min, max, dflt) {
   const n = Number(v);
   if (!Number.isFinite(n)) return dflt;
@@ -7116,6 +7126,44 @@ io.on('connection', socket => {
     socket.emit('playerPets', { pets: currentRoom.petSnapshot() });
     if (_selfP && _selfP.petId) {
       socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfP.petId });
+    }
+
+    // Authoritative item state, pushed on every join. On a FIRST join this
+    // only re-affirms what the client is restoring from the same record. It
+    // exists for the RECONNECT (js/network.js's _isReconnectRejoin), which
+    // deliberately skips restoreFromSave to avoid stomping live progress —
+    // and so had no way at all to learn that the server's items had moved on
+    // while the socket was down.
+    //
+    // That gap is what duplicated market listings. Listing an item splices it
+    // out of the local inventory optimistically and only marketListError undoes
+    // that, so when the connection dropped mid-request the client restored the
+    // item itself (onMarketConnectionLost) — with no way to know the server had
+    // already created the listing and persisted the removal. The item then
+    // existed both in the inventory and as a live lot, until the next save's
+    // census caught the extra copy and reverted the player's WHOLE item set as
+    // forged. Both outcomes of that race are settled here instead: the server's
+    // copy is right whether the request landed or not.
+    //
+    // It also closes the loop on this handler's own forged-items rejection
+    // above, which pinned _lastStats to the stored record but never told the
+    // client — leaving it to resend the rejected set on every later save.
+    //
+    // Sent only when the client's own blob disagrees about what it owns —
+    // the join already carries a full inventory upward (netSelectChar sends
+    // _buildSaveStats), and echoing an identical set back down would double
+    // that cost on every routine mobile reconnect for nothing. Comparing the
+    // census rather than the arrays is deliberate: it is exactly the "same
+    // items or not" question, so an inventory <-> storage move the client
+    // made just before dropping counts as agreement and survives, while a
+    // gained or lost item does not.
+    if (_lastStats && !_censusEqual(_itemCensus(sanitized), _itemCensus(_lastStats))) {
+      socket.emit('inventorySync', {
+        inventory: _lastStats.inventory || [],
+        equipment: _lastStats.equipment || {},
+        storage:   _lastStats.storage   || [],
+        invRev: _invRev,
+      });
     }
   });
 

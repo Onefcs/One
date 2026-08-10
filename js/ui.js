@@ -4688,25 +4688,41 @@ function onMarketSold(data) {
 function onMarketError(msg) {
   _marketToast(msg || t('genericErrorLbl'), 'err');
 }
+// The server says in so many words that it did NOT create the listing, so
+// undoing the optimistic splice locally is exactly right here.
 function onMarketListError(msg) {
-  if (_rollbackPendingSell()) _marketToast(msg || t('genericErrorLbl'), 'err');
+  if (_clearPendingSell(true)) _marketToast(msg || t('genericErrorLbl'), 'err');
 }
 // Called when the socket drops while a marketList request is in flight
-// (js/network.js's 'disconnect' handler) — the optimistic splice in
-// _confirmMarketList is normally undone by marketListError, but that event
-// can never arrive once the connection itself is gone, which is exactly the
-// "оборвалась связь" scenario that used to strand the item in limbo forever
-// (see _pendingSellItem). Restore it locally instead of waiting for a
-// response that will never come.
+// (js/network.js's 'disconnect' handler). Unlike marketListError this says
+// nothing about whether the request landed: the server creates the listing
+// and persists the removal before it answers, so a drop in the round trip
+// can just as easily mean "already sold" as "never arrived".
+//
+// It used to guess "never arrived" and put the item back. When the guess was
+// wrong the item existed twice over — in the inventory and as a live lot —
+// and stayed that way, because a reconnect deliberately skips restoreFromSave.
+// The next save's item census then caught the extra copy and reverted the
+// player's whole item set as forged: the "выставил на маркет, а он ещё и в
+// инвентаре, потом всё откатило" reports.
+//
+// So don't guess. The item is not lost either way — the server holds the
+// truthful answer in both cases and pushes it back as an authoritative
+// inventorySync the moment we rejoin (see the end of selectChar,
+// server/index.js), which restores the item if the listing was never created
+// and leaves it out if it was.
 function onMarketConnectionLost() {
-  if (_rollbackPendingSell()) _marketToast(t('noServerConn'), 'err');
+  if (_clearPendingSell(false)) _marketToast(t('noServerConn'), 'err');
 }
-// Shared by onMarketListError and onMarketConnectionLost. Returns true if
-// there was a pending sell to roll back.
-function _rollbackPendingSell() {
+// Shared by both handlers above. `restore` puts the item back in the local
+// inventory; pass it only when the server has confirmed there is no listing.
+// Returns true if there was a pending sell at all.
+function _clearPendingSell(restore) {
   if (!_pendingSellItem) return false;
-  const it = _pendingSellItem.item;
-  addToInventoryQty(it, it.qty || 1);
+  if (restore) {
+    const it = _pendingSellItem.item;
+    addToInventoryQty(it, it.qty || 1);
+  }
   updateInvUI();
   _pendingSellItem = null;
   _setSellPickerBusy(false);

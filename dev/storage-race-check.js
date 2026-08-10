@@ -53,11 +53,12 @@ vm.runInContext([
   slice(/^function _canonSavedItem\(/m, '_canonSavedItem'),
   slice(/^function _itemCensus\(/m, '_itemCensus'),
   slice(/^function _censusOverflow\(/m, '_censusOverflow'),
+  slice(/^function _censusEqual\(/m, '_censusEqual'),
 ].join('\n'), sandbox);
 
 // Function declarations land on the context's global object; `const`s live in
 // its lexical scope instead and have to be read back by evaluating their name.
-const { _itemCensus, _censusOverflow } = sandbox;
+const { _itemCensus, _censusOverflow, _censusEqual } = sandbox;
 const read = expr => vm.runInContext(expr, sandbox);
 
 // The stale-invRev guard's item-rollback lines, read out of the real handler
@@ -156,6 +157,61 @@ const check = (name, pass, detail) => { results.push({ name, pass, detail }); };
 //    a set the server just replaced and resends it on every later save.
 check('inventorySync carries storage when the guard reverts it',
   GUARD.syncsStorage, GUARD.syncsStorage ? 'storage field present' : 'storage field MISSING from the emit');
+
+// ── Market listing racing a dropped connection ──────────────────────────────
+// Listing an item splices it out of the local inventory optimistically; the
+// server creates the lot and persists the removal BEFORE it answers. A drop in
+// that round trip therefore says nothing about whether the listing exists —
+// and the client used to assume it did not and put the item back. Whichever
+// way the race actually went, the join that follows has to settle it, or the
+// item lives in the inventory and as a live lot at the same time until the
+// census reverts the player's whole set as forged.
+{
+  // The listing DID land: the server no longer holds the item, the client
+  // reconnects still holding it.
+  const serverAfterListing = { inventory: [], equipment: {}, storage: [] };
+  const clientOnRejoin = { inventory: [clone(ITEM)], equipment: {}, storage: [] };
+  check('market race: a rejoin whose items disagree gets a correction',
+    !_censusEqual(_itemCensus(clientOnRejoin), _itemCensus(serverAfterListing)),
+    'censuses compare equal, so no inventorySync would be sent');
+
+  // The listing did NOT land: the server still holds the item, and the client
+  // dropped it locally. Same answer — the server's copy is the truth and has
+  // to go down, which is what restores the item.
+  const serverNoListing = { inventory: [clone(ITEM)], equipment: {}, storage: [] };
+  const clientMissing = { inventory: [], equipment: {}, storage: [] };
+  check('market race: the other outcome is corrected too, not just one',
+    !_censusEqual(_itemCensus(clientMissing), _itemCensus(serverNoListing)),
+    'censuses compare equal, so the item would never come back');
+
+  // An ordinary reconnect must stay silent — this runs on every mobile blip.
+  const agreed = { inventory: [clone(ITEM)], equipment: {}, storage: [] };
+  check('market race: an ordinary reconnect sends no extra payload',
+    _censusEqual(_itemCensus(agreed), _itemCensus(clone(agreed))),
+    'identical holdings compared unequal');
+
+  // An inventory <-> storage move made just before the drop is agreement, not
+  // a discrepancy: same items, different shelf. Correcting it would undo the
+  // move for no reason.
+  const movedToStorage = { inventory: [], equipment: {}, storage: [clone(ITEM)] };
+  check('market race: a storage move before the drop is not treated as a mismatch',
+    _censusEqual(_itemCensus(movedToStorage), _itemCensus(agreed)),
+    'the same item on a different shelf compared unequal');
+}
+
+// The correction itself has to actually be wired into the join, and the client
+// must stop conjuring the item back on a drop it cannot interpret.
+const serverSrc = SRC.slice(SRC.indexOf("safeOn('selectChar'"));
+check('selectChar pushes the authoritative items when they disagree',
+  /_censusEqual\(_itemCensus\(sanitized\), _itemCensus\(_lastStats\)\)/.test(serverSrc)
+    && /socket\.emit\('inventorySync'/.test(serverSrc.slice(0, serverSrc.indexOf("safeOn('mv'"))),
+  'end of the selectChar handler in server/index.js');
+
+const uiSrc = fs.readFileSync(path.join(ROOT, 'js', 'ui.js'), 'utf8');
+check('a dropped connection no longer restores a possibly-listed item',
+  /function onMarketConnectionLost\(\)\s*\{[\s\S]*?_clearPendingSell\(false\)/.test(uiSrc)
+    && /function onMarketListError\([\s\S]*?_clearPendingSell\(true\)/.test(uiSrc),
+  'js/ui.js onMarketConnectionLost / onMarketListError');
 
 const clientSrc = fs.readFileSync(path.join(ROOT, 'js', 'network.js'), 'utf8');
 check('client inventorySync applies the storage it is sent',
