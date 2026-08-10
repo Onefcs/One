@@ -7001,6 +7001,17 @@ io.on('connection', socket => {
     // still there. Gold is capped the same way, which costs at most the last
     // few seconds of kill gold on an unclean disconnect — the same window
     // the debounce always risked.
+    // Whatever gets corrected below has to reach the client too, or a session
+    // that reconnects with a stale/ahead blob (see _isReconnectRejoin in
+    // js/network.js — every socket.io reconnect resends the CLIENT's current
+    // in-memory stats here, by design, so it doesn't lose the last few
+    // unsaved seconds) gets silently rewritten server-side while the client
+    // goes right on believing its rejected figures. It then resends those
+    // same figures on the very next reconnect, trips the same rejection
+    // again, and the desync only ever gets fixed by luck — whichever
+    // unrelated saveProgress happens to run its own check first. That's the
+    // moment a real, non-cheating player sees an item or a level vanish.
+    let _itemsCorrected = false, _goldCorrected = false, _xpCorrected = false;
     if (effectiveSaved) {
       const _dbBase = _sanitizeSavedStats(authed.savedData) || null;
       const _over = _censusOverflow(_itemCensus(effectiveSaved), _itemCensus(_dbBase));
@@ -7008,6 +7019,7 @@ io.on('connection', socket => {
         effectiveSaved.inventory = (_dbBase && _dbBase.inventory) || [];
         effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
         effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
+        _itemsCorrected = true;
         logPlayer(authed.telegramId, authed.username, 'select_items_forged', {
           item: _over.key, had: _over.had, sent: _over.sent,
         });
@@ -7029,6 +7041,7 @@ io.on('connection', socket => {
         console.error(`[selectChar] Capped suspicious gold for telegramId=${authed.telegramId}` +
           ` (had ${_dbGold}, claimed ${effectiveSaved.gold})`);
         effectiveSaved.gold = _dbGold + GOLD_GROWTH_SLACK;
+        _goldCorrected = true;
       }
       // Level/XP, pinned to the stored record exactly as the items above are
       // and for the same reason: this blob becomes _lastStats, which is the
@@ -7059,6 +7072,7 @@ io.on('connection', socket => {
         effectiveSaved.baseMaxHp = _rebased.baseMaxHp;
         effectiveSaved.xpNext    = _rebased.xpNext;
         effectiveSaved.upgrades  = _rebased.upgrades;
+        _xpCorrected = true;
       }
       // The session's entitlement starts here and only ever grows by what the
       // server itself hands out (_allowXp).
@@ -7070,6 +7084,23 @@ io.on('connection', socket => {
       // server-side time and that first save would be capped down to the
       // same flat slack used here, rejecting gold that was earned honestly.
       _lastSaveAcceptedAt = Date.now();
+      // Push every correction back to the client right away — see the
+      // comment above _itemsCorrected. invRev is deliberately NOT bumped:
+      // this is a rejection, not a grant, and window._invRev is reset to 0
+      // by gameStart's own fresh-session reset (js/network.js), matching
+      // _invRev's own fresh-session value of 0 here.
+      if (_itemsCorrected) {
+        socket.emit('inventorySync', {
+          inventory: effectiveSaved.inventory, equipment: effectiveSaved.equipment || {},
+          storage: effectiveSaved.storage || [], invRev: _invRev,
+        });
+      }
+      if (_goldCorrected) socket.emit('goldSync', { gold: effectiveSaved.gold });
+      if (_xpCorrected) {
+        socket.emit('xpSync', {
+          lvl: effectiveSaved.lvl, xp: effectiveSaved.xp, xpNext: effectiveSaved.xpNext,
+        });
+      }
     }
     // Season state is read straight off the stored record. It is never part of
     // the client blob — the sanitizer strips both fields so they can't be
