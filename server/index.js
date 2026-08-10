@@ -4756,7 +4756,18 @@ io.on('connection', socket => {
   // out a free duplicate of every market purchase and world drop.
   function _commitServerItems(inventory, equipment, reason, meta, opts) {
     if (!_lastStats) _lastStats = {};
-    const _before = Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0;
+    // Most callers grab `_lastStats.inventory` itself (not a copy), mutate it
+    // in place (push/qty++) and only THEN call this — so by the time we get
+    // here _lastStats.inventory already IS `inventory`, post-mutation, and
+    // reading its length as "before" always printed the post-grant count
+    // twice (`slots: 39 -> 39` no matter what actually landed). Callers that
+    // mutate in place instead snapshot the true pre-mutation length and pass
+    // it as opts.beforeLen; opts-less callers (the admin panel's wholesale
+    // replace) never mutated the old array, so its still-current length is
+    // the real "before" and the fallback stays correct for them.
+    const _before = (opts && Number.isFinite(opts.beforeLen))
+      ? opts.beforeLen
+      : (Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0);
     _lastStats.inventory = inventory;
     if (equipment) _lastStats.equipment = equipment;
     _invRev++;
@@ -4811,6 +4822,7 @@ io.on('connection', socket => {
     const empty = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
     const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
     const items = _rollMobLoot(inv, eid, rlvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
     if (_vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
@@ -4824,7 +4836,7 @@ io.on('connection', socket => {
       if (Math.random() < 0.01) { blessStone = 1; _invAdd(inv, { ..._STONE_DEFS.bless_stone, qty: 1 }); }
     }
     if (items.length || boxUncommon || boxRare || normStone || blessStone) {
-      _commitServerItems(inv, null, 'mob_loot', { eid, rlvl, n: items.length, boxUncommon, boxRare, normStone, blessStone });
+      _commitServerItems(inv, null, 'mob_loot', { eid, rlvl, n: items.length, boxUncommon, boxRare, normStone, blessStone }, { beforeLen: _beforeLen });
     }
     return { items, boxUncommon, boxRare, normStone, blessStone };
   };
@@ -4854,11 +4866,12 @@ io.on('connection', socket => {
     if (!authed) return null;
     const items = deathBattleRewards();
     const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+    const _beforeLen = inv ? inv.length : 0;
     if (inv) items.forEach(it => _invAdd(inv, it));
     const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD);
     if (_dbBal !== null) { _gramBalance = _dbBal; socket.emit('gramBalanceUpdate', { balance: _dbBal }); }
     if (inv) await _commitServerItems(inv, null, 'death_battle_win',
-      { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD });
+      { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD }, { beforeLen: _beforeLen });
     logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
     return { items, delivered: !!inv };
   };
@@ -5476,6 +5489,7 @@ io.on('connection', socket => {
         return socket.emit('craftGearError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
       }
       const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
       // A full inventory dooms the craft regardless of how the roll lands —
       // refuse up front rather than spend mats/Liberty on an attempt that
       // could never have delivered the item.
@@ -5544,7 +5558,7 @@ io.on('connection', socket => {
         // refund policy for a case that shouldn't be reachable.
         _invAdd(inv, resultEnhance > 0 ? { ...resultDef, enhance: resultEnhance } : { ...resultDef });
       }
-      _commitServerItems(inv, null, 'gear_craft', { itemId, cost: rec.nexumCost, success });
+      _commitServerItems(inv, null, 'gear_craft', { itemId, cost: rec.nexumCost, success }, { beforeLen: _beforeLen });
       socket.emit('gearCrafted', { itemId, success, resultEnhance: success ? resultEnhance : 0, newNexumBalance: _nexumBalance });
     } catch (err) {
       console.error('craftGear:', err);
@@ -5581,6 +5595,7 @@ io.on('connection', socket => {
       return socket.emit('enhanceError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
     const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
     const curEnh = Math.max(0, Math.floor(Number(enhance)) || 0);
     if (curEnh >= ENHANCE_MAX) return socket.emit('enhanceError', { msg: 'Уже максимальная заточка' });
 
@@ -5712,7 +5727,7 @@ io.on('connection', socket => {
     // rebuilds both halves from this sync — sending only the inventory would
     // leave the two disagreeing again the moment they were made to agree.
     _commitServerItems(inv, _lastStats.equipment || {}, 'enhance',
-      { id, stoneType, outcome, fromEnhance: curEnh, slot: targetSlot || null });
+      { id, stoneType, outcome, fromEnhance: curEnh, slot: targetSlot || null }, { beforeLen: _beforeLen });
     // Season points for a successful enhance. The rarity is re-read from the
     // catalog rather than taken off the entry, so a crafted request cannot
     // claim a common item is worth an uncommon's points. A miss pays nothing.
@@ -5743,6 +5758,7 @@ io.on('connection', socket => {
       return socket.emit('craftBoxError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
     const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
     const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
     const have = countOf(box.keyId);
     if (have < box.keyCost) {
@@ -5764,7 +5780,7 @@ io.on('connection', socket => {
       else { left -= qty; inv.splice(i, 1); }
     }
     _invAdd(inv, { ...box, qty: 1 });
-    _commitServerItems(inv, null, 'box_craft', { boxId });
+    _commitServerItems(inv, null, 'box_craft', { boxId }, { beforeLen: _beforeLen });
     socket.emit('boxCrafted', { boxId });
   });
 
@@ -5783,6 +5799,7 @@ io.on('connection', socket => {
       return socket.emit('craftMatUpgradeError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
     const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
     const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
     const have = countOf(rec.from);
     if (have < rec.count) {
@@ -5805,7 +5822,7 @@ io.on('connection', socket => {
     }
     const success = Math.random() < rec.chance;
     if (success) _invAdd(inv, { ...toMat, qty: 1 });
-    _commitServerItems(inv, null, 'mat_upgrade', { from: rec.from, to: rec.to, success });
+    _commitServerItems(inv, null, 'mat_upgrade', { from: rec.from, to: rec.to, success }, { beforeLen: _beforeLen });
     socket.emit('matUpgraded', { from: rec.from, to: rec.to, success });
   });
 
@@ -5825,6 +5842,7 @@ io.on('connection', socket => {
       return socket.emit('openBoxError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
     const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
     const boxIdx = inv.findIndex(i => i && i.id === id);
     if (boxIdx < 0) return socket.emit('openBoxError', { msg: 'Бокс не найден' });
 
@@ -5849,7 +5867,7 @@ io.on('connection', socket => {
     const wonItem = cands.length ? cands[Math.floor(Math.random() * cands.length)] : null;
     const granted = wonItem ? _invAdd(inv, { ...wonItem }) : false;
 
-    _commitServerItems(inv, null, 'box_open', { boxId: id, wonItemId: wonItem ? wonItem.id : null, granted });
+    _commitServerItems(inv, null, 'box_open', { boxId: id, wonItemId: wonItem ? wonItem.id : null, granted }, { beforeLen: _beforeLen });
     socket.emit('boxOpened', { boxId: id, item: granted ? wonItem : null });
   });
 
@@ -5876,6 +5894,7 @@ io.on('connection', socket => {
       if (_lastStats.inventory.length >= SERVER_INV_MAX) {
         return socket.emit('petCraftError', { msg: 'Инвентарь полон' });
       }
+      const _beforeLen = _lastStats.inventory.length;
       const candidates = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity);
       if (!candidates.length) return socket.emit('petCraftError', { msg: 'Питомцы этой редкости не найдены' });
 
@@ -5892,7 +5911,7 @@ io.on('connection', socket => {
         _delivered = _invAdd(_lastStats.inventory, resultPet);
       }
       _commitServerItems(_lastStats.inventory, null, 'pet_craft',
-        { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null });
+        { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null }, { beforeLen: _beforeLen });
 
       socket.emit('petCrafted', {
         pet: resultPet, newNexumBalance: _nexumBalance, delivered: _delivered,
@@ -5924,6 +5943,7 @@ io.on('connection', socket => {
         return socket.emit('craftClassGearError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
       }
       const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
       if (inv.length >= SERVER_INV_MAX) {
         return socket.emit('craftClassGearError', { msg: 'Инвентарь полон' });
       }
@@ -5954,7 +5974,7 @@ io.on('connection', socket => {
       const resultItem = { ...candidates[Math.floor(Math.random() * candidates.length)] };
       const _delivered = _invAdd(inv, resultItem);
       _commitServerItems(inv, null, 'class_gear_craft',
-        { slot: rec.resultSlot, rarity: rec.resultRarity, cost: rec.nexumCost, got: resultItem.id });
+        { slot: rec.resultSlot, rarity: rec.resultRarity, cost: rec.nexumCost, got: resultItem.id }, { beforeLen: _beforeLen });
       socket.emit('classGearCrafted', { item: resultItem, newNexumBalance: _nexumBalance, delivered: _delivered });
     } catch (err) {
       console.error('craftClassGear:', err);
@@ -6375,13 +6395,14 @@ io.on('connection', socket => {
         if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
         const inv = _liveInventory();
         if (!inv) return socket.emit('seasonBurnError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        const _beforeLen = inv.length;
         const i = Math.floor(Number(idx));
         if (!Number.isFinite(i) || i < 0 || i >= inv.length) return;
         const pts = _burnValue(inv[i]);
         if (!pts) return socket.emit('seasonBurnError', { msg: 'Этот предмет нельзя сжечь' });
         const burned = inv[i];
         inv.splice(i, 1);
-        _commitServerItems(inv, null, 'season_burn', { itemId: burned.id, points: pts });
+        _commitServerItems(inv, null, 'season_burn', { itemId: burned.id, points: pts }, { beforeLen: _beforeLen });
         const total = await _seasonAddPoints(pts, 'burn', { itemId: burned.id, n: 1 });
         socket.emit('seasonBurned', { burned: 1, points: pts, total: total ?? null });
       } catch (err) {
@@ -6402,6 +6423,7 @@ io.on('connection', socket => {
         if (!SEASON_BURN_POINTS[rarity]) return socket.emit('seasonBurnError', { msg: 'Эту редкость нельзя сжечь' });
         const inv = _liveInventory();
         if (!inv) return socket.emit('seasonBurnError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        const _beforeLen = inv.length;
         let burned = 0, pts = 0;
         for (let i = inv.length - 1; i >= 0; i--) {
           const it = inv[i];
@@ -6413,7 +6435,7 @@ io.on('connection', socket => {
           burned++; pts += v;
         }
         if (!burned) return socket.emit('seasonBurnError', { msg: 'Нечего сжигать' });
-        _commitServerItems(inv, null, 'season_burn_all', { rarity, burned, points: pts });
+        _commitServerItems(inv, null, 'season_burn_all', { rarity, burned, points: pts }, { beforeLen: _beforeLen });
         const total = await _seasonAddPoints(pts, 'burn_all', { rarity, n: burned });
         socket.emit('seasonBurned', { burned, points: pts, total: total ?? null });
       } catch (err) {
@@ -6467,6 +6489,7 @@ io.on('connection', socket => {
     if (!q) return socket.emit('questClaimError', { msg: 'Квест не найден' });
 
     const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
     const rewardIds = Array.isArray(q.reward.items) ? q.reward.items : [];
     const items = [];
     rewardIds.forEach(id => {
@@ -6481,7 +6504,7 @@ io.on('connection', socket => {
     // from zero.
     _lastStats.questIdx = cur + 1;
     _lastStats.questKills = {};
-    _commitServerItems(inv, null, 'quest_reward', { questId: q.id, idx: cur, gold, items: items.map(i => i.id) });
+    _commitServerItems(inv, null, 'quest_reward', { questId: q.id, idx: cur, gold, items: items.map(i => i.id) }, { beforeLen: _beforeLen });
     _persistSavedFields(authed, { gold: _lastStats.gold, questIdx: _lastStats.questIdx, questKills: {} });
     logPlayer(authed.telegramId, authed.username, 'quest_reward', { questId: q.id, idx: cur, gold, xp: q.reward.xp || 0 });
     // Quest XP is applied flat client-side (gainXP's `flat` path skips every
@@ -6509,6 +6532,7 @@ io.on('connection', socket => {
       try {
         const inv = _liveInventory();
         if (!inv) return socket.emit('sellItemError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        const _beforeLen = inv.length;
         const i = Math.floor(Number(idx));
         if (!Number.isFinite(i) || i < 0 || i >= inv.length) return;
         const it = inv[i];
@@ -6522,7 +6546,7 @@ io.on('connection', socket => {
         inv.splice(i, 1);
         if (!_lastStats) _lastStats = {};
         _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + SELL_COMMON_PRICE);
-            _commitServerItems(inv, null, 'sell_common', { itemId: it.id, gold: SELL_COMMON_PRICE });
+            _commitServerItems(inv, null, 'sell_common', { itemId: it.id, gold: SELL_COMMON_PRICE }, { beforeLen: _beforeLen });
         await _persistSavedFields(authed, { gold: _lastStats.gold });
         socket.emit('itemSold', { gold: SELL_COMMON_PRICE, newGold: _lastStats.gold });
       } catch (err) {
@@ -6561,9 +6585,10 @@ io.on('connection', socket => {
     }
     const drop = currentRoom.claimWorldDrop(id, p.x, p.y);
     if (!drop) return;
+    const _beforeLen = inv ? inv.length : 0;
     const _delivered = !!(inv && _invAdd(inv, drop.item));
     if (_delivered) {
-      _commitServerItems(inv, null, 'world_drop', { item: drop.item && drop.item.id });
+      _commitServerItems(inv, null, 'world_drop', { item: drop.item && drop.item.id }, { beforeLen: _beforeLen });
     }
     socket.emit('worldDropPicked', { id: drop.id, item: drop.item, delivered: _delivered });
   });
@@ -6664,9 +6689,10 @@ io.on('connection', socket => {
       // Take the item out of the server's copy too, and persist immediately —
       // otherwise the item only left the account once the CLIENT's own save
       // landed, and listing-then-killing-the-app duplicated it.
+      const _beforeLen = _lastStats.inventory.length;
       _invRemove(_lastStats.inventory, canonItem);
       _commitServerItems(_lastStats.inventory, null, 'market_list',
-        { item: canonItem.id, enhance: canonItem.enhance || 0, qty: canonItem.qty || 1, price: _round2(p) });
+        { item: canonItem.id, enhance: canonItem.enhance || 0, qty: canonItem.qty || 1, price: _round2(p) }, { beforeLen: _beforeLen });
       socket.emit('marketListed', { listing: _marketListingData(listing) });
     } catch (err) {
       console.error('marketList:', err);
@@ -6701,10 +6727,11 @@ io.on('connection', socket => {
       // from the marketCancelled event meant a lost event (or a disconnect in
       // the round trip) destroyed the item — the listing was already
       // cancelled, so nothing would ever return it.
+      const _sellerBeforeLen = _sellerInv ? _sellerInv.length : 0;
       const _returned = !!(_sellerInv && _invAdd(_sellerInv, listing.item));
       if (_returned) {
         _commitServerItems(_sellerInv, null, 'market_cancel',
-          { item: listing.item && listing.item.id, listingId: String(listingId) });
+          { item: listing.item && listing.item.id, listingId: String(listingId) }, { beforeLen: _sellerBeforeLen });
       } else {
         // Cancelled but not returned server-side — the client is the only
         // copy holding it now, so make that visible rather than silent.
@@ -6769,11 +6796,12 @@ io.on('connection', socket => {
       // The item is delivered server-side so a marketBought event that never
       // reaches the client (disconnect, lost packet) can't leave the buyer
       // having paid for nothing.
+      const _buyerBeforeLen = _buyerInv ? _buyerInv.length : 0;
       const _delivered = !!(_buyerInv && _invAdd(_buyerInv, claimed.item));
       if (_delivered) {
         _commitServerItems(_buyerInv, null, 'market_buy',
           { item: claimed.item && claimed.item.id, price: claimed.price,
-            seller: claimed.sellerId, listingId: String(listingId) });
+            seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
       }
 
       // Credit the seller (10% fee burned — not paid to anyone), online or not.
@@ -8711,12 +8739,13 @@ io.on('connection', socket => {
           if (inv.length + newSlots > SERVER_INV_MAX) {
             return socket.emit('clanError', { msg: 'Освободите место в инвентаре — в хранилище остались Осколки' });
           }
+          const _beforeLen = inv.length;
           const _got = [];
           for (const e of _rows) {
             const base = CRAFT_MATS.find(m => m.id === e.id);
             if (base && _invAdd(inv, { ...base, qty: e.qty })) _got.push(`${e.id}x${e.qty}`);
           }
-          _commitServerItems(inv, null, 'clan_storage_return', { clan: clan.name, items: _got.join(',') });
+          _commitServerItems(inv, null, 'clan_storage_return', { clan: clan.name, items: _got.join(',') }, { beforeLen: _beforeLen });
         }
         await ClanModel.deleteOne({ _id: clan._id }).catch(() => {});
       }
@@ -8958,6 +8987,7 @@ io.on('connection', socket => {
       }
       const inv = _liveInventory();
       if (!inv) return socket.emit('clanStorageError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      const _beforeLen = inv.length;
       const have = inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
       if (have < n) return socket.emit('clanStorageError', { msg: `Недостаточно Осколков (есть ${have})` });
 
@@ -9001,7 +9031,7 @@ io.on('connection', socket => {
         return socket.emit('clanStorageError', { msg: 'Ошибка сервера' });
       }
 
-      _commitServerItems(inv, null, 'clan_storage_deposit', { id, qty: n, clan: clan.name });
+      _commitServerItems(inv, null, 'clan_storage_deposit', { id, qty: n, clan: clan.name }, { beforeLen: _beforeLen });
       const fresh = await _myClan();
       if (fresh) await _clanStoragePush(fresh);
       socket.emit('clanStorageOk', { msg: `Передано в хранилище: ${n}` });
@@ -9104,6 +9134,7 @@ io.on('connection', socket => {
       }
       const inv = _liveInventory();
       if (!inv) return socket.emit('clanStorageError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      const _beforeLen = inv.length;
 
       const pulled = await ClanModel.findOneAndUpdate(
         { _id: clan._id, 'allocations.telegramId': authed.telegramId },
@@ -9140,7 +9171,7 @@ io.on('connection', socket => {
       if (!granted.length) { await putBack(); return socket.emit('clanStorageError', { msg: 'Инвентарь полон' }); }
 
       _commitServerItems(inv, null, 'clan_storage_claim',
-        { clan: clan.name, items: granted.map(g => `${g.id}x${g.qty}`).join(',') });
+        { clan: clan.name, items: granted.map(g => `${g.id}x${g.qty}`).join(',') }, { beforeLen: _beforeLen });
       const fresh = await _myClan();
       if (fresh) await _clanStoragePush(fresh);
       socket.emit('clanStorageClaimed', { items: granted });
