@@ -7979,14 +7979,27 @@ io.on('connection', socket => {
     // Stale-inventory guard. A save composed before the last server-side item
     // change carries an inventory that predates it, and taking it at face
     // value is what reverted shop packs and market cancellations. Keep the
-    // server's copy for those two fields, accept everything else in the save
+    // server's copy for those fields, accept everything else in the save
     // (position, hp, xp... are all still current), and push the authoritative
     // items back so the client stops resending the stale set.
+    //
+    // storage is rolled back WITH inventory/equipment, never on its own. The
+    // census invariant (see _itemCensus) counts all three together, and
+    // inventory <-> storage is a client-side MOVE — so replacing only the
+    // inventory half of a move that was in flight left the blob describing
+    // two different points in time at once. A deposit then read as the item
+    // existing twice (server inventory still has it, client storage now has
+    // it too), which tripped the anti-duplication check below and reverted
+    // the player's whole item set as if it were forged; a withdrawal read as
+    // it existing nowhere, and since the check only looks for GROWTH that
+    // save was accepted verbatim and destroyed the item. Reverting the three
+    // as a unit costs at most one re-done storage move and cannot do either.
     const _clientRev = Math.floor(Number(stats && stats.invRev)) || 0;
     if (_clientRev !== _invRev && _lastStats) {
       const _rejected = Array.isArray(clean.inventory) ? clean.inventory.length : 0;
       clean.inventory = _lastStats.inventory || [];
       clean.equipment = _lastStats.equipment || {};
+      clean.storage   = _lastStats.storage   || [];
       // The single most useful line when a player says an item vanished: it
       // records that a save arrived carrying a pre-grant inventory and was
       // overruled, rather than that happening invisibly.
@@ -7995,7 +8008,8 @@ io.on('connection', socket => {
         rejectedSlots: _rejected, keptSlots: clean.inventory.length,
       });
       socket.emit('inventorySync', {
-        inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
+        inventory: clean.inventory, equipment: clean.equipment,
+        storage: clean.storage, invRev: _invRev,
       });
     }
     // Anti-duplication. Enforced on EVERY save, including ones whose invRev
@@ -8024,8 +8038,12 @@ io.on('connection', socket => {
       });
       console.error(`[saveProgress] Rejected minted items for telegramId=${authed.telegramId}` +
         ` (${_grew.key}: had ${_grew.had}, save claimed ${_grew.sent})`);
+      // storage is reverted just above, so it has to ride along here too —
+      // otherwise the client keeps the storage half of the rejected set and
+      // resends it, tripping the same check on every save from then on.
       socket.emit('inventorySync', {
-        inventory: clean.inventory, equipment: clean.equipment, invRev: _invRev,
+        inventory: clean.inventory, equipment: clean.equipment,
+        storage: clean.storage, invRev: _invRev,
       });
     }
 

@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+'use strict';
+// Regression check for the inventory <-> storage rollback race.
+//
+//   node dev/storage-race-check.js
+//
+// Needs no database and no running server: it lifts the real census helpers
+// and the real stale-invRev guard out of server/index.js by source slice and
+// runs them in a vm against the real item catalog, so the check fails if the
+// shipped code changes rather than passing against a paraphrase of it.
+//
+// The race it guards: inventory <-> storage is a CLIENT-side move (js/player.js
+// moveToStorage/moveToInventory) that only reaches the server on the next
+// saveProgress, while _invRev is bumped by every SERVER-side item grant (mob
+// loot, purchases, quest rewards). When a grant lands inside that window the
+// save arrives stale, and the guard replaces the client's items with the
+// server's copy. Replacing only the inventory half of a move in flight left
+// the blob describing two moments at once — which _itemCensus, counting
+// inventory + equipment + storage together, then read as either a duplicate
+// (deposit) or a vanished item (withdrawal).
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.join(__dirname, '..');
+const SRC = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+
+// ── Lift the real code out of server/index.js ───────────────────────────────
+// Sliced by name rather than copied, so an edit to any of them is picked up
+// here automatically and a rename fails loudly instead of silently testing a
+// stale duplicate.
+function slice(startRe, label) {
+  const m = SRC.match(startRe);
+  if (!m) throw new Error(`storage-race-check: could not find ${label} in server/index.js`);
+  // Walk braces from the first { after the match to the matching close.
+  const from = SRC.indexOf('{', m.index);
+  let depth = 0;
+  for (let i = from; i < SRC.length; i++) {
+    if (SRC[i] === '{') depth++;
+    else if (SRC[i] === '}') { depth--; if (depth === 0) return SRC.slice(m.index, i + 1); }
+  }
+  throw new Error(`storage-race-check: unbalanced braces reading ${label}`);
+}
+
+const sandbox = { console, Map, Set, Number, Math, Array, Object, JSON };
+vm.createContext(sandbox);
+// The catalog and isStackableItem/ENHANCE* the helpers close over.
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'shared', 'definitions.js'), 'utf8'), sandbox);
+vm.runInContext([
+  slice(/^const _SANITIZE_MAX = /m, '_SANITIZE_MAX'),
+  slice(/^function _catalogBase\(/m, '_catalogBase'),
+  slice(/^function _canonSavedItem\(/m, '_canonSavedItem'),
+  slice(/^function _itemCensus\(/m, '_itemCensus'),
+  slice(/^function _censusOverflow\(/m, '_censusOverflow'),
+].join('\n'), sandbox);
+
+// Function declarations land on the context's global object; `const`s live in
+// its lexical scope instead and have to be read back by evaluating their name.
+const { _itemCensus, _censusOverflow } = sandbox;
+const read = expr => vm.runInContext(expr, sandbox);
+
+// The stale-invRev guard's item-rollback lines, read out of the real handler
+// so this test tracks whatever it actually does today.
+const GUARD = (() => {
+  const start = SRC.indexOf('const _clientRev = Math.floor(Number(stats && stats.invRev)) || 0;');
+  if (start < 0) throw new Error('storage-race-check: stale-invRev guard not found');
+  const end = SRC.indexOf('// Anti-duplication.', start);
+  const body = SRC.slice(start, end);
+  return {
+    revertsInventory: /clean\.inventory\s*=\s*_lastStats\.inventory/.test(body),
+    revertsEquipment: /clean\.equipment\s*=\s*_lastStats\.equipment/.test(body),
+    revertsStorage:   /clean\.storage\s*=\s*_lastStats\.storage/.test(body),
+    syncsStorage:     /socket\.emit\('inventorySync',[\s\S]*storage:/.test(body),
+  };
+})();
+
+// ── Fixtures ────────────────────────────────────────────────────────────────
+// A real, non-stackable catalog item so the census keys it by id@enhance.
+const ITEM = (() => {
+  const d = read('ITEM_DEF.find(i => ENHANCEABLE_SLOTS.has(i.slot)) || null');
+  if (!d) throw new Error('storage-race-check: no enhanceable item in the catalog');
+  return { id: d.id, enhance: 0 };
+})();
+const KEY = `${ITEM.id}@0`;
+
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// What the server holds: the item sits in the inventory, storage is empty.
+const serverStats = { inventory: [clone(ITEM)], equipment: {}, storage: [] };
+
+// Replays the real handler's item path for one save: the stale-invRev guard
+// (as the shipped source writes it) followed by the anti-duplication census.
+function applySave(clean, lastStats, { staleRev }) {
+  const out = clone(clean);
+  if (staleRev) {
+    if (GUARD.revertsInventory) out.inventory = lastStats.inventory || [];
+    if (GUARD.revertsEquipment) out.equipment = lastStats.equipment || {};
+    if (GUARD.revertsStorage)   out.storage   = lastStats.storage   || [];
+  }
+  const grew = _censusOverflow(_itemCensus(out), _itemCensus(lastStats));
+  if (grew) {
+    out.inventory = lastStats.inventory || [];
+    out.equipment = lastStats.equipment || {};
+    out.storage   = lastStats.storage   || [];
+  }
+  return { saved: out, forged: grew };
+}
+
+const total = stats => (_itemCensus(stats).get(KEY) || 0);
+
+// ── Cases ───────────────────────────────────────────────────────────────────
+const results = [];
+const check = (name, pass, detail) => { results.push({ name, pass, detail }); };
+
+// 1. Deposit (inventory -> storage) racing a server-side grant.
+{
+  const clientSave = { inventory: [], equipment: {}, storage: [clone(ITEM)] };
+  const { saved, forged } = applySave(clientSave, serverStats, { staleRev: true });
+  check('deposit race: player is not flagged as forging items',
+    !forged, forged ? `census overflow on ${forged.key}: had ${forged.had}, sent ${forged.sent}` : 'no overflow');
+  check('deposit race: the item still exists exactly once',
+    total(saved) === 1, `census count = ${total(saved)}`);
+}
+
+// 2. Withdrawal (storage -> inventory) racing a server-side grant. This is the
+//    destructive half: the census only rejects GROWTH, so a blob that lost the
+//    item on both sides used to be accepted verbatim.
+{
+  const heldInStorage = { inventory: [], equipment: {}, storage: [clone(ITEM)] };
+  const clientSave = { inventory: [clone(ITEM)], equipment: {}, storage: [] };
+  const { saved } = applySave(clientSave, heldInStorage, { staleRev: true });
+  check('withdrawal race: the item is not destroyed',
+    total(saved) === 1, `census count = ${total(saved)}`);
+}
+
+// 3. The guard must still do its original job — a stale save cannot keep an
+//    inventory that predates a server grant.
+{
+  const granted = { inventory: [clone(ITEM), clone(ITEM)], equipment: {}, storage: [] };
+  const preGrantSave = { inventory: [clone(ITEM)], equipment: {}, storage: [] };
+  const { saved } = applySave(preGrantSave, granted, { staleRev: true });
+  check('stale save does not roll back a server-side grant',
+    total(saved) === 2, `census count = ${total(saved)}, expected 2`);
+}
+
+// 4. Minting is still rejected, stale rev or not.
+{
+  const forgedSave = { inventory: [clone(ITEM), clone(ITEM), clone(ITEM)], equipment: {}, storage: [] };
+  const { forged } = applySave(forgedSave, serverStats, { staleRev: false });
+  check('forged save with extra items is still rejected',
+    !!forged, forged ? `rejected ${forged.key}` : 'NOT rejected');
+}
+
+// 5. The rollback has to reach the client too, or it keeps the storage half of
+//    a set the server just replaced and resends it on every later save.
+check('inventorySync carries storage when the guard reverts it',
+  GUARD.syncsStorage, GUARD.syncsStorage ? 'storage field present' : 'storage field MISSING from the emit');
+
+const clientSrc = fs.readFileSync(path.join(ROOT, 'js', 'network.js'), 'utf8');
+check('client inventorySync applies the storage it is sent',
+  /socket\.on\('inventorySync',\s*\(\{[^}]*storage/.test(clientSrc)
+    && /player\.storage\s*=\s*_migrateInventory\(storage\)/.test(clientSrc),
+  'js/network.js inventorySync handler');
+
+// ── Report ──────────────────────────────────────────────────────────────────
+let failed = 0;
+for (const r of results) {
+  if (!r.pass) failed++;
+  console.log(`${r.pass ? '  ok  ' : ' FAIL '} ${r.name}${r.pass ? '' : `\n         ${r.detail}`}`);
+}
+console.log(`\n${results.length - failed}/${results.length} passed`);
+process.exit(failed ? 1 : 0);

@@ -1,6 +1,13 @@
 // ─────────────────────────────────────────────────────────
 //  NPC DIALOG SYSTEM
 // ─────────────────────────────────────────────────────────
+// Which NPC dialog is currently on screen, or null. Only openNpc/closeNpc
+// touch it: the handful of places that rewrite #npc-body directly are
+// sub-panels of an already-open NPC, so the id stays true through them.
+// Read by refreshStorageNpc (below) to tell "the storage panel is open and
+// showing stale indices" from "nothing to redraw".
+let _openNpcId = null;
+
 function openNpc(npcId) {
   if (!npcId || !player) return;
   const def = NPC_DEF.find(n => n.id === npcId);
@@ -12,10 +19,21 @@ function openNpc(npcId) {
   document.getElementById('npc-body').innerHTML = _buildNpcBody(npcId);
   const ov = document.getElementById('npc-overlay');
   ov.style.display = 'flex';
+  _openNpcId = npcId;
 }
 
 function closeNpc() {
   document.getElementById('npc-overlay').style.display = 'none';
+  // An inventory <-> storage move is the one client-side item operation the
+  // server cannot reconstruct, and it only reaches it on the next save. Left
+  // on the 2s debounce, a player who deposits something and immediately runs
+  // off to fight has that save land mid-combat — where every mob drop bumps
+  // invRev and makes it arrive stale, so the server rolls the move back and
+  // the deposit has to be done again. Flushing on close sends it while they
+  // are still standing at the NPC, and coalesces a whole bulk move into one
+  // save rather than one per tap.
+  if (_openNpcId === 'storage' && typeof netSaveProgressNow === 'function') netSaveProgressNow();
+  _openNpcId = null;
 }
 
 function _buildNpcBody(npcId) {
@@ -887,6 +905,10 @@ function _storageStoTab() {
   return html;
 }
 
+// Both moves ride the ordinary 2s debounce — a save blob carries the whole
+// inventory AND storage as full item objects, so flushing per tap would
+// re-upload all of it for every item of a bulk move. closeNpc flushes once
+// instead; see the note there for why the timing matters.
 function _doMoveToStorage(idx) {
   if (!player) return;
   if (!moveToStorage(idx)) { _shopMsg(typeof t === 'function' ? t('storageFull') : 'Хранилище полно!'); return; }
@@ -898,6 +920,16 @@ function _doMoveToInventory(idx) {
   if (!player) return;
   if (!moveToInventory(idx)) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
   netSaveProgress();
+  document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
+}
+
+// The panel's cells carry raw indices into player.inventory / player.storage
+// (see _storageItemCell), so an inventorySync that swaps those arrays under
+// an open panel leaves every cell pointing at whatever now sits at that
+// index — the next tap moves an item the player never picked. Redraw instead.
+// No-op unless the storage NPC is actually on screen.
+function refreshStorageNpc() {
+  if (_openNpcId !== 'storage' || !player) return;
   document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
 }
 

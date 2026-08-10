@@ -1102,10 +1102,19 @@ function netConnect(onReady) {
   // change — this brings the live client in line so it shows up now, and
   // carries the new invRev so our next autosave is recognised as current
   // instead of being treated as pre-grant and dropped.
-  socket.on('inventorySync', ({ inventory, equipment, invRev } = {}) => {
+  socket.on('inventorySync', ({ inventory, equipment, storage, invRev } = {}) => {
     if (!player) return;
     if (Array.isArray(inventory) && typeof _migrateInventory === 'function') {
       player.inventory = _migrateInventory(inventory);
+    }
+    // Only present when the server rolled an inventory <-> storage move back
+    // (the stale-rev and forged-census branches of saveProgress). Applying
+    // just the inventory half of that rollback is what left the local copy
+    // holding the item in BOTH places — which the next save then reported as
+    // a duplicate and got the whole item set rejected for. An ordinary grant
+    // omits the field entirely, and this is a no-op for it.
+    if (Array.isArray(storage) && typeof _migrateInventory === 'function') {
+      player.storage = _migrateInventory(storage);
     }
     if (equipment && typeof equipment === 'object' && typeof _rebuildFromCatalog === 'function') {
       // Same blank-template merge restoreFromSave uses — every slot key has to
@@ -1119,6 +1128,9 @@ function netConnect(onReady) {
     if (invRev != null) window._invRev = invRev;
     if (typeof recompute === 'function') recompute();
     if (typeof updateInvUI === 'function') updateInvUI();
+    // The storage NPC panel indexes straight into the arrays just replaced —
+    // see refreshStorageNpc (js/npc.js). No-op when it isn't open.
+    if (typeof refreshStorageNpc === 'function') refreshStorageNpc();
   });
 
   // Merchant sale confirmed — the item is already gone via the
