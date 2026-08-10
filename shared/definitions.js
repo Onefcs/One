@@ -245,6 +245,40 @@ function bandForLocalLevel(fe, localLvl) {
 function xpAtLevel(lvl)   { return Math.max(1, Math.round(lvl || 1)); }
 function goldAtLevel(lvl) { return Math.max(1, Math.round(lvl || 1)); }
 
+// XP needed to go FROM `lvl` to lvl+1. This curve used to live only inside
+// gainXP's level-up loop (js/player.js), which made xpNext a number the
+// client computed, saved, and was handed straight back on load — so a save
+// claiming xpNext:1 levelled up on every point of XP earned, and nothing on
+// the server had any way to say otherwise. Both sides derive it from the
+// level now (see _sanitizeSavedStats, which recomputes it exactly like
+// baseAtk/baseDef/baseMaxHp are recomputed) and the saved value is ignored.
+function xpToNext(lvl) {
+  const L = Math.max(1, Math.floor(lvl) || 1);
+  let mult = L > 5 ? 3 : 1;
+  if (L > 20) mult *= 1.6;
+  return Math.floor(Math.floor(100 * Math.pow(1.38, L - 1)) * mult);
+}
+
+// Total XP an account has ever earned to stand at (lvl, xp) — the whole
+// ladder below it plus the progress into the current level. This is the one
+// scalar that makes "could this account really have got here" answerable:
+// the server counts the XP it has actually handed out and compares totals
+// (see _xpAllowed, server/index.js), which a per-level comparison cannot do.
+//
+// The curve is exponential, so a forged level runs the sum off the top of
+// double precision — Infinity compares greater than any ceiling, which is
+// the right answer for it, so that case needs no special handling beyond
+// leaving the loop early.
+function xpTotalAt(lvl, xp) {
+  const L = Math.max(1, Math.floor(lvl) || 1);
+  let sum = Math.max(0, Number(xp) || 0);
+  for (let i = 1; i < L; i++) {
+    sum += xpToNext(i);
+    if (!isFinite(sum)) return Infinity;
+  }
+  return sum;
+}
+
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
@@ -1386,7 +1420,7 @@ function clanAtkBonusPct(level) {
 
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
-  xpAtLevel, goldAtLevel,
+  xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,

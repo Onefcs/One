@@ -1068,6 +1068,26 @@ function netConnect(onReady) {
     if (typeof updateInvUI === 'function') updateInvUI();
     if (typeof updateClanUI === 'function') updateClanUI();
   });
+  // The server capped a level/XP claim to what it has actually granted this
+  // session (see _allowXp, server/index.js). Without applying it the client
+  // keeps the rejected figures and resends them in every later save, so each
+  // one trips the same check and the correction never converges.
+  // recompute() is what turns the corrected level into the stats this side
+  // uses — baseAtk/baseDef/baseMaxHp all track it.
+  socket.on('xpSync', ({ lvl, xp, xpNext } = {}) => {
+    if (!player || !Number.isFinite(lvl)) return;
+    const _cd = player.charDef || {};
+    player.lvl       = lvl;
+    player.xp        = Number.isFinite(xp) ? xp : 0;
+    player.xpNext    = Number.isFinite(xpNext) ? xpNext : xpToNext(lvl);
+    player.baseAtk   = (_cd.baseAtk || 0) + (lvl - 1);
+    player.baseDef   = (_cd.baseDef || 0) + (lvl - 1);
+    player.baseMaxHp = (_cd.baseHP  || 0) + (lvl - 1) * 20;
+    if (typeof recompute === 'function') recompute();
+    if (player.hp > player.maxHp) player.hp = player.maxHp;
+    if (typeof updateHUD === 'function') updateHUD();
+    if (typeof updateProfileUI === 'function') updateProfileUI();
+  });
   // The shards are already in the inventory via the inventorySync that
   // preceded this; this only reports what arrived.
   socket.on('clanStorageClaimed', ({ items } = {}) => {

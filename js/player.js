@@ -119,7 +119,7 @@ function makePlayer(type) {
     baseAtk: d.baseAtk, baseDef: d.baseDef, baseMaxHp: d.baseHP,
     atk: d.baseAtk, def: d.baseDef, maxHp: d.baseHP, hp: d.baseHP,
     speed: d.speed, baseSpeed: d.speed,
-    lvl: 1, xp: 0, xpNext: 100,
+    lvl: 1, xp: 0, xpNext: xpToNext(1),
     gold: 0, kills: 0,
     atkTimer: 0, hurtTimer: 0,
     facing: 'front', atkAnimTimer: 0, castDuration: 0, animFrame: 0, animTimer: 0,
@@ -360,10 +360,10 @@ function gainXP(amount, flat) {
   while (player.xp >= player.xpNext) {
     player.xp = Math.round(player.xp - player.xpNext);
     player.lvl++;
-    const _xpBase = Math.floor(100 * Math.pow(1.38, player.lvl - 1));
-    let _xpMult = player.lvl > 5 ? 3 : 1;
-    if (player.lvl > 20) _xpMult *= 1.6;
-    player.xpNext = Math.floor(_xpBase * _xpMult);
+    // The curve moved to shared/definitions.js so the server derives the same
+    // number instead of being handed whatever this side last saved — see
+    // xpToNext there.
+    player.xpNext = xpToNext(player.lvl);
     player.baseAtk += 1; player.baseDef += 1; player.baseMaxHp += 20;
     recompute();
     player.hp = Math.min(player.maxHp, player.hp + 35);
@@ -870,7 +870,9 @@ function restoreFromSave(data) {
   // (e.g. 2182.666666666666g) before those were fixed to divide to whole
   // numbers server-side — this cleans up anything already persisted.
   player.xp       = Math.round(data.xp   || 0);
-  player.xpNext   = data.xpNext   || 100;
+  // Derived from the level, never read back from the save: a blob claiming
+  // xpNext:1 used to level the character up on every point of XP it earned.
+  player.xpNext   = xpToNext(player.lvl);
   player.gold     = Math.floor(data.gold || 0);
   player.kills    = data.kills    || 0;
   // migrate old integer potions save → potionBag
