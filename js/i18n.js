@@ -751,6 +751,8 @@ Object.assign(I18N_UI, {
   profpLockedFmt: { ru: 'Прокачай навык книгами — {n}/10', en: 'Level the skill up with books — {n}/10', uk: 'Прокачай навичку книгами — {n}/10', es: 'Sube la habilidad con libros — {n}/10', tr: 'Kitaplarla yeteneği yükselt — {n}/10', pt: 'Suba a habilidade com livros — {n}/10' },
   profpNeedBooksFmt: { ru: 'Книг найдено {have} из {need}', en: '{have} of {need} books found', uk: 'Книг знайдено {have} з {need}', es: '{have} de {need} libros encontrados', tr: '{have}/{need} kitap bulundu', pt: '{have} de {need} livros encontrados' },
   profpLearnBtn: { ru: 'Изучить', en: 'Learn', uk: 'Вивчити', es: 'Aprender', tr: 'Öğren', pt: 'Aprender' },
+  profpNowLbl: { ru: 'Сейчас', en: 'Now', uk: 'Зараз', es: 'Ahora', tr: 'Şimdi', pt: 'Agora' },
+  profpWillBeLbl: { ru: 'Станет', en: 'Will become', uk: 'Стане', es: 'Se convertirá', tr: 'Olacak', pt: 'Se tornará' },
   profpFarmHint: { ru: '📖 Книги продвинутых навыков падают только в Фарм зоне (21-30 ур.)', en: '📖 Advanced-skill books drop only in the Farm Zone (lvl 21-30)', uk: '📖 Книги просунутих навичок падають лише у Ферм-зоні (21-30 рів.)', es: '📖 Los libros de habilidad avanzada solo caen en la Zona de Farmeo (niv. 21-30)', tr: '📖 Gelişmiş yetenek kitapları yalnızca Farm Bölgesi\'nde düşer (sv. 21-30)', pt: '📖 Livros de habilidade avançada só caem na Zona de Farm (nv. 21-30)' },
 
   // ── "What's new" login modal (js/ui.js's openWhatsNewModal, shown once per

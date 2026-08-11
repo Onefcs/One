@@ -837,7 +837,14 @@ function renderProfessionPanel() {
             <div class="profp-node-name" style="color:${stage === 3 ? cc : '#8a8070'}">${adv ? adv.name : ''}</div>
           </div>
         </div>
-        <div class="profp-desc">${stage === 3 && active && adv ? adv.desc : sk.desc}</div>
+        <div class="profp-descs">
+          <div class="profp-desc-row${stage === 3 && active ? ' dim' : ''}">
+            <span class="profp-desc-tag">${t('profpNowLbl')}</span>${sk.desc}
+          </div>
+          ${adv ? `<div class="profp-desc-row${stage === 3 && active ? ' lit' : ''}" style="--cc:${cc}">
+            <span class="profp-desc-tag">${t('profpWillBeLbl')}</span>${adv.desc}
+          </div>` : ''}
+        </div>
         ${stateHtml}
       </div>`;
   }).join('');
