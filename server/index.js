@@ -4531,6 +4531,29 @@ io.on('connection', socket => {
     try { await fn(); } finally { _econBusy = false; }
     return true;
   }
+
+  // ── Stale-inventory-array guard for item-granting handlers ─────────────────
+  // marketCancel/marketBuy/craftGear/craftClassGear/gramShopBuy/claimVipRewards/
+  // clanStorageDeposit/clanStorageClaim/_dbGrantWin all read _lastStats.inventory
+  // (or a copy of it) BEFORE at least one `await` (a DB round trip), then
+  // mutate/commit it AFTER. saveProgress runs fully synchronously and needs no
+  // await of its own, so it can — and does — run to completion in the gap
+  // between two of THIS handler's awaits, on the very same socket (safeOn just
+  // does a plain socket.on; nothing serializes different event types against
+  // each other). When it does, its accepted branch replaces _lastStats
+  // wholesale with a brand-new object (see `_lastStats = clean` below), which
+  // orphans the array these handlers are still holding a reference to — their
+  // eventual _commitServerItems() then stamps that stale, detached array back
+  // over the live one, silently discarding whatever the save legitimately
+  // changed in between, INCLUDING — if the ordering lands the other way — the
+  // item the handler itself just granted or returned. This is what made a
+  // cancelled market listing's item vanish right after coming back.
+  //
+  // _lastStats is otherwise only ever reassigned wholesale at login/selectChar
+  // (both before any of these handlers can fire) — saveProgress is the one
+  // recurring source of the race, so gating just it is enough to close the
+  // window for every handler below without touching their internal logic.
+  let _itemOpBusy = 0;
   let _saveDebounceTimer = null;
 
   // ── Coalesced balance writes ──────────────────────────────────────────────
@@ -4828,16 +4851,21 @@ io.on('connection', socket => {
   // actually landed in the server-side inventory — see _commitServerItems.
   socket.data._dbGrantWin = async () => {
     if (!authed) return null;
-    const items = deathBattleRewards();
-    const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
-    const _beforeLen = inv ? inv.length : 0;
-    if (inv) items.forEach(it => _invAdd(inv, it));
-    const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD);
-    if (_dbBal !== null) { _gramBalance = _dbBal; socket.emit('gramBalanceUpdate', { balance: _dbBal }); }
-    if (inv) await _commitServerItems(inv, null, 'death_battle_win',
-      { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD }, { beforeLen: _beforeLen });
-    logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
-    return { items, delivered: !!inv };
+    _itemOpBusy++;
+    try {
+      const items = deathBattleRewards();
+      const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
+      const _beforeLen = inv ? inv.length : 0;
+      if (inv) items.forEach(it => _invAdd(inv, it));
+      const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD);
+      if (_dbBal !== null) { _gramBalance = _dbBal; socket.emit('gramBalanceUpdate', { balance: _dbBal }); }
+      if (inv) await _commitServerItems(inv, null, 'death_battle_win',
+        { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD }, { beforeLen: _beforeLen });
+      logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
+      return { items, delivered: !!inv };
+    } finally {
+      _itemOpBusy--;
+    }
   };
 
   // Pays out a 3v3 win. Lives on the socket for the same reason _dbGrantWin
@@ -5146,7 +5174,10 @@ io.on('connection', socket => {
 
   safeOn('gramShopBuy', async ({ pkgId, petId } = {}) => {
     if (!authed || !pkgId) return;
-    const _ran = await _withEconLock(async () => {
+    _itemOpBusy++;
+    let _ran;
+    try {
+    _ran = await _withEconLock(async () => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId)
                 || _SEASON_SHOP_PKGS.find(p => p.id === pkgId);
@@ -5360,6 +5391,9 @@ io.on('connection', socket => {
       logPlayerErr(authed.telegramId, authed.username, 'gram_shop', err, { pkgId });
     }
     });
+    } finally {
+      _itemOpBusy--;
+    }
     if (!_ran) socket.emit('gramShopError', { msg: 'Покупка уже обрабатывается' });
   });
 
@@ -5434,6 +5468,8 @@ io.on('connection', socket => {
   // item isn't granted.
   safeOn('craftGear', async ({ itemId } = {}) => {
     if (!authed) return;
+    _itemOpBusy++;
+    try {
     await _withEconLock(async () => {
     try {
       const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId)
@@ -5523,6 +5559,9 @@ io.on('connection', socket => {
       socket.emit('craftGearError', { msg: 'Ошибка сервера' });
     }
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // ── Enhance / заточка (inventory item modal + equipped item modal) ─────────
@@ -5890,6 +5929,8 @@ io.on('connection', socket => {
   // happen here rather than being client-computed.
   safeOn('craftClassGear', async ({ slot, rarity } = {}) => {
     if (!authed) return;
+    _itemOpBusy++;
+    try {
     await _withEconLock(async () => {
     try {
       const rec = CLASS_GEAR_SALVAGE_RECIPES.find(r => r.resultSlot === slot && r.resultRarity === rarity);
@@ -5939,6 +5980,9 @@ io.on('connection', socket => {
       socket.emit('craftClassGearError', { msg: 'Ошибка сервера' });
     }
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // ── Market ────────────────────────────────────────────────────────────────
@@ -6662,6 +6706,7 @@ io.on('connection', socket => {
 
   safeOn('marketCancel', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
+    _itemOpBusy++;
     try {
       // Peek at the item before cancelling: if there's nowhere to put it back,
       // the cancellation must not happen at all. Cancelling first and only
@@ -6700,6 +6745,8 @@ io.on('connection', socket => {
     } catch (err) {
       console.error('marketCancel:', err);
       logPlayerErr(authed.telegramId, authed.username, 'market_cancel', err, { listingId: String(listingId) });
+    } finally {
+      _itemOpBusy--;
     }
   });
 
@@ -6716,6 +6763,7 @@ io.on('connection', socket => {
 
   safeOn('marketBuy', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
+    _itemOpBusy++;
     try {
       const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
       if (!listing) return socket.emit('marketError', { msg: 'Лот уже продан или снят' });
@@ -6790,6 +6838,8 @@ io.on('connection', socket => {
     } catch (err) {
       console.error('marketBuy:', err);
       logPlayerErr(authed.telegramId, authed.username, 'market_buy', err, { listingId: String(listingId) });
+    } finally {
+      _itemOpBusy--;
     }
   });
 
@@ -6881,6 +6931,8 @@ io.on('connection', socket => {
 
   safeOn('claimVipRewards', async () => {
     if (!authed) return;
+    _itemOpBusy++;
+    try {
     // Serialized: vipPending is read here and only cleared after an await, so
     // two claims in one tick both saw the same pending list and each handed
     // out the full item set. See _withEconLock.
@@ -6946,6 +6998,9 @@ io.on('connection', socket => {
       logPlayerErr(authed.telegramId, authed.username, 'vip_rewards', err);
     }
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   safeOn('selectChar', ({ type, savedStats }) => {
@@ -8172,6 +8227,14 @@ io.on('connection', socket => {
 
   safeOn('saveProgress', ({ stats } = {}) => {
     if (!authed) return;
+    // An item-granting handler (market cancel/buy, a craft, a shop purchase...)
+    // is mid-flight and holding a reference to the current _lastStats.inventory
+    // across an await. Accepting this save now would let its eventual commit
+    // stamp that now-stale reference back over whatever this save changes —
+    // see _itemOpBusy above. Dropping it here is safe: the client's own
+    // autosave debounce resends within a couple seconds, by which point the
+    // in-flight handler has finished and this session is caught up.
+    if (_itemOpBusy > 0) return;
     // Sanitize the client blob before it becomes the server's source of truth
     // for BM/combat stats and before it's persisted (anti-cheat — see
     // _sanitizeSavedStats). gram/nexum are never taken from here.
@@ -8925,6 +8988,8 @@ io.on('connection', socket => {
 
   safeOn('clanStorageDeposit', async ({ id, qty } = {}) => {
     if (!authed) return;
+    _itemOpBusy++;
+    try {
     await _withEconLock(async () => {
       const n = Math.floor(Number(qty));
       if (!Number.isFinite(n) || n <= 0) return;
@@ -8997,6 +9062,9 @@ io.on('connection', socket => {
       if (fresh) await _clanStoragePush(fresh);
       socket.emit('clanStorageOk', { msg: `Передано в хранилище: ${n}` });
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // Leader hands part of the pool to a member. Nothing reaches their inventory
@@ -9082,6 +9150,8 @@ io.on('connection', socket => {
   // allocation goes back exactly as it was.
   safeOn('clanStorageClaim', async () => {
     if (!authed) return;
+    _itemOpBusy++;
+    try {
     await _withEconLock(async () => {
       const clan = await _myClan();
       if (!clan) return;
@@ -9137,6 +9207,9 @@ io.on('connection', socket => {
       if (fresh) await _clanStoragePush(fresh);
       socket.emit('clanStorageClaimed', { items: granted });
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // One point of clan XP for the kill — now a Map increment and nothing else.
