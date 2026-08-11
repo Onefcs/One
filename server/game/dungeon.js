@@ -184,17 +184,23 @@ const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 // _rollFarmZoneLoot, server/index.js). Entry is level-gated client-side at
 // FARM_ENTRY_LEVEL, same trust model as every other level gate in the open
 // world (dungeon.corridorGates) — see the farm pad in js/game.js.
+// Each of the 80 monsters rolls its own level (21-30) and species/archetype
+// independently, so every room comes out mixed — different kinds and
+// different levels standing next to each other, not one uniform pack the
+// way a normal room is.
 const FARM_ROOM = 16;
 const FARM_GAP = 8;
 const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
 const FARM_X0 = ARENA_X0;
 const FARM_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
 const FARM_MOBS_PER_ROOM = 20;
-const FARM_MONSTER_LVL = 24;
+const FARM_LVL_MIN = 21;
+const FARM_LVL_MAX = 30;
 const FARM_ENTRY_LEVEL = 20;
-// One guard-type species per room for visual variety, pulled from the arm-2
-// roster (the species already tuned for the low-20s level range).
-const FARM_SPECIES = ['zombie_guard', 'lizardman_guard', 'orc_guard', 'vampire_guard'];
+// Both archetypes of every arm-2 species — 21-30 sits inside arm 2's own
+// 21-40 range (ARM_OFFSETS[1] = 20), so these are the species already tuned
+// for exactly this level band.
+const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'lizardman_warrior', 'orc_guard', 'orc_warrior'];
 
 const ZONES_Y0 = FARM_Y0 + FARM_SIZE + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
@@ -299,7 +305,9 @@ function generateOpenWorld() {
       x, y, size: FARM_ROOM,
       bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
       cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
-      isFarmZone: true, monsterLvl: FARM_MONSTER_LVL, arm: 'farmZone',
+      // Level varies per monster (FARM_LVL_MIN-FARM_LVL_MAX) — this is just a
+      // representative midpoint for the HUD's single-number room label.
+      isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone',
     };
     paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
     rooms.push(room);
@@ -314,27 +322,35 @@ function generateOpenWorld() {
   paintRect(farmMidX - CW, FARM_Y0, farmMidX + CW, FARM_Y0 + FARM_SIZE - 1);
   const farmMidY = FARM_Y0 + Math.floor(FARM_SIZE / 2);
 
+  // Same halving every other packed room applies ("regular monsters spawn
+  // in packs — halved individually") — 20 in a 16x16 room is denser than
+  // the usual 5-10, so this matters here too.
+  const FARM_WEAK_MULT = 0.5;
+  const _farmMaxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19)
   farmRooms.forEach((room, ri) => {
-    const d = _enemyByEid.get(FARM_SPECIES[ri % FARM_SPECIES.length]);
-    if (!d) return;
-    const stats = monsterStatsAtLevel(FARM_MONSTER_LVL, d.eType);
-    // Same halving every other packed room applies ("regular monsters spawn
-    // in packs — halved individually") — 20 in a 16x16 room is denser than
-    // the usual 5-10, so this matters here too.
-    const weakMult = 0.5;
     for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
+      const d = _enemyByEid.get(FARM_SPECIES[Math.floor(rng() * FARM_SPECIES.length)]);
+      if (!d) continue;
+      const lvl = FARM_LVL_MIN + Math.floor(rng() * (FARM_LVL_MAX - FARM_LVL_MIN + 1));
+      const stats = monsterStatsAtLevel(lvl, d.eType);
       let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
       for (let attempt = 0; attempt < 40; attempt++) {
         const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
         const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
         if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
       }
+      // Named/colored the same way arm 2's own rooms would at this level
+      // (localLvl relative to ARM_OFFSETS[1]) so a level-27 zombie here looks
+      // exactly like a level-27 zombie anywhere else in the open world.
+      const localLvl = lvl - ARM_OFFSETS[1];
       enemyList.push({
         id: `farm_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
-        rlvl: FARM_MONSTER_LVL,
-        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
-        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(FARM_MONSTER_LVL), gold: goldAtLevel(FARM_MONSTER_LVL),
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, _farmMaxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, _farmMaxLocalLvl),
+        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
+        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(),
         // Never self-aggros (aggroR: 0) — same "stands until struck" pattern
