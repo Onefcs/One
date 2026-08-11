@@ -803,6 +803,31 @@ function _currentLocationBounds() {
       ty1: Math.min(dungeon.h - 1, Math.ceil(sz.y2 / TILE) + margin),
     };
   }
+  // Sealed zones that carry their own tile-space `bounds` (Фарм-зона, Война
+  // гильдий, Кровавая Башня — see their dungeon.js entries). Checked by raw
+  // tile bounds rather than _getRoomAt's room-only lookup, so standing in a
+  // zone's connecting corridor (not inside one of its rooms) still resolves
+  // here instead of falling through to the whole-map fallback below — this
+  // was the actual bug: a Фарм-зона player between rooms had no `arm` match
+  // (farmZone isn't one of ARM_NAMES) and no room hit either, so every path
+  // above missed and the "shouldn't normally happen" fallback fired for
+  // completely normal play. zoneLabel lets drawMapPanel's status line reuse
+  // this same detection instead of re-deriving it.
+  const px = player.x / TILE, py = player.y / TILE;
+  const namedZones = [
+    { z: dungeon.farmZone, zoneLabel: 'farmZoneLbl' },
+    { z: dungeon.guildWar, zoneLabel: 'guildWarLbl' },
+    { z: dungeon.race10,   zoneLabel: 'race10ArenaLbl' },
+  ];
+  for (const { z, zoneLabel } of namedZones) {
+    const zb = z && z.bounds;
+    if (!zb || px < zb.x0 || px > zb.x1 || py < zb.y0 || py > zb.y1) continue;
+    return {
+      tx0: Math.max(0, zb.x0 - margin), ty0: Math.max(0, zb.y0 - margin),
+      tx1: Math.min(dungeon.w - 1, zb.x1 + margin), ty1: Math.min(dungeon.h - 1, zb.y1 + margin),
+      zoneLabel,
+    };
+  }
   const playerTy = player.y / TILE;
   for (const dir of ARM_NAMES) {
     const armRooms = dungeon.rooms.filter(r => r.arm === dir);
@@ -911,8 +936,13 @@ function drawMapPanel() {
   // _armLabel/_ARM_LABEL (js/game.js) only return the bare adjective (e.g.
   // "left") — corridorSuffix is appended at each call site instead of baked
   // into the shared helper, matching how enteredCorridorToast's own template
-  // already does it.
-  const _locLabel = _pRoom?.arm ? (_armLabel(_pRoom.arm) + ' ' + t('corridorSuffix') + ' · ' + t('levelAbbrev') + ' ' + _pRoom.monsterLvl) : t('centralHall');
+  // already does it. b.zoneLabel (set by _currentLocationBounds for Фарм-
+  // зона/Guild War/race10) takes priority — _pRoom.arm can be 'farmZone',
+  // which isn't one of ARM_NAMES and would otherwise reach _armLabel with a
+  // key it doesn't know.
+  const _locLabel = b.zoneLabel ? t(b.zoneLabel)
+    : (_pRoom?.arm && ARM_NAMES.includes(_pRoom.arm)) ? (_armLabel(_pRoom.arm) + ' ' + t('corridorSuffix') + ' · ' + t('levelAbbrev') + ' ' + _pRoom.monsterLvl)
+    : t('centralHall');
   document.getElementById('map-status').textContent =
     _locLabel + ' · ' + tVars('enemiesCountFmt', { n: aliveEnemies.length });
 }
