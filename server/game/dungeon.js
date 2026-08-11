@@ -197,6 +197,7 @@ const FARM_MOBS_PER_ROOM = 20;
 const FARM_LVL_MIN = 21;
 const FARM_LVL_MAX = 30;
 const FARM_ENTRY_LEVEL = 20;
+const FARM_XP_MULT = 3; // 3x normal XP — the zone's own reward, on top of the shard chance
 // Both archetypes of every arm-2 species — 21-30 sits inside arm 2's own
 // 21-40 range (ARM_OFFSETS[1] = 20), so these are the species already tuned
 // for exactly this level band.
@@ -350,7 +351,7 @@ function generateOpenWorld() {
         color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, _farmMaxLocalLvl),
         maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
         atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
+        xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(),
         // Never self-aggros (aggroR: 0) — same "stands until struck" pattern
