@@ -1155,23 +1155,47 @@ function _liveFarmEnemy(base) {
 // is deliberately NOT _monsterDropBodyHtml: that function's rows would all
 // be either wrong (recipe/gear chances that never actually roll here) or
 // misleadingly absent (no hint that shards/adv books exist at all).
+function _dropRow(icon, label, valHtml, color) {
+  const st = color ? ` style="color:${color}"` : '';
+  return `<div class="fi-drop">
+    <span class="fi-drop-icon">${icon}</span>
+    <span class="fi-drop-lbl"${st}>${label}</span>
+    <span class="fi-drop-val"${st}>${valHtml}</span>
+  </div>`;
+}
+
 function _farmDropBodyHtml(e) {
-  function _dropRow(icon, label, valHtml, color) {
-    const st = color ? ` style="color:${color}"` : '';
-    return `<div class="fi-drop">
-      <span class="fi-drop-icon">${icon}</span>
-      <span class="fi-drop-lbl"${st}>${label}</span>
-      <span class="fi-drop-val"${st}>${valHtml}</span>
-    </div>`;
-  }
   const shardPct = (FARM_SHARD_CHANCE * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%';
-  const advPct = (FARM_ADV_SKILL_BOOK_CHANCE * 100).toPrecision(2) + '%';
   return `
     ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
     ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
     ${_dropRow('💎', t('farmShardChanceLbl'), shardPct, '#c9a24b')}
-    ${_dropRow('📖', t('farmAdvBookChanceLbl'), advPct, '#f5c542')}
   `;
+}
+
+// One shared roll picks a single random book out of the pool (see
+// _rollFarmZoneLoot, server/index.js) — the drop itself is NOT per-book
+// independent. This just breaks that one shared chance down per book (equal
+// share of the pool) so players can see which class+skill book they're
+// actually after, instead of one opaque merged line.
+const _FARM_ADV_BOOK_CLASS_COLOR = { lev: '#9aa3ab', deathknight: '#a58fc4', ranger: '#8fbf5a', mage: '#66aaff', warlock: '#c47a92' };
+function _farmAdvBooksHtml() {
+  const pool = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.advSkillKey);
+  if (!pool.length) return '';
+  const perBookPct = (FARM_ADV_SKILL_BOOK_CHANCE / pool.length * 100).toPrecision(2) + '%';
+  const rows = pool.map(b => _dropRow('📖', b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542')).join('');
+  return `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:#f5c542"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl">${t('farmAdvBooksHdr')}</span>
+          <div class="mon-name-row"><span class="mon-name">${t('farmAdvBooksSub')}</span></div>
+        </div>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div class="mon-body">${rows}</div>
+    </div>`;
 }
 
 function _farmZoneMonsterListHtml() {
@@ -1190,7 +1214,7 @@ function _farmZoneMonsterListHtml() {
       </div>
       <div class="mon-body">${_farmDropBodyHtml(e)}</div>
     </div>`).join('');
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}`;
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}${_farmAdvBooksHtml()}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
