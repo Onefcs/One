@@ -293,9 +293,11 @@ function _rollMobLoot(inv, eid, rlvl) {
 // just an independent FARM_SHARD_CHANCE roll per shard kind (same per-kind-
 // independent shape as the normal shard roll in _rollMobLoot above, just
 // flat and much higher, since farming shards is this zone's whole point),
-// plus one flat roll for a random advanced-skill book (FARM_ADV_SKILL_BOOK_
-// CHANCE — see its own comment, shared/definitions.js). Both are the ONLY
-// ways to get an advanced-skill book at all; it never drops anywhere else.
+// plus an independent FARM_ADV_SKILL_BOOK_CHANCE roll for EACH of the 20
+// advanced-skill books (one per class+skill, same per-kind-independent shape
+// as the shard loop above — a kill can drop several different books at
+// once, or none). Both are the ONLY ways to get an advanced-skill book at
+// all; it never drops anywhere else.
 function _rollFarmZoneLoot(inv) {
   const granted = [];
   function addMat(id, qty) {
@@ -305,9 +307,8 @@ function _rollFarmZoneLoot(inv) {
   for (const sh of UNIQUE_SHARDS) {
     if (Math.random() < FARM_SHARD_CHANCE) addMat(sh.id, 1);
   }
-  if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) {
-    const pool = CRAFT_MATS.filter(m => m.advSkillKey);
-    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)].id, 1);
+  for (const book of CRAFT_MATS) {
+    if (book.advSkillKey && Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) addMat(book.id, 1);
   }
   return granted;
 }
