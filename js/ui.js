@@ -523,7 +523,7 @@ function _skillBookDef(cls, key) {
 // definitions.js). One-time unlock (ADV_SKILL_STUDY_COST), then a free
 // toggle (toggleAdvSkill) between base/advanced for that slot — see
 // _activeSkillDef/useSkill, js/player.js.
-const ADV_SKILL_STUDY_COST = 1;
+const ADV_SKILL_STUDY_COST = 5;
 function _advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
 function _advSkillBookDef(cls, key) {
   return CRAFT_MATS.find(m => m.id === _advSkillBookId(cls, key));
