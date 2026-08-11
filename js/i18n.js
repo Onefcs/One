@@ -735,6 +735,12 @@ Object.assign(I18N_UI, {
 
   guildWarLbl: { ru: '🏰 Война гильдий', en: '🏰 Guild War', uk: '🏰 Війна гільдій', es: '🏰 Guerra de Clanes', tr: '🏰 Klan Savaşı', pt: '🏰 Guerra de Clãs' },
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
+  // Map panel's monster reference list, Фарм-зона variant — see
+  // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.
+  farmBestiaryHint: { ru: 'Уровень варьируется 21-30 у каждого монстра отдельно — здесь показан средний.', en: 'Each monster rolls its own level 21-30 — shown here is the average.', uk: 'Рівень варіюється 21-30 в кожного монстра окремо — тут показано середній.', es: 'Cada monstruo tiene su propio nivel 21-30 — aquí se muestra el promedio.', tr: 'Her canavarın kendi seviyesi 21-30 arasında — burada ortalama gösteriliyor.', pt: 'Cada monstro sorteia seu próprio nível 21-30 — aqui é mostrada a média.' },
+  farmShardChanceLbl: { ru: 'Осколок (за вид, ×20 видов)', en: 'Shard (per kind, ×20 kinds)', uk: 'Осколок (за видом, ×20 видів)', es: 'Fragmento (por tipo, ×20 tipos)', tr: 'Parça (tür başına, ×20 tür)', pt: 'Fragmento (por tipo, ×20 tipos)' },
+  farmAdvBookChanceLbl: { ru: 'Книга продвинутого навыка', en: 'Advanced-skill book', uk: 'Книга просунутого навику', es: 'Libro de habilidad avanzada', tr: 'Gelişmiş yetenek kitabı', pt: 'Livro de habilidade avançada' },
+  farmLevelRangeLbl: { ru: 'Уровень 21-30', en: 'Level 21-30', uk: 'Рівень 21-30', es: 'Nivel 21-30', tr: 'Seviye 21-30', pt: 'Nível 21-30' },
 
   // ── "What's new" login modal (js/ui.js's openWhatsNewModal, shown once per
   // WHATS_NEW_VERSION via localStorage — see js/network.js's _finishOnlineStart) ──

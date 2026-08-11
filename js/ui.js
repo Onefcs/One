@@ -1079,6 +1079,11 @@ function _floorEnemyPool(n, localLvl) {
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
+  // Фарм-зона isn't part of the arm/level system this list otherwise walks —
+  // showing the regular 1-78 bestiary while standing inside it would name
+  // monsters nobody here actually is. Swap to its own species list instead.
+  const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
+  if (_b && _b.zoneLabel === 'farmZoneLbl') { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
   let html = '';
   for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
     const armIdx = armIndexForLevel(lvl);
@@ -1118,6 +1123,74 @@ function _liveEnemy(base, lvl, localLvl, isBoss, maxLocalLvl) {
     spd: base.spd * spdMult,
     xp: xpAtLevel(lvl), gold: goldAtLevel(lvl),
   };
+}
+
+// ── Фарм-зона reference list ─────────────────────────────────────────────
+// Every FARM_SPECIES entry rolls its OWN level 21-30 independently at spawn
+// (server/game/dungeon.js) — there is no single "level" for this zone the
+// way a normal room has one. This snapshots each species at the midpoint
+// (FARM_LVL_MIN..FARM_LVL_MAX average) purely for a representative stat
+// line; farmBestiaryHint says as much in the panel itself.
+function _liveFarmEnemy(base) {
+  const lvl = Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2);
+  const stats = monsterStatsAtLevel(lvl, base.eType);
+  // Named/colored the same way dungeon.js's actual spawn does (localLvl
+  // relative to ARM_OFFSETS[1], arm 2's own rank scale) — see its comment
+  // for why: a level-27 zombie here should look identical to one anywhere
+  // else in the open world.
+  const localLvl = lvl - ARM_OFFSETS[1];
+  const maxLocalLvl = roomsInArm(2) - 1;
+  return {
+    ...base, isBoss: false,
+    name: monsterNameAtLevel(base.name, localLvl, false, base.fem, maxLocalLvl),
+    color: monsterColorAtLevel(base.color, base.endColor, localLvl, false, maxLocalLvl),
+    hp: Math.floor(stats.hp * 0.5), atk: Math.floor(stats.atk * 0.5), def: stats.def,
+    xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
+  };
+}
+
+// Drop breakdown shared by every Фарм-зона species — the zone skips the
+// normal loot table entirely (no recipes/gear/keys/stones/regular skill
+// books, no GRAM/Liberty — see _rollFarmZoneLoot, server/index.js), so this
+// is deliberately NOT _monsterDropBodyHtml: that function's rows would all
+// be either wrong (recipe/gear chances that never actually roll here) or
+// misleadingly absent (no hint that shards/adv books exist at all).
+function _farmDropBodyHtml(e) {
+  function _dropRow(icon, label, valHtml, color) {
+    const st = color ? ` style="color:${color}"` : '';
+    return `<div class="fi-drop">
+      <span class="fi-drop-icon">${icon}</span>
+      <span class="fi-drop-lbl"${st}>${label}</span>
+      <span class="fi-drop-val"${st}>${valHtml}</span>
+    </div>`;
+  }
+  const shardPct = (FARM_SHARD_CHANCE * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%';
+  const advPct = (FARM_ADV_SKILL_BOOK_CHANCE * 100).toPrecision(2) + '%';
+  return `
+    ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
+    ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
+    ${_dropRow('💎', t('farmShardChanceLbl'), shardPct, '#c9a24b')}
+    ${_dropRow('📖', t('farmAdvBookChanceLbl'), advPct, '#f5c542')}
+  `;
+}
+
+function _farmZoneMonsterListHtml() {
+  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  const species = (typeof FARM_SPECIES !== 'undefined' ? FARM_SPECIES : [])
+    .map(eid => eMap.get(eid)).filter(Boolean).map(_liveFarmEnemy);
+  const items = species.map(e => `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:${e.color}"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl">${t('farmLevelRangeLbl')}</span>
+          <div class="mon-name-row"><span class="mon-name">${e.name}</span></div>
+        </div>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div class="mon-body">${_farmDropBodyHtml(e)}</div>
+    </div>`).join('');
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {

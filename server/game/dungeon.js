@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -188,20 +188,15 @@ const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 // independently, so every room comes out mixed — different kinds and
 // different levels standing next to each other, not one uniform pack the
 // way a normal room is.
+// FARM_LVL_MIN/MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT and
+// FARM_SPECIES now live in shared/definitions.js (imported above) — the
+// client needs them too, for its own Фарм-зона reference list (js/ui.js).
+// Only this zone's tile geometry stays server-only, here.
 const FARM_ROOM = 16;
 const FARM_GAP = 8;
 const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
 const FARM_X0 = ARENA_X0;
 const FARM_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
-const FARM_MOBS_PER_ROOM = 20;
-const FARM_LVL_MIN = 21;
-const FARM_LVL_MAX = 30;
-const FARM_ENTRY_LEVEL = 20;
-const FARM_XP_MULT = 3; // 3x normal XP — the zone's own reward, on top of the shard chance
-// Both archetypes of every arm-2 species — 21-30 sits inside arm 2's own
-// 21-40 range (ARM_OFFSETS[1] = 20), so these are the species already tuned
-// for exactly this level band.
-const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'lizardman_warrior', 'orc_guard', 'orc_warrior'];
 
 const ZONES_Y0 = FARM_Y0 + FARM_SIZE + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);

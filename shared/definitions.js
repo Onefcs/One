@@ -922,6 +922,21 @@ const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can 
 // is the zone's whole point.
 const FARM_SHARD_CHANCE = 0.001;
 
+// Фарм-зона content constants — kept here (not server/game/dungeon.js, which
+// only holds its tile geometry) because the client needs them too, to build
+// its own reference list of what's actually in the zone (see
+// _liveFarmEnemy/_farmZoneMonsterListHtml, js/ui.js) the same way
+// ARM_OFFSETS/FLOOR_ENEMIES already serve the regular bestiary.
+const FARM_LVL_MIN = 21;
+const FARM_LVL_MAX = 30;
+const FARM_MOBS_PER_ROOM = 20;
+const FARM_ENTRY_LEVEL = 20;
+const FARM_XP_MULT = 3; // 3x normal XP — the zone's own reward, on top of the shard chance
+// Both archetypes of every arm-2 species — 21-30 sits inside arm 2's own
+// 21-40 range (ARM_OFFSETS[1] = 20), so these are the species already tuned
+// for exactly this level band.
+const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'lizardman_warrior', 'orc_guard', 'orc_warrior'];
+
 // Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat
 // roll per kill, same "roll once, pick a random book from the pool" shape
 // _rollMobLoot's own skillKey-book roll already uses — just 100x rarer, and
@@ -1485,6 +1500,7 @@ if (typeof module !== 'undefined') module.exports = {
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
+  FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
