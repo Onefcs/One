@@ -1183,7 +1183,13 @@ function _farmAdvBooksHtml() {
   const pool = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.advSkillKey);
   if (!pool.length) return '';
   const perBookPct = (FARM_ADV_SKILL_BOOK_CHANCE / pool.length * 100).toPrecision(2) + '%';
-  const rows = pool.map(b => _dropRow('📖', b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542')).join('');
+  const rows = pool.map(b => {
+    const def = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass] || []).find(s => s.key === b.advSkillKey);
+    const icon = def && def.img
+      ? `<img src="${def.img}" style="width:20px;height:20px;border-radius:5px;image-rendering:pixelated">`
+      : '📖';
+    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542');
+  }).join('');
   return `
     <div class="mon-item">
       <div class="mon-hdr" onclick="_toggleMonster(this)">
