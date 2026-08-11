@@ -7424,8 +7424,10 @@ io.on('connection', socket => {
       }
 
       const _arm = armIndexForLevel(result.rlvl);
-      const nexumDrop  = Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0) ? 1 : 0;
-      const gramDrop   = Math.random() < GRAM_DROP_CHANCE ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
+      // Фарм-зона already skips the whole normal loot table (see farmZone in
+      // _grantKillLoot) — Liberty/GRAM are the same "no drop but shards" deal.
+      const nexumDrop  = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
+      const gramDrop   = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
@@ -7550,8 +7552,8 @@ io.on('connection', socket => {
         });
       }
       const _arm2 = armIndexForLevel(result.rlvl);
-      const nexumDrop2 = Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0) ? 1 : 0;
-      const gramDrop2  = Math.random() < GRAM_DROP_CHANCE ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
+      const nexumDrop2 = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
+      const gramDrop2  = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
