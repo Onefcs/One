@@ -459,7 +459,8 @@ function update(dt, realDt) {
           if (typeof madnessTimer !== 'undefined' && madnessTimer > 0 && player.type === 'deathknight') {
             const _te = serverEnemiesMap.get(pa.id);
             if (_te) {
-              spawnAOE(_te.x, _te.y, 90);
+              spawnAOE(_te.x, _te.y, 90, 'bloodwave', '#9c2a3a', '#d2495a');
+              if (typeof netSpawnAoe === 'function') netSpawnAoe(_te.x, _te.y, 90, 'bloodwave', '#9c2a3a', '#d2495a');
               serverEnemies.forEach(e => {
                 if ((e.hp || 0) <= 0 || e.id === pa.id) return;
                 if (dist(e.x, e.y, _te.x, _te.y) < 90 && hasLOS(_te.x, _te.y, e.x, e.y)) netAttack(e.id);

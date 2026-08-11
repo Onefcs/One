@@ -672,8 +672,8 @@ function useSkill(idx) {
         dmgNum(player.x, player.y - 40, '💰 Жадность!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 10);
       } else { // Смерч клинков — AOE 110
-        spawnAOE(player.x, player.y, 110);
-        _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
+        spawnAOE(player.x, player.y, 110, 'fissure', '#9c2a3a', '#5a3a7a');
+        _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110, 'fissure', '#9c2a3a', '#5a3a7a');
         _pvpSkillAOE(110, _skillDmgMult('W'));
       }
     } else if (sk.key === 'E') {
@@ -721,8 +721,8 @@ function useSkill(idx) {
   } else if (player.type === 'ranger') {
     if (sk.key === 'Q') {
       if (_advActive('Q')) { // Град стрел — AOE ×3, radius 220
-        spawnAOE(player.x, player.y, 220);
-        _skillAOEMult(220, 3 * _skillDmgMult('Q')); netSpawnAoe(player.x, player.y, 220);
+        spawnAOE(player.x, player.y, 220, 'pulse', '#8fbf5a');
+        _skillAOEMult(220, 3 * _skillDmgMult('Q')); netSpawnAoe(player.x, player.y, 220, 'pulse', '#8fbf5a');
         _pvpSkillAOE(220, 3 * _skillDmgMult('Q'));
         dmgNum(player.x, player.y - 40, '🏹 Град стрел!', '#f5c542');
       } else { // Multi-Shot — 3 arrows fan
@@ -823,8 +823,8 @@ function useSkill(idx) {
       const _advW = _advActive('W');
       const r = _advW ? 220 : 130;
       const dmgMult = (_advW ? 3 : 1) * _skillDmgMult('W'); // Разряд ×3 / Ледяная нова ×1
-      spawnAOE(player.x, player.y, r);
-      _skillAOEMult(r, dmgMult); netSpawnAoe(player.x, player.y, r);
+      spawnAOE(player.x, player.y, r, 'frost', '#66ccff');
+      _skillAOEMult(r, dmgMult); netSpawnAoe(player.x, player.y, r, 'frost', '#66ccff');
       const slowIds = [];
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
@@ -837,8 +837,8 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, _advW ? '#f5c542' : '#8ef', 12);
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Вспышка — AOE ×2 damage, radius 220 + the same +80% DEF 3s (+1s per level)
-        spawnAOE(player.x, player.y, 220);
-        _skillAOEMult(220, 2 * _skillDmgMult('E')); netSpawnAoe(player.x, player.y, 220);
+        spawnAOE(player.x, player.y, 220, 'flash', '#c9a3ff');
+        _skillAOEMult(220, 2 * _skillDmgMult('E')); netSpawnAoe(player.x, player.y, 220, 'flash', '#c9a3ff');
         _pvpSkillAOE(220, 2 * _skillDmgMult('E'));
         barrierTimer = 3 + _skillBuffSec('E');
         recompute();
@@ -955,8 +955,8 @@ function useSkill(idx) {
       // advanced ×2 damage at radius 220.
       const _advW4 = _advActive('W');
       const r2 = _advW4 ? 220 : 110;
-      spawnAOE(player.x, player.y, r2);
-      _skillAOEMult(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W')); netSpawnAoe(player.x, player.y, r2);
+      spawnAOE(player.x, player.y, r2, 'shockwave', '#ccccdd');
+      _skillAOEMult(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W')); netSpawnAoe(player.x, player.y, r2, 'shockwave', '#ccccdd');
       _pvpSkillAOE(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W'));
     } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
       // level) either way; advanced additionally gives +10% ATK for the same duration.

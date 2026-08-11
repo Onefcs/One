@@ -9,7 +9,7 @@ const compression = require('compression');
 const { Server } = require('socket.io');
 // Shared with the client so both sides agree on what a facing index means —
 // see the 'mv' handler below.
-const { NC_FACING } = require('../shared/netcodec');
+const { NC_FACING, NC_AOE_STYLES } = require('../shared/netcodec');
 const mongoose = require('mongoose');
 const PlayerModel       = require('./models/Player');
 const ClanModel         = require('./models/Clan');
@@ -8062,6 +8062,9 @@ io.on('connection', socket => {
       x: _num(data.x, -1e5, 1e5, 0),
       y: _num(data.y, -1e5, 1e5, 0),
       r: _num(data.r, 1, 400, 80),
+      style: NC_AOE_STYLES.includes(data.style) ? data.style : 'classic',
+      color: _color(data.color),
+      color2: _color(data.color2 || data.color),
     });
   });
 

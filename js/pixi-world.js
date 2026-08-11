@@ -346,17 +346,173 @@ function _updateLights(ts) {
 }
 
 // ── AOE rings ─────────────────────────────────────────────
+// Six named styles (spawnAOE's `style` param, js/particles.js) drawn here,
+// picked per skill at its call site (js/player.js/game.js) — see each
+// draw function's own comment for which cast it's tuned for. `p` is 0..1
+// progress through the ring's life (0 = just cast, 1 = about to despawn);
+// every style derives its own fade/expand curve from it, matching the
+// preview build the visual direction was picked from.
+function _easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+function _easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+function _hexToNum(s, fallback) {
+  const n = parseInt((s || '').replace('#', ''), 16);
+  return Number.isFinite(n) ? n : (fallback != null ? fallback : 0xffffff);
+}
+
+// Original plain ring, unchanged — default when no style is passed at all.
+function _drawAoeClassic(g, x, y, R, p, color) {
+  const a = 1 - p;
+  g.beginFill(color, a * 0.20);
+  g.drawCircle(x, y, R);
+  g.endFill();
+  g.lineStyle(2 / ZOOM, color, a * 0.85);
+  g.drawCircle(x, y, R);
+  g.lineStyle(0);
+}
+
+// General-purpose expanding ring with a thin trailing echo — Lev's Вихрь
+// клинка/Вихрь.
+function _drawAoeShockwave(g, x, y, R, p, color) {
+  const r = R * _easeOutCubic(p);
+  const a = 1 - p;
+  g.beginFill(color, a * 0.16);
+  g.drawCircle(x, y, r);
+  g.endFill();
+  g.lineStyle(Math.max(1.5, 3 * (1 - p * 0.5)) / ZOOM, color, a);
+  g.drawCircle(x, y, r);
+  g.lineStyle(1 / ZOOM, color, a * 0.5);
+  g.drawCircle(x, y, Math.max(0, r - 8));
+  g.lineStyle(0);
+}
+
+// Two staggered rings, reads as a volley rippling outward — Ranger's Град
+// стрел.
+function _drawAoePulse(g, x, y, R, p, color) {
+  const ring = (delay, widthMul, alphaMul) => {
+    const pp = Math.min(1, Math.max(0, (p - delay) / (1 - delay)));
+    if (pp <= 0) return;
+    const r = R * _easeOutQuad(pp);
+    const a = (1 - pp) * alphaMul;
+    g.lineStyle(2.4 * widthMul / ZOOM, color, a);
+    g.drawCircle(x, y, r);
+  };
+  ring(0, 1.2, 1);
+  ring(0.16, 0.7, 0.65);
+  g.lineStyle(0);
+}
+
+// Bright core bloom (approximated with stacked falling-alpha circles, same
+// trick the torch glow above uses — PIXI.Graphics has no radial-gradient
+// fill) plus an expanding ring — Mage's Вспышка.
+function _drawAoeFlash(g, x, y, R, p, color) {
+  const bp = Math.min(1, p / 0.3);
+  if (bp < 1) {
+    const ba = 1 - bp;
+    g.beginFill(0xffffff, ba * 0.55); g.drawCircle(x, y, R * 0.16); g.endFill();
+    g.beginFill(0xffffff, ba * 0.30); g.drawCircle(x, y, R * 0.28); g.endFill();
+    g.beginFill(color,    ba * 0.35); g.drawCircle(x, y, R * 0.42); g.endFill();
+    g.beginFill(color,    ba * 0.16); g.drawCircle(x, y, R * 0.55); g.endFill();
+  }
+  const r = R * _easeOutCubic(p);
+  const a = 1 - p;
+  g.lineStyle(2.5 / ZOOM, color, a);
+  g.drawCircle(x, y, r);
+  g.lineStyle(0);
+}
+
+// Ring plus small crystal shards flung outward along its edge — Mage's
+// Ледяная нова/Разряд.
+function _drawAoeFrost(g, x, y, R, p, color, rand) {
+  const r = R * _easeOutCubic(p);
+  const a = 1 - p;
+  g.lineStyle(2 / ZOOM, color, a);
+  g.drawCircle(x, y, r);
+  g.beginFill(color, a * 0.12);
+  g.drawCircle(x, y, r);
+  g.endFill();
+  g.lineStyle(0);
+  const n = 10;
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + rand[i] * 0.4;
+    const dist = r * (0.55 + rand[i + n] * 0.5);
+    const sx = x + Math.cos(ang) * dist, sy = y + Math.sin(ang) * dist;
+    const len = 10 * (1 - p * 0.4);
+    const dx = Math.cos(ang), dy = Math.sin(ang), px = -dy, py = dx;
+    const tipx = sx + dx * len, tipy = sy + dy * len;
+    const b1x = sx - dx * len * 0.35 + px * len * 0.28, b1y = sy - dy * len * 0.35 + py * len * 0.28;
+    const b2x = sx - dx * len * 0.35 - px * len * 0.28, b2y = sy - dy * len * 0.35 - py * len * 0.28;
+    g.beginFill(0xeaf6ff, a);
+    g.moveTo(tipx, tipy); g.lineTo(b1x, b1y); g.lineTo(b2x, b2y); g.closePath();
+    g.endFill();
+  }
+}
+
+// Jagged cracks racing outward from the impact point over a pulsing dark
+// glow — Deathknight's Вихрь клинка/Безумие splash.
+function _drawAoeFissure(g, x, y, R, p, color, color2, rand) {
+  const pulseA = Math.sin(p * Math.PI) * 0.35;
+  g.beginFill(color2, pulseA * 0.20); g.drawCircle(x, y, R); g.endFill();
+  g.beginFill(color2, pulseA * 0.30); g.drawCircle(x, y, R * 0.7); g.endFill();
+  g.beginFill(color,  pulseA * 0.30); g.drawCircle(x, y, R * 0.4); g.endFill();
+
+  const appear = Math.min(1, p / 0.25);
+  const fade = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
+  const crackA = Math.max(0, Math.min(appear, fade));
+  const n = 8, segs = 5;
+  g.lineStyle(2.2 * (1 - p * 0.3) / ZOOM, color, crackA);
+  for (let i = 0; i < n; i++) {
+    const baseAng = (i / n) * Math.PI * 2 + rand[i] * 0.5;
+    let cx = x, cy = y;
+    g.moveTo(cx, cy);
+    for (let s = 1; s <= segs; s++) {
+      const t = s / segs;
+      const rr = R * _easeOutCubic(Math.min(1, p * 1.4)) * t;
+      const jitter = (rand[i * segs + s] - 0.5) * R * 0.22 * (1 - t * 0.5);
+      const ang = baseAng + jitter / Math.max(rr, 1);
+      cx = x + Math.cos(ang) * rr;
+      cy = y + Math.sin(ang) * rr;
+      g.lineTo(cx, cy);
+    }
+  }
+  g.lineStyle(1.5 / ZOOM, color2, (1 - p) * 0.7);
+  g.drawCircle(x, y, R * _easeOutCubic(p));
+  g.lineStyle(0);
+}
+
+// Thick ring with a turbulent, serrated edge instead of a clean circle —
+// Deathknight's own "blade storm" flavor, kept in reserve alongside fissure.
+function _drawAoeBloodwave(g, x, y, R, p, color, color2) {
+  const r = R * _easeOutCubic(p);
+  const a = 1 - p;
+  const steps = 40;
+  g.lineStyle(3.2 / ZOOM, color2, a);
+  g.beginFill(color, a * 0.18);
+  for (let i = 0; i <= steps; i++) {
+    const ang = (i / steps) * Math.PI * 2;
+    const wobble = Math.sin(ang * 7 + p * 10) * 4 + Math.sin(ang * 3 - p * 6) * 6;
+    const rr = r + wobble * (1 - p * 0.4);
+    const px = x + Math.cos(ang) * rr, py = y + Math.sin(ang) * rr;
+    if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+  }
+  g.closePath();
+  g.endFill();
+  g.lineStyle(0);
+}
 
 function _updateAoeRings() {
   _aoeGfx.clear();
   aoeRings.forEach(ring => {
-    const a = ring.life / ring.maxLife;
-    _aoeGfx.beginFill(0x44aaff, a * 0.20);
-    _aoeGfx.drawCircle(ring.x, ring.y, ring.r);
-    _aoeGfx.endFill();
-    _aoeGfx.lineStyle(2 / ZOOM, 0x44aaff, a * 0.85);
-    _aoeGfx.drawCircle(ring.x, ring.y, ring.r);
-    _aoeGfx.lineStyle(0);
+    const p = 1 - ring.life / ring.maxLife;
+    const color = _hexToNum(ring.color, 0x44aaff);
+    switch (ring.style) {
+      case 'shockwave': _drawAoeShockwave(_aoeGfx, ring.x, ring.y, ring.r, p, color); break;
+      case 'pulse':     _drawAoePulse(_aoeGfx, ring.x, ring.y, ring.r, p, color); break;
+      case 'flash':     _drawAoeFlash(_aoeGfx, ring.x, ring.y, ring.r, p, color); break;
+      case 'frost':     _drawAoeFrost(_aoeGfx, ring.x, ring.y, ring.r, p, color, ring.rand); break;
+      case 'fissure':   _drawAoeFissure(_aoeGfx, ring.x, ring.y, ring.r, p, color, _hexToNum(ring.color2, color), ring.rand); break;
+      case 'bloodwave': _drawAoeBloodwave(_aoeGfx, ring.x, ring.y, ring.r, p, color, _hexToNum(ring.color2, color)); break;
+      default:          _drawAoeClassic(_aoeGfx, ring.x, ring.y, ring.r, p, color);
+    }
   });
 }
 

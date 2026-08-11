@@ -45,7 +45,11 @@
 //   [projectiles] u16 count, per entry (19 bytes):
 //     u32 x*2, u32 y*2, i16 vx, i16 vy, u8 size, u8 life*20,
 //     u8 r, u8 g, u8 b, u8 flags (bit0 = arrow), u8 age (10ms units)
-//   [aoe rings]   u8 count, per entry (10 bytes): u32 x*2, u32 y*2, u16 radius
+//   [aoe rings]   u8 count, per entry (17 bytes): u32 x*2, u32 y*2, u16 radius,
+//                 u8 style (index into NC_AOE_STYLES), u8 r,g,b, u8 r2,g2,b2
+//                 (color/color2 — unused by 'classic' and most styles, sent
+//                 anyway so every entry stays fixed-size; see spawnAOE,
+//                 js/particles.js, and _updateAoeRings, js/pixi-world.js)
 //   [race lanes]  u8 count, per entry (3 bytes): u16 seq (player handle), u8 lane
 //   str = u8 byteLength + UTF-8 bytes
 //
@@ -166,6 +170,12 @@ function _ncHex(r, g, b) {
   return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
 }
 
+// AOE ring visual style, by wire index — see spawnAOE (js/particles.js) for
+// what each one actually draws. Index 0 ('classic') is also the fallback for
+// any value the sender didn't recognize, so an unmatched style never crashes
+// the decoder, just draws the original plain ring.
+const NC_AOE_STYLES = ['classic', 'shockwave', 'pulse', 'flash', 'frost', 'fissure', 'bloodwave'];
+
 function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
   let o = 0;
   _ncEnsure(o, 16);
@@ -272,13 +282,19 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
   }
 
   const na = aoes ? Math.min(aoes.length, 255) : 0;
-  _ncEnsure(o, 1 + na * 10);
+  _ncEnsure(o, 1 + na * 17);
   _ncU8[o++] = na;
   for (let i = 0; i < na; i++) {
     const a = aoes[i];
     _ncDV.setUint32(o, _ncQPos(a.x), true); o += 4;
     _ncDV.setUint32(o, _ncQPos(a.y), true); o += 4;
     _ncDV.setUint16(o, Math.max(0, Math.min(65535, Math.round(a.r))), true); o += 2;
+    const styleIdx = Math.max(0, NC_AOE_STYLES.indexOf(a.style));
+    _ncU8[o++] = styleIdx;
+    const rgb = _ncRgb(a.color);
+    _ncU8[o++] = rgb[0]; _ncU8[o++] = rgb[1]; _ncU8[o++] = rgb[2];
+    const rgb2 = _ncRgb(a.color2 || a.color);
+    _ncU8[o++] = rgb2[0]; _ncU8[o++] = rgb2[1]; _ncU8[o++] = rgb2[2];
   }
 
   // Race lanes — see the format note at the top. One entry per player whose
@@ -421,11 +437,14 @@ function decodeGameState(data) {
     }
     if (o < dv.byteLength) {
       const an = u8[o++];
-      for (let i = 0; i < an && o + 10 <= dv.byteLength; i++) {
+      for (let i = 0; i < an && o + 17 <= dv.byteLength; i++) {
         const x = dv.getUint32(o, true) / 2; o += 4;
         const y = dv.getUint32(o, true) / 2; o += 4;
         const r = dv.getUint16(o, true); o += 2;
-        aoes.push({ x, y, r });
+        const style = NC_AOE_STYLES[u8[o++]] || 'classic';
+        const cr = u8[o++], cg = u8[o++], cb = u8[o++];
+        const cr2 = u8[o++], cg2 = u8[o++], cb2 = u8[o++];
+        aoes.push({ x, y, r, style, color: _ncHex(cr, cg, cb), color2: _ncHex(cr2, cg2, cb2) });
       }
     }
   }
@@ -481,4 +500,4 @@ function unpackGrid(packed, w, h) {
 }
 
 if (typeof module !== 'undefined')
-  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, packGrid, unpackGrid, NC_FACING };
+  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, packGrid, unpackGrid, NC_FACING, NC_AOE_STYLES };

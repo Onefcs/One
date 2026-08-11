@@ -670,7 +670,10 @@ function netConnect(onReady) {
     const _sp = _st.projs;
     if (_sp && _sp.length) for (let i = 0; i < _sp.length; i++) otherProjs.push(_sp[i]);
     const _sa = _st.aoes;
-    if (_sa && _sa.length) for (let i = 0; i < _sa.length; i++) spawnAOE(_sa[i].x, _sa[i].y, _sa[i].r || 80);
+    if (_sa && _sa.length) for (let i = 0; i < _sa.length; i++) {
+      const sa = _sa[i];
+      spawnAOE(sa.x, sa.y, sa.r || 80, sa.style, sa.color, sa.color2);
+    }
 
     _profSocketEvts++;
     _profSocketMs += performance.now() - _gs0;
@@ -2056,8 +2059,8 @@ function netSpawnProj(proj) {
   if (socket?.connected) socket.emit('spawnProj', proj);
 }
 
-function netSpawnAoe(x, y, r) {
-  if (socket?.connected) socket.emit('spawnAoe', { x, y, r });
+function netSpawnAoe(x, y, r, style, color, color2) {
+  if (socket?.connected) socket.emit('spawnAoe', { x, y, r, style, color, color2 });
 }
 
 // ── GRAM wallet ───────────────────────────────────────────────────────────────
