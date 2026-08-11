@@ -1917,6 +1917,14 @@ function _finishOnlineStart() {
   setTab(0);
   // Immediately save so a page refresh always finds the character type
   _emitSaveProgress();
+  // "What's new" announcement — once per WHATS_NEW_VERSION (js/ui.js), only
+  // on a genuine first join like everything else in this function, so a
+  // reconnect never re-shows it mid-session.
+  try {
+    if (typeof openWhatsNewModal === 'function' && localStorage.getItem('whatsNewSeen') !== WHATS_NEW_VERSION) {
+      openWhatsNewModal();
+    }
+  } catch (_) {}
 }
 
 // ── Move throttle ─────────────────────────────────────────────

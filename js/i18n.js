@@ -722,6 +722,29 @@ Object.assign(I18N_UI, {
 
   guildWarLbl: { ru: '🏰 Война гильдий', en: '🏰 Guild War', uk: '🏰 Війна гільдій', es: '🏰 Guerra de Clanes', tr: '🏰 Klan Savaşı', pt: '🏰 Guerra de Clãs' },
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
+
+  // ── "What's new" login modal (js/ui.js's openWhatsNewModal, shown once per
+  // WHATS_NEW_VERSION via localStorage — see js/network.js's _finishOnlineStart) ──
+  whatsNewTitle: { ru: '🎉 Обновление!', en: '🎉 Update!', uk: '🎉 Оновлення!', es: '🎉 ¡Actualización!', tr: '🎉 Güncelleme!', pt: '🎉 Atualização!' },
+  whatsNewFarmZoneTitle: { ru: '🌾 Новая локация: Фарм зона', en: '🌾 New location: Farm Zone', uk: '🌾 Нова локація: Ферм-зона', es: '🌾 Nueva zona: Zona de Farmeo', tr: '🌾 Yeni bölge: Farm Bölgesi', pt: '🌾 Nova zona: Zona de Farm' },
+  whatsNewFarmZoneDesc: {
+    ru: 'Квадратная зона из 4 комнат с монстрами 21-30 уровня вперемешку. Они не нападают первыми, но дают ×3 опыта и с шансом 0.1% роняют осколки уникального оружия (обычного лута с них нет). Портал — в зале, нужен 20 уровень.',
+    en: 'A square zone with 4 rooms, mixed level 21-30 monsters. They never attack first, but grant ×3 XP and have a 0.1% chance to drop unique-weapon shards (no normal loot). Portal is in the hall, requires level 20.',
+    uk: 'Квадратна зона з 4 кімнат з монстрами 21-30 рівня впереміш. Вони не нападають першими, але дають ×3 досвіду і з шансом 0.1% скидають осколки унікальної зброї (звичайного лута немає). Портал — у залі, потрібен 20 рівень.',
+    es: 'Una zona cuadrada con 4 salas y monstruos de nivel 21-30 mezclados. Nunca atacan primero, pero dan ×3 XP y tienen un 0.1% de probabilidad de soltar fragmentos de arma única (sin botín normal). El portal está en el salón, requiere nivel 20.',
+    tr: '4 odalı kare bir bölge, seviye 21-30 canavarlar karışık. Asla ilk saldırmazlar ama ×3 XP verirler ve %0.1 ihtimalle eşsiz silah parçası düşürürler (normal ganimet yok). Portal salonda, seviye 20 gerekir.',
+    pt: 'Uma zona quadrada com 4 salas, monstros de nível 21-30 misturados. Nunca atacam primeiro, mas dão ×3 XP e têm 0.1% de chance de soltar fragmentos de arma única (sem loot normal). O portal fica no salão, requer nível 20.',
+  },
+  whatsNewGuildWarTitle: { ru: '🏰 Война гильдий короче', en: '🏰 Guild War is shorter', uk: '🏰 Війна гільдій коротша', es: '🏰 Guerra de Clanes más corta', tr: '🏰 Klan Savaşı kısaldı', pt: '🏰 Guerra de Clãs mais curta' },
+  whatsNewGuildWarDesc: {
+    ru: 'Окно боя теперь с 22:00 до 22:15 по Москве вместо целого часа.',
+    en: 'The combat window is now 22:00-22:15 Moscow time instead of a full hour.',
+    uk: 'Вікно бою тепер з 22:00 до 22:15 за Москвою замість цілої години.',
+    es: 'La ventana de combate ahora es de 22:00 a 22:15 hora de Moscú en vez de una hora completa.',
+    tr: 'Savaş penceresi artık tam bir saat yerine Moskova saatiyle 22:00-22:15.',
+    pt: 'A janela de combate agora é das 22:00 às 22:15 horário de Moscou em vez de uma hora inteira.',
+  },
+  whatsNewCloseBtn: { ru: 'Понятно', en: 'Got it', uk: 'Зрозуміло', es: 'Entendido', tr: 'Anladım', pt: 'Entendi' },
   guildWarTab: { ru: 'Война гильдий', en: 'Guild War', uk: 'Війна гільдій', es: 'Guerra de Clanes', tr: 'Klan Savaşı', pt: 'Guerra de Clãs' },
   guildWarPhaseOpen:   { ru: 'Локация открыта', en: 'Zone is open', uk: 'Локація відкрита', es: 'Zona abierta', tr: 'Bölge açık', pt: 'Zona aberta' },
   guildWarPhaseClosed: { ru: 'До открытия локации', en: 'Zone opens in', uk: 'До відкриття локації', es: 'La zona abre en', tr: 'Bölge açılana kadar', pt: 'A zona abre em' },

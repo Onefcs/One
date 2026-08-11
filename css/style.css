@@ -2117,6 +2117,15 @@ canvas { display:block; width:100%; height:100%; }
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+/* ── "What's new" login modal — centered dialog, not a bottom sheet ────────── */
+.whatsnew-modal-overlay { align-items: center; z-index: 401; }
+.whatsnew-modal-sheet {
+  width: calc(100% - 32px); max-width: 420px; max-height: 78vh;
+  border-radius: 18px;
+  border-top: none;
+  border: 1px solid rgba(209,204,197,.1);
+}
+
 .market-pick-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

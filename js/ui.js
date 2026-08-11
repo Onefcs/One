@@ -5551,3 +5551,44 @@ function _gramMsg(text, type) {
   clearTimeout(_gramMsg._t);
   _gramMsg._t = setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
 }
+
+// ── "What's new" login modal ─────────────────────────────────────────────
+// Shown once per WHATS_NEW_VERSION (js/network.js's _finishOnlineStart calls
+// this on a genuine first join, gated on the localStorage flag below) — a
+// centered dialog rather than the market panel's bottom sheet, since this is
+// a one-shot announcement, not a repeated in-flow action. Reuses
+// .market-modal-overlay for the backdrop (blur + touch-action fix already
+// there) with .whatsnew-modal-sheet overriding it to a centered, full-radius
+// box instead of a bottom sheet — see css/style.css.
+const WHATS_NEW_VERSION = 'farmzone1';
+function openWhatsNewModal() {
+  const existing = document.getElementById('whatsnew-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay whatsnew-modal-overlay';
+  ov.id = 'whatsnew-ov';
+  ov.onclick = () => closeWhatsNewModal();
+  ov.innerHTML = `
+    <div class="market-modal-sheet whatsnew-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <div style="font-size:17px;font-weight:800;color:#90d653">${t('whatsNewTitle')}</div>
+        <button onclick="closeWhatsNewModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div style="padding:12px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:12px">
+        <div style="font-weight:700;color:#eec379;margin-bottom:6px">${t('whatsNewFarmZoneTitle')}</div>
+        <div style="font-size:12.5px;line-height:1.5;color:#c9bfae">${t('whatsNewFarmZoneDesc')}</div>
+      </div>
+      <div style="padding:12px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:16px">
+        <div style="font-weight:700;color:#eec379;margin-bottom:6px">${t('whatsNewGuildWarTitle')}</div>
+        <div style="font-size:12.5px;line-height:1.5;color:#c9bfae">${t('whatsNewGuildWarDesc')}</div>
+      </div>
+      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function closeWhatsNewModal() {
+  const ov = document.getElementById('whatsnew-ov');
+  if (ov) ov.remove();
+  try { localStorage.setItem('whatsNewSeen', WHATS_NEW_VERSION); } catch (_) {}
+}
