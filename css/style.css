@@ -2545,3 +2545,130 @@ canvas { display:block; width:100%; height:100%; }
   letter-spacing: 0.5px;
   text-shadow: 0 2px 6px rgba(0,0,0,.8);
 }
+
+/* ── Профессия panel — second-profession codex ──────────────────────────────
+   Same overlay geometry as the other HUD panels (rating/vip/events/season),
+   reached instead from the canvas-drawn button under Мир/ПК (drawProfession-
+   Button, js/ui.js) rather than a top-right DOM button. */
+#profession-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: radial-gradient(ellipse 640px 420px at 50% -6%, rgba(165,143,196,.08), transparent 60%), rgba(15,11,4,.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#profession-panel, #profession-panel * { touch-action: pan-y; pointer-events: auto; }
+
+.profp-body { padding: 14px 14px 26px; }
+
+.profp-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; margin-bottom: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cc) 14%, transparent), rgba(209,204,197,.03));
+  border: 1px solid color-mix(in srgb, var(--cc) 40%, rgba(209,204,197,.12));
+  border-radius: 14px;
+}
+.profp-banner-icon {
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: 12px;
+  background: rgba(9,7,4,.6);
+  border: 1px solid color-mix(in srgb, var(--cc) 55%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--cc) 35%, transparent);
+  display: flex; align-items: center; justify-content: center;
+}
+.profp-banner-cls { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--parchment); }
+.profp-banner-sub { font-size: 11.5px; color: #968a7a; margin-top: 2px; }
+
+.profp-cards { display: flex; flex-direction: column; gap: 10px; }
+.profp-card {
+  background: rgba(209,204,197,.03);
+  border: 1px solid rgba(209,204,197,.1);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+  position: relative;
+}
+.profp-card.learned {
+  border-color: color-mix(in srgb, var(--cc) 55%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cc) 8%, transparent), rgba(209,204,197,.03));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 18%, transparent), 0 4px 18px rgba(0,0,0,.35);
+}
+.profp-card-key {
+  position: absolute; top: 12px; right: 14px;
+  width: 20px; height: 20px; border-radius: 5px;
+  background: rgba(9,7,4,.7); border: 1px solid rgba(209,204,197,.15);
+  color: #b5a684; font-size: 10.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.profp-flow { display: flex; align-items: center; gap: 4px; padding-right: 26px; }
+.profp-node { flex: 1; min-width: 0; text-align: center; }
+.profp-node-icon {
+  width: 44px; height: 44px; margin: 0 auto 6px;
+  border-radius: 11px;
+  background: rgba(9,7,4,.55);
+  border: 1px solid rgba(209,204,197,.14);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.profp-card.learned .profp-node.adv .profp-node-icon {
+  border-color: color-mix(in srgb, var(--cc) 60%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--cc) 45%, transparent);
+}
+.profp-node-icon.dim { opacity: .38; filter: grayscale(.6); }
+.profp-node-lockbadge {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(9,7,4,.35); border-radius: 11px;
+}
+.profp-icon-img { width: 24px; height: 24px; image-rendering: pixelated; border-radius: 4px; }
+.profp-node-name { font-size: 11px; font-weight: 600; color: #c5bfb7; line-height: 1.25; min-height: 28px; display: flex; align-items: center; justify-content: center; }
+.profp-bar { height: 4px; border-radius: 2px; background: rgba(9,7,4,.6); overflow: hidden; margin-top: 2px; }
+.profp-bar-fill { height: 100%; background: linear-gradient(90deg, var(--gold-dim), var(--gold-hi)); border-radius: 2px; }
+
+.profp-connector { flex-shrink: 0; width: 30px; height: 44px; display: flex; align-items: center; justify-content: center; }
+.profp-fx { position: relative; width: 22px; height: 22px; display: block; }
+.profp-fx::before {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 100%; height: 2px;
+  background: color-mix(in srgb, var(--fx) 70%, transparent);
+  transform: translate(-50%, -50%);
+}
+.profp-fx::after { content: '▸'; position: absolute; right: -2px; top: 50%; transform: translateY(-50%); color: var(--fx); font-size: 11px; }
+.profp-fx-classic::before { opacity: .5; }
+.profp-fx-pulse::before { animation: profpPulseLine 1.6s ease-in-out infinite; }
+@keyframes profpPulseLine {
+  0%, 100% { opacity: .55; transform: translate(-50%, -50%) scaleX(.9); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scaleX(1.08); }
+}
+
+.profp-desc { font-size: 12px; color: #968a7a; line-height: 1.5; margin: 8px 0 10px; }
+
+.profp-lockrow { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: #8a8070; }
+.profp-learn-btn {
+  width: 100%; padding: 9px 0; border: none; border-radius: 10px;
+  background: linear-gradient(135deg, var(--cc), color-mix(in srgb, var(--cc) 70%, #2a1030));
+  color: #150f08; font-size: 13px; font-weight: 800; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.profp-learn-btn:active { filter: brightness(1.1); }
+
+.profp-toggle {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none;
+}
+.profp-toggle-opt { flex: 1; font-size: 11.5px; font-weight: 600; color: #746a5a; text-align: center; transition: color .15s; }
+.profp-toggle-opt.on { color: #d1ccc5; }
+.profp-toggle-opt.on[style*="--cc"] { color: var(--cc); }
+.profp-toggle-switch {
+  flex-shrink: 0; width: 40px; height: 22px; border-radius: 11px;
+  background: rgba(9,7,4,.7); border: 1px solid rgba(209,204,197,.18);
+  position: relative;
+}
+.profp-toggle-knob {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #c5bfb7; transition: left .16s ease, background .16s ease;
+}
+.profp-toggle-switch.adv { border-color: color-mix(in srgb, var(--cc) 60%, transparent); }
+.profp-toggle-switch.adv .profp-toggle-knob { left: 20px; background: var(--cc); box-shadow: 0 0 8px var(--cc); }
+
+.profp-hint { margin-top: 16px; font-size: 11px; color: #6b6152; text-align: center; line-height: 1.5; }

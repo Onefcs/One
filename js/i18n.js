@@ -564,6 +564,7 @@ Object.assign(I18N_UI, {
   minAbbrev: { ru: 'м', en: 'm', uk: 'хв', es: 'm', tr: 'dk', pt: 'm' },
   pvpOnLabel: { ru: 'ПК', en: 'PK', uk: 'ПК', es: 'JcJ', tr: 'PK', pt: 'JcJ' },
   pvpOffLabel: { ru: 'Мир', en: 'Peace', uk: 'Мир', es: 'Paz', tr: 'Barış', pt: 'Paz' },
+  professionBtnLbl: { ru: 'Проф', en: 'Prof', uk: 'Проф', es: 'Prof', tr: 'Mslk', pt: 'Prof' },
   partyInviteBtnLbl: { ru: 'Пати+', en: 'Party+', uk: 'Паті+', es: 'Grupo+', tr: 'Grup+', pt: 'Grupo+' },
   partyInfoBtnLbl: { ru: 'Инфо', en: 'Info', uk: 'Інфо', es: 'Info', tr: 'Bilgi', pt: 'Info' },
   partyLeaveBtnLbl: { ru: 'Выйти', en: 'Leave', uk: 'Вийти', es: 'Salir', tr: 'Ayrıl', pt: 'Sair' },
@@ -742,6 +743,15 @@ Object.assign(I18N_UI, {
   farmAdvBooksHdr: { ru: 'Книги допскиллов', en: 'Advanced-skill books', uk: 'Книги допнавичок', es: 'Libros de habilidad avanzada', tr: 'Gelişmiş yetenek kitapları', pt: 'Livros de habilidade avançada' },
   farmAdvBooksSub: { ru: 'Шанс на каждую книгу', en: 'Chance per book', uk: 'Шанс на кожну книгу', es: 'Probabilidad por libro', tr: 'Kitap başına şans', pt: 'Chance por livro' },
   farmLevelRangeLbl: { ru: 'Уровень 21-30', en: 'Level 21-30', uk: 'Рівень 21-30', es: 'Nivel 21-30', tr: 'Seviye 21-30', pt: 'Nível 21-30' },
+
+  // ── Профессия HUD panel (openProfessionPanel, js/ui.js) — second-profession
+  // codex reachable from the HUD button under Мир/ПК.
+  professionHdr: { ru: 'Профессия', en: 'Profession', uk: 'Професія', es: 'Profesión', tr: 'Meslek', pt: 'Profissão' },
+  profpBannerSub: { ru: 'Вторая грань каждого умения', en: 'A second edge to every skill', uk: 'Друга грань кожного вміння', es: 'Una segunda faceta de cada habilidad', tr: 'Her yeteneğin ikinci yüzü', pt: 'Uma segunda face de cada habilidade' },
+  profpLockedFmt: { ru: 'Прокачай навык книгами — {n}/10', en: 'Level the skill up with books — {n}/10', uk: 'Прокачай навичку книгами — {n}/10', es: 'Sube la habilidad con libros — {n}/10', tr: 'Kitaplarla yeteneği yükselt — {n}/10', pt: 'Suba a habilidade com livros — {n}/10' },
+  profpNeedBooksFmt: { ru: 'Книг найдено {have} из {need}', en: '{have} of {need} books found', uk: 'Книг знайдено {have} з {need}', es: '{have} de {need} libros encontrados', tr: '{have}/{need} kitap bulundu', pt: '{have} de {need} livros encontrados' },
+  profpLearnBtn: { ru: 'Изучить', en: 'Learn', uk: 'Вивчити', es: 'Aprender', tr: 'Öğren', pt: 'Aprender' },
+  profpFarmHint: { ru: '📖 Книги продвинутых навыков падают только в Фарм зоне (21-30 ур.)', en: '📖 Advanced-skill books drop only in the Farm Zone (lvl 21-30)', uk: '📖 Книги просунутих навичок падають лише у Ферм-зоні (21-30 рів.)', es: '📖 Los libros de habilidad avanzada solo caen en la Zona de Farmeo (niv. 21-30)', tr: '📖 Gelişmiş yetenek kitapları yalnızca Farm Bölgesi\'nde düşer (sv. 21-30)', pt: '📖 Livros de habilidade avançada só caem na Zona de Farm (nv. 21-30)' },
 
   // ── "What's new" login modal (js/ui.js's openWhatsNewModal, shown once per
   // WHATS_NEW_VERSION via localStorage — see js/network.js's _finishOnlineStart) ──

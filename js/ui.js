@@ -529,6 +529,19 @@ function _advSkillBookDef(cls, key) {
   return CRAFT_MATS.find(m => m.id === _advSkillBookId(cls, key));
 }
 
+// Drives the Профессия HUD button's glow (drawProfessionButton, below) —
+// true once at least one Q/W/E/R slot is maxed and its book is in hand but
+// not yet learned, same "something to claim" signal as other HUD badges.
+function _professionHasReady() {
+  if (!player) return false;
+  const skills = SKILL_DEF[player.type];
+  if (!skills) return false;
+  const sl = player.skillLevels || {};
+  const al = player.advSkillLearned || {};
+  return skills.some(sk => (sl[sk.key] || 0) >= 10 && !al[sk.key] &&
+    countMaterial(_advSkillBookId(player.type, sk.key)) >= ADV_SKILL_STUDY_COST);
+}
+
 function updateSkillsUI() {
   if (!player) return;
   const el = document.getElementById('skill-upgrade-panel');
@@ -716,6 +729,7 @@ function learnAdvSkill(key) {
   netSaveProgress();
   updateSkillsUI();
   updateInvUI();
+  _refreshProfessionPanelIfOpen();
 }
 
 // Free toggle between a slot's base and advanced version — no cost either
@@ -732,6 +746,113 @@ function toggleAdvSkill(key) {
   dmgNum(player.x, player.y - 40, aa[key] ? t('advSwitchedToAdvToast') : t('advSwitchedToBaseToast'), '#f5c542');
   netSaveProgress();
   updateSkillsUI();
+  _refreshProfessionPanelIfOpen();
+}
+
+// ─────────────────────────────────────────────────────────
+//  ПРОФЕССИЯ PANEL — full-screen codex reached from the HUD button below
+//  Мир/ПК (drawProfessionButton, getProfessionBtnPos). Re-presents the same
+//  underlying state as the Character→Skills tab's adv-skill-box (SKILL_DEF,
+//  ADV_SKILL_DEF, player.skillLevels/advSkillLearned/advSkillActive) as one
+//  standalone "what I have → what I'll get" page instead of one box per card
+//  buried in the upgrade list — same data, same learnAdvSkill/toggleAdvSkill
+//  actions, just laid out to actually show off the transformation.
+function openProfessionPanel() {
+  const panel = document.getElementById('profession-panel');
+  if (!panel || !player) return;
+  panel.style.display = 'flex';
+  renderProfessionPanel();
+}
+
+function closeProfessionPanel() {
+  const panel = document.getElementById('profession-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _refreshProfessionPanelIfOpen() {
+  const panel = document.getElementById('profession-panel');
+  if (panel && panel.style.display !== 'none') renderProfessionPanel();
+}
+
+function renderProfessionPanel() {
+  const body = document.getElementById('profession-panel-body');
+  if (!body || !player) return;
+  const skills = SKILL_DEF[player.type];
+  if (!skills) { body.innerHTML = ''; return; }
+  const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || [];
+  const cc = _FARM_ADV_BOOK_CLASS_COLOR[player.type] || '#cdb8ec';
+  const sl = player.skillLevels || {};
+  const al = player.advSkillLearned || {};
+  const aa = player.advSkillActive || {};
+  const cls = (typeof CHAR_DEF !== 'undefined' ? CHAR_DEF[player.type] : null) || {};
+
+  const cards = skills.map(sk => {
+    const level = sl[sk.key] || 0;
+    const maxed = level >= 10;
+    const adv = advSkills.find(a => a.key === sk.key);
+    const learned = !!al[sk.key];
+    const active = !!aa[sk.key];
+    const advBookCount = countMaterial(_advSkillBookId(player.type, sk.key));
+
+    // 0 = slot not maxed yet, 1 = maxed but missing books, 2 = maxed & ready
+    // to learn, 3 = learned (free toggle from here on).
+    const stage = !maxed ? 0 : learned ? 3 : (advBookCount >= ADV_SKILL_STUDY_COST ? 2 : 1);
+
+    const baseGlyph = sk.img
+      ? `<img src="${sk.img}" class="profp-icon-img" alt="">`
+      : iconHTML(sk.icon, 22, '#e3941d');
+    const advGlyph = adv
+      ? (adv.img ? `<img src="${adv.img}" class="profp-icon-img" alt="">` : iconHTML(adv.icon, 22, cc))
+      : '';
+
+    let stateHtml;
+    if (stage === 0) {
+      stateHtml = `<div class="profp-lockrow">${iconHTML('lock', 12, '#645f57')} ${tVars('profpLockedFmt', { n: level })}</div>`;
+    } else if (stage === 1) {
+      stateHtml = `<div class="profp-lockrow">${iconHTML('book', 12, '#a58fc4')} ${tVars('profpNeedBooksFmt', { have: advBookCount, need: ADV_SKILL_STUDY_COST })}</div>`;
+    } else if (stage === 2) {
+      stateHtml = `<button class="profp-learn-btn" onclick="learnAdvSkill('${sk.key}')">${iconHTML('star', 12, '#150f08')} ${t('profpLearnBtn')}</button>`;
+    } else {
+      stateHtml = `<div class="profp-toggle" onclick="toggleAdvSkill('${sk.key}')">
+        <span class="profp-toggle-opt${!active ? ' on' : ''}">${sk.name}</span>
+        <span class="profp-toggle-switch${active ? ' adv' : ''}" style="--cc:${cc}"><span class="profp-toggle-knob"></span></span>
+        <span class="profp-toggle-opt${active ? ' on' : ''}" style="--cc:${cc}">${adv ? adv.name : ''}</span>
+      </div>`;
+    }
+
+    return `
+      <div class="profp-card${stage === 3 ? ' learned' : ''}" style="--cc:${cc}">
+        <div class="profp-card-key">${sk.key}</div>
+        <div class="profp-flow">
+          <div class="profp-node">
+            <div class="profp-node-icon">${baseGlyph}</div>
+            <div class="profp-node-name">${sk.name}</div>
+            <div class="profp-bar"><div class="profp-bar-fill" style="width:${Math.min(100, level * 10)}%"></div></div>
+          </div>
+          <div class="profp-connector">
+            <span class="profp-fx profp-fx-${stage === 3 ? 'pulse' : 'classic'}" style="--fx:${stage >= 1 ? cc : '#4a4438'}"></span>
+          </div>
+          <div class="profp-node adv">
+            <div class="profp-node-icon${stage < 3 ? ' dim' : ''}">${advGlyph}${stage < 3 ? `<div class="profp-node-lockbadge">${iconHTML('lock', 10, '#d1ccc5')}</div>` : ''}</div>
+            <div class="profp-node-name" style="color:${stage === 3 ? cc : '#8a8070'}">${adv ? adv.name : ''}</div>
+          </div>
+        </div>
+        <div class="profp-desc">${stage === 3 && active && adv ? adv.desc : sk.desc}</div>
+        ${stateHtml}
+      </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="profp-banner" style="--cc:${cc}">
+      <div class="profp-banner-icon">${iconHTML(cls.icon || 'star', 24, cc)}</div>
+      <div>
+        <div class="profp-banner-cls">${cls.name || ''}</div>
+        <div class="profp-banner-sub">${t('profpBannerSub')}</div>
+      </div>
+    </div>
+    <div class="profp-cards">${cards}</div>
+    <div class="profp-hint">${t('profpFarmHint')}</div>
+  `;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1986,6 +2107,7 @@ function _buildUiBtnGrads() {
   const ab  = getAttackBtnPos();
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
+  const prof = getProfessionBtnPos();
   const pty = getPartyBtnPos();
   const tfW = 160, tfH = 42;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
@@ -2005,6 +2127,11 @@ function _buildUiBtnGrads() {
   pvg0.addColorStop(0,'rgba(30,24,14,0.97)'); pvg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
   pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
+
+  const pfg0 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
+  pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
+  pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
   ptg0.addColorStop(0,'rgba(24,36,14,0.97)'); ptg0.addColorStop(1,'rgba(12,18,7,0.99)');
@@ -2035,9 +2162,9 @@ function _buildUiBtnGrads() {
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
-  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2275,6 +2402,40 @@ function drawPvpButton() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ПРОФЕССИЯ BUTTON — below Мир/ПК, opens the advanced-skills panel
+// ─────────────────────────────────────────────────────────
+function drawProfessionButton() {
+  if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const pb = _uiBtnGrads.profBtn;
+  const F = 'system-ui, -apple-system, Arial';
+  const ready = _professionHasReady();
+
+  ctx.save();
+
+  ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(194,154,86,0.4)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+
+  if (ready) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+    ctx.strokeStyle = `rgba(165,143,196,${(0.10 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+  }
+
+  const profColor = ready ? '#cdb8ec' : 'rgba(224,188,127,0.9)';
+  drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, profColor);
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = profColor;
+  ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  TARGET FRAME
 // ─────────────────────────────────────────────────────────
 function drawTargetFrame() {
@@ -2448,7 +2609,7 @@ function drawPartyHUD() {
   const bw = 130, bh = 26, gap = 4;
   const pvpBtn = getPvpBtnPos();
   const startX = pvpBtn.x;
-  const startY = HEADER_H + BUFF_BAR_H + 56;
+  const startY = _partyHudStartY();
 
   // Cache the three HP bar gradients (position fixed, only depends on startX)
   const _hbx = startX + 20, _hbw = 130 - 24;

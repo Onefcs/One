@@ -46,12 +46,26 @@ function getPvpBtnPos() {
   return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
 }
 
+// Directly below the Мир/ПК toggle, same column — opens the "Профессия"
+// panel (second-profession skills). See _checkProfessionBtnTouch/input.js
+// and drawProfessionButton/openProfessionPanel, js/ui.js.
+function getProfessionBtnPos() {
+  const pvp = getPvpBtnPos();
+  return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
+}
+
 function getPartyLeaveBtnPos() {
   const bh = 26, gap = 4;
-  const pvpBtn = getPvpBtnPos();
-  const startY = HEADER_H + BUFF_BAR_H + 56;
+  const startY = _partyHudStartY();
   const count = (typeof partyMembers !== 'undefined') ? partyMembers.length : 0;
-  return { x: pvpBtn.x, y: startY + count * (bh + gap), w: 80, h: 22 };
+  return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: 80, h: 22 };
+}
+
+// Party member list starts below the Профессия button, not the Мир/ПК
+// toggle directly — keeps the two stacks from overlapping.
+function _partyHudStartY() {
+  const prof = getProfessionBtnPos();
+  return prof.y + prof.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -257,6 +271,15 @@ function _checkPvpBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkProfessionBtnTouch(cx, cy) {
+  const pb = getProfessionBtnPos();
+  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
+    if (typeof openProfessionPanel === 'function') openProfessionPanel();
+    return true;
+  }
+  return false;
+}
+
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
   const lb = getPartyLeaveBtnPos();
@@ -366,6 +389,7 @@ function onTS(e) {
     if (_checkPartyInviteTouch(p.x, p.y)) continue;
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
+    if (_checkProfessionBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -432,6 +456,7 @@ function onMD(e) {
   if (_checkPartyInviteTouch(p.x, p.y)) return;
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
+  if (_checkProfessionBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y)) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;
