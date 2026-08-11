@@ -354,11 +354,16 @@ function generateOpenWorld() {
         xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         atkTimer: 1 + rng(),
-        // Never self-aggros (aggroR: 0) — same "stands until struck" pattern
-        // as spawnGuildWarTower. attackEnemy/skillAttackEnemy unconditionally
-        // set aggro:true on any hit regardless of aggroR, so it still fights
-        // back once attacked; it just never pulls first.
-        aggro: false, aggroR: 0,
+        // Never self-pulls (Room.js's tick loop exempts farmZone from the
+        // aggroR-triggered self-aggro check explicitly) — attackEnemy/
+        // skillAttackEnemy still unconditionally set aggro:true on any hit,
+        // so it fights back once attacked. aggroR itself stays a normal
+        // value: it's what the tick loop's de-aggro leash (aggroR * 2.2)
+        // uses to decide when a retaliating monster gives up and walks back
+        // to spawn — aggroR:0 collapsed that leash to 0 too and reset aggro
+        // right back to false the tick after it was set, so nothing ever
+        // visibly retaliated.
+        aggro: false, aggroR: 175 + rng() * 55,
       });
     }
   });

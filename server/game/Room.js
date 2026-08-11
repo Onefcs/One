@@ -1281,7 +1281,14 @@ class Room {
       // re-confirm what's already true. Skipping it there takes the single
       // most expensive call in this loop off every already-chasing enemy,
       // every tick — which in a busy arm is most of them.
-      if (!e.aggro && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      //
+      // farmZone is excluded from this self-pull trigger explicitly rather
+      // than via aggroR:0 — zeroing aggroR used to also zero the de-aggro
+      // leash below (aggroR * 2.2), which reset aggro back to false the very
+      // next tick after attackEnemy/skillAttackEnemy set it, so a farm-zone
+      // monster could set its own hp/target but could never actually swing
+      // back. It keeps a normal aggroR purely for that leash distance.
+      if (!e.aggro && !e.farmZone && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
