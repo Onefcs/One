@@ -1509,6 +1509,8 @@ function _buildSaveStats() {
     specialQuestsDone: player.specialQuestsDone || [],
     skillLevels: player.skillLevels || {},
     passiveLevels: player.passiveLevels || {},
+    advSkillLearned: player.advSkillLearned || {},
+    advSkillActive: player.advSkillActive || {},
     bonusSP: player.bonusSP || 0,
     lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
     // When this blob was composed — the server uses it to tell a save that
@@ -1623,6 +1625,13 @@ function netSkillStun(enemyId, duration) {
 function netSkillSlow(enemyIds, duration) {
   if (!socket?.connected || !enemyIds || !enemyIds.length) return;
   socket.emit('skillEffect', { enemyIds, type: 'slow', duration });
+}
+// "Охота" (advanced deathknight R, js/player.js) — Room.js's applySkillEffect
+// clamps duration to 6s server-side same as stun/slow, regardless of what's
+// requested here.
+function netSkillDefDown(enemyId, duration) {
+  if (!socket?.connected || !enemyId) return;
+  socket.emit('skillEffect', { enemyId, type: 'defDown', duration });
 }
 function netPlayerInvis(invis) {
   if (socket?.connected) socket.emit('playerInvis', { invis: !!invis });

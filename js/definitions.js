@@ -106,6 +106,58 @@ const SKILL_DEF = {
   ],
 };
 
+// ── Advanced skills ("вторая профессия") ────────────────────────────────────
+// One enhanced replacement per Q/W/E/R slot, same shape as SKILL_DEF (key
+// matches so it shares that slot's cooldown/level/book — see _skillLvl,
+// player.skillCooldowns). Unlocked per-slot once that slot's book-taught
+// level (player.skillLevels[key]) hits the max (10) AND the player has
+// learned this slot's advanced book (player.advSkillLearned[key] — a
+// separate one-time consumable, ADV_SKILL_BOOK_SRC/CRAFT_MATS in
+// shared/definitions.js, dropped only in the Фарм-зона). Once learned,
+// toggling player.advSkillActive[key] freely swaps which version useSkill()
+// (js/player.js) runs and which one is shown on the HUD button/skill panel
+// (see _activeSkillDef, js/player.js) — no extra cost either direction.
+// desc numbers are additive over the base skill's own secondary effects
+// unless explicitly restated here (e.g. Lev R keeps its arrival damage and
+// adds the slow; Mage W keeps its freeze and adds the bigger AOE) — only the
+// stat actually named below overrides the base one.
+const ADV_SKILL_DEF = {
+  lev: [
+    { key:'Q', name:'Молот гнева', icon:'shieldBash', img:'/images/skill/adv/adv_molotgneva.png', cd:18, desc:'×3 урон по цели + стан 5 сек' },
+    { key:'W', name:'Вихрь',       icon:'whirlwind',  img:'/images/skill/adv/adv_vixr.png',        cd:12, desc:'АОЕ урон ×2, радиус 220' },
+    { key:'E', name:'Щит',         icon:'barrier',    img:'/images/skill/adv/adv_shit.png',        cd:20, desc:'+80% защиты и +10% атаки на 10 сек' },
+    { key:'R', name:'Рывок',       icon:'dash',       img:'/images/skill/adv/adv_rivok.png',       cd:15, desc:'Прыгает к цели, замедляя её на 30% на 10 сек', auto:false },
+  ],
+  deathknight: [
+    { key:'Q', name:'Истощение', icon:'drop',      img:'/images/skill/adv/adv_istoshenie.png', cd:28, desc:'Вампиризм 15% + атака +20% на 10 сек' },
+    { key:'W', name:'Жадность',  icon:'battleCry', img:'/images/skill/adv/adv_jadnost.png',    cd:12, desc:'+5% крит. урона на 20 минут' },
+    { key:'E', name:'Безумие',   icon:'battleCry', img:'/images/skill/adv/adv_bezumie.png',    cd:20, desc:'+25% атака, обычные удары наносят АОЕ урон, на 5 сек' },
+    { key:'R', name:'Охота',     icon:'roll',      img:'/images/skill/adv/adv_oxota.png',      cd:15, desc:'Прыгает к цели, снимая 20% её защиты на 10 сек', auto:false },
+  ],
+  ranger: [
+    { key:'Q', name:'Град стрел', icon:'arrowRain',   img:'/images/skill/adv/adv_grad.png',        cd:6,  desc:'АОЕ урон ×3, радиус 220' },
+    { key:'W', name:'Остриё',     icon:'poisonArrow', img:'/images/skill/adv/adv_ostrie.png',      cd:10, desc:'×3 урон по цели + стан 2 сек' },
+    // Base ranger E ("Прыжок") is a dash and carries auto:false — this
+    // advanced replacement is a stationary self-buff instead, so auto must
+    // be explicitly re-enabled here or it would silently inherit the dash's
+    // auto:false through _activeSkillDef's {...base, ...adv} spread.
+    { key:'E', name:'Баф Крит',   icon:'multiShot',   img:'/images/skill/adv/adv_buffcrit.png',    cd:8,  desc:'+5% шанс крита на 20 минут', auto:true },
+    { key:'R', name:'Ускорение',  icon:'arrowRain',   img:'/images/skill/adv/adv_buffskratak.png', cd:20, desc:'×2 скорость атаки на 5 сек' },
+  ],
+  mage: [
+    { key:'Q', name:'Урон молнии',  icon:'fireball', img:'/images/skill/adv/adv_uronmolnii.png',  cd:5,  desc:'Снаряд ×3 урона + стан 3 сек' },
+    { key:'W', name:'Разряд',       icon:'iceNova',  img:'/images/skill/adv/adv_razryad.png',     cd:10, desc:'АОЕ урон ×3, радиус 220' },
+    { key:'E', name:'Вспышка',      icon:'barrier',  img:'/images/skill/adv/adv_vspishka.png',    cd:18, desc:'АОЕ урон ×2, радиус 220 + защита +80% на 3 сек' },
+    { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 180px + восстанавливает 20% здоровья', auto:false },
+  ],
+  warlock: [
+    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду' },
+    { key:'W', name:'Колючие оковы',  icon:'iceNova', img:'/images/skill/adv/adv_koluchieokovi.png', cd:15, desc:'Удерживает цель 3 сек, нанося ×3 урона' },
+    { key:'E', name:'Жажда',          icon:'barrier', img:'/images/skill/adv/adv_jajda.png',         cd:18, desc:'+50% защита себе и пати, ×2 скорость атаки, на 4 сек' },
+    { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати' },
+  ],
+};
+
 // Bonus category for each skill key per class
 // damage → +1% per level  |  buff → +1s duration  |  barrier → +0.2s  |  invis → +0.2s  |  heal → +1%  |  mobility → +10px range
 const SKILL_BONUS_TYPE = {

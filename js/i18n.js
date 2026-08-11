@@ -520,6 +520,19 @@ Object.assign(I18N_UI, {
   needNSkillBooksFmt: { ru: 'Нужно {n} книги этого навыка!', en: 'Need {n} of this skill\'s books!', uk: 'Потрібно {n} книги цього навику!', es: '¡Necesitas {n} libros de esta habilidad!', tr: 'Bu yetenekten {n} kitap gerekli!', pt: 'Necessário {n} livros desta habilidade!' },
   needNPassiveBooksFmt: { ru: 'Нужно {n} книги этой пассивки!', en: 'Need {n} of this passive\'s books!', uk: 'Потрібно {n} книги цієї пасивки!', es: '¡Necesitas {n} libros de esta pasiva!', tr: 'Bu pasiften {n} kitap gerekli!', pt: 'Necessário {n} livros desta passiva!' },
   failToast: { ru: 'Неудача...', en: 'Failed...', uk: 'Невдача...', es: 'Fallo...', tr: 'Başarısız...', pt: 'Falhou...' },
+
+  // ── Advanced skills ("вторая профессия") — js/ui.js's learnAdvSkill/
+  // toggleAdvSkill, unlocked once a slot's own level hits 10. Book drops
+  // only in the Фарм-зона (FARM_ADV_SKILL_BOOK_CHANCE, shared/definitions.js).
+  advSkillHdr: { ru: 'Продвинутый навык', en: 'Advanced skill', uk: 'Просунута навичка', es: 'Habilidad avanzada', tr: 'Gelişmiş yetenek', pt: 'Habilidade avançada' },
+  advActiveLbl: { ru: 'Активен', en: 'Active', uk: 'Активна', es: 'Activa', tr: 'Aktif', pt: 'Ativa' },
+  advStudyBtnFmt: { ru: 'Изучить ({n})', en: 'Learn ({n})', uk: 'Вивчити ({n})', es: 'Aprender ({n})', tr: 'Öğren ({n})', pt: 'Aprender ({n})' },
+  advSwitchToAdvBtn: { ru: 'Переключить на продвинутый', en: 'Switch to advanced', uk: 'Перемкнути на просунутий', es: 'Cambiar a avanzada', tr: 'Gelişmişe geç', pt: 'Mudar para avançada' },
+  advSwitchToBaseBtn: { ru: '✓ Активен — переключить на базовый', en: '✓ Active — switch to base', uk: '✓ Активна — перемкнути на базову', es: '✓ Activa — cambiar a base', tr: '✓ Aktif — temele geç', pt: '✓ Ativa — mudar para base' },
+  needAdvSkillBookToast: { ru: 'Нужна книга продвинутого навыка! Падает только в Фарм зоне', en: 'You need the advanced-skill book! Only drops in the Farm Zone', uk: 'Потрібна книга просунутого навику! Випадає лише у Ферм-зоні', es: '¡Necesitas el libro de habilidad avanzada! Solo cae en la Zona de Farmeo', tr: 'Gelişmiş yetenek kitabına ihtiyacın var! Sadece Farm Bölgesi\'nde düşer', pt: 'Você precisa do livro de habilidade avançada! Só cai na Zona de Farm' },
+  advSkillLearnedToast: { ru: '🌟 Продвинутый навык изучен!', en: '🌟 Advanced skill learned!', uk: '🌟 Просунуту навичку вивчено!', es: '🌟 ¡Habilidad avanzada aprendida!', tr: '🌟 Gelişmiş yetenek öğrenildi!', pt: '🌟 Habilidade avançada aprendida!' },
+  advSwitchedToAdvToast: { ru: 'Продвинутый навык активен', en: 'Advanced skill active', uk: 'Просунута навичка активна', es: 'Habilidad avanzada activa', tr: 'Gelişmiş yetenek aktif', pt: 'Habilidade avançada ativa' },
+  advSwitchedToBaseToast: { ru: 'Базовый навык активен', en: 'Base skill active', uk: 'Базова навичка активна', es: 'Habilidad base activa', tr: 'Temel yetenek aktif', pt: 'Habilidade base ativa' },
   classPassivesFmt: { ru: 'Классовые ({cls})', en: 'Class ({cls})', uk: 'Класові ({cls})', es: 'De Clase ({cls})', tr: 'Sınıf ({cls})', pt: 'De Classe ({cls})' },
   commonPassivesHdr: { ru: 'Общие', en: 'Common', uk: 'Загальні', es: 'Comunes', tr: 'Ortak', pt: 'Comuns' },
   bonusToDamage: { ru: 'к урону', en: 'to damage', uk: 'до шкоди', es: 'al daño', tr: 'hasara', pt: 'ao dano' },
@@ -892,6 +905,63 @@ const I18N_SKILLS = {
          desc: { en: '+50% defense to self and party for 4s', uk: '+50% захисту собі й паті на 4 сек', es: '+50% de defensa a ti y al grupo durante 4s', tr: '4sn boyunca kendine ve gruba +%50 savunma', pt: '+50% de defesa para você e o grupo por 4s' } },
     R: { name: { en: 'Dark Prayer',    uk: 'Темна молитва', es: 'Oración Oscura',   tr: 'Karanlık Dua',    pt: 'Oração Sombria' },
          desc: { en: '+10% maxHP to self and +10% to party', uk: '+10% макс. HP собі та +10% паті', es: '+10% de HP máx. a ti y +10% al grupo', tr: 'Kendine +%10, grubuna +%10 maksimum HP', pt: '+10% do HP máximo para você e +10% para o grupo' } },
+  },
+};
+
+// Advanced skills ("вторая профессия") — same [class][key] -> {name, desc}
+// shape as I18N_SKILLS above, applied to ADV_SKILL_DEF (js/definitions.js)
+// by the same applyLocale/_i18nSnapshot pass, just keyed off its own
+// _i18nOrigName/_i18nOrigDesc snapshot (see both functions below).
+const I18N_ADV_SKILLS = {
+  lev: {
+    Q: { name: { en: 'Hammer of Wrath', uk: 'Молот гніву', es: 'Martillo de Ira', tr: 'Gazap Çekici', pt: 'Martelo da Ira' },
+         desc: { en: '×3 damage to target + 5s stun', uk: '×3 урону по цілі + оглушення 5 сек', es: '×3 daño al objetivo + 5s de aturdimiento', tr: 'Hedefe ×3 hasar + 5sn sersemletme', pt: '×3 de dano no alvo + atordoamento de 5s' } },
+    W: { name: { en: 'Whirl', uk: 'Вихор', es: 'Torbellino', tr: 'Kasırga', pt: 'Redemoinho' },
+         desc: { en: 'AOE damage ×2, radius 220', uk: 'АОЕ урон ×2, радіус 220', es: 'Daño en área ×2, radio 220', tr: 'Alan hasarı ×2, yarıçap 220', pt: 'Dano em área ×2, raio 220' } },
+    E: { name: { en: 'Shield', uk: 'Щит', es: 'Escudo', tr: 'Kalkan', pt: 'Escudo' },
+         desc: { en: '+80% defense and +10% attack for 10s', uk: '+80% захисту та +10% атаки на 10 сек', es: '+80% de defensa y +10% de ataque durante 10s', tr: '10sn boyunca +%80 savunma ve +%10 saldırı', pt: '+80% de defesa e +10% de ataque por 10s' } },
+    R: { name: { en: 'Dash', uk: 'Ривок', es: 'Arremetida', tr: 'Atılım', pt: 'Investida' },
+         desc: { en: 'Dashes to target, slowing them 30% for 10s', uk: 'Стрибає до цілі, сповільнюючи її на 30% на 10 сек', es: 'Embiste hacia el objetivo, ralentizándolo 30% durante 10s', tr: 'Hedefe atılır, %30 yavaşlatarak 10sn', pt: 'Avança até o alvo, reduzindo sua velocidade em 30% por 10s' } },
+  },
+  deathknight: {
+    Q: { name: { en: 'Exhaustion', uk: 'Виснаження', es: 'Agotamiento', tr: 'Tükenme', pt: 'Exaustão' },
+         desc: { en: 'Lifesteal 15% + attack +20% for 10s', uk: 'Вампіризм 15% + атака +20% на 10 сек', es: 'Robo de vida 15% + ataque +20% durante 10s', tr: '%15 can çalma + %20 saldırı, 10sn', pt: 'Roubo de vida de 15% + ataque +20% por 10s' } },
+    W: { name: { en: 'Greed', uk: 'Жадібність', es: 'Codicia', tr: 'Açgözlülük', pt: 'Ganância' },
+         desc: { en: '+5% crit damage for 20 minutes', uk: '+5% крит. урону на 20 хвилин', es: '+5% de daño crítico durante 20 minutos', tr: '20 dakika boyunca +%5 kritik hasar', pt: '+5% de dano crítico por 20 minutos' } },
+    E: { name: { en: 'Madness', uk: 'Безумство', es: 'Locura', tr: 'Çılgınlık', pt: 'Loucura' },
+         desc: { en: '+25% attack, basic hits deal AOE damage, for 5s', uk: '+25% атаки, звичайні удари завдають АОЕ урону, на 5 сек', es: '+25% de ataque, los golpes básicos infligen daño en área, durante 5s', tr: '+%25 saldırı, normal vuruşlar 5sn boyunca alan hasarı verir', pt: '+25% de ataque, golpes básicos causam dano em área, por 5s' } },
+    R: { name: { en: 'Hunt', uk: 'Полювання', es: 'Caza', tr: 'Av', pt: 'Caça' },
+         desc: { en: 'Dashes to target, stripping 20% of their defense for 10s', uk: 'Стрибає до цілі, знімаючи 20% її захисту на 10 сек', es: 'Embiste hacia el objetivo, reduciendo 20% de su defensa durante 10s', tr: 'Hedefe atılır, 10sn boyunca savunmasının %20\'sini düşürür', pt: 'Avança até o alvo, removendo 20% de sua defesa por 10s' } },
+  },
+  ranger: {
+    Q: { name: { en: 'Arrow Storm', uk: 'Град стріл', es: 'Lluvia de Flechas', tr: 'Ok Fırtınası', pt: 'Chuva de Flechas' },
+         desc: { en: 'AOE damage ×3, radius 220', uk: 'АОЕ урон ×3, радіус 220', es: 'Daño en área ×3, radio 220', tr: 'Alan hasarı ×3, yarıçap 220', pt: 'Dano em área ×3, raio 220' } },
+    W: { name: { en: 'Piercing Tip', uk: 'Вістря', es: 'Punta Afilada', tr: 'Sivri Uç', pt: 'Ponta Afiada' },
+         desc: { en: '×3 damage to target + 2s stun', uk: '×3 урону по цілі + оглушення 2 сек', es: '×3 daño al objetivo + 2s de aturdimiento', tr: 'Hedefe ×3 hasar + 2sn sersemletme', pt: '×3 de dano no alvo + atordoamento de 2s' } },
+    E: { name: { en: 'Crit Buff', uk: 'Баф криту', es: 'Bufo de Crítico', tr: 'Kritik Bafı', pt: 'Buff de Crítico' },
+         desc: { en: '+5% crit chance for 20 minutes', uk: '+5% шансу криту на 20 хвилин', es: '+5% de probabilidad crítica durante 20 minutos', tr: '20 dakika boyunca +%5 kritik şansı', pt: '+5% de chance de crítico por 20 minutos' } },
+    R: { name: { en: 'Acceleration', uk: 'Прискорення', es: 'Aceleración', tr: 'Hızlanma', pt: 'Aceleração' },
+         desc: { en: '×2 attack speed for 5s', uk: '×2 швидкості атаки на 5 сек', es: '×2 velocidad de ataque durante 5s', tr: '5sn boyunca ×2 saldırı hızı', pt: '×2 de velocidade de ataque por 5s' } },
+  },
+  mage: {
+    Q: { name: { en: 'Lightning Damage', uk: 'Урон блискавки', es: 'Daño de Rayo', tr: 'Yıldırım Hasarı', pt: 'Dano de Raio' },
+         desc: { en: 'Projectile ×3 damage + 3s stun', uk: 'Снаряд ×3 урону + оглушення 3 сек', es: 'Proyectil ×3 daño + 3s de aturdimiento', tr: 'Mermi ×3 hasar + 3sn sersemletme', pt: 'Projétil ×3 de dano + atordoamento de 3s' } },
+    W: { name: { en: 'Discharge', uk: 'Розряд', es: 'Descarga', tr: 'Boşalım', pt: 'Descarga' },
+         desc: { en: 'AOE damage ×3, radius 220', uk: 'АОЕ урон ×3, радіус 220', es: 'Daño en área ×3, radio 220', tr: 'Alan hasarı ×3, yarıçap 220', pt: 'Dano em área ×3, raio 220' } },
+    E: { name: { en: 'Flash', uk: 'Спалах', es: 'Destello', tr: 'Parlama', pt: 'Clarão' },
+         desc: { en: 'AOE damage ×2, radius 220 + defense +80% for 3s', uk: 'АОЕ урон ×2, радіус 220 + захист +80% на 3 сек', es: 'Daño en área ×2, radio 220 + defensa +80% durante 3s', tr: 'Alan hasarı ×2, yarıçap 220 + savunma +%80, 3sn', pt: 'Dano em área ×2, raio 220 + defesa +80% por 3s' } },
+    R: { name: { en: 'Transference', uk: 'Перенесення', es: 'Transferencia', tr: 'Aktarım', pt: 'Transferência' },
+         desc: { en: 'Dash 180px + restores 20% health', uk: 'Ривок 180px + відновлює 20% здоров\'я', es: 'Embestida 180px + restaura 20% de salud', tr: '180px atılım + %20 can yeniler', pt: 'Investida de 180px + restaura 20% de vida' } },
+  },
+  warlock: {
+    Q: { name: { en: 'Butterflies', uk: 'Метелики', es: 'Mariposas', tr: 'Kelebekler', pt: 'Borboletas' },
+         desc: { en: 'Summons butterflies for 10s — heal 5% HP per second', uk: 'Викликає метеликів на 10 сек — лікують 5% HP щосекунди', es: 'Invoca mariposas durante 10s — curan 5% de HP por segundo', tr: '10sn boyunca kelebekler çağırır — saniyede %5 HP iyileştirir', pt: 'Invoca borboletas por 10s — curam 5% de HP por segundo' } },
+    W: { name: { en: 'Thorned Chains', uk: 'Колючі кайдани', es: 'Cadenas Espinosas', tr: 'Dikenli Zincirler', pt: 'Correntes Espinhosas' },
+         desc: { en: 'Roots target for 3s, dealing ×3 damage', uk: 'Утримує ціль 3 сек, завдаючи ×3 урону', es: 'Inmoviliza al objetivo 3s, infligiendo ×3 daño', tr: 'Hedefi 3sn tutar, ×3 hasar verir', pt: 'Prende o alvo por 3s, causando ×3 de dano' } },
+    E: { name: { en: 'Thirst', uk: 'Спрага', es: 'Sed', tr: 'Susuzluk', pt: 'Sede' },
+         desc: { en: '+50% defense to self and party, ×2 attack speed, for 4s', uk: '+50% захисту собі й паті, ×2 швидкості атаки, на 4 сек', es: '+50% de defensa a ti y al grupo, ×2 velocidad de ataque, durante 4s', tr: 'Kendine ve gruba +%50 savunma, ×2 saldırı hızı, 4sn', pt: '+50% de defesa para você e o grupo, ×2 de velocidade de ataque, por 4s' } },
+    R: { name: { en: 'Healing', uk: 'Зцілення', es: 'Curación', tr: 'İyileştirme', pt: 'Cura' },
+         desc: { en: 'Heals 20% HP to self and party', uk: 'Лікує 20% HP собі й паті', es: 'Cura 20% de HP a ti y al grupo', tr: 'Kendine ve gruba %20 HP iyileştirir', pt: 'Cura 20% de HP para você e o grupo' } },
   },
 };
 
@@ -1343,6 +1413,9 @@ function _i18nSnapshot() {
   if (typeof SKILL_DEF !== 'undefined') Object.keys(SKILL_DEF).forEach(cls => {
     SKILL_DEF[cls].forEach(s => { s._i18nOrigName = s.name; s._i18nOrigDesc = s.desc; });
   });
+  if (typeof ADV_SKILL_DEF !== 'undefined') Object.keys(ADV_SKILL_DEF).forEach(cls => {
+    ADV_SKILL_DEF[cls].forEach(s => { s._i18nOrigName = s.name; s._i18nOrigDesc = s.desc; });
+  });
   if (typeof PASSIVE_CLASS_DEF !== 'undefined') Object.keys(PASSIVE_CLASS_DEF).forEach(cls => {
     PASSIVE_CLASS_DEF[cls].forEach(p => { p._i18nOrigName = p.name; p._i18nOrigDesc = p.desc; });
   });
@@ -1388,6 +1461,13 @@ function applyLocale(lang) {
   if (typeof SKILL_DEF !== 'undefined') Object.keys(SKILL_DEF).forEach(cls => {
     SKILL_DEF[cls].forEach(s => {
       const src = I18N_SKILLS[cls] && I18N_SKILLS[cls][s.key];
+      s.name = pickField({ x: src }, 'x', 'name', s._i18nOrigName);
+      s.desc = pickField({ x: src }, 'x', 'desc', s._i18nOrigDesc);
+    });
+  });
+  if (typeof ADV_SKILL_DEF !== 'undefined') Object.keys(ADV_SKILL_DEF).forEach(cls => {
+    ADV_SKILL_DEF[cls].forEach(s => {
+      const src = I18N_ADV_SKILLS[cls] && I18N_ADV_SKILLS[cls][s.key];
       s.name = pickField({ x: src }, 'x', 'name', s._i18nOrigName);
       s.desc = pickField({ x: src }, 'x', 'desc', s._i18nOrigDesc);
     });

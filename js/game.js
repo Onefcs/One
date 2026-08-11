@@ -249,11 +249,16 @@ function _autoCastSkills(dt) {
   // Roughly the chase radius — close enough that the fight is actually on.
   if (dist(foe.x, foe.y, player.x, player.y) > 420) return;
 
-  const skills = SKILL_DEF[player.type] || [];
+  const baseSkills = SKILL_DEF[player.type] || [];
   const hpFrac = player.maxHp > 0 ? (player.hp / player.maxHp) : 1;
   const bonusTypes = (typeof SKILL_BONUS_TYPE !== 'undefined' && SKILL_BONUS_TYPE[player.type]) || {};
-  for (let i = 0; i < skills.length; i++) {
-    const sk = skills[i];
+  for (let i = 0; i < baseSkills.length; i++) {
+    // Resolved to whichever version (base/advanced) is actually active —
+    // an advanced skill can flip a slot's auto-eligibility either way (see
+    // ADV_SKILL_DEF, js/definitions.js), so this must match useSkill()'s own
+    // resolution, not just the base skill's auto flag.
+    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : baseSkills[i];
+    if (!sk) continue;
     if (sk.auto === false) continue;                       // dash / jump / teleport
     if (_skillLvl(sk.key) <= 0) continue;                  // not learned
     if ((player.skillCooldowns[sk.key] || 0) > 0) continue;
@@ -446,6 +451,21 @@ function update(dt, realDt) {
           fireProj(_e?.x ?? pa.x, _e?.y ?? pa.y, pa.id);
         } else {
           netAttack(pa.id);
+          // "Безумие" (advanced deathknight E) — while active, every basic
+          // melee hit also splashes onto nearby enemies. Plain netAttack per
+          // extra target (not a skill multiplier), matching "обычные удары
+          // наносят АОЕ урон" — these ARE still basic attacks, just several
+          // of them landing at once.
+          if (typeof madnessTimer !== 'undefined' && madnessTimer > 0 && player.type === 'deathknight') {
+            const _te = serverEnemiesMap.get(pa.id);
+            if (_te) {
+              spawnAOE(_te.x, _te.y, 90);
+              serverEnemies.forEach(e => {
+                if ((e.hp || 0) <= 0 || e.id === pa.id) return;
+                if (dist(e.x, e.y, _te.x, _te.y) < 90 && hasLOS(_te.x, _te.y, e.x, e.y)) netAttack(e.id);
+              });
+            }
+          }
         }
       }
     }
@@ -719,6 +739,26 @@ function update(dt, realDt) {
   if (faithShieldTimer > 0) { faithShieldTimer -= realDt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
   if (guardTimer > 0) { guardTimer -= realDt; if (guardTimer <= 0) { guardTimer = 0; recompute(); } }
   if (vampirismTimer > 0) { vampirismTimer -= realDt; if (vampirismTimer <= 0) vampirismTimer = 0; }
+  // Advanced-skill timers ("вторая профессия") — same realDt/recompute()
+  // discipline as the base-skill timers above.
+  if (advDkQAtkTimer  > 0) { advDkQAtkTimer  -= realDt; if (advDkQAtkTimer  <= 0) { advDkQAtkTimer  = 0; recompute(); } }
+  if (critDmgBuffTimer > 0) { critDmgBuffTimer -= realDt; if (critDmgBuffTimer <= 0) { critDmgBuffTimer = 0; recompute(); } }
+  if (madnessTimer > 0) { madnessTimer -= realDt; if (madnessTimer <= 0) { madnessTimer = 0; recompute(); } }
+  if (critChanceBuffTimer > 0) { critChanceBuffTimer -= realDt; if (critChanceBuffTimer <= 0) { critChanceBuffTimer = 0; recompute(); } }
+  if (levShieldAtkTimer > 0) { levShieldAtkTimer -= realDt; if (levShieldAtkTimer <= 0) { levShieldAtkTimer = 0; recompute(); } }
+  // Бабочки (adv warlock Q) — periodic 1s self-heal tick while active, not
+  // just a flat stat multiplier, so it's driven here instead of recompute().
+  if (butterfliesTimer > 0) {
+    butterfliesTimer -= realDt;
+    _butterfliesTickAcc += realDt;
+    while (_butterfliesTickAcc >= 1 && player) {
+      _butterfliesTickAcc -= 1;
+      const heal = Math.round(player.maxHp * 0.05);
+      player.hp = Math.min(player.maxHp, player.hp + heal);
+      dmgNum(player.x, player.y - 30, '+' + heal + '♥', '#a855e0');
+    }
+    if (butterfliesTimer <= 0) { butterfliesTimer = 0; _butterfliesTickAcc = 0; }
+  }
   if (invisTimer > 0) { invisTimer -= realDt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
   if ((player.stunTimer || 0) > 0) { player.stunTimer -= realDt; if (player.stunTimer <= 0) player.stunTimer = 0; }
   if ((player.slowTimer || 0) > 0) { player.slowTimer -= realDt; if (player.slowTimer <= 0) player.slowTimer = 0; }

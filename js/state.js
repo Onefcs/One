@@ -51,6 +51,21 @@ let invisTimer = 0;
 let guardTimer = 0;      // Танк (lev) E — +80% DEF buff
 let vampirismTimer = 0;  // Рыцарь Смерти (deathknight) Q — % lifesteal buff
 const VAMPIRISM_PCT = 0.10;
+const ADV_VAMPIRISM_PCT = 0.15; // DK Q advanced ("Истощение") — see _applyVampirism, js/player.js
+
+// ── Advanced skills ("вторая профессия") ────────────────────────────────
+// Extra buff timers not covered by the base-skill ones above — several
+// advanced skills reuse the same slot as their base but at a different
+// magnitude/mechanic (bigger %, longer/shorter duration, or an outright new
+// effect), so they can't just share the existing timer. See recompute() and
+// useSkill() (js/player.js) for how each is actually applied.
+let advDkQAtkTimer = 0;      // DK Q adv "Истощение" — +20% atk, 10s (alongside vampirismTimer's own bigger heal %)
+let critDmgBuffTimer = 0;    // DK W adv "Жадность" — +5% crit power, 20 min
+let madnessTimer = 0;        // DK E adv "Безумие" — +25% atk + basic attacks splash AOE, 5s
+let critChanceBuffTimer = 0; // Ranger E adv "Баф Крит" — +5% crit chance, 20 min
+let levShieldAtkTimer = 0;   // Lev E adv "Щит" — +10% atk, 10s (alongside guardTimer's own unchanged def)
+let butterfliesTimer = 0;    // Warlock Q adv "Бабочки" — periodic self-heal, 10s
+let _butterfliesTickAcc = 0; // 1s tick accumulator for the above
 
 // Target & PK mode
 let targetId = null;

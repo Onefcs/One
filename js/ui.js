@@ -15,6 +15,21 @@ function _itemIcon(it, size) {
       <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${glyph}</div>
     </div>`;
   }
+  // Advanced-skill books ("вторая профессия") — same book-glyph treatment as
+  // regular skill books above, framing ADV_SKILL_DEF's art instead of
+  // SKILL_DEF's, with a gold ring so the rare drop reads differently at a
+  // glance even before the tooltip/name is read.
+  if (it && it.advSkillKey && it.forClass) {
+    const sk = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[it.forClass]) || []).find(s => s.key === it.advSkillKey);
+    const gs = Math.round(size * 0.58);
+    const glyph = sk && sk.img
+      ? `<img src="${sk.img}" width="${gs}" height="${gs}" style="image-rendering:pixelated;border-radius:2px">`
+      : iconHTML((sk && sk.icon) || 'book', gs, '#f5c542');
+    return `<div style="position:relative;width:${size}px;height:${size}px">
+      ${iconHTML('book', size, '#f5c542')}
+      <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${glyph}</div>
+    </div>`;
+  }
   // Passive skill books: same book-glyph treatment, framing the passive's
   // own icon (PASSIVE_CLASS_DEF for class-exclusive ones, PASSIVE_COMMON_DEF
   // for universal ones — passiveDefById checks both).
@@ -502,6 +517,18 @@ function _skillBookDef(cls, key) {
   return CRAFT_MATS.find(m => m.id === _skillBookId(cls, key));
 }
 
+// ── Advanced skills ("вторая профессия") ─────────────────────────────────
+// Separate book pool/id space from the regular skill books above — see
+// ADV_SKILL_DEF (js/definitions.js) and _ADV_SKILL_BOOK_SRC (shared/
+// definitions.js). One-time unlock (ADV_SKILL_STUDY_COST), then a free
+// toggle (toggleAdvSkill) between base/advanced for that slot — see
+// _activeSkillDef/useSkill, js/player.js.
+const ADV_SKILL_STUDY_COST = 1;
+function _advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
+function _advSkillBookDef(cls, key) {
+  return CRAFT_MATS.find(m => m.id === _advSkillBookId(cls, key));
+}
+
 function updateSkillsUI() {
   if (!player) return;
   const el = document.getElementById('skill-upgrade-panel');
@@ -556,6 +583,54 @@ function updateSkillsUI() {
         btnAction = `upgradeSkillWithBook('${sk.key}')`;
       }
 
+      // Advanced skill ("вторая профессия") — only ever shown once this slot
+      // itself is maxed (level 10). Learning is a one-time book spend
+      // (dropped only in the Фарм-зона, see FARM_ADV_SKILL_BOOK_CHANCE); once
+      // learned, advActive is a free toggle — see toggleAdvSkill below.
+      let advHtml = '';
+      if (maxed) {
+        const adv = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || []).find(a => a.key === sk.key);
+        if (adv) {
+          const advLearned = !!(player.advSkillLearned || {})[sk.key];
+          const advActive  = !!(player.advSkillActive  || {})[sk.key];
+          const advBookId  = _advSkillBookId(player.type, sk.key);
+          const advBookName = (_advSkillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
+          const advBookCount = countMaterial(advBookId);
+          const advGlyph = adv.img
+            ? `<img src="${adv.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
+            : iconHTML(adv.icon, 15, '#f5c542');
+          const advIconEl = `<div style="position:relative;width:26px;height:26px">
+            ${iconHTML('book', 26, '#f5c542')}
+            <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${advGlyph}</div>
+          </div>`;
+          let advBtnLabel, advBtnAction, advBtnDisabled;
+          if (!advLearned) {
+            advBtnDisabled = advBookCount < ADV_SKILL_STUDY_COST;
+            advBtnLabel = iconHTML('book', 12, '#f5c542') + ` ${ADV_SKILL_STUDY_COST} · ${tVars('advStudyBtnFmt', { n: advBookCount })}`;
+            advBtnAction = `learnAdvSkill('${sk.key}')`;
+          } else {
+            advBtnDisabled = false;
+            advBtnLabel = advActive ? t('advSwitchToBaseBtn') : t('advSwitchToAdvBtn');
+            advBtnAction = `toggleAdvSkill('${sk.key}')`;
+          }
+          advHtml = `<div class="adv-skill-box${advActive ? ' active' : ''}">
+            <div class="adv-skill-hdr">${iconHTML('star', 11, '#f5c542')} ${t('advSkillHdr')}${advActive ? `<span class="adv-skill-active-badge">${t('advActiveLbl')}</span>` : ''}</div>
+            <div class="skill-upg-top">
+              <div class="skill-upg-icon" style="position:relative">
+                ${advIconEl}
+                ${!advLearned ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
+              </div>
+              <div class="skill-upg-info">
+                <div class="skill-upg-name" style="color:#f5c542">${adv.name}</div>
+                <div class="skill-upg-desc">${adv.desc}</div>
+                <div class="skill-upg-type">${!advLearned ? advBookName : ''}</div>
+              </div>
+            </div>
+            <button class="skill-upg-btn adv-btn${advBtnDisabled ? ' disabled' : ''}" onclick="${advBtnAction}">${advBtnLabel}</button>
+          </div>`;
+        }
+      }
+
       return `<div class="skill-upg-card">
         <div class="skill-upg-top">
           <div class="skill-upg-icon" style="position:relative">
@@ -574,6 +649,7 @@ function updateSkillsUI() {
           ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
         </div>` : ''}
         <button class="skill-upg-btn${btnDisabled ? ' disabled' : ''}" onclick="${btnAction}">${btnLabel}</button>
+        ${advHtml}
       </div>`;
     }).join('')}
   `;
@@ -619,6 +695,43 @@ function upgradeSkillWithBook(key) {
   netSaveProgress();
   updateSkillsUI();
   updateInvUI();
+}
+
+// ── Advanced skills ("вторая профессия") ─────────────────────────────────
+function learnAdvSkill(key) {
+  if (!player) return;
+  const sl = player.skillLevels || {};
+  if ((sl[key] || 0) < 10) return; // this slot itself isn't maxed yet
+  const al = player.advSkillLearned || (player.advSkillLearned = { Q:false, W:false, E:false, R:false });
+  if (al[key]) return; // already learned
+  const bookId = _advSkillBookId(player.type, key);
+  if (countMaterial(bookId) < ADV_SKILL_STUDY_COST) {
+    dmgNum(player.x, player.y - 30, t('needAdvSkillBookToast'), '#f17e8b');
+    return;
+  }
+  removeFromInventory(bookId, ADV_SKILL_STUDY_COST);
+  al[key] = true;
+  spawnBurst(player.x, player.y, '#f5c542', 14);
+  dmgNum(player.x, player.y - 42, t('advSkillLearnedToast'), '#f5c542');
+  netSaveProgress();
+  updateSkillsUI();
+  updateInvUI();
+}
+
+// Free toggle between a slot's base and advanced version — no cost either
+// direction, only gated on having learned it (learnAdvSkill above). Shares
+// the same cooldown/level as the base skill (see _activeSkillDef, js/
+// player.js), so switching mid-fight never resets or dodges a cooldown.
+function toggleAdvSkill(key) {
+  if (!player) return;
+  const al = player.advSkillLearned || {};
+  if (!al[key]) return;
+  const aa = player.advSkillActive || (player.advSkillActive = { Q:false, W:false, E:false, R:false });
+  aa[key] = !aa[key];
+  spawnBurst(player.x, player.y, '#f5c542', 8);
+  dmgNum(player.x, player.y - 40, aa[key] ? t('advSwitchedToAdvToast') : t('advSwitchedToBaseToast'), '#f5c542');
+  netSaveProgress();
+  updateSkillsUI();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1708,7 +1821,10 @@ function drawSkillButtons() {
   if (!_skillBtnGradCache) _buildSkillBtnGrads();
 
   for (let i = 0; i < 4; i++) {
-    const sk = skills[i];
+    // Resolved to whichever version (base/advanced) is active — key/cd/level
+    // are identical either way (see _activeSkillDef, js/player.js), only the
+    // icon/art shown here differs.
+    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : skills[i];
     const grads = _skillBtnGradCache[i];
     const b = grads; // positions cached inside grads
     const locked = ((player.skillLevels || {})[sk.key] || 0) <= 0;

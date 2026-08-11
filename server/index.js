@@ -29,7 +29,7 @@ const {
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
-  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE,
+  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
@@ -289,11 +289,13 @@ function _rollMobLoot(inv, eid, rlvl) {
 }
 
 // ── Фарм-зона kill loot ──────────────────────────────────────────────────
-// No recipe/equipment/key/enchant-stone/book drops at all — just an
-// independent FARM_SHARD_CHANCE roll per shard kind, same per-kind-
+// No recipe/equipment/key/enchant-stone/regular-skill-book drops at all —
+// just an independent FARM_SHARD_CHANCE roll per shard kind (same per-kind-
 // independent shape as the normal shard roll in _rollMobLoot above, just
-// flat (no level gate — every farm-zone monster already qualifies) and much
-// higher, since farming shards is this zone's whole point.
+// flat and much higher, since farming shards is this zone's whole point),
+// plus one flat roll for a random advanced-skill book (FARM_ADV_SKILL_BOOK_
+// CHANCE — see its own comment, shared/definitions.js). Both are the ONLY
+// ways to get an advanced-skill book at all; it never drops anywhere else.
 function _rollFarmZoneLoot(inv) {
   const granted = [];
   function addMat(id, qty) {
@@ -302,6 +304,10 @@ function _rollFarmZoneLoot(inv) {
   }
   for (const sh of UNIQUE_SHARDS) {
     if (Math.random() < FARM_SHARD_CHANCE) addMat(sh.id, 1);
+  }
+  if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) {
+    const pool = CRAFT_MATS.filter(m => m.advSkillKey);
+    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)].id, 1);
   }
   return granted;
 }

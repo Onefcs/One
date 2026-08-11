@@ -178,12 +178,40 @@ function _skillInvisSec(key)   { return _skillLvl(key) * 0.2; }
 function _skillHealMult(key)   { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 
+// ── Advanced skills ("вторая профессия") ───────────────────────────────────
+// A slot's advanced version shares its base's key/cd/level/cooldown-slot —
+// only name/icon/img/desc/behavior change — so switching is purely cosmetic
+// bookkeeping plus a branch inside useSkill() below. MUST be learned
+// (advSkillLearned, a one-time book spend — see learnAdvSkill, js/ui.js)
+// before advSkillActive can mean anything; checking both here means a stray
+// active:true with no matching learned:true (e.g. a hand-edited save) can
+// never silently activate an unearned skill.
+function _advActive(key) {
+  return !!(player && player.advSkillLearned && player.advSkillLearned[key] &&
+    player.advSkillActive && player.advSkillActive[key]);
+}
+// Resolves which version of a slot to actually show — used by the HUD skill
+// buttons and touch hitboxes (js/ui.js, js/input.js) so both always agree
+// with what useSkill() below will actually run. cd/key are identical between
+// base and advanced by construction (ADV_SKILL_DEF, js/definitions.js), so
+// spreading the advanced entry over the base one changes only display fields.
+function _activeSkillDef(cls, idx) {
+  const base = (typeof SKILL_DEF !== 'undefined' && SKILL_DEF[cls]) ? SKILL_DEF[cls][idx] : null;
+  if (!base) return null;
+  if (_advActive(base.key)) {
+    const adv = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[cls]) ? ADV_SKILL_DEF[cls][idx] : null;
+    if (adv) return { ...base, ...adv };
+  }
+  return base;
+}
+
 // Вампиризм (deathknight Q) — heals a % of any damage the player deals
 // while vampirismTimer is active. Called from network.js wherever a hit/kill
 // event reports how much damage this player's own attack just dealt.
 function _applyVampirism(dmg) {
   if (!player || !(vampirismTimer > 0) || !dmg) return;
-  const heal = Math.max(1, Math.round(dmg * VAMPIRISM_PCT));
+  const pct = (player.type === 'deathknight' && _advActive('Q')) ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT; // "Истощение" heals 15% instead of 10%
+  const heal = Math.max(1, Math.round(dmg * pct));
   player.hp = Math.min(player.maxHp, player.hp + heal);
   dmgNum(player.x, player.y - 30, '+' + heal + '♥', '#c23b5e');
 }
@@ -268,9 +296,19 @@ function recompute() {
   // — a level-up, a gear swap, a potion buff expiring — used to silently
   // erase a still-running skill buff while its timer and icon kept going.
   if (typeof battleCryTimer !== 'undefined' && battleCryTimer > 0) a = Math.floor(a * 1.20);
+  // Advanced-skill ATK buffs (own separate timers — see js/state.js's
+  // comment block above them for why they can't just share battleCryTimer).
+  if (typeof advDkQAtkTimer  !== 'undefined' && advDkQAtkTimer  > 0) a = Math.floor(a * 1.20); // "Истощение" (adv DK Q)
+  if (typeof madnessTimer    !== 'undefined' && madnessTimer    > 0) a = Math.floor(a * 1.25); // "Безумие" (adv DK E)
+  if (typeof levShieldAtkTimer !== 'undefined' && levShieldAtkTimer > 0) a = Math.floor(a * 1.10); // "Щит" (adv Lev E)
   let defMult = 1;
   if (typeof guardTimer       !== 'undefined' && guardTimer       > 0) defMult *= 1.80;
-  if (typeof barrierTimer     !== 'undefined' && barrierTimer     > 0) defMult *= 1.50;
+  // "Вспышка" (adv mage E) gives +80% def instead of Barrier's own +50% —
+  // barrierTimer is mage-only either way, so the active-skill check just
+  // picks which magnitude this cast actually meant.
+  if (typeof barrierTimer !== 'undefined' && barrierTimer > 0) {
+    defMult *= (player.type === 'mage' && _advActive('E')) ? 1.80 : 1.50;
+  }
   if (typeof faithShieldTimer !== 'undefined' && faithShieldTimer > 0) defMult *= 1.50;
   if (defMult !== 1) d = Math.floor(d * defMult);
 
@@ -280,9 +318,19 @@ function recompute() {
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
-  if (typeof atkSpeedTimer !== 'undefined' && atkSpeedTimer > 0) player.atkSpeed *= 1.5;
-  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0);
+  if (typeof atkSpeedTimer !== 'undefined' && atkSpeedTimer > 0) {
+    // ×2 instead of ranger's own ×1.5 for "Ускорение" (adv ranger R); warlock
+    // never sets atkSpeedTimer at all except via "Жажда" (adv warlock E), so
+    // it's unconditionally ×2 there.
+    let _asMult = 1.5;
+    if (player.type === 'ranger' && _advActive('R')) _asMult = 2;
+    if (player.type === 'warlock') _asMult = 2;
+    player.atkSpeed *= _asMult;
+  }
+  const _critChanceBuff = (typeof critChanceBuffTimer !== 'undefined' && critChanceBuffTimer > 0) ? 0.05 : 0; // "Баф Крит" (adv ranger E)
+  const _critDmgBuff    = (typeof critDmgBuffTimer    !== 'undefined' && critDmgBuffTimer    > 0) ? 0.05 : 0; // "Жадность" (adv DK W)
+  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff);
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
   player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;
@@ -605,20 +653,44 @@ function useSkill(idx) {
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
   if (player.type === 'deathknight') {
-    if (sk.key === 'Q') { // Вампиризм — 10% lifesteal for 10s (+1s per level)
-      vampirismTimer = 10 + _skillBuffSec('Q');
-      dmgNum(player.x, player.y - 40, '🩸 Вампиризм!', '#a5f');
-      spawnBurst(player.x, player.y, '#a5f', 10);
-    } else if (sk.key === 'W') { // Смерч клинков — AOE 110
-      spawnAOE(player.x, player.y, 110);
-      _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
-      _pvpSkillAOE(110, _skillDmgMult('W'));
-    } else if (sk.key === 'E') { // Гнев мертвеца — +20% ATK 5s (+1s per level)
-      battleCryTimer = 5 + _skillBuffSec('E');
-      recompute(); // applies the buff off the timer above and pushes the new stats to the server
-      dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
-      spawnBurst(player.x, player.y, '#a5f', 10);
-    } else if (sk.key === 'R') { // Рывок тьмы — dash 140px toward target/enemy, deal ×1.5 on arrival
+    if (sk.key === 'Q') {
+      if (_advActive('Q')) { // Истощение — 15% lifesteal + 20% ATK, 10s (+1s per level)
+        vampirismTimer = 10 + _skillBuffSec('Q');
+        advDkQAtkTimer = 10 + _skillBuffSec('Q');
+        recompute();
+        dmgNum(player.x, player.y - 40, '🩸 Истощение!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 12);
+      } else { // Вампиризм — 10% lifesteal for 10s (+1s per level)
+        vampirismTimer = 10 + _skillBuffSec('Q');
+        dmgNum(player.x, player.y - 40, '🩸 Вампиризм!', '#a5f');
+        spawnBurst(player.x, player.y, '#a5f', 10);
+      }
+    } else if (sk.key === 'W') {
+      if (_advActive('W')) { // Жадность — +5% crit damage, 20 min (+1s per level)
+        critDmgBuffTimer = 1200 + _skillBuffSec('W');
+        recompute();
+        dmgNum(player.x, player.y - 40, '💰 Жадность!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 10);
+      } else { // Смерч клинков — AOE 110
+        spawnAOE(player.x, player.y, 110);
+        _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
+        _pvpSkillAOE(110, _skillDmgMult('W'));
+      }
+    } else if (sk.key === 'E') {
+      if (_advActive('E')) { // Безумие — +25% ATK + basic attacks splash AOE, 5s (+1s per level)
+        madnessTimer = 5 + _skillBuffSec('E');
+        recompute();
+        dmgNum(player.x, player.y - 40, '💢 Безумие!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 12);
+      } else { // Гнев мертвеца — +20% ATK 5s (+1s per level)
+        battleCryTimer = 5 + _skillBuffSec('E');
+        recompute(); // applies the buff off the timer above and pushes the new stats to the server
+        dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
+        spawnBurst(player.x, player.y, '#a5f', 10);
+      }
+    } else if (sk.key === 'R') { // Рывок тьмы / Охота — dash 140px toward target/enemy, ×1.5 on arrival;
+      // advanced additionally strips 20% of the (PvE) target's defense for 10s.
+      const _advR = _advActive('R');
       const _pvpR = _pvpPlayerTarget();
       let _rdx, _rdy, _chargeTarget = null, _chargePvpTarget = null;
       if (_pvpR) {
@@ -639,78 +711,148 @@ function useSkill(idx) {
         spawnAOE(_chargePvpTarget.op.x, _chargePvpTarget.op.y, 40);
       } else if (_chargeTarget) {
         netSkillAttack(_chargeTarget.id, 1.5 * _skillDmgMult('R'));
+        if (_advR && typeof netSkillDefDown === 'function') netSkillDefDown(_chargeTarget.id, 10);
         faceTowards(_chargeTarget.x, _chargeTarget.y);
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
       }
-      spawnBurst(player.x, player.y, '#a5f', 8);
+      if (_advR) dmgNum(player.x, player.y - 40, '🏹 Охота!', '#f5c542');
+      spawnBurst(player.x, player.y, _advR ? '#f5c542' : '#a5f', 8);
     }
   } else if (player.type === 'ranger') {
-    if (sk.key === 'Q') { // Multi-Shot — 3 arrows fan
-      const dir = nearestEnemyDir();
-      const base = Math.atan2(dir.dy, dir.dx);
-      const dmgMult = _skillDmgMult('Q');
-      [-0.35, 0, 0.35].forEach(off => {
-        const ang = base + off;
-        const p = { x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
-          color: '#8fbf5a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
-        projs.push(p);
-        netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#8fbf5a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
-      });
-      _skillDirMult(dir.dx, dir.dy, 220, 0.1, dmgMult);
-    } else if (sk.key === 'W') { // Combo Arrow — 3 arrows toward target
-      const dir = nearestEnemyDir();
-      const ang = Math.atan2(dir.dy, dir.dx);
-      const dmgMult = _skillDmgMult('W');
-      [0, 80, 160].forEach(delayMs => {
-        setTimeout(() => {
-          if (!player) return;
-          projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
-            color: '#a8d47a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
-          netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
-            color: '#a8d47a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
-        }, delayMs);
-      });
-      _skillDirMult(dir.dx, dir.dy, 240, 0.5, dmgMult);
-    } else if (sk.key === 'E') { // Jump — dash 80px (+1s per level)
-      dodgeTimer = 0.6 + _skillBuffSec('E');
-      const dx = joy.dx || 0, dy = joy.dy || 0;
-      const len = Math.hypot(dx, dy) || 1;
-      _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
-      spawnBurst(player.x, player.y, '#7e7', 6);
-    } else if (sk.key === 'R') { // Attack Speed ×1.5 for 5s (+1s per level)
+    if (sk.key === 'Q') {
+      if (_advActive('Q')) { // Град стрел — AOE ×3, radius 220
+        spawnAOE(player.x, player.y, 220);
+        _skillAOEMult(220, 3 * _skillDmgMult('Q')); netSpawnAoe(player.x, player.y, 220);
+        _pvpSkillAOE(220, 3 * _skillDmgMult('Q'));
+        dmgNum(player.x, player.y - 40, '🏹 Град стрел!', '#f5c542');
+      } else { // Multi-Shot — 3 arrows fan
+        const dir = nearestEnemyDir();
+        const base = Math.atan2(dir.dy, dir.dx);
+        const dmgMult = _skillDmgMult('Q');
+        [-0.35, 0, 0.35].forEach(off => {
+          const ang = base + off;
+          const p = { x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
+            color: '#8fbf5a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
+          projs.push(p);
+          netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#8fbf5a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
+        });
+        _skillDirMult(dir.dx, dir.dy, 220, 0.1, dmgMult);
+      }
+    } else if (sk.key === 'W') {
+      if (_advActive('W')) { // Остриё — ×3 damage + 2s stun on nearest/PvP target
+        const stunDur = 2 + _skillBuffSec('W');
+        const pvpTgt = _pvpPlayerTarget();
+        if (pvpTgt) {
+          spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
+          netPvpSkillAttack(pvpTgt.id, 3 * _skillDmgMult('W'));
+          pvpTgt.op.stunTimer = stunDur;
+          netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
+          faceTowards(pvpTgt.op.x, pvpTgt.op.y);
+        } else {
+          const tgt = nearestEnemy();
+          if (tgt) {
+            spawnAOE(tgt.x, tgt.y, 40);
+            netSkillAttack(tgt.id, 3 * _skillDmgMult('W'));
+            tgt.stunTimer = stunDur;
+            netSkillStun(tgt.id, stunDur);
+            faceTowards(tgt.x, tgt.y);
+          }
+        }
+        spawnBurst(player.x, player.y, '#f5c542', 8);
+        dmgNum(player.x, player.y - 40, '🎯 Остриё!', '#f5c542');
+      } else { // Combo Arrow — 3 arrows toward target
+        const dir = nearestEnemyDir();
+        const ang = Math.atan2(dir.dy, dir.dx);
+        const dmgMult = _skillDmgMult('W');
+        [0, 80, 160].forEach(delayMs => {
+          setTimeout(() => {
+            if (!player) return;
+            projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
+              color: '#a8d47a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
+            netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
+              color: '#a8d47a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
+          }, delayMs);
+        });
+        _skillDirMult(dir.dx, dir.dy, 240, 0.5, dmgMult);
+      }
+    } else if (sk.key === 'E') {
+      if (_advActive('E')) { // Баф Крит — +5% crit chance, 20 min (+1s per level)
+        critChanceBuffTimer = 1200 + _skillBuffSec('E');
+        recompute();
+        dmgNum(player.x, player.y - 40, '🎯 Баф Крит!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 10);
+      } else { // Jump — dash 80px (+1s per level)
+        dodgeTimer = 0.6 + _skillBuffSec('E');
+        const dx = joy.dx || 0, dy = joy.dy || 0;
+        const len = Math.hypot(dx, dy) || 1;
+        _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
+        spawnBurst(player.x, player.y, '#7e7', 6);
+      }
+    } else if (sk.key === 'R') { // Скорость атаки / Ускорение — ×1.5 or (advanced) ×2 attack speed
+      // for 5s (+1s per level); recompute() itself picks the multiplier off
+      // _advActive('R'), so this cast is identical either way.
       atkSpeedTimer = 5 + _skillBuffSec('R');
       recompute();
-      dmgNum(player.x, player.y - 40, '⚡ Скорость!', '#7ef');
-      spawnBurst(player.x, player.y, '#7ef', 8);
+      const _advR2 = _advActive('R');
+      dmgNum(player.x, player.y - 40, _advR2 ? '⚡ Ускорение!' : '⚡ Скорость!', _advR2 ? '#f5c542' : '#7ef');
+      spawnBurst(player.x, player.y, _advR2 ? '#f5c542' : '#7ef', 8);
     }
   } else if (player.type === 'mage') {
-    if (sk.key === 'Q') { // Fireball — ×2 damage
+    if (sk.key === 'Q') {
+      const _advQ = _advActive('Q');
       const dir = nearestEnemyDir();
       const ang = Math.atan2(dir.dy, dir.dx);
-      const dmgMult = 2 * _skillDmgMult('Q');
+      const dmgMult = (_advQ ? 3 : 2) * _skillDmgMult('Q'); // Урон молнии ×3 / Ледяной шар ×2
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
-        color: '#f60', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
+        color: _advQ ? '#f5c542' : '#f60', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
       _skillDirMult(dir.dx, dir.dy, 160, 0.5, dmgMult);
-      netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
-    } else if (sk.key === 'W') { // Ice Nova — AOE + slow 3s
-      spawnAOE(player.x, player.y, 130);
-      _skillAOEMult(130, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 130);
+      netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: _advQ ? '#f5c542' : '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
+      if (_advQ) { // + 3s stun (+1s per level) on the same target the shot is aimed at
+        const stunDur = 3 + _skillBuffSec('Q');
+        const pvpTgt = _pvpPlayerTarget();
+        if (pvpTgt) {
+          pvpTgt.op.stunTimer = stunDur;
+          netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
+        } else {
+          const tgt = nearestEnemy();
+          if (tgt) { tgt.stunTimer = stunDur; netSkillStun(tgt.id, stunDur); }
+        }
+        dmgNum(player.x, player.y - 40, '⚡ Урон молнии!', '#f5c542');
+      }
+    } else if (sk.key === 'W') {
+      const _advW = _advActive('W');
+      const r = _advW ? 220 : 130;
+      const dmgMult = (_advW ? 3 : 1) * _skillDmgMult('W'); // Разряд ×3 / Ледяная нова ×1
+      spawnAOE(player.x, player.y, r);
+      _skillAOEMult(r, dmgMult); netSpawnAoe(player.x, player.y, r);
       const slowIds = [];
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
-        if (dist(e.x, e.y, player.x, player.y) < 130) { e.slowTimer = 3; slowIds.push(e.id); }
+        if (dist(e.x, e.y, player.x, player.y) < r) { e.slowTimer = 3; slowIds.push(e.id); }
       });
       if (slowIds.length) netSkillSlow(slowIds, 3);
-      _pvpSkillAOE(130, _skillDmgMult('W'));
-      _pvpSkillSlow(130, 3);
-      dmgNum(player.x, player.y - 40, '❄ Заморозка!', '#8ef');
-      spawnBurst(player.x, player.y, '#8ef', 12);
-    } else if (sk.key === 'E') { // Barrier — +50% DEF for 3s (+1s per level)
-      barrierTimer = 3 + _skillBuffSec('E');
-      recompute();
-      dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
-      spawnBurst(player.x, player.y, '#e8e', 8);
-    } else if (sk.key === 'R') { // Teleport (+10px per level)
+      _pvpSkillAOE(r, dmgMult);
+      _pvpSkillSlow(r, 3);
+      dmgNum(player.x, player.y - 40, _advW ? '⚡ Разряд!' : '❄ Заморозка!', _advW ? '#f5c542' : '#8ef');
+      spawnBurst(player.x, player.y, _advW ? '#f5c542' : '#8ef', 12);
+    } else if (sk.key === 'E') {
+      if (_advActive('E')) { // Вспышка — AOE ×2 damage, radius 220 + the same +80% DEF 3s (+1s per level)
+        spawnAOE(player.x, player.y, 220);
+        _skillAOEMult(220, 2 * _skillDmgMult('E')); netSpawnAoe(player.x, player.y, 220);
+        _pvpSkillAOE(220, 2 * _skillDmgMult('E'));
+        barrierTimer = 3 + _skillBuffSec('E');
+        recompute();
+        dmgNum(player.x, player.y - 40, '✨ Вспышка!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 14);
+      } else { // Barrier — +50% DEF for 3s (+1s per level)
+        barrierTimer = 3 + _skillBuffSec('E');
+        recompute();
+        dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
+        spawnBurst(player.x, player.y, '#e8e', 8);
+      }
+    } else if (sk.key === 'R') { // Teleport / Перенесение — dash (+10px per level);
+      // advanced additionally restores 20% HP on arrival.
+      const _advR3 = _advActive('R');
       const dx = joy.dx || 0, dy = joy.dy || 0;
       const len = Math.hypot(dx, dy) || 1;
       const range = 180 + _skillMobRange('R');
@@ -718,20 +860,36 @@ function useSkill(idx) {
       const ty = player.y + (dy / len) * range;
       spawnBurst(player.x, player.y, '#f4f', 6);
       _dashTo(tx, ty); // steps toward tx/ty, stopping at walls or locked gates
-      spawnBurst(player.x, player.y, '#f4f', 6);
+      spawnBurst(player.x, player.y, _advR3 ? '#f5c542' : '#f4f', 6);
+      if (_advR3) {
+        const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('R'));
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        dmgNum(player.x, player.y - 50, '+' + heal + '♥ Перенесение!', '#f5c542');
+      }
     }
   } else if (player.type === 'warlock') {
-    if (sk.key === 'Q') { // Тёмное исцеление — +20% maxHP (+1% per level)
-      const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('Q'));
-      player.hp = Math.min(player.maxHp, player.hp + heal);
-      dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#a855e0');
-      spawnBurst(player.x, player.y, '#a855e0', 8);
-    } else if (sk.key === 'W') { // Оковы тьмы — stun nearest target 3s (+1s per level)
+    if (sk.key === 'Q') {
+      if (_advActive('Q')) { // Бабочки — summon for 10s, healing 5% maxHP/sec (+1s per level)
+        butterfliesTimer = 10 + _skillBuffSec('Q');
+        _butterfliesTickAcc = 0;
+        dmgNum(player.x, player.y - 40, '🦋 Бабочки!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 14);
+      } else { // Тёмное исцеление — +20% maxHP (+1% per level)
+        const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('Q'));
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#a855e0');
+        spawnBurst(player.x, player.y, '#a855e0', 8);
+      }
+    } else if (sk.key === 'W') { // Оковы тьмы / Колючие оковы — stun nearest/PvP target 3s
+      // (+1s per level); advanced also deals ×3 damage (base PvE stun deals
+      // none today — only its PvP branch already did, at ×1).
+      const _advW3 = _advActive('W');
       const stunDur = 3 + _skillBuffSec('W');
+      const dmgMult3 = (_advW3 ? 3 : 1) * _skillDmgMult('W');
       const pvpTgt = _pvpPlayerTarget();
       if (pvpTgt) {
         spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
-        netPvpSkillAttack(pvpTgt.id, _skillDmgMult('W'));
+        netPvpSkillAttack(pvpTgt.id, dmgMult3);
         pvpTgt.op.stunTimer = stunDur;
         netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
         faceTowards(pvpTgt.op.x, pvpTgt.op.y);
@@ -739,35 +897,45 @@ function useSkill(idx) {
         const tgt = nearestEnemy();
         if (tgt) {
           spawnAOE(tgt.x, tgt.y, 40);
+          if (_advW3) netSkillAttack(tgt.id, dmgMult3);
           tgt.stunTimer = stunDur;
           netSkillStun(tgt.id, stunDur);
           faceTowards(tgt.x, tgt.y);
         }
       }
-      spawnBurst(player.x, player.y, '#a855e0', 8);
-      dmgNum(player.x, player.y - 40, '⛓ Оковы тьмы!', '#a855e0');
-    } else if (sk.key === 'E') { // Тёмный щит — +50% DEF self + party 4s (+1s per level)
+      spawnBurst(player.x, player.y, _advW3 ? '#f5c542' : '#a855e0', 8);
+      dmgNum(player.x, player.y - 40, _advW3 ? '⛓ Колючие оковы!' : '⛓ Оковы тьмы!', _advW3 ? '#f5c542' : '#a855e0');
+    } else if (sk.key === 'E') { // Тёмный щит / Жажда — +50% DEF self + party 4s (+1s per
+      // level); advanced additionally grants ×2 attack speed for the same duration.
+      const _advE3 = _advActive('E');
       faithShieldTimer = 4 + _skillBuffSec('E');
+      if (_advE3) atkSpeedTimer = 4 + _skillBuffSec('E');
       recompute();
       if (typeof netFaithShield === 'function') netFaithShield(faithShieldTimer);
-      dmgNum(player.x, player.y - 40, '🛡 Тёмный щит!', '#a855e0');
-      spawnBurst(player.x, player.y, '#a855e0', 10);
-    } else if (sk.key === 'R') { // Тёмная молитва — +10% maxHP self + party (+1% per level)
-      const healSelf = Math.round(player.maxHp * 0.10 * _skillHealMult('R'));
+      dmgNum(player.x, player.y - 40, _advE3 ? '⚡ Жажда!' : '🛡 Тёмный щит!', _advE3 ? '#f5c542' : '#a855e0');
+      spawnBurst(player.x, player.y, _advE3 ? '#f5c542' : '#a855e0', 10);
+    } else if (sk.key === 'R') { // Тёмная молитва / Исцеление — heals self + party for 10%
+      // (or, advanced, 20%) of maxHP (+1% per level).
+      const _advR4 = _advActive('R');
+      const pct = _advR4 ? 0.20 : 0.10;
+      const healSelf = Math.round(player.maxHp * pct * _skillHealMult('R'));
       player.hp = Math.min(player.maxHp, player.hp + healSelf);
-      dmgNum(player.x, player.y - 50, '+' + healSelf + '♥ Молитва!', '#a855e0');
-      spawnBurst(player.x, player.y, '#a855e0', 14);
+      dmgNum(player.x, player.y - 50, '+' + healSelf + (_advR4 ? '♥ Исцеление!' : '♥ Молитва!'), _advR4 ? '#f5c542' : '#a855e0');
+      spawnBurst(player.x, player.y, _advR4 ? '#f5c542' : '#a855e0', 14);
       if (typeof netHealParty === 'function') {
-        netHealParty(Math.round(player.maxHp * 0.10 * _skillHealMult('R')));
+        netHealParty(Math.round(player.maxHp * pct * _skillHealMult('R')));
       }
     }
   } else if (player.type === 'lev') {
-    if (sk.key === 'Q') { // Пинок — ×2 single target + stun 3s
-      const stunDur = 3 + _skillBuffSec('Q');
+    if (sk.key === 'Q') { // Пинок / Молот гнева — single target, base ×2 + 3s
+      // stun, advanced ×3 + 5s stun (+1s per level either way).
+      const _advQ2 = _advActive('Q');
+      const stunDur = (_advQ2 ? 5 : 3) + _skillBuffSec('Q');
+      const dmgMult4 = (_advQ2 ? 3 : 2) * _skillDmgMult('Q');
       const pvpTgt = _pvpPlayerTarget();
       if (pvpTgt) {
         spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 50);
-        netPvpSkillAttack(pvpTgt.id, 2 * _skillDmgMult('Q'));
+        netPvpSkillAttack(pvpTgt.id, dmgMult4);
         pvpTgt.op.stunTimer = stunDur;
         netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
         faceTowards(pvpTgt.op.x, pvpTgt.op.y);
@@ -775,24 +943,33 @@ function useSkill(idx) {
         const tgt = nearestEnemy();
         if (tgt) {
           spawnAOE(tgt.x, tgt.y, 50);
-          netSkillAttack(tgt.id, 2 * _skillDmgMult('Q'));
+          netSkillAttack(tgt.id, dmgMult4);
           tgt.stunTimer = stunDur;
           netSkillStun(tgt.id, stunDur);
           faceTowards(tgt.x, tgt.y);
         }
       }
-      spawnBurst(player.x, player.y, '#ccd', 8);
-      dmgNum(player.x, player.y - 40, '🥾 Пинок!', '#ccd');
-    } else if (sk.key === 'W') { // Вихрь клинка — AOE 110
-      spawnAOE(player.x, player.y, 110);
-      _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110);
-      _pvpSkillAOE(110, _skillDmgMult('W'));
-    } else if (sk.key === 'E') { // Гнев мертвеца — +80% DEF 10s (+1s per level)
+      spawnBurst(player.x, player.y, _advQ2 ? '#f5c542' : '#ccd', 8);
+      dmgNum(player.x, player.y - 40, _advQ2 ? '🔨 Молот гнева!' : '🥾 Пинок!', _advQ2 ? '#f5c542' : '#ccd');
+    } else if (sk.key === 'W') { // Вихрь клинка / Вихрь — AOE, base radius 110,
+      // advanced ×2 damage at radius 220.
+      const _advW4 = _advActive('W');
+      const r2 = _advW4 ? 220 : 110;
+      spawnAOE(player.x, player.y, r2);
+      _skillAOEMult(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W')); netSpawnAoe(player.x, player.y, r2);
+      _pvpSkillAOE(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W'));
+    } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
+      // level) either way; advanced additionally gives +10% ATK for the same duration.
+      const _advE4 = _advActive('E');
       guardTimer = 10 + _skillBuffSec('E');
+      if (_advE4) levShieldAtkTimer = 10 + _skillBuffSec('E');
       recompute();
-      dmgNum(player.x, player.y - 40, '🛡 +80% DEF!', '#ccd');
-      spawnBurst(player.x, player.y, '#ccd', 10);
-    } else if (sk.key === 'R') { // Кувырок — dash 140px toward target/enemy, ×1.5 on arrival
+      dmgNum(player.x, player.y - 40, _advE4 ? '🛡 Щит!' : '🛡 +80% DEF!', _advE4 ? '#f5c542' : '#ccd');
+      spawnBurst(player.x, player.y, _advE4 ? '#f5c542' : '#ccd', 10);
+    } else if (sk.key === 'R') { // Кувырок / Рывок — dash 140px toward
+      // target/enemy, ×1.5 on arrival; advanced additionally slows the (PvE)
+      // target 30% for 10s.
+      const _advR5 = _advActive('R');
       const _pvpR = _pvpPlayerTarget();
       let _rdx, _rdy, _chargeTarget = null, _chargePvpTarget = null;
       if (_pvpR) {
@@ -809,14 +986,16 @@ function useSkill(idx) {
       _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
       if (_chargePvpTarget) {
         netPvpSkillAttack(_chargePvpTarget.id, 1.5 * _skillDmgMult('R'));
+        if (_advR5) { _chargePvpTarget.op.slowTimer = 10; netPvpSkillCC(_chargePvpTarget.id, 'slow', 10); }
         faceTowards(_chargePvpTarget.op.x, _chargePvpTarget.op.y);
         spawnAOE(_chargePvpTarget.op.x, _chargePvpTarget.op.y, 40);
       } else if (_chargeTarget) {
         netSkillAttack(_chargeTarget.id, 1.5 * _skillDmgMult('R'));
+        if (_advR5) { _chargeTarget.slowTimer = 10; netSkillSlow([_chargeTarget.id], 10); }
         faceTowards(_chargeTarget.x, _chargeTarget.y);
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
       }
-      spawnBurst(player.x, player.y, '#ccd', 8);
+      spawnBurst(player.x, player.y, _advR5 ? '#f5c542' : '#ccd', 8);
     }
   }
 }
@@ -910,6 +1089,12 @@ function restoreFromSave(data) {
 
   player.skillLevels = { Q:0, W:0, E:0, R:0, ...(data.skillLevels || {}) };
   player.passiveLevels = { ...(data.passiveLevels || {}) };
+  // "Вторая профессия" — advSkillLearned is permanent (one-time book spend,
+  // see learnAdvSkill, js/ui.js); advSkillActive is a free toggle on top of
+  // it and defaults to false (base skill) even once learned, same as any
+  // other loadout choice — see _activeSkillDef, js/player.js.
+  player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...(data.advSkillLearned || {}) };
+  player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...(data.advSkillActive || {}) };
   recompute();
   player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }

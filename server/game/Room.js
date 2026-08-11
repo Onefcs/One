@@ -1192,7 +1192,7 @@ class Room {
           e.hp = e.maxHp;
           e.x = e.spawnX; e.y = e.spawnY;
           e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
-          e.stunTimer = 0; e.slowTimer = 0;
+          e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0;
           e._shp = -1;
           delete e.respawnTimer;
           if (e.isBoss) this.io.to(`floor_${this.floor}`).emit('bossStatus', { arm: e.arm, alive: true });
@@ -1231,6 +1231,7 @@ class Room {
       // Tick CC timers
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
       if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
+      if ((e.defDownTimer || 0) > 0) e.defDownTimer -= dt;
 
       // Find closest alive player not in safe zone, not invisible — but only
       // actually re-scan every AI_TARGET_SEARCH_EVERY ticks (see its comment
@@ -2527,7 +2528,7 @@ class Room {
       e.hp = e.maxHp;
       e.x = e.spawnX; e.y = e.spawnY;
       e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
-      e.stunTimer = 0; e.slowTimer = 0;
+      e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0;
       e._shp = -1;
       delete e.respawnTimer;
     });
@@ -2776,7 +2777,10 @@ class Room {
       if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
       if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
     }
-    const base = Math.max(1, attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3);
+    // "Охота" (advanced deathknight R) — 20% off this enemy's def while
+    // defDownTimer is running (see applySkillEffect's 'defDown' branch).
+    const _effDef = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
+    const base = Math.max(1, attacker.atk - _effDef + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
@@ -2853,7 +2857,9 @@ class Room {
       if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
     }
     const mult = Math.max(1, Math.min(multiplier || 1, 10));
-    const base = Math.max(1, Math.floor((attacker.atk - enemy.def + Math.floor(Math.random() * 7) - 3) * mult));
+    // Same defDown discount as attackEnemy above.
+    const _effDef2 = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
+    const base = Math.max(1, Math.floor((attacker.atk - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     // Missing here (unlike attackEnemy/pvpAttack/pvpSkillAttack, which all
     // bump this) meant every skill cast against a monster that doesn't also
@@ -2903,6 +2909,10 @@ class Room {
     if (!enemy || enemy.hp <= 0) return;
     if (type === 'stun') enemy.stunTimer = Math.min(duration, 6);
     else if (type === 'slow') enemy.slowTimer = Math.min(duration, 6);
+    // "Охота" (advanced deathknight R, js/player.js) — same 6s cap as
+    // stun/slow above, applied in attackEnemy/skillAttackEnemy's own damage
+    // calc (defDownTimer > 0 → 20% off this enemy's def for that hit).
+    else if (type === 'defDown') enemy.defDownTimer = Math.min(duration, 6);
   }
 
   // Capped: the id list comes straight from a client packet (up to the 512 KB

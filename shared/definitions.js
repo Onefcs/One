@@ -622,6 +622,17 @@ const _SKILL_BOOK_SRC = [
   ['warlock', 'Q', 'Тёмное исцеление'], ['warlock', 'W', 'Оковы тьмы'], ['warlock', 'E', 'Тёмный щит'], ['warlock', 'R', 'Тёмная молитва'],
 ];
 
+// [class, skillKey, name] — advanced-skill counterpart of _SKILL_BOOK_SRC
+// above; name must match ADV_SKILL_DEF[class][i].name exactly (js/
+// definitions.js). Same slot/key as the base skill it enhances.
+const _ADV_SKILL_BOOK_SRC = [
+  ['lev', 'Q', 'Молот гнева'], ['lev', 'W', 'Вихрь'], ['lev', 'E', 'Щит'], ['lev', 'R', 'Рывок'],
+  ['deathknight', 'Q', 'Истощение'], ['deathknight', 'W', 'Жадность'], ['deathknight', 'E', 'Безумие'], ['deathknight', 'R', 'Охота'],
+  ['ranger', 'Q', 'Град стрел'], ['ranger', 'W', 'Остриё'], ['ranger', 'E', 'Баф Крит'], ['ranger', 'R', 'Ускорение'],
+  ['mage', 'Q', 'Урон молнии'], ['mage', 'W', 'Разряд'], ['mage', 'E', 'Вспышка'], ['mage', 'R', 'Перенесение'],
+  ['warlock', 'Q', 'Бабочки'], ['warlock', 'W', 'Колючие оковы'], ['warlock', 'E', 'Жажда'], ['warlock', 'R', 'Исцеление'],
+];
+
 // [class, passiveId, name] — class-exclusive pair of passives, one book per
 // class+passive combo. Name must match PASSIVE_CLASS_DEF's entry for that
 // id exactly (further down in this file).
@@ -675,6 +686,19 @@ const CRAFT_MATS = [
   ..._PASSIVE_COMMON_BOOK_SRC.map(([id, name]) => ({
     id: `book_pas_${id}`, name: `Книга: ${name}`,
     slot: 'material', rarity: 'uncommon', passiveId: id,
+  })),
+  // ── Advanced skill books ("вторая профессия") ────────────
+  // One per class+skill-key combo, same shape as the regular skill books
+  // above but a separate item id/pool (book_adv_<cls>_<key>, advSkillKey
+  // instead of skillKey) so studySkill/upgradeSkillWithBook's regular flow
+  // never sees them by accident. Names mirror ADV_SKILL_DEF (js/
+  // definitions.js); icon resolved the same book-glyph way via forClass+
+  // advSkillKey (see _itemIcon, js/ui.js). legendary rarity reflects how
+  // rare the drop itself is (FARM_ADV_SKILL_BOOK_CHANCE below) — these are a
+  // capstone unlock, not a normal upgrade material.
+  ..._ADV_SKILL_BOOK_SRC.map(([cls, key, name]) => ({
+    id: `book_adv_${cls}_${key}`, name: `Книга: ${name}`,
+    slot: 'material', rarity: 'legendary', forClass: cls, advSkillKey: key,
   })),
 ];
 
@@ -897,6 +921,16 @@ const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can 
 // UNIQUE_SHARD_CHANCE above, just flat and far higher since farming shards
 // is the zone's whole point.
 const FARM_SHARD_CHANCE = 0.001;
+
+// Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat
+// roll per kill, same "roll once, pick a random book from the pool" shape
+// _rollMobLoot's own skillKey-book roll already uses — just 100x rarer, and
+// with no arm/room dropMult multiplier (the normal roll's base rate before
+// that multiplier is 0.00002; Фарм-зона has no dropMult concept at all, so
+// that flat pre-multiplier rate is the closest "normal book chance" to scale
+// down from). Only rolled for farmZone kills, never regular ones.
+const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100;
+
 // How many of EVERY kind one weapon costs. All 20 are required, so the two
 // numbers below mean 20 000 and 100 000 shards respectively.
 const UNIQUE_SHARD_COST = { epic: 1000, legendary: 5000 };
@@ -1450,7 +1484,7 @@ if (typeof module !== 'undefined') module.exports = {
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
-  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE,
+  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
