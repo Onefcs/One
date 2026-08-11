@@ -2723,7 +2723,13 @@ function _recordChat(username, text) {
 // Clan chat history — last 30 per clan, keyed by clan _id (string). Same
 // ephemeral in-memory model as globalChatHistory above (resets on restart,
 // no DB persistence) — kept consistent with the rest of this chat system.
+// Nothing ever removed a clan's entry here, including when the clan itself
+// was disbanded (see the ClanModel.deleteOne in clanLeave/clanDisband), so
+// this grew by one row per distinct clan ID ever created for the life of the
+// process — the same shape of leak dmHistory below already had fixed. Evict
+// the least recently written clan once there are too many, same mechanism.
 const clanChatHistory = new Map(); // clanId string -> [{username, text, time}]
+const CLAN_CHAT_MAX_CLANS = 2000;
 function _recordClanChat(clanId, username, text) {
   const key = String(clanId);
   const now = new Date();
@@ -2731,7 +2737,13 @@ function _recordClanChat(clanId, username, text) {
   const arr = clanChatHistory.get(key) || [];
   arr.push({ username, text, time });
   if (arr.length > 30) arr.shift();
+  // Re-inserting moves this key to the end of the Map's iteration order, same
+  // LRU trick dmHistory uses below.
+  clanChatHistory.delete(key);
   clanChatHistory.set(key, arr);
+  while (clanChatHistory.size > CLAN_CHAT_MAX_CLANS) {
+    clanChatHistory.delete(clanChatHistory.keys().next().value);
+  }
 }
 
 // Private messages — last 50 per conversation, keyed by the two participants'
