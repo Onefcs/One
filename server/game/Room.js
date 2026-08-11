@@ -915,8 +915,9 @@ class Room {
     // look like "Кровавая Башня" (see _buildChunk, js/game.js).
     // guildWar is the same case as arena — _buildArmGates builds _gwPad/
     // _gwReturnPad from it, so omitting it would leave the Guild War portal
-    // permanently missing no matter what guildWarState says.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar };
+    // permanently missing no matter what guildWarState says. farmZone is the
+    // same again, for the Фарм-зона pad.
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
   }
 
   _inSafeZone(x, y) {
@@ -2810,7 +2811,7 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -2884,7 +2885,7 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

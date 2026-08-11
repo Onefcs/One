@@ -171,7 +171,32 @@ const GW_Y0 = FEAR_Y0 + FEAR_H + ZONE_GAP;
 const GW_SPAWN_COUNT = 8;
 const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 
-const ZONES_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
+// ── Фарм-зона (Farm Zone) ─────────────────────────────────────────────────
+// Four identical square rooms in a 2x2 grid, joined by a plus-shaped
+// corridor through their shared gap so all four are reachable from one
+// entrance — the whole footprint (rooms + gap) is itself a square. Baked in
+// at world-gen like a regular room (not runtime-spawned like Fear's waves),
+// since every monster here is a fixed level with no escalation to track.
+// Monsters spawn non-aggressive (aggroR: 0 — never pull first, same pattern
+// as spawnGuildWarTower) and skip the normal loot table entirely: only an
+// independent FARM_SHARD_CHANCE roll per shard kind, no gold/gear/recipe/key
+// drops at all (see the farmZone flag, Room.attackEnemy/skillAttackEnemy and
+// _rollFarmZoneLoot, server/index.js). Entry is level-gated client-side at
+// FARM_ENTRY_LEVEL, same trust model as every other level gate in the open
+// world (dungeon.corridorGates) — see the farm pad in js/game.js.
+const FARM_ROOM = 16;
+const FARM_GAP = 8;
+const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
+const FARM_X0 = ARENA_X0;
+const FARM_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
+const FARM_MOBS_PER_ROOM = 20;
+const FARM_MONSTER_LVL = 24;
+const FARM_ENTRY_LEVEL = 20;
+// One guard-type species per room for visual variety, pulled from the arm-2
+// roster (the species already tuned for the low-20s level range).
+const FARM_SPECIES = ['zombie_guard', 'lizardman_guard', 'orc_guard', 'vampire_guard'];
+
+const ZONES_Y0 = FARM_Y0 + FARM_SIZE + ZONE_GAP;
 const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
 const DW = Math.max(MARGIN * 2 + ZONE_LEN, RACE10_X0 + RACE10_W + MARGIN);
 
@@ -258,6 +283,68 @@ function generateOpenWorld() {
   const armEntries = [];
   let eid = 0;
   const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+
+  // Фарм-зона: paint the 4 rooms (2x2 grid) plus the plus-shaped corridor
+  // through their shared gap, then bake in FARM_MOBS_PER_ROOM static
+  // monsters per room (random floor tile inside the room, same placement
+  // buildArm's spawnRoomEnemies uses below).
+  const farmRoomCoords = [
+    { x: FARM_X0, y: FARM_Y0 },                                         // top-left
+    { x: FARM_X0 + FARM_ROOM + FARM_GAP, y: FARM_Y0 },                  // top-right
+    { x: FARM_X0, y: FARM_Y0 + FARM_ROOM + FARM_GAP },                  // bottom-left
+    { x: FARM_X0 + FARM_ROOM + FARM_GAP, y: FARM_Y0 + FARM_ROOM + FARM_GAP }, // bottom-right
+  ];
+  const farmRooms = farmRoomCoords.map(({ x, y }) => {
+    const room = {
+      x, y, size: FARM_ROOM,
+      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
+      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
+      isFarmZone: true, monsterLvl: FARM_MONSTER_LVL, arm: 'farmZone',
+    };
+    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
+    rooms.push(room);
+    return room;
+  });
+  const farmMidX = FARM_X0 + Math.floor(FARM_SIZE / 2);
+  // Top-row and bottom-row corridors (through the horizontal gap), plus one
+  // vertical corridor through the centre column tying both rows together —
+  // every room reaches every other one without lengthening any room itself.
+  paintRect(FARM_X0, farmRooms[0].cy - CW, FARM_X0 + FARM_SIZE - 1, farmRooms[0].cy + CW);
+  paintRect(FARM_X0, farmRooms[2].cy - CW, FARM_X0 + FARM_SIZE - 1, farmRooms[2].cy + CW);
+  paintRect(farmMidX - CW, FARM_Y0, farmMidX + CW, FARM_Y0 + FARM_SIZE - 1);
+  const farmMidY = FARM_Y0 + Math.floor(FARM_SIZE / 2);
+
+  farmRooms.forEach((room, ri) => {
+    const d = _enemyByEid.get(FARM_SPECIES[ri % FARM_SPECIES.length]);
+    if (!d) return;
+    const stats = monsterStatsAtLevel(FARM_MONSTER_LVL, d.eType);
+    // Same halving every other packed room applies ("regular monsters spawn
+    // in packs — halved individually") — 20 in a 16x16 room is denser than
+    // the usual 5-10, so this matters here too.
+    const weakMult = 0.5;
+    for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
+      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      enemyList.push({
+        id: `farm_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
+        rlvl: FARM_MONSTER_LVL,
+        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(FARM_MONSTER_LVL), gold: goldAtLevel(FARM_MONSTER_LVL),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(),
+        // Never self-aggros (aggroR: 0) — same "stands until struck" pattern
+        // as spawnGuildWarTower. attackEnemy/skillAttackEnemy unconditionally
+        // set aggro:true on any hit regardless of aggroR, so it still fights
+        // back once attacked; it just never pulls first.
+        aggro: false, aggroR: 0,
+      });
+    }
+  });
 
   // Race10 monster lines — exact pixel spacing (RACE10_MOB_SPACING), not the
   // random-within-a-room placement buildArm's rooms use below: "впритык"
@@ -536,6 +623,16 @@ function generateOpenWorld() {
         };
       }),
       bounds: { x0: GW_X0, y0: GW_Y0, x1: GW_X0 + GW_SIZE, y1: GW_Y0 + GW_SIZE },
+    },
+    // Фарм-зона: one entry/exit pair at the centre of the plus-shaped
+    // corridor (offset a couple tiles apart so arriving and leaving don't
+    // trigger each other) plus minLevel for the client's teleport-pad gate
+    // (js/game.js) — same req-based lock the regular arm pads already use.
+    farmZone: {
+      entryX: farmMidX * TILE + TILE / 2, entryY: farmMidY * TILE + TILE / 2,
+      exitX:  farmMidX * TILE + TILE / 2, exitY:  (FARM_Y0 + 2) * TILE + TILE / 2,
+      bounds: { x0: FARM_X0, y0: FARM_Y0, x1: FARM_X0 + FARM_SIZE, y1: FARM_Y0 + FARM_SIZE },
+      minLevel: FARM_ENTRY_LEVEL,
     },
     armEntries,
     corridorGates,

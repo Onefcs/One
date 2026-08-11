@@ -721,6 +721,7 @@ Object.assign(I18N_UI, {
   evtBossDefeated: { ru: '🏆 Босс повержен! Собирайте добычу', en: '🏆 The boss is defeated! Grab the loot', uk: '🏆 Боса переможено! Збирайте здобич', es: '🏆 ¡Jefe derrotado! Recoge el botín', tr: '🏆 Boss yenildi! Ganimeti topla', pt: '🏆 Chefe derrotado! Pegue o loot' },
 
   guildWarLbl: { ru: '🏰 Война гильдий', en: '🏰 Guild War', uk: '🏰 Війна гільдій', es: '🏰 Guerra de Clanes', tr: '🏰 Klan Savaşı', pt: '🏰 Guerra de Clãs' },
+  farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
   guildWarTab: { ru: 'Война гильдий', en: 'Guild War', uk: 'Війна гільдій', es: 'Guerra de Clanes', tr: 'Klan Savaşı', pt: 'Guerra de Clãs' },
   guildWarPhaseOpen:   { ru: 'Локация открыта', en: 'Zone is open', uk: 'Локація відкрита', es: 'Zona abierta', tr: 'Bölge açık', pt: 'Zona aberta' },
   guildWarPhaseClosed: { ru: 'До открытия локации', en: 'Zone opens in', uk: 'До відкриття локації', es: 'La zona abre en', tr: 'Bölge açılana kadar', pt: 'A zona abre em' },

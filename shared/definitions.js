@@ -890,6 +890,13 @@ const CLAN_STORAGE_UNLOCK_GOLD = 1000000;
 const UNIQUE_SHARD_MIN_LEVEL = 15;        // monsters below this level never drop one
 const UNIQUE_SHARD_CHANCE    = 0.000001;  // per SHARD KIND, rolled independently on every kill
 const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can yield
+
+// Фарм-зона ("Фарм зона", server/game/dungeon.js): its monsters skip the
+// normal loot table entirely (see _rollFarmZoneLoot, server/index.js) and
+// instead roll only this — same per-kind-independent shape as
+// UNIQUE_SHARD_CHANCE above, just flat and far higher since farming shards
+// is the zone's whole point.
+const FARM_SHARD_CHANCE = 0.001;
 // How many of EVERY kind one weapon costs. All 20 are required, so the two
 // numbers below mean 20 000 and 100 000 shards respectively.
 const UNIQUE_SHARD_COST = { epic: 1000, legendary: 5000 };
@@ -1443,7 +1450,7 @@ if (typeof module !== 'undefined') module.exports = {
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
-  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
+  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,

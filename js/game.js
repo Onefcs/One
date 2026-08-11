@@ -1303,6 +1303,13 @@ const _GW_PAD_DX = -10;
 let _gwPad = null, _gwReturnPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
+// Фарм-зона pad — always open (no time window, unlike Guild War), but
+// level-gated: _farmPad.req comes straight from dungeon.farmZone.minLevel,
+// checked the same way _teleportPads' own req field is (_updateTeleportPads
+// below), and _drawTeleportPad already renders the locked/unlocked ring off
+// that same req param.
+const _FARM_PAD_DX = -12;
+let _farmPad = null, _farmReturnPad = null;
 // World boss state as the server last reported it: spawnAt is a summon already
 // counting down, nextAt the next scheduled appearance (пн/ср/пт/вс 20:00 МСК).
 // Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
@@ -1349,6 +1356,19 @@ function _buildArmGates() {
     _gwReturnPad = { x: gw.exitX, y: gw.exitY, targetX: sx, targetY: sy };
   } else {
     _gwPad = null; _gwReturnPad = null;
+  }
+
+  // Фарм-зона pad — req carries the level gate, same field regular arm pads
+  // use (see _teleportPads above).
+  const fz = dungeon.farmZone;
+  if (fz) {
+    _farmPad = {
+      x: sx + _FARM_PAD_DX * TILE, y: sy, targetX: fz.entryX, targetY: fz.entryY,
+      req: fz.minLevel || 0, label: typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона',
+    };
+    _farmReturnPad = { x: fz.exitX, y: fz.exitY, targetX: sx, targetY: sy };
+  } else {
+    _farmPad = null; _farmReturnPad = null;
   }
 }
 
@@ -1412,6 +1432,16 @@ function _updateTeleportPads(dt) {
   if (_gwReturnPad && dist(player.x, player.y, _gwReturnPad.x, _gwReturnPad.y) < TRIGGER_R) {
     _teleportTo(_gwReturnPad.targetX, _gwReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   }
+  if (_farmPad && dist(player.x, player.y, _farmPad.x, _farmPad.y) < TRIGGER_R) {
+    if (_farmPad.req > 0 && (player.lvl || 1) < _farmPad.req) {
+      if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: _farmPad.req }) : `🔒 Нужен ${_farmPad.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
+    } else {
+      _teleportTo(_farmPad.targetX, _farmPad.targetY, _farmPad.label);
+    }
+  }
+  if (_farmReturnPad && dist(player.x, player.y, _farmReturnPad.x, _farmReturnPad.y) < TRIGGER_R) {
+    _teleportTo(_farmReturnPad.targetX, _farmReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+  }
 }
 
 function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
@@ -1451,6 +1481,10 @@ function drawTeleportPads() {
   if (_evtReturnPad) _drawTeleportPad(_evtReturnPad.x, _evtReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
   if (_gwOpen() && _gwPad) _drawTeleportPad(_gwPad.x, _gwPad.y, 0, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', '#eb4e61', '#c9a24b');
   if (_gwReturnPad) _drawTeleportPad(_gwReturnPad.x, _gwReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
+  // Фарм-зона: always open, so no gating condition here — just the pad's own
+  // req (level 20) via _drawTeleportPad's built-in lock rendering.
+  if (_farmPad) _drawTeleportPad(_farmPad.x, _farmPad.y, _farmPad.req, _farmPad.label, '#eb4e61', '#4ee69a');
+  if (_farmReturnPad) _drawTeleportPad(_farmReturnPad.x, _farmReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',

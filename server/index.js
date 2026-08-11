@@ -29,7 +29,7 @@ const {
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
-  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
+  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
@@ -285,6 +285,24 @@ function _rollMobLoot(inv, eid, rlvl) {
     }
   }
 
+  return granted;
+}
+
+// ── Фарм-зона kill loot ──────────────────────────────────────────────────
+// No recipe/equipment/key/enchant-stone/book drops at all — just an
+// independent FARM_SHARD_CHANCE roll per shard kind, same per-kind-
+// independent shape as the normal shard roll in _rollMobLoot above, just
+// flat (no level gate — every farm-zone monster already qualifies) and much
+// higher, since farming shards is this zone's whole point.
+function _rollFarmZoneLoot(inv) {
+  const granted = [];
+  function addMat(id, qty) {
+    const mat = CRAFT_MATS.find(m => m.id === id);
+    if (mat && _invAdd(inv, { ...mat, qty })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty });
+  }
+  for (const sh of UNIQUE_SHARDS) {
+    if (Math.random() < FARM_SHARD_CHANCE) addMat(sh.id, 1);
+  }
   return granted;
 }
 
@@ -4756,14 +4774,16 @@ io.on('connection', socket => {
   // that used to be rolled by the caller but only ever granted by the
   // client) so the caller only has to decide who won and relay what comes
   // back for that player's floating-text feedback.
-  socket.data._grantKillLoot = ({ eid, rlvl, isBoss }) => {
+  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone }) => {
     const empty = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
-    const items = _rollMobLoot(inv, eid, rlvl);
+    // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
+    // reroll below) entirely — see _rollFarmZoneLoot's own comment.
+    const items = farmZone ? _rollFarmZoneLoot(inv) : _rollMobLoot(inv, eid, rlvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-    if (_vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
+    if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl));
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
@@ -7422,7 +7442,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
 
       if (memberIds.length > 0) {
@@ -7543,7 +7563,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
