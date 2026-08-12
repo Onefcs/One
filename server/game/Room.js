@@ -199,11 +199,19 @@ const FEAR_XP_MULT   = 10;  // XP multiplier for every Fear-event kill
 // How long a disconnected entrant's hall is held open before it's actually
 // released — see _fearGraceStart/_fearGraceClaim below and the matching
 // FEAR_RECONNECT_GRACE_MS in server/index.js (kept in sync by comment, not by
-// import, since Room.js has no reason to depend on that file). Comfortably
-// past js/network.js's own ~2s reconnect watchdog and the kind of brief
-// Wi-Fi/LTE handover or backgrounded-WebView blip that watchdog exists for,
-// short enough that a genuinely abandoned hall doesn't sit locked for long.
-const FEAR_RECONNECT_GRACE_MS = 15000;
+// import, since Room.js has no reason to depend on that file).
+//
+// This used to say "comfortably past js/network.js's own ~2s reconnect
+// watchdog" at 15000ms — that watchdog (_PONG_SILENCE_MS) is 8000ms now, and
+// a real reconnect still has to re-handshake the transport and round-trip
+// loginTelegramWebApp through the DB on top of that wait, on the same flaky
+// link that dropped in the first place. 15s left as little as ~7s for all of
+// that, so ordinary reconnects — not just the same-tick socket-id swap —
+// missed the window more often than not: the hall released for real, its
+// monsters purged, and the returning player's next enemy snapshot came back
+// empty. Raised well past the watchdog's own 8s floor; a genuinely abandoned
+// hall still frees itself, just a bit later.
+const FEAR_RECONNECT_GRACE_MS = 45000;
 // A wave spawns in a ring this far from the entry point (px) — see
 // fearSpawnWave. Kept well inside _closestTargetFor's own search radius
 // (max(aggroR*2.2, 300), aggroR tops out at 230 so that's ~506px) so every

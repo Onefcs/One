@@ -4182,7 +4182,19 @@ function _fearEliminate(socketId) {
 // in sync by comment). Room's copy is what actually holds the hall/monsters;
 // this one is what lets fearSync/fearWave keep reporting the right wave to a
 // client that's mid-reconnect.
-const FEAR_RECONNECT_GRACE_MS = 15000;
+//
+// Was 15000. The client's own disconnect watchdog (_PONG_SILENCE_MS,
+// js/network.js) doesn't even START reconnecting until 8s of silence, and a
+// real reconnect on the exact flaky link that caused the drop in the first
+// place — transport re-handshake, then loginTelegramWebApp's own DB round
+// trip — routinely eats several more. 15s total left as little as ~7s for
+// all of that, so an ordinary reconnect (not just a same-tick socket-id
+// swap) missed the window more often than not: the hall released for real,
+// its monsters purged, and the returning player's next enemy snapshot came
+// back empty — read as "the monsters just vanished," reported as happening
+// "at any moment" tied to reconnects. Raised well past the watchdog's own
+// 8s floor.
+const FEAR_RECONNECT_GRACE_MS = 45000;
 // telegramId -> { run: {lane, wave}, timer } — a Fear run held across a
 // disconnect. See _pvpEliminate's opts.fearGrace and the reconnect handling
 // in the login flow below (where a matching Room._fearGraceClaim result
