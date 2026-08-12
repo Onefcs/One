@@ -582,8 +582,13 @@ const _SPECIAL_SHOP_PKGS = [
   // armor+weapon set, bonus skill points, Liberty and a full buff-potion
   // restock. specialShopBuy grants these the same way gramShopBuy grants its
   // own armor/weapon/bonusSP/nexum/potions fields — see the extra grant
-  // block there.
-  { id:'special270', gram:270, bookCount:50, bless:30, armor:'epic', weapon:'epic', bonusSP:15, nexum:10000, potions:100, enhance:0 },
+  // block there. uniqueWeapon swaps the plain epic-tier weapon the `weapon`
+  // field would otherwise resolve to (_SHOP_CLASS_WEAPONS[class].epic) for
+  // the buyer's class's own UNIQUE_WEAPONS entry instead (Меч/Топор/Лук/
+  // Посох/Жезл бездны) — those are normally craft-only (noDrop keeps them
+  // out of every random loot pool, shared/definitions.js), but an explicit
+  // shop grant by id bypasses that the same way UNIQUE_CRAFT_RECIPES does.
+  { id:'special270', gram:270, bookCount:50, bless:30, armor:'epic', weapon:'epic', uniqueWeapon:true, bonusSP:15, nexum:10000, potions:100, enhance:0 },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
@@ -6084,8 +6089,13 @@ io.on('connection', socket => {
         });
       }
       if (pkg.weapon) {
-        const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
-        const base = ITEM_DEF.find(d => d.id === wepMap[pkg.weapon]);
+        // uniqueWeapon (special270): the buyer's class's own UNIQUE_WEAPONS
+        // entry (unique:true on the merged ITEM_DEF copy — shared/
+        // definitions.js) instead of the plain epic-tier weapon `weapon`
+        // would otherwise resolve to via _SHOP_CLASS_WEAPONS.
+        const base = pkg.uniqueWeapon
+          ? ITEM_DEF.find(d => d.unique && d.forClass && d.forClass.includes(charClass))
+          : ITEM_DEF.find(d => d.id === (_SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev)[pkg.weapon]);
         if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
       }
       if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;

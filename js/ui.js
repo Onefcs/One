@@ -5283,7 +5283,7 @@ const _SPECIAL_SHOP_PKGS_UI = [
   // _SPECIAL_SHOP_PKGS. bookCount still goes through the same buyer-picked
   // Q/W/E/R split (_specialPicker below); armor/weapon/bonusSP/nexum/potions
   // are new fields _specialPkgHtml/_renderSpecialPicker render conditionally.
-  { id:'special270', gram:270, get label() { return _packNLabel(7); }, bookCount:50, bless:30, armor:'epic', weapon:'epic', bonusSP:15, nexum:10000, potions:100, color:'#8a5cc2' },
+  { id:'special270', gram:270, get label() { return _packNLabel(7); }, bookCount:50, bless:30, armor:'epic', weapon:'epic', uniqueWeapon:true, bonusSP:15, nexum:10000, potions:100, color:'#8a5cc2' },
 ];
 
 // Pet+cloak+artifact packages — mirror of server/index.js's petpkg1/2/3
@@ -5350,7 +5350,14 @@ function _shopExtraRewardRows(pkg, ri) {
     const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
     rows += icons.map(i => ri(`/images/${i}`, enhLbl, key)).join('');
   }
-  if (pkg.weapon) {
+  if (pkg.weapon && pkg.uniqueWeapon) {
+    // The buyer's class's own UNIQUE_WEAPONS entry (Меч/Топор/Лук/Посох/
+    // Жезл бездны — shared/definitions.js), not the plain epic-tier weapon
+    // `weapon` would otherwise resolve to. Mirrors specialShopBuy's own
+    // uniqueWeapon branch (server/index.js) so the preview matches the grant.
+    const uw = ITEM_DEF.find(d => d.unique && d.forClass && d.forClass.includes(player?.type));
+    if (uw) rows += ri(uw.img, pkg.enhance ? `+${pkg.enhance}` : '', 'epic');
+  } else if (pkg.weapon) {
     const key = pkg.weapon.toLowerCase();
     const pfx = _SHOP_WEP_PFX_MAP[key] || 'c';
     const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s' }[player?.type] || 't';
