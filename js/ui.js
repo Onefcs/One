@@ -482,6 +482,98 @@ function onUpgradesResetError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  REBIRTH  (Персонаж → Перерождение)
+//  REBIRTH_LEVEL/REBIRTH_BONUS_SP/REBIRTH_COST live in shared/definitions.js
+//  (mirrored by the server's own rebirth handler, server/index.js) so the
+//  requirement/cost shown here can never drift from what actually gets
+//  charged and granted.
+// ─────────────────────────────────────────────────────────
+function _rebirthCostDef(id) {
+  return (typeof BOX_DEF !== 'undefined' && BOX_DEF.find(d => d.id === id))
+      || (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(d => d.id === id))
+      || null;
+}
+function _rebirthReady() {
+  if (!player) return false;
+  if ((player.lvl || 1) < REBIRTH_LEVEL) return false;
+  return Object.entries(REBIRTH_COST).every(([id, need]) => countMaterial(id) >= need);
+}
+
+function updateRebirthUI() {
+  if (!player) return;
+  const el = document.getElementById('rebirth-body');
+  if (!el) return;
+  function ri(img, label, cls) {
+    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+  }
+  const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
+  const rows = Object.entries(REBIRTH_COST).map(([id, need]) => {
+    const def = _rebirthCostDef(id);
+    const have = countMaterial(id);
+    const ok = have >= need;
+    const label = `<span style="color:${ok ? '#98e456' : '#f88'}">${have}/${need}</span>`;
+    return ri(def ? def.img : '', label, '');
+  }).join('');
+  const ready = _rebirthReady();
+
+  el.innerHTML = `
+    <div class="sec-title">${t('rebirthTabLbl')}</div>
+    <div style="padding:0 12px 10px;font-size:12.5px;color:#a2988a;line-height:1.55">${t('rebirthDesc')}</div>
+    <div style="padding:0 12px 12px;font-size:13px;font-weight:700;color:${lvlOk ? '#98e456' : '#f88'}">
+      ${tVars('rebirthLevelReqFmt', { lvl: REBIRTH_LEVEL, cur: player.lvl || 1 })}
+    </div>
+    <div class="vip-items-row" style="padding:0 12px">${rows}</div>
+    <div style="padding:16px 12px 20px">
+      <button class="upg-reset-btn${ready ? '' : ' disabled'}" onclick="${ready ? 'openRebirthConfirm()' : ''}">
+        ${t('rebirthBtn')}
+      </button>
+      <div class="upg-reset-hint">${tVars('rebirthCountFmt', { n: player.rebirths || 0 })}</div>
+    </div>`;
+}
+
+function openRebirthConfirm() {
+  if (!_rebirthReady()) return;
+  const existing = document.getElementById('rebirth-confirm-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.id = 'rebirth-confirm-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('rebirthConfirmTitle')}</div>
+    <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:16px">${t('rebirthConfirmBody')}</div>
+    <div style="display:flex;gap:10px">
+      <button onclick="document.getElementById('rebirth-confirm-ov').remove()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+        color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+      <button onclick="_confirmRebirth()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;
+        background:linear-gradient(135deg,#4a3410,#6b4a17);color:#e5aa52;
+        font-size:14px;font-weight:700;cursor:pointer">${t('rebirthGo')}</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _confirmRebirth() {
+  const ov = document.getElementById('rebirth-confirm-ov');
+  if (ov) ov.remove();
+  if (typeof netRebirth === 'function') netRebirth();
+}
+
+function onRebirthDone() {
+  if (typeof updateRebirthUI === 'function') updateRebirthUI();
+  if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
+  if (typeof updateProfileUI === 'function') updateProfileUI();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (player) dmgNum(player.x, player.y - 30, t('rebirthDoneToast'), '#98e456');
+}
+
+function onRebirthError(msg) {
+  if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+}
+
+// ─────────────────────────────────────────────────────────
 //  SKILL UPGRADE UI
 // ─────────────────────────────────────────────────────────
 function _skillBonusDesc(type, level) {
@@ -1596,9 +1688,11 @@ function setInvTab(n) {
   document.getElementById('inv-tab-content-0').style.display = n === 0 ? '' : 'none';
   document.getElementById('inv-tab-content-1').style.display = n === 1 ? '' : 'none';
   document.getElementById('inv-tab-content-2').style.display = n === 2 ? '' : 'none';
+  document.getElementById('inv-tab-content-3').style.display = n === 3 ? '' : 'none';
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
   if (n === 2) switchSkillTab(_activeSkillSubTab);
+  if (n === 3) updateRebirthUI();
 }
 
 // Chat / VIP / Market / Rating float above the world canvas and only make
@@ -1639,7 +1733,12 @@ function setTab(n) {
     const el = document.getElementById(pid);
     el.style.display = 'block';
     requestAnimationFrame(() => { el.classList.add('open'); el.scrollTop = 0; });
-    if (n === 1) { if (_invTab === 1) updateProfileUI(); else if (_invTab === 2) switchSkillTab(_activeSkillSubTab); else updateInvUI(); }
+    if (n === 1) {
+      if (_invTab === 1) updateProfileUI();
+      else if (_invTab === 2) switchSkillTab(_activeSkillSubTab);
+      else if (_invTab === 3) updateRebirthUI();
+      else updateInvUI();
+    }
     if (n === 2) { setMapTab(); }
     if (n === 3 && typeof updateQuestUI === 'function') updateQuestUI();
     if (n === 4 && typeof updateClanUI === 'function') {

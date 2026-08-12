@@ -151,6 +151,7 @@ function makePlayer(type) {
     questKills: {},
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     bonusSP: 0,
+    rebirths: 0,
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
     critChance: 0.05, critPower: 1.5,
@@ -339,7 +340,7 @@ function recompute() {
 }
 
 function getAvailableSkillPoints() {
-  const total = (player.lvl || 1) * 3 + (player.bonusSP || 0);
+  const total = skillPointBudget(player.lvl, player.rebirths) + (player.bonusSP || 0);
   const spent = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
   return total - spent;
 }
@@ -1091,6 +1092,7 @@ function restoreFromSave(data) {
   player.storage    = _migrateInventory(data.storage || []);
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
   player.bonusSP  = data.bonusSP  || 0;
+  player.rebirths = data.rebirths || 0;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
   player.specialQuestsDone = data.specialQuestsDone || [];

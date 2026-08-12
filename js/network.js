@@ -1516,6 +1516,7 @@ function _buildSaveStats() {
     advSkillLearned: player.advSkillLearned || {},
     advSkillActive: player.advSkillActive || {},
     bonusSP: player.bonusSP || 0,
+    rebirths: player.rebirths || 0,
     lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
     // When this blob was composed — the server uses it to tell a save that
     // predates a since-applied gold spend from one that already accounts for
@@ -2171,6 +2172,13 @@ function netCraftClassGear(slot, rarity) {
 // 'upgradesReset' — see the handler above.
 function netResetUpgrades() {
   if (socket?.connected) socket.emit('resetUpgrades');
+}
+
+// Item cost only (REBIRTH_COST, shared/definitions.js) — the server checks
+// and removes it, resets level/xp/upgrades and answers with 'rebirthDone'
+// (see the handler below).
+function netRebirth() {
+  if (socket?.connected) socket.emit('rebirth');
 }
 
 function netGetRating(tab) {
@@ -2875,6 +2883,28 @@ function _initPetCraftHandlers(s) {
   });
   s.on('resetUpgradesError', ({ msg }) => {
     if (typeof onUpgradesResetError === 'function') onUpgradesResetError(msg);
+  });
+
+  // Rebirth (Перерождение). Same "inventorySync already landed" shape as
+  // boxOpened above — the server's own _commitServerItems call inside the
+  // rebirth handler already pushed the item-cost removal; this only carries
+  // the progression reset (level/xp/upgrades/bonusSP/rebirths).
+  s.on('rebirthDone', ({ lvl, xp, xpNext, baseAtk, baseDef, baseMaxHp, upgrades, bonusSP, rebirths } = {}) => {
+    if (!player) return;
+    player.lvl = lvl; player.xp = xp; player.xpNext = xpNext;
+    player.baseAtk = baseAtk; player.baseDef = baseDef; player.baseMaxHp = baseMaxHp;
+    player.upgrades = upgrades || {};
+    player.bonusSP = bonusSP || 0;
+    player.rebirths = rebirths || 0;
+    if (typeof recompute === 'function') recompute();
+    // Rebirth is framed as a fresh start — full heal, matching the +HP an
+    // ordinary level-up already grants (gainXP, js/player.js).
+    player.hp = player.maxHp;
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+    if (typeof onRebirthDone === 'function') onRebirthDone();
+  });
+  s.on('rebirthError', ({ msg }) => {
+    if (typeof onRebirthError === 'function') onRebirthError(msg);
   });
 }
 

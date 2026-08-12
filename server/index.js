@@ -43,6 +43,7 @@ const {
   GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpAtLevel, xpToNext, xpTotalAt,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
@@ -2292,7 +2293,7 @@ const floorRooms = new Map();
 // stores each item as {…catalogBase, enhance} and derives the enhance bonus at
 // runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
 const _SANITIZE_MAX = {
-  gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6,
+  gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6, rebirths: 1e4,
   maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 200,
   // Raised from 9999 for the Осколки: a unique legendary costs 5000 of every
   // kind, so a player working toward a second one legitimately holds well
@@ -2601,6 +2602,7 @@ function _sanitizeSavedStats(raw) {
   s.xp      = _clampNum(s.xp,      0, _SANITIZE_MAX.xp, 0);
   s.kills   = _clampInt(s.kills,   0, _SANITIZE_MAX.kills, 0);
   s.bonusSP = _clampInt(s.bonusSP, 0, _SANITIZE_MAX.bonusSP, 0);
+  s.rebirths = _clampInt(s.rebirths, 0, _SANITIZE_MAX.rebirths, 0);
   if (s.maxHp     != null) s.maxHp     = _clampInt(s.maxHp,     1, _SANITIZE_MAX.maxHp, 100);
   if (s.hp        != null) s.hp        = _clampNum(s.hp,        0, s.maxHp ?? _SANITIZE_MAX.maxHp, 0);
   if (s.atk       != null) s.atk       = _clampNum(s.atk,       0, _SANITIZE_MAX.atk, 0);
@@ -2627,20 +2629,20 @@ function _sanitizeSavedStats(raw) {
   if (s.autoHpPct != null) s.autoHpPct = _clampNum(s.autoHpPct, 0, 1, 0.5);
 
   // Upgrade points spent must not exceed what the (now server-derived) lvl/
-  // bonusSP could actually have earned — getAvailableSkillPoints (js/
-  // player.js) computes this identical budget client-side to gate
-  // upgradeStats(), but nothing enforced it here, so a crafted save could
-  // report any upgrades total up to the per-stat ceiling regardless of
-  // level, and — same as baseAtk/baseDef above — these feed real combat
-  // power via computeStats. A legitimate client can never violate this
-  // budget, so a save that does is treated the same as an untrusted item
-  // id: the whole map is dropped rather than guessing which entries (if
-  // any) were legitimate.
+  // bonusSP/rebirths could actually have earned — getAvailableSkillPoints
+  // (js/player.js) computes this identical budget client-side via the same
+  // shared skillPointBudget to gate upgradeStats(), but nothing enforced it
+  // here, so a crafted save could report any upgrades total up to the
+  // per-stat ceiling regardless of level, and — same as baseAtk/baseDef
+  // above — these feed real combat power via computeStats. A legitimate
+  // client can never violate this budget, so a save that does is treated
+  // the same as an untrusted item id: the whole map is dropped rather than
+  // guessing which entries (if any) were legitimate.
   if (s.upgrades && typeof s.upgrades === 'object' && !Array.isArray(s.upgrades)) {
     const u = {};
     for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
     const _spent = Object.values(u).reduce((sum, v) => sum + v, 0);
-    const _budget = s.lvl * 3 + s.bonusSP;
+    const _budget = skillPointBudget(s.lvl, s.rebirths) + s.bonusSP;
     s.upgrades = _spent <= _budget ? u : {};
   }
   // ── Fields that used to pass through untouched ────────────────────────────
@@ -4997,7 +4999,7 @@ io.on('connection', socket => {
     'clanStorageSync', 'clanStorageDeposit', 'clanStorageGive',
     'clanStorageCancel', 'clanStorageClaim', 'clanStorageUnlock',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'resetUpgrades', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
+    'requestPlayerProfile', 'resetUpgrades', 'rebirth', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
     // Both hit the database on every call — seasonRating sorts the whole
     // player collection, seasonSetTier writes the selected band.
@@ -6228,9 +6230,10 @@ io.on('connection', socket => {
   // below for the same reasoning).
   //
   // Clearing player.upgrades is all a "refund" needs to be — spent points are
-  // never stored, they're derived as lvl*3 + bonusSP minus the sum of the
-  // upgrade levels (getAvailableSkillPoints, js/player.js). Emptying the map
-  // therefore hands back every point ever put into it, however many that was.
+  // never stored, they're derived as skillPointBudget(lvl, rebirths) +
+  // bonusSP minus the sum of the upgrade levels (getAvailableSkillPoints,
+  // js/player.js). Emptying the map therefore hands back every point ever
+  // put into it, however many that was.
   // Gold spent on those upgrades is deliberately not refunded.
   safeOn('resetUpgrades', async () => {
     if (!authed) return;
@@ -6259,6 +6262,96 @@ io.on('connection', socket => {
     } catch (err) {
       console.error('resetUpgrades:', err);
       socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
+    }
+  });
+
+  // ── Перерождение (Rebirth) ──────────────────────────────────────────────
+  // Level REBIRTH_LEVEL+ only: resets level/xp/upgrades back to a fresh
+  // character in exchange for a flat, permanent REBIRTH_BONUS_SP folded into
+  // bonusSP — skillPointBudget (shared/definitions.js) is what then keeps
+  // levelling from handing out points again until level REBIRTH_LEVEL is
+  // reached a second time (getAvailableSkillPoints/the upgrades-budget check
+  // above both call it, so client and server can't disagree on the result).
+  //
+  // Pure item cost (REBIRTH_COST) — no Liberty spend — so unlike craftGear/
+  // resetUpgrades this never awaits a balance call: everything here runs off
+  // _lastStats in one synchronous pass, which is also why it needs none of
+  // their cross-session-during-an-await machinery (nothing yields between
+  // the mat check and the mutation, so activeSessions/_lastStats can't have
+  // moved out from under it).
+  safeOn('rebirth', () => {
+    if (!authed) return;
+    try {
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('rebirthError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      const lvl = Math.floor(Number(_lastStats.lvl)) || 1;
+      if (lvl < REBIRTH_LEVEL) {
+        return socket.emit('rebirthError', { msg: `Нужен ${REBIRTH_LEVEL} уровень` });
+      }
+      const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
+      const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+      const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
+      for (const [id, need] of Object.entries(REBIRTH_COST)) {
+        const have = matCount(id);
+        if (have < need) {
+          return socket.emit('rebirthError', { msg: `Нужно ${need} × ${matName(id)} (есть ${have})` });
+        }
+      }
+      // All four cost items stack (BOX_DEF/CRAFT_MATS' box/recipe slots —
+      // isStackableItem, shared/definitions.js), so a plain qty-decrement
+      // pass covers every one of them — no enhanced-item matching needed,
+      // unlike craftGear's mats (which can carry a minEnhance).
+      for (const [id, need] of Object.entries(REBIRTH_COST)) {
+        let left = need;
+        for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+          const e = inv[i];
+          if (!e || e.id !== id) continue;
+          const have = e.qty || 1;
+          if (have > left) { e.qty = have - left; left = 0; }
+          else { left -= have; inv.splice(i, 1); }
+        }
+      }
+
+      const _cd = CHAR_DEF[_lastStats.type] || CHAR_DEF.lev;
+      _lastStats.lvl = 1;
+      _lastStats.xp = 0;
+      _lastStats.xpNext = xpToNext(1);
+      // Same derivation _sanitizeSavedStats uses for baseAtk/baseDef/
+      // baseMaxHp at any level — here that's simply the class's own raw
+      // CHAR_DEF numbers, since lvl-1 is 0 at level 1.
+      _lastStats.baseAtk = _cd.baseAtk;
+      _lastStats.baseDef = _cd.baseDef;
+      _lastStats.baseMaxHp = _cd.baseHP;
+      _lastStats.upgrades = {};
+      _lastStats.bonusSP = (_lastStats.bonusSP || 0) + REBIRTH_BONUS_SP;
+      _lastStats.rebirths = (_lastStats.rebirths || 0) + 1;
+      _lastStats.inventory = inv;
+
+      // Keep the room's anti-cheat baseline in step, or its computeStats
+      // would go on crediting the pre-rebirth level/upgrades until the next
+      // saveProgress (same reasoning as resetUpgrades above).
+      if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
+      // Bumps invRev and emits inventorySync with the post-cost inventory —
+      // rebirthDone below deliberately carries no inventory field of its own,
+      // same "already landed via inventorySync" shape as craftGear/boxOpened.
+      _commitServerItems(inv, null, 'rebirth', { rebirths: _lastStats.rebirths }, { beforeLen: _beforeLen });
+      _persistSavedFields(authed, {
+        lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
+        baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
+        upgrades: {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
+      });
+      logPlayer(authed.telegramId, authed.username, 'rebirth', { rebirths: _lastStats.rebirths });
+      socket.emit('rebirthDone', {
+        lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
+        baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
+        upgrades: {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
+      });
+    } catch (err) {
+      console.error('rebirth:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'rebirth', err, {});
+      socket.emit('rebirthError', { msg: 'Ошибка сервера' });
     }
   });
 

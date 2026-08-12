@@ -279,6 +279,32 @@ function xpTotalAt(lvl, xp) {
   return sum;
 }
 
+// ── Перерождение (Rebirth) ──────────────────────────────────────────────
+// Available once a character reaches REBIRTH_LEVEL: level resets to 1 and
+// the run starts over, in exchange for a flat, permanent REBIRTH_BONUS_SP
+// skill points that stick around across the reset (folded into bonusSP by
+// the caller — see the rebirth handler, server/index.js).
+const REBIRTH_LEVEL = 30;
+const REBIRTH_BONUS_SP = 15;
+// box_uncommon/box_rare — BOX_DEF below. rece/recl — CRAFT_MATS' epic/
+// legendary recipe scrolls.
+const REBIRTH_COST = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30 };
+
+// Skill points a character's level alone is worth — 3 per level, exactly as
+// before, UNLESS the account has rebirthed at least once AND hasn't yet
+// climbed back up to REBIRTH_LEVEL: until then, levelling grants no further
+// points (the flat REBIRTH_BONUS_SP from the rebirth itself, already folded
+// into bonusSP, is all there is), and the ordinary per-level curve resumes
+// exactly as if nothing had happened once level REBIRTH_LEVEL is reached
+// again. Both client (getAvailableSkillPoints, js/player.js) and server
+// (_sanitizeSavedStats' upgrades budget, server/index.js) call this so the
+// two can't drift apart — same reasoning as xpToNext above.
+function skillPointBudget(lvl, rebirths) {
+  const L = Math.max(1, Math.floor(lvl) || 1);
+  if ((rebirths || 0) > 0 && L < REBIRTH_LEVEL) return 0;
+  return L * 3;
+}
+
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
@@ -1477,6 +1503,7 @@ function clanAtkBonusPct(level) {
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
