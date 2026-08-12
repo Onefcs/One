@@ -2468,20 +2468,23 @@ function drawSpecialButton() {
   ctx.save();
 
   ctx.fillStyle = _uiBtnGrads.scg1;
-  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 9); ctx.fill();
+  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 7); ctx.fill();
 
   ctx.strokeStyle = 'rgba(245,197,66,0.75)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 9); ctx.stroke();
+  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 7); ctx.stroke();
 
-  ctx.strokeStyle = `rgba(245,197,66,${(0.08 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-  roundRect(ctx, sb.x - 2, sb.y - 2, sb.w + 4, sb.h + 4, 11); ctx.stroke();
+  ctx.strokeStyle = `rgba(245,197,66,${(0.08 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 3;
+  roundRect(ctx, sb.x - 2, sb.y - 2, sb.w + 4, sb.h + 4, 9); ctx.stroke();
 
+  // Fixed left-padding layout rather than the icon+text centering math the
+  // taller Проф/ПвП buttons use — this one's short enough (compact 64×22)
+  // that centering the pair as a whole isn't worth the extra arithmetic.
   const scColor = '#f5c542';
-  drawIconCtx(ctx, 'star', sb.x + sb.w / 2 - 14, sb.y + sb.h / 2, 12, scColor);
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'star', sb.x + 12, sb.y + sb.h / 2, 9, scColor);
+  ctx.font = `bold 9.5px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = scColor;
-  ctx.fillText(t('specialBtnLbl'), sb.x + sb.w / 2 - 5, sb.y + sb.h / 2);
+  ctx.fillText(t('specialBtnLbl'), sb.x + 21, sb.y + sb.h / 2);
 
   ctx.restore();
 }

@@ -54,15 +54,15 @@ function getProfessionBtnPos() {
   return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 
-// Directly below Профессия, same column — opens the "Новые навыки" GRAM
-// shop panel (advanced-skill books of the buyer's own choice + safe
-// enchant stones + season points). See _checkSpecialBtnTouch/input.js and
-// drawSpecialButton/openSpecialPanel, js/ui.js. Wider than Проф/ПвП above
-// it (same left edge, same height) — "Новые навыки" doesn't fit the
-// narrower 80px column those two short labels use.
+// Directly below Профессия, same column — opens the "Книги" GRAM shop
+// panel (advanced-skill books of the buyer's own choice + safe enchant
+// stones + season points). See _checkSpecialBtnTouch/input.js and
+// drawSpecialButton/openSpecialPanel, js/ui.js. Smaller than Проф/ПвП
+// above it (same left edge) — a short single word ("Special") needs less
+// room than either of those two labels.
 function getSpecialBtnPos() {
   const prof = getProfessionBtnPos();
-  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w + 48, h: prof.h };
+  return { x: prof.x, y: prof.y + prof.h + 6, w: 64, h: 22 };
 }
 
 function getPartyLeaveBtnPos() {
