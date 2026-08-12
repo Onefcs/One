@@ -36,7 +36,26 @@ let _petLoadedFor = null;
 const _dmgActive = [];
 const _dmgPool   = [];
 
-// Chunk sprite cache — separate from _tileChunks canvas cache
+// Chunk sprite cache — separate from _tileChunks canvas cache (js/game.js).
+// That one is capped at _CHUNK_MAX (96) with a comment sizing its worst-case
+// CPU-side memory; this one held the GPU-uploaded PIXI.Texture for every
+// distinct chunk ever built and was never capped at all. Per _updateTiles'
+// own profiling comment below, the texture upload (PIXI.Texture.from, ~5ms
+// avg, spikes over 30ms) is the EXPENSIVE half of building a chunk — the
+// canvas draw that got the cap is the cheap ~0.6ms half. The only thing that
+// ever cleared this was pixiInvalidateChunks(), and that only runs from
+// buildTileCanvas() on a fresh gameStart (login/reconnect) — leftover
+// plumbing from the old multi-floor game, where every floor change fired it.
+// This world is one permanent floor now (MAX_FLOOR=1, server/index.js), so a
+// long session that never reconnects never calls it again: every chunk a
+// player ever walked past — up to ~8000 across the full map — stayed
+// uploaded to the GPU for the rest of the session. That's an unbounded VRAM
+// leak, worst on the mobile WebView this actually runs in, and reads exactly
+// like the "игра фризит после долгой сессии" reports. Capped the same way
+// _tileChunks is, oldest evicted first — see the eviction pass at the end of
+// _updateTiles, which skips anything on screen this frame so eviction can
+// never pop a visible chunk.
+const _CHUNK_SPR_MAX = 96;
 const _chunkSprCache = new Map(); // "cx,cy" → PIXI.Sprite
 
 // Texture caches
@@ -313,6 +332,19 @@ function _updateTiles(camX, camY) {
     }
   }
   _chunkSprCache.forEach(spr => { spr.visible = spr._visGen === gen; });
+  // Evict oldest-first (Map insertion order, same rule _tileChunks uses)
+  // once over the cap, skipping anything visible this frame — see
+  // _CHUNK_SPR_MAX above. destroy({texture, baseTexture}) is what actually
+  // frees the GPU upload; removing the child alone would not.
+  if (_chunkSprCache.size > _CHUNK_SPR_MAX) {
+    for (const [k, spr] of _chunkSprCache) {
+      if (_chunkSprCache.size <= _CHUNK_SPR_MAX) break;
+      if (spr.visible) continue;
+      _tileCt.removeChild(spr);
+      spr.destroy({ texture: true, baseTexture: true });
+      _chunkSprCache.delete(k);
+    }
+  }
 }
 
 // ── torch light + ambient dust ───────────────────────────────
