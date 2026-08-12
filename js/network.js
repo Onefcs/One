@@ -1506,6 +1506,7 @@ function _buildSaveStats() {
     hudPotion: player.hudPotion || 'pt1',
     buffs: player.buffs || {},
     autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0,
+    autoBuffTypes: player.autoBuffTypes || {},
     upgrades: player.upgrades || {},
     questIdx: player.questIdx || 0,
     questKills: player.questKills || {},

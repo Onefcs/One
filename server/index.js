@@ -2676,6 +2676,18 @@ function _sanitizeSavedStats(raw) {
     }
     s.buffs = b;
   }
+  // Per-type auto-redrink toggles for buff potions — same bounded-shape
+  // treatment as buffs above: only known buff types survive, as booleans.
+  if (s.autoBuffTypes !== undefined) {
+    const ab = {};
+    if (s.autoBuffTypes && typeof s.autoBuffTypes === 'object' && !Array.isArray(s.autoBuffTypes)) {
+      for (const [k, v] of Object.entries(s.autoBuffTypes)) {
+        if (!_BUFF_TYPES.has(k) || !v) continue;
+        ab[k] = true;
+      }
+    }
+    s.autoBuffTypes = ab;
+  }
   // Freshness stamp used only to pick the newer of {DB, client localStorage
   // backup} on reload. Clamp to a sane range so a client can't write a
   // far-future value that would make its record permanently "win".

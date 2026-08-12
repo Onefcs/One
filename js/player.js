@@ -134,6 +134,7 @@ function makePlayer(type) {
     buffs: {},
     potCd: 0,
     autoHpPct: 0,
+    autoBuffTypes: {},
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
     // 0 = locked/not yet studied (see studySkill/upgradeSkillWithBook in
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
@@ -501,6 +502,24 @@ function useBuffPotion(id) {
   if (player.hp > player.maxHp) player.hp = player.maxHp;
   dmgNum(player.x, player.y - 30, def.name + '!', '#f0c040');
   spawnBurst(player.x, player.y, '#f0c040', 6);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  netSaveProgress();
+}
+
+// Re-drink a buff potion of the given type from inventory the moment its
+// timer expires — used by the per-type auto toggle (toggleAutoBuffPotion)
+// and the game-loop check in js/game.js. No-ops quietly if the bag is empty.
+function _autoUseBuffPotionByType(btype) {
+  if (!player) return;
+  const it = (player.inventory || []).find(i => i.slot === 'buff_potion' && i.buffType === btype);
+  if (it && (it.qty || 1) > 0) useBuffPotion(it.id);
+}
+
+function toggleAutoBuffPotion(btype) {
+  if (!player || !btype) return;
+  const auto = player.autoBuffTypes || (player.autoBuffTypes = {});
+  auto[btype] = !auto[btype];
+  if (auto[btype] && ((player.buffs || {})[btype] || 0) <= 0) _autoUseBuffPotionByType(btype);
   if (typeof updateInvUI === 'function') updateInvUI();
   netSaveProgress();
 }
@@ -1064,6 +1083,7 @@ function restoreFromSave(data) {
   player.buffs      = data.buffs      || {};
   player.potCd      = 0;
   player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0;
+  player.autoBuffTypes = data.autoBuffTypes || {};
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;

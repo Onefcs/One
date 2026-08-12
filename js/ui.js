@@ -2825,6 +2825,7 @@ function openInvItemModal(idx) {
     const active = btype && ((player.buffs || {})[btype] || 0) > 0;
     const remaining = active ? Math.ceil((player.buffs[btype] || 0) / 60) : 0;
     const qty = it.qty || 1;
+    const autoOn = !!((player.autoBuffTypes || {})[btype]);
     const ov = document.createElement('div');
     ov.id = 'inv-item-modal-ov';
     ov.className = 'imod-overlay';
@@ -2844,7 +2845,15 @@ function openInvItemModal(idx) {
         <button class="imod-btn imod-equip${active ? ' disabled' : ''}" onclick="${active ? '' : `useBuffPotion('${it.id}');closeInvItemModal()`}">
           ${active ? t('alreadyActiveLbl') : t('useBtn')}
         </button>
+        <button class="imod-btn" onclick="toggleAutoBuffPotion('${btype}');openInvItemModal(${idx})" style="
+          background:${autoOn ? 'rgba(144,214,83,0.15)' : 'rgba(209,204,197,0.08)'};
+          color:${autoOn ? '#90d653' : '#968a7a'};
+          border:1px solid ${autoOn ? '#90d65344' : 'transparent'};
+        ">
+          ${t('autoLbl')}: ${autoOn ? t('onLbl') : t('offLbl')}
+        </button>
       </div>
+      <div style="font-size:10px;color:#72685a;text-align:center;margin-top:8px">${t('autoBuffHint')}</div>
     </div>`;
     document.getElementById('app').appendChild(ov);
     return;

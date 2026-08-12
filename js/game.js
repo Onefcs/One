@@ -384,6 +384,15 @@ function update(dt, realDt) {
   }
   if (_buffChanged) { recompute(); if (typeof updateInvUI === 'function') updateInvUI(); }
 
+  // Auto-use buff potions — re-drink any type whose toggle is on the moment
+  // its timer hits 0 (toggleAutoBuffPotion/_autoUseBuffPotionByType, js/player.js)
+  const _autoBuffTypes = player.autoBuffTypes;
+  if (_autoBuffTypes) {
+    for (const bt of Object.keys(_autoBuffTypes)) {
+      if (_autoBuffTypes[bt] && (_buffs[bt] || 0) <= 0) _autoUseBuffPotionByType(bt);
+    }
+  }
+
   // Auto-use HP potion
   const _autoPct = player.autoHpPct || 0;
   if (_autoPct > 0 && player.potCd <= 0 && player.hp < player.maxHp * _autoPct) {
