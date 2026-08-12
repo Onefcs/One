@@ -4655,6 +4655,18 @@ io.on('connection', socket => {
     // Both hit the database on every call — seasonRating sorts the whole
     // player collection, seasonSetTier writes the selected band.
     'seasonRating', 'seasonSetTier',
+    // History/lookup reads that were left in the loose default bucket even
+    // though each call is its own DB round trip — a client idly re-opening
+    // (or scripting) a DM thread or the clan chat panel could fire these at
+    // up to 300/s in the fast bucket, same amplification shape as the ones
+    // above, just missed when this list was written.
+    'privMsgHistory', 'clanChatHistory',
+    // arena3/race10/fear Register+Sync all await the daily-attempts DB read
+    // (see _dailyAttemptsLeft) on every single call — Register additionally
+    // rewrites the queue and re-broadcasts it. Same shape as the rest of this
+    // list; only the *Unregister/*Return/*ing-state variants stay in the fast
+    // bucket because they're pure in-memory reads/writes.
+    'arena3Register', 'arena3Sync', 'race10Register', 'race10Sync', 'fearEnter', 'fearSync',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
