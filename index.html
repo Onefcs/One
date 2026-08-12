@@ -137,7 +137,6 @@
   </div>
   <div class="rating-tabs">
     <button class="rating-tab active" id="stab-quests" onclick="switchSeasonTab('quests')" data-i18n="seasonTabQuests">Квесты</button>
-    <button class="rating-tab" id="stab-packs" onclick="switchSeasonTab('packs')" data-i18n="seasonTabPacks">Паки</button>
     <button class="rating-tab" id="stab-rating" onclick="switchSeasonTab('rating')" data-i18n="seasonTabRating">Рейтинг</button>
   </div>
   <div id="season-panel-body" class="vip-body"></div>
@@ -237,6 +236,10 @@
     <div class="vip-title" style="color:#ffd700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><span data-i18n="gramShopHdr">Магазин GRAM</span></div>
     <button class="vip-close" onclick="closeGramShopPanel()">✕</button>
   </div>
+  <div class="rating-tabs">
+    <button class="rating-tab active" id="shtab-packs" onclick="switchShopTab('packs')" data-i18n="shopTabPacks">Паки</button>
+    <button class="rating-tab" id="shtab-season" onclick="switchShopTab('season')" data-i18n="shopTabSeason">Сезонные</button>
+  </div>
   <div id="gram-shop-body" class="vip-body"></div>
 </div>
 
@@ -248,17 +251,6 @@
     <button class="vip-close" onclick="closeProfessionPanel()">✕</button>
   </div>
   <div id="profession-panel-body" class="vip-body profp-body"></div>
-</div>
-
-<!-- Special overlay panel: GRAM shop for advanced-skill books of the
-     buyer's own choice + safe enchant stones + season points — opened from
-     the canvas HUD button under Профессия, see openSpecialPanel (js/ui.js). -->
-<div id="special-panel" style="display:none">
-  <div class="vip-header">
-    <div class="vip-title" style="color:#f5c542"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg><span data-i18n="specialShopHdr">Книги</span></div>
-    <button class="vip-close" onclick="closeSpecialPanel()">✕</button>
-  </div>
-  <div id="special-panel-body" class="vip-body"></div>
 </div>
 
 <!-- Chat -->

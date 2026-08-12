@@ -54,17 +54,6 @@ function getProfessionBtnPos() {
   return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 
-// Directly below Профессия, same column — opens the "Книги" GRAM shop
-// panel (advanced-skill books of the buyer's own choice + safe enchant
-// stones + season points). See _checkSpecialBtnTouch/input.js and
-// drawSpecialButton/openSpecialPanel, js/ui.js. Smaller than Проф/ПвП
-// above it (same left edge) — a short single word ("Special") needs less
-// room than either of those two labels.
-function getSpecialBtnPos() {
-  const prof = getProfessionBtnPos();
-  return { x: prof.x, y: prof.y + prof.h + 6, w: 64, h: 22 };
-}
-
 function getPartyLeaveBtnPos() {
   const bh = 26, gap = 4;
   const startY = _partyHudStartY();
@@ -72,11 +61,11 @@ function getPartyLeaveBtnPos() {
   return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: 80, h: 22 };
 }
 
-// Party member list starts below the Special button, not the Профессия
-// button directly — keeps the two stacks from overlapping.
+// Party member list starts below the Профессия button — used to be below
+// the since-removed Special button one slot further down.
 function _partyHudStartY() {
-  const sp = getSpecialBtnPos();
-  return sp.y + sp.h + 6;
+  const prof = getProfessionBtnPos();
+  return prof.y + prof.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -291,15 +280,6 @@ function _checkProfessionBtnTouch(cx, cy) {
   return false;
 }
 
-function _checkSpecialBtnTouch(cx, cy) {
-  const sb = getSpecialBtnPos();
-  if (cx >= sb.x && cx <= sb.x + sb.w && cy >= sb.y && cy <= sb.y + sb.h) {
-    if (typeof openSpecialPanel === 'function') openSpecialPanel();
-    return true;
-  }
-  return false;
-}
-
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
   const lb = getPartyLeaveBtnPos();
@@ -410,7 +390,6 @@ function onTS(e) {
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
-    if (_checkSpecialBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -478,7 +457,6 @@ function onMD(e) {
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
-  if (_checkSpecialBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y)) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;

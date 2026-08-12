@@ -2214,7 +2214,6 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
-  const spc = getSpecialBtnPos();
   const pty = getPartyBtnPos();
   const tfW = 160, tfH = 42;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
@@ -2239,13 +2238,6 @@ function _buildUiBtnGrads() {
   pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
-
-  // Gold tone (echoes the GRAM shop's own gold accent — this button opens
-  // another GRAM-purchase panel, just one layout slot lower).
-  const scg0 = ctx.createLinearGradient(spc.x, spc.y, spc.x, spc.y+spc.h);
-  scg0.addColorStop(0,'rgba(30,24,14,0.97)'); scg0.addColorStop(1,'rgba(17,13,7,0.99)');
-  const scg1 = ctx.createLinearGradient(spc.x, spc.y, spc.x, spc.y+spc.h);
-  scg1.addColorStop(0,'rgba(66,52,10,0.97)'); scg1.addColorStop(1,'rgba(32,25,5,0.99)');
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
   ptg0.addColorStop(0,'rgba(24,36,14,0.97)'); ptg0.addColorStop(1,'rgba(12,18,7,0.99)');
@@ -2276,9 +2268,9 @@ function _buildUiBtnGrads() {
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
-  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, scg0, scg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, spcBtn: spc, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2545,45 +2537,6 @@ function drawProfessionButton() {
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
   ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
-
-  ctx.restore();
-}
-
-// ─────────────────────────────────────────────────────────
-//  SPECIAL BUTTON — below Профессия, opens the Special GRAM shop panel
-//  (advanced-skill books of choice + safe enchant stones + season points).
-//  See openSpecialPanel/js/ui.js and _checkSpecialBtnTouch/js/input.js.
-// ─────────────────────────────────────────────────────────
-function drawSpecialButton() {
-  if (!player) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
-  const sb = _uiBtnGrads.spcBtn;
-  const F = 'system-ui, -apple-system, Arial';
-  // Gently pulses all the time (not gated on a "ready" state like
-  // Профессия — this is a shop, always worth a glance) so it reads as a
-  // standing offer rather than one more static nav button.
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
-
-  ctx.save();
-
-  ctx.fillStyle = _uiBtnGrads.scg1;
-  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 7); ctx.fill();
-
-  ctx.strokeStyle = 'rgba(245,197,66,0.75)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 7); ctx.stroke();
-
-  ctx.strokeStyle = `rgba(245,197,66,${(0.08 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 3;
-  roundRect(ctx, sb.x - 2, sb.y - 2, sb.w + 4, sb.h + 4, 9); ctx.stroke();
-
-  // Fixed left-padding layout rather than the icon+text centering math the
-  // taller Проф/ПвП buttons use — this one's short enough (compact 64×22)
-  // that centering the pair as a whole isn't worth the extra arithmetic.
-  const scColor = '#f5c542';
-  drawIconCtx(ctx, 'star', sb.x + 12, sb.y + sb.h / 2, 9, scColor);
-  ctx.font = `bold 9.5px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = scColor;
-  ctx.fillText(t('specialBtnLbl'), sb.x + 21, sb.y + sb.h / 2);
 
   ctx.restore();
 }
@@ -3338,9 +3291,7 @@ function switchSeasonTab(tab) {
 function _renderSeasonBody() {
   const body = document.getElementById('season-panel-body');
   if (!body) return;
-  body.innerHTML = _seasonTab === 'rating' ? _seasonRatingHTML()
-                 : _seasonTab === 'packs'  ? _seasonPacksHTML()
-                 : _seasonQuestsHTML();
+  body.innerHTML = _seasonTab === 'rating' ? _seasonRatingHTML() : _seasonQuestsHTML();
 }
 
 // Prize table — display only, the payout itself happens outside the game.
@@ -3491,18 +3442,6 @@ function _seasonQuestsHTML() {
       ${burnBlock}
       ${_seasonPrizesHTML()}
     </div>`;
-}
-
-// Сезонные паки. Priced in GRAM, so the balance is shown here the same way
-// the GRAM shop shows it — otherwise the disabled buttons have no explanation.
-function _seasonPacksHTML() {
-  const bal = window._gramBalance || 0;
-  return `<div style="padding:16px">
-    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
-      ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
-    </div>
-    ${_SEASON_SHOP_PKGS_UI.map(pkg => _seasonShopPkgHtml(pkg, bal)).join('')}
-  </div>`;
 }
 
 function _seasonRatingHTML() {
@@ -5283,9 +5222,10 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
 ];
 
-// Сезонные паки — shown in the Паки tab of the Сезон panel, not in the GRAM
-// shop. Mirror of _SEASON_SHOP_PKGS on the server (which is what actually
-// grants them); this copy only exists to draw the cards. Keep the two in sync.
+// Сезонные паки — shown in the GRAM shop's own Сезонные tab (used to be a
+// Паки tab on the Сезон panel instead). Mirror of _SEASON_SHOP_PKGS on the
+// server (which is what actually grants them); this copy only exists to
+// draw the cards. Keep the two in sync.
 const _SEASON_SHOP_PKGS_UI = [
   { id:'sp5',  gram:5,  stones:{ norm_stone:10 } },
   { id:'sp10', gram:10, stones:{ norm_stone:10, bless_stone:2  } },
@@ -5359,16 +5299,22 @@ function showGramShopBtn() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  SPECIAL SHOP PANEL — advanced-skill books ("вторая профессия") in a
-//  distribution the buyer picks, plus safe enchant stones and season
-//  points. Mirror of _SPECIAL_SHOP_PKGS on the server (which is what
-//  actually validates the split and grants everything) — keep the two in
-//  sync. bookCount totals aren't arbitrary: ADV_SKILL_STUDY_COST (above) is
-//  5 books per Q/W/E/R slot to learn that advanced skill, so 5/10/20 map
+//  "Паки" TAB PACKAGES (GRAM shop) — advanced-skill books ("вторая
+//  профессия") in a distribution the buyer picks, plus safe enchant stones
+//  and season points. Mirror of _SPECIAL_SHOP_PKGS on the server (which is
+//  what actually validates the split and grants everything) — keep the two
+//  in sync. bookCount totals aren't arbitrary: ADV_SKILL_STUDY_COST (above)
+//  is 5 books per Q/W/E/R slot to learn that advanced skill, so 5/10/20 map
 //  exactly to unlocking 1/2/4 of the class's four advanced skills.
+//
+//  These used to live on their own "Special" HUD panel; that panel is gone
+//  and every package here now renders under the GRAM shop's Паки tab
+//  instead (_renderGramShopPanel), alongside the regular _GRAM_SHOP_PKGS_UI
+//  ones — only the panel changed, the purchase flow (specialShopBuy/
+//  gramShopBuy) didn't.
 // ─────────────────────────────────────────────────────────
 // Plain "Пак N" labels rather than themed names (unlike _GRAM_SHOP_PKGS_UI's
-// gramPkgLabel_*) — numbered in the order the Special panel actually renders
+// gramPkgLabel_*) — numbered in the order the Паки tab actually renders
 // them: the three pet packages (_SPECIAL_PET_PKGS_UI, below) first as 1-3,
 // then these four book packages as 4-7. Both arrays' `label` getters below
 // share this one numbering scheme.
@@ -5388,38 +5334,14 @@ const _SPECIAL_SHOP_PKGS_UI = [
 // Pet+cloak+artifact packages — mirror of server/index.js's petpkg1/2/3
 // entries in _GRAM_SHOP_PKGS. Bought through gramShopBuy (not
 // specialShopBuy: no buyer-picked book split here), same as any other GRAM
-// shop package, but shown on the Special panel rather than the GRAM one —
-// hence their own render/picker functions below instead of reusing
-// _gramShopPkgHtml/openGramShopConfirm.
+// shop package — own render/picker functions below instead of reusing
+// _gramShopPkgHtml/openGramShopConfirm only because the reward kinds
+// (petChoice/classCloak/classArtifact) don't fit that card's layout.
 const _SPECIAL_PET_PKGS_UI = [
   { id:'petpkg1', gram:20,  get label() { return _packNLabel(1); }, petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:3, color:'#9c9086' },
   { id:'petpkg2', gram:60,  get label() { return _packNLabel(2); }, petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:3, color:'#6f9c4a' },
   { id:'petpkg3', gram:110, get label() { return _packNLabel(3); }, petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5, color:'#4a7bab' },
 ];
-
-function openSpecialPanel() {
-  const panel = document.getElementById('special-panel');
-  if (!panel || !player) return;
-  panel.style.display = 'flex';
-  _renderSpecialPanel();
-}
-function closeSpecialPanel() {
-  const panel = document.getElementById('special-panel');
-  if (panel) panel.style.display = 'none';
-}
-
-function _renderSpecialPanel() {
-  const el = document.getElementById('special-panel-body');
-  if (!el || !player) return;
-  const bal = window._gramBalance || 0;
-  el.innerHTML = `
-    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
-      ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
-    </div>
-    ${_SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('')}
-    ${_SPECIAL_SHOP_PKGS_UI.map(pkg => _specialPkgHtml(pkg, bal)).join('')}
-  `;
-}
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
 // coin icon) — split out of _gramShopPkgHtml so _specialPkgHtml can render
@@ -5436,8 +5358,8 @@ const _shopCoinUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'
 const _shopSpUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
 
 // Renders the armor/weapon/bonusSP/nexum/potions rows any pkg carries —
-// shared between _gramShopPkgHtml (the GRAM panel) and _specialPkgHtml (the
-// Special panel's special270), which both need the same reward kinds.
+// shared between _gramShopPkgHtml and _specialPkgHtml (special270), which
+// both need the same reward kinds.
 function _shopExtraRewardRows(pkg, ri) {
   let rows = '';
   if (pkg.potions) {
@@ -5601,8 +5523,10 @@ function onSpecialShopResult(data) {
   if (data.newNexumBalance != null) window._nexumBalance = data.newNexumBalance;
   if (data.vipData) window._vipData = data.vipData;
   _marketToast(t('specialBoughtToast'), 'ok');
-  const panel = document.getElementById('special-panel');
-  if (panel && panel.style.display !== 'none') _renderSpecialPanel();
+  // Bought from the GRAM shop's Паки tab now (see _renderGramShopPanel) —
+  // used to be its own Special panel.
+  const panel = document.getElementById('gram-shop-panel');
+  if (panel && panel.style.display !== 'none') _renderGramShopPanel();
   updateInvUI();
   if (typeof _refreshProfessionPanelIfOpen === 'function') _refreshProfessionPanelIfOpen();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
@@ -5614,12 +5538,12 @@ function onSpecialShopError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  SPECIAL PANEL — pet+cloak+artifact packages (petpkg1/2/3, mirror of
-//  server/index.js's _GRAM_SHOP_PKGS entries of the same id). Bought through
-//  gramShopBuy like any other GRAM package — petChoice/classCloak/
-//  classArtifact/enhance are already fully supported there — but shown on
-//  the Special panel, so they get their own card/picker instead of reusing
-//  _gramShopPkgHtml/openGramShopConfirm (which are wired to the GRAM panel).
+//  PET+CLOAK+ARTIFACT PACKAGES (petpkg1/2/3, mirror of server/index.js's
+//  _GRAM_SHOP_PKGS entries of the same id). Bought through gramShopBuy like
+//  any other GRAM package — petChoice/classCloak/classArtifact/enhance are
+//  already fully supported there — but with their own card/picker instead
+//  of reusing _gramShopPkgHtml/openGramShopConfirm (built for a different
+//  reward-row layout).
 // ─────────────────────────────────────────────────────────
 function _specialPetPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
@@ -5732,16 +5656,30 @@ function closeGramShopPanel() {
   if (panel) panel.style.display = 'none';
 }
 
+// "Паки" (regular GRAM packages + the former Special panel's pet/book
+// packages) vs "Сезонные" (season packages, moved here from the Сезон
+// panel's own Паки tab — see _seasonShopPkgHtml/_SEASON_SHOP_PKGS_UI).
+let _shopTab = 'packs';
+
+function switchShopTab(tab) {
+  _shopTab = tab;
+  document.querySelectorAll('#gram-shop-panel .rating-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('shtab-' + tab)?.classList.add('active');
+  _renderGramShopPanel();
+}
+
 function _renderGramShopPanel() {
   const el = document.getElementById('gram-shop-body');
   if (!el) return;
   const bal = window._gramBalance || 0;
-  el.innerHTML = `
-    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
+  const balBar = `<div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
       ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
-    </div>
-    ${_GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')}
-  `;
+    </div>`;
+  el.innerHTML = balBar + (_shopTab === 'season'
+    ? _SEASON_SHOP_PKGS_UI.map(pkg => _seasonShopPkgHtml(pkg, bal)).join('')
+    : _GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('')
+      + _SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('')
+      + _SPECIAL_SHOP_PKGS_UI.map(pkg => _specialPkgHtml(pkg, bal)).join(''));
 }
 
 function _gramShopPkgHtml(pkg, bal) {
@@ -5877,23 +5815,19 @@ function onGramShopResult(data) {
   // their own — name them by price so the toast still says what was bought.
   const spkg = pkg ? null : _SEASON_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
   // Pet+cloak+artifact packages (petpkg1/2/3) — bought through this same
-  // handler but shown on the Special panel (_SPECIAL_PET_PKGS_UI), so they
-  // have no label of their own either.
+  // handler but shown on the GRAM shop's own Паки tab (_SPECIAL_PET_PKGS_UI),
+  // so they have no label of their own either.
   const ppkg = (pkg || spkg) ? null : _SPECIAL_PET_PKGS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label
             : spkg ? tVars('seasonPkgLabelFmt', { g: spkg.gram })
             : ppkg ? ppkg.label
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
+  // Every package kind above (regular/pet/book, and — on the Сезонные tab —
+  // season packages too) now renders inside this one panel/tab pair, so a
+  // single re-render covers whichever tab happens to be open.
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
-  // Season packs are bought from the Сезон panel, which shows the same GRAM
-  // balance — redraw it too or the buttons keep the pre-purchase state.
-  const spanel = document.getElementById('season-panel');
-  if (spanel && spanel.style.display !== 'none' && _seasonTab === 'packs') _renderSeasonBody();
-  // Pet packages are bought from the Special panel, same reasoning.
-  const sppanel = document.getElementById('special-panel');
-  if (ppkg && sppanel && sppanel.style.display !== 'none') _renderSpecialPanel();
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
   if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
