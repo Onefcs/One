@@ -5336,10 +5336,10 @@ io.on('connection', socket => {
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
-  // Tiny GRAM trickle from regular kills: 30% chance, amount scales with the
+  // Tiny GRAM trickle from regular kills: 7.5% chance, amount scales with the
   // monster's own level (rlvl) — a level-1 mob drops 0.000001 GRAM, a
   // level-2 mob 0.000002, and so on.
-  const GRAM_DROP_CHANCE = 0.30;
+  const GRAM_DROP_CHANCE = 0.075;
   const GRAM_PER_LEVEL = 0.0000001;
 
   function _startAutosave() {
