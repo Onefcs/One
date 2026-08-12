@@ -4400,6 +4400,19 @@ function _emitToEnemyViewers(room, enemyId, event, payload, exclude) {
 
 io.on('connection', socket => {
   let authed = null;
+  // Every safeguard in this file (rate-limit buckets, brute-force locks,
+  // cache eviction...) assumes a socket either authenticates or goes away
+  // quickly — nothing ever bounded how long an UNauthenticated one can sit
+  // open. transports:['websocket'] (see the Server() options above) means a
+  // raw WebSocket handshake alone opens a connection here with no HTTP
+  // request/response round trip to rate-limit separately, so a script that
+  // just connects and never sends loginTelegram(WebApp) could hold sockets
+  // (and their fds) open indefinitely, for free, with no cap. Real clients
+  // authenticate within a second or two of connecting; this is generous
+  // slack on top of that, not a tight budget.
+  const _authTimeout = setTimeout(() => {
+    if (!authed) socket.disconnect(true);
+  }, 20000);
   let currentRoom = null;
   let currentFloor = 1;
   let _lastStats = null;
@@ -5037,6 +5050,7 @@ io.on('connection', socket => {
         return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
       }
       authed = doc;
+      clearTimeout(_authTimeout);
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
@@ -5096,6 +5110,7 @@ io.on('connection', socket => {
         return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
       }
       authed = doc;
+      clearTimeout(_authTimeout);
       socket.data.username = doc.username;
       socket.data.telegramId = telegramId;
       if (doc.savedData) _lastStats = doc.savedData;
@@ -9334,6 +9349,7 @@ io.on('connection', socket => {
   });
 
   safeOn('disconnect', () => {
+    clearTimeout(_authTimeout);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     // _flushNow (below, via _pendingFlush) clears this too and writes whatever
     // the coalesced drop balances are owed — clearing here as well just makes
