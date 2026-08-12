@@ -3135,11 +3135,18 @@ function _removeFromParty(partyId, leaverId) {
   members.forEach((name, id) => remaining.push({ id, name }));
 
   if (remaining.length <= 1) {
-    // Party fully dissolves
+    // Party fully dissolves. partyLeft alone used to leave the last member's
+    // own partyMembers array (js/network.js) never cleared — its handler
+    // explicitly defers clearing to a partyUpdated that, in this branch, was
+    // never sent — so their party HUD (drawPartyHUD, js/ui.js) kept showing
+    // the departed member's HP bar indefinitely. Sending an empty
+    // partyUpdated alongside partyLeft here matches the >1-member branch
+    // below and actually clears it.
     parties.delete(partyId);
     remaining.forEach(m => {
       playerParty.delete(m.id);
       io.to(m.id).emit('partyLeft', { leftName: leaverName });
+      io.to(m.id).emit('partyUpdated', { members: [] });
     });
   } else {
     // Party shrinks; send notification then updated list to each remaining member
@@ -3149,6 +3156,40 @@ function _removeFromParty(partyId, leaverId) {
       io.to(m.id).emit('partyUpdated', { members: othersForM });
     });
   }
+}
+
+// How long a disconnected member's party slot is held before they're actually
+// dropped — same reasoning/window as Fear's own reconnect grace
+// (FEAR_RECONNECT_GRACE_MS): an ordinary network blip's reconnect (transport
+// re-handshake, then loginTelegramWebApp's own DB round trip) routinely eats
+// several seconds beyond the client's 8s silence watchdog before it even
+// starts, so anything shorter drops the member for real before a perfectly
+// ordinary reconnect can land. Kept as its own constant (not shared with
+// Fear's) since the two systems have nothing to do with each other.
+const PARTY_RECONNECT_GRACE_MS = 45000;
+// telegramId -> { partyId, socketId, timer } — a party slot held across a
+// disconnect. `socketId` is the now-dead socket still sitting in `parties`/
+// `playerParty`; reclaimed onto the reconnecting socket in the login flow
+// below (mirrors _fearDisconnectGrace/_fearGraceClaim) or, if the timer
+// fires first, actually removed via _removeFromParty.
+const _partyDisconnectGrace = new Map();
+// Called from the 'disconnect' handler instead of an immediate
+// _removeFromParty — holds the slot open rather than dissolving the party
+// (or evicting the member) over what may just be a brief drop. Falls back to
+// removing immediately when there's no telegramId to reconnect-match against
+// (shouldn't happen for an authed session, but leaves nothing orphaned if it
+// somehow does).
+function _partyHoldOnDisconnect(socketId, telegramId) {
+  const partyId = playerParty.get(socketId);
+  if (!partyId) return;
+  if (!telegramId) { _removeFromParty(partyId, socketId); return; }
+  const prior = _partyDisconnectGrace.get(telegramId);
+  if (prior) clearTimeout(prior.timer);
+  const timer = setTimeout(() => {
+    _partyDisconnectGrace.delete(telegramId);
+    _removeFromParty(partyId, socketId);
+  }, PARTY_RECONNECT_GRACE_MS);
+  _partyDisconnectGrace.set(telegramId, { partyId, socketId, timer });
 }
 
 function getRoom(floor) {
@@ -8275,6 +8316,14 @@ io.on('connection', socket => {
         // now goes through the same fearGrace hold as a real disconnect (see
         // below) rather than a bespoke same-tick-only carry.
         _pvpEliminate(staleSocketId, undefined, undefined, { fearGrace: true, telegramId: authed.telegramId });
+        // Same-tick duplicate-login race: the stale socket's own 'disconnect'
+        // hasn't fired yet (this addPlayer call is what's dropping it), so
+        // nothing has put its party slot into _partyDisconnectGrace for the
+        // reclaim block below to find. Start that hold explicitly now so the
+        // reclaim right after this block still picks it up onto socket.id
+        // instead of leaving the party pointed at a socketId that's already
+        // gone and will never itself reconnect.
+        _partyHoldOnDisconnect(staleSocketId, authed.telegramId);
       }
       // Reclaim a Fear hall/run held across a disconnect. Room's own
       // _fearGraceClaim (inside addPlayer above) already reclaimed the hall
@@ -8288,6 +8337,32 @@ io.on('connection', socket => {
       if (fearCarry) {
         const g = _fearDisconnectGrace.get(authed.telegramId);
         if (g) { clearTimeout(g.timer); _fearDisconnectGrace.delete(authed.telegramId); _fear.set(socket.id, g.run); }
+      }
+      // Reclaim a party slot held across a disconnect (_partyHoldOnDisconnect,
+      // the 'disconnect' handler below) — same independent-of-staleSocketId
+      // reasoning as the Fear reclaim just above: an ordinary reconnect's old
+      // socket has usually finished disconnecting well before this new one
+      // gets here, so there's rarely a live staleSocketId to key off. Moves
+      // the still-held socketId in `parties`/`playerParty` onto this socket
+      // and refreshes every member's roster — including this one, so its own
+      // partyMembers isn't left showing pre-reconnect ids.
+      const _pg = _partyDisconnectGrace.get(authed.telegramId);
+      if (_pg) {
+        clearTimeout(_pg.timer);
+        _partyDisconnectGrace.delete(authed.telegramId);
+        const pmap = parties.get(_pg.partyId);
+        if (pmap && pmap.has(_pg.socketId)) {
+          const uname = pmap.get(_pg.socketId);
+          pmap.delete(_pg.socketId);
+          pmap.set(socket.id, uname);
+          playerParty.delete(_pg.socketId);
+          playerParty.set(socket.id, _pg.partyId);
+          pmap.forEach((_, mid) => {
+            const others = [];
+            pmap.forEach((name, oid) => { if (oid !== mid) others.push({ id: oid, name }); });
+            io.to(mid).emit('partyUpdated', { members: others });
+          });
+        }
       }
       socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
       if (globalChatHistory.length) socket.emit('chatHistory', _publicChatHistory());
@@ -10606,8 +10681,11 @@ io.on('connection', socket => {
     // shared/competitive instances a lone reconnect can't safely resume into.
     _pvpEliminate(socket.id, undefined, undefined, { fearGrace: true, telegramId: authed?.telegramId });
     playerFloorMap.delete(socket.id);
-    const partyId = playerParty.get(socket.id);
-    if (partyId) _removeFromParty(partyId, socket.id);
+    // Held for PARTY_RECONNECT_GRACE_MS instead of dissolved on the spot — a
+    // small network drop (see the fearGrace comment just above) used to kick
+    // the member out of their party immediately, same class of bug as Fear's
+    // hall-release-on-blip one.
+    _partyHoldOnDisconnect(socket.id, authed?.telegramId);
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);
