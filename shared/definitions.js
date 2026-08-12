@@ -898,26 +898,26 @@ const ITEM_DEF = [
 const GEAR_CRAFT_EPIC_COST = 7000;
 const GEAR_CRAFT_LEGENDARY_COST = 20000;
 const GEAR_CRAFT_RECIPES = [
-  { itemId:'sw4', mats:[{id:'sw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'tw4', mats:[{id:'tw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'bw4', mats:[{id:'bw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'st4', mats:[{id:'st3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'hm4', mats:[{id:'hm3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'ar4', mats:[{id:'ar3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'gl4', mats:[{id:'gl3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:0.80, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'st5', mats:[{id:'st4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'hm5', mats:[{id:'hm4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'ar5', mats:[{id:'ar4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'gl5', mats:[{id:'gl4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:0.80, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'sw4', mats:[{id:'sw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'tw4', mats:[{id:'tw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'bw4', mats:[{id:'bw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'st4', mats:[{id:'st3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'hm4', mats:[{id:'hm3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'ar4', mats:[{id:'ar3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'gl4', mats:[{id:'gl3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'st5', mats:[{id:'st4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'hm5', mats:[{id:'hm4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'ar5', mats:[{id:'ar4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'gl5', mats:[{id:'gl4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
 ];
 
 // ── Уникальное оружие ───────────────────────────────────────────────────────
@@ -1070,35 +1070,35 @@ ITEM_DEF.push(...UNIQUE_WEAPONS.map(w => ({ ...w, noDrop: true, unique: true }))
 // one place.
 const GEAR_TIER_CRAFT_RECIPES = [
   // ── Assassin knives ──────────────────────────────────────
-  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Warrior axes ─────────────────────────────────────────
-  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Archer bows ──────────────────────────────────────────
-  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Staves ───────────────────────────────────────────────
-  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Helmets ──────────────────────────────────────────────
-  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Body armor ───────────────────────────────────────────
-  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Gloves ───────────────────────────────────────────────
-  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Boots ────────────────────────────────────────────────
-  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Rings ────────────────────────────────────────────────
-  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Belts ────────────────────────────────────────────────
-  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:0.80 },
-  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:0.80 },
+  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
 ];
 
 // Recipe-scroll tier-up (recu→recr→rece→recl): 20 of the lower rarity → 1 of
