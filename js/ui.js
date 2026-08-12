@@ -5268,15 +5268,22 @@ function showGramShopBtn() {
 //  5 books per Q/W/E/R slot to learn that advanced skill, so 5/10/20 map
 //  exactly to unlocking 1/2/4 of the class's four advanced skills.
 // ─────────────────────────────────────────────────────────
+// Plain "Пак N" labels rather than themed names (unlike _GRAM_SHOP_PKGS_UI's
+// gramPkgLabel_*) — numbered in the order the Special panel actually renders
+// them: the three pet packages (_SPECIAL_PET_PKGS_UI, below) first as 1-3,
+// then these four book packages as 4-7. Both arrays' `label` getters below
+// share this one numbering scheme.
+function _packNLabel(n) { return tVars('packNFmt', { n }); }
+
 const _SPECIAL_SHOP_PKGS_UI = [
-  { id:'special20',  gram:20,  bookCount:5,  bless:2,  seasonPoints:200,  color:'#e6b761' },
-  { id:'special50',  gram:50,  bookCount:10, bless:5,  seasonPoints:600,  color:'#e5a546' },
-  { id:'special100', gram:100, bookCount:20, bless:12, seasonPoints:1000, color:'#eb4e61' },
+  { id:'special20',  gram:20,  get label() { return _packNLabel(4); }, bookCount:5,  bless:2,  seasonPoints:200,  color:'#e6b761' },
+  { id:'special50',  gram:50,  get label() { return _packNLabel(5); }, bookCount:10, bless:5,  seasonPoints:600,  color:'#e5a546' },
+  { id:'special100', gram:100, get label() { return _packNLabel(6); }, bookCount:20, bless:12, seasonPoints:1000, color:'#eb4e61' },
   // Top tier — mirror of server/index.js's special270 entry in
   // _SPECIAL_SHOP_PKGS. bookCount still goes through the same buyer-picked
   // Q/W/E/R split (_specialPicker below); armor/weapon/bonusSP/nexum/potions
   // are new fields _specialPkgHtml/_renderSpecialPicker render conditionally.
-  { id:'special270', gram:270, bookCount:50, bless:30, armor:'epic', weapon:'epic', bonusSP:15, nexum:10000, potions:100, color:'#8a5cc2' },
+  { id:'special270', gram:270, get label() { return _packNLabel(7); }, bookCount:50, bless:30, armor:'epic', weapon:'epic', bonusSP:15, nexum:10000, potions:100, color:'#8a5cc2' },
 ];
 
 // Pet+cloak+artifact packages — mirror of server/index.js's petpkg1/2/3
@@ -5286,9 +5293,9 @@ const _SPECIAL_SHOP_PKGS_UI = [
 // hence their own render/picker functions below instead of reusing
 // _gramShopPkgHtml/openGramShopConfirm.
 const _SPECIAL_PET_PKGS_UI = [
-  { id:'petpkg1', gram:20,  petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:3, color:'#9c9086' },
-  { id:'petpkg2', gram:60,  petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:3, color:'#6f9c4a' },
-  { id:'petpkg3', gram:110, petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5, color:'#4a7bab' },
+  { id:'petpkg1', gram:20,  get label() { return _packNLabel(1); }, petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:3, color:'#9c9086' },
+  { id:'petpkg2', gram:60,  get label() { return _packNLabel(2); }, petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:3, color:'#6f9c4a' },
+  { id:'petpkg3', gram:110, get label() { return _packNLabel(3); }, petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5, color:'#4a7bab' },
 ];
 
 function openSpecialPanel() {
@@ -5374,7 +5381,7 @@ function _specialPkgHtml(pkg, bal) {
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
-        <div class="gram-shop-title" style="color:${pkg.color}">${t('specialShopHdr')}</div>
+        <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
         <div class="gram-shop-price">${pkg.gram} GRAM</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
@@ -5445,7 +5452,7 @@ function _renderSpecialPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${t('specialShopHdr')} — ${pkg.gram} GRAM</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
         <button onclick="_specialPicker=null;document.getElementById('special-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('specialPickerHint')}</div>
@@ -5525,7 +5532,7 @@ function _specialPetPkgHtml(pkg, bal) {
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
-        <div class="gram-shop-title" style="color:${pkg.color}">${t('specialShopHdr')}</div>
+        <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
         <div class="gram-shop-price">${pkg.gram} GRAM</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
@@ -5582,7 +5589,7 @@ function _renderPetPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${t('specialShopHdr')} — ${pkg.gram} GRAM</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
         <button onclick="_petPicker=null;document.getElementById('pet-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('petPickerHint')}</div>
@@ -5769,7 +5776,7 @@ function onGramShopResult(data) {
   const ppkg = (pkg || spkg) ? null : _SPECIAL_PET_PKGS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label
             : spkg ? tVars('seasonPkgLabelFmt', { g: spkg.gram })
-            : ppkg ? t('specialBtnLbl')
+            : ppkg ? ppkg.label
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
   const panel = document.getElementById('gram-shop-panel');
