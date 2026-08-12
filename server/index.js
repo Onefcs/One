@@ -4918,6 +4918,36 @@ io.on('connection', socket => {
     return { items, boxUncommon, boxRare, normStone, blessStone };
   };
 
+  // Cross-socket item grant for a handler resuming after this account may
+  // have reconnected on a DIFFERENT socket while it was mid-flight —
+  // marketCancel/marketBuy hold across two-to-four DB awaits before they
+  // apply the item, and Node never cancels a promise chain just because its
+  // socket disconnected. A stale handler that kept _sellerInv/_buyerInv as a
+  // direct reference into THIS closure's _lastStats.inventory would, on
+  // resuming, either write into a _lastStats nobody's client can see any
+  // more (harmless but the item is gone from the account's real, live
+  // session) or — via _commitServerItems' unconditional persist — overwrite
+  // whatever the real live session has saved since, with the returned/bought
+  // item nowhere in it. That is exactly what "предмет пропал после снятия с
+  // маркета" kept coming back as: the reconnect itself is what raced it.
+  // Same reasoning as _grantKillLoot above; this is the same pattern for a
+  // single specific item instead of a loot roll.
+  socket.data._grantMarketItem = (item) => {
+    if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory) || !item) return { delivered: false };
+    _itemOpBusy++;
+    try {
+      const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
+      const delivered = _invAdd(inv, item);
+      if (delivered) {
+        _commitServerItems(inv, null, 'market_cross_session_grant', { item: item.id }, { beforeLen: _beforeLen });
+      }
+      return { delivered };
+    } finally {
+      _itemOpBusy--;
+    }
+  };
+
   // Gold granted by an admin to a player who is online. It has to land in
   // _lastStats, not just in the database: this session's 60s autosave writes
   // _lastStats wholesale, so a grant written only to Mongo was reverted the
@@ -6971,6 +7001,33 @@ io.on('connection', socket => {
         { new: false }, // return the pre-update doc (still has the item)
       );
       if (!listing) return socket.emit('marketError', { msg: 'Лот не найден' });
+      // The account may have reconnected on a DIFFERENT socket during the two
+      // awaits above — that socket's closure is the live session now, not
+      // this one (see _grantMarketItem's comment). Writing through _sellerInv
+      // here regardless is exactly the "item vanishes after cancelling" race:
+      // the item lands in a _lastStats nobody's client can see, and the next
+      // autosave from the REAL live session overwrites it away with no trace.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _liveSid = activeSessions.get(authed.telegramId);
+        const _liveSocket = _liveSid ? io.sockets.sockets.get(_liveSid) : null;
+        const _result = _liveSocket && _liveSocket.data._grantMarketItem
+          ? _liveSocket.data._grantMarketItem(listing.item)
+          : null;
+        const _delivered = !!(_result && _result.delivered);
+        if (!_delivered) {
+          // No live session at all, or its inventory had no room — an atomic
+          // push straight to the DB at least keeps the item from being
+          // destroyed outright; it'll show up next time the account loads.
+          await PlayerModel.updateOne(
+            { _id: authed._id }, { $push: { 'savedData.inventory': listing.item } },
+          ).catch(() => {});
+        }
+        logPlayer(authed.telegramId, authed.username, 'market_cancel_cross_session',
+          { item: listing.item && listing.item.id, listingId: String(listingId),
+            hadLiveSocket: !!_liveSocket, delivered: _delivered });
+        if (_liveSocket) _liveSocket.emit('marketCancelled', { listingId, item: listing.item, delivered: true });
+        return;
+      }
       // Put the item back server-side as well. Relying on the client to do it
       // from the marketCancelled event meant a lost event (or a disconnect in
       // the round trip) destroyed the item — the listing was already
@@ -7044,15 +7101,46 @@ io.on('connection', socket => {
         return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
       }
       _gramBalance = _paid;
-      // The item is delivered server-side so a marketBought event that never
-      // reaches the client (disconnect, lost packet) can't leave the buyer
-      // having paid for nothing.
-      const _buyerBeforeLen = _buyerInv ? _buyerInv.length : 0;
-      const _delivered = !!(_buyerInv && _invAdd(_buyerInv, claimed.item));
-      if (_delivered) {
-        _commitServerItems(_buyerInv, null, 'market_buy',
-          { item: claimed.item && claimed.item.id, price: claimed.price,
-            seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
+      // The account may have reconnected on a DIFFERENT socket during the
+      // awaits above (payment already landed — that's account-keyed, not
+      // socket-keyed, so it's unaffected) — but _buyerInv is a direct
+      // reference into THIS closure's _lastStats.inventory, and writing
+      // through it now would land the bought item where the real live
+      // session's client can't see it, then get silently overwritten away
+      // by that session's next autosave. Same race as marketCancel's, see
+      // _grantMarketItem's comment.
+      let _delivered;
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _liveSid = activeSessions.get(authed.telegramId);
+        const _liveSocket = _liveSid ? io.sockets.sockets.get(_liveSid) : null;
+        const _result = _liveSocket && _liveSocket.data._grantMarketItem
+          ? _liveSocket.data._grantMarketItem(claimed.item)
+          : null;
+        _delivered = !!(_result && _result.delivered);
+        if (!_delivered) {
+          await PlayerModel.updateOne(
+            { _id: authed._id }, { $push: { 'savedData.inventory': claimed.item } },
+          ).catch(() => {});
+        }
+        logPlayer(authed.telegramId, authed.username, 'market_buy_cross_session',
+          { item: claimed.item && claimed.item.id, listingId: String(listingId),
+            hadLiveSocket: !!_liveSocket, delivered: _delivered });
+        if (_liveSocket) {
+          _liveSocket.emit('marketBought', {
+            listingId, item: claimed.item, newBalance: _paid, delivered: true,
+          });
+        }
+      } else {
+        // The item is delivered server-side so a marketBought event that never
+        // reaches the client (disconnect, lost packet) can't leave the buyer
+        // having paid for nothing.
+        const _buyerBeforeLen = _buyerInv ? _buyerInv.length : 0;
+        _delivered = !!(_buyerInv && _invAdd(_buyerInv, claimed.item));
+        if (_delivered) {
+          _commitServerItems(_buyerInv, null, 'market_buy',
+            { item: claimed.item && claimed.item.id, price: claimed.price,
+              seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
+        }
       }
 
       // Credit the seller (10% fee burned — not paid to anyone), online or not.
