@@ -3419,7 +3419,17 @@ async function _a3TryStart() {
   // deployed; anyone else is dropped from the queue rather than counted.
   const ready = [..._a3.queue.keys()].filter(sid =>
     io.sockets.sockets.get(sid) && room.players.get(sid));
-  [..._a3.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _a3.queue.delete(sid); });
+  const _pruned = [..._a3.queue.keys()].filter(sid => !ready.includes(sid));
+  _pruned.forEach(sid => _a3.queue.delete(sid));
+  // This dropped players from the queue silently — _a3PublicState().queued
+  // (a plain _a3.queue.size) kept reporting the pre-prune count to everyone
+  // still waiting until the next registration/unregistration happened to
+  // re-broadcast. That's exactly "показывает больше чем зарегистрировано":
+  // the count stays inflated by however many quietly disconnected, and if
+  // that's what pushed it over ARENA3_NEEDED, the match then also never
+  // starts — the ready count right below is the honest one, but nobody
+  // downstream saw it until someone else registered.
+  if (_pruned.length) _a3Broadcast();
   if (ready.length < ARENA3_NEEDED) return;
 
   _a3.starting = true;
@@ -8053,6 +8063,19 @@ io.on('connection', socket => {
     const cp = currentRoom?.players.get(socket.id);
     if (!cp) return socket.emit('deathBattleError', { msg: 'Выберите персонажа' });
     if (_fear.has(socket.id)) return socket.emit('deathBattleError', { msg: 'Вы сейчас в Страхе' });
+    // Checked against the QUEUE too, not just live participation — same
+    // reasoning as fearEnter's own cross-checks (see its comment): arena3/
+    // race10 registration opens minutes before the match actually deploys,
+    // so a player who queued there and then also queued here could get
+    // deployed into arena3/race10 while still holding a death-battle slot,
+    // or the reverse. This was the one direction that never got the
+    // treatment — arena3Register/race10Register already check .reg here.
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
+      return socket.emit('deathBattleError', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
+      return socket.emit('deathBattleError', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
     _db.reg.set(socket.id, { name: authed.username });
     socket.emit('deathBattleRegistered', { registered: true });
     _dbBroadcast();
@@ -8081,7 +8104,13 @@ io.on('connection', socket => {
     // overrun grace period normally wrap up well before this window opens at
     // 21:00, but an admin can force-open either one off-schedule, so a race
     // can in principle still be live right as this one opens.
-    if (_race10.alive.has(socket.id)) {
+    //
+    // Checked against the QUEUE too, not just live participation — the same
+    // gap fearEnter's own cross-checks were added to close (see its
+    // comment): without this, queuing here AND for race10 let both windows'
+    // deploys fight over the same player, landing them in one match while
+    // still holding a slot in the other.
+    if (_race10.queue.has(socket.id) || _race10.alive.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы сейчас в Кровавой Башне' });
     }
     if (_fear.has(socket.id)) {
@@ -8129,7 +8158,11 @@ io.on('connection', socket => {
     if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
       return socket.emit('race10Error', { msg: 'Вы уже записаны на битву на смерть' });
     }
-    if (_a3.live && _a3.teams.has(socket.id)) {
+    // Checked against the QUEUE too, not just live participation — mirrors
+    // the check arena3Register now runs the other way (see its comment):
+    // without this, queuing here AND for arena3 let both windows' deploys
+    // fight over the same player.
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
       return socket.emit('race10Error', { msg: 'Вы сейчас на арене 3х3' });
     }
     if (_fear.has(socket.id)) {
