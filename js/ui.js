@@ -2115,6 +2115,7 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
+  const spc = getSpecialBtnPos();
   const pty = getPartyBtnPos();
   const tfW = 160, tfH = 42;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
@@ -2139,6 +2140,13 @@ function _buildUiBtnGrads() {
   pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
+
+  // Gold tone (echoes the GRAM shop's own gold accent — this button opens
+  // another GRAM-purchase panel, just one layout slot lower).
+  const scg0 = ctx.createLinearGradient(spc.x, spc.y, spc.x, spc.y+spc.h);
+  scg0.addColorStop(0,'rgba(30,24,14,0.97)'); scg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  const scg1 = ctx.createLinearGradient(spc.x, spc.y, spc.x, spc.y+spc.h);
+  scg1.addColorStop(0,'rgba(66,52,10,0.97)'); scg1.addColorStop(1,'rgba(32,25,5,0.99)');
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
   ptg0.addColorStop(0,'rgba(24,36,14,0.97)'); ptg0.addColorStop(1,'rgba(12,18,7,0.99)');
@@ -2169,9 +2177,9 @@ function _buildUiBtnGrads() {
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
-  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, scg0, scg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, spcBtn: spc, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2438,6 +2446,42 @@ function drawProfessionButton() {
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
   ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  SPECIAL BUTTON — below Профессия, opens the Special GRAM shop panel
+//  (advanced-skill books of choice + safe enchant stones + season points).
+//  See openSpecialPanel/js/ui.js and _checkSpecialBtnTouch/js/input.js.
+// ─────────────────────────────────────────────────────────
+function drawSpecialButton() {
+  if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const sb = _uiBtnGrads.spcBtn;
+  const F = 'system-ui, -apple-system, Arial';
+  // Gently pulses all the time (not gated on a "ready" state like
+  // Профессия — this is a shop, always worth a glance) so it reads as a
+  // standing offer rather than one more static nav button.
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
+
+  ctx.save();
+
+  ctx.fillStyle = _uiBtnGrads.scg1;
+  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(245,197,66,0.75)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 9); ctx.stroke();
+
+  ctx.strokeStyle = `rgba(245,197,66,${(0.08 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, sb.x - 2, sb.y - 2, sb.w + 4, sb.h + 4, 11); ctx.stroke();
+
+  const scColor = '#f5c542';
+  drawIconCtx(ctx, 'star', sb.x + sb.w / 2 - 14, sb.y + sb.h / 2, 12, scColor);
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = scColor;
+  ctx.fillText(t('specialBtnLbl'), sb.x + sb.w / 2 - 5, sb.y + sb.h / 2);
 
   ctx.restore();
 }
@@ -5199,6 +5243,182 @@ function openSeasonShopConfirm(pkgId) {
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionGramShopBtn(); }
+}
+
+// ─────────────────────────────────────────────────────────
+//  SPECIAL SHOP PANEL — advanced-skill books ("вторая профессия") in a
+//  distribution the buyer picks, plus safe enchant stones and season
+//  points. Mirror of _SPECIAL_SHOP_PKGS on the server (which is what
+//  actually validates the split and grants everything) — keep the two in
+//  sync. bookCount totals aren't arbitrary: ADV_SKILL_STUDY_COST (above) is
+//  5 books per Q/W/E/R slot to learn that advanced skill, so 5/10/20 map
+//  exactly to unlocking 1/2/4 of the class's four advanced skills.
+// ─────────────────────────────────────────────────────────
+const _SPECIAL_SHOP_PKGS_UI = [
+  { id:'special20',  gram:20,  bookCount:5,  bless:2,  seasonPoints:200,  color:'#e6b761' },
+  { id:'special50',  gram:50,  bookCount:10, bless:5,  seasonPoints:600,  color:'#e5a546' },
+  { id:'special100', gram:100, bookCount:20, bless:12, seasonPoints:1000, color:'#eb4e61' },
+];
+
+function openSpecialPanel() {
+  const panel = document.getElementById('special-panel');
+  if (!panel || !player) return;
+  panel.style.display = 'flex';
+  _renderSpecialPanel();
+}
+function closeSpecialPanel() {
+  const panel = document.getElementById('special-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _renderSpecialPanel() {
+  const el = document.getElementById('special-panel-body');
+  if (!el || !player) return;
+  const bal = window._gramBalance || 0;
+  el.innerHTML = `
+    <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
+      ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
+    </div>
+    ${_SPECIAL_SHOP_PKGS_UI.map(pkg => _specialPkgHtml(pkg, bal)).join('')}
+  `;
+}
+
+const _seasonPointsUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2350af95' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
+
+function _specialPkgHtml(pkg, bal) {
+  const canAfford = bal >= pkg.gram;
+  function ri(img, label, cls) {
+    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+  }
+  const bookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c542' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
+  const rows = ri(bookUri, tVars('specialBooksOfChoiceFmt', { n: pkg.bookCount }), 'epic')
+    + ri(_STONE_IMG.bless_stone, `×${pkg.bless}`, '')
+    + ri(_seasonPointsUri, `+${pkg.seasonPoints}`, '');
+
+  return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
+    <div class="gram-shop-card-head">
+      <div>
+        <div class="gram-shop-title" style="color:${pkg.color}">Special</div>
+        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+      </div>
+      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
+        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
+        onclick="${canAfford ? `openSpecialPickerModal('${pkg.id}')` : ''}">
+        ${canAfford ? t('specialChooseBtn') : t('notEnoughBtn')}
+      </button>
+    </div>
+    <div class="vip-items-row">${rows}</div>
+  </div>`;
+}
+
+// Which of the buyer's class's 4 advanced-skill slots (Q/W/E/R) the current
+// picker modal has allocated books to — reset each time the modal opens,
+// consumed by _confirmSpecialBuy.
+let _specialPicker = null;
+
+function openSpecialPickerModal(pkgId) {
+  const pkg = _SPECIAL_SHOP_PKGS_UI.find(p => p.id === pkgId);
+  if (!pkg || !player) return;
+  const bal = window._gramBalance || 0;
+  if (bal < pkg.gram) return;
+  const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || [];
+  if (!advSkills.length) return;
+  _specialPicker = { pkgId, dist: { Q: 0, W: 0, E: 0, R: 0 } };
+  const existing = document.getElementById('special-picker-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'special-picker-ov';
+  ov.onclick = () => { _specialPicker = null; ov.remove(); };
+  document.body.appendChild(ov);
+  _renderSpecialPicker();
+}
+
+function _renderSpecialPicker() {
+  const ov = document.getElementById('special-picker-ov');
+  if (!ov || !_specialPicker || !player) return;
+  const pkg = _SPECIAL_SHOP_PKGS_UI.find(p => p.id === _specialPicker.pkgId);
+  if (!pkg) return;
+  const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || [];
+  const dist = _specialPicker.dist;
+  const total = Object.values(dist).reduce((s, n) => s + n, 0);
+  const left = pkg.bookCount - total;
+
+  const rows = advSkills.map(adv => {
+    const key = adv.key;
+    const n = dist[key] || 0;
+    const icon = _itemIcon({ advSkillKey: key, forClass: player.type }, 32);
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(209,204,197,.08)">
+        ${icon}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px;font-weight:700;color:#e8ddc9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${adv.name}</div>
+          <div style="font-size:10.5px;color:#968a7a">${key}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="_specialPickerAdjust('${key}',-1)"${n <= 0 ? ' disabled' : ''}
+            style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(209,204,197,.2);background:rgba(209,204,197,.06);color:#e8ddc9;font-weight:700;${n <= 0 ? 'opacity:.35' : 'cursor:pointer'}">−</button>
+          <span style="min-width:20px;text-align:center;font-weight:700;color:#f5c542">${n}</span>
+          <button onclick="_specialPickerAdjust('${key}',1)"${left <= 0 ? ' disabled' : ''}
+            style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(209,204,197,.2);background:rgba(209,204,197,.06);color:#e8ddc9;font-weight:700;${left <= 0 ? 'opacity:.35' : 'cursor:pointer'}">+</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  const ready = total === pkg.bookCount;
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">Special — ${pkg.gram} GRAM</div>
+        <button onclick="_specialPicker=null;document.getElementById('special-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('specialPickerHint')}</div>
+      <div style="margin-bottom:10px">${rows}</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:14px">
+        <span style="color:#b2a288">${t('specialPickedLbl')}</span>
+        <span style="font-weight:700;color:${ready ? '#7ee0c0' : '#f5c542'}">${total} / ${pkg.bookCount}</span>
+      </div>
+      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px${ready ? '' : ';opacity:.4'}"${ready ? '' : ' disabled'}
+        onclick="${ready ? '_confirmSpecialBuy()' : ''}">${tVars('buyForFmt', { price: pkg.gram })}</button>
+    </div>`;
+}
+
+function _specialPickerAdjust(key, delta) {
+  if (!_specialPicker) return;
+  const pkg = _SPECIAL_SHOP_PKGS_UI.find(p => p.id === _specialPicker.pkgId);
+  if (!pkg) return;
+  const dist = _specialPicker.dist;
+  const total = Object.values(dist).reduce((s, n) => s + n, 0);
+  const n = (dist[key] || 0) + delta;
+  if (n < 0) return;
+  if (delta > 0 && total >= pkg.bookCount) return;
+  dist[key] = n;
+  _renderSpecialPicker();
+}
+
+function _confirmSpecialBuy() {
+  if (!_specialPicker) return;
+  const { pkgId, dist } = _specialPicker;
+  const ov = document.getElementById('special-picker-ov');
+  if (ov) ov.remove();
+  _specialPicker = null;
+  if (typeof netSpecialShopBuy === 'function') netSpecialShopBuy(pkgId, dist);
+}
+
+function onSpecialShopResult(data) {
+  window._gramBalance = data.newBalance;
+  if (player && data.newInventory) player.inventory = data.newInventory;
+  if (data.vipData) window._vipData = data.vipData;
+  _marketToast(t('specialBoughtToast'), 'ok');
+  const panel = document.getElementById('special-panel');
+  if (panel && panel.style.display !== 'none') _renderSpecialPanel();
+  updateInvUI();
+  if (typeof _refreshProfessionPanelIfOpen === 'function') _refreshProfessionPanelIfOpen();
+  if (activeTab === 1 && _invTab === 1) updateProfileUI();
+}
+
+function onSpecialShopError(msg) {
+  _marketToast(msg || t('purchaseErrorLbl'), 'err');
 }
 
 function openGramShopPanel() {

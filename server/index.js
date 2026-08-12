@@ -518,6 +518,20 @@ const _SEASON_SHOP_PKGS = [
   { id:'sl50', gram:50, season:true, nexum:6000, potions:60 },
 ];
 
+// ── Special Shop ─────────────────────────────────────────────────────────────
+// Advanced-skill books ("вторая профессия" — CRAFT_MATS' advSkillKey entries)
+// in a distribution the BUYER picks, unlike the regular skillBooks above
+// (each/random, no choice). bookCount is the total the buyer must split
+// across their class's four Q/W/E/R slots — see specialShopBuy below, which
+// is where that split is actually validated. ADV_SKILL_STUDY_COST (js/ui.js)
+// is 5 books per slot to learn one advanced skill, so these totals aren't
+// arbitrary: 5 = exactly one skill, 10 = two, 20 = every slot for the class.
+const _SPECIAL_SHOP_PKGS = [
+  { id:'special20',  gram:20,  bookCount:5,  bless:2,  seasonPoints:200  },
+  { id:'special50',  gram:50,  bookCount:10, bless:5,  seasonPoints:600  },
+  { id:'special100', gram:100, bookCount:20, bless:12, seasonPoints:1000 },
+];
+
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
   lev:         { common:'tw1', uncommon:'tw2', rare:'tw3' },
@@ -4672,7 +4686,7 @@ io.on('connection', socket => {
   // in-memory limiter — matches this server's existing state model.
   const _HEAVY_EVENTS = new Set([
     'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
-    'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
+    'gramGetHistory', 'gramShopBuy', 'specialShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
     'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
@@ -5451,6 +5465,160 @@ io.on('connection', socket => {
       _itemOpBusy--;
     }
     if (!_ran) socket.emit('gramShopError', { msg: 'Покупка уже обрабатывается' });
+  });
+
+  // ── Special Shop (advanced-skill books "of choice") ────────────────────────
+  // Same GRAM-purchase shape as gramShopBuy above (atomic spend, room check,
+  // one commit, VIP progress), kept as its own handler rather than folded
+  // into that one: this is the only package type where the BUYER decides the
+  // item split, and threading that through gramShopBuy's already-large
+  // branch-per-reward-kind body risked the two kinds of packages interfering.
+  safeOn('specialShopBuy', async ({ pkgId, books } = {}) => {
+    if (!authed || !pkgId) return;
+    _itemOpBusy++;
+    let _ran;
+    try {
+    _ran = await _withEconLock(async () => {
+    try {
+      const pkg = _SPECIAL_SHOP_PKGS.find(p => p.id === pkgId);
+      if (!pkg) return socket.emit('specialShopError', { msg: 'Пакет не найден' });
+
+      // books: { Q, W, E, R } — how the buyer wants pkg.bookCount split
+      // across their class's four advanced-skill slots. Validated in full
+      // BEFORE any GRAM moves: every key must be one of the four slot
+      // letters, every value a non-negative integer, and the sum must be
+      // exactly pkg.bookCount — no more, no less. A missing/invalid split
+      // never costs the player anything.
+      const SLOTS = ['Q', 'W', 'E', 'R'];
+      if (!books || typeof books !== 'object' || Array.isArray(books)) {
+        return socket.emit('specialShopError', { msg: 'Выберите книги' });
+      }
+      if (Object.keys(books).some(k => !SLOTS.includes(k))) {
+        return socket.emit('specialShopError', { msg: 'Некорректный выбор' });
+      }
+      const dist = {};
+      let sum = 0;
+      for (const k of SLOTS) {
+        const n = Math.floor(Number(books[k]));
+        if (!Number.isFinite(n) || n < 0) return socket.emit('specialShopError', { msg: 'Некорректный выбор' });
+        dist[k] = n;
+        sum += n;
+      }
+      if (sum !== pkg.bookCount) {
+        return socket.emit('specialShopError', { msg: `Выберите ровно ${pkg.bookCount} книг` });
+      }
+
+      if (_liveGram() < pkg.gram) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
+
+      const doc = await PlayerModel.findById(authed._id);
+      if (!doc) return;
+      // Drop earnings first, so the price is tested against everything the
+      // player has actually earned — same reasoning as gramShopBuy.
+      await _flushBalances();
+      const saved = doc.savedData || {};
+      const charClass = saved.type || 'lev';
+      const classAdvBooks = {};
+      CRAFT_MATS.forEach(m => { if (m.forClass === charClass && m.advSkillKey) classAdvBooks[m.advSkillKey] = m; });
+
+      // Live copy first — a fresh DB read here is up to ~3s behind (the
+      // saveProgress debounce), so building the purchase on it rolled back
+      // anything picked up in that window. Same pattern as gramShopBuy.
+      const _liveInv = _liveInventory();
+      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
+
+      // Room check before anything is deducted. Books and the safe stone all
+      // stack, so this is at most one new slot per book slot the buyer
+      // actually put a nonzero count in, plus one for bless_stone.
+      const has = id => inv.some(i => i && i.id === id);
+      let _newSlots = 0;
+      SLOTS.forEach(k => { if (dist[k] > 0 && classAdvBooks[k] && !has(classAdvBooks[k].id)) _newSlots++; });
+      if (pkg.bless > 0 && !has('bless_stone')) _newSlots++;
+      if (inv.length + _newSlots > SERVER_INV_MAX) {
+        logPlayer(authed.telegramId, authed.username, 'special_shop_refused',
+          { pkg: pkg.id, need: _newSlots, slots: `${inv.length}/${SERVER_INV_MAX}` });
+        return socket.emit('specialShopError', {
+          msg: `Нужно ${_newSlots} свободных мест в инвентаре (занято ${inv.length}/${SERVER_INV_MAX})`,
+        });
+      }
+
+      // The deduction is the affordability check — same _spendBalance rule as
+      // every other GRAM purchase in this file.
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', pkg.gram);
+      if (_paid === null) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
+      _gramBalance = _paid;
+
+      const _addStack = (base, qty) => {
+        if (!base || qty <= 0) return;
+        const existing = inv.find(i => i.id === base.id);
+        if (existing) existing.qty = (existing.qty || 1) + qty;
+        else inv.push({ ...base, qty });
+      };
+      SLOTS.forEach(k => { if (dist[k] > 0) _addStack(classAdvBooks[k], dist[k]); });
+      if (pkg.bless > 0) _addStack(CRAFT_MATS.find(m => m.id === 'bless_stone'), pkg.bless);
+
+      // VIP progress from purchase — identical rule to gramShopBuy, GRAM is
+      // GRAM regardless of which shop it was spent in.
+      let _vipLvl = saved.vipLevel || 0;
+      let _vipDep = saved.vipDeposited || 0;
+      const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
+      const _prevVipLvl = _vipLvl;
+      if (_vipLvl < 10) {
+        _vipDep += pkg.gram;
+        while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
+          _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
+          _vipLvl++;
+          _vipPend.push(_vipLvl);
+        }
+        saved.vipLevel = _vipLvl;
+        saved.vipDeposited = _vipDep;
+        saved.vipPending = _vipPend;
+      }
+
+      saved.inventory = inv;
+      // Targeted $set, same reasoning as gramShopBuy's own — a full-document
+      // save from the doc fetched at the top of this handler could already be
+      // stale by the time this lands.
+      await PlayerModel.updateOne({ _id: doc._id }, { $set: {
+        'savedData.inventory':    inv,
+        'savedData.vipLevel':     _vipLvl,
+        'savedData.vipDeposited': _vipDep,
+        'savedData.vipPending':   _vipPend,
+      } });
+
+      // Bumps the revision, so a client autosave queued before this purchase
+      // can no longer land afterwards and wipe the items out.
+      _commitServerItems(inv, null, 'special_shop', { pkg: pkg.id, gram: pkg.gram, books: dist });
+      socket.data.vipLevel = _vipLvl;
+      _setVipAura(authed.username, _vipLvl);
+
+      // Season points — best-effort. The rest of the purchase (books, safe
+      // stones, VIP progress) is real value already paid for and granted;
+      // not letting a season that happens to be over right now undo any of
+      // that, same as every other season-adjacent grant in this file.
+      const _seasonTotal = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
+
+      socket.emit('specialShopResult', {
+        pkgId,
+        newBalance: _gramBalance,
+        newInventory: inv,
+        invRev: _invRev,
+        vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
+        leveled: _vipLvl > _prevVipLvl,
+        seasonTotal: _seasonTotal,
+      });
+      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
+      if (_vipLvl > _prevVipLvl) {
+        socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
+      }
+    } catch (err) {
+      console.error('specialShopBuy:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'special_shop', err, { pkgId });
+    }
+    });
+    } finally {
+      _itemOpBusy--;
+    }
+    if (!_ran) socket.emit('specialShopError', { msg: 'Покупка уже обрабатывается' });
   });
 
   // ── Reset stat upgrades (Улучшения → Сбросить) ─────────────────────────────

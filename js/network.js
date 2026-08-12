@@ -2095,6 +2095,9 @@ function netGramWithdraw(amount, address) {
 function netGramShopBuy(pkgId, petId) {
   if (socket?.connected) socket.emit('gramShopBuy', { pkgId, petId });
 }
+function netSpecialShopBuy(pkgId, books) {
+  if (socket?.connected) socket.emit('specialShopBuy', { pkgId, books });
+}
 function netGramHistory() {
   if (socket?.connected) socket.emit('gramGetHistory');
 }
@@ -2745,6 +2748,13 @@ function _initGramHandlers(s) {
   });
   s.on('gramShopError', ({ msg }) => {
     if (typeof onGramShopError === 'function') onGramShopError(msg);
+  });
+  s.on('specialShopResult', (data) => {
+    if (typeof onSpecialShopResult === 'function') onSpecialShopResult(data);
+    netSaveProgressNow();
+  });
+  s.on('specialShopError', ({ msg }) => {
+    if (typeof onSpecialShopError === 'function') onSpecialShopError(msg);
   });
 }
 

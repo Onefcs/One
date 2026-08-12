@@ -2561,6 +2561,17 @@ canvas { display:block; width:100%; height:100%; }
 }
 #profession-panel, #profession-panel * { touch-action: pan-y; pointer-events: auto; }
 
+#special-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: radial-gradient(ellipse 640px 420px at 50% -6%, rgba(245,197,66,.08), transparent 60%), rgba(15,11,4,.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#special-panel, #special-panel * { touch-action: pan-y; pointer-events: auto; }
+
 .profp-body { padding: 14px 14px 26px; }
 
 .profp-banner {
