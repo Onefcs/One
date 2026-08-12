@@ -1077,7 +1077,19 @@ const io = new Server(server, {
 });
 
 mongoose.connect(process.env.MONGODB_URI, {
-  maxPoolSize: 10,
+  // 10 connections shared by every DB-touching op this process makes —
+  // logins, saves, every market/craft/clan-storage handler's awaited
+  // read+write, and logPlayer's write on "most kills" (its own comment,
+  // fires from _rollMobLoot's item grants) — is a tight ceiling once more
+  // than a handful of players are doing any of that at once. Past it,
+  // operations queue for a free connection instead of running, which is
+  // exactly what a player-facing "завис на секунду" during a busy moment
+  // (market buy, a clan storage claim, a save landing) looks like from the
+  // inside — nothing crashes, everything just waits its turn. Raised well
+  // under any real MongoDB plan's own connection ceiling (even constrained
+  // free/shared tiers allow 100+); if this instance's plan caps lower than
+  // that, match this number to it rather than the driver ceiling.
+  maxPoolSize: 50,
   serverSelectionTimeoutMS: 10000,
   socketTimeoutMS: 45000,
 })
@@ -2778,10 +2790,15 @@ function _recordDm(tidA, tidB, username, text) {
 // Resolves a @nickname to the canonical account, whether or not they're
 // currently online (DB lookup, case-insensitive exact match — Telegram
 // handles are treated as case-insensitive everywhere else in this app).
+// Plain equality + .collation() rather than a case-insensitive regex: Mongo
+// can serve this off Player.js's strength:2 collation index on `username`,
+// where the regex form was a full collection scan on every call — see the
+// comment on that index.
 async function _resolveUsername(name) {
   const target = String(name || '').trim().replace(/^@/, '');
   if (!target) return null;
-  return PlayerModel.findOne({ username: new RegExp('^' + _escapeRegex(target) + '$', 'i') }, 'telegramId username').lean();
+  return PlayerModel.findOne({ username: target }, 'telegramId username')
+    .collation({ locale: 'en', strength: 2 }).lean();
 }
 
 // ── Party state ───────────────────────────────────────────────────────────────

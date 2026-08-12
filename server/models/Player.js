@@ -21,4 +21,15 @@ const PlayerSchema = new mongoose.Schema({
 // full collection scan every time.
 PlayerSchema.index({ bm: -1 });
 
+// _resolveUsername (server/index.js — every privMsg/privMsgHistory lookup)
+// used to match this with a case-insensitive ^...$ regex, which Mongo can't
+// serve off a plain index (a collection-wide scan on every single call,
+// worse than the missing bm index above since this is a social feature
+// players trigger far more often). A strength:2 collation index makes
+// case-insensitive EQUALITY match usable via an index — it only helps when
+// the query itself also requests this exact collation, which is why
+// _resolveUsername was switched from the regex to a plain equality match
+// with .collation() rather than just adding this index alone.
+PlayerSchema.index({ username: 1 }, { collation: { locale: 'en', strength: 2 } });
+
 module.exports = mongoose.model('Player', PlayerSchema);
