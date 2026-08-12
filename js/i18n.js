@@ -692,6 +692,8 @@ Object.assign(I18N_UI, {
   specialPickerHint: { ru: 'Распределите книги между своими навыками второй профессии', en: 'Split the books between your advanced-skill slots', uk: 'Розподіліть книги між навичками другої професії', es: 'Distribuye los libros entre tus habilidades avanzadas', tr: 'Kitapları ikinci meslek yeteneklerine dağıt', pt: 'Distribua os livros entre suas habilidades avançadas' },
   specialPickedLbl: { ru: 'Выбрано', en: 'Picked', uk: 'Обрано', es: 'Elegido', tr: 'Seçildi', pt: 'Escolhido' },
   specialBoughtToast: { ru: '✓ Книги куплены!', en: '✓ Books purchased!', uk: '✓ Книги придбано!', es: '✓ ¡Libros comprados!', tr: '✓ Kitaplar satın alındı!', pt: '✓ Livros comprados!' },
+  petChoiceLbl: { ru: 'Питомец', en: 'Pet', uk: 'Улюбленець', es: 'Mascota', tr: 'Evcil hayvan', pt: 'Mascote' },
+  petPickerHint: { ru: 'Выберите питомца', en: 'Choose a pet', uk: 'Оберіть улюбленця', es: 'Elige una mascota', tr: 'Bir evcil hayvan seç', pt: 'Escolha um mascote' },
   refLinkCardTitle: { ru: 'Ваша реферальная ссылка', en: 'Your referral link', uk: 'Ваше реферальне посилання', es: 'Tu enlace de referido', tr: 'Referans bağlantın', pt: 'Seu link de indicação' },
   copyBtn: { ru: 'Копировать', en: 'Copy', uk: 'Копіювати', es: 'Copiar', tr: 'Kopyala', pt: 'Copiar' },
   copiedLbl: { ru: 'Скопировано!', en: 'Copied!', uk: 'Скопійовано!', es: '¡Copiado!', tr: 'Kopyalandı!', pt: 'Copiado!' },

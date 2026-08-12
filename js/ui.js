@@ -5272,6 +5272,23 @@ const _SPECIAL_SHOP_PKGS_UI = [
   { id:'special20',  gram:20,  bookCount:5,  bless:2,  seasonPoints:200,  color:'#e6b761' },
   { id:'special50',  gram:50,  bookCount:10, bless:5,  seasonPoints:600,  color:'#e5a546' },
   { id:'special100', gram:100, bookCount:20, bless:12, seasonPoints:1000, color:'#eb4e61' },
+  // Top tier — mirror of server/index.js's special270 entry in
+  // _SPECIAL_SHOP_PKGS. bookCount still goes through the same buyer-picked
+  // Q/W/E/R split (_specialPicker below); armor/weapon/bonusSP/nexum/potions
+  // are new fields _specialPkgHtml/_renderSpecialPicker render conditionally.
+  { id:'special270', gram:270, bookCount:50, bless:30, armor:'epic', weapon:'epic', bonusSP:15, nexum:10000, potions:100, color:'#8a5cc2' },
+];
+
+// Pet+cloak+artifact packages — mirror of server/index.js's petpkg1/2/3
+// entries in _GRAM_SHOP_PKGS. Bought through gramShopBuy (not
+// specialShopBuy: no buyer-picked book split here), same as any other GRAM
+// shop package, but shown on the Special panel rather than the GRAM one —
+// hence their own render/picker functions below instead of reusing
+// _gramShopPkgHtml/openGramShopConfirm.
+const _SPECIAL_PET_PKGS_UI = [
+  { id:'petpkg1', gram:20,  petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:3, color:'#9c9086' },
+  { id:'petpkg2', gram:60,  petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:3, color:'#6f9c4a' },
+  { id:'petpkg3', gram:110, petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5, color:'#4a7bab' },
 ];
 
 function openSpecialPanel() {
@@ -5293,8 +5310,48 @@ function _renderSpecialPanel() {
     <div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
       ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
     </div>
+    ${_SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('')}
     ${_SPECIAL_SHOP_PKGS_UI.map(pkg => _specialPkgHtml(pkg, bal)).join('')}
   `;
+}
+
+// Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
+// coin icon) — split out of _gramShopPkgHtml so _specialPkgHtml can render
+// the same reward kinds for special270 without re-declaring them.
+const _SHOP_ARMOR_ICONS = {
+  common:   ['arm/ch.png','arm/ct.png','arm/cg.png','arm/cb.png','acs/cr.png','acs/cp.png'],
+  uncommon: ['arm/uh.png','arm/ut.png','arm/ug.png','arm/ub.png','acs/ur.png','acs/up.png'],
+  rare:     ['arm/rh.png','arm/rt.png','arm/rg.png','arm/rb.png','acs/rr.png','acs/rp.png'],
+  epic:     ['arm/eh.png','arm/et.png','arm/eg.png','arm/eb.png','acs/er.png','acs/ep.png'],
+};
+const _SHOP_WEP_PFX_MAP = { common:'c', uncommon:'u', rare:'r', epic:'e' };
+const _SHOP_POTION_NAMES = ['hp','exp','gold','regen','atkspeed','atk'];
+const _shopCoinUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
+const _shopSpUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
+
+// Renders the armor/weapon/bonusSP/nexum/potions rows any pkg carries —
+// shared between _gramShopPkgHtml (the GRAM panel) and _specialPkgHtml (the
+// Special panel's special270), which both need the same reward kinds.
+function _shopExtraRewardRows(pkg, ri) {
+  let rows = '';
+  if (pkg.potions) {
+    rows += _SHOP_POTION_NAMES.map(p => ri(`/images/potion/${p}.png`, `×${pkg.potions}`, '')).join('');
+  }
+  if (pkg.armor) {
+    const key = pkg.armor.toLowerCase();
+    const icons = _SHOP_ARMOR_ICONS[key] || [];
+    const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
+    rows += icons.map(i => ri(`/images/${i}`, enhLbl, key)).join('');
+  }
+  if (pkg.weapon) {
+    const key = pkg.weapon.toLowerCase();
+    const pfx = _SHOP_WEP_PFX_MAP[key] || 'c';
+    const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s' }[player?.type] || 't';
+    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, pkg.enhance ? `+${pkg.enhance}` : '', key);
+  }
+  if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');
+  if (pkg.nexum) rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'epic');
+  return rows;
 }
 
 const _seasonPointsUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2350af95' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
@@ -5305,9 +5362,14 @@ function _specialPkgHtml(pkg, bal) {
     return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
   }
   const bookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c542' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
-  const rows = ri(bookUri, tVars('specialBooksOfChoiceFmt', { n: pkg.bookCount }), 'epic')
-    + ri(_STONE_IMG.bless_stone, `×${pkg.bless}`, '')
-    + ri(_seasonPointsUri, `+${pkg.seasonPoints}`, '');
+  // bless/seasonPoints guarded rather than assumed: special270 (the top
+  // tier) carries bless but no seasonPoints, and adds armor/weapon/bonusSP/
+  // nexum/potions instead — same reward kinds gramShopBuy grants, rendered
+  // via the shared _shopExtraRewardRows.
+  let rows = ri(bookUri, tVars('specialBooksOfChoiceFmt', { n: pkg.bookCount }), 'epic');
+  if (pkg.bless) rows += ri(_STONE_IMG.bless_stone, `×${pkg.bless}`, '');
+  if (pkg.seasonPoints) rows += ri(_seasonPointsUri, `+${pkg.seasonPoints}`, '');
+  rows += _shopExtraRewardRows(pkg, ri);
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
@@ -5422,6 +5484,8 @@ function _confirmSpecialBuy() {
 function onSpecialShopResult(data) {
   window._gramBalance = data.newBalance;
   if (player && data.newInventory) player.inventory = data.newInventory;
+  if (player && data.newBonusSP != null) player.bonusSP = data.newBonusSP;
+  if (data.newNexumBalance != null) window._nexumBalance = data.newNexumBalance;
   if (data.vipData) window._vipData = data.vipData;
   _marketToast(t('specialBoughtToast'), 'ok');
   const panel = document.getElementById('special-panel');
@@ -5429,10 +5493,118 @@ function onSpecialShopResult(data) {
   updateInvUI();
   if (typeof _refreshProfessionPanelIfOpen === 'function') _refreshProfessionPanelIfOpen();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
+  if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
 }
 
 function onSpecialShopError(msg) {
   _marketToast(msg || t('purchaseErrorLbl'), 'err');
+}
+
+// ─────────────────────────────────────────────────────────
+//  SPECIAL PANEL — pet+cloak+artifact packages (petpkg1/2/3, mirror of
+//  server/index.js's _GRAM_SHOP_PKGS entries of the same id). Bought through
+//  gramShopBuy like any other GRAM package — petChoice/classCloak/
+//  classArtifact/enhance are already fully supported there — but shown on
+//  the Special panel, so they get their own card/picker instead of reusing
+//  _gramShopPkgHtml/openGramShopConfirm (which are wired to the GRAM panel).
+// ─────────────────────────────────────────────────────────
+function _specialPetPkgHtml(pkg, bal) {
+  const canAfford = bal >= pkg.gram;
+  function ri(img, label, cls) {
+    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+  }
+  const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
+  const cls = player?.type;
+  const cloak = cls ? ITEM_DEF.find(d => d.slot === 'cloak' && d.rarity === pkg.classCloak && d.forClass && d.forClass.includes(cls)) : null;
+  const artifact = cls ? ITEM_DEF.find(d => d.slot === 'artifact' && d.rarity === pkg.classArtifact && d.forClass && d.forClass.includes(cls)) : null;
+  const petSample = ITEM_DEF.find(d => d.slot === 'pet' && d.rarity === pkg.petChoice);
+  const rows = (petSample ? ri(petSample.img, `${t('petChoiceLbl')} ${enhLbl}`, pkg.petChoice) : '')
+    + (cloak ? ri(cloak.img, enhLbl, pkg.classCloak) : '')
+    + (artifact ? ri(artifact.img, enhLbl, pkg.classArtifact) : '');
+
+  return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
+    <div class="gram-shop-card-head">
+      <div>
+        <div class="gram-shop-title" style="color:${pkg.color}">${t('specialShopHdr')}</div>
+        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+      </div>
+      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
+        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
+        onclick="${canAfford ? `openSpecialPetPickerModal('${pkg.id}')` : ''}">
+        ${canAfford ? t('specialChooseBtn') : t('notEnoughBtn')}
+      </button>
+    </div>
+    <div class="vip-items-row">${rows}</div>
+  </div>`;
+}
+
+// Which pet id the current picker modal has selected — reset each time it
+// opens, consumed by _confirmPetPkgBuy. Mirrors _specialPicker's shape.
+let _petPicker = null;
+
+function openSpecialPetPickerModal(pkgId) {
+  const pkg = _SPECIAL_PET_PKGS_UI.find(p => p.id === pkgId);
+  if (!pkg || !player) return;
+  const bal = window._gramBalance || 0;
+  if (bal < pkg.gram) return;
+  const pets = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === pkg.petChoice);
+  if (!pets.length) return;
+  _petPicker = { pkgId, petId: pets[0].id };
+  const existing = document.getElementById('pet-picker-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'pet-picker-ov';
+  ov.onclick = () => { _petPicker = null; ov.remove(); };
+  document.body.appendChild(ov);
+  _renderPetPicker();
+}
+
+function _renderPetPicker() {
+  const ov = document.getElementById('pet-picker-ov');
+  if (!ov || !_petPicker || !player) return;
+  const pkg = _SPECIAL_PET_PKGS_UI.find(p => p.id === _petPicker.pkgId);
+  if (!pkg) return;
+  const pets = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === pkg.petChoice);
+
+  const rows = pets.map(p => {
+    const sel = p.id === _petPicker.petId;
+    return `<div onclick="event.stopPropagation();_petPickerSelect('${p.id}')" style="
+      display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;cursor:pointer;margin-bottom:6px;
+      border:2px solid ${sel ? pkg.color : 'rgba(209,204,197,0.1)'};
+      background:${sel ? pkg.color + '22' : 'rgba(209,204,197,0.04)'};
+    ">
+      <img src="${p.img}" width="36" height="36" style="image-rendering:pixelated">
+      <div style="font-weight:700;color:${sel ? pkg.color : '#e8ddc9'}">${p.name}</div>
+    </div>`;
+  }).join('');
+
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${t('specialShopHdr')} — ${pkg.gram} GRAM</div>
+        <button onclick="_petPicker=null;document.getElementById('pet-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('petPickerHint')}</div>
+      <div style="margin-bottom:10px">${rows}</div>
+      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
+        onclick="_confirmPetPkgBuy()">${tVars('buyForFmt', { price: pkg.gram })}</button>
+    </div>`;
+}
+
+function _petPickerSelect(petId) {
+  if (!_petPicker) return;
+  _petPicker.petId = petId;
+  _renderPetPicker();
+}
+
+function _confirmPetPkgBuy() {
+  if (!_petPicker) return;
+  const { pkgId, petId } = _petPicker;
+  const ov = document.getElementById('pet-picker-ov');
+  if (ov) ov.remove();
+  _petPicker = null;
+  if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId, petId);
 }
 
 function openGramShopPanel() {
@@ -5468,54 +5640,16 @@ function _gramShopPkgHtml(pkg, bal) {
     return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
   }
 
-  const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s' }[player?.type] || 't';
-  const wepPfxMap = { common:'c', uncommon:'u', rare:'r' };
-
-  const _ARMOR_ICONS = {
-    common:   ['arm/ch.png','arm/ct.png','arm/cg.png','arm/cb.png','acs/cr.png','acs/cp.png'],
-    uncommon: ['arm/uh.png','arm/ut.png','arm/ug.png','arm/ub.png','acs/ur.png','acs/up.png'],
-    rare:     ['arm/rh.png','arm/rt.png','arm/rg.png','arm/rb.png','acs/rr.png','acs/rp.png'],
-  };
-  const _POTION_NAMES = ['hp','exp','gold','regen','atkspeed','atk'];
-  const coinUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
-
-  // gold
-  let rows = ri(coinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold');
-
-  // potions
-  rows += _POTION_NAMES.map(p => ri(`/images/potion/${p}.png`, `×${pkg.potions}`, '')).join('');
-
-  // armor set
-  if (pkg.armor) {
-    const key = pkg.armor.toLowerCase();
-    const icons = _ARMOR_ICONS[key] || [];
-    const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
-    rows += icons.map(i => ri(`/images/${i}`, enhLbl, key)).join('');
-  }
-
-  // weapon — class-specific
-  if (pkg.weapon) {
-    const key = pkg.weapon.toLowerCase();
-    const pfx = wepPfxMap[key] || 'c';
-    rows += ri(`/images/wep/${pfx}${wepSfx}.png`, pkg.enhance ? `+${pkg.enhance}` : '', key);
-  }
-
-  // bonus skill points
-  if (pkg.bonusSP) {
-    const spUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
-    rows += ri(spUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');
-  }
+  // gold, then everything _shopExtraRewardRows also renders for special270
+  // (potions/armor/weapon/bonusSP/nexum), then this shop's own two extra
+  // kinds (skillBooks/boxes) that no Special package uses.
+  let rows = ri(_shopCoinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold');
+  rows += _shopExtraRewardRows(pkg, ri);
 
   // skill books — for the buyer's own class (see _skillBooksLabel below)
   if (pkg.skillBooks) {
     const bookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e3941d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
     rows += ri(bookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
-  }
-
-  // Liberty (Nexum) bonus — same coin icon Liberty uses everywhere else
-  // (pet crafting, drop toasts, quest/arena rewards).
-  if (pkg.nexum) {
-    rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'epic');
   }
 
   // boxes (BOX_DEF — see _boxesLabel below)
@@ -5629,8 +5763,13 @@ function onGramShopResult(data) {
   // Season packages live in their own list and have no label of
   // their own — name them by price so the toast still says what was bought.
   const spkg = pkg ? null : _SEASON_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
+  // Pet+cloak+artifact packages (petpkg1/2/3) — bought through this same
+  // handler but shown on the Special panel (_SPECIAL_PET_PKGS_UI), so they
+  // have no label of their own either.
+  const ppkg = (pkg || spkg) ? null : _SPECIAL_PET_PKGS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label
             : spkg ? tVars('seasonPkgLabelFmt', { g: spkg.gram })
+            : ppkg ? t('specialBtnLbl')
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
   const panel = document.getElementById('gram-shop-panel');
@@ -5639,6 +5778,9 @@ function onGramShopResult(data) {
   // balance — redraw it too or the buttons keep the pre-purchase state.
   const spanel = document.getElementById('season-panel');
   if (spanel && spanel.style.display !== 'none' && _seasonTab === 'packs') _renderSeasonBody();
+  // Pet packages are bought from the Special panel, same reasoning.
+  const sppanel = document.getElementById('special-panel');
+  if (ppkg && sppanel && sppanel.style.display !== 'none') _renderSpecialPanel();
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
   if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
