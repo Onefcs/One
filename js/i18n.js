@@ -836,6 +836,7 @@ Object.assign(I18N_UI, {
   marketTabHistory: { ru: 'История', en: 'History', uk: 'Історія', es: 'Historial', tr: 'Geçmiş', pt: 'Histórico' },
   gramShopHdr: { ru: 'Магазин GRAM', en: 'GRAM Shop', uk: 'Магазин GRAM', es: 'Tienda GRAM', tr: 'GRAM Mağazası', pt: 'Loja GRAM' },
   shopTabPacks: { ru: 'Паки', en: 'Packs', uk: 'Паки', es: 'Packs', tr: 'Paketler', pt: 'Pacotes' },
+  shopTabSpecial: { ru: 'Специальные', en: 'Special', uk: 'Спеціальні', es: 'Especiales', tr: 'Özel', pt: 'Especiais' },
   shopTabSeason: { ru: 'Сезонные', en: 'Seasonal', uk: 'Сезонні', es: 'De temporada', tr: 'Sezonluk', pt: 'Sazonais' },
   talkBtnLbl: { ru: 'Поговорить', en: 'Talk', uk: 'Поговорити', es: 'Hablar', tr: 'Konuş', pt: 'Falar' },
   deathXpPenaltyLine: { ru: '−50% опыта на 5 минут', en: '−50% XP for 5 minutes', uk: '−50% досвіду на 5 хвилин', es: '−50% de XP durante 5 minutos', tr: '5 dakika boyunca −%50 tecrübe', pt: '−50% de XP por 5 minutos' },

@@ -546,6 +546,10 @@ const _GRAM_SHOP_PKGS = [
     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:3 },
   { id:'petpkg3', gram:110, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5 },
+  // Plain gear-only packages (no pet/cloak/artifact/books) — cheapest tier
+  // of the "Специальные" tab, js/ui.js's _SPECIAL_GEAR_IDS.
+  { id:'specgear1', gram:5,  gold:0, potions:0, armor:'common',   weapon:'common',   bonusSP:0, skillBooks:null },
+  { id:'specgear2', gram:10, gold:0, potions:0, armor:'uncommon', weapon:'uncommon', bonusSP:0, skillBooks:null },
 ];
 // ── Сезонные паки ────────────────────────────────────────────────────────────
 // Enhance stones only, priced in GRAM. Kept in the same shape as the regular
@@ -579,17 +583,22 @@ const _SPECIAL_SHOP_PKGS = [
   { id:'special50',  gram:50,  bookCount:10, bless:5,  seasonPoints:600  },
   { id:'special100', gram:100, bookCount:20, bless:12, seasonPoints:1000 },
   // Top tier: same buyer-picked book split as the three above (now 50
-  // instead of 20 — every slot for the class twice over), plus a full EPIC
-  // armor+weapon set, bonus skill points, Liberty and a full buff-potion
-  // restock. specialShopBuy grants these the same way gramShopBuy grants its
-  // own armor/weapon/bonusSP/nexum/potions fields — see the extra grant
-  // block there. uniqueWeapon swaps the plain epic-tier weapon the `weapon`
-  // field would otherwise resolve to (_SHOP_CLASS_WEAPONS[class].epic) for
-  // the buyer's class's own UNIQUE_WEAPONS entry instead (Меч/Топор/Лук/
-  // Посох/Жезл бездны) — those are normally craft-only (noDrop keeps them
-  // out of every random loot pool, shared/definitions.js), but an explicit
-  // shop grant by id bypasses that the same way UNIQUE_CRAFT_RECIPES does.
-  { id:'special270', gram:270, bookCount:50, bless:30, armor:'epic', weapon:'epic', uniqueWeapon:true, bonusSP:15, nexum:10000, potions:100, enhance:0 },
+  // instead of 20 — every slot for the class twice over), the unique class
+  // weapon (no other epic gear — see uniqueWeapon below), a rare pet of
+  // choice, class cloak+artifact (no rare tier exists for those — see
+  // petpkg3's own comment above), bonus skill points, Liberty and a full
+  // buff-potion restock. specialShopBuy grants these the same way
+  // gramShopBuy grants its own armor/weapon/petChoice/classCloak/
+  // classArtifact/bonusSP/nexum/potions fields — see the extra grant block
+  // there. uniqueWeapon swaps the plain epic-tier weapon the `weapon` field
+  // would otherwise resolve to (_SHOP_CLASS_WEAPONS[class].epic) for the
+  // buyer's class's own UNIQUE_WEAPONS entry instead (Меч/Топор/Лук/Посох/
+  // Жезл бездны) — those are normally craft-only (noDrop keeps them out of
+  // every random loot pool, shared/definitions.js), but an explicit shop
+  // grant by id bypasses that the same way UNIQUE_CRAFT_RECIPES does.
+  { id:'special270', gram:270, bookCount:50, bless:30, weapon:'epic', uniqueWeapon:true,
+    petChoice:'rare', classCloak:'uncommon', classArtifact:'uncommon', enhance:5,
+    bonusSP:15, nexum:10000, potions:100 },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
@@ -5980,7 +5989,7 @@ io.on('connection', socket => {
   // into that one: this is the only package type where the BUYER decides the
   // item split, and threading that through gramShopBuy's already-large
   // branch-per-reward-kind body risked the two kinds of packages interfering.
-  safeOn('specialShopBuy', async ({ pkgId, books } = {}) => {
+  safeOn('specialShopBuy', async ({ pkgId, books, petId } = {}) => {
     if (!authed || !pkgId) return;
     _itemOpBusy++;
     let _ran;
@@ -6013,6 +6022,15 @@ io.on('connection', socket => {
       }
       if (sum !== pkg.bookCount) {
         return socket.emit('specialShopError', { msg: `Выберите ровно ${pkg.bookCount} книг` });
+      }
+
+      // petChoice (special270): same rule as gramShopBuy's own — a valid
+      // pick of the right rarity BEFORE any GRAM is spent, so a missing/
+      // invalid choice never costs the player anything.
+      let _chosenPet = null;
+      if (pkg.petChoice) {
+        _chosenPet = ITEM_DEF.find(d => d.id === petId && d.slot === 'pet' && d.rarity === pkg.petChoice);
+        if (!_chosenPet) return socket.emit('specialShopError', { msg: 'Выберите питомца' });
       }
 
       if (_liveGram() < pkg.gram) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
@@ -6099,6 +6117,20 @@ io.on('connection', socket => {
           ? ITEM_DEF.find(d => d.unique && d.forClass && d.forClass.includes(charClass))
           : ITEM_DEF.find(d => d.id === (_SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev)[pkg.weapon]);
         if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
+      }
+      // Class-locked cloak/artifact + the buyer's chosen pet — same fields/
+      // grant shape gramShopBuy uses for these three.
+      if (pkg.classArtifact) {
+        const base = ITEM_DEF.find(d => d.slot === 'artifact' && d.rarity === pkg.classArtifact && d.forClass && d.forClass.includes(charClass));
+        if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
+      }
+      if (pkg.classCloak) {
+        const base = ITEM_DEF.find(d => d.slot === 'cloak' && d.rarity === pkg.classCloak && d.forClass && d.forClass.includes(charClass));
+        if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
+      }
+      if (_chosenPet) {
+        inv.push({ ..._chosenPet, enhance: pkg.enhance || 0 });
+        _addedItems.push({ item: { ..._chosenPet, enhance: pkg.enhance || 0 } });
       }
       if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
       // Liberty (Nexum) — an atomic $inc via _incBalance, safe regardless of

@@ -2101,8 +2101,8 @@ function netGramWithdraw(amount, address) {
 function netGramShopBuy(pkgId, petId) {
   if (socket?.connected) socket.emit('gramShopBuy', { pkgId, petId });
 }
-function netSpecialShopBuy(pkgId, books) {
-  if (socket?.connected) socket.emit('specialShopBuy', { pkgId, books });
+function netSpecialShopBuy(pkgId, books, petId) {
+  if (socket?.connected) socket.emit('specialShopBuy', { pkgId, books, petId });
 }
 function netGramHistory() {
   if (socket?.connected) socket.emit('gramGetHistory');
