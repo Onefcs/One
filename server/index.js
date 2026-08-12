@@ -6266,12 +6266,14 @@ io.on('connection', socket => {
   });
 
   // ── Перерождение (Rebirth) ──────────────────────────────────────────────
-  // Level REBIRTH_LEVEL+ only: resets level/xp/upgrades back to a fresh
-  // character in exchange for a flat, permanent REBIRTH_BONUS_SP folded into
-  // bonusSP — skillPointBudget (shared/definitions.js) is what then keeps
-  // levelling from handing out points again until level REBIRTH_LEVEL is
-  // reached a second time (getAvailableSkillPoints/the upgrades-budget check
-  // above both call it, so client and server can't disagree on the result).
+  // Level REBIRTH_LEVEL+ only: resets level/xp back to a fresh character —
+  // player.upgrades (stat points already spent) is deliberately left alone,
+  // see the bonusSP banking below — in exchange for a flat, permanent
+  // REBIRTH_BONUS_SP. skillPointBudget (shared/definitions.js) is what then
+  // keeps levelling from handing out NEW points again until level
+  // REBIRTH_LEVEL is reached a second time (getAvailableSkillPoints/the
+  // upgrades-budget check above both call it, so client and server can't
+  // disagree on the result).
   //
   // Pure item cost (REBIRTH_COST) — no Liberty spend — so unlike craftGear/
   // resetUpgrades this never awaits a balance call: everything here runs off
@@ -6314,6 +6316,20 @@ io.on('connection', socket => {
         }
       }
 
+      // Улучшения (player.upgrades) are kept, not cleared — only the level
+      // curve resets. That only works without the anti-cheat upgrades-budget
+      // check (_sanitizeSavedStats) wiping them right back out on the very
+      // next save: it drops the WHOLE upgrades map the instant spent exceeds
+      // skillPointBudget(lvl, rebirths) + bonusSP, and post-rebirth that
+      // budget is 0 until level REBIRTH_LEVEL again. So the level-derived
+      // budget this account is about to give up (skillPointBudget at its
+      // CURRENT, pre-reset level/rebirths) is folded into bonusSP here,
+      // permanently — spent can never exceed it, by construction, whatever
+      // was already invested. This is on top of REBIRTH_BONUS_SP, not
+      // instead of it: rebirthing is a straightforward net gain (what you
+      // already earned stays spendable, +15 more on top, and the level
+      // curve above REBIRTH_LEVEL pays out again in full once re-climbed).
+      const _oldBudget = skillPointBudget(lvl, _lastStats.rebirths || 0);
       const _cd = CHAR_DEF[_lastStats.type] || CHAR_DEF.lev;
       _lastStats.lvl = 1;
       _lastStats.xp = 0;
@@ -6324,13 +6340,12 @@ io.on('connection', socket => {
       _lastStats.baseAtk = _cd.baseAtk;
       _lastStats.baseDef = _cd.baseDef;
       _lastStats.baseMaxHp = _cd.baseHP;
-      _lastStats.upgrades = {};
-      _lastStats.bonusSP = (_lastStats.bonusSP || 0) + REBIRTH_BONUS_SP;
+      _lastStats.bonusSP = (_lastStats.bonusSP || 0) + REBIRTH_BONUS_SP + _oldBudget;
       _lastStats.rebirths = (_lastStats.rebirths || 0) + 1;
       _lastStats.inventory = inv;
 
       // Keep the room's anti-cheat baseline in step, or its computeStats
-      // would go on crediting the pre-rebirth level/upgrades until the next
+      // would go on crediting the pre-rebirth level until the next
       // saveProgress (same reasoning as resetUpgrades above).
       if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
       // Bumps invRev and emits inventorySync with the post-cost inventory —
@@ -6340,13 +6355,13 @@ io.on('connection', socket => {
       _persistSavedFields(authed, {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
-        upgrades: {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
+        bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
       });
       logPlayer(authed.telegramId, authed.username, 'rebirth', { rebirths: _lastStats.rebirths });
       socket.emit('rebirthDone', {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
-        upgrades: {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
+        upgrades: _lastStats.upgrades || {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
       });
     } catch (err) {
       console.error('rebirth:', err);
