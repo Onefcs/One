@@ -152,13 +152,33 @@ function _canonicalMarketItem(rawItem) {
 // event or a disconnect mid-trade.
 const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
 
+// Which slot this item really occupies. isStackableItem (shared/definitions.js)
+// answers purely off `it.slot`, so an item passed around as a bare
+// {id, qty} — no slot — reads as NON-stackable, and every stack rule built on
+// that answer silently inverts: _invRemove takes the whole entry instead of
+// `qty` units, _invAdd refuses to merge into an existing stack, and a room
+// check thinks a stackable needs a fresh slot. That is how depositing 5
+// осколки into clan storage could delete a stack of 5000 (see
+// clanStorageDeposit's cross-session branch, which passed exactly such a bare
+// {id}). Resolving the slot from the catalog when the caller didn't carry one
+// makes all three read the same way no matter which shape reached them.
+function _itemSlotOf(item) {
+  if (!item) return undefined;
+  if (item.slot !== undefined) return item.slot;
+  const base = _catalogBase(item.id);
+  return base ? base.slot : undefined;
+}
+function _isStackable(item) {
+  return !!item && isStackableItem({ slot: _itemSlotOf(item) });
+}
+
 // Does `inv` hold at least `qty` of this item (matching enhance level for
 // enhanceable gear, which is what makes two otherwise-identical swords
 // different)? Returns the matching entry's index, or -1.
 function _invFindOwned(inv, item) {
   if (!Array.isArray(inv)) return -1;
-  const wantEnh = ENHANCEABLE_SLOTS.has(item.slot) ? (item.enhance || 0) : null;
-  const wantQty = isStackableItem(item) ? (item.qty || 1) : 1;
+  const wantEnh = ENHANCEABLE_SLOTS.has(_itemSlotOf(item)) ? (item.enhance || 0) : null;
+  const wantQty = _isStackable(item) ? (item.qty || 1) : 1;
   return inv.findIndex(i =>
     i && i.id === item.id &&
     (wantEnh === null || (i.enhance || 0) === wantEnh) &&
@@ -171,7 +191,7 @@ function _invRemove(inv, item) {
   const idx = _invFindOwned(inv, item);
   if (idx < 0) return false;
   const entry = inv[idx];
-  if (isStackableItem(item)) {
+  if (_isStackable(item)) {
     const take = item.qty || 1;
     const have = entry.qty || 1;
     if (have > take) entry.qty = have - take;
@@ -185,13 +205,28 @@ function _invRemove(inv, item) {
 // Adds `item` to `inv` in place. Returns false when there's no room — the
 // caller must then refuse the trade rather than silently destroying the item.
 function _invAdd(inv, item) {
-  if (isStackableItem(item)) {
+  if (_isStackable(item)) {
     const existing = inv.find(i => i && i.id === item.id);
     if (existing) { existing.qty = (existing.qty || 1) + (item.qty || 1); return true; }
   }
   if (inv.length >= SERVER_INV_MAX) return false;
   inv.push({ ...item });
   return true;
+}
+
+// Would _invAdd succeed for this item? A stackable rides in for free ONLY when
+// a stack of it already exists — with no existing stack it needs a slot just
+// like a non-stackable does. Callers that tested `!isStackableItem(item) &&
+// full` instead were letting exactly that case through, and since the item was
+// by then already paid for (marketBuy) or already off the listing
+// (marketCancel), _invAdd's refusal destroyed it. pickupWorldDrop worked this
+// out first; this is that check, in one place, for everyone.
+// A null/absent inventory answers false: "no room" is the safe reading, and
+// every caller here refuses the trade rather than proceeding without one.
+function _invHasRoomFor(inv, item) {
+  if (!Array.isArray(inv) || !item) return false;
+  if (_isStackable(item) && inv.some(i => i && i.id === item.id)) return true;
+  return inv.length < SERVER_INV_MAX;
 }
 
 // ── Mob kill loot roll ──────────────────────────────────────────────────────
@@ -1882,7 +1917,10 @@ async function _adminCancelListing(listingId) {
     const saved = sellerDoc.savedData || {};
     sellerInv = Array.isArray(saved.inventory) ? saved.inventory.slice() : [];
   }
-  if (!isStackableItem(pre.item) && sellerInv.length >= SERVER_INV_MAX) {
+  // _invHasRoomFor, not "!stackable && full" — see its own comment: a
+  // stackable with no existing stack still needs a slot, and letting it
+  // through here cancelled the listing and then destroyed the item.
+  if (!_invHasRoomFor(sellerInv, pre.item)) {
     return { ok: false, error: 'У продавца полон инвентарь' };
   }
 
@@ -1897,6 +1935,17 @@ async function _adminCancelListing(listingId) {
   if (delivered) {
     if (live) await liveSocket.data._adminApplyItems(sellerInv, sellerEq);
     else await PlayerModel.updateOne({ _id: sellerDoc._id }, { $set: { 'savedData.inventory': sellerInv } });
+  } else {
+    // The room check above already refused this case, so we only get here if
+    // the seller's inventory changed in between. Put the listing back rather
+    // than leaving it cancelled with the item nowhere — same reasoning as the
+    // player-facing marketCancel handler.
+    await MarketListingModel.updateOne(
+      { _id: listing._id, status: 'cancelled' }, { status: 'active', soldAt: null },
+    ).catch(() => {});
+    logPlayer(listing.sellerId, listing.sellerUsername, 'admin_market_cancel_noroom',
+      { listingId: String(listing._id), item: listing.item && listing.item.id, listingRestored: true });
+    return { ok: false, error: 'У продавца полон инвентарь — лот оставлен активным' };
   }
   io.to(`tg_${listing.sellerId}`).emit('marketCancelled', {
     listingId: String(listing._id), item: listing.item, delivered,
@@ -2225,6 +2274,12 @@ const _SANITIZE_MAX = {
   // past the old ceiling. See _canonSavedItem for why going over it now
   // clamps instead of resetting.
   qty: 1e6,
+  // HP potions per kind (potionBag). Generous — the shop sells them in
+  // hundreds — but bounded, where this field used to take any number at all.
+  potions: 1e5,
+  // Longest buff in the catalog is 30 min; this leaves room above it without
+  // letting a save claim a buff that never expires.
+  buffDur: 7200,
 };
 
 // ── Gold growth cap (anti-forgery) ───────────────────────────────────────
@@ -2292,8 +2347,34 @@ function _xpCeilingFor(n) { return Math.round(n * (1 + XP_CLAN_MAX_PCT / 100)) *
 // that costs 136M, so no number of them adds up to anything.
 const XP_JOIN_SLACK_KILLS = 30;
 
+// Retired item ids → their replacement. An id that leaves the catalog takes
+// every copy of that item with it: _canonSavedItem returns null for an unknown
+// id, the sanitizer filters those out, and since a save that SHRINKS is
+// legitimate by design (_censusOverflow only looks for growth) the loss is
+// accepted silently on both sides. That is a live hazard for any future
+// rename or merge of a catalog entry, so renames belong here rather than in a
+// migration script: one line keeps every existing copy alive.
+// Empty today — nothing has been renamed yet.
+const _ITEM_ID_ALIASES = Object.create(null);
+
 function _catalogBase(id) {
-  return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
+  const key = (id != null && _ITEM_ID_ALIASES[id]) || id;
+  return ITEM_DEF.find(d => d.id === key) || CRAFT_MATS.find(d => d.id === key) || BOX_DEF.find(d => d.id === key) || null;
+}
+
+// Item ids in a save blob that the catalog no longer knows — i.e. exactly what
+// sanitizing is about to delete. Only ever called when the sanitized result
+// came out shorter than the raw one, so the scan costs nothing on the normal
+// path; its whole job is to turn a silent deletion into a log line naming the
+// ids, so a wave of "my items vanished" after a deploy is answerable.
+function _unknownItemIds(raw) {
+  const out = new Set();
+  const scan = it => { if (it && typeof it === 'object' && it.id != null && !_catalogBase(it.id)) out.add(String(it.id)); };
+  if (Array.isArray(raw?.inventory)) raw.inventory.forEach(scan);
+  if (Array.isArray(raw?.storage)) raw.storage.forEach(scan);
+  const eq = raw?.equipment;
+  if (eq && typeof eq === 'object' && !Array.isArray(eq)) Object.values(eq).forEach(scan);
+  return [...out];
 }
 
 // Rebuild one inventory/equipment entry from the canonical catalog, trusting the
@@ -2428,6 +2509,34 @@ function _clampNum(v, min, max, dflt) {
 }
 function _clampInt(v, min, max, dflt) { return Math.floor(_clampNum(v, min, max, dflt)); }
 
+// Bounded { key: value } map out of an arbitrary client object. Keys are
+// capped in count and length and values run through `fn`; anything that isn't
+// a plain object becomes {}. Used for the progression maps that used to be
+// written to the database verbatim (skillLevels, advSkillLearned, ...), where
+// what matters is that the container can't be an unbounded junk payload.
+const _KEY_MAP_MAX_KEYS = 64;
+const _KEY_MAP_MAX_KEY_LEN = 40;
+function _sanitizeKeyMap(raw, fn) {
+  if (raw === undefined) return undefined;
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  let n = 0;
+  for (const [k, v] of Object.entries(raw)) {
+    if (n >= _KEY_MAP_MAX_KEYS) break;
+    if (typeof k !== 'string' || k.length > _KEY_MAP_MAX_KEY_LEN) continue;
+    out[k] = fn(v);
+    n++;
+  }
+  return out;
+}
+
+// The HP potions (ITEM_DEF slot 'use') — the only ids potionBag may hold, and
+// the only ones usePotion will spend. Derived from the catalog rather than
+// hard-coded so adding a third potion needs no change here.
+const _HP_POTION_IDS = ITEM_DEF.filter(d => d.slot === 'use').map(d => d.id);
+const _HP_POTION_HEAL = new Map(ITEM_DEF.filter(d => d.slot === 'use').map(d => [d.id, Math.max(0, Number(d.hp) || 0)]));
+const _BUFF_TYPES = new Set(ITEM_DEF.filter(d => d.slot === 'buff_potion' && d.buffType).map(d => d.buffType));
+
 const _VALID_LANGS = ['ru', 'en', 'uk', 'es', 'tr', 'pt'];
 
 function _sanitizeSavedStats(raw) {
@@ -2508,6 +2617,64 @@ function _sanitizeSavedStats(raw) {
     const _spent = Object.values(u).reduce((sum, v) => sum + v, 0);
     const _budget = s.lvl * 3 + s.bonusSP;
     s.upgrades = _spent <= _budget ? u : {};
+  }
+  // ── Fields that used to pass through untouched ────────────────────────────
+  // Everything above this point was validated; these were not, and went into
+  // the stored document exactly as the client sent them — arbitrary keys,
+  // arbitrary sizes, arbitrary values. They are all still CLIENT-OWNED (HP
+  // potions are bought client-side, skills are learned client-side by
+  // consuming a book, which is a shrink the save path already allows), so the
+  // job here is shape and bounds, not entitlement: a save can no longer carry
+  // a hundred-kilobyte junk object or a nonsense value into the database.
+  //
+  // potionBag is the one with teeth: the usePotion handler now spends from
+  // this copy, so it has to be a small map of REAL potion ids to sane counts.
+  {
+    const bag = {};
+    for (const id of _HP_POTION_IDS) bag[id] = 0;
+    if (s.potionBag && typeof s.potionBag === 'object' && !Array.isArray(s.potionBag)) {
+      for (const id of _HP_POTION_IDS) {
+        const n = Math.floor(Number(s.potionBag[id]));
+        bag[id] = Number.isFinite(n) && n > 0 ? Math.min(n, _SANITIZE_MAX.potions) : 0;
+      }
+    } else if (s.potions != null) {
+      // Legacy record: a single `potions` integer from before the bag existed.
+      // restoreFromSave (js/player.js) migrates it to pt1 the same way — doing
+      // it here too means a session that falls back to the stored blob (a
+      // selectChar with no savedStats) doesn't zero those potions out.
+      const n = Math.floor(Number(s.potions));
+      if (Number.isFinite(n) && n > 0) bag[_HP_POTION_IDS[0]] = Math.min(n, _SANITIZE_MAX.potions);
+    }
+    s.potionBag = bag;
+  }
+  if (s.hudPotion != null) s.hudPotion = _HP_POTION_IDS.includes(s.hudPotion) ? s.hudPotion : _HP_POTION_IDS[0];
+  // Character class. Validated rather than pinned: the char-select flow does
+  // legitimately write a new one (see selectChar's own $set), so the rule is
+  // "a known class or nothing" — an unknown value is dropped entirely, and
+  // _persistSavedFields skips undefined, so the stored class stays put.
+  if (s.type != null && !CHAR_DEF[s.type]) delete s.type;
+  // Skill/passive progression: bounded shape only. passiveLevels is
+  // additionally clamped per-entry where it is actually read
+  // (passiveBonusTotal, shared/definitions.js), and the skill multiplier a
+  // client claims in combat is clamped to ×10 in Room.js regardless of what
+  // these say — so bounding the container is what is missing, not a new
+  // entitlement check.
+  s.skillLevels    = _sanitizeKeyMap(s.skillLevels,    v => _clampInt(v, 0, 99, 0));
+  s.passiveLevels  = _sanitizeKeyMap(s.passiveLevels,  v => _clampInt(v, 0, 99, 0));
+  s.advSkillLearned = _sanitizeKeyMap(s.advSkillLearned, v => !!v);
+  s.advSkillActive  = _sanitizeKeyMap(s.advSkillActive,  v => !!v);
+  // Active buff timers, in seconds. Only the buff types that exist, and never
+  // longer than the longest buff in the catalog.
+  if (s.buffs !== undefined) {
+    const b = {};
+    if (s.buffs && typeof s.buffs === 'object' && !Array.isArray(s.buffs)) {
+      for (const [k, v] of Object.entries(s.buffs)) {
+        if (!_BUFF_TYPES.has(k)) continue;
+        const n = _clampNum(v, 0, _SANITIZE_MAX.buffDur, 0);
+        if (n > 0) b[k] = n;
+      }
+    }
+    s.buffs = b;
   }
   // Freshness stamp used only to pick the newer of {DB, client localStorage
   // backup} on reload. Clamp to a sane range so a client can't write a
@@ -2614,6 +2781,42 @@ function _persistSavedFields(authed, fields, extra) {
   // land before proceeding (see socket.data._flushNow above) can await it;
   // existing fire-and-forget call sites are unaffected since they don't.
   return PlayerModel.findByIdAndUpdate(authed._id, { $set: set }).catch(() => {});
+}
+
+// Last-resort delivery: append items straight to the stored inventory when
+// there is no live session to hand them to (a market purchase whose buyer
+// reconnected and then vanished, a death-battle prize, VIP rewards). Never
+// refuses — dropping an item the player has already paid for is the one
+// outcome worse than an oversized inventory.
+//
+// But an oversized inventory is not harmless either, and nothing used to say
+// when it happened: past SERVER_INV_MAX the client's own invHasSpace() is
+// false forever, so world drops stop being picked up and every market
+// cancellation starts failing its room check. So the push still goes through
+// and the overflow is recorded, loudly, with the reason that caused it —
+// which is what makes such an account findable and trimmable instead of
+// quietly broken.
+async function _dbPushInventory(authed, items, reason) {
+  const list = (Array.isArray(items) ? items : [items]).filter(Boolean);
+  if (!authed || !list.length) return false;
+  try {
+    const doc = await PlayerModel.findByIdAndUpdate(
+      authed._id,
+      { $push: { 'savedData.inventory': { $each: list } } },
+      { new: true, projection: { 'savedData.inventory': 1 } },
+    ).lean();
+    const len = Array.isArray(doc?.savedData?.inventory) ? doc.savedData.inventory.length : null;
+    if (len !== null && len > SERVER_INV_MAX) {
+      logPlayer(authed.telegramId, authed.username, 'inv_over_cap',
+        { reason, slots: len, cap: SERVER_INV_MAX, added: list.length });
+      console.error(`[${reason}] telegramId=${authed.telegramId}: inventory is now ${len} slots, over the ` +
+        `${SERVER_INV_MAX} cap — drops and market returns will fail for this account until it is trimmed.`);
+    }
+    return true;
+  } catch (err) {
+    console.error('_dbPushInventory:', err);
+    return false;
+  }
 }
 
 // Keep in sync with the identical calcBM in js/definitions.js — the client
@@ -4907,10 +5110,17 @@ io.on('connection', socket => {
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
     if (isBoss) {
-      if (Math.random() < 0.50) { boxUncommon = 1; _invAdd(inv, { ...BOX_DEF.find(b => b.id === 'box_uncommon'), qty: 1 }); }
-      if (Math.random() < 0.10) { boxRare = 1; _invAdd(inv, { ...BOX_DEF.find(b => b.id === 'box_rare'), qty: 1 }); }
-      if (Math.random() < 0.10) { normStone = 1; _invAdd(inv, { ..._STONE_DEFS.norm_stone, qty: 1 }); }
-      if (Math.random() < 0.01) { blessStone = 1; _invAdd(inv, { ..._STONE_DEFS.bless_stone, qty: 1 }); }
+      // The flag is set from what _invAdd ACTUALLY placed, not from the roll.
+      // Setting it first and ignoring the return (as this did) meant a full
+      // inventory still told the client "+1× Ящик" — the floating text played,
+      // nothing arrived, and the player had no way to tell the drop apart from
+      // one that was stolen. Every other grant in this file already reports
+      // only what landed (see _rollMobLoot's addMat).
+      const _rollInto = (chance, item) => (Math.random() < chance && _invAdd(inv, item)) ? 1 : 0;
+      boxUncommon = _rollInto(0.50, { ...BOX_DEF.find(b => b.id === 'box_uncommon'), qty: 1 });
+      boxRare     = _rollInto(0.10, { ...BOX_DEF.find(b => b.id === 'box_rare'), qty: 1 });
+      normStone   = _rollInto(0.10, { ..._STONE_DEFS.norm_stone, qty: 1 });
+      blessStone  = _rollInto(0.01, { ..._STONE_DEFS.bless_stone, qty: 1 });
     }
     if (items.length || boxUncommon || boxRare || normStone || blessStone) {
       _commitServerItems(inv, null, 'mob_loot', { eid, rlvl, n: items.length, boxUncommon, boxRare, normStone, blessStone }, { beforeLen: _beforeLen });
@@ -5078,8 +5288,7 @@ io.on('connection', socket => {
         : null;
       const _delivered = !!_result;
       if (!_delivered && items.length) {
-        await PlayerModel.updateOne({ _id: authed._id },
-          { $push: { 'savedData.inventory': { $each: items } } }).catch(() => {});
+        await _dbPushInventory(authed, items, 'death_battle_win');
       }
       logPlayer(authed.telegramId, authed.username, 'death_battle_win',
         { gram: DEATH_BATTLE_GRAM_REWARD, delivered: _delivered, crossSession: !!_target && _target !== socket });
@@ -5427,7 +5636,14 @@ io.on('connection', socket => {
       // saveProgress debounce), so building the purchase on it rolled back
       // anything picked up in that window.
       const _liveInv = _liveInventory();
-      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
+      // Entries are CLONED, not just the array. A shallow [...inv] shares every
+      // item object with the live inventory, so the `existing.qty += n` merges
+      // below were landing in _lastStats immediately — including on the paths
+      // that then bail out with "nothing was consumed" (claimVipRewards'
+      // outOfRoom refusal), which left a grant half-applied to a purchase that
+      // never happened. Cloning keeps this a scratch copy until it is committed.
+      const inv = _liveInv ? _liveInv.map(i => (i && typeof i === 'object' ? { ...i } : i))
+        : (Array.isArray(saved.inventory) ? saved.inventory.map(i => (i && typeof i === 'object' ? { ...i } : i)) : []);
 
       // Room check before anything is deducted. This used to push items in
       // unconditionally, which is how accounts ended up over the 150-slot cap
@@ -5729,7 +5945,14 @@ io.on('connection', socket => {
       // saveProgress debounce), so building the purchase on it rolled back
       // anything picked up in that window. Same pattern as gramShopBuy.
       const _liveInv = _liveInventory();
-      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
+      // Entries are CLONED, not just the array. A shallow [...inv] shares every
+      // item object with the live inventory, so the `existing.qty += n` merges
+      // below were landing in _lastStats immediately — including on the paths
+      // that then bail out with "nothing was consumed" (claimVipRewards'
+      // outOfRoom refusal), which left a grant half-applied to a purchase that
+      // never happened. Cloning keeps this a scratch copy until it is committed.
+      const inv = _liveInv ? _liveInv.map(i => (i && typeof i === 'object' ? { ...i } : i))
+        : (Array.isArray(saved.inventory) ? saved.inventory.map(i => (i && typeof i === 'object' ? { ...i } : i)) : []);
 
       // Room check before anything is deducted. Books and the safe stone all
       // stack, so this is at most one new slot per book slot the buyer
@@ -6125,6 +6348,25 @@ io.on('connection', socket => {
       return _enhNotFound('slot_mismatch:' + slot);
     }
 
+    // Can this thing be enhanced at all? Checked HERE — before the relocation
+    // below — rather than after it. Refusing afterwards left the item already
+    // moved between the inventory and an equip slot inside _lastStats with no
+    // _commitServerItems behind it: no revision bump, no persist, no
+    // inventorySync, so the session and the stored record disagreed about
+    // where the item lived until some later save happened to paper over it.
+    // Nothing was created or destroyed by that, but a request that is about to
+    // be refused has no business moving anything.
+    //
+    // Pets are enhanceable and always have been — the client has offered it
+    // for every slot since long before this handler existed (canEnh in
+    // js/ui.js is a pure enhance < max test), and players hold pets at +3
+    // and above that were enhanced back when the roll happened client-side.
+    // Excluding them here made every one of those attempts fail, which is
+    // the regression behind the reports about enhancing suddenly breaking.
+    if (!ENHANCEABLE_SLOTS.has(target.slot)) {
+      return socket.emit('enhanceError', { msg: 'Этот предмет нельзя точить' });
+    }
+
     // The client's placement wins where the two disagree — it is the one the
     // player is looking at — so move the item before the roll below writes the
     // result back. Only the inventory <-> equip-slot direction is reconciled:
@@ -6146,15 +6388,6 @@ io.on('connection', socket => {
       _lastStats.equipment = eq;
       targetIdx = inv.length - 1;
       targetSlot = null;
-    }
-    // Pets are enhanceable and always have been — the client has offered it
-    // for every slot since long before this handler existed (canEnh in
-    // js/ui.js is a pure enhance < max test), and players hold pets at +3
-    // and above that were enhanced back when the roll happened client-side.
-    // Excluding them here made every one of those attempts fail, which is
-    // the regression behind the reports about enhancing suddenly breaking.
-    if (!ENHANCEABLE_SLOTS.has(target.slot)) {
-      return socket.emit('enhanceError', { msg: 'Этот предмет нельзя точить' });
     }
 
     const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
@@ -6344,6 +6577,12 @@ io.on('connection', socket => {
   // client only ever displays what this event reports back.
   safeOn('craftPet', async ({ rarity } = {}) => {
     if (!authed) return;
+    // _itemOpBusy, like every other handler that holds an inventory across an
+    // await: this one was the only craft without it, so a saveProgress landing
+    // between the balance spend and the commit below could replace _lastStats
+    // wholesale and have the grant stamped back over it.
+    _itemOpBusy++;
+    try {
     // Serialized like the other spend handlers — the charge below is a DB
     // round trip, and two crafts overlapping across it would interleave their
     // inventory writes.
@@ -6368,11 +6607,37 @@ io.on('connection', socket => {
       if (_bal === null) return socket.emit('petCraftError', { msg: 'Недостаточно Liberty' });
       _nexumBalance = _bal;
 
-      let resultPet = null, _delivered = false;
+      let resultPet = null;
       if (Math.random() < rec.chance) {
         resultPet = { ...candidates[Math.floor(Math.random() * candidates.length)] };
-        _delivered = _invAdd(_lastStats.inventory, resultPet);
       }
+
+      // Cross-session guard, same as craftGear/craftClassGear already have and
+      // this one was missing: the Liberty spend above is a DB round trip, and
+      // if the account reconnected on a different socket during it, this
+      // closure's _lastStats belongs to a session nobody's client can see.
+      // Committing through it would drop the pet into the void AND — via
+      // _commitServerItems' unconditional persist — write this dead session's
+      // inventory over whatever the live one has saved since.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        if (!_target || !_target.data._applyGrant) {
+          // Nothing live to grant into. Refund rather than charge for a pet
+          // that cannot be delivered — the roll is re-done on the retry.
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('petCraftError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+        const _res = _target.data._applyGrant(
+          resultPet ? { addItems: [{ item: resultPet }] } : {},
+          'pet_craft_cross_session', { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null });
+        _target.emit('petCrafted', {
+          pet: resultPet, newNexumBalance: _nexumBalance, delivered: !!_res && !!resultPet,
+        });
+        return;
+      }
+
+      const _delivered = resultPet ? _invAdd(_lastStats.inventory, resultPet) : false;
       _commitServerItems(_lastStats.inventory, null, 'pet_craft',
         { rarity, cost: rec.nexumCost, got: resultPet ? resultPet.id : null }, { beforeLen: _beforeLen });
 
@@ -6385,6 +6650,9 @@ io.on('connection', socket => {
       socket.emit('petCraftError', { msg: 'Ошибка сервера' });
     }
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // ── Class cloak/artifact crafting (Кузнец → Материалы → Плащи и артефакты
@@ -6884,7 +7152,36 @@ io.on('connection', socket => {
     return SEASON_BURN_POINTS[base.rarity] || 0;
   }
 
-  safeOn('seasonBurn', async ({ idx } = {}) => {
+  // ── Addressing an inventory item the client tapped ────────────────────────
+  // The client sends the slot INDEX it drew the item at, and destructive
+  // handlers (burn, sell) used to index straight into the server's own array
+  // with it. The two copies legitimately drift: every server-side splice
+  // (craft materials, a market listing, a clan deposit) renumbers the server's
+  // slots, and the client only catches up when the inventorySync that follows
+  // arrives. A tap sent inside that window addressed a DIFFERENT item — and
+  // for the burn path, which accepts any burnable rarity, that meant
+  // destroying something the player never picked.
+  //
+  // So the request also carries WHAT the client thinks is there (id, plus
+  // enhance for gear, where +0 and +9 of the same sword are different things
+  // to own — the same identity scheme enhanceItem resolves by). The index is
+  // used as a hint and verified; if it doesn't hold, the item is looked up by
+  // identity instead, and only a request naming something the server doesn't
+  // have at all is refused. `id` absent means a client from before this
+  // change: fall back to the index alone so an open tab keeps working.
+  // Returns an index, or -1.
+  function _resolveInvIdx(inv, idx, id, enhance) {
+    const i = Math.floor(Number(idx));
+    const inRange = Number.isFinite(i) && i >= 0 && i < inv.length;
+    if (id == null) return inRange ? i : -1;
+    const wantEnh = Math.floor(Number(enhance));
+    const _matches = it => it && it.id === id &&
+      (!ENHANCEABLE_SLOTS.has(_itemSlotOf(it)) || !Number.isFinite(wantEnh) || (it.enhance || 0) === wantEnh);
+    if (inRange && _matches(inv[i])) return i;
+    return inv.findIndex(_matches);
+  }
+
+  safeOn('seasonBurn', async ({ idx, id, enhance } = {}) => {
     if (!authed) return;
     await _withEconLock(async () => {
       try {
@@ -6892,15 +7189,34 @@ io.on('connection', socket => {
         const inv = _liveInventory();
         if (!inv) return socket.emit('seasonBurnError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
         const _beforeLen = inv.length;
-        const i = Math.floor(Number(idx));
-        if (!Number.isFinite(i) || i < 0 || i >= inv.length) return;
+        // By identity, not by raw index — see _resolveInvIdx. Burning is
+        // irreversible, so addressing the wrong slot destroys the wrong item.
+        const i = _resolveInvIdx(inv, idx, id, enhance);
+        if (i < 0) {
+          socket.emit('inventorySync', {
+            inventory: inv, equipment: _lastStats.equipment || {}, invRev: _invRev,
+          });
+          logPlayer(authed.telegramId, authed.username, 'season_burn_desync', { idx, id, enhance });
+          return socket.emit('seasonBurnError', { msg: 'Предмет не найден — список обновлён' });
+        }
         const pts = _burnValue(inv[i]);
         if (!pts) return socket.emit('seasonBurnError', { msg: 'Этот предмет нельзя сжечь' });
         const burned = inv[i];
-        inv.splice(i, 1);
-        _commitServerItems(inv, null, 'season_burn', { itemId: burned.id, points: pts }, { beforeLen: _beforeLen });
+        // Points FIRST. The destruction used to be committed (and persisted)
+        // before this await, so a failed points write — a DB blip, an
+        // exhausted connection pool — burned the item for nothing. Awarding
+        // first means the worst case is points credited for a burn that then
+        // didn't happen, which the player can simply redo.
         const total = await _seasonAddPoints(pts, 'burn', { itemId: burned.id, n: 1 });
-        socket.emit('seasonBurned', { burned: 1, points: pts, total: total ?? null });
+        if (total === null) {
+          return socket.emit('seasonBurnError', { msg: 'Не удалось начислить очки — попробуйте ещё раз' });
+        }
+        // Re-resolve after the await: the inventory can have moved under us.
+        const j = _resolveInvIdx(inv, i, burned.id, burned.enhance);
+        if (j < 0) return socket.emit('seasonBurnError', { msg: 'Предмет не найден — список обновлён' });
+        inv.splice(j, 1);
+        _commitServerItems(inv, null, 'season_burn', { itemId: burned.id, points: pts }, { beforeLen: _beforeLen });
+        socket.emit('seasonBurned', { burned: 1, points: pts, total });
       } catch (err) {
         console.error('seasonBurn:', err);
         logPlayerErr(authed.telegramId, authed.username, 'season_burn', err, { idx });
@@ -6920,20 +7236,37 @@ io.on('connection', socket => {
         const inv = _liveInventory();
         if (!inv) return socket.emit('seasonBurnError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
         const _beforeLen = inv.length;
-        let burned = 0, pts = 0;
+        // Counted first, destroyed only once the points have actually landed —
+        // same reasoning as the single burn above, and it matters more here
+        // because one call can consume a whole rarity's worth of gear.
+        const _victims = [];
+        let pts = 0;
         for (let i = inv.length - 1; i >= 0; i--) {
           const it = inv[i];
           const base = it && _catalogBase(it.id);
           if (!base || base.rarity !== rarity) continue;
           const v = _burnValue(it);
           if (!v) continue;
-          inv.splice(i, 1);
-          burned++; pts += v;
+          _victims.push(i); pts += v;
         }
-        if (!burned) return socket.emit('seasonBurnError', { msg: 'Нечего сжигать' });
+        if (!_victims.length) return socket.emit('seasonBurnError', { msg: 'Нечего сжигать' });
+        const total = await _seasonAddPoints(pts, 'burn_all', { rarity, n: _victims.length });
+        if (total === null) {
+          return socket.emit('seasonBurnError', { msg: 'Не удалось начислить очки — попробуйте ещё раз' });
+        }
+        // Indices were collected high-to-low, so splicing in that order stays
+        // valid. Each one is re-checked because the await above is a window in
+        // which the inventory can have changed.
+        let burned = 0;
+        for (const i of _victims) {
+          const it = inv[i];
+          const base = it && _catalogBase(it.id);
+          if (!base || base.rarity !== rarity) continue;
+          inv.splice(i, 1);
+          burned++;
+        }
         _commitServerItems(inv, null, 'season_burn_all', { rarity, burned, points: pts }, { beforeLen: _beforeLen });
-        const total = await _seasonAddPoints(pts, 'burn_all', { rarity, n: burned });
-        socket.emit('seasonBurned', { burned, points: pts, total: total ?? null });
+        socket.emit('seasonBurned', { burned, points: pts, total });
       } catch (err) {
         console.error('seasonBurnAll:', err);
         logPlayerErr(authed.telegramId, authed.username, 'season_burn_all', err, { rarity });
@@ -6987,10 +7320,38 @@ io.on('connection', socket => {
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     const rewardIds = Array.isArray(q.reward.items) ? q.reward.items : [];
+    const rewardDefs = rewardIds
+      .map(id => ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id))
+      .filter(Boolean);
+    // Room for the WHOLE reward before anything is claimed. This used to push
+    // each item with _invAdd and ignore the refusal — on a full inventory the
+    // reward items were dropped one by one while questIdx advanced anyway,
+    // which made them unrecoverable (the claim can never be replayed: see the
+    // index check above). Same "refuse up front" rule the crafts and the shop
+    // already follow. Stackables that merge into an existing entry cost no
+    // slot, so they are counted the way _invAdd would actually place them.
+    {
+      let _need = 0;
+      const _willStack = new Set();
+      for (const def of rewardDefs) {
+        if (_isStackable(def) && (inv.some(i => i && i.id === def.id) || _willStack.has(def.id))) {
+          _willStack.add(def.id);
+          continue;
+        }
+        if (_isStackable(def)) _willStack.add(def.id);
+        _need++;
+      }
+      if (inv.length + _need > SERVER_INV_MAX) {
+        logPlayer(authed.telegramId, authed.username, 'quest_reward_refused',
+          { questId: q.id, idx: cur, need: _need, slots: `${inv.length}/${SERVER_INV_MAX}` });
+        return socket.emit('questClaimError', {
+          msg: `Нужно ${_need} свободных мест в инвентаре (занято ${inv.length}/${SERVER_INV_MAX})`,
+        });
+      }
+    }
     const items = [];
-    rewardIds.forEach(id => {
-      const def = ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id);
-      if (def && _invAdd(inv, { ...def, qty: 1 })) items.push({ id: def.id, name: def.name, rarity: def.rarity });
+    rewardDefs.forEach(def => {
+      if (_invAdd(inv, { ...def, qty: 1 })) items.push({ id: def.id, name: def.name, rarity: def.rarity });
     });
     const gold = Math.max(0, Math.floor(Number(q.reward.gold)) || 0);
     if (gold) _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + gold);
@@ -7022,15 +7383,25 @@ io.on('connection', socket => {
   // would be clamped away and the player would lose the sale. So the whole
   // transaction moves here.
   const SELL_COMMON_PRICE = 100;
-  safeOn('sellItem', async ({ idx } = {}) => {
+  safeOn('sellItem', async ({ idx, id, enhance } = {}) => {
     if (!authed) return;
     await _withEconLock(async () => {
       try {
         const inv = _liveInventory();
         if (!inv) return socket.emit('sellItemError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
         const _beforeLen = inv.length;
-        const i = Math.floor(Number(idx));
-        if (!Number.isFinite(i) || i < 0 || i >= inv.length) return;
+        // By identity rather than by raw index — see _resolveInvIdx. The
+        // rarity check below already stopped this selling anything but a
+        // common, but "a common, just not the one tapped" was still possible
+        // while the two copies were briefly renumbered differently.
+        const i = _resolveInvIdx(inv, idx, id, enhance);
+        if (i < 0) {
+          socket.emit('inventorySync', {
+            inventory: inv, equipment: _lastStats.equipment || {}, invRev: _invRev,
+          });
+          logPlayer(authed.telegramId, authed.username, 'sell_desync', { idx, id, enhance });
+          return socket.emit('sellItemError', { msg: 'Предмет не найден — список обновлён' });
+        }
         const it = inv[i];
         if (!it) return;
         // Re-derived from the catalog rather than read off the entry, so the
@@ -7075,16 +7446,28 @@ io.on('connection', socket => {
     // for someone else. The client used to paper over that by adding it
     // locally on delivered:false, which is precisely the kind of client-side
     // grant the save path no longer accepts.
-    const _wouldStack = inv && isStackableItem(peek.item) && inv.some(i => i && i.id === peek.item.id);
-    if (inv && !_wouldStack && inv.length >= SERVER_INV_MAX) {
+    //
+    // A session with no inventory loaded at all (no selectChar yet) is
+    // refused for the same reason rather than being let through: the `inv &&`
+    // in front of the old check skipped it, so claimWorldDrop below consumed
+    // the pile off the floor — removing it for everyone — and then had
+    // nowhere to put it. Leaving the drop where it is costs nothing; there is
+    // no second chance once it's claimed.
+    if (!inv) return socket.emit('worldDropError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    if (!_invHasRoomFor(inv, peek.item)) {
       return socket.emit('worldDropError', { msg: 'Инвентарь полон' });
     }
     const drop = currentRoom.claimWorldDrop(id, p.x, p.y);
     if (!drop) return;
-    const _beforeLen = inv ? inv.length : 0;
-    const _delivered = !!(inv && _invAdd(inv, drop.item));
+    const _beforeLen = inv.length;
+    const _delivered = _invAdd(inv, drop.item);
     if (_delivered) {
       _commitServerItems(inv, null, 'world_drop', { item: drop.item && drop.item.id }, { beforeLen: _beforeLen });
+    } else {
+      // Unreachable via the check above; logged rather than silent so that if
+      // it ever does happen there is a record naming the item.
+      logPlayer(authed.telegramId, authed.username, 'world_drop_noroom',
+        { item: drop.item && drop.item.id, slots: inv.length });
     }
     socket.emit('worldDropPicked', { id: drop.id, item: drop.item, delivered: _delivered });
   });
@@ -7211,8 +7594,21 @@ io.on('connection', socket => {
         { _id: listingId, sellerId: authed.telegramId, status: 'active' }, 'item').lean();
       if (!pre) return socket.emit('marketError', { msg: 'Лот не найден' });
       const _sellerInv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
-      if (_sellerInv && !isStackableItem(pre.item) && _sellerInv.length >= SERVER_INV_MAX) {
-        return socket.emit('marketError', { msg: 'Инвентарь полон' });
+      // Only gate on THIS socket's inventory while this socket is still the
+      // account's live session. If it isn't, the cross-session branch below
+      // owns delivery (live socket, or a $push straight to the document) and
+      // has its own room handling — refusing here on a stale closure's
+      // inventory would block a cancellation that can be delivered fine.
+      if (activeSessions.get(authed.telegramId) === socket.id) {
+        if (!_sellerInv) {
+          return socket.emit('marketError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        }
+        // _invHasRoomFor, not "!stackable && full": a stackable with no
+        // existing stack needs a slot too, and letting it through here meant
+        // the listing was cancelled and then the item destroyed on the way in.
+        if (!_invHasRoomFor(_sellerInv, pre.item)) {
+          return socket.emit('marketError', { msg: 'Инвентарь полон' });
+        }
       }
       const listing = await MarketListingModel.findOneAndUpdate(
         { _id: listingId, sellerId: authed.telegramId, status: 'active' },
@@ -7237,9 +7633,7 @@ io.on('connection', socket => {
           // No live session at all, or its inventory had no room — an atomic
           // push straight to the DB at least keeps the item from being
           // destroyed outright; it'll show up next time the account loads.
-          await PlayerModel.updateOne(
-            { _id: authed._id }, { $push: { 'savedData.inventory': listing.item } },
-          ).catch(() => {});
+          await _dbPushInventory(authed, listing.item, 'market_cancel_cross_session');
         }
         logPlayer(authed.telegramId, authed.username, 'market_cancel_cross_session',
           { item: listing.item && listing.item.id, listingId: String(listingId),
@@ -7257,11 +7651,20 @@ io.on('connection', socket => {
         _commitServerItems(_sellerInv, null, 'market_cancel',
           { item: listing.item && listing.item.id, listingId: String(listingId) }, { beforeLen: _sellerBeforeLen });
       } else {
-        // Cancelled but not returned server-side — the client is the only
-        // copy holding it now, so make that visible rather than silent.
+        // Cancelled but not returned. The room check above should have caught
+        // this before the listing was touched, so reaching here means the
+        // inventory changed underneath us — put the LISTING back rather than
+        // leaving the item nowhere. A lot that is active again can be
+        // cancelled once there's space; a cancelled lot whose item never
+        // arrived is gone for good.
+        await MarketListingModel.updateOne(
+          { _id: listingId, sellerId: authed.telegramId, status: 'cancelled' },
+          { status: 'active', soldAt: null },
+        ).catch(() => {});
         logPlayer(authed.telegramId, authed.username, 'market_cancel_noroom',
           { item: listing.item && listing.item.id, listingId: String(listingId),
-            slots: _sellerInv ? _sellerInv.length : null });
+            slots: _sellerInv ? _sellerInv.length : null, listingRestored: true });
+        return socket.emit('marketError', { msg: 'Инвентарь полон — лот остался на маркете' });
       }
       socket.emit('marketCancelled', { listingId, item: listing.item, delivered: _returned });
     } catch (err) {
@@ -7305,9 +7708,23 @@ io.on('connection', socket => {
       // was already gone and the item was destroyed with the listing marked
       // sold. Refuse the trade instead and put the lot back up.
       const _buyerInv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
-      if (_buyerInv && !isStackableItem(claimed.item) && _buyerInv.length >= SERVER_INV_MAX) {
-        await _releaseClaim(listingId);
-        return socket.emit('marketError', { msg: 'Инвентарь полон' });
+      // Same shape as marketCancel's: gate on this socket's inventory only
+      // while it is still the live session (the cross-session branch below
+      // owns delivery otherwise), and use _invHasRoomFor rather than
+      // "!stackable && full" — a stackable with no existing stack needs a
+      // slot, and letting it past here meant the GRAM was spent and the item
+      // then dropped on the way in. A missing inventory (a socket that never
+      // ran selectChar) refuses for the same reason instead of paying first
+      // and discovering there is nowhere to put it.
+      if (activeSessions.get(authed.telegramId) === socket.id) {
+        if (!_buyerInv) {
+          await _releaseClaim(listingId);
+          return socket.emit('marketError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+        }
+        if (!_invHasRoomFor(_buyerInv, claimed.item)) {
+          await _releaseClaim(listingId);
+          return socket.emit('marketError', { msg: 'Инвентарь полон' });
+        }
       }
       // Payment is the affordability check: _spendBalance only writes if the
       // balance covers the price, so two purchases in flight can't be paid for
@@ -7337,9 +7754,7 @@ io.on('connection', socket => {
           : null;
         _delivered = !!(_result && _result.delivered);
         if (!_delivered) {
-          await PlayerModel.updateOne(
-            { _id: authed._id }, { $push: { 'savedData.inventory': claimed.item } },
-          ).catch(() => {});
+          await _dbPushInventory(authed, claimed.item, 'market_buy_cross_session');
         }
         logPlayer(authed.telegramId, authed.username, 'market_buy_cross_session',
           { item: claimed.item && claimed.item.id, listingId: String(listingId),
@@ -7355,11 +7770,23 @@ io.on('connection', socket => {
         // having paid for nothing.
         const _buyerBeforeLen = _buyerInv ? _buyerInv.length : 0;
         _delivered = !!(_buyerInv && _invAdd(_buyerInv, claimed.item));
-        if (_delivered) {
-          _commitServerItems(_buyerInv, null, 'market_buy',
-            { item: claimed.item && claimed.item.id, price: claimed.price,
-              seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
+        if (!_delivered) {
+          // The room check above already refused this case, so getting here
+          // means the inventory changed under us between the two. The GRAM is
+          // already gone and the seller has NOT been paid yet (that's below),
+          // so unwind the whole trade rather than leaving the buyer charged
+          // for an item that has nowhere to go.
+          const _back = await _incBalance(authed.telegramId, 'gramBalance', claimed.price);
+          if (_back !== null) { _gramBalance = _back; socket.emit('gramBalanceUpdate', { balance: _back }); }
+          await _releaseClaim(listingId);
+          logPlayer(authed.telegramId, authed.username, 'market_buy_noroom',
+            { item: claimed.item && claimed.item.id, listingId: String(listingId),
+              price: claimed.price, refunded: _back !== null });
+          return socket.emit('marketError', { msg: 'Инвентарь полон — покупка отменена' });
         }
+        _commitServerItems(_buyerInv, null, 'market_buy',
+          { item: claimed.item && claimed.item.id, price: claimed.price,
+            seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
       }
 
       // Credit the seller (10% fee burned — not paid to anyone), online or not.
@@ -7500,7 +7927,14 @@ io.on('connection', socket => {
       // Live copy first, same reason as gramShopBuy: a fresh DB read lags the
       // saveProgress debounce by up to ~3s and would roll back recent pickups.
       const _liveInv = _liveInventory();
-      const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
+      // Entries are CLONED, not just the array. A shallow [...inv] shares every
+      // item object with the live inventory, so the `existing.qty += n` merges
+      // below were landing in _lastStats immediately — including on the paths
+      // that then bail out with "nothing was consumed" (claimVipRewards'
+      // outOfRoom refusal), which left a grant half-applied to a purchase that
+      // never happened. Cloning keeps this a scratch copy until it is committed.
+      const inv = _liveInv ? _liveInv.map(i => (i && typeof i === 'object' ? { ...i } : i))
+        : (Array.isArray(saved.inventory) ? saved.inventory.map(i => (i && typeof i === 'object' ? { ...i } : i)) : []);
       let goldReward = 0;
       let outOfRoom = false;
       // Mirrors what actually gets pushed/merged into inv below — used to
@@ -7555,11 +7989,21 @@ io.on('connection', socket => {
               'vip_rewards', { levels: pending, gold: goldReward })
           : null;
         if (!_result) {
+          // Gold and the vipPending reset stay in one update with the items:
+          // clearing pending separately would risk clearing it for a push that
+          // never landed. The over-cap check _dbPushInventory does for the
+          // other fallbacks is run after it, on the same figure.
           await PlayerModel.updateOne({ _id: authed._id }, {
             $push: { 'savedData.inventory': { $each: _addedItems.map(({ item, qty }) => ({ ...item, ...(qty != null ? { qty } : {}) })) } },
             ...(goldReward > 0 ? { $inc: { 'savedData.gold': goldReward } } : {}),
             $set: { 'savedData.vipPending': [] },
           }).catch(() => {});
+          const _after = await PlayerModel.findById(authed._id, { 'savedData.inventory': 1 }).lean().catch(() => null);
+          const _len = Array.isArray(_after?.savedData?.inventory) ? _after.savedData.inventory.length : null;
+          if (_len !== null && _len > SERVER_INV_MAX) {
+            logPlayer(authed.telegramId, authed.username, 'inv_over_cap',
+              { reason: 'vip_rewards_cross_session', slots: _len, cap: SERVER_INV_MAX, added: _addedItems.length });
+          }
         }
         logPlayer(authed.telegramId, authed.username, 'vip_rewards_cross_session',
           { levels: pending, gold: goldReward, delivered: !!_result, hadLiveSocket: !!_target });
@@ -7961,15 +8405,60 @@ io.on('connection', socket => {
     if (currentRoom) currentRoom.setMapOpen(socket.id, !!open);
   });
 
+  // ── HP potion ─────────────────────────────────────────────────────────────
   // `amount` is validated as a real number before it goes anywhere near hp.
   // Math.min('x', 200) is NaN, and NaN assigned to hp is permanent: every
   // damage path writes Math.max(0, NaN - dmg) === NaN back, and `hp <= 0` is
   // false for NaN — so one malformed packet made a player unkillable until
   // respawn, which is worth real money in the death battle/arena/tower.
-  safeOn('usePotion', ({ amount } = {}) => {
+  //
+  // That validation was the whole of it, and it wasn't enough. healPlayer
+  // (Room.js) is deliberately NOT gated by MAX_HP_REGEN_PER_SEC — the rate
+  // limit that stops a client simply reporting full hp on every movement
+  // packet — because real heals are supposed to arrive through here. So this
+  // event was a full-heal button with no cooldown, no cost and no proof the
+  // player owned a potion, sitting in the loose rate-limit bucket (1500 per
+  // 5s). Spamming it made a character unkillable in exactly the modes that
+  // pay out real GRAM/Liberty.
+  //
+  // Three things close it, all server-side:
+  //   • POTION_CD_MS, mirroring the client's own 4s potCd with a little slack
+  //     for latency — a legitimate client can never exceed it;
+  //   • the potion is spent from the server's own copy of potionBag (now
+  //     sanitized to real ids and sane counts — see _sanitizeSavedStats);
+  //   • the heal is the catalog's value for THAT potion, not a number the
+  //     packet chose.
+  // `amount` is still accepted and still clamped, but only as the fallback
+  // for a client from before this change that sends nothing else — a tab left
+  // open across the deploy keeps working instead of losing its potions.
+  const POTION_CD_MS = 3500;
+  let _lastPotionAt = 0;
+  safeOn('usePotion', ({ id, amount } = {}) => {
     if (!currentRoom) return;
+    const now = Date.now();
+    if (now - _lastPotionAt < POTION_CD_MS) return;
+    const potId = _HP_POTION_IDS.includes(id) ? id
+      : (_lastStats && _HP_POTION_IDS.includes(_lastStats.hudPotion) ? _lastStats.hudPotion : _HP_POTION_IDS[0]);
+    const bag = (_lastStats && _lastStats.potionBag && typeof _lastStats.potionBag === 'object')
+      ? _lastStats.potionBag : null;
+    // No server-side bag yet (a session that hasn't sent a save since the
+    // sanitizer started producing one) — fall back to the old behaviour so
+    // nobody is left unable to drink, but the cooldown above still applies.
+    if (bag) {
+      if (!(bag[potId] > 0)) return socket.emit('potionEmpty', { id: potId });
+      bag[potId] -= 1;
+    }
+    _lastPotionAt = now;
+    const _catalogHeal = _HP_POTION_HEAL.get(potId);
     const n = Number(amount);
-    currentRoom.healPlayer(socket.id, Number.isFinite(n) ? Math.max(0, Math.min(n, 200)) : 60);
+    const heal = Number.isFinite(_catalogHeal) && _catalogHeal > 0
+      ? _catalogHeal
+      : (Number.isFinite(n) ? Math.max(0, Math.min(n, 200)) : 60);
+    currentRoom.healPlayer(socket.id, heal);
+    // Not persisted on its own: potionBag rides the normal progress save, and
+    // the client's own copy (which it decrements too) is what the next save
+    // carries anyway. Writing here would be one DB round trip per potion.
+    socket.emit('potionUsed', { id: potId, heal, left: bag ? bag[potId] : null });
   });
 
   safeOn('statsUpdate', ({ atk, def, maxHp, critChance, critPower } = {}) => {
@@ -8847,6 +9336,22 @@ io.on('connection', socket => {
     // for BM/combat stats and before it's persisted (anti-cheat — see
     // _sanitizeSavedStats). gram/nexum are never taken from here.
     const clean = _sanitizeSavedStats(stats);
+    // Did sanitizing DELETE anything? An id the catalog no longer knows is
+    // dropped on the floor here and, because a shrinking save is legitimate,
+    // nothing downstream ever notices. The length comparison is the cheap
+    // guard (it is equal on every normal save); only when it isn't do we pay
+    // for the scan that names the ids. See _unknownItemIds.
+    if (Array.isArray(stats && stats.inventory) &&
+        stats.inventory.length > clean.inventory.length) {
+      const _gone = _unknownItemIds(stats);
+      if (_gone.length) {
+        logPlayer(authed.telegramId, authed.username, 'save_items_unknown_id', {
+          ids: _gone.slice(0, 20).join(','), n: _gone.length,
+        });
+        console.error(`[saveProgress] Dropped items with unknown ids for telegramId=${authed.telegramId}:`,
+          _gone.slice(0, 20).join(', '));
+      }
+    }
     // Stale-inventory guard. A save composed before the last server-side item
     // change carries an inventory that predates it, and taking it at face
     // value is what reverted shop packs and market cancellations. Keep the
@@ -9647,7 +10152,14 @@ io.on('connection', socket => {
           logPlayerErr(authed.telegramId, authed.username, 'clan_storage_deposit', err, { id, qty: n });
           return socket.emit('clanStorageError', { msg: 'Ошибка сервера' });
         }
-        _target.data._applyGrant({ removeItems: [{ item: { id }, qty: n }] },
+        // The FULL catalog entry, not a bare { id }: _invRemove decides
+        // "take n units" vs "take the whole entry" from the item's slot, so a
+        // slot-less object made this delete the player's entire stack of that
+        // shard and hand only n of them to the clan. _itemSlotOf now resolves
+        // the slot from the catalog either way; passing the real base as well
+        // means this no longer depends on that fallback at all.
+        const _shardBase = CRAFT_MATS.find(m => m.id === id);
+        _target.data._applyGrant({ removeItems: [{ item: { ...(_shardBase || { id, slot: 'material' }) }, qty: n }] },
           'clan_storage_deposit_cross_session', { id, qty: n, clan: clan.name });
         const _fresh = await _myClan();
         if (_fresh) await _clanStoragePush(_fresh);
@@ -9835,11 +10347,15 @@ io.on('connection', socket => {
           await _putBack();
           return socket.emit('clanStorageError', { msg: 'Инвентарь полон' });
         }
+        // Same partial-loss fix as the same-session path below: a kind that
+        // can't be handed over goes back to the clan instead of being dropped
+        // after the allocation was already pulled.
         const _granted = [];
         const _addItems = [];
+        const _unclaimedX = [];
         for (const [id, q] of _byId) {
           const base = CRAFT_MATS.find(m => m.id === id);
-          if (!base || q <= 0) continue;
+          if (!base || q <= 0) { _unclaimedX.push(..._mine.filter(a => a.id === id)); continue; }
           _addItems.push({ item: base, qty: q });
           _granted.push({ id, name: base.name, qty: q });
         }
@@ -9847,6 +10363,11 @@ io.on('connection', socket => {
 
         _target.data._applyGrant({ addItems: _addItems }, 'clan_storage_claim_cross_session',
           { clan: clan.name, items: _granted.map(g => `${g.id}x${g.qty}`).join(',') });
+        if (_unclaimedX.length) {
+          await ClanModel.updateOne({ _id: clan._id }, { $push: { allocations: { $each: _unclaimedX } } }).catch(() => {});
+          logPlayer(authed.telegramId, authed.username, 'clan_storage_claim_partial',
+            { clan: clan.name, returned: _unclaimedX.map(a => `${a.id}x${a.qty}`).join(','), crossSession: true });
+        }
         const _fresh = await _myClan();
         if (_fresh) await _clanStoragePush(_fresh);
         _target.emit('clanStorageClaimed', { items: _granted });
@@ -9882,14 +10403,28 @@ io.on('connection', socket => {
         await putBack();
         return socket.emit('clanStorageError', { msg: 'Инвентарь полон' });
       }
+      // Anything that can't be handed over goes BACK to the clan. The
+      // allocation was already pulled atomically above (so a second tap finds
+      // nothing), and skipping a kind here — an id the catalog no longer has,
+      // or an _invAdd the space check didn't predict — used to drop it on the
+      // floor: gone from the clan, never in the inventory. The all-or-nothing
+      // putBack() below only covered the case where NOTHING landed.
       const granted = [];
+      const _unclaimed = [];
       for (const [id, q] of byId) {
         const base = CRAFT_MATS.find(m => m.id === id);
-        if (!base || q <= 0) continue;
-        if (!_invAdd(inv, { ...base, qty: q })) continue;
+        if (!base || q <= 0 || !_invAdd(inv, { ...base, qty: q })) {
+          _unclaimed.push(...mine.filter(a => a.id === id));
+          continue;
+        }
         granted.push({ id, name: base.name, qty: q });
       }
       if (!granted.length) { await putBack(); return socket.emit('clanStorageError', { msg: 'Инвентарь полон' }); }
+      if (_unclaimed.length) {
+        await ClanModel.updateOne({ _id: clan._id }, { $push: { allocations: { $each: _unclaimed } } }).catch(() => {});
+        logPlayer(authed.telegramId, authed.username, 'clan_storage_claim_partial',
+          { clan: clan.name, returned: _unclaimed.map(a => `${a.id}x${a.qty}`).join(',') });
+      }
 
       _commitServerItems(inv, null, 'clan_storage_claim',
         { clan: clan.name, items: granted.map(g => `${g.id}x${g.qty}`).join(',') }, { beforeLen: _beforeLen });

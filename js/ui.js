@@ -295,7 +295,7 @@ function usePotionById(itemId) {
   player.potCd = 4;
   dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#98e456');
   spawnBurst(player.x, player.y, '#98e456', 5);
-  if (typeof netUsePotion === 'function') netUsePotion(heal);
+  if (typeof netUsePotion === 'function') netUsePotion(itemId, heal);
   updateInvUI();
   netSaveProgress();
 }
@@ -2954,7 +2954,9 @@ function burnItemForSeason(idx) {
   if (!player) return;
   const it = player.inventory[idx];
   if (!_seasonBurnPts(it)) return;
-  if (typeof netSeasonBurn === 'function') netSeasonBurn(idx);
+  // The item's own identity goes with the index — the server verifies the two
+  // agree before destroying anything (see netSeasonBurn).
+  if (typeof netSeasonBurn === 'function') netSeasonBurn(idx, it.id, it.enhance || 0);
   closeInvItemModal();
 }
 
@@ -2962,7 +2964,7 @@ function sellCommonItem(idx) {
   if (!player) return;
   const it = player.inventory[idx];
   if (!it || it.rarity !== 'common') return;
-  if (typeof netSellItem === 'function') netSellItem(idx);
+  if (typeof netSellItem === 'function') netSellItem(idx, it.id, it.enhance || 0);
   closeInvItemModal();
 }
 

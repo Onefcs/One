@@ -2014,8 +2014,12 @@ function netSendMove() {
   ]);
 }
 
-function netUsePotion(amount) {
-  if (socket?.connected) socket.emit('usePotion', { amount });
+// `id` is what the server actually spends and heals from (it looks the amount
+// up in the catalog itself now — see the usePotion handler); `amount` is kept
+// only so a server that hasn't been redeployed yet still heals the right
+// number. Callers must pass the potion they drank, not just its size.
+function netUsePotion(id, amount) {
+  if (socket?.connected) socket.emit('usePotion', { id, amount });
 }
 
 function netStatsUpdate(atk, def, maxHp, critChance, critPower) {
@@ -2668,8 +2672,12 @@ function netPickupWorldDrop(id) {
 // Sell a common item to the merchant. The server removes it and credits the
 // gold (see the sellItem handler) — nothing is applied locally, the result
 // arrives as inventorySync + itemSold.
-function netSellItem(idx) {
-  if (socket?.connected) socket.emit('sellItem', { idx });
+// id/enhance travel with the slot index so the server can verify it is about
+// to destroy the item the player actually tapped — the two inventories are
+// briefly renumbered differently after any server-side splice, and the index
+// alone addressed whatever had slid into that slot. See _resolveInvIdx.
+function netSellItem(idx, id, enhance) {
+  if (socket?.connected) socket.emit('sellItem', { idx, id, enhance });
 }
 
 // Claim the current story quest's reward. `idx` names the quest so a save
@@ -2686,7 +2694,10 @@ function netSeasonRating() { if (socket?.connected) socket.emit('seasonRating');
 function netSeasonSetTier(tier) { if (socket?.connected) socket.emit('seasonSetTier', { tier }); }
 // Burning destroys the item for season points — the server owns both halves,
 // nothing is applied locally.
-function netSeasonBurn(idx)       { if (socket?.connected) socket.emit('seasonBurn', { idx }); }
+// Same identity check as netSellItem above, and it matters more here: burning
+// accepts any burnable rarity, so a stale index could destroy a legendary the
+// player never picked.
+function netSeasonBurn(idx, id, enhance) { if (socket?.connected) socket.emit('seasonBurn', { idx, id, enhance }); }
 function netSeasonBurnAll(rarity) { if (socket?.connected) socket.emit('seasonBurnAll', { rarity }); }
 
 // Incoming GRAM events

@@ -479,7 +479,7 @@ function usePotion() {
   player.potCd = 4;
   dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
   spawnBurst(player.x, player.y, '#4f4', 5);
-  if (typeof netUsePotion === 'function') netUsePotion(heal);
+  if (typeof netUsePotion === 'function') netUsePotion(type, heal);
   if (typeof updateInvUI === 'function') updateInvUI();
   netSaveProgress();
 }
