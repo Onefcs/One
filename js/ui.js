@@ -5298,7 +5298,7 @@ function _specialPkgHtml(pkg, bal) {
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
-        <div class="gram-shop-title" style="color:${pkg.color}">Special</div>
+        <div class="gram-shop-title" style="color:${pkg.color}">${t('specialShopHdr')}</div>
         <div class="gram-shop-price">${pkg.gram} GRAM</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
@@ -5369,7 +5369,7 @@ function _renderSpecialPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">Special — ${pkg.gram} GRAM</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${t('specialShopHdr')} — ${pkg.gram} GRAM</div>
         <button onclick="_specialPicker=null;document.getElementById('special-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('specialPickerHint')}</div>
