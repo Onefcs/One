@@ -4948,6 +4948,93 @@ io.on('connection', socket => {
     }
   };
 
+  // General-purpose version of _grantMarketItem above, for handlers that
+  // touch more than one item and/or gold/bonusSP/VIP progress in one go
+  // (crafts consuming materials, shop packages granting several rewards at
+  // once). Same reasoning: those handlers hold across several DB awaits
+  // before applying anything, and if the account reconnected on a different
+  // socket in the meantime, this is what actually applies the result
+  // against whichever session's _lastStats is live NOW — see each caller's
+  // own comment for the specific race this closes.
+  //
+  // patch: { addItems: [{item, qty?}], removeItems: [{item, qty?}],
+  //          goldDelta, bonusSPDelta, vipGramDelta, clearVipPending }
+  // removeItems are applied before addItems (matters for crafts: spend
+  // materials, then hand back the result). Returns null if this socket
+  // isn't authed/loaded; otherwise the account's resulting gold/VIP state,
+  // which callers use to build the event they emit back.
+  socket.data._applyGrant = (patch, reason, meta) => {
+    if (!authed || !_lastStats) return null;
+    _itemOpBusy++;
+    try {
+      if (!Array.isArray(_lastStats.inventory)) _lastStats.inventory = [];
+      const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
+      (patch.removeItems || []).forEach(({ item, qty }) => {
+        if (item) _invRemove(inv, qty != null ? { ...item, qty } : item);
+      });
+      (patch.addItems || []).forEach(({ item, qty }) => {
+        if (item) _invAdd(inv, qty != null ? { ...item, qty } : item);
+      });
+      if (patch.goldDelta) _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + patch.goldDelta);
+      if (patch.bonusSPDelta) _lastStats.bonusSP = (_lastStats.bonusSP || 0) + patch.bonusSPDelta;
+      let vipLeveled = false;
+      if (patch.vipGramDelta) {
+        let _vipLvl = _lastStats.vipLevel || 0;
+        let _vipDep = (_lastStats.vipDeposited || 0) + patch.vipGramDelta;
+        const _vipPend = Array.isArray(_lastStats.vipPending) ? [..._lastStats.vipPending] : [];
+        const _prevVipLvl = _vipLvl;
+        while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
+          _vipDep -= VIP_THRESHOLDS[_vipLvl + 1]; _vipLvl++; _vipPend.push(_vipLvl);
+        }
+        _lastStats.vipLevel = _vipLvl; _lastStats.vipDeposited = _vipDep; _lastStats.vipPending = _vipPend;
+        vipLeveled = _vipLvl > _prevVipLvl;
+        socket.data.vipLevel = _vipLvl;
+        _setVipAura(authed.username, _vipLvl);
+      }
+      if (patch.clearVipPending) _lastStats.vipPending = [];
+      _commitServerItems(inv, null, reason, meta, { beforeLen: _beforeLen });
+      _persistSavedFields(authed, {
+        gold: _lastStats.gold, bonusSP: _lastStats.bonusSP, vipLevel: _lastStats.vipLevel,
+        vipDeposited: _lastStats.vipDeposited, vipPending: _lastStats.vipPending,
+      });
+      if (vipLeveled) {
+        socket.emit('vipUpdate', {
+          level: _lastStats.vipLevel, deposited: _lastStats.vipDeposited, pending: _lastStats.vipPending,
+        });
+      }
+      return {
+        gold: _lastStats.gold, bonusSP: _lastStats.bonusSP || 0, vipLevel: _lastStats.vipLevel || 0,
+        vipDeposited: _lastStats.vipDeposited || 0, vipPending: _lastStats.vipPending || [], vipLeveled,
+      };
+    } finally {
+      _itemOpBusy--;
+    }
+  };
+
+  // Cross-socket craft delegate: craftGear/craftClassGear consume materials
+  // with matching rules (minEnhance thresholds, rarity/salvage counts) that
+  // don't fit the generic addItems/removeItems shape _applyGrant takes, so
+  // instead of re-encoding that matching here, the caller passes in the exact
+  // same removal closure it already built against its own (possibly stale)
+  // inventory — it runs the same, just against whichever socket is actually
+  // live. removeFn(inv) mutates in place; resultItem (or null on a failed
+  // craft roll) is appended after.
+  socket.data._applyCraftResult = (removeFn, resultItem, reason, meta) => {
+    if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return { delivered: false };
+    _itemOpBusy++;
+    try {
+      const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
+      removeFn(inv);
+      const delivered = resultItem ? _invAdd(inv, resultItem) : true;
+      _commitServerItems(inv, null, reason, meta, { beforeLen: _beforeLen });
+      return { delivered };
+    } finally {
+      _itemOpBusy--;
+    }
+  };
+
   // Gold granted by an admin to a player who is online. It has to land in
   // _lastStats, not just in the database: this session's 60s autosave writes
   // _lastStats wholesale, so a grant written only to Mongo was reverted the
@@ -4974,15 +5061,29 @@ io.on('connection', socket => {
     _itemOpBusy++;
     try {
       const items = deathBattleRewards();
-      const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
-      const _beforeLen = inv ? inv.length : 0;
-      if (inv) items.forEach(it => _invAdd(inv, it));
       const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD);
       if (_dbBal !== null) { _gramBalance = _dbBal; socket.emit('gramBalanceUpdate', { balance: _dbBal }); }
-      if (inv) await _commitServerItems(inv, null, 'death_battle_win',
-        { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD }, { beforeLen: _beforeLen });
-      logPlayer(authed.telegramId, authed.username, 'death_battle_win', { gram: DEATH_BATTLE_GRAM_REWARD });
-      return { items, delivered: !!inv };
+      // The account may have reconnected on a different socket during the
+      // balance award above — this closure (`socket` here is whichever
+      // socket _dbFinish resolved as the winner's live one AT THE TIME it
+      // called this) can be stale by now. Apply the item reward against
+      // whichever socket is the account's live session RIGHT NOW instead of
+      // writing it through a closure nobody's client can see any more —
+      // same race as marketCancel/marketBuy, see _applyGrant's comment.
+      const _liveSid = activeSessions.get(authed.telegramId);
+      const _target = _liveSid === socket.id ? socket : _socketForTelegramId(authed.telegramId);
+      const _result = _target && _target.data._applyGrant
+        ? _target.data._applyGrant({ addItems: items.map(it => ({ item: it })) }, 'death_battle_win',
+            { items: items.map(i => i.id), gram: DEATH_BATTLE_GRAM_REWARD })
+        : null;
+      const _delivered = !!_result;
+      if (!_delivered && items.length) {
+        await PlayerModel.updateOne({ _id: authed._id },
+          { $push: { 'savedData.inventory': { $each: items } } }).catch(() => {});
+      }
+      logPlayer(authed.telegramId, authed.username, 'death_battle_win',
+        { gram: DEATH_BATTLE_GRAM_REWARD, delivered: _delivered, crossSession: !!_target && _target !== socket });
+      return { items, delivered: _delivered };
     } finally {
       _itemOpBusy--;
     }
@@ -5356,6 +5457,14 @@ io.on('connection', socket => {
       // buyer's gold. Same reasoning for the potion count below.
       saved.gold = (saved.gold || 0) + (pkg.gold || 0);
 
+      // Parallel record of every item this purchase grants, as plain
+      // {item, qty} deltas — used only if the account turns out to have
+      // reconnected on a different socket by the time we're ready to commit
+      // (see the cross-session branch below). Kept alongside the existing
+      // inv.push/qty+= mutations rather than replacing them, so the normal
+      // same-socket path is untouched.
+      const _addedItems = [];
+
       // Buff potions (bp_hp/bp_exp/... — ITEM_DEF slot 'buff_potion') are
       // stackable inventory items, not potionBag entries. potionBag only
       // holds pt1/pt2 HP potions; useBuffPotion() (player.js) looks these up
@@ -5366,13 +5475,14 @@ io.on('connection', socket => {
         const existing = inv.find(i => i.id === bp.id);
         if (existing) existing.qty = (existing.qty || 1) + pkg.potions;
         else inv.push({ ...bp, qty: pkg.potions });
+        _addedItems.push({ item: bp, qty: pkg.potions });
       });
 
       // Armor set
       if (pkg.armor) {
         (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(id => {
           const base = ITEM_DEF.find(d => d.id === id);
-          if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
+          if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
         });
       }
 
@@ -5380,7 +5490,7 @@ io.on('connection', socket => {
       if (pkg.weapon) {
         const wepId = wepMap[pkg.weapon];
         const base = ITEM_DEF.find(d => d.id === wepId);
-        if (base) inv.push({ ...base, enhance: pkg.enhance || 0 });
+        if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
       }
 
       // Специальная акция: class-locked artifact/cloak (every entry in
@@ -5389,13 +5499,13 @@ io.on('connection', socket => {
       // validated (_chosenPet) before any GRAM was spent, above.
       if (pkg.classArtifact) {
         const base = ITEM_DEF.find(d => d.slot === 'artifact' && d.rarity === pkg.classArtifact && d.forClass && d.forClass.includes(charClass));
-        if (base) inv.push({ ...base, enhance: 0 });
+        if (base) { inv.push({ ...base, enhance: 0 }); _addedItems.push({ item: { ...base, enhance: 0 } }); }
       }
       if (pkg.classCloak) {
         const base = ITEM_DEF.find(d => d.slot === 'cloak' && d.rarity === pkg.classCloak && d.forClass && d.forClass.includes(charClass));
-        if (base) inv.push({ ...base, enhance: 0 });
+        if (base) { inv.push({ ...base, enhance: 0 }); _addedItems.push({ item: { ...base, enhance: 0 } }); }
       }
-      if (_chosenPet) inv.push({ ..._chosenPet });
+      if (_chosenPet) { inv.push({ ..._chosenPet }); _addedItems.push({ item: _chosenPet }); }
 
       // Skill books — for the buyer's own class only (see charClass above)
       if (pkg.skillBooks) {
@@ -5404,6 +5514,7 @@ io.on('connection', socket => {
           const existing = inv.find(i => i.id === book.id);
           if (existing) existing.qty = (existing.qty || 1) + qty;
           else inv.push({ ...book, qty });
+          _addedItems.push({ item: book, qty });
         };
         if (pkg.skillBooks.each) {
           classBooks.forEach(book => _addBook(book, pkg.skillBooks.each));
@@ -5422,6 +5533,7 @@ io.on('connection', socket => {
           const existing = inv.find(i => i.id === boxId);
           if (existing) existing.qty = (existing.qty || 1) + qty;
           else inv.push({ ...base, qty });
+          _addedItems.push({ item: base, qty });
         });
       }
 
@@ -5435,6 +5547,7 @@ io.on('connection', socket => {
           const existing = inv.find(i => i.id === sid);
           if (existing) existing.qty = (existing.qty || 1) + qty;
           else inv.push({ ...base, qty });
+          _addedItems.push({ item: base, qty });
         });
       }
 
@@ -5462,6 +5575,46 @@ io.on('connection', socket => {
         saved.vipLevel = _vipLvl;
         saved.vipDeposited = _vipDep;
         saved.vipPending = _vipPend;
+      }
+
+      // Cross-session guard: this handler holds across several awaits
+      // (findById, _flushBalances, _spendBalance, an optional nexum grant)
+      // before it gets here, and `inv` above was built as a snapshot copy —
+      // committing it straight into THIS closure's _lastStats would write it
+      // into whichever session is stale if the account reconnected on a
+      // different socket in the meantime. Delegate the grant as a delta
+      // (items/gold/bonusSP/VIP) against whichever socket is live now,
+      // instead of committing the whole reconstructed inv.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        const _result = _target && _target.data._applyGrant
+          ? _target.data._applyGrant({
+              addItems: _addedItems, goldDelta: pkg.gold || 0, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: pkg.gram,
+            }, 'gram_shop_cross_session', { pkg: pkg.id, gram: pkg.gram })
+          : null;
+        if (!_result) {
+          await PlayerModel.updateOne({ _id: doc._id }, {
+            $push: { 'savedData.inventory': { $each: _addedItems.map(({ item, qty }) => ({ ...item, ...(qty != null ? { qty } : {}) })) } },
+            $inc: { 'savedData.gold': pkg.gold || 0, ...(pkg.bonusSP > 0 ? { 'savedData.bonusSP': pkg.bonusSP } : {}) },
+          }).catch(() => {});
+        }
+        logPlayer(authed.telegramId, authed.username, 'gram_shop_cross_session',
+          { pkg: pkg.id, gram: pkg.gram, delivered: !!_result, hadLiveSocket: !!_target });
+        const _newInv = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : inv;
+        const _res = _result || { gold: saved.gold, bonusSP: saved.bonusSP || 0, vipLevel: _vipLvl, vipDeposited: _vipDep, vipPending: _vipPend };
+        if (_target) {
+          _target.emit('gramShopResult', {
+            pkgId, newBalance: _gramBalance, newGold: _res.gold, newInventory: _newInv, invRev: _invRev,
+            newBonusSP: _res.bonusSP, newNexumBalance: _nexumBalance,
+            vipData: { level: _res.vipLevel, deposited: _res.vipDeposited, pending: _res.vipPending },
+            leveled: _res.vipLevel > _prevVipLvl,
+          });
+          if (_res.vipLevel > _prevVipLvl) {
+            _target.emit('vipUpdate', { level: _res.vipLevel, deposited: _res.vipDeposited, pending: _res.vipPending });
+          }
+        }
+        io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
+        return;
       }
 
       saved.inventory = inv;
@@ -5799,33 +5952,71 @@ io.on('connection', socket => {
           return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${matCount(m)})` });
         }
       }
-      for (const m of rec.mats) {
-        let left = m.n;
-        for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
-          const e = inv[i];
-          if (!e || e.id !== m.id) continue;
-          if (m.minEnhance != null) {
-            if ((e.enhance || 0) < m.minEnhance) continue;
-            inv.splice(i, 1); left--;
-          } else {
-            const have = e.qty || 1;
-            if (have > left) { e.qty = have - left; left = 0; }
-            else { left -= have; inv.splice(i, 1); }
-          }
-        }
-      }
       // Result enhance mirrors _craftResultEnhance (js/npc.js): comes out 2
       // levels below whatever the consumed base item was required to be.
       const baseMat = rec.mats.find(m => m.minEnhance != null);
       const resultEnhance = baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
       const success = Math.random() < rec.chance;
+      const resultItem = success
+        ? (resultEnhance > 0 ? { ...resultDef, enhance: resultEnhance } : { ...resultDef })
+        : null;
+      const _removeMats = (liveInv) => {
+        for (const m of rec.mats) {
+          let left = m.n;
+          for (let i = liveInv.length - 1; i >= 0 && left > 0; i--) {
+            const e = liveInv[i];
+            if (!e || e.id !== m.id) continue;
+            if (m.minEnhance != null) {
+              if ((e.enhance || 0) < m.minEnhance) continue;
+              liveInv.splice(i, 1); left--;
+            } else {
+              const have = e.qty || 1;
+              if (have > left) { e.qty = have - left; left = 0; }
+              else { left -= have; liveInv.splice(i, 1); }
+            }
+          }
+        }
+      };
+
+      // Cross-session guard: the nexumCost path above awaits a balance spend
+      // — if the account reconnected on a different socket during that gap,
+      // this closure's inv is orphaned. Redirect mat consumption + result
+      // grant at whichever socket is live now.
+      if (rec.nexumCost && activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        const _items = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : null;
+        if (!_target || !Array.isArray(_items)) {
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('craftGearError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+        for (const m of rec.mats) {
+          const _cnt = m.minEnhance != null
+            ? _items.reduce((s, i) => s + (i && i.id === m.id && (i.enhance || 0) >= m.minEnhance ? 1 : 0), 0)
+            : _items.reduce((s, i) => s + (i && i.id === m.id ? (i.qty || 1) : 0), 0);
+          if (_cnt < m.n) {
+            const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+            if (back !== null) _nexumBalance = back;
+            return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${_cnt})` });
+          }
+        }
+        const _res = _target.data._applyCraftResult(_removeMats, resultItem,
+          'gear_craft_cross_session', { itemId, cost: rec.nexumCost, success });
+        _target.emit('gearCrafted', {
+          itemId, success, resultEnhance: success ? resultEnhance : 0,
+          newNexumBalance: _nexumBalance, delivered: _res ? _res.delivered : false,
+        });
+        return;
+      }
+
+      _removeMats(inv);
       if (success) {
         // Space was already guaranteed above, so this can only fail if the
         // check there and this add somehow disagree — treat as the same
         // "inventory's full, but the roll already happened" edge case
         // craftStone accepts rather than trying to re-roll or fabricate a
         // refund policy for a case that shouldn't be reachable.
-        _invAdd(inv, resultEnhance > 0 ? { ...resultDef, enhance: resultEnhance } : { ...resultDef });
+        _invAdd(inv, resultItem);
       }
       _commitServerItems(inv, null, 'gear_craft', { itemId, cost: rec.nexumCost, success }, { beforeLen: _beforeLen });
       socket.emit('gearCrafted', { itemId, success, resultEnhance: success ? resultEnhance : 0, newNexumBalance: _nexumBalance });
@@ -6240,12 +6431,40 @@ io.on('connection', socket => {
         if (back !== null) _nexumBalance = back;
         return socket.emit('craftClassGearError', { msg: `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${matCount()})` });
       }
-      let left = rec.costCount;
-      for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
-        const e = inv[i];
-        if (e && !isStackableItem(e) && e.rarity === rec.costRarity) { inv.splice(i, 1); left--; }
-      }
       const resultItem = { ...candidates[Math.floor(Math.random() * candidates.length)] };
+      const _removeMats = (liveInv) => {
+        let left = rec.costCount;
+        for (let i = liveInv.length - 1; i >= 0 && left > 0; i--) {
+          const e = liveInv[i];
+          if (e && !isStackableItem(e) && e.rarity === rec.costRarity) { liveInv.splice(i, 1); left--; }
+        }
+      };
+
+      // Cross-session guard, same reasoning as craftGear above: the nexumCost
+      // spend just awaited may have outlasted this socket's session.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        const _items = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : null;
+        if (!_target || !Array.isArray(_items)) {
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('craftClassGearError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+        const _cnt = _items.reduce((s, i) => s + (i && !isStackableItem(i) && i.rarity === rec.costRarity ? 1 : 0), 0);
+        if (_cnt < rec.costCount) {
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', rec.nexumCost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('craftClassGearError', { msg: `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${_cnt})` });
+        }
+        const _res = _target.data._applyCraftResult(_removeMats, resultItem,
+          'class_gear_craft_cross_session', { slot: rec.resultSlot, rarity: rec.resultRarity, cost: rec.nexumCost, got: resultItem.id });
+        _target.emit('classGearCrafted', {
+          item: resultItem, newNexumBalance: _nexumBalance, delivered: _res ? _res.delivered : false,
+        });
+        return;
+      }
+
+      _removeMats(inv);
       const _delivered = _invAdd(inv, resultItem);
       _commitServerItems(inv, null, 'class_gear_craft',
         { slot: rec.resultSlot, rarity: rec.resultRarity, cost: rec.nexumCost, got: resultItem.id }, { beforeLen: _beforeLen });
@@ -7284,6 +7503,10 @@ io.on('connection', socket => {
       const inv = _liveInv ? [..._liveInv] : (Array.isArray(saved.inventory) ? [...saved.inventory] : []);
       let goldReward = 0;
       let outOfRoom = false;
+      // Mirrors what actually gets pushed/merged into inv below — used to
+      // replay the same grant against a different socket if the account
+      // reconnected elsewhere during the DB awaits above (see below).
+      const _addedItems = [];
       for (const vipLvl of pending) {
         const items = _vipLevelItems(vipLvl, charClass);
         for (const item of items) {
@@ -7294,6 +7517,7 @@ io.on('connection', socket => {
             // and market cancellations start destroying their item.
             if (inv.length >= SERVER_INV_MAX) { outOfRoom = true; break; }
             inv.push({ ...item });
+            _addedItems.push({ item });
           } else {
             const ex = inv.find(i => i.id === item.id);
             if (ex) ex.qty = (ex.qty || 1) + (item.qty || 1);
@@ -7301,6 +7525,7 @@ io.on('connection', socket => {
               if (inv.length >= SERVER_INV_MAX) { outOfRoom = true; break; }
               inv.push({ ...item });
             }
+            _addedItems.push({ item, qty: item.qty || 1 });
           }
         }
         if (outOfRoom) break;
@@ -7314,6 +7539,32 @@ io.on('connection', socket => {
         return socket.emit('gramShopError', {
           msg: `Инвентарь полон (${inv.length}/${SERVER_INV_MAX}) — освободите место и заберите награды снова`,
         });
+      }
+      // The account may have reconnected on a different socket during the
+      // findById/updateOne awaits above — inv here was built off a snapshot
+      // that predates whatever the REAL live session has done since. Same
+      // race as marketCancel/marketBuy (see _applyGrant's comment): replay
+      // the same additions against whichever socket is live now instead of
+      // writing this stale snapshot through a dead one.
+      const _liveSid = activeSessions.get(authed.telegramId);
+      if (_liveSid !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        const _result = _target && _target.data._applyGrant
+          ? _target.data._applyGrant(
+              { addItems: _addedItems, goldDelta: goldReward, clearVipPending: true },
+              'vip_rewards', { levels: pending, gold: goldReward })
+          : null;
+        if (!_result) {
+          await PlayerModel.updateOne({ _id: authed._id }, {
+            $push: { 'savedData.inventory': { $each: _addedItems.map(({ item, qty }) => ({ ...item, ...(qty != null ? { qty } : {}) })) } },
+            ...(goldReward > 0 ? { $inc: { 'savedData.gold': goldReward } } : {}),
+            $set: { 'savedData.vipPending': [] },
+          }).catch(() => {});
+        }
+        logPlayer(authed.telegramId, authed.username, 'vip_rewards_cross_session',
+          { levels: pending, gold: goldReward, delivered: !!_result, hadLiveSocket: !!_target });
+        if (_target) _target.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
+        return;
       }
       if (goldReward > 0) saved.gold = (saved.gold || 0) + goldReward;
       saved.inventory  = inv;
@@ -9368,6 +9619,42 @@ io.on('connection', socket => {
           msg: `Хранилище доступно после ${CLAN_STORAGE_MIN_DAYS} дней в клане`,
         });
       }
+
+      // Cross-session guard: the socket that queued this request may no
+      // longer be the account's live session (disconnect/reconnect while the
+      // _myClan() await above was in flight). Redirect the whole deposit at
+      // whichever socket IS live so the removal lands on the inventory the
+      // player actually sees, instead of clobbering it from an orphaned
+      // closure — same class of bug as the market cancel/buy fix.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        const _items = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : null;
+        if (!_target || !Array.isArray(_items)) {
+          return socket.emit('clanStorageError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+        const _have = _items.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+        if (_have < n) return socket.emit('clanStorageError', { msg: `Недостаточно Осколков (есть ${_have})` });
+        try {
+          const _bumped = await ClanModel.updateOne(
+            { _id: clan._id, 'storage.id': id }, { $inc: { 'storage.$.qty': n } },
+          );
+          if (!_bumped.matchedCount) {
+            await ClanModel.updateOne(
+              { _id: clan._id, 'storage.id': { $ne: id } }, { $push: { storage: { id, qty: n } } },
+            );
+          }
+        } catch (err) {
+          logPlayerErr(authed.telegramId, authed.username, 'clan_storage_deposit', err, { id, qty: n });
+          return socket.emit('clanStorageError', { msg: 'Ошибка сервера' });
+        }
+        _target.data._applyGrant({ removeItems: [{ item: { id }, qty: n }] },
+          'clan_storage_deposit_cross_session', { id, qty: n, clan: clan.name });
+        const _fresh = await _myClan();
+        if (_fresh) await _clanStoragePush(_fresh);
+        _target.emit('clanStorageOk', { msg: `Передано в хранилище: ${n}` });
+        return;
+      }
+
       const inv = _liveInventory();
       if (!inv) return socket.emit('clanStorageError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
       const _beforeLen = inv.length;
@@ -9520,6 +9807,52 @@ io.on('connection', socket => {
           msg: `Хранилище доступно после ${CLAN_STORAGE_MIN_DAYS} дней в клане`,
         });
       }
+
+      // Cross-session guard, mirrors clanStorageDeposit above.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        const _items = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : null;
+        if (!_target || !Array.isArray(_items)) {
+          return socket.emit('clanStorageError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+
+        const _pulled = await ClanModel.findOneAndUpdate(
+          { _id: clan._id, 'allocations.telegramId': authed.telegramId },
+          { $pull: { allocations: { telegramId: authed.telegramId } } },
+          { new: false },
+        ).catch(() => null);
+        const _mine = _pulled ? (_pulled.allocations || []).filter(a => a.telegramId === authed.telegramId) : [];
+        if (!_mine.length) return socket.emit('clanStorageError', { msg: 'Для вас ничего не выдано' });
+
+        const _putBack = async () => {
+          await ClanModel.updateOne({ _id: clan._id }, { $push: { allocations: { $each: _mine } } }).catch(() => {});
+        };
+
+        const _byId = new Map();
+        for (const a of _mine) _byId.set(a.id, (_byId.get(a.id) || 0) + (a.qty || 0));
+        const _newSlots = [..._byId.keys()].filter(id => !_items.some(i => i && i.id === id)).length;
+        if (_items.length + _newSlots > SERVER_INV_MAX) {
+          await _putBack();
+          return socket.emit('clanStorageError', { msg: 'Инвентарь полон' });
+        }
+        const _granted = [];
+        const _addItems = [];
+        for (const [id, q] of _byId) {
+          const base = CRAFT_MATS.find(m => m.id === id);
+          if (!base || q <= 0) continue;
+          _addItems.push({ item: base, qty: q });
+          _granted.push({ id, name: base.name, qty: q });
+        }
+        if (!_granted.length) { await _putBack(); return socket.emit('clanStorageError', { msg: 'Инвентарь полон' }); }
+
+        _target.data._applyGrant({ addItems: _addItems }, 'clan_storage_claim_cross_session',
+          { clan: clan.name, items: _granted.map(g => `${g.id}x${g.qty}`).join(',') });
+        const _fresh = await _myClan();
+        if (_fresh) await _clanStoragePush(_fresh);
+        _target.emit('clanStorageClaimed', { items: _granted });
+        return;
+      }
+
       const inv = _liveInventory();
       if (!inv) return socket.emit('clanStorageError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
       const _beforeLen = inv.length;
