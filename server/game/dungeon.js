@@ -66,14 +66,15 @@ const ARENA = 40;
 const ARENA_X0 = HUB_X0 + HUB + ZONE_GAP;
 const ARENA_Y0 = HUB_Y0;
 // ── 3v3 PvP arena ───────────────────────────────────────────────────────────
-// Two team bases facing each other across a single central corridor — one
-// lane, so both teams meet head-on instead of splitting into side skirmishes.
-// Like the boss arena it is walled off from everything — the only way in is
-// being placed there by the match, and the only way out is dying or the
-// match ending. Sits in the empty band between the boss arena and the first
-// zone. Each base also holds a stationary guard boss (see A3_BOSS_DX below) —
-// the opposing team destroying it wins the match instantly.
-const A3_X0 = ARENA_X0;
+// Its own floor now (generatePvpArena, below). Two team bases facing each
+// other across a single central corridor — one lane, so both teams meet
+// head-on instead of splitting into side skirmishes. Sealed off the same way
+// every other special zone is: the only way in is being placed there by the
+// match, and the only way out is dying or the match ending. Each base also
+// holds a stationary guard boss (see A3_BOSS_DX below) — the opposing team
+// destroying it wins the match instantly. A3_Y0 stays here only because
+// RACE10_Y0 (below — not split out yet) still chains off where this zone's
+// old rectangle used to sit inside the hub's grid.
 const A3_Y0 = ARENA_Y0 + ARENA + 5;
 const A3_W = 60, A3_H = 27;
 const A3_BASE_W = 10;                       // depth of each team's starting box
@@ -216,20 +217,6 @@ function generateHub() {
   };
   paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
 
-  // 3v3 arena: a base box at each end, joined by a single central lane.
-  const a3 = {
-    x: A3_X0, y: A3_Y0, size: A3_W,
-    bx1: A3_X0 - 1, by1: A3_Y0 - 1, bx2: A3_X0 + A3_W + 1, by2: A3_Y0 + A3_H + 1,
-    cx: A3_X0 + Math.floor(A3_W / 2), cy: A3_Y0 + Math.floor(A3_H / 2),
-    isPvpArena: true,
-  };
-  paintRect(A3_X0, A3_Y0, A3_X0 + A3_BASE_W - 1, A3_Y0 + A3_H - 1);                       // left base
-  paintRect(A3_X0 + A3_W - A3_BASE_W, A3_Y0, A3_X0 + A3_W - 1, A3_Y0 + A3_H - 1);         // right base
-  A3_LANE_YS.forEach(dy => {
-    const cy = A3_Y0 + dy;
-    paintRect(A3_X0 + A3_BASE_W, cy - A3_LANE_HW, A3_X0 + A3_W - A3_BASE_W - 1, cy + A3_LANE_HW);
-  });
-
   // 10-player corridor race: ten parallel lanes, each running the full
   // RACE10_LANE_LEN before opening into one shared boss room spanning every
   // lane's row.
@@ -259,7 +246,7 @@ function generateHub() {
     });
   }
 
-  const rooms = [hub, a3];
+  const rooms = [hub];
   const enemyList = [];
   let eid = 0;
 
@@ -318,25 +305,6 @@ function generateHub() {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
-    // 3v3 spawn points: one per player per side, set back inside each base so
-    // a match never starts with the two teams already in contact. bossA/bossB
-    // are each team's stationary guard boss, further back still so the
-    // owning team stands between it and the lane.
-    pvpArena: {
-      cx: a3.cx * TILE + TILE / 2, cy: a3.cy * TILE + TILE / 2,
-      teamA: A3_SPAWN_YS.map(dy => ({
-        x: (A3_X0 + 4) * TILE + TILE / 2, y: (A3_Y0 + dy) * TILE + TILE / 2,
-      })),
-      teamB: A3_SPAWN_YS.map(dy => ({
-        x: (A3_X0 + A3_W - 5) * TILE + TILE / 2, y: (A3_Y0 + dy) * TILE + TILE / 2,
-      })),
-      bossA: {
-        x: (A3_X0 + A3_BOSS_DX) * TILE + TILE / 2, y: (A3_Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
-      },
-      bossB: {
-        x: (A3_X0 + A3_W - 1 - A3_BOSS_DX) * TILE + TILE / 2, y: (A3_Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
-      },
-    },
     // Race10 ("Кровавая Башня"): one spawn point per lane (index = lane
     // number) and the single shared boss's spot at the end of every lane.
     // bounds (tile coords) lets the client tint this whole zone's floor/
@@ -744,4 +712,57 @@ function generateArena() {
   };
 }
 
-module.exports = { generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, TILE, WALL, FLOOR };
+// 3v3 PvP arena, now its own floor (see server/game/floors.js) instead of a
+// rectangle painted into the hub's mega-grid. Two team bases at either end
+// joined by a single central lane; teamA/teamB are per-player spawn points
+// set back inside each base so a match never starts with the two teams
+// already in contact, bossA/bossB each team's stationary guard boss, further
+// back still so the owning team stands between it and the lane.
+function generatePvpArena() {
+  const w = A3_W + MARGIN * 2, h = A3_H + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const a3 = {
+    x: X0, y: Y0, size: A3_W,
+    cx: X0 + Math.floor(A3_W / 2), cy: Y0 + Math.floor(A3_H / 2),
+    isPvpArena: true,
+  };
+  paintRect(X0, Y0, X0 + A3_BASE_W - 1, Y0 + A3_H - 1);                       // left base
+  paintRect(X0 + A3_W - A3_BASE_W, Y0, X0 + A3_W - 1, Y0 + A3_H - 1);         // right base
+  A3_LANE_YS.forEach(dy => {
+    const cy = Y0 + dy;
+    paintRect(X0 + A3_BASE_W, cy - A3_LANE_HW, X0 + A3_W - A3_BASE_W - 1, cy + A3_LANE_HW);
+  });
+
+  return {
+    grid, rooms: [a3], w, h,
+    spawn: { x: a3.cx * TILE + TILE / 2, y: a3.cy * TILE + TILE / 2 },
+    pvpArena: {
+      cx: a3.cx * TILE + TILE / 2, cy: a3.cy * TILE + TILE / 2,
+      teamA: A3_SPAWN_YS.map(dy => ({
+        x: (X0 + 4) * TILE + TILE / 2, y: (Y0 + dy) * TILE + TILE / 2,
+      })),
+      teamB: A3_SPAWN_YS.map(dy => ({
+        x: (X0 + A3_W - 5) * TILE + TILE / 2, y: (Y0 + dy) * TILE + TILE / 2,
+      })),
+      bossA: {
+        x: (X0 + A3_BOSS_DX) * TILE + TILE / 2, y: (Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
+      },
+      bossB: {
+        x: (X0 + A3_W - 1 - A3_BOSS_DX) * TILE + TILE / 2, y: (Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
+      },
+    },
+    enemies: [],
+  };
+}
+
+module.exports = {
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
+  TILE, WALL, FLOOR,
+};

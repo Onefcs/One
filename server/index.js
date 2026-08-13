@@ -2160,6 +2160,16 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
     _dbOpenReg(Date.now() + regMs);
     res.json({ ok: true, regMs, startAt: _db.startAt });
   });
+
+  // Same idea, for the 3v3 arena: opens registration on the spot instead of
+  // waiting for the 21:00 MSK window. Unlike the other two there is no
+  // separate "start" timer to short-circuit — arena3Register already tries
+  // a deploy itself the moment enough people are queued (_a3TryStartSafe),
+  // so this alone is enough to exercise the flow locally/in the harness.
+  app.post('/dev/arena3/open', (req, res) => {
+    _a3OpenWindow(Date.now());
+    res.json({ ok: true });
+  });
 }
 
 // One permanent Room per location (see server/game/floors.js's
@@ -2520,6 +2530,24 @@ function _findPlayerAnyFloor(sid) {
   if (floor == null) return null;
   const room = getRoom(floor);
   return room ? room.players.get(sid) || null : null;
+}
+
+// Sends a match/round participant back to the hub for real — the shared exit
+// path for 3v3 and Кровавая Башня (an elimination, the round ending under
+// everyone still standing). Unlike the death battle's own _dbReturnEntrant,
+// neither of those cares where the entrant actually came from: registering
+// never required being on any particular floor, but Room.deathBattleReturn
+// always sent them to the hub specifically, and this preserves that exactly
+// — it's just a real floor change now instead of a position reset within a
+// Room they were never really in. socket.data._forceEnterLocation is what
+// makes the move even though this may be running from module-level
+// scheduling code with no socket of its own.
+function _returnToHub(socketId) {
+  const sock = io.sockets.sockets.get(socketId);
+  if (!sock?.data?._forceEnterLocation?.('hub')) return null;
+  const room = getRoom(FLOOR_IDS.hub);
+  const p = room ? room.players.get(socketId) : null;
+  return p ? { x: p.x, y: p.y } : null;
 }
 
 // Arena 3v3 and the Кровавая Башня allow DAILY_DUNGEON_ATTEMPTS runs per UTC
@@ -3240,12 +3268,14 @@ async function _a3TryStart() {
   // pass the _a3.live check while the attempt re-check is in flight and
   // deploy two matches into the one arena.
   if (_a3.live || _a3.starting) return;
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.pvpArena);
   if (!room) return;
   // Only entrants still connected and still standing in the world can be
   // deployed; anyone else is dropped from the queue rather than counted.
+  // Registration never required being on any particular floor, so this
+  // checks wherever each one actually is, not just the hub.
   const ready = [..._a3.queue.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room.players.get(sid));
+    io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
   const _pruned = [..._a3.queue.keys()].filter(sid => !ready.includes(sid));
   _pruned.forEach(sid => _a3.queue.delete(sid));
   // This dropped players from the queue silently — _a3PublicState().queued
@@ -3302,14 +3332,21 @@ async function _a3Deploy(ready, room) {
   _a3.fightAt = Date.now() + ARENA3_FREEZE_MS;
   _a3.roundEndAt = _a3.fightAt + ARENA3_ROUND_MS;
 
-  const placed = room.pvpArenaDeploy(teamA, teamB);
+  // pvpArenaDeploy below needs everyone already present in room.players to
+  // lay out the two bases — force each entrant's own connection onto the
+  // pvpArena floor first (bypassing any gate: this is a matchmade deploy,
+  // not a walk-in, and there is none to bypass anyway — see _doEnterLocation).
+  const joinedA = teamA.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('pvpArena'));
+  const joinedB = teamB.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('pvpArena'));
+
+  const placed = room.pvpArenaDeploy(joinedA, joinedB);
   // Someone can vanish between the readiness filter above and the deploy. A
   // side with nobody on it would never trigger the win check — no one is left
   // to be killed — and with no match timer that would hold the arena until the
   // round guard fired. Put everyone back and wait instead.
   if (placed.filter(p => p.team === 'A').length === 0 ||
       placed.filter(p => p.team === 'B').length === 0) {
-    placed.forEach(({ socketId }) => room.deathBattleReturn(socketId));
+    placed.forEach(({ socketId }) => _returnToHub(socketId));
     _a3.live = false;
     _a3.fightAt = 0;
     _a3.roundEndAt = 0;
@@ -3365,8 +3402,7 @@ function _a3Eliminate(socketId, killerSocketId) {
   const rec = _a3.alive.get(socketId);
   if (!rec) return false;
   _a3.alive.delete(socketId);
-  const room = getRoom(1);
-  const spot = room ? room.deathBattleReturn(socketId) : null;
+  const spot = _returnToHub(socketId);
   io.to(socketId).emit('arena3Eliminated', { x: spot?.x, y: spot?.y });
   if (killerSocketId) {
     const killerRec = _a3.alive.get(killerSocketId);
@@ -3398,13 +3434,13 @@ async function _a3Finish(winner, wedged) {
   _a3.live = false;
   _a3.fightAt = 0;
   _a3.roundEndAt = 0;
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.pvpArena);
   // Match is over either way — clear both guard bosses so a dead-or-alive
   // leftover never carries into the next one.
   if (room) room.despawnPvpArenaBosses();
   // Everyone still standing goes home too — the match is over for them as
   // well, they just didn't die to get there.
-  _a3.alive.forEach((_, sid) => { if (room) room.deathBattleReturn(sid); });
+  _a3.alive.forEach((_, sid) => _returnToHub(sid));
 
   const teams = new Map(_a3.teams);
   const names = new Map(_a3.names);
@@ -9665,14 +9701,14 @@ io.on('connection', socket => {
   });
 
   // Sent once the player closes the arena3 result modal. Server-side position
-  // was already reset to the hub spawn when the match ended (eliminated
+  // was already reset to the hub floor when the match ended (eliminated
   // players get it immediately via arena3Eliminated; survivors get it inside
-  // _a3Finish) — this just tells THIS client to catch up visually, same as
-  // deathBattleReturn below does for the death battle's winner. Safe to call
-  // any time (not gated on being mid-match): deathBattleReturn always just
-  // re-lands the caller on the hub spawn.
+  // _a3Finish) — this just tells THIS client to catch up visually. Safe to
+  // call any time (not gated on being mid-match): _returnToHub always just
+  // re-lands the caller on the hub floor, and no-ops if they're already
+  // there (see _doEnterLocation's same-floor guard).
   safeOn('arena3Return', () => {
-    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    const spot = _returnToHub(socket.id);
     if (spot) socket.emit('deathBattleReturned', spot);
   });
 

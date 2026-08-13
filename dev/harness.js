@@ -498,6 +498,40 @@ scenario('floors: Death Battle deploys entrants from wherever they are and retur
   await b.close();
 });
 
+scenario('floors: the 3v3 arena deploys a full match and returns an eliminated entrant to the hub', async () => {
+  // ARENA3_NEEDED is 6 (two teams of ARENA3_TEAM_SIZE=3) and arena3Register
+  // itself tries a deploy the moment the queue reaches it — no separate
+  // "start" step to trigger, unlike death battle/race10.
+  const openRes = await fetch(`${BASE}/dev/arena3/open`, { method: 'POST' });
+  eq(openRes.status, 200, 'the dev route force-opens the 3v3 registration window');
+
+  const players = [];
+  for (let i = 0; i < 6; i++) {
+    const c = await connectWithSaved(`harness_a3_${i}`, { lvl: 15, xp: 0, xpNext: 100 });
+    await enterWorld(c, 'ranger');
+    players.push(c);
+  }
+
+  const started = players.map(c => c.wait('arena3Started', { timeout: 6000 }));
+  players.forEach(c => c.emit('arena3Register'));
+  await Promise.all(started);
+  players.forEach(c => {
+    eq(c.last('gameStart')?.floor, 9, `${c.name} is force-joined onto the pvpArena floor to be deployed`);
+  });
+
+  // Same 'respawn' shortcut the death battle test uses — _pvpEliminate tries
+  // _a3Eliminate unconditionally for anyone in _a3.alive, no real combat
+  // needed to prove the return path works.
+  const victim = players[0];
+  const eliminated = victim.wait('arena3Eliminated', { timeout: 3000 });
+  victim.emit('respawn');
+  const spot = await eliminated;
+  eq(victim.last('gameStart')?.floor, 1, 'an eliminated entrant is returned to the hub floor');
+  ok(spot && spot.x != null && spot.y != null, 'landing at the hub spawn (a real position, not a null placeholder)');
+
+  await Promise.all(players.map(c => c.close()));
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');
