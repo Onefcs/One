@@ -1347,17 +1347,22 @@ const _PORTAL_DY = 7; // tiles south of spawn — closer in than the old arm-pad
 let _portalPad = null;          // hub-only: {x, y} — approach opens the modal
 let _portalDestinations = null; // hub-only: [{target, req, label}] — modal contents
 let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation('hub') on trigger
-// Event-boss arena pads (see _evtArenaOpen). The hub-side one sits due west
-// of spawn — NPCs are north (dy -8..-11) and the arm pads south (dy +10), so
-// this row is clear.
-const _EVENT_PAD_DX = -8;
+// Event-boss arena pad (see _evtArenaOpen) and the Guild War pad just below —
+// both sit right next to the main portal (_PORTAL_DX/_PORTAL_DY), one tile
+// either side of it, rather than off in their own row: same swirl look as
+// the portal now (see _drawSwirlPad), just recoloured, so the three read as
+// one family of "teleport here" circles instead of two different pad styles
+// scattered around the hub.
+const _EVENT_PAD_DX = _PORTAL_DX - 2.4;
+const _EVENT_PAD_DY = _PORTAL_DY;
 let _evtPad = null;
 let _evtBossAlive = false;
-// Guild War zone pads — same shape as the event-boss pads just above, own
-// offset (-10) so the two don't overlap in the hub's NPC-free row. Gated on
-// _gwOpen() (22:00-22:15 MSK) instead of _evtArenaOpen(); _gwPhase is set by
-// js/network.js's guildWarState handler and by the gameStart payload.
-const _GW_PAD_DX = -10;
+// Guild War zone pad — mirrors the event pad on the other side of the
+// portal. Gated on _gwOpen() (22:00-22:15 MSK) instead of _evtArenaOpen();
+// _gwPhase is set by js/network.js's guildWarState handler and by the
+// gameStart payload.
+const _GW_PAD_DX = _PORTAL_DX + 2.4;
+const _GW_PAD_DY = _PORTAL_DY;
 let _gwPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
@@ -1420,7 +1425,7 @@ function _buildArmGates() {
   // handling above, so there's no dedicated return pad to build here either
   // — same for Death Battle's own return, which is a server push (gameStart
   // + deathBattleEliminated/deathBattleReturnedPrev), not a pad walk at all.
-  _evtPad = onHub ? { x: sx + _EVENT_PAD_DX * TILE, y: sy } : null;
+  _evtPad = onHub ? { x: sx + _EVENT_PAD_DX * TILE, y: sy + _EVENT_PAD_DY * TILE } : null;
 
   // Guild War hub-side pad — its own floor now (server/game/floors.js), so
   // stepping onto it requests a real transition (netEnterLocation) rather
@@ -1428,7 +1433,7 @@ function _buildArmGates() {
   // portal above already went through. The zone's own returnPad
   // (generateGuildWar) flows back through the generic _returnPads handling
   // above, so there's no dedicated return pad to build here any more either.
-  _gwPad = onHub ? { x: sx + _GW_PAD_DX * TILE, y: sy } : null;
+  _gwPad = onHub ? { x: sx + _GW_PAD_DX * TILE, y: sy + _GW_PAD_DY * TILE } : null;
 }
 
 // True while a world boss is announced, alive, or its loot is still on the
@@ -1608,14 +1613,31 @@ function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
   ctx.fillText(lbl, sx, sy + baseR + 14);
 }
 
-// The single hub portal's own look — a blue swirl rather than the plain
-// pulsing ring _drawTeleportPad gives every other pad: a soft outer glow, a
-// slowly counter-rotating pair of dashed rings, and a few sparks orbiting the
-// rim. It never locks (its destinations do — see the modal's own per-row
-// lock state), so there's no locked/unlocked branch to draw here at all.
-function _drawPortalPad(x, y, label) {
+// Colour families for _drawSwirlPad — glow/disc/rings/spark/label all move
+// together so a pad reads as one coherent colour rather than a blue shape
+// with an odd-coloured label. Blue is the original (and still the only)
+// look for the main hub portal; red/green are the boss-arena and Guild War
+// pads, recoloured into the same swirl instead of the plainer pulsing ring
+// _drawTeleportPad gives everything else.
+const _SWIRL_THEMES = {
+  blue:  { glow: '70,170,255',  disc: 'rgba(12,55,110,0.45)', ring1: '#4fc3ff', ring2: '#bfe9ff', label: '#8fd8ff' },
+  red:   { glow: '255,80,80',   disc: 'rgba(110,15,15,0.45)', ring1: '#ff5252', ring2: '#ffb0b0', label: '#ff9a9a' },
+  green: { glow: '80,235,140',  disc: 'rgba(12,90,45,0.45)',  ring1: '#4fe38a', ring2: '#bfffd9', label: '#8fffbf' },
+};
+
+// A swirling teleport circle — a soft outer glow, a slowly counter-rotating
+// pair of dashed rings, a bright pulsing core ring, and a few sparks
+// orbiting the rim — recoloured per `theme` (a key into _SWIRL_THEMES).
+// Started as the hub portal's own look only; the boss-arena and Guild War
+// pads now share it too (red/green) so the whole cluster next to the portal
+// reads as one family of circles rather than two different pad styles. None
+// of these lock on their own (the portal's destinations do, per-row, in its
+// modal), so there's no locked/unlocked branch to draw here at all.
+function _drawSwirlPad(x, y, label, theme) {
   const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
+  if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
   if (sx < -70 || sx > W + 70 || sy < -70 || sy > H + 70) return;
+  const th = _SWIRL_THEMES[theme] || _SWIRL_THEMES.blue;
   const tsec = _nowMs / 1000;
   const baseR = 28 * ZOOM;
   const pulse = 0.5 + 0.5 * Math.sin(tsec * 2.1);
@@ -1623,14 +1645,14 @@ function _drawPortalPad(x, y, label) {
   ctx.save();
   // Soft outer glow.
   const glow = ctx.createRadialGradient(sx, sy, baseR * 0.15, sx, sy, baseR * 1.8);
-  glow.addColorStop(0, `rgba(70,170,255,${0.32 + 0.1 * pulse})`);
-  glow.addColorStop(1, 'rgba(70,170,255,0)');
+  glow.addColorStop(0, `rgba(${th.glow},${0.32 + 0.1 * pulse})`);
+  glow.addColorStop(1, `rgba(${th.glow},0)`);
   ctx.fillStyle = glow;
   ctx.beginPath(); ctx.arc(sx, sy, baseR * 1.8, 0, Math.PI * 2); ctx.fill();
 
-  // Filled disc, deep blue.
+  // Filled disc.
   ctx.globalAlpha = 0.85;
-  ctx.fillStyle = 'rgba(12,55,110,0.45)';
+  ctx.fillStyle = th.disc;
   ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
 
   // Two dashed rings, counter-rotating, so the whole thing reads as swirling
@@ -1638,11 +1660,11 @@ function _drawPortalPad(x, y, label) {
   ctx.lineWidth = 2.4;
   ctx.setLineDash([7, 6]);
   ctx.globalAlpha = 0.85;
-  ctx.strokeStyle = '#4fc3ff';
+  ctx.strokeStyle = th.ring1;
   ctx.lineDashOffset = -tsec * 46;
   ctx.beginPath(); ctx.arc(sx, sy, baseR + 4, 0, Math.PI * 2); ctx.stroke();
   ctx.globalAlpha = 0.55;
-  ctx.strokeStyle = '#bfe9ff';
+  ctx.strokeStyle = th.ring2;
   ctx.lineDashOffset = tsec * 34;
   ctx.beginPath(); ctx.arc(sx, sy, baseR - 7, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
@@ -1667,18 +1689,19 @@ function _drawPortalPad(x, y, label) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
   ctx.strokeText(label, sx, sy + baseR + 16);
-  ctx.fillStyle = '#8fd8ff';
+  ctx.fillStyle = th.label;
   ctx.fillText(label, sx, sy + baseR + 16);
 }
 
 function drawTeleportPads() {
   if (!player) return;
-  if (_portalPad) _drawPortalPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт');
+  if (_portalPad) _drawSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт', 'blue');
   (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a'));
-  // Event pads in their own colours so they read as "this is the boss thing",
-  // not just another level gate.
-  if (_evtArenaOpen() && _evtPad) _drawTeleportPad(_evtPad.x, _evtPad.y, 0, t('evtArenaLbl'), '#eb4e61', '#ff8a4a');
-  if (_gwOpen() && _gwPad) _drawTeleportPad(_gwPad.x, _gwPad.y, 0, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', '#eb4e61', '#c9a24b');
+  // Boss-arena and Guild War pads sit right beside the portal now, swirling
+  // in their own colour (red/green) instead of the plain pulsing ring every
+  // other pad still uses — see _SWIRL_THEMES.
+  if (_evtArenaOpen() && _evtPad) _drawSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
+  if (_gwOpen() && _gwPad) _drawSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', 'green');
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',
