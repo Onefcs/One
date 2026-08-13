@@ -102,8 +102,9 @@ function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
   _questClaimPending = false;
   if (!player) return;
   const q = QUEST_DEF[idx];
+  // newGold is the server's total. There is no local fallback any more: gold
+  // is not a number this side is allowed to compose.
   if (Number.isFinite(newGold)) player.gold = newGold;
-  else if (gold) gainGold(gold, true);
   if (xp > 0 && typeof gainXP === 'function') gainXP(xp, true);
   player.questIdx = Number.isFinite(questIdx) ? questIdx : (player.questIdx + 1);
   player.questKills = {};
@@ -428,7 +429,7 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   // level-ups. Nexum is server-authoritative and not in the save blob, so we
   // only refresh the displayed balance.
   if (!alreadyDone) {
-    if (reward.gold)  { gainGold(reward.gold, true); }
+    // The balance arrives as a total via goldSync; this is display only.
     if (reward.xp && typeof gainXP === 'function') gainXP(reward.xp, true);
     if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
   }

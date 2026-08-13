@@ -886,7 +886,7 @@ function netConnect(onReady) {
     dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#5dade2' : '#98e456');
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, goldTotal, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -937,16 +937,13 @@ function netConnect(onReady) {
     if (boxRare)     _showBoxLoot('box_rare',      boxRare,     px, py - 16);
     if (normStone)  _showStoneLoot('norm_stone',  normStone,  px, py - 32);
     if (blessStone) _showStoneLoot('bless_stone', blessStone, px, py - 48);
-    if (gold && player) {
-      // Clan bonus first, then the ×2 potion on top — same order the server
-      // already applies the VIP gold bonus in (it multiplies result.gold
-      // before sending it, see the attack handler in server/index.js).
-      const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
-      const _goldClan = _cb && _cb.gold > 0 ? Math.round(gold * (1 + _cb.gold / 100)) : gold;
-      const _goldFinal = gainGold(_goldClan);
-      const g = _goldFinal % 1 === 0 ? _goldFinal : +_goldFinal.toFixed(1);
-      dmgNum(px, py - 36, '+' + g + 'g', '#ff0');
-    }
+    // `gold` is what this kill actually paid THIS player, clan bonus and potion
+    // already applied server-side; goldTotal is the balance it produced. The
+    // client used to apply those multipliers itself and add the result to its
+    // own total, which is exactly why the server could not know what anyone's
+    // balance should be.
+    if (gold && player) dmgNum(px, py - 36, '+' + gold + 'g', '#ff0');
+    if (player && Number.isFinite(goldTotal)) player.gold = goldTotal;
     if (nexum && player) {
       window._nexumBalance = (window._nexumBalance || 0) + nexum;
       player.nexumBalance = window._nexumBalance;
@@ -1176,7 +1173,8 @@ function netConnect(onReady) {
 
   socket.on('adminGive', ({ gold, nexum, gram }) => {
     if (!player) return;
-    if (gold)  { gainGold(gold, true); if (typeof updateHUD === 'function') updateHUD(); }
+    // Gold arrives as a total via goldSync; this only refreshes the display.
+    if (gold)  { if (typeof updateHUD === 'function') updateHUD(); }
     if (nexum) { if (typeof updateNexumBalance === 'function') updateNexumBalance(nexum); }
     if (gram)  { if (typeof updateGramBalance === 'function') updateGramBalance(gram); }
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
@@ -1328,6 +1326,20 @@ function netConnect(onReady) {
   // had drifted; showing it beats a button that silently does nothing.
   // A move the server refused — a full container, a class-locked item, or an
   // index that no longer points at what the client thought it did.
+  // The server refused a gold spend — not enough, or the potion bag is full.
+  socket.on('goldError', ({ msg } = {}) => {
+    if (typeof _shopMsg === 'function') _shopMsg(msg || '');
+    else if (player && msg) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
+  });
+
+  // The authoritative potion bag, after a purchase or a use.
+  socket.on('potionBag', ({ potionBag } = {}) => {
+    if (!player || !potionBag) return;
+    player.potionBag = { ...potionBag };
+    if (typeof onBuyPotion === 'function') onBuyPotion();
+    if (typeof updateHUD === 'function') updateHUD();
+  });
+
   socket.on('itemError', ({ msg } = {}) => {
     if (!player || !msg) return;
     if (typeof _invMsg === 'function') _invMsg(msg);
@@ -1801,6 +1813,9 @@ function netEquipItem(idx)       { if (socket?.connected) socket.emit('equipItem
 function netUnequipItem(slot)    { if (socket?.connected) socket.emit('unequipItem', { slot }); }
 function netStorageDeposit(idx)  { if (socket?.connected) socket.emit('storageDeposit', { idx }); }
 function netStorageWithdraw(idx) { if (socket?.connected) socket.emit('storageWithdraw', { idx }); }
+// The merchant is the only shop priced in gold, so it is the only purchase
+// that had to move here for gold to become server-owned.
+function netBuyPotion(idx, qty)  { if (socket?.connected) socket.emit('buyPotion', { idx, qty }); }
 
 function netSkillStun(enemyId, duration) {
   if (!socket?.connected || !enemyId) return;
@@ -2935,9 +2950,9 @@ function _initGramHandlers(s) {
   s.on('vipRewardsClaimed', ({ newInventory, goldAdded, vipPending }) => {
     if (window._vipData) window._vipData.pending = vipPending || [];
     if (player && newInventory) player.inventory = newInventory;
-    if (player && goldAdded > 0) {
-      gainGold(goldAdded, true);
-      if (player.x !== undefined) dmgNum(player.x, player.y - 40, '+' + goldAdded + 'g VIP', '#ffd700');
+    if (player && goldAdded > 0 && player.x !== undefined) {
+      // The balance itself arrives as a total via goldSync.
+      dmgNum(player.x, player.y - 40, '+' + goldAdded + 'g VIP', '#ffd700');
     }
     if (typeof renderVipPanel === 'function') renderVipPanel();
     netSaveProgressNow();

@@ -371,11 +371,15 @@ function upgradeStats(key) {
 //
 // Returns the amount actually credited, so callers can show the real number
 // rather than the pre-buff one.
-function gainGold(amount, flat) {
-  if (!player || !amount) return 0;
-  const gained = (!flat && (player.buffs || {}).gold > 0) ? amount * 2 : amount;
-  player.gold = (player.gold || 0) + gained;
-  return gained;
+// Display only. Gold is the server's number now: it applies the clan bonus and
+// the x2 potion itself and sends the new total (goldTotal on enemyKilled,
+// goldSync everywhere else), so adding here as well would double-count it and
+// put the client back in the business of authoring a balance.
+//
+// Kept as a function because a dozen call sites still want the figure to float
+// over the player's head; it just no longer touches player.gold.
+function gainGold(amount) {
+  return Math.max(0, Math.floor(Number(amount)) || 0);
 }
 
 function gainXP(amount, flat) {

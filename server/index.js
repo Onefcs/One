@@ -64,6 +64,7 @@ const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
+  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS,
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
@@ -2048,29 +2049,6 @@ const MAX_FLOOR = 1;
 const floorRooms = new Map();
 
 
-// ── Gold growth cap (anti-forgery) ───────────────────────────────────────
-// Gold has no census the way items do (_itemCensus/_censusOverflow below) —
-// it isn't discrete minted units, and legitimate play grows it constantly
-// through this very save path (kill/quest gold is computed client-side, see
-// gainGold in js/player.js, then reported here) — so a flat "can only
-// shrink" rule would reject ordinary earning. But nothing bounded how FAST
-// it's allowed to grow either: _serverSpendGold's own comment already says
-// the quiet part — "gold is the one currency the server does not own... the
-// next saveProgress replaces _lastStats wholesale" — so a forged save (any
-// modified client — the game used to also mirror every save into a
-// localStorage backup and adopt it back on the next load if newer, which
-// briefly made a hand-edited local value an even easier way in; that backup
-// is gone now) could claim any figure up to _SANITIZE_MAX.gold and the
-// server adopted it outright as the new truth.
-//
-// GOLD_MAX_EARN_PER_SEC is picked well above the fastest legitimate combo:
-// goldAtLevel tops out around the global level ceiling (~120/kill), stacked
-// with max VIP (+100%), max clan (+20%) and a gold potion (×2) is under
-// 600/kill, and _atkAllowed caps attacks at 20/s — no real kill rate gets
-// close to that. GOLD_GROWTH_SLACK covers a save landing back-to-back with
-// the previous one (near-zero elapsed time) without being rejected outright.
-const GOLD_MAX_EARN_PER_SEC = 3000;
-const GOLD_GROWTH_SLACK = 5000;
 
 
 // Retired item ids → their replacement. An id that leaves the catalog takes
@@ -4135,6 +4113,15 @@ io.on('connection', socket => {
     if (Number.isFinite(_grew)) _xpAllowed = _grew;
   }
   socket.data._allowXp = _allowXp;
+  // A party member's share is credited against their OWN session — same
+  // reasoning as _allowXp above, and the same delivery route. Returns what was
+  // credited as well as the new total: the attacker's socket cannot compute a
+  // member's clan bonus or potion buff, so the figure their client displays has
+  // to come back from their own session.
+  socket.data._grantKillGold = base => {
+    const gained = _killGold(base);
+    return { gained, total: _grantGold(gained, 'kill', { quiet: true }) };
+  };
 
   // ── Server-side gold spend ────────────────────────────────────────────────
   // Gold is the one currency the server does not own: it rides in on the
@@ -4144,27 +4131,15 @@ io.on('connection', socket => {
   // money straight back. That is why "золото не снимает" for the clan storage
   // unlock: the charge landed and was then quietly undone.
   //
-  // The fix is to remember the spend until a save that actually accounts for it
-  // arrives. saveProgress re-applies it to any save stamped EARLIER than the
-  // spend (see the _pendingGoldSpend block there) — savedAt is what separates
-  // "composed before" from "composed after", so a player who legitimately
-  // earned gold in between is never charged twice. One-shot and time-bounded:
-  // it can correct at most one save, and expires either way.
-  let _pendingGoldSpend = null;
-
+  // That whole correction is gone: gold is server-owned, a save cannot report
+  // a balance, and so nothing can hand a charge back. What is left is the
+  // charge itself.
   async function _serverSpendGold(amount, reason) {
     if (!authed || !_lastStats || !(amount > 0)) return null;
-    const before = Math.floor(Number(_lastStats.gold) || 0);
-    const after = Math.max(0, before - amount);
+    const before = _goldNow();
+    const after = Math.max(0, before - Math.floor(amount));
     _lastStats.gold = after;
-    // savedAt moves with it: _pendingGoldSpend.at (below) is stamped from this
-    // value, and that is what the next saveProgress compares its own
-    // clean.savedAt against to tell "composed before this spend" (needs the
-    // deduction re-applied) from "composed after" (already accounts for it).
-    _lastStats.savedAt = Date.now();
-    _pendingGoldSpend = { amount, after, at: _lastStats.savedAt, reason,
-                          until: Date.now() + 60000 };
-    await _persistSavedFields(authed, { gold: after, savedAt: _lastStats.savedAt });
+    await _persistSavedFields(authed, { gold: after });
     socket.emit('goldSync', { gold: after });
     logPlayer(authed.telegramId, authed.username, 'gold_spend',
       { reason, amount, before, after });
@@ -5654,6 +5629,71 @@ io.on('connection', socket => {
     }
   });
 
+  // ── Gold ──────────────────────────────────────────────────────────────────
+  // Gold was a client-side number. The server computed a kill's drop and sent
+  // it, but the CLIENT applied the clan bonus and the ×2 potion on top, added
+  // it to its own total, and reported the result in the next save. Merchant
+  // purchases and the clan founding fee were deducted the same way — locally,
+  // with the server never told the price.
+  //
+  // So the server had no idea what a player's balance should be, and the only
+  // thing standing between that and an arbitrary figure was a rate guess (the
+  // gold growth cap) that had to be loose enough never to punish a good farming
+  // streak. Applying the multipliers here instead makes the total derivable,
+  // which is what lets that cap go.
+  function _goldNow() {
+    return Math.max(0, Math.floor(Number(_lastStats && _lastStats.gold)) || 0);
+  }
+
+  // Credits gold and tells the client the new total. `reason` shows up in the
+  // player log beside every other economic event.
+  function _grantGold(amount, reason, opts) {
+    if (!authed || !_lastStats || !(amount > 0)) return _goldNow();
+    const before = _goldNow();
+    const after = before + Math.floor(amount);
+    _lastStats.gold = after;
+    // Persisted on the ordinary save debounce rather than per kill: a kill is
+    // the highest-frequency event in the game and a write per kill would be a
+    // write per player per second. The debounce already covers a crash to
+    // within a few seconds, which is the same window it always did.
+    if (!(opts && opts.quiet)) socket.emit('goldSync', { gold: after });
+    return after;
+  }
+
+  // Everything a kill's gold passes through before it lands, in the order the
+  // client used to apply it: the VIP bonus is already folded into the figure
+  // Room.js returns, then the clan's gold bonus, then the ×2 potion.
+  function _killGold(base) {
+    if (!(base > 0)) return 0;
+    let g = base;
+    const _cl = _myClanLevel ? CLAN_LEVELS[_myClanLevel - 1] : null;
+    const clanPct = (_cl && _cl.bonus && _cl.bonus.gold) || 0;
+    if (clanPct > 0) g = Math.round(g * (1 + clanPct / 100));
+    if (((_lastStats && _lastStats.buffs) || {}).gold > 0) g *= 2;
+    return Math.floor(g);
+  }
+
+  // Merchant: the only shop priced in gold. MERCHANT_SHOP and POTION_CAP are
+  // shared (shared/definitions.js) precisely so the price charged here is the
+  // one the button showed.
+  safeOn('buyPotion', ({ idx, qty } = {}) => {
+    if (!authed || !_lastStats) return;
+    const entry = MERCHANT_SHOP[Math.floor(Number(idx))];
+    if (!entry) return;
+    const n = Math.max(1, Math.min(POTION_CAP, Math.floor(Number(qty)) || 1));
+    if (!_lastStats.potionBag || typeof _lastStats.potionBag !== 'object') _lastStats.potionBag = {};
+    const cur = Math.max(0, Math.floor(Number(_lastStats.potionBag[entry.itemId])) || 0);
+    if (cur + n > POTION_CAP) return socket.emit('goldError', { msg: `Максимум ${POTION_CAP} зелий!` });
+    const cost = entry.price * n;
+    if (_goldNow() < cost) return socket.emit('goldError', { msg: 'Мало золота!' });
+    _lastStats.gold = _goldNow() - cost;
+    _lastStats.potionBag[entry.itemId] = cur + n;
+    _persistSavedFields(authed, { gold: _lastStats.gold, potionBag: _lastStats.potionBag });
+    logPlayer(authed.telegramId, authed.username, 'buy_potion', { id: entry.itemId, n, cost });
+    socket.emit('goldSync', { gold: _lastStats.gold });
+    socket.emit('potionBag', { potionBag: _lastStats.potionBag });
+  });
+
   // ── Item placement (equip, unequip, storage) ──────────────────────────────
   // The last four item operations the CLIENT still decided for itself. Loot,
   // sales, crafts, enhancing, boxes, market and potions were already server
@@ -5942,9 +5982,7 @@ io.on('connection', socket => {
     // duration, then read the map back out rather than trusting the capture.
     _itemOpBusy++;
     try {
-      // Charges, persists the new balance and pushes goldSync — and registers
-      // the spend so a save composed a moment BEFORE it can't hand the gold
-      // back (see _pendingGoldSpend).
+      // Charges, persists the new balance and pushes goldSync.
       await _serverSpendGold(cost, 'upgrade:' + key);
       if (!_lastStats.upgrades || typeof _lastStats.upgrades !== 'object') _lastStats.upgrades = {};
       _lastStats.upgrades[key] = lvl + 1;
@@ -8092,23 +8130,12 @@ io.on('connection', socket => {
       effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
       effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
       _itemsCorrected = true;   // push them, so the client renders what it has
-      // Gold, capped to GOLD_GROWTH_SLACK over the stored DB figure — flat,
-      // not rate-over-elapsed-time like saveProgress's own check, because the
-      // gap since that DB record was written can legitimately be arbitrary
-      // offline time (this runs on every login/reconnect), none of which
-      // earned anything. The slack is exactly the "last few seconds of kill
-      // gold on an unclean disconnect" this function's own comment above
-      // already promised — it just never actually enforced it.
-      const _dbGold = Math.floor(Number(_dbBase && _dbBase.gold) || 0);
-      if (effectiveSaved.gold > _dbGold + GOLD_GROWTH_SLACK) {
-        logPlayer(authed.telegramId, authed.username, 'select_gold_forged', {
-          had: _dbGold, sent: effectiveSaved.gold, cappedTo: _dbGold + GOLD_GROWTH_SLACK,
-        });
-        console.error(`[selectChar] Capped suspicious gold for telegramId=${authed.telegramId}` +
-          ` (had ${_dbGold}, claimed ${effectiveSaved.gold})`);
-        effectiveSaved.gold = _dbGold + GOLD_GROWTH_SLACK;
-        _goldCorrected = true;
-      }
+      // Gold comes from the stored record, like the items above. Every change
+      // to it was applied and persisted server-side as it happened, so there
+      // is nothing to cap: this is not a correction, it is where the balance
+      // lives. _goldCorrected stays true so the client is told what it has.
+      effectiveSaved.gold = Math.max(0, Math.floor(Number(_dbBase && _dbBase.gold)) || 0);
+      _goldCorrected = true;
       // Level/XP, pinned to the stored record exactly as the items above are
       // and for the same reason: this blob becomes _lastStats, which is the
       // baseline every later save is measured against, so accepting a forged
@@ -8641,7 +8668,8 @@ io.on('connection', socket => {
         memberIds.forEach(mid => io.sockets.sockets.get(mid)?.data?._allowXp?.(xpShare));
 
         socket.emit('enemyKilled', {
-          id: enemyId, xp: xpShare, gold: goldShare,
+          id: enemyId, xp: xpShare,
+          ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(goldShare)),
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl,
           ...(lootWinnerId === socket.id ? lootResult : null),
@@ -8649,7 +8677,8 @@ io.on('connection', socket => {
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
-            id: enemyId, xp: xpShare, gold: goldShare,
+            id: enemyId, xp: xpShare,
+            ...(_g => ({ gold: _g.gained, goldTotal: _g.total }))(io.sockets.sockets.get(mid)?.data?._grantKillGold?.(goldShare) || {}),
             ex: result.ex, ey: result.ey, color: result.color,
             eid: result.eid, rlvl: result.rlvl,
             ...(lootWinnerId === mid ? lootResult : null),
@@ -8664,7 +8693,8 @@ io.on('connection', socket => {
         // No party: attacker gets full reward and loot
         _allowXp(result.xp);
         socket.emit('enemyKilled', {
-          id: enemyId, xp: result.xp, gold: result.gold,
+          id: enemyId, xp: result.xp,
+          ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)),
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl, ...lootResult, nexum: nexumDrop, gram: gramDrop,
         });
@@ -8756,7 +8786,8 @@ io.on('connection', socket => {
         _allowXp(xpShare);
         memberIds.forEach(mid => io.sockets.sockets.get(mid)?.data?._allowXp?.(xpShare));
         socket.emit('enemyKilled', {
-          id: enemyId, xp: xpShare, gold: goldShare, dmg: result.dmg, isCrit: result.isCrit,
+          id: enemyId, xp: xpShare, dmg: result.dmg, isCrit: result.isCrit,
+          ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(goldShare)),
           ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl,
           ...(lootWinnerId === socket.id ? lootResult : null),
@@ -8764,7 +8795,8 @@ io.on('connection', socket => {
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
-            id: enemyId, xp: xpShare, gold: goldShare,
+            id: enemyId, xp: xpShare,
+            ...(_g => ({ gold: _g.gained, goldTotal: _g.total }))(io.sockets.sockets.get(mid)?.data?._grantKillGold?.(goldShare) || {}),
             ex: result.ex, ey: result.ey, color: result.color,
             eid: result.eid, rlvl: result.rlvl,
             ...(lootWinnerId === mid ? lootResult : null),
@@ -8775,7 +8807,8 @@ io.on('connection', socket => {
       } else {
         _allowXp(result.xp);
         socket.emit('enemyKilled', {
-          id: enemyId, xp: result.xp, gold: result.gold, dmg: result.dmg, isCrit: result.isCrit,
+          id: enemyId, xp: result.xp,
+          ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)), dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl, ...lootResult, nexum: nexumDrop2, gram: gramDrop2,
         });
@@ -9464,48 +9497,19 @@ io.on('connection', socket => {
       clean.upgrades        = _lastStats.upgrades        || {};
     }
 
-    // A server-side gold spend the client may not have known about yet. Only a
-    // save composed BEFORE the spend is corrected — savedAt is the client's own
-    // "when I built this blob" stamp, so a later save has already had the
-    // deduction applied to it (or the player has earned since, which is theirs
-    // to keep). Either way the pending spend is cleared: it corrects at most
-    // one save, so it can never charge twice.
-    if (_pendingGoldSpend) {
-      if (Date.now() > _pendingGoldSpend.until) {
-        _pendingGoldSpend = null;
-      } else if ((Math.floor(Number(clean.savedAt)) || 0) < _pendingGoldSpend.at) {
-        const was = Math.floor(Number(clean.gold) || 0);
-        clean.gold = Math.max(0, was - _pendingGoldSpend.amount);
-        logPlayer(authed.telegramId, authed.username, 'gold_spend_reapplied',
-          { reason: _pendingGoldSpend.reason, amount: _pendingGoldSpend.amount,
-            saveHad: was, now: clean.gold });
-        socket.emit('goldSync', { gold: clean.gold });
-        _pendingGoldSpend = null;
-      } else {
-        _pendingGoldSpend = null;   // this save already accounts for the spend
-      }
-    }
-
-    // See the GOLD_MAX_EARN_PER_SEC comment above. Rate-limited against
-    // wall-clock time actually elapsed server-side, not clean.savedAt (the
-    // client's own stamp, which a forged save is just as free to inflate).
-    if (_lastStats) {
-      const prevGold = Math.floor(Number(_lastStats.gold) || 0);
-      if (clean.gold > prevGold) {
-        const elapsedSec = Math.max(0, (Date.now() - (_lastSaveAcceptedAt || Date.now())) / 1000);
-        const maxGrowth = GOLD_GROWTH_SLACK + Math.ceil(elapsedSec * GOLD_MAX_EARN_PER_SEC);
-        if (clean.gold - prevGold > maxGrowth) {
-          logPlayer(authed.telegramId, authed.username, 'save_gold_forged', {
-            had: prevGold, sent: clean.gold, cappedTo: prevGold + maxGrowth,
-            elapsedSec: Math.round(elapsedSec),
-          });
-          console.error(`[saveProgress] Capped suspicious gold growth for telegramId=${authed.telegramId}` +
-            ` (had ${prevGold}, claimed ${clean.gold}, capped to +${maxGrowth})`);
-          clean.gold = prevGold + maxGrowth;
-          socket.emit('goldSync', { gold: clean.gold });
-        }
-      }
-    }
+    // Gold is server-owned: every credit (kills, quests, sales, VIP, admin)
+    // and every debit (merchant, stat upgrades, clan storage, clan founding)
+    // is applied on this side and pushed as a total. A save has nothing left
+    // to say about it.
+    //
+    // Two things go rather than sit alongside this pin, because a pinned field
+    // cannot need either. _pendingGoldSpend existed to re-apply a charge to a
+    // save composed just before it. The growth cap existed to bound how fast a
+    // CLIENT-COMPOSED balance could rise — a rate guess that had to stay loose
+    // enough never to punish a good farming streak, and therefore could never
+    // be tight enough to stop a patient forgery. Deriving the total is what
+    // makes both unnecessary.
+    if (_lastStats) clean.gold = _goldNow();
     _lastSaveAcceptedAt = Date.now();
 
     // Level/XP against what the server has actually handed out this session
@@ -9706,11 +9710,19 @@ io.on('connection', socket => {
     if (typeof icon !== 'number' || icon < 1 || icon > 30) return socket.emit('clanError', { msg: 'Неверная иконка' });
     const existing = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
     if (existing) return socket.emit('clanError', { msg: 'Вы уже в клане' });
+    // The founding fee was deducted on the client and reported by the next
+    // save — so the server created the clan without ever charging for it, and
+    // a client that simply skipped the deduction founded one for free. Charged
+    // here, before the clan exists, so a failure cannot leave one unpaid.
+    if (_goldNow() < CLAN_CREATE_COST) {
+      return socket.emit('clanError', { msg: `Нужно ${CLAN_CREATE_COST} золота` });
+    }
     try {
       const clan = await ClanModel.create({
         name: n, icon,
         members: [{ telegramId: authed.telegramId, username: authed.username, role: 'leader' }],
       });
+      await _serverSpendGold(CLAN_CREATE_COST, 'clan_create');
       const _cd = await _clanDataFor(clan, authed.telegramId);
       socket.emit('clanData', _cd);
       _myClanName  = _cd ? _cd.name : null;

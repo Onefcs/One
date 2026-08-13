@@ -174,10 +174,13 @@ const NPC_DEF = [
   { id:'storage',    name:'Хранилище', icon:'storage',    color:'#44ff44', desc:'Хранение предметов (200 ячеек)' },
 ];
 
-const MERCHANT_SHOP = [
-  { itemId:'pt1',       name:'Малое зелье',     img:'/images/potion/smallhp.png', price:5,    desc:'HP +20'                    },
-  { itemId:'pt2',       name:'Большое зелье',   img:'/images/potion/bighp.png',   price:30,   desc:'HP +50'                    },
-];
+// Display fields only. itemId and price come from the shared catalog (which
+// the server charges against), so the price on the button is the price taken.
+const _MERCHANT_UI = {
+  pt1: { name:'Малое зелье',   img:'/images/potion/smallhp.png', desc:'HP +20' },
+  pt2: { name:'Большое зелье', img:'/images/potion/bighp.png',   desc:'HP +50' },
+};
+const MERCHANT_SHOP_UI = MERCHANT_SHOP.map(e => ({ ...e, ..._MERCHANT_UI[e.itemId] }));
 
 // Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll
 // GEAR_TIER_CRAFT_RECIPES (uncommon/rare) and GEAR_CRAFT_RECIPES (epic/

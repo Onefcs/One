@@ -1492,6 +1492,18 @@ function maxSkillDamageMult() {
 const UPGRADE_KEYS = ['atk', 'def', 'hp', 'atkSpeed', 'critChance', 'critPower', 'hpRegen'];
 function upgradeCost(level) { return 300 * (Math.max(0, Math.floor(Number(level)) || 0) + 1); }
 
+// ── Merchant (HP potions) ───────────────────────────────────────────────────
+// The only shop that charges gold rather than a real-money currency. It lived
+// in js/definitions.js where only the client could see it, which is why buying
+// a potion was a client-side deduction the save then reported. The server
+// charges it now (buyPotion, server/index.js), so both sides read one copy.
+const MERCHANT_SHOP = [
+  { itemId:'pt1', price:5  },
+  { itemId:'pt2', price:30 },
+];
+const POTION_CAP = 999;          // per kind, in potionBag
+const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
+
 // ── Cost of learning and upgrading ──────────────────────────────────────────
 // Books to unlock a locked (level 0) skill or passive, books per upgrade
 // attempt once studied, and the chance an attempt succeeds. These lived in
@@ -1632,6 +1644,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult, maxSkillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
+  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

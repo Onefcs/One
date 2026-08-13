@@ -1462,7 +1462,7 @@ function _i18nSnapshot() {
   });
   if (typeof PASSIVE_COMMON_DEF !== 'undefined') PASSIVE_COMMON_DEF.forEach(p => { p._i18nOrigName = p.name; p._i18nOrigDesc = p.desc; });
   if (typeof NPC_DEF !== 'undefined') NPC_DEF.forEach(n => { n._i18nOrigName = n.name; n._i18nOrigDesc = n.desc; });
-  if (typeof MERCHANT_SHOP !== 'undefined') MERCHANT_SHOP.forEach(m => { m._i18nOrigName = m.name; });
+  if (typeof MERCHANT_SHOP_UI !== 'undefined') MERCHANT_SHOP_UI.forEach(m => { m._i18nOrigName = m.name; });
   if (typeof EQ_SLOTS !== 'undefined') EQ_SLOTS.forEach(s => { s._i18nOrigLabel = s.label; });
   if (typeof UPGRADE_DEF !== 'undefined') Object.keys(UPGRADE_DEF).forEach(k => {
     UPGRADE_DEF[k]._i18nOrigLabel = UPGRADE_DEF[k].label; UPGRADE_DEF[k]._i18nOrigDesc = UPGRADE_DEF[k].desc;
@@ -1529,7 +1529,7 @@ function applyLocale(lang) {
     n.name = pickField(I18N_NPCS, n.id, 'name', n._i18nOrigName);
     n.desc = pickField(I18N_NPCS, n.id, 'desc', n._i18nOrigDesc);
   });
-  if (typeof MERCHANT_SHOP !== 'undefined') MERCHANT_SHOP.forEach(m => { m.name = pick(I18N_ITEMS, m.itemId, m._i18nOrigName); });
+  if (typeof MERCHANT_SHOP_UI !== 'undefined') MERCHANT_SHOP_UI.forEach(m => { m.name = pick(I18N_ITEMS, m.itemId, m._i18nOrigName); });
 
   if (typeof EQ_SLOTS !== 'undefined') EQ_SLOTS.forEach(s => { s.label = pick(I18N_EQ_SLOT_LABELS, s.slot, s._i18nOrigLabel); });
   if (typeof UPGRADE_DEF !== 'undefined') Object.keys(UPGRADE_DEF).forEach(k => {

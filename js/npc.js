@@ -82,11 +82,11 @@ function _merchantBody() {
 
   // HP potions
   html += '<div class="shop-sec">' + (typeof t === 'function' ? t('npcHealPotionsHdr') : 'Зелья лечения') + '</div><div class="shop-list">';
-  MERCHANT_SHOP.filter(e => {
+  MERCHANT_SHOP_UI.filter(e => {
     const def = ITEM_DEF.find(d => d.id === e.itemId);
     return def && def.slot === 'use';
   }).forEach((entry) => {
-    const idx = MERCHANT_SHOP.indexOf(entry);
+    const idx = MERCHANT_SHOP_UI.indexOf(entry);
     const { cur, want, cost, canBuy } = _potionBuyPlan(entry);
     // Falls back to the price of one when nothing can be bought, so a
     // disabled button still says what the potion costs instead of "0".
@@ -107,27 +107,20 @@ function _merchantBody() {
   return html;
 }
 
+// A request now. The server holds the gold and the potion bag, charges the
+// price from the shared catalog and answers with goldSync + potionBag — see
+// the buyPotion handler in server/index.js. Deducting here and letting the
+// save carry it is what made the price and the balance client-authored.
 function buyPotion(idx, qty) {
-  const entry = MERCHANT_SHOP[idx];
+  const entry = MERCHANT_SHOP_UI[idx];
   if (!entry || !player) return;
-  const def = ITEM_DEF.find(d => d.id === entry.itemId);
-  if (!def) return;
   const n = Math.max(1, Math.floor(qty) || 1);
-
-  if (!player.potionBag) player.potionBag = { pt1: 0, pt2: 0 };
-  const cur = player.potionBag[entry.itemId] || 0;
-  // Re-checked here rather than trusting the count baked into the button:
-  // gold and the bag can both have changed since the shop was rendered.
+  // Local pre-checks are courtesy so an obviously impossible tap never leaves
+  // the device; both are enforced again server-side.
+  const cur = (player.potionBag || {})[entry.itemId] || 0;
   if (cur + n > POTION_CAP) { _shopMsg(typeof t === 'function' ? t('npcMaxPotions') : 'Максимум 999 зелий!'); return; }
-  const cost = entry.price * n;
-  if (player.gold < cost) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
-
-  player.gold -= cost;
-  player.potionBag[entry.itemId] = cur + n;
-  if (typeof onBuyPotion === 'function') onBuyPotion();
-  netSaveProgress();
-  openNpc('merchant');
-  _shopMsgOk((typeof t === 'function' ? t('npcBoughtPrefix') : '✓ Куплено: ') + def.name + (n > 1 ? ' ×' + n : ''));
+  if (player.gold < entry.price * n) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
+  netBuyPotion(idx, n);
 }
 
 // ── Craftsman ───────────────────────────────────────────

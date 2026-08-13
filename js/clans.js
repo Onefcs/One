@@ -708,7 +708,8 @@ function _clanSubmitCreate() {
     if (e) e.textContent = typeof tVars === 'function' ? tVars('clanNeedGold', { n: CLAN_CREATE_COST }) : `Нужно ${CLAN_CREATE_COST} золота`;
     return;
   }
-  player.gold -= CLAN_CREATE_COST;
+  // The fee is charged server-side by clanCreate; the new balance arrives
+  // as a goldSync. Deducting here as well would double-charge the display.
   _pendingClanCreateGold = true;
   if (typeof updateInvUI === 'function') updateInvUI();
   netClanCreate(name, _clanNewIcon);
@@ -1172,7 +1173,8 @@ function onClanApplySent(clanId) {
 function onClanError(msg) {
   if (_pendingClanCreateGold) {
     _pendingClanCreateGold = false;
-    if (player) { player.gold += CLAN_CREATE_COST; if (typeof updateInvUI === 'function') updateInvUI(); }
+    // Nothing to refund locally — the charge only ever happened server-side,
+    // and a failed create never reached it.
   }
   // An apply that failed (already in a clan, clan vanished, etc.) — put the
   // button back rather than leaving it stuck on "Отправка...".

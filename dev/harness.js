@@ -165,26 +165,86 @@ scenario('world: the room ticks, and goes quiet when nothing is happening', asyn
   await c.close();
 });
 
-scenario('save: progress round-trips through the database', async () => {
+scenario('save: the fields a save still owns round-trip', async () => {
   const c = await connectAs('harness_save');
   await enterWorld(c, 'lev');
-  // Level stays at 1 on purpose: the XP ledger only credits what the server
-  // itself granted, so claiming a level here would (correctly) be capped and
-  // the scenario would be testing the cap rather than the round trip. Gold sits
-  // inside GOLD_GROWTH_SLACK for the same reason.
+  // No gold, no items, no levels: those are the server's now. What is left in
+  // the blob is preferences and counters nothing is entitled to.
   c.emit('saveProgress', { stats: {
-    type: 'lev', lvl: 1, xp: 0, gold: 250, kills: 7,
-    hp: 100, maxHp: 100, inventory: [], storage: [], equipment: {},
-    hudPotion: 'pt1', lang: 'en',
-    savedAt: Date.now(), invRev: 0,
+    type: 'lev', lvl: 1, xp: 0, kills: 7, hp: 100, maxHp: 100,
+    hudPotion: 'pt1', lang: 'en', autoHpPct: 0.4,
+    savedAt: Date.now(),
   } });
   await sleep(3400);   // the server debounces its write by 3s
   const row = memory.__dump('Player').find(p => p.username === c.auth.username);
   ok(row, 'the player row exists');
   const sd = (row && row.savedData) || {};
-  eq(sd.gold, 250, 'gold reached the database');
   eq(sd.kills, 7, 'kills reached the database');
   eq(sd.lang, 'en', 'settings reached the database');
+  eq(sd.autoHpPct, 0.4, 'preferences reached the database');
+  await c.close();
+});
+
+scenario('gold: a save cannot set the balance', async () => {
+  const c = await connectWithSaved('harness_goldpin', { gold: 500 });
+  await enterWorld(c, 'mage');
+  c.emit('saveProgress', { stats: {
+    type: 'mage', lvl: 1, xp: 0, gold: 999999, kills: 0, hp: 10, maxHp: 10,
+    savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.gold, 500, 'the stored balance is the one the server held');
+  await c.close();
+});
+
+scenario('gold: the merchant charges server-side', async () => {
+  const c = await connectWithSaved('harness_merchant', { gold: 100 });
+  await enterWorld(c, 'ranger');
+  // Both replies land in the same tick, so both listeners go on before the
+  // request — subscribing to the second one after awaiting the first misses it.
+  const sync = c.wait('goldSync', { timeout: 6000 });
+  const bagP = c.wait('potionBag', { timeout: 6000 }).catch(() => null);
+  c.emit('buyPotion', { idx: 0, qty: 3 });        // pt1, 5 gold each
+  const got = await sync;
+  eq(got.gold, 85, 'the price came off the balance');
+  const bag = await bagP;
+  ok(bag && bag.potionBag && bag.potionBag.pt1 === 3, 'and the potions arrived');
+  await sleep(150);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.gold, 85, 'persisted immediately, not on the save debounce');
+  await c.close();
+});
+
+scenario('gold: a purchase beyond the balance is refused', async () => {
+  const c = await connectWithSaved('harness_broke', { gold: 4 });
+  await enterWorld(c, 'mage');
+  const err = c.wait('goldError', { timeout: 5000 }).catch(() => null);
+  c.emit('buyPotion', { idx: 0, qty: 1 });
+  ok(await err, 'refused with a message');
+  await sleep(150);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.gold, 4, 'and nothing was charged');
+  await c.close();
+});
+
+scenario('gold: founding a clan charges the fee', async () => {
+  const c = await connectWithSaved('harness_clan', { gold: 1000 });
+  await enterWorld(c, 'warlock');
+  const sync = c.wait('goldSync', { timeout: 6000 }).catch(() => null);
+  c.emit('clanCreate', { name: 'Test', icon: 1 });
+  const got = await sync;
+  ok(got && got.gold === 900, `the founding fee was taken (gold=${got && got.gold})`);
+  await c.close();
+});
+
+scenario('gold: founding is refused when short, and no clan is made', async () => {
+  const c = await connectWithSaved('harness_clanbroke', { gold: 10 });
+  await enterWorld(c, 'warlock');
+  const err = c.wait('clanError', { timeout: 5000 }).catch(() => null);
+  c.emit('clanCreate', { name: 'Broke', icon: 1 });
+  ok(await err, 'refused with a message');
+  eq(memory.__dump('Clan').filter(x => x.name === 'Broke').length, 0, 'and no clan exists');
   await c.close();
 });
 
@@ -252,7 +312,7 @@ scenario('progression: a save cannot write passive levels the server did not gra
 // so anything written to the row after the socket authenticated is invisible
 // to it until the next login. Granting first and connecting second is what a
 // real drop does too (it goes through _commitServerItems on a live session).
-async function connectWithItems(name, items) {
+async function connectWithSaved(name, saved) {
   const seed = await connectAs(name);           // creates the row
   await seed.close();
   // Long enough for that socket's disconnect flush to land. It writes the
@@ -262,13 +322,15 @@ async function connectWithItems(name, items) {
   await sleep(500);
   const Player = require('../server/models/Player');
   const row = memory.__dump('Player').find(p => p.username === seed.auth.username);
-  await Player.updateOne({ _id: row._id }, { $set: { 'savedData.inventory': items } });
+  const set = {};
+  for (const [k, v] of Object.entries(saved)) set['savedData.' + k] = v;
+  await Player.updateOne({ _id: row._id }, { $set: set });
   await sleep(50);
   return connectAs(name);
 }
 
 scenario('items: equipping is performed by the server, not the save', async () => {
-  const c = await connectWithItems('harness_equip', [{ id: 'uq_sword_l', enhance: 0 }]);
+  const c = await connectWithSaved('harness_equip', { inventory: [{ id: 'uq_sword_l', enhance: 0 }] });
   await enterWorld(c, 'deathknight');
   const sync = c.wait('inventorySync', { timeout: 6000 });
   c.emit('equipItem', { idx: 0 });
@@ -283,7 +345,7 @@ scenario('items: equipping is performed by the server, not the save', async () =
 });
 
 scenario('items: unequip refuses when the inventory is full', async () => {
-  const c = await connectWithItems('harness_unequip', [{ id: 'uq_axe_l', enhance: 0 }]);
+  const c = await connectWithSaved('harness_unequip', { inventory: [{ id: 'uq_axe_l', enhance: 0 }] });
   await enterWorld(c, 'lev');
   await (async () => { const s = c.wait('inventorySync'); c.emit('equipItem', { idx: 0 }); await s; })();
   // Fill every inventory slot, then try to take the weapon back. Seeded after
@@ -323,7 +385,7 @@ scenario('items: a save can no longer write the item set', async () => {
 });
 
 scenario('items: a storage move is one server-side operation', async () => {
-  const c = await connectWithItems('harness_storage', [{ id: 'rece', qty: 10 }]);
+  const c = await connectWithSaved('harness_storage', { inventory: [{ id: 'rece', qty: 10 }] });
   await enterWorld(c, 'ranger');
   let sync = c.wait('inventorySync', { timeout: 6000 });
   c.emit('storageDeposit', { idx: 0 });
