@@ -53,6 +53,23 @@ Object.assign(process.env, {
 const BASE = `http://127.0.0.1:${PORT}`;
 const io = require('socket.io-client');
 
+// ── Watch for handlers that threw ────────────────────────────────────────────
+// safeOn (server/index.js) catches anything a socket handler throws so one bad
+// packet can't take the process down. The cost is that a broken handler is
+// SILENT to the client: no success, no error, just a reply that never comes —
+// which is what a missing import looked like from the outside, twice.
+//
+// Here it is not silent. Every '[socket:<event>]' the server logs is collected
+// and turned into a failure at the end of the run, so any handler a scenario
+// happens to touch is also checked for throwing.
+const handlerErrors = [];
+const _realError = console.error;
+console.error = (...args) => {
+  const first = String(args[0] || '');
+  if (first.startsWith('[socket:')) handlerErrors.push(`${first} ${args[1] && args[1].message ? args[1].message : ''}`.trim());
+  _realError.apply(console, args);
+};
+
 // ── Tiny assertion kit ───────────────────────────────────────────────────────
 let passed = 0, failed = 0;
 const results = [];
@@ -555,6 +572,48 @@ scenario('save: a blank save no longer resets anything', async () => {
   await c.close();
 });
 
+scenario('market: listing an item and reading my lots back', async () => {
+  // VIP 1 is the gate on selling; the item has to be in the SERVER's inventory.
+  const c = await connectWithSaved('harness_market', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(c, 'deathknight');
+
+  const listed = c.wait('marketListed', { timeout: 8000 }).catch(() => null);
+  const err    = c.wait('marketListError', { timeout: 8000 }).catch(() => null);
+  const inv    = c.wait('inventorySync', { timeout: 8000 }).catch(() => null);
+  c.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+  const got = await Promise.race([listed, err]);
+  ok(got && got.listing, `the listing was created${got && got.msg ? ' — refused: ' + got.msg : ''}`);
+  const iv = await inv;
+  eq(iv && iv.inventory.length, 0, 'and the item left the server inventory');
+
+  // The tab that is reported as stuck on "loading".
+  const mine = c.wait('marketMyListingsData', { timeout: 8000 }).catch(() => null);
+  c.emit('marketMyListings', {});
+  const rows = await mine;
+  ok(rows, 'marketMyListingsData came back at all');
+  eq(rows && rows.listings && rows.listings.length, 1, 'and carried the lot');
+  await c.close();
+});
+
+scenario('market: cancelling a lot returns the item', async () => {
+  const c = await connectWithSaved('harness_marketcancel', {
+    vipLevel: 1, inventory: [{ id: 'uq_bow_l', enhance: 0 }],
+  });
+  await enterWorld(c, 'ranger');
+  const listed = c.wait('marketListed', { timeout: 8000 }).catch(() => null);
+  c.emit('marketList', { item: { id: 'uq_bow_l', enhance: 0 }, price: 10 });
+  const l = await listed;
+  ok(l && l.listing, 'listed');
+  if (!l || !l.listing) return c.close();
+  const back = c.wait('inventorySync', { timeout: 8000 }).catch(() => null);
+  c.emit('marketCancel', { listingId: l.listing.id });
+  const iv = await back;
+  eq(iv && iv.inventory.length, 1, 'the item came back to the inventory');
+  await c.close();
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';
@@ -578,6 +637,14 @@ scenario('save: a blank save no longer resets anything', async () => {
       failed++;
       console.log(`✗ ${s.name}\n    THREW ${err.message}`);
     }
+  }
+
+  // Any handler that threw during any scenario, however unrelated.
+  const uniqueErrors = [...new Set(handlerErrors)];
+  if (uniqueErrors.length) {
+    failed += uniqueErrors.length;
+    console.log('\n✗ socket handlers threw (safeOn swallowed these, the client saw nothing):');
+    uniqueErrors.forEach(e => console.log('    ' + e));
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

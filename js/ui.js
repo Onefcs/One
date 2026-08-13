@@ -5035,33 +5035,30 @@ function _confirmMarketList() {
     _marketToast(t('noServerConn'), 'err');
     return;
   }
-  // Flush a save with the item STILL in the inventory, before the optimistic
-  // splice below. The server verifies the seller actually owns what they're
-  // listing against its own copy of the inventory (see marketList in
-  // server/index.js), and socket.io delivers per-connection messages in order,
-  // so this save is guaranteed to have been applied by the time the listing
-  // request is handled. Without it, an item picked up in the last couple of
-  // seconds — not yet covered by the debounced autosave — would be rejected as
-  // "not in inventory".
-  netSaveProgressNow();
+  // No optimistic removal. The item leaves on the inventorySync the server
+  // sends once the listing is actually created — the inventory is a projection
+  // of the server's copy now, and editing it here re-creates the second copy
+  // the whole change was about.
+  //
+  // It also removed the failure mode this used to have: the rollback lived in
+  // the marketListError handler, so anything that stopped that reply from
+  // arriving — a thrown handler, a dropped connection — took the item off the
+  // player's screen permanently, with no way to get it back but a reload.
+  //
+  // The save flush is gone with it: it existed to push a client-side inventory
+  // to the server before the ownership check, and the server has not read the
+  // client's inventory for some time.
   const have = it.qty || 1;
-  let itemSnapshot;
+  let itemSnapshot = it;
   if (_isStackable(it) && have > 1) {
     const qtyInput = document.getElementById('market-qty-input');
     let qty = Math.floor(Number(qtyInput?.value));
     if (!Number.isFinite(qty) || qty < 1) qty = 1;
     if (qty > have) qty = have;
     itemSnapshot = { ...it, qty };
-    if (qty >= have) player.inventory.splice(idx, 1);
-    else it.qty = have - qty;
-  } else {
-    // Single unit (stackable with qty 1, or non-stackable equipment)
-    itemSnapshot = it;
-    player.inventory.splice(idx, 1);
   }
   _pendingSellItem = { item: itemSnapshot };
   _setSellPickerBusy(true);
-  updateInvUI();
   netMarketList(itemSnapshot, Math.round(p * 100) / 100);
 }
 
@@ -5125,42 +5122,29 @@ function onMarketSold(data) {
 function onMarketError(msg) {
   _marketToast(msg || t('genericErrorLbl'), 'err');
 }
-// The server says in so many words that it did NOT create the listing, so
-// undoing the optimistic splice locally is exactly right here.
+// Nothing is restored locally any more, in either case. The item never left
+// the local inventory to begin with — it leaves on the server's inventorySync
+// — so both of these only have to stop the spinner and say what happened.
 function onMarketListError(msg) {
-  if (_clearPendingSell(true)) _marketToast(msg || t('genericErrorLbl'), 'err');
+  if (_clearPendingSell()) _marketToast(msg || t('genericErrorLbl'), 'err');
 }
 // Called when the socket drops while a marketList request is in flight
-// (js/network.js's 'disconnect' handler). Unlike marketListError this says
-// nothing about whether the request landed: the server creates the listing
-// and persists the removal before it answers, so a drop in the round trip
-// can just as easily mean "already sold" as "never arrived".
+// (js/network.js's 'disconnect' handler). It says nothing about whether the
+// request landed: the server creates the listing and persists the removal
+// before it answers, so a drop in the round trip can just as easily mean
+// "already sold" as "never arrived".
 //
-// It used to guess "never arrived" and put the item back. When the guess was
-// wrong the item existed twice over — in the inventory and as a live lot —
-// and stayed that way, because a reconnect deliberately skips restoreFromSave.
-// The next save's item census then caught the extra copy and reverted the
-// player's whole item set as forged: the "выставил на маркет, а он ещё и в
-// инвентаре, потом всё откатило" reports.
-//
-// So don't guess. The item is not lost either way — the server holds the
-// truthful answer in both cases and pushes it back as an authoritative
-// inventorySync the moment we rejoin (see the end of selectChar,
-// server/index.js), which restores the item if the listing was never created
-// and leaves it out if it was.
+// It used to guess "never arrived" and put the item back, and when the guess
+// was wrong the item existed twice over. There is no guess left to make: the
+// server pushes an authoritative inventorySync on rejoin (see the end of
+// selectChar, server/index.js) and that is the answer.
 function onMarketConnectionLost() {
-  if (_clearPendingSell(false)) _marketToast(t('noServerConn'), 'err');
+  if (_clearPendingSell()) _marketToast(t('noServerConn'), 'err');
 }
-// Shared by both handlers above. `restore` puts the item back in the local
-// inventory; pass it only when the server has confirmed there is no listing.
-// Returns true if there was a pending sell at all.
-function _clearPendingSell(restore) {
+// Shared by both handlers above. Returns true if there was a pending sell at
+// all — which is what decides whether a toast is warranted.
+function _clearPendingSell() {
   if (!_pendingSellItem) return false;
-  if (restore) {
-    const it = _pendingSellItem.item;
-    addToInventoryQty(it, it.qty || 1);
-  }
-  updateInvUI();
   _pendingSellItem = null;
   _setSellPickerBusy(false);
   return true;

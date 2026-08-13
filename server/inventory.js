@@ -171,6 +171,11 @@ function _invHasRoomFor(inv, item) {
 }
 
 module.exports = {
+  // The market's own bounds moved here with the price floors, but
+  // server/index.js is where they are USED — exporting them is what that split
+  // forgot, and every marketList/marketMyListings call has thrown a
+  // ReferenceError since.
+  MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 };
