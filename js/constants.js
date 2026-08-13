@@ -12,5 +12,7 @@ const ATTACK_ANIM_SPEEDUP = 2;
 
 // Player level required to use auto-attack / Market / Rating
 const FEATURE_UNLOCK_LEVEL = 3;
-// Gold cost to found a clan
-const CLAN_CREATE_COST = 100;
+// Gold cost to found a clan — now in shared/definitions.js, because the server
+// is what charges it (clanCreate). Declaring it here as well is a duplicate
+// `const` in the concatenated bundle, which is a SyntaxError that takes the
+// whole client down.

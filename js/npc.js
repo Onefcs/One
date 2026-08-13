@@ -47,7 +47,9 @@ function _potImg(entry, size) {
 // but "as many as gold and the 999 cap allow", resolved per row when the shop
 // is rendered — the two potions have different prices, so it can't be a single
 // figure held here.
-const POTION_CAP = 999;
+// POTION_CAP now lives in shared/definitions.js — the server enforces it in
+// buyPotion, and a second `const` here is a duplicate declaration in the
+// concatenated bundle, which is a SyntaxError that takes the client down.
 const _POTION_QTY_PRESETS = [1, 10, 50, 100];
 let _potionQty = 1;
 

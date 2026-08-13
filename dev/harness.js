@@ -410,6 +410,35 @@ scenario('reconnect: a second socket for the same account kicks the first', asyn
   await c1.close(); await c2.close();
 });
 
+scenario('bundle: the concatenated client parses and declares nothing twice', async () => {
+  // The client is 24 files joined into ONE script, so two files declaring the
+  // same `const` is a SyntaxError that stops the entire bundle from loading —
+  // a total outage, and one no server-side scenario can see. Moving a constant
+  // into shared/definitions.js without deleting the old copy does exactly
+  // that, and it reached a commit before this check existed.
+  const fs = require('fs');
+  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  const list = src.slice(src.indexOf('const BUNDLE_FILES = ['), src.indexOf("].map(f => path.join(ROOT, f));"));
+  const files = [...list.matchAll(/'([^']+)'/g)].map(m => m[1]);
+  ok(files.length > 10, `bundle file list found (${files.length} files)`);
+  const bundle = files.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
+  let err = null;
+  try { new (require('vm').Script)(bundle, { filename: 'bundle.js' }); }
+  catch (e) { err = e.message; }
+  ok(!err, 'the concatenated bundle parses', err);
+
+  // Name the collision rather than only reporting a parse error, so the fix is
+  // obvious from the failure line.
+  const seen = new Map(), dupes = [];
+  for (const f of files) {
+    for (const m of fs.readFileSync(path.join(ROOT, f), 'utf8').matchAll(/^const ([A-Za-z_$][\w$]*)\s*=/gm)) {
+      if (seen.has(m[1]) && seen.get(m[1]) !== f) dupes.push(`${m[1]} (${seen.get(m[1])} and ${f})`);
+      else seen.set(m[1], f);
+    }
+  }
+  ok(dupes.length === 0, 'no top-level const is declared in two bundle files', dupes.join(', '));
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';
