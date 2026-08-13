@@ -574,6 +574,17 @@ const _enemySpriteLoadPromises = {};
 // Image → Canvas; a canvas's raw pixel buffer isn't subject to the
 // browser's compressed-image-bitmap eviction/re-decode behavior the way an
 // <img> is, which is the actual freeze this avoids, not a byte-size cut.
+// A sheet whose img.onerror fires (mobile network blip, a request dropped
+// mid-flight) used to just count as "done" and leave enemySpriteCache[eid][key]
+// pointing at the broken <img> forever — _enemyTextures' naturalWidth check
+// then treats that as "not yet rasterized" on every future frame, so the
+// sprite never appears again for the rest of the session even though the
+// server keeps simulating and hitting with that enemy: exactly the "monster
+// hits you but you can't see it" symptom. A few retries with backoff gives a
+// transient failure a real chance to recover before this enemy is given up on.
+const ENEMY_SPRITE_LOAD_RETRIES = 4;
+const ENEMY_SPRITE_RETRY_DELAY_MS = 600;
+
 function loadEnemySprites(eid, onDone) {
   onDone = onDone || function () {};
   const def = ENEMY_SPRITE_DEF[eid];
@@ -587,18 +598,30 @@ function loadEnemySprites(eid, onDone) {
   function tick() { if (++done >= total) resolveReady(); }
   keys.forEach(key => {
     const sh = def.sheets[key];
-    const img = new Image();
-    img.src = sh.src;
-    img.onload = () => {
-      const raster = () => _queueRaster(() => {
-        // 4 facing rows × sh.cols frames, all in this one sheet image.
-        enemySpriteCache[eid][key] = _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH);
-        tick();
-      });
-      if (img.decode) img.decode().then(raster, raster); else raster();
+    let attempt = 0;
+    const load = () => {
+      const img = new Image();
+      img.src = sh.src + (attempt > 0 ? (sh.src.includes('?') ? '&' : '?') + 'retry=' + attempt : '');
+      img.onload = () => {
+        const raster = () => _queueRaster(() => {
+          // 4 facing rows × sh.cols frames, all in this one sheet image.
+          enemySpriteCache[eid][key] = _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH);
+          tick();
+        });
+        if (img.decode) img.decode().then(raster, raster); else raster();
+      };
+      img.onerror = () => {
+        attempt++;
+        if (attempt <= ENEMY_SPRITE_LOAD_RETRIES) {
+          setTimeout(load, ENEMY_SPRITE_RETRY_DELAY_MS * attempt);
+        } else {
+          console.error('[sprites] gave up loading enemy sheet after retries:', eid, key, sh.src);
+          tick();
+        }
+      };
+      enemySpriteCache[eid][key] = img;
     };
-    img.onerror = tick;
-    enemySpriteCache[eid][key] = img;
+    load();
   });
   if (total === 0) resolveReady();
   _enemySpriteLoadPromises[eid].then(onDone);
