@@ -1990,7 +1990,6 @@ const PUBLIC_FILES = {
   '/guide.html':              'guide.html',
   '/admin.html':              'admin.html',
   '/tonconnect-manifest.json':'tonconnect-manifest.json',
-  '/favicon.ico':             'images/favicon.ico',
 };
 app.get(Object.keys(PUBLIC_FILES), (req, res) => {
   res.sendFile(path.join(ROOT, PUBLIC_FILES[req.path] || 'index.html'), err => {

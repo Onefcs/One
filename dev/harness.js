@@ -740,6 +740,89 @@ scenario('potions: an empty bag cannot be drunk from', async () => {
   await c.close();
 });
 
+// ── Browser check ────────────────────────────────────────────────────────────
+// Everything above talks to the server over a socket. This drives the actual
+// client: real Chromium, the real bundle, real WebGL. It is what makes changes
+// to the BUILD checkable at all — a server scenario cannot tell you the page
+// loaded, and the concatenated-bundle parse check cannot tell you it ran.
+//
+// The browser Playwright wants and the one this environment ships are
+// different builds, so the path is resolved rather than assumed; if neither is
+// there the scenario says so instead of failing the run for the wrong reason.
+function chromiumPath() {
+  const fs = require('fs');
+  const roots = ['/opt/pw-browsers'];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    for (const d of fs.readdirSync(root)) {
+      const p = path.join(root, d, 'chrome-linux', 'chrome');
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
+scenario('browser: the real client loads and reaches the world', async () => {
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    const errors = [], failed = [];
+    page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message.slice(0, 200)));
+    page.on('response', r => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url()}`); });
+    page.on('requestfailed', r => failed.push(`${r.failure() && r.failure().errorText} ${r.url()}`));
+
+    // DEV_LOCAL is on in the harness, so /?dev=<name> logs in through the same
+    // path the Mini App uses, with locally signed initData.
+    await page.goto(`${BASE}/?dev=browsercheck`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(7000);
+
+    // A fresh account lands on character select; pick a class to reach the world.
+    // A fresh account lands on the character carousel (#char-select). Picking
+    // a class goes through selectChar(), which is what the play button calls.
+    const needsClass = await page.evaluate(() => typeof state !== 'undefined' && state === 'select');
+    if (needsClass) {
+      await page.evaluate(() => selectChar('mage'));
+      await page.waitForTimeout(8000);
+    }
+
+    const st = await page.evaluate(() => ({
+      state: typeof state !== 'undefined' ? state : null,
+      hasPlayer: typeof player !== 'undefined' && !!player,
+      lvl: typeof player !== 'undefined' && player ? player.lvl : null,
+      connected: typeof socket !== 'undefined' && !!(socket && socket.connected),
+      // The three shapes the build changes could break: the shared catalog, a
+      // late file in the concat order, and the renderer.
+      sharedOk: typeof CHAR_DEF !== 'undefined' && typeof skillDamageMult === 'function',
+      lateFileOk: typeof openNpc === 'function',
+      pixiOk: typeof PIXI !== 'undefined',
+    }));
+
+    ok(st.hasPlayer, 'the client built a player');
+    eq(st.state, 'playing', 'and reached the world');
+    ok(st.connected, 'with a live socket');
+    ok(st.sharedOk, 'the shared catalog is in scope for the game code');
+    ok(st.lateFileOk, 'so is the last file in the concat order');
+    ok(st.pixiOk, 'the renderer loaded');
+    // Only same-origin requests are the game's own responsibility. This
+    // sandbox's proxy refuses third-party hosts outright, which says nothing
+    // about production — and is a large part of why serving socket.io from
+    // our own origin is worth doing.
+    const ours = failed.filter(f => f.includes(BASE));
+    ok(ours.length === 0, 'no same-origin request failed', ours.join(', '));
+    const realErrors = errors.filter(e => !/ERR_TUNNEL|ERR_(NAME|CONNECTION|PROXY)|telegram\.org|cdn\.socket\.io/.test(e));
+    ok(realErrors.length === 0, 'no console errors of our own', realErrors.slice(0, 4).join(' | '));
+  } finally {
+    await browser.close();
+  }
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

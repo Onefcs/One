@@ -6,6 +6,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <!-- Warm DNS/TLS to the socket.io CDN before its (deferred, end-of-body) script is reached -->
 <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
+<!-- Named explicitly. Without it the browser asks for /favicon.ico on every
+     cold load and takes a 404 for its trouble — there has never been such a
+     file in this project. -->
+<link rel="icon" href="/images/nexum-coin_v2.png" type="image/png">
 <link rel="stylesheet" href="css/style.css">
 <!-- Telegram Mini App SDK — must load before any game scripts -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>

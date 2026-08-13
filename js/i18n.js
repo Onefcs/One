@@ -1477,7 +1477,7 @@ function _i18nSnapshot() {
 // shows the right language automatically. Always derives from the pristine
 // RU snapshot (_i18nSnapshot), never from whatever the fields currently
 // hold, so switching languages back and forth is always correct.
-function applyLocale(lang) {
+function applyLocale(lang, opts) {
   _i18nSnapshot();
   currentLang = lang;
   const isRu = lang === 'ru';
@@ -1546,6 +1546,9 @@ function applyLocale(lang) {
   }
 
   applyDomTranslations();
+  // Called with skipRerender at page load — see initLocale for why the
+  // re-render cannot run until the rest of the bundle has executed.
+  if (opts && opts.skipRerender) return;
   // Re-render whatever's currently visible so the switch shows up immediately.
   // Wrapped in try/catch: applyLocale() runs once at page load (initLocale(),
   // called from the bottom of js/network.js) *before* later-loading bundle
@@ -1595,6 +1598,23 @@ function _loadSavedLang() {
 }
 
 // Called once on startup (js/network.js) before the first UI render.
+//
+// The re-render half is deferred to the end of the current task rather than
+// run inline. The bundle is 24 files in ONE script, and initLocale is called
+// from network.js — which sits ahead of quests.js, clans.js, game.js and
+// npc.js in the concat order, so their top-level `let`/`const` bindings do not
+// exist yet. Touching one is a TDZ throw, which `typeof` does NOT make safe
+// for a binding declared later in the same script, and applyLocale's re-render
+// block touches several. It was caught per call and logged, so the damage was
+// only that those panels silently kept their previous language — but the
+// throw was real and it happened on every single page load.
+//
+// A microtask runs after the whole script has finished executing, so by then
+// every file's declarations exist and there is nothing to trip over. The
+// translation of the DATA still happens synchronously here: that is what the
+// first render reads.
 function initLocale() {
-  applyLocale(_loadSavedLang());
+  const lang = _loadSavedLang();
+  applyLocale(lang, { skipRerender: true });
+  queueMicrotask(() => applyLocale(lang));
 }
