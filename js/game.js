@@ -1949,13 +1949,13 @@ function _isGuildWarTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
-// Фарм-зона gets a lighter palette than the biome theme it would otherwise
-// fall through to (getTheme() clamps every floor past index 4 to the same
-// dark golem-fortress brown) — a light, open field reads better for a zone
-// that's meant to feel like a low-pressure grinding spot, not a dungeon.
-const _FARM_WALL    = '#8a7448';
-const _FARM_FLOOR_A = '#5f7a3a';
-const _FARM_FLOOR_B = '#6f8c46';
+// Фарм-зона gets a dedicated dark-icy palette instead of falling through to
+// the biome theme (getTheme() clamps every floor past index 4 to the same
+// golem-fortress brown) — cold, dim blues instead of the old bright
+// green/tan so the zone reads as a frozen grinding spot, not a sunlit field.
+const _FARM_WALL    = '#2e4a5e';
+const _FARM_FLOOR_A = '#16242e';
+const _FARM_FLOOR_B = '#1c2f3a';
 function _isFarmZoneTile(tx, ty) {
   const b = typeof dungeon !== 'undefined' && dungeon && dungeon.farmZone && dungeon.farmZone.bounds;
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;

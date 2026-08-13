@@ -2539,6 +2539,52 @@ function drawTechGiftButton() {
   ctx.restore();
 }
 
+// Reward amounts shown in the modal below — mirrors TECH_GIFT_GOLD/
+// TECH_GIFT_NEXUM (server/index.js); purely display text, the server is
+// what actually decides and enforces the grant on techClaim.
+const TECH_GIFT_GOLD_DISPLAY  = 100000;
+const TECH_GIFT_NEXUM_DISPLAY = 200;
+
+// Opens on a tap of the ТЕХ HUD button (_checkTechGiftBtnTouch, js/input.js)
+// instead of claiming straight away, so the reward is shown before the
+// one-shot grant is spent. Same market-modal-overlay/-sheet shell every
+// other confirm-style popup here uses.
+function openTechGiftModal() {
+  if (!player || player.techClaimed) return;
+  const existing = document.getElementById('tech-gift-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'tech-gift-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800;color:#ffd659">${t('techGiftModalTitle')}</div>
+        <button onclick="document.getElementById('tech-gift-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:11px;color:#a3957c;margin-bottom:12px">${t('techGiftModalDesc')}</div>
+      <div class="db-rewards" style="margin-bottom:16px">
+        <div class="db-reward-row">
+          <span style="font-size:18px;flex:0 0 auto">🪙</span>
+          <span>${t('npcGoldLbl')}</span><span class="db-reward-qty">+${TECH_GIFT_GOLD_DISPLAY.toLocaleString('ru-RU')}</span>
+        </div>
+        <div class="db-reward-row">
+          <img src="/images/nexum-coin_v2.png" alt="">
+          <span>Liberty</span><span class="db-reward-qty">+${TECH_GIFT_NEXUM_DISPLAY}</span>
+        </div>
+      </div>
+      <button class="gram-btn gram-btn-orange" style="width:100%;padding:13px" onclick="_confirmTechGiftClaim()">${t('techGiftClaimBtn')}</button>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function _confirmTechGiftClaim() {
+  const ov = document.getElementById('tech-gift-ov');
+  if (ov) ov.remove();
+  if (typeof netTechClaim === 'function') netTechClaim();
+}
+
 // ─────────────────────────────────────────────────────────
 //  TARGET FRAME
 // ─────────────────────────────────────────────────────────

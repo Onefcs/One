@@ -297,7 +297,7 @@ function _checkTechGiftBtnTouch(cx, cy) {
   if (!player || player.techClaimed) return false;
   const tb = getTechGiftBtnPos();
   if (cx >= tb.x && cx <= tb.x + tb.w && cy >= tb.y && cy <= tb.y + tb.h) {
-    if (typeof netTechClaim === 'function') netTechClaim();
+    if (typeof openTechGiftModal === 'function') openTechGiftModal();
     return true;
   }
   return false;
