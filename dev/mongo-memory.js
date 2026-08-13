@@ -124,15 +124,20 @@ function matchFilter(doc, filter) {
 // ── Update application ──────────────────────────────────────────────────────
 function applyUpdate(doc, update) {
   if (!update) return;
-  const plain = Object.keys(update).filter(k => !k.startsWith('$'));
-  // A bare object (no operators) REPLACES the document body — the behaviour
-  // the _persistSavedFields comment warns about.
-  if (plain.length && !Object.keys(update).some(k => k.startsWith('$'))) {
-    for (const k of Object.keys(doc)) if (k !== '_id') delete doc[k];
-    Object.assign(doc, deepCopy(update));
-    return;
-  }
-  for (const [path, value] of Object.entries(update.$set || {})) setPath(doc, path, deepCopy(value));
+  // Mongoose's castUpdate ("fix up $set sugar") folds every bare top-level key
+  // into $set before the driver ever sees it — Model.updateOne({}, { foo: 1 })
+  // is a partial update, not a whole-document replace, and that is real
+  // Mongoose behaviour (node_modules/mongoose/lib/helpers/query/castUpdate.js),
+  // not raw MongoDB driver semantics. Flattening bare keys into $set here
+  // matches that: several call sites (findOneAndUpdate with a plain object,
+  // e.g. marketBuy's claim, the admin ban toggles) rely on it, and a double
+  // that instead nuked the rest of the document made those look broken
+  // (fields like item/price/sellerId vanishing) when production is fine.
+  const bareKeys = Object.keys(update).filter(k => !k.startsWith('$'));
+  const merged = bareKeys.length
+    ? { ...update, $set: { ...(update.$set || {}), ...Object.fromEntries(bareKeys.map(k => [k, update[k]])) } }
+    : update;
+  for (const [path, value] of Object.entries(merged.$set || {})) setPath(doc, path, deepCopy(value));
   for (const [path, by]    of Object.entries(update.$inc || {})) {
     setPath(doc, path, (Number(getPath(doc, path)) || 0) + Number(by));
   }

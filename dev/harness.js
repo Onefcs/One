@@ -614,6 +614,37 @@ scenario('market: cancelling a lot returns the item', async () => {
   await c.close();
 });
 
+scenario('market: buying a lot pays the seller', async () => {
+  // MARKET_FEE_PCT used to be undefined here (exported from inventory.js but
+  // never imported into index.js): price * (1 - undefined) is NaN, and
+  // _incBalance refuses a non-finite delta outright, so the seller's payout
+  // silently never happened while the buyer still paid and got the item.
+  const seller = await connectWithSaved('harness_market_seller', {
+    vipLevel: 1, gramBalance: 0, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(seller, 'deathknight');
+  const listed = seller.wait('marketListed', { timeout: 8000 });
+  seller.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+  const l = await listed;
+  ok(l && l.listing, 'listing created');
+  if (!l || !l.listing) return seller.close();
+
+  const buyer = await connectWithSaved('harness_market_buyer', { gramBalance: 100 });
+  await enterWorld(buyer, 'ranger');
+
+  const sellerCredit = seller.wait('gramBalanceUpdate', { timeout: 8000 });
+  const bought = buyer.wait('marketBought', { timeout: 8000 });
+  buyer.emit('marketBuy', { listingId: l.listing.id });
+  const bo = await bought;
+  ok(bo && bo.delivered !== false, 'buyer received the item');
+
+  const credit = await sellerCredit;
+  eq(credit.balance, 9, 'seller was credited price minus the 10% fee');
+
+  await seller.close();
+  await buyer.close();
+});
+
 scenario('hp: a save cannot hand the player health', async () => {
   const c = await connectWithSaved('harness_hp', { lvl: 1, hp: 5 });
   await enterWorld(c, 'lev');
