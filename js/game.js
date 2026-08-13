@@ -1342,7 +1342,7 @@ const _TELEPORT_LABEL = new Proxy({}, { get: (_, dir) => _teleportLabel(dir) });
 // listing every destination instead of triggering a transition directly —
 // see _portalDestinations/_openPortalModal below.
 const _PORTAL_DX = 0; // tiles, hub-side (NPCs sit north, at dy -11)
-const _PORTAL_DY = 10; // tiles south of spawn
+const _PORTAL_DY = 7; // tiles south of spawn — closer in than the old arm-pad row (was 10)
 let _portalPad = null;          // hub-only: {x, y} — approach opens the modal
 let _portalDestinations = null; // hub-only: [{target, req, label}] — modal contents
 let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation('hub') on trigger
@@ -1948,6 +1948,18 @@ function _isGuildWarTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
+// Фарм-зона gets a lighter palette than the biome theme it would otherwise
+// fall through to (getTheme() clamps every floor past index 4 to the same
+// dark golem-fortress brown) — a light, open field reads better for a zone
+// that's meant to feel like a low-pressure grinding spot, not a dungeon.
+const _FARM_WALL    = '#8a7448';
+const _FARM_FLOOR_A = '#5f7a3a';
+const _FARM_FLOOR_B = '#6f8c46';
+function _isFarmZoneTile(tx, ty) {
+  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.farmZone && dungeon.farmZone.bounds;
+  return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -1980,14 +1992,16 @@ function _buildChunk(cx, cy) {
   const mortarWall = _shadeHexColor(th.wallColor, -0.45);
   const mortarWallRace10 = _shadeHexColor(_RACE10_WALL, -0.45);
   const mortarWallGw = _shadeHexColor(_GW_WALL, -0.45);
+  const mortarWallFarm = _shadeHexColor(_FARM_WALL, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       const x = tx * TILE, y = ty * TILE;
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
-      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : th.wallColor;
-      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : mortarWall;
+      const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
+      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : th.wallColor;
+      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : mortarWall;
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2007,15 +2021,17 @@ function _buildChunk(cx, cy) {
   const mortarFloor = _shadeHexColor(th.floorA, -0.35);
   const mortarFloorRace10 = _shadeHexColor(_RACE10_FLOOR_A, -0.35);
   const mortarFloorGw = _shadeHexColor(_GW_FLOOR_A, -0.35);
+  const mortarFloorFarm = _shadeHexColor(_FARM_FLOOR_A, -0.35);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
-      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : th.floorA;
-      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : th.floorB;
-      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : mortarFloor;
+      const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
+      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : th.floorA;
+      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : th.floorB;
+      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : mortarFloor;
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2061,7 +2077,8 @@ function _buildChunk(cx, cy) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
       const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
-        : _isGuildWarTile(tx, ty) ? _GW_WALL : th.wallColor;
+        : _isGuildWarTile(tx, ty) ? _GW_WALL
+        : _isFarmZoneTile(tx, ty) ? _FARM_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));

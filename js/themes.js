@@ -173,10 +173,12 @@ const THEMES = [
     drawFloorProp: _floorProps(120, [{ key: 'bone_long' }, { key: 'bone_small' }, { key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'spikes_row' }]),
   },
 
-  // Floor 2 — Логово гоблинов (goblins)
+  // Floor 2 — Логово гоблинов (goblins). Colors match Floor 1 (the hub) —
+  // same bg/wallColor/floorA/floorB/mmFloor — while keeping its own name and
+  // floor props, so it still reads as a distinct zone, just recolored.
   {
-    name: '🏹 Логово гоблинов', bg: '#0a1408', mmFloor: '#5a8a2e',
-    wallColor: '#3d5a2e', floorA: '#33471f', floorB: '#3d5625',
+    name: '🏹 Логово гоблинов', bg: '#0a0c10', mmFloor: '#6a7488',
+    wallColor: '#3a4550', floorA: '#262c34', floorB: '#2d333c',
     drawFloorProp: _floorProps(120, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'bush1' }, { key: 'crate_single' }, { key: 'barrel_small' }]),
   },
 
