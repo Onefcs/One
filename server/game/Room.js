@@ -963,14 +963,18 @@ class Room {
     // it in _buildArmGates (js/game.js), and without it _evtPad stays null so
     // the portal never appears no matter what the event state says.
     // race10.bounds is what lets the client tint that zone's floor/walls to
-    // look like "Кровавая Башня" (see _buildChunk, js/game.js).
-    // guildWar is the same case as arena — _buildArmGates builds _gwPad/
-    // _gwReturnPad from it, so omitting it would leave the Guild War portal
-    // permanently missing no matter what guildWarState says. farmZone is the
-    // same again, for the Фарм-зона pad.
-    // returnPad exists only on arm floors (the pad that requests a transition
-    // back to the hub); armEntries only on the hub (the 4 outbound pads, now
-    // just {dir,req} — no target x/y, each arm is its own floor).
+    // look like "Кровавая Башня" (see _buildChunk, js/game.js). farmZone is
+    // the same again, for the Фарм-зона pad.
+    // guildWar is now only ever present on the Guild War floor's own Room —
+    // it carries the tower position/spawn ring/tinting bounds that floor's
+    // own dungeonData needs (see generateGuildWar, server/game/dungeon.js);
+    // the hub no longer has a guildWar field at all, since its outbound pad
+    // (_gwPad, js/game.js) only needs the hub's own spawn point plus a fixed
+    // offset, not this zone's own geometry.
+    // returnPad exists on every "own floor, one entrance" zone (arms, Guild
+    // War, …) — the pad that requests a transition back to the hub; armEntries
+    // only on the hub (the 4 outbound arm pads, now just {dir,req} — no
+    // target x/y, each arm is its own floor).
     return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, returnPad: d.returnPad, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
   }
 
@@ -2806,19 +2810,6 @@ class Room {
     p.x = spot.x; p.y = spot.y;
     p._profileRev++;
     return { x: p.x, y: p.y };
-  }
-
-  // Forces a player out of the Guild War zone to the hub — used when the
-  // 22:00-22:15 window hard-closes (server/index.js iterates every player
-  // still flagged _guildWarZone and calls this for each). Reuses
-  // deathBattleReturn's hub-eject (pvpMode=false, hub spawn) and additionally
-  // clears _guildWarZone so the per-tick bounds check doesn't immediately
-  // flip pvpMode back on before the client's next position update arrives.
-  guildWarEvict(socketId) {
-    const spot = this.deathBattleReturn(socketId);
-    const p = this.players.get(socketId);
-    if (p) p._guildWarZone = false;
-    return spot;
   }
 
   // Sends a player back to the hub with PvP off — shared exit path for

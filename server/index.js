@@ -3406,12 +3406,19 @@ function _gwOpenWindow(openAt = Date.now()) {
 // (ownership doesn't reset here, only the closeTimer/phase do) and everyone
 // still standing inside the zone is ejected to the hub. Re-arms tomorrow's
 // window immediately, same as _race10CloseWindow.
+//
+// Guild War is its own floor now (see server/game/floors.js), so "ejected"
+// means a real floor change, not just a position/flag reset within one
+// shared Room — that's what _forceEnterLocation (socket.data, set up per
+// connection near the enterLocation handler) exists for: this runs from a
+// module-level timer with no socket of its own in scope, so it has to reach
+// into each affected connection from outside.
 function _gwCloseWindow() {
   _gw.phase = 'closed';
   clearTimeout(_gw.closeTimer);
-  const room = getRoom(1);
-  if (room) {
-    room.players.forEach((p, sid) => { if (p._guildWarZone) room.guildWarEvict(sid); });
+  for (const [sid, floor] of playerFloorMap) {
+    if (floor !== FLOOR_IDS.guildWar) continue;
+    io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('hub');
   }
   io.emit('guildWarState', _gwPublicState());
   _gwSchedule();
@@ -3995,7 +4002,7 @@ async function _initFloorRooms() {
         .catch(err => console.error('[BossState] persist failed', f, arm, err));
     };
     const room = new Room(f, io, bossStateByFloor.get(f) || {}, onBossDeath);
-    if (f === FLOOR_IDS.hub) room.spawnGuildWarTower(_gw);
+    if (f === FLOOR_IDS.guildWar) room.spawnGuildWarTower(_gw);
     floorRooms.set(f, room);
   }
   console.log('Floor rooms initialized');
@@ -8701,28 +8708,48 @@ io.on('connection', socket => {
   });
 
   // Real floor transition — replaces the old client-only _teleportTo trick
-  // (js/game.js) for the hub's arm pads: the player leaves their current
-  // floor's Room entirely and joins a different one, with its own grid/
-  // enemies/NPCs, instead of just being repositioned inside a shared grid.
-  // `target` is either an arm key ('left'/'top'/'bottom'/'right') or 'hub'.
-  safeOn('enterLocation', ({ target } = {}) => {
-    if (!authed || !currentRoom) return;
+  // (js/game.js) for the hub's arm pads, and (as the special zones split off
+  // the hub one by one, see server/game/floors.js) their pads too: the player
+  // leaves their current floor's Room entirely and joins a different one,
+  // with its own grid/enemies/NPCs, instead of just being repositioned
+  // inside a shared grid. `target` is an arm key ('left'/'top'/'bottom'/
+  // 'right'), a special-zone key ('guildWar', …), or 'hub'.
+  //
+  // Factored out of the socket handler (rather than living inline in it) so
+  // code OUTSIDE this connection — a scheduled window closing, a match
+  // ending — can also move this specific player between floors. Every other
+  // per-connection escape hatch in this file follows the same shape: a
+  // closure assigned onto socket.data (see _grantXp, _questOnKill, …) so a
+  // handler elsewhere can call back into a connection it doesn't otherwise
+  // have a reference to. `silent` drops the denial emit for that case: a
+  // forced eviction has already decided the move is happening regardless of
+  // gates, there is nothing left to tell the client no about.
+  function _doEnterLocation(target, { silent = false } = {}) {
+    if (!authed || !currentRoom) return false;
     const oldP = currentRoom.players.get(socket.id);
-    if (!oldP || !oldP.type) return; // no character selected yet
+    if (!oldP || !oldP.type) return false; // no character selected yet
     let targetFloor;
     if (target === 'hub') {
       targetFloor = FLOOR_IDS.hub;
-    } else if (FLOOR_IDS[target] != null && target !== 'hub') {
+    } else if (target === 'guildWar') {
+      // Combat access follows the daily window, not a level — see _gw
+      // (phase 'live' only 22:00-22:15 MSK).
+      if (_gw.phase !== 'live') {
+        if (!silent) socket.emit('enterLocationDenied', { target, reason: 'closed' });
+        return false;
+      }
+      targetFloor = FLOOR_IDS.guildWar;
+    } else if (FLOOR_IDS[target] != null) {
       // Server-side level gate — the pad's own lock icon is client-side
       // decoration only, this is the check that actually matters.
       const req = ARM_LEVEL_REQ[target] || 0;
       const lvl = (oldP._sd && oldP._sd.lvl) || 1;
-      if (lvl < req) { socket.emit('enterLocationDenied', { target, reason: 'level', req }); return; }
+      if (lvl < req) { if (!silent) socket.emit('enterLocationDenied', { target, reason: 'level', req }); return false; }
       targetFloor = FLOOR_IDS[target];
     } else {
-      return; // unknown target
+      return false; // unknown target
     }
-    if (targetFloor === currentFloor) return; // already there
+    if (targetFloor === currentFloor) return false; // already there
 
     const oldFloor = currentFloor;
     const charType = oldP.type;
@@ -8738,6 +8765,10 @@ io.on('connection', socket => {
     currentRoom = getRoom(currentFloor);
     currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
     currentRoom.setPlayerChar(socket.id, charType, savedStats);
+    // Guild War: spread fresh entrants across the spawn ring instead of
+    // landing everyone on the same tile — the same placement a mid-window
+    // death respawn already uses (Room.guildWarRespawn).
+    if (target === 'guildWar') currentRoom.guildWarRespawn(socket.id);
     socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type: charType });
 
@@ -8747,7 +8778,11 @@ io.on('connection', socket => {
     if (_selfP2 && _selfP2.petId) {
       socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfP2.petId });
     }
-  });
+    return true;
+  }
+  socket.data._forceEnterLocation = target => _doEnterLocation(target, { silent: true });
+
+  safeOn('enterLocation', ({ target } = {}) => { _doEnterLocation(target); });
 
   // Compact position update: [x*2, y*2, facingIndex, hp] — see netSendMove in
   // js/network.js for why it is an array of half-pixel integers rather than an

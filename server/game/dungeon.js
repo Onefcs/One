@@ -151,18 +151,12 @@ const FEAR_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
 const FEAR_H  = FEAR_LANES * FEAR_PITCH;
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
-// One square sealed zone with a single stationary tower/castle dead centre.
-// Whichever clan lands the killing blow owns it (Room.js's capture logic
-// resets its HP in place — it is never despawned/respawned, see
-// Room.spawnGuildWarTower). No matchmaking/capacity cap ("Без ограничений —
-// открытая зона"), so sized generously like the boss ARENA rather than
-// tightly like a sealed instance — a big simultaneous crowd from multiple
-// clans shouldn't feel like a mosh pit around one tile. `spawns` is a ring of
-// entry points used both for initial placement and for in-zone respawn while
-// the window is live (Room.guildWarRespawn) — dying here doesn't eject you,
-// unlike every other sealed zone.
+// Its own floor now (generateGuildWar, below) instead of a rectangle painted
+// into the hub's mega-grid. GW_Y0 stays here only because FARM_Y0 (Фарм-зона,
+// below — not split out yet) still chains off where guildWar's old rectangle
+// used to sit in the hub's grid; GW_SIZE/GW_SPAWN_COUNT/GW_SPAWN_R are the
+// real geometry, shared with generateGuildWar().
 const GW_SIZE = 60;
-const GW_X0 = ARENA_X0;
 const GW_Y0 = FEAR_Y0 + FEAR_H + ZONE_GAP;
 const GW_SPAWN_COUNT = 8;
 const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
@@ -272,14 +266,6 @@ function generateHub() {
       entryY: (y0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
     });
   }
-
-  const guildWar = {
-    x: GW_X0, y: GW_Y0, size: GW_SIZE,
-    bx1: GW_X0 - 1, by1: GW_Y0 - 1, bx2: GW_X0 + GW_SIZE + 1, by2: GW_Y0 + GW_SIZE + 1,
-    cx: GW_X0 + Math.floor(GW_SIZE / 2), cy: GW_Y0 + Math.floor(GW_SIZE / 2),
-    isGuildWar: true,
-  };
-  paintRect(guildWar.x, guildWar.y, guildWar.x + guildWar.size - 1, guildWar.y + guildWar.size - 1);
 
   const rooms = [hub, arena, a3];
   const enemyList = [];
@@ -478,25 +464,6 @@ function generateHub() {
     // and every wave transition are server-pushed teleports, not something the
     // client discovers by walking around.
     fear: { lanes: fearLanes },
-    // Война гильдий (Guild War): one sealed zone, one tower dead centre.
-    // spawns is a ring of entry points reused both for initial placement
-    // (js/game.js's teleport pad) and in-zone respawn while the window is
-    // live (Room.guildWarRespawn) — see the const block above for why.
-    // bounds lets the client tint the zone's floor/walls, same purpose as
-    // race10.bounds above.
-    guildWar: {
-      cx: guildWar.cx * TILE + TILE / 2, cy: guildWar.cy * TILE + TILE / 2,
-      entryX: (GW_X0 + 6) * TILE + TILE / 2, entryY: guildWar.cy * TILE + TILE / 2,
-      exitX:  (GW_X0 + 3) * TILE + TILE / 2, exitY:  (GW_Y0 + 3) * TILE + TILE / 2,
-      spawns: Array.from({ length: GW_SPAWN_COUNT }, (_, i) => {
-        const ang = (i / GW_SPAWN_COUNT) * Math.PI * 2;
-        return {
-          x: guildWar.cx * TILE + TILE / 2 + Math.cos(ang) * GW_SPAWN_R * TILE,
-          y: guildWar.cy * TILE + TILE / 2 + Math.sin(ang) * GW_SPAWN_R * TILE,
-        };
-      }),
-      bounds: { x0: GW_X0, y0: GW_Y0, x1: GW_X0 + GW_SIZE, y1: GW_Y0 + GW_SIZE },
-    },
     // Фарм-зона: one entry/exit pair at the centre of the plus-shaped
     // corridor (offset a couple tiles apart so arriving and leaving don't
     // trigger each other) plus minLevel for the client's teleport-pad gate
@@ -688,4 +655,51 @@ function generateArm(dir, armIdx) {
   };
 }
 
-module.exports = { generateHub, generateArm, TILE, WALL, FLOOR };
+// Война гильдий (Guild War), now its own floor (see server/game/floors.js)
+// instead of a rectangle painted into the hub's mega-grid — same self-
+// contained small 0,0-origin grid pattern generateArm() above uses. One
+// square sealed zone with a single stationary tower dead centre; `spawns` is
+// a ring of entry points reused both for initial placement (server/index.js's
+// enterLocation('guildWar')) and in-zone respawn while the window is live
+// (Room.guildWarRespawn) — dying here doesn't eject you, unlike every other
+// sealed zone. `bounds` covers the whole grid (there's nothing else on this
+// floor to distinguish it from) so the existing position-driven pvpMode
+// check in Room.js's _tick keeps working unchanged: everyone on this floor
+// is inside `bounds` from the moment they land.
+function generateGuildWar() {
+  const w = GW_SIZE + MARGIN * 2, h = GW_SIZE + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const gw = {
+    x: MARGIN, y: MARGIN, size: GW_SIZE,
+    bx1: MARGIN - 1, by1: MARGIN - 1, bx2: MARGIN + GW_SIZE + 1, by2: MARGIN + GW_SIZE + 1,
+    cx: MARGIN + Math.floor(GW_SIZE / 2), cy: MARGIN + Math.floor(GW_SIZE / 2),
+    isGuildWar: true,
+  };
+  paintRect(gw.x, gw.y, gw.x + gw.size - 1, gw.y + gw.size - 1);
+
+  const cx = gw.cx * TILE + TILE / 2, cy = gw.cy * TILE + TILE / 2;
+  const spawns = Array.from({ length: GW_SPAWN_COUNT }, (_, i) => {
+    const ang = (i / GW_SPAWN_COUNT) * Math.PI * 2;
+    return { x: cx + Math.cos(ang) * GW_SPAWN_R * TILE, y: cy + Math.sin(ang) * GW_SPAWN_R * TILE };
+  });
+  // Sits just inside the north-west corner, clear of the tower and the spawn
+  // ring — walking onto it triggers enterLocation({target:'hub'}) client-side
+  // the same generic way an arm's own returnPad does (js/game.js).
+  const returnPad = { x: (gw.x + 3) * TILE + TILE / 2, y: (gw.y + 3) * TILE + TILE / 2 };
+
+  return {
+    grid, rooms: [gw], w, h,
+    spawn: spawns[0],
+    returnPad,
+    guildWar: { cx, cy, spawns, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
+    enemies: [],
+  };
+}
+
+module.exports = { generateHub, generateArm, generateGuildWar, TILE, WALL, FLOOR };

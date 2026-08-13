@@ -339,6 +339,48 @@ scenario('floors: entering an arm is a real floor change, gated server-side, wit
   await c.close();
 });
 
+scenario('floors: Guild War is its own floor, window-gated, and force-evicted when it closes', async () => {
+  const c = await connectAs('harness_gw');
+  await enterWorld(c, 'ranger');
+
+  // The window starts closed — a client that goes straight for it (no pad
+  // walk to gate it client-side first) must still be refused server-side.
+  const deniedClosed = c.wait('enterLocationDenied', { timeout: 3000 });
+  c.emit('enterLocation', { target: 'guildWar' });
+  const denial = await deniedClosed;
+  eq(denial && denial.reason, 'closed', 'entry is refused while the window is closed');
+
+  // Same force-open the in-game admin panel uses.
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+  const openRes = await fetch(`${BASE}/admin/guildwar/open`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  eq(openRes.status, 200, 'admin can force-open the Guild War window');
+
+  const gwStart = c.wait('gameStart', { where: `${c.name} enters guildWar` });
+  c.emit('enterLocation', { target: 'guildWar' });
+  const onGw = await gwStart;
+  eq(onGw.floor, 6, 'entering guildWar switches to its own floor');
+  ok((onGw.enemies || []).some(e => e.eid === 'guildwar_castle'), 'and that floor has its own tower, in view from the spawn ring');
+
+  // Closing the window has to force everyone still inside back out — no pad
+  // walk triggers it, so this only works if it can reach the connection from
+  // outside (socket.data._forceEnterLocation, server/index.js).
+  const hubStart = c.wait('gameStart', { where: `${c.name} force-evicted to hub` });
+  const closeRes = await fetch(`${BASE}/admin/guildwar/close`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  eq(closeRes.status, 200, 'admin can force-close the Guild War window');
+  const backAtHub = await hubStart;
+  eq(backAtHub.floor, 1, 'closing the window sends a still-present player back to the hub floor');
+
+  await c.close();
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');

@@ -1518,8 +1518,10 @@ function netConnect(onReady) {
 
 // ── Party helpers ─────────────────────────────────────────
 // Requests a real floor transition — replaces the old client-only
-// _teleportTo trick (js/game.js) for the hub's arm pads. `target` is either
-// an arm key ('left'/'top'/'bottom'/'right') or 'hub'. The server answers
+// _teleportTo trick (js/game.js) for the hub's arm pads, and for the special
+// zones being split off the hub the same way (see server/game/floors.js).
+// `target` is an arm key ('left'/'top'/'bottom'/'right'), a special-zone key
+// ('guildWar', …), or 'hub'. The server answers
 // with a fresh 'gameStart' for the new floor, same shape as first login —
 // _pendingFloorChange tells _applyGameStart to treat it as a floor change
 // (reposition, but don't restoreFromSave/csOnServerReady's login path).

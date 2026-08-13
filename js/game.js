@@ -1351,7 +1351,7 @@ let _evtBossAlive = false;
 // _gwOpen() (22:00-22:15 MSK) instead of _evtArenaOpen(); _gwPhase is set by
 // js/network.js's guildWarState handler and by the gameStart payload.
 const _GW_PAD_DX = -10;
-let _gwPad = null, _gwReturnPad = null;
+let _gwPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
 // Фарм-зона pad — always open (no time window, unlike Guild War), but
@@ -1403,14 +1403,15 @@ function _buildArmGates() {
     _evtPad = null; _evtReturnPad = null;
   }
 
-  // Guild War zone pads — same reasoning as the event-boss ones above.
-  const gw = dungeon.guildWar;
-  if (gw) {
-    _gwPad = { x: sx + _GW_PAD_DX * TILE, y: sy, targetX: gw.entryX, targetY: gw.entryY };
-    _gwReturnPad = { x: gw.exitX, y: gw.exitY, targetX: sx, targetY: sy };
-  } else {
-    _gwPad = null; _gwReturnPad = null;
-  }
+  // Guild War hub-side pad — its own floor now (server/game/floors.js), so
+  // stepping onto it requests a real transition (netEnterLocation) rather
+  // than a same-grid teleport; no targetX/targetY any more, same change the
+  // arm pads above already went through. Only makes sense on the hub itself
+  // — armEntries is a hub-only field (generateHub, server/game/dungeon.js) —
+  // and the zone's own returnPad (generateGuildWar) flows back through the
+  // generic _returnPads handling above, so there's no dedicated return pad
+  // to build here any more either.
+  _gwPad = dungeon.armEntries ? { x: sx + _GW_PAD_DX * TILE, y: sy } : null;
 
   // Фарм-зона pad — req carries the level gate, same field regular arm pads
   // use (see _teleportPads above).
@@ -1506,14 +1507,13 @@ function _updateTeleportPads(dt) {
     _teleportTo(_evtReturnPad.targetX, _evtReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   }
   if (typeof updateGuildWarHpBar === 'function') updateGuildWarHpBar();
+  // The way back is the zone's own returnPad, handled generically by the
+  // _returnPads loop above (same as an arm) — the server refuses re-entry
+  // once the window closes (see _doEnterLocation, server/index.js), and a
+  // reconnect mid-eviction lands back on the hub already, so there's no
+  // "stranded with the window shut" case left to special-case here.
   if (_gwOpen() && _gwPad && dist(player.x, player.y, _gwPad.x, _gwPad.y) < TRIGGER_R) {
-    _teleportTo(_gwPad.targetX, _gwPad.targetY, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
-  }
-  // Stays usable even when the window is closed — nobody should still be
-  // inside by then (the server evicts everyone at 22:15), but a reconnect
-  // mid-eviction shouldn't leave anyone with no way out.
-  if (_gwReturnPad && dist(player.x, player.y, _gwReturnPad.x, _gwReturnPad.y) < TRIGGER_R) {
-    _teleportTo(_gwReturnPad.targetX, _gwReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+    _requestEnterLocation('guildWar', typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
   }
   if (_farmPad && dist(player.x, player.y, _farmPad.x, _farmPad.y) < TRIGGER_R) {
     if (_farmPad.req > 0 && (player.lvl || 1) < _farmPad.req) {
@@ -1563,7 +1563,6 @@ function drawTeleportPads() {
   if (_evtArenaOpen() && _evtPad) _drawTeleportPad(_evtPad.x, _evtPad.y, 0, t('evtArenaLbl'), '#eb4e61', '#ff8a4a');
   if (_evtReturnPad) _drawTeleportPad(_evtReturnPad.x, _evtReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
   if (_gwOpen() && _gwPad) _drawTeleportPad(_gwPad.x, _gwPad.y, 0, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', '#eb4e61', '#c9a24b');
-  if (_gwReturnPad) _drawTeleportPad(_gwReturnPad.x, _gwReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
   // Фарм-зона: always open, so no gating condition here — just the pad's own
   // req (level 20) via _drawTeleportPad's built-in lock rendering.
   if (_farmPad) _drawTeleportPad(_farmPad.x, _farmPad.y, _farmPad.req, _farmPad.label, '#eb4e61', '#4ee69a');
