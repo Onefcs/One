@@ -1053,6 +1053,72 @@ scenario('items: a storage move is one server-side operation', async () => {
   await c.close();
 });
 
+scenario('party: growing an existing party doesn\'t break it for the others', async () => {
+  // Investigated a report that a party "breaks apart" when someone else
+  // sends a party invite. Covers every shape that report could reasonably
+  // mean: an existing member inviting a new one to grow the party, an
+  // outsider trying to invite someone who is already partied (must be
+  // silently refused, not disrupt anything), and a full party refusing a
+  // 6th member — none of these should touch the existing members' rosters.
+  const a = await connectAs('harness_party_a');
+  const b = await connectAs('harness_party_b');
+  const c = await connectAs('harness_party_c');
+  const d = await connectAs('harness_party_d');
+  await enterWorld(a, 'ranger'); await enterWorld(b, 'ranger');
+  await enterWorld(c, 'ranger'); await enterWorld(d, 'ranger');
+
+  // Form a 2-person party: a invites b, b accepts.
+  const aUpd1 = a.wait('partyUpdated', { timeout: 4000 });
+  const bInv  = b.wait('partyInviteReceived', { timeout: 4000 });
+  a.emit('partyInvite', { targetId: b.sock.id });
+  const inv1 = await bInv;
+  eq(inv1.fromId, a.sock.id, 'b is told who invited them');
+  const bUpd1 = b.wait('partyUpdated', { timeout: 4000 });
+  b.emit('partyAccept', { fromId: a.sock.id });
+  const [au1, bu1] = await Promise.all([aUpd1, bUpd1]);
+  eq(au1.members.length, 1, 'a now sees exactly b');
+  eq(bu1.members.length, 1, 'b now sees exactly a');
+
+  // An outsider (d) invites a, who is already partied — must be silently
+  // refused: d gets nothing back, and — the actual bug shape reported — the
+  // party must not dissolve or change for b either.
+  const dGotNothing = d.wait('partyInviteReceived', { timeout: 1500 }).then(() => 'got one').catch(() => 'nothing');
+  const bGotNothing = b.wait('partyUpdated', { timeout: 1500 }).then(() => 'got one').catch(() => 'nothing');
+  d.emit('partyInvite', { targetId: a.sock.id });
+  eq(await dGotNothing, 'nothing', 'a, already partied, never sees the outside invite reach them');
+  eq(await bGotNothing, 'nothing', 'and b\'s side of the party is never touched by it');
+
+  // b (an existing member, not the one who formed the party) invites c to
+  // grow it. a must be told about the new member — that is the actual "does
+  // the party survive a new invite" question the report was about.
+  const aUpd2 = a.wait('partyUpdated', { timeout: 4000 });
+  const cInv  = c.wait('partyInviteReceived', { timeout: 4000 });
+  b.emit('partyInvite', { targetId: c.sock.id });
+  await cInv;
+  const cUpd = c.wait('partyUpdated', { timeout: 4000 });
+  const bUpd2 = b.wait('partyUpdated', { timeout: 4000 });
+  c.emit('partyAccept', { fromId: b.sock.id });
+  const [au2, bu2, cu2] = await Promise.all([aUpd2, bUpd2, cUpd]);
+  eq(au2.members.length, 2, 'a sees the party grow to 2 others (b, c) — not dissolve');
+  eq(bu2.members.length, 2, 'so does b');
+  eq(cu2.members.length, 2, 'and c joined the SAME party (a+b), not a fresh one');
+  ok(au2.members.some(m => m.id === c.sock.id), 'a specifically sees c as a new party-mate');
+
+  // c declining a fresh invite tells the inviter, instead of leaving them
+  // with no signal at all (partyDecline used to be a pure no-op).
+  const e = await connectAs('harness_party_e');
+  await enterWorld(e, 'ranger');
+  const declineToast = a.wait('partyInviteDeclined', { timeout: 4000 });
+  const eInv = e.wait('partyInviteReceived', { timeout: 4000 });
+  a.emit('partyInvite', { targetId: e.sock.id });
+  await eInv;
+  e.emit('partyDecline', { fromId: a.sock.id });
+  const declined = await declineToast;
+  eq(declined.byName, e.auth.username, 'the inviter is told who declined');
+
+  await Promise.all([a, b, c, d, e].map(x => x.close()));
+});
+
 scenario('reconnect: a second socket for the same account kicks the first', async () => {
   const c1 = await connectAs('harness_kick');
   await enterWorld(c1, 'warlock');

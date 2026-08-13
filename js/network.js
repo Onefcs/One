@@ -1062,6 +1062,13 @@ function netConnect(onReady) {
     // partyUpdated (or disconnect) will clear the member list; don't wipe here
   });
 
+  // partyDecline (server/index.js) used to be a pure no-op — the inviter
+  // never found out their invite was refused, and just had no way to tell
+  // that apart from "still pending" or "their client silently ate it".
+  socket.on('partyInviteDeclined', ({ byName }) => {
+    if (player) dmgNum(player.x, player.y - 30, typeof tVars === 'function' ? tVars('partyDeclinedToast', { name: byName || '?' }) : (byName || '?') + ' отклонил(а) приглашение', '#fa0');
+  });
+
   // Answer to the Инфо button next to Пати+ (getPartyInfoBtnPos, js/input.js
   // / drawPartyButton, js/ui.js) — the server computes this straight from
   // its own record of the target (Room.publicProfile), so unlike an earlier

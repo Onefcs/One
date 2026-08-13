@@ -10425,7 +10425,19 @@ io.on('connection', socket => {
     });
   });
 
-  safeOn('partyDecline', () => { /* no cleanup needed */ });
+  // No server-side party state to clean up here — a pending invite was never
+  // tracked anywhere (partyInvite is fire-and-forget: it either lands as
+  // partyInviteReceived or the target was never reachable at all), so
+  // there's nothing to roll back. But the inviter WAS left with nothing:
+  // this used to be a pure no-op, so their client just sat there with no
+  // idea whether the invite is still pending, was declined, or vanished
+  // into a client that closed the popup without answering at all. Telling
+  // them closes that gap.
+  safeOn('partyDecline', ({ fromId } = {}) => {
+    if (!authed || typeof fromId !== 'string') return;
+    const fromSocket = io.sockets.sockets.get(fromId);
+    if (fromSocket) fromSocket.emit('partyInviteDeclined', { byName: authed.username });
+  });
 
   // Answered straight from this Room's own record of the target (see
   // Room.publicProfile) instead of relaying to their client — that earlier

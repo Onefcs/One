@@ -463,6 +463,7 @@ Object.assign(I18N_UI, {
   enchantStoneLbl: { ru: 'Камень заточки', en: 'Enchant Stone', uk: 'Камінь гартування', es: 'Piedra de Encantamiento', tr: 'Büyü Taşı', pt: 'Pedra de Encantamento' },
   partyCountToast: { ru: 'Пати: {n} чел.', en: 'Party: {n}', uk: 'Паті: {n}', es: 'Grupo: {n}', tr: 'Grup: {n}', pt: 'Grupo: {n}' },
   leftPartyToast: { ru: '{name} покинул пати', en: '{name} left the party', uk: '{name} покинув паті', es: '{name} abandonó el grupo', tr: '{name} gruptan ayrıldı', pt: '{name} saiu do grupo' },
+  partyDeclinedToast: { ru: '{name} отклонил(а) приглашение', en: '{name} declined the invite', uk: '{name} відхилив(ла) запрошення', es: '{name} rechazó la invitación', tr: '{name} daveti reddetti', pt: '{name} recusou o convite' },
   allyPrayerToast: { ru: 'Молитва союзника!', en: "Ally's Prayer!", uk: 'Молитва союзника!', es: '¡Oración del Aliado!', tr: 'Müttefik Duası!', pt: 'Oração do Aliado!' },
   finalBossToast: { ru: '⚔️ ФИНАЛЬНЫЙ БОСС!', en: '⚔️ FINAL BOSS!', uk: '⚔️ ФІНАЛЬНИЙ БОС!', es: '⚔️ ¡JEFE FINAL!', tr: '⚔️ SON PATRON!', pt: '⚔️ CHEFE FINAL!' },
   waveToast:     { ru: 'Волна {w} / {total}', en: 'Wave {w} / {total}', uk: 'Хвиля {w} / {total}', es: 'Oleada {w} / {total}', tr: 'Dalga {w} / {total}', pt: 'Onda {w} / {total}' },
