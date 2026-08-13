@@ -465,7 +465,8 @@ function usePotion() {
   const type = player.hudPotion || 'pt1';
   if ((bag[type] || 0) <= 0) return;
   if (player.hp >= player.maxHp) return;
-  bag[type]--;
+  // Not decremented here: the server spends from its own bag and answers
+  // with potionBag, which is what the HUD and the shop read.
   const def = ITEM_DEF.find(i => i.id === type);
   const heal = (def && def.hp) || 20;
   player.hp = Math.min(player.maxHp, player.hp + heal);

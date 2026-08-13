@@ -698,6 +698,48 @@ scenario('exposure: the repository is not served as static files', async () => {
   }
 });
 
+scenario('potions: buying adds them and persists', async () => {
+  const c = await connectWithSaved('harness_potbuy', { gold: 100, potionBag: {} });
+  await enterWorld(c, 'mage');
+  const gold = c.wait('goldSync', { timeout: 6000 }).catch(() => null);
+  const bag  = c.wait('potionBag', { timeout: 6000 }).catch(() => null);
+  c.emit('buyPotion', { idx: 0, qty: 4 });     // pt1, 5 gold each
+  const g = await gold, b = await bag;
+  eq(g && g.gold, 80, 'gold went down by the price');
+  eq(b && b.potionBag && b.potionBag.pt1, 4, 'and the potions came back in the same round trip');
+  ok(b && b.bought && b.bought.n === 4, 'with what was bought, for the confirmation line');
+  await sleep(200);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.potionBag && row.savedData.potionBag.pt1, 4, 'and both were persisted');
+  eq(row.savedData.gold, 80, 'gold too');
+  await c.close();
+});
+
+scenario('potions: drinking one is persisted, not just decremented in memory', async () => {
+  // It used to ride "the normal progress save", which stopped carrying
+  // potionBag the moment that field was pinned — so a drunk potion came back
+  // on the next reconnect.
+  const c = await connectWithSaved('harness_potuse', { potionBag: { pt1: 3 }, hp: 10, maxHp: 260, lvl: 1 });
+  await enterWorld(c, 'lev');
+  const bag = c.wait('potionBag', { timeout: 6000 }).catch(() => null);
+  c.emit('usePotion', { id: 'pt1' });
+  const b = await bag;
+  eq(b && b.potionBag && b.potionBag.pt1, 2, 'the server spent one from its own bag');
+  await sleep(250);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.potionBag && row.savedData.potionBag.pt1, 2, 'and wrote it down');
+  await c.close();
+});
+
+scenario('potions: an empty bag cannot be drunk from', async () => {
+  const c = await connectWithSaved('harness_potempty', { potionBag: { pt1: 0 }, hp: 10, maxHp: 260 });
+  await enterWorld(c, 'lev');
+  const empty = c.wait('potionEmpty', { timeout: 5000 }).catch(() => null);
+  c.emit('usePotion', { id: 'pt1' });
+  ok(await empty, 'refused');
+  await c.close();
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

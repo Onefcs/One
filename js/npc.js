@@ -22,6 +22,17 @@ function openNpc(npcId) {
   _openNpcId = npcId;
 }
 
+// Re-renders whatever NPC panel is open, in place. The merchant shows the gold
+// and the potion counts, and both now change server-side — buying used to
+// re-open the panel itself right after mutating them locally, which stopped
+// working the moment the purchase became a request: the reply arrives later, in
+// network.js, with nothing to re-render it.
+function refreshNpcPanel() {
+  if (!_openNpcId || !player) return;
+  const body = document.getElementById('npc-body');
+  if (body) body.innerHTML = _buildNpcBody(_openNpcId);
+}
+
 function closeNpc() {
   document.getElementById('npc-overlay').style.display = 'none';
   // Storage moves are server-side now (storageDeposit/storageWithdraw), each

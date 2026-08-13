@@ -1127,6 +1127,8 @@ function netConnect(onReady) {
     if (!player || !Number.isFinite(gold)) return;
     if (player.gold === gold) return;
     player.gold = gold;
+    // The merchant panel prints the balance and gates its buttons on it.
+    if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
     if (typeof netSaveProgressNow === 'function') netSaveProgressNow();
     if (typeof updateInvUI === 'function') updateInvUI();
     if (typeof updateClanUI === 'function') updateClanUI();
@@ -1330,11 +1332,23 @@ function netConnect(onReady) {
   });
 
   // The authoritative potion bag, after a purchase or a use.
-  socket.on('potionBag', ({ potionBag } = {}) => {
+  socket.on('potionBag', ({ potionBag, bought } = {}) => {
     if (!player || !potionBag) return;
     player.potionBag = { ...potionBag };
+    // The merchant panel reads the counts and the gold straight off `player`,
+    // so it has to be told to redraw — the purchase is a request now and this
+    // reply is the only thing that knows it landed.
+    if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
     if (typeof onBuyPotion === 'function') onBuyPotion();
     if (typeof updateHUD === 'function') updateHUD();
+    if (typeof updateInvUI === 'function') updateInvUI();
+    // The "✓ Куплено" line the shop used to print itself, before the purchase
+    // became a request and the confirmation moved to the reply.
+    if (bought && typeof _shopMsgOk === 'function') {
+      const def = typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bought.id) : null;
+      _shopMsgOk((typeof t === 'function' ? t('npcBoughtPrefix') : '✓ Куплено: ') +
+        ((def && def.name) || bought.id) + (bought.n > 1 ? ' ×' + bought.n : ''));
+    }
   });
 
   // The authoritative buff timers. The client keeps counting them down for its

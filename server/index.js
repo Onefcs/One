@@ -5870,7 +5870,7 @@ io.on('connection', socket => {
     _persistSavedFields(authed, { gold: _lastStats.gold, potionBag: _lastStats.potionBag });
     logPlayer(authed.telegramId, authed.username, 'buy_potion', { id: entry.itemId, n, cost });
     socket.emit('goldSync', { gold: _lastStats.gold });
-    socket.emit('potionBag', { potionBag: _lastStats.potionBag });
+    socket.emit('potionBag', { potionBag: _lastStats.potionBag, bought: { id: entry.itemId, n } });
     // buy_potion quests count purchases, and this is the only place one happens.
     if (_currentQuest() && _currentQuest().type === 'buy_potion') { _questBump('_potion', n); _questPush(); }
   });
@@ -8696,10 +8696,17 @@ io.on('connection', socket => {
       ? _catalogHeal
       : (Number.isFinite(n) ? Math.max(0, Math.min(n, 200)) : 60);
     currentRoom.healPlayer(socket.id, heal);
-    // Not persisted on its own: potionBag rides the normal progress save, and
-    // the client's own copy (which it decrements too) is what the next save
-    // carries anyway. Writing here would be one DB round trip per potion.
+    // Persisted here, and this is not optional any more. It used to ride "the
+    // normal progress save, and the client's own copy is what the next save
+    // carries anyway" — but potionBag is pinned to the server's copy now, so
+    // the client's save carries nothing and the decrement never reached the
+    // database. Potions came back after every reconnect. One small $set per
+    // potion, against a 3.5s cooldown, is the right price for that.
+    if (bag) _persistSavedFields(authed, { potionBag: bag });
     socket.emit('potionUsed', { id: potId, heal, left: bag ? bag[potId] : null });
+    // The authoritative bag, so the shop and the HUD show what is actually
+    // left rather than the client's own guess.
+    if (bag) socket.emit('potionBag', { potionBag: bag });
   });
 
   safeOn('statsUpdate', ({ atk, def, maxHp, critChance, critPower } = {}) => {
