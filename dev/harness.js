@@ -248,28 +248,61 @@ scenario('gold: founding is refused when short, and no clan is made', async () =
   await c.close();
 });
 
-scenario('anti-cheat: the XP ledger is armed, not silently disabled', async () => {
-  // Regression guard. _xpCeilingFor once returned NaN because its constants
-  // lived in another module, and every comparison against NaN is false — so the
-  // ledger accepted any level at all and said nothing. A cap that is off is
-  // indistinguishable from a cap that passes unless something asserts the
-  // entitlement is a real number.
-  const { _xpCeilingFor, XP_JOIN_SLACK_KILLS } = require('../server/anticheat');
-  ok(Number.isFinite(_xpCeilingFor(100)), `_xpCeilingFor returns a number (${_xpCeilingFor(100)})`);
-  ok(_xpCeilingFor(100) > 100, 'and it is a ceiling above the raw figure');
-  ok(Number.isFinite(XP_JOIN_SLACK_KILLS), 'the join slack is a number');
+scenario('level: a save cannot set the level', async () => {
+  const c = await connectWithSaved('harness_lvlpin', { lvl: 5, xp: 12 });
+  await enterWorld(c, 'mage');
+  c.emit('saveProgress', { stats: {
+    type: 'mage', lvl: 900, xp: 999999, xpNext: 1, baseAtk: 9999, baseDef: 9999, baseMaxHp: 99999,
+    gold: 0, kills: 0, hp: 10, maxHp: 10, savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const sd = row.savedData || {};
+  eq(sd.lvl, 5, 'the stored level is the one the server held');
+  eq(sd.xp, 12, 'and so is the xp');
+  ok(sd.baseAtk < 9999, `the level-derived stats came with it (baseAtk=${sd.baseAtk})`);
+  await c.close();
 });
 
-scenario('anti-cheat: a save claiming impossible level is capped', async () => {
-  const c = await connectAs('harness_forge');
+scenario('combat: a hit reaches the server and lowers the real enemy', async () => {
+  const c = await connectAs('harness_combat');
+  const start = await enterWorld(c, 'deathknight');
+  const target = (start.enemies || []).filter(e => e && (e.hp || 0) > 0).sort((x, y) => x.hp - y.hp)[0];
+  ok(target, 'the room has a live enemy');
+  if (!target) return c.close();
+  // Killing one is not a test: the weakest enemy reachable from spawn has
+  // 24,000 HP against a level-1 character. What matters here is that the hit
+  // is resolved server-side at all — the damage number, the range check and
+  // the enemy's HP all live there.
+  c.emit('playerMove', { x: target.x + 20, y: target.y, facing: 1, moving: false });
+  await sleep(120);
+  const hurt = c.wait('enemyHurt', { timeout: 6000 }).catch(() => null);
+  c.emit('attack', { enemyId: target.id });
+  const got = await hurt;
+  ok(got && got.id === target.id, 'the server resolved the hit');
+  ok(got && got.dmg > 0, `and reported the damage it dealt (${got && got.dmg})`);
+  ok(got && got.hp < target.hp, 'and the enemy lost health on its side');
+  await c.close();
+});
+
+scenario('level: a server-granted reward crosses the level threshold', async () => {
+  // One XP short of level 2, then claim the first story quest — a flat 50 XP
+  // reward, granted and applied entirely server-side.
+  const c = await connectWithSaved('harness_levelup', { lvl: 1, xp: 99, xpNext: 100, questIdx: 0 });
   await enterWorld(c, 'mage');
-  const sync = c.wait('xpSync', { timeout: 5000 }).catch(() => null);
-  c.emit('saveProgress', { stats: {
-    type: 'mage', lvl: 900, xp: 0, gold: 0, kills: 0, hp: 10, maxHp: 10,
-    inventory: [], storage: [], equipment: {}, savedAt: Date.now(), invRev: 0,
-  } });
-  const got = await sync;
-  ok(got && got.lvl < 900, `a forged level is corrected (xpSync lvl=${got && got.lvl})`);
+  const claimed = c.wait('questClaimed', { timeout: 6000 }).catch(() => null);
+  const synced  = c.wait('xpSync', { timeout: 6000 }).catch(() => null);
+  c.emit('claimQuest', { idx: 0 });
+  const q = await claimed;
+  ok(q && q.xp === 50, `the quest paid its flat XP (${q && q.xp})`);
+  const st = await synced;
+  ok(st, 'the level state came back from the server');
+  eq(st && st.lvl, 2, 'which crossed into level 2');
+  ok(st && st.xpNext > 100, 'with the next threshold recomputed');
+  ok(st && st.baseAtk > 0 && st.baseMaxHp > 0, 'and the level-derived stats');
+  await sleep(200);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.lvl, 2, 'the level up was persisted immediately');
   await c.close();
 });
 

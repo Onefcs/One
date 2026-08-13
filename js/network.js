@@ -886,7 +886,7 @@ function netConnect(onReady) {
     dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#5dade2' : '#98e456');
   }
 
-  socket.on('enemyKilled', ({ id, xp, gold, goldTotal, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
+  socket.on('enemyKilled', ({ id, xp, gold, goldTotal, level, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
     if (id === targetId && !targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
     const e = serverEnemiesMap.get(id);
     const px = ex ?? (e ? e.x : player?.x ?? 0);
@@ -915,12 +915,12 @@ function netConnect(onReady) {
       }
       serverEnemies.length = j;
     }
-    if (xp && player) {
-      player.kills++;
-      const _cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
-      const _xpFinal = _cb && _cb.xp > 0 ? Math.round(xp * (1 + _cb.xp / 100)) : xp;
-      gainXP(_xpFinal);
-    }
+    // `xp` is what this kill actually paid THIS player — clan bonus, potion and
+    // death penalty already applied server-side — and `level` is the state it
+    // produced. The client used to apply those multipliers and run the level
+    // curve itself, which is why the server had to audit the result.
+    if (xp && player) player.kills++;
+    if (player && level) applyLevelState(level);
     if (eid && player && typeof onEnemyKill === 'function') {
       const _eDef = ENEMY_DEF.find(e => e.eid === eid);
       if (_eDef) onEnemyKill(_eDef.name);
@@ -1137,16 +1137,13 @@ function netConnect(onReady) {
   // one trips the same check and the correction never converges.
   // recompute() is what turns the corrected level into the stats this side
   // uses — baseAtk/baseDef/baseMaxHp all track it.
-  socket.on('xpSync', ({ lvl, xp, xpNext } = {}) => {
-    if (!player || !Number.isFinite(lvl)) return;
-    const _cd = player.charDef || {};
-    player.lvl       = lvl;
-    player.xp        = Number.isFinite(xp) ? xp : 0;
-    player.xpNext    = Number.isFinite(xpNext) ? xpNext : xpToNext(lvl);
-    player.baseAtk   = (_cd.baseAtk || 0) + (lvl - 1);
-    player.baseDef   = (_cd.baseDef || 0) + (lvl - 1);
-    player.baseMaxHp = (_cd.baseHP  || 0) + (lvl - 1) * 20;
-    if (typeof recompute === 'function') recompute();
+  // The authoritative level state. Sent on join and whenever the server has
+  // corrected or recomputed it. The base stats travel with the level rather
+  // than being re-derived here: the server owns the curve now, and two places
+  // computing the same three numbers is how they come to disagree.
+  socket.on('xpSync', (st = {}) => {
+    if (!player || !Number.isFinite(st.lvl)) return;
+    applyLevelState(st);
     if (player.hp > player.maxHp) player.hp = player.maxHp;
     if (typeof updateHUD === 'function') updateHUD();
     if (typeof updateProfileUI === 'function') updateProfileUI();

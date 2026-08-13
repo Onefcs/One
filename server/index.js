@@ -21,8 +21,7 @@ const {
   SERVER_INV_MAX, _SANITIZE_MAX, _HP_POTION_IDS, _HP_POTION_HEAL,
   _catalogBase, _unknownItemIds, _canonSavedItem,
   _itemCensus, _censusOverflow, _clampNum, _clampInt, _sanitizeKeyMap,
-  _sanitizeSavedStats, _looksLikeCatastrophicReset, calcBM, _xpCeilingFor,
-  XP_JOIN_SLACK_KILLS,
+  _sanitizeSavedStats, _looksLikeCatastrophicReset, calcBM,
 } = require('./anticheat');
 const {
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
@@ -4093,28 +4092,16 @@ io.on('connection', socket => {
   // same forgery just claim an earlier savedAt to buy a bigger allowance.
   let _lastSaveAcceptedAt = 0;
 
-  // Highest lifetime XP total (xpTotalAt) this account is entitled to claim.
-  // Seeded from the stored record on every join and raised by each grant the
-  // server itself makes — see the XP ledger comment above. null until
-  // selectChar has run, which is also the only state in which the check is
-  // skipped: no baseline, nothing to compare against.
-  let _xpAllowed = null;
   // Banks one XP grant at the most generous multiplier the client could
   // legitimately apply to it. Exposed on socket.data because a kill pays
   // every nearby party member, and their entitlement lives in THEIR socket's
   // closure, not this one — same reason _grantKillLoot is exposed.
-  function _allowXp(amount) {
-    const n = Number(amount);
-    if (!(n > 0) || _xpAllowed === null) return;
-    const _grew = _xpAllowed + _xpCeilingFor(n);
-    // Same reasoning as the saveProgress check: letting NaN in here would
-    // poison the entitlement for the rest of the session and turn the ledger
-    // off without a word. Leave it as it was instead.
-    if (Number.isFinite(_grew)) _xpAllowed = _grew;
-  }
-  socket.data._allowXp = _allowXp;
+  // The XP entitlement ledger used to live here: it banked what the server had
+  // handed out so a CLIENT-COMPOSED level could be measured against it. The
+  // server applies the XP and runs the level curve itself now (_grantXp), so
+  // there is no claim left to audit and nothing to bank.
   // A party member's share is credited against their OWN session — same
-  // reasoning as _allowXp above, and the same delivery route. Returns what was
+  // reasoning as the XP share below, and the same delivery route. Returns what was
   // credited as well as the new total: the attacker's socket cannot compute a
   // member's clan bonus or potion buff, so the figure their client displays has
   // to come back from their own session.
@@ -5628,6 +5615,74 @@ io.on('connection', socket => {
       socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
     }
   });
+
+  // ── Experience and level ──────────────────────────────────────────────────
+  // The mirror image of gold. The server decided how much XP a kill was worth
+  // and banked an entitlement for it (_allowXp), but the CLIENT applied the
+  // clan bonus, the ×2 exp potion and the death penalty, added the result to
+  // its own total, ran the level-up loop and reported the resulting level in
+  // the next save. The ledger then checked afterwards whether that level was
+  // reachable.
+  //
+  // Applying it here instead makes the level derivable, which is what lets the
+  // ledger go: there is no claim left to audit.
+  function _xpMult(base) {
+    if (!(base > 0)) return 0;
+    let x = base;
+    const _cl = _myClanLevel ? CLAN_LEVELS[_myClanLevel - 1] : null;
+    const clanPct = (_cl && _cl.bonus && _cl.bonus.xp) || 0;
+    if (clanPct > 0) x = Math.round(x * (1 + clanPct / 100));
+    const buffs = (_lastStats && _lastStats.buffs) || {};
+    if (buffs.exp > 0) x *= 2;
+    // Halving would floor a level-1 monster's single XP to zero — the penalty
+    // must not be able to zero out a kill entirely, so it skips anything
+    // already under 2. Identical to what gainXP did client-side.
+    if (buffs.deathPenalty > 0 && x >= 2) x = Math.floor(x * 0.5);
+    return Math.round(x);
+  }
+
+  // Credits XP, runs the level-up curve, and returns everything the client
+  // needs to render the result. Levels raise the base stats by the same steps
+  // the client used to apply, and computeStats (Room.js) reads them straight
+  // out of _sd — so the room's idea of the player follows the level up without
+  // waiting for a save.
+  function _grantXp(base, opts) {
+    if (!authed || !_lastStats) return null;
+    const gained = (opts && opts.flat) ? Math.max(0, Math.round(Number(base) || 0)) : _xpMult(base);
+    if (!(gained > 0)) return null;
+    const before = Math.max(1, Math.floor(Number(_lastStats.lvl)) || 1);
+    _lastStats.xp = Math.round((Number(_lastStats.xp) || 0) + gained);
+    _lastStats.lvl = before;
+    if (!Number.isFinite(Number(_lastStats.xpNext)) || _lastStats.xpNext <= 0) {
+      _lastStats.xpNext = xpToNext(_lastStats.lvl);
+    }
+    while (_lastStats.xp >= _lastStats.xpNext && _lastStats.lvl < _SANITIZE_MAX.lvl) {
+      _lastStats.xp = Math.round(_lastStats.xp - _lastStats.xpNext);
+      _lastStats.lvl += 1;
+      _lastStats.xpNext = xpToNext(_lastStats.lvl);
+      _lastStats.baseAtk   = (Number(_lastStats.baseAtk)   || 0) + 1;
+      _lastStats.baseDef   = (Number(_lastStats.baseDef)   || 0) + 1;
+      _lastStats.baseMaxHp = (Number(_lastStats.baseMaxHp) || 0) + 20;
+    }
+    const levelled = _lastStats.lvl > before;
+    if (levelled && currentRoom) {
+      currentRoom.updatePlayerSavedData(socket.id, _lastStats);
+      currentRoom.healPlayer(socket.id, 35 * (_lastStats.lvl - before));
+      _persistSavedFields(authed, {
+        lvl: _lastStats.lvl, xp: _lastStats.xp, xpNext: _lastStats.xpNext,
+        baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
+      });
+      logPlayer(authed.telegramId, authed.username, 'level_up', { from: before, to: _lastStats.lvl });
+    }
+    return {
+      gained, levelled,
+      lvl: _lastStats.lvl, xp: _lastStats.xp, xpNext: _lastStats.xpNext,
+      baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
+    };
+  }
+  // A party member's share lands on their own session, for the same reason
+  // their gold share does: their clan and their buffs are not visible here.
+  socket.data._grantXp = (base, opts) => _grantXp(base, opts);
 
   // ── Gold ──────────────────────────────────────────────────────────────────
   // Gold was a client-side number. The server computed a kill's drop and sent
@@ -7401,14 +7456,15 @@ io.on('connection', socket => {
     _commitServerItems(inv, null, 'quest_reward', { questId: q.id, idx: cur, gold, items: items.map(i => i.id) }, { beforeLen: _beforeLen });
     _persistSavedFields(authed, { gold: _lastStats.gold, questIdx: _lastStats.questIdx, questKills: {} });
     logPlayer(authed.telegramId, authed.username, 'quest_reward', { questId: q.id, idx: cur, gold, xp: q.reward.xp || 0 });
-    // Quest XP is applied flat client-side (gainXP's `flat` path skips every
-    // multiplier), so this is banked at face value — _allowXp's ×2.4 is a
-    // ceiling, and being generous here costs nothing.
-    _allowXp(Math.max(0, Math.floor(Number(q.reward.xp)) || 0));
+    // Quest XP is a fixed reward, so it is granted flat: the kill multipliers
+    // (clan, potion, death penalty) deliberately do not apply to it, exactly as
+    // gainXP's old `flat` path did not apply them client-side.
+    const _qxp = _grantXp(Math.max(0, Math.floor(Number(q.reward.xp)) || 0), { flat: true });
     socket.emit('questClaimed', {
-      idx: cur, questId: q.id, gold, xp: Math.max(0, Math.floor(Number(q.reward.xp)) || 0),
+      idx: cur, questId: q.id, gold, xp: _qxp ? _qxp.gained : 0,
       items, newGold: _lastStats.gold, questIdx: _lastStats.questIdx,
     });
+    if (_qxp) socket.emit('xpSync', _qxp);
   });
 
   // ── Selling a common item to the merchant ─────────────────────────────────
@@ -8136,37 +8192,17 @@ io.on('connection', socket => {
       // lives. _goldCorrected stays true so the client is told what it has.
       effectiveSaved.gold = Math.max(0, Math.floor(Number(_dbBase && _dbBase.gold)) || 0);
       _goldCorrected = true;
-      // Level/XP, pinned to the stored record exactly as the items above are
-      // and for the same reason: this blob becomes _lastStats, which is the
-      // baseline every later save is measured against, so accepting a forged
-      // level HERE would launder it — every save afterwards would then check
-      // out cleanly against it. Nothing legitimate is lost: every point of XP
-      // is granted by the server, so a real one is already in the stored
-      // record, bar the slack below for the last seconds before an unclean
-      // disconnect.
-      const _dbLvl = Math.max(1, Math.floor(Number(_dbBase && _dbBase.lvl) || 1));
-      const _dbXp  = Math.max(0, Number(_dbBase && _dbBase.xp) || 0);
-      const _joinSlack = _xpCeilingFor(XP_JOIN_SLACK_KILLS * xpAtLevel(_dbLvl));
-      const _dbTotal = xpTotalAt(_dbLvl, _dbXp);
-      if (xpTotalAt(effectiveSaved.lvl, effectiveSaved.xp) > _dbTotal + _joinSlack) {
-        logPlayer(authed.telegramId, authed.username, 'select_xp_forged', {
-          hadLvl: _dbLvl, hadXp: _dbXp, sentLvl: effectiveSaved.lvl, sentXp: effectiveSaved.xp,
-        });
-        console.error(`[selectChar] Rejected impossible level for telegramId=${authed.telegramId}` +
-          ` (stored lvl=${_dbLvl} xp=${_dbXp}, claimed lvl=${effectiveSaved.lvl} xp=${effectiveSaved.xp})`);
-        effectiveSaved.lvl = _dbLvl;
-        effectiveSaved.xp  = _dbXp;
-        // Every stat the sanitizer derives from the level has to be rebuilt
-        // off the corrected one, or this session runs on the forged figures
-        // until the next save (computeStats reads them straight out of _sd).
-        const _rebased = _sanitizeSavedStats(effectiveSaved);
-        effectiveSaved.baseAtk   = _rebased.baseAtk;
-        effectiveSaved.baseDef   = _rebased.baseDef;
-        effectiveSaved.baseMaxHp = _rebased.baseMaxHp;
-        effectiveSaved.xpNext    = _rebased.xpNext;
-        effectiveSaved.upgrades  = _rebased.upgrades;
-        _xpCorrected = true;
-      }
+      // Level and XP come from the stored record, like the items and the gold
+      // above — every point of it was applied and persisted server-side as it
+      // happened, so there is nothing to check.
+      effectiveSaved.lvl       = Math.max(1, Math.floor(Number(_dbBase && _dbBase.lvl)) || 1);
+      effectiveSaved.xp        = Math.max(0, Number(_dbBase && _dbBase.xp) || 0);
+      const _rebasedLvl = _sanitizeSavedStats(effectiveSaved);
+      effectiveSaved.baseAtk   = _rebasedLvl.baseAtk;
+      effectiveSaved.baseDef   = _rebasedLvl.baseDef;
+      effectiveSaved.baseMaxHp = _rebasedLvl.baseMaxHp;
+      effectiveSaved.xpNext    = _rebasedLvl.xpNext;
+      _xpCorrected = true;   // push it, so the client renders what it has
       // Studied progression comes from the stored record, never from the
       // blob the client sent — see the matching pin in saveProgress. Every
       // change to it was applied and persisted server-side as it happened
@@ -8187,9 +8223,6 @@ io.on('connection', socket => {
         advSkillLearned: effectiveSaved.advSkillLearned,
         advSkillActive:  effectiveSaved.advSkillActive,
       });
-      // The session's entitlement starts here and only ever grows by what the
-      // server itself hands out (_allowXp).
-      _xpAllowed = xpTotalAt(effectiveSaved.lvl, effectiveSaved.xp) + _joinSlack;
       _lastStats = effectiveSaved;
       // Baseline for saveProgress's own rate-based gold cap — without this,
       // the time this session spends actually playing before its first
@@ -8661,15 +8694,13 @@ io.on('connection', socket => {
         const xpShare   = Math.max(1, Math.round(result.xp / totalMembers));
         const goldShare = Math.round(result.gold / totalMembers);
 
-        // Bank what each recipient is now entitled to claim (see _allowXp).
-        // A member's entitlement lives in their own socket's closure, which
-        // is why it goes through socket.data rather than being set here.
-        _allowXp(xpShare);
-        memberIds.forEach(mid => io.sockets.sockets.get(mid)?.data?._allowXp?.(xpShare));
+        // Each recipient's share is credited on their OWN socket — see the
+        // _grantXp/_grantKillGold spreads in the payloads below.
 
         socket.emit('enemyKilled', {
-          id: enemyId, xp: xpShare,
+          id: enemyId,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(goldShare)),
+          ...(_x => ({ xp: _x ? _x.gained : 0, level: _x }))(_grantXp(xpShare)),
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl,
           ...(lootWinnerId === socket.id ? lootResult : null),
@@ -8677,8 +8708,9 @@ io.on('connection', socket => {
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
-            id: enemyId, xp: xpShare,
+            id: enemyId,
             ...(_g => ({ gold: _g.gained, goldTotal: _g.total }))(io.sockets.sockets.get(mid)?.data?._grantKillGold?.(goldShare) || {}),
+            ...(_x => ({ xp: _x ? _x.gained : 0, level: _x }))(io.sockets.sockets.get(mid)?.data?._grantXp?.(xpShare)),
             ex: result.ex, ey: result.ey, color: result.color,
             eid: result.eid, rlvl: result.rlvl,
             ...(lootWinnerId === mid ? lootResult : null),
@@ -8691,10 +8723,10 @@ io.on('connection', socket => {
           [socket.id, ...memberIds]);
       } else {
         // No party: attacker gets full reward and loot
-        _allowXp(result.xp);
         socket.emit('enemyKilled', {
-          id: enemyId, xp: result.xp,
+          id: enemyId,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)),
+          ...(_x => ({ xp: _x ? _x.gained : 0, level: _x }))(_grantXp(result.xp)),
           dmg: result.dmg, isCrit: result.isCrit, ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl, ...lootResult, nexum: nexumDrop, gram: gramDrop,
         });
@@ -8782,12 +8814,10 @@ io.on('connection', socket => {
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
-        // Same entitlement bookkeeping as the basic-attack path above.
-        _allowXp(xpShare);
-        memberIds.forEach(mid => io.sockets.sockets.get(mid)?.data?._allowXp?.(xpShare));
         socket.emit('enemyKilled', {
-          id: enemyId, xp: xpShare, dmg: result.dmg, isCrit: result.isCrit,
+          id: enemyId, dmg: result.dmg, isCrit: result.isCrit,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(goldShare)),
+          ...(_x => ({ xp: _x ? _x.gained : 0, level: _x }))(_grantXp(xpShare)),
           ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl,
           ...(lootWinnerId === socket.id ? lootResult : null),
@@ -8795,8 +8825,9 @@ io.on('connection', socket => {
         });
         memberIds.forEach(mid => {
           io.to(mid).emit('enemyKilled', {
-            id: enemyId, xp: xpShare,
+            id: enemyId,
             ...(_g => ({ gold: _g.gained, goldTotal: _g.total }))(io.sockets.sockets.get(mid)?.data?._grantKillGold?.(goldShare) || {}),
+            ...(_x => ({ xp: _x ? _x.gained : 0, level: _x }))(io.sockets.sockets.get(mid)?.data?._grantXp?.(xpShare)),
             ex: result.ex, ey: result.ey, color: result.color,
             eid: result.eid, rlvl: result.rlvl,
             ...(lootWinnerId === mid ? lootResult : null),
@@ -8805,10 +8836,10 @@ io.on('connection', socket => {
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
       } else {
-        _allowXp(result.xp);
         socket.emit('enemyKilled', {
-          id: enemyId, xp: result.xp,
-          ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)), dmg: result.dmg, isCrit: result.isCrit,
+          id: enemyId,
+          ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)),
+          ...(_x => ({ xp: _x ? _x.gained : 0, level: _x }))(_grantXp(result.xp)), dmg: result.dmg, isCrit: result.isCrit,
           ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl, ...lootResult, nexum: nexumDrop2, gram: gramDrop2,
         });
@@ -9512,62 +9543,24 @@ io.on('connection', socket => {
     if (_lastStats) clean.gold = _goldNow();
     _lastSaveAcceptedAt = Date.now();
 
-    // Level/XP against what the server has actually handed out this session
-    // (see the XP ledger comment above _allowXp). Unlike the gold cap this is
-    // not a rate guess — every point of XP in the game is computed server-side,
-    // so the comparison is exact up to the multipliers the client applies on
-    // top, which _allowXp already banks at their maximum. A save at or under
-    // the entitlement is untouched; one above it could not have been earned.
+    // Level and XP are server-owned: _grantXp applies every kill, quest and
+    // event reward, runs the level curve and pushes the result. A save has
+    // nothing to say about them, and the stats the level derives (baseAtk,
+    // baseDef, baseMaxHp, xpNext) ride along, since accepting those from the
+    // client would hand back through the side door exactly what pinning the
+    // level closed.
     //
-    // Correcting rather than dropping the save: the rest of the blob
-    // (position, hp, items) is fine and the overwhelmingly likely cause of a
-    // small overshoot is a client running ahead of a grant, not a forgery.
-    {
-      // A save can arrive before selectChar has run — nothing stops a script
-      // from emitting one straight after login, and skipping the check when
-      // there is no session baseline would have been a way to launder any
-      // level at all: _lastStats would take the forged figure, the debounce
-      // would persist it, and the NEXT login's baseline is that record.
-      // Seed from the stored record instead, which is the same thing
-      // selectChar would have used.
-      // Not `=== null`: a non-finite entitlement disables this check entirely,
-      // because every comparison against NaN is false. That is exactly what
-      // happened when _xpCeilingFor's constants went missing — the ledger
-      // silently accepted any level at all, and nothing said so. Rebuilding
-      // from the stored record covers null, undefined and NaN in one, so the
-      // failure mode is a stricter check rather than no check.
-      if (!Number.isFinite(_xpAllowed)) {
-        const _b = _sanitizeSavedStats(authed.savedData) || null;
-        const _bLvl = Math.max(1, Math.floor(Number(_b && _b.lvl) || 1));
-        _xpAllowed = xpTotalAt(_bLvl, Math.max(0, Number(_b && _b.xp) || 0))
-          + _xpCeilingFor(XP_JOIN_SLACK_KILLS * xpAtLevel(_bLvl));
-      }
-      const _claimed = xpTotalAt(clean.lvl, clean.xp);
-      if (_claimed > _xpAllowed) {
-        const _prevLvl = clean.lvl, _prevXp = clean.xp;
-        // Walk back down the same ladder the client climbs up, so the
-        // corrected pair is a real position on the curve rather than the old
-        // level with a truncated xp bar.
-        let _lvl = 1, _left = Math.max(0, _xpAllowed);
-        while (_left >= xpToNext(_lvl) && _lvl < _SANITIZE_MAX.lvl) { _left -= xpToNext(_lvl); _lvl++; }
-        clean.lvl = _lvl;
-        clean.xp  = Math.round(_left);
-        // Everything the sanitizer derives from the level has to follow it
-        // down, or the session keeps the combat stats of the forged level.
-        const _rebased = _sanitizeSavedStats(clean);
-        clean.baseAtk   = _rebased.baseAtk;
-        clean.baseDef   = _rebased.baseDef;
-        clean.baseMaxHp = _rebased.baseMaxHp;
-        clean.xpNext    = _rebased.xpNext;
-        clean.upgrades  = _rebased.upgrades;
-        logPlayer(authed.telegramId, authed.username, 'save_xp_forged', {
-          sentLvl: _prevLvl, sentXp: _prevXp, claimedTotal: _claimed,
-          allowedTotal: Math.round(_xpAllowed), cappedToLvl: _lvl,
-        });
-        console.error(`[saveProgress] Capped impossible XP for telegramId=${authed.telegramId}` +
-          ` (claimed lvl=${_prevLvl} xp=${_prevXp}, entitled to lvl=${_lvl})`);
-        socket.emit('xpSync', { lvl: clean.lvl, xp: clean.xp, xpNext: clean.xpNext });
-      }
+    // This is what retires the entitlement ledger. It existed to bank what the
+    // server had granted so a client-composed level could be measured against
+    // it — an audit that only ever made sense while the client was the one
+    // composing.
+    if (_lastStats) {
+      clean.lvl       = _lastStats.lvl;
+      clean.xp        = _lastStats.xp;
+      clean.xpNext    = _lastStats.xpNext;
+      clean.baseAtk   = _lastStats.baseAtk;
+      clean.baseDef   = _lastStats.baseDef;
+      clean.baseMaxHp = _lastStats.baseMaxHp;
     }
 
     if (_looksLikeCatastrophicReset(_lastStats, clean)) {
@@ -10556,15 +10549,24 @@ io.on('connection', socket => {
           socket.emit('nexumBalanceUpdate', { balance: _qb });
         }
       }
+      let _sqxp = null;
       if (_lastStats) {
         _lastStats.specialQuestsDone = newDone;
-        if (quest.reward.gold) _lastStats.gold = (authed.savedData.gold || 0);
-        if (quest.reward.xp)    _lastStats.xp           = (authed.savedData.xp           || 0);
+        // Gold and XP were written straight from the freshly-read document,
+        // which was how a reward computed elsewhere reached this session. Both
+        // are applied on this side now, so they go through the same helpers as
+        // every other credit and the client is told the result.
+        if (quest.reward.gold) {
+          _lastStats.gold = (authed.savedData.gold || 0);
+          socket.emit('goldSync', { gold: _goldNow() });
+        }
+        // Flat, like the story-quest reward above: a fixed reward does not take
+        // the kill multipliers.
+        if (quest.reward.xp) _sqxp = _grantXp(quest.reward.xp, { flat: true });
       }
       logPlayer(authed.telegramId, authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });
-      // Flat like the story-quest reward above — see _allowXp.
-      _allowXp(quest.reward && quest.reward.xp);
       socket.emit('specialQuestDone', { questId: String(questId), reward: quest.reward });
+      if (_sqxp) socket.emit('xpSync', _sqxp);
     } catch(e) {
       console.error('completeSpecialQuest error:', e);
       socket.emit('specialQuestError', { questId: String(questId || ''), reason: 'server_error' });

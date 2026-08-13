@@ -382,39 +382,37 @@ function gainGold(amount) {
   return Math.max(0, Math.floor(Number(amount)) || 0);
 }
 
-function gainXP(amount, flat) {
-  // flat=true skips the exp/deathPenalty buff multipliers — used for fixed
-  // rewards the server already computed (e.g. special-quest XP), so the client
-  // adds exactly what the server added and its next save can't drift the value.
-  if (!flat) {
-    if ((player.buffs || {}).exp > 0) amount *= 2;
-    // Halving would floor level-1 monsters' 1 XP down to 0 — the penalty
-    // shouldn't be able to zero out a kill entirely, so it skips anything
-    // already under 2 XP and leaves it untouched instead.
-    if ((player.buffs || {}).deathPenalty > 0 && amount >= 2) amount = Math.floor(amount * 0.5);
-  }
-  // Rounded to a whole number on every add — XP is a whole-number stat, and
-  // party-kill shares (result.xp / memberCount, server/index.js) are now
-  // rounded server-side too, but this keeps the client robust against any
-  // stray fractional amount (and against old float-noise drift like
-  // 858.9999999999418) instead of letting it persist and display.
-  player.xp = Math.round(player.xp + amount);
-  while (player.xp >= player.xpNext) {
-    player.xp = Math.round(player.xp - player.xpNext);
-    player.lvl++;
-    // The curve moved to shared/definitions.js so the server derives the same
-    // number instead of being handed whatever this side last saved — see
-    // xpToNext there.
-    player.xpNext = xpToNext(player.lvl);
-    player.baseAtk += 1; player.baseDef += 1; player.baseMaxHp += 20;
-    recompute();
-    player.hp = Math.min(player.maxHp, player.hp + 35);
+// Display only, like gainGold above. XP is the server's number now: it applies
+// the clan bonus, the x2 exp potion and the death penalty, runs the level
+// curve and sends the resulting lvl/xp/xpNext and base stats (the `level`
+// field on enemyKilled, levelSync elsewhere). Adding here as well would
+// double-count it and put the client back in the business of composing a
+// level — which is exactly what the entitlement ledger existed to audit.
+function gainXP(amount) {
+  return Math.max(0, Math.round(Number(amount) || 0));
+}
+
+// Applies a level state the server computed. Everything derived from the level
+// lives in these six fields, so taking them as a set is what keeps the sheet,
+// the stats and the curve from disagreeing.
+function applyLevelState(st) {
+  if (!player || !st) return;
+  const before = player.lvl;
+  if (Number.isFinite(st.lvl))       player.lvl       = st.lvl;
+  if (Number.isFinite(st.xp))        player.xp        = st.xp;
+  if (Number.isFinite(st.xpNext))    player.xpNext    = st.xpNext;
+  if (Number.isFinite(st.baseAtk))   player.baseAtk   = st.baseAtk;
+  if (Number.isFinite(st.baseDef))   player.baseDef   = st.baseDef;
+  if (Number.isFinite(st.baseMaxHp)) player.baseMaxHp = st.baseMaxHp;
+  recompute();
+  if (player.lvl > before) {
+    // The heal itself was applied server-side; this is the part the player sees.
+    player.hp = Math.min(player.maxHp, player.hp + 35 * (player.lvl - before));
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
     dmgNum(player.x, player.y - 54, '+3 очка навыка', '#a0f0a0');
     spawnBurst(player.x, player.y, '#ff0', 14);
     if (typeof onLevelUp === 'function') onLevelUp(player.lvl);
   }
-  netSaveProgress();
 }
 
 function _invMsg(msg) {

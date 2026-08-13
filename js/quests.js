@@ -105,7 +105,7 @@ function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
   // newGold is the server's total. There is no local fallback any more: gold
   // is not a number this side is allowed to compose.
   if (Number.isFinite(newGold)) player.gold = newGold;
-  if (xp > 0 && typeof gainXP === 'function') gainXP(xp, true);
+  // The level state arrives via xpSync; this is display only.
   player.questIdx = Number.isFinite(questIdx) ? questIdx : (player.questIdx + 1);
   player.questKills = {};
   if (q) showQuestComplete(q);
@@ -430,7 +430,7 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   // only refresh the displayed balance.
   if (!alreadyDone) {
     // The balance arrives as a total via goldSync; this is display only.
-    if (reward.xp && typeof gainXP === 'function') gainXP(reward.xp, true);
+    // Level state arrives via xpSync.
     if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
   }
   if (typeof updateHUD === 'function') updateHUD();
