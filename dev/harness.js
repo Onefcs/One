@@ -1613,6 +1613,66 @@ scenario('browser: the real client loads and reaches the world', async () => {
   }
 });
 
+scenario('browser: entering Страх closes the events panel instead of leaving it over the world', async () => {
+  // Clicking "Войти" (netFearEnter) teleports the player into Fear and spawns
+  // wave 1 immediately — unlike deathBattle/race10/arena3, which all sit
+  // behind a registration window that gives the player time to close this
+  // panel themselves before anything actually happens. #events-panel is a
+  // near-opaque full-screen overlay (97% alpha, z-index 120, see css/
+  // style.css) that used to only ever close on its own "✕" button — so a
+  // player who entered Fear was dropped into a live run, monsters and all,
+  // still looking at a panel reading "Войдите, чтобы начать". Every single
+  // entry went through this exact button, which is why it read as "monsters
+  // never appear in Страх" for everyone, every time, right on entry.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  // Seeded above FEAR_MIN_LEVEL (10) the same way the other 'reconnect:'
+  // scenarios seed a save — connectWithSaved creates the DB row and patches
+  // it, then closes; the browser page below logs into that same account via
+  // the same /dev/init-data route connectAs itself uses.
+  const seed = await connectWithSaved('harness_fear_ui', { lvl: 15 });
+  await seed.close();
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    await page.goto(`${BASE}/?dev=harness_fear_ui`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4000);
+    const needsClass = await page.evaluate(() => typeof state !== 'undefined' && state === 'select');
+    if (needsClass) {
+      await page.evaluate(() => selectChar('ranger'));
+      await page.waitForTimeout(4000);
+    }
+    ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
+
+    await page.evaluate(() => { openEventsPanel(); switchEventTab('fear'); });
+    await page.waitForTimeout(300);
+    ok(await page.evaluate(() => document.getElementById('events-panel')?.style.display === 'flex'),
+      'the events panel is open, same as a real player checking Страх');
+
+    await page.evaluate(() => netFearEnter());
+    // Poll rather than wait on a fixed delay: fearStarted is a single round
+    // trip, but no need to hard-code how long that takes.
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(300);
+      if (await page.evaluate(() => typeof dungeonLvl !== 'undefined' && dungeonLvl === 11)) break;
+    }
+
+    const after = await page.evaluate(() => ({
+      floor: typeof dungeonLvl !== 'undefined' ? dungeonLvl : null,
+      panelDisplay: document.getElementById('events-panel')?.style.display,
+    }));
+    eq(after.floor, 11, 'the client followed the server onto the fear floor');
+    eq(after.panelDisplay, 'none', 'and the events panel closed itself, uncovering the world');
+  } finally {
+    await browser.close();
+  }
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

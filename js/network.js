@@ -2925,6 +2925,17 @@ function _initFearHandlers(s) {
     if (hp) player.hp = hp;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('fearLbl'));
     else { player.x = x; player.y = y; }
+    // Unlike deathBattle/race10/arena3 — which all sit behind a registration
+    // window, giving the player time to close this panel themselves before
+    // anything actually happens — clicking "Войти" here teleports the
+    // player into Fear and spawns wave 1 immediately. Left open, the
+    // near-opaque #events-panel (97% alpha, z-index 120) still covers the
+    // whole screen at that instant, so the run was already live — monsters
+    // and all — behind a panel still showing "Войдите, чтобы начать". From
+    // the player's side that reads as "I entered Fear and no monsters ever
+    // appeared", every single time, since every entry goes through this
+    // exact button.
+    if (typeof closeEventsPanel === 'function') closeEventsPanel();
     if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('fearWaveMsg', { wave: 1, max: _fearState.maxWave }), '#8a3ffc');
     if (typeof Sound !== 'undefined') Sound.bossSpawn();
     if (typeof onFearState === 'function') onFearState();
