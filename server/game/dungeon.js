@@ -13,11 +13,10 @@ function seededRng(seed) {
 // ── Open world: one small hub + 4 detached "comb" zones ─────────────────────
 // The hub is just spawn + NPCs + 4 teleport pads (one per arm/level range,
 // ARM_LEVEL_REQ) — there's no walkable corridor out of it. Each arm is its
-// own self-contained zone stacked below the hub, spaced far enough apart
-// (ZONE_GAP) that its room chains can never reach a neighboring zone's,
-// however the random room sizes land. Reaching a zone means walking onto its
-// hub pad, which teleports the player straight to that zone's own corridor
-// entrance — see the teleport-pad handling in js/game.js.
+// own floor now (see server/game/floors.js), so there's no neighboring
+// zone's room chains to keep clear of any more either. Reaching a zone means
+// walking onto its hub pad, which requests a real floor transition — see the
+// teleport-pad handling in js/game.js.
 //
 // Inside a zone the layout is unchanged from before: a dead-straight, always-
 // empty main corridor with rooms branching off both sides at ARM_ROOM_PAIRS
@@ -46,25 +45,16 @@ const PITCH = 20;         // tile spacing between consecutive room-pair position
 const LEAD_IN = 10;       // distance from a zone's entrance to its first position
 const MARGIN = 10;        // outer wall padding
 const ROOM_CHAIN_LEN = 6; // rooms chained per side per position (except the boss slot, always 1)
-const ZONE_GAP = 30;      // gap (tiles) between zones/hub — comfortably more than any
-                          // chain's max reach (CW + ROOM_CHAIN_LEN*(STUB+LARGE)) so
-                          // neighboring zones' rooms can never touch
 
 const REACH = CW + ROOM_CHAIN_LEN * (GAUNTLET_STUB + LARGE); // max perpendicular room-chain reach from the corridor centerline (sized off the wider gauntlet stub, the deepest any chain gets)
 const ZONE_H = REACH * 2 + 4; // both sides plus a little pad
 
 const HUB_X0 = MARGIN, HUB_Y0 = MARGIN;
 // ── Boss arena ──────────────────────────────────────────────────────────────
-// A plain square room off to the right of the hub, in the otherwise empty
-// band above the first zone. Nothing spawns here during normal play and it
-// has no walkable connection to anything — the only way in is the event
-// teleport pad that appears in the hub while a world boss is active (see
-// _buildArmGates / _updateTeleportPads in js/game.js). Sized so a size-165
-// boss (≈630px across) has room to be kited and its 62 loot piles still land
-// well inside the walls.
+// Its own floor now (generateArena, below). Sized so a size-165 boss (≈630px
+// across) has room to be kited and its 62 loot piles still land well inside
+// the walls.
 const ARENA = 40;
-const ARENA_X0 = HUB_X0 + HUB + ZONE_GAP;
-const ARENA_Y0 = HUB_Y0;
 // ── 3v3 PvP arena ───────────────────────────────────────────────────────────
 // Its own floor now (generatePvpArena, below). Two team bases facing each
 // other across a single central corridor — one lane, so both teams meet
@@ -72,13 +62,10 @@ const ARENA_Y0 = HUB_Y0;
 // every other special zone is: the only way in is being placed there by the
 // match, and the only way out is dying or the match ending. Each base also
 // holds a stationary guard boss (see A3_BOSS_DX below) — the opposing team
-// destroying it wins the match instantly. A3_Y0 stays here only because
-// RACE10_Y0 (below — not split out yet) still chains off where this zone's
-// old rectangle used to sit inside the hub's grid.
-const A3_Y0 = ARENA_Y0 + ARENA + 5;
+// destroying it wins the match instantly.
 const A3_W = 60, A3_H = 27;
 const A3_BASE_W = 10;                       // depth of each team's starting box
-const A3_LANE_YS = [13];                    // single corridor row, relative to A3_Y0
+const A3_LANE_YS = [13];                    // single corridor row, relative to the floor's own Y0
 // Spawn rows are kept separate from the (now singular) lane row so a team's
 // 3 players still land on 3 distinct tiles inside their own base instead of
 // stacking on the one lane spawn.
@@ -87,24 +74,23 @@ const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corri
 const A3_BOSS_DX = 2;                       // guard boss sits this many tiles inside the base's back wall
 
 // ── Corridor race ("Кровавая Башня") ─────────────────────────────────────────
-// Every entrant runs their own sealed lane: 60 level-5 monsters packed
-// shoulder-to-shoulder, a short gap, then 60 level-10 monsters the same way —
-// "впритык", so there's no way past them except fighting through. All lanes
-// open into ONE shared room at the far end holding a single boss (same
-// identity as the world EVENT_BOSS — see spawnRaceBoss, server/game/Room.js).
-// Whoever has dealt it the most damage when it dies wins; dying anywhere in a
-// lane eliminates that player from the run (see the 'respawn' handler,
-// server/index.js). Sits below the 3v3 arena, same sealed-off rules: the only
-// way in is being placed there by the event.
+// Its own floor now (generateRace10, below). Every entrant runs their own
+// sealed lane: 60 level-5 monsters packed shoulder-to-shoulder, a short gap,
+// then 60 level-10 monsters the same way — "впритык", so there's no way past
+// them except fighting through. All lanes open into ONE shared room at the
+// far end holding a single boss (same identity as the world EVENT_BOSS — see
+// spawnRaceBoss, server/game/Room.js). Whoever has dealt it the most damage
+// when it dies wins; dying anywhere in a lane eliminates that player from
+// the run (see the 'respawn' handler, server/index.js).
 //
-// The event takes however many players register, one lane each — but the world
-// is generated once at startup and its geometry never changes, so the lanes
-// have to exist before anyone signs up. This is the ceiling on entrants
-// (RACE10_MAX_ENTRANTS, server/index.js reads it from here): raising it costs
-// RACE10_LANE_PITCH tiles of map height and RACE10_MOB_PER_TIER*2 monsters,
-// and those monsters are skipped by the AI loop entirely while no race is
-// running (see the race10 branch in Room.js's _tick), so an unused lane costs
-// nothing per tick.
+// The event takes however many players register, one lane each — but the
+// floor is generated once at startup and its geometry never changes, so the
+// lanes have to exist before anyone signs up. This is the ceiling on
+// entrants (RACE10_MAX_ENTRANTS, server/index.js reads it from here):
+// raising it costs RACE10_LANE_PITCH tiles of map height and
+// RACE10_MOB_PER_TIER*2 monsters, and those monsters are skipped by the AI
+// loop entirely while no race is running (see the race10 branch in Room.js's
+// _tick), so an unused lane costs nothing per tick.
 const RACE10_LANES        = 30;
 const RACE10_LANE_HW      = 1;   // half-width — 3 tiles wide, same convention as every other corridor
 const RACE10_LANE_GAP     = 2;   // wall tiles between adjacent lanes
@@ -121,81 +107,74 @@ const RACE10_TIER_GAP     = 4;   // tiles between the level-5 line and the level
 const RACE10_LEAD_IN      = 9;   // (9-2)*40 = 280px clearance
 const RACE10_LEAD_OUT     = 6;   // last monster to the shared boss room
 const RACE10_LANE_LEN     = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT;
-// Barrier positions (tile x, relative to RACE10_X0) — centred in the gap
-// after each tier's monster line, so the player runs into it right where the
-// line ends rather than partway through empty corridor. Client-side only
-// (see _isRaceBarrierBlocked, js/game.js) — same trust model as the level
-// gates elsewhere in the open world (dungeon.corridorGates).
+// Barrier positions (tile x, relative to the floor's own X0) — centred in
+// the gap after each tier's monster line, so the player runs into it right
+// where the line ends rather than partway through empty corridor.
+// Client-side only (see _isRaceBarrierBlocked, js/game.js) — same trust
+// model as the level gates elsewhere in the open world (dungeon.corridorGates).
 const RACE10_BARRIER1_X = RACE10_LEAD_IN + RACE10_TIER_LEN + RACE10_TIER_GAP / 2;
 const RACE10_BARRIER2_X = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT / 2;
 const RACE10_BOSS_ROOM    = 44;  // shared room, square
-const RACE10_X0 = ARENA_X0;
-const RACE10_Y0 = A3_Y0 + A3_H + 5;
 const RACE10_H  = RACE10_LANES * RACE10_LANE_PITCH;
 const RACE10_W  = RACE10_LANE_LEN + RACE10_BOSS_ROOM;
 
 // ── Страх (Fear) — private wave-survival instances ──────────────────────────
-// FEAR_LANES identical sealed square rooms, one per concurrent entrant —
-// unlike race10's corridors these hold no baked-in monsters: each wave (20
-// monsters, escalating one global level at a time) is spawned dynamically at
-// runtime by Room.js's fearSpawnWave once the player is deployed, and removed
-// once the lane is released, so only geometry needs to exist ahead of time.
-// Sealed off from everything else the same way arena/pvpArena/race10 are —
-// the only way in is server.js's fearEnter handler placing a player at a
-// lane's entry point directly.
+// Its own floor now (generateFear, below). FEAR_LANES identical sealed
+// square rooms, one per concurrent entrant — unlike race10's corridors these
+// hold no baked-in monsters: each wave (20 monsters, escalating one global
+// level at a time) is spawned dynamically at runtime by Room.js's
+// fearSpawnWave once the player is deployed, and removed once the lane is
+// released, so only geometry needs to exist ahead of time. Sealed off from
+// everything else the same way every other special zone is — the only way
+// in is server/index.js's fearEnter handler force-joining a player onto this
+// floor and placing them at a lane's entry point.
 const FEAR_LANES = 8;      // max concurrent Fear runs
 const FEAR_ROOM   = 12;    // room size (tiles) — tight enough that a wave doesn't feel spread thin
 const FEAR_GAP    = 8;     // wall padding between stacked lanes
 const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
-const FEAR_X0 = ARENA_X0;
-const FEAR_Y0 = RACE10_Y0 + RACE10_H + ZONE_GAP;
-const FEAR_H  = FEAR_LANES * FEAR_PITCH;
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
-// Its own floor now (generateGuildWar, below) instead of a rectangle painted
-// into the hub's mega-grid. GW_Y0 stays here only because FARM_Y0 (Фарм-зона,
-// below — not split out yet) still chains off where guildWar's old rectangle
-// used to sit in the hub's grid; GW_SIZE/GW_SPAWN_COUNT/GW_SPAWN_R are the
-// real geometry, shared with generateGuildWar().
+// Its own floor now (generateGuildWar, below). One square sealed zone with a
+// single stationary tower/castle dead centre. Whichever clan lands the
+// killing blow owns it (Room.js's capture logic resets its HP in place — it
+// is never despawned/respawned, see Room.spawnGuildWarTower). No
+// matchmaking/capacity cap ("Без ограничений — открытая зона"), so sized
+// generously like the boss ARENA rather than tightly like a sealed instance.
+// `spawns` is a ring of entry points used both for initial placement and for
+// in-zone respawn while the window is live (Room.guildWarRespawn) — dying
+// here doesn't eject you, unlike every other sealed zone.
 const GW_SIZE = 60;
-const GW_Y0 = FEAR_Y0 + FEAR_H + ZONE_GAP;
 const GW_SPAWN_COUNT = 8;
 const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 
 // ── Фарм-зона (Farm Zone) ─────────────────────────────────────────────────
-// Four identical square rooms in a 2x2 grid, joined by a plus-shaped
-// corridor through their shared gap so all four are reachable from one
-// entrance — the whole footprint (rooms + gap) is itself a square. Baked in
-// at world-gen like a regular room (not runtime-spawned like Fear's waves),
-// since every monster here is a fixed level with no escalation to track.
-// Monsters spawn non-aggressive (aggroR: 0 — never pull first, same pattern
-// as spawnGuildWarTower) and skip the normal loot table entirely: only an
-// independent FARM_SHARD_CHANCE roll per shard kind, no gold/gear/recipe/key
-// drops at all (see the farmZone flag, Room.attackEnemy/skillAttackEnemy and
-// _rollFarmZoneLoot, server/index.js). Entry is level-gated server-side now
-// (see _doEnterLocation, server/index.js) at FARM_ENTRY_LEVEL.
-// Each of the 80 monsters rolls its own level (21-30) and species/archetype
-// independently, so every room comes out mixed — different kinds and
-// different levels standing next to each other, not one uniform pack the
-// way a normal room is.
+// Its own floor now (generateFarmZone, below). Four identical square rooms
+// in a 2x2 grid, joined by a plus-shaped corridor through their shared gap
+// so all four are reachable from one entrance — the whole footprint (rooms +
+// gap) is itself a square. Baked in at world-gen like a regular room (not
+// runtime-spawned like Fear's waves), since every monster here is a fixed
+// level with no escalation to track. Monsters spawn non-aggressive (aggroR:
+// 0 — never pull first, same pattern as spawnGuildWarTower) and skip the
+// normal loot table entirely: only an independent FARM_SHARD_CHANCE roll per
+// shard kind, no gold/gear/recipe/key drops at all (see the farmZone flag,
+// Room.attackEnemy/skillAttackEnemy and _rollFarmZoneLoot, server/index.js).
+// Entry is level-gated server-side (see _doEnterLocation, server/index.js)
+// at FARM_ENTRY_LEVEL. Each of the 80 monsters rolls its own level (21-30)
+// and species/archetype independently, so every room comes out mixed —
+// different kinds and different levels standing next to each other, not one
+// uniform pack the way a normal room is.
 // FARM_LVL_MIN/MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT and
 // FARM_SPECIES now live in shared/definitions.js (imported above) — the
 // client needs them too, for its own Фарм-зона reference list (js/ui.js).
-// Its own floor now (generateFarmZone, below) — FARM_Y0 stays here only
-// because DH (the hub's own dead grid dimensions, below) still chains off
-// where this zone's old rectangle used to sit inside it.
 const FARM_ROOM = 16;
 const FARM_GAP = 8;
 const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
-const FARM_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
 
-// Each location is now its own floor/Room with its own small grid (see
-// server/game/floors.js) instead of one shared mega-grid — the hub keeps
-// hosting the special zones below (arena/a3/race10/fear/guildWar/farmZone)
-// until they get split into their own floors in a later pass; the 4
-// leveling arms already moved out, into generateArm() below.
-const DH = FARM_Y0 + FARM_SIZE + ZONE_GAP;
-const DW = Math.max(MARGIN * 2 + HUB, RACE10_X0 + RACE10_W + MARGIN);
+// The hub is now the only thing that lives in its own grid — every special
+// zone and every leveling arm has moved out into its own floor (see
+// server/game/floors.js), so this only needs to fit the hub room itself.
+const DH = MARGIN * 2 + HUB;
+const DW = MARGIN * 2 + HUB;
 
 const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
@@ -216,21 +195,6 @@ function generateHub() {
   };
   paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
 
-  // Страх: FEAR_LANES plain sealed rooms stacked one per row, entry point
-  // dead centre of each. Room.js scatters that lane's wave inside these same
-  // tile bounds (x0/y0/size) the same way buildArm's spawnRoomEnemies picks a
-  // random FLOOR tile within a room's bounds, below.
-  const fearLanes = [];
-  for (let i = 0; i < FEAR_LANES; i++) {
-    const x0 = FEAR_X0, y0 = FEAR_Y0 + i * FEAR_PITCH;
-    paintRect(x0, y0, x0 + FEAR_ROOM - 1, y0 + FEAR_ROOM - 1);
-    fearLanes.push({
-      x0, y0, size: FEAR_ROOM,
-      entryX: (x0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
-      entryY: (y0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
-    });
-  }
-
   const rooms = [hub];
   const enemyList = [];
 
@@ -240,12 +204,6 @@ function generateHub() {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
-    // Страх (Fear): lane geometry only — Room.js reaches into this directly
-    // (this._dungeon.fear), it is deliberately NOT part of Room.dungeonData
-    // (below), since the client needs no rendering/tinting hints for it: entry
-    // and every wave transition are server-pushed teleports, not something the
-    // client discovers by walking around.
-    fear: { lanes: fearLanes },
     // {dir, req} per arm — where to go and the level gate, resolved into an
     // actual floor by the client's enterLocation request (js/network.js);
     // no target x/y here any more, each arm lives on its own floor now.
@@ -785,8 +743,52 @@ function generateRace10() {
   };
 }
 
+// Страх (Fear), now its own floor (see server/game/floors.js) instead of a
+// stack of sealed rooms in the hub's mega-grid. FEAR_LANES identical rooms,
+// one per concurrent private run — unlike race10's corridors these hold no
+// baked-in monsters at all: each wave is spawned dynamically at runtime by
+// Room.fearSpawnWave once a player is deployed into a lane (server/index.js's
+// fearEnter), so only the geometry needs to exist ahead of time.
+function generateFear() {
+  const w = FEAR_ROOM + MARGIN * 2, h = FEAR_LANES * FEAR_PITCH + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const lanes = [];
+  for (let i = 0; i < FEAR_LANES; i++) {
+    const x0 = X0, y0 = Y0 + i * FEAR_PITCH;
+    paintRect(x0, y0, x0 + FEAR_ROOM - 1, y0 + FEAR_ROOM - 1);
+    lanes.push({
+      x0, y0, size: FEAR_ROOM,
+      entryX: (x0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
+      entryY: (y0 + Math.floor(FEAR_ROOM / 2)) * TILE + TILE / 2,
+    });
+  }
+
+  return {
+    grid, rooms: [], w, h,
+    // Just lane 0's entry as a fallback default (Room.addPlayer needs SOME
+    // valid spawn point) — every real entrant is placed precisely by
+    // Room.fearDeploy right after joining, same as every other matchmade/
+    // deployed zone.
+    spawn: { x: lanes[0].entryX, y: lanes[0].entryY },
+    // Lane geometry only — Room.js reaches into this directly
+    // (this._dungeon.fear), it is deliberately NOT part of Room.dungeonData,
+    // since the client needs no rendering/tinting hints for it: entry and
+    // every wave transition are server-pushed teleports, not something the
+    // client discovers by walking around.
+    fear: { lanes },
+    enemies: [],
+  };
+}
+
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
-  generateRace10,
+  generateRace10, generateFear,
   TILE, WALL, FLOOR,
 };

@@ -4018,14 +4018,14 @@ function _fearTrackKill(socketId, result) {
   if (result.arm !== 'fear') return;
   const run = _fear.get(socketId);
   if (!run || run.lane !== result.lane) return;
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.fear);
   if (!room) return;
   // The run record is only trustworthy while the player is still actually
   // standing in that hall. Several handlers unrelated to this event
-  // (race10Return/arena3Return/deathBattleReturn) call Room.deathBattleReturn
-  // unconditionally, which hands the hall back as a side effect — so a stale
-  // record here could otherwise be counting kills against a hall that now
-  // belongs to somebody else's run.
+  // (race10Return/arena3Return/_fearFinish itself) end up releasing a hall
+  // as a side effect of moving its owner off this floor — so a stale record
+  // here could otherwise be counting kills against a hall that now belongs
+  // to somebody else's run.
   if (room.fearLaneOf(socketId) !== run.lane || room.fearOwnerOf(run.lane) !== socketId) {
     _fear.delete(socketId);
     return;
@@ -4043,17 +4043,25 @@ function _fearFinish(socketId, cleared) {
   const run = _fear.get(socketId);
   if (!run) return;
   _fear.delete(socketId);
-  const room = getRoom(1);
-  // deathBattleReturn releases the hall as part of the teleport home, but
-  // ONLY while the player record still exists — it bails out early otherwise,
-  // which is exactly the case when this is reached from a disconnect. So the
-  // hall is also released off the run record, which always knows its lane —
-  // but only while it is still THIS socket's hall. Releasing it unconditionally
-  // would let a stale run record (see _fearTrackKill) wipe the wave of
-  // whoever had since been given that hall.
+  const room = getRoom(FLOOR_IDS.fear);
+  // Release the lane BEFORE the floor change below, not after. _returnToHub
+  // ends in Room.removePlayer, which — if the departing record still has a
+  // lane set — holds it open for a possible reconnect instead of releasing
+  // it (_fearGraceStart, a 45s grace window meant for a genuine disconnect).
+  // This is a clean finish, not a disconnect: fearReleaseLane clears the
+  // player's own p._fearLane as part of releasing, so by the time
+  // removePlayer runs there's nothing left for that grace path to hold.
+  // Skipping it here would leave a stale _fearGrace entry that outlives the
+  // lane's real state — fearDeploy only ever checks _fearOwner, so the lane
+  // would look free and get handed to a new entrant while the old grace
+  // timer is still ticking down, and when it eventually fires it would
+  // silently release THEIR run out from under them 45s later.
+  // ownedBefore guards against releasing a lane this run record no longer
+  // actually owns (see _fearTrackKill's identical check) — it could be
+  // stale if the hall was already reassigned since this player last held it.
   const ownedBefore = room ? room.fearOwnerOf(run.lane) === socketId : false;
-  const spot = room ? room.deathBattleReturn(socketId) : null;
   if (room && ownedBefore) room.fearReleaseLane(run.lane);
+  const spot = _returnToHub(socketId);
   io.to(socketId).emit('fearFinished', { cleared, wave: run.wave, x: spot?.x, y: spot?.y });
 }
 
@@ -8690,6 +8698,19 @@ io.on('connection', socket => {
       { $set: { 'savedData.type': type } }
     ).catch(() => {});
     if (!currentRoom) {
+      // A held Fear run (see _fearDisconnectGrace, above) lives on the fear
+      // floor's own Room now, not the hub's — currentFloor's initial value
+      // is always the hub (every fresh connection starts there), so without
+      // this a reconnecting session would join the hub's Room instead, and
+      // its addPlayer's own _fearGraceClaim would check the wrong Room and
+      // never find the hall, timing it out from under a session that's
+      // actually still coming back. loginTelegramWebApp/selectChar are two
+      // separate round trips, so by the time this runs the stale socket's
+      // own 'disconnect' handler (which populates _fearDisconnectGrace) has
+      // had a full network round trip to complete — reliable in practice,
+      // and the worst case if it somehow hasn't is the same as any other
+      // missed reconnect window: the hall just times out normally.
+      if (_fearDisconnectGrace.has(authed.telegramId)) currentFloor = FLOOR_IDS.fear;
       currentRoom = getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
       socket.join(`floor_${currentFloor}`);
@@ -9679,13 +9700,28 @@ io.on('connection', socket => {
     if (left <= 0) {
       return socket.emit('fearError', { msg: 'Попытки в Страх на сегодня закончились' });
     }
+    // Fear is its own floor now (server/game/floors.js) — fearDeploy below
+    // needs the player already present in that floor's Room, and there is
+    // no walk-in pad for it (see _doEnterLocation), so this connection has
+    // to force its own way onto it first. Every real gate (level, attempts,
+    // the cross-checks above) is already applied, so force:true here is just
+    // skipping the (nonexistent) reachability gate, not bypassing anything
+    // that still needs checking.
+    if (!_doEnterLocation('fear', { force: true })) {
+      return socket.emit('fearError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+    }
     // Checked before the attempt is spent, and again implicitly by
     // fearDeploy itself (which re-derives occupancy from live state) — a
     // refusal here must never cost the player one of their two runs.
     const spot = currentRoom.fearDeploy(socket.id);
     if (!spot) {
+      // Every lane taken in the instant between the checks above and this
+      // one (concurrent entries racing in) — send this connection back
+      // rather than stranding it on an otherwise-empty floor with no lane.
+      const totalLanes = currentRoom.fearLaneCount();
+      _doEnterLocation('hub', { force: true });
       return socket.emit('fearError', {
-        msg: `Все ${currentRoom.fearLaneCount()} залов заняты — дождитесь, пока кто-нибудь выйдет`,
+        msg: `Все ${totalLanes} залов заняты — дождитесь, пока кто-нибудь выйдет`,
       });
     }
     _lockFearDaily(socket.id);
@@ -9695,12 +9731,15 @@ io.on('connection', socket => {
 
   safeOn('fearSync', async () => {
     const run = _fear.get(socket.id);
+    const fearRoom = getRoom(FLOOR_IDS.fear);
     socket.emit('fearState', {
       maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
       attemptsLeft: await _fearAttemptsLeft(socket.id),
       inRun: !!run, wave: run?.wave || 0,
-      freeLanes: currentRoom ? currentRoom.fearFreeLaneCount() : null,
-      totalLanes: currentRoom ? currentRoom.fearLaneCount() : null,
+      // Fear's own floor, not currentRoom — this panel is readable from
+      // anywhere, not just while standing on it.
+      freeLanes: fearRoom ? fearRoom.fearFreeLaneCount() : null,
+      totalLanes: fearRoom ? fearRoom.fearLaneCount() : null,
     });
   });
 
@@ -9709,7 +9748,7 @@ io.on('connection', socket => {
   // the run ended (_fearFinish), this just makes the client catch up
   // visually if it somehow missed the fearFinished payload's x/y.
   safeOn('fearReturn', () => {
-    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    const spot = _returnToHub(socket.id);
     if (spot) socket.emit('deathBattleReturned', spot);
   });
 

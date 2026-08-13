@@ -579,6 +579,58 @@ scenario('floors: Кровавая Башня deploys entrants onto its own floo
   await b.close();
 });
 
+scenario('floors: Страх deploys into its own floor and a death returns the player to the hub', async () => {
+  const c = await connectWithSaved('harness_fear_death', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(c, 'ranger');
+
+  const started = c.wait('fearStarted', { timeout: 3000 });
+  c.emit('fearEnter');
+  const st = await started;
+  eq(c.last('gameStart')?.floor, 11, 'entering Fear force-joins its own floor');
+  ok(st && st.x != null && st.y != null, 'and fearDeploy places the player in a lane');
+
+  // Fear has no PvP either — "died mid-run" only ever means a monster kill,
+  // reported through the same 'respawn' round trip every death in the game
+  // uses. _fearFinish (called via _fearEliminate) has to do its own
+  // floor-aware return before the SAME handler's generic respawnPlayer call
+  // runs right after it, same class of fix race10Eliminate needed.
+  const finished = c.wait('fearFinished', { timeout: 3000 });
+  c.emit('respawn');
+  const fin = await finished;
+  eq(fin?.cleared, false, 'the run ends uncleared (died, not finished the last wave)');
+  eq(c.last('gameStart')?.floor, 1, 'and the player is returned to the hub floor, not left on Fear\'s own');
+
+  await c.close();
+});
+
+scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own floor, not the hub', async () => {
+  const a1 = await connectWithSaved('harness_fear_reconnect', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(a1, 'ranger');
+
+  const started = a1.wait('fearStarted', { timeout: 3000 });
+  a1.emit('fearEnter');
+  await started;
+  eq(a1.last('gameStart')?.floor, 11, 'the first session is on the fear floor mid-run');
+
+  // An ordinary disconnect (not a clean exit) — the run is meant to be held
+  // open for a possible reconnect (_fearHoldOnDisconnect/_fearGraceStart),
+  // not ended outright the way arena3/race10/death battle disconnects are.
+  await a1.close();
+
+  // Reconnect as the SAME account. Every fresh connection's own currentFloor
+  // starts at the hub (see its declaration) — without the reconnect-floor
+  // fix (selectChar checking _fearDisconnectGrace before defaulting there),
+  // this session would join the hub's Room instead of the fear floor's, and
+  // Room.addPlayer's own _fearGraceClaim would check the wrong Room and
+  // never find the held hall at all.
+  const a2 = await connectAs('harness_fear_reconnect');
+  const start2 = await enterWorld(a2, 'ranger');
+  eq(start2.floor, 11, 'reconnecting mid-run lands back on the fear floor, not the hub');
+  eq(start2.fear && start2.fear.inRun, true, 'and the run itself is reported as still live');
+
+  await a2.close();
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');

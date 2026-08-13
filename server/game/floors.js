@@ -1,17 +1,16 @@
 const {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
-  generateRace10,
+  generateRace10, generateFear,
 } = require('./dungeon');
 
 // Every location the player can stand in is its own floor id + its own
-// generator, replacing the single generateOpenWorld() mega-grid. The hub, the
-// 4 leveling arms, Guild War, Фарм-зона, the boss arena (also the Death
-// Battle venue), the 3v3 arena and Кровавая Башня are split out — Fear is
-// the last special zone still bundled inside generateHub() (see dungeon.js)
-// until it gets its own floor id in a later pass.
+// generator, replacing the single generateOpenWorld() mega-grid. The hub,
+// the 4 leveling arms and every special zone (Guild War, Фарм-зона, the boss
+// arena/Death Battle venue, the 3v3 arena, Кровавая Башня and Страх) are
+// each their own floor now.
 const FLOOR_IDS = {
   hub: 1, left: 2, top: 3, bottom: 4, right: 5,
-  guildWar: 6, farmZone: 7, arena: 8, pvpArena: 9, race10: 10,
+  guildWar: 6, farmZone: 7, arena: 8, pvpArena: 9, race10: 10, fear: 11,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -28,6 +27,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.arena,    key: 'arena',    generate: () => generateArena() },
   { id: FLOOR_IDS.pvpArena, key: 'pvpArena', generate: () => generatePvpArena() },
   { id: FLOOR_IDS.race10,   key: 'race10',   generate: () => generateRace10() },
+  { id: FLOOR_IDS.fear,     key: 'fear',     generate: () => generateFear() },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

@@ -2791,28 +2791,6 @@ class Room {
     return { x: p.x, y: p.y };
   }
 
-  // Sends a player back to the hub with PvP off — shared exit path for
-  // arena3, race10 and Fear (eliminated, the match/wave-run finishing, the
-  // round ending under them). The death battle uses its own
-  // _dbReturnEntrant (server/index.js) instead, since its entrants land back
-  // wherever they actually were — a real floor of their own, now that the
-  // arena is one too — rather than always the hub. Returns the landing spot
-  // so the caller can tell that client. Clears the tower lane (and releases a Fear
-  // lane, if any) as well as the PvP flag — leaving either set would keep
-  // the player invisible to ordinary world monsters (and them to it) for the
-  // rest of the session, since that is exactly what _raceVisible keys on.
-  deathBattleReturn(socketId) {
-    const p = this.players.get(socketId);
-    if (!p) return null;
-    p.x = this._dungeon.spawn.x;
-    p.y = this._dungeon.spawn.y;
-    p.pvpMode = false;
-    p._raceLane = null;
-    if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
-    p._profileRev++;
-    return { x: p.x, y: p.y };
-  }
-
   updatePlayerStats(socketId, { atk, def, maxHp }) {
     const p = this.players.get(socketId);
     if (!p) return;
