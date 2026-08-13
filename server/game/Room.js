@@ -963,19 +963,19 @@ class Room {
     // it in _buildArmGates (js/game.js), and without it _evtPad stays null so
     // the portal never appears no matter what the event state says.
     // race10.bounds is what lets the client tint that zone's floor/walls to
-    // look like "Кровавая Башня" (see _buildChunk, js/game.js). farmZone is
-    // the same again, for the Фарм-зона pad.
-    // guildWar is now only ever present on the Guild War floor's own Room —
-    // it carries the tower position/spawn ring/tinting bounds that floor's
-    // own dungeonData needs (see generateGuildWar, server/game/dungeon.js);
-    // the hub no longer has a guildWar field at all, since its outbound pad
-    // (_gwPad, js/game.js) only needs the hub's own spawn point plus a fixed
-    // offset, not this zone's own geometry.
+    // look like "Кровавая Башня" (see _buildChunk, js/game.js).
+    // guildWar/farmZone are now only ever present on that zone's own floor's
+    // own Room — each carries whatever geometry/tinting bounds that floor's
+    // own dungeonData needs (see generateGuildWar/generateFarmZone, server/
+    // game/dungeon.js); the hub no longer has either field at all, since its
+    // outbound pads (_gwPad/_farmPad, js/game.js) only need the hub's own
+    // spawn point plus a fixed offset (and, for the level-gated farm pad,
+    // farmZoneEntry.req) — not the zone's own geometry.
     // returnPad exists on every "own floor, one entrance" zone (arms, Guild
-    // War, …) — the pad that requests a transition back to the hub; armEntries
-    // only on the hub (the 4 outbound arm pads, now just {dir,req} — no
-    // target x/y, each arm is its own floor).
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, returnPad: d.returnPad, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
+    // War, Фарм-зона, …) — the pad that requests a transition back to the
+    // hub; armEntries/farmZoneEntry only on the hub (the outbound pads, now
+    // just {req} or {dir,req} — no target x/y, each zone is its own floor).
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
   }
 
   _inSafeZone(x, y) {

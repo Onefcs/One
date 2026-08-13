@@ -59,6 +59,7 @@ const {
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP,
   GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
+  FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
@@ -75,7 +76,11 @@ const {
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
 } = require('../shared/definitions');
 
-
+// enterLocation's generic level gate (see _doEnterLocation) reads from this —
+// the arms' own per-key requirements plus every simple "just a level gate,
+// no window/queue" special zone folded in next to them, so each new one of
+// those doesn't need its own dedicated branch in _doEnterLocation.
+const _ZONE_LEVEL_REQ = { ...ARM_LEVEL_REQ, farmZone: FARM_ENTRY_LEVEL };
 
 // ── Server-side inventory ops for the market ────────────────────────────────
 // The item half of every trade used to be entirely client-authoritative: the
@@ -8741,8 +8746,11 @@ io.on('connection', socket => {
       targetFloor = FLOOR_IDS.guildWar;
     } else if (FLOOR_IDS[target] != null) {
       // Server-side level gate — the pad's own lock icon is client-side
-      // decoration only, this is the check that actually matters.
-      const req = ARM_LEVEL_REQ[target] || 0;
+      // decoration only, this is the check that actually matters. Фарм-зона
+      // used to only ever be checked client-side (FARM_ENTRY_LEVEL, shared/
+      // definitions.js) — folded into the same map as the arms' own
+      // ARM_LEVEL_REQ now that entry is a real gated floor transition too.
+      const req = _ZONE_LEVEL_REQ[target] || 0;
       const lvl = (oldP._sd && oldP._sd.lvl) || 1;
       if (lvl < req) { if (!silent) socket.emit('enterLocationDenied', { target, reason: 'level', req }); return false; }
       targetFloor = FLOOR_IDS[target];

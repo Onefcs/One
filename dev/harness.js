@@ -381,6 +381,32 @@ scenario('floors: Guild War is its own floor, window-gated, and force-evicted wh
   await c.close();
 });
 
+scenario('floors: Фарм-зона is its own floor, gated server-side by level', async () => {
+  const low = await connectAs('harness_farm_low');
+  await enterWorld(low, 'ranger'); // fresh character, well under FARM_ENTRY_LEVEL (20)
+
+  const denied = low.wait('enterLocationDenied', { timeout: 3000 });
+  low.emit('enterLocation', { target: 'farmZone' });
+  const denial = await denied;
+  eq(denial && denial.reason, 'level', 'a character below FARM_ENTRY_LEVEL is refused, not just hidden behind the pad\'s lock icon');
+  await low.close();
+
+  const high = await connectWithSaved('harness_farm_high', { lvl: 20, xp: 0, xpNext: 100 });
+  await enterWorld(high, 'ranger');
+  const farmStart = high.wait('gameStart', { where: `${high.name} enters farmZone` });
+  high.emit('enterLocation', { target: 'farmZone' });
+  const onFarm = await farmStart;
+  eq(onFarm.floor, 7, 'a character at the level requirement switches to the Фарм-зона floor');
+  eq((onFarm.enemies || []).length, 80, 'and that floor reports its own baked-in monsters');
+
+  const hubStart = high.wait('gameStart', { where: `${high.name} returns to hub` });
+  high.emit('enterLocation', { target: 'hub' });
+  const backAtHub = await hubStart;
+  eq(backAtHub.floor, 1, 'the zone\'s own return pad sends the character back to the hub floor');
+
+  await high.close();
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');

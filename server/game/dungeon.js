@@ -171,9 +171,8 @@ const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 // as spawnGuildWarTower) and skip the normal loot table entirely: only an
 // independent FARM_SHARD_CHANCE roll per shard kind, no gold/gear/recipe/key
 // drops at all (see the farmZone flag, Room.attackEnemy/skillAttackEnemy and
-// _rollFarmZoneLoot, server/index.js). Entry is level-gated client-side at
-// FARM_ENTRY_LEVEL, same trust model as every other level gate in the open
-// world (dungeon.corridorGates) — see the farm pad in js/game.js.
+// _rollFarmZoneLoot, server/index.js). Entry is level-gated server-side now
+// (see _doEnterLocation, server/index.js) at FARM_ENTRY_LEVEL.
 // Each of the 80 monsters rolls its own level (21-30) and species/archetype
 // independently, so every room comes out mixed — different kinds and
 // different levels standing next to each other, not one uniform pack the
@@ -181,11 +180,12 @@ const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 // FARM_LVL_MIN/MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT and
 // FARM_SPECIES now live in shared/definitions.js (imported above) — the
 // client needs them too, for its own Фарм-зона reference list (js/ui.js).
-// Only this zone's tile geometry stays server-only, here.
+// Its own floor now (generateFarmZone, below) — FARM_Y0 stays here only
+// because DH (the hub's own dead grid dimensions, below) still chains off
+// where this zone's old rectangle used to sit inside it.
 const FARM_ROOM = 16;
 const FARM_GAP = 8;
 const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
-const FARM_X0 = ARENA_X0;
 const FARM_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
 
 // Each location is now its own floor/Room with its own small grid (see
@@ -270,83 +270,6 @@ function generateHub() {
   const rooms = [hub, arena, a3];
   const enemyList = [];
   let eid = 0;
-
-  // Фарм-зона: paint the 4 rooms (2x2 grid) plus the plus-shaped corridor
-  // through their shared gap, then bake in FARM_MOBS_PER_ROOM static
-  // monsters per room (random floor tile inside the room, same placement
-  // buildArm's spawnRoomEnemies uses below).
-  const farmRoomCoords = [
-    { x: FARM_X0, y: FARM_Y0 },                                         // top-left
-    { x: FARM_X0 + FARM_ROOM + FARM_GAP, y: FARM_Y0 },                  // top-right
-    { x: FARM_X0, y: FARM_Y0 + FARM_ROOM + FARM_GAP },                  // bottom-left
-    { x: FARM_X0 + FARM_ROOM + FARM_GAP, y: FARM_Y0 + FARM_ROOM + FARM_GAP }, // bottom-right
-  ];
-  const farmRooms = farmRoomCoords.map(({ x, y }) => {
-    const room = {
-      x, y, size: FARM_ROOM,
-      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
-      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
-      // Level varies per monster (FARM_LVL_MIN-FARM_LVL_MAX) — this is just a
-      // representative midpoint for the HUD's single-number room label.
-      isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone',
-    };
-    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
-    rooms.push(room);
-    return room;
-  });
-  const farmMidX = FARM_X0 + Math.floor(FARM_SIZE / 2);
-  // Top-row and bottom-row corridors (through the horizontal gap), plus one
-  // vertical corridor through the centre column tying both rows together —
-  // every room reaches every other one without lengthening any room itself.
-  paintRect(FARM_X0, farmRooms[0].cy - CW, FARM_X0 + FARM_SIZE - 1, farmRooms[0].cy + CW);
-  paintRect(FARM_X0, farmRooms[2].cy - CW, FARM_X0 + FARM_SIZE - 1, farmRooms[2].cy + CW);
-  paintRect(farmMidX - CW, FARM_Y0, farmMidX + CW, FARM_Y0 + FARM_SIZE - 1);
-  const farmMidY = FARM_Y0 + Math.floor(FARM_SIZE / 2);
-
-  // Same halving every other packed room applies ("regular monsters spawn
-  // in packs — halved individually") — 20 in a 16x16 room is denser than
-  // the usual 5-10, so this matters here too.
-  const FARM_WEAK_MULT = 0.5;
-  const _farmMaxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19)
-  farmRooms.forEach((room, ri) => {
-    for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
-      const d = _enemyByEid.get(FARM_SPECIES[Math.floor(rng() * FARM_SPECIES.length)]);
-      if (!d) continue;
-      const lvl = FARM_LVL_MIN + Math.floor(rng() * (FARM_LVL_MAX - FARM_LVL_MIN + 1));
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
-      }
-      // Named/colored the same way arm 2's own rooms would at this level
-      // (localLvl relative to ARM_OFFSETS[1]) so a level-27 zombie here looks
-      // exactly like a level-27 zombie anywhere else in the open world.
-      const localLvl = lvl - ARM_OFFSETS[1];
-      enemyList.push({
-        id: `farm_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, _farmMaxLocalLvl),
-        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, _farmMaxLocalLvl),
-        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
-        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(),
-        // Never self-pulls (Room.js's tick loop exempts farmZone from the
-        // aggroR-triggered self-aggro check explicitly) — attackEnemy/
-        // skillAttackEnemy still unconditionally set aggro:true on any hit,
-        // so it fights back once attacked. aggroR itself stays a normal
-        // value: it's what the tick loop's de-aggro leash (aggroR * 2.2)
-        // uses to decide when a retaliating monster gives up and walks back
-        // to spawn — aggroR:0 collapsed that leash to 0 too and reset aggro
-        // right back to false the tick after it was set, so nothing ever
-        // visibly retaliated.
-        aggro: false, aggroR: 175 + rng() * 55,
-      });
-    }
-  });
 
   // Race10 monster lines — exact pixel spacing (RACE10_MOB_SPACING), not the
   // random-within-a-room placement buildArm's rooms use below: "впритык"
@@ -464,20 +387,14 @@ function generateHub() {
     // and every wave transition are server-pushed teleports, not something the
     // client discovers by walking around.
     fear: { lanes: fearLanes },
-    // Фарм-зона: one entry/exit pair at the centre of the plus-shaped
-    // corridor (offset a couple tiles apart so arriving and leaving don't
-    // trigger each other) plus minLevel for the client's teleport-pad gate
-    // (js/game.js) — same req-based lock the regular arm pads already use.
-    farmZone: {
-      entryX: farmMidX * TILE + TILE / 2, entryY: farmMidY * TILE + TILE / 2,
-      exitX:  farmMidX * TILE + TILE / 2, exitY:  (FARM_Y0 + 2) * TILE + TILE / 2,
-      bounds: { x0: FARM_X0, y0: FARM_Y0, x1: FARM_X0 + FARM_SIZE, y1: FARM_Y0 + FARM_SIZE },
-      minLevel: FARM_ENTRY_LEVEL,
-    },
     // {dir, req} per arm — where to go and the level gate, resolved into an
     // actual floor by the client's enterLocation request (js/network.js);
     // no target x/y here any more, each arm lives on its own floor now.
     armEntries,
+    // Same idea, one entry, for the Фарм-зона hub pad: just the level gate
+    // the pad itself needs to draw locked/unlocked — the zone's own geometry
+    // now lives entirely on its own floor (generateFarmZone, below), not here.
+    farmZoneEntry: { req: FARM_ENTRY_LEVEL },
     enemies: enemyList,
   };
 }
@@ -702,4 +619,111 @@ function generateGuildWar() {
   };
 }
 
-module.exports = { generateHub, generateArm, generateGuildWar, TILE, WALL, FLOOR };
+// Фарм-зона (Farm Zone), now its own floor (see server/game/floors.js)
+// instead of a corner of the hub's mega-grid — same self-contained small
+// 0,0-origin grid pattern generateGuildWar() above uses. Four identical
+// square rooms in a 2x2 grid joined by a plus-shaped corridor through their
+// shared gap, baked in at world-gen (not runtime-spawned) since every
+// monster here is a fixed level range with no escalation to track. Entry is
+// level-gated server-side now (see _doEnterLocation, server/index.js) —
+// FARM_ENTRY_LEVEL used to only ever be checked client-side.
+function generateFarmZone() {
+  const rng = seededRng(2026 * 1337 + 777 + 600);
+  const w = FARM_SIZE + MARGIN * 2, h = FARM_SIZE + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const roomCoords = [
+    { x: X0, y: Y0 },                                     // top-left
+    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 },              // top-right
+    { x: X0, y: Y0 + FARM_ROOM + FARM_GAP },              // bottom-left
+    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 + FARM_ROOM + FARM_GAP }, // bottom-right
+  ];
+  const rooms = roomCoords.map(({ x, y }) => {
+    const room = {
+      x, y, size: FARM_ROOM,
+      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
+      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
+      // Level varies per monster (FARM_LVL_MIN-FARM_LVL_MAX) — this is just a
+      // representative midpoint for the HUD's single-number room label.
+      isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone',
+    };
+    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
+    return room;
+  });
+  const midX = X0 + Math.floor(FARM_SIZE / 2);
+  // Top-row and bottom-row corridors (through the horizontal gap), plus one
+  // vertical corridor through the centre column tying both rows together —
+  // every room reaches every other one without lengthening any room itself.
+  paintRect(X0, rooms[0].cy - CW, X0 + FARM_SIZE - 1, rooms[0].cy + CW);
+  paintRect(X0, rooms[2].cy - CW, X0 + FARM_SIZE - 1, rooms[2].cy + CW);
+  paintRect(midX - CW, Y0, midX + CW, Y0 + FARM_SIZE - 1);
+  const midY = Y0 + Math.floor(FARM_SIZE / 2);
+
+  // Same halving every other packed room applies ("regular monsters spawn
+  // in packs — halved individually") — 20 in a 16x16 room is denser than
+  // the usual 5-10, so this matters here too.
+  const FARM_WEAK_MULT = 0.5;
+  const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19)
+  const enemyList = [];
+  let eid = 0;
+  rooms.forEach((room, ri) => {
+    for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
+      const d = _enemyByEid.get(FARM_SPECIES[Math.floor(rng() * FARM_SPECIES.length)]);
+      if (!d) continue;
+      const lvl = FARM_LVL_MIN + Math.floor(rng() * (FARM_LVL_MAX - FARM_LVL_MIN + 1));
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      // Named/colored the same way arm 2's own rooms would at this level
+      // (localLvl relative to ARM_OFFSETS[1]) so a level-27 zombie here looks
+      // exactly like a level-27 zombie anywhere else in the open world.
+      const localLvl = lvl - ARM_OFFSETS[1];
+      enemyList.push({
+        id: `farm_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
+        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(),
+        // Never self-pulls (Room.js's tick loop exempts farmZone from the
+        // aggroR-triggered self-aggro check explicitly) — attackEnemy/
+        // skillAttackEnemy still unconditionally set aggro:true on any hit,
+        // so it fights back once attacked. aggroR itself stays a normal
+        // value: it's what the tick loop's de-aggro leash (aggroR * 2.2)
+        // uses to decide when a retaliating monster gives up and walks back
+        // to spawn — aggroR:0 collapsed that leash to 0 too and reset aggro
+        // right back to false the tick after it was set, so nothing ever
+        // visibly retaliated.
+        aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  });
+
+  // Sits 2 tiles into the corridor from the north edge — offset from the
+  // entry spawn (dead centre of the plus) so arriving and leaving don't
+  // trigger each other, same as every other zone's own entrance/return pair.
+  const returnPad = { x: midX * TILE + TILE / 2, y: (Y0 + 2) * TILE + TILE / 2 };
+
+  return {
+    grid, rooms, w, h,
+    spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
+    returnPad,
+    farmZone: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_ENTRY_LEVEL },
+    enemies: enemyList,
+  };
+}
+
+module.exports = { generateHub, generateArm, generateGuildWar, generateFarmZone, TILE, WALL, FLOOR };

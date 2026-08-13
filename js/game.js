@@ -1355,12 +1355,13 @@ let _gwPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
 // Фарм-зона pad — always open (no time window, unlike Guild War), but
-// level-gated: _farmPad.req comes straight from dungeon.farmZone.minLevel,
-// checked the same way _teleportPads' own req field is (_updateTeleportPads
-// below), and _drawTeleportPad already renders the locked/unlocked ring off
-// that same req param.
+// level-gated: _farmPad.req comes from dungeon.farmZoneEntry.req (hub-only,
+// see generateHub, server/game/dungeon.js), checked the same way
+// _teleportPads' own req field is (_updateTeleportPads below), and
+// _drawTeleportPad already renders the locked/unlocked ring off that same
+// req param.
 const _FARM_PAD_DX = -12;
-let _farmPad = null, _farmReturnPad = null;
+let _farmPad = null;
 // World boss state as the server last reported it: spawnAt is a summon already
 // counting down, nextAt the next scheduled appearance (пн/ср/пт/вс 20:00 МСК).
 // Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
@@ -1403,28 +1404,30 @@ function _buildArmGates() {
     _evtPad = null; _evtReturnPad = null;
   }
 
+  // armEntries is a hub-only field (generateHub, server/game/dungeon.js) —
+  // the one reliable signal, from any floor's dungeon payload, that this is
+  // the hub itself and its special-zone outbound pads belong on screen.
+  const onHub = !!dungeon.armEntries;
+
   // Guild War hub-side pad — its own floor now (server/game/floors.js), so
   // stepping onto it requests a real transition (netEnterLocation) rather
   // than a same-grid teleport; no targetX/targetY any more, same change the
-  // arm pads above already went through. Only makes sense on the hub itself
-  // — armEntries is a hub-only field (generateHub, server/game/dungeon.js) —
-  // and the zone's own returnPad (generateGuildWar) flows back through the
-  // generic _returnPads handling above, so there's no dedicated return pad
-  // to build here any more either.
-  _gwPad = dungeon.armEntries ? { x: sx + _GW_PAD_DX * TILE, y: sy } : null;
+  // arm pads above already went through. The zone's own returnPad
+  // (generateGuildWar) flows back through the generic _returnPads handling
+  // above, so there's no dedicated return pad to build here any more either.
+  _gwPad = onHub ? { x: sx + _GW_PAD_DX * TILE, y: sy } : null;
 
-  // Фарм-зона pad — req carries the level gate, same field regular arm pads
-  // use (see _teleportPads above).
-  const fz = dungeon.farmZone;
-  if (fz) {
-    _farmPad = {
-      x: sx + _FARM_PAD_DX * TILE, y: sy, targetX: fz.entryX, targetY: fz.entryY,
-      req: fz.minLevel || 0, label: typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона',
-    };
-    _farmReturnPad = { x: fz.exitX, y: fz.exitY, targetX: sx, targetY: sy };
-  } else {
-    _farmPad = null; _farmReturnPad = null;
-  }
+  // Фарм-зона hub-side pad — its own floor now (server/game/floors.js), same
+  // change the arm pads and the Guild War pad above already went through: a
+  // real transition (netEnterLocation) instead of a same-grid teleport, req
+  // carries the level gate (dungeon.farmZoneEntry, hub-only — see
+  // generateHub, server/game/dungeon.js), and the zone's own returnPad flows
+  // back through the generic _returnPads handling, so there's no dedicated
+  // return pad to build here any more either.
+  const fze = dungeon.farmZoneEntry;
+  _farmPad = onHub && fze
+    ? { x: sx + _FARM_PAD_DX * TILE, y: sy, req: fze.req || 0, label: typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона' }
+    : null;
 }
 
 // True while a world boss is announced, alive, or its loot is still on the
@@ -1519,11 +1522,8 @@ function _updateTeleportPads(dt) {
     if (_farmPad.req > 0 && (player.lvl || 1) < _farmPad.req) {
       if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: _farmPad.req }) : `🔒 Нужен ${_farmPad.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
     } else {
-      _teleportTo(_farmPad.targetX, _farmPad.targetY, _farmPad.label);
+      _requestEnterLocation('farmZone', _farmPad.label);
     }
-  }
-  if (_farmReturnPad && dist(player.x, player.y, _farmReturnPad.x, _farmReturnPad.y) < TRIGGER_R) {
-    _teleportTo(_farmReturnPad.targetX, _farmReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   }
 }
 
@@ -1566,7 +1566,6 @@ function drawTeleportPads() {
   // Фарм-зона: always open, so no gating condition here — just the pad's own
   // req (level 20) via _drawTeleportPad's built-in lock rendering.
   if (_farmPad) _drawTeleportPad(_farmPad.x, _farmPad.y, _farmPad.req, _farmPad.label, '#eb4e61', '#4ee69a');
-  if (_farmReturnPad) _drawTeleportPad(_farmReturnPad.x, _farmReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',
