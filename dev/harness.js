@@ -777,6 +777,46 @@ scenario('build: the launch path is cacheable and the legacy names still answer'
      'but is still fetchable on demand');
 });
 
+scenario('build: the bundle is minified, mapped, and keeps its HTML entry points', async () => {
+  const html = await (await fetch(BASE + '/')).text();
+  const jsPath = (html.match(/\/bundle\.[a-f0-9]+\.js/) || [])[0];
+  ok(jsPath, 'index.html names the bundle');
+  if (!jsPath) return;
+  const code = await (await fetch(BASE + jsPath)).text();
+
+  // Minified at all: comments gone, and materially smaller than the sources.
+  const fs = require('fs');
+  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  const list = src.slice(src.indexOf('const BUNDLE_FILES = ['), src.indexOf("].map(f => path.join(ROOT, f));"));
+  const raw = [...list.matchAll(/'([^']+)'/g)].map(m => m[1])
+    .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
+  ok(code.length < raw.length * 0.75,
+     `smaller than the sources (${Math.round(raw.length / 1024)}K -> ${Math.round(code.length / 1024)}K)`);
+
+  // The names the minifier cannot see: onclick attributes in index.html and
+  // handlers built inside JS strings. Renaming any of them breaks silently.
+  const fromHtml = [...html.matchAll(/on\w+="\s*([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]);
+  const fromStrings = [...raw.matchAll(/onclick=\\?["'`]\s*([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]);
+  const entryPoints = [...new Set([...fromHtml, ...fromStrings])];
+  ok(entryPoints.length > 10, `found ${entryPoints.length} names reachable only from markup`);
+  // Looked for in the bundle AND in index.html's own inline scripts — some
+  // handlers (the chat panel) are defined right there beside their markup and
+  // never reach the minifier at all, so searching only the bundle reports them
+  // as lost when nothing happened to them.
+  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n');
+  const reachable = code + '\n' + inline;
+  const lost = entryPoints.filter(n => !new RegExp('\\b' + n + '\\b').test(reachable));
+  ok(lost.length === 0, 'every one of them is still defined somewhere', lost.join(', '));
+
+  // And a stack trace stays readable.
+  ok(/sourceMappingURL=\/bundle\.[a-f0-9]+\.js\.map/.test(code), 'the bundle points at a source map');
+  const mapRes = await fetch(BASE + jsPath + '.map');
+  eq(mapRes.status, 200, 'which is served');
+  const map = await mapRes.json();
+  ok(Array.isArray(map.sources) && map.sources.length > 0, 'and carries sources');
+  ok(typeof map.mappings === 'string' && map.mappings.length > 1000, 'and real mappings');
+});
+
 // ── Browser check ────────────────────────────────────────────────────────────
 // Everything above talks to the server over a socket. This drives the actual
 // client: real Chromium, the real bundle, real WebGL. It is what makes changes
