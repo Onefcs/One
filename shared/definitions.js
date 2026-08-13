@@ -1486,6 +1486,31 @@ function maxSkillDamageMult() {
   return best;
 }
 
+// The stat-upgrade slots (UPGRADE_DEF, js/definitions.js) and what the next
+// point in one costs. Shared so the server can charge it: upgradeStats used to
+// deduct the gold and raise the level client-side and let the save carry both.
+const UPGRADE_KEYS = ['atk', 'def', 'hp', 'atkSpeed', 'critChance', 'critPower', 'hpRegen'];
+function upgradeCost(level) { return 300 * (Math.max(0, Math.floor(Number(level)) || 0) + 1); }
+
+// ── Cost of learning and upgrading ──────────────────────────────────────────
+// Books to unlock a locked (level 0) skill or passive, books per upgrade
+// attempt once studied, and the chance an attempt succeeds. These lived in
+// js/ui.js, where only the client could see them — which is precisely why
+// studying and upgrading had to be client-side decisions that the server could
+// only rubber-stamp through the save blob. They are shared now so the server
+// can charge and roll them itself (learnPassive/upgradePassive/learnSkill/
+// upgradeSkill/learnAdvSkill, server/index.js).
+const SKILL_STUDY_COST     = 1;
+const SKILL_UPGRADE_COST   = 2;
+const SKILL_UPGRADE_CHANCE = 0.30;
+const ADV_SKILL_STUDY_COST = 5;
+
+// Every class+slot and every passive has its OWN book (CRAFT_MATS below) — a
+// generic book would not say which of the abilities it is for.
+function skillBookId(cls, key)  { return `book_${cls}_${key}`; }
+function advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
+function passiveBookId(id)      { return `book_pas_${id}`; }
+
 const PASSIVE_MAX_LEVEL = 5;
 
 const PASSIVE_CLASS_DEF = {
@@ -1605,6 +1630,8 @@ if (typeof module !== 'undefined') module.exports = {
   UPGRADE_RESET_COST,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult, maxSkillDamageMult,
+  SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
+  skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

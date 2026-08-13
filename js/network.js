@@ -1288,45 +1288,54 @@ function netConnect(onReady) {
     if (typeof netSaveProgress === 'function') setTimeout(netSaveProgress, 1200);
   });
 
-  // The server overruled a save that reported a studied skill or passive at a
-  // LOWER level than it holds — a save composed before the study arriving
-  // after it (the 2s save debounce, a save dropped while an item op was in
-  // flight, or the in-memory blob every reconnect resends through selectChar).
-  // See _keepLearnedProgress in server/index.js. Without applying it here the
-  // client keeps the rewound copy and resends it in every later save, so the
-  // player goes on seeing an un-learned passive while the stored record has
-  // been right all along.
-  //
-  // Merged FORWARD, never assigned: the payload was built from the save that
-  // was in flight, and the player may well have upgraded again in the
-  // meantime — the whole point of this handler is that a level never goes
-  // down, which taking the payload verbatim would itself violate.
+  // The authoritative studied levels. The client no longer writes these at all
+  // — studySkill/upgradePassive/... are requests (js/ui.js) and this is the
+  // answer — so it is applied verbatim rather than merged: there is no newer
+  // local version left to protect, and merging would make a legitimate
+  // correction (an admin edit, a rolled-back forgery) impossible to deliver.
   socket.on('progressSync', (data) => {
     if (!player || !data || typeof data !== 'object') return;
-    let touched = false;
-    const _mergeUp = (field, rank) => {
-      const inc = data[field];
-      if (!inc || typeof inc !== 'object') return;
-      const cur = player[field] || (player[field] = {});
-      Object.keys(inc).forEach(k => {
-        if (rank(inc[k]) <= rank(cur[k])) return;
-        cur[k] = inc[k];
-        touched = true;
-      });
-    };
-    ['skillLevels', 'passiveLevels'].forEach(f => _mergeUp(f, v => Math.max(0, Math.floor(Number(v)) || 0)));
-    _mergeUp('advSkillLearned', v => (v ? 1 : 0));
-    if (!touched) return;
-    // passiveLevels feeds straight into the stat bonuses (passiveBonusTotal,
-    // shared/definitions.js), so the restored level has to reach the live
-    // stats and not just the panel.
+    if (data.upgrades)        player.upgrades        = { ...data.upgrades };
+    if (data.skillLevels)     player.skillLevels     = { Q:0, W:0, E:0, R:0, ...data.skillLevels };
+    if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
+    if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
+    if (data.advSkillActive)  player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...data.advSkillActive };
+    // passiveLevels feed the stat bonuses (passiveBonusTotal,
+    // shared/definitions.js), so a new level has to reach the live stats and
+    // not just the panel.
     if (typeof recompute === 'function') recompute();
     if (typeof updateSkillsUI === 'function') updateSkillsUI();
     if (typeof updatePassiveSkillsUI === 'function') updatePassiveSkillsUI();
     if (typeof _refreshProfessionPanelIfOpen === 'function') _refreshProfessionPanelIfOpen();
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
+    if (typeof updateProfileUI === 'function') updateProfileUI();
   });
 
-  // ── Сезон ─────────────────────────────────────────────────────────────────
+  // The outcome of one upgrade attempt. The level itself arrives in the
+  // progressSync above; this is only what the player sees happen.
+  socket.on('upgradeRolled', ({ kind, ok, level } = {}) => {
+    if (!player) return;
+    if (ok) {
+      if (typeof spawnBurst === 'function') spawnBurst(player.x, player.y, '#e69419', 10);
+      const msg = kind === 'passive'
+        ? tVars('passiveLevelUpToast', { n: level })
+        : tVars('skillLevelUpToast', { n: level });
+      dmgNum(player.x, player.y - 42, msg, '#e69419');
+    } else {
+      dmgNum(player.x, player.y - 36, t('failToast'), '#eb4e61');
+    }
+  });
+
+  // A learn/upgrade request the server refused — wrong class, not studied yet,
+  // books gone between the click and the packet. The client's own pre-checks
+  // catch these first in normal play, so this is the case where the two copies
+  // had drifted; showing it beats a button that silently does nothing.
+  socket.on('progressError', ({ msg } = {}) => {
+    if (!player || !msg) return;
+    dmgNum(player.x, player.y - 30, msg, '#f17e8b');
+  });
+
   socket.on('seasonState', (st) => {
     if (!st) return;
     _seasonState = { ..._seasonState, ...st };
@@ -1773,6 +1782,19 @@ function netSkillAttack(enemyId, multiplier, key) {
   if (!socket?.connected) return;
   socket.emit('skillAttack', { enemyId, key });
 }
+// ── Learning and upgrading ──────────────────────────────────────────────────
+// Requests, not results. The server counts the books, rolls the upgrade chance
+// and applies the level; what comes back is progressSync (authoritative maps),
+// inventorySync (the books it spent) and upgradeRolled (so the success/failure
+// text still plays). See the handlers in server/index.js.
+function netLearnSkill(key)      { if (socket?.connected) socket.emit('learnSkill', { key }); }
+function netUpgradeSkill(key)    { if (socket?.connected) socket.emit('upgradeSkill', { key }); }
+function netLearnPassive(id)     { if (socket?.connected) socket.emit('learnPassive', { id }); }
+function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePassive', { id }); }
+function netLearnAdvSkill(key)   { if (socket?.connected) socket.emit('learnAdvSkill', { key }); }
+function netToggleAdvSkill(key)  { if (socket?.connected) socket.emit('toggleAdvSkill', { key }); }
+function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgrade', { key }); }
+
 function netSkillStun(enemyId, duration) {
   if (!socket?.connected || !enemyId) return;
   socket.emit('skillEffect', { enemyId, type: 'stun', duration });

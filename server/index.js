@@ -44,6 +44,9 @@ const {
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpAtLevel, xpToNext, xpTotalAt,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
+  SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
+  SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
+  skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
@@ -151,6 +154,8 @@ function _canonicalMarketItem(rawItem) {
 // applies it optimistically and its next full-array save wins, which keeps the
 // two consistent — but the server-side copy means the trade survives a lost
 // event or a disconnect mid-trade.
+// The four ability slots every class has (SKILL_DEF, js/definitions.js).
+const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
 
 // Which slot this item really occupies. isStackableItem (shared/definitions.js)
@@ -2559,68 +2564,6 @@ function _sanitizeKeyMap(raw, fn) {
     n++;
   }
   return out;
-}
-
-// ── Learned progression only ever moves forward ─────────────────────────────
-// Studying or upgrading a skill or a passive costs books, and nothing in the
-// game gives a level back: there is no un-learn, no refund, and rebirth
-// deliberately keeps them (see the rebirth handler). So a save reporting a
-// LOWER level than the baseline is never a legitimate downgrade — it is a
-// save composed BEFORE the study arriving after it.
-//
-// That ordering happens routinely, through paths that have nothing to do with
-// cheating: the client save is debounced up to 2s (netSaveProgress,
-// js/network.js), a save is dropped outright while an item op holds the
-// inventory (_itemOpBusy in saveProgress below), and every socket.io
-// reconnect resends the client's in-memory blob through selectChar. Any of
-// those can put an older passiveLevels on the wire after a newer one, and
-// taking it at face value silently un-learns a passive the player paid books
-// for — the books are gone (that spend rode a save that DID land), the level
-// is back to what it was.
-//
-// Items, gold, XP and questIdx are all already guarded against exactly this;
-// these maps were the one kind of progress with no rule at all, which is why
-// they are the kind players saw roll back.
-//
-// advSkillActive is deliberately absent: that one is a free toggle between a
-// slot's base and advanced version (toggleAdvSkill, js/ui.js), so "off" after
-// "on" is an ordinary choice, not a rewind.
-const _MONOTONIC_LEVEL_MAPS = ['skillLevels', 'passiveLevels'];
-const _MONOTONIC_FLAG_MAPS  = ['advSkillLearned'];
-
-// Merged per key, not kept as a whole blob: one save can legitimately carry a
-// brand-new passive AND a stale copy of a different one. Returns the merged
-// map, or null when `incoming` already covers `base` — which is every
-// ordinary save, so the common path allocates nothing.
-function _mergeForward(base, incoming, rank) {
-  if (!base || typeof base !== 'object' || Array.isArray(base)) return null;
-  const inc = (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) ? incoming : null;
-  let out = null;
-  for (const [k, bv] of Object.entries(base)) {
-    const b = rank(bv);
-    if (!b) continue;
-    if (rank(inc ? inc[k] : undefined) >= b) continue;
-    if (!out) out = { ...(inc || {}) };
-    out[k] = bv;
-  }
-  return out;
-}
-
-// Applies the rule above to a sanitized save blob in place. Returns just the
-// fields that had to be corrected (so the caller can log and push them back to
-// the client), or null when nothing was rewound.
-function _keepLearnedProgress(clean, base) {
-  if (!clean || !base) return null;
-  let corrected = null;
-  const _apply = (field, rank) => {
-    const merged = _mergeForward(base[field], clean[field], rank);
-    if (!merged) return;
-    clean[field] = merged;
-    (corrected || (corrected = {}))[field] = merged;
-  };
-  _MONOTONIC_LEVEL_MAPS.forEach(f => _apply(f, v => Math.max(0, Math.floor(Number(v)) || 0)));
-  _MONOTONIC_FLAG_MAPS.forEach(f => _apply(f, v => (v ? 1 : 0)));
-  return corrected;
 }
 
 // The HP potions (ITEM_DEF slot 'use') — the only ids potionBag may hold, and
@@ -6355,6 +6298,210 @@ io.on('connection', socket => {
     }
   });
 
+  // ── Learned progression (skills, passives, "вторая профессия") ────────────
+  // These used to be decided entirely by the client: it checked the books,
+  // removed them, rolled the upgrade chance, wrote the new level into
+  // player.skillLevels/passiveLevels and let the next debounced saveProgress
+  // carry the result. The server's only involvement was accepting whatever
+  // arrived. That is what every rollback report traced back to — a save
+  // composed before a study landing after it, a save dropped while an item op
+  // held the inventory, a reconnect resending a stale in-memory blob — and it
+  // also meant a modified client could simply write itself max levels.
+  //
+  // Now the client asks and the server decides: it counts the books out of its
+  // own inventory copy, rolls the chance itself, applies the level and answers
+  // with progressSync (plus the inventorySync _commitServerItems already
+  // sends). Nothing about the outcome is ever read back off the save blob —
+  // see _sanitizeSavedStats, which pins these fields to the server's copy.
+  function _learnedMaps() {
+    if (!_lastStats) return null;
+    if (!_lastStats.skillLevels    || typeof _lastStats.skillLevels    !== 'object') _lastStats.skillLevels = {};
+    if (!_lastStats.passiveLevels  || typeof _lastStats.passiveLevels  !== 'object') _lastStats.passiveLevels = {};
+    if (!_lastStats.advSkillLearned|| typeof _lastStats.advSkillLearned!== 'object') _lastStats.advSkillLearned = {};
+    if (!_lastStats.advSkillActive || typeof _lastStats.advSkillActive !== 'object') _lastStats.advSkillActive = {};
+    return _lastStats;
+  }
+
+  // Pushes the authoritative maps to the client. The client merges them
+  // forward and never writes them itself any more, so this is the only way a
+  // studied level ever reaches the character sheet.
+  function _pushProgress() {
+    socket.emit('progressSync', {
+      upgrades:        _lastStats.upgrades,
+      skillLevels:     _lastStats.skillLevels,
+      passiveLevels:   _lastStats.passiveLevels,
+      advSkillLearned: _lastStats.advSkillLearned,
+      advSkillActive:  _lastStats.advSkillActive,
+    });
+  }
+
+  // Counts, then spends, `need` copies of a book. Returns false (and changes
+  // nothing) when the player hasn't got them, so every caller can check and
+  // charge in one step and can't half-apply.
+  function _spendBooks(bookId, need) {
+    const inv = _liveInventory();
+    if (!Array.isArray(inv)) return false;
+    const have = inv.reduce((s, i) => s + (i && i.id === bookId ? (i.qty || 1) : 0), 0);
+    if (have < need) return false;
+    const beforeLen = inv.length;
+    let left = need;
+    for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+      const e = inv[i];
+      if (!e || e.id !== bookId) continue;
+      const q = e.qty || 1;
+      if (q > left) { e.qty = q - left; left = 0; }
+      else { left -= q; inv.splice(i, 1); }
+    }
+    _commitServerItems(inv, null, 'books', { book: bookId, n: need }, { beforeLen });
+    return true;
+  }
+
+  function _progressErr(msg) { socket.emit('progressError', { msg }); }
+
+  // Persist just the progression fields. Cheap enough to do per action — these
+  // are a handful of small maps, and an action the player paid books for must
+  // not wait on the 3s save debounce to become durable.
+  function _persistLearned() {
+    _persistSavedFields(authed, {
+      skillLevels: _lastStats.skillLevels, passiveLevels: _lastStats.passiveLevels,
+      advSkillLearned: _lastStats.advSkillLearned, advSkillActive: _lastStats.advSkillActive,
+    });
+    if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
+  }
+
+  safeOn('learnSkill', ({ key } = {}) => {
+    if (!authed || !_learnedMaps()) return;
+    if (!SKILL_SLOTS.includes(key)) return;
+    const cls = _lastStats.type;
+    if (!CHAR_DEF[cls]) return _progressErr('Класс не выбран');
+    if ((_lastStats.skillLevels[key] || 0) > 0) return;   // already studied
+    if (!_spendBooks(skillBookId(cls, key), SKILL_STUDY_COST)) return _progressErr('Нужна книга навыка!');
+    _lastStats.skillLevels[key] = 1;
+    _persistLearned();
+    logPlayer(authed.telegramId, authed.username, 'skill_study', { key });
+    _pushProgress();
+  });
+
+  safeOn('upgradeSkill', ({ key } = {}) => {
+    if (!authed || !_learnedMaps()) return;
+    if (!SKILL_SLOTS.includes(key)) return;
+    const cls = _lastStats.type;
+    if (!CHAR_DEF[cls]) return _progressErr('Класс не выбран');
+    const lvl = _lastStats.skillLevels[key] || 0;
+    if (lvl <= 0) return _progressErr('Сначала изучите навык!');
+    if (lvl >= SKILL_MAX_LEVEL) return;
+    if (!_spendBooks(skillBookId(cls, key), SKILL_UPGRADE_COST)) return _progressErr('Не хватает книг!');
+    // Rolled HERE, not on the client. A client-side roll is a client-side
+    // decision: re-rolling until it succeeds costs nothing to implement.
+    const ok = Math.random() < SKILL_UPGRADE_CHANCE;
+    if (ok) _lastStats.skillLevels[key] = lvl + 1;
+    _persistLearned();
+    logPlayer(authed.telegramId, authed.username, 'skill_upgrade', { key, from: lvl, ok });
+    socket.emit('upgradeRolled', { kind: 'skill', key, ok, level: _lastStats.skillLevels[key] });
+    _pushProgress();
+  });
+
+  safeOn('learnPassive', ({ id } = {}) => {
+    if (!authed || !_learnedMaps()) return;
+    const cls = _lastStats.type;
+    if (!passiveDefById(cls, id)) return;                 // not a passive this class has
+    if ((_lastStats.passiveLevels[id] || 0) > 0) return;  // already studied
+    if (!_spendBooks(passiveBookId(id), SKILL_STUDY_COST)) return _progressErr('Нужна книга этой пассивки!');
+    _lastStats.passiveLevels[id] = 1;
+    _persistLearned();
+    logPlayer(authed.telegramId, authed.username, 'passive_study', { id });
+    _pushProgress();
+  });
+
+  safeOn('upgradePassive', ({ id } = {}) => {
+    if (!authed || !_learnedMaps()) return;
+    const cls = _lastStats.type;
+    if (!passiveDefById(cls, id)) return;
+    const lvl = _lastStats.passiveLevels[id] || 0;
+    if (lvl <= 0) return _progressErr('Сначала изучите пассивку!');
+    if (lvl >= PASSIVE_MAX_LEVEL) return;
+    if (!_spendBooks(passiveBookId(id), SKILL_UPGRADE_COST)) return _progressErr('Не хватает книг!');
+    const ok = Math.random() < SKILL_UPGRADE_CHANCE;
+    if (ok) _lastStats.passiveLevels[id] = lvl + 1;
+    _persistLearned();
+    logPlayer(authed.telegramId, authed.username, 'passive_upgrade', { id, from: lvl, ok });
+    socket.emit('upgradeRolled', { kind: 'passive', id, ok, level: _lastStats.passiveLevels[id] });
+    _pushProgress();
+  });
+
+  safeOn('learnAdvSkill', ({ key } = {}) => {
+    if (!authed || !_learnedMaps()) return;
+    if (!SKILL_SLOTS.includes(key)) return;
+    const cls = _lastStats.type;
+    if (!CHAR_DEF[cls]) return _progressErr('Класс не выбран');
+    // The slot has to be maxed first — the client greys the button out, but
+    // that is advice, not a rule, until it is checked here.
+    if ((_lastStats.skillLevels[key] || 0) < SKILL_MAX_LEVEL) return _progressErr('Навык не прокачан до максимума');
+    if (_lastStats.advSkillLearned[key]) return;
+    if (!_spendBooks(advSkillBookId(cls, key), ADV_SKILL_STUDY_COST)) return _progressErr('Не хватает книг!');
+    _lastStats.advSkillLearned[key] = true;
+    _persistLearned();
+    logPlayer(authed.telegramId, authed.username, 'adv_skill_learn', { key });
+    _pushProgress();
+  });
+
+  // Free either way — but it decides which variant's damage the server applies
+  // (_skillMultFor, server/game/Room.js), so it has to be the server's copy
+  // that changes, not a field the client writes into its next save.
+  safeOn('toggleAdvSkill', ({ key } = {}) => {
+    if (!authed || !_learnedMaps()) return;
+    if (!SKILL_SLOTS.includes(key)) return;
+    if (!_lastStats.advSkillLearned[key]) return;
+    _lastStats.advSkillActive[key] = !_lastStats.advSkillActive[key];
+    _persistLearned();
+    _pushProgress();
+  });
+
+
+  // A stat upgrade: one skill point and some gold for one point in a stat.
+  // Same reasoning as the learn/upgrade handlers above — this used to be a
+  // purely client-side deduction (upgradeStats, js/player.js) carried by the
+  // next save, so both the point and the gold were whatever the client said
+  // they were. The budget check that existed server-side (_sanitizeSavedStats)
+  // could only drop the WHOLE upgrades map after the fact when the totals
+  // stopped adding up; this refuses the individual purchase instead.
+  safeOn('spendUpgrade', async ({ key } = {}) => {
+    if (!authed || !_lastStats) return;
+    if (!UPGRADE_KEYS.includes(key)) return;
+    if (!_lastStats.upgrades || typeof _lastStats.upgrades !== 'object') _lastStats.upgrades = {};
+    const u = _lastStats.upgrades;
+    const lvl = Math.max(0, Math.floor(Number(u[key])) || 0);
+    const cost = upgradeCost(lvl);
+    // Exactly the budget getAvailableSkillPoints (js/player.js) shows, from
+    // the same shared function — so the button and the rule cannot disagree.
+    const spent = UPGRADE_KEYS.reduce((sum, k) => sum + Math.max(0, Math.floor(Number(u[k])) || 0), 0);
+    const budget = skillPointBudget(_lastStats.lvl, _lastStats.rebirths) + (_lastStats.bonusSP || 0);
+    if (budget - spent < 1) return socket.emit('progressError', { msg: 'Мало очков навыка!' });
+    if ((Math.floor(Number(_lastStats.gold)) || 0) < cost) {
+      return socket.emit('progressError', { msg: 'Мало золота!' });
+    }
+    // _serverSpendGold awaits its own write, and a saveProgress landing in
+    // that window replaces _lastStats wholesale — so `u` above would be a
+    // reference into the previous object. Same hazard every item handler
+    // guards with this flag, and the same answer: hold saves off for the
+    // duration, then read the map back out rather than trusting the capture.
+    _itemOpBusy++;
+    try {
+      // Charges, persists the new balance and pushes goldSync — and registers
+      // the spend so a save composed a moment BEFORE it can't hand the gold
+      // back (see _pendingGoldSpend).
+      await _serverSpendGold(cost, 'upgrade:' + key);
+      if (!_lastStats.upgrades || typeof _lastStats.upgrades !== 'object') _lastStats.upgrades = {};
+      _lastStats.upgrades[key] = lvl + 1;
+      _persistSavedFields(authed, { upgrades: _lastStats.upgrades });
+      if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
+      logPlayer(authed.telegramId, authed.username, 'stat_upgrade', { key, to: lvl + 1, cost });
+      socket.emit('progressSync', { upgrades: _lastStats.upgrades });
+    } finally {
+      _itemOpBusy--;
+    }
+  });
+
   // ── Перерождение (Rebirth) ──────────────────────────────────────────────
   // Level REBIRTH_LEVEL+ only: resets level/xp back to a fresh character —
   // player.upgrades (stat points already spent) is deliberately left alone,
@@ -8540,19 +8687,26 @@ io.on('connection', socket => {
         effectiveSaved.upgrades  = _rebased.upgrades;
         _xpCorrected = true;
       }
-      // Studied skills and passives, pinned forward against the stored record
-      // — see _keepLearnedProgress. This runs on every socket.io reconnect
-      // with the client's in-memory blob, and it is also the branch that
-      // substitutes the DB copy wholesale (blankOverReal above); either way a
-      // level the player has already paid books for must survive, whichever
-      // side happens to be the stale one.
-      const _learnKept = _keepLearnedProgress(effectiveSaved, _dbBase);
-      if (_learnKept) {
-        logPlayer(authed.telegramId, authed.username, 'select_learned_rewound', {
-          fields: Object.keys(_learnKept).join(','),
-        });
-        socket.emit('progressSync', _learnKept);
-      }
+      // Studied progression comes from the stored record, never from the
+      // blob the client sent — see the matching pin in saveProgress. Every
+      // change to it was applied and persisted server-side as it happened
+      // (_persistLearned), so the record is current even on a reconnect that
+      // arrives seconds later, and the client is told what it actually has.
+      effectiveSaved.skillLevels     = (_dbBase && _dbBase.skillLevels)     || {};
+      effectiveSaved.passiveLevels   = (_dbBase && _dbBase.passiveLevels)   || {};
+      effectiveSaved.advSkillLearned = (_dbBase && _dbBase.advSkillLearned) || {};
+      effectiveSaved.advSkillActive  = (_dbBase && _dbBase.advSkillActive)  || {};
+      // upgrades is pinned too, EXCEPT where the XP correction above already
+      // rebased it off a corrected level — that rebase is the more specific
+      // rule and has to win.
+      if (!_xpCorrected) effectiveSaved.upgrades = (_dbBase && _dbBase.upgrades) || {};
+      socket.emit('progressSync', {
+        upgrades:        effectiveSaved.upgrades,
+        skillLevels:     effectiveSaved.skillLevels,
+        passiveLevels:   effectiveSaved.passiveLevels,
+        advSkillLearned: effectiveSaved.advSkillLearned,
+        advSkillActive:  effectiveSaved.advSkillActive,
+      });
       // The session's entitlement starts here and only ever grows by what the
       // server itself hands out (_allowXp).
       _xpAllowed = xpTotalAt(effectiveSaved.lvl, effectiveSaved.xp) + _joinSlack;
@@ -9896,24 +10050,23 @@ io.on('connection', socket => {
       }
     }
 
-    // Studied skills and passives, same rule and for the same reason — see
-    // _keepLearnedProgress. Checked against this session's live baseline, or
-    // the stored record when a save arrives before selectChar established one
-    // (the same fallback the item census above uses), so a save that predates
-    // the study can't rewind it in either window.
-    {
-      const _learnBase = _lastStats || _sanitizeSavedStats(authed.savedData) || null;
-      const _kept = _keepLearnedProgress(clean, _learnBase);
-      if (_kept) {
-        logPlayer(authed.telegramId, authed.username, 'save_learned_rewound', {
-          fields: Object.keys(_kept).join(','),
-        });
-        // The client has to be told, exactly as with questSync above: left
-        // alone it keeps its rewound copy, resends it in every later save,
-        // and the player goes on seeing an un-learned passive even though the
-        // stored record is correct.
-        socket.emit('progressSync', _kept);
-      }
+    // Studied skills, passives and the "вторая профессия" unlocks are
+    // server-owned now: the client asks for them through learnSkill/
+    // upgradePassive/... and the server counts the books, rolls the chance and
+    // applies the level itself. So they are taken from the session copy here
+    // rather than from the blob, and a save that carries anything else — a
+    // stale copy that predates a study, or a forged one claiming max levels —
+    // simply has no effect on them. This is what retires the whole class of
+    // "my passive rolled back" reports, rather than detecting it after the
+    // fact. advSkillActive rides along: it is free to change, but it decides
+    // which variant's damage the server applies (_skillMultFor, Room.js), so
+    // the server's copy has to be the one that counts.
+    if (_lastStats) {
+      clean.skillLevels     = _lastStats.skillLevels     || {};
+      clean.passiveLevels   = _lastStats.passiveLevels   || {};
+      clean.advSkillLearned = _lastStats.advSkillLearned || {};
+      clean.advSkillActive  = _lastStats.advSkillActive  || {};
+      clean.upgrades        = _lastStats.upgrades        || {};
     }
 
     // A server-side gold spend the client may not have known about yet. Only a

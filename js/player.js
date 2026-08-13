@@ -350,26 +350,25 @@ function getAvailableSkillPoints() {
   return total - spent;
 }
 
+// A request now, not a purchase. The server checks the point budget and the
+// gold, charges both and answers with goldSync + progressSync — see the
+// spendUpgrade handler in server/index.js. Deducting here and letting the save
+// carry it is what made both the point and the price client-authored.
+//
+// The two local checks are UI courtesy so an obviously impossible click never
+// leaves the device; both are enforced again server-side.
 function upgradeStats(key) {
   if (!player || !UPGRADE_DEF[key]) return;
-  const u = player.upgrades;
-  const lvl = u[key] || 0;
-  const cost = 300 * (lvl + 1);
-  const availSP = getAvailableSkillPoints();
-  if (player.gold < cost) {
+  const lvl = (player.upgrades || {})[key] || 0;
+  if (player.gold < upgradeCost(lvl)) {
     dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
     return;
   }
-  if (availSP < 1) {
+  if (getAvailableSkillPoints() < 1) {
     dmgNum(player.x, player.y - 30, 'Мало очков навыка!', '#f88');
     return;
   }
-  player.gold -= cost;
-  u[key] = lvl + 1;
-  recompute();
-  netSaveProgress();
-  if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
-  if (typeof updateProfileUI === 'function') updateProfileUI();
+  netSpendUpgrade(key);
 }
 
 // Gold counterpart to gainXP below, and deliberately the same shape: `flat`

@@ -597,14 +597,9 @@ function _skillBonusTypeLabel(type) {
   }
 }
 
-const SKILL_STUDY_COST   = 1;   // books to unlock a level-0 (locked) skill
-const SKILL_UPGRADE_COST = 2;   // books per upgrade attempt once studied
-const SKILL_UPGRADE_CHANCE = 0.30;
-
-// Every class+key combo has its OWN book (shared/definitions.js CRAFT_MATS,
-// id "book_<class>_<key>") — a generic book wouldn't say which of the 4
-// different abilities it's for.
-function _skillBookId(cls, key) { return `book_${cls}_${key}`; }
+// Costs and book ids now live in shared/definitions.js — the server charges
+// and rolls them itself, so both sides have to read one copy.
+function _skillBookId(cls, key) { return skillBookId(cls, key); }
 function _skillBookDef(cls, key) {
   return CRAFT_MATS.find(m => m.id === _skillBookId(cls, key));
 }
@@ -615,8 +610,7 @@ function _skillBookDef(cls, key) {
 // definitions.js). One-time unlock (ADV_SKILL_STUDY_COST), then a free
 // toggle (toggleAdvSkill) between base/advanced for that slot — see
 // _activeSkillDef/useSkill, js/player.js.
-const ADV_SKILL_STUDY_COST = 5;
-function _advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
+function _advSkillBookId(cls, key) { return advSkillBookId(cls, key); }
 function _advSkillBookDef(cls, key) {
   return CRAFT_MATS.find(m => m.id === _advSkillBookId(cls, key));
 }
@@ -760,96 +754,71 @@ function updateSkillsUI() {
   `;
 }
 
+// ── Learning and upgrading ──────────────────────────────────────────────────
+// These five used to do the whole thing locally: check the books, remove them,
+// roll the chance, write the new level and let the next debounced save carry
+// it. That made the level a client-authored value, which is what let a stale
+// save roll a studied passive back — and let a modified client write itself max
+// levels outright.
+//
+// They are requests now. The server counts the books out of its own copy,
+// rolls the chance itself, and answers with progressSync (the new levels) and
+// inventorySync (the books it spent); upgradeRolled carries the success/failure
+// so the same floating text still plays. Nothing is applied here — see the
+// progressSync handler in js/network.js.
+//
+// The local pre-checks that remain are UI courtesy, not rules: they keep the
+// button from sending a request the server will obviously refuse. Every one of
+// them is enforced again server-side.
 function studySkill(key) {
   if (!player) return;
-  const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
-  if ((sl[key] || 0) > 0) return; // already studied
-  const bookId = _skillBookId(player.type, key);
-  if (countMaterial(bookId) < SKILL_STUDY_COST) {
+  const sl = player.skillLevels || {};
+  if ((sl[key] || 0) > 0) return;
+  if (countMaterial(_skillBookId(player.type, key)) < SKILL_STUDY_COST) {
     dmgNum(player.x, player.y - 30, t('needSkillBookToast'), '#f17e8b');
     return;
   }
-  removeFromInventory(bookId, SKILL_STUDY_COST);
-  sl[key] = 1;
-  spawnBurst(player.x, player.y, '#e69419', 10);
-  dmgNum(player.x, player.y - 42, t('skillStudiedToast'), '#e69419');
-  // Immediate, not debounced: the server refuses casts from a slot its copy
-  // of skillLevels still reads as unstudied (_skillMultFor, Room.js), so a
-  // two-second gap here is two seconds of a freshly bought skill doing
-  // nothing.
-  netSaveProgressNow();
-  updateSkillsUI();
-  updateInvUI();
+  netLearnSkill(key);
 }
 
 function upgradeSkillWithBook(key) {
   if (!player) return;
-  const sl = player.skillLevels || (player.skillLevels = { Q:0, W:0, E:0, R:0 });
+  const sl = player.skillLevels || {};
   const lvl = sl[key] || 0;
   if (lvl <= 0) { dmgNum(player.x, player.y - 30, t('studySkillFirstToast'), '#f17e8b'); return; }
-  if (lvl >= 10) return;
-  const bookId = _skillBookId(player.type, key);
-  if (countMaterial(bookId) < SKILL_UPGRADE_COST) {
+  if (lvl >= SKILL_MAX_LEVEL) return;
+  if (countMaterial(_skillBookId(player.type, key)) < SKILL_UPGRADE_COST) {
     dmgNum(player.x, player.y - 30, tVars('needNSkillBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
     return;
   }
-  removeFromInventory(bookId, SKILL_UPGRADE_COST);
-  if (Math.random() < SKILL_UPGRADE_CHANCE) {
-    sl[key] = lvl + 1;
-    spawnBurst(player.x, player.y, '#e69419', 10);
-    dmgNum(player.x, player.y - 42, tVars('skillLevelUpToast', { n: sl[key] }), '#e69419');
-  } else {
-    dmgNum(player.x, player.y - 36, t('failToast'), '#eb4e61');
-  }
-  // Same reasoning as studySkill above — the level feeds the server's own
-  // damage derivation now, so it must not lag behind by the debounce.
-  netSaveProgressNow();
-  updateSkillsUI();
-  updateInvUI();
+  netUpgradeSkill(key);
 }
 
 // ── Advanced skills ("вторая профессия") ─────────────────────────────────
 function learnAdvSkill(key) {
   if (!player) return;
   const sl = player.skillLevels || {};
-  if ((sl[key] || 0) < 10) return; // this slot itself isn't maxed yet
-  const al = player.advSkillLearned || (player.advSkillLearned = { Q:false, W:false, E:false, R:false });
-  if (al[key]) return; // already learned
-  const bookId = _advSkillBookId(player.type, key);
-  if (countMaterial(bookId) < ADV_SKILL_STUDY_COST) {
+  if ((sl[key] || 0) < SKILL_MAX_LEVEL) return;   // this slot isn't maxed yet
+  if ((player.advSkillLearned || {})[key]) return;
+  if (countMaterial(_advSkillBookId(player.type, key)) < ADV_SKILL_STUDY_COST) {
     dmgNum(player.x, player.y - 30, t('needAdvSkillBookToast'), '#f17e8b');
     return;
   }
-  removeFromInventory(bookId, ADV_SKILL_STUDY_COST);
-  al[key] = true;
-  spawnBurst(player.x, player.y, '#f5c542', 14);
-  dmgNum(player.x, player.y - 42, t('advSkillLearnedToast'), '#f5c542');
-  netSaveProgress();
-  updateSkillsUI();
-  updateInvUI();
-  _refreshProfessionPanelIfOpen();
+  netLearnAdvSkill(key);
 }
 
 // Free toggle between a slot's base and advanced version — no cost either
 // direction, only gated on having learned it (learnAdvSkill above). Shares
 // the same cooldown/level as the base skill (see _activeSkillDef, js/
 // player.js), so switching mid-fight never resets or dodges a cooldown.
+//
+// Still a request rather than a local flip: this is what decides which
+// variant's damage the SERVER applies (_skillMultFor, server/game/Room.js), so
+// its copy is the one that has to change.
 function toggleAdvSkill(key) {
   if (!player) return;
-  const al = player.advSkillLearned || {};
-  if (!al[key]) return;
-  const aa = player.advSkillActive || (player.advSkillActive = { Q:false, W:false, E:false, R:false });
-  aa[key] = !aa[key];
-  spawnBurst(player.x, player.y, '#f5c542', 8);
-  dmgNum(player.x, player.y - 40, aa[key] ? t('advSwitchedToAdvToast') : t('advSwitchedToBaseToast'), '#f5c542');
-  // Flushed immediately, not on the usual 2s debounce: the server now derives
-  // skill damage from advSkillActive in its copy of this save (_skillMultFor,
-  // server/game/Room.js), and base vs advanced is up to a 3x difference. A
-  // debounced write would leave the first casts after a switch resolving
-  // against the previous variant.
-  netSaveProgressNow();
-  updateSkillsUI();
-  _refreshProfessionPanelIfOpen();
+  if (!(player.advSkillLearned || {})[key]) return;
+  netToggleAdvSkill(key);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -999,7 +968,7 @@ function _passiveBonusText(p, level) {
 
 // One book per passive id (shared/definitions.js CRAFT_MATS, id
 // "book_pas_<id>") — mirrors _skillBookId/_skillBookDef above exactly.
-function _passiveBookId(id) { return `book_pas_${id}`; }
+function _passiveBookId(id) { return passiveBookId(id); }
 function _passiveBookDef(id) {
   return CRAFT_MATS.find(m => m.id === _passiveBookId(id));
 }
@@ -1083,50 +1052,26 @@ function updatePassiveSkillsUI() {
 
 function studyPassiveSkill(id) {
   if (!player) return;
-  const def = typeof passiveDefById === 'function' ? passiveDefById(player.type, id) : null;
-  if (!def) return;
-  const pl = player.passiveLevels || (player.passiveLevels = {});
-  if ((pl[id] || 0) > 0) return; // already studied
-  const bookId = _passiveBookId(id);
-  if (countMaterial(bookId) < SKILL_STUDY_COST) {
+  if (!passiveDefById(player.type, id)) return;
+  if (((player.passiveLevels || {})[id] || 0) > 0) return;   // already studied
+  if (countMaterial(_passiveBookId(id)) < SKILL_STUDY_COST) {
     dmgNum(player.x, player.y - 30, t('needPassiveBookToast'), '#f17e8b');
     return;
   }
-  removeFromInventory(bookId, SKILL_STUDY_COST);
-  pl[id] = 1;
-  recompute();
-  spawnBurst(player.x, player.y, '#e69419', 10);
-  dmgNum(player.x, player.y - 42, t('passiveStudiedToast'), '#e69419');
-  netSaveProgress();
-  updatePassiveSkillsUI();
-  updateInvUI();
+  netLearnPassive(id);
 }
 
 function upgradePassiveSkillWithBook(id) {
   if (!player) return;
-  const def = typeof passiveDefById === 'function' ? passiveDefById(player.type, id) : null;
-  if (!def) return;
-  const pl = player.passiveLevels || (player.passiveLevels = {});
-  const lvl = pl[id] || 0;
+  if (!passiveDefById(player.type, id)) return;
+  const lvl = (player.passiveLevels || {})[id] || 0;
   if (lvl <= 0) { dmgNum(player.x, player.y - 30, t('studyPassiveFirstToast'), '#f17e8b'); return; }
   if (lvl >= PASSIVE_MAX_LEVEL) return;
-  const bookId = _passiveBookId(id);
-  if (countMaterial(bookId) < SKILL_UPGRADE_COST) {
+  if (countMaterial(_passiveBookId(id)) < SKILL_UPGRADE_COST) {
     dmgNum(player.x, player.y - 30, tVars('needNPassiveBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
     return;
   }
-  removeFromInventory(bookId, SKILL_UPGRADE_COST);
-  if (Math.random() < SKILL_UPGRADE_CHANCE) {
-    pl[id] = lvl + 1;
-    recompute();
-    spawnBurst(player.x, player.y, '#e69419', 10);
-    dmgNum(player.x, player.y - 42, tVars('passiveLevelUpToast', { n: pl[id] }), '#e69419');
-  } else {
-    dmgNum(player.x, player.y - 36, t('failToast'), '#eb4e61');
-  }
-  netSaveProgress();
-  updatePassiveSkillsUI();
-  updateInvUI();
+  netUpgradePassive(id);
 }
 
 // Which location (hub or one of the 4 corridor arms) the player is currently
