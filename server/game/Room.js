@@ -959,18 +959,20 @@ class Room {
 
   get dungeonData() {
     const d = this._dungeon;
-    // race10.bounds is what lets the client tint that zone's floor/walls to
-    // look like "Кровавая Башня" (see _buildChunk, js/game.js).
-    // guildWar/farmZone/arena are now only ever present on that zone's own
-    // floor's own Room — each carries whatever geometry/tinting bounds that
-    // floor's own dungeonData needs (see generateGuildWar/generateFarmZone/
-    // generateArena, server/game/dungeon.js); the hub no longer has any of
-    // these fields at all, since its outbound pads (_gwPad/_farmPad/_evtPad,
-    // js/game.js) only need the hub's own spawn point plus a fixed offset
-    // (and, for the level-gated farm pad, farmZoneEntry.req) — not the
-    // zone's own geometry. this._dungeon.arena itself still exists on the
-    // arena floor's own Room internally (spawnEventBoss/deathBattleDeploy
-    // read it directly), it's just no longer part of what gets sent here.
+    // guildWar/farmZone/arena/race10 are now only ever present on that
+    // zone's own floor's own Room — each carries whatever geometry/tinting
+    // bounds that floor's own dungeonData needs (see generateGuildWar/
+    // generateFarmZone/generateArena/generateRace10, server/game/dungeon.js);
+    // race10.bounds in particular is what lets the client tint that whole
+    // floor to look like "Кровавая Башня" (_buildChunk, js/game.js). The hub
+    // no longer has any of these fields at all, since its outbound pads
+    // (_gwPad/_farmPad/_evtPad, js/game.js) only need the hub's own spawn
+    // point plus a fixed offset (and, for the level-gated farm pad,
+    // farmZoneEntry.req) — not the zone's own geometry, and pvpArena/race10
+    // have no walk-in pad at all (matchmade/scheduled deploys only). this._
+    // dungeon.arena/pvpArena themselves still exist on their own floor's own
+    // Room internally (spawnEventBoss/deathBattleDeploy/pvpArenaDeploy read
+    // them directly), just no longer part of what gets sent here.
     // returnPad exists on every "own floor, one entrance" zone (arms, Guild
     // War, Фарм-зона, arena, …) — the pad that requests a transition back to
     // the hub; armEntries/farmZoneEntry only on the hub (the outbound pads,

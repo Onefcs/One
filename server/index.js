@@ -3678,7 +3678,7 @@ const RACE10_MAX_MS    = 15 * 60 * 1000;
 // The map's lane count — the hard ceiling on entrants. Read once the world
 // exists; before that (nobody can register yet) it reports 0.
 function _race10Capacity() {
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.race10);
   return room?.dungeonData?.race10?.lanes?.length || 0;
 }
 
@@ -3795,12 +3795,14 @@ function _race10StartSafe() { _race10Start().catch(err => console.error('_race10
 async function _race10Start() {
   if (_race10.live || _race10.starting) return;
   _race10.startAt = 0;
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.race10);
   if (!room) { _race10CloseWindow({ silent: true }); return; }
   // Only entrants still connected and still standing in the world can be
-  // deployed; anyone else is dropped rather than counted.
+  // deployed; anyone else is dropped rather than counted. Registration never
+  // required being on any particular floor, so this checks wherever each one
+  // actually is, not just the hub.
   const ready = [..._race10.queue.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room.players.get(sid));
+    io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
   [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
   if (ready.length < RACE10_MIN_PLAYERS) {
     // Not enough showed up. Nobody is charged an attempt (that happens on
@@ -3869,7 +3871,12 @@ async function _race10Deploy(ready, room) {
   // second race later in the same window would otherwise find them still
   // dead from the first one.
   room.resetRaceMonsters();
-  const placed = room.raceDeploy(running);
+  // raceDeploy below needs everyone already present in room.players to
+  // assign lanes — force each entrant's own connection onto the race10
+  // floor first (bypassing any gate: this is a scheduled deploy, not a
+  // walk-in, and there is none to bypass anyway — see _doEnterLocation).
+  const joined = running.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('race10'));
+  const placed = room.raceDeploy(joined);
   _race10.bossId = room.spawnRaceBoss();
 
   placed.forEach(({ socketId, lane }) => {
@@ -3904,10 +3911,22 @@ async function _race10Deploy(ready, room) {
 // call for anyone not in the race (a normal death elsewhere), it returns
 // immediately. Their damage tally survives them: "most damage dealt" doesn't
 // require surviving to the end.
+//
+// This always runs from inside the 'respawn' handler (race10 has no PvP —
+// "dying anywhere" only ever means a monster kill), which unconditionally
+// calls currentRoom.respawnPlayer() right after _pvpEliminate returns. Before
+// the split that alone sent an eliminated racer back to spawn, because
+// this._dungeon.spawn WAS the hub's own — respawnPlayer and race10 shared a
+// Room. Now race10 has its own floor (its own default spawn, the boss room),
+// so this has to do the floor change itself first: _returnToHub updates the
+// connection's own currentRoom/currentFloor, so by the time respawnPlayer
+// runs afterward it's already operating on the hub and just re-applies the
+// same standard full-heal-at-spawn every other death in the game gets.
 function _race10Eliminate(socketId) {
   if (!_race10.live) return false;
   if (!_race10.alive.has(socketId)) return false;
   _race10.alive.delete(socketId);
+  _returnToHub(socketId);
   io.to(socketId).emit('race10Eliminated', {});
   // Nobody left standing anywhere and the boss is still up — no one can ever
   // land another hit, so there's no point riding out RACE10_MAX_MS.
@@ -3921,11 +3940,13 @@ async function _race10Finish(winnerId, timedOut) {
   clearTimeout(_race10.maxTimer);
   _race10.live = false;
   _race10.fightAt = 0;
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.race10);
   if (room) room.despawnRaceBoss();
   // Everyone still standing goes home too — the race is over for them as
-  // well, they just didn't die to get there.
-  _race10.alive.forEach((_, sid) => { if (room) room.deathBattleReturn(sid); });
+  // well, they just didn't die to get there. Eliminated racers (already
+  // dropped from _race10.alive by _race10Eliminate) stay put where they
+  // fell until they close the result modal — see the race10Return handler.
+  _race10.alive.forEach((_, sid) => _returnToHub(sid));
 
   const names = new Map(_race10.names);
   const dmg = new Map(_race10.dmg);
@@ -9693,10 +9714,13 @@ io.on('connection', socket => {
   });
 
   // Sent once the player closes the race10 result modal — same reasoning as
-  // arena3Return below (server-side position was already reset when the race
-  // ended; this just makes the client catch up visually).
+  // arena3Return above. Server-side position was already reset to the hub
+  // floor by the time this fires either way (an eliminated racer via
+  // _race10Eliminate, called from the 'respawn' handler; a survivor via
+  // _race10Finish once the race ends) — this is just the visual catch-up,
+  // and _returnToHub's own same-floor guard makes it a safe no-op if so.
   safeOn('race10Return', () => {
-    const spot = currentRoom ? currentRoom.deathBattleReturn(socket.id) : null;
+    const spot = _returnToHub(socket.id);
     if (spot) socket.emit('deathBattleReturned', spot);
   });
 

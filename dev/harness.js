@@ -532,6 +532,53 @@ scenario('floors: the 3v3 arena deploys a full match and returns an eliminated e
   await Promise.all(players.map(c => c.close()));
 });
 
+scenario('floors: Кровавая Башня deploys entrants onto its own floor and an elimination returns them to the hub', async () => {
+  const openRes = await fetch(`${BASE}/dev/race10/open?reg=1500`, { method: 'POST' });
+  eq(openRes.status, 200, 'the dev route force-opens race10 registration with a short window');
+
+  const a = await connectWithSaved('harness_race10_a', { lvl: 10, xp: 0, xpNext: 100 });
+  const b = await connectWithSaved('harness_race10_b', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(a, 'ranger');
+  await enterWorld(b, 'mage');
+
+  const aReg = a.wait('race10Registered', { timeout: 3000 });
+  const bReg = b.wait('race10Registered', { timeout: 3000 });
+  a.emit('race10Register');
+  b.emit('race10Register');
+  eq((await aReg)?.registered, true, 'a is registered');
+  eq((await bReg)?.registered, true, 'b is registered');
+
+  const aStarted = a.wait('race10Started', { timeout: 6000 });
+  const bStarted = b.wait('race10Started', { timeout: 6000 });
+  await aStarted; await bStarted;
+  eq(a.last('gameStart')?.floor, 10, 'a is force-joined onto its own race10 floor to be deployed');
+  eq(b.last('gameStart')?.floor, 10, 'b is force-joined onto the same floor, in its own lane');
+
+  // Race10 has no PvP — "eliminated" only ever means a monster kill, reported
+  // through the same 'respawn' round trip every death in the game uses. This
+  // is exactly the path that used to rely on respawnPlayer's Room-local
+  // spawn reset (correct back when race10 shared the hub's own Room, wrong
+  // now that it's its own floor with its own default spawn) — _race10Eliminate
+  // now does the floor change itself first (see its comment). Eliminating
+  // both finishes the race too (no survivors left to hit the boss), so this
+  // covers both entrants' return in one pass.
+  const aElim = a.wait('race10Eliminated', { timeout: 3000 });
+  const bElim = b.wait('race10Eliminated', { timeout: 3000 });
+  const aResult = a.wait('race10Result', { timeout: 3000 });
+  const bResult = b.wait('race10Result', { timeout: 3000 });
+  a.emit('respawn');
+  b.emit('respawn');
+  await aElim; await bElim;
+  eq(a.last('gameStart')?.floor, 1, 'a is returned to the hub floor, not left stranded on race10\'s own');
+  eq(b.last('gameStart')?.floor, 1, 'b is returned to the hub floor too');
+  const aRes = await aResult, bRes = await bResult;
+  eq(aRes?.won, false, 'a\'s result reports a loss (no survivors, nobody won)');
+  eq(bRes?.won, false, 'and so does b\'s');
+
+  await a.close();
+  await b.close();
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');

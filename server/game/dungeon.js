@@ -200,7 +200,6 @@ const DW = Math.max(MARGIN * 2 + HUB, RACE10_X0 + RACE10_W + MARGIN);
 const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
 function generateHub() {
-  const rng = seededRng(2026 * 1337 + 777);
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
 
   function inBounds(gx, gy) { return gx >= 0 && gx < DW && gy >= 0 && gy < DH; }
@@ -216,20 +215,6 @@ function generateHub() {
     isHub: true,
   };
   paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
-
-  // 10-player corridor race: ten parallel lanes, each running the full
-  // RACE10_LANE_LEN before opening into one shared boss room spanning every
-  // lane's row.
-  const race10LaneRows = [];
-  for (let i = 0; i < RACE10_LANES; i++) {
-    const cy = RACE10_Y0 + i * RACE10_LANE_PITCH + RACE10_LANE_HW;
-    race10LaneRows.push(cy);
-    paintRect(RACE10_X0, cy - RACE10_LANE_HW, RACE10_X0 + RACE10_LANE_LEN - 1, cy + RACE10_LANE_HW);
-  }
-  const race10BossRoomX0 = RACE10_X0 + RACE10_LANE_LEN;
-  paintRect(race10BossRoomX0, RACE10_Y0, race10BossRoomX0 + RACE10_BOSS_ROOM - 1, RACE10_Y0 + RACE10_H - 1);
-  const race10BossCx = race10BossRoomX0 + Math.floor(RACE10_BOSS_ROOM / 2);
-  const race10BossCy = RACE10_Y0 + Math.floor(RACE10_H / 2);
 
   // Страх: FEAR_LANES plain sealed rooms stacked one per row, entry point
   // dead centre of each. Room.js scatters that lane's wave inside these same
@@ -248,56 +233,6 @@ function generateHub() {
 
   const rooms = [hub];
   const enemyList = [];
-  let eid = 0;
-
-  // Race10 monster lines — exact pixel spacing (RACE10_MOB_SPACING), not the
-  // random-within-a-room placement buildArm's rooms use below: "впритык"
-  // means the gap itself has to be exact. Arm 1's species rotation (rat/
-  // slime/imp) covers both tiers (level 5 and level 10) comfortably.
-  const race10Fe = FLOOR_ENEMIES[1];
-  function pickRace10Enemy(lvl) {
-    const pool = bandForLocalLevel(race10Fe, lvl).pool;
-    return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
-  }
-  function spawnRace10Tier(laneIdx, laneRow, tierIdx, lvl) {
-    const baseX = (RACE10_X0 + RACE10_LEAD_IN + tierIdx * (RACE10_TIER_LEN + RACE10_TIER_GAP)) * TILE;
-    const ey = laneRow * TILE + TILE / 2;
-    for (let i = 0; i < RACE10_MOB_PER_TIER; i++) {
-      const d = pickRace10Enemy(lvl);
-      if (!d) continue;
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      const ex = baseX + i * RACE10_MOB_SPACING + TILE / 2;
-      // Same halving buildArm's spawnRoomEnemies applies to every regular
-      // room monster ("regular monsters spawn in packs — halved
-      // individually") — race10's lines are packed even tighter (60 per
-      // tier, RACE10_MOB_SPACING=30px apart, vs. 5-10 spread across a whole
-      // room), so full monsterStatsAtLevel() here hit far harder than
-      // anywhere else a player meets a level 5 or 10 monster.
-      const weakMult = 0.5;
-      enemyList.push({
-        id: `race10_${laneIdx}_${eid++}`, ...d, isBoss: false, arm: 'race10',
-        // Which lane this monster belongs to. The id has carried it all along
-        // (the client slices it out to match barriers), but the server needs it
-        // as a field: it is what keeps a monster from ever seeing — or being
-        // seen by — a player running a different corridor. Lanes are 5 tiles
-        // apart and aggro reaches up to 230px, so without it every monster
-        // within two rows was fair game across a solid wall.
-        lane: laneIdx,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, lvl, false, d.fem, 20),
-        color: monsterColorAtLevel(d.color, d.endColor, lvl, false, 20),
-        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
-        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl) * RACE10_XP_MULT, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
-      });
-    }
-  }
-  race10LaneRows.forEach((laneRow, laneIdx) => {
-    spawnRace10Tier(laneIdx, laneRow, 0, 5);
-    spawnRace10Tier(laneIdx, laneRow, 1, 10);
-  });
 
   const armEntries = ARM_NAMES.map(dir => ({ dir, req: ARM_LEVEL_REQ[dir] || 0 }));
 
@@ -305,33 +240,6 @@ function generateHub() {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
-    // Race10 ("Кровавая Башня"): one spawn point per lane (index = lane
-    // number) and the single shared boss's spot at the end of every lane.
-    // bounds (tile coords) lets the client tint this whole zone's floor/
-    // walls to match the name — see _buildChunk, js/game.js.
-    race10: {
-      lanes: race10LaneRows.map(cy => ({
-        x: (RACE10_X0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2,
-      })),
-      boss: {
-        x: race10BossCx * TILE + TILE / 2, y: race10BossCy * TILE + TILE / 2,
-      },
-      bounds: { x0: RACE10_X0, y0: RACE10_Y0, x1: race10BossRoomX0 + RACE10_BOSS_ROOM, y1: RACE10_Y0 + RACE10_H },
-      // Where the shared boss room starts (px, world x) — every lane's
-      // corridor ends before this and the one shared room spans everything
-      // past it. Room.js uses this to tell "still in my own sealed corridor"
-      // apart from "reached the shared room", the same distinction the boss
-      // itself already gets (see spawnRaceBoss's `lane`-less enemy).
-      bossRoomX0: race10BossRoomX0 * TILE,
-      // One barrier pair per lane: tier 0 blocks until every level-5 monster
-      // in that lane is dead, tier 1 until every level-10 one is. lane/tier
-      // let the client match a barrier to the right slice of serverEnemies
-      // (ids are `race10_<lane>_<n>`, rlvl is 5 or 10 — see spawnRace10Tier).
-      barriers: race10LaneRows.flatMap((cy, lane) => [
-        { x: (RACE10_X0 + RACE10_BARRIER1_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 0 },
-        { x: (RACE10_X0 + RACE10_BARRIER2_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 1 },
-      ]),
-    },
     // Страх (Fear): lane geometry only — Room.js reaches into this directly
     // (this._dungeon.fear), it is deliberately NOT part of Room.dungeonData
     // (below), since the client needs no rendering/tinting hints for it: entry
@@ -762,7 +670,123 @@ function generatePvpArena() {
   };
 }
 
+// Кровавая Башня (the 10-player corridor race), now its own floor (see
+// server/game/floors.js) instead of a slice of the hub's mega-grid. Ten
+// parallel sealed lanes, each running the full RACE10_LANE_LEN before
+// opening into one shared boss room spanning every lane's row — everyone who
+// registered gets their own lane (Room.raceDeploy), isolated from every
+// other lane the same way Fear's private halls are (see _raceVisible,
+// Room.js), just now on this floor instead of inside the hub's Room.
+// `bounds` covers the whole grid (there's nothing else on this floor to
+// distinguish it from), same reasoning generateGuildWar's own bounds field
+// has, so the client's "Кровавая Башня" tile tinting (_isRace10Tile,
+// js/game.js) still applies to the whole thing.
+function generateRace10() {
+  const rng = seededRng(2026 * 1337 + 777 + 800);
+  const w = RACE10_W + MARGIN * 2, h = RACE10_H + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const laneRows = [];
+  for (let i = 0; i < RACE10_LANES; i++) {
+    const cy = Y0 + i * RACE10_LANE_PITCH + RACE10_LANE_HW;
+    laneRows.push(cy);
+    paintRect(X0, cy - RACE10_LANE_HW, X0 + RACE10_LANE_LEN - 1, cy + RACE10_LANE_HW);
+  }
+  const bossRoomX0 = X0 + RACE10_LANE_LEN;
+  paintRect(bossRoomX0, Y0, bossRoomX0 + RACE10_BOSS_ROOM - 1, Y0 + RACE10_H - 1);
+  const bossCx = bossRoomX0 + Math.floor(RACE10_BOSS_ROOM / 2);
+  const bossCy = Y0 + Math.floor(RACE10_H / 2);
+
+  const enemyList = [];
+  let eid = 0;
+
+  // Exact pixel spacing (RACE10_MOB_SPACING), not the random-within-a-room
+  // placement buildArm's rooms use: "впритык" means the gap itself has to be
+  // exact. Arm 1's species rotation (rat/slime/imp) covers both tiers
+  // (level 5 and level 10) comfortably.
+  const fe = FLOOR_ENEMIES[1];
+  function pickEnemy(lvl) {
+    const pool = bandForLocalLevel(fe, lvl).pool;
+    return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
+  }
+  function spawnTier(laneIdx, laneRow, tierIdx, lvl) {
+    const baseX = (X0 + RACE10_LEAD_IN + tierIdx * (RACE10_TIER_LEN + RACE10_TIER_GAP)) * TILE;
+    const ey = laneRow * TILE + TILE / 2;
+    for (let i = 0; i < RACE10_MOB_PER_TIER; i++) {
+      const d = pickEnemy(lvl);
+      if (!d) continue;
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      const ex = baseX + i * RACE10_MOB_SPACING + TILE / 2;
+      // Same halving buildArm's spawnRoomEnemies applies to every regular
+      // room monster ("regular monsters spawn in packs — halved
+      // individually") — race10's lines are packed even tighter (60 per
+      // tier, RACE10_MOB_SPACING=30px apart, vs. 5-10 spread across a whole
+      // room), so full monsterStatsAtLevel() here hit far harder than
+      // anywhere else a player meets a level 5 or 10 monster.
+      const weakMult = 0.5;
+      enemyList.push({
+        id: `race10_${laneIdx}_${eid++}`, ...d, isBoss: false, arm: 'race10',
+        // Which lane this monster belongs to. The id has carried it all along
+        // (the client slices it out to match barriers), but the server needs it
+        // as a field: it is what keeps a monster from ever seeing — or being
+        // seen by — a player running a different corridor. Lanes are 5 tiles
+        // apart and aggro reaches up to 230px, so without it every monster
+        // within two rows was fair game across a solid wall.
+        lane: laneIdx,
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, lvl, false, d.fem, 20),
+        color: monsterColorAtLevel(d.color, d.endColor, lvl, false, 20),
+        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl) * RACE10_XP_MULT, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  }
+  laneRows.forEach((laneRow, laneIdx) => {
+    spawnTier(laneIdx, laneRow, 0, 5);
+    spawnTier(laneIdx, laneRow, 1, 10);
+  });
+
+  return {
+    grid, rooms: [], w, h,
+    spawn: { x: bossCx * TILE + TILE / 2, y: bossCy * TILE + TILE / 2 },
+    // One spawn point per lane (index = lane number) and the single shared
+    // boss's spot at the end of every lane.
+    race10: {
+      lanes: laneRows.map(cy => ({
+        x: (X0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2,
+      })),
+      boss: { x: bossCx * TILE + TILE / 2, y: bossCy * TILE + TILE / 2 },
+      bounds: { x0: 0, y0: 0, x1: w, y1: h },
+      // Where the shared boss room starts (px, world x) — every lane's
+      // corridor ends before this and the one shared room spans everything
+      // past it. Room.js uses this to tell "still in my own sealed corridor"
+      // apart from "reached the shared room", the same distinction the boss
+      // itself already gets (see spawnRaceBoss's `lane`-less enemy).
+      bossRoomX0: bossRoomX0 * TILE,
+      // One barrier pair per lane: tier 0 blocks until every level-5 monster
+      // in that lane is dead, tier 1 until every level-10 one is. lane/tier
+      // let the client match a barrier to the right slice of serverEnemies
+      // (ids are `race10_<lane>_<n>`, rlvl is 5 or 10 — see spawnTier above).
+      barriers: laneRows.flatMap((cy, lane) => [
+        { x: (X0 + RACE10_BARRIER1_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 0 },
+        { x: (X0 + RACE10_BARRIER2_X) * TILE + TILE / 2, y: cy * TILE + TILE / 2, lane, tier: 1 },
+      ]),
+    },
+    enemies: enemyList,
+  };
+}
+
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
+  generateRace10,
   TILE, WALL, FLOOR,
 };
