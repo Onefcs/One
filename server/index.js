@@ -8429,11 +8429,25 @@ io.on('connection', socket => {
       // happened, so there is nothing to check.
       effectiveSaved.lvl       = Math.max(1, Math.floor(Number(_dbBase && _dbBase.lvl)) || 1);
       effectiveSaved.xp        = Math.max(0, Number(_dbBase && _dbBase.xp) || 0);
+      // bonusSP/rebirths/upgrades are pinned here too, and BEFORE the rebase
+      // below, not after: a reconnect's savedStats (_buildSaveStats, js/
+      // network.js) never carries these fields at all, so leaving them to the
+      // client blob left them undefined/zero for the rest of the session —
+      // and the next autosave (clean.bonusSP/rebirths/upgrades further down)
+      // wrote that zero straight over the real stored totals. Pinning them
+      // before the rebase also means the upgrades-budget check inside
+      // _sanitizeSavedStats validates the real upgrades against the real
+      // bonusSP/rebirths/level, instead of clearing them for failing a budget
+      // computed off fields that were never actually sent.
+      effectiveSaved.bonusSP   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.bonusSP)) || 0);
+      effectiveSaved.rebirths  = Math.max(0, Math.floor(Number(_dbBase && _dbBase.rebirths)) || 0);
+      effectiveSaved.upgrades  = (_dbBase && _dbBase.upgrades) || {};
       const _rebasedLvl = _sanitizeSavedStats(effectiveSaved);
       effectiveSaved.baseAtk   = _rebasedLvl.baseAtk;
       effectiveSaved.baseDef   = _rebasedLvl.baseDef;
       effectiveSaved.baseMaxHp = _rebasedLvl.baseMaxHp;
       effectiveSaved.xpNext    = _rebasedLvl.xpNext;
+      effectiveSaved.upgrades  = _rebasedLvl.upgrades;
       _xpCorrected = true;   // push it, so the client renders what it has
       // Quest progress, from the stored record like everything else the server
       // owns — the counters are incremented on this side as the events happen.
@@ -8455,10 +8469,6 @@ io.on('connection', socket => {
       effectiveSaved.passiveLevels   = (_dbBase && _dbBase.passiveLevels)   || {};
       effectiveSaved.advSkillLearned = (_dbBase && _dbBase.advSkillLearned) || {};
       effectiveSaved.advSkillActive  = (_dbBase && _dbBase.advSkillActive)  || {};
-      // upgrades is pinned too, EXCEPT where the XP correction above already
-      // rebased it off a corrected level — that rebase is the more specific
-      // rule and has to win.
-      if (!_xpCorrected) effectiveSaved.upgrades = (_dbBase && _dbBase.upgrades) || {};
       socket.emit('progressSync', {
         upgrades:        effectiveSaved.upgrades,
         skillLevels:     effectiveSaved.skillLevels,

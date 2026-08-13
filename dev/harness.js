@@ -645,6 +645,48 @@ scenario('market: buying a lot pays the seller', async () => {
   await buyer.close();
 });
 
+scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {
+  // A reconnect's selectChar sends _buildSaveStats() (js/network.js), which
+  // never carries lvl/bonusSP/rebirths/upgrades at all — only type, floor,
+  // hp/maxHp, kills, potion/buff prefs and lang. The level/XP-become-
+  // server-owned change pinned lvl/xp back from the stored record on every
+  // selectChar, but left bonusSP/rebirths/upgrades to fall through from
+  // that bare blob — so a reconnect zeroed them in memory, and the very next
+  // periodic autosave wrote the zero over the real stored totals for good.
+  // lvl 35 (past REBIRTH_LEVEL=30) so a rebirth's budget isn't zeroed
+  // (skillPointBudget returns 0 below REBIRTH_LEVEL once rebirths > 0).
+  const c1 = await connectWithSaved('harness_reconnect_sp', {
+    lvl: 35, bonusSP: 15, rebirths: 2, upgrades: { atk: 30 },
+  });
+  await enterWorld(c1, 'lev');
+  await c1.close();
+  await sleep(500);
+
+  const c2 = await connectAs('harness_reconnect_sp');
+  const sync = c2.wait('progressSync', { timeout: 8000 });
+  // The exact shape _buildSaveStats() sends on a real reconnect.
+  c2.emit('selectChar', { type: 'lev', savedStats: {
+    type: 'lev', floor: 1, hp: 100, maxHp: 100, kills: 0,
+    hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
+  } });
+  const ps = await sync;
+  eq(ps.upgrades && ps.upgrades.atk, 30, 'progressSync still carries the real upgrades');
+
+  // The periodic autosave the real client fires every few seconds off the
+  // same bare _buildSaveStats() shape — this is the write that would make a
+  // reconnect's in-memory zeroing permanent.
+  c2.emit('saveProgress', { stats: {
+    type: 'lev', floor: 1, hp: 100, maxHp: 100, kills: 0,
+    hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
+  } });
+  await sleep(3400); // let the debounced write land
+  const row = memory.__dump('Player').find(p => p.username === c2.auth.username);
+  eq(row.savedData.bonusSP, 15, 'bonusSP was not zeroed by the autosave');
+  eq(row.savedData.rebirths, 2, 'rebirths was not zeroed by the autosave');
+  eq(row.savedData.upgrades && row.savedData.upgrades.atk, 30, 'upgrades was not zeroed by the autosave');
+  await c2.close();
+});
+
 scenario('hp: a save cannot hand the player health', async () => {
   const c = await connectWithSaved('harness_hp', { lvl: 1, hp: 5 });
   await enterWorld(c, 'lev');
