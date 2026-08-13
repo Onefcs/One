@@ -22,6 +22,7 @@ const {
   _catalogBase, _unknownItemIds, _canonSavedItem,
   _itemCensus, _censusOverflow, _clampNum, _clampInt, _sanitizeKeyMap,
   _sanitizeSavedStats, _looksLikeCatastrophicReset, calcBM, _xpCeilingFor,
+  XP_JOIN_SLACK_KILLS,
 } = require('./anticheat');
 const {
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
@@ -2071,45 +2072,6 @@ const floorRooms = new Map();
 const GOLD_MAX_EARN_PER_SEC = 3000;
 const GOLD_GROWTH_SLACK = 5000;
 
-// ── XP/level ledger ─────────────────────────────────────────────────────────
-// Level is the single most valuable number a client can lie about: every
-// permanent combat stat is derived from it (_sanitizeSavedStats recomputes
-// baseAtk/baseDef/baseMaxHp from it precisely so they can't be claimed
-// directly) and it sets the upgrade-point budget. Clamping it to a ceiling —
-// it was 1000, against content that stops at MAX_MONSTER_LEVEL 78 — bounded
-// nothing worth bounding.
-//
-// Gold needed a rate cap because the server does not see the events that earn
-// it. XP is different: the server computes every point it hands out (xpAtLevel
-// in Room.attackEnemy, quest rewards here) so it can simply COUNT, and compare
-// totals instead of guessing a rate. xpTotalAt (shared/definitions.js) turns a
-// (lvl, xp) pair into the one scalar that makes them comparable.
-//
-// The count is a ceiling, not a ledger: the client applies multipliers the
-// server cannot see, so each grant is banked at the most generous value it
-// could legitimately become. Anything at or under that is accepted untouched,
-// which is why this cannot cost an honest player anything.
-//   ×1.20  clan XP bonus at clan level 10 (CLAN_LEVELS, the maximum)
-//   ×2     зелье опыта (buffs.exp, gainXP)
-// The death penalty (×0.5) only ever reduces, so it is deliberately absent.
-//
-// Banked in the client's own ORDER and with its own rounding, not as a single
-// ×2.4. The client rounds after the clan bonus and doubles afterwards
-// (js/network.js's enemyKilled, then gainXP), so on small grants the rounding
-// goes UP and the real figure lands above a flat 2.4×: a level-3 monster pays
-// 3 XP, which becomes round(3 × 1.2) × 2 = 8 while 3 × 2.4 is only 7.2. That
-// gap is invisible at high level and fatal at low, where it clamped a fresh
-// character farming its first levels — dev/xp-ledger-check.js is what caught
-// it, and covers exactly that case.
-const XP_CLAN_MAX_PCT = 20;
-const XP_POTION_MULT  = 2;
-// Progress a join may claim beyond the stored record — the same "last few
-// seconds before an unclean disconnect" the debounce has always risked, worth
-// about thirty kills at the player's own level. Deliberately derived from the
-// DB value on every join rather than from the previous ceiling, so repeated
-// reconnects can't ratchet it: at level 40 this is ~1.2k XP against a level
-// that costs 136M, so no number of them adds up to anything.
-const XP_JOIN_SLACK_KILLS = 30;
 
 // Retired item ids → their replacement. An id that leaves the catalog takes
 // every copy of that item with it: _canonSavedItem returns null for an unknown
@@ -4166,7 +4128,11 @@ io.on('connection', socket => {
   function _allowXp(amount) {
     const n = Number(amount);
     if (!(n > 0) || _xpAllowed === null) return;
-    _xpAllowed += _xpCeilingFor(n);
+    const _grew = _xpAllowed + _xpCeilingFor(n);
+    // Same reasoning as the saveProgress check: letting NaN in here would
+    // poison the entitlement for the rest of the session and turn the ledger
+    // off without a word. Leave it as it was instead.
+    if (Number.isFinite(_grew)) _xpAllowed = _grew;
   }
   socket.data._allowXp = _allowXp;
 
@@ -9514,7 +9480,13 @@ io.on('connection', socket => {
       // would persist it, and the NEXT login's baseline is that record.
       // Seed from the stored record instead, which is the same thing
       // selectChar would have used.
-      if (_xpAllowed === null) {
+      // Not `=== null`: a non-finite entitlement disables this check entirely,
+      // because every comparison against NaN is false. That is exactly what
+      // happened when _xpCeilingFor's constants went missing — the ledger
+      // silently accepted any level at all, and nothing said so. Rebuilding
+      // from the stored record covers null, undefined and NaN in one, so the
+      // failure mode is a stricter check rather than no check.
+      if (!Number.isFinite(_xpAllowed)) {
         const _b = _sanitizeSavedStats(authed.savedData) || null;
         const _bLvl = Math.max(1, Math.floor(Number(_b && _b.lvl) || 1));
         _xpAllowed = xpTotalAt(_bLvl, Math.max(0, Number(_b && _b.xp) || 0))

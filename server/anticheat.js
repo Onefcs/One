@@ -13,10 +13,49 @@ const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, CHAR_DEF,
   ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
   xpToNext, skillPointBudget,
-  XP_CLAN_MAX_PCT, XP_POTION_MULT,
 } = require('../shared/definitions');
 
 const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
+
+// ── XP/level ledger ─────────────────────────────────────────────────────────
+// Level is the single most valuable number a client can lie about: every
+// permanent combat stat is derived from it (_sanitizeSavedStats recomputes
+// baseAtk/baseDef/baseMaxHp from it precisely so they can't be claimed
+// directly) and it sets the upgrade-point budget. Clamping it to a ceiling —
+// it was 1000, against content that stops at MAX_MONSTER_LEVEL 78 — bounded
+// nothing worth bounding.
+//
+// Gold needed a rate cap because the server does not see the events that earn
+// it. XP is different: the server computes every point it hands out (xpAtLevel
+// in Room.attackEnemy, quest rewards here) so it can simply COUNT, and compare
+// totals instead of guessing a rate. xpTotalAt (shared/definitions.js) turns a
+// (lvl, xp) pair into the one scalar that makes them comparable.
+//
+// The count is a ceiling, not a ledger: the client applies multipliers the
+// server cannot see, so each grant is banked at the most generous value it
+// could legitimately become. Anything at or under that is accepted untouched,
+// which is why this cannot cost an honest player anything.
+//   ×1.20  clan XP bonus at clan level 10 (CLAN_LEVELS, the maximum)
+//   ×2     зелье опыта (buffs.exp, gainXP)
+// The death penalty (×0.5) only ever reduces, so it is deliberately absent.
+//
+// Banked in the client's own ORDER and with its own rounding, not as a single
+// ×2.4. The client rounds after the clan bonus and doubles afterwards
+// (js/network.js's enemyKilled, then gainXP), so on small grants the rounding
+// goes UP and the real figure lands above a flat 2.4×: a level-3 monster pays
+// 3 XP, which becomes round(3 × 1.2) × 2 = 8 while 3 × 2.4 is only 7.2. That
+// gap is invisible at high level and fatal at low, where it clamped a fresh
+// character farming its first levels — dev/xp-ledger-check.js is what caught
+// it, and covers exactly that case.
+const XP_CLAN_MAX_PCT = 20;
+const XP_POTION_MULT  = 2;
+// Progress a join may claim beyond the stored record — the same "last few
+// seconds before an unclean disconnect" the debounce has always risked, worth
+// about thirty kills at the player's own level. Deliberately derived from the
+// DB value on every join rather than from the previous ceiling, so repeated
+// reconnects can't ratchet it: at level 40 this is ~1.2k XP against a level
+// that costs 136M, so no number of them adds up to anything.
+const XP_JOIN_SLACK_KILLS = 30;
 
 // Ids the catalog has renamed. Empty today; the indirection is what lets a
 // rename land without every stored save losing the item.
@@ -425,7 +464,7 @@ function calcBM(s) {
 function _xpCeilingFor(n) { return Math.round(n * (1 + XP_CLAN_MAX_PCT / 100)) * XP_POTION_MULT; }
 
 module.exports = {
-  SERVER_INV_MAX, _SANITIZE_MAX, _HP_POTION_IDS, _HP_POTION_HEAL,
+  SERVER_INV_MAX, XP_CLAN_MAX_PCT, XP_POTION_MULT, XP_JOIN_SLACK_KILLS, _SANITIZE_MAX, _HP_POTION_IDS, _HP_POTION_HEAL,
   _catalogBase, _unknownItemIds, _canonSavedItem,
   _itemCensus, _censusOverflow, _clampNum, _clampInt, _sanitizeKeyMap,
   _sanitizeSavedStats, _looksLikeCatastrophicReset, calcBM, _xpCeilingFor,

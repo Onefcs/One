@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
-    "dev:local": "node dev/local.js"
+    "dev:local": "node dev/local.js",
+    "harness": "node dev/harness.js"
   },
   "dependencies": {
     "compression": "^1.8.1",
