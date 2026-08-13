@@ -2561,6 +2561,68 @@ function _sanitizeKeyMap(raw, fn) {
   return out;
 }
 
+// ── Learned progression only ever moves forward ─────────────────────────────
+// Studying or upgrading a skill or a passive costs books, and nothing in the
+// game gives a level back: there is no un-learn, no refund, and rebirth
+// deliberately keeps them (see the rebirth handler). So a save reporting a
+// LOWER level than the baseline is never a legitimate downgrade — it is a
+// save composed BEFORE the study arriving after it.
+//
+// That ordering happens routinely, through paths that have nothing to do with
+// cheating: the client save is debounced up to 2s (netSaveProgress,
+// js/network.js), a save is dropped outright while an item op holds the
+// inventory (_itemOpBusy in saveProgress below), and every socket.io
+// reconnect resends the client's in-memory blob through selectChar. Any of
+// those can put an older passiveLevels on the wire after a newer one, and
+// taking it at face value silently un-learns a passive the player paid books
+// for — the books are gone (that spend rode a save that DID land), the level
+// is back to what it was.
+//
+// Items, gold, XP and questIdx are all already guarded against exactly this;
+// these maps were the one kind of progress with no rule at all, which is why
+// they are the kind players saw roll back.
+//
+// advSkillActive is deliberately absent: that one is a free toggle between a
+// slot's base and advanced version (toggleAdvSkill, js/ui.js), so "off" after
+// "on" is an ordinary choice, not a rewind.
+const _MONOTONIC_LEVEL_MAPS = ['skillLevels', 'passiveLevels'];
+const _MONOTONIC_FLAG_MAPS  = ['advSkillLearned'];
+
+// Merged per key, not kept as a whole blob: one save can legitimately carry a
+// brand-new passive AND a stale copy of a different one. Returns the merged
+// map, or null when `incoming` already covers `base` — which is every
+// ordinary save, so the common path allocates nothing.
+function _mergeForward(base, incoming, rank) {
+  if (!base || typeof base !== 'object' || Array.isArray(base)) return null;
+  const inc = (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) ? incoming : null;
+  let out = null;
+  for (const [k, bv] of Object.entries(base)) {
+    const b = rank(bv);
+    if (!b) continue;
+    if (rank(inc ? inc[k] : undefined) >= b) continue;
+    if (!out) out = { ...(inc || {}) };
+    out[k] = bv;
+  }
+  return out;
+}
+
+// Applies the rule above to a sanitized save blob in place. Returns just the
+// fields that had to be corrected (so the caller can log and push them back to
+// the client), or null when nothing was rewound.
+function _keepLearnedProgress(clean, base) {
+  if (!clean || !base) return null;
+  let corrected = null;
+  const _apply = (field, rank) => {
+    const merged = _mergeForward(base[field], clean[field], rank);
+    if (!merged) return;
+    clean[field] = merged;
+    (corrected || (corrected = {}))[field] = merged;
+  };
+  _MONOTONIC_LEVEL_MAPS.forEach(f => _apply(f, v => Math.max(0, Math.floor(Number(v)) || 0)));
+  _MONOTONIC_FLAG_MAPS.forEach(f => _apply(f, v => (v ? 1 : 0)));
+  return corrected;
+}
+
 // The HP potions (ITEM_DEF slot 'use') — the only ids potionBag may hold, and
 // the only ones usePotion will spend. Derived from the catalog rather than
 // hard-coded so adding a third potion needs no change here.
@@ -8452,6 +8514,19 @@ io.on('connection', socket => {
         effectiveSaved.upgrades  = _rebased.upgrades;
         _xpCorrected = true;
       }
+      // Studied skills and passives, pinned forward against the stored record
+      // — see _keepLearnedProgress. This runs on every socket.io reconnect
+      // with the client's in-memory blob, and it is also the branch that
+      // substitutes the DB copy wholesale (blankOverReal above); either way a
+      // level the player has already paid books for must survive, whichever
+      // side happens to be the stale one.
+      const _learnKept = _keepLearnedProgress(effectiveSaved, _dbBase);
+      if (_learnKept) {
+        logPlayer(authed.telegramId, authed.username, 'select_learned_rewound', {
+          fields: Object.keys(_learnKept).join(','),
+        });
+        socket.emit('progressSync', _learnKept);
+      }
       // The session's entitlement starts here and only ever grows by what the
       // server itself hands out (_allowXp).
       _xpAllowed = xpTotalAt(effectiveSaved.lvl, effectiveSaved.xp) + _joinSlack;
@@ -9671,10 +9746,17 @@ io.on('connection', socket => {
     // is mid-flight and holding a reference to the current _lastStats.inventory
     // across an await. Accepting this save now would let its eventual commit
     // stamp that now-stale reference back over whatever this save changes —
-    // see _itemOpBusy above. Dropping it here is safe: the client's own
-    // autosave debounce resends within a couple seconds, by which point the
-    // in-flight handler has finished and this session is caught up.
-    if (_itemOpBusy > 0) return;
+    // see _itemOpBusy above.
+    //
+    // Dropping it was assumed to be safe because "the client's own autosave
+    // debounce resends within a couple seconds" — but the client has no
+    // periodic autosave, only event-driven ones (netSaveProgress, js/
+    // network.js). A player who studies a passive and then stands still —
+    // which is exactly what someone does in the skills panel, right after the
+    // market/craft/shop op that set this flag — emits nothing further, so the
+    // dropped save was the only one carrying that study and it simply never
+    // reached the database. Ask for it back instead of discarding it.
+    if (_itemOpBusy > 0) { socket.emit('saveDeferred'); return; }
     // Sanitize the client blob before it becomes the server's source of truth
     // for BM/combat stats and before it's persisted (anti-cheat — see
     // _sanitizeSavedStats). gram/nexum are never taken from here.
@@ -9785,6 +9867,26 @@ io.on('connection', socket => {
         // against. Overwhelmingly this is an ordinary stale save rather than
         // anything deliberate, so it is corrected, not punished.
         socket.emit('questSync', { questIdx: _prevQ, questKills: clean.questKills });
+      }
+    }
+
+    // Studied skills and passives, same rule and for the same reason — see
+    // _keepLearnedProgress. Checked against this session's live baseline, or
+    // the stored record when a save arrives before selectChar established one
+    // (the same fallback the item census above uses), so a save that predates
+    // the study can't rewind it in either window.
+    {
+      const _learnBase = _lastStats || _sanitizeSavedStats(authed.savedData) || null;
+      const _kept = _keepLearnedProgress(clean, _learnBase);
+      if (_kept) {
+        logPlayer(authed.telegramId, authed.username, 'save_learned_rewound', {
+          fields: Object.keys(_kept).join(','),
+        });
+        // The client has to be told, exactly as with questSync above: left
+        // alone it keeps its rewound copy, resends it in every later save,
+        // and the player goes on seeing an un-learned passive even though the
+        // stored record is correct.
+        socket.emit('progressSync', _kept);
       }
     }
 

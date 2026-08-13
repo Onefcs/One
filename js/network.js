@@ -1255,6 +1255,55 @@ function netConnect(onReady) {
     if (typeof onQuestSync === 'function') onQuestSync(data || {});
   });
 
+  // The server refused this save because a server-side item op was holding
+  // the inventory when it arrived (_itemOpBusy, server/index.js). Nothing is
+  // wrong with the blob — it just has to come again once that op finishes.
+  // netSaveProgress rebuilds it from the live player and rate-limits itself to
+  // one emit per 2s, so this is a re-arm rather than a resend, and a session
+  // where the op somehow never clears settles into ordinary autosave traffic
+  // instead of quietly persisting nothing at all.
+  socket.on('saveDeferred', () => {
+    if (typeof netSaveProgress === 'function') setTimeout(netSaveProgress, 1200);
+  });
+
+  // The server overruled a save that reported a studied skill or passive at a
+  // LOWER level than it holds — a save composed before the study arriving
+  // after it (the 2s save debounce, a save dropped while an item op was in
+  // flight, or the in-memory blob every reconnect resends through selectChar).
+  // See _keepLearnedProgress in server/index.js. Without applying it here the
+  // client keeps the rewound copy and resends it in every later save, so the
+  // player goes on seeing an un-learned passive while the stored record has
+  // been right all along.
+  //
+  // Merged FORWARD, never assigned: the payload was built from the save that
+  // was in flight, and the player may well have upgraded again in the
+  // meantime — the whole point of this handler is that a level never goes
+  // down, which taking the payload verbatim would itself violate.
+  socket.on('progressSync', (data) => {
+    if (!player || !data || typeof data !== 'object') return;
+    let touched = false;
+    const _mergeUp = (field, rank) => {
+      const inc = data[field];
+      if (!inc || typeof inc !== 'object') return;
+      const cur = player[field] || (player[field] = {});
+      Object.keys(inc).forEach(k => {
+        if (rank(inc[k]) <= rank(cur[k])) return;
+        cur[k] = inc[k];
+        touched = true;
+      });
+    };
+    ['skillLevels', 'passiveLevels'].forEach(f => _mergeUp(f, v => Math.max(0, Math.floor(Number(v)) || 0)));
+    _mergeUp('advSkillLearned', v => (v ? 1 : 0));
+    if (!touched) return;
+    // passiveLevels feeds straight into the stat bonuses (passiveBonusTotal,
+    // shared/definitions.js), so the restored level has to reach the live
+    // stats and not just the panel.
+    if (typeof recompute === 'function') recompute();
+    if (typeof updateSkillsUI === 'function') updateSkillsUI();
+    if (typeof updatePassiveSkillsUI === 'function') updatePassiveSkillsUI();
+    if (typeof _refreshProfessionPanelIfOpen === 'function') _refreshProfessionPanelIfOpen();
+  });
+
   // ── Сезон ─────────────────────────────────────────────────────────────────
   socket.on('seasonState', (st) => {
     if (!st) return;
