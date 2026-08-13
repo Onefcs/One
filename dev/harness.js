@@ -244,6 +244,101 @@ scenario('progression: a save cannot write passive levels the server did not gra
   await c.close();
 });
 
+
+// Seeds an account's stored inventory and returns a session that has it.
+//
+// The two-step connect is not ceremony: authed.savedData is the document as it
+// was read AT LOGIN, and selectChar builds the session's item set from that —
+// so anything written to the row after the socket authenticated is invisible
+// to it until the next login. Granting first and connecting second is what a
+// real drop does too (it goes through _commitServerItems on a live session).
+async function connectWithItems(name, items) {
+  const seed = await connectAs(name);           // creates the row
+  await seed.close();
+  // Long enough for that socket's disconnect flush to land. It writes the
+  // session's own view of the character, so seeding before it completes gets
+  // silently overwritten — which is a real property of the server, not a quirk
+  // of the double.
+  await sleep(500);
+  const Player = require('../server/models/Player');
+  const row = memory.__dump('Player').find(p => p.username === seed.auth.username);
+  await Player.updateOne({ _id: row._id }, { $set: { 'savedData.inventory': items } });
+  await sleep(50);
+  return connectAs(name);
+}
+
+scenario('items: equipping is performed by the server, not the save', async () => {
+  const c = await connectWithItems('harness_equip', [{ id: 'uq_sword_l', enhance: 0 }]);
+  await enterWorld(c, 'deathknight');
+  const sync = c.wait('inventorySync', { timeout: 6000 });
+  c.emit('equipItem', { idx: 0 });
+  const got = await sync;
+  eq(got.inventory.length, 0, 'the item left the inventory');
+  ok(got.equipment && got.equipment.weapon && got.equipment.weapon.id === 'uq_sword_l',
+     'and landed in the weapon slot');
+  await sleep(120);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  ok(row.savedData.equipment && row.savedData.equipment.weapon, 'and was persisted immediately');
+  await c.close();
+});
+
+scenario('items: unequip refuses when the inventory is full', async () => {
+  const c = await connectWithItems('harness_unequip', [{ id: 'uq_axe_l', enhance: 0 }]);
+  await enterWorld(c, 'lev');
+  await (async () => { const s = c.wait('inventorySync'); c.emit('equipItem', { idx: 0 }); await s; })();
+  // Fill every inventory slot, then try to take the weapon back. Seeded after
+  // the session is closed AND its disconnect flush has landed, or that flush
+  // writes the session's empty inventory over this.
+  await c.close(); await sleep(500);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const Player = require('../server/models/Player');
+  await Player.updateOne({ _id: row._id }, { $set: { 'savedData.inventory':
+    Array.from({ length: 150 }, () => ({ id: 'uq_axe_e', enhance: 0 })) } });
+  await sleep(80);
+  const c2 = await connectAs('harness_unequip');
+  await enterWorld(c2, 'lev');
+  const err = c2.wait('itemError', { timeout: 5000 }).catch(() => null);
+  c2.emit('unequipItem', { slot: 'weapon' });
+  ok(await err, 'a full inventory refuses the unequip');
+  await c2.close();
+});
+
+scenario('items: a save can no longer write the item set', async () => {
+  const c = await connectAs('harness_mint');
+  await enterWorld(c, 'mage');
+  c.emit('saveProgress', { stats: {
+    type: 'mage', lvl: 1, xp: 0, gold: 0, kills: 0, hp: 10, maxHp: 10,
+    inventory: [{ id: 'uq_sword_l', enhance: 15 }, { id: 'rece', qty: 9999 }],
+    storage: [{ id: 'bless_stone', qty: 500 }],
+    equipment: { weapon: { id: 'uq_bow_l', enhance: 15 } },
+    savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const sd = row.savedData || {};
+  eq((sd.inventory || []).length, 0, 'minted inventory did not persist');
+  eq((sd.storage || []).length, 0, 'minted storage did not persist');
+  eq(Object.values(sd.equipment || {}).filter(Boolean).length, 0, 'minted equipment did not persist');
+  await c.close();
+});
+
+scenario('items: a storage move is one server-side operation', async () => {
+  const c = await connectWithItems('harness_storage', [{ id: 'rece', qty: 10 }]);
+  await enterWorld(c, 'ranger');
+  let sync = c.wait('inventorySync', { timeout: 6000 });
+  c.emit('storageDeposit', { idx: 0 });
+  let got = await sync;
+  eq(got.inventory.length, 0, 'deposit removed it from the inventory');
+  eq((got.storage || []).length, 1, 'and put it in storage — in the same message');
+  sync = c.wait('inventorySync', { timeout: 6000 });
+  c.emit('storageWithdraw', { idx: 0 });
+  got = await sync;
+  eq((got.storage || []).length, 0, 'withdraw took it back out');
+  eq(got.inventory.length, 1, 'and returned it to the inventory');
+  eq(got.inventory[0].qty, 10, 'with the stack intact');
+  await c.close();
+});
+
 scenario('reconnect: a second socket for the same account kicks the first', async () => {
   const c1 = await connectAs('harness_kick');
   await enterWorld(c1, 'warlock');

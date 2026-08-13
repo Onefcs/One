@@ -4450,11 +4450,12 @@ io.on('connection', socket => {
   // queued before a server-side grant lands after it and silently reverts it —
   // which is how bought packs "never arrived" for some players.
   //
-  // _invRev is a per-session counter bumped by every server-side item change.
-  // The client echoes back the last value it was told (invRev in saveProgress)
-  // and a mismatch means that save was composed before the grant, so its
-  // inventory is stale and must not be applied. Never sent to the client for
-  // interpretation — it just stores and returns it.
+  // A per-session counter bumped by every server-side item change. It used to
+  // be an ordering token echoed back by the client's save so the server could
+  // tell a pre-grant item set from a post-grant one; with items server-owned
+  // there is no client item set to order, and nothing reads it back. Kept as a
+  // sequence number in the item log, which is what makes a "where did my item
+  // go" report answerable.
   let _invRev = 0;
 
   // Single choke point for every server-side item change: updates the live
@@ -4497,10 +4498,18 @@ io.on('connection', socket => {
       });
     }
     if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
-    const written = (opts && opts.persist === false) ? null : _persistSavedFields(authed,
-      equipment ? { inventory, equipment } : { inventory });
+    // storage travels with the other two whenever a caller touched it. It is
+    // the third leg of the same set — the census counts all three together and
+    // an inventory <-> storage move changes both halves at once — so writing
+    // and syncing only part of it is what left the client holding an item in
+    // two places at the same time.
+    const _fields = { inventory };
+    if (equipment) _fields.equipment = equipment;
+    if (opts && opts.storage) _fields.storage = _lastStats.storage || [];
+    const written = (opts && opts.persist === false) ? null : _persistSavedFields(authed, _fields);
     socket.emit('inventorySync', {
-      inventory, equipment: _lastStats.equipment || {}, invRev: _invRev,
+      inventory, equipment: _lastStats.equipment || {},
+      storage: _lastStats.storage || [],
     });
     return written;
   }
@@ -5265,7 +5274,7 @@ io.on('connection', socket => {
         const _res = _result || { gold: saved.gold, bonusSP: saved.bonusSP || 0, vipLevel: _vipLvl, vipDeposited: _vipDep, vipPending: _vipPend };
         if (_target) {
           _target.emit('gramShopResult', {
-            pkgId, newBalance: _gramBalance, newGold: _res.gold, newInventory: _newInv, invRev: _invRev,
+            pkgId, newBalance: _gramBalance, newGold: _res.gold, newInventory: _newInv,
             newBonusSP: _res.bonusSP, newNexumBalance: _nexumBalance,
             vipData: { level: _res.vipLevel, deposited: _res.vipDeposited, pending: _res.vipPending },
             leveled: _res.vipLevel > _prevVipLvl,
@@ -5312,7 +5321,6 @@ io.on('connection', socket => {
         newBalance:  _gramBalance,
         newGold:     saved.gold,
         newInventory: inv,
-        invRev:      _invRev,
         newBonusSP:  saved.bonusSP || 0,
         newNexumBalance: _nexumBalance,
         vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
@@ -5540,7 +5548,7 @@ io.on('connection', socket => {
         const _seasonTotalX = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
         if (_target) {
           _target.emit('specialShopResult', {
-            pkgId, newBalance: _gramBalance, newInventory: _newInv, invRev: _invRev,
+            pkgId, newBalance: _gramBalance, newInventory: _newInv,
             newBonusSP: _res.bonusSP, newNexumBalance: _nexumBalance,
             vipData: { level: _res.vipLevel, deposited: _res.vipDeposited, pending: _res.vipPending },
             leveled: _res.vipLevel > _prevVipLvl, seasonTotal: _seasonTotalX,
@@ -5584,7 +5592,6 @@ io.on('connection', socket => {
         pkgId,
         newBalance: _gramBalance,
         newInventory: inv,
-        invRev: _invRev,
         newBonusSP: saved.bonusSP || 0,
         newNexumBalance: _nexumBalance,
         vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
@@ -5645,6 +5652,105 @@ io.on('connection', socket => {
       console.error('resetUpgrades:', err);
       socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
     }
+  });
+
+  // ── Item placement (equip, unequip, storage) ──────────────────────────────
+  // The last four item operations the CLIENT still decided for itself. Loot,
+  // sales, crafts, enhancing, boxes, market and potions were already server
+  // side; these four moved an item between inventory, an equipment slot and
+  // the storage chest by editing the local arrays and letting the next
+  // debounced save carry the result.
+  //
+  // That is what the whole item-census machinery exists to police: because a
+  // save could rewrite the item set, the server had to work out afterwards
+  // whether the rewrite was legitimate. Moving them here removes the writer,
+  // and with it the need to police it — a move is now a request the server
+  // performs on its own copy, and answers with inventorySync.
+  //
+  // Nothing here can create or destroy an item: each one takes it out of one
+  // container and puts it in another, refusing when the destination is full.
+  const SERVER_STORAGE_MAX = 200;   // matches storageHasSpace() in js/player.js
+
+  function _itemsFor() {
+    if (!_lastStats) return null;
+    if (!Array.isArray(_lastStats.inventory)) _lastStats.inventory = [];
+    if (!Array.isArray(_lastStats.storage))   _lastStats.storage = [];
+    if (!_lastStats.equipment || typeof _lastStats.equipment !== 'object') _lastStats.equipment = {};
+    return _lastStats;
+  }
+  function _itemErr(msg) { socket.emit('itemError', { msg }); }
+
+  safeOn('equipItem', ({ idx } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    const inv = _lastStats.inventory;
+    const i = Math.floor(Number(idx));
+    const it = (Number.isInteger(i) && i >= 0) ? inv[i] : null;
+    if (!it) return;
+    // A stackable or a consumable has no slot to occupy. The client greys
+    // these out; that is advice until it is checked here.
+    if (_isStackable(it) || it.slot === 'use' || !it.slot) return;
+    if (Array.isArray(it.forClass) && _lastStats.type && !it.forClass.includes(_lastStats.type)) {
+      return _itemErr('Этот предмет не для вашего класса');
+    }
+    const beforeLen = inv.length;
+    const old = _lastStats.equipment[it.slot] || null;
+    _lastStats.equipment[it.slot] = it;
+    inv.splice(i, 1);
+    // The displaced item goes back to the slot the new one just freed, so the
+    // swap is always net-zero and can never need room it hasn't got.
+    if (old) inv.push(old);
+    _commitServerItems(inv, _lastStats.equipment, 'equip', { id: it.id, slot: it.slot }, { beforeLen });
+  });
+
+  safeOn('unequipItem', ({ slot } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    const it = _lastStats.equipment[slot];
+    if (!it) return;
+    const inv = _lastStats.inventory;
+    if (!_invHasRoomFor(inv, it)) return _itemErr('Инвентарь полон!');
+    const beforeLen = inv.length;
+    _lastStats.equipment[slot] = null;
+    inv.push(it);
+    _commitServerItems(inv, _lastStats.equipment, 'unequip', { id: it.id, slot }, { beforeLen });
+  });
+
+  // Inventory -> storage and back. Both are MOVES: the item is spliced out of
+  // one array and merged into the other in a single handler, so the two halves
+  // can never be observed apart the way they could when a save carried them.
+  function _moveBetween(fromArr, toArr, idx, cap, reason) {
+    const i = Math.floor(Number(idx));
+    const it = (Number.isInteger(i) && i >= 0) ? fromArr[i] : null;
+    if (!it) return null;
+    if (_isStackable(it)) {
+      const existing = toArr.find(e => e && e.id === it.id);
+      if (existing) {
+        existing.qty = (existing.qty || 1) + (it.qty || 1);
+        fromArr.splice(i, 1);
+        return it;
+      }
+    }
+    if (toArr.length >= cap) return 'full';
+    fromArr.splice(i, 1);
+    toArr.push(it);
+    return it;
+  }
+
+  safeOn('storageDeposit', ({ idx } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    const beforeLen = _lastStats.inventory.length;
+    const res = _moveBetween(_lastStats.inventory, _lastStats.storage, idx, SERVER_STORAGE_MAX, 'deposit');
+    if (res === 'full') return _itemErr('Хранилище полно!');
+    if (!res) return;
+    _commitServerItems(_lastStats.inventory, null, 'storage_in', { id: res.id }, { beforeLen, storage: true });
+  });
+
+  safeOn('storageWithdraw', ({ idx } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    const beforeLen = _lastStats.inventory.length;
+    const res = _moveBetween(_lastStats.storage, _lastStats.inventory, idx, SERVER_INV_MAX, 'withdraw');
+    if (res === 'full') return _itemErr('Инвентарь полон!');
+    if (!res) return;
+    _commitServerItems(_lastStats.inventory, null, 'storage_out', { id: res.id }, { beforeLen, storage: true });
   });
 
   // ── Learned progression (skills, passives, "вторая профессия") ────────────
@@ -5955,7 +6061,7 @@ io.on('connection', socket => {
       // would go on crediting the pre-rebirth level until the next
       // saveProgress (same reasoning as resetUpgrades above).
       if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
-      // Bumps invRev and emits inventorySync with the post-cost inventory —
+      // Emits inventorySync with the post-cost inventory —
       // rebirthDone below deliberately carries no inventory field of its own,
       // same "already landed via inventorySync" shape as craftGear/boxOpened.
       _commitServerItems(inv, null, 'rebirth', { rebirths: _lastStats.rebirths }, { beforeLen: _beforeLen });
@@ -6191,7 +6297,7 @@ io.on('connection', socket => {
         serverHas: inv.filter(i => i && i.id === id).map(i => i.enhance || 0),
       });
       socket.emit('inventorySync', {
-        inventory: inv, equipment: _lastStats.equipment || {}, invRev: _invRev,
+        inventory: inv, equipment: _lastStats.equipment || {},
       });
       return socket.emit('enhanceError', { msg: 'Предмет не найден' });
     };
@@ -7087,7 +7193,7 @@ io.on('connection', socket => {
         const i = _resolveInvIdx(inv, idx, id, enhance);
         if (i < 0) {
           socket.emit('inventorySync', {
-            inventory: inv, equipment: _lastStats.equipment || {}, invRev: _invRev,
+            inventory: inv, equipment: _lastStats.equipment || {},
           });
           logPlayer(authed.telegramId, authed.username, 'season_burn_desync', { idx, id, enhance });
           return socket.emit('seasonBurnError', { msg: 'Предмет не найден — список обновлён' });
@@ -7290,7 +7396,7 @@ io.on('connection', socket => {
         const i = _resolveInvIdx(inv, idx, id, enhance);
         if (i < 0) {
           socket.emit('inventorySync', {
-            inventory: inv, equipment: _lastStats.equipment || {}, invRev: _invRev,
+            inventory: inv, equipment: _lastStats.equipment || {},
           });
           logPlayer(authed.telegramId, authed.username, 'sell_desync', { idx, id, enhance });
           return socket.emit('sellItemError', { msg: 'Предмет не найден — список обновлён' });
@@ -7976,18 +8082,16 @@ io.on('connection', socket => {
     let _itemsCorrected = false, _goldCorrected = false, _xpCorrected = false;
     if (effectiveSaved) {
       const _dbBase = _sanitizeSavedStats(authed.savedData) || null;
-      const _over = _censusOverflow(_itemCensus(effectiveSaved), _itemCensus(_dbBase));
-      if (_over) {
-        effectiveSaved.inventory = (_dbBase && _dbBase.inventory) || [];
-        effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
-        effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
-        _itemsCorrected = true;
-        logPlayer(authed.telegramId, authed.username, 'select_items_forged', {
-          item: _over.key, had: _over.had, sent: _over.sent,
-        });
-        console.error(`[selectChar] Rejected minted items for telegramId=${authed.telegramId}` +
-          ` (${_over.key}: had ${_over.had}, claimed ${_over.sent})`);
-      }
+      // Items come from the stored record, full stop — the blob the client
+      // sent has no say. Every change to them was applied and persisted
+      // server-side as it happened (_commitServerItems), so the record is
+      // current even on a reconnect that arrives seconds later, and there is
+      // nothing to compare or correct: this is not a rejection, it is simply
+      // where the item set lives now.
+      effectiveSaved.inventory = (_dbBase && _dbBase.inventory) || [];
+      effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
+      effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
+      _itemsCorrected = true;   // push them, so the client renders what it has
       // Gold, capped to GOLD_GROWTH_SLACK over the stored DB figure — flat,
       // not rate-over-elapsed-time like saveProgress's own check, because the
       // gap since that DB record was written can legitimately be arbitrary
@@ -8067,14 +8171,11 @@ io.on('connection', socket => {
       // same flat slack used here, rejecting gold that was earned honestly.
       _lastSaveAcceptedAt = Date.now();
       // Push every correction back to the client right away — see the
-      // comment above _itemsCorrected. invRev is deliberately NOT bumped:
-      // this is a rejection, not a grant, and window._invRev is reset to 0
-      // by gameStart's own fresh-session reset (js/network.js), matching
-      // _invRev's own fresh-session value of 0 here.
+      // comment above _itemsCorrected.
       if (_itemsCorrected) {
         socket.emit('inventorySync', {
           inventory: effectiveSaved.inventory, equipment: effectiveSaved.equipment || {},
-          storage: effectiveSaved.storage || [], invRev: _invRev,
+          storage: effectiveSaved.storage || [],
         });
       }
       if (_goldCorrected) socket.emit('goldSync', { gold: effectiveSaved.gold });
@@ -8309,7 +8410,6 @@ io.on('connection', socket => {
         inventory: _lastStats.inventory || [],
         equipment: _lastStats.equipment || {},
         storage:   _lastStats.storage   || [],
-        invRev: _invRev,
       });
     }
   });
@@ -9306,75 +9406,21 @@ io.on('connection', socket => {
           _gone.slice(0, 20).join(', '));
       }
     }
-    // Stale-inventory guard. A save composed before the last server-side item
-    // change carries an inventory that predates it, and taking it at face
-    // value is what reverted shop packs and market cancellations. Keep the
-    // server's copy for those fields, accept everything else in the save
-    // (position, hp, xp... are all still current), and push the authoritative
-    // items back so the client stops resending the stale set.
+    // Items are server-owned. Every path that moves one — loot, sale, craft,
+    // enhance, box, market, potion, and now equip/unequip/storage as well —
+    // goes through _commitServerItems, so a save has nothing left to say about
+    // them and they are taken from the session copy here.
     //
-    // storage is rolled back WITH inventory/equipment, never on its own. The
-    // census invariant (see _itemCensus) counts all three together, and
-    // inventory <-> storage is a client-side MOVE — so replacing only the
-    // inventory half of a move that was in flight left the blob describing
-    // two different points in time at once. A deposit then read as the item
-    // existing twice (server inventory still has it, client storage now has
-    // it too), which tripped the anti-duplication check below and reverted
-    // the player's whole item set as if it were forged; a withdrawal read as
-    // it existing nowhere, and since the check only looks for GROWTH that
-    // save was accepted verbatim and destroyed the item. Reverting the three
-    // as a unit costs at most one re-done storage move and cannot do either.
-    const _clientRev = Math.floor(Number(stats && stats.invRev)) || 0;
-    if (_clientRev !== _invRev && _lastStats) {
-      const _rejected = Array.isArray(clean.inventory) ? clean.inventory.length : 0;
+    // This is what retires the machinery that used to live in this spot. The
+    // stale-revision guard existed to order a client's item set against a
+    // server grant (invRev), and the census existed to work out afterwards
+    // whether a rewrite had minted anything. Both were answers to the question
+    // "was this client-authored item set legitimate?" — a question that no
+    // longer has anything to range over, because the client does not author it.
+    if (_lastStats) {
       clean.inventory = _lastStats.inventory || [];
       clean.equipment = _lastStats.equipment || {};
       clean.storage   = _lastStats.storage   || [];
-      // The single most useful line when a player says an item vanished: it
-      // records that a save arrived carrying a pre-grant inventory and was
-      // overruled, rather than that happening invisibly.
-      logPlayer(authed.telegramId, authed.username, 'save_stale_items', {
-        clientRev: _clientRev, serverRev: _invRev,
-        rejectedSlots: _rejected, keptSlots: clean.inventory.length,
-      });
-      socket.emit('inventorySync', {
-        inventory: clean.inventory, equipment: clean.equipment,
-        storage: clean.storage, invRev: _invRev,
-      });
-    }
-    // Anti-duplication. Enforced on EVERY save, including ones whose invRev
-    // matched — that token only orders saves against grants, it never proves
-    // entitlement (the client is what supplies it). See _itemCensus.
-    //
-    // Baseline is this session's live copy, or the stored one when the save
-    // arrives before selectChar has established it. A brand-new character
-    // legitimately owns nothing at all (js/player.js starts inventory,
-    // equipment and storage empty — the free potions live in potionBag, not
-    // in items), so an absent baseline is an EMPTY census rather than a free
-    // pass: the very first save of a new account can't smuggle items in
-    // either.
-    const _itemBase = _lastStats || _sanitizeSavedStats(authed.savedData) || null;
-    const _grew = _censusOverflow(_itemCensus(clean), _itemCensus(_itemBase));
-    if (_grew) {
-      // Items are dropped as a set rather than trimmed to the legal subset:
-      // once a save is known to be forged there is nothing in its item
-      // fields worth salvaging, and the authoritative copy is right here.
-      clean.inventory = (_itemBase && _itemBase.inventory) || [];
-      clean.equipment = (_itemBase && _itemBase.equipment) || {};
-      clean.storage   = (_itemBase && _itemBase.storage)   || [];
-      logPlayer(authed.telegramId, authed.username, 'save_items_forged', {
-        item: _grew.key, had: _grew.had, sent: _grew.sent,
-        clientRev: _clientRev, serverRev: _invRev,
-      });
-      console.error(`[saveProgress] Rejected minted items for telegramId=${authed.telegramId}` +
-        ` (${_grew.key}: had ${_grew.had}, save claimed ${_grew.sent})`);
-      // storage is reverted just above, so it has to ride along here too —
-      // otherwise the client keeps the storage half of the rejected set and
-      // resends it, tripping the same check on every save from then on.
-      socket.emit('inventorySync', {
-        inventory: clean.inventory, equipment: clean.equipment,
-        storage: clean.storage, invRev: _invRev,
-      });
     }
 
     // Story progress only ever moves forward. questIdx is what makes a quest

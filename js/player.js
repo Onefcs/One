@@ -77,37 +77,21 @@ function storageHasSpace() {
   return storageSlotCount() < 200;
 }
 
+// Both directions are server-side moves now (storageDeposit/storageWithdraw,
+// server/index.js). Splitting the move across a client edit and a later save
+// is what let one item be observed in both containers at once — the case the
+// census then read as duplication and rejected the whole set for.
 function moveToStorage(idx) {
-  const it = player.inventory[idx];
-  if (!it) return false;
-  if (_isStackable(it)) {
-    const existing = player.storage.find(i => i.id === it.id);
-    if (existing) {
-      existing.qty = (existing.qty || 1) + (it.qty || 1);
-      player.inventory.splice(idx, 1);
-      return true;
-    }
-  }
+  if (!player || !player.inventory[idx]) return false;
   if (!storageHasSpace()) return false;
-  player.inventory.splice(idx, 1);
-  player.storage.push(it);
+  netStorageDeposit(idx);
   return true;
 }
 
 function moveToInventory(idx) {
-  const it = player.storage[idx];
-  if (!it) return false;
-  if (_isStackable(it)) {
-    const existing = player.inventory.find(i => i.id === it.id);
-    if (existing) {
-      existing.qty = (existing.qty || 1) + (it.qty || 1);
-      player.storage.splice(idx, 1);
-      return true;
-    }
-  }
+  if (!player || !player.storage[idx]) return false;
   if (!invHasSpace()) return false;
-  player.storage.splice(idx, 1);
-  player.inventory.push(it);
+  netStorageWithdraw(idx);
   return true;
 }
 
@@ -447,6 +431,15 @@ function _invMsg(msg) {
 // is what made enhancing a freshly-crafted pet fail with "Предмет не найден"
 // — the enhance roll is server-side now (see 'enhanceItem', server/index.js)
 // and it looks the target up in the server's own copy, not the client's.
+// Requests, not edits. The server moves the item on its own copy and answers
+// with inventorySync — see the equipItem/unequipItem handlers in
+// server/index.js. Doing it locally and letting the save carry the result is
+// what made the item set client-authored, and what the whole item census
+// existed to police after the fact.
+//
+// Deliberately not applied optimistically: the point of the change is that
+// there is one copy of the item set, and a local edit reintroduces the second
+// one for as long as the round trip lasts. Equipping is not a twitch action.
 function equipItem(idx) {
   const it = player.inventory[idx]; if (!it) return;
   if (_isStackable(it) || it.slot === 'use') return;
@@ -454,21 +447,13 @@ function equipItem(idx) {
     _invMsg('Этот предмет не для вашего класса');
     return;
   }
-  const old = player.equipment[it.slot];
-  player.equipment[it.slot] = it;
-  player.inventory.splice(idx, 1);
-  if (old) player.inventory.push(old);
-  recompute(); updateInvUI();
-  netSaveProgress();
+  netEquipItem(idx);
 }
 
 function unequipItem(slot) {
   const it = player.equipment[slot];
   if (!it || !invHasSpace()) return;
-  player.inventory.push(it);
-  player.equipment[slot] = null;
-  recompute(); updateInvUI();
-  netSaveProgress();
+  netUnequipItem(slot);
 }
 
 function usePotion() {

@@ -24,15 +24,9 @@ function openNpc(npcId) {
 
 function closeNpc() {
   document.getElementById('npc-overlay').style.display = 'none';
-  // An inventory <-> storage move is the one client-side item operation the
-  // server cannot reconstruct, and it only reaches it on the next save. Left
-  // on the 2s debounce, a player who deposits something and immediately runs
-  // off to fight has that save land mid-combat — where every mob drop bumps
-  // invRev and makes it arrive stale, so the server rolls the move back and
-  // the deposit has to be done again. Flushing on close sends it while they
-  // are still standing at the NPC, and coalesces a whole bulk move into one
-  // save rather than one per tap.
-  if (_openNpcId === 'storage' && typeof netSaveProgressNow === 'function') netSaveProgressNow();
+  // Storage moves are server-side now (storageDeposit/storageWithdraw), each
+  // one applied and persisted as it happens — so there is nothing left here
+  // that a flush on close would rescue.
   _openNpcId = null;
 }
 

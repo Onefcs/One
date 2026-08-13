@@ -380,9 +380,6 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
-    // Fresh server socket == fresh _invRev counter, so ours has to match
-    // or our very first save would be mistaken for a stale one.
-    window._invRev = 0;
     bossStatus = bs || {};
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
@@ -1185,13 +1182,12 @@ function netConnect(onReady) {
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
-  // The server changed this account's items itself (shop pack, market
-  // cancel/list, VIP rewards, pet craft, world drop, admin panel) or rejected
-  // a stale inventory from us. It has already applied and persisted the
-  // change — this brings the live client in line so it shows up now, and
-  // carries the new invRev so our next autosave is recognised as current
-  // instead of being treated as pre-grant and dropped.
-  socket.on('inventorySync', ({ inventory, equipment, storage, invRev } = {}) => {
+  // The authoritative item set. Every change to it happens server-side —
+  // loot, sale, craft, enhance, box, market, VIP, admin, and equip/unequip/
+  // storage moves too — and this is how the change reaches the screen. The
+  // client no longer holds an item set of its own to reconcile against; it
+  // renders this one.
+  socket.on('inventorySync', ({ inventory, equipment, storage } = {}) => {
     if (!player) return;
     if (Array.isArray(inventory) && typeof _migrateInventory === 'function') {
       player.inventory = _migrateInventory(inventory);
@@ -1214,7 +1210,6 @@ function netConnect(onReady) {
       Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
       player.equipment = { ...blank, ...rebuilt };
     }
-    if (invRev != null) window._invRev = invRev;
     if (typeof recompute === 'function') recompute();
     if (typeof updateInvUI === 'function') updateInvUI();
     // The storage NPC panel indexes straight into the arrays just replaced —
@@ -1331,6 +1326,14 @@ function netConnect(onReady) {
   // books gone between the click and the packet. The client's own pre-checks
   // catch these first in normal play, so this is the case where the two copies
   // had drifted; showing it beats a button that silently does nothing.
+  // A move the server refused — a full container, a class-locked item, or an
+  // index that no longer points at what the client thought it did.
+  socket.on('itemError', ({ msg } = {}) => {
+    if (!player || !msg) return;
+    if (typeof _invMsg === 'function') _invMsg(msg);
+    else dmgNum(player.x, player.y - 30, msg, '#f17e8b');
+  });
+
   socket.on('progressError', ({ msg } = {}) => {
     if (!player || !msg) return;
     dmgNum(player.x, player.y - 30, msg, '#f17e8b');
@@ -1675,10 +1678,6 @@ function _buildSaveStats() {
     // predates a since-applied gold spend from one that already accounts for
     // it (_pendingGoldSpend, server/index.js). Not otherwise interpreted here.
     savedAt: Date.now(),
-    // Echoed back untouched — the server uses it to tell a save composed
-    // before its last item grant from one composed after (see _invRev in
-    // server/index.js). Not interpreted here.
-    invRev: window._invRev || 0,
   };
 }
 
@@ -1794,6 +1793,14 @@ function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePa
 function netLearnAdvSkill(key)   { if (socket?.connected) socket.emit('learnAdvSkill', { key }); }
 function netToggleAdvSkill(key)  { if (socket?.connected) socket.emit('toggleAdvSkill', { key }); }
 function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgrade', { key }); }
+
+// ── Item placement ──────────────────────────────────────────────────────────
+// Moving an item between the inventory, an equipment slot and the storage
+// chest is the server's job now; the answer comes back as inventorySync.
+function netEquipItem(idx)       { if (socket?.connected) socket.emit('equipItem', { idx }); }
+function netUnequipItem(slot)    { if (socket?.connected) socket.emit('unequipItem', { slot }); }
+function netStorageDeposit(idx)  { if (socket?.connected) socket.emit('storageDeposit', { idx }); }
+function netStorageWithdraw(idx) { if (socket?.connected) socket.emit('storageWithdraw', { idx }); }
 
 function netSkillStun(enemyId, duration) {
   if (!socket?.connected || !enemyId) return;
