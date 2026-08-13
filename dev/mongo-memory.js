@@ -125,11 +125,17 @@ function matchFilter(doc, filter) {
 function applyUpdate(doc, update) {
   if (!update) return;
   const plain = Object.keys(update).filter(k => !k.startsWith('$'));
-  // A bare object (no operators) REPLACES the document body — the behaviour
-  // the _persistSavedFields comment warns about.
+  // A bare object is $set, not a replacement. That is Mongoose's behaviour —
+  // it wraps an operator-less update in $set, and only findOneAndReplace
+  // overwrites the document — and getting it wrong here is not a harmless
+  // difference: this double silently deleted every field the update did not
+  // mention, which made a market purchase fail on an item that was there.
+  //
+  // The nested-object hazard _persistSavedFields warns about is a different
+  // thing and still holds: `{ savedData: {...} }` replaces the whole savedData
+  // subtree, which is why that helper writes dotted paths instead.
   if (plain.length && !Object.keys(update).some(k => k.startsWith('$'))) {
-    for (const k of Object.keys(doc)) if (k !== '_id') delete doc[k];
-    Object.assign(doc, deepCopy(update));
+    for (const [path, value] of Object.entries(update)) setPath(doc, path, deepCopy(value));
     return;
   }
   for (const [path, value] of Object.entries(update.$set || {})) setPath(doc, path, deepCopy(value));

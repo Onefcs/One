@@ -597,6 +597,52 @@ scenario('market: listing an item and reading my lots back', async () => {
   await c.close();
 });
 
+scenario('market: a purchase completes — seller paid, buyer holds the item', async () => {
+  // The path none of the checks walked, and the one that broke in production:
+  // MARKET_FEE_PCT is read only after the listing has been claimed, past every
+  // early return an empty payload hits. It needs two accounts and real GRAM.
+  const seller = await connectWithSaved('harness_seller', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(seller, 'deathknight');
+  const listed = seller.wait('marketListed', { timeout: 8000 }).catch(() => null);
+  seller.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+  const l = await listed;
+  ok(l && l.listing, 'the lot exists');
+  if (!l || !l.listing) return seller.close();
+
+  // The buyer needs a GRAM balance, which is server-owned and lives on the
+  // player row rather than in any save.
+  const buyerSeed = await connectAs('harness_buyer');
+  await buyerSeed.close();
+  await sleep(500);
+  const Player = require('../server/models/Player');
+  const brow = memory.__dump('Player').find(p => p.username === buyerSeed.auth.username);
+  await Player.updateOne({ _id: brow._id }, { $set: { 'savedData.gramBalance': 100 } });
+  await sleep(80);
+
+  const buyer = await connectAs('harness_buyer');
+  await enterWorld(buyer, 'mage');
+  const bought = buyer.wait('marketBought', { timeout: 9000 }).catch(() => null);
+  const err    = buyer.wait('marketError',  { timeout: 9000 }).catch(() => null);
+  const inv    = buyer.wait('inventorySync', { timeout: 9000 }).catch(() => null);
+  buyer.emit('marketBuy', { listingId: l.listing.id });
+
+  const got = await Promise.race([bought, err]);
+  ok(got && !got.msg, `the purchase went through${got && got.msg ? ' — refused: ' + got.msg : ''}`);
+  const iv = await inv;
+  ok(iv && iv.inventory.some(i => i && i.id === 'uq_sword_l'), 'the buyer holds the item');
+
+  await sleep(400);
+  const rows = memory.__dump('MarketListing').filter(x => String(x._id) === String(l.listing.id));
+  eq(rows[0] && rows[0].status, 'sold', 'the lot is marked sold');
+  // 10 GRAM at a 10% fee pays the seller 9; the fee is burned, not paid on.
+  const srow = memory.__dump('Player').find(p => p.username === seller.auth.username);
+  ok((srow.savedData.gramBalance || 0) > 0,
+     `the seller was paid (${srow.savedData.gramBalance})`);
+  await seller.close(); await buyer.close();
+});
+
 scenario('market: cancelling a lot returns the item', async () => {
   const c = await connectWithSaved('harness_marketcancel', {
     vipLevel: 1, inventory: [{ id: 'uq_bow_l', enhance: 0 }],
@@ -640,6 +686,55 @@ scenario('hp: reconnecting does not full-heal', async () => {
   const row = memory.__dump('Player').find(p => p.username === c2.auth.username);
   ok(row.savedData.hp < 100, `the character resumed on its stored hp (${row.savedData.hp})`);
   await c2.close();
+});
+
+scenario('imports: nothing an extracted module declares is used unimported', async () => {
+  // The check the market needed three times. Splitting server/index.js moved
+  // constants into modules and left the uses behind; each survived every
+  // syntax check, because a reference that never executes is not a syntax
+  // error, and each surfaced only when a player hit that exact line —
+  // MARKET_MAX_ACTIVE and MARKET_LIST_COOLDOWN_MS as a market that never
+  // replied, MARKET_FEE_PCT as a purchase that threw mid-transaction.
+  //
+  // The handler sweep cannot find these: it proves a handler RUNS, and these
+  // live past an early return that an empty payload never gets through. A
+  // general "is every identifier resolvable" scan was tried and thrown away —
+  // it needs a real parser and produced mostly false positives.
+  //
+  // This one is exact instead of general, and so has no false positives at
+  // all: take the names the extracted modules declare, and check that every
+  // one of them used in server/index.js is either declared there too or
+  // imported from the module that owns it.
+  const fs = require('fs');
+  const mods = ['server/anticheat.js', 'server/inventory.js', 'server/security.js'];
+  const owner = {};
+  for (const m of mods) {
+    const src = fs.readFileSync(path.join(ROOT, m), 'utf8');
+    for (const d of src.matchAll(/^(?:const|let|var|function|async function)\s+([A-Za-z_$][\w$]*)/gm)) owner[d[1]] = m;
+  }
+  ok(Object.keys(owner).length > 20, `${Object.keys(owner).length} names declared across the modules`);
+
+  const idx = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  const own = new Set([...idx.matchAll(/^(?:const|let|var|function|async function)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]));
+  const imported = new Set();
+  for (const m of idx.matchAll(/const \{([^}]*)\} = require\('\.\/(anticheat|inventory|security)'\);/g)) {
+    m[1].split(/[,\s]+/).filter(Boolean).forEach(n => imported.add(n));
+  }
+  const missing = Object.entries(owner)
+    .filter(([n]) => !own.has(n) && !imported.has(n))
+    .filter(([n]) => new RegExp('(^|[^.\\w$])' + n.replace(/\$/g, '\\$') + '\\b').test(idx))
+    .map(([n, m]) => `${n} (declared in ${m})`);
+  ok(missing.length === 0, 'every name used in index.js resolves', missing.join(', '));
+
+  // And the other direction: a name imported from a module the module no
+  // longer exports is undefined at the point of use, which reads identically.
+  for (const m of mods) {
+    const exported = require(path.join(ROOT, m));
+    const wanted = [...idx.matchAll(new RegExp('const \\{([^}]*)\\} = require\\(\'\\./' + path.basename(m, '.js') + '\'\\);', 'g'))]
+      .flatMap(x => x[1].split(/[,\s]+/).filter(Boolean));
+    const undef = wanted.filter(n => exported[n] === undefined);
+    ok(undef.length === 0, `${path.basename(m)} exports everything index.js imports`, undef.join(', '));
+  }
 });
 
 scenario('handlers: none of the 115 throws on a bare request', async () => {

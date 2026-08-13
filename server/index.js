@@ -24,7 +24,7 @@ const {
   _sanitizeSavedStats, calcBM,
 } = require('./anticheat');
 const {
-  MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS,
+  MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS, MARKET_FEE_PCT,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 } = require('./inventory');
