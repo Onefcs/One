@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const { generateOpenWorld, TILE, WALL } = require('./dungeon');
+const { TILE, WALL } = require('./dungeon');
+const { floorEntry } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
@@ -351,14 +352,22 @@ class Room {
     this.io = io;
     this._onBossDeath = onBossDeath;
     this.players = new Map();
-    this._dungeon = generateOpenWorld();
+    const entry = floorEntry(floor);
+    if (!entry) throw new Error(`No floor registry entry for floor ${floor}`);
+    this._dungeon = entry.generate();
     this._gridPacked = packGrid(this._dungeon.grid, this._dungeon.w, this._dungeon.h);
     // Which arms currently have >=1 player, recomputed once per tick (see
     // _tick's players.forEach) — lets the enemy AI and grid-rebuild loops
     // skip regular arm enemies nobody is there to see, same idea as the
-    // existing race10-idle skip below.
+    // existing race10-idle skip below. armBounds no longer exists on any
+    // floor's dungeon now that each arm is its own floor/Room — see the
+    // guarded callers below — kept only so this doesn't need ripping out yet.
     this._armBounds = this._dungeon.armBounds;
     this._armPresent = new Set();
+    // The single arm this floor's regular enemies belong to (or null, e.g.
+    // on the hub floor) — see _broadcastMapBlips, which used to derive this
+    // per-player from a Y-band lookup across all 4 arms sharing one grid.
+    this._soleArm = ARM_NAMES.find(a => this._dungeon.enemies.some(e => e.arm === a)) || null;
     const _now = Date.now();
     this.enemies = this._dungeon.enemies.map(e => {
       if (!e.isBoss) {
@@ -959,11 +968,15 @@ class Room {
     // _gwReturnPad from it, so omitting it would leave the Guild War portal
     // permanently missing no matter what guildWarState says. farmZone is the
     // same again, for the Фарм-зона pad.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
+    // returnPad exists only on arm floors (the pad that requests a transition
+    // back to the hub); armEntries only on the hub (the 4 outbound pads, now
+    // just {dir,req} — no target x/y, each arm is its own floor).
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, returnPad: d.returnPad, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
   }
 
   _inSafeZone(x, y) {
     const sz = this._dungeon.safeZone;
+    if (!sz) return false; // arm floors have no hub-style safe zone
     return x >= sz.x1 && x <= sz.x2 && y >= sz.y1 && y <= sz.y2;
   }
 
@@ -1145,9 +1158,16 @@ class Room {
       p._wasInSafeZone = nowIn;
       // Arms are stacked by Y with no overlap (see dungeon.js's armBounds
       // comment) — at most one of these can match, so break on the first hit.
-      for (let i = 0; i < ARM_NAMES.length; i++) {
-        const b = this._armBounds[ARM_NAMES[i]];
-        if (p.y >= b.y0 && p.y < b.y1) { armPresent.add(ARM_NAMES[i]); break; }
+      // armBounds no longer exists on any floor's dungeon now that each arm
+      // is its own floor/Room (a floor's enemies already belong to just that
+      // one arm, or to none) — this whole presence-culling optimization is
+      // dead weight post-split, kept only as a no-op guard for now rather
+      // than ripping out its two callers below in the same pass.
+      if (this._armBounds) {
+        for (let i = 0; i < ARM_NAMES.length; i++) {
+          const b = this._armBounds[ARM_NAMES[i]];
+          if (p.y >= b.y0 && p.y < b.y1) { armPresent.add(ARM_NAMES[i]); break; }
+        }
       }
       // Guild War: pvpMode is driven continuously off live position, for as
       // long as a player is physically inside the zone bounds — unlike every
@@ -1268,7 +1288,7 @@ class Room {
       // entirely. Bosses are excluded: there are only 4 of them, so the cost
       // is negligible, and skipping would also skip their leash/respawn-
       // adjacent state below in ways not worth reasoning about here.
-      if (!e.isBoss && this._armBounds[e.arm] && !armPresent.has(e.arm)) return;
+      if (!e.isBoss && this._armBounds && this._armBounds[e.arm] && !armPresent.has(e.arm)) return;
 
       // Tick CC timers
       if ((e.stunTimer || 0) > 0) { e.stunTimer -= dt; return; }
@@ -1654,7 +1674,7 @@ class Room {
       // Same empty-arm skip as the AI loop above: nobody in that arm could
       // possibly have it inside their AOI query, so indexing it here would
       // be pure waste.
-      if (this._armBounds[e.arm] && !armPresent.has(e.arm)) continue;
+      if (this._armBounds && this._armBounds[e.arm] && !armPresent.has(e.arm)) continue;
       const key = _gridKey(Math.floor(e.x / ENEMY_GRID_CELL), Math.floor(e.y / ENEMY_GRID_CELL));
       let cell = grid.get(key);
       if (!cell) { cell = []; grid.set(key, cell); }
@@ -2001,17 +2021,13 @@ class Room {
       cache.set(key, buf.buffer);
       return buf.buffer;
     };
-    // Which arm a viewer is standing in — the same Y-band test the tick uses.
-    const armAt = y => {
-      for (let i = 0; i < ARM_NAMES.length; i++) {
-        const b = this._armBounds[ARM_NAMES[i]];
-        if (b && y >= b.y0 && y < b.y1) return ARM_NAMES[i];
-      }
-      return null;
-    };
     this.players.forEach(p => {
       if (!p._mapOpen) return;
-      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : armAt(p.y));
+      // A floor's regular (non-race10/fear) enemies all belong to the same
+      // single arm now that each arm is its own floor/Room (or to none, on
+      // the hub floor) — no more Y-band lookup needed to tell which arm a
+      // viewer is standing in, see this._soleArm in the constructor.
+      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : this._soleArm);
       // In the hub (or anywhere outside an arm) there are no regular monsters
       // to plot, so there is nothing to send at all.
       if (!arm) return;

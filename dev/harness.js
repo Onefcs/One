@@ -283,7 +283,13 @@ scenario('level: a save cannot set the level', async () => {
 
 scenario('combat: a hit reaches the server and lowers the real enemy', async () => {
   const c = await connectAs('harness_combat');
-  const start = await enterWorld(c, 'deathknight');
+  await enterWorld(c, 'deathknight');
+  // The hub floor itself has no regular monsters any more — each leveling
+  // arm is now its own floor (server/game/floors.js), reached with a real
+  // enterLocation transition instead of a same-grid walk.
+  const armStart = c.wait('gameStart', { where: `${c.name} enterLocation left` });
+  c.emit('enterLocation', { target: 'left' });
+  const start = await armStart;
   const target = (start.enemies || []).filter(e => e && (e.hp || 0) > 0).sort((x, y) => x.hp - y.hp)[0];
   ok(target, 'the room has a live enemy');
   if (!target) return c.close();
@@ -300,6 +306,61 @@ scenario('combat: a hit reaches the server and lowers the real enemy', async () 
   ok(got && got.dmg > 0, `and reported the damage it dealt (${got && got.dmg})`);
   ok(got && got.hp < target.hp, 'and the enemy lost health on its side');
   await c.close();
+});
+
+scenario('floors: entering an arm is a real floor change, gated server-side, with a working way back', async () => {
+  const c = await connectAs('harness_floors');
+  const start = await enterWorld(c, 'ranger');
+  eq(start.floor, 1, 'a fresh character lands on the hub floor');
+
+  // 'top' requires level 20 (ARM_LEVEL_REQ) — a level-1 character asking for
+  // it must be refused server-side, not just hidden behind the pad's own
+  // client-side lock icon.
+  const denied = c.wait('enterLocationDenied', { timeout: 3000 });
+  c.emit('enterLocation', { target: 'top' });
+  const denial = await denied;
+  eq(denial && denial.reason, 'level', 'a level-gated arm refuses a character who has not reached it');
+
+  // 'left' has no level requirement — the same request should actually move
+  // the character onto that arm's own floor, with its own grid/enemies.
+  const leftStart = c.wait('gameStart', { where: `${c.name} enters left` });
+  c.emit('enterLocation', { target: 'left' });
+  const onLeft = await leftStart;
+  eq(onLeft.floor, 2, 'entering the left arm switches to its own floor');
+  ok((onLeft.enemies || []).length > 0, 'and that floor reports its own regular enemies');
+
+  // The arm's own return pad sends the character back to the hub floor —
+  // same round trip a player makes by walking onto it.
+  const hubStart = c.wait('gameStart', { where: `${c.name} returns to hub` });
+  c.emit('enterLocation', { target: 'hub' });
+  const backAtHub = await hubStart;
+  eq(backAtHub.floor, 1, 'requesting hub from an arm returns to the hub floor');
+
+  await c.close();
+});
+
+scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
+  const a = await connectAs('harness_floors_a');
+  const b = await connectAs('harness_floors_b');
+  await enterWorld(a, 'ranger');
+  await enterWorld(b, 'mage'); // both start on the hub floor
+
+  // A plain in-floor move must NOT look like a departure.
+  const noLeaveYet = b.wait('playerLeft', { timeout: 800 }).catch(() => null);
+  a.emit('playerMove', { x: 1400, y: 1400, facing: 1, moving: true });
+  eq(await noLeaveYet, null, 'moving within the same floor does not fire playerLeft');
+
+  // Leaving for the left arm is a real floor change — b (still on the hub)
+  // must be told a left, the same as an actual disconnect would.
+  const aLeftForB = b.wait('playerLeft', { timeout: 3000 });
+  const aOnLeft = a.wait('gameStart', { where: 'a enters left' });
+  a.emit('enterLocation', { target: 'left' });
+  await aOnLeft;
+  const leftEvt = await aLeftForB;
+  eq(leftEvt && leftEvt.id, a.sock.id, 'the hub floor is told a left when they entered the arm');
+
+  await a.close();
+  await b.close();
 });
 
 scenario('level: a server-granted reward crosses the level threshold', async () => {
@@ -956,6 +1017,36 @@ scenario('browser: the real client loads and reaches the world', async () => {
     ok(st.sharedOk, 'the shared catalog is in scope for the game code');
     ok(st.lateFileOk, 'so is the last file in the concat order');
     ok(st.pixiOk, 'the renderer loaded');
+
+    // Real floor transition, driven through the actual client code path
+    // (netEnterLocation -> _applyGameStart's floorChange branch -> initNpcs/
+    // pixiClearEntityPools/_buildArmGates/buildTileCanvas) rather than the
+    // raw socket protocol the 'floors:' scenarios already cover — this is
+    // the one check that would catch a client-side exception (a null deref
+    // in a real PIXI/DOM environment) those can't.
+    await page.evaluate(() => netEnterLocation('left'));
+    await page.waitForTimeout(2500);
+    const onArm = await page.evaluate(() => ({
+      floor: typeof dungeonLvl !== 'undefined' ? dungeonLvl : null,
+      npcCount: typeof npcs !== 'undefined' ? npcs.length : null,
+      overlayHidden: (() => {
+        const el = document.getElementById('char-select');
+        return !el || el.style.display === 'none';
+      })(),
+    }));
+    eq(onArm.floor, 2, 'the client followed the server onto the arm floor');
+    eq(onArm.npcCount, 0, 'and cleared the hub-only NPCs');
+    ok(onArm.overlayHidden, 'and hid the floor-loading overlay again');
+
+    await page.evaluate(() => netEnterLocation('hub'));
+    await page.waitForTimeout(2500);
+    const backHome = await page.evaluate(() => ({
+      floor: typeof dungeonLvl !== 'undefined' ? dungeonLvl : null,
+      npcCount: typeof npcs !== 'undefined' ? npcs.length : null,
+    }));
+    eq(backHome.floor, 1, 'and came back from the return pad request');
+    eq(backHome.npcCount, 3, 'with the hub NPCs rebuilt');
+
     // Only same-origin requests are the game's own responsibility. This
     // sandbox's proxy refuses third-party hosts outright, which says nothing
     // about production — and is a large part of why serving socket.io from

@@ -39,6 +39,7 @@ const ChatMessageModel  = require('./models/ChatMessage');
 const BossStateModel    = require('./models/BossState');
 const GuildWarStateModel = require('./models/GuildWarState');
 const Room = require('./game/Room');
+const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
@@ -59,7 +60,7 @@ const {
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP,
   GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
-  clanAtkBonusPct, xpToNext,
+  clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
@@ -1968,8 +1969,8 @@ app.get('/health', (req, res) => {
 // by content hash, and let the browser cache do the rest. gameStart now
 // carries only mapVersion; the client fetches this URL and, after the first
 // time, never asks again.
-app.get('/api/world-map/:ver', (req, res) => {
-  const room = floorRooms.get(1);
+app.get('/api/world-map/:floor/:ver', (req, res) => {
+  const room = floorRooms.get(Number(req.params.floor));
   if (!room) return res.status(503).json({ error: 'not ready' });
   // The version lives in the URL and the response is immutable, so a request
   // naming a different version must not be answered with these bytes — that
@@ -2146,13 +2147,10 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
   });
 }
 
-// One permanent Room for the whole open world — pre-created at startup, never
-// destroyed. All players share the one world (no sub-instances, no capacity
-// limit). MAX_FLOOR=1: the "floor" machinery below (floorRooms/currentFloor/
-// the floor_1 socket.io room) is legacy plumbing from the old 5-floor system,
-// kept as-is since it still works unchanged with a single permanent world —
-// only renaming would churn without benefit.
-const MAX_FLOOR = 1;
+// One permanent Room per location (see server/game/floors.js's
+// FLOOR_REGISTRY) — pre-created at startup, never destroyed. Players move
+// between them via a real floor transition (see enterLocation below)
+// instead of the old single-shared-grid world this replaced.
 const floorRooms = new Map();
 
 
@@ -2651,7 +2649,39 @@ function _partyHoldOnDisconnect(socketId, telegramId) {
 }
 
 function getRoom(floor) {
-  return floorRooms.get(Math.max(1, Math.min(MAX_FLOOR, floor)));
+  return floorRooms.get(floor) || floorRooms.get(FLOOR_IDS.hub);
+}
+
+// Builds the gameStart-shaped payload for a socket that just joined (first
+// login/reconnect) or transitioned to (enterLocation) a floor's Room — one
+// shared builder so both paths send an identical shape, and so the client's
+// _applyGameStart (js/network.js) never has to special-case which one it
+// came from.
+function _buildGameStartPayload(socket, room, floor) {
+  const _selfP = room.players.get(socket.id);
+  return {
+    floor,
+    // The map itself is fetched over HTTP and cached by the browser — see
+    // /api/world-map above. Only its name (and now its floor) travels here.
+    mapVersion: room.mapVersion,
+    spawn: _selfP ? { x: _selfP.x, y: _selfP.y } : undefined,
+    enemies: room.enemySnapshot(socket.id),
+    bossStatus: room.getBossStatus(),
+    // So someone logging in mid-countdown still sees the timer, and someone
+    // arriving after the kill still sees loot already lying on the floor.
+    // These four event systems are still tied to the hub floor for now (see
+    // server/game/floors.js) — reported unconditionally since a socket on
+    // any floor may still be registered/mid-run in one of them.
+    eventBoss: eventBossState(),
+    deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
+    race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
+    arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
+    guildWar: _gwPublicState(),
+    // Unlike the three above, Fear has no scheduled window/queue to report
+    // when nothing's running — only present at all when a run is live for
+    // this socket.
+    fear: _fear.has(socket.id) ? { inRun: true, wave: _fear.get(socket.id).wave, maxWave: FEAR_MAX_WAVE } : null,
+  };
 }
 
 // ── Event announcements over the bot ────────────────────────────────────────
@@ -3958,13 +3988,14 @@ async function _initFloorRooms() {
     _gw.ownerClanIcon = gwDoc.ownerClanIcon || null;
     _gw.capturedAt = gwDoc.capturedAt || 0;
   }
-  for (let f = 1; f <= MAX_FLOOR; f++) {
+  for (const entry of FLOOR_REGISTRY) {
+    const f = entry.id;
     const onBossDeath = (arm, respawnAt) => {
       BossStateModel.updateOne({ floor: f, arm }, { $set: { respawnAt } }, { upsert: true })
         .catch(err => console.error('[BossState] persist failed', f, arm, err));
     };
     const room = new Room(f, io, bossStateByFloor.get(f) || {}, onBossDeath);
-    if (f === 1) room.spawnGuildWarTower(_gw);
+    if (f === FLOOR_IDS.hub) room.spawnGuildWarTower(_gw);
     floorRooms.set(f, room);
   }
   console.log('Floor rooms initialized');
@@ -4181,7 +4212,7 @@ io.on('connection', socket => {
     if (!authed) socket.disconnect(true);
   }, 20000);
   let currentRoom = null;
-  let currentFloor = 1;
+  let currentFloor = FLOOR_IDS.hub;
   let _lastStats = null;
   let _autoSaveInterval = null;
   // Wall-clock time this session last had a save accepted — used by the gold
@@ -8623,31 +8654,7 @@ io.on('connection', socket => {
     // the hub regardless — stuck "in battle" with no monsters in sight, at a
     // spot with nothing to fight and no way out.
     const _selfP = currentRoom.players.get(socket.id);
-    socket.emit('gameStart', {
-      floor: currentFloor,
-      // The map itself is fetched over HTTP and cached by the browser — see
-      // /api/world-map above. Only its name travels here.
-      mapVersion: currentRoom.mapVersion,
-      spawn: _selfP ? { x: _selfP.x, y: _selfP.y } : undefined,
-      enemies: currentRoom.enemySnapshot(socket.id),
-      bossStatus: currentRoom.getBossStatus(),
-      // So someone logging in mid-countdown still sees the timer, and someone
-      // arriving after the kill still sees loot already lying on the floor.
-      eventBoss: eventBossState(),
-      deathBattle: { ..._dbPublicState(), registered: _db.reg.has(socket.id) },
-      race10: { ..._race10PublicState(), registered: _race10.queue.has(socket.id) },
-      arena3: { ..._a3PublicState(), registered: _a3.queue.has(socket.id) },
-      guildWar: _gwPublicState(),
-      // Unlike the three above, Fear has no scheduled window/queue to report
-      // when nothing's running — only present at all when a run is live for
-      // this socket, which after a reconnect (see fearGrace/_fearGraceClaim)
-      // is exactly the case that otherwise left the client's own wave HUD
-      // and "in run" flag stuck on their pre-reconnect values (or unset, on
-      // a first load) even though the server-side run and its monsters came
-      // back fine. onFearState (js/network.js's _applyGameStart) picks this
-      // straight up, the same way it already does for the other three.
-      fear: _fear.has(socket.id) ? { inRun: true, wave: _fear.get(socket.id).wave, maxWave: FEAR_MAX_WAVE } : null,
-    });
+    socket.emit('gameStart', _buildGameStartPayload(socket, currentRoom, currentFloor));
     // MUST come after gameStart: its client handler rebuilds otherPlayers from
     // scratch (`otherPlayers = new Map()`), so a roster delivered before it was
     // wiped on arrival and nobody ever saw anyone else's pet.
@@ -8690,6 +8697,55 @@ io.on('connection', socket => {
         equipment: _lastStats.equipment || {},
         storage:   _lastStats.storage   || [],
       });
+    }
+  });
+
+  // Real floor transition — replaces the old client-only _teleportTo trick
+  // (js/game.js) for the hub's arm pads: the player leaves their current
+  // floor's Room entirely and joins a different one, with its own grid/
+  // enemies/NPCs, instead of just being repositioned inside a shared grid.
+  // `target` is either an arm key ('left'/'top'/'bottom'/'right') or 'hub'.
+  safeOn('enterLocation', ({ target } = {}) => {
+    if (!authed || !currentRoom) return;
+    const oldP = currentRoom.players.get(socket.id);
+    if (!oldP || !oldP.type) return; // no character selected yet
+    let targetFloor;
+    if (target === 'hub') {
+      targetFloor = FLOOR_IDS.hub;
+    } else if (FLOOR_IDS[target] != null && target !== 'hub') {
+      // Server-side level gate — the pad's own lock icon is client-side
+      // decoration only, this is the check that actually matters.
+      const req = ARM_LEVEL_REQ[target] || 0;
+      const lvl = (oldP._sd && oldP._sd.lvl) || 1;
+      if (lvl < req) { socket.emit('enterLocationDenied', { target, reason: 'level', req }); return; }
+      targetFloor = FLOOR_IDS[target];
+    } else {
+      return; // unknown target
+    }
+    if (targetFloor === currentFloor) return; // already there
+
+    const oldFloor = currentFloor;
+    const charType = oldP.type;
+    const savedStats = oldP._sd;
+
+    socket.leave(`floor_${oldFloor}`);
+    currentRoom.removePlayer(socket.id);
+    socket.to(`floor_${oldFloor}`).emit('playerLeft', { id: socket.id });
+
+    currentFloor = targetFloor;
+    playerFloorMap.set(socket.id, currentFloor);
+    socket.join(`floor_${currentFloor}`);
+    currentRoom = getRoom(currentFloor);
+    currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
+    currentRoom.setPlayerChar(socket.id, charType, savedStats);
+    socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
+    socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type: charType });
+
+    socket.emit('gameStart', _buildGameStartPayload(socket, currentRoom, currentFloor));
+    socket.emit('playerPets', { pets: currentRoom.petSnapshot() });
+    const _selfP2 = currentRoom.players.get(socket.id);
+    if (_selfP2 && _selfP2.petId) {
+      socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfP2.petId });
     }
   });
 

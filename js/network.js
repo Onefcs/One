@@ -28,6 +28,13 @@ let _authOkReceived = false;
 // Set by the authOk reconnect-guard, consumed by the gameStart handler —
 // see comment there for why a reconnect must not reposition/restore.
 let _isReconnectRejoin = false;
+// Set right when this client asks the server for a floor transition
+// (netEnterLocation below), consumed by the next gameStart the same way
+// _isReconnectRejoin is — a floor change reuses the exact same 'gameStart'
+// event as first login/reconnect (see server/index.js's enterLocation
+// handler, which builds the payload with the same _buildGameStartPayload),
+// so this is what tells _applyGameStart which of the three it's handling.
+let _pendingFloorChange = false;
 // True only once gameStart's non-reconnect branch has actually run
 // restoreFromSave() (or made the deliberate "no data yet, start fresh" call
 // for a genuinely new account) at least once this session. The authOk
@@ -320,9 +327,12 @@ function netConnect(onReady) {
   // socket.io reconnect, so a phone that changes network used to re-download
   // and re-parse the whole world every time.
   //
-  // Held in memory across reconnects too, so the common case doesn't even
-  // reach the HTTP cache.
-  let _mapCache = null;      // { version, data }
+  // Held in memory across reconnects (and floor changes) too, so the common
+  // case doesn't even reach the HTTP cache. Each location is now its own
+  // floor with its own grid bytes (server/game/floors.js), so the cache is
+  // keyed by floor — a stale entry from a different floor sharing the same
+  // version string would otherwise serve the wrong map.
+  const _mapCache = new Map(); // floor -> { version, data }
   function _decodeWorldMap(buf) {
     const u8 = new Uint8Array(buf);
     const dv = new DataView(buf);
@@ -331,18 +341,21 @@ function netConnect(onReady) {
     meta.gridPacked = u8.subarray(4 + jsonLen);
     return meta;
   }
-  async function _loadWorldMap(version) {
-    if (_mapCache && _mapCache.version === version) return _mapCache.data;
+  async function _loadWorldMap(floor, version) {
+    const cached = _mapCache.get(floor);
+    if (cached && cached.version === version) return cached.data;
     try {
-      const res = await fetch(`/api/world-map/${encodeURIComponent(version)}`);
+      const res = await fetch(`/api/world-map/${floor}/${encodeURIComponent(version)}`);
       if (!res.ok) throw new Error(`map ${res.status}`);
       const data = _decodeWorldMap(await res.arrayBuffer());
-      _mapCache = { version, data };
+      _mapCache.set(floor, { version, data });
       return data;
     } catch (err) {
       // Proxy ate it, cache handed back a 404, offline for a moment — fall
       // back to the socket, which is by definition still working since this
-      // code only runs in response to a gameStart that arrived on it.
+      // code only runs in response to a gameStart that arrived on it. The
+      // socket fallback resolves the map for whatever floor the server
+      // currently has this socket on, so no floor param is needed here.
       console.warn('[map] HTTP fetch failed, falling back to socket:', err);
       const data = await new Promise((resolve, reject) => {
         const to = setTimeout(() => reject(new Error('map timeout')), 15000);
@@ -350,7 +363,7 @@ function netConnect(onReady) {
           buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))); });
         socket.emit('worldMapInline');
       });
-      _mapCache = { version, data };
+      _mapCache.set(floor, { version, data });
       return data;
     }
   }
@@ -359,10 +372,12 @@ function netConnect(onReady) {
     // Fast path kept strictly synchronous: once this session has the map (i.e.
     // every reconnect, which is when gameStart actually matters for stability)
     // the handler runs start to finish in the same task, exactly as it did
-    // when the map travelled inline. Only a genuinely first-time load defers.
-    const cached = (_mapCache && _mapCache.version === payload.mapVersion) ? _mapCache.data : null;
+    // when the map travelled inline. Only a genuinely first-time (or new-floor)
+    // load defers.
+    const cachedEntry = _mapCache.get(payload.floor);
+    const cached = (cachedEntry && cachedEntry.version === payload.mapVersion) ? cachedEntry.data : null;
     if (cached) return _applyGameStart(payload, cached);
-    _loadWorldMap(payload.mapVersion)
+    _loadWorldMap(payload.floor, payload.mapVersion)
       .then(d => _applyGameStart(payload, d))
       .catch(err => {
         console.error('[map] could not load world map:', err);
@@ -379,6 +394,9 @@ function netConnect(onReady) {
     _lastSentX = null;
     dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
     if (typeof _buildArmGates === 'function') _buildArmGates();
+    // Every location is its own floor now — NPCs (hub only) need rebuilding
+    // on every floor load, not just the very first one.
+    if (typeof initNpcs === 'function') initNpcs();
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
@@ -386,6 +404,11 @@ function netConnect(onReady) {
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
+    // Event-boss ground loot and the map panel's dot cache are both scoped to
+    // whatever floor they were fetched/claimed on — stale entries from the
+    // floor just left would otherwise survive the switch.
+    _worldDropPending.clear();
+    _mapBlips = null;
     // Event boss: restore the countdown banner and any loot already lying on
     // the floor, so joining mid-event shows the same state as everyone else.
     worldDrops = new Map((evb && evb.drops || []).map(d => [d.id, d]));
@@ -516,6 +539,23 @@ function netConnect(onReady) {
       // died — no penalty either. Re-run the same death handling a live
       // 'playerHurt' would have triggered.
       if (player && player.hp <= 0 && state !== 'dead') playerDie();
+      return;
+    }
+    if (_pendingFloorChange) {
+      // A real floor transition (netEnterLocation) — this player's stats/
+      // inventory/etc are already loaded and live; only reposition them onto
+      // the new floor's spawn, same as the first-login branch below does,
+      // but skip restoreFromSave (there is nothing new to restore, and
+      // running it would stomp live progress with the account's DB blob —
+      // same reasoning as the reconnect branch above).
+      _pendingFloorChange = false;
+      if (player) {
+        const sp = srvSpawn || d.spawn;
+        player.x = sp.x; player.y = sp.y;
+        camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
+        clampCamera();
+      }
+      csOnServerReady();
       return;
     }
     if (player) {
@@ -1477,6 +1517,18 @@ function netConnect(onReady) {
 }
 
 // ── Party helpers ─────────────────────────────────────────
+// Requests a real floor transition — replaces the old client-only
+// _teleportTo trick (js/game.js) for the hub's arm pads. `target` is either
+// an arm key ('left'/'top'/'bottom'/'right') or 'hub'. The server answers
+// with a fresh 'gameStart' for the new floor, same shape as first login —
+// _pendingFloorChange tells _applyGameStart to treat it as a floor change
+// (reposition, but don't restoreFromSave/csOnServerReady's login path).
+function netEnterLocation(target) {
+  if (!socket?.connected) return;
+  _pendingFloorChange = true;
+  socket.emit('enterLocation', { target });
+}
+
 function netPartyInvite(targetId) {
   if (socket?.connected) socket.emit('partyInvite', { targetId });
 }

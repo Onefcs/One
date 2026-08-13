@@ -50,10 +50,6 @@ const ZONE_GAP = 30;      // gap (tiles) between zones/hub — comfortably more 
                           // chain's max reach (CW + ROOM_CHAIN_LEN*(STUB+LARGE)) so
                           // neighboring zones' rooms can never touch
 
-const MAX_ARM_PAIRS = Math.max(...ARM_ROOM_PAIRS); // longest arm sizes the zone width; shorter arms just end sooner
-// +1 extra PITCH: room for the second local-level-19 gauntlet corridor (see
-// HAS_LVL19_GAUNTLET) that sits one position past the last regular one.
-const ZONE_LEN = LEAD_IN + MAX_ARM_PAIRS * PITCH + Math.floor(PITCH / 2) + LARGE;
 const REACH = CW + ROOM_CHAIN_LEN * (GAUNTLET_STUB + LARGE); // max perpendicular room-chain reach from the corridor centerline (sized off the wider gauntlet stub, the deepest any chain gets)
 const ZONE_H = REACH * 2 + 4; // both sides plus a little pad
 
@@ -198,11 +194,17 @@ const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
 const FARM_X0 = ARENA_X0;
 const FARM_Y0 = GW_Y0 + GW_SIZE + ZONE_GAP;
 
-const ZONES_Y0 = FARM_Y0 + FARM_SIZE + ZONE_GAP;
-const DH = ZONES_Y0 + ARM_NAMES.length * (ZONE_H + ZONE_GAP);
-const DW = Math.max(MARGIN * 2 + ZONE_LEN, RACE10_X0 + RACE10_W + MARGIN);
+// Each location is now its own floor/Room with its own small grid (see
+// server/game/floors.js) instead of one shared mega-grid — the hub keeps
+// hosting the special zones below (arena/a3/race10/fear/guildWar/farmZone)
+// until they get split into their own floors in a later pass; the 4
+// leveling arms already moved out, into generateArm() below.
+const DH = FARM_Y0 + FARM_SIZE + ZONE_GAP;
+const DW = Math.max(MARGIN * 2 + HUB, RACE10_X0 + RACE10_W + MARGIN);
 
-function generateOpenWorld() {
+const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+
+function generateHub() {
   const rng = seededRng(2026 * 1337 + 777);
   const grid = Array.from({ length: DH }, () => new Array(DW).fill(WALL));
 
@@ -281,10 +283,7 @@ function generateOpenWorld() {
 
   const rooms = [hub, arena, a3];
   const enemyList = [];
-  const corridorGates = [];
-  const armEntries = [];
   let eid = 0;
-  const _enemyByEid = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
   // Фарм-зона: paint the 4 rooms (2x2 grid) plus the plus-shaped corridor
   // through their shared gap, then bake in FARM_MOBS_PER_ROOM static
@@ -412,150 +411,7 @@ function generateOpenWorld() {
     spawnRace10Tier(laneIdx, laneRow, 1, 10);
   });
 
-  function buildArm(dir, armIdx, zoneIndex) {
-    const fe = FLOOR_ENEMIES[armIdx];
-    const pairs = ARM_ROOM_PAIRS[armIdx - 1];
-    const roomCount = roomsInArm(armIdx);
-    const maxLocalLvl = roomCount - 1; // last room is the boss; ranks/colors ramp to this
-    // True for every arm whose pre-boss position lands exactly on local level
-    // 19 (left/top/bottom; 'right' is one pair short and never reaches it).
-    // Those arms get a second 6-large-room level-19 gauntlet corridor one
-    // more position further out, past the boss junction — see below.
-    const HAS_LVL19_GAUNTLET = (pairs - 1) * 2 + 1 === 19;
-    function pickEnemy(isBoss, localLvl) {
-      if (isBoss) return _enemyByEid.get(fe.boss);
-      const pool = bandForLocalLevel(fe, localLvl).pool;
-      return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
-    }
-
-    // Main corridor: one dead-straight, always-empty strip from the zone's
-    // entrance out to the last position (plus a little tail), 3 tiles wide.
-    const zoneY0 = ZONES_Y0 + zoneIndex * (ZONE_H + ZONE_GAP);
-    const fixedCoord = zoneY0 + Math.floor(ZONE_H / 2);
-    const mainStart = MARGIN;
-    const lastPos = HAS_LVL19_GAUNTLET ? pairs : pairs - 1; // one extra PITCH for the second level-19 gauntlet
-    const mainEnd = mainStart + LEAD_IN + lastPos * PITCH + Math.floor(PITCH / 2);
-    paintRect(mainStart, fixedCoord - CW, mainEnd, fixedCoord + CW);
-
-    // Level-gated checkpoints between each room-pair position — same
-    // level-gate mechanic that used to guard the arm's entrance (now the
-    // teleport pad's own level check does that job instead), just repeated
-    // at every position boundary along the corridor. Gate before position
-    // `pos` requires the level of that position's first (weaker) room —
-    // e.g. the gate before the room pair hosting local levels 3-4 requires
-    // character level 3.
-    for (let pos = 1; pos < pairs; pos++) {
-      const boundary = mainStart + LEAD_IN + (pos - 0.5) * PITCH;
-      const req = ARM_OFFSETS[armIdx - 1] + (pos * 2 + 1);
-      corridorGates.push({ dir, tx: Math.round(boundary), ty: fixedCoord, req });
-    }
-
-    function spawnRoomEnemies(room, x, y, size, isBoss) {
-      const count = isBoss ? 1 : (room.isSmall ? 5 : 10);
-      const weakMult = isBoss ? 1 : 0.5; // regular monsters spawn in packs — halved individually
-      for (let n = 0; n < count; n++) {
-        const d = pickEnemy(isBoss, room.localLvl);
-        if (!d) continue;
-        let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
-        for (let attempt = 0; attempt < 40; attempt++) {
-          const gx = x + 1 + Math.floor(rng() * Math.max(1, size - 2));
-          const gy = y + 1 + Math.floor(rng() * Math.max(1, size - 2));
-          if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
-        }
-        const stats = monsterStatsAtLevel(room.monsterLvl, isBoss ? 'boss' : d.eType);
-        // Movement speed isn't part of monsterStatsAtLevel (it's flat per
-        // species in ENEMY_DEF) — scale it up separately past level 20 (and
-        // for the level-20 boss itself, see below) to match the HP jumps.
-        const isLvl20Boss = isBoss && room.monsterLvl === 20;
-        const spdMult = (room.monsterLvl > 20 || isLvl20Boss) ? 1.5 : 1;
-        // The boss guarding the end of the starting arm (level 20, right
-        // before the level-20 gate) gets an extra x10 HP on top of the
-        // regular BOSS_HP_MULT — it was underwhelming next to the buffed
-        // level-21+ mobs that immediately follow it.
-        const boss20HpMult = isLvl20Boss ? 10 : 1;
-        enemyList.push({
-          id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
-          rlvl: room.monsterLvl,
-          name: monsterNameAtLevel(d.name, room.localLvl, isBoss, d.fem, maxLocalLvl),
-          color: monsterColorAtLevel(d.color, d.endColor, room.localLvl, isBoss, maxLocalLvl),
-          maxHp: Math.floor(stats.hp * weakMult * boss20HpMult), hp: Math.floor(stats.hp * weakMult * boss20HpMult),
-          atk: Math.floor(stats.atk * weakMult),
-          def: stats.def,
-          spd: d.spd * spdMult,
-          xp: xpAtLevel(room.monsterLvl), gold: goldAtLevel(room.monsterLvl),
-          x: ex, y: ey, spawnX: ex, spawnY: ey,
-          atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
-        });
-      }
-    }
-
-    // side = -1 (near/top side of the corridor) or +1 (far/bottom side).
-    // Chains `chainLen` rooms in a row starting from the main corridor's
-    // edge and going outward — each subsequent room links to the previous
-    // one via another short stub instead of the main corridor, so the
-    // corridor itself never gets any longer/wider. All rooms in the chain
-    // share the same localLvl/monsterLvl (more room to fight the same
-    // level's monsters, not more levels).
-    function buildRoomChain(pos, side, localLvl, chainLen, isBoss, stub = STUB) {
-      const alongCenter = mainStart + LEAD_IN + pos * PITCH;
-      let cursor = side < 0 ? (fixedCoord - CW) : (fixedCoord + CW); // outer edge of whatever it's linking from
-
-      for (let i = 0; i < chainLen; i++) {
-        const roomIsBoss = isBoss && i === chainLen - 1;
-        // Local level 19 — the row right before the level-20 boss slot in
-        // every arm that reaches it — is the pre-boss gauntlet: all 6 rooms
-        // large (10 monsters each) instead of the usual random small/large
-        // mix, same treatment as a boss room.
-        const size = (roomIsBoss || localLvl === 19) ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
-
-        const x = alongCenter - Math.floor(size / 2);
-        const y = side < 0 ? (cursor - stub - size) : (cursor + stub);
-        const branchX0 = alongCenter - BW, branchX1 = alongCenter + BW;
-        const branchY0 = side < 0 ? (y + size) : cursor;
-        const branchY1 = side < 0 ? (cursor - 1) : (y - 1);
-
-        const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
-        const room = {
-          x, y, size,
-          bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
-          cx, cy, isSmall: size === SMALL,
-          arm: dir, localLvl, monsterLvl: ARM_OFFSETS[armIdx - 1] + localLvl, isBoss: roomIsBoss,
-        };
-        rooms.push(room);
-        paintRect(x, y, x + size - 1, y + size - 1);
-        paintRect(branchX0, branchY0, branchX1, branchY1);
-        spawnRoomEnemies(room, x, y, size, roomIsBoss);
-
-        cursor = side < 0 ? y : (y + size);
-      }
-    }
-
-    for (let pos = 0; pos < pairs; pos++) {
-      const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
-      const lvlBIsBossSlot = lvlB === roomCount;
-      buildRoomChain(pos, -1, lvlA, ROOM_CHAIN_LEN, false, lvlA === 19 ? GAUNTLET_STUB : STUB);
-      buildRoomChain(pos, 1, lvlB, lvlBIsBossSlot ? 1 : ROOM_CHAIN_LEN, lvlBIsBossSlot);
-    }
-
-    if (HAS_LVL19_GAUNTLET) {
-      // Second level-19 gauntlet: an identical 6-large-room chain one more
-      // corridor position past the boss junction (near side only — the far
-      // side here just stays plain corridor, nothing needs it). Doubles the
-      // farming space at the level everyone bottlenecks on right before the
-      // level-20 gate.
-      buildRoomChain(pairs, -1, 19, ROOM_CHAIN_LEN, false, GAUNTLET_STUB);
-    }
-
-    // Where a teleport into this arm drops the player — right at the start
-    // of its main corridor, clear of both hub-side pads and the first rooms.
-    armEntries.push({
-      dir, req: ARM_LEVEL_REQ[dir] || 0,
-      x: (mainStart + 2) * TILE + TILE / 2,
-      y: fixedCoord * TILE + TILE / 2,
-    });
-  }
-
-  ARM_NAMES.forEach((dir, i) => buildArm(dir, i + 1, i));
+  const armEntries = ARM_NAMES.map(dir => ({ dir, req: ARM_LEVEL_REQ[dir] || 0 }));
 
   return {
     grid, rooms, w: DW, h: DH,
@@ -651,20 +507,185 @@ function generateOpenWorld() {
       bounds: { x0: FARM_X0, y0: FARM_Y0, x1: FARM_X0 + FARM_SIZE, y1: FARM_Y0 + FARM_SIZE },
       minLevel: FARM_ENTRY_LEVEL,
     },
+    // {dir, req} per arm — where to go and the level gate, resolved into an
+    // actual floor by the client's enterLocation request (js/network.js);
+    // no target x/y here any more, each arm lives on its own floor now.
     armEntries,
-    corridorGates,
     enemies: enemyList,
-    // Per-arm Y span (px, world coords) — arms are stacked purely by Y with
-    // ZONE_GAP of solid wall between them and everything else (see the file
-    // header comment), so a player's Y alone unambiguously places them in at
-    // most one arm. Lets Room.js cheaply know which arms currently have
-    // nobody in them, without tracking per-player arm state anywhere else.
-    armBounds: ARM_NAMES.reduce((acc, dir, i) => {
-      const zoneY0 = ZONES_Y0 + i * (ZONE_H + ZONE_GAP);
-      acc[dir] = { y0: zoneY0 * TILE, y1: (zoneY0 + ZONE_H) * TILE };
-      return acc;
-    }, {}),
   };
 }
 
-module.exports = { generateOpenWorld, TILE, WALL, FLOOR };
+// One leveling arm (left/top/bottom/right), now its OWN floor with its own
+// small 0,0-origin grid instead of a Y-banded slice of the old shared
+// mega-grid — everything below is buildArm() from the pre-split
+// generateOpenWorld(), unindented, with the corridor's centerline anchored
+// at a local yOrigin (MARGIN) instead of a position among the other arms.
+function generateArm(dir, armIdx) {
+  const rng = seededRng(2026 * 1337 + 777 + armIdx);
+  const fe = FLOOR_ENEMIES[armIdx];
+  const pairs = ARM_ROOM_PAIRS[armIdx - 1];
+  const roomCount = roomsInArm(armIdx);
+  const maxLocalLvl = roomCount - 1; // last room is the boss; ranks/colors ramp to this
+  // True for every arm whose pre-boss position lands exactly on local level
+  // 19 (left/top/bottom; 'right' is one pair short and never reaches it).
+  // Those arms get a second 6-large-room level-19 gauntlet corridor one
+  // more position further out, past the boss junction — see below.
+  const HAS_LVL19_GAUNTLET = (pairs - 1) * 2 + 1 === 19;
+
+  const yOrigin = MARGIN;
+  const lastPos = HAS_LVL19_GAUNTLET ? pairs : pairs - 1; // one extra PITCH for the second level-19 gauntlet
+  const mainStart = MARGIN;
+  const mainEnd = mainStart + LEAD_IN + lastPos * PITCH + Math.floor(PITCH / 2);
+  const fixedCoord = yOrigin + Math.floor(ZONE_H / 2);
+  const DW_ARM = mainEnd + MARGIN;
+  const DH_ARM = ZONE_H + yOrigin * 2;
+
+  const grid = Array.from({ length: DH_ARM }, () => new Array(DW_ARM).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < DW_ARM && gy >= 0 && gy < DH_ARM; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const rooms = [];
+  const enemyList = [];
+  const corridorGates = [];
+  let eid = 0;
+
+  function pickEnemy(isBoss, localLvl) {
+    if (isBoss) return _enemyByEid.get(fe.boss);
+    const pool = bandForLocalLevel(fe, localLvl).pool;
+    return _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
+  }
+
+  // Main corridor: one dead-straight, always-empty strip from the zone's
+  // entrance out to the last position (plus a little tail), 3 tiles wide.
+  paintRect(mainStart, fixedCoord - CW, mainEnd, fixedCoord + CW);
+
+  // Level-gated checkpoints between each room-pair position — same
+  // level-gate mechanic that used to guard the arm's entrance (now the
+  // teleport pad's own level check does that job instead), just repeated
+  // at every position boundary along the corridor. Gate before position
+  // `pos` requires the level of that position's first (weaker) room —
+  // e.g. the gate before the room pair hosting local levels 3-4 requires
+  // character level 3.
+  for (let pos = 1; pos < pairs; pos++) {
+    const boundary = mainStart + LEAD_IN + (pos - 0.5) * PITCH;
+    const req = ARM_OFFSETS[armIdx - 1] + (pos * 2 + 1);
+    corridorGates.push({ dir, tx: Math.round(boundary), ty: fixedCoord, req });
+  }
+
+  function spawnRoomEnemies(room, x, y, size, isBoss) {
+    const count = isBoss ? 1 : (room.isSmall ? 5 : 10);
+    const weakMult = isBoss ? 1 : 0.5; // regular monsters spawn in packs — halved individually
+    for (let n = 0; n < count; n++) {
+      const d = pickEnemy(isBoss, room.localLvl);
+      if (!d) continue;
+      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = x + 1 + Math.floor(rng() * Math.max(1, size - 2));
+        const gy = y + 1 + Math.floor(rng() * Math.max(1, size - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      const stats = monsterStatsAtLevel(room.monsterLvl, isBoss ? 'boss' : d.eType);
+      // Movement speed isn't part of monsterStatsAtLevel (it's flat per
+      // species in ENEMY_DEF) — scale it up separately past level 20 (and
+      // for the level-20 boss itself, see below) to match the HP jumps.
+      const isLvl20Boss = isBoss && room.monsterLvl === 20;
+      const spdMult = (room.monsterLvl > 20 || isLvl20Boss) ? 1.5 : 1;
+      // The boss guarding the end of the starting arm (level 20, right
+      // before the level-20 gate) gets an extra x10 HP on top of the
+      // regular BOSS_HP_MULT — it was underwhelming next to the buffed
+      // level-21+ mobs that immediately follow it.
+      const boss20HpMult = isLvl20Boss ? 10 : 1;
+      enemyList.push({
+        id: `e_${dir}_${eid++}`, ...d, isBoss, arm: dir,
+        rlvl: room.monsterLvl,
+        name: monsterNameAtLevel(d.name, room.localLvl, isBoss, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, room.localLvl, isBoss, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * weakMult * boss20HpMult), hp: Math.floor(stats.hp * weakMult * boss20HpMult),
+        atk: Math.floor(stats.atk * weakMult),
+        def: stats.def,
+        spd: d.spd * spdMult,
+        xp: xpAtLevel(room.monsterLvl), gold: goldAtLevel(room.monsterLvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  }
+
+  // side = -1 (near/top side of the corridor) or +1 (far/bottom side).
+  // Chains `chainLen` rooms in a row starting from the main corridor's
+  // edge and going outward — each subsequent room links to the previous
+  // one via another short stub instead of the main corridor, so the
+  // corridor itself never gets any longer/wider. All rooms in the chain
+  // share the same localLvl/monsterLvl (more room to fight the same
+  // level's monsters, not more levels).
+  function buildRoomChain(pos, side, localLvl, chainLen, isBoss, stub = STUB) {
+    const alongCenter = mainStart + LEAD_IN + pos * PITCH;
+    let cursor = side < 0 ? (fixedCoord - CW) : (fixedCoord + CW); // outer edge of whatever it's linking from
+
+    for (let i = 0; i < chainLen; i++) {
+      const roomIsBoss = isBoss && i === chainLen - 1;
+      // Local level 19 — the row right before the level-20 boss slot in
+      // every arm that reaches it — is the pre-boss gauntlet: all 6 rooms
+      // large (10 monsters each) instead of the usual random small/large
+      // mix, same treatment as a boss room.
+      const size = (roomIsBoss || localLvl === 19) ? LARGE : (rng() < 0.5 ? SMALL : LARGE);
+
+      const x = alongCenter - Math.floor(size / 2);
+      const y = side < 0 ? (cursor - stub - size) : (cursor + stub);
+      const branchX0 = alongCenter - BW, branchX1 = alongCenter + BW;
+      const branchY0 = side < 0 ? (y + size) : cursor;
+      const branchY1 = side < 0 ? (cursor - 1) : (y - 1);
+
+      const cx = x + Math.floor(size / 2), cy = y + Math.floor(size / 2);
+      const room = {
+        x, y, size,
+        bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
+        cx, cy, isSmall: size === SMALL,
+        arm: dir, localLvl, monsterLvl: ARM_OFFSETS[armIdx - 1] + localLvl, isBoss: roomIsBoss,
+      };
+      rooms.push(room);
+      paintRect(x, y, x + size - 1, y + size - 1);
+      paintRect(branchX0, branchY0, branchX1, branchY1);
+      spawnRoomEnemies(room, x, y, size, roomIsBoss);
+
+      cursor = side < 0 ? y : (y + size);
+    }
+  }
+
+  for (let pos = 0; pos < pairs; pos++) {
+    const lvlA = pos * 2 + 1, lvlB = pos * 2 + 2;
+    const lvlBIsBossSlot = lvlB === roomCount;
+    buildRoomChain(pos, -1, lvlA, ROOM_CHAIN_LEN, false, lvlA === 19 ? GAUNTLET_STUB : STUB);
+    buildRoomChain(pos, 1, lvlB, lvlBIsBossSlot ? 1 : ROOM_CHAIN_LEN, lvlBIsBossSlot);
+  }
+
+  if (HAS_LVL19_GAUNTLET) {
+    // Second level-19 gauntlet: an identical 6-large-room chain one more
+    // corridor position past the boss junction (near side only — the far
+    // side here just stays plain corridor, nothing needs it). Doubles the
+    // farming space at the level everyone bottlenecks on right before the
+    // level-20 gate.
+    buildRoomChain(pairs, -1, 19, ROOM_CHAIN_LEN, false, GAUNTLET_STUB);
+  }
+
+  // Where a teleport into this arm drops the player — right at the start
+  // of its main corridor, clear of the return pad and the first rooms. The
+  // return pad sits two tiles further back, right at the entrance, so
+  // walking back onto it (rather than forward into the corridor) is what
+  // triggers enterLocation({target:'hub'}) client-side.
+  const spawn = { x: (mainStart + 2) * TILE + TILE / 2, y: fixedCoord * TILE + TILE / 2 };
+  const returnPad = { x: mainStart * TILE + TILE / 2, y: fixedCoord * TILE + TILE / 2 };
+
+  return {
+    grid, rooms, w: DW_ARM, h: DH_ARM,
+    spawn,
+    returnPad,
+    corridorGates,
+    enemies: enemyList,
+  };
+}
+
+module.exports = { generateHub, generateArm, TILE, WALL, FLOOR };

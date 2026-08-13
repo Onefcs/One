@@ -302,6 +302,36 @@ function csStartLoading(type, onReady) {
   csSetStatus(typeof t === 'function' ? t('csLoadingSprites') : 'Загрузка спрайтов...');
 }
 
+// Same two-gate loading overlay as csStartLoading (first login), reused for
+// a mid-session floor transition (netEnterLocation, js/network.js) — no
+// character to show here, just the destination's own label/icon in place of
+// the class icon/name. Unlike csStartLoading, #char-select itself is hidden
+// at this point (_finishOnlineStart already ran) — show it again as a bare
+// backdrop for #cs-loading (same trick _showCharSelect uses for the very
+// first load) and let onReady's caller csHide() it again when done.
+function csStartFloorLoading(label, icon, onReady) {
+  _csGateSprites = false;
+  _csGateServer  = false;
+  _csGateCb      = onReady;
+
+  const csEl = document.getElementById('char-select');
+  if (csEl) {
+    csEl.style.display = 'flex';
+    Array.from(csEl.children).forEach(child => {
+      if (child.id !== 'cs-loading') child.style.display = 'none';
+    });
+  }
+  const loadEl = document.getElementById('cs-loading');
+  if (loadEl) loadEl.style.display = 'flex';
+
+  const emojiEl = document.getElementById('csl-emoji');
+  const nameEl  = document.getElementById('csl-name');
+  if (emojiEl) emojiEl.innerHTML = icon || '🗺️';
+  if (nameEl)  nameEl.textContent  = label || '';
+
+  csSetStatus(typeof t === 'function' ? t('csLoadingSprites') : 'Загрузка спрайтов...');
+}
+
 function csSetStatus(text) {
   const el = document.getElementById('csl-status');
   if (el) el.textContent = text;

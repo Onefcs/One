@@ -115,6 +115,18 @@ function pixiClearEntityPools() {
   Object.keys(_petTex).forEach(k => delete _petTex[k]);
   // Invalidate player texture cache so new char type picks up fresh textures
   Object.keys(_pTex).forEach(k => delete _pTex[k]);
+  // NPCs used to never change at runtime (one permanent floor), so this pool
+  // was never cleared — harmless then, but now that each location is its own
+  // floor with its own NPC set (see initNpcs, js/game.js) an arm floor has
+  // NONE, and _updateNpcs' own trim loop only runs while npcs.length > 0
+  // (pixi-world.js), so it can never clean up the hub's stale sprites/name
+  // labels on its own. Clear both here, the one choke point every floor
+  // change already runs through (buildTileCanvas -> pixiInvalidateChunks).
+  _npcPool.forEach(obj => obj.ct.destroy({ children: true }));
+  _npcPool.clear();
+  Object.keys(_npcTex).forEach(k => delete _npcTex[k]);
+  _npcNames.forEach(t => { _worldCt.removeChild(t); t.destroy(); });
+  _npcNames.length = 0;
 }
 
 // Enemies/other-players are only bulk-freed on floor/raid change (above). Within

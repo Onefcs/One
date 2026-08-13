@@ -1338,8 +1338,8 @@ function _teleportLabel(dir) { const n = { left:1, top:20, bottom:40, right:60 }
 const _TELEPORT_LABEL = new Proxy({}, { get: (_, dir) => _teleportLabel(dir) });
 const _TELEPORT_HUB_DX = { left: -12, top: -4, bottom: 4, right: 12 }; // tiles, hub-side pad row
 const _TELEPORT_HUB_DY = 10; // tiles south of spawn (NPCs sit north, at dy -11)
-let _teleportPads = null; // hub-side: {dir, x, y, req, label, targetX, targetY}
-let _returnPads = null;   // zone-side: {dir, x, y, targetX, targetY} — back to hub
+let _teleportPads = null; // hub-side: {dir, x, y, req, label} — enterLocation(dir) on trigger
+let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation('hub') on trigger
 // Event-boss arena pads (see _evtArenaOpen). The hub-side one sits due west
 // of spawn — NPCs are north (dy -8..-11) and the arm pads south (dy +10), so
 // this row is clear.
@@ -1377,17 +1377,20 @@ function _buildArmGates() {
   // is decided.
   _raceBarriers = (dungeon.race10 && dungeon.race10.barriers) || [];
 
+  // Hub-side outbound pads — one per arm. Each arm is its own floor now (see
+  // server/game/floors.js), so stepping onto one requests a real transition
+  // (netEnterLocation) instead of walking to a same-grid target coordinate —
+  // no targetX/targetY any more.
   const entries = dungeon.armEntries || [];
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
   _teleportPads = entries.map(e => ({
     dir: e.dir, req: e.req, label: _TELEPORT_LABEL[e.dir] || `${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${e.req}`,
     x: sx + (_TELEPORT_HUB_DX[e.dir] || 0) * TILE, y: sy + _TELEPORT_HUB_DY * TILE,
-    targetX: e.x + TILE * 2, targetY: e.y,
   }));
-  // Landing spot is offset 2 tiles further down the corridor from the return
-  // pad's own position, so arriving players don't stand on top of it and
-  // immediately bounce straight back to the hub.
-  _returnPads = entries.map(e => ({ dir: e.dir, x: e.x, y: e.y, targetX: sx, targetY: sy }));
+  // Arm-side return pad — only present when THIS floor IS an arm (its own
+  // returnPad field, see generateArm in server/game/dungeon.js); the hub
+  // itself has none.
+  _returnPads = dungeon.returnPad ? [{ x: dungeon.returnPad.x, y: dungeon.returnPad.y }] : [];
 
   // Event-boss arena pads. Built once here, but only drawn and only trigger
   // while the event is running (see _evtArenaOpen) — outside an event the
@@ -1439,6 +1442,35 @@ function _teleportTo(tx, ty, label) {
   dmgNum(player.x, player.y - 30, `→ ${label}`, '#7fd7ff', 15);
 }
 
+// Real floor transition (hub <-> arm) — replaces _teleportTo for the pads
+// that now cross into a different floor's own Room (server/index.js's
+// enterLocation handler). _floorChangePending guards against re-firing every
+// frame while the request is in flight: the player visibly stays standing
+// on the same old-floor pad tile for the round trip, since the reposition
+// onto the new floor only happens once the matching gameStart lands (see
+// _applyGameStart's floorChange branch, js/network.js).
+let _floorChangePending = false;
+function _requestEnterLocation(target, label, icon) {
+  if (_floorChangePending) return;
+  if (typeof netEnterLocation !== 'function') return;
+  _floorChangePending = true;
+  if (typeof csStartFloorLoading === 'function') {
+    csStartFloorLoading(label, icon, () => {
+      _floorChangePending = false;
+      if (typeof csHide === 'function') csHide();
+    });
+    // Nothing floor-specific to preload ahead of time — enemy/NPC sprites
+    // for a newly-entered floor lazy-load on first draw the same way an
+    // already-open session picks up a never-before-seen species (see
+    // _enemyTextures, js/pixi-world.js) — so the sprite gate is a no-op here,
+    // only the server round trip actually gates the overlay.
+    if (typeof csOnSpritesReady === 'function') csOnSpritesReady();
+  } else {
+    _floorChangePending = false;
+  }
+  netEnterLocation(target);
+}
+
 // Called once per frame from update(): triggers a teleport the instant the
 // player walks onto a pad they're allowed to use, or shows a throttled lock
 // message near one they aren't leveled for yet.
@@ -1452,11 +1484,11 @@ function _updateTeleportPads(dt) {
       if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: p.req }) : `🔒 Нужен ${p.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
       return;
     }
-    _teleportTo(p.targetX, p.targetY, p.label);
+    _requestEnterLocation(p.dir, p.label);
   });
   (_returnPads || []).forEach(p => {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
-    _teleportTo(p.targetX, p.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+    _requestEnterLocation('hub', typeof t === 'function' ? t('centralHall') : 'Центральный зал');
   });
   // Boss HP readout, refreshed 8x/sec — a DOM write every frame would be
   // wasted work for a bar that only needs to look live.
@@ -1694,9 +1726,14 @@ function drawRaceBarriers() {
 // ─────────────────────────────────────────────────────────
 // The hub has no physical exits anymore (see TELEPORT PADS above) — NPCs
 // just sit side by side north of spawn, clear of the teleport pad row south
-// of it.
+// of it. Called on every floor (re)load now that locations are separate
+// floors (js/network.js's _applyGameStart) — only the hub actually has
+// NPCs, so every other floor just clears the list. armEntries only exists
+// on the hub's own dungeon payload (server/game/dungeon.js's generateHub),
+// so its presence is what tells the two apart rather than a hardcoded floor
+// number.
 function initNpcs() {
-  if (!dungeon) return;
+  if (!dungeon || !dungeon.armEntries) { npcs = []; nearNpc = null; return; }
   const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
   const offsets = [
     { dx: -TILE * 4, dy: -TILE * 11 },
