@@ -443,6 +443,47 @@ scenario('admin: maintenance mode kicks everyone but TG_ADMIN_ID, and blocks new
   await before.close();
 });
 
+scenario('admin: give-all grants gold+SP to an online account live and an offline account in the DB', async () => {
+  const online = await connectWithSaved('harness_giveall_online', { gold: 100, bonusSP: 2 });
+  await enterWorld(online, 'ranger');
+
+  // An account that exists but isn't connected right now — the DB-only path.
+  const offlineSeed = await connectAs('harness_giveall_offline');
+  await offlineSeed.close();
+  await sleep(200);
+
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+
+  const gave = online.wait('adminGive', { where: 'give-all lands on the online account' });
+  const giveRes = await fetch(`${BASE}/admin/give-all`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ gold: 500, sp: 3 }),
+  });
+  const giveBody = await giveRes.json();
+  eq(giveRes.status, 200, 'admin can grant gold+SP to everyone at once');
+  ok(giveBody.online >= 1, 'reports at least the one online account it touched');
+  ok(giveBody.offline >= 1, 'reports at least the one offline account it touched');
+
+  const onlinePayload = await gave;
+  eq(onlinePayload.newGold, 600, 'the online account\'s live session got the new gold total pushed to it');
+  eq(onlinePayload.newBonusSP, 5, 'and the new bonusSP total');
+
+  await sleep(150); // _persistSavedFields's DB write
+  const onlineRow = memory.__dump('Player').find(p => p.username === online.auth.username);
+  eq(onlineRow.savedData.gold, 600, 'the online account\'s DB row matches, not just its live session');
+  eq(onlineRow.savedData.bonusSP, 5, 'same for bonusSP');
+
+  const offlineRow = memory.__dump('Player').find(p => p.username === offlineSeed.auth.username);
+  eq(offlineRow.savedData.gold, 500, 'the offline account got the gold via a straight DB increment');
+  eq(offlineRow.savedData.bonusSP, 3, 'and the SP');
+
+  await online.close();
+});
+
 scenario('floors: Фарм-зона is its own floor, gated server-side by level', async () => {
   const low = await connectAs('harness_farm_low');
   await enterWorld(low, 'ranger'); // fresh character, well under FARM_ENTRY_LEVEL (20)

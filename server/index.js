@@ -1480,6 +1480,48 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Same grant as above, applied to every registered account at once — the
+// "give to all" button pair on the dashboard. Online accounts go through
+// their live session (socket.data._adminGiveGoldSP, same reasoning as
+// _adminGiveGold above: their own 60s autosave would otherwise revert a
+// DB-only write); everyone else gets a straight $inc.
+app.post('/admin/give-all', adminAuth, async (req, res) => {
+  try {
+    const _amt = v => {
+      const n = Math.trunc(Number(v));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const gold = _amt((req.body || {}).gold);
+    const sp   = _amt((req.body || {}).sp);
+    if (!gold && !sp) return res.status(400).json({ error: 'Нечего выдавать' });
+
+    const liveIds = [];
+    for (const s of io.sockets.sockets.values()) {
+      if (!s.data?.telegramId || typeof s.data._adminGiveGoldSP !== 'function') continue;
+      liveIds.push(s.data.telegramId);
+      const result = await s.data._adminGiveGoldSP(gold, sp);
+      s.emit('adminGive', {
+        gold, nexum: 0, gram: 0, sp,
+        newGold: result ? result.gold : undefined,
+        newBonusSP: result ? result.bonusSP : undefined,
+      });
+    }
+
+    // Legacy accounts can still have savedData: null — a dotted $inc through
+    // a null parent throws (see the season-points route above), so it has to
+    // be normalised first, same as there.
+    const offlineFilter = liveIds.length ? { telegramId: { $nin: liveIds } } : {};
+    await PlayerModel.updateMany({ ...offlineFilter, savedData: null }, { $set: { savedData: {} } });
+    const inc = {};
+    if (gold) inc['savedData.gold'] = gold;
+    if (sp)   inc['savedData.bonusSP'] = sp;
+    const r = await PlayerModel.updateMany(offlineFilter, { $inc: inc });
+
+    console.log(`[admin] give-all: gold=${gold} sp=${sp} — ${liveIds.length} online, ${r.modifiedCount || 0} offline`);
+    res.json({ ok: true, online: liveIds.length, offline: r.modifiedCount || 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Admin: season points ─────────────────────────────────────────────────────
 // Hands out (or takes back) season points by hand — for compensating an award
 // that failed, and for anything else the automatic paths can't cover.
@@ -4994,6 +5036,29 @@ io.on('connection', socket => {
     await _persistSavedFields(authed, { gold: _lastStats.gold });
     logPlayer(authed.telegramId, authed.username, 'admin_give_gold_live',
       { amount, balance: _lastStats.gold });
+  };
+
+  // Same reasoning as _adminGiveGold just above, extended to bonusSP — used
+  // by /admin/give-all (a gold+skill-point grant to every account at once) so
+  // an online player's next autosave doesn't revert either field. Both move
+  // in one _persistSavedFields call since a mass grant sets them together.
+  socket.data._adminGiveGoldSP = async (goldAmount, spAmount) => {
+    if (!authed) return null;
+    if (!_lastStats) _lastStats = {};
+    const fields = {};
+    if (Number.isFinite(goldAmount) && goldAmount !== 0) {
+      _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + goldAmount);
+      fields.gold = _lastStats.gold;
+    }
+    if (Number.isFinite(spAmount) && spAmount !== 0) {
+      _lastStats.bonusSP = (_lastStats.bonusSP || 0) + spAmount;
+      fields.bonusSP = _lastStats.bonusSP;
+    }
+    if (!Object.keys(fields).length) return { gold: _lastStats.gold || 0, bonusSP: _lastStats.bonusSP || 0 };
+    await _persistSavedFields(authed, fields);
+    logPlayer(authed.telegramId, authed.username, 'admin_give_all_live',
+      { gold: goldAmount, sp: spAmount, balance: _lastStats.gold, bonusSP: _lastStats.bonusSP });
+    return { gold: _lastStats.gold || 0, bonusSP: _lastStats.bonusSP || 0 };
   };
 
   // Hands the death-battle winner its prize. Lives here rather than beside

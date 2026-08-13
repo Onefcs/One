@@ -1211,11 +1211,27 @@ function netConnect(onReady) {
     if (typeof _specialQuestUnlock === 'function') _specialQuestUnlock(questId);
   });
 
-  socket.on('adminGive', ({ gold, nexum, gram }) => {
+  socket.on('adminGive', ({ gold, nexum, gram, newGold, newBonusSP }) => {
     if (!player) return;
     // Gold/nexum/gram all arrive as a total via their own sync events
     // (goldSync/gramBalanceUpdate/etc.), which already refresh their own
-    // displays — this only shows the toast.
+    // displays — this only shows the toast. The mass "give to all" admin
+    // route (server/index.js's /admin/give-all) is the one caller that also
+    // carries newGold/newBonusSP directly, since a bulk grant has no
+    // per-account goldSync round trip to ride along on.
+    let _changed = false;
+    if (Number.isFinite(newGold) && player.gold !== newGold) { player.gold = newGold; _changed = true; }
+    if (Number.isFinite(newBonusSP) && player.bonusSP !== newBonusSP) { player.bonusSP = newBonusSP; _changed = true; }
+    if (_changed) {
+      // Same refresh set goldSync uses just above; the skill-point screen
+      // isn't among them because it (like goldSync's own bonusSP-adjacent
+      // rebirthDone handler) reads player.bonusSP fresh whenever it's opened
+      // rather than needing a push.
+      if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
+      if (typeof netSaveProgressNow === 'function') netSaveProgressNow();
+      if (typeof updateInvUI === 'function') updateInvUI();
+      if (typeof updateClanUI === 'function') updateClanUI();
+    }
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
