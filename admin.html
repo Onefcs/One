@@ -257,6 +257,19 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         <div class="stat-card"><div class="val" id="st-bans">—</div><div class="lbl">Заблокировано</div></div>
       </div>
       <div class="card">
+        <h3>🛠️ Технические работы</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="maint-status">—</div>
+        <div class="action-grid">
+          <button class="btn btn-red" id="maint-on-btn" onclick="enableMaintenance()">Включить</button>
+          <button class="btn btn-green" id="maint-off-btn" onclick="disableMaintenance()">Отключить</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Пока включено, в игру сможет зайти только аккаунт с TG_ADMIN_ID (см. переменные окружения
+          сервера); все остальные, включая уже находящихся в игре, будут отключены с сообщением
+          о технических работах.
+        </div>
+      </div>
+      <div class="card">
         <h3>⚔️ Мировой босс</h3>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="evtboss-status">—</div>
         <button class="btn btn-primary" id="evtboss-btn" onclick="summonEventBoss()">Вызвать босса</button>
@@ -568,9 +581,45 @@ async function loadDashboard() {
     document.getElementById('online-badge').textContent = '● ' + (d.online||0) + ' онлайн';
     renderTops(d.tops || { bm:[], lvl:[], gold:[], nexum:[] });
   } catch(e) { console.error(e); }
+  loadMaintenance();
   loadEventBoss();
   loadRace10();
   loadGuildWar();
+}
+
+// ── Технические работы ─────────────────────────────────────
+async function loadMaintenance() {
+  const el = document.getElementById('maint-status');
+  const onBtn = document.getElementById('maint-on-btn');
+  const offBtn = document.getElementById('maint-off-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/maintenance')).json();
+    el.textContent = d.on ? '🔴 Включены — вход закрыт для всех, кроме админа' : '🟢 Выключены — сервер доступен всем';
+    if (onBtn)  { onBtn.disabled = d.on;    onBtn.style.opacity  = d.on    ? '.5' : '1'; }
+    if (offBtn) { offBtn.disabled = !d.on;  offBtn.style.opacity = !d.on  ? '.5' : '1'; }
+  } catch(e) { el.textContent = '—'; }
+}
+
+async function enableMaintenance() {
+  if (!confirm('Включить технические работы? Все игроки, кроме админа, будут немедленно отключены и не смогут зайти обратно, пока работы не выключены.')) return;
+  try {
+    const r = await api('/admin/maintenance/on', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Технические работы включены');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadMaintenance();
+}
+
+async function disableMaintenance() {
+  try {
+    const r = await api('/admin/maintenance/off', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Технические работы выключены');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadMaintenance();
 }
 
 // ── World event boss ──────────────────────────────────────

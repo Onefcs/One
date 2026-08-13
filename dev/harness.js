@@ -34,6 +34,18 @@ Module._load = function (request, parent, isMain) {
 };
 
 const PORT = Number(process.env.HARNESS_PORT || 3111);
+
+// Mirrors /dev/init-data's own username -> telegramId derivation (server/
+// index.js) so TG_ADMIN_ID below can be set to the id a scenario will
+// actually get back from connectAs('harness-admin') — there is no other way
+// to know that id ahead of a real login.
+const crypto = require('crypto');
+function _devTelegramId(username) {
+  return '9' + parseInt(crypto.createHash('sha1').update(username).digest('hex').slice(0, 10), 16)
+    .toString().slice(0, 9);
+}
+const HARNESS_ADMIN_NAME = 'harness-admin';
+
 Object.assign(process.env, {
   MONGODB_URI: 'mongodb://127.0.0.1:27017/harness',
   PORT: String(PORT),
@@ -44,6 +56,8 @@ Object.assign(process.env, {
   TG_BOT_USERNAME: 'harness_bot',
   ADMIN_USERNAME: 'admin',
   ADMIN_PASSWORD: 'admin',
+  // The one account maintenance mode (server/index.js) must never lock out.
+  TG_ADMIN_ID: _devTelegramId(HARNESS_ADMIN_NAME),
   GAME_URL: `http://127.0.0.1:${PORT}`,
   // Keep the movement guard measuring but never acting, so a scenario that
   // teleports a client on purpose isn't fighting it.
@@ -379,6 +393,54 @@ scenario('floors: Guild War is its own floor, window-gated, and force-evicted wh
   eq(backAtHub.floor, 1, 'closing the window sends a still-present player back to the hub floor');
 
   await c.close();
+});
+
+scenario('admin: maintenance mode kicks everyone but TG_ADMIN_ID, and blocks new non-admin logins', async () => {
+  const before = await connectAs('harness_maint_before');
+  await enterWorld(before, 'ranger');
+
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+
+  // A player already in the game when maintenance switches on has to be
+  // force-disconnected, not just refused on their next login.
+  const kicked = before.wait('kicked', { timeout: 3000 });
+  const onRes = await fetch(`${BASE}/admin/maintenance/on`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  eq(onRes.status, 200, 'admin can switch maintenance on');
+  const kickMsg = await kicked;
+  ok(kickMsg && /технически/i.test(kickMsg.reason || ''), 'a player already online is kicked with a maintenance reason');
+
+  // A normal account cannot log in at all while it's on — same authError
+  // path a banned account gets, so no client change was needed for this.
+  const { initData: blockedInitData } = await (await fetch(`${BASE}/dev/init-data?dev=harness_maint_blocked`)).json();
+  const blockedSock = io(BASE, { transports: ['websocket'], upgrade: false, forceNew: true });
+  await waitFor(blockedSock, 'connect', { where: 'maint-blocked connect' });
+  const authErrP = waitFor(blockedSock, 'authError', { where: 'maint-blocked authError' });
+  blockedSock.emit('loginTelegramWebApp', { initData: blockedInitData });
+  const authErr = await authErrP;
+  ok(authErr && /технически/i.test(authErr.message || ''), 'a non-admin login is refused with a maintenance message while it is on');
+  blockedSock.close();
+
+  // TG_ADMIN_ID itself (see the harness's own env setup) is exempt from both.
+  const admin = await connectAs(HARNESS_ADMIN_NAME);
+  ok(admin.auth && typeof admin.auth.username === 'string', 'the TG_ADMIN_ID account can still log in while maintenance is on');
+  await admin.close();
+
+  const offRes = await fetch(`${BASE}/admin/maintenance/off`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  eq(offRes.status, 200, 'admin can switch maintenance off again');
+
+  const after = await connectAs('harness_maint_after');
+  ok(after.auth && typeof after.auth.username === 'string', 'a normal account can log in again once maintenance is off');
+  await after.close();
+
+  await before.close();
 });
 
 scenario('floors: Фарм-зона is its own floor, gated server-side by level', async () => {

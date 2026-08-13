@@ -251,6 +251,26 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD  || '';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME  || 'admin';
 const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram chat ID
 const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
+
+// ── Maintenance mode ─────────────────────────────────────────────────────────
+// In-memory toggle, same convention as _gw/_race10's own open/closed state
+// (server/index.js) — not persisted, so a restart always comes back up open.
+// While on, only TG_ADMIN_ID may log in (see the `banned` checks inside
+// loginTelegramWebApp/loginTelegram below, which this sits right next to);
+// everyone else gets the same authError rejection a banned account gets.
+let _maintenanceMode = false;
+
+// Disconnects every currently-connected player except TG_ADMIN_ID, mirroring
+// /admin/player/:tid/ban's own kick — used when maintenance is switched on so
+// nobody is left standing in a world nobody else can rejoin.
+function _kickAllForMaintenance() {
+  io.sockets.sockets.forEach(s => {
+    if (s.data?.telegramId && s.data.telegramId !== TG_ADMIN_ID) {
+      s.emit('kicked', { reason: 'Ведутся технические работы' });
+      s.disconnect(true);
+    }
+  });
+}
 let _tgBotUsername = process.env.TG_BOT_USERNAME  || '';
 
 // ── Balances ──────────────────────────────────────────────────────────────────
@@ -1734,6 +1754,26 @@ app.post('/admin/guildwar/close', adminAuth, (req, res) => {
 
 app.get('/admin/guildwar', adminAuth, (req, res) => {
   res.json(_gwPublicState());
+});
+
+// Maintenance mode: while on, only TG_ADMIN_ID may log in (see the
+// _maintenanceMode check in loginTelegramWebApp/loginTelegram above) —
+// everyone else already connected gets kicked immediately, same as a ban.
+app.get('/admin/maintenance', adminAuth, (req, res) => {
+  res.json({ on: _maintenanceMode });
+});
+
+app.post('/admin/maintenance/on', adminAuth, (req, res) => {
+  if (_maintenanceMode) return res.status(409).json({ error: 'Уже включено' });
+  _maintenanceMode = true;
+  _kickAllForMaintenance();
+  res.json({ ok: true });
+});
+
+app.post('/admin/maintenance/off', adminAuth, (req, res) => {
+  if (!_maintenanceMode) return res.status(409).json({ error: 'Уже выключено' });
+  _maintenanceMode = false;
+  res.json({ ok: true });
 });
 
 app.get('/admin/market', adminAuth, async (req, res) => {
@@ -5137,6 +5177,10 @@ io.on('connection', socket => {
         activeSessions.delete(telegramId);
         return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
       }
+      if (_maintenanceMode && telegramId !== TG_ADMIN_ID) {
+        activeSessions.delete(telegramId);
+        return socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
+      }
       authed = doc;
       clearTimeout(_authTimeout);
       socket.data.username = doc.username;
@@ -5196,6 +5240,10 @@ io.on('connection', socket => {
       if (doc.banned) {
         activeSessions.delete(telegramId);
         return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
+      }
+      if (_maintenanceMode && telegramId !== TG_ADMIN_ID) {
+        activeSessions.delete(telegramId);
+        return socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
       }
       authed = doc;
       clearTimeout(_authTimeout);
