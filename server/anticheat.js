@@ -1,14 +1,18 @@
 'use strict';
-// Everything that decides what a client-supplied save blob is ALLOWED to say,
-// split out of server/index.js verbatim: the catalog rebuild, the numeric
-// clamps, the item census that makes minting detectable, and the
-// catastrophic-reset guard.
+// What a client-supplied save blob is allowed to SAY — shape and bounds, not
+// entitlement. The catalog rebuild, the numeric clamps and the bounded key
+// maps live here.
 //
-// These are pure functions over a blob and the shared catalog — no models, no
-// sockets, no session state — which is why they can live on their own and be
-// exercised directly. The POLICY around them (what to do when a save is
-// rejected, which baseline to compare it against) deliberately stays in the
-// saveProgress/selectChar handlers, where the session context is.
+// Most of what this file used to do is gone, because the questions it answered
+// stopped existing: the item census, the catastrophic-reset guard and the XP
+// ledger were all ways of auditing a client-authored character. The character
+// is the server's now (see the pins in saveProgress/selectChar), so what
+// remains is the job of not letting a malformed blob into the database — bad
+// types, junk keys, absurd numbers — plus the catalog rebuild that reading a
+// STORED record still needs.
+//
+// Pure functions over a blob and the shared catalog: no models, no sockets, no
+// session state, which is what makes them testable on their own.
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, CHAR_DEF,
   ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
@@ -17,36 +21,10 @@ const {
 
 const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
 
-// ── XP/level ledger ─────────────────────────────────────────────────────────
-// Level is the single most valuable number a client can lie about: every
-// permanent combat stat is derived from it (_sanitizeSavedStats recomputes
-// baseAtk/baseDef/baseMaxHp from it precisely so they can't be claimed
-// directly) and it sets the upgrade-point budget. Clamping it to a ceiling —
-// it was 1000, against content that stops at MAX_MONSTER_LEVEL 78 — bounded
-// nothing worth bounding.
-//
-// Gold needed a rate cap because the server does not see the events that earn
-// it. XP is different: the server computes every point it hands out (xpAtLevel
-// in Room.attackEnemy, quest rewards here) so it can simply COUNT, and compare
-// totals instead of guessing a rate. xpTotalAt (shared/definitions.js) turns a
-// (lvl, xp) pair into the one scalar that makes them comparable.
-//
-// The count is a ceiling, not a ledger: the client applies multipliers the
-// server cannot see, so each grant is banked at the most generous value it
-// could legitimately become. Anything at or under that is accepted untouched,
-// which is why this cannot cost an honest player anything.
-//   ×1.20  clan XP bonus at clan level 10 (CLAN_LEVELS, the maximum)
-//   ×2     зелье опыта (buffs.exp, gainXP)
-// The death penalty (×0.5) only ever reduces, so it is deliberately absent.
-//
-// Banked in the client's own ORDER and with its own rounding, not as a single
-// ×2.4. The client rounds after the clan bonus and doubles afterwards
-// (js/network.js's enemyKilled, then gainXP), so on small grants the rounding
-// goes UP and the real figure lands above a flat 2.4×: a level-3 monster pays
-// 3 XP, which becomes round(3 × 1.2) × 2 = 8 while 3 × 2.4 is only 7.2. That
-// gap is invisible at high level and fatal at low, where it clamped a fresh
-// character farming its first levels — dev/xp-ledger-check.js is what caught
-// it, and covers exactly that case.
+// The XP multipliers a buff can apply, kept here because _xpCeilingFor still
+// uses them. The ledger they were written for is gone: the server applies XP
+// and runs the level curve itself now (_grantXp, server/index.js), so there is
+// no client claim left to measure against a ceiling.
 const XP_CLAN_MAX_PCT = 20;
 const XP_POTION_MULT  = 2;
 // Progress a join may claim beyond the stored record — the same "last few
@@ -163,52 +141,7 @@ function _canonSavedItem(raw) {
   return item;
 }
 
-// ── Anti-duplication: the item census ───────────────────────────────────────
-// _canonSavedItem above rebuilds an item from the catalog, so a save can only
-// ever carry REAL items — but it says nothing about whether the player was
-// ever entitled to them, and saveProgress took the resulting array as the new
-// truth. That is the hole every "items out of nowhere" report comes back to:
-// a modified client appends a legendary at +15, echoes the invRev the server
-// itself just told it, and the save is accepted. invRev is an ordering token
-// (it tells a save composed before a grant from one composed after), never an
-// authorisation one — the client is the one that supplies it.
-//
-// What closes it is an invariant rather than another per-feature check: every
-// legitimate CLIENT-side operation on items either moves one (equip/unequip,
-// inventory <-> storage) or destroys one (sell, discard, consume a potion/
-// book/key). Not one of them creates an item or raises an enhance level —
-// every path that does is already server-side and goes through
-// _commitServerItems. So across inventory + equipment + storage combined, a
-// client save may only ever SHRINK. Anything that grew was minted.
-//
-// The key is what makes "+15 copy of a +0 sword" a different thing to own
-// rather than the same sword with a bigger number: enhance is part of the
-// identity for gear, while stackables collapse to one key counted by qty.
-function _itemCensus(stats) {
-  const out = new Map();
-  const add = raw => {
-    const it = _canonSavedItem(raw);
-    if (!it) return;
-    const stack = isStackableItem(it);
-    const key = stack ? it.id : `${it.id}@${it.enhance || 0}`;
-    out.set(key, (out.get(key) || 0) + (stack ? (it.qty || 1) : 1));
-  };
-  if (Array.isArray(stats?.inventory)) stats.inventory.forEach(add);
-  if (Array.isArray(stats?.storage)) stats.storage.forEach(add);
-  const eq = stats?.equipment;
-  if (eq && typeof eq === 'object' && !Array.isArray(eq)) Object.values(eq).forEach(add);
-  return out;
-}
 
-// The first key `incoming` holds more of than `baseline` does, or null when
-// nothing grew. Returned rather than a bare boolean so the rejection log
-// names the item that gave it away.
-function _censusOverflow(incoming, baseline) {
-  for (const [key, n] of incoming) {
-    if (n > (baseline.get(key) || 0)) return { key, had: baseline.get(key) || 0, sent: n };
-  }
-  return null;
-}
 
 function _clampNum(v, min, max, dflt) {
   const n = Number(v);
@@ -429,23 +362,6 @@ function _sanitizeSavedStats(raw) {
   return s;
 }
 
-// Last line of defense against a client-side race (e.g. a save firing before
-// restoreFromSave has populated the real character — the exact shape of the
-// bug fixed in "stop wiping saved progress on refresh when savedData.type is
-// stale") silently overwriting real progress with a blank starter character.
-// A legitimate save never simultaneously zeroes level, gold, kills, inventory
-// AND equipment at once — those don't all reset together in normal play — so
-// treat that combination as corruption and refuse to persist it rather than
-// trust the client blindly.
-function _looksLikeCatastrophicReset(prev, next) {
-  if (!prev) return false;
-  const hadProgress = (prev.lvl || 1) > 2 || (prev.gold || 0) > 0 ||
-    (prev.inventory || []).length > 0 || Object.keys(prev.equipment || {}).length > 0;
-  if (!hadProgress) return false;
-  const isBlank = (next.lvl || 1) <= 1 && (next.gold || 0) === 0 && (next.kills || 0) === 0 &&
-    (next.inventory || []).length === 0 && Object.keys(next.equipment || {}).length === 0;
-  return isBlank;
-}
 
 // Keep in sync with the identical calcBM in js/definitions.js — the client
 // renders this number in the HUD and clan panel, the server stores it for
@@ -466,6 +382,6 @@ function _xpCeilingFor(n) { return Math.round(n * (1 + XP_CLAN_MAX_PCT / 100)) *
 module.exports = {
   SERVER_INV_MAX, XP_CLAN_MAX_PCT, XP_POTION_MULT, XP_JOIN_SLACK_KILLS, _SANITIZE_MAX, _HP_POTION_IDS, _HP_POTION_HEAL,
   _catalogBase, _unknownItemIds, _canonSavedItem,
-  _itemCensus, _censusOverflow, _clampNum, _clampInt, _sanitizeKeyMap,
-  _sanitizeSavedStats, _looksLikeCatastrophicReset, calcBM, _xpCeilingFor,
+  _clampNum, _clampInt, _sanitizeKeyMap,
+  _sanitizeSavedStats, calcBM, _xpCeilingFor,
 };

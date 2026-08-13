@@ -20,8 +20,8 @@ const {
 const {
   SERVER_INV_MAX, _SANITIZE_MAX, _HP_POTION_IDS, _HP_POTION_HEAL,
   _catalogBase, _unknownItemIds, _canonSavedItem,
-  _itemCensus, _censusOverflow, _clampNum, _clampInt, _sanitizeKeyMap,
-  _sanitizeSavedStats, _looksLikeCatastrophicReset, calcBM,
+  _clampNum, _clampInt, _sanitizeKeyMap,
+  _sanitizeSavedStats, calcBM,
 } = require('./anticheat');
 const {
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
@@ -63,7 +63,7 @@ const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
-  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS,
+  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS, questComplete,
   FEAR_MAX_WAVE, QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
@@ -2109,15 +2109,6 @@ async function _seasonAddPointsTo(telegramId, n, reason, meta) {
 
 
 
-// Do these two describe the same holdings? Unlike _censusOverflow this is
-// symmetric — it answers "does the client agree with the server about what
-// this account owns", which is what decides whether a join has to be handed a
-// correction (see the end of the selectChar handler).
-function _censusEqual(a, b) {
-  if (a.size !== b.size) return false;
-  for (const [key, n] of a) { if ((b.get(key) || 0) !== n) return false; }
-  return true;
-}
 
 
 
@@ -5616,6 +5607,112 @@ io.on('connection', socket => {
     }
   });
 
+  // Drinking a buff potion. Client-side until now: it removed the item and
+  // wrote the timer into its own save. That was already an item write the
+  // census had to cover, and it became load-bearing the moment gold and XP
+  // started reading buffs.gold / buffs.exp to apply the x2 — a save claiming a
+  // permanently active gold buff would have doubled every payout for good.
+  //
+  // The timer still ticks down on the client (js/game.js) for the HUD; what
+  // matters here is that the server holds its own copy and only ever sets it
+  // from a potion it watched being consumed.
+  safeOn('useBuffPotion', ({ id } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    const def = ITEM_DEF.find(d => d.id === id);
+    if (!def || def.slot !== 'buff_potion' || !def.buffType) return;
+    if (!_lastStats.buffs || typeof _lastStats.buffs !== 'object') _lastStats.buffs = {};
+    if ((_lastStats.buffs[def.buffType] || 0) > 0) return _itemErr('Уже активно!');
+    const inv = _lastStats.inventory;
+    const beforeLen = inv.length;
+    if (!_invRemove(inv, { id, qty: 1, slot: def.slot })) return _itemErr('Нет зелья');
+    _lastStats.buffs[def.buffType] = def.buffDur || 1800;
+    _persistSavedFields(authed, { buffs: _lastStats.buffs });
+    _commitServerItems(inv, null, 'buff_potion', { id }, { beforeLen });
+    logPlayer(authed.telegramId, authed.username, 'buff_potion', { id, type: def.buffType });
+    socket.emit('buffSync', { buffs: _lastStats.buffs });
+  });
+
+  // The buff timers run down in real time. The client counts them for its own
+  // HUD, but the server needs its own clock or a buff would last forever here —
+  // which, for the gold and XP multipliers, is the whole exposure.
+  const _buffTick = setInterval(() => {
+    if (!_lastStats || !_lastStats.buffs) return;
+    let changed = false;
+    for (const [k, v] of Object.entries(_lastStats.buffs)) {
+      const left = Math.max(0, (Number(v) || 0) - 5);
+      if (left !== v) { _lastStats.buffs[k] = left; changed = true; }
+      if (left <= 0) delete _lastStats.buffs[k];
+    }
+    if (changed) _persistSavedFields(authed, { buffs: _lastStats.buffs });
+  }, 5000);
+
+  // ── Quest progress ────────────────────────────────────────────────────────
+  // claimQuest checked WHICH quest was being claimed but never whether it had
+  // been done: the counters lived in the client's blob, so the server had
+  // nothing to ask. A client could walk the whole 60-quest chain in one go.
+  //
+  // The server sees every event these counters are made of — kills, potion
+  // purchases, clan membership, the corridor a kill happened in — so it counts
+  // them itself, and the claim is checked against questComplete (shared, so the
+  // button and the rule cannot disagree).
+  function _questKills() {
+    if (!_lastStats) return null;
+    if (!_lastStats.questKills || typeof _lastStats.questKills !== 'object') _lastStats.questKills = {};
+    return _lastStats.questKills;
+  }
+
+  // Only the CURRENT quest's counters are tracked, exactly as the client did:
+  // a counter for a quest that isn't active yet would let a player arrive at it
+  // already complete.
+  function _currentQuest() {
+    if (!_lastStats) return null;
+    return QUEST_DEF[Math.max(0, Math.floor(Number(_lastStats.questIdx)) || 0)] || null;
+  }
+
+  function _questBump(key, by) {
+    const k = _questKills();
+    if (!k) return false;
+    k[key] = Math.max(0, Math.floor(Number(k[key])) || 0) + (by || 1);
+    return true;
+  }
+
+  // Pushes the counters and lets the client light up the claim button.
+  function _questPush() {
+    if (!_lastStats) return;
+    socket.emit('questSync', { questIdx: _lastStats.questIdx || 0, questKills: _lastStats.questKills || {} });
+  }
+
+  // Called for every kill this session is credited for.
+  function _questOnKill(eid, rlvl) {
+    const q = _currentQuest();
+    if (!q || !_questKills()) return;
+    let changed = false;
+    if ((q.type === 'kill' || q.type === 'kill_multi') && eid) {
+      const def = ENEMY_DEF.find(e => e.eid === eid);
+      // Matched on the base catalog name, the same string the quest lists and
+      // the same one the client counted (the level prefix is display only).
+      if (def && (q.enemies || []).includes(def.name)) changed = _questBump(def.name, 1);
+    }
+    // Legacy floor quests: with one seamless world there is no floor to walk
+    // into, so reaching the corridor a kill happened in is what completes them
+    // — the same rule the client applied in onEnterArm.
+    if ((q.type === 'dungeon_clear' || q.type === 'goto_floor') && rlvl > 0) {
+      const arm = armIndexForLevel(rlvl);
+      if (q.type === 'dungeon_clear' && arm > q.floor) {
+        const k = _questKills();
+        if ((k['_dungeon_' + q.floor] || 0) < q.count) {
+          k['_dungeon_' + q.floor] = q.count;
+          changed = true;
+        }
+      }
+      if (q.type === 'goto_floor' && arm >= q.targetFloor) {
+        changed = _questBump('_floor_' + q.targetFloor, 1) || changed;
+      }
+    }
+    if (changed) _questPush();
+  }
+  socket.data._questOnKill = (eid, rlvl) => _questOnKill(eid, rlvl);
+
   // ── Experience and level ──────────────────────────────────────────────────
   // The mirror image of gold. The server decided how much XP a kill was worth
   // and banked an entitlement for it (_allowXp), but the CLIENT applied the
@@ -5747,6 +5844,8 @@ io.on('connection', socket => {
     logPlayer(authed.telegramId, authed.username, 'buy_potion', { id: entry.itemId, n, cost });
     socket.emit('goldSync', { gold: _lastStats.gold });
     socket.emit('potionBag', { potionBag: _lastStats.potionBag });
+    // buy_potion quests count purchases, and this is the only place one happens.
+    if (_currentQuest() && _currentQuest().type === 'buy_potion') { _questBump('_potion', n); _questPush(); }
   });
 
   // ── Item placement (equip, unequip, storage) ──────────────────────────────
@@ -6407,7 +6506,7 @@ io.on('connection', socket => {
     // scheme used above — and reconcile the location afterwards. Relocating an
     // item between the inventory and an equip slot creates and destroys
     // nothing, so this stays inside the census invariant saveProgress enforces
-    // (_itemCensus counts both together); it cannot be used to conjure or
+    // (both containers are the server's); it cannot be used to conjure or
     // upgrade anything, only to agree on where a thing already owned is kept.
     const eq = _lastStats.equipment || {};
     const _matches = it => it && it.id === id && (it.enhance || 0) === curEnh;
@@ -7408,6 +7507,14 @@ io.on('connection', socket => {
     }
     const q = QUEST_DEF[cur];
     if (!q) return socket.emit('questClaimError', { msg: 'Квест не найден' });
+    // Was it actually done? This is the check that was missing: the index said
+    // WHICH quest, never whether it had been finished, so a client could claim
+    // the whole chain in sequence without playing it.
+    if (!questComplete(q, _questKills(), _lastStats.lvl)) {
+      logPlayer(authed.telegramId, authed.username, 'quest_claim_incomplete', { questId: q.id, idx: cur });
+      socket.emit('questSync', { questIdx: cur, questKills: _lastStats.questKills || {} });
+      return socket.emit('questClaimError', { msg: 'Квест ещё не выполнен' });
+    }
 
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
@@ -8134,21 +8241,13 @@ io.on('connection', socket => {
     // would let the next debounced saveProgress persist fresh/default stats
     // over real progress.
     //
-    // A client can also send a well-formed but BLANK object here — a fresh
-    // makePlayer() sent by a socket.io reconnect that raced ahead of its own
-    // restoreFromSave (a flaky/slow connection during the loading window is
-    // exactly what triggers this: see the _playerRestored guard in
-    // js/network.js's authOk handler). That object is truthy, so it slips
-    // past the "sent nothing" fallback above. Catch it the same way
-    // saveProgress already catches a blank autosave — refuse to let it
-    // overwrite a real DB record, which is what _lastStats (read by every
-    // later saveProgress's own catastrophic-reset check) would otherwise be
-    // poisoned with for the rest of this connection.
+    // A blank blob used to be a hazard here — a fresh makePlayer() sent by a
+    // reconnect that raced ahead of its own restore would become _lastStats and
+    // poison the baseline for the rest of the connection. Every field that
+    // mattered is now taken from the stored record below regardless of what
+    // arrived, so a blank blob simply has nothing to poison.
     const sanitized = _sanitizeSavedStats(savedStats || null);
-    const blankOverReal = sanitized && authed.savedData && _looksLikeCatastrophicReset(authed.savedData, sanitized);
-    const effectiveSaved = blankOverReal
-      ? _sanitizeSavedStats(authed.savedData)
-      : (sanitized || _sanitizeSavedStats(authed.savedData || null));
+    const effectiveSaved = sanitized || _sanitizeSavedStats(authed.savedData || null);
     // This blob becomes _lastStats, which is the BASELINE every later
     // saveProgress is checked against — so accepting the client's items and
     // gold here unchecked would simply move the forgery one step earlier and
@@ -8203,6 +8302,11 @@ io.on('connection', socket => {
       effectiveSaved.baseMaxHp = _rebasedLvl.baseMaxHp;
       effectiveSaved.xpNext    = _rebasedLvl.xpNext;
       _xpCorrected = true;   // push it, so the client renders what it has
+      // Quest progress, from the stored record like everything else the server
+      // owns — the counters are incremented on this side as the events happen.
+      effectiveSaved.questIdx   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.questIdx)) || 0);
+      effectiveSaved.questKills = (_dbBase && _dbBase.questKills) || {};
+      socket.emit('questSync', { questIdx: effectiveSaved.questIdx, questKills: effectiveSaved.questKills });
       // Studied progression comes from the stored record, never from the
       // blob the client sent — see the matching pin in saveProgress. Every
       // change to it was applied and persisted server-side as it happened
@@ -8457,15 +8561,12 @@ io.on('connection', socket => {
     // above, which pinned _lastStats to the stored record but never told the
     // client — leaving it to resend the rejected set on every later save.
     //
-    // Sent only when the client's own blob disagrees about what it owns —
-    // the join already carries a full inventory upward (netSelectChar sends
-    // _buildSaveStats), and echoing an identical set back down would double
-    // that cost on every routine mobile reconnect for nothing. Comparing the
-    // census rather than the arrays is deliberate: it is exactly the "same
-    // items or not" question, so an inventory <-> storage move the client
-    // made just before dropping counts as agreement and survives, while a
-    // gained or lost item does not.
-    if (_lastStats && !_censusEqual(_itemCensus(sanitized), _itemCensus(_lastStats))) {
+    // Always sent: the join blob no longer carries an item set at all
+    // (_buildSaveStats, js/network.js), so there is nothing to compare it
+    // against. This used to be conditional on a census comparison purely to
+    // avoid echoing an identical inventory back down on every mobile
+    // reconnect — a cost that disappeared with the upward copy.
+    if (_lastStats) {
       socket.emit('inventorySync', {
         inventory: _lastStats.inventory || [],
         equipment: _lastStats.equipment || {},
@@ -8697,6 +8798,7 @@ io.on('connection', socket => {
         // Each recipient's share is credited on their OWN socket — see the
         // _grantXp/_grantKillGold spreads in the payloads below.
 
+        _questOnKill(result.eid, result.rlvl);
         socket.emit('enemyKilled', {
           id: enemyId,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(goldShare)),
@@ -8707,6 +8809,9 @@ io.on('connection', socket => {
           nexum: nexumDrop, gram: gramDrop,
         });
         memberIds.forEach(mid => {
+          // A member's quest counters, XP and gold all live in their own
+          // session — the attacker's socket cannot see any of them.
+          io.sockets.sockets.get(mid)?.data?._questOnKill?.(result.eid, result.rlvl);
           io.to(mid).emit('enemyKilled', {
             id: enemyId,
             ...(_g => ({ gold: _g.gained, goldTotal: _g.total }))(io.sockets.sockets.get(mid)?.data?._grantKillGold?.(goldShare) || {}),
@@ -8723,6 +8828,7 @@ io.on('connection', socket => {
           [socket.id, ...memberIds]);
       } else {
         // No party: attacker gets full reward and loot
+        _questOnKill(result.eid, result.rlvl);
         socket.emit('enemyKilled', {
           id: enemyId,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)),
@@ -8814,6 +8920,7 @@ io.on('connection', socket => {
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
         const xpShare = Math.max(1, Math.round(result.xp / totalMembers)), goldShare = Math.round(result.gold / totalMembers);
+        _questOnKill(result.eid, result.rlvl);
         socket.emit('enemyKilled', {
           id: enemyId, dmg: result.dmg, isCrit: result.isCrit,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(goldShare)),
@@ -8824,6 +8931,9 @@ io.on('connection', socket => {
           nexum: nexumDrop2, gram: gramDrop2,
         });
         memberIds.forEach(mid => {
+          // A member's quest counters, XP and gold all live in their own
+          // session — the attacker's socket cannot see any of them.
+          io.sockets.sockets.get(mid)?.data?._questOnKill?.(result.eid, result.rlvl);
           io.to(mid).emit('enemyKilled', {
             id: enemyId,
             ...(_g => ({ gold: _g.gained, goldTotal: _g.total }))(io.sockets.sockets.get(mid)?.data?._grantKillGold?.(goldShare) || {}),
@@ -8836,6 +8946,7 @@ io.on('connection', socket => {
         _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
           { id: enemyId, ex: result.ex, ey: result.ey, color: result.color }, [socket.id, ...memberIds]);
       } else {
+        _questOnKill(result.eid, result.rlvl);
         socket.emit('enemyKilled', {
           id: enemyId,
           ...(_m => ({ gold: _m.gained, goldTotal: _m.total }))(socket.data._grantKillGold(result.gold)),
@@ -9487,26 +9598,24 @@ io.on('connection', socket => {
       clean.storage   = _lastStats.storage   || [];
     }
 
-    // Story progress only ever moves forward. questIdx is what makes a quest
-    // reward once-only (see the claimQuest handler), and it rides in on this
-    // same client blob — so a save that rewinds it would let the same quest
-    // be claimed for its reward again and again. It also keeps a save that
-    // was composed before a claim from undoing the advance.
+    // Quest progress is server-tracked: the counters are incremented from the
+    // events the server already sees (kills, potion purchases, joining a clan)
+    // and the claim is checked against them. So both fields come from the
+    // session copy, and the monotonic guard that used to sit here — which
+    // stopped a rewound questIdx from re-claiming a reward — has nothing left
+    // to guard: the client cannot rewind a counter it does not write.
     if (_lastStats) {
-      const _prevQ = Math.floor(Number(_lastStats.questIdx)) || 0;
-      const _newQ = Math.floor(Number(clean.questIdx)) || 0;
-      if (_newQ < _prevQ) {
-        clean.questIdx = _prevQ;
-        // questKills belongs to whichever quest is current, so it has to come
-        // back with it rather than being carried over from the rewound one.
-        clean.questKills = _lastStats.questKills || {};
-        // And the client has to be told, or it keeps its rewound counter and
-        // every claim from here on names a quest the server considers done —
-        // which is the same permanent dead end the claim handler guards
-        // against. Overwhelmingly this is an ordinary stale save rather than
-        // anything deliberate, so it is corrected, not punished.
-        socket.emit('questSync', { questIdx: _prevQ, questKills: clean.questKills });
-      }
+      clean.questIdx   = _lastStats.questIdx || 0;
+      clean.questKills = _lastStats.questKills || {};
+      // The last of it. buffs decide the x2 gold and XP payouts, potionBag is
+      // spent by usePotion, bonusSP and rebirths are written by the rebirth and
+      // shop handlers, specialQuestsDone is what makes a special quest
+      // once-only. None of them is a number the client may compose.
+      clean.buffs             = _lastStats.buffs             || {};
+      clean.potionBag         = _lastStats.potionBag         || {};
+      clean.bonusSP           = _lastStats.bonusSP           || 0;
+      clean.rebirths          = _lastStats.rebirths          || 0;
+      clean.specialQuestsDone = _lastStats.specialQuestsDone || [];
     }
 
     // Studied skills, passives and the "вторая профессия" unlocks are
@@ -9563,17 +9672,11 @@ io.on('connection', socket => {
       clean.baseMaxHp = _lastStats.baseMaxHp;
     }
 
-    if (_looksLikeCatastrophicReset(_lastStats, clean)) {
-      logPlayer(authed.telegramId, authed.username, 'save_reset_blocked', {
-        hadLvl: _lastStats.lvl, hadGold: _lastStats.gold,
-        hadItems: (_lastStats.inventory || []).length,
-        hadEquip: Object.keys(_lastStats.equipment || {}).length,
-      });
-      console.error(`[saveProgress] Rejected suspicious full-reset for telegramId=${authed.telegramId} ` +
-        `(had lvl=${_lastStats.lvl} gold=${_lastStats.gold} items=${(_lastStats.inventory || []).length} ` +
-        `equip=${Object.keys(_lastStats.equipment || {}).length} — incoming save was blank). Keeping previous state.`);
-      return;
-    }
+    // The catastrophic-reset guard used to live here: it refused a save that
+    // arrived blank over a real character, because such a save would have
+    // wiped items, gold and level in one write. Every one of those fields is
+    // now taken from the session copy a few lines above, so a blank save
+    // overwrites nothing worth having — there is no reset left to catch.
     _lastStats = clean;
     authed.bm = calcBM(clean);
     // Catches the friend crossing level 20 mid-session rather than only at the
@@ -9716,6 +9819,7 @@ io.on('connection', socket => {
         members: [{ telegramId: authed.telegramId, username: authed.username, role: 'leader' }],
       });
       await _serverSpendGold(CLAN_CREATE_COST, 'clan_create');
+      if (_currentQuest() && _currentQuest().type === 'join_guild') { _questBump('_guild', 1); _questPush(); }
       const _cd = await _clanDataFor(clan, authed.telegramId);
       socket.emit('clanData', _cd);
       _myClanName  = _cd ? _cd.name : null;
@@ -10576,6 +10680,7 @@ io.on('connection', socket => {
   safeOn('disconnect', () => {
     clearTimeout(_authTimeout);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
+    clearInterval(_buffTick);
     // _flushNow (below, via _pendingFlush) clears this too and writes whatever
     // the coalesced drop balances are owed — clearing here as well just makes
     // sure no timer outlives the socket in the paths that don't reach it.

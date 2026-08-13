@@ -1337,6 +1337,17 @@ function netConnect(onReady) {
     if (typeof updateHUD === 'function') updateHUD();
   });
 
+  // The authoritative buff timers. The client keeps counting them down for its
+  // own HUD; this is what starts one, and what a reconnect resumes from.
+  socket.on('buffSync', ({ buffs } = {}) => {
+    if (!player || !buffs) return;
+    player.buffs = { ...buffs };
+    if (typeof recompute === 'function') recompute();
+    if (player.hp > player.maxHp) player.hp = player.maxHp;
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof spawnBurst === 'function') spawnBurst(player.x, player.y, '#f0c040', 6);
+  });
+
   socket.on('itemError', ({ msg } = {}) => {
     if (!player || !msg) return;
     if (typeof _invMsg === 'function') _invMsg(msg);
@@ -1656,36 +1667,26 @@ function _showCharSelect(savedData) {
 }
 
 
+// What the client still owns. Everything else the character used to carry —
+// items, equipment, storage, gold, level, XP and the stats derived from it,
+// studied skills and passives, stat upgrades, quest progress, buffs, the potion
+// bag, bonusSP, rebirths — is applied and persisted server-side as it happens,
+// and pinned there on the way in, so sending it would be sending a number
+// nobody reads.
+//
+// What is left is genuinely this side's: which class, where the player is, the
+// display preferences, and a couple of counters nothing is entitled to.
 function _buildSaveStats() {
   if (!player) return null;
   return {
     type: player.type,
     floor: dungeonLvl || 1,
-    lvl: player.lvl, xp: player.xp, xpNext: player.xpNext,
-    gold: player.gold, kills: player.kills,
     hp: player.hp, maxHp: player.maxHp,
-    atk: player.atk, def: player.def,
-    baseAtk: player.baseAtk, baseDef: player.baseDef, baseMaxHp: player.baseMaxHp,
-    inventory: player.inventory, storage: player.storage, equipment: player.equipment,
-    potionBag: player.potionBag || { pt1: 0, pt2: 0 },
+    kills: player.kills,
     hudPotion: player.hudPotion || 'pt1',
-    buffs: player.buffs || {},
     autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0,
     autoBuffTypes: player.autoBuffTypes || {},
-    upgrades: player.upgrades || {},
-    questIdx: player.questIdx || 0,
-    questKills: player.questKills || {},
-    specialQuestsDone: player.specialQuestsDone || [],
-    skillLevels: player.skillLevels || {},
-    passiveLevels: player.passiveLevels || {},
-    advSkillLearned: player.advSkillLearned || {},
-    advSkillActive: player.advSkillActive || {},
-    bonusSP: player.bonusSP || 0,
-    rebirths: player.rebirths || 0,
     lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
-    // When this blob was composed — the server uses it to tell a save that
-    // predates a since-applied gold spend from one that already accounts for
-    // it (_pendingGoldSpend, server/index.js). Not otherwise interpreted here.
     savedAt: Date.now(),
   };
 }
@@ -1813,6 +1814,7 @@ function netStorageWithdraw(idx) { if (socket?.connected) socket.emit('storageWi
 // The merchant is the only shop priced in gold, so it is the only purchase
 // that had to move here for gold to become server-owned.
 function netBuyPotion(idx, qty)  { if (socket?.connected) socket.emit('buyPotion', { idx, qty }); }
+function netUseBuffPotion(id)    { if (socket?.connected) socket.emit('useBuffPotion', { id }); }
 
 function netSkillStun(enemyId, duration) {
   if (!socket?.connected || !enemyId) return;

@@ -288,7 +288,11 @@ scenario('combat: a hit reaches the server and lowers the real enemy', async () 
 scenario('level: a server-granted reward crosses the level threshold', async () => {
   // One XP short of level 2, then claim the first story quest — a flat 50 XP
   // reward, granted and applied entirely server-side.
-  const c = await connectWithSaved('harness_levelup', { lvl: 1, xp: 99, xpNext: 100, questIdx: 0 });
+  // The kills the quest asks for are seeded too: the server checks the claim
+  // against its own counters now, so an unfinished quest is refused.
+  const c = await connectWithSaved('harness_levelup', {
+    lvl: 1, xp: 99, xpNext: 100, questIdx: 0, questKills: { 'Крыса страж': 10 },
+  });
   await enterWorld(c, 'mage');
   const claimed = c.wait('questClaimed', { timeout: 6000 }).catch(() => null);
   const synced  = c.wait('xpSync', { timeout: 6000 }).catch(() => null);
@@ -303,6 +307,36 @@ scenario('level: a server-granted reward crosses the level threshold', async () 
   await sleep(200);
   const row = memory.__dump('Player').find(p => p.username === c.auth.username);
   eq(row.savedData.lvl, 2, 'the level up was persisted immediately');
+  await c.close();
+});
+
+scenario('quests: a claim for an unfinished quest is refused', async () => {
+  // The check that was missing entirely: claimQuest verified WHICH quest was
+  // being claimed but never whether it had been done, so a client could walk
+  // the whole 60-quest chain in one go and collect every reward.
+  const c = await connectWithSaved('harness_questcheat', { questIdx: 0, questKills: { 'Крыса страж': 9 } });
+  await enterWorld(c, 'mage');
+  const err = c.wait('questClaimError', { timeout: 6000 }).catch(() => null);
+  c.emit('claimQuest', { idx: 0 });
+  ok(await err, 'one kill short is refused');
+  await sleep(200);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.questIdx, 0, 'and the chain did not advance');
+  await c.close();
+});
+
+scenario('quests: a save cannot write the counters', async () => {
+  const c = await connectWithSaved('harness_questpin', { questIdx: 0, questKills: {} });
+  await enterWorld(c, 'mage');
+  c.emit('saveProgress', { stats: {
+    type: 'mage', lvl: 1, xp: 0, hp: 10, maxHp: 10,
+    questIdx: 42, questKills: { 'Крыса страж': 999 },
+    savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.questIdx, 0, 'the stored index is the server\'s');
+  eq(Object.keys(row.savedData.questKills || {}).length, 0, 'and so are the counters');
   await c.close();
 });
 
@@ -470,6 +504,55 @@ scenario('bundle: the concatenated client parses and declares nothing twice', as
     }
   }
   ok(dupes.length === 0, 'no top-level const is declared in two bundle files', dupes.join(', '));
+});
+
+scenario('buffs: the x2 multipliers cannot be claimed by a save', async () => {
+  // This one is load-bearing: gold and XP read buffs.gold / buffs.exp to apply
+  // the x2, so a save able to write a permanently active buff would double
+  // every payout for good. Drinking is a request (useBuffPotion) and the timer
+  // is the server's.
+  const c = await connectWithSaved('harness_buff', { gold: 0, buffs: {} });
+  await enterWorld(c, 'mage');
+  c.emit('saveProgress', { stats: {
+    type: 'mage', lvl: 1, xp: 0, hp: 10, maxHp: 10,
+    buffs: { gold: 999999, exp: 999999 }, savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(Object.keys(row.savedData.buffs || {}).length, 0, 'the forged buffs did not persist');
+  await c.close();
+});
+
+scenario('buffs: drinking one is served by the server', async () => {
+  const c = await connectWithSaved('harness_drink', { inventory: [{ id: 'bp_gold', qty: 1 }] });
+  await enterWorld(c, 'ranger');
+  const sync = c.wait('buffSync', { timeout: 6000 }).catch(() => null);
+  const inv  = c.wait('inventorySync', { timeout: 6000 }).catch(() => null);
+  c.emit('useBuffPotion', { id: 'bp_gold' });
+  const st = await sync;
+  ok(st && st.buffs && st.buffs.gold > 0, `the buff started server-side (${st && st.buffs && st.buffs.gold}s)`);
+  const iv = await inv;
+  eq(iv && iv.inventory.length, 0, 'and the potion was consumed');
+  await c.close();
+});
+
+scenario('save: a blank save no longer resets anything', async () => {
+  // The catastrophic-reset guard used to catch this. It is gone, because every
+  // field it protected is taken from the session copy now — so an empty blob
+  // has nothing left to overwrite.
+  const c = await connectWithSaved('harness_blank', {
+    gold: 777, lvl: 4, inventory: [{ id: 'rece', qty: 3 }], questIdx: 2,
+  });
+  await enterWorld(c, 'lev');
+  c.emit('saveProgress', { stats: { type: 'lev', savedAt: Date.now() } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const sd = row.savedData || {};
+  eq(sd.gold, 777, 'gold survived a blank save');
+  eq(sd.lvl, 4, 'level survived');
+  eq((sd.inventory || []).length, 1, 'items survived');
+  eq(sd.questIdx, 2, 'quest progress survived');
+  await c.close();
 });
 
 // ── Runner ───────────────────────────────────────────────────────────────────

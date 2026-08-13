@@ -1492,6 +1492,48 @@ function maxSkillDamageMult() {
 const UPGRADE_KEYS = ['atk', 'def', 'hp', 'atkSpeed', 'critChance', 'critPower', 'hpRegen'];
 function upgradeCost(level) { return 300 * (Math.max(0, Math.floor(Number(level)) || 0) + 1); }
 
+// ── Quest progress ──────────────────────────────────────────────────────────
+// Whether a quest's requirement is met, from the counters alone. It lived only
+// in js/quests.js, which is why claimQuest could check WHICH quest was being
+// claimed but never whether it had been done — the server had no way to ask.
+// Both sides read this now: the client to light up the claim button, the
+// server to decide whether to pay.
+//
+// `kills` is the same flat map both sides keep (savedData.questKills): enemy
+// names for the kill types, and a handful of underscore-prefixed keys for the
+// others.
+function questProgress(q, kills, lvl) {
+  const k = kills || {};
+  const n = key => Math.max(0, Math.floor(Number(k[key])) || 0);
+  switch (q && q.type) {
+    case 'kill':          return { done: (q.enemies || []).reduce((s, name) => s + n(name), 0), total: q.count };
+    case 'kill_multi':    return (q.enemies || []).reduce((o, name) => (o[name] = { done: n(name), total: q.count }, o), {});
+    case 'level':         return { done: Math.max(1, Math.floor(Number(lvl)) || 1), total: q.level };
+    case 'buy_potion':    return { done: n('_potion'), total: q.count };
+    case 'craft':         return { done: n('_craft'), total: 1 };
+    case 'dungeon_clear': return { done: n('_dungeon_' + q.floor), total: q.count };
+    case 'join_guild':    return { done: n('_guild'), total: 1 };
+    case 'goto_floor':    return { done: n('_floor_' + q.targetFloor), total: 1 };
+    default:              return {};
+  }
+}
+
+function questComplete(q, kills, lvl) {
+  const k = kills || {};
+  const n = key => Math.max(0, Math.floor(Number(k[key])) || 0);
+  switch (q && q.type) {
+    case 'kill':          return (q.enemies || []).reduce((s, name) => s + n(name), 0) >= q.count;
+    case 'kill_multi':    return (q.enemies || []).every(name => n(name) >= q.count);
+    case 'level':         return (Math.max(1, Math.floor(Number(lvl)) || 1)) >= q.level;
+    case 'buy_potion':    return n('_potion') >= q.count;
+    case 'craft':         return n('_craft') >= 1;
+    case 'dungeon_clear': return n('_dungeon_' + q.floor) >= q.count;
+    case 'join_guild':    return n('_guild') >= 1;
+    case 'goto_floor':    return n('_floor_' + q.targetFloor) >= 1;
+    default:              return false;
+  }
+}
+
 // ── Merchant (HP potions) ───────────────────────────────────────────────────
 // The only shop that charges gold rather than a real-money currency. It lived
 // in js/definitions.js where only the client could see it, which is why buying
@@ -1644,7 +1686,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult, maxSkillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
-  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST,
+  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questProgress, questComplete,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

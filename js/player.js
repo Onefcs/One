@@ -477,25 +477,18 @@ function usePotion() {
   netSaveProgress();
 }
 
+// A request now. The server removes the potion and holds the timer — it has
+// to, because buffs.gold and buffs.exp are what the x2 payouts read, so a
+// client-written timer would be a client-written multiplier.
 function useBuffPotion(id) {
   if (!player || state !== 'playing') return;
   const def = ITEM_DEF.find(d => d.id === id);
   if (!def || def.slot !== 'buff_potion') return;
-  const buffs = player.buffs || (player.buffs = {});
-  const btype = def.buffType;
-  // 30-min cooldown per buff type
-  if ((buffs[btype] || 0) > 0) {
+  if (((player.buffs || {})[def.buffType] || 0) > 0) {
     dmgNum(player.x, player.y - 26, 'Уже активно!', '#f88');
     return;
   }
-  if (!removeFromInventory(id, 1)) return;
-  buffs[btype] = def.buffDur || 1800;
-  recompute();
-  if (player.hp > player.maxHp) player.hp = player.maxHp;
-  dmgNum(player.x, player.y - 30, def.name + '!', '#f0c040');
-  spawnBurst(player.x, player.y, '#f0c040', 6);
-  if (typeof updateInvUI === 'function') updateInvUI();
-  netSaveProgress();
+  netUseBuffPotion(id);
 }
 
 // Re-drink a buff potion of the given type from inventory the moment its

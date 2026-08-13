@@ -10,41 +10,17 @@ function getCurrentQuest() {
   return QUEST_DEF[player.questIdx] || null;
 }
 
+// Both of these now read the shared rules (questProgress/questComplete,
+// shared/definitions.js), because the server decides whether a claim is paid
+// and the two sides must not be able to disagree about what "done" means.
 function getQuestProgress(q) {
   if (!player || !q) return {};
-  if (q.type === 'kill') {
-    const done = q.enemies.reduce((s, name) => s + (player.questKills[name] || 0), 0);
-    return { done, total: q.count };
-  }
-  if (q.type === 'kill_multi') {
-    return q.enemies.reduce((o, name) => {
-      o[name] = { done: player.questKills[name] || 0, total: q.count };
-      return o;
-    }, {});
-  }
-  if (q.type === 'level')         return { done: player.lvl, total: q.level };
-  if (q.type === 'buy_potion')    return { done: player.questKills['_potion'] || 0, total: q.count };
-  if (q.type === 'craft')         return { done: player.questKills['_craft'] || 0, total: 1 };
-  if (q.type === 'dungeon_clear') return { done: player.questKills['_dungeon_' + q.floor] || 0, total: q.count };
-  if (q.type === 'join_guild')    return { done: player.questKills['_guild'] || 0, total: 1 };
-  if (q.type === 'goto_floor')    return { done: player.questKills['_floor_' + q.targetFloor] || 0, total: 1 };
-  return {};
+  return questProgress(q, player.questKills, player.lvl);
 }
 
 function isQuestComplete(q) {
   if (!player || !q) return false;
-  if (q.type === 'kill') {
-    const done = q.enemies.reduce((s, name) => s + (player.questKills[name] || 0), 0);
-    return done >= q.count;
-  }
-  if (q.type === 'kill_multi')    return q.enemies.every(name => (player.questKills[name] || 0) >= q.count);
-  if (q.type === 'level')         return player.lvl >= q.level;
-  if (q.type === 'buy_potion')    return (player.questKills['_potion'] || 0) >= q.count;
-  if (q.type === 'craft')         return (player.questKills['_craft'] || 0) >= 1;
-  if (q.type === 'dungeon_clear') return (player.questKills['_dungeon_' + q.floor] || 0) >= q.count;
-  if (q.type === 'join_guild')    return (player.questKills['_guild'] || 0) >= 1;
-  if (q.type === 'goto_floor')    return (player.questKills['_floor_' + q.targetFloor] || 0) >= 1;
-  return false;
+  return questComplete(q, player.questKills, player.lvl);
 }
 
 function checkQuestComplete() {
@@ -133,35 +109,22 @@ function tickQuestNotif(dt) {
 }
 
 // ── Event hooks ───────────────────────────────────────────
-function onEnemyKill(name) {
-  if (!player) return;
-  const q = getCurrentQuest();
-  if (!q) return;
-  if (q.type === 'kill' || q.type === 'kill_multi') {
-    if (q.enemies.includes(name)) {
-      player.questKills[name] = (player.questKills[name] || 0) + 1;
-      checkQuestComplete();
-      if (activeTab === 3) updateQuestUI();
-    }
-  }
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
+function onEnemyKill() {
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
 function onBuyPotion() {
-  if (!player) return;
-  const q = getCurrentQuest();
-  if (!q || q.type !== 'buy_potion') return;
-  player.questKills['_potion'] = (player.questKills['_potion'] || 0) + 1;
-  checkQuestComplete();
-  if (activeTab === 3) updateQuestUI();
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
 function onCraftWeapon() {
-  if (!player) return;
-  const q = getCurrentQuest();
-  if (!q || q.type !== 'craft') return;
-  player.questKills['_craft'] = (player.questKills['_craft'] || 0) + 1;
-  checkQuestComplete();
-  if (activeTab === 3) updateQuestUI();
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
 function onLevelUp(lvl) {
@@ -178,50 +141,28 @@ function onLevelUp(lvl) {
 // (dungeon_clear is awarded in full since repeated "runs" have no real
 // equivalent in one seamless world). Called from the enemyKilled handler
 // with the killed monster's global room level.
-function onEnterArm(rlvl) {
-  if (!player || typeof armIndexForLevel !== 'function') return;
-  const arm = armIndexForLevel(rlvl);
-  if (!player._armCleared) player._armCleared = {};
-  for (let f = 1; f < arm; f++) {
-    if (player._armCleared[f]) continue;
-    player._armCleared[f] = true;
-    const dq = QUEST_DEF.find(q => q.type === 'dungeon_clear' && q.floor === f);
-    const times = dq ? dq.count : 1;
-    for (let i = 0; i < times; i++) onDungeonClear(f);
-    onGotoFloor(f + 1);
-  }
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
+function onEnterArm() {
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
-function onDungeonClear(floor) {
-  if (!player) return;
-  const key = '_dungeon_' + floor;
-  player.questKills[key] = (player.questKills[key] || 0) + 1;
-  const q = getCurrentQuest();
-  if (q && q.type === 'dungeon_clear' && q.floor === floor) {
-    checkQuestComplete();
-    if (activeTab === 3) updateQuestUI();
-  }
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
+function onDungeonClear() {
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
-function onGotoFloor(floor) {
-  if (!player) return;
-  const key = '_floor_' + floor;
-  player.questKills[key] = 1;
-  const q = getCurrentQuest();
-  if (q && q.type === 'goto_floor' && q.targetFloor === floor) {
-    checkQuestComplete();
-    if (activeTab === 3) updateQuestUI();
-  }
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
+function onGotoFloor() {
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
+// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
+// pushed back as questSync. Kept as the UI hook it also was.
 function onJoinGuild() {
-  if (!player) return;
-  player.questKills['_guild'] = 1;
-  const q = getCurrentQuest();
-  if (q && q.type === 'join_guild') {
-    checkQuestComplete();
-    if (activeTab === 3) updateQuestUI();
-  }
+  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
 function drawQuestNotif() {
