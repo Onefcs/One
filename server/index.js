@@ -3194,7 +3194,7 @@ const ARENA3_REWARD      = 10;          // Liberty (Nexum) per winner
 // account may claim this exactly once, ever. savedData.techClaimed is the
 // permanent record of that (see the techClaim handler and its clean.techClaimed
 // pin in saveProgress, both further down).
-const TECH_GIFT_GOLD  = 100000;
+const TECH_GIFT_GOLD  = 1000000;
 const TECH_GIFT_NEXUM = 200;
 // A real match clock now (it used to be a 30-minute operational guard only,
 // back when the rules said a match ran until one side was wiped out however
@@ -8781,6 +8781,35 @@ io.on('connection', socket => {
       effectiveSaved.questIdx   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.questIdx)) || 0);
       effectiveSaved.questKills = (_dbBase && _dbBase.questKills) || {};
       socket.emit('questSync', { questIdx: effectiveSaved.questIdx, questKills: effectiveSaved.questKills });
+      // potionBag/buffs/techClaimed/specialQuestsDone: server-owned exactly
+      // like bonusSP/rebirths above (see saveProgress's matching pin, further
+      // down this file, for why — usePotion spends the bag and persists
+      // immediately, techClaim's atomic DB guard is meaningless if a later
+      // save can write the flag back to false). This block used to leave all
+      // four to whatever the client's blob happened to carry, so a reconnect
+      // (or a fresh tab reading an older localStorage snapshot) that raced
+      // ahead of its own last potion purchase/use sent a bag one or more
+      // potions short — and because saveProgress persists _lastStats.potionBag
+      // verbatim a few seconds later, that stale, smaller number became the
+      // new permanent total in the database. Same failure shape as the
+      // gold/items bug this whole pin block exists to close, just for a field
+      // that got missed. Pinning here, and telling the client its real bag
+      // right away (a stale reconnect otherwise only found out on its next
+      // buy/drink), is what closes it.
+      effectiveSaved.potionBag         = (_dbBase && _dbBase.potionBag)         || {};
+      effectiveSaved.buffs             = (_dbBase && _dbBase.buffs)             || {};
+      effectiveSaved.techClaimed       = !!(_dbBase && _dbBase.techClaimed);
+      // specialQuestsDone specifically: NOT from _dbBase — _sanitizeSavedStats
+      // unconditionally `delete`s this field (see its own comment on why: the
+      // once-only claim in completeSpecialQuest guards itself with a DB $ne
+      // against this very array, so a sanitize pass that let a save merely
+      // omit an id would let that quest be claimed again). That means
+      // _dbBase.specialQuestsDone is always undefined, and this has to read
+      // the raw, untouched DB record instead — same as completeSpecialQuest's
+      // own read a little further down this file.
+      effectiveSaved.specialQuestsDone = Array.isArray(authed.savedData && authed.savedData.specialQuestsDone)
+        ? authed.savedData.specialQuestsDone : [];
+      socket.emit('potionBag', { potionBag: effectiveSaved.potionBag });
       // Studied progression comes from the stored record, never from the
       // blob the client sent — see the matching pin in saveProgress. Every
       // change to it was applied and persisted server-side as it happened

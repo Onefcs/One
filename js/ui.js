@@ -2542,7 +2542,7 @@ function drawTechGiftButton() {
 // Reward amounts shown in the modal below — mirrors TECH_GIFT_GOLD/
 // TECH_GIFT_NEXUM (server/index.js); purely display text, the server is
 // what actually decides and enforces the grant on techClaim.
-const TECH_GIFT_GOLD_DISPLAY  = 100000;
+const TECH_GIFT_GOLD_DISPLAY  = 1000000;
 const TECH_GIFT_NEXUM_DISPLAY = 200;
 
 // Opens on a tap of the ТЕХ HUD button (_checkTechGiftBtnTouch, js/input.js)
