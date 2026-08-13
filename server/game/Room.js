@@ -4,7 +4,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
-        FEAR_MAX_WAVE, GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
+        GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
         skillDamageMult } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -2826,7 +2826,7 @@ class Room {
     return { x: p.x, y: p.y };
   }
 
-  updatePlayerStats(socketId, { atk, def, maxHp, critChance, critPower }) {
+  updatePlayerStats(socketId, { atk, def, maxHp }) {
     const p = this.players.get(socketId);
     if (!p) return;
     const cd = CHAR_DEF[p.type];

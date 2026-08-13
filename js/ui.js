@@ -1957,9 +1957,10 @@ function drawHeader() {
   const _goldDisp = Math.floor(p.gold);
   ctx.fillText(_goldDisp, stxH + 13, 24);
   stxH += 13 + ctx.measureText(String(_goldDisp)).width + 8;
-  // Nexum balance
+  // Nexum balance — shown unconditionally, same as GRAM below, so a currency
+  // doesn't appear/disappear from the HUD as its balance crosses zero.
   const _nxBal = window._nexumBalance || 0;
-  if (_nxBal > 0 || true) {
+  {
     const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
     if (_nxImg.complete && _nxImg.naturalWidth > 0) {
       ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
@@ -2506,7 +2507,7 @@ function drawTargetFrame() {
   const isOnline = !!(socket?.connected);
   const activeEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
 
-  let name = '', hp = 0, maxHp = 1, color = '#e69419';
+  let name, hp, maxHp, color;
   if (targetIsPlayer && isOnline) {
     const op = otherPlayers.get(targetId);
     if (!op) return;
@@ -3635,7 +3636,7 @@ function renderVipPanel() {
   const cumulative= _vipCumulative(thresholds);
   const bon       = bonuses ? (bonuses[level] || bonuses[0]) : { xp:0, gold:0, drop:0 };
 
-  let progressHtml = '';
+  let progressHtml;
   if (level < 10) {
     const needed = thresholds[level + 1] || 1;
     const pct    = Math.min(100, (deposited / needed) * 100).toFixed(1);

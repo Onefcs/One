@@ -30,6 +30,7 @@ function _sanitizeName(raw) {
     // Control characters, markup delimiters and quote marks — everything
     // that could either spoof a name visually or break out of an HTML
     // context somewhere downstream.
+    // eslint-disable-next-line no-control-regex -- the control-character range is the point, not a stray byte.
     .replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '')
     .trim()
     .slice(0, _USERNAME_MAX_CHARS);
@@ -49,6 +50,7 @@ function _safeUsername(raw, telegramId) {
 // rather than a display name.
 function _sanitizeClanDesc(raw) {
   return String(raw == null ? '' : raw)
+    // eslint-disable-next-line no-control-regex -- same intentional range as _sanitizeName above.
     .replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '')
     .trim()
     .slice(0, CLAN_DESC_MAX_CHARS);

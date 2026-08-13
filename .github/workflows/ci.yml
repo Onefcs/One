@@ -1,0 +1,38 @@
+name: ci
+
+# lint: eslint against the real config (eslint.config.js) — no-undef/
+# no-unused-vars are what caught the class of bug that shipped twice in one
+# day (an unimported constant, a dead conditional branch); see the comment
+# at the top of eslint.config.js for how it's scoped across server/client.
+#
+# harness: runs the real server (server/index.js, unmodified) against the
+# in-memory Mongo double in dev/mongo-memory.js and drives it with real
+# socket.io clients — see dev/harness.js for why this exists and what it
+# checks (economy invariants, item/gold/XP ownership, market flows,
+# reconnect behaviour, the built client bundle). No MongoDB service and no
+# secrets are needed: the harness sets its own throwaway env vars before the
+# server ever loads. The one scenario that drives a real browser
+# (Playwright/Chromium) skips itself when neither is present, which is the
+# case on this runner — see chromiumPath() in dev/harness.js.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: node dev/harness.js

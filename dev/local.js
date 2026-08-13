@@ -61,7 +61,6 @@ function assertLocal(uri) {
 
 (async () => {
   let uri = EXT_URI || '';
-  let mongod = null;
 
   if (!uri) {
     const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -69,7 +68,7 @@ function assertLocal(uri) {
     // The default (no dbPath) storage lives in a temp dir that goes away with
     // the process; --persist pins it to .dev-mongo/ so progress survives a
     // restart, which is what you want when testing anything save-related.
-    mongod = await MongoMemoryServer.create({
+    const mongod = await MongoMemoryServer.create({
       instance: PERSIST
         ? { dbName: 'liberty', dbPath: DB_PATH, storageEngine: 'wiredTiger' }
         : { dbName: 'liberty' },

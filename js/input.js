@@ -136,7 +136,7 @@ function _raceUnselectable(id) {
 function cycleTarget() {
   if (!player) return;
   const isOnline = !!(socket?.connected);
-  const activeEnemies = isOnline ? serverEnemies : enemies;
+  const activeEnemies = serverEnemies; // see the comment on the identical fallback in js/ui.js's drawTargetFrame()
   const candidates = [];
   activeEnemies.forEach(e => {
     if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y) && !_a3Unselectable(e.id))
@@ -166,7 +166,7 @@ function _trySelectEntityAtTouch(cx, cy) {
   const worldX = cx / ZOOM + camera.x;
   const worldY = (cy - HEADER_H) / ZOOM + camera.y;
   const isOnline = !!(socket?.connected);
-  const activeEnemies = isOnline ? serverEnemies : enemies;
+  const activeEnemies = serverEnemies; // see the comment on the identical fallback in js/ui.js's drawTargetFrame()
   const tapR = 28;
   let best = null, bestD = Infinity;
   activeEnemies.forEach(e => {

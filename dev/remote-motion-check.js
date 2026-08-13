@@ -44,7 +44,6 @@ async function login(browser, who) {
 
   await runner.evaluate(() => {
     window.__run = setInterval(() => {
-      if (typeof inp !== 'undefined' && inp) { inp.dx = 1; inp.dy = 0; inp.len = 1; }
       if (typeof joy !== 'undefined' && joy) { joy.active = true; joy.dx = 1; joy.dy = 0; }
     }, 16);
   });
@@ -73,8 +72,6 @@ async function login(browser, who) {
     console.log(JSON.stringify({ ok: false, reason: 'the watcher never saw the runner', samples: s.length }));
     process.exit(1);
   }
-  // Only look at the stretch where they were actually running.
-  const moved = s.filter((p, i) => i > 0 && Math.abs(p.x - s[i - 1].x) > 0.001);
   let movingFlips = 0, keyFlips = 0, facingChanges = 0, stalls = 0;
   for (let i = 1; i < s.length; i++) {
     if (s[i].moving !== s[i - 1].moving) movingFlips++;

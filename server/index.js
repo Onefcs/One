@@ -24,7 +24,7 @@ const {
   _sanitizeSavedStats, calcBM,
 } = require('./anticheat');
 const {
-  MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS,
+  MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 } = require('./inventory');
@@ -41,13 +41,13 @@ const GuildWarStateModel = require('./models/GuildWarState');
 const Room = require('./game/Room');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
-  UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
+  UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
-  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, UPGRADE_RESET_COST,
+  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
@@ -59,16 +59,16 @@ const {
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP,
   GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
-  clanAtkBonusPct, xpAtLevel, xpToNext, xpTotalAt,
+  clanAtkBonusPct, xpToNext,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS, questComplete,
   FEAR_MAX_WAVE, QUEST_DEF,
-  SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
-  SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
+  SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
+  SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
   SEASON_WIN_POINTS,
   SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
@@ -890,32 +890,7 @@ if (!_tgBotUsername && _TG_TOKEN) {
 }
 
 const ROOT = path.join(__dirname, '..');
-const BUNDLE_FILES = [
-  'shared/definitions.js',
-  'shared/netcodec.js',
-  'js/constants.js',
-  'js/utils.js',
-  'js/state.js',
-  'js/icons.js',
-  'js/themes.js',
-  'js/definitions.js',
-  'js/i18n.js',
-  'js/tonconnect.js',
-  'js/sprites.js',
-  'js/particles.js',
-  'js/sound.js',
-  'js/player.js',
-  'js/combat.js',
-  'js/input.js',
-  'js/ui.js',
-  'js/charselect.js',
-  'js/network.js',
-  'js/quests.js',
-  'js/clans.js',
-  'js/pixi-world.js',
-  'js/game.js',
-  'js/npc.js',
-].map(f => path.join(ROOT, f));
+const BUNDLE_FILES = require('./bundle-files').map(f => path.join(ROOT, f));
 
 const jsBundleRaw = BUNDLE_FILES.map(f => fs.readFileSync(f, 'utf8')).join('\n;\n');
 
@@ -2594,7 +2569,7 @@ async function _dailyAttemptsLeft(socketId, field) {
     const rec = doc?.savedData?.[field];
     if (!rec || rec.date !== _todayStr()) return cap;
     return Math.max(0, cap - rec.count);
-  } catch (e) { return cap; }
+  } catch (_) { return cap; }
 }
 
 function _lockArena3Daily(socketId)                  { _lockDailyAttempt(socketId, 'arena3Attempts'); }
@@ -3233,7 +3208,7 @@ async function _a3Deploy(ready, room) {
   // the attack/skillAttack handlers below) and destroying the enemy's ends
   // the match immediately (see the a3Team branch in those same handlers).
   const bossIds = room.spawnPvpArenaBosses();
-  placed.forEach(({ socketId, x, y, hp, team }) => {
+  placed.forEach(({ socketId, team }) => {
     const name = _a3.queue.get(socketId)?.name || '?';
     _a3.teams.set(socketId, team);
     _a3.alive.set(socketId, { name, team });
@@ -6044,7 +6019,7 @@ io.on('connection', socket => {
   // Inventory -> storage and back. Both are MOVES: the item is spliced out of
   // one array and merged into the other in a single handler, so the two halves
   // can never be observed apart the way they could when a save carried them.
-  function _moveBetween(fromArr, toArr, idx, cap, reason) {
+  function _moveBetween(fromArr, toArr, idx, cap) {
     const i = Math.floor(Number(idx));
     const it = (Number.isInteger(i) && i >= 0) ? fromArr[i] : null;
     if (!it) return null;
@@ -6065,7 +6040,7 @@ io.on('connection', socket => {
   safeOn('storageDeposit', ({ idx } = {}) => {
     if (!authed || !_itemsFor()) return;
     const beforeLen = _lastStats.inventory.length;
-    const res = _moveBetween(_lastStats.inventory, _lastStats.storage, idx, SERVER_STORAGE_MAX, 'deposit');
+    const res = _moveBetween(_lastStats.inventory, _lastStats.storage, idx, SERVER_STORAGE_MAX);
     if (res === 'full') return _itemErr('Хранилище полно!');
     if (!res) return;
     _commitServerItems(_lastStats.inventory, null, 'storage_in', { id: res.id }, { beforeLen, storage: true });
@@ -6074,7 +6049,7 @@ io.on('connection', socket => {
   safeOn('storageWithdraw', ({ idx } = {}) => {
     if (!authed || !_itemsFor()) return;
     const beforeLen = _lastStats.inventory.length;
-    const res = _moveBetween(_lastStats.storage, _lastStats.inventory, idx, SERVER_INV_MAX, 'withdraw');
+    const res = _moveBetween(_lastStats.storage, _lastStats.inventory, idx, SERVER_INV_MAX);
     if (res === 'full') return _itemErr('Инвентарь полон!');
     if (!res) return;
     _commitServerItems(_lastStats.inventory, null, 'storage_out', { id: res.id }, { beforeLen, storage: true });
@@ -8405,7 +8380,6 @@ io.on('connection', socket => {
     // again, and the desync only ever gets fixed by luck — whichever
     // unrelated saveProgress happens to run its own check first. That's the
     // moment a real, non-cheating player sees an item or a level vanish.
-    let _itemsCorrected = false, _goldCorrected = false, _xpCorrected = false;
     if (effectiveSaved) {
       const _dbBase = _sanitizeSavedStats(authed.savedData) || null;
       // Items come from the stored record, full stop — the blob the client
@@ -8417,13 +8391,11 @@ io.on('connection', socket => {
       effectiveSaved.inventory = (_dbBase && _dbBase.inventory) || [];
       effectiveSaved.equipment = (_dbBase && _dbBase.equipment) || {};
       effectiveSaved.storage   = (_dbBase && _dbBase.storage)   || [];
-      _itemsCorrected = true;   // push them, so the client renders what it has
       // Gold comes from the stored record, like the items above. Every change
       // to it was applied and persisted server-side as it happened, so there
       // is nothing to cap: this is not a correction, it is where the balance
-      // lives. _goldCorrected stays true so the client is told what it has.
+      // lives.
       effectiveSaved.gold = Math.max(0, Math.floor(Number(_dbBase && _dbBase.gold)) || 0);
-      _goldCorrected = true;
       // Level and XP come from the stored record, like the items and the gold
       // above — every point of it was applied and persisted server-side as it
       // happened, so there is nothing to check.
@@ -8448,7 +8420,6 @@ io.on('connection', socket => {
       effectiveSaved.baseMaxHp = _rebasedLvl.baseMaxHp;
       effectiveSaved.xpNext    = _rebasedLvl.xpNext;
       effectiveSaved.upgrades  = _rebasedLvl.upgrades;
-      _xpCorrected = true;   // push it, so the client renders what it has
       // Quest progress, from the stored record like everything else the server
       // owns — the counters are incremented on this side as the events happen.
       // HP comes from the stored record, not from the blob a reconnect sent.
@@ -8483,20 +8454,18 @@ io.on('connection', socket => {
       // server-side time and that first save would be capped down to the
       // same flat slack used here, rejecting gold that was earned honestly.
       _lastSaveAcceptedAt = Date.now();
-      // Push every correction back to the client right away — see the
-      // comment above _itemsCorrected.
-      if (_itemsCorrected) {
-        socket.emit('inventorySync', {
-          inventory: effectiveSaved.inventory, equipment: effectiveSaved.equipment || {},
-          storage: effectiveSaved.storage || [],
-        });
-      }
-      if (_goldCorrected) socket.emit('goldSync', { gold: effectiveSaved.gold });
-      if (_xpCorrected) {
-        socket.emit('xpSync', {
-          lvl: effectiveSaved.lvl, xp: effectiveSaved.xp, xpNext: effectiveSaved.xpNext,
-        });
-      }
+      // Push every field just pinned above back to the client right away — a
+      // reconnect that arrives believing stale/rejected figures (see the
+      // comment above this whole block) needs to be told what it actually
+      // has, not left to find out on the next unrelated sync.
+      socket.emit('inventorySync', {
+        inventory: effectiveSaved.inventory, equipment: effectiveSaved.equipment || {},
+        storage: effectiveSaved.storage || [],
+      });
+      socket.emit('goldSync', { gold: effectiveSaved.gold });
+      socket.emit('xpSync', {
+        lvl: effectiveSaved.lvl, xp: effectiveSaved.xp, xpNext: effectiveSaved.xpNext,
+      });
     }
     // Season state is read straight off the stored record. It is never part of
     // the client blob — the sanitizer strips both fields so they can't be

@@ -501,9 +501,7 @@ scenario('bundle: the concatenated client parses and declares nothing twice', as
   // into shared/definitions.js without deleting the old copy does exactly
   // that, and it reached a commit before this check existed.
   const fs = require('fs');
-  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
-  const list = src.slice(src.indexOf('const BUNDLE_FILES = ['), src.indexOf("].map(f => path.join(ROOT, f));"));
-  const files = [...list.matchAll(/'([^']+)'/g)].map(m => m[1]);
+  const files = require('../server/bundle-files');
   ok(files.length > 10, `bundle file list found (${files.length} files)`);
   const bundle = files.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
   let err = null;
@@ -859,9 +857,7 @@ scenario('build: the bundle is minified, mapped, and keeps its HTML entry points
 
   // Minified at all: comments gone, and materially smaller than the sources.
   const fs = require('fs');
-  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
-  const list = src.slice(src.indexOf('const BUNDLE_FILES = ['), src.indexOf("].map(f => path.join(ROOT, f));"));
-  const raw = [...list.matchAll(/'([^']+)'/g)].map(m => m[1])
+  const raw = require('../server/bundle-files')
     .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
   ok(code.length < raw.length * 0.75,
      `smaller than the sources (${Math.round(raw.length / 1024)}K -> ${Math.round(code.length / 1024)}K)`);

@@ -60,7 +60,6 @@ const WHO = process.argv[2] || 'hero';
   // Drive the character with the joystick's input vector for a few seconds.
   await page.evaluate(() => {
     window.__smokeMove = setInterval(() => {
-      if (typeof inp !== 'undefined' && inp) { inp.dx = 1; inp.dy = 0; inp.len = 1; }
       if (typeof joy !== 'undefined' && joy) { joy.active = true; joy.dx = 1; joy.dy = 0; }
     }, 16);
   });

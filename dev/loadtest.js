@@ -213,6 +213,7 @@ async function makeBot(i) {
     })(),
     gameStatePacketsPerSecPerBot: +(gsPackets / SECS / N).toFixed(1),
     gameStateKBsPerSecPerBot: +(gsBytes / 1024 / SECS / N).toFixed(1),
+    mapBlipsPacketsPerSecPerBot: +(blipPackets / SECS / N).toFixed(1),
     mapBlipsKBsPerSecPerBot: +(blipBytes / 1024 / SECS / N).toFixed(1),
   }, null, 2));
   stops.forEach(f => f());

@@ -1149,7 +1149,6 @@ function netConnect(onReady) {
     if (!player || !Number.isFinite(st.lvl)) return;
     applyLevelState(st);
     if (player.hp > player.maxHp) player.hp = player.maxHp;
-    if (typeof updateHUD === 'function') updateHUD();
     if (typeof updateProfileUI === 'function') updateProfileUI();
   });
   // The shards are already in the inventory via the inventorySync that
@@ -1174,10 +1173,9 @@ function netConnect(onReady) {
 
   socket.on('adminGive', ({ gold, nexum, gram }) => {
     if (!player) return;
-    // Gold arrives as a total via goldSync; this only refreshes the display.
-    if (gold)  { if (typeof updateHUD === 'function') updateHUD(); }
-    if (nexum) { if (typeof updateNexumBalance === 'function') updateNexumBalance(nexum); }
-    if (gram)  { if (typeof updateGramBalance === 'function') updateGramBalance(gram); }
+    // Gold/nexum/gram all arrive as a total via their own sync events
+    // (goldSync/gramBalanceUpdate/etc.), which already refresh their own
+    // displays — this only shows the toast.
     if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('adminGiftToast') : '🎁 Подарок от админа!', '#fd0');
   });
 
@@ -1342,7 +1340,6 @@ function netConnect(onReady) {
     // reply is the only thing that knows it landed.
     if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
     if (typeof onBuyPotion === 'function') onBuyPotion();
-    if (typeof updateHUD === 'function') updateHUD();
     if (typeof updateInvUI === 'function') updateInvUI();
     // The "✓ Куплено" line the shop used to print itself, before the purchase
     // became a request and the confirmation moved to the reply.

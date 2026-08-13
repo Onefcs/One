@@ -85,7 +85,6 @@ function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
   player.questIdx = Number.isFinite(questIdx) ? questIdx : (player.questIdx + 1);
   player.questKills = {};
   if (q) showQuestComplete(q);
-  if (typeof updateHUD === 'function') updateHUD();
   updateQuestUI();
 }
 
@@ -374,7 +373,6 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
     // Level state arrives via xpSync.
     if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
   }
-  if (typeof updateHUD === 'function') updateHUD();
   if (_activeQuestTab === 'special') updateSpecialQuestUI();
   if (!alreadyDone) {
     questNotif = { title: '✓ ' + (typeof t === 'function' ? t('questSpecialCompleteToast') : 'Специальный квест выполнен!'), timer: 3.5 };

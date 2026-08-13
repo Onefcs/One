@@ -6,7 +6,8 @@
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
     "dev:local": "node dev/local.js",
-    "harness": "node dev/harness.js"
+    "harness": "node dev/harness.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "compression": "^1.8.1",
@@ -17,6 +18,10 @@
     "terser": "^5.50.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "espree": "^11.2.0",
+    "globals": "^17.11.0",
     "mongodb-memory-server": "^11.2.0",
     "playwright": "^1.61.1",
     "socket.io-client": "^4.8.3"
