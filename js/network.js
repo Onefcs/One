@@ -1255,6 +1255,28 @@ function netConnect(onReady) {
     if (typeof onQuestSync === 'function') onQuestSync(data || {});
   });
 
+  // The server refused a move as impossibly fast and is telling us where it
+  // still has us (see _checkMoveBudget, server/game/Room.js). Only ever sent
+  // in enforce mode. Applied rather than argued with: the server's copy is
+  // what every other player, every monster and every hit test already uses, so
+  // a client that ignores this is playing somewhere nobody else can see.
+  socket.on('posCorrect', ({ x, y } = {}) => {
+    if (!player || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    player.x = x; player.y = y;
+    // The camera follows the player every frame anyway, but snapping it here
+    // too keeps the correction from being rendered as one frame of the world
+    // sliding — and clampCamera is what stops it leaving the map bounds.
+    if (typeof camera !== 'undefined' && camera) {
+      camera.x = player.x - W / (2 * ZOOM);
+      camera.y = player.y - _visH() / 2;
+      if (typeof clampCamera === 'function') clampCamera();
+    }
+    // The next netSendMove compares against the last position we told the
+    // server; leaving that stale would make it skip the packet that confirms
+    // we accepted the correction.
+    _lastSentX = null;
+  });
+
   // The server refused this save because a server-side item op was holding
   // the inventory when it arrived (_itemOpBusy, server/index.js). Nothing is
   // wrong with the blob — it just has to come again once that op finishes.

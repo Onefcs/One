@@ -4,7 +4,40 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
-        FEAR_MAX_WAVE, GUILD_WAR_TOWER_HP } = require('../../shared/definitions');
+        FEAR_MAX_WAVE, GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF } = require('../../shared/definitions');
+
+// ── Movement guard ──────────────────────────────────────────────────────────
+// The fastest a player can legitimately move: the quickest class, with the
+// move-speed passive maxed. Derived rather than written down so a new class or
+// a retuned passive can't leave a stale number here (recompute(), js/player.js,
+// applies exactly these two factors and nothing else — items and buffs do not
+// touch speed).
+const _MOVE_SPEED_CAP = Math.max(...Object.values(CHAR_DEF).map(c => c.speed || 0)) *
+  (1 + PASSIVE_MAX_LEVEL * ((PASSIVE_COMMON_DEF.find(p => p.stat === 'moveSpeedPct') || {}).perLevel || 0));
+// How much unspent travel the bucket below may hold, in seconds of movement at
+// that cap. This is the whole tolerance budget: a teleport, a respawn, a floor
+// change or a lag spike that coalesces several seconds of running into one
+// packet all get absorbed by it.
+const _MOVE_BUCKET_S = 6;
+// One overdraft is not evidence of anything — that is exactly what a teleport
+// pad looks like, and players use those constantly. What separates a hack from
+// a teleport is that a teleport happens ONCE and then the bucket refills,
+// while sustained speeding overdraws on packet after packet. So nothing is
+// reported or refused until _MOVE_STRIKES overdrafts land inside
+// _MOVE_STRIKE_WINDOW_MS of each other. At 20 move packets a second a client
+// running at even 1.5x speed reaches that in well under a second; five
+// teleports inside three seconds is not something normal play produces (the
+// pads are far apart and trigger within 26px).
+const _MOVE_STRIKES = 5;
+const _MOVE_STRIKE_WINDOW_MS = 3000;
+// off      — no accounting at all.
+// log      — accounts and reports, never refuses a move (default).
+// enforce  — also refuses moves once the bucket is empty, and corrects the
+//            client back to the last position the server accepted.
+const _MOVE_GUARD = ['off', 'log', 'enforce'].includes(process.env.MOVE_GUARD)
+  ? process.env.MOVE_GUARD : 'log';
+// Per-player, so one player flooding the log can't hide everyone else.
+const _MOVE_LOG_EVERY_MS = 30000;
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
 
 // Replicates client recompute() formula — single source of truth for server
@@ -2268,14 +2301,25 @@ class Room {
     // not a movement rule — it's the guard that stops one malformed packet
     // corrupting room state.
     //
-    // There is deliberately NO distance/speed check here. Movement is
-    // client-authoritative in this game, and the world's own teleport pads move
-    // the player tens of thousands of pixels through this very function (see
-    // _updateTeleportPads, js/game.js), so any cap has to carve them out — and
-    // the version that didn't took the game down in production. The exemption
-    // was written and tested, then removed again by choice: teleport-hacking is
-    // worth less than the risk of a movement rule mis-firing on real players.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    // Movement guard. There used to be no check here at all, on purpose: a
+    // per-packet distance cap is what took this down in production, because
+    // the world's own teleport pads move a player tens of thousands of pixels
+    // through this very function (_updateTeleportPads, js/game.js) — and so do
+    // respawn, floor changes, and the arena/guild-war/farm entrances. Any
+    // per-jump rule has to enumerate every one of them, and mis-fires on real
+    // players the day a new one is added.
+    //
+    // Distance over TIME needs no such list, which is the whole reason this
+    // shape is safe where that one wasn't. A teleport is one enormous jump and
+    // then nothing; a speedhack is continuous. So the budget is a token
+    // bucket: it refills at the fastest speed the game can legitimately
+    // produce and holds at most _MOVE_BUCKET_S seconds of it. A teleport —
+    // or a lag spike that coalesces several seconds of running into a single
+    // packet — drains it and it refills while the player carries on, costing
+    // them nothing. Only sustained travel faster than the cap drains it faster
+    // than it refills, and that is the only thing this can ever flag.
+    if (_MOVE_GUARD !== 'off' && !this._checkMoveBudget(socketId, p, x, y)) return;
     // undefined means a client still running the pre-authoritative-flag
     // bundle (mid-rollout, tab open since before the deploy) — its 'mv'
     // packet has no 5th element at all. Leaving p.moving untouched in that
@@ -2291,6 +2335,60 @@ class Room {
       moving = (ddx * ddx + ddy * ddy) > 0.1;
     }
     p.x = x; p.y = y; p.facing = facing; p.moving = moving;
+  }
+
+  // Returns false only when the move must be refused (enforce mode, bucket
+  // empty). Always does the accounting first, so 'log' mode measures exactly
+  // what 'enforce' would have acted on — the point of running it in log mode
+  // for a while before switching is that the two cannot disagree.
+  _checkMoveBudget(socketId, p, x, y) {
+    const now = Date.now();
+    if (p._mvAt === undefined) {
+      // First packet of the session: no elapsed time to earn budget over, so
+      // start full rather than empty. Otherwise the spawn-to-first-step move
+      // would be judged against a bucket that has never refilled.
+      p._mvAt = now;
+      p._mvBudget = _MOVE_SPEED_CAP * _MOVE_BUCKET_S;
+      return true;
+    }
+    const elapsed = Math.max(0, (now - p._mvAt) / 1000);
+    p._mvAt = now;
+    p._mvBudget = Math.min(_MOVE_SPEED_CAP * _MOVE_BUCKET_S,
+      (p._mvBudget || 0) + elapsed * _MOVE_SPEED_CAP);
+    const dx = x - p.x, dy = y - p.y;
+    const travelled = Math.sqrt(dx * dx + dy * dy);
+    if (travelled <= p._mvBudget) { p._mvBudget -= travelled; return true; }
+    // Overdrawn. The bucket goes to zero rather than negative: a single
+    // teleport must cost one bucket, not put the player in debt for the
+    // minutes it would take to pay off a 30,000px jump.
+    p._mvBudget = 0;
+    // Strikes decay by falling out of the window rather than being counted
+    // down, so a player who overdraws once an hour never accumulates any.
+    p._mvStrikes = (now - (p._mvStrikeAt || 0) <= _MOVE_STRIKE_WINDOW_MS) ? (p._mvStrikes || 0) + 1 : 1;
+    p._mvStrikeAt = now;
+    if (p._mvStrikes < _MOVE_STRIKES) return true;   // a teleport, or a lag burst
+    if (now - (p._mvWarnAt || 0) >= _MOVE_LOG_EVERY_MS) {
+      p._mvWarnAt = now;
+      console.warn(`[move] ${p.username || socketId}: ${p._mvStrikes} overdrafts in ` +
+        `${_MOVE_STRIKE_WINDOW_MS}ms, last ${Math.round(travelled)}px in ${Math.round(elapsed * 1000)}ms ` +
+        `(cap ${Math.round(_MOVE_SPEED_CAP)}px/s) — ` +
+        `${_MOVE_GUARD === 'enforce' ? 'refusing' : 'allowed, MOVE_GUARD=log'}`);
+    }
+    if (_MOVE_GUARD !== 'enforce') return true;
+    // Refusing alone would leave the client believing it is somewhere the
+    // server will never agree with — it renders its own position locally and
+    // gameState only carries OTHER players — so it has to be told where it
+    // actually is, or a false positive strands it permanently.
+    //
+    // Throttled: refusals arrive at the client's own send rate (20/s), and
+    // answering every one of them would put a steady 20 packets a second on
+    // the wire for as long as the player keeps trying. Four a second re-anchors
+    // them just as fast as they can act on it.
+    if (now - (p._mvCorrectAt || 0) >= 250) {
+      p._mvCorrectAt = now;
+      this.io.to(socketId).emit('posCorrect', { x: p.x, y: p.y });
+    }
+    return false;
   }
 
   syncPlayerHp(socketId, clientHp) {
