@@ -72,15 +72,106 @@ const _SNAP_MAX   = 10;   // ~250ms of buffer
 // second is plenty for something the server already stopped sending.
 let _aoiPruneTick = 0;
 
-// RTT ping measurement — updated every 2s, read by perf overlay
+// RTT ping measurement — updated every _PING_EVERY_MS, read by perf overlay
 let _pingMs = -1;
 let _pingTimer = null;
-// Watchdog state — see the ping loop in netConnect. Eight seconds is four
-// missed round trips: long enough that a brief stall or a GC pause on either
-// side can't trip it, short enough that a player is back in the game in
-// seconds instead of the two minutes the protocol timeout allows.
-let _lastPongAt = 0;
-const _PONG_SILENCE_MS = 8000;
+const _PING_EVERY_MS = 2000;
+// Watchdog state — see the ping loop in netConnect. Four unanswered probes is
+// eight seconds: long enough that a brief stall or a GC pause on either side
+// can't trip it, short enough that a player is back in the game in seconds
+// instead of the two minutes the protocol timeout allows.
+//
+// Counted in probes, NOT as "now - lastPongAt", because that wall-clock form
+// could not tell a dead link from a frozen client, and killed healthy sockets
+// for the second reason constantly. Everything that stops this timer from
+// running on schedule — a hidden tab (browsers throttle background timers to
+// as little as once a minute), the Telegram WebView suspended while the player
+// answers a message, a long main-thread stall on a weak phone — makes the next
+// tick read many seconds of "silence" that the link had nothing to do with.
+// The old check reconnected on the spot: the world was wiped and re-fetched,
+// the server kicked and re-seated the session, and to the player it looked
+// like the game randomly reconnects itself on a perfectly good connection.
+// A counter can be forgiven instead (see _pingTick), so only silence actually
+// observed by a running client counts against the link.
+let _pongMissed = 0;
+const _PONG_MISS_LIMIT = 4;
+// Wall-clock time the watchdog tick last ran, to detect that it did not.
+let _lastPingTickAt = 0;
+// How late a tick may be before we treat it as the timer having been frozen
+// rather than as elapsed time we can hold the link responsible for. Ordinary
+// jitter is tens of milliseconds; a throttled or suspended timer overshoots by
+// seconds, so anything past one extra interval is the latter.
+const _TICK_LATE_MS = _PING_EVERY_MS * 2;
+
+// Give the link a fresh, full silence budget. Called whenever we learn that
+// the previous budget was spent on something other than the link being quiet:
+// a new connection, or the client coming back from being frozen.
+function _resetPingWatchdog() {
+  _pongMissed = 0;
+  _lastPingTickAt = Date.now();
+}
+
+// Watchdog + latency probe, one tick every _PING_EVERY_MS.
+//
+// engine.io only gives up after pingInterval + pingTimeout, and a link that
+// black-holes (Wi-Fi to LTE handover, a sleeping radio, a WebView suspended in
+// the background) does not close the TCP connection — it just goes quiet.
+// Until the protocol timeout fires the client believes it is online and shows
+// a frozen world without even trying to reconnect. We already round-trip every
+// two seconds for the latency readout, so unanswered probes are a far faster
+// signal: reconnect after four of them instead of waiting out the protocol.
+function _pingTick() {
+  const now = Date.now();
+  const sinceTick = _lastPingTickAt ? now - _lastPingTickAt : 0;
+  _lastPingTickAt = now;
+  if (!socket?.connected) return;
+
+  // This tick fired far later than it was scheduled to, so the timer itself
+  // was stopped — the tab was hidden and throttled, the WebView suspended, or
+  // the main thread blocked. Probes that were never sent cannot have gone
+  // unanswered, and the gap says nothing about the link, so start the budget
+  // over rather than spending it on time we spent frozen. The link still gets
+  // checked, just from here: if it really did die while we were away, the next
+  // four probes go unanswered and the reconnect happens ~8s from now.
+  if (sinceTick > _TICK_LATE_MS) _pongMissed = 0;
+  // Same reasoning, ahead of time: a hidden page is exactly where the timer is
+  // least trustworthy, and nobody is looking at the world anyway. Keep probing
+  // (the readout stays warm and engine.io still has its own timeout), but do
+  // not tear down a session on evidence gathered in that state.
+  else if (_pongMissed >= _PONG_MISS_LIMIT && !_isPageHidden()) {
+    _resetPingWatchdog(); // don't re-fire every tick while it reconnects
+    _pingMs = -1;
+    socket.disconnect();
+    socket.connect();
+    return;
+  }
+
+  _pongMissed++;
+  // Deliberately not volatile: socket.io drops a volatile packet whenever the
+  // transport is not writable at that instant, and a probe that was silently
+  // discarded before it left is indistinguishable here from one the server
+  // never answered. Four such drops in a row used to disconnect a healthy
+  // session. It is one tiny packet every two seconds — send it for real.
+  socket.emit('_ping', now);
+}
+
+function _isPageHidden() {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+// Coming back to the foreground after the tab/WebView was hidden: the timer
+// above was throttled or stopped for the whole time away, so whatever the
+// watchdog has counted up is about us, not about the link. Clear it and probe
+// straight away — a link that really did die while we were backgrounded is
+// then caught by the normal budget, instead of every single return to the app
+// tearing down a working session.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    _resetPingWatchdog();
+    if (socket?.connected) socket.emit('_ping', Date.now());
+  });
+}
 
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
@@ -97,28 +188,10 @@ function netConnect(onReady) {
     // force the next netSendMove to send rather than compare against a
     // position the old connection reported.
     _lastSentX = null;
-    _lastPongAt = Date.now();
+    _resetPingWatchdog();
     // Start RTT ping loop
     if (_pingTimer) clearInterval(_pingTimer);
-    _pingTimer = setInterval(() => {
-      if (!socket?.connected) return;
-      // Watchdog. engine.io only gives up after pingInterval + pingTimeout,
-      // and a link that black-holes (Wi-Fi to LTE handover, a sleeping radio,
-      // the WebView suspended in the background) does not close the TCP
-      // connection — it just goes quiet. Until the protocol timeout fires the
-      // client believes it is online and shows a frozen world without even
-      // trying to reconnect. We already round-trip every 2s for the latency
-      // readout, so silence here is a far faster and more truthful signal:
-      // reconnect immediately instead of waiting out the protocol.
-      if (_lastPongAt && Date.now() - _lastPongAt > _PONG_SILENCE_MS) {
-        _lastPongAt = Date.now(); // don't re-fire every tick while it reconnects
-        _pingMs = -1;
-        socket.disconnect();
-        socket.connect();
-        return;
-      }
-      socket.volatile.emit('_ping', Date.now());
-    }, 2000);
+    _pingTimer = setInterval(_pingTick, _PING_EVERY_MS);
   });
 
   _initGramHandlers(socket);
@@ -126,7 +199,7 @@ function netConnect(onReady) {
   _initPetCraftHandlers(socket);
   _initEventBossHandlers(socket);
 
-  socket.on('_pong', t0 => { _pingMs = Date.now() - t0; _lastPongAt = Date.now(); });
+  socket.on('_pong', t0 => { _pingMs = Date.now() - t0; _pongMissed = 0; });
 
   socket.on('connect_error', () => {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
