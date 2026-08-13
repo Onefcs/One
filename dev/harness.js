@@ -676,6 +676,28 @@ scenario('handlers: none of the 115 throws on a bare request', async () => {
   await c.close();
 });
 
+scenario('exposure: the repository is not served as static files', async () => {
+  // express.static was mounted on the project root, which published every file
+  // in it: server/index.js and server/security.js in full, the models, the
+  // audit documents, and /.git — from which the whole history, and anything
+  // ever committed to it, can be reconstructed. It was the default that came
+  // with pointing it at '..', and nothing about the game needed any of it.
+  const leaky = ['/server/index.js', '/server/security.js', '/server/anticheat.js',
+                 '/server/models/Player.js', '/shared/definitions.js', '/dev/harness.js',
+                 '/package.json', '/package-lock.json', '/.git/config', '/.git/HEAD',
+                 '/AUDIT.md', '/SCALING.md', '/dev/seed.js'];
+  for (const p of leaky) {
+    const r = await fetch(BASE + p).catch(() => ({ status: 599 }));
+    ok(r.status !== 200, `not public: ${p}`, `served with ${r.status}`);
+  }
+  // And the things that must stay public still are.
+  for (const p of ['/', '/index.html', '/guide.html', '/admin.html', '/css/style.css',
+                   '/bundle.js', '/tonconnect-manifest.json', '/js/pixi.min.js']) {
+    const r = await fetch(BASE + p).catch(() => ({ status: 599 }));
+    eq(r.status, 200, `still public: ${p}`);
+  }
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

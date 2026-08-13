@@ -1972,8 +1972,34 @@ app.get('/bundle.js', (req, res) => {
   res.send(jsBundle);
 });
 
-// HTML/CSS: no cache so updates are picked up immediately
-app.use(express.static(path.join(__dirname, '..')));
+// HTML/CSS: no cache so updates are picked up immediately.
+//
+// Served from an ALLOWLIST, not from the repository root. Mounting the root
+// published every file in the project: server/index.js and server/security.js
+// in full, the models, the audit documents — and /.git, from which the entire
+// history (and anything ever committed to it) can be reconstructed. Nothing
+// about the game needed any of that; it was the default that came with
+// pointing express.static at '..'.
+//
+// Everything the client actually asks for either has its own route above
+// (/bundle.js, /images, /audio, the pixi and tonconnect vendor files) or is
+// named here. A file that is not on this list is not public.
+const PUBLIC_FILES = {
+  '/':                        'index.html',
+  '/index.html':              'index.html',
+  '/guide.html':              'guide.html',
+  '/admin.html':              'admin.html',
+  '/tonconnect-manifest.json':'tonconnect-manifest.json',
+  '/favicon.ico':             'images/favicon.ico',
+};
+app.get(Object.keys(PUBLIC_FILES), (req, res) => {
+  res.sendFile(path.join(ROOT, PUBLIC_FILES[req.path] || 'index.html'), err => {
+    if (err) res.status(404).end();
+  });
+});
+// The stylesheet is the only thing still served as a directory, and only this
+// one directory.
+app.use('/css', express.static(path.join(ROOT, 'css')));
 
 app.get('/tg-botname', (req, res) => {
   if (_tgBotUsername) return res.json({ username: _tgBotUsername });
