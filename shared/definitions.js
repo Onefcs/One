@@ -1402,6 +1402,90 @@ function deathBattleRewards() {
 // charged).
 const UPGRADE_RESET_COST = 200;
 
+// ── Skill damage multipliers ────────────────────────────────────────────────
+// The factor a skill applies on top of the level/gear scaling every skill
+// shares (skillDamageMult below). Per class, per slot, and per variant: `base`
+// is the ordinary skill, `adv` its "вторая профессия" version. null means that
+// variant deals no direct damage at all — it is a buff, a heal, a dash or a
+// pure crowd-control cast.
+//
+// These used to live as bare numbers inline in useSkill() (js/player.js) and
+// travelled to the server as a number the CLIENT computed: skillAttack carried
+// `multiplier` on the wire and the server could only clamp it (x10, Room.js),
+// because it had no way to know what the cast should have been worth. A
+// modified client simply asked for the ceiling on every hit. With the table
+// here, the server derives the figure from the player's own class, skill
+// levels and equipment, and the wire carries the skill SLOT instead — which is
+// a fact about what was cast, not a number to be trusted.
+//
+// Keep this the only place the numbers exist. The client reads it for its own
+// prediction (projectile damage, floating text) through the same function the
+// server uses, so the two cannot drift.
+const SKILL_MAX_LEVEL = 10;
+const SKILL_DMG_MULT = {
+  deathknight: {
+    Q: { base: null, adv: null },  // Вампиризм / Истощение — lifesteal buffs
+    W: { base: 1,    adv: null },  // Смерч клинков AOE / Жадность (crit buff)
+    E: { base: null, adv: null },  // Гнев мертвеца / Безумие — ATK buffs
+    R: { base: 1.5,  adv: 1.5  },  // Рывок тьмы / Охота — dash, hit on arrival
+  },
+  ranger: {
+    Q: { base: 1,    adv: 3    },  // Multi-Shot / Град стрел
+    W: { base: 1,    adv: 3    },  // Combo Arrow / Остриё
+    E: { base: null, adv: null },  // Jump / Баф Крит
+    R: { base: null, adv: null },  // attack-speed buffs
+  },
+  mage: {
+    Q: { base: 2,    adv: 3    },  // Ледяной шар / Молния
+    W: { base: 1,    adv: 3    },  // Ледяная нова / Разряд
+    E: { base: null, adv: 2    },  // Барьер (no damage) / Вспышка
+    R: { base: null, adv: null },  // Teleport / Перенесение
+  },
+  warlock: {
+    Q: { base: null, adv: null },
+    W: { base: null, adv: 3    },  // Оковы тьмы stun only / Колючие оковы also hit
+    E: { base: null, adv: null },  // Тёмный щит / Жажда
+    R: { base: null, adv: null },  // Тёмная молитва / Исцеление
+  },
+  lev: {
+    Q: { base: 2,    adv: 3    },  // Пинок / Молот гнева
+    W: { base: 1,    adv: 2    },  // Вихрь клинка / Вихрь
+    E: { base: null, adv: null },  // Гнев мертвеца / Щит
+    R: { base: 1.5,  adv: 1.5  },  // Кувырок / Рывок
+  },
+};
+
+// Level and gear scaling, shared by every damaging skill: +1% per skill level,
+// then the equipment's skill-power bonus (skillPct, e.g. the unique weapons).
+// Split out because healing scales identically (_skillHealMult, js/player.js).
+function skillScaleMult(skillLvl, skillPct) {
+  const L = Math.max(0, Math.min(SKILL_MAX_LEVEL, Math.floor(Number(skillLvl)) || 0));
+  return (1 + L * 0.01) * (1 + Math.max(0, Number(skillPct) || 0));
+}
+
+// The authoritative multiplier for one cast. Returns 0 when the slot's active
+// variant does no direct damage, so a client claiming a hit from a pure buff
+// cast gets nothing rather than a default.
+function skillDamageMult(cls, key, advActive, skillLvl, skillPct) {
+  const row = (SKILL_DMG_MULT[cls] || {})[key];
+  if (!row) return 0;
+  const base = advActive ? row.adv : row.base;
+  if (!base) return 0;
+  return base * skillScaleMult(skillLvl, skillPct);
+}
+
+// Every point of skillPct a player could possibly be wearing. Used as the
+// ceiling when the server has to bound a claim it cannot attribute to a
+// specific slot (see pvpSkillAttack) — derived so a new item can't leave a
+// stale number behind.
+function maxSkillDamageMult() {
+  let best = 0;
+  Object.values(SKILL_DMG_MULT).forEach(byKey => Object.values(byKey).forEach(v => {
+    best = Math.max(best, v.base || 0, v.adv || 0);
+  }));
+  return best;
+}
+
 const PASSIVE_MAX_LEVEL = 5;
 
 const PASSIVE_CLASS_DEF = {
@@ -1520,6 +1604,7 @@ if (typeof module !== 'undefined') module.exports = {
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
+  SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult, maxSkillDamageMult,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

@@ -1763,9 +1763,15 @@ function netHealParty(amount) {
   const amt = Math.max(0, Math.min(amount, 9999));
   socket.emit('healParty', { amount: amt });
 }
-function netSkillAttack(enemyId, multiplier) {
+// `key` is the skill slot that was cast (Q/W/E/R). The server derives the
+// damage multiplier from it — see skillDamageMult, shared/definitions.js — so
+// this no longer sends a number for the server to trust. `multiplier` is still
+// computed locally for the client's own prediction (projectile damage,
+// floating text) and is deliberately NOT sent: a value on the wire is a value
+// somebody edits.
+function netSkillAttack(enemyId, multiplier, key) {
   if (!socket?.connected) return;
-  socket.emit('skillAttack', { enemyId, multiplier });
+  socket.emit('skillAttack', { enemyId, key });
 }
 function netSkillStun(enemyId, duration) {
   if (!socket?.connected || !enemyId) return;
@@ -2189,10 +2195,11 @@ function netPvpAttack(targetSocketId) {
   socket.emit('pvpAttack', { targetId: targetSocketId });
 }
 
-function netPvpSkillAttack(targetId, multiplier) {
+// Same as netSkillAttack above: the slot travels, the number does not.
+function netPvpSkillAttack(targetId, multiplier, key) {
   if (!socket?.connected) return;
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
-  socket.emit('pvpSkillAttack', { targetId, multiplier });
+  socket.emit('pvpSkillAttack', { targetId, key });
 }
 
 function netPvpSkillCC(targetId, type, duration) {

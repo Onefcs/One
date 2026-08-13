@@ -773,7 +773,11 @@ function studySkill(key) {
   sl[key] = 1;
   spawnBurst(player.x, player.y, '#e69419', 10);
   dmgNum(player.x, player.y - 42, t('skillStudiedToast'), '#e69419');
-  netSaveProgress();
+  // Immediate, not debounced: the server refuses casts from a slot its copy
+  // of skillLevels still reads as unstudied (_skillMultFor, Room.js), so a
+  // two-second gap here is two seconds of a freshly bought skill doing
+  // nothing.
+  netSaveProgressNow();
   updateSkillsUI();
   updateInvUI();
 }
@@ -797,7 +801,9 @@ function upgradeSkillWithBook(key) {
   } else {
     dmgNum(player.x, player.y - 36, t('failToast'), '#eb4e61');
   }
-  netSaveProgress();
+  // Same reasoning as studySkill above — the level feeds the server's own
+  // damage derivation now, so it must not lag behind by the debounce.
+  netSaveProgressNow();
   updateSkillsUI();
   updateInvUI();
 }
@@ -836,7 +842,12 @@ function toggleAdvSkill(key) {
   aa[key] = !aa[key];
   spawnBurst(player.x, player.y, '#f5c542', 8);
   dmgNum(player.x, player.y - 40, aa[key] ? t('advSwitchedToAdvToast') : t('advSwitchedToBaseToast'), '#f5c542');
-  netSaveProgress();
+  // Flushed immediately, not on the usual 2s debounce: the server now derives
+  // skill damage from advSkillActive in its copy of this save (_skillMultFor,
+  // server/game/Room.js), and base vs advanced is up to a 3x difference. A
+  // debounced write would leave the first casts after a switch resolving
+  // against the previous variant.
+  netSaveProgressNow();
   updateSkillsUI();
   _refreshProfessionPanelIfOpen();
 }

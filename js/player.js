@@ -173,7 +173,12 @@ function _skillLvl(key) { return (player && player.skillLevels && player.skillLe
 // percentage of a duration is a different kind of number to a percentage of a
 // hit.
 function _skillPowerMult()     { return 1 + ((player && player.skillPct) || 0); }
-function _skillDmgMult(key)    { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
+function _skillDmgMult(key)    { return skillScaleMult(_skillLvl(key), (player && player.skillPct) || 0); }
+// The full multiplier for casting `key` right now — the slot's own factor
+// (SKILL_DMG_MULT, shared/definitions.js) times the level/gear scaling above.
+// The server derives the identical number from the slot name the cast sends,
+// so these must come from the one table rather than from literals here.
+function _skillMult(key)       { return skillDamageMult(player && player.type, key, _advActive(key), _skillLvl(key), (player && player.skillPct) || 0); }
 function _skillBuffSec(key)    { return _skillLvl(key); }
 function _skillBarrierSec(key) { return _skillLvl(key) * 0.2; }
 function _skillInvisSec(key)   { return _skillLvl(key) * 0.2; }
@@ -219,16 +224,16 @@ function _applyVampirism(dmg) {
 }
 
 // AOE helper with optional damage multiplier (replaces _skillAOE for leveled skills)
-function _skillAOEMult(r, mult) {
+function _skillAOEMult(r, mult, key) {
   const m = Math.max(1, mult || 1);
   serverEnemies.forEach(e => {
     if ((e.hp || 0) <= 0) return;
-    if (dist(e.x, e.y, player.x, player.y) < r + (e.size || 0) && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m);
+    if (dist(e.x, e.y, player.x, player.y) < r + (e.size || 0) && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m, key);
   });
 }
 
 // Directional AOE with optional damage multiplier
-function _skillDirMult(dx, dy, r, arcDot, mult) {
+function _skillDirMult(dx, dy, r, arcDot, mult, key) {
   const m = Math.max(1, mult || 1);
   const len = Math.hypot(dx, dy) || 1;
   const nx = dx / len, ny = dy / len;
@@ -237,7 +242,7 @@ function _skillDirMult(dx, dy, r, arcDot, mult) {
     const ex = e.x - player.x, ey = e.y - player.y;
     const d = Math.hypot(ex, ey);
     if (d > r + (e.size || 0) || d < 1) return;
-    if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3) && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m);
+    if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3) && hasLOS(player.x, player.y, e.x, e.y)) netSkillAttack(e.id, m, key);
   });
 }
 
@@ -621,11 +626,11 @@ function _pvpPlayerTarget() {
 }
 
 // PvP: skill damage AOE hitting all nearby other players
-function _pvpSkillAOE(r, mult) {
+function _pvpSkillAOE(r, mult, key) {
   if (!pvpMode) return;
   otherPlayers.forEach((op, id) => {
     if ((op.hp || 0) <= 0 || op.x == null) return;
-    if (dist(op.x, op.y, player.x, player.y) < r) netPvpSkillAttack(id, mult);
+    if (dist(op.x, op.y, player.x, player.y) < r) netPvpSkillAttack(id, mult, key);
   });
 }
 
@@ -693,8 +698,8 @@ function useSkill(idx) {
         spawnBurst(player.x, player.y, '#f5c542', 10);
       } else { // Смерч клинков — AOE 110
         spawnAOE(player.x, player.y, 110, 'fissure', '#9c2a3a', '#5a3a7a');
-        _skillAOEMult(110, _skillDmgMult('W')); netSpawnAoe(player.x, player.y, 110, 'fissure', '#9c2a3a', '#5a3a7a');
-        _pvpSkillAOE(110, _skillDmgMult('W'));
+        _skillAOEMult(110, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, 110, 'fissure', '#9c2a3a', '#5a3a7a');
+        _pvpSkillAOE(110, _skillMult('W'), 'W');
       }
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Безумие — +25% ATK + basic attacks splash AOE, 5s (+1s per level)
@@ -726,11 +731,11 @@ function useSkill(idx) {
       const len = Math.hypot(_rdx, _rdy) || 1;
       _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
       if (_chargePvpTarget) {
-        netPvpSkillAttack(_chargePvpTarget.id, 1.5 * _skillDmgMult('R'));
+        netPvpSkillAttack(_chargePvpTarget.id, _skillMult('R'), 'R');
         faceTowards(_chargePvpTarget.op.x, _chargePvpTarget.op.y);
         spawnAOE(_chargePvpTarget.op.x, _chargePvpTarget.op.y, 40);
       } else if (_chargeTarget) {
-        netSkillAttack(_chargeTarget.id, 1.5 * _skillDmgMult('R'));
+        netSkillAttack(_chargeTarget.id, _skillMult('R'), 'R');
         if (_advR && typeof netSkillDefDown === 'function') netSkillDefDown(_chargeTarget.id, 10);
         faceTowards(_chargeTarget.x, _chargeTarget.y);
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
@@ -742,8 +747,8 @@ function useSkill(idx) {
     if (sk.key === 'Q') {
       if (_advActive('Q')) { // Град стрел — AOE ×3, radius 220
         spawnAOE(player.x, player.y, 220, 'pulse', '#8fbf5a');
-        _skillAOEMult(220, 3 * _skillDmgMult('Q')); netSpawnAoe(player.x, player.y, 220, 'pulse', '#8fbf5a');
-        _pvpSkillAOE(220, 3 * _skillDmgMult('Q'));
+        _skillAOEMult(220, _skillMult('Q'), 'Q'); netSpawnAoe(player.x, player.y, 220, 'pulse', '#8fbf5a');
+        _pvpSkillAOE(220, _skillMult('Q'), 'Q');
         dmgNum(player.x, player.y - 40, '🏹 Град стрел!', '#f5c542');
       } else { // Multi-Shot — 3 arrows fan
         const dir = nearestEnemyDir();
@@ -756,7 +761,7 @@ function useSkill(idx) {
           projs.push(p);
           netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#8fbf5a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
         });
-        _skillDirMult(dir.dx, dir.dy, 220, 0.1, dmgMult);
+        _skillDirMult(dir.dx, dir.dy, 220, 0.1, dmgMult, 'Q');
       }
     } else if (sk.key === 'W') {
       if (_advActive('W')) { // Остриё — ×3 damage + 2s stun on nearest/PvP target
@@ -764,7 +769,7 @@ function useSkill(idx) {
         const pvpTgt = _pvpPlayerTarget();
         if (pvpTgt) {
           spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
-          netPvpSkillAttack(pvpTgt.id, 3 * _skillDmgMult('W'));
+          netPvpSkillAttack(pvpTgt.id, _skillMult('W'), 'W');
           pvpTgt.op.stunTimer = stunDur;
           netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
           faceTowards(pvpTgt.op.x, pvpTgt.op.y);
@@ -772,7 +777,7 @@ function useSkill(idx) {
           const tgt = nearestEnemy();
           if (tgt) {
             spawnAOE(tgt.x, tgt.y, 40);
-            netSkillAttack(tgt.id, 3 * _skillDmgMult('W'));
+            netSkillAttack(tgt.id, _skillMult('W'), 'W');
             tgt.stunTimer = stunDur;
             netSkillStun(tgt.id, stunDur);
             faceTowards(tgt.x, tgt.y);
@@ -793,7 +798,7 @@ function useSkill(idx) {
               color: '#a8d47a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
           }, delayMs);
         });
-        _skillDirMult(dir.dx, dir.dy, 240, 0.5, dmgMult);
+        _skillDirMult(dir.dx, dir.dy, 240, 0.5, dmgMult, 'W');
       }
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Баф Крит — +5% crit chance, 20 min (+1s per level)
@@ -822,10 +827,10 @@ function useSkill(idx) {
       const _advQ = _advActive('Q');
       const dir = nearestEnemyDir();
       const ang = Math.atan2(dir.dy, dir.dx);
-      const dmgMult = (_advQ ? 3 : 2) * _skillDmgMult('Q'); // Урон молнии ×3 / Ледяной шар ×2
+      const dmgMult = _skillMult('Q'); // Урон молнии ×3 / Ледяной шар ×2
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
         color: _advQ ? '#f5c542' : '#f60', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
-      _skillDirMult(dir.dx, dir.dy, 160, 0.5, dmgMult);
+      _skillDirMult(dir.dx, dir.dy, 160, 0.5, dmgMult, 'Q');
       netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: _advQ ? '#f5c542' : '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
       if (_advQ) { // + 3s stun (+1s per level) on the same target the shot is aimed at
         const stunDur = 3 + _skillBuffSec('Q');
@@ -842,24 +847,24 @@ function useSkill(idx) {
     } else if (sk.key === 'W') {
       const _advW = _advActive('W');
       const r = _advW ? 220 : 130;
-      const dmgMult = (_advW ? 3 : 1) * _skillDmgMult('W'); // Разряд ×3 / Ледяная нова ×1
+      const dmgMult = _skillMult('W'); // Разряд ×3 / Ледяная нова ×1
       spawnAOE(player.x, player.y, r, 'frost', '#66ccff');
-      _skillAOEMult(r, dmgMult); netSpawnAoe(player.x, player.y, r, 'frost', '#66ccff');
+      _skillAOEMult(r, dmgMult, 'W'); netSpawnAoe(player.x, player.y, r, 'frost', '#66ccff');
       const slowIds = [];
       serverEnemies.forEach(e => {
         if ((e.hp || 0) <= 0) return;
         if (dist(e.x, e.y, player.x, player.y) < r) { e.slowTimer = 3; slowIds.push(e.id); }
       });
       if (slowIds.length) netSkillSlow(slowIds, 3);
-      _pvpSkillAOE(r, dmgMult);
+      _pvpSkillAOE(r, dmgMult, 'W');
       _pvpSkillSlow(r, 3);
       dmgNum(player.x, player.y - 40, _advW ? '⚡ Разряд!' : '❄ Заморозка!', _advW ? '#f5c542' : '#8ef');
       spawnBurst(player.x, player.y, _advW ? '#f5c542' : '#8ef', 12);
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Вспышка — AOE ×2 damage, radius 220 + the same +80% DEF 3s (+1s per level)
         spawnAOE(player.x, player.y, 220, 'flash', '#c9a3ff');
-        _skillAOEMult(220, 2 * _skillDmgMult('E')); netSpawnAoe(player.x, player.y, 220, 'flash', '#c9a3ff');
-        _pvpSkillAOE(220, 2 * _skillDmgMult('E'));
+        _skillAOEMult(220, _skillMult('E'), 'E'); netSpawnAoe(player.x, player.y, 220, 'flash', '#c9a3ff');
+        _pvpSkillAOE(220, _skillMult('E'), 'E');
         barrierTimer = 3 + _skillBuffSec('E');
         recompute();
         dmgNum(player.x, player.y - 40, '✨ Вспышка!', '#f5c542');
@@ -905,11 +910,11 @@ function useSkill(idx) {
       // none today — only its PvP branch already did, at ×1).
       const _advW3 = _advActive('W');
       const stunDur = 3 + _skillBuffSec('W');
-      const dmgMult3 = (_advW3 ? 3 : 1) * _skillDmgMult('W');
+      const dmgMult3 = _skillMult('W');
       const pvpTgt = _pvpPlayerTarget();
       if (pvpTgt) {
         spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
-        netPvpSkillAttack(pvpTgt.id, dmgMult3);
+        netPvpSkillAttack(pvpTgt.id, dmgMult3, 'W');
         pvpTgt.op.stunTimer = stunDur;
         netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
         faceTowards(pvpTgt.op.x, pvpTgt.op.y);
@@ -917,7 +922,7 @@ function useSkill(idx) {
         const tgt = nearestEnemy();
         if (tgt) {
           spawnAOE(tgt.x, tgt.y, 40);
-          if (_advW3) netSkillAttack(tgt.id, dmgMult3);
+          if (_advW3) netSkillAttack(tgt.id, dmgMult3, 'W');
           tgt.stunTimer = stunDur;
           netSkillStun(tgt.id, stunDur);
           faceTowards(tgt.x, tgt.y);
@@ -951,11 +956,11 @@ function useSkill(idx) {
       // stun, advanced ×3 + 5s stun (+1s per level either way).
       const _advQ2 = _advActive('Q');
       const stunDur = (_advQ2 ? 5 : 3) + _skillBuffSec('Q');
-      const dmgMult4 = (_advQ2 ? 3 : 2) * _skillDmgMult('Q');
+      const dmgMult4 = _skillMult('Q');
       const pvpTgt = _pvpPlayerTarget();
       if (pvpTgt) {
         spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 50);
-        netPvpSkillAttack(pvpTgt.id, dmgMult4);
+        netPvpSkillAttack(pvpTgt.id, dmgMult4, 'Q');
         pvpTgt.op.stunTimer = stunDur;
         netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
         faceTowards(pvpTgt.op.x, pvpTgt.op.y);
@@ -963,7 +968,7 @@ function useSkill(idx) {
         const tgt = nearestEnemy();
         if (tgt) {
           spawnAOE(tgt.x, tgt.y, 50);
-          netSkillAttack(tgt.id, dmgMult4);
+          netSkillAttack(tgt.id, dmgMult4, 'Q');
           tgt.stunTimer = stunDur;
           netSkillStun(tgt.id, stunDur);
           faceTowards(tgt.x, tgt.y);
@@ -976,8 +981,8 @@ function useSkill(idx) {
       const _advW4 = _advActive('W');
       const r2 = _advW4 ? 220 : 110;
       spawnAOE(player.x, player.y, r2, 'shockwave', '#ccccdd');
-      _skillAOEMult(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W')); netSpawnAoe(player.x, player.y, r2, 'shockwave', '#ccccdd');
-      _pvpSkillAOE(r2, (_advW4 ? 2 : 1) * _skillDmgMult('W'));
+      _skillAOEMult(r2, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r2, 'shockwave', '#ccccdd');
+      _pvpSkillAOE(r2, _skillMult('W'), 'W');
     } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
       // level) either way; advanced additionally gives +10% ATK for the same duration.
       const _advE4 = _advActive('E');
@@ -1005,12 +1010,12 @@ function useSkill(idx) {
       const len = Math.hypot(_rdx, _rdy) || 1;
       _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
       if (_chargePvpTarget) {
-        netPvpSkillAttack(_chargePvpTarget.id, 1.5 * _skillDmgMult('R'));
+        netPvpSkillAttack(_chargePvpTarget.id, _skillMult('R'), 'R');
         if (_advR5) { _chargePvpTarget.op.slowTimer = 10; netPvpSkillCC(_chargePvpTarget.id, 'slow', 10); }
         faceTowards(_chargePvpTarget.op.x, _chargePvpTarget.op.y);
         spawnAOE(_chargePvpTarget.op.x, _chargePvpTarget.op.y, 40);
       } else if (_chargeTarget) {
-        netSkillAttack(_chargeTarget.id, 1.5 * _skillDmgMult('R'));
+        netSkillAttack(_chargeTarget.id, _skillMult('R'), 'R');
         if (_advR5) { _chargeTarget.slowTimer = 10; netSkillSlow([_chargeTarget.id], 10); }
         faceTowards(_chargeTarget.x, _chargeTarget.y);
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);

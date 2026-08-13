@@ -9083,14 +9083,14 @@ io.on('connection', socket => {
     }
   });
 
-  safeOn('skillAttack', ({ enemyId, multiplier } = {}) => {
+  safeOn('skillAttack', ({ enemyId, key } = {}) => {
     if (!_atkAllowed()) return;
     if (_pvpFrozen(socket.id)) return;
     if (!currentRoom) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
     const _a3TargetEnemy2 = currentRoom._enemyMap.get(enemyId);
     if (_a3TargetEnemy2 && _a3TargetEnemy2.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy2.a3Team) return;
-    const result = currentRoom.skillAttackEnemy(socket.id, enemyId, multiplier);
+    const result = currentRoom.skillAttackEnemy(socket.id, enemyId, key);
     if (!result) return;
     if (result.immune) {
       socket.emit('guildWarError', { msg: result.reason === 'no_clan' ? 'Нужен клан, чтобы атаковать замок' : 'Нельзя атаковать свой замок' });
@@ -9291,14 +9291,14 @@ io.on('connection', socket => {
     if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, socket.id, currentRoom); }
   });
 
-  safeOn('pvpSkillAttack', ({ targetId, multiplier } = {}) => {
+  safeOn('pvpSkillAttack', ({ targetId, key } = {}) => {
     // Was the only combat handler outside the attack limiter, i.e. in the
     // 300 events/s bucket.
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id) || _pvpFrozen(targetId)) return;
     if (_isPvpImmune(socket.id, targetId)) return;
-    const result = currentRoom.pvpSkillAttack(socket.id, targetId, multiplier);
+    const result = currentRoom.pvpSkillAttack(socket.id, targetId, key);
     if (!result) return;
     io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
     socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });

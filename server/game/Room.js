@@ -4,7 +4,8 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
-        FEAR_MAX_WAVE, GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF } = require('../../shared/definitions');
+        FEAR_MAX_WAVE, GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
+        skillDamageMult } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
@@ -2161,7 +2162,32 @@ class Room {
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
-  pvpSkillAttack(attackerSocketId, targetSocketId, multiplier) {
+  // The multiplier for a cast by this player in slot `key`, derived from what
+  // the server already knows about them: class, that slot's studied level, and
+  // whether its advanced variant is switched on. The cast used to carry the
+  // number itself and all the server could do was clamp it (x10) — a bound
+  // roughly twice the best a legitimate cast can reach (x4.95), so a modified
+  // client simply asked for the ceiling every time.
+  //
+  // p._sd is the same sanitized save the stats come from (computeStats), so
+  // skillLevels/advSkillActive here are the ones the anti-cheat has already
+  // bounded, and skillPct is read off the equipment rather than claimed.
+  _skillMultFor(p, key) {
+    const sd = p._sd || {};
+    let skillPct = 0;
+    Object.values(sd.equipment || {}).forEach(it => { if (it && it.skillPct) skillPct += it.skillPct; });
+    // Unstudied slots cast for nothing. The client refuses this outright
+    // ("Навык не изучен", useSkill in js/player.js) but the server never
+    // checked it at all, so a modified client had all four slots from level
+    // one without spending a single book. studySkill writes level 1, so zero
+    // means unstudied and nothing else.
+    const lvl = Math.max(0, Math.floor(Number((sd.skillLevels || {})[key])) || 0);
+    if (lvl <= 0) return 0;
+    const adv = !!((sd.advSkillLearned || {})[key] && (sd.advSkillActive || {})[key]);
+    return skillDamageMult(p.type || sd.type, key, adv, lvl, skillPct);
+  }
+
+  pvpSkillAttack(attackerSocketId, targetSocketId, key) {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
@@ -2169,8 +2195,7 @@ class Room {
     if (attacker.hp <= 0) return null;
     // Same server-side floor as skillAttackEnemy — and it matters more here:
     // this handler doesn't go through the attack limiter in server/index.js at
-    // all, so it sat in the 300 events/s bucket with a ×10 multiplier, which
-    // is an instant kill on anyone. See SKILL_BURST_MS above for why this
+    // all, so it sat in the 300 events/s bucket. See SKILL_BURST_MS above for why this
     // isn't a flat per-hit gate.
     const _nowCd = Date.now();
     const _castStart = attacker._lastSkillAtk || 0;
@@ -2183,7 +2208,11 @@ class Room {
     if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 600 * 600) return null;
-    const mult = Math.max(1, Math.min(10, multiplier || 1));
+    // 0 means the slot's active variant deals no direct damage — a buff, a
+    // heal or a pure stun. A client claiming a hit from one of those is
+    // refused outright rather than falling back to a default.
+    const mult = this._skillMultFor(attacker, key);
+    if (!(mult > 0)) return null;
     const base = Math.max(1, Math.round(attacker.atk * mult) - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
@@ -2934,7 +2963,7 @@ class Room {
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
 
-  skillAttackEnemy(socketId, enemyId, multiplier) {
+  skillAttackEnemy(socketId, enemyId, key) {
     const attacker = this.players.get(socketId);
     if (!attacker) return null;
     // Dead attackers can't cast — attackEnemy has refused this for basic hits
@@ -2942,8 +2971,7 @@ class Room {
     if (attacker.hp <= 0) return null;
     // Real skill cooldowns (12–20s) live in the client, which makes them
     // advisory. This is the server's own floor: without it the only limit was
-    // the socket-level 20 events/s, and each of those can carry a ×10
-    // multiplier — roughly thirty times the intended damage output. SKILL_CD_MS
+    // the socket-level 20 events/s. SKILL_CD_MS
     // is far below any real cooldown, so legitimate play never reaches it; it
     // exists purely to bound a modified client. See SKILL_BURST_MS above for
     // why one AOE cast's several hits don't gate each other.
@@ -2962,7 +2990,10 @@ class Room {
       if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
       if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
     }
-    const mult = Math.max(1, Math.min(multiplier || 1, 10));
+    // See _skillMultFor — derived from this player's own progression, not
+    // taken from the packet. 0 = the active variant does no damage.
+    const mult = this._skillMultFor(attacker, key);
+    if (!(mult > 0)) return null;
     // Same defDown discount as attackEnemy above.
     const _effDef2 = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
     const base = Math.max(1, Math.floor((attacker.atk - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
