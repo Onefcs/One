@@ -966,8 +966,9 @@ class Room {
     // race10.bounds in particular is what lets the client tint that whole
     // floor to look like "Кровавая Башня" (_buildChunk, js/game.js). The hub
     // no longer has any of these fields at all, since its outbound pads
-    // (_gwPad/_farmPad/_evtPad, js/game.js) only need the hub's own spawn
-    // point plus a fixed offset (and, for the level-gated farm pad,
+    // (_gwPad/_evtPad and the single _portalPad covering the arms +
+    // Фарм-зона, js/game.js) only need the hub's own spawn point plus a
+    // fixed offset (and, for the portal's level-gated destinations,
     // farmZoneEntry.req) — not the zone's own geometry, and pvpArena/race10
     // have no walk-in pad at all (matchmade/scheduled deploys only). this._
     // dungeon.arena/pvpArena themselves still exist on their own floor's own

@@ -754,6 +754,8 @@ Object.assign(I18N_UI, {
 
   guildWarLbl: { ru: '🏰 Война гильдий', en: '🏰 Guild War', uk: '🏰 Війна гільдій', es: '🏰 Guerra de Clanes', tr: '🏰 Klan Savaşı', pt: '🏰 Guerra de Clãs' },
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
+  portalLbl: { ru: '🌀 Телепорт', en: '🌀 Portal', uk: '🌀 Телепорт', es: '🌀 Portal', tr: '🌀 Portal', pt: '🌀 Portal' },
+  portalPickTitle: { ru: 'Куда телепортироваться?', en: 'Where to teleport?', uk: 'Куди телепортуватися?', es: '¿A dónde teletransportarse?', tr: 'Nereye ışınlanmak istersin?', pt: 'Para onde teleportar?' },
   // Map panel's monster reference list, Фарм-зона variant — see
   // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.
   farmBestiaryHint: { ru: 'Уровень варьируется 21-30 у каждого монстра отдельно — здесь показан средний.', en: 'Each monster rolls its own level 21-30 — shown here is the average.', uk: 'Рівень варіюється 21-30 в кожного монстра окремо — тут показано середній.', es: 'Cada monstruo tiene su propio nivel 21-30 — aquí se muestra el promedio.', tr: 'Her canavarın kendi seviyesi 21-30 arasında — burada ortalama gösteriliyor.', pt: 'Cada monstro sorteia seu próprio nível 21-30 — aqui é mostrada a média.' },

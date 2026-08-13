@@ -1328,17 +1328,23 @@ function _armLabel(dir) { return typeof t === 'function' ? t({ left:'armLeft', t
 const _ARM_LABEL = new Proxy({}, { get: (_, dir) => _armLabel(dir) });
 
 // ─────────────────────────────────────────────────────────
-//  TELEPORT PADS — hub-side pads (one per arm, labeled by its level range)
-//  warp straight into that zone's corridor entrance; a matching pad at each
-//  zone's entrance warps back to the hub. Replaces the old walk-down-the-
-//  corridor hub doors entirely — the hub isn't physically connected to any
-//  zone anymore.
+//  TELEPORT PADS — a single hub-side portal opens a modal listing every arm
+//  (labeled by its level range) plus Фарм-зона; picking one warps straight
+//  into that zone's corridor entrance, and a matching pad at each zone's
+//  entrance warps back to the hub. Replaces the old walk-down-the-corridor
+//  hub doors entirely — the hub isn't physically connected to any zone
+//  anymore.
 // ─────────────────────────────────────────────────────────
 function _teleportLabel(dir) { const n = { left:1, top:20, bottom:40, right:60 }[dir]; return typeof tVars === 'function' ? tVars('lvlNTeleport', { n }) : n + ' уровень'; }
 const _TELEPORT_LABEL = new Proxy({}, { get: (_, dir) => _teleportLabel(dir) });
-const _TELEPORT_HUB_DX = { left: -12, top: -4, bottom: 4, right: 12 }; // tiles, hub-side pad row
-const _TELEPORT_HUB_DY = 10; // tiles south of spawn (NPCs sit north, at dy -11)
-let _teleportPads = null; // hub-side: {dir, x, y, req, label} — enterLocation(dir) on trigger
+// Single hub-side portal, standing in for what used to be 5 separate pads
+// (the 4 arm pads + the Фарм-зона pad): walking up to it opens a modal
+// listing every destination instead of triggering a transition directly —
+// see _portalDestinations/_openPortalModal below.
+const _PORTAL_DX = 0; // tiles, hub-side (NPCs sit north, at dy -11)
+const _PORTAL_DY = 10; // tiles south of spawn
+let _portalPad = null;          // hub-only: {x, y} — approach opens the modal
+let _portalDestinations = null; // hub-only: [{target, req, label}] — modal contents
 let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation('hub') on trigger
 // Event-boss arena pads (see _evtArenaOpen). The hub-side one sits due west
 // of spawn — NPCs are north (dy -8..-11) and the arm pads south (dy +10), so
@@ -1354,14 +1360,8 @@ const _GW_PAD_DX = -10;
 let _gwPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
-// Фарм-зона pad — always open (no time window, unlike Guild War), but
-// level-gated: _farmPad.req comes from dungeon.farmZoneEntry.req (hub-only,
-// see generateHub, server/game/dungeon.js), checked the same way
-// _teleportPads' own req field is (_updateTeleportPads below), and
-// _drawTeleportPad already renders the locked/unlocked ring off that same
-// req param.
-const _FARM_PAD_DX = -12;
-let _farmPad = null;
+let _portalModalOpen = false; // true while the destination-picker modal is up
+let _portalDismissed = false; // player closed it manually; don't reopen until they step away and back
 // World boss state as the server last reported it: spawnAt is a summon already
 // counting down, nextAt the next scheduled appearance (пн/ср/пт/вс 20:00 МСК).
 // Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
@@ -1369,7 +1369,8 @@ let _evtBossState = { spawnAt: 0, alive: false, nextAt: 0 };
 let _evtHpCd = 0;
 
 function _buildArmGates() {
-  if (!dungeon) { _armGates = []; _teleportPads = []; _returnPads = []; _raceBarriers = []; return; }
+  _closePortalModal();
+  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _raceBarriers = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
   ));
@@ -1378,16 +1379,8 @@ function _buildArmGates() {
   // is decided.
   _raceBarriers = (dungeon.race10 && dungeon.race10.barriers) || [];
 
-  // Hub-side outbound pads — one per arm. Each arm is its own floor now (see
-  // server/game/floors.js), so stepping onto one requests a real transition
-  // (netEnterLocation) instead of walking to a same-grid target coordinate —
-  // no targetX/targetY any more.
-  const entries = dungeon.armEntries || [];
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
-  _teleportPads = entries.map(e => ({
-    dir: e.dir, req: e.req, label: _TELEPORT_LABEL[e.dir] || `${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${e.req}`,
-    x: sx + (_TELEPORT_HUB_DX[e.dir] || 0) * TILE, y: sy + _TELEPORT_HUB_DY * TILE,
-  }));
+
   // Arm-side return pad — only present when THIS floor IS an arm (its own
   // returnPad field, see generateArm in server/game/dungeon.js); the hub
   // itself has none.
@@ -1397,6 +1390,25 @@ function _buildArmGates() {
   // the one reliable signal, from any floor's dungeon payload, that this is
   // the hub itself and its special-zone outbound pads belong on screen.
   const onHub = !!dungeon.armEntries;
+
+  // Single hub-side portal — the 4 arm pads and the Фарм-зона pad used to
+  // each sit in their own spot and transition directly on touch; now they're
+  // just entries in a list a single pad shows in a modal on approach (see
+  // _openPortalModal/_updateTeleportPads), each still carrying its own req
+  // (level gate) and label the same way the old individual pads did.
+  const entries = dungeon.armEntries || [];
+  _portalDestinations = entries.map(e => (
+    { target: e.dir, req: e.req, label: _TELEPORT_LABEL[e.dir] || `${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${e.req}` }
+  ));
+  const fze = dungeon.farmZoneEntry;
+  if (fze) {
+    _portalDestinations.push(
+      { target: 'farmZone', req: fze.req || 0, label: typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона' }
+    );
+  }
+  _portalPad = (onHub && _portalDestinations.length)
+    ? { x: sx + _PORTAL_DX * TILE, y: sy + _PORTAL_DY * TILE }
+    : null;
 
   // Event-boss arena pad — its own floor now (server/game/floors.js), same
   // change every other special-zone pad below already went through: a real
@@ -1412,22 +1424,10 @@ function _buildArmGates() {
   // Guild War hub-side pad — its own floor now (server/game/floors.js), so
   // stepping onto it requests a real transition (netEnterLocation) rather
   // than a same-grid teleport; no targetX/targetY any more, same change the
-  // arm pads above already went through. The zone's own returnPad
+  // portal above already went through. The zone's own returnPad
   // (generateGuildWar) flows back through the generic _returnPads handling
   // above, so there's no dedicated return pad to build here any more either.
   _gwPad = onHub ? { x: sx + _GW_PAD_DX * TILE, y: sy } : null;
-
-  // Фарм-зона hub-side pad — its own floor now (server/game/floors.js), same
-  // change the arm pads and the Guild War pad above already went through: a
-  // real transition (netEnterLocation) instead of a same-grid teleport, req
-  // carries the level gate (dungeon.farmZoneEntry, hub-only — see
-  // generateHub, server/game/dungeon.js), and the zone's own returnPad flows
-  // back through the generic _returnPads handling, so there's no dedicated
-  // return pad to build here any more either.
-  const fze = dungeon.farmZoneEntry;
-  _farmPad = onHub && fze
-    ? { x: sx + _FARM_PAD_DX * TILE, y: sy, req: fze.req || 0, label: typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона' }
-    : null;
 }
 
 // True while a world boss is announced, alive, or its loot is still on the
@@ -1438,7 +1438,6 @@ function _evtArenaOpen() {
          (typeof worldDrops !== 'undefined' && worldDrops.size > 0);
 }
 
-let _teleportMsgCd = 0;
 function _teleportTo(tx, ty, label) {
   player.x = tx; player.y = ty;
   camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2; clampCamera();
@@ -1475,21 +1474,22 @@ function _requestEnterLocation(target, label, icon) {
   netEnterLocation(target);
 }
 
-// Called once per frame from update(): triggers a teleport the instant the
-// player walks onto a pad they're allowed to use, or shows a throttled lock
-// message near one they aren't leveled for yet.
+// Called once per frame from update(): opens the portal's destination modal
+// the instant the player walks up to it (closing it again once they step
+// away), and triggers a teleport the instant they walk onto any pad that
+// still transitions directly (return pads, the event arena, Guild War).
 function _updateTeleportPads(dt) {
   if (!player) return;
-  if (_teleportMsgCd > 0) _teleportMsgCd -= dt;
   const TRIGGER_R = 26;
-  (_teleportPads || []).forEach(p => {
-    if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
-    if (p.req > 0 && (player.lvl || 1) < p.req) {
-      if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: p.req }) : `🔒 Нужен ${p.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
-      return;
+  if (_portalPad) {
+    const inRange = dist(player.x, player.y, _portalPad.x, _portalPad.y) < TRIGGER_R;
+    if (inRange) {
+      if (!_portalModalOpen && !_portalDismissed) _openPortalModal();
+    } else {
+      if (_portalModalOpen) _closePortalModal();
+      _portalDismissed = false;
     }
-    _requestEnterLocation(p.dir, p.label);
-  });
+  }
   (_returnPads || []).forEach(p => {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
     _requestEnterLocation('hub', typeof t === 'function' ? t('centralHall') : 'Центральный зал');
@@ -1516,13 +1516,63 @@ function _updateTeleportPads(dt) {
   if (_gwOpen() && _gwPad && dist(player.x, player.y, _gwPad.x, _gwPad.y) < TRIGGER_R) {
     _requestEnterLocation('guildWar', typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
   }
-  if (_farmPad && dist(player.x, player.y, _farmPad.x, _farmPad.y) < TRIGGER_R) {
-    if (_farmPad.req > 0 && (player.lvl || 1) < _farmPad.req) {
-      if (_teleportMsgCd <= 0) { dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: _farmPad.req }) : `🔒 Нужен ${_farmPad.req} уровень`, '#f17e8b'); _teleportMsgCd = 1.5; }
-    } else {
-      _requestEnterLocation('farmZone', _farmPad.label);
-    }
+}
+
+// Destination-picker modal for the single hub portal — lists every arm +
+// Фарм-зона (see _portalDestinations, built in _buildArmGates), each showing
+// its own lock state the same way the old individual pads did. Follows the
+// same dynamically-built-overlay pattern as openPetStatsModal (js/npc.js):
+// a fresh .imod-overlay/.imod-box appended to #app, torn down by id.
+function _openPortalModal() {
+  if (!_portalDestinations || !_portalDestinations.length) return;
+  _closePortalModal();
+  _portalModalOpen = true;
+  const lvl = (player && player.lvl) || 1;
+  const cellsHtml = _portalDestinations.map(d => {
+    const locked = d.req > 0 && lvl < d.req;
+    const sub = d.req > 0
+      ? (typeof t === 'function' ? `${t('levelAbbrev')} ${d.req}` : `Ур. ${d.req}`)
+      : '';
+    return `<div class="craft-item-cell${locked ? '' : ' craftable'}" onclick="_pickPortalDestination('${d.target}')">
+      <div class="craft-item-cell-icon" style="font-size:26px">${locked ? '🔒' : '🌀'}</div>
+      <div class="craft-item-cell-name" style="max-width:100%;white-space:normal;font-size:10px">${d.label}</div>
+      ${sub ? `<div class="craft-item-cell-name" style="max-width:100%;color:${locked ? '#f17e8b' : '#8ff0c0'}">${sub}</div>` : ''}
+    </div>`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.id = 'portal-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = () => { _portalDismissed = true; _closePortalModal(); };
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
+    <div class="imod-hdr">
+      <span class="imod-big-icon" style="font-size:32px">🌀</span>
+      <div class="imod-title-block">
+        <div class="imod-name">${typeof t === 'function' ? t('portalPickTitle') : 'Куда телепортироваться?'}</div>
+      </div>
+      <button class="npc-close" onclick="_portalDismissed = true; _closePortalModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="craft-items-grid">${cellsHtml}</div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _closePortalModal() {
+  _portalModalOpen = false;
+  const el = document.getElementById('portal-modal-ov');
+  if (el) el.remove();
+}
+
+function _pickPortalDestination(target) {
+  const d = (_portalDestinations || []).find(x => x.target === target);
+  if (!d) return;
+  const lvl = (player && player.lvl) || 1;
+  if (d.req > 0 && lvl < d.req) {
+    dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: d.req }) : `🔒 Нужен ${d.req} уровень`, '#f17e8b');
+    return;
   }
+  _portalDismissed = true;
+  _closePortalModal();
+  _requestEnterLocation(d.target, d.label);
 }
 
 function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
@@ -1554,15 +1604,14 @@ function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
 
 function drawTeleportPads() {
   if (!player) return;
-  (_teleportPads || []).forEach(p => _drawTeleportPad(p.x, p.y, p.req, p.label, '#eb4e61', '#4ee69a'));
+  // The portal itself never locks (its destinations do, shown inside the
+  // modal — see _openPortalModal), so it always draws in the unlocked color.
+  if (_portalPad) _drawTeleportPad(_portalPad.x, _portalPad.y, 0, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт', '#eb4e61', '#4ee69a');
   (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a'));
   // Event pads in their own colours so they read as "this is the boss thing",
   // not just another level gate.
   if (_evtArenaOpen() && _evtPad) _drawTeleportPad(_evtPad.x, _evtPad.y, 0, t('evtArenaLbl'), '#eb4e61', '#ff8a4a');
   if (_gwOpen() && _gwPad) _drawTeleportPad(_gwPad.x, _gwPad.y, 0, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', '#eb4e61', '#c9a24b');
-  // Фарм-зона: always open, so no gating condition here — just the pad's own
-  // req (level 20) via _drawTeleportPad's built-in lock rendering.
-  if (_farmPad) _drawTeleportPad(_farmPad.x, _farmPad.y, _farmPad.req, _farmPad.label, '#eb4e61', '#4ee69a');
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',
