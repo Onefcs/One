@@ -614,6 +614,68 @@ scenario('market: cancelling a lot returns the item', async () => {
   await c.close();
 });
 
+scenario('hp: a save cannot hand the player health', async () => {
+  const c = await connectWithSaved('harness_hp', { lvl: 1, hp: 5 });
+  await enterWorld(c, 'lev');
+  c.emit('saveProgress', { stats: {
+    type: 'lev', hp: 99999, maxHp: 99999, kills: 0, savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  ok(row.savedData.hp < 99999, `the stored hp is the server's (${row.savedData.hp})`);
+  await c.close();
+});
+
+scenario('hp: reconnecting does not full-heal', async () => {
+  // setPlayerChar seats the character at the hp selectChar was given, so
+  // accepting it from the client meant a free full heal on demand — reconnect
+  // with hp at maximum, mid-boss or mid-PvP, and walk away topped up.
+  const c = await connectWithSaved('harness_hpheal', { lvl: 1, hp: 7, maxHp: 260 });
+  await enterWorld(c, 'lev');
+  await c.close();
+  await sleep(500);
+  const c2 = await connectAs('harness_hpheal');
+  await enterWorld(c2, 'lev', { type: 'lev', hp: 99999, maxHp: 99999, savedAt: Date.now() });
+  await sleep(300);
+  const row = memory.__dump('Player').find(p => p.username === c2.auth.username);
+  ok(row.savedData.hp < 100, `the character resumed on its stored hp (${row.savedData.hp})`);
+  await c2.close();
+});
+
+scenario('handlers: none of the 115 throws on a bare request', async () => {
+  // The check the two missing-import regressions needed, and the reason a
+  // scenario per handler is not the answer: there are 115 of them and the
+  // scenarios cover 17.
+  //
+  // Both regressions were a symbol moved out of server/index.js with the uses
+  // left behind. Neither is a syntax error — a reference that never executes is
+  // not one — so they surfaced only when a handler ran. This runs all of them:
+  // every safeOn event is emitted once with an empty payload, and the
+  // handler-error watch above turns any ReferenceError into a failure.
+  //
+  // Most will refuse the request on validation, which is the point: a missing
+  // constant is usually read BEFORE the payload is looked at (a rate-limit
+  // window, a price ceiling, a cap), so an empty payload is enough to find it.
+  // What this deliberately does NOT check is that a handler does its job — the
+  // scenarios above are for that.
+  const fs = require('fs');
+  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  const events = [...new Set([...src.matchAll(/safeOn\('([a-zA-Z0-9_]+)'/g)].map(m => m[1]))]
+    // Skip the ones that would end the session out from under the sweep.
+    .filter(e => !['disconnect', 'loginTelegram', 'loginTelegramWebApp'].includes(e));
+  ok(events.length > 100, `found ${events.length} handlers to sweep`);
+
+  const c = await connectWithSaved('harness_sweep', { vipLevel: 1, gold: 100, inventory: [] });
+  await enterWorld(c, 'mage');
+  const before = handlerErrors.length;
+  for (const ev of events) { c.emit(ev, {}); await sleep(12); }
+  await sleep(1200);   // let the async ones settle
+  const thrown = handlerErrors.slice(before);
+  ok(thrown.length === 0, `no handler threw on an empty payload (${thrown.length} did)`,
+     [...new Set(thrown)].slice(0, 10).join(' | '));
+  await c.close();
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

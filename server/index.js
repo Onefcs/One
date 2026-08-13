@@ -8305,6 +8305,12 @@ io.on('connection', socket => {
       _xpCorrected = true;   // push it, so the client renders what it has
       // Quest progress, from the stored record like everything else the server
       // owns — the counters are incremented on this side as the events happen.
+      // HP comes from the stored record, not from the blob a reconnect sent.
+      // setPlayerChar (Room.js) seats the character at savedStats.hp, so
+      // accepting it here meant any client could full-heal on demand simply by
+      // reconnecting with hp set to its maximum — bypassing syncPlayerHp's
+      // regen limit entirely, mid-boss or mid-PvP.
+      effectiveSaved.hp = (_dbBase && _dbBase.hp != null) ? _dbBase.hp : undefined;
       effectiveSaved.questIdx   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.questIdx)) || 0);
       effectiveSaved.questKills = (_dbBase && _dbBase.questKills) || {};
       socket.emit('questSync', { questIdx: effectiveSaved.questIdx, questKills: effectiveSaved.questKills });
@@ -9547,6 +9553,12 @@ io.on('connection', socket => {
 
   safeOn('saveProgress', ({ stats } = {}) => {
     if (!authed) return;
+    // No blob, nothing to do. _sanitizeSavedStats returns its argument
+    // unchanged when it isn't an object, so without this the pins below run
+    // against undefined and the handler throws — which safeOn then swallows,
+    // leaving the client with no reply at all. Found by the handler sweep in
+    // dev/harness.js.
+    if (!stats || typeof stats !== 'object') return;
     // An item-granting handler (market cancel/buy, a craft, a shop purchase...)
     // is mid-flight and holding a reference to the current _lastStats.inventory
     // across an await. Accepting this save now would let its eventual commit
@@ -9617,6 +9629,24 @@ io.on('connection', socket => {
       clean.bonusSP           = _lastStats.bonusSP           || 0;
       clean.rebirths          = _lastStats.rebirths          || 0;
       clean.specialQuestsDone = _lastStats.specialQuestsDone || [];
+      // HP, from the room. The server is what lowers it (attackEnemy,
+      // pvpAttack, the AI) and what raises it (healPlayer, respawn, and the
+      // rate-limited regen syncPlayerHp accepts off playerMove) — so the live
+      // figure is already the truthful one, and taking it from the save was
+      // the last way a client could hand itself health.
+      //
+      // Only while alive: a dead player's room entry sits at 0 until they
+      // respawn, and persisting that is exactly right, but a save arriving in
+      // the window before the room entry exists must not zero a live
+      // character.
+      const _rp = currentRoom && currentRoom.players.get(socket.id);
+      if (_rp && _rp.hp > 0) clean.hp = _rp.hp;
+      else if (_lastStats.hp != null) clean.hp = _lastStats.hp;
+      // maxHp is a pure function of class, level, equipment and passives —
+      // every one of which the server holds — so it is derived rather than
+      // accepted. _sanitizeSavedStats already rebuilt it from the pinned
+      // level above; this just stops the client's own figure winning.
+      clean.maxHp = _lastStats.maxHp != null ? _lastStats.maxHp : clean.maxHp;
     }
 
     // Studied skills, passives and the "вторая профессия" unlocks are
