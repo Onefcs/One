@@ -6411,15 +6411,36 @@ io.on('connection', socket => {
       // check (_sanitizeSavedStats) wiping them right back out on the very
       // next save: it drops the WHOLE upgrades map the instant spent exceeds
       // skillPointBudget(lvl, rebirths) + bonusSP, and post-rebirth that
-      // budget is 0 until level REBIRTH_LEVEL again. So the level-derived
-      // budget this account is about to give up (skillPointBudget at its
-      // CURRENT, pre-reset level/rebirths) is folded into bonusSP here,
-      // permanently — spent can never exceed it, by construction, whatever
-      // was already invested. This is on top of REBIRTH_BONUS_SP, not
-      // instead of it: rebirthing is a straightforward net gain (what you
-      // already earned stays spendable, +15 more on top, and the level
-      // curve above REBIRTH_LEVEL pays out again in full once re-climbed).
+      // budget is 0 until level REBIRTH_LEVEL again. So what the kept
+      // upgrades cost is folded into bonusSP here, permanently, and the check
+      // is satisfied by construction however much was invested.
+      //
+      // What is banked is what was actually SPENT, not the whole level-derived
+      // budget. Banking the budget handed the player every UNSPENT level point
+      // as well, and those are exactly what the level reset is supposed to
+      // take away: someone who rebirthed at 30 without spending walked into
+      // level 1 with the full 90 still on the counter, which is the "rebirth
+      // gives skill points below level 30" players were seeing. It also paid
+      // that 90 out a second time when they re-climbed to REBIRTH_LEVEL and
+      // skillPointBudget started counting the curve again, so every rebirth
+      // was worth 105 points rather than the flat REBIRTH_BONUS_SP.
+      //
+      // Spending stays exactly as it was, the flat bonus is the whole gain:
+      // available afterwards is (old bonusSP + REBIRTH_BONUS_SP), and once
+      // REBIRTH_LEVEL is re-climbed the curve pays for that level once, same
+      // as it does for anyone else. Matches shared/definitions.js's own
+      // description of the rule — below REBIRTH_LEVEL "the flat
+      // REBIRTH_BONUS_SP from the rebirth itself is all there is".
+      //
+      // Clamped to the pre-reset budget as a belt-and-braces measure: every
+      // save has already been through the check above, so upgrades can't
+      // exceed it, and a bad one must not be able to mint bonusSP here.
+      const _oldBonus  = Math.max(0, Math.floor(Number(_lastStats.bonusSP)) || 0);
       const _oldBudget = skillPointBudget(lvl, _lastStats.rebirths || 0);
+      const _spentSP = Math.min(
+        Object.values(_lastStats.upgrades || {})
+          .reduce((s, v) => s + Math.max(0, Math.floor(Number(v)) || 0), 0),
+        _oldBudget + _oldBonus);
       const _cd = CHAR_DEF[_lastStats.type] || CHAR_DEF.lev;
       _lastStats.lvl = 1;
       _lastStats.xp = 0;
@@ -6430,7 +6451,7 @@ io.on('connection', socket => {
       _lastStats.baseAtk = _cd.baseAtk;
       _lastStats.baseDef = _cd.baseDef;
       _lastStats.baseMaxHp = _cd.baseHP;
-      _lastStats.bonusSP = (_lastStats.bonusSP || 0) + REBIRTH_BONUS_SP + _oldBudget;
+      _lastStats.bonusSP = _oldBonus + REBIRTH_BONUS_SP + _spentSP;
       _lastStats.rebirths = (_lastStats.rebirths || 0) + 1;
       _lastStats.inventory = inv;
 
@@ -6447,7 +6468,12 @@ io.on('connection', socket => {
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
         bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
       });
-      logPlayer(authed.telegramId, authed.username, 'rebirth', { rebirths: _lastStats.rebirths });
+      logPlayer(authed.telegramId, authed.username, 'rebirth', {
+        rebirths: _lastStats.rebirths, fromLvl: lvl,
+        // What the rebirth actually cost and paid in points — the one line
+        // that makes a later "my skill points changed" report answerable.
+        spentSP: _spentSP, bonusSP: `${_oldBonus} -> ${_lastStats.bonusSP}`,
+      });
       socket.emit('rebirthDone', {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
