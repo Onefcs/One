@@ -6095,6 +6095,10 @@ function updateGramUI() {
   `;
 
   _renderTonConnectRow();
+  // Pulls the wallet library in the moment the panel is opened, so a player
+  // who connected before sees that state instead of a "connect" button. The
+  // library is the only thing that can restore that session.
+  if (typeof tcWarmUp === 'function') tcWarmUp();
   if (typeof netGramHistory === 'function') netGramHistory();
 }
 
@@ -6103,6 +6107,23 @@ function updateGramUI() {
 function _shortenTonAddr(addr) {
   if (!addr) return '';
   return addr.length > 12 ? addr.slice(0, 6) + '…' + addr.slice(-4) : addr;
+}
+
+// Shown while the wallet library downloads on first use — a second or two on
+// mobile, during which the button would otherwise look dead.
+function _tcSetBusy(busy) {
+  const el = document.getElementById('ton-connect-row');
+  if (!el) return;
+  const btn = el.querySelector('button');
+  if (!btn) return;
+  if (busy) {
+    btn.dataset.label = btn.innerHTML;
+    btn.innerHTML = typeof t === 'function' ? t('questLoading') : 'Загрузка…';
+    btn.disabled = true;
+  } else if (btn.dataset.label) {
+    btn.innerHTML = btn.dataset.label;
+    btn.disabled = false;
+  }
 }
 
 function _renderTonConnectRow() {

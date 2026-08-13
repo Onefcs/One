@@ -918,7 +918,42 @@ const BUNDLE_FILES = [
 ].map(f => path.join(ROOT, f));
 
 const jsBundle = BUNDLE_FILES.map(f => fs.readFileSync(f, 'utf8')).join('\n;\n');
-const jsBundleEtag = `"${crypto.createHash('sha1').update(jsBundle).digest('hex').slice(0, 8)}"`;
+const jsBundleHash = crypto.createHash('sha1').update(jsBundle).digest('hex').slice(0, 12);
+const jsBundleEtag = `"${jsBundleHash}"`;
+// The hash goes in the URL, which is what lets the file be cached forever:
+// /bundle.js could only ever be `no-cache`, because the name stayed the same
+// while the content changed, so the browser had to ask on every single launch
+// before it could run a line. A content-addressed name changes when the
+// content does, so a stale copy is unreachable rather than merely unlikely.
+const JS_BUNDLE_PATH = `/bundle.${jsBundleHash}.js`;
+
+// The stylesheet gets the same treatment for the same reason — it was the
+// third round trip a launch had to make before anything could be drawn.
+const cssBundle = fs.readFileSync(path.join(ROOT, 'css', 'style.css'));
+const cssHash = crypto.createHash('sha1').update(cssBundle).digest('hex').slice(0, 12);
+const CSS_PATH = `/css/style.${cssHash}.css`;
+
+// index.html, rewritten once at startup to point at both hashed paths.
+//
+// Built here rather than substituted per request, and verified: a page that
+// names a bundle nobody serves is a blank screen for everyone, so if either
+// marker is missing this keeps the original markup — which still works,
+// because the un-hashed routes are still answered — and says so loudly rather
+// than shipping a broken page quietly.
+const INDEX_HTML = (() => {
+  const raw = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  let out = raw;
+  const swaps = [['/bundle.js', JS_BUNDLE_PATH], ['css/style.css', CSS_PATH.slice(1)]];
+  for (const [from, to] of swaps) {
+    if (!out.includes(from)) {
+      console.error(`[bundle] index.html has no "${from}" to rewrite — serving it unchanged, ` +
+        'so the un-hashed routes stay in use and caching is not improved.');
+      return raw;
+    }
+    out = out.split(from).join(to);
+  }
+  return out;
+})();
 // Compressed once, here, instead of by the compression() middleware on every
 // request. The bundle is ~1.07MB of text (301KB gzipped) and never changes
 // while the process lives, so re-deflating it per client was pure repeated
@@ -1956,12 +1991,17 @@ app.get('/js/vendor/tonconnect-ui.min.js.map', (req, res) => {
   res.sendFile(path.join(ROOT, 'js', 'vendor', 'tonconnect-ui.min.js.map'));
 });
 
-// Single JS bundle — ETag changes on every server restart (bundle rebuilt on startup)
-app.get('/bundle.js', (req, res) => {
+// Single JS bundle, served at a content-addressed path. /bundle.js stays
+// answerable for a page that was cached before this change (and for anything
+// else pointing at the old name), on the old revalidate-every-time policy.
+app.get([JS_BUNDLE_PATH, '/bundle.js'], (req, res) => {
   if (req.headers['if-none-match'] === jsBundleEtag) return res.status(304).end();
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('ETag', jsBundleEtag);
-  res.setHeader('Cache-Control', 'no-cache');
+  // Only the hashed path may be cached: the URL is the version, so a change
+  // cannot be missed. The legacy name must keep asking.
+  res.setHeader('Cache-Control', req.path === JS_BUNDLE_PATH
+    ? 'public, max-age=31536000, immutable' : 'no-cache');
   // Setting Content-Encoding ourselves is also what makes compression() skip
   // this response instead of compressing it a second time.
   res.setHeader('Vary', 'Accept-Encoding');
@@ -1992,12 +2032,25 @@ const PUBLIC_FILES = {
   '/tonconnect-manifest.json':'tonconnect-manifest.json',
 };
 app.get(Object.keys(PUBLIC_FILES), (req, res) => {
+  // index.html is the one page that must never be cached: it is what carries
+  // the hashed names of everything else, so it is how a deploy is noticed.
+  if (PUBLIC_FILES[req.path] === 'index.html') {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.send(INDEX_HTML);
+  }
   res.sendFile(path.join(ROOT, PUBLIC_FILES[req.path] || 'index.html'), err => {
     if (err) res.status(404).end();
   });
 });
-// The stylesheet is the only thing still served as a directory, and only this
-// one directory.
+// The hashed stylesheet — cacheable forever for the same reason the bundle is.
+app.get(CSS_PATH, (req, res) => {
+  res.setHeader('Content-Type', 'text/css; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(cssBundle);
+});
+// The un-hashed path stays answerable for anything still pointing at it
+// (guide.html, admin.html, a cached page from before this change).
 app.use('/css', express.static(path.join(ROOT, 'css')));
 
 app.get('/tg-botname', (req, res) => {

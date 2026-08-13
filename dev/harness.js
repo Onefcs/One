@@ -740,6 +740,43 @@ scenario('potions: an empty bag cannot be drunk from', async () => {
   await c.close();
 });
 
+scenario('build: the launch path is cacheable and the legacy names still answer', async () => {
+  const html = await (await fetch(BASE + '/')).text();
+  const js  = (html.match(/\/bundle\.[a-f0-9]+\.js/) || [])[0];
+  const css = (html.match(/css\/style\.[a-f0-9]+\.css/) || [])[0];
+  ok(js,  'index.html points at a content-addressed bundle', html.match(/bundle[^"']*/) || '');
+  ok(css, 'and a content-addressed stylesheet');
+  if (!js || !css) return;
+
+  // The whole point: these two may be cached forever, so a repeat launch does
+  // not go to the network for them at all.
+  for (const [p, what] of [[js, 'bundle'], ['/' + css, 'stylesheet']]) {
+    const r = await fetch(BASE + p);
+    eq(r.status, 200, `the hashed ${what} is served`);
+    ok(/immutable/.test(r.headers.get('cache-control') || ''),
+       `and may be cached forever`, r.headers.get('cache-control'));
+  }
+  // index.html itself must never be: it is how a deploy is noticed.
+  const idx = await fetch(BASE + '/');
+  ok(/no-cache/.test(idx.headers.get('cache-control') || ''),
+     'index.html is not cached', idx.headers.get('cache-control'));
+
+  // A page cached from before the change still points at the old names.
+  for (const p of ['/bundle.js', '/css/style.css']) {
+    eq((await fetch(BASE + p)).status, 200, `the legacy path still answers: ${p}`);
+  }
+
+  // Nothing on the launch path comes from a third party any more.
+  // Only real script tags count — the markup carries a comment explaining why
+  // the CDN was dropped, and matching that would be matching the explanation.
+  const tags = [...html.matchAll(/<script[^>]*\bsrc=["']([^"']+)["']/g)].map(m => m[1]);
+  ok(!tags.some(u => /^https?:\/\/cdn\.socket\.io/.test(u)), 'no script comes from the socket.io CDN', tags.join(' '));
+  ok(!tags.some(u => /tonconnect-ui/.test(u)), 'the wallet library is not in the launch path', tags.join(' '));
+  ok(/\/socket\.io\/socket\.io\.js/.test(html), 'it is served from our own origin');
+  eq((await fetch(BASE + '/js/vendor/tonconnect-ui.min.js')).status, 200,
+     'but is still fetchable on demand');
+});
+
 // ── Browser check ────────────────────────────────────────────────────────────
 // Everything above talks to the server over a socket. This drives the actual
 // client: real Chromium, the real bundle, real WebGL. It is what makes changes

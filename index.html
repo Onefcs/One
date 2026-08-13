@@ -4,8 +4,7 @@
 <title>Dungeon Quest</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<!-- Warm DNS/TLS to the socket.io CDN before its (deferred, end-of-body) script is reached -->
-<link rel="preconnect" href="https://cdn.socket.io" crossorigin>
+<!-- No preconnect: every script the page loads is now same-origin. -->
 <!-- Named explicitly. Without it the browser asks for /favicon.ico on every
      cold load and takes a 404 for its trouble — there has never been such a
      file in this project. -->
@@ -804,15 +803,18 @@ document.addEventListener('keydown', e => {
 });
 </script>
 <!-- Socket.io client -->
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<!-- Fallback to the copy socket.io serves itself when the CDN is unreachable
-     (an offline local dev run, a blocked CDN) — without it the bundle below
-     loads into a page with no `io` and the game never connects. -->
-<script>window.io || document.write('<script src="/socket.io/socket.io.js"><\/script>');</script>
+<!-- Served by our own process (socket.io mounts this route itself), not from
+     cdn.socket.io. The CDN cost an extra DNS lookup and TLS handshake to a
+     third party on the critical path, and its fallback was a document.write
+     that blocks the parser — for a file the server was already serving. -->
+<script src="/socket.io/socket.io.js"></script>
 <!-- PixiJS v7 WebGL renderer -->
 <script src="/js/pixi.min.js"></script>
 <!-- TON Connect (wallet connect for GRAM deposit/withdraw) — self-hosted so it works under this app's CSP -->
-<script src="/js/vendor/tonconnect-ui.min.js"></script>
+<!-- TON Connect is NOT loaded here any more: 125 KB gzip, a fifth of the
+     download, for a wallet most players never open — and being ahead of
+     bundle.js it delayed the first frame for all of them. js/tonconnect.js
+     fetches it on demand (_tcLoadScript). -->
 <!-- All game scripts in one bundle — ETag cache-busts on server restart -->
 <script src="/bundle.js"></script>
 <script>

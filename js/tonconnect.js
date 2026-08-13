@@ -12,9 +12,34 @@
 
 let _tonConnectUI = null;
 let _tonConnectedAddress = null;
+let _tcLoading = null;
 
-function _tcInit() {
-  if (_tonConnectUI || typeof TON_CONNECT_UI === 'undefined') return;
+// The TON Connect UI bundle is 435 KB (125 KB gzip) — a fifth of everything
+// the game downloads to start — for a wallet most players never open, and its
+// script tag sat ahead of the game's own bundle, so it delayed the first frame
+// for everyone. It is fetched on demand instead.
+//
+// Memoised on the promise, not on a boolean: two taps before the first load
+// finishes must wait on one download, not start a second.
+function _tcLoadScript() {
+  if (typeof TON_CONNECT_UI !== 'undefined') return Promise.resolve(true);
+  if (_tcLoading) return _tcLoading;
+  _tcLoading = new Promise(resolve => {
+    const el = document.createElement('script');
+    el.src = '/js/vendor/tonconnect-ui.min.js';
+    el.onload = () => resolve(typeof TON_CONNECT_UI !== 'undefined');
+    el.onerror = () => { _tcLoading = null; resolve(false); };
+    document.head.appendChild(el);
+  });
+  return _tcLoading;
+}
+
+// Loads the library if needed and builds the UI object. Everything that used
+// to call _tcInit() awaits this instead.
+async function _tcEnsure() {
+  if (_tonConnectUI) return true;
+  if (!(await _tcLoadScript())) return false;
+  if (_tonConnectUI) return true;         // a concurrent caller got there first
   _tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
     manifestUrl: window.location.origin + '/tonconnect-manifest.json',
   });
@@ -22,11 +47,24 @@ function _tcInit() {
     _tonConnectedAddress = wallet ? wallet.account.address : null;
     if (typeof _onTonConnectChange === 'function') _onTonConnectChange();
   });
+  return true;
 }
 
-function tcConnect() {
-  _tcInit();
-  if (_tonConnectUI) _tonConnectUI.openModal();
+// Called when the wallet panel opens, so a player who connected previously
+// sees "connected" rather than "connect" — restoring that session is something
+// only the library can do, and it cannot do it until it is loaded.
+function tcWarmUp() {
+  _tcEnsure().then(ok => { if (ok && typeof _onTonConnectChange === 'function') _onTonConnectChange(); });
+}
+
+async function tcConnect() {
+  // The download can take a second or two on mobile, and a button that does
+  // nothing for that long reads as broken.
+  if (typeof _tcSetBusy === 'function') _tcSetBusy(true);
+  const ok = await _tcEnsure();
+  if (typeof _tcSetBusy === 'function') _tcSetBusy(false);
+  if (ok && _tonConnectUI) _tonConnectUI.openModal();
+  else if (typeof _marketToast === 'function') _marketToast('Не удалось загрузить кошелёк', 'err');
 }
 
 function tcDisconnect() {
