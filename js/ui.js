@@ -3601,6 +3601,23 @@ function onRatingData(tab, rows) {
   if (_ratingTab === tab) _renderRatingBody();
 }
 
+function _ratingPanelOpen() {
+  return document.getElementById('rating-panel')?.style.display === 'flex';
+}
+
+// getRating (server/index.js) is a plain request/response — nothing pushes
+// fresh standings on its own, so a panel left open just kept showing
+// whatever it fetched on open/tab-switch forever (everyone's BM/clan totals
+// climbing in the background, invisible to anyone already looking at the
+// list). Same ticker shape the Events panel uses for its own countdown
+// (_eventsPanelOpen, just above): re-request the tab actually on screen
+// every 5 minutes while the panel is open, no-op otherwise.
+if (typeof setInterval === 'function') {
+  setInterval(() => {
+    if (_ratingPanelOpen() && typeof netGetRating === 'function') netGetRating(_ratingTab);
+  }, 5 * 60 * 1000);
+}
+
 function _renderRatingBody() {
   const el = document.getElementById('rating-body');
   if (!el) return;
