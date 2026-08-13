@@ -943,6 +943,37 @@ const io = new Server(server, {
   maxHttpBufferSize: 512 * 1024,  // 512 KB max per socket message
 });
 
+// Cross-process fan-out. Everything in this file addresses other players
+// through io.to(...).emit(...), and socket.io routes those through its adapter
+// — so pointing the adapter at Redis is genuinely all it takes for one process
+// to reach a socket connected to another. Left unset it uses the in-memory
+// adapter and nothing changes.
+//
+// This is NOT on its own enough to run a second process: the world lives in
+// this process's memory (floorRooms, activeSessions, parties, the arena/race
+// queues, the balance caches), and none of that is fan-out. See SCALING.md for
+// what has to move first. The hook is here so that when it does, the messaging
+// half is already done.
+if (process.env.REDIS_URL) {
+  let createAdapter, createClient;
+  try {
+    ({ createAdapter } = require('@socket.io/redis-adapter'));
+    ({ createClient } = require('redis'));
+  } catch (err) {
+    // Explicit rather than a bare MODULE_NOT_FOUND at boot: REDIS_URL being set
+    // means somebody intended clustering, and silently continuing single-process
+    // would be the wrong kind of quiet.
+    console.error('REDIS_URL is set but the adapter packages are missing — ' +
+      'run: npm i @socket.io/redis-adapter redis');
+    throw err;
+  }
+  const pub = createClient({ url: process.env.REDIS_URL });
+  const sub = pub.duplicate();
+  Promise.all([pub.connect(), sub.connect()])
+    .then(() => { io.adapter(createAdapter(pub, sub)); console.log('socket.io: redis adapter attached'); })
+    .catch(err => { console.error('socket.io: redis adapter failed:', err.message); process.exit(1); });
+}
+
 mongoose.connect(process.env.MONGODB_URI, {
   // 10 connections shared by every DB-touching op this process makes —
   // logins, saves, every market/craft/clan-storage handler's awaited
@@ -10613,6 +10644,11 @@ process.on('uncaughtException', (err) => {
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
+// Upper bound on how long to wait for final saves. Generous compared with the
+// writes themselves (each is one small $set) but well inside the grace period
+// a host gives between SIGTERM and SIGKILL.
+const SHUTDOWN_FLUSH_MS = 8000;
+
 async function _gracefulShutdown(signal) {
   console.log(`${signal}: shutting down...`);
   // Stop all floor game loops
@@ -10620,10 +10656,35 @@ async function _gracefulShutdown(signal) {
   // Land whatever clan XP has accumulated since the last 20s flush, so a
   // redeploy doesn't quietly discard it.
   await _flushClanXp().catch(() => {});
-  // Disconnect all sockets — triggers disconnect event per socket which flushes pending saves
+  // Disconnect all sockets. Each socket's own disconnect handler registers its
+  // final save in _pendingFlush, keyed by account.
   io.close();
-  // Wait 2s for in-flight DB writes to complete
-  await new Promise(r => setTimeout(r, 2000));
+  // Then WAIT FOR THOSE WRITES, rather than for a fixed two seconds and hoping.
+  // The sleep was a guess that got worse the more players were online: every
+  // one of them lands a flush at the same instant, they queue for the Mongo
+  // pool (maxPoolSize), and anything still queued when the timer expired was
+  // dropped by process.exit below — the last few seconds of progress, for
+  // whoever happened to be at the back of the queue, on every single deploy.
+  //
+  // Bounded all the same: a shutdown that hangs on one stuck write is worse
+  // than one that loses it, and SIGTERM usually comes with a hard kill behind
+  // it. The race resolves on whichever comes first, and the timeout path says
+  // so instead of exiting silently.
+  // io.close() disconnects the sockets, but each socket's disconnect handler is
+  // what registers its flush — give the event loop a turn so they have all run
+  // before the map is read, or this collects an empty set and waits for
+  // nothing at all.
+  await new Promise(r => setTimeout(r, 200));
+  const _flushes = [..._pendingFlush.values()];
+  if (_flushes.length) {
+    console.log(`waiting for ${_flushes.length} pending save(s)...`);
+    const _done = await Promise.race([
+      Promise.allSettled(_flushes).then(() => true),
+      new Promise(r => setTimeout(() => r(false), SHUTDOWN_FLUSH_MS)),
+    ]);
+    console.log(_done ? 'all pending saves landed'
+      : `WARNING: ${SHUTDOWN_FLUSH_MS}ms elapsed with saves still in flight — exiting anyway`);
+  }
   await mongoose.connection.close();
   console.log('Shutdown complete');
   process.exit(0);
