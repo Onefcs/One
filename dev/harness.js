@@ -407,6 +407,97 @@ scenario('floors: Фарм-зона is its own floor, gated server-side by level
   await high.close();
 });
 
+scenario('floors: the boss arena is its own floor, reachable only while a world boss is up', async () => {
+  const c = await connectAs('harness_arena_boss');
+  await enterWorld(c, 'ranger');
+
+  const deniedClosed = c.wait('enterLocationDenied', { timeout: 3000 });
+  c.emit('enterLocation', { target: 'arena' });
+  const denial = await deniedClosed;
+  eq(denial && denial.reason, 'closed', 'entry is refused while no world boss is up');
+
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+  const summonRes = await fetch(`${BASE}/admin/event-boss`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  eq(summonRes.status, 200, 'admin can summon the world boss on the spot');
+
+  const arenaStart = c.wait('gameStart', { where: `${c.name} enters the arena` });
+  c.emit('enterLocation', { target: 'arena' });
+  const onArena = await arenaStart;
+  eq(onArena.floor, 8, 'a summoned boss opens the arena as its own floor');
+  ok((onArena.enemies || []).some(e => e.eid === 'demon_event_boss'), 'and that floor has the boss itself');
+
+  const hubStart2 = c.wait('gameStart', { where: `${c.name} returns to hub` });
+  c.emit('enterLocation', { target: 'hub' });
+  const backAtHub2 = await hubStart2;
+  eq(backAtHub2.floor, 1, 'the arena\'s own return pad sends the character back to the hub floor');
+
+  await c.close();
+});
+
+scenario('floors: Death Battle deploys entrants from wherever they are and returns each one there', async () => {
+  const a = await connectAs('harness_db_a');
+  const b = await connectAs('harness_db_b');
+  const aStart = await enterWorld(a, 'ranger'); // stays on the hub
+  await enterWorld(b, 'mage');
+
+  // b heads to the left arm first — registering for the event never required
+  // being on any particular floor, so this is the case that actually proves
+  // the return trip goes back to where each entrant really was, not always
+  // the hub (which is all a single-floor arena could ever have told apart).
+  const bOnLeft = b.wait('gameStart', { where: `${b.name} enters left` });
+  b.emit('enterLocation', { target: 'left' });
+  const bLeftStart = await bOnLeft;
+  eq(bLeftStart.floor, 2, 'b moves to the left arm before registering');
+
+  // Registration only accepts entrants while _db.phase === 'reg' — the dev
+  // route has to open the window before either of these can register at all.
+  const openRes = await fetch(`${BASE}/dev/deathbattle/open?reg=1500`, { method: 'POST' });
+  eq(openRes.status, 200, 'the dev route force-opens registration with a short window');
+
+  const aReg = a.wait('deathBattleRegistered', { timeout: 3000 });
+  const bReg = b.wait('deathBattleRegistered', { timeout: 3000 });
+  a.emit('deathBattleRegister');
+  b.emit('deathBattleRegister');
+  eq((await aReg)?.registered, true, 'a is registered');
+  eq((await bReg)?.registered, true, 'b is registered');
+
+  const aStarted = a.wait('deathBattleStarted', { timeout: 6000 });
+  const bStarted = b.wait('deathBattleStarted', { timeout: 6000 });
+  await aStarted; await bStarted;
+  eq(a.last('gameStart')?.floor, 8, 'a is force-joined onto the arena floor to be deployed');
+  eq(b.last('gameStart')?.floor, 8, 'b is force-joined onto the arena floor too, from the left arm');
+
+  // 'respawn' unconditionally counts as an elimination for whoever is still
+  // in _db.alive (see _pvpEliminate/_dbEliminate) — a deterministic stand-in
+  // for landing a killing PvP blow, without needing real combat, the 500px
+  // range check, or the opening freeze timer in a test.
+  const aEliminated = a.wait('deathBattleEliminated', { timeout: 3000 });
+  a.emit('respawn');
+  const aSpot = await aEliminated;
+  eq(a.last('gameStart')?.floor, 1, 'the eliminated entrant is returned to the hub floor it actually came from');
+  eq(aSpot && aSpot.x, aStart.spawn.x, 'at the exact x it was standing at before deployment');
+  eq(aSpot && aSpot.y, aStart.spawn.y, 'at the exact y it was standing at before deployment');
+
+  // Only one entrant is left standing, so _dbEliminate's own alive.size<=1
+  // check already finished the round and named b the winner — closing the
+  // reward modal is what actually sends the winner home.
+  const bReturned = b.wait('deathBattleReturnedPrev', { timeout: 3000 });
+  b.emit('deathBattleReturn');
+  const bSpot = await bReturned;
+  eq(b.last('gameStart')?.floor, 2, 'the winner is returned to the left arm it actually came from, not the hub');
+  eq(bSpot && bSpot.x, bLeftStart.spawn.x, 'at the exact x it was standing at before deployment');
+  eq(bSpot && bSpot.y, bLeftStart.spawn.y, 'at the exact y it was standing at before deployment');
+
+  await a.close();
+  await b.close();
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');

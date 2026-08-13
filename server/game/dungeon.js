@@ -216,14 +216,6 @@ function generateHub() {
   };
   paintRect(hub.x, hub.y, hub.x + hub.size - 1, hub.y + hub.size - 1);
 
-  const arena = {
-    x: ARENA_X0, y: ARENA_Y0, size: ARENA,
-    bx1: ARENA_X0 - 1, by1: ARENA_Y0 - 1, bx2: ARENA_X0 + ARENA + 1, by2: ARENA_Y0 + ARENA + 1,
-    cx: ARENA_X0 + Math.floor(ARENA / 2), cy: ARENA_Y0 + Math.floor(ARENA / 2),
-    isArena: true,
-  };
-  paintRect(arena.x, arena.y, arena.x + arena.size - 1, arena.y + arena.size - 1);
-
   // 3v3 arena: a base box at each end, joined by a single central lane.
   const a3 = {
     x: A3_X0, y: A3_Y0, size: A3_W,
@@ -267,7 +259,7 @@ function generateHub() {
     });
   }
 
-  const rooms = [hub, arena, a3];
+  const rooms = [hub, a3];
   const enemyList = [];
   let eid = 0;
 
@@ -326,15 +318,6 @@ function generateHub() {
     grid, rooms, w: DW, h: DH,
     spawn: { x: hub.cx * TILE + TILE / 2, y: hub.cy * TILE + TILE / 2 },
     safeZone: { x1: hub.bx1 * TILE, y1: hub.by1 * TILE, x2: hub.bx2 * TILE, y2: hub.by2 * TILE },
-    // Arena geometry the client needs to place the event pads. Players arrive
-    // at the middle of the west wall; the way out sits in the north-west
-    // corner, well clear of both the arrival spot and the boss in the centre
-    // so nobody teleports out by accident mid-fight.
-    arena: {
-      cx: arena.cx * TILE + TILE / 2, cy: arena.cy * TILE + TILE / 2,
-      entryX: (ARENA_X0 + 6) * TILE + TILE / 2, entryY: arena.cy * TILE + TILE / 2,
-      exitX:  (ARENA_X0 + 3) * TILE + TILE / 2, exitY:  (ARENA_Y0 + 3) * TILE + TILE / 2,
-    },
     // 3v3 spawn points: one per player per side, set back inside each base so
     // a match never starts with the two teams already in contact. bossA/bossB
     // are each team's stationary guard boss, further back still so the
@@ -726,4 +709,39 @@ function generateFarmZone() {
   };
 }
 
-module.exports = { generateHub, generateArm, generateGuildWar, generateFarmZone, TILE, WALL, FLOOR };
+// Boss arena, now its own floor (see server/game/floors.js) instead of a
+// square room off to the right of the hub. Doubles as the Death Battle
+// (Битва на смерть) venue — same zone, same sealed-off rules, just placed
+// via Room.deathBattleDeploy's ring layout instead of a walk-in pad. Players
+// arrive at the middle of the west wall; the way out sits in the north-west
+// corner, well clear of both the arrival spot and the boss/ring in the
+// centre so nobody teleports out by accident mid-fight.
+function generateArena() {
+  const w = ARENA + MARGIN * 2, h = ARENA + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const ar = {
+    x: MARGIN, y: MARGIN, size: ARENA,
+    cx: MARGIN + Math.floor(ARENA / 2), cy: MARGIN + Math.floor(ARENA / 2),
+    isArena: true,
+  };
+  paintRect(ar.x, ar.y, ar.x + ar.size - 1, ar.y + ar.size - 1);
+
+  const spawn = { x: (MARGIN + 6) * TILE + TILE / 2, y: ar.cy * TILE + TILE / 2 };
+  const returnPad = { x: (MARGIN + 3) * TILE + TILE / 2, y: (MARGIN + 3) * TILE + TILE / 2 };
+
+  return {
+    grid, rooms: [ar], w, h,
+    spawn,
+    returnPad,
+    arena: { cx: ar.cx * TILE + TILE / 2, cy: ar.cy * TILE + TILE / 2 },
+    enemies: [],
+  };
+}
+
+module.exports = { generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, TILE, WALL, FLOOR };

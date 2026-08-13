@@ -1344,7 +1344,7 @@ let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation(
 // of spawn — NPCs are north (dy -8..-11) and the arm pads south (dy +10), so
 // this row is clear.
 const _EVENT_PAD_DX = -8;
-let _evtPad = null, _evtReturnPad = null;
+let _evtPad = null;
 let _evtBossAlive = false;
 // Guild War zone pads — same shape as the event-boss pads just above, own
 // offset (-10) so the two don't overlap in the hub's NPC-free row. Gated on
@@ -1393,21 +1393,21 @@ function _buildArmGates() {
   // itself has none.
   _returnPads = dungeon.returnPad ? [{ x: dungeon.returnPad.x, y: dungeon.returnPad.y }] : [];
 
-  // Event-boss arena pads. Built once here, but only drawn and only trigger
-  // while the event is running (see _evtArenaOpen) — outside an event the
-  // arena has no entrance at all.
-  const ar = dungeon.arena;
-  if (ar) {
-    _evtPad = { x: sx + _EVENT_PAD_DX * TILE, y: sy, targetX: ar.entryX, targetY: ar.entryY };
-    _evtReturnPad = { x: ar.exitX, y: ar.exitY, targetX: sx, targetY: sy };
-  } else {
-    _evtPad = null; _evtReturnPad = null;
-  }
-
   // armEntries is a hub-only field (generateHub, server/game/dungeon.js) —
   // the one reliable signal, from any floor's dungeon payload, that this is
   // the hub itself and its special-zone outbound pads belong on screen.
   const onHub = !!dungeon.armEntries;
+
+  // Event-boss arena pad — its own floor now (server/game/floors.js), same
+  // change every other special-zone pad below already went through: a real
+  // transition (netEnterLocation) instead of a same-grid teleport. Built
+  // whenever we're on the hub; only drawn and only trigger while the event is
+  // running (see _evtArenaOpen) — outside an event the pad just sits inert.
+  // The zone's own returnPad flows back through the generic _returnPads
+  // handling above, so there's no dedicated return pad to build here either
+  // — same for Death Battle's own return, which is a server push (gameStart
+  // + deathBattleEliminated/deathBattleReturnedPrev), not a pad walk at all.
+  _evtPad = onHub ? { x: sx + _EVENT_PAD_DX * TILE, y: sy } : null;
 
   // Guild War hub-side pad — its own floor now (server/game/floors.js), so
   // stepping onto it requests a real transition (netEnterLocation) rather
@@ -1501,13 +1501,11 @@ function _updateTeleportPads(dt) {
     _evtHpCd = 0.125;
     if (typeof updateEventBossHpBar === 'function') updateEventBossHpBar();
   }
-  if (_evtArenaOpen() && _evtPad && dist(player.x, player.y, _evtPad.x, _evtPad.y) < TRIGGER_R) {
-    _teleportTo(_evtPad.targetX, _evtPad.targetY, t('evtArenaLbl'));
-  }
-  // The way back stays usable even after the event closes, so nobody can be
+  // The way back is the zone's own returnPad (generic _returnPads handling
+  // above) and stays usable even after the event closes, so nobody can be
   // stranded in the arena when the loot expires.
-  if (_evtReturnPad && dist(player.x, player.y, _evtReturnPad.x, _evtReturnPad.y) < TRIGGER_R) {
-    _teleportTo(_evtReturnPad.targetX, _evtReturnPad.targetY, typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+  if (_evtArenaOpen() && _evtPad && dist(player.x, player.y, _evtPad.x, _evtPad.y) < TRIGGER_R) {
+    _requestEnterLocation('arena', t('evtArenaLbl'));
   }
   if (typeof updateGuildWarHpBar === 'function') updateGuildWarHpBar();
   // The way back is the zone's own returnPad, handled generically by the
@@ -1561,7 +1559,6 @@ function drawTeleportPads() {
   // Event pads in their own colours so they read as "this is the boss thing",
   // not just another level gate.
   if (_evtArenaOpen() && _evtPad) _drawTeleportPad(_evtPad.x, _evtPad.y, 0, t('evtArenaLbl'), '#eb4e61', '#ff8a4a');
-  if (_evtReturnPad) _drawTeleportPad(_evtReturnPad.x, _evtReturnPad.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a');
   if (_gwOpen() && _gwPad) _drawTeleportPad(_gwPad.x, _gwPad.y, 0, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', '#eb4e61', '#c9a24b');
   // Фарм-зона: always open, so no gating condition here — just the pad's own
   // req (level 20) via _drawTeleportPad's built-in lock rendering.

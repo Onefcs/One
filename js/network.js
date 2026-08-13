@@ -2566,9 +2566,11 @@ function _initDeathBattleHandlers(s) {
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     pvpMode = false;
     if (player && x != null && y != null) {
-      // Lands back wherever this player actually was before the battle
-      // (server's dbReturnToPrevSpot), not the hub — hence its own label
-      // rather than centralHall.
+      // Lands back wherever this player actually was before the battle —
+      // the server has already moved this connection onto that floor by the
+      // time this event arrives (see _dbReturnEntrant, server/index.js), so
+      // this is just the visual catch-up, same idea as deathBattleStarted's
+      // own _teleportTo above — hence its own label rather than centralHall.
       if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbReturnPrevLbl'));
       else { player.x = x; player.y = y; }
     }

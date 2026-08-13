@@ -2150,6 +2150,16 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
     _race10OpenWindow(Date.now(), regMs);
     res.json({ ok: true, regMs, startsAt: _race10.startAt });
   });
+
+  // Same idea, for Death Battle (Битва на смерть): opens registration on the
+  // spot with a short window instead of waiting for the next scheduled slot,
+  // so the deploy/eliminate/finish flow (arena floor join, return-to-
+  // previous-floor) can actually be exercised locally/in the harness.
+  app.post('/dev/deathbattle/open', (req, res) => {
+    const regMs = Math.max(500, Math.min(Number(req.query.reg) || 2000, 300000));
+    _dbOpenReg(Date.now() + regMs);
+    res.json({ ok: true, regMs, startAt: _db.startAt });
+  });
 }
 
 // One permanent Room per location (see server/game/floors.js's
@@ -2499,6 +2509,19 @@ const playerParty = new Map();
 // socketId -> current floor number (for proximity check)
 const playerFloorMap = new Map();
 
+// Looks up a player's own record on whichever floor they're actually on
+// right now, without the caller having to know which Room that is —
+// registration for a scheduled event (death battle, …) doesn't require
+// being on any particular floor, so deploy-time code that only used to check
+// the hub's own Room (back when every reachable zone lived inside it) needs
+// this instead.
+function _findPlayerAnyFloor(sid) {
+  const floor = playerFloorMap.get(sid);
+  if (floor == null) return null;
+  const room = getRoom(floor);
+  return room ? room.players.get(sid) || null : null;
+}
+
 // Arena 3v3 and the Кровавая Башня allow DAILY_DUNGEON_ATTEMPTS runs per UTC
 // day — each gets its own savedData field (see the wrapper functions below)
 // so their attempt pools are independent. The attempt is consumed on entry,
@@ -2756,7 +2779,7 @@ function _wbNextStartAt(from = Date.now()) {
 }
 
 function eventBossState() {
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.arena);
   return {
     spawnAt: 0,
     alive: !!(room && room.isEventBossAlive()),
@@ -2769,13 +2792,25 @@ function eventBossState() {
 }
 
 function scheduleEventBoss() {
-  const room = getRoom(1);
+  const room = getRoom(FLOOR_IDS.arena);
   if (!room) return { error: 'Мир ещё не инициализирован' };
   if (room.isEventBossAlive()) return { error: 'Босс уже на карте' };
   const boss = room.spawnEventBoss();
   if (!boss) return { error: 'Не удалось призвать босса' };
   io.to('floor_1').emit('eventBossSpawned', { x: boss.x, y: boss.y });
   return { ok: true, spawnAt: 0 };
+}
+
+// Whether the arena is currently reachable via a walk-in pad (the world
+// boss's own entry path — Death Battle deploys entrants with force:true and
+// never consults this, see _doEnterLocation). Mirrors the client's own
+// _evtArenaOpen (js/game.js): up while the boss is alive, and for as long as
+// its loot still lies on the floor afterward, so nobody who was already
+// fighting gets locked out of collecting a drop.
+function _arenaOpen() {
+  const room = getRoom(FLOOR_IDS.arena);
+  if (!room) return false;
+  return room.isEventBossAlive() || room.worldDropSnapshot().length > 0;
 }
 
 // Arms the next scheduled summon (понедельник/среда/пятница/воскресенье в
@@ -2888,12 +2923,20 @@ function _dbOpenReg(startAt) {
   _dbBroadcast();
 }
 
+// The arena is its own floor now (server/game/floors.js) — deploying an
+// entrant means a real floor change, and "which floor/spot were they
+// actually standing in before" has to be captured BEFORE that move, from
+// wherever they really were (any floor, not just the hub — registering for
+// the event never required being on any particular one). Room.deathBattleDeploy
+// no longer tracks this itself; _dbPrevFloor/_dbPrevX/_dbPrevY are set here,
+// directly on the arena room's freshly-joined player record, right after.
 function _dbStart() {
-  const room = getRoom(1);
-  // Only entrants who are still connected and still in the world can fight.
+  const arenaRoom = getRoom(FLOOR_IDS.arena);
+  // Only entrants who are still connected and still have an active character
+  // somewhere in the world can fight.
   const ids = [..._db.reg.keys()].filter(sid =>
-    io.sockets.sockets.get(sid) && room && room.players.get(sid));
-  if (!room || ids.length < DEATH_BATTLE_MIN_PLAYERS) {
+    io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
+  if (!arenaRoom || ids.length < DEATH_BATTLE_MIN_PLAYERS) {
     io.to('floor_1').emit('deathBattleCancelled', { reason: 'notEnough' });
     _db.reg.clear();
     _dbSchedule();
@@ -2903,8 +2946,22 @@ function _dbStart() {
   _db.phase = 'live';
   _db.alive.clear();
   _db.fightAt = Date.now() + DEATH_BATTLE_FREEZE_MS;
-  const placed = room.deathBattleDeploy(ids);
+  const prevInfo = new Map();
+  ids.forEach(sid => {
+    const p = _findPlayerAnyFloor(sid);
+    if (p) prevInfo.set(sid, { floor: playerFloorMap.get(sid), x: p.x, y: p.y });
+  });
+  // deathBattleDeploy below needs everyone already present in
+  // arenaRoom.players to lay out the ring — force each entrant's own
+  // connection onto the arena floor first (bypassing _arenaOpen: this is a
+  // scheduled deploy, not a walk-in, and has nothing to do with whether a
+  // world boss happens to be up at the same time).
+  const joined = ids.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('arena'));
+  const placed = arenaRoom.deathBattleDeploy(joined);
   placed.forEach(({ socketId, x, y, hp }) => {
+    const info = prevInfo.get(socketId);
+    const p = arenaRoom.players.get(socketId);
+    if (p && info) { p._dbPrevFloor = info.floor; p._dbPrevX = info.x; p._dbPrevY = info.y; }
     _db.alive.set(socketId, _db.reg.get(socketId) || { name: '?' });
     io.sockets.sockets.get(socketId)?.data?._seasonAwardEvent?.('deathbattle');
     io.to(socketId).emit('deathBattleStarted', { x, y, hp, total: placed.length, fightAt: _db.fightAt });
@@ -2924,6 +2981,28 @@ function _dbStart() {
   _dbBroadcast();
 }
 
+// Sends a death-battle entrant back to the floor+spot they were actually
+// standing in before deployment (see _dbStart, above). The move itself has
+// to run through that specific connection's own socket.data._forceEnterLocation
+// (force accepts the raw floor id _dbPrevFloor holds, and pos restores the
+// exact previous spot instead of that floor's default spawn) — this works
+// the same whether it's called from that connection's own handler (the
+// winner closing the reward modal) or, the common case, from module-level
+// scheduling code with no socket of its own (an elimination, the round
+// ending under everyone still standing).
+function _dbReturnEntrant(socketId) {
+  const arenaRoom = getRoom(FLOOR_IDS.arena);
+  const p = arenaRoom ? arenaRoom.players.get(socketId) : null;
+  if (!p) return null;
+  const floor = p._dbPrevFloor || FLOOR_IDS.hub;
+  const pos = (p._dbPrevX != null && p._dbPrevY != null) ? { x: p._dbPrevX, y: p._dbPrevY } : null;
+  const sock = io.sockets.sockets.get(socketId);
+  if (!sock?.data?._forceEnterLocation?.(floor, { pos })) return null;
+  const newRoom = getRoom(floor);
+  const np = newRoom ? newRoom.players.get(socketId) : null;
+  return np ? { x: np.x, y: np.y } : null;
+}
+
 // Drops one entrant out of a running round. Safe to call for a socket that
 // isn't in the round (a normal PvP kill elsewhere, an unrelated disconnect) —
 // it returns immediately. killerSocketId is only ever set when this came from
@@ -2934,8 +3013,7 @@ function _dbEliminate(socketId, killerSocketId) {
   if (_db.phase !== 'live') return false;
   const victim = _db.alive.get(socketId);
   if (!_db.alive.delete(socketId)) return false;
-  const room = getRoom(1);
-  const spot = room ? room.dbReturnToPrevSpot(socketId) : null;
+  const spot = _dbReturnEntrant(socketId);
   io.to(socketId).emit('deathBattleEliminated', { left: _db.alive.size, x: spot?.x, y: spot?.y });
   if (killerSocketId) {
     const killer = _db.alive.get(killerSocketId);
@@ -2954,12 +3032,12 @@ async function _dbFinish(timedOut) {
   clearTimeout(_db.freezeTimer);
   _db.phase = 'idle';
   _db.fightAt = 0;
-  const room = getRoom(1);
-  // A timeout has no winner: send everyone still standing back to the hub.
+  // A timeout has no winner: send everyone still standing back to wherever
+  // they each came from (see _dbReturnEntrant).
   const winnerId = (!timedOut && _db.alive.size === 1) ? [..._db.alive.keys()][0] : null;
   _db.alive.forEach((_, sid) => {
     if (sid === winnerId) return;
-    const spot = room ? room.dbReturnToPrevSpot(sid) : null;
+    const spot = _dbReturnEntrant(sid);
     io.to(sid).emit('deathBattleEliminated', { left: 0, x: spot?.x, y: spot?.y });
   });
   _db.alive.clear();
@@ -8718,7 +8796,8 @@ io.on('connection', socket => {
   // leaves their current floor's Room entirely and joins a different one,
   // with its own grid/enemies/NPCs, instead of just being repositioned
   // inside a shared grid. `target` is an arm key ('left'/'top'/'bottom'/
-  // 'right'), a special-zone key ('guildWar', …), or 'hub'.
+  // 'right'), a special-zone key ('guildWar', …), 'hub', or (force-only, see
+  // below) a raw numeric floor id.
   //
   // Factored out of the socket handler (rather than living inline in it) so
   // code OUTSIDE this connection — a scheduled window closing, a match
@@ -8726,24 +8805,40 @@ io.on('connection', socket => {
   // per-connection escape hatch in this file follows the same shape: a
   // closure assigned onto socket.data (see _grantXp, _questOnKill, …) so a
   // handler elsewhere can call back into a connection it doesn't otherwise
-  // have a reference to. `silent` drops the denial emit for that case: a
-  // forced eviction has already decided the move is happening regardless of
-  // gates, there is nothing left to tell the client no about.
-  function _doEnterLocation(target, { silent = false } = {}) {
+  // have a reference to.
+  //
+  // `force` skips every gate (level/window/reachability) and accepts a raw
+  // floor id as `target` — this is what a trusted server-initiated move
+  // (an eviction, a death-battle deploy or its return-to-wherever-you-were)
+  // needs: those are not requests that can be refused, they are the server
+  // telling this connection where it has already decided the player goes.
+  // The plain client-facing 'enterLocation' handler below never sets it.
+  //
+  // `pos`, when given, overrides the landing spot after the normal join
+  // (which otherwise always lands on the target floor's own default spawn/
+  // zone placement) — used only by the death battle's "send this entrant
+  // back to the exact spot they were standing in before" return path.
+  function _doEnterLocation(target, { force = false, pos } = {}) {
     if (!authed || !currentRoom) return false;
     const oldP = currentRoom.players.get(socket.id);
     if (!oldP || !oldP.type) return false; // no character selected yet
     let targetFloor;
-    if (target === 'hub') {
+    if (force && typeof target === 'number') {
+      targetFloor = target;
+    } else if (target === 'hub') {
       targetFloor = FLOOR_IDS.hub;
     } else if (target === 'guildWar') {
       // Combat access follows the daily window, not a level — see _gw
       // (phase 'live' only 22:00-22:15 MSK).
-      if (_gw.phase !== 'live') {
-        if (!silent) socket.emit('enterLocationDenied', { target, reason: 'closed' });
-        return false;
-      }
+      if (!force && _gw.phase !== 'live') { socket.emit('enterLocationDenied', { target, reason: 'closed' }); return false; }
       targetFloor = FLOOR_IDS.guildWar;
+    } else if (target === 'arena') {
+      // Reachable while a world boss is up (or its loot still lies on the
+      // floor) — see _arenaOpen. Death Battle deploys entrants with
+      // force:true regardless, since registering for it has nothing to do
+      // with whether a world boss happens to be up at the same time.
+      if (!force && !_arenaOpen()) { socket.emit('enterLocationDenied', { target, reason: 'closed' }); return false; }
+      targetFloor = FLOOR_IDS.arena;
     } else if (FLOOR_IDS[target] != null) {
       // Server-side level gate — the pad's own lock icon is client-side
       // decoration only, this is the check that actually matters. Фарм-зона
@@ -8752,7 +8847,7 @@ io.on('connection', socket => {
       // ARM_LEVEL_REQ now that entry is a real gated floor transition too.
       const req = _ZONE_LEVEL_REQ[target] || 0;
       const lvl = (oldP._sd && oldP._sd.lvl) || 1;
-      if (lvl < req) { if (!silent) socket.emit('enterLocationDenied', { target, reason: 'level', req }); return false; }
+      if (!force && lvl < req) { socket.emit('enterLocationDenied', { target, reason: 'level', req }); return false; }
       targetFloor = FLOOR_IDS[target];
     } else {
       return false; // unknown target
@@ -8777,6 +8872,8 @@ io.on('connection', socket => {
     // landing everyone on the same tile — the same placement a mid-window
     // death respawn already uses (Room.guildWarRespawn).
     if (target === 'guildWar') currentRoom.guildWarRespawn(socket.id);
+    const _joined = currentRoom.players.get(socket.id);
+    if (pos && _joined) { _joined.x = pos.x; _joined.y = pos.y; }
     socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type: charType });
 
@@ -8788,7 +8885,7 @@ io.on('connection', socket => {
     }
     return true;
   }
-  socket.data._forceEnterLocation = target => _doEnterLocation(target, { silent: true });
+  socket.data._forceEnterLocation = (target, opts) => _doEnterLocation(target, { ...opts, force: true });
 
   safeOn('enterLocation', ({ target } = {}) => { _doEnterLocation(target); });
 
@@ -9580,7 +9677,7 @@ io.on('connection', socket => {
   });
 
   // Sent once the winner closes the reward modal — everyone else was already
-  // sent back (to wherever they each were, see dbReturnToPrevSpot) the
+  // sent back (to wherever they each were, see _dbReturnEntrant) the
   // moment they were eliminated; the winner is left standing in the arena
   // until this. Own event name (not the shared 'deathBattleReturned'
   // arena3Return/race10Return use) so the client can label this teleport
@@ -9589,7 +9686,7 @@ io.on('connection', socket => {
   safeOn('deathBattleReturn', () => {
     if (_db.winnerId !== socket.id) return; // see _db.winnerId — not a free teleport home
     _db.winnerId = null;
-    const spot = currentRoom ? currentRoom.dbReturnToPrevSpot(socket.id) : null;
+    const spot = _dbReturnEntrant(socket.id);
     if (spot) socket.emit('deathBattleReturnedPrev', spot);
   });
 
@@ -10322,7 +10419,7 @@ io.on('connection', socket => {
         { $set: { ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0 } },
         { upsert: true },
       ).catch(err => console.error('[GuildWarState] disband release failed', err));
-      const _gwRoom = getRoom(1);
+      const _gwRoom = getRoom(FLOOR_IDS.guildWar);
       const _gwTower = _gwRoom && _gwRoom._gwTowerId && _gwRoom._enemyMap.get(_gwRoom._gwTowerId);
       if (_gwTower) { _gwTower.ownerClanId = null; _gwTower.ownerClanName = null; _gwTower.ownerClanIcon = null; }
       io.emit('guildWarState', _gwPublicState());

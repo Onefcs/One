@@ -959,23 +959,23 @@ class Room {
 
   get dungeonData() {
     const d = this._dungeon;
-    // arena must be included: the client builds the event teleport pads from
-    // it in _buildArmGates (js/game.js), and without it _evtPad stays null so
-    // the portal never appears no matter what the event state says.
     // race10.bounds is what lets the client tint that zone's floor/walls to
     // look like "Кровавая Башня" (see _buildChunk, js/game.js).
-    // guildWar/farmZone are now only ever present on that zone's own floor's
-    // own Room — each carries whatever geometry/tinting bounds that floor's
-    // own dungeonData needs (see generateGuildWar/generateFarmZone, server/
-    // game/dungeon.js); the hub no longer has either field at all, since its
-    // outbound pads (_gwPad/_farmPad, js/game.js) only need the hub's own
-    // spawn point plus a fixed offset (and, for the level-gated farm pad,
-    // farmZoneEntry.req) — not the zone's own geometry.
+    // guildWar/farmZone/arena are now only ever present on that zone's own
+    // floor's own Room — each carries whatever geometry/tinting bounds that
+    // floor's own dungeonData needs (see generateGuildWar/generateFarmZone/
+    // generateArena, server/game/dungeon.js); the hub no longer has any of
+    // these fields at all, since its outbound pads (_gwPad/_farmPad/_evtPad,
+    // js/game.js) only need the hub's own spawn point plus a fixed offset
+    // (and, for the level-gated farm pad, farmZoneEntry.req) — not the
+    // zone's own geometry. this._dungeon.arena itself still exists on the
+    // arena floor's own Room internally (spawnEventBoss/deathBattleDeploy
+    // read it directly), it's just no longer part of what gets sent here.
     // returnPad exists on every "own floor, one entrance" zone (arms, Guild
-    // War, Фарм-зона, …) — the pad that requests a transition back to the
-    // hub; armEntries/farmZoneEntry only on the hub (the outbound pads, now
-    // just {req} or {dir,req} — no target x/y, each zone is its own floor).
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, arena: d.arena, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
+    // War, Фарм-зона, arena, …) — the pad that requests a transition back to
+    // the hub; armEntries/farmZoneEntry only on the hub (the outbound pads,
+    // now just {req} or {dir,req} — no target x/y, each zone is its own floor).
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
   }
 
   _inSafeZone(x, y) {
@@ -2483,11 +2483,17 @@ class Room {
 
   // ── Death Battle (Битва на смерть) ────────────────────────────────────────
   // Drops every entrant onto its own point of a ring inside the event arena —
-  // the one room in the world that is sealed off and outside the hub's safe
-  // zone, so PvP works there and nobody can wander in mid-round. Everyone is
-  // healed and flipped into PvP here rather than client-side: the server owns
-  // hp and pvpMode, and a client that ignored the request would otherwise be
-  // an unkillable participant.
+  // its own floor now (server/game/floors.js), sealed off the same way the
+  // world boss's own use of it already is, so PvP works there and nobody can
+  // wander in mid-round. Everyone is healed and flipped into PvP here rather
+  // than client-side: the server owns hp and pvpMode, and a client that
+  // ignored the request would otherwise be an unkillable participant.
+  // Callers (server/index.js's _dbStart) force each entrant's own connection
+  // onto this floor before calling this — _dbPrevFloor/_dbPrevX/_dbPrevY
+  // (where they actually were, for the return trip) are captured by that
+  // caller too, from the floor they were really on, since by the time this
+  // runs everyone here already has this floor's own default spawn position,
+  // not their real previous one.
   deathBattleDeploy(socketIds) {
     const ar = this._dungeon.arena;
     if (!ar) return [];
@@ -2499,10 +2505,6 @@ class Room {
     socketIds.forEach((sid, i) => {
       const p = this.players.get(sid);
       if (!p) return;
-      // Remembered so dbReturnToPrevSpot can send this entrant back to
-      // wherever they actually were instead of the shared hub spawn
-      // deathBattleReturn always uses (arena3/race10 never set this).
-      p._dbPrevX = p.x; p._dbPrevY = p.y;
       const ang = (i / n) * Math.PI * 2;
       let x = ar.cx + Math.cos(ang) * R;
       let y = ar.cy + Math.sin(ang) * R;
@@ -2514,32 +2516,6 @@ class Room {
       placed.push({ socketId: sid, x, y, hp: p.hp });
     });
     return placed;
-  }
-
-  // Death-battle-only sibling of deathBattleReturn (above): sends this
-  // entrant back to wherever they were standing right before deployment
-  // (saved on p._dbPrevX/Y by deathBattleDeploy) instead of the fixed hub
-  // spawn — arena3 and race10 keep using deathBattleReturn/the hub spawn
-  // unchanged. Falls back to the hub spawn if no saved spot exists (e.g.
-  // this socket was never actually deployed), so it never leaves a player
-  // stranded with an undefined position.
-  dbReturnToPrevSpot(socketId) {
-    const p = this.players.get(socketId);
-    if (!p) return null;
-    if (p._dbPrevX != null && p._dbPrevY != null) {
-      p.x = p._dbPrevX;
-      p.y = p._dbPrevY;
-    } else {
-      p.x = this._dungeon.spawn.x;
-      p.y = this._dungeon.spawn.y;
-    }
-    p._dbPrevX = null;
-    p._dbPrevY = null;
-    p.pvpMode = false;
-    p._raceLane = null;
-    if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
-    p._profileRev++;
-    return { x: p.x, y: p.y };
   }
 
   // Places a 3v3 match: one side per base, one player per lane, full HP and
@@ -2794,8 +2770,9 @@ class Room {
 
   // Guild War in-zone respawn: the first "die and come back inside the same
   // fight" path in this file — every other zone (respawnPlayer,
-  // deathBattleReturn, dbReturnToPrevSpot below) ejects the player out on
-  // death. Picks a random point off the zone's own spawn ring (dungeon.js's
+  // deathBattleReturn below, the death battle's own return-to-previous-floor
+  // in server/index.js) ejects the player out on death. Picks a random point
+  // off the zone's own spawn ring (dungeon.js's
   // guildWar.spawns, the same ring used for initial entry). Deliberately
   // leaves p._guildWarZone/p.pvpMode untouched — the per-tick bounds check in
   // _tick re-confirms both next frame regardless (see the guild-war block
@@ -2815,9 +2792,10 @@ class Room {
   // Sends a player back to the hub with PvP off — shared exit path for
   // arena3, race10 and Fear (eliminated, the match/wave-run finishing, the
   // round ending under them). The death battle uses its own
-  // dbReturnToPrevSpot instead (below) so its entrants land back where they
-  // actually were rather than the hub. Returns the landing spot so the
-  // caller can tell that client. Clears the tower lane (and releases a Fear
+  // _dbReturnEntrant (server/index.js) instead, since its entrants land back
+  // wherever they actually were — a real floor of their own, now that the
+  // arena is one too — rather than always the hub. Returns the landing spot
+  // so the caller can tell that client. Clears the tower lane (and releases a Fear
   // lane, if any) as well as the PvP flag — leaving either set would keep
   // the player invisible to ordinary world monsters (and them to it) for the
   // rest of the session, since that is exactly what _raceVisible keys on.
