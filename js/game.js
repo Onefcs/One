@@ -1522,21 +1522,26 @@ function _updateTeleportPads(dt) {
 // Фарм-зона (see _portalDestinations, built in _buildArmGates), each showing
 // its own lock state the same way the old individual pads did. Follows the
 // same dynamically-built-overlay pattern as openPetStatsModal (js/npc.js):
-// a fresh .imod-overlay/.imod-box appended to #app, torn down by id.
+// a fresh .imod-overlay/.imod-box appended to #app, torn down by id. Rows
+// use .shop-list/.shop-row (js/npc.js's merchant panel) rather than the
+// craft grid — a vertical list of named destinations reads better than a
+// grid of icon tiles when every entry already carries its own text label.
 function _openPortalModal() {
   if (!_portalDestinations || !_portalDestinations.length) return;
   _closePortalModal();
   _portalModalOpen = true;
   const lvl = (player && player.lvl) || 1;
-  const cellsHtml = _portalDestinations.map(d => {
+  const rowsHtml = _portalDestinations.map(d => {
     const locked = d.req > 0 && lvl < d.req;
     const sub = d.req > 0
       ? (typeof t === 'function' ? `${t('levelAbbrev')} ${d.req}` : `Ур. ${d.req}`)
       : '';
-    return `<div class="craft-item-cell${locked ? '' : ' craftable'}" onclick="_pickPortalDestination('${d.target}')">
-      <div class="craft-item-cell-icon" style="font-size:26px">${locked ? '🔒' : '🌀'}</div>
-      <div class="craft-item-cell-name" style="max-width:100%;white-space:normal;font-size:10px">${d.label}</div>
-      ${sub ? `<div class="craft-item-cell-name" style="max-width:100%;color:${locked ? '#f17e8b' : '#8ff0c0'}">${sub}</div>` : ''}
+    return `<div class="shop-row" style="cursor:pointer;touch-action:manipulation;${locked ? 'opacity:.7' : 'border-color:rgba(79,195,255,0.35)'}" onclick="_pickPortalDestination('${d.target}')">
+      <div class="shop-item-icon">${locked ? '🔒' : '🌀'}</div>
+      <div class="shop-item-info">
+        <div class="shop-item-name">${d.label}</div>
+        ${sub ? `<div class="shop-item-stat" style="color:${locked ? '#f17e8b' : '#7fd7ff'}">${sub}</div>` : ''}
+      </div>
     </div>`;
   }).join('');
   const ov = document.createElement('div');
@@ -1545,13 +1550,13 @@ function _openPortalModal() {
   ov.onclick = () => { _portalDismissed = true; _closePortalModal(); };
   ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
     <div class="imod-hdr">
-      <span class="imod-big-icon" style="font-size:32px">🌀</span>
+      <span class="imod-big-icon" style="font-size:32px;filter:drop-shadow(0 0 6px #4fc3ff)">🌀</span>
       <div class="imod-title-block">
-        <div class="imod-name">${typeof t === 'function' ? t('portalPickTitle') : 'Куда телепортироваться?'}</div>
+        <div class="imod-name" style="color:#8fd8ff">${typeof t === 'function' ? t('portalPickTitle') : 'Куда телепортироваться?'}</div>
       </div>
       <button class="npc-close" onclick="_portalDismissed = true; _closePortalModal()" style="touch-action:manipulation">✕</button>
     </div>
-    <div class="craft-items-grid">${cellsHtml}</div>
+    <div class="shop-list">${rowsHtml}</div>
   </div>`;
   document.getElementById('app').appendChild(ov);
 }
@@ -1602,11 +1607,72 @@ function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
   ctx.fillText(lbl, sx, sy + baseR + 14);
 }
 
+// The single hub portal's own look — a blue swirl rather than the plain
+// pulsing ring _drawTeleportPad gives every other pad: a soft outer glow, a
+// slowly counter-rotating pair of dashed rings, and a few sparks orbiting the
+// rim. It never locks (its destinations do — see the modal's own per-row
+// lock state), so there's no locked/unlocked branch to draw here at all.
+function _drawPortalPad(x, y, label) {
+  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
+  if (sx < -70 || sx > W + 70 || sy < -70 || sy > H + 70) return;
+  const tsec = _nowMs / 1000;
+  const baseR = 28 * ZOOM;
+  const pulse = 0.5 + 0.5 * Math.sin(tsec * 2.1);
+
+  ctx.save();
+  // Soft outer glow.
+  const glow = ctx.createRadialGradient(sx, sy, baseR * 0.15, sx, sy, baseR * 1.8);
+  glow.addColorStop(0, `rgba(70,170,255,${0.32 + 0.1 * pulse})`);
+  glow.addColorStop(1, 'rgba(70,170,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(sx, sy, baseR * 1.8, 0, Math.PI * 2); ctx.fill();
+
+  // Filled disc, deep blue.
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = 'rgba(12,55,110,0.45)';
+  ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
+
+  // Two dashed rings, counter-rotating, so the whole thing reads as swirling
+  // rather than just pulsing in place.
+  ctx.lineWidth = 2.4;
+  ctx.setLineDash([7, 6]);
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = '#4fc3ff';
+  ctx.lineDashOffset = -tsec * 46;
+  ctx.beginPath(); ctx.arc(sx, sy, baseR + 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = '#bfe9ff';
+  ctx.lineDashOffset = tsec * 34;
+  ctx.beginPath(); ctx.arc(sx, sy, baseR - 7, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // A bright pulsing core ring right at the edge of the disc.
+  ctx.globalAlpha = 0.5 + 0.4 * pulse;
+  ctx.strokeStyle = '#eaffff';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(sx, sy, baseR - 1 + pulse * 2, 0, Math.PI * 2); ctx.stroke();
+
+  // Three sparks orbiting the rim.
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = '#eaffff';
+  for (let i = 0; i < 3; i++) {
+    const ang = tsec * 1.7 + i * (Math.PI * 2 / 3);
+    const px = sx + Math.cos(ang) * (baseR + 5), py = sy + Math.sin(ang) * (baseR + 5);
+    ctx.beginPath(); ctx.arc(px, py, 2.1 * ZOOM, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.font = 'bold 11px system-ui, Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeText(label, sx, sy + baseR + 16);
+  ctx.fillStyle = '#8fd8ff';
+  ctx.fillText(label, sx, sy + baseR + 16);
+}
+
 function drawTeleportPads() {
   if (!player) return;
-  // The portal itself never locks (its destinations do, shown inside the
-  // modal — see _openPortalModal), so it always draws in the unlocked color.
-  if (_portalPad) _drawTeleportPad(_portalPad.x, _portalPad.y, 0, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт', '#eb4e61', '#4ee69a');
+  if (_portalPad) _drawPortalPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт');
   (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a'));
   // Event pads in their own colours so they read as "this is the boss thing",
   // not just another level gate.
