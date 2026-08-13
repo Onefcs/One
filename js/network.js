@@ -2462,6 +2462,12 @@ function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
 
+// "ТЕХ" one-time gift button (getTechGiftBtnPos, js/input.js) — the server
+// answers with either techClaimResult or techClaimError (handlers below).
+function netTechClaim() {
+  if (socket?.connected) socket.emit('techClaim');
+}
+
 // ── Event boss + world drops ────────────────────────────────────────────────
 // worldDrops is the shared ground-loot pool (id -> {id,x,y,item}); the server
 // arbitrates every pickup, so this map is display-only — an entry disappearing
@@ -3184,6 +3190,25 @@ function _initPetCraftHandlers(s) {
   });
   s.on('rebirthError', ({ msg }) => {
     if (typeof onRebirthError === 'function') onRebirthError(msg);
+  });
+
+  // "ТЕХ" one-time gift button (getTechGiftBtnPos, js/input.js) — gold/
+  // Liberty arrive via the normal goldSync/nexumBalanceUpdate events the
+  // server already emits alongside this (see the techClaim handler, server/
+  // index.js); this only flips the permanent claimed flag (so the button
+  // stops drawing — see drawTechGiftButton, js/ui.js) and shows the toast.
+  s.on('techClaimResult', () => {
+    if (!player) return;
+    player.techClaimed = true;
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('techGiftToast') : '🎁 Технический подарок получен!', '#fd0');
+  });
+  // Left alone rather than forced to true here: a generic server error isn't
+  // proof the gift was already claimed, so hiding the button on one would
+  // strand an account that never actually got it. Worst case on the real
+  // "already claimed" message is a harmless re-click.
+  s.on('techClaimError', ({ msg }) => {
+    if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 40, msg || 'Ошибка', '#f88');
   });
 }
 

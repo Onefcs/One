@@ -279,6 +279,45 @@ scenario('gold: founding is refused when short, and no clan is made', async () =
   await c.close();
 });
 
+scenario('techGift: claims once, grants gold+Liberty, and refuses a second claim', async () => {
+  const c = await connectWithSaved('harness_techgift', { gold: 500, nexumBalance: 50 });
+  await enterWorld(c, 'ranger');
+
+  const goldP  = c.wait('goldSync', { timeout: 5000 });
+  const nexumP = c.wait('nexumBalanceUpdate', { timeout: 5000 });
+  const resultP = c.wait('techClaimResult', { timeout: 5000 });
+  c.emit('techClaim');
+  const [gold, nexum, result] = await Promise.all([goldP, nexumP, resultP]);
+  eq(gold.gold, 500 + 100000, 'the gift adds the gold on top of the existing balance');
+  eq(nexum.balance, 50 + 200, 'and the Liberty on top of the existing balance');
+  eq(result.gold, 500 + 100000, 'techClaimResult itself reports the same new gold total');
+  eq(result.nexum, 50 + 200, 'and the same new Liberty total');
+
+  await sleep(200); // _persistSavedFields's DB write, and the techClaimed $set before it
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.techClaimed, true, 'the DB row is permanently marked claimed');
+  eq(row.savedData.gold, 500 + 100000, 'and the DB gold matches the live total');
+
+  // A second attempt on the SAME still-connected session is refused —
+  // proves the atomic DB guard, not just an in-memory flag, is what's
+  // stopping the second claim.
+  const err = c.wait('techClaimError', { timeout: 5000 });
+  c.emit('techClaim');
+  const errBody = await err;
+  ok(errBody && errBody.msg, 'the second claim is refused with a message');
+
+  // A save cannot forge the flag back to false either.
+  c.emit('saveProgress', { stats: {
+    type: 'ranger', lvl: 1, xp: 0, gold: 500 + 100000, techClaimed: false,
+    hp: 100, maxHp: 100, savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const row2 = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row2.savedData.techClaimed, true, 'a save claiming techClaimed:false does not un-claim it');
+
+  await c.close();
+});
+
 scenario('level: a save cannot set the level', async () => {
   const c = await connectWithSaved('harness_lvlpin', { lvl: 5, xp: 12 });
   await enterWorld(c, 'mage');

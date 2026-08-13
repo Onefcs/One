@@ -575,6 +575,8 @@ Object.assign(I18N_UI, {
   pvpOnLabel: { ru: 'ПК', en: 'PK', uk: 'ПК', es: 'JcJ', tr: 'PK', pt: 'JcJ' },
   pvpOffLabel: { ru: 'Мир', en: 'Peace', uk: 'Мир', es: 'Paz', tr: 'Barış', pt: 'Paz' },
   professionBtnLbl: { ru: 'Проф', en: 'Prof', uk: 'Проф', es: 'Prof', tr: 'Mslk', pt: 'Prof' },
+  techGiftBtnLbl: { ru: 'ТЕХ', en: 'TECH', uk: 'ТЕХ', es: 'TECH', tr: 'TEK', pt: 'TECH' },
+  techGiftToast: { ru: '🎁 Технический подарок получен!', en: '🎁 Tech gift claimed!', uk: '🎁 Технічний подарунок отримано!', es: '🎁 ¡Regalo técnico recibido!', tr: '🎁 Teknik hediye alındı!', pt: '🎁 Presente técnico recebido!' },
   partyInviteBtnLbl: { ru: 'Пати+', en: 'Party+', uk: 'Паті+', es: 'Grupo+', tr: 'Grup+', pt: 'Grupo+' },
   partyInfoBtnLbl: { ru: 'Инфо', en: 'Info', uk: 'Інфо', es: 'Info', tr: 'Bilgi', pt: 'Info' },
   partyLeaveBtnLbl: { ru: 'Выйти', en: 'Leave', uk: 'Вийти', es: 'Salir', tr: 'Ayrıl', pt: 'Sair' },

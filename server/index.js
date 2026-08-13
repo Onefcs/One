@@ -3189,6 +3189,13 @@ const ARENA3_NEEDED      = ARENA3_TEAM_SIZE * 2;
 const ARENA3_MIN_LEVEL   = 15;
 const ARENA3_FREEZE_MS   = 10 * 1000;   // shorter than the death battle's: six known players, no scatter to take in
 const ARENA3_REWARD      = 10;          // Liberty (Nexum) per winner
+
+// One-time "ТЕХ" gift button (see getTechGiftBtnPos, js/input.js) — every
+// account may claim this exactly once, ever. savedData.techClaimed is the
+// permanent record of that (see the techClaim handler and its clean.techClaimed
+// pin in saveProgress, both further down).
+const TECH_GIFT_GOLD  = 100000;
+const TECH_GIFT_NEXUM = 200;
 // A real match clock now (it used to be a 30-minute operational guard only,
 // back when the rules said a match ran until one side was wiped out however
 // long that took). Counted from when the fight itself starts (_a3.fightAt),
@@ -8639,6 +8646,50 @@ io.on('connection', socket => {
     }
   });
 
+  // "ТЕХ" gift button (getTechGiftBtnPos, js/input.js) — a flat one-time
+  // gold+Liberty grant every account may claim exactly once. The atomic
+  // findOneAndUpdate below (guarded on savedData.techClaimed not already
+  // true) is what actually enforces "once" — _withEconLock only rules out a
+  // same-socket double-click racing itself. A reconnect landing mid-claim on
+  // a different device isn't a real race either: the new socket's own login
+  // just re-reads whatever the DB row already says, same as every other
+  // server-owned savedData field (see the doc.savedData -> _lastStats
+  // hydration in loginTelegramWebApp/loginTelegram).
+  safeOn('techClaim', async () => {
+    if (!authed || !_lastStats) return;
+    await _withEconLock(async () => {
+      try {
+        const doc = await PlayerModel.findOneAndUpdate(
+          { _id: authed._id, 'savedData.techClaimed': { $ne: true } },
+          { $set: { 'savedData.techClaimed': true } },
+          { new: true, projection: { _id: 1 } },
+        );
+        if (!doc) { socket.emit('techClaimError', { msg: 'Уже получено' }); return; }
+        _lastStats.techClaimed = true;
+        _grantGold(TECH_GIFT_GOLD, 'tech_gift');
+        const newNexum = await _incBalance(authed.telegramId, 'nexumBalance', TECH_GIFT_NEXUM);
+        if (newNexum !== null) {
+          _setNexum(newNexum);
+          socket.emit('nexumBalanceUpdate', { balance: newNexum });
+        }
+        // Gold rides the ordinary save debounce everywhere else in this file
+        // (see _grantGold's own comment on why), but this is a rare, one-shot,
+        // high-value grant rather than a per-kill drip — worth the extra write
+        // to close the narrow window where a crash between now and the next
+        // debounced save would leave techClaimed:true permanently set with the
+        // gold never having actually landed.
+        await _persistSavedFields(authed, { gold: _lastStats.gold });
+        logPlayer(authed.telegramId, authed.username, 'tech_gift_claim',
+          { gold: TECH_GIFT_GOLD, nexum: TECH_GIFT_NEXUM });
+        socket.emit('techClaimResult', { gold: _goldNow(), nexum: _liveNexum() });
+      } catch (err) {
+        console.error('techClaim:', err);
+        logPlayerErr(authed.telegramId, authed.username, 'tech_gift', err);
+        socket.emit('techClaimError', { msg: 'Ошибка сервера' });
+      }
+    });
+  });
+
   safeOn('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     // authed.savedData is the DB-loaded record for this account (single save
@@ -10155,6 +10206,11 @@ io.on('connection', socket => {
       clean.bonusSP           = _lastStats.bonusSP           || 0;
       clean.rebirths          = _lastStats.rebirths          || 0;
       clean.specialQuestsDone = _lastStats.specialQuestsDone || [];
+      // The "ТЕХ" one-time gift flag — set only by the techClaim handler
+      // above, never by a save (see its own comment for why that handler's
+      // atomic DB guard, not this pin, is what actually stops a double-claim;
+      // this pin only stops a stale/forged save from resetting it to false).
+      clean.techClaimed       = !!_lastStats.techClaimed;
       // HP, from the room. The server is what lowers it (attackEnemy,
       // pvpAttack, the AI) and what raises it (healPlayer, respawn, and the
       // rate-limited regen syncPlayerHp accepts off playerMove) — so the live

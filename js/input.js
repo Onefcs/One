@@ -61,11 +61,21 @@ function getPartyLeaveBtnPos() {
   return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: 80, h: 22 };
 }
 
-// Party member list starts below the Профессия button — used to be below
-// the since-removed Special button one slot further down.
-function _partyHudStartY() {
+// Directly below Профессия, same column — the one-time "ТЕХ" gift button
+// (getTechGiftBtnPos/drawTechGiftButton in js/ui.js, techClaim in server/
+// index.js). Always reserves this slot, even once claimed and no longer
+// drawn/tappable (see _checkTechGiftBtnTouch below), so the party list one
+// slot further down never jumps depending on claimed state.
+function getTechGiftBtnPos() {
   const prof = getProfessionBtnPos();
-  return prof.y + prof.h + 6;
+  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
+}
+
+// Party member list starts below the ТЕХ gift slot — used to be below the
+// since-removed Special button one slot further down.
+function _partyHudStartY() {
+  const tech = getTechGiftBtnPos();
+  return tech.y + tech.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -280,6 +290,19 @@ function _checkProfessionBtnTouch(cx, cy) {
   return false;
 }
 
+// Once claimed the button no longer draws (see drawTechGiftButton, js/ui.js)
+// and this returns false so the tap falls through to whatever's behind the
+// now-empty slot, same as the button never having existed.
+function _checkTechGiftBtnTouch(cx, cy) {
+  if (!player || player.techClaimed) return false;
+  const tb = getTechGiftBtnPos();
+  if (cx >= tb.x && cx <= tb.x + tb.w && cy >= tb.y && cy <= tb.y + tb.h) {
+    if (typeof netTechClaim === 'function') netTechClaim();
+    return true;
+  }
+  return false;
+}
+
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
   const lb = getPartyLeaveBtnPos();
@@ -390,6 +413,7 @@ function onTS(e) {
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
+    if (_checkTechGiftBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -457,6 +481,7 @@ function onMD(e) {
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
+  if (_checkTechGiftBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y)) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;
