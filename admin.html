@@ -344,6 +344,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
             <input id="give-gold" type="number" min="0" placeholder="Золото">
             <input id="give-nexum" type="number" min="0" placeholder="Liberty">
             <input id="give-gram" type="number" min="0" placeholder="GRAM">
+            <input id="give-sp" type="number" min="0" placeholder="Очки навыка">
           </div>
           <div style="margin-top:8px"><button class="btn btn-sm btn-green" onclick="givePlayer()">Выдать</button></div>
         </div>
@@ -835,6 +836,7 @@ async function openPlayer(tid) {
       <div class="prow"><span class="k">Telegram ID</span><span>${p.telegramId}</span></div>
       <div class="prow"><span class="k">Уровень</span><span>${sd.lvl||1}</span></div>
       <div class="prow"><span class="k">Класс</span><span>${sd.type||'—'}</span></div>
+      <div class="prow"><span class="k">Очки навыка</span><span>${sd.bonusSP||0}</span></div>
       <div class="prow"><span class="k">Золото</span><span>${fmt(sd.gold||0)}</span></div>
       <div class="prow"><span class="k">Liberty</span><span>${fmt(sd.nexumBalance||0)}</span></div>
       <div class="prow"><span class="k">GRAM</span><span>${fmt(sd.gramBalance||0)}</span></div>
@@ -894,10 +896,11 @@ async function givePlayer() {
   const gold  = Number(document.getElementById('give-gold').value)||0;
   const nexum = Number(document.getElementById('give-nexum').value)||0;
   const gram  = Number(document.getElementById('give-gram').value)||0;
-  if (!gold && !nexum && !gram) { toast('Укажи сумму', false); return; }
+  const sp    = Number(document.getElementById('give-sp').value)||0;
+  if (!gold && !nexum && !gram && !sp) { toast('Укажи сумму', false); return; }
   try {
-    const r = await api('/admin/player/'+_currentPlayerId+'/give', { method:'POST', body:JSON.stringify({ gold, nexum, gram }) });
-    if (r.ok) { toast('Выдано!'); ['give-gold','give-nexum','give-gram'].forEach(id=>document.getElementById(id).value=''); }
+    const r = await api('/admin/player/'+_currentPlayerId+'/give', { method:'POST', body:JSON.stringify({ gold, nexum, gram, sp }) });
+    if (r.ok) { toast('Выдано!'); ['give-gold','give-nexum','give-gram','give-sp'].forEach(id=>document.getElementById(id).value=''); }
     else { const d=await r.json(); toast(d.error||'Ошибка', false); }
   } catch(e) { toast('Ошибка', false); }
 }

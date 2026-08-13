@@ -582,6 +582,79 @@ scenario('floors: the boss arena is its own floor, reachable only while a world 
   await c.close();
 });
 
+scenario('season: hitting the world boss pays its 50 points once, not once per reconnect', async () => {
+  // _seasonTrackBossHit (server/index.js) used to remember "already paid for
+  // this boss" in a bare in-memory variable scoped to one socket connection —
+  // so a reconnect (a page refresh is a brand new connection, same as any
+  // ordinary network blip) forgot, and the very next hit on the still-alive
+  // boss paid the 50 participation points again. Reproduces that exact
+  // sequence: hit once, reconnect, hit the SAME boss id again, and check the
+  // stored total only reflects one grant.
+  const c1 = await connectAs('harness_bosspts');
+  await enterWorld(c1, 'ranger');
+
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+  // 200 summons a fresh one; 409 means an earlier scenario in this same run
+  // (the 'boss arena is its own floor' test above) already has one up and
+  // never tore it down — either way there is a live boss to hit afterward,
+  // which is all this scenario actually needs.
+  const summonRes = await fetch(`${BASE}/admin/event-boss`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  ok(summonRes.status === 200 || summonRes.status === 409, `a world boss is up one way or another (got ${summonRes.status})`);
+
+  const arenaStart = c1.wait('gameStart', { where: `${c1.name} enters the arena` });
+  c1.emit('enterLocation', { target: 'arena' });
+  const onArena = await arenaStart;
+  const boss = (onArena.enemies || []).find(e => e.eid === 'demon_event_boss');
+  ok(boss && boss.id, 'the arena floor carries the boss and its live id');
+
+  // The arena's spawn point is well outside melee range of the boss at its
+  // centre (same reasoning as the 'combat' scenario's playerMove) — walk
+  // over before swinging, or attackEnemy's own range check silently refuses
+  // the hit and nothing here ever fires.
+  c1.emit('playerMove', { x: boss.x + 20, y: boss.y, facing: 1, moving: false });
+  await sleep(120);
+  const paid1 = c1.wait('seasonEventDone', { timeout: 5000 });
+  c1.emit('attack', { enemyId: boss.id });
+  const done1 = await paid1;
+  eq(done1.task, 'worldboss', 'the first hit pays the world-boss participation task');
+  eq(done1.points, 50, 'for 50 points');
+
+  await c1.close();
+  await sleep(500);
+
+  // Reconnect — same account, brand new socket connection, lands back on the
+  // hub (the bare _buildSaveStats()-shaped blob every real reconnect sends).
+  // Boss is still alive (event bosses live for minutes; summoning it fresh
+  // above guarantees it hasn't despawned yet) — walk back in and hit the
+  // exact same boss id again.
+  const c2 = await connectAs('harness_bosspts');
+  const hubStart = c2.wait('gameStart', { where: `${c2.name} reconnects` });
+  c2.emit('selectChar', { type: 'ranger', savedStats: {
+    type: 'ranger', floor: 1, hp: 100, maxHp: 100, kills: 0,
+    hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
+  } });
+  await hubStart;
+  const arenaStart2 = c2.wait('gameStart', { where: `${c2.name} re-enters the arena` });
+  c2.emit('enterLocation', { target: 'arena' });
+  await arenaStart2;
+
+  c2.emit('playerMove', { x: boss.x + 20, y: boss.y, facing: 1, moving: false });
+  await sleep(120);
+  c2.emit('attack', { enemyId: boss.id });
+  await sleep(1000); // give a wrongly-re-awarded grant time to land if the bug is back
+
+  const row = memory.__dump('Player').find(p => p.username === c2.auth.username);
+  eq(row.savedData.seasonPoints, 50, 'the stored total reflects exactly one grant, not two');
+  eq(row.savedData.seasonBossPaid, boss.id, 'and the paid-boss id is persisted, not just held in memory');
+  await c2.close();
+});
+
 scenario('floors: Death Battle deploys entrants from wherever they are and returns each one there', async () => {
   const a = await connectAs('harness_db_a');
   const b = await connectAs('harness_db_b');

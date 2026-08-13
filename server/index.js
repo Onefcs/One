@@ -1441,19 +1441,26 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     const gold  = _amt((req.body || {}).gold);
     const nexum = _amt((req.body || {}).nexum);
     const gram  = _amt((req.body || {}).gram);
-    if (!gold && !nexum && !gram) return res.status(400).json({ error: 'Нечего выдавать' });
+    // Skill points (очки навыка) — same field give-all already grants in
+    // bulk (savedData.bonusSP); this is its single-account counterpart.
+    // Truncated like give-all's own _amt does: a fractional skill point
+    // means nothing to skillPointBudget.
+    const sp    = Math.trunc(_amt((req.body || {}).sp));
+    if (!gold && !nexum && !gram && !sp) return res.status(400).json({ error: 'Нечего выдавать' });
     const p = await PlayerModel.findOne({ telegramId: req.params.tid });
     if (!p) return res.status(404).json({ error: 'Not found' });
     const saved = p.savedData || {};
-    // Gold, unlike gram/nexum, has no server-side live cache — it rides the
-    // client's save blob. Writing it straight to the DB for a player who is
-    // online meant their next autosave (up to 60s later) overwrote it with the
-    // figure their client still held, and the grant silently vanished. Route it
-    // through the live session when there is one, exactly as the item endpoint
-    // above does.
+    // Gold and skill points, unlike gram/nexum, have no server-side live
+    // cache — both ride the client's save blob. Writing them straight to the
+    // DB for a player who is online meant their next autosave (up to 60s
+    // later) overwrote the grant with whatever figure their client still
+    // held, and it silently vanished. Route both through the live session
+    // when there is one, via the same helper /admin/give-all already uses
+    // for a mass grant of this exact pair.
     const _liveSock = io.sockets.sockets.get(activeSessions.get(String(req.params.tid)) || '');
-    const _giveGoldLive = gold ? _liveSock?.data?._adminGiveGold : null;
-    if (gold)  saved.gold          = (saved.gold || 0) + gold;
+    const _giveLive = (gold || sp) ? _liveSock?.data?._adminGiveGoldSP : null;
+    if (gold) saved.gold    = (saved.gold || 0) + gold;
+    if (sp)   saved.bonusSP = (saved.bonusSP || 0) + sp;
     // Both balances move by $inc against the live document — the player may be
     // online and earning while the admin types, and neither side should
     // overwrite the other. A negative figure is a valid way to take money back,
@@ -1466,16 +1473,22 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     // Targeted $set on just the touched fields — a full-document save from
     // this snapshot would revert any other savedData field this account's
     // own gameplay autosave wrote in the same window.
-    // Only gold goes through $set here — the two real balances were already
-    // moved atomically above and must never be written as an absolute.
+    // Only gold/bonusSP go through $set here — the two real balances were
+    // already moved atomically above and must never be written as an absolute.
     const _giveSet = {};
-    // Gold handled by the live session when the player is online (see above);
-    // only write it here when nobody is holding a newer copy in memory.
-    if (gold && !_giveGoldLive) _giveSet['savedData.gold'] = saved.gold;
+    // Gold/SP handled by the live session when the player is online (see
+    // above); only write them here when nobody is holding a newer copy in
+    // memory.
+    if (gold && !_giveLive) _giveSet['savedData.gold']    = saved.gold;
+    if (sp   && !_giveLive) _giveSet['savedData.bonusSP'] = saved.bonusSP;
     if (Object.keys(_giveSet).length) await PlayerModel.updateOne({ _id: p._id }, { $set: _giveSet });
-    if (_giveGoldLive) await _giveGoldLive(gold);
-    io.to(`tg_${p.telegramId}`).emit('adminGive', { gold, nexum, gram });
-    logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram });
+    const _liveResult = _giveLive ? await _giveLive(gold, sp) : null;
+    io.to(`tg_${p.telegramId}`).emit('adminGive', {
+      gold, nexum, gram, sp,
+      newGold: _liveResult ? _liveResult.gold : undefined,
+      newBonusSP: _liveResult ? _liveResult.bonusSP : undefined,
+    });
+    logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram, sp });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5029,26 +5042,17 @@ io.on('connection', socket => {
     }
   };
 
-  // Gold granted by an admin to a player who is online. It has to land in
-  // _lastStats, not just in the database: this session's 60s autosave writes
-  // _lastStats wholesale, so a grant written only to Mongo was reverted the
-  // next time that timer fired (most visibly for a backgrounded mobile client,
-  // whose own save — which does carry the grant, see the adminGive handler in
-  // js/network.js — may not come for a long time). No double-counting: the
-  // client's next save replaces _lastStats rather than adding to it.
-  socket.data._adminGiveGold = async (amount) => {
-    if (!authed || !Number.isFinite(amount) || amount === 0) return;
-    if (!_lastStats) _lastStats = {};
-    _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + amount);
-    await _persistSavedFields(authed, { gold: _lastStats.gold });
-    logPlayer(authed.telegramId, authed.username, 'admin_give_gold_live',
-      { amount, balance: _lastStats.gold });
-  };
-
-  // Same reasoning as _adminGiveGold just above, extended to bonusSP — used
-  // by /admin/give-all (a gold+skill-point grant to every account at once) so
-  // an online player's next autosave doesn't revert either field. Both move
-  // in one _persistSavedFields call since a mass grant sets them together.
+  // Gold and/or skill points granted by an admin to a player who is online.
+  // Both have to land in _lastStats, not just in the database: this
+  // session's 60s autosave writes _lastStats wholesale, so a grant written
+  // only to Mongo was reverted the next time that timer fired (most visibly
+  // for a backgrounded mobile client, whose own save — which does carry the
+  // grant, see the adminGive handler in js/network.js — may not come for a
+  // long time). No double-counting: the client's next save replaces
+  // _lastStats rather than adding to it. Used by both /admin/give-all (a
+  // mass grant to every online account) and /admin/player/:tid/give (a
+  // single account) — both fields move in one _persistSavedFields call so a
+  // gold+SP grant sets them together.
   socket.data._adminGiveGoldSP = async (goldAmount, spAmount) => {
     if (!authed) return null;
     if (!_lastStats) _lastStats = {};
@@ -7624,17 +7628,34 @@ io.on('connection', socket => {
   }
   socket.data._seasonAwardWin = _seasonAwardWin;
 
-  // Which world boss this session has already been paid for. The boss keeps
+  // Which world boss this account has already been paid for. The boss keeps
   // one id for its whole appearance, so remembering the last one paid is
   // enough to make it once-per-boss no matter how many times it is hit —
   // otherwise every swing would be worth points.
+  //
+  // _seasonBossPaid used to be ONLY this in-memory variable, scoped to one
+  // socket connection — so it forgot on every reconnect, and a page refresh
+  // (or any ordinary mobile network blip; ordinary here) is a brand new
+  // connection. The very next hit on the still-alive boss then read as a
+  // fresh appearance and paid the 50 points again — the same failure shape
+  // as techClaimed resetting on reconnect, just for a different field. It
+  // still exists as a same-connection fast path (avoids a DB round trip on
+  // every one of a boss fight's many hits), but the actual "already paid"
+  // decision is now the persisted, atomically-guarded write below — same
+  // $ne-guarded findOneAndUpdate techClaim uses — which survives whatever
+  // connection asks and still "arms again" the moment a new boss spawns,
+  // since a fresh spawn always gets a fresh id (Room.spawnEventBoss).
   let _seasonBossPaid = null;
   function _seasonTrackBossHit(enemyId) {
     if (!authed || !seasonActive() || !enemyId) return;
     if (!String(enemyId).startsWith('evtboss_')) return;
     if (_seasonBossPaid === enemyId) return;
     _seasonBossPaid = enemyId;
-    _seasonAwardEvent('worldboss');
+    PlayerModel.findOneAndUpdate(
+      { telegramId: String(authed.telegramId), 'savedData.seasonBossPaid': { $ne: enemyId } },
+      { $set: { 'savedData.seasonBossPaid': enemyId } },
+    ).then(doc => { if (doc) _seasonAwardEvent('worldboss'); })
+     .catch(err => console.error('_seasonTrackBossHit:', err));
   }
   socket.data._seasonTrackBossHit = _seasonTrackBossHit;
 
