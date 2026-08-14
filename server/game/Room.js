@@ -2578,25 +2578,50 @@ class Room {
   // lane number), full HP, normal PvE combat (no pvpMode — this event has no
   // player-vs-player component at all). Falls back to the shared boss room if
   // a lane spawn ever lands on a wall.
+  // The corridors an entrant can actually be put into, each carrying the
+  // MAP's own lane index rather than a position in this list. That index is
+  // the lane's identity everywhere else — every corridor monster carries
+  // `lane` and _raceVisible compares against it — so an unusable corridor has
+  // to be skipped, never compacted away, or entrant N would be sealed to lane
+  // N while standing in lane N+1's corridor.
+  //
+  // Validated rather than assumed. raceDeploy used to fall back to the boss
+  // room when a lane spot came out inside geometry, which is the exact silent
+  // failure that put every entrant on the boss once before (see
+  // _race10Deploy, server/index.js): a placement that cannot be honoured must
+  // reduce capacity and refuse someone plainly, not quietly move them
+  // somewhere they did not ask to be.
+  raceUsableLanes() {
+    const race = this._dungeon.race10;
+    if (!race) return [];
+    const out = [];
+    race.lanes.forEach((spot, lane) => {
+      if (this.canStandAt(spot.x, spot.y)) out.push({ lane, x: spot.x, y: spot.y });
+    });
+    return out;
+  }
+
   raceDeploy(socketIds) {
     const race = this._dungeon.race10;
     if (!race) return [];
     const placed = [];
+    const usable = this.raceUsableLanes();
     // One lane per entrant, never shared: two players in the same corridor
     // would fight the same monsters and re-create exactly the cross-lane mess
-    // the isolation above removes. The caller caps the list at lanes.length.
-    socketIds.slice(0, race.lanes.length).forEach((sid, i) => {
+    // the isolation above removes. The caller caps the list at
+    // raceUsableLanes().length and hands them over in the same order, so slot
+    // n here is the corridor entrant n was already joined at.
+    socketIds.slice(0, usable.length).forEach((sid, i) => {
       const p = this.players.get(sid);
       if (!p) return;
-      const spot = race.lanes[i];
-      let x = spot.x, y = spot.y;
-      if (this._isWall(x, y)) { x = race.boss.x; y = race.boss.y; }
+      const spot = usable[i];
+      const x = spot.x, y = spot.y;
       p.x = x; p.y = y;
       p.hp = p.maxHp;
       // Their lane for as long as the run lasts — read by _raceVisible on both
       // the targeting and the streaming side. Cleared when they leave, in
       // deathBattleReturn (every exit path goes through it) and removePlayer.
-      p._raceLane = i;
+      p._raceLane = spot.lane;
       // Defensive: fearEnter's own registration-time check is what's meant to
       // keep these two from ever overlapping (register for the Tower, then
       // start a Fear run while waiting for it to open), but landing here with
@@ -2607,7 +2632,7 @@ class Room {
       // other path in.
       if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
       p._profileRev++;
-      placed.push({ socketId: sid, x, y, hp: p.hp, lane: i });
+      placed.push({ socketId: sid, x, y, hp: p.hp, lane: spot.lane });
     });
     this._raceActive = placed.length > 0;
     return placed;
@@ -2882,6 +2907,18 @@ class Room {
     attacker._lastAtk = now;
     const enemy = this._enemyMap.get(enemyId); // O(1) Map lookup
     if (!enemy || enemy.hp <= 0) return null;
+    // Instance isolation, as a RULE rather than as a consequence of the map.
+    // A corridor monster belongs to exactly one Tower lane (and a Fear
+    // monster to one hall), and until now nothing said so on the damage path
+    // — cross-lane hits were stopped only by the walls between corridors and
+    // the line-of-sight check below. That holds for the geometry as drawn,
+    // but it is the wrong thing to be relying on: a client that names an
+    // enemy id directly is not constrained by what it can see, and the one
+    // thing standing between it and somebody else's monsters would be a
+    // sampling test over a wall. _raceVisible is the same predicate the
+    // streaming and targeting sides already use, so this makes "you may only
+    // touch your own instance" one rule with one implementation.
+    if (!this._raceVisible(attacker, enemy)) return null;
     // Range check: must be within 350px of the enemy's BODY (generous for AoE
     // skills). enemy.size is added because this is measured to its centre —
     // without it a large enemy shrinks the usable window by its own radius,
@@ -2969,6 +3006,8 @@ class Room {
     }
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
+    // Same instance-isolation rule attackEnemy applies — see its comment.
+    if (!this._raceVisible(attacker, enemy)) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     if (rdx * rdx + rdy * rdy > 600 * 600) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;

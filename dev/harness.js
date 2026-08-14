@@ -2639,6 +2639,153 @@ scenario('race10: everyone who hits the boss is paid, the winner more, and nobod
   await a.close(); await b.close(); await c.close();
 });
 
+// A throwaway Tower Room, for the scenarios that ask Room.js questions
+// directly rather than through a socket. Built fresh (and stopped again)
+// rather than reaching into the server's live one, so poking at its geometry
+// cannot leak into any other scenario.
+function _towerRoom() {
+  const Room = require('../server/game/Room');
+  const { FLOOR_IDS } = require('../server/game/floors');
+  const _io = { to: () => ({ emit() {} }), sockets: { sockets: { get: () => null } } };
+  return new Room(FLOOR_IDS.race10, _io, {}, null);
+}
+
+scenario('race10: a same-account reconnect during registration keeps its place in the queue', async () => {
+  // The Map's insertion order IS the queue — _race10Start takes the first
+  // `capacity` entrants — and the rekey onto the reconnecting socket used to
+  // be set-then-delete, which appends. A player whose connection blipped
+  // during registration therefore went to the back of a line they were at the
+  // front of, and at 30+ registrants for 30 corridors that decides who races.
+  //
+  // The path under test is the duplicate-login one: a second socket for the
+  // same account arrives while the first is still live (addPlayer reports it
+  // as a stale entry), which is what a fast mobile reconnect looks like. A
+  // fully processed disconnect is a different case — it drops the
+  // registration outright, on purpose, since only a connected entrant can be
+  // deployed.
+  const a = await connectWithSaved('harness_r10_q_a', { lvl: 10, xp: 0, xpNext: 100 });
+  const b = await connectWithSaved('harness_r10_q_b', { lvl: 10, xp: 0, xpNext: 100 });
+  const c = await connectWithSaved('harness_r10_q_c', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(a, 'ranger');
+  await enterWorld(b, 'mage');
+  await enterWorld(c, 'lev');
+  await fetch(`${BASE}/dev/race10/open?reg=6000`, { method: 'POST' });
+
+  for (const x of [a, b, c]) {
+    const r = x.wait('race10Registered', { timeout: 4000 });
+    x.emit('race10Register');
+    await r;
+  }
+  const before = await fetch(`${BASE}/dev/race10/queue`).then(r => r.json());
+  eq(before.names[0], a.auth.username, 'a signed up first');
+
+  // a's client reconnects without its old socket having been torn down yet.
+  const a2 = await connectAs('harness_r10_q_a');
+  await enterWorld(a2, 'ranger');
+  await sleep(400);
+
+  const after = await fetch(`${BASE}/dev/race10/queue`).then(r => r.json());
+  eq(after.size, 3, 'the queue still holds all three');
+  eq(after.names[0], a2.auth.username, 'and the reconnected entrant is still FIRST, not appended to the back');
+  eq(after.names[1], b.auth.username, 'with everyone behind it in the order they signed up');
+  eq(after.names[2], c.auth.username, 'unchanged');
+
+  // And the same after a FULLY processed disconnect, which is what a real
+  // mobile drop looks like once engine.io has given up on it. This is the
+  // case that used to lose the sign-up outright rather than merely reorder
+  // it: the registration is parked on disconnect and reclaimed by account.
+  await b.close();
+  await sleep(700);
+  const midway = await fetch(`${BASE}/dev/race10/queue`).then(r => r.json());
+  eq(midway.size, 3, 'a dropped entrant stays parked in the queue rather than being unregistered');
+
+  const b2 = await connectAs('harness_r10_q_b');
+  await enterWorld(b2, 'mage');
+  await sleep(400);
+  const healed = await fetch(`${BASE}/dev/race10/queue`).then(r => r.json());
+  eq(healed.size, 3, 'and reconnecting does not duplicate it');
+  eq(healed.names[1], b2.auth.username, 'it is reclaimed in the same position it signed up at');
+
+  // The client is told it is still registered, so it does not sit showing a
+  // sign-up button for a race it is already in.
+  const sync = b2.wait('race10State', { timeout: 4000 });
+  b2.emit('race10Sync');
+  eq((await sync).registered, true, 'and the reconnected client knows it is still registered');
+
+  await Promise.all([a2, b2, c].map(x => x.close()));
+});
+
+scenario('race10: a corridor whose entry is unusable lowers capacity instead of dumping its occupant on the boss', async () => {
+  // raceDeploy used to fall back to the boss room when a lane's entry point
+  // came out inside geometry — the same silent misplacement that put every
+  // entrant on the boss for real. A placement that cannot be honoured has to
+  // reduce capacity and refuse someone plainly.
+  const room = _towerRoom();
+  try {
+    const all = room.dungeonData.race10.lanes;
+    eq(room.raceUsableLanes().length, all.length, 'every corridor is usable on the map as drawn');
+
+    // Move one lane's entry point into the wall block between corridors and
+    // confirm it drops out of the usable set rather than becoming a boss slot.
+    const victim = all[7];
+    victim.x = 0; victim.y = 0;             // margin, solid wall
+    const usable = room.raceUsableLanes();
+    eq(usable.length, all.length - 1, 'the unusable corridor is not offered');
+    ok(!usable.some(u => u.lane === 7), 'and specifically lane 7 is the one missing');
+    ok(usable.every(u => u.x !== room.dungeonData.race10.boss.x || u.y !== room.dungeonData.race10.boss.y),
+      'no corridor resolves to the boss room');
+    // Lane identity survives the gap: the remaining corridors keep their own
+    // map indices, because every corridor monster is tagged with one.
+    eq(usable[7].lane, 8, 'lanes past the gap keep their real index, they are not renumbered');
+  } finally {
+    room._stopLoop();
+  }
+});
+
+scenario('race10: a racer cannot damage another corridor\'s monsters even when told the id directly', async () => {
+  // Cross-lane hits were stopped only by the walls and the line-of-sight
+  // sampling — true for the geometry as drawn, but the wrong thing to rely
+  // on: a client that names an enemy id is not constrained by what it can
+  // see. The rule is now explicit on the damage path (_raceVisible in
+  // attackEnemy/skillAttackEnemy), so this asks the server directly rather
+  // than through a client.
+  const room = _towerRoom();
+  const mine = room.enemies.find(e => e.arm === 'race10' && e.lane === 0 && e.hp > 0);
+  const theirs = room.enemies.find(e => e.arm === 'race10' && e.lane === 1 && e.hp > 0);
+  ok(mine && theirs, 'two corridors have live monsters');
+
+  const sid = 'harness_lanerule';
+  room.addPlayer(sid, 'lanerule', null, null, 0, '900000001');
+  room.setPlayerChar(sid, 'ranger', { lvl: 40, upgrades: {}, equipment: {} });
+  const p = room.players.get(sid);
+  try {
+    p._raceLane = 0;
+    // Stand right on top of the OTHER corridor's monster: in range, clear
+    // line of sight, nothing geometric left to refuse the hit.
+    p.x = theirs.x; p.y = theirs.y;
+    const hpBefore = theirs.hp;
+    eq(room.attackEnemy(sid, theirs.id), null, 'a basic attack on another corridor\'s monster is refused');
+    eq(theirs.hp, hpBefore, 'and it takes no damage');
+    eq(room.skillAttackEnemy(sid, theirs.id, 'Q'), null, 'a skill on it is refused too');
+    eq(theirs.hp, hpBefore, 'still no damage');
+
+    // The same player, same distance, against its OWN corridor: allowed.
+    // The refused hits above still spent the attacker's 150ms basic-attack
+    // slot (the limiter is stamped before any target check, deliberately, so
+    // a client spamming refused ids is still throttled) — so wait it out,
+    // or this measures the rate limit instead of the lane rule.
+    await sleep(200);
+    p.x = mine.x; p.y = mine.y;
+    const ownBefore = mine.hp;
+    const hit = room.attackEnemy(sid, mine.id);
+    ok(hit && hit.dmg > 0, 'its own corridor is still perfectly attackable');
+    ok(mine.hp < ownBefore, 'and that monster really takes the damage');
+  } finally {
+    room.removePlayer(sid);
+    room._stopLoop();
+  }
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

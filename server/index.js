@@ -2471,6 +2471,13 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
     });
   });
 
+  // The registration queue in order. The order is the queue — _race10Start
+  // takes the first `capacity` — so it is the thing a fairness test has to be
+  // able to read.
+  app.get('/dev/race10/queue', (req, res) => {
+    res.json({ names: [..._race10.queue.values()].map(v => v.name), size: _race10.queue.size });
+  });
+
   // Ends the current race the way its own clock would, awarding the win to
   // whoever has dealt the most damage — the same _race10Finish path a real
   // ending takes, just without waiting out RACE10_MAX_MS.
@@ -3546,6 +3553,44 @@ function _socketTid(socketId) {
   return io.sockets.sockets.get(socketId)?.data?.telegramId || null;
 }
 
+// Moves a queue entry from a dead socket id to the reconnected one WITHOUT
+// losing its place in line.
+//
+// A Map iterates in insertion order, and for the registration queues that
+// order is the queue: _race10Start takes the first `capacity` entrants and
+// _a3TryStart the first six. The obvious set-then-delete rekey appends, so a
+// player whose connection blipped during registration silently went to the
+// back — and at 30+ registrants for the Tower's 30 corridors that is the
+// difference between racing and being told there was no room. Rebuilding the
+// map preserves the position; these queues hold tens of entries at most, so
+// the cost is irrelevant next to being fair about who signed up first.
+// Hands every pre-match registration this account is holding to its current
+// socket, keeping each one's place in line. Called from selectChar on every
+// join, so it covers a reconnect however the old socket went away — cleanly
+// disconnected, kicked by this very login, or still hanging around as a stale
+// room entry. Keyed by telegramId rather than by the old socket id precisely
+// because in the common case that id is already gone by the time we get here.
+function _reclaimQueues(telegramId, socketId) {
+  if (!telegramId) return;
+  const each = [[_db.reg, _dbBroadcast], [_a3.queue, _a3Broadcast], [_race10.queue, _race10Broadcast]];
+  for (const [map, broadcast] of each) {
+    for (const [sid, entry] of map) {
+      if (sid === socketId || !entry || entry.tid !== telegramId) continue;
+      _rekeyQueue(map, sid, socketId);
+      broadcast();
+      break;   // one registration per account per event
+    }
+  }
+}
+
+function _rekeyQueue(map, oldKey, newKey) {
+  if (!map.has(oldKey)) return false;
+  const entries = [...map];
+  map.clear();
+  for (const [k, v] of entries) map.set(k === oldKey ? newKey : k, v);
+  return true;
+}
+
 // Next scheduled window open, in UTC ms — every day, 21:00 Moscow. Same
 // nextEventStartAt helper the death battle/world boss/race10 schedules use.
 function _a3NextOpenAt(from = Date.now()) {
@@ -4096,9 +4141,13 @@ const RACE10_MAX_MS    = 15 * 60 * 1000;
 
 // The map's lane count — the hard ceiling on entrants. Read once the world
 // exists; before that (nobody can register yet) it reports 0.
+// How many entrants the Tower can actually take. Usable corridors, not the
+// raw lane count: an entry point that is not standable is not a slot anyone
+// can be given, and advertising it would promise a place that deploy would
+// then have to refuse.
 function _race10Capacity() {
   const room = getRoom(FLOOR_IDS.race10);
-  return room?.dungeonData?.race10?.lanes?.length || 0;
+  return room ? room.raceUsableLanes().length : 0;
 }
 
 const _race10 = {
@@ -4255,7 +4304,7 @@ async function _race10Deploy(ready, room) {
   // Everyone who registered, capped only by how many corridors the map has.
   // Anyone past that is told plainly rather than being silently dropped into
   // somebody else's lane.
-  const capacity = room.dungeonData.race10?.lanes?.length || 0;
+  const capacity = room.raceUsableLanes().length;
   const picked = ready.slice(0, capacity);
   ready.slice(capacity).forEach(sid => {
     _race10.queue.delete(sid);
@@ -4316,7 +4365,12 @@ async function _race10Deploy(ready, room) {
   // hands out lanes by position in the array it receives, and this pushes in
   // the same order. Anyone who fails to join simply is not pushed, so the two
   // stay in step.
-  const _laneSpots = room.dungeonData.race10?.lanes || [];
+  // raceUsableLanes() rather than the raw lane list: a corridor whose entry
+  // point is not standable is not a corridor anyone can be given, and it now
+  // reduces capacity instead of silently dumping its occupant on the boss.
+  // Same list raceDeploy walks, in the same order, so slot n here is the
+  // corridor raceDeploy is about to assign as lane n.
+  const _laneSpots = room.raceUsableLanes();
   const joined = [];
   running.forEach(sid => {
     if (joined.length >= _laneSpots.length) return;
@@ -9494,6 +9548,13 @@ io.on('connection', socket => {
       // own private Room.
       if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
       const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
+      // Anything this account had signed up for before the drop comes back
+      // onto this socket, in the position it signed up at. Unconditional: the
+      // registration survives the disconnect now (see the 'disconnect'
+      // handler), so this is the only thing that reconnects it to a live
+      // socket, and the gameStart built further down already reports the
+      // restored registered:… flags because of it.
+      _reclaimQueues(authed.telegramId, socket.id);
       // Back to the exact spot, not just the right floor — but only when the
       // stored floor is the one actually being restored (an arm's coordinates
       // land far outside the hub's own grid) and the spot is still standable.
@@ -9525,12 +9586,12 @@ io.on('connection', socket => {
         // registered:_race10.queue.has(socket.id) (etc.) fields already
         // reflect the transfer, so the client's UI just shows "you're
         // registered" with no extra event needed.
-        const staleDb = _db.reg.get(staleSocketId);
-        if (staleDb) { _db.reg.set(socket.id, staleDb); _db.reg.delete(staleSocketId); }
-        const staleA3q = _a3.queue.get(staleSocketId);
-        if (staleA3q) { _a3.queue.set(socket.id, staleA3q); _a3.queue.delete(staleSocketId); _a3Broadcast(); }
-        const staleR10q = _race10.queue.get(staleSocketId);
-        if (staleR10q) { _race10.queue.set(socket.id, staleR10q); _race10.queue.delete(staleSocketId); _race10Broadcast(); }
+        // Registration carry-over used to live here, keyed off the stale room
+        // entry — see _reclaimQueues, which now does it for every join
+        // instead. This branch only ever fired when the old socket was still
+        // sitting in the room, which is the one case a real reconnect usually
+        // is NOT: the duplicate login kicks the old socket first, and its
+        // disconnect handler runs before this does.
         // The real 'disconnect' handler below also drops the old socket out of
         // any LIVE PvP instance (race10/arena3/deathBattle/Fear) — separate
         // Maps from the registration queues just transferred above (_db.alive/
@@ -10364,7 +10425,7 @@ io.on('connection', socket => {
     if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
       return socket.emit('deathBattleError', { msg: 'Вы сейчас в Кровавой Башне' });
     }
-    _db.reg.set(socket.id, { name: authed.username });
+    _db.reg.set(socket.id, { name: authed.username, tid: authed.telegramId });
     socket.emit('deathBattleRegistered', { registered: true });
     _dbBroadcast();
   });
@@ -10412,7 +10473,7 @@ io.on('connection', socket => {
     if (left <= 0) {
       return socket.emit('arena3Error', { msg: 'Попытки на арену на сегодня закончились' });
     }
-    _a3.queue.set(socket.id, { name: authed.username, lvl });
+    _a3.queue.set(socket.id, { name: authed.username, lvl, tid: authed.telegramId });
     socket.emit('arena3Registered', { registered: true, attemptsLeft: left });
     _a3Broadcast();
     _a3TryStartSafe();
@@ -10466,7 +10527,7 @@ io.on('connection', socket => {
     }
     // Registering no longer risks starting the race — it begins on its own
     // timer with whoever is signed up by then.
-    _race10.queue.set(socket.id, { name: authed.username, lvl });
+    _race10.queue.set(socket.id, { name: authed.username, lvl, tid: authed.telegramId });
     socket.emit('race10Registered', { registered: true, attemptsLeft: left });
     _race10Broadcast();
   });
@@ -12035,9 +12096,20 @@ io.on('connection', socket => {
       _logWritesSinceTrim.delete(authed.telegramId);
       _pvpHistoryWritesSinceTrim.delete(authed.telegramId);
     }
-    _db.reg.delete(socket.id);
-    if (_a3.queue.delete(socket.id)) _a3Broadcast();
-    if (_race10.queue.delete(socket.id)) _race10Broadcast();
+    // Registration entries are LEFT PARKED under this dead socket id rather
+    // than deleted. They used to be dropped here, and that made an ordinary
+    // blip during the registration window cost the whole sign-up: the kick
+    // that a reconnecting duplicate login performs runs this handler first,
+    // so by the time the new socket reached selectChar there was nothing left
+    // to carry over and the player waited for a race they were no longer in.
+    //
+    // Parked is safe because nothing deploys a parked entry: _race10Start and
+    // _a3TryStart both filter for "still connected and still in the world"
+    // before deploying, and _race10CloseWindow clears the queue wholesale when
+    // the window ends. A player who comes back reclaims their entry — in
+    // place, so they keep the position they signed up in (see _reclaimQueues,
+    // called from selectChar).
+    _dbBroadcast(); _a3Broadcast(); _race10Broadcast();
     // fearGrace: an actual disconnect (network blip, closed tab, backgrounded
     // WebView) might just be a reconnect a moment away — hold the Fear run
     // instead of ending it, same as Room's own removePlayer now holds the
