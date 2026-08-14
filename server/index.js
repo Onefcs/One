@@ -4264,7 +4264,31 @@ async function _race10Deploy(ready, room) {
   // assign lanes — force each entrant's own connection onto the race10
   // floor first (bypassing any gate: this is a scheduled deploy, not a
   // walk-in, and there is none to bypass anyway — see _doEnterLocation).
-  const joined = running.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('race10'));
+  //
+  // Each one is joined AT the lane it is about to be given, rather than at the
+  // floor's default spawn. That default is the middle of the shared boss room
+  // (generateRace10), and joining lands a player there for the short moment
+  // between the join and raceDeploy below — which would be invisible, except
+  // that the join is also what builds gameStart, so gameStart went out saying
+  // "you are at the boss". The client applies gameStart's position, and on a
+  // first visit to this floor it applies it LATE: the handler defers behind
+  // the world-map HTTP fetch (see socket.on('gameStart'), js/network.js),
+  // while race10Started — sent moments later with the real lane — arrives and
+  // is applied immediately. So the correct placement landed first and the
+  // stale one overwrote it, and every entrant's first race of a session
+  // started them standing on the boss instead of in their corridor.
+  //
+  // lanes[joined.length] is the exact lane raceDeploy is about to assign: it
+  // hands out lanes by position in the array it receives, and this pushes in
+  // the same order. Anyone who fails to join simply is not pushed, so the two
+  // stay in step.
+  const _laneSpots = room.dungeonData.race10?.lanes || [];
+  const joined = [];
+  running.forEach(sid => {
+    if (joined.length >= _laneSpots.length) return;
+    const ok = io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('race10', { pos: _laneSpots[joined.length] });
+    if (ok) joined.push(sid);
+  });
   const placed = room.raceDeploy(joined);
   _race10.bossId = room.spawnRaceBoss();
 

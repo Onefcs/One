@@ -1444,6 +1444,10 @@ function _evtArenaOpen() {
 }
 
 function _teleportTo(tx, ty, label) {
+  // Every server-driven placement lands here (deathBattleStarted,
+  // arena3Started, race10Started, fearStarted and each event's return path),
+  // so this is the one place that has to record when it happened.
+  _serverPlacedAt = Date.now();
   player.x = tx; player.y = ty;
   camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2; clampCamera();
   spawnBurst(player.x, player.y, '#7fd7ff', 20);

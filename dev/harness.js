@@ -2470,6 +2470,102 @@ scenario('browser: a kicked session stays down instead of reloading into a kick 
   }
 });
 
+scenario('race10: an entrant is joined AT its lane, so gameStart cannot say "boss room"', async () => {
+  // Every entrant used to start the race standing on the boss instead of in
+  // their own corridor. The join that builds gameStart runs BEFORE raceDeploy
+  // assigns lanes, so gameStart carried this floor's default spawn — which for
+  // the Tower is the middle of the shared boss room — while race10Started
+  // carried the real lane moments later. The client applies race10Started at
+  // once but defers gameStart behind the world-map fetch on a first visit to
+  // the floor, so the stale position won by arriving last.
+  //
+  // Fixed at the source: each entrant is joined at the exact lane raceDeploy is
+  // about to give it, so the two payloads agree and the ordering stops
+  // mattering. Asserted as "these two agree", which is the property that has to
+  // hold however the client is written.
+  const a = await connectWithSaved('harness_r10_lane_a', { lvl: 10, xp: 0, xpNext: 100 });
+  const b = await connectWithSaved('harness_r10_lane_b', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(a, 'ranger');
+  await enterWorld(b, 'mage');
+  await fetch(`${BASE}/dev/race10/open?reg=1500`, { method: 'POST' });
+
+  const aReg = a.wait('race10Registered', { timeout: 3000 });
+  const bReg = b.wait('race10Registered', { timeout: 3000 });
+  a.emit('race10Register'); b.emit('race10Register');
+  await aReg; await bReg;
+
+  const aStarted = a.wait('race10Started', { timeout: 6000 });
+  const bStarted = b.wait('race10Started', { timeout: 6000 });
+  const as = await aStarted, bs = await bStarted;
+
+  const bossSpot = require('../server/game/dungeon').generateRace10().race10.boss;
+  const aGs = a.last('gameStart');
+  eq(aGs.floor, 10, 'joined onto the Tower floor');
+  eq(aGs.spawn.x, as.x, 'gameStart puts the entrant at the same x race10Started does');
+  eq(aGs.spawn.y, as.y, 'and the same y — not the floor default');
+  ok(!(aGs.spawn.x === bossSpot.x && aGs.spawn.y === bossSpot.y),
+    'and that spot is not the shared boss room');
+
+  // Two entrants, two different corridors — the lanes really are per player.
+  eq(as.lane, 0, 'the first entrant gets lane 0');
+  eq(bs.lane, 1, 'the second gets lane 1');
+  ok(as.y !== bs.y, 'and they are on different rows');
+
+  await a.close(); await b.close();
+});
+
+scenario('race10: 31 entrants for 30 corridors — the 31st is refused, not stuffed into a shared lane', async () => {
+  // RACE10_LANES is 30 (server/game/dungeon.js) and the map is generated with
+  // exactly that many sealed corridors, so a 31st registrant cannot be given
+  // one. Sharing a corridor would put two players on the same monsters and
+  // undo the isolation the whole design rests on; silently dropping them would
+  // leave someone waiting for a race that never starts. Run at the real
+  // numbers rather than a scaled-down stand-in — 30 is the number in the
+  // question, so it is the number under test.
+  const N = 31;
+  const clients = await Promise.all(
+    Array.from({ length: N }, (_, i) =>
+      connectWithSaved(`harness_r10_cap_${i}`, { lvl: 10, xp: 0, xpNext: 100 })),
+  );
+  await Promise.all(clients.map((c, i) => enterWorld(c, i % 2 ? 'mage' : 'ranger')));
+  await fetch(`${BASE}/dev/race10/open?reg=3000`, { method: 'POST' });
+
+  const regs = clients.map(c => c.wait('race10Registered', { timeout: 6000 }).catch(() => null));
+  clients.forEach(c => c.emit('race10Register'));
+  const regged = await Promise.all(regs);
+  eq(regged.filter(r => r && r.registered).length, N,
+    'all 31 are accepted into the queue — the cap is applied at deploy, not at sign-up');
+
+  const outcomes = clients.map(c => Promise.race([
+    c.wait('race10Started', { timeout: 12000 }).then(v => ({ started: v })).catch(() => null),
+    c.wait('race10Error', { timeout: 12000 }).then(v => ({ error: v })).catch(() => null),
+  ]));
+  const res = await Promise.all(outcomes);
+
+  const started = res.filter(r => r && r.started);
+  const refused = res.filter(r => r && r.error);
+  eq(started.length, 30, 'exactly 30 are deployed — one per corridor, never shared');
+  eq(refused.length, 1, 'and the 31st is refused rather than silently dropped');
+  ok(/коридор/i.test((refused[0].error.msg) || ''),
+    'with a message naming the reason', refused[0].error.msg);
+
+  // Every deployed entrant holds a corridor of its own.
+  const lanes = started.map(r => r.started.lane);
+  eq(new Set(lanes).size, 30, 'all 30 lanes are distinct');
+  eq(Math.min(...lanes), 0, 'numbered from 0');
+  eq(Math.max(...lanes), 29, 'up to 29');
+
+  // And the refused one is not left believing it is still in.
+  const rejected = clients[res.findIndex(r => r && r.error)];
+  const sync = rejected.wait('race10State', { timeout: 5000 });
+  rejected.emit('race10Sync');
+  const st = await sync;
+  eq(st.registered, false, 'the refused entrant is unregistered, not left waiting for a race it is not in');
+  eq(st.inMatch, false, 'and is not in the match either');
+
+  await Promise.all(clients.map(c => c.close()));
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

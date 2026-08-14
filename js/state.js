@@ -151,6 +151,20 @@ let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: n
 // starting (see js/network.js's netFearEnter/fearStarted). wave/maxWave
 // track progress through the current run, pushed by fearWave/fearStarted.
 let _fearState = { attemptsLeft: null, maxAttempts: 2, maxWave: 39, minLevel: 10 };
+// Wall-clock time the SERVER last placed this player explicitly — every
+// instanced deploy and every return home goes through _teleportTo (js/game.js),
+// which stamps this. Read by _applyGameStart (js/network.js) to tell a
+// gameStart that is still describing where the player WAS from one that is
+// current.
+//
+// It exists because gameStart is not always applied when it arrives: on the
+// first visit to a floor its handler defers behind the world-map HTTP fetch.
+// The Bloody Tower made that visible — the join that builds gameStart happens
+// before raceDeploy assigns a lane, so gameStart said "boss room" (that floor's
+// default spawn), race10Started said "your corridor" moments later, and the
+// deferred gameStart landed last and put every entrant on the boss.
+let _serverPlacedAt = 0;
+
 let _fearInRun = false;
 let _fearWave = 0;
 

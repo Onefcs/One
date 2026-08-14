@@ -392,6 +392,10 @@ function netConnect(onReady) {
   }
 
   socket.on('gameStart', payload => {
+    // When this payload ARRIVED, not when it is applied — the two differ by a
+    // whole HTTP fetch on a first visit to a floor (see below), and anything
+    // the server told us after this instant is newer than what it carries.
+    const rxAt = Date.now();
     // Fast path kept strictly synchronous: once this session has the map (i.e.
     // every reconnect, which is when gameStart actually matters for stability)
     // the handler runs start to finish in the same task, exactly as it did
@@ -399,21 +403,31 @@ function netConnect(onReady) {
     // load defers.
     const cachedEntry = _mapCache.get(payload.floor);
     const cached = (cachedEntry && cachedEntry.version === payload.mapVersion) ? cachedEntry.data : null;
-    if (cached) return _applyGameStart(payload, cached);
+    if (cached) return _applyGameStart(payload, cached, rxAt);
     _loadWorldMap(payload.floor, payload.mapVersion)
-      .then(d => _applyGameStart(payload, d))
+      .then(d => _applyGameStart(payload, d, rxAt))
       .catch(err => {
         console.error('[map] could not load world map:', err);
         showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
       });
   });
 
-  function _applyGameStart(payload, d) {
+  function _applyGameStart(payload, d, rxAt) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
             deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws } = payload;
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
+    // Did the server place this player AFTER it sent this payload? Then the
+    // position in here is stale and must not be applied. gameStart carries
+    // wherever the player stood at the moment it was built, and for an
+    // instanced deploy that is the floor's default spawn — the join that
+    // builds gameStart runs before the deploy that assigns a lane/slot. The
+    // matching *Started event with the real spot follows immediately and is
+    // applied at once, while THIS handler defers behind the world-map fetch on
+    // a first visit to the floor. Without this guard the stale position wins
+    // by arriving last. See _serverPlacedAt (js/state.js).
+    const _placementIsStale = rxAt != null && _serverPlacedAt > rxAt;
     // Is this a reconnect that landed back on the floor we are already
     // rendering? Then the map, its gates, its NPCs and the tile raster are all
     // still correct, and rebuilding them is the visible half of "the game
@@ -592,7 +606,7 @@ function netConnect(onReady) {
       // running it would stomp live progress with the account's DB blob —
       // same reasoning as the reconnect branch above).
       _pendingFloorChange = false;
-      if (player) {
+      if (player && !_placementIsStale) {
         const sp = srvSpawn || d.spawn;
         player.x = sp.x; player.y = sp.y;
         camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
@@ -601,7 +615,7 @@ function netConnect(onReady) {
       csOnServerReady();
       return;
     }
-    if (player) {
+    if (player && !_placementIsStale) {
       // srvSpawn is this socket's actual server-side position — the reclaimed
       // Fear hall when a run was restored (see the matching comment on the
       // server's gameStart emit), the map's ordinary spawn otherwise. Falling
