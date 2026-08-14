@@ -100,15 +100,14 @@ function bundleGlobals() {
 // js/tonconnect.js's _tcLoadScript, see the comment there).
 const VENDOR_GLOBALS = { io: 'readonly', PIXI: 'readonly', TON_CONNECT_UI: 'readonly' };
 
-// dev/harness.js, dev/smoke.js and dev/remote-motion-check.js drive a real
-// Chromium via Playwright and pass callbacks to page.evaluate(fn) — fn's
-// BODY runs inside the browser page, not in this Node process, and
-// references the client bundle's own globals (player, state, socket,
-// dungeon, window, ...). ESLint has no way to scope just that callback
-// differently from the surrounding Node code in the same file, so these
-// three get the union of both worlds rather than losing no-undef entirely
-// for a whole file over a few page.evaluate() bodies.
-const browserEvalFiles = ['dev/harness.js', 'dev/smoke.js', 'dev/remote-motion-check.js'];
+// These files drive a real Chromium via Playwright and pass callbacks to
+// page.evaluate(fn) — fn's BODY runs inside the browser page, not in this
+// Node process, and references the client bundle's own globals (player,
+// state, socket, dungeon, window, ...). ESLint has no way to scope just that
+// callback differently from the surrounding Node code in the same file, so
+// they get the union of both worlds rather than losing no-undef entirely for
+// a whole file over a few page.evaluate() bodies.
+const browserEvalFiles = ['dev/harness.js', 'dev/smoke.js', 'dev/remote-motion-check.js', 'dev/egress.js'];
 const nodeFiles = ['server/**/*.js', 'dev/**/*.js', 'shared/**/*.js', 'eslint.config.js'];
 const clientFiles = BUNDLE_FILES.map(f => f.replace(/\\/g, '/'));
 

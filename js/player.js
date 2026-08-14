@@ -136,7 +136,6 @@ function makePlayer(type) {
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     bonusSP: 0,
     rebirths: 0,
-    techClaimed: false,
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
     critChance: 0.05, critPower: 1.5,
@@ -1079,10 +1078,6 @@ function restoreFromSave(data) {
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
   player.bonusSP  = data.bonusSP  || 0;
   player.rebirths = data.rebirths || 0;
-  // One-time "ТЕХ" gift button (getTechGiftBtnPos, js/input.js) — server-
-  // owned (see the techClaimed pin in saveProgress, server/index.js), just
-  // read back here like bonusSP/rebirths.
-  player.techClaimed = !!data.techClaimed;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
   player.specialQuestsDone = data.specialQuestsDone || [];

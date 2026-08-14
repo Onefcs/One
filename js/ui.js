@@ -2172,7 +2172,6 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
-  const tech = getTechGiftBtnPos();
   const pty = getPartyBtnPos();
   const tfW = 160, tfH = 42;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
@@ -2198,8 +2197,6 @@ function _buildUiBtnGrads() {
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
-  const tcg1 = ctx.createLinearGradient(tech.x, tech.y, tech.x, tech.y+tech.h);
-  tcg1.addColorStop(0,'rgba(66,50,14,0.97)'); tcg1.addColorStop(1,'rgba(32,24,7,0.99)');
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
   ptg0.addColorStop(0,'rgba(24,36,14,0.97)'); ptg0.addColorStop(1,'rgba(12,18,7,0.99)');
@@ -2230,9 +2227,9 @@ function _buildUiBtnGrads() {
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
-  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, tcg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, techBtn: tech, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2501,88 +2498,6 @@ function drawProfessionButton() {
   ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
 
   ctx.restore();
-}
-
-// ─────────────────────────────────────────────────────────
-//  ТЕХ BUTTON — below Проф, a one-time gold+Liberty gift (getTechGiftBtnPos,
-//  js/input.js; techClaim, server/index.js). Every account can claim it
-//  exactly once; once player.techClaimed is set this stops drawing (and
-//  _checkTechGiftBtnTouch stops hit-testing it) — there's nothing left here.
-// ─────────────────────────────────────────────────────────
-function drawTechGiftButton() {
-  if (!player || player.techClaimed) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
-  const tb = _uiBtnGrads.techBtn;
-  const F = 'system-ui, -apple-system, Arial';
-
-  ctx.save();
-
-  ctx.fillStyle = _uiBtnGrads.tcg1;
-  roundRect(ctx, tb.x, tb.y, tb.w, tb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = 'rgba(255,214,89,0.85)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, tb.x, tb.y, tb.w, tb.h, 9); ctx.stroke();
-
-  // Always pulses — unlike Проф, this button has no "nothing to do here"
-  // state while unclaimed, so the glow never turns off on its own.
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  ctx.strokeStyle = `rgba(255,214,89,${(0.14 + 0.14 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-  roundRect(ctx, tb.x - 2, tb.y - 2, tb.w + 4, tb.h + 4, 11); ctx.stroke();
-
-  const techColor = '#ffd659';
-  drawIconCtx(ctx, 'coin', tb.x + tb.w / 2 - 14, tb.y + tb.h / 2, 12, techColor);
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = techColor;
-  ctx.fillText(t('techGiftBtnLbl'), tb.x + tb.w / 2 - 5, tb.y + tb.h / 2);
-
-  ctx.restore();
-}
-
-// Reward amounts shown in the modal below — mirrors TECH_GIFT_GOLD/
-// TECH_GIFT_NEXUM (server/index.js); purely display text, the server is
-// what actually decides and enforces the grant on techClaim.
-const TECH_GIFT_GOLD_DISPLAY  = 1000000;
-const TECH_GIFT_NEXUM_DISPLAY = 200;
-
-// Opens on a tap of the ТЕХ HUD button (_checkTechGiftBtnTouch, js/input.js)
-// instead of claiming straight away, so the reward is shown before the
-// one-shot grant is spent. Same market-modal-overlay/-sheet shell every
-// other confirm-style popup here uses.
-function openTechGiftModal() {
-  if (!player || player.techClaimed) return;
-  const existing = document.getElementById('tech-gift-ov');
-  if (existing) existing.remove();
-  const ov = document.createElement('div');
-  ov.className = 'market-modal-overlay';
-  ov.id = 'tech-gift-ov';
-  ov.onclick = () => ov.remove();
-  ov.innerHTML = `
-    <div class="market-modal-sheet" onclick="event.stopPropagation()">
-      <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:#ffd659">${t('techGiftModalTitle')}</div>
-        <button onclick="document.getElementById('tech-gift-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
-      </div>
-      <div style="font-size:11px;color:#a3957c;margin-bottom:12px">${t('techGiftModalDesc')}</div>
-      <div class="db-rewards" style="margin-bottom:16px">
-        <div class="db-reward-row">
-          <span style="font-size:18px;flex:0 0 auto">🪙</span>
-          <span>${t('npcGoldLbl')}</span><span class="db-reward-qty">+${TECH_GIFT_GOLD_DISPLAY.toLocaleString('ru-RU')}</span>
-        </div>
-        <div class="db-reward-row">
-          <img src="/images/nexum-coin_v2.png" alt="">
-          <span>Liberty</span><span class="db-reward-qty">+${TECH_GIFT_NEXUM_DISPLAY}</span>
-        </div>
-      </div>
-      <button class="gram-btn gram-btn-orange" style="width:100%;padding:13px" onclick="_confirmTechGiftClaim()">${t('techGiftClaimBtn')}</button>
-    </div>`;
-  document.body.appendChild(ov);
-}
-
-function _confirmTechGiftClaim() {
-  const ov = document.getElementById('tech-gift-ov');
-  if (ov) ov.remove();
-  if (typeof netTechClaim === 'function') netTechClaim();
 }
 
 // ─────────────────────────────────────────────────────────

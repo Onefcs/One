@@ -3387,12 +3387,6 @@ const ARENA3_MIN_LEVEL   = 15;
 const ARENA3_FREEZE_MS   = 10 * 1000;   // shorter than the death battle's: six known players, no scatter to take in
 const ARENA3_REWARD      = 10;          // Liberty (Nexum) per winner
 
-// One-time "ТЕХ" gift button (see getTechGiftBtnPos, js/input.js) — every
-// account may claim this exactly once, ever. savedData.techClaimed is the
-// permanent record of that (see the techClaim handler and its clean.techClaimed
-// pin in saveProgress, both further down).
-const TECH_GIFT_GOLD  = 1000000;
-const TECH_GIFT_NEXUM = 200;
 // A real match clock now (it used to be a 30-minute operational guard only,
 // back when the rules said a match ran until one side was wiped out however
 // long that took). Counted from when the fight itself starts (_a3.fightAt),
@@ -7946,13 +7940,13 @@ io.on('connection', socket => {
   // (or any ordinary mobile network blip; ordinary here) is a brand new
   // connection. The very next hit on the still-alive boss then read as a
   // fresh appearance and paid the 50 points again — the same failure shape
-  // as techClaimed resetting on reconnect, just for a different field. It
+  // any once-per-account flag has when it lives only in a connection. It
   // still exists as a same-connection fast path (avoids a DB round trip on
   // every one of a boss fight's many hits), but the actual "already paid"
-  // decision is now the persisted, atomically-guarded write below — same
-  // $ne-guarded findOneAndUpdate techClaim uses — which survives whatever
-  // connection asks and still "arms again" the moment a new boss spawns,
-  // since a fresh spawn always gets a fresh id (Room.spawnEventBoss).
+  // decision is now the persisted, atomically-guarded write below — a
+  // $ne-guarded findOneAndUpdate — which survives whatever connection asks
+  // and still "arms again" the moment a new boss spawns, since a fresh spawn
+  // always gets a fresh id (Room.spawnEventBoss).
   let _seasonBossPaid = null;
   function _seasonTrackBossHit(enemyId) {
     if (!authed || !seasonActive() || !enemyId) return;
@@ -8995,50 +8989,6 @@ io.on('connection', socket => {
     }
   });
 
-  // "ТЕХ" gift button (getTechGiftBtnPos, js/input.js) — a flat one-time
-  // gold+Liberty grant every account may claim exactly once. The atomic
-  // findOneAndUpdate below (guarded on savedData.techClaimed not already
-  // true) is what actually enforces "once" — _withEconLock only rules out a
-  // same-socket double-click racing itself. A reconnect landing mid-claim on
-  // a different device isn't a real race either: the new socket's own login
-  // just re-reads whatever the DB row already says, same as every other
-  // server-owned savedData field (see the doc.savedData -> _lastStats
-  // hydration in loginTelegramWebApp/loginTelegram).
-  safeOn('techClaim', async () => {
-    if (!authed || !_lastStats) return;
-    await _withEconLock(async () => {
-      try {
-        const doc = await PlayerModel.findOneAndUpdate(
-          { _id: authed._id, 'savedData.techClaimed': { $ne: true } },
-          { $set: { 'savedData.techClaimed': true } },
-          { new: true, projection: { _id: 1 } },
-        );
-        if (!doc) { socket.emit('techClaimError', { msg: 'Уже получено' }); return; }
-        _lastStats.techClaimed = true;
-        _grantGold(TECH_GIFT_GOLD, 'tech_gift');
-        const newNexum = await _incBalance(authed.telegramId, 'nexumBalance', TECH_GIFT_NEXUM);
-        if (newNexum !== null) {
-          _setNexum(newNexum);
-          socket.emit('nexumBalanceUpdate', { balance: newNexum });
-        }
-        // Gold rides the ordinary save debounce everywhere else in this file
-        // (see _grantGold's own comment on why), but this is a rare, one-shot,
-        // high-value grant rather than a per-kill drip — worth the extra write
-        // to close the narrow window where a crash between now and the next
-        // debounced save would leave techClaimed:true permanently set with the
-        // gold never having actually landed.
-        await _persistSavedFields(authed, { gold: _lastStats.gold });
-        logPlayer(authed.telegramId, authed.username, 'tech_gift_claim',
-          { gold: TECH_GIFT_GOLD, nexum: TECH_GIFT_NEXUM });
-        socket.emit('techClaimResult', { gold: _goldNow(), nexum: _liveNexum() });
-      } catch (err) {
-        console.error('techClaim:', err);
-        logPlayerErr(authed.telegramId, authed.username, 'tech_gift', err);
-        socket.emit('techClaimError', { msg: 'Ошибка сервера' });
-      }
-    });
-  });
-
   safeOn('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     // authed.savedData is the DB-loaded record for this account (single save
@@ -9130,12 +9080,13 @@ io.on('connection', socket => {
       effectiveSaved.questIdx   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.questIdx)) || 0);
       effectiveSaved.questKills = (_dbBase && _dbBase.questKills) || {};
       socket.emit('questSync', { questIdx: effectiveSaved.questIdx, questKills: effectiveSaved.questKills });
-      // potionBag/buffs/techClaimed/specialQuestsDone: server-owned exactly
-      // like bonusSP/rebirths above (see saveProgress's matching pin, further
-      // down this file, for why — usePotion spends the bag and persists
-      // immediately, techClaim's atomic DB guard is meaningless if a later
-      // save can write the flag back to false). This block used to leave all
-      // four to whatever the client's blob happened to carry, so a reconnect
+      // potionBag/buffs/specialQuestsDone: server-owned exactly like
+      // bonusSP/rebirths above (see saveProgress's matching pin, further down
+      // this file, for why — usePotion spends the bag and persists
+      // immediately, and completeSpecialQuest's own once-only DB guard is
+      // meaningless if a later save can write its record back). This block
+      // used to leave all of them to whatever the client's blob happened to
+      // carry, so a reconnect
       // (or a fresh tab reading an older localStorage snapshot) that raced
       // ahead of its own last potion purchase/use sent a bag one or more
       // potions short — and because saveProgress persists _lastStats.potionBag
@@ -9147,7 +9098,6 @@ io.on('connection', socket => {
       // buy/drink), is what closes it.
       effectiveSaved.potionBag         = (_dbBase && _dbBase.potionBag)         || {};
       effectiveSaved.buffs             = (_dbBase && _dbBase.buffs)             || {};
-      effectiveSaved.techClaimed       = !!(_dbBase && _dbBase.techClaimed);
       // specialQuestsDone specifically: NOT from _dbBase — _sanitizeSavedStats
       // unconditionally `delete`s this field (see its own comment on why: the
       // once-only claim in completeSpecialQuest guards itself with a DB $ne
@@ -10649,11 +10599,6 @@ io.on('connection', socket => {
       clean.bonusSP           = _lastStats.bonusSP           || 0;
       clean.rebirths          = _lastStats.rebirths          || 0;
       clean.specialQuestsDone = _lastStats.specialQuestsDone || [];
-      // The "ТЕХ" one-time gift flag — set only by the techClaim handler
-      // above, never by a save (see its own comment for why that handler's
-      // atomic DB guard, not this pin, is what actually stops a double-claim;
-      // this pin only stops a stale/forged save from resetting it to false).
-      clean.techClaimed       = !!_lastStats.techClaimed;
       // HP, from the room. The server is what lowers it (attackEnemy,
       // pvpAttack, the AI) and what raises it (healPlayer, respawn, and the
       // rate-limited regen syncPlayerHp accepts off playerMove) — so the live

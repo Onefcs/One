@@ -5,10 +5,25 @@
 const Music = (() => {
   let muted = false;
   try { muted = localStorage.getItem('bgmMuted') === '1'; } catch (_) {}
-  const el = new Audio('/audio/hub-theme.mp3');
+  // preload:'none' and NO src yet. `new Audio(url)` defaults to preload:'auto',
+  // so the old shape pulled the whole 1.9MB track down the moment this file
+  // parsed — on every fresh load, for every player, including the ones who
+  // had turned the music off and would never hear a second of it. It is the
+  // single largest asset the game ships after the sprite sheets, and that was
+  // pure egress for a muted player. The bytes are now fetched at the first
+  // moment they can actually be played (see _start), which for an unmuted
+  // player is the same gesture that would have started playback anyway.
+  const el = new Audio();
+  el.preload = 'none';
   el.loop = true;
   el.volume = 0.125;
   el.muted = muted;
+  let _srcSet = false;
+  function _ensureSrc() {
+    if (_srcSet) return;
+    _srcSet = true;
+    el.src = '/audio/hub-theme.mp3';
+  }
 
   // Every gesture retries until playback actually starts — { once: true }
   // here would burn the listener on the first attempt even when el.play()
@@ -18,6 +33,7 @@ const Music = (() => {
   const _UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchstart'];
   function _start() {
     if (muted) return;
+    _ensureSrc();
     el.play().then(() => {
       _UNLOCK_EVENTS.forEach(ev => window.removeEventListener(ev, _start));
     }).catch(() => {});

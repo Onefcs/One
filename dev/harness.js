@@ -279,45 +279,6 @@ scenario('gold: founding is refused when short, and no clan is made', async () =
   await c.close();
 });
 
-scenario('techGift: claims once, grants gold+Liberty, and refuses a second claim', async () => {
-  const c = await connectWithSaved('harness_techgift', { gold: 500, nexumBalance: 50 });
-  await enterWorld(c, 'ranger');
-
-  const goldP  = c.wait('goldSync', { timeout: 5000 });
-  const nexumP = c.wait('nexumBalanceUpdate', { timeout: 5000 });
-  const resultP = c.wait('techClaimResult', { timeout: 5000 });
-  c.emit('techClaim');
-  const [gold, nexum, result] = await Promise.all([goldP, nexumP, resultP]);
-  eq(gold.gold, 500 + 1000000, 'the gift adds the gold on top of the existing balance');
-  eq(nexum.balance, 50 + 200, 'and the Liberty on top of the existing balance');
-  eq(result.gold, 500 + 1000000, 'techClaimResult itself reports the same new gold total');
-  eq(result.nexum, 50 + 200, 'and the same new Liberty total');
-
-  await sleep(200); // _persistSavedFields's DB write, and the techClaimed $set before it
-  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
-  eq(row.savedData.techClaimed, true, 'the DB row is permanently marked claimed');
-  eq(row.savedData.gold, 500 + 1000000, 'and the DB gold matches the live total');
-
-  // A second attempt on the SAME still-connected session is refused —
-  // proves the atomic DB guard, not just an in-memory flag, is what's
-  // stopping the second claim.
-  const err = c.wait('techClaimError', { timeout: 5000 });
-  c.emit('techClaim');
-  const errBody = await err;
-  ok(errBody && errBody.msg, 'the second claim is refused with a message');
-
-  // A save cannot forge the flag back to false either.
-  c.emit('saveProgress', { stats: {
-    type: 'ranger', lvl: 1, xp: 0, gold: 500 + 1000000, techClaimed: false,
-    hp: 100, maxHp: 100, savedAt: Date.now(),
-  } });
-  await sleep(3400);
-  const row2 = memory.__dump('Player').find(p => p.username === c.auth.username);
-  eq(row2.savedData.techClaimed, true, 'a save claiming techClaimed:false does not un-claim it');
-
-  await c.close();
-});
-
 scenario('level: a save cannot set the level', async () => {
   const c = await connectWithSaved('harness_lvlpin', { lvl: 5, xp: 12 });
   await enterWorld(c, 'mage');
@@ -1821,19 +1782,19 @@ scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {
   await c2.close();
 });
 
-scenario('reconnect: potionBag/buffs/techClaimed/specialQuestsDone survive it', async () => {
+scenario('reconnect: potionBag/buffs/specialQuestsDone survive it', async () => {
   // Same failure shape as the bonusSP/rebirths/upgrades bug above, just for
-  // four fields that were missed when that fix went in: _buildSaveStats()
-  // (js/network.js) never carries potionBag, buffs, techClaimed or
-  // specialQuestsDone at all, so a reconnect's bare selectChar blob sanitizes
-  // down to an empty bag/no buffs/unclaimed/no-quests-done — and the very
+  // fields that were missed when that fix went in: _buildSaveStats()
+  // (js/network.js) never carries potionBag, buffs or specialQuestsDone at
+  // all, so a reconnect's bare selectChar blob sanitizes down to an empty
+  // bag/no buffs/no-quests-done — and the very
   // next periodic autosave (which pins these straight from _lastStats) wrote
   // that wipe over the real stored values for good. This is what made HP
   // potions "randomly disappear": any ordinary reconnect (a backgrounded
   // mobile tab, a brief network drop) was enough to zero the bag.
   const c1 = await connectWithSaved('harness_reconnect_potions', {
     lvl: 10, potionBag: { pt1: 12, pt2: 3 }, buffs: { gold: 3600 },
-    techClaimed: true, specialQuestsDone: ['welcome'],
+    specialQuestsDone: ['welcome'],
   });
   await enterWorld(c1, 'ranger');
   await c1.close();
@@ -1842,7 +1803,7 @@ scenario('reconnect: potionBag/buffs/techClaimed/specialQuestsDone survive it', 
   const c2 = await connectAs('harness_reconnect_potions');
   const sync = c2.wait('potionBag', { timeout: 8000 });
   // The exact shape _buildSaveStats() sends on a real reconnect — no
-  // potionBag/buffs/techClaimed/specialQuestsDone field at all.
+  // potionBag/buffs/specialQuestsDone field at all.
   c2.emit('selectChar', { type: 'ranger', savedStats: {
     type: 'ranger', floor: 1, hp: 100, maxHp: 100, kills: 0,
     hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
@@ -1862,7 +1823,6 @@ scenario('reconnect: potionBag/buffs/techClaimed/specialQuestsDone survive it', 
   eq(row.savedData.potionBag && row.savedData.potionBag.pt1, 12, 'potionBag.pt1 was not zeroed by the autosave');
   eq(row.savedData.potionBag && row.savedData.potionBag.pt2, 3, 'potionBag.pt2 was not zeroed by the autosave');
   eq(row.savedData.buffs && row.savedData.buffs.gold, 3600, 'buffs was not wiped by the autosave');
-  eq(row.savedData.techClaimed, true, 'techClaimed was not reset by the autosave');
   ok((row.savedData.specialQuestsDone || []).includes('welcome'), 'specialQuestsDone was not wiped by the autosave');
   await c2.close();
 });
