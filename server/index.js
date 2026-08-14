@@ -1457,7 +1457,6 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     if (!gold && !nexum && !gram && !sp) return res.status(400).json({ error: 'Нечего выдавать' });
     const p = await PlayerModel.findOne({ telegramId: req.params.tid });
     if (!p) return res.status(404).json({ error: 'Not found' });
-    const saved = p.savedData || {};
     // Gold and skill points, unlike gram/nexum, have no server-side live
     // cache — both ride the client's save blob. Writing them straight to the
     // DB for a player who is online meant their next autosave (up to 60s
@@ -1467,8 +1466,6 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
     // for a mass grant of this exact pair.
     const _liveSock = io.sockets.sockets.get(activeSessions.get(String(req.params.tid)) || '');
     const _giveLive = (gold || sp) ? _liveSock?.data?._adminGiveGoldSP : null;
-    if (gold) saved.gold    = (saved.gold || 0) + gold;
-    if (sp)   saved.bonusSP = (saved.bonusSP || 0) + sp;
     // Both balances move by $inc against the live document — the player may be
     // online and earning while the admin types, and neither side should
     // overwrite the other. A negative figure is a valid way to take money back,
@@ -1478,18 +1475,22 @@ app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
       const newG = await _incBalance(p.telegramId, 'gramBalance', gram);
       if (newG !== null) io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
     }
-    // Targeted $set on just the touched fields — a full-document save from
-    // this snapshot would revert any other savedData field this account's
-    // own gameplay autosave wrote in the same window.
-    // Only gold/bonusSP go through $set here — the two real balances were
-    // already moved atomically above and must never be written as an absolute.
-    const _giveSet = {};
-    // Gold/SP handled by the live session when the player is online (see
-    // above); only write them here when nobody is holding a newer copy in
-    // memory.
-    if (gold && !_giveLive) _giveSet['savedData.gold']    = saved.gold;
-    if (sp   && !_giveLive) _giveSet['savedData.bonusSP'] = saved.bonusSP;
-    if (Object.keys(_giveSet).length) await PlayerModel.updateOne({ _id: p._id }, { $set: _giveSet });
+    // Offline gold/bonusSP: $inc against the live document too, not a
+    // read-then-$set of a snapshot taken at the top of this request. Two
+    // /give calls landing close together for the same offline account used
+    // to both read the same starting figure and the second $set silently
+    // clobbered the first grant — the exact class of lost update _incBalance
+    // already closes for gram/nexum. savedData may still be null on an
+    // account that only ever pressed /start (see _incBalance's own comment);
+    // a dotted $inc through that throws, so it's normalised first, same as
+    // there.
+    if ((gold || sp) && !_giveLive) {
+      await PlayerModel.updateOne({ _id: p._id, savedData: null }, { $set: { savedData: {} } });
+      const _giveInc = {};
+      if (gold) _giveInc['savedData.gold']    = gold;
+      if (sp)   _giveInc['savedData.bonusSP'] = sp;
+      await PlayerModel.updateOne({ _id: p._id }, { $inc: _giveInc });
+    }
     const _liveResult = _giveLive ? await _giveLive(gold, sp) : null;
     io.to(`tg_${p.telegramId}`).emit('adminGive', {
       gold, nexum, gram, sp,

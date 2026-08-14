@@ -523,6 +523,57 @@ scenario('admin: give-all grants gold+SP to an online account live and an offlin
   await online.close();
 });
 
+scenario('admin: two concurrent /give grants to an offline account do not lose one', async () => {
+  // Gold/bonusSP for an offline account used to be a read-then-$set of a
+  // snapshot taken at the top of the request — two /give calls landing close
+  // together both read the same starting gold, and whichever $set landed
+  // last silently discarded the other's grant. Fixed to $inc, matching how
+  // gram/nexum were already handled here (and give-all's own offline path).
+  const offlineSeed = await connectAs('harness_give_race_offline');
+  await offlineSeed.close();
+  await sleep(200);
+  const row0 = memory.__dump('Player').find(p => p.username === offlineSeed.auth.username);
+
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+
+  const give = amount => fetch(`${BASE}/admin/player/${row0.telegramId}/give`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ gold: amount }),
+  });
+  // The in-memory Mongo double resolves findOne with no real I/O behind it,
+  // so a flat delay isn't enough to force an overlap: Node's own timer
+  // ordering tends to let the first request's read-then-write finish before
+  // the second's read even starts, which never exercises the race either.
+  // A barrier does it properly: both findOne calls block until BOTH have
+  // arrived, so neither can see the other's write when they're released —
+  // exactly two admin clicks landing close together against a real, slower
+  // database, which is the scenario this guards.
+  const Player = require('../server/models/Player');
+  const origFindOne = Player.findOne.bind(Player);
+  let waiting = 0, releaseBarrier;
+  const barrier = new Promise(r => { releaseBarrier = r; });
+  Player.findOne = async (...args) => {
+    if (++waiting >= 2) releaseBarrier();
+    await barrier;
+    return origFindOne(...args);
+  };
+  let r1, r2;
+  try {
+    [r1, r2] = await Promise.all([give(100), give(50)]);
+  } finally {
+    Player.findOne = origFindOne;
+  }
+  eq(r1.status, 200, 'first grant accepted');
+  eq(r2.status, 200, 'second grant accepted');
+
+  const row1 = memory.__dump('Player').find(p => p.username === offlineSeed.auth.username);
+  eq((row1.savedData && row1.savedData.gold) || 0, 150, 'both grants landed — neither silently overwrote the other');
+});
+
 scenario('floors: Фарм-зона is its own floor, gated server-side by level', async () => {
   const low = await connectAs('harness_farm_low');
   await enterWorld(low, 'ranger'); // fresh character, well under FARM_ENTRY_LEVEL (20)
@@ -1514,7 +1565,7 @@ scenario('market: a regular seller is capped at 5 active listings, VIP 3+ is not
 async function _withDbDelay(Model, method, ms, fn) {
   const orig = Model[method].bind(Model);
   Model[method] = async (...args) => { await sleep(ms); return orig(...args); };
-  try { await fn(); } finally { Model[method] = orig; }
+  try { return await fn(); } finally { Model[method] = orig; }
 }
 
 scenario('race: marketList racing equipItem cannot duplicate the item', async () => {
