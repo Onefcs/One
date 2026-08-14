@@ -6334,7 +6334,7 @@ io.on('connection', socket => {
   //
   // Nothing here can create or destroy an item: each one takes it out of one
   // container and puts it in another, refusing when the destination is full.
-  const SERVER_STORAGE_MAX = 700;   // matches storageHasSpace() in js/player.js
+  const SERVER_STORAGE_MAX = 200;   // matches storageHasSpace() in js/player.js
 
   function _itemsFor() {
     if (!_lastStats) return null;
@@ -8225,7 +8225,7 @@ io.on('connection', socket => {
     if (!authed) return;
     try {
       const rows = await MarketListingModel.find({ status: 'active', sellerId: { $ne: authed.telegramId } })
-        .sort({ createdAt: -1 }).limit(200).lean();
+        .sort({ createdAt: -1 }).limit(700).lean();
       socket.emit('marketBrowseData', { listings: rows.map(_marketListingData) });
     } catch (err) { console.error('marketBrowse:', err); }
   });

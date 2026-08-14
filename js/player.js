@@ -74,7 +74,7 @@ function storageSlotCount() {
 }
 
 function storageHasSpace() {
-  return storageSlotCount() < 700;
+  return storageSlotCount() < 200;
 }
 
 // Both directions are server-side moves now (storageDeposit/storageWithdraw,
