@@ -15,7 +15,8 @@ const { _catalogBase, SERVER_INV_MAX } = require('./anticheat');
 const MARKET_MIN_PRICE   = 0.1;
 const MARKET_MAX_PRICE   = 1000;
 const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
-const MARKET_MAX_ACTIVE  = 20;     // active listings per seller
+const MARKET_MAX_ACTIVE  = 5;      // active listings per seller — VIP 3+ has no cap, see _marketMaxActive (server/index.js)
+const MARKET_MAX_ACTIVE_VIP_LEVEL = 3; // VIP level at which the cap above stops applying
 const MARKET_MAX_QTY     = 9999;   // sanity bound on a stackable listing's quantity
 const MARKET_LIST_COOLDOWN_MS = 3000;
 // Per-category floors, below the generic MARKET_MIN_PRICE above — these items
@@ -175,7 +176,8 @@ module.exports = {
   // server/index.js is where they are USED — exporting them is what that split
   // forgot, and every marketList/marketMyListings call has thrown a
   // ReferenceError since.
-  MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS,
+  MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_MAX_ACTIVE_VIP_LEVEL,
+  MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 };

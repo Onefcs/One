@@ -66,7 +66,7 @@ const _ITEM_ID_ALIASES = Object.create(null);
 // runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
 const _SANITIZE_MAX = {
   gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6, rebirths: 1e4,
-  maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 200,
+  maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 700,
   // Raised from 9999 for the Осколки: a unique legendary costs 5000 of every
   // kind, so a player working toward a second one legitimately holds well
   // past the old ceiling. See _canonSavedItem for why going over it now
@@ -178,7 +178,7 @@ function _sanitizeSavedStats(raw) {
     ? s.inventory.slice(0, _SANITIZE_MAX.invLen).map(_canonSavedItem).filter(Boolean)
     : [];
 
-  // Storage (Хранилище NPC) — same canonicalization, capped at 200 slots
+  // Storage (Хранилище NPC) — same canonicalization, capped at storageLen slots
   s.storage = Array.isArray(s.storage)
     ? s.storage.slice(0, _SANITIZE_MAX.storageLen).map(_canonSavedItem).filter(Boolean)
     : [];

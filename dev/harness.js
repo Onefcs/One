@@ -1138,6 +1138,34 @@ scenario('items: a storage move is one server-side operation', async () => {
   await c.close();
 });
 
+scenario('items: storage cap is 700, not 200', async () => {
+  // SERVER_STORAGE_MAX (server/index.js) went from 200 to 700 — seed right up
+  // to the new boundary rather than actually performing 700 deposits.
+  const bulk = Array.from({ length: 699 }, () => ({ id: 'uq_sword_l', enhance: 0 }));
+  const c = await connectWithSaved('harness_storage_cap', {
+    storage: bulk,
+    inventory: [{ id: 'uq_bow_l', enhance: 0 }, { id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(c, 'ranger');
+
+  // selectChar itself pushes a couple of inventorySync events while settling
+  // the reconnect (the immediate resync, then the pet/equipment follow-ups) —
+  // let those land before attaching a fresh one-shot listener below, or it
+  // can catch one of THOSE instead of the deposit's own response.
+  await sleep(300);
+
+  let sync = c.wait('inventorySync', { timeout: 6000 });
+  c.emit('storageDeposit', { idx: 0 });
+  let got = await sync;
+  eq((got.storage || []).length, 700, 'the 700th item is accepted — the old 200 cap would have refused it');
+
+  const err = c.wait('itemError', { timeout: 4000 }).catch(() => null);
+  c.emit('storageDeposit', { idx: 0 });
+  const e = await err;
+  ok(e && /полн/i.test(e.msg || ''), `a 701st is refused as full (got: ${e && e.msg})`);
+  await c.close();
+});
+
 scenario('rating: bm reflects real gear, not just level and maxHp', async () => {
   // calcBM (server/anticheat.js) reads sd.atk/sd.def — the full, gear-
   // inclusive combat stats — but _buildSaveStats() (js/network.js) never
@@ -1390,6 +1418,49 @@ scenario('market: cancelling a lot returns the item', async () => {
   const iv = await back;
   eq(iv && iv.inventory.length, 1, 'the item came back to the inventory');
   await c.close();
+});
+
+scenario('market: a regular seller is capped at 5 active listings, VIP 3+ is not', async () => {
+  // Seeded directly rather than listed one at a time — marketList's own
+  // MARKET_LIST_COOLDOWN_MS (3s) would make 5-6 real listings slow, and the
+  // cap itself is just a countDocuments comparison, so pre-existing rows are
+  // exactly as good a fixture as ones this session created.
+  const MarketListing = require('../server/models/MarketListing');
+  async function seedActive(telegramId, username, n) {
+    for (let i = 0; i < n; i++) {
+      await MarketListing.create({
+        sellerId: telegramId, sellerUsername: username,
+        item: { id: 'rece', qty: 1 }, price: 1, status: 'active',
+      });
+    }
+  }
+
+  const c1 = await connectWithSaved('harness_market_cap5', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(c1, 'deathknight');
+  const row1 = memory.__dump('Player').find(p => p.username === c1.auth.username);
+  await seedActive(row1.telegramId, c1.auth.username, 5);
+
+  const err = c1.wait('marketListError', { timeout: 8000 });
+  c1.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+  const e = await err;
+  ok(e && /Максимум 5/.test(e.msg || ''), `a 6th listing is refused below VIP 3 (got: ${e && e.msg})`);
+  await c1.close();
+
+  const c2 = await connectWithSaved('harness_market_vip3_cap', {
+    vipLevel: 3, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(c2, 'deathknight');
+  const row2 = memory.__dump('Player').find(p => p.username === c2.auth.username);
+  await seedActive(row2.telegramId, c2.auth.username, 5);
+
+  const listed = c2.wait('marketListed', { timeout: 8000 }).catch(() => null);
+  const err2 = c2.wait('marketListError', { timeout: 8000 }).catch(() => null);
+  c2.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+  const got = await Promise.race([listed, err2]);
+  ok(got && got.listing, `VIP 3 lists a 6th past the 5-listing cap${got && got.msg ? ' — refused: ' + got.msg : ''}`);
+  await c2.close();
 });
 
 // The in-memory Mongo double (dev/mongo-memory.js) resolves every query

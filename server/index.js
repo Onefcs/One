@@ -24,10 +24,18 @@ const {
   _sanitizeSavedStats, calcBM,
 } = require('./anticheat');
 const {
-  MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_LIST_COOLDOWN_MS,
+  MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_MAX_ACTIVE_VIP_LEVEL,
+  MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 } = require('./inventory');
+// VIP 3+ trades away the flat MARKET_MAX_ACTIVE cap for no cap at all —
+// Infinity compares false against activeCount forever, so the check below
+// simply never trips; .limit(0) is Mongo's own "no limit" convention, used
+// wherever this feeds a query instead of a comparison.
+function _marketMaxActive(vipLevel) {
+  return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? Infinity : MARKET_MAX_ACTIVE;
+}
 const PlayerModel       = require('./models/Player');
 const ClanModel         = require('./models/Clan');
 const GramTxModel       = require('./models/GramTx');
@@ -6326,7 +6334,7 @@ io.on('connection', socket => {
   //
   // Nothing here can create or destroy an item: each one takes it out of one
   // container and puts it in another, refusing when the destination is full.
-  const SERVER_STORAGE_MAX = 200;   // matches storageHasSpace() in js/player.js
+  const SERVER_STORAGE_MAX = 700;   // matches storageHasSpace() in js/player.js
 
   function _itemsFor() {
     if (!_lastStats) return null;
@@ -8225,8 +8233,9 @@ io.on('connection', socket => {
   safeOn('marketMyListings', async () => {
     if (!authed) return;
     try {
+      const cap = _marketMaxActive(socket.data.vipLevel);
       const rows = await MarketListingModel.find({ status: 'active', sellerId: authed.telegramId })
-        .sort({ createdAt: -1 }).limit(MARKET_MAX_ACTIVE).lean();
+        .sort({ createdAt: -1 }).limit(cap === Infinity ? 0 : cap).lean();
       socket.emit('marketMyListingsData', { listings: rows.map(_marketListingData) });
     } catch (err) { console.error('marketMyListings:', err); }
   });
@@ -8290,10 +8299,11 @@ io.on('connection', socket => {
       return socket.emit('marketListError', { msg: 'Предмета нет в инвентаре' });
     }
     try {
+      const cap = _marketMaxActive(socket.data.vipLevel);
       const activeCount = await MarketListingModel.countDocuments({ sellerId: authed.telegramId, status: 'active' });
-      if (activeCount >= MARKET_MAX_ACTIVE) {
+      if (activeCount >= cap) {
         _lastMarketListAt = _prevListAt;
-        return socket.emit('marketListError', { msg: `Максимум ${MARKET_MAX_ACTIVE} активных лотов` });
+        return socket.emit('marketListError', { msg: `Максимум ${cap} активных лотов` });
       }
       // Re-check ownership right before the write: the countDocuments await
       // above is a window in which this account's own save (or a concurrent
