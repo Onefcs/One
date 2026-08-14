@@ -411,21 +411,41 @@ function netConnect(onReady) {
   function _applyGameStart(payload, d) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
             deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws } = payload;
+    // A world is arriving, so the post-disconnect teardown has nothing left to
+    // do — see _scheduleWorldWipe.
+    _cancelWorldWipe();
+    // Is this a reconnect that landed back on the floor we are already
+    // rendering? Then the map, its gates, its NPCs and the tile raster are all
+    // still correct, and rebuilding them is the visible half of "the game
+    // reloaded itself": unpacking a 240x338 grid and re-rasterising every tile
+    // is the most expensive thing this function does, and it made a half-second
+    // network blip look exactly like an hour offline. Only the things that are
+    // genuinely per-attachment get redone below.
+    //
+    // Deliberately narrow: it requires the reconnect flag AND a dungeon that is
+    // already built AND the same floor. A real floor change (_pendingFloorChange)
+    // or a first join never takes this path, and neither does a reconnect the
+    // server answered with a different floor.
+    const _resumeSameFloor = _isReconnectRejoin && !!dungeon && dungeonLvl === floor;
     dungeonLvl = floor;
     // A fresh room attachment: whatever this session last told the server
     // about its position belongs to the old one.
     _lastSentX = null;
-    dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
-    if (typeof _buildArmGates === 'function') _buildArmGates();
-    // Every location is its own floor now — NPCs (hub only) need rebuilding
-    // on every floor load, not just the very first one.
-    if (typeof initNpcs === 'function') initNpcs();
+    if (!_resumeSameFloor) {
+      dungeon = { ...d, grid: unpackGrid(d.gridPacked, d.w, d.h), enemies: [], safeZone: d.safeZone || null };
+      if (typeof _buildArmGates === 'function') _buildArmGates();
+      // Every location is its own floor now — NPCs (hub only) need rebuilding
+      // on every floor load, not just the very first one.
+      if (typeof initNpcs === 'function') initNpcs();
+    }
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
     bossStatus = bs || {};
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
-    buildTileCanvas();
+    // The tile raster is a pure function of the grid, so it only needs
+    // rebuilding when the grid did (see _resumeSameFloor above).
+    if (!_resumeSameFloor) buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
     // Event-boss ground loot and the map panel's dot cache are both scoped to
     // whatever floor they were fetched/claimed on — stale entries from the
@@ -1545,6 +1565,36 @@ function netConnect(onReady) {
     // underlying transport successfully reconnected. socket.connected already
     // reads false while down and true again once back, which is exactly what
     // every call site here guards on.
+    // The world used to be emptied right here — enemies, other players, the
+    // Pixi pools, the party list, the chat button. That is the flash players
+    // describe as the game reloading, and it fired for a half-second blip
+    // exactly as hard as for a real outage: on mobile the socket drops every
+    // time the app is backgrounded past engine.io's 40s of silence, so this
+    // was the most-seen frame in the game.
+    //
+    // Deferred instead of removed. A reconnect that lands inside
+    // _WORLD_WIPE_AFTER_MS cancels it and resyncs in place (see
+    // _applyGameStart's _resumeSameFloor), so a short drop now shows a world
+    // that pauses for a moment rather than one that disappears. A drop that
+    // really is over still clears down to the same state it always did, just
+    // a few seconds later, so nothing downstream sees a shape it didn't
+    // before.
+    _scheduleWorldWipe();
+  });
+}
+
+// How long a dropped connection may keep showing its last frame before the
+// world is cleared for real. Comfortably longer than a socket.io reconnect
+// (its own backoff starts at ~1s) and well short of the client watchdog's own
+// 8s budget, so an ordinary mobile blip is covered end to end and a genuine
+// outage does not sit on a stale world.
+const _WORLD_WIPE_AFTER_MS = 4000;
+let _worldWipeTimer = null;
+
+function _scheduleWorldWipe() {
+  if (_worldWipeTimer) return;
+  _worldWipeTimer = setTimeout(() => {
+    _worldWipeTimer = null;
     serverEnemies = [];
     serverEnemiesMap.clear();
     otherPlayers = new Map();
@@ -1559,7 +1609,16 @@ function netConnect(onReady) {
     if (chatPanel) chatPanel.classList.remove('open');
     const chatPreview = document.getElementById('chat-preview');
     if (chatPreview) chatPreview.style.display = 'none';
-  });
+  }, _WORLD_WIPE_AFTER_MS);
+}
+
+// The reconnect beat it: whatever gameStart is about to install replaces all
+// of the above anyway, so the pending teardown would only be able to destroy
+// state that is once again current.
+function _cancelWorldWipe() {
+  if (!_worldWipeTimer) return;
+  clearTimeout(_worldWipeTimer);
+  _worldWipeTimer = null;
 }
 
 // ── Party helpers ─────────────────────────────────────────

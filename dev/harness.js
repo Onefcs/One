@@ -589,21 +589,23 @@ scenario('season: hitting the world boss pays its 50 points once, not once per r
   await c1.close();
   await sleep(500);
 
-  // Reconnect — same account, brand new socket connection, lands back on the
-  // hub (the bare _buildSaveStats()-shaped blob every real reconnect sends).
+  // Reconnect — same account, brand new socket connection, sending the bare
+  // _buildSaveStats()-shaped blob every real reconnect sends. It lands back on
+  // the ARENA: the floor is restored from the stored record now
+  // (_restoreFloorFor, server/index.js), and the arena still qualifies while a
+  // boss is up. Note the blob below claims floor 1 and is ignored for exactly
+  // the reason the 'stored floor the client made up' scenario covers — the
+  // restore reads the database, never the save.
   // Boss is still alive (event bosses live for minutes; summoning it fresh
-  // above guarantees it hasn't despawned yet) — walk back in and hit the
-  // exact same boss id again.
+  // above guarantees it hasn't despawned yet) — hit the same boss id again.
   const c2 = await connectAs('harness_bosspts');
-  const hubStart = c2.wait('gameStart', { where: `${c2.name} reconnects` });
+  const rejoin = c2.wait('gameStart', { where: `${c2.name} reconnects` });
   c2.emit('selectChar', { type: 'ranger', savedStats: {
     type: 'ranger', floor: 1, hp: 100, maxHp: 100, kills: 0,
     hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
   } });
-  await hubStart;
-  const arenaStart2 = c2.wait('gameStart', { where: `${c2.name} re-enters the arena` });
-  c2.emit('enterLocation', { target: 'arena' });
-  await arenaStart2;
+  const back = await rejoin;
+  eq(back.floor, 8, 'the reconnect comes back to the boss arena it was fighting on');
 
   c2.emit('playerMove', { x: boss.x + 20, y: boss.y, facing: 1, moving: false });
   await sleep(120);
@@ -943,22 +945,18 @@ scenario('health: a DB outage is reported without failing the liveness check', a
   eq(back.ok, true, 'and it reports healthy again once the DB is back');
 });
 
-scenario('reconnect: dropping the socket in an arm puts the player back in the hub safe zone', async () => {
-  // This is the whole of "игру перезагрузило и выкинуло в безопасную зону",
-  // reproduced. Nothing here is exotic: one ordinary socket drop, which on
-  // mobile happens every time the app is backgrounded past engine.io's
-  // pingInterval+pingTimeout.
+scenario('reconnect: a drop in an arm comes back to the arm, not the hub safe zone', async () => {
+  // The "игру перезагрузило и выкинуло в безопасную зону" half of the reload
+  // report. Nothing exotic is needed to trigger it: one ordinary socket drop,
+  // which on mobile happens every time the app is backgrounded past
+  // engine.io's 40s of silence.
   //
-  // The floor IS saved — the autosave writes `floor: currentFloor` on every
-  // pass (server/index.js) — and the client sends its own floor in every save
-  // blob too. Nothing reads either back: `currentFloor` is initialised to the
-  // hub for every new connection and only ever changed by an explicit
-  // enterLocation (or the Fear-grace path, which was fixed for Fear alone).
-  // So the reconnect rebuilds the world on floor 1, and floor 1's spawn sits
-  // in the middle of the safe zone.
-  //
-  // Documented as the current behaviour rather than asserted as correct: when
-  // the floor is restored this scenario is what has to flip.
+  // The floor was already being saved and never read back — currentFloor is
+  // initialised to the hub for every new connection — so the reconnect
+  // rebuilt the world on floor 1, whose spawn sits in the middle of the safe
+  // zone. It is restored now (_restoreFloorFor, server/index.js), from the
+  // DATABASE's copy rather than the client's blob, and re-checked against the
+  // gates rather than trusted.
   const c1 = await connectWithSaved('harness_arm_reconnect', { lvl: 20, xp: 0, xpNext: 9999 });
   await enterWorld(c1, 'ranger');
   const onArm = c1.wait('gameStart', { where: 'enter arm' });
@@ -966,24 +964,62 @@ scenario('reconnect: dropping the socket in an arm puts the player back in the h
   const arm = await onArm;
   eq(arm.floor, 3, 'the player is standing on the arm floor');
 
+  // Walk somewhere that is not the arm's entrance, so "came back to the right
+  // floor" and "came back to the right spot" are two different assertions.
+  const walkedX = arm.spawn.x + 120, walkedY = arm.spawn.y;
+  for (let i = 0; i < 6; i++) { c1.emit('mv', [Math.round(walkedX * 2), Math.round(walkedY * 2), 1, 500, 1]); await sleep(60); }
+  await sleep(300);
   await c1.close();
-  await sleep(600);
+  await sleep(700);   // let the disconnect flush land
 
   const c2 = await connectAs('harness_arm_reconnect');
   const back = await enterWorld(c2, 'ranger');
-  eq(back.floor, 1, 'after a reconnect the server puts them on the hub — the saved floor is never read back');
+  eq(back.floor, 3, 'the reconnect comes back to the arm it dropped on');
+  ok(Math.abs(back.spawn.x - walkedX) < 40 && Math.abs(back.spawn.y - walkedY) < 40,
+    `and to the spot it was standing on, not the entrance (${back.spawn.x},${back.spawn.y} vs ${walkedX},${walkedY})`);
+  await c2.close();
+  await sleep(300);
+});
 
-  // And the hub spawn really is inside the safe zone, which is what the
-  // player actually notices.
-  const { FLOOR_IDS } = require('../server/game/floors');
-  const hub = require('../server/game/dungeon').generateHub();
-  const sz = hub.safeZone, sp = back.spawn || hub.spawn;
-  eq(FLOOR_IDS.hub, 1, 'floor 1 is the hub');
-  ok(sp.x >= sz.x1 && sp.x <= sz.x2 && sp.y >= sz.y1 && sp.y <= sz.y2,
-    `and they land inside the safe zone (${sp.x},${sp.y} in ${sz.x1}..${sz.x2})`);
+scenario('reconnect: the restored floor is re-checked, not trusted', async () => {
+  // Restoring a floor is a server-side entry to it, so it has to answer the
+  // same question the walk-in path does — asked against the state NOW, not
+  // the state when the player left. A level that no longer qualifies (a
+  // rebirth, an admin correction) must land in the hub instead.
+  const c1 = await connectWithSaved('harness_arm_gate', { lvl: 20, xp: 0, xpNext: 9999 });
+  await enterWorld(c1, 'ranger');
+  const onArm = c1.wait('gameStart', { where: 'enter arm' });
+  c1.emit('enterLocation', { target: 'top' });
+  eq((await onArm).floor, 3, 'in the arm at a level that qualifies');
+  await c1.close();
+  await sleep(700);
 
+  // Drop the level below that arm's requirement while they are away.
+  const Player = require('../server/models/Player');
+  const row = memory.__dump('Player').find(p => p.username === c1.auth.username);
+  await Player.updateOne({ _id: row._id }, { $set: { 'savedData.lvl': 1 } });
+  await sleep(50);
+
+  const c2 = await connectAs('harness_arm_gate');
+  const back = await enterWorld(c2, 'ranger');
+  eq(back.floor, 1, 'a floor the account can no longer enter falls back to the hub');
   await c2.close();
 });
+
+scenario('reconnect: a stored floor the client made up is ignored', async () => {
+  // `floor` rides inside the same savedData blob a modified client composes
+  // freely, so honouring the client's copy would be a free teleport onto any
+  // floor past every gate. The restore reads the DB record only.
+  const c = await connectAs('harness_arm_forge');
+  const start = c.wait('gameStart', { where: 'forged floor' });
+  c.emit('selectChar', { type: 'ranger', savedStats: {
+    type: 'ranger', floor: 10, x: 4000, y: 4000, lvl: 1, xp: 0,
+    hp: 100, maxHp: 100, kills: 0, savedAt: Date.now(),
+  } });
+  eq((await start).floor, 1, 'a floor claimed by the save is not honoured');
+  await c.close();
+});
+
 
 scenario('health: /health says WHY sessions ended, split by cause', async () => {
   // "Мир перезагружается" is a client reconnecting — the reconnect re-runs
@@ -2287,6 +2323,82 @@ scenario('browser: entering Страх closes the events panel instead of leavin
     }));
     eq(after.floor, 11, 'the client followed the server onto the fear floor');
     eq(after.panelDisplay, 'none', 'and the events panel closed itself, uncovering the world');
+  } finally {
+    await browser.close();
+  }
+});
+
+scenario('browser: a short drop resumes in place instead of rebuilding the world', async () => {
+  // The other half of "мир перезагружается". Even once the reconnect lands
+  // back on the right floor, it used to rebuild everything on arrival —
+  // unpack the grid, re-run buildTileCanvas(), re-init NPCs — and the
+  // 'disconnect' handler had already emptied enemies, other players and the
+  // Pixi pools the moment the socket went. A half-second blip therefore
+  // looked exactly like an hour offline. This drives a real client through a
+  // real drop and checks the world was resumed, not rebuilt.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const seed = await connectWithSaved('harness_resume_ui', { lvl: 20, xp: 0, xpNext: 9999 });
+  await seed.close();
+  await sleep(300);
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    await page.goto(`${BASE}/?dev=harness_resume_ui`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(5000);
+    if (await page.evaluate(() => typeof state !== 'undefined' && state === 'select')) {
+      await page.evaluate(() => selectChar('ranger'));
+      await page.waitForTimeout(5000);
+    }
+    ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
+
+    // Out to an arm, so the floor being restored is a real one and the grid
+    // being skipped is the big one (240x338, not the hub's 68x68).
+    await page.evaluate(() => netEnterLocation('top'));
+    await page.waitForTimeout(2500);
+    eq(await page.evaluate(() => dungeonLvl), 3, 'standing on the arm floor');
+
+    // Count the expensive rebuild from here on.
+    await page.evaluate(() => {
+      window.__tileBuilds = 0;
+      const orig = window.buildTileCanvas;
+      window.buildTileCanvas = function (...a) { window.__tileBuilds++; return orig.apply(this, a); };
+      window.__dungeonRef = dungeon;
+    });
+
+    // A real drop, exactly as the transport would deliver it.
+    await page.evaluate(() => socket.io.engine.close());
+    await page.waitForTimeout(400);
+    ok(await page.evaluate(() => !socket.connected), 'the socket really went down');
+    // Mid-drop the world must still be there — this is the frame players saw
+    // emptied.
+    ok(await page.evaluate(() => !!dungeon && typeof serverEnemies !== 'undefined'),
+      'the world is still standing while the socket is down');
+
+    // Let socket.io reconnect on its own.
+    for (let i = 0; i < 40; i++) {
+      await page.waitForTimeout(500);
+      if (await page.evaluate(() => !!socket.connected && state === 'playing')) break;
+    }
+    await page.waitForTimeout(1500);
+
+    const after = await page.evaluate(() => ({
+      connected: !!socket.connected,
+      floor: dungeonLvl,
+      tileBuilds: window.__tileBuilds,
+      sameDungeon: dungeon === window.__dungeonRef,
+      enemies: serverEnemies.length,
+    }));
+    ok(after.connected, 'and it came back');
+    eq(after.floor, 3, 'onto the same arm floor it dropped on');
+    eq(after.tileBuilds, 0, 'without re-rasterising a single tile');
+    ok(after.sameDungeon, 'and without rebuilding the map it was already rendering');
+    ok(after.enemies > 0, 'while the enemy list was resynced, not left empty', String(after.enemies));
   } finally {
     await browser.close();
   }

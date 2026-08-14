@@ -188,6 +188,50 @@ const {
 // those doesn't need its own dedicated branch in _doEnterLocation.
 const _ZONE_LEVEL_REQ = { ...ARM_LEVEL_REQ, farmZone: FARM_ENTRY_LEVEL };
 
+// ── Coming back to the floor you were standing on ────────────────────────────
+// Every new connection starts on the hub, and until now that is where a
+// reconnect put you — from anywhere. The floor was already being saved (the
+// autosave writes `floor: currentFloor`) and the client sends its own floor in
+// every blob; neither was ever read back. So an ordinary mobile drop — the app
+// backgrounded past engine.io's 40s of silence, a network handover — rebuilt
+// the world on floor 1 and dropped the player at its spawn, which sits in the
+// middle of the hub's safe zone. That is the "выкинуло в безопасную зону" half
+// of the reload report.
+//
+// Restored from the DATABASE's copy, never the client's: `floor` rides inside
+// the same savedData blob a modified client composes freely, so honouring it
+// would be a free teleport onto any floor, past every level gate below. And
+// even the stored one is re-checked rather than trusted, because the world can
+// have moved on while the player was away — they may have rebirthed back below
+// an arm's requirement, or the zone's window may have closed.
+//
+// Only floors you can STAND on are restorable. The instanced/scheduled ones
+// are deliberately absent: pvpArena, race10 and the Death Battle arena all
+// treat a disconnect as elimination (see _pvpEliminate), so returning someone
+// to an event they are no longer in would be worse than the hub, and Fear has
+// its own hall-holding grace path (_fearDisconnectGrace) that runs before this
+// one and wins.
+const _RESTORABLE_FLOORS = new Set([
+  FLOOR_IDS.hub, FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
+  FLOOR_IDS.farmZone, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
+]);
+// floorId -> the key _ZONE_LEVEL_REQ is written in, for the floors that have a
+// requirement at all. The arms are already keyed by name in ARM_LEVEL_REQ.
+const _FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [v, k]));
+function _restoreFloorFor(savedFloor, lvl) {
+  const floor = Number(savedFloor);
+  if (!Number.isFinite(floor) || !_RESTORABLE_FLOORS.has(floor)) return FLOOR_IDS.hub;
+  if (floor === FLOOR_IDS.hub) return FLOOR_IDS.hub;
+  // Same level gate the walk-in path applies (_doEnterLocation), re-evaluated
+  // against the level they have NOW.
+  if ((lvl || 1) < (_ZONE_LEVEL_REQ[_FLOOR_KEY[floor]] || 0)) return FLOOR_IDS.hub;
+  // Window-gated zones: only put them back if the zone is still open, exactly
+  // as if they were walking in this second.
+  if (floor === FLOOR_IDS.guildWar && _gw.phase !== 'live') return FLOOR_IDS.hub;
+  if (floor === FLOOR_IDS.arena && !_arenaOpen()) return FLOOR_IDS.hub;
+  return floor;
+}
+
 // ── Server-side inventory ops for the market ────────────────────────────────
 // The item half of every trade used to be entirely client-authoritative: the
 // server created/sold/cancelled listings but never touched savedData.inventory,
@@ -5108,12 +5152,19 @@ io.on('connection', socket => {
   // later, persisted it right back over the real progress.
   socket.data._flushNow = async () => {
     if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
+    // Read BEFORE the first await. The disconnect handler ends in
+    // currentRoom.removePlayer(socket.id), which runs synchronously while this
+    // is still suspended on _flushBalances below — so by the time the write
+    // itself happens there is no room entry left to read a position off, and
+    // the flush that matters most (the one on the way out) was the one path
+    // that always stored the floor without a position to go with it.
+    const _where = _wherePlayerIs();
     // Balances are their own write and are never part of the progress blob —
     // see the balance block at the top of this file. Whatever this session has
     // earned since the last flush has to land either way.
     await _flushBalances();
     if (authed && _lastStats) {
-      await _persistSavedFields(authed, { ..._lastStats }, { bm: authed.bm });
+      await _persistSavedFields(authed, { ..._lastStats, ..._where }, { bm: authed.bm });
     }
     // Season quest progress is deliberately NOT part of _lastStats (the
     // sanitizer strips it, so the blob above cannot carry it) and is only
@@ -5503,6 +5554,25 @@ io.on('connection', socket => {
     return { lvl: sd.lvl, upgrades: sd.upgrades, atk: stats.atk, def: stats.def, maxHp: stats.maxHp };
   }
 
+  // Where this session currently is, for every persist path below. Used to be
+  // written by the 60s autosave alone and by nothing else, so a player who
+  // walked into an arm and dropped 10 seconds later had the HUB stored as
+  // their floor — and _restoreFloorFor would faithfully put them back there.
+  // The floor is only worth restoring if it is actually current, so every
+  // write carries it: the periodic save, the debounced saveProgress, and the
+  // final flush on disconnect.
+  //
+  // x/y ride along for the same reason the floor does. Landing on an arm's
+  // entrance after every blip is better than landing in the hub, but it is
+  // still not where the player was standing; the position is validated on the
+  // way back out (see the restore in selectChar), never trusted blindly.
+  function _wherePlayerIs() {
+    const out = { floor: currentFloor };
+    const p = currentRoom && currentRoom.players.get(socket.id);
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) { out.x = p.x; out.y = p.y; }
+    return out;
+  }
+
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = safeInterval('autosave', () => {
@@ -5510,7 +5580,7 @@ io.on('connection', socket => {
       // Progress only. Balances are moved by $inc from their own paths and must
       // never be written as an absolute from here — that is precisely what let
       // a periodic save undo a credit that arrived seconds earlier.
-      const saveData = { ..._lastStats, floor: currentFloor };
+      const saveData = { ..._lastStats, ..._wherePlayerIs() };
       if (currentRoom) {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
@@ -9311,7 +9381,13 @@ io.on('connection', socket => {
       // and the worst case if it somehow hasn't is the same as any other
       // missed reconnect window: the run just times out normally.
       const _fearHeld = _fearDisconnectGrace.get(authed.telegramId);
+      // Everything else comes back to the floor it was standing on — see
+      // _restoreFloorFor, which re-checks the level gate and any window rather
+      // than trusting the stored number, and falls back to the hub when the
+      // floor is no longer somewhere this account may be. Read off the DB
+      // record, never off `savedStats`: that blob is the client's.
       if (_fearHeld) currentFloor = FLOOR_IDS.fear;
+      else currentFloor = _restoreFloorFor((authed.savedData || {}).floor, effectiveSaved && effectiveSaved.lvl);
       currentRoom = _fearHeld ? _fearHeld.run.room : getRoom(currentFloor);
       // The instance may have been swept out of _fearRooms while this player
       // was away (it had no players for the length of the drop) — put it back
@@ -9323,6 +9399,19 @@ io.on('connection', socket => {
       // own private Room.
       if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
       const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
+      // Back to the exact spot, not just the right floor — but only when the
+      // stored floor is the one actually being restored (an arm's coordinates
+      // land far outside the hub's own grid) and the spot is still standable.
+      // Anything else keeps addPlayer's spawn placement. Fear is excluded: its
+      // grace path re-deploys into the held hall itself, which is a stricter
+      // placement than this.
+      if (!_fearHeld) {
+        const _sd = authed.savedData || {};
+        if (Number(_sd.floor) === currentFloor && currentRoom.canStandAt(_sd.x, _sd.y)) {
+          const _me = currentRoom.players.get(socket.id);
+          if (_me) { _me.x = _sd.x; _me.y = _sd.y; }
+        }
+      }
       // A stale room entry for this same account (see addPlayer's comment)
       // was just dropped — tell other clients immediately instead of waiting
       // for that old socket's own (possibly delayed) disconnect to do it, so
@@ -10812,7 +10901,7 @@ io.on('connection', socket => {
       // Progress only — balances move by $inc from their own paths. `clean` has
       // already had both stripped by _sanitizeSavedStats, so nothing here can
       // reintroduce a client-supplied figure either.
-      _persistSavedFields(authed, { ...clean }, { bm: authed.bm });
+      _persistSavedFields(authed, { ...clean, ..._wherePlayerIs() }, { bm: authed.bm });
     }, 3000);
   });
 

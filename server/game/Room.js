@@ -1062,6 +1062,17 @@ class Room {
     return d.grid[ty][tx] === WALL;
   }
 
+  // Public form of _isWall, for the reconnect path in server/index.js: a
+  // stored position is only worth restoring if it is still somewhere this
+  // floor can be stood on. The map is generated from a fixed seed and so does
+  // not change between deploys, but a position saved on one floor must never
+  // be applied on another (an arm's coordinates are far outside the hub's
+  // 68x68 grid), and a restore that drops someone inside geometry is worse
+  // than one that puts them on the spawn.
+  canStandAt(x, y) {
+    return Number.isFinite(x) && Number.isFinite(y) && !this._isWall(x, y);
+  }
+
   // Same sampling algorithm as the client's hasLOS() (combat.js) — kept in
   // lockstep so a shot the client thinks is clear doesn't get rejected here.
   // ── Кровавая Башня: lane isolation ────────────────────────────────────────
