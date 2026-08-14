@@ -297,6 +297,7 @@ const I18N_UI = {
   questJoinGuildBtn: { ru: 'Вступить в гильдию', en: 'Join the Clan', uk: 'Вступити до клану', es: 'Únete al Clan', tr: 'Klana Katıl', pt: 'Entrar no Clã' },
   questReachCorridor: { ru: 'Дойди до монстров уровня {lvl}+ в коридоре', en: 'Reach level {lvl}+ monsters in the corridor', uk: 'Дійди до монстрів рівня {lvl}+ у коридорі', es: 'Llega a monstruos de nivel {lvl}+ en el corredor', tr: 'Koridorda seviye {lvl}+ canavarlara ulaş', pt: 'Chegue a monstros de nível {lvl}+ no corredor' },
   questVisitBlacksmith: { ru: 'Зайди к кузнецу', en: 'Visit the blacksmith', uk: 'Завітай до коваля', es: 'Visita al herrero', tr: 'Demirciye git', pt: 'Visite o ferreiro' },
+  questEnterFarmZone: { ru: 'Зайди в Фарм-зону через портал в Зале', en: 'Enter the Farm Zone through the hub portal', uk: 'Зайди у Ферм-зону через портал у Залі', es: 'Entra en la Zona de Farmeo a través del portal del vestíbulo', tr: 'Lobi portalından Çiftlik Bölgesi\'ne gir', pt: 'Entre na Zona de Farm pelo portal do hub' },
   questFloorLbl: { ru: 'Этаж', en: 'Floor', uk: 'Поверх', es: 'Piso', tr: 'Kat', pt: 'Andar' },
   questCompletedSuffix: { ru: 'выполнено', en: 'done', uk: 'виконано', es: 'completado', tr: 'tamamlandı', pt: 'concluído' },
   tabSkillsActive:  { ru: 'Активные',   en: 'Active',   uk: 'Активні',      es: 'Activas',     tr: 'Aktif',       pt: 'Ativas' },
@@ -1314,9 +1315,9 @@ const I18N_QUEST_TITLES = {
   f1q11: { en: 'Conqueror',        uk: 'Підкорювач',          es: 'Conquistador',        tr: 'Fatih',             pt: 'Conquistador' },
   f1q12: { en: 'Butcher',          uk: 'М\'ясник',            es: 'Carnicero',           tr: 'Kasap',             pt: 'Açougueiro' },
   f1q13: { en: 'Berserker',        uk: 'Берсерк',             es: 'Berserker',           tr: 'Berserker',         pt: 'Berserker' },
-  f1q14: { en: 'To the Clan!',     uk: 'До клану!',           es: '¡Al Clan!',           tr: 'Klana Katıl!',      pt: 'Para o Clã!' },
+  f1q14: { en: 'Tempering',        uk: 'Загартування',        es: 'Templanza',           tr: 'Pekişme',           pt: 'Têmpera' },
   f1q9:  { en: 'Imp Banisher',     uk: 'Виганяч бісів',       es: 'Expulsor de Diablillos', tr: 'İblis Kovucu',   pt: 'Banidor de Diabretes' },
-  f1q15: { en: 'Next Level',       uk: 'Наступний рівень',    es: 'Siguiente Nivel',     tr: 'Sıradaki Seviye',   pt: 'Próximo Nível' },
+  f1q15: { en: 'Farmer',           uk: 'Фермер',              es: 'Granjero',            tr: 'Çiftçi',            pt: 'Fazendeiro' },
 
   f2q1:  { en: 'First Blood II',       uk: 'Перша кров II',       es: 'Primera Sangre II',     tr: 'İlk Kan II',          pt: 'Primeiro Sangue II' },
   f2q2:  { en: 'The Guard Falls II',   uk: 'Вартовий впаде II',   es: 'Cae el Guardián II',    tr: 'Muhafız Düşecek II', pt: 'O Guardião Cai II' },
@@ -1387,6 +1388,7 @@ const I18N_QUEST_TPL = {
     promoteClan: () => 'Get promoted in your clan',
     gotoFloor: (floor) => `Reach the ${_CORRIDOR_NAME[floor].en}`,
     dungeonClear: (floor) => `Reach the end of the ${_CORRIDOR_NAME[floor].en}`,
+    enterFarmZone: () => 'Enter the Farm Zone',
   },
   uk: {
     kill: (n, enemy) => `Вбий ${n} ${enemy}`,
@@ -1396,6 +1398,7 @@ const I18N_QUEST_TPL = {
     promoteClan: () => 'Підвищ ранг у клані',
     gotoFloor: (floor) => `Дійди до ${_CORRIDOR_NAME[floor].uk}`,
     dungeonClear: (floor) => `Дійди до кінця ${_CORRIDOR_NAME[floor].uk}`,
+    enterFarmZone: () => 'Зайди у Ферм-зону',
   },
   es: {
     kill: (n, enemy) => `Mata a ${n} ${enemy}`,
@@ -1405,6 +1408,7 @@ const I18N_QUEST_TPL = {
     promoteClan: () => 'Sube de rango en tu clan',
     gotoFloor: (floor) => `Llega al ${_CORRIDOR_NAME[floor].es}`,
     dungeonClear: (floor) => `Llega al final del ${_CORRIDOR_NAME[floor].es}`,
+    enterFarmZone: () => 'Entra en la Zona de Farmeo',
   },
   tr: {
     kill: (n, enemy) => `${n} ${enemy} öldür`,
@@ -1414,6 +1418,7 @@ const I18N_QUEST_TPL = {
     promoteClan: () => 'Klanında rütbe atla',
     gotoFloor: (floor) => `${_CORRIDOR_NAME[floor].tr}'a ulaş`,
     dungeonClear: (floor) => `${_CORRIDOR_NAME[floor].tr}'un sonuna ulaş`,
+    enterFarmZone: () => "Çiftlik Bölgesi'ne gir",
   },
   pt: {
     kill: (n, enemy) => `Mate ${n} ${enemy}`,
@@ -1423,6 +1428,7 @@ const I18N_QUEST_TPL = {
     promoteClan: () => 'Suba de patente no seu clã',
     gotoFloor: (floor) => `Chegue ao ${_CORRIDOR_NAME[floor].pt}`,
     dungeonClear: (floor) => `Chegue ao fim do ${_CORRIDOR_NAME[floor].pt}`,
+    enterFarmZone: () => 'Entre na Zona de Farm',
   },
 };
 function _questDescFor(q, lang) {
@@ -1438,6 +1444,7 @@ function _questDescFor(q, lang) {
     case 'join_guild': return (q._i18nOrigDesc || q.desc).indexOf('Вступи') === 0 ? tpl.joinClan() : tpl.promoteClan();
     case 'goto_floor': return tpl.gotoFloor(q.targetFloor);
     case 'dungeon_clear': return tpl.dungeonClear(q.floor);
+    case 'enter_zone': return q.zone === 'farmZone' ? tpl.enterFarmZone() : (q._i18nOrigDesc || q.desc);
     default: return q._i18nOrigDesc || q.desc;
   }
 }

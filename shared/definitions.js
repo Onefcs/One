@@ -562,15 +562,19 @@ const QUEST_DEF = [
   { id:'f1q11', floor:1, title:'Покоритель',          desc:'Достигни 10 уровня',          type:'level',        level:10,                     reward:{ xp:400,  gold:200, items:_BUFF_POTION_IDS } },
   { id:'f1q12', floor:1, title:'Мясник',              desc:'Убей 100 Бес воин',          type:'kill',         enemies:['Бес воин'],         count:100, reward:{ xp:450,  gold:225 } },
   { id:'f1q13', floor:1, title:'Берсерк',             desc:'Убей 100 Бес страж',         type:'kill',         enemies:['Бес страж'],        count:100, reward:{ xp:450,  gold:225 } },
-  { id:'f1q14', floor:1, title:'В гильдию!',          desc:'Вступи в гильдию',           type:'join_guild',                                 reward:{ xp:500,  gold:250 } },
-  // Sits right before the "go to the top corridor" quest, and the top arm's
-  // own gate needs level 20 anyway (ARM_LEVEL_REQ.top) — so this milestone
-  // lines up with what the player has to reach to continue regardless.
+  { id:'f1q14', floor:1, title:'Закалка',             desc:'Достигни 15 уровня',         type:'level',        level:15,                     reward:{ xp:500,  gold:250 } },
+  // Sits right before the level-20 quest, and the top arm's own gate needs
+  // level 20 anyway (ARM_LEVEL_REQ.top) — so that milestone lines up with
+  // what the player has to reach to continue regardless.
   // Kept at this array position and under its original id: questIdx is a
   // POSITIONAL index into this table, so moving or removing an entry would
   // silently shift every player already past it onto a different quest.
   { id:'f1q9',  floor:1, title:'Мастер',              desc:'Достигни 20 уровня',         type:'level',        level:20,                     reward:{ xp:300,  gold:150 } },
-  { id:'f1q15', floor:1, title:'Следующий уровень',   desc:'Дойди до верхнего коридора', type:'goto_floor',   targetFloor:2,                reward:{ xp:600,  gold:300, items:_BUFF_POTION_IDS } },
+  // Фарм-зона's own gate is level 20 (_ZONE_LEVEL_REQ.farmZone, server/
+  // index.js) — same reasoning as f1q9 just above: by the time a player
+  // reaches this quest they've already cleared that gate, so there's
+  // nothing left to unlock for it.
+  { id:'f1q15', floor:1, title:'Фермер',              desc:'Войди в Фарм-зону',          type:'enter_zone',   zone:'farmZone',              reward:{ xp:600,  gold:300, items:_BUFF_POTION_IDS } },
 
   // ── Верхний коридор · Гнилые топи (квесты 16-30) · награда ×2 ──
   { id:'f2q1',  floor:2, title:'Первая кровь II',     desc:'Убей 10 Зомби страж',        type:'kill',         enemies:['Зомби страж'],      count:10,  reward:{ xp:1000, gold:500, items:_BUFF_POTION_IDS } },
@@ -1514,6 +1518,7 @@ function questProgress(q, kills, lvl) {
     case 'dungeon_clear': return { done: n('_dungeon_' + q.floor), total: q.count };
     case 'join_guild':    return { done: n('_guild'), total: 1 };
     case 'goto_floor':    return { done: n('_floor_' + q.targetFloor), total: 1 };
+    case 'enter_zone':    return { done: n('_zone_' + q.zone), total: 1 };
     default:              return {};
   }
 }
@@ -1530,6 +1535,7 @@ function questComplete(q, kills, lvl) {
     case 'dungeon_clear': return n('_dungeon_' + q.floor) >= q.count;
     case 'join_guild':    return n('_guild') >= 1;
     case 'goto_floor':    return n('_floor_' + q.targetFloor) >= 1;
+    case 'enter_zone':    return n('_zone_' + q.zone) >= 1;
     default:              return false;
   }
 }

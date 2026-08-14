@@ -925,6 +925,50 @@ scenario('quests: a save cannot write the counters', async () => {
   await c.close();
 });
 
+scenario('quests: f1q14 is now a level-15 gate and f1q15 asks to enter Фарм-зона', async () => {
+  // QUEST_DEF indices are positional: f1q14 sits at index 12 (after
+  // f1..f1q13), f1q15 at index 14 (after f1q9's level-20 quest at 13) — see
+  // shared/definitions.js's own comment on why the array position, not the
+  // id, is what player progress keys off.
+  const F1Q14_IDX = 12, F1Q15_IDX = 14;
+
+  // f1q14: replaced "join a clan" with "reach level 15" — a save already at
+  // level 15 should find it claimable immediately, no separate event needed.
+  const leveled = await connectWithSaved('harness_quest_lvl15', { lvl: 15, questIdx: F1Q14_IDX, questKills: {} });
+  await enterWorld(leveled, 'ranger');
+  const claimed14 = leveled.wait('questClaimed', { timeout: 6000 }).catch(() => null);
+  leveled.emit('claimQuest', { idx: F1Q14_IDX });
+  ok(await claimed14, 'level 15 alone is enough to claim f1q14');
+  await leveled.close();
+
+  const short = await connectWithSaved('harness_quest_lvl14', { lvl: 14, questIdx: F1Q14_IDX, questKills: {} });
+  await enterWorld(short, 'ranger');
+  const err14 = short.wait('questClaimError', { timeout: 6000 }).catch(() => null);
+  short.emit('claimQuest', { idx: F1Q14_IDX });
+  ok(await err14, 'one level short of 15 is refused');
+  await short.close();
+
+  // f1q15: replaced "reach the top corridor" with "enter Фарм-зона" — actually
+  // walking through the portal (enterLocation('farmZone')) has to be what
+  // completes it, not a kill-triggered proxy (there's no monster-level curve
+  // to hook into for a zone outside the arm progression).
+  const farmer = await connectWithSaved('harness_quest_farm', { lvl: 25, questIdx: F1Q15_IDX, questKills: {} });
+  await enterWorld(farmer, 'ranger');
+  const preErr = farmer.wait('questClaimError', { timeout: 3000 }).catch(() => null);
+  farmer.emit('claimQuest', { idx: F1Q15_IDX });
+  ok(await preErr, 'not claimable before actually entering the zone');
+
+  const farmStart = farmer.wait('gameStart', { where: `${farmer.name} enters farmZone` });
+  farmer.emit('enterLocation', { target: 'farmZone' });
+  const onFarm = await farmStart;
+  eq(onFarm.floor, 7, 'the transition landed on the farm-zone floor');
+
+  const claimed15 = farmer.wait('questClaimed', { timeout: 6000 }).catch(() => null);
+  farmer.emit('claimQuest', { idx: F1Q15_IDX });
+  ok(await claimed15, 'entering the zone alone made it claimable');
+  await farmer.close();
+});
+
 scenario('progression: learning a passive without the book is refused', async () => {
   const c = await connectAs('harness_passive');
   await enterWorld(c, 'mage');

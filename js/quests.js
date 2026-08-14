@@ -427,6 +427,9 @@ function _questProgHtml(q, isCur) {
   if (q.type === 'craft') {
     return `<div class="quest-prog">${typeof t === 'function' ? t('questVisitBlacksmith') : 'Зайди к кузнецу'}</div>`;
   }
+  if (q.type === 'enter_zone') {
+    return `<div class="quest-prog">${typeof t === 'function' ? t('questEnterFarmZone') : 'Зайди в Фарм-зону через портал в Зале'}</div>`;
+  }
   return '';
 }
 

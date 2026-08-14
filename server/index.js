@@ -9195,6 +9195,17 @@ io.on('connection', socket => {
     if (_selfP2 && _selfP2.petId) {
       socket.to(`floor_${currentFloor}`).emit('playerPet', { id: socket.id, petId: _selfP2.petId });
     }
+    // 'enter_zone' quests (currently just "Войди в Фарм-зону") complete the
+    // instant the transition actually lands — unlike goto_floor's legacy
+    // kill-triggered proxy (there's no monster-level curve to hook into for
+    // a zone that isn't part of the arm progression), this fires directly
+    // off the real event.
+    {
+      const q = _currentQuest();
+      if (q && q.type === 'enter_zone' && q.zone === target) {
+        if (_questBump('_zone_' + target, 1)) _questPush();
+      }
+    }
     return true;
   }
   socket.data._forceEnterLocation = (target, opts) => _doEnterLocation(target, { ...opts, force: true });
