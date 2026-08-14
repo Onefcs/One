@@ -2909,10 +2909,6 @@ function _initFearHandlers(s) {
       maxWave: st.maxWave || _fearState.maxWave || 39,
       minLevel: st.minLevel || _fearState.minLevel || 10,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _fearState.attemptsLeft,
-      // null means "not reported" — the panel then just omits the line
-      // rather than claiming every hall is busy.
-      freeLanes: st.freeLanes !== undefined ? st.freeLanes : _fearState.freeLanes,
-      totalLanes: st.totalLanes !== undefined ? st.totalLanes : _fearState.totalLanes,
     };
     _fearInRun = !!st.inRun;
     _fearWave = st.wave || 0;

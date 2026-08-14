@@ -118,19 +118,21 @@ const RACE10_BOSS_ROOM    = 44;  // shared room, square
 const RACE10_H  = RACE10_LANES * RACE10_LANE_PITCH;
 const RACE10_W  = RACE10_LANE_LEN + RACE10_BOSS_ROOM;
 
-// ── Страх (Fear) — private wave-survival instances ──────────────────────────
-// Its own floor now (generateFear, below). FEAR_LANES identical sealed
-// square rooms, one per concurrent entrant — unlike race10's corridors these
-// hold no baked-in monsters: each wave (20 monsters, escalating one global
-// level at a time) is spawned dynamically at runtime by Room.js's
-// fearSpawnWave once the player is deployed, and removed once the lane is
-// released, so only geometry needs to exist ahead of time. Sealed off from
-// everything else the same way every other special zone is — the only way
-// in is server/index.js's fearEnter handler force-joining a player onto this
-// floor and placing them at a lane's entry point.
-const FEAR_LANES = 8;      // max concurrent Fear runs
+// ── Страх (Fear) — one private instance per entrant ─────────────────────────
+// Used to be FEAR_LANES identical sealed rooms sharing one Room object — a
+// fixed pool of concurrent runs that could fill up and make an entrant wait.
+// Every fearEnter now builds its own fresh Room (server/index.js's
+// _createFearRoom), each with its own call to generateFear() below, so
+// there is exactly one lane because there is exactly one possible occupant;
+// "lane" survives purely as the coordinate scheme Room.js's fear methods
+// already speak (fearDeploy/fearSpawnWave/etc. all still work unmodified —
+// they just never see more than lane 0). No baked-in monsters either way:
+// each wave (20 monsters, escalating one global level at a time) is spawned
+// dynamically at runtime by Room.js's fearSpawnWave once the player is
+// deployed, so only the room's geometry needs to exist ahead of time.
+const FEAR_LANES = 1;
 const FEAR_ROOM   = 12;    // room size (tiles) — tight enough that a wave doesn't feel spread thin
-const FEAR_GAP    = 8;     // wall padding between stacked lanes
+const FEAR_GAP    = 8;     // wall padding (irrelevant now with only one room, kept for the shared pitch math below)
 const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
@@ -744,11 +746,12 @@ function generateRace10() {
 }
 
 // Страх (Fear), now its own floor (see server/game/floors.js) instead of a
-// stack of sealed rooms in the hub's mega-grid. FEAR_LANES identical rooms,
-// one per concurrent private run — unlike race10's corridors these hold no
-// baked-in monsters at all: each wave is spawned dynamically at runtime by
-// Room.fearSpawnWave once a player is deployed into a lane (server/index.js's
-// fearEnter), so only the geometry needs to exist ahead of time.
+// stack of sealed rooms in the hub's mega-grid. Called fresh for every
+// fearEnter (see _createFearRoom, server/index.js) rather than once at boot,
+// so every entrant gets a newly generated, single-lane room of their own —
+// unlike race10's corridors these hold no baked-in monsters at all: each
+// wave is spawned dynamically at runtime by Room.fearSpawnWave once the
+// player is deployed, so only the geometry needs to exist ahead of time.
 function generateFear() {
   const w = FEAR_ROOM + MARGIN * 2, h = FEAR_LANES * FEAR_PITCH + MARGIN * 2;
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));

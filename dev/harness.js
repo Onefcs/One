@@ -853,6 +853,70 @@ scenario('floors: Страх holds monsters back for FEAR_START_DELAY_MS after e
   await c.close();
 });
 
+scenario('floors: Страх gives every entrant their own private instance, not shared halls', async () => {
+  // The old design stacked a fixed FEAR_LANES rooms into one shared grid —
+  // a second entrant landed in lane 1, at a different y-coordinate than
+  // lane 0's occupant, and only ever a few lanes were free at once. Every
+  // entrant gets a freshly generated, single-lane Room of their own now
+  // (_createFearRoom, server/index.js) — two simultaneous entrants are BOTH
+  // "lane 0" of their own room, so they land at the exact same (x, y),
+  // which could never happen if they were sharing one floor's grid.
+  const a = await connectWithSaved('harness_fear_iso_a', { lvl: 10, xp: 0, xpNext: 100 });
+  const b = await connectWithSaved('harness_fear_iso_b', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(a, 'ranger');
+  await enterWorld(b, 'ranger');
+
+  const aStarted = a.wait('fearStarted', { timeout: 3000 });
+  a.emit('fearEnter');
+  const aSt = await aStarted;
+
+  const bStarted = b.wait('fearStarted', { timeout: 3000 });
+  b.emit('fearEnter');
+  const bSt = await bStarted;
+
+  ok(aSt && bSt, 'both entrants were accepted');
+  eq(bSt.x, aSt.x, 'two simultaneous entrants land at the same x — each is lane 0 of their OWN room');
+  eq(bSt.y, aSt.y, 'and the same y, for the same reason');
+
+  // And they really are isolated, not just coincidentally overlapping:
+  // ending a's run must not touch b's.
+  const aFin = a.wait('fearFinished', { timeout: 3000 });
+  a.emit('respawn');
+  const aRes = await aFin;
+  eq(aRes?.cleared, false, "a's run ends (died)");
+
+  const bSync = b.wait('fearState', { timeout: 3000 });
+  b.emit('fearSync');
+  const bSt2 = await bSync;
+  eq(bSt2?.inRun, true, "b's own run is completely unaffected by a finishing theirs");
+
+  await a.close();
+  await b.close();
+});
+
+scenario('floors: Страх never refuses an entrant for lack of space', async () => {
+  // The old shared-hall design capped concurrent runs at FEAR_LANES (was 8)
+  // and refused anyone past it with "Все N залов заняты". There is no
+  // shared pool to exhaust any more — every entrant gets their own Room
+  // (_createFearRoom) — so more simultaneous entrants than the old cap must
+  // all still be accepted.
+  const N = 10;
+  const clients = await Promise.all(
+    Array.from({ length: N }, (_, i) => connectWithSaved(`harness_fear_volume_${i}`, { lvl: 10, xp: 0, xpNext: 100 })),
+  );
+  await Promise.all(clients.map(c => enterWorld(c, 'ranger')));
+
+  const waits = clients.map(c => ({
+    started: c.wait('fearStarted', { timeout: 6000 }).catch(() => null),
+    err: c.wait('fearError', { timeout: 6000 }).catch(() => null),
+  }));
+  clients.forEach(c => c.emit('fearEnter'));
+  const results = await Promise.all(waits.map(w => Promise.race([w.started, w.err])));
+  results.forEach((r, i) => ok(r && r.x != null, `entrant ${i + 1}/${N} was accepted, not refused for space${r && r.msg ? ' (' + r.msg + ')' : ''}`));
+
+  await Promise.all(clients.map(c => c.close()));
+});
+
 scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own floor, not the hub', async () => {
   const a1 = await connectWithSaved('harness_fear_reconnect', { lvl: 10, xp: 0, xpNext: 100 });
   await enterWorld(a1, 'ranger');

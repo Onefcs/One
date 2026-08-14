@@ -4112,18 +4112,36 @@ const FEAR_MIN_LEVEL = 10;
 // rather than resuming a countdown no client is around to show).
 const FEAR_START_DELAY_MS = 5000;
 
-// socketId -> { lane, wave } for whoever currently has a run going — read by
-// the attack/skillAttack handlers to advance the run one kill at a time, by
-// _fearEliminate on death, and by the disconnect handler if they drop
-// mid-run. A player can only ever be in one lane at once (fearEnter refuses
-// a second entry while this already has them), so a flat map is enough.
+// socketId -> { room, lane, wave } for whoever currently has a run going —
+// read by the attack/skillAttack handlers to advance the run one kill at a
+// time, by _fearEliminate on death, and by the disconnect handler if they
+// drop mid-run. `room` is that socket's own private Room instance (see
+// _createFearRoom) — there is no shared Fear floor any more to look one up
+// from, so the run record has to carry it. A player can only ever be in one
+// lane at once (fearEnter refuses a second entry while this already has
+// them), so a flat map is enough.
 const _fear = new Map();
+
+// Every Fear run gets its OWN Room, created here and never registered in
+// floorRooms — it exists only as long as something (a live socket's
+// currentRoom, this player's _fear/_fearDisconnectGrace entry) still
+// references it, and becomes eligible for GC the moment the run ends and
+// the grace window (if any) elapses. This is what removed the old "every
+// hall is busy, wait for a slot" refusal: there is no shared pool to run out
+// of, since nobody ever shares a Room with a stranger's run. generateFear()
+// (server/game/dungeon.js) builds a fresh single-lane dungeon on every call,
+// so this is otherwise exactly how every OTHER floor's Room is constructed —
+// no boss content on this floor, hence the empty bossState and null
+// onBossDeath.
+function _createFearRoom() {
+  return new Room(FLOOR_IDS.fear, io, {}, null);
+}
 
 // Spawns wave `wave` in `lane` and tells the client — split out since both
 // fearEnter (wave 1) and _fearTrackKill (every wave after) need it.
 function _fearStartWave(room, socketId, lane, wave) {
   room.fearSpawnWave(lane, wave);
-  _fear.set(socketId, { lane, wave });
+  _fear.set(socketId, { room, lane, wave });
   io.to(socketId).emit('fearWave', { wave, maxWave: FEAR_MAX_WAVE });
 }
 
@@ -4137,7 +4155,7 @@ function _fearTrackKill(socketId, result) {
   if (result.arm !== 'fear') return;
   const run = _fear.get(socketId);
   if (!run || run.lane !== result.lane) return;
-  const room = getRoom(FLOOR_IDS.fear);
+  const room = run.room;
   if (!room) return;
   // The run record is only trustworthy while the player is still actually
   // standing in that hall. Several handlers unrelated to this event
@@ -4162,7 +4180,7 @@ function _fearFinish(socketId, cleared) {
   const run = _fear.get(socketId);
   if (!run) return;
   _fear.delete(socketId);
-  const room = getRoom(FLOOR_IDS.fear);
+  const room = run.room;
   // Release the lane BEFORE the floor change below, not after. _returnToHub
   // ends in Room.removePlayer, which — if the departing record still has a
   // lane set — holds it open for a possible reconnect instead of releasing
@@ -9043,22 +9061,27 @@ io.on('connection', socket => {
       { $set: { 'savedData.type': type } }
     ).catch(() => {});
     if (!currentRoom) {
-      // A held Fear run (see _fearDisconnectGrace, above) lives on the fear
-      // floor's own Room now, not the hub's — currentFloor's initial value
-      // is always the hub (every fresh connection starts there), so without
-      // this a reconnecting session would join the hub's Room instead, and
-      // its addPlayer's own _fearGraceClaim would check the wrong Room and
-      // never find the hall, timing it out from under a session that's
-      // actually still coming back. loginTelegramWebApp/selectChar are two
+      // A held Fear run (see _fearDisconnectGrace, above) lives on ITS OWN
+      // private Room now (_createFearRoom), not a shared floor lookup —
+      // getRoom(FLOOR_IDS.fear) only ever returns the harmless, always-empty
+      // static entry every floor gets at boot, never a real run's instance.
+      // currentFloor's initial value is always the hub (every fresh
+      // connection starts there), so without this a reconnecting session
+      // would land on the hub instead, and never find its way back to the
+      // room actually holding its run. loginTelegramWebApp/selectChar are two
       // separate round trips, so by the time this runs the stale socket's
       // own 'disconnect' handler (which populates _fearDisconnectGrace) has
       // had a full network round trip to complete — reliable in practice,
       // and the worst case if it somehow hasn't is the same as any other
-      // missed reconnect window: the hall just times out normally.
-      if (_fearDisconnectGrace.has(authed.telegramId)) currentFloor = FLOOR_IDS.fear;
-      currentRoom = getRoom(currentFloor);
+      // missed reconnect window: the run just times out normally.
+      const _fearHeld = _fearDisconnectGrace.get(authed.telegramId);
+      if (_fearHeld) currentFloor = FLOOR_IDS.fear;
+      currentRoom = _fearHeld ? _fearHeld.run.room : getRoom(currentFloor);
       playerFloorMap.set(socket.id, currentFloor);
-      socket.join(`floor_${currentFloor}`);
+      // See _doEnterLocation's identical guard: Fear players never join the
+      // shared floor_<id> broadcast group, since each one is alone on their
+      // own private Room.
+      if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
       const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
       // A stale room entry for this same account (see addPlayer's comment)
       // was just dropped — tell other clients immediately instead of waiting
@@ -9254,7 +9277,7 @@ io.on('connection', socket => {
   // (which otherwise always lands on the target floor's own default spawn/
   // zone placement) — used only by the death battle's "send this entrant
   // back to the exact spot they were standing in before" return path.
-  function _doEnterLocation(target, { force = false, pos } = {}) {
+  function _doEnterLocation(target, { force = false, pos, room = null } = {}) {
     if (!authed || !currentRoom) return false;
     const oldP = currentRoom.players.get(socket.id);
     if (!oldP || !oldP.type) return false; // no character selected yet
@@ -9294,14 +9317,25 @@ io.on('connection', socket => {
     const charType = oldP.type;
     const savedStats = oldP._sd;
 
-    socket.leave(`floor_${oldFloor}`);
+    // Fear players never join the shared floor_<id> broadcast group — each
+    // one is on their own private Room now (see _createFearRoom), so there
+    // is never anyone else legitimately on "floor_11" to tell about a join/
+    // leave/char change, and joining them all into one group would leak
+    // exactly that across otherwise-isolated runs. Skipping the join means
+    // every socket.to(`floor_${currentFloor}`) broadcast below is already a
+    // no-op for Fear on its own — nothing else here needs to know the
+    // difference.
+    if (oldFloor !== FLOOR_IDS.fear) socket.leave(`floor_${oldFloor}`);
     currentRoom.removePlayer(socket.id);
     socket.to(`floor_${oldFloor}`).emit('playerLeft', { id: socket.id });
 
     currentFloor = targetFloor;
     playerFloorMap.set(socket.id, currentFloor);
-    socket.join(`floor_${currentFloor}`);
-    currentRoom = getRoom(currentFloor);
+    if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
+    // `room`, when given, is a fresh private instance this connection just
+    // created (fearEnter) — the ordinary getRoom(floorId) lookup only ever
+    // returns the one shared Room per floor, which Fear no longer has one of.
+    currentRoom = room || getRoom(currentFloor);
     currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
     currentRoom.setPlayerChar(socket.id, charType, savedStats);
     // Guild War: spread fresh entrants across the spawn ring instead of
@@ -10069,37 +10103,33 @@ io.on('connection', socket => {
     if (left <= 0) {
       return socket.emit('fearError', { msg: 'Попытки в Страх на сегодня закончились' });
     }
-    // Fear is its own floor now (server/game/floors.js) — fearDeploy below
-    // needs the player already present in that floor's Room, and there is
-    // no walk-in pad for it (see _doEnterLocation), so this connection has
-    // to force its own way onto it first. Every real gate (level, attempts,
-    // the cross-checks above) is already applied, so force:true here is just
-    // skipping the (nonexistent) reachability gate, not bypassing anything
-    // that still needs checking.
-    if (!_doEnterLocation('fear', { force: true })) {
+    // Fear is its own floor (server/game/floors.js), but unlike every other
+    // one there is no shared Room to walk onto — this connection creates a
+    // brand-new private instance right here and force-joins it via the
+    // `room` override (_doEnterLocation), the same way it used to force-join
+    // the old shared floor. Every real gate (level, attempts, the cross-
+    // checks above) is already applied, so force:true is just skipping the
+    // (nonexistent) reachability gate, not bypassing anything that still
+    // needs checking.
+    const fearRoom = _createFearRoom();
+    if (!_doEnterLocation('fear', { force: true, room: fearRoom })) {
       return socket.emit('fearError', { msg: 'Не удалось войти — попробуйте ещё раз' });
     }
-    // Checked before the attempt is spent, and again implicitly by
-    // fearDeploy itself (which re-derives occupancy from live state) — a
-    // refusal here must never cost the player one of their two runs.
+    // Always succeeds: fearRoom was just created for this connection alone,
+    // so its one lane can only ever already belong to this same socket.
+    // Kept as a real check (not assumed) rather than trusting that no future
+    // change to fearDeploy's own logic could ever disagree.
     const spot = currentRoom.fearDeploy(socket.id);
     if (!spot) {
-      // Every lane taken in the instant between the checks above and this
-      // one (concurrent entries racing in) — send this connection back
-      // rather than stranding it on an otherwise-empty floor with no lane.
-      const totalLanes = currentRoom.fearLaneCount();
       _doEnterLocation('hub', { force: true });
-      return socket.emit('fearError', {
-        msg: `Все ${totalLanes} залов заняты — дождитесь, пока кто-нибудь выйдет`,
-      });
+      return socket.emit('fearError', { msg: 'Не удалось войти — попробуйте ещё раз' });
     }
     _lockFearDaily(socket.id);
     // wave:0 first — see FEAR_START_DELAY_MS's own comment for why this has
     // to be a real _fear record (not just a bare setTimeout with nothing
     // backing it) rather than calling _fearStartWave immediately.
-    const fearRoom = currentRoom;
     const readyAt = Date.now() + FEAR_START_DELAY_MS;
-    _fear.set(socket.id, { lane: spot.lane, wave: 0 });
+    _fear.set(socket.id, { room: fearRoom, lane: spot.lane, wave: 0 });
     socket.emit('fearStarted', { x: spot.x, y: spot.y, hp: cp.hp, maxWave: FEAR_MAX_WAVE, attemptsLeft: left - 1, readyAt });
     setTimeout(() => {
       // Still exactly the run this timer was scheduled for? A disconnect
@@ -10108,23 +10138,32 @@ io.on('connection', socket => {
       // stale timer for a socket that's since gone quietly no-ops here
       // rather than double-spawning the wave once the reconnect path
       // starts it (see the fearCarry reclaim, further up this file).
+      //
+      // run.room !== fearRoom (identity, not just lane/wave) is the part
+      // that matters now that every run gets its own fresh Room: lane is
+      // always 0 and wave is always 0 at this point for ANY fresh entry, so
+      // a player who died during this exact countdown (impossible today —
+      // wave 0 has no monsters — but not a case worth trusting to stay that
+      // way) and re-entered before this timer fired would have a NEW room
+      // with the same lane/wave numbers as this stale closure's. Without the
+      // identity check that coincidence would pass the old guard and spawn
+      // wave 1 into the abandoned OLD room while stamping ITS reference back
+      // over the new run's _fear entry — silently hijacking the active run.
       const run = _fear.get(socket.id);
-      if (!run || run.lane !== spot.lane || run.wave !== 0) return;
+      if (!run || run.room !== fearRoom || run.lane !== spot.lane || run.wave !== 0) return;
       _fearStartWave(fearRoom, socket.id, spot.lane, 1);
     }, FEAR_START_DELAY_MS);
   });
 
   safeOn('fearSync', async () => {
     const run = _fear.get(socket.id);
-    const fearRoom = getRoom(FLOOR_IDS.fear);
     socket.emit('fearState', {
       maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
       attemptsLeft: await _fearAttemptsLeft(socket.id),
       inRun: !!run, wave: run?.wave || 0,
-      // Fear's own floor, not currentRoom — this panel is readable from
-      // anywhere, not just while standing on it.
-      freeLanes: fearRoom ? fearRoom.fearFreeLaneCount() : null,
-      totalLanes: fearRoom ? fearRoom.fearLaneCount() : null,
+      // No freeLanes/totalLanes any more — every entrant gets their own
+      // private Room now (_createFearRoom), so there is no shared pool that
+      // can ever be "full".
     });
   });
 
