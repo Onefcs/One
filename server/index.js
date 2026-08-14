@@ -37,6 +37,68 @@ function _marketMaxActive(vipLevel) {
   return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? Infinity : MARKET_MAX_ACTIVE;
 }
 
+// ── Why sessions end ─────────────────────────────────────────────────────────
+// "Мир перезагружается" is, from the server's side, always the same event: a
+// socket went away and the client reconnected — which re-runs selectChar and
+// makes gameStart rebuild the whole world on the client. The useful question
+// is never "did it reconnect" but "why did the socket go", and socket.io
+// answers that precisely, in the `reason` argument the disconnect handler was
+// throwing away:
+//
+//   ping timeout               the client stopped answering engine.io's own
+//                              pings for pingTimeout — a real network loss, a
+//                              frozen client, or a suspended WebView.
+//   transport close            the connection closed under us: the app was
+//                              backgrounded/closed, the network dropped, or
+//                              something in front of us (a load balancer, a
+//                              proxy) cut it.
+//   transport error            it broke mid-flight.
+//   client namespace disconnect  the CLIENT chose to disconnect — for this
+//                              game that is js/network.js's watchdog deciding
+//                              the link is dead after 4 unanswered pings, so
+//                              a pile of these means the watchdog is firing,
+//                              not that the network is failing.
+//   server namespace disconnect  we closed it: a duplicate login being kicked,
+//                              maintenance mode, the auth timeout.
+//   server shutting down       a deploy or a restart, i.e. every session at
+//                              once.
+//
+// Those five outcomes need five different fixes, and they are indistinguishable
+// from the outside — which is exactly why this had to stop being a guess.
+// Counted rather than logged per-event (a busy server would drown in lines),
+// split by whether the session had authenticated and how long it lasted, and
+// exposed on /health next to the tick timings. `sinceMs` makes the counts a
+// rate rather than a total nobody can interpret.
+const _sessionStats = {
+  since: Date.now(),
+  reasons: new Map(),   // reason -> count
+  shortLived: 0,        // authenticated sessions that died inside SHORT_SESSION_MS
+  authedEnded: 0,
+  totalMs: 0,
+};
+// A session this short did not end because the player put their phone down.
+// It is the shape a reconnect loop makes, and counting it separately means a
+// loop shows up as a ratio instead of having to be spotted in a log.
+const SHORT_SESSION_MS = 60000;
+function _recordSessionEnd(reason, wasAuthed, lifetimeMs) {
+  const key = String(reason || 'unknown');
+  _sessionStats.reasons.set(key, (_sessionStats.reasons.get(key) || 0) + 1);
+  if (!wasAuthed) return;
+  _sessionStats.authedEnded++;
+  _sessionStats.totalMs += lifetimeMs;
+  if (lifetimeMs < SHORT_SESSION_MS) _sessionStats.shortLived++;
+}
+function _sessionStatsSnapshot() {
+  const n = _sessionStats.authedEnded;
+  return {
+    sinceMs: Date.now() - _sessionStats.since,
+    endedAuthed: n,
+    shortLived: _sessionStats.shortLived,
+    avgSessionS: n ? Math.round(_sessionStats.totalMs / n / 1000) : 0,
+    reasons: Object.fromEntries(_sessionStats.reasons),
+  };
+}
+
 // ── Timers that cannot take the process down ─────────────────────────────────
 // A timer callback runs on an empty stack: nothing is above it to catch a
 // throw, so it reaches process scope, where uncaughtException (bottom of this
@@ -2142,6 +2204,9 @@ app.get('/health', (req, res) => {
     heapMb: Math.round(mem.heapUsed / 1048576),
     rssMb: Math.round(mem.rss / 1048576),
     rooms,
+    // Why sessions have been ending since this process started — the direct
+    // answer to "почему мир перезагружается". See _sessionStats.
+    sessions: _sessionStatsSnapshot(),
   });
 });
 
@@ -4651,6 +4716,40 @@ async function _flushClanXp() {
 }
 safeInterval('clanXpFlush', () => { _flushClanXp().catch(() => {}); }, CLAN_XP_FLUSH_MS).unref();
 
+// One line every SESSION_REPORT_MS naming why sessions ended in that window,
+// so the answer is in the deploy log rather than only behind an authenticated
+// /health poll nobody is making at 3am. Silent when nothing disconnected, and
+// on stdout rather than stderr — this is a routine measurement, and a hosting
+// dashboard paints anything from stderr as an error (see the [move] guard
+// lines, which are console.warn and get flagged red for no reason).
+//
+// Read it as a shape, not as numbers: mostly 'transport close' with long
+// average sessions is ordinary mobile churn and nothing to fix. A large
+// 'client namespace disconnect' share means js/network.js's own watchdog is
+// tearing down healthy links. A large 'ping timeout' share means the link (or
+// the client) really is going quiet. 'server shutting down' means the process
+// restarted and took everyone with it. shortLived/endedAuthed climbing toward
+// 1 is a reconnect loop whatever the reason column says.
+const SESSION_REPORT_MS = 5 * 60 * 1000;
+let _lastSessionReport = _sessionStatsSnapshot();
+safeInterval('sessionReport', () => {
+  const now = _sessionStatsSnapshot();
+  const delta = {};
+  let total = 0;
+  for (const [k, v] of Object.entries(now.reasons)) {
+    const d = v - (_lastSessionReport.reasons[k] || 0);
+    if (d > 0) { delta[k] = d; total += d; }
+  }
+  const endedAuthed = now.endedAuthed - _lastSessionReport.endedAuthed;
+  const shortLived  = now.shortLived  - _lastSessionReport.shortLived;
+  _lastSessionReport = now;
+  if (!total) return;
+  console.log(`[sessions] ${total} ended in ${SESSION_REPORT_MS / 60000}min ` +
+    `(${endedAuthed} authed, ${shortLived} under ${SHORT_SESSION_MS / 1000}s, ` +
+    `avg ${now.avgSessionS}s all-time) — ` +
+    Object.entries(delta).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' '));
+}, SESSION_REPORT_MS).unref();
+
 // ── Combat fan-out ───────────────────────────────────────────────────────────
 // enemyHurt/enemyKilled describe ONE enemy, and they used to go to the whole
 // floor on every swing. The world is a single shared floor, so the cost of one
@@ -4690,6 +4789,14 @@ function _emitToEnemyViewers(room, enemyId, event, payload, exclude) {
 
 io.on('connection', socket => {
   let authed = null;
+  // When this connection opened — read by the disconnect handler to bucket
+  // how long sessions actually last (see _sessionStats). A world that
+  // "reloads itself" is a client reconnecting: the reconnect re-runs
+  // selectChar, and gameStart rebuilds the world from scratch on the client
+  // (js/network.js). So the question behind that report is always "why did
+  // the socket go away", and until now the server threw away the one field
+  // that answers it.
+  const _connectedAt = Date.now();
   // Every safeguard in this file (rate-limit buckets, brute-force locks,
   // cache eviction...) assumes a socket either authenticates or goes away
   // quickly — nothing ever bounded how long an UNauthenticated one can sit
@@ -11690,7 +11797,10 @@ io.on('connection', socket => {
     }
   });
 
-  safeOn('disconnect', () => {
+  safeOn('disconnect', (reason) => {
+    // Counted before anything else here can throw or return early — a session
+    // that ended is a session that ended, whatever the cleanup below does.
+    _recordSessionEnd(reason, !!authed, Date.now() - _connectedAt);
     clearTimeout(_authTimeout);
     if (_autoSaveInterval) { clearInterval(_autoSaveInterval); _autoSaveInterval = null; }
     clearInterval(_buffTick);

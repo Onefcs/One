@@ -943,6 +943,97 @@ scenario('health: a DB outage is reported without failing the liveness check', a
   eq(back.ok, true, 'and it reports healthy again once the DB is back');
 });
 
+scenario('reconnect: dropping the socket in an arm puts the player back in the hub safe zone', async () => {
+  // This is the whole of "игру перезагрузило и выкинуло в безопасную зону",
+  // reproduced. Nothing here is exotic: one ordinary socket drop, which on
+  // mobile happens every time the app is backgrounded past engine.io's
+  // pingInterval+pingTimeout.
+  //
+  // The floor IS saved — the autosave writes `floor: currentFloor` on every
+  // pass (server/index.js) — and the client sends its own floor in every save
+  // blob too. Nothing reads either back: `currentFloor` is initialised to the
+  // hub for every new connection and only ever changed by an explicit
+  // enterLocation (or the Fear-grace path, which was fixed for Fear alone).
+  // So the reconnect rebuilds the world on floor 1, and floor 1's spawn sits
+  // in the middle of the safe zone.
+  //
+  // Documented as the current behaviour rather than asserted as correct: when
+  // the floor is restored this scenario is what has to flip.
+  const c1 = await connectWithSaved('harness_arm_reconnect', { lvl: 20, xp: 0, xpNext: 9999 });
+  await enterWorld(c1, 'ranger');
+  const onArm = c1.wait('gameStart', { where: 'enter arm' });
+  c1.emit('enterLocation', { target: 'top' });
+  const arm = await onArm;
+  eq(arm.floor, 3, 'the player is standing on the arm floor');
+
+  await c1.close();
+  await sleep(600);
+
+  const c2 = await connectAs('harness_arm_reconnect');
+  const back = await enterWorld(c2, 'ranger');
+  eq(back.floor, 1, 'after a reconnect the server puts them on the hub — the saved floor is never read back');
+
+  // And the hub spawn really is inside the safe zone, which is what the
+  // player actually notices.
+  const { FLOOR_IDS } = require('../server/game/floors');
+  const hub = require('../server/game/dungeon').generateHub();
+  const sz = hub.safeZone, sp = back.spawn || hub.spawn;
+  eq(FLOOR_IDS.hub, 1, 'floor 1 is the hub');
+  ok(sp.x >= sz.x1 && sp.x <= sz.x2 && sp.y >= sz.y1 && sp.y <= sz.y2,
+    `and they land inside the safe zone (${sp.x},${sp.y} in ${sz.x1}..${sz.x2})`);
+
+  await c2.close();
+});
+
+scenario('health: /health says WHY sessions ended, split by cause', async () => {
+  // "Мир перезагружается" is a client reconnecting — the reconnect re-runs
+  // selectChar and gameStart rebuilds the world from scratch. Which of the
+  // several possible causes is happening is not visible from outside, and the
+  // server was throwing away socket.io's `reason` argument, the one field
+  // that separates them. A client closing itself (js/network.js's watchdog
+  // giving up on the link) and the server closing it (a duplicate login being
+  // kicked) are opposite problems with opposite fixes, and they must not read
+  // the same in the counts.
+  const { token } = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  }).then(r => r.json());
+  const stats = async () => (await fetch(`${BASE}/health`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => r.json())).sessions;
+
+  const before = await stats();
+  ok(before && typeof before.sinceMs === 'number', '/health carries a session breakdown');
+
+  // A client hanging up on itself — exactly the shape the watchdog produces.
+  const a = await connectAs('harness_sessreason_a');
+  await enterWorld(a, 'mage');
+  a.sock.disconnect();
+  await sleep(400);
+  const afterClient = await stats();
+  const clientQuits = (afterClient.reasons['client namespace disconnect'] || 0)
+                    - (before.reasons['client namespace disconnect'] || 0);
+  eq(clientQuits, 1, 'a client hanging up is counted as the client hanging up');
+  eq(afterClient.endedAuthed - before.endedAuthed, 1, 'and counted as an authenticated session ending');
+  ok(afterClient.shortLived - before.shortLived === 1,
+    'and flagged short-lived, which is what a reconnect loop looks like in bulk');
+
+  // The server closing one instead: a second login for the same account kicks
+  // the first, and that must NOT land in the same bucket as the case above.
+  const b1 = await connectAs('harness_sessreason_b');
+  await enterWorld(b1, 'ranger');
+  const b2 = await connectAs('harness_sessreason_b');
+  await sleep(500);
+  const afterKick = await stats();
+  eq((afterKick.reasons['server namespace disconnect'] || 0)
+     - (afterClient.reasons['server namespace disconnect'] || 0), 1,
+  'a server-side kick is counted separately from a client giving up');
+  eq(afterKick.reasons['client namespace disconnect'] || 0, clientQuits + (before.reasons['client namespace disconnect'] || 0),
+    'and did not inflate the client-side bucket');
+
+  await b2.close();
+  await b1.close();
+});
+
 scenario('rating: the tables are built once and shared, not rebuilt per request', async () => {
   // getRating sits in the heavy bucket, which still allows 40 calls per 5s per
   // socket. The clans tab reads EVERY clan plus a bm document for EVERY member
