@@ -1392,6 +1392,161 @@ scenario('market: cancelling a lot returns the item', async () => {
   await c.close();
 });
 
+// The in-memory Mongo double (dev/mongo-memory.js) resolves every query
+// through a plain Promise with no real I/O behind it — every await in a
+// handler settles within the same microtask sweep, all of which drains
+// before the event loop looks at the NEXT incoming socket frame. Against a
+// real MongoDB (single-digit-to-double-digit milliseconds per round trip)
+// that gap is wide open; against the double it's sub-microsecond, too narrow
+// for a second client message to land inside no matter how fast it's sent.
+// These two races specifically need that gap to be real, so they patch the
+// one model call the vulnerable handler awaits to actually take a few
+// milliseconds — not to mock server logic (nothing about the handler changes),
+// only to give the double the same round-trip shape a production database
+// already has. Restored in a `finally` so no later scenario inherits it.
+async function _withDbDelay(Model, method, ms, fn) {
+  const orig = Model[method].bind(Model);
+  Model[method] = async (...args) => { await sleep(ms); return orig(...args); };
+  try { await fn(); } finally { Model[method] = orig; }
+}
+
+scenario('race: marketList racing equipItem cannot duplicate the item', async () => {
+  // marketList re-verifies ownership, then awaits MarketListingModel.create()
+  // — a real yield point — and only removes the item from inventory AFTER
+  // that resolves. equipItem is fully synchronous: fired into that gap it
+  // moves the sword out of plain inventory and into the equipment slot
+  // before marketList's own removal runs. The bug this proves fixed: that
+  // removal used to fire-and-forget (_invRemove's return value discarded),
+  // so it silently found nothing and did nothing — the listing went live
+  // for a sword that was ALSO still equipped and usable. The fix checks
+  // _invRemove's result and unwinds (deletes) the listing when it fails.
+  const c = await connectWithSaved('harness_race_market_equip', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(c, 'deathknight');
+
+  const MarketListing = require('../server/models/MarketListing');
+  await _withDbDelay(MarketListing, 'create', 60, async () => {
+    const listedP = c.wait('marketListed', { timeout: 8000 }).catch(() => null);
+    const listErrP = c.wait('marketListError', { timeout: 8000 }).catch(() => null);
+    c.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+    // Sent right as marketList's create() is in flight — see _withDbDelay.
+    await sleep(20);
+    c.emit('equipItem', { idx: 0 });
+    await Promise.race([listedP, listErrP]);
+  });
+  await sleep(200); // let any trailing inventorySync settle
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const listings = memory.__dump('MarketListing')
+    .filter(l => l.sellerUsername === c.auth.username && l.status === 'active');
+  const invHasSword = (row.savedData.inventory || []).some(i => i && i.id === 'uq_sword_l');
+  const eqHasSword = !!(row.savedData.equipment && row.savedData.equipment.weapon
+    && row.savedData.equipment.weapon.id === 'uq_sword_l');
+  const copies = (invHasSword ? 1 : 0) + (eqHasSword ? 1 : 0) + listings.length;
+  eq(copies, 1,
+    `exactly one copy of the sword survives the race (inventory:${invHasSword} equipped:${eqHasSword} activeListings:${listings.length})`);
+
+  await c.close();
+});
+
+scenario('race: claimVipRewards racing equipItem cannot duplicate or lose the item', async () => {
+  // claimVipRewards clones _lastStats.inventory before its DB awaits
+  // (findById, updateOne) and commits that clone wholesale at the end via
+  // _commitServerItems(inv, null, ...) — which does _lastStats.inventory =
+  // inv unconditionally. equipItem is synchronous: fired into that window it
+  // moves an item out of the LIVE inventory and into the equipment slot —
+  // but the clone still has it, since it was taken before the equip ran. The
+  // bug this proves fixed: claimVipRewards' stale-clone commit used to stamp
+  // that clone back over the live array, resurrecting the sword in inventory
+  // even though it was ALSO now equipped. The fix gates equipItem (and every
+  // other synchronous inventory handler) behind _itemOpBusy, which
+  // claimVipRewards already raises for the duration of its own await window.
+  const c = await connectWithSaved('harness_race_vip_equip', {
+    inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+    vipPending: [1],
+  });
+  await enterWorld(c, 'deathknight');
+
+  // Delaying findById (the FIRST await) is too early: the vulnerable
+  // inventory snapshot (_liveInventory()) isn't taken until AFTER it
+  // resolves, so an equip landing during that particular wait is captured
+  // correctly, not lost. The real window is between that snapshot and the
+  // handler's LAST await — the same-session PlayerModel.updateOne that
+  // commits the snapshot — so that's the one this delays.
+  const Player = require('../server/models/Player');
+  await _withDbDelay(Player, 'updateOne', 60, async () => {
+    const claimedP = c.wait('vipRewardsClaimed', { timeout: 8000 }).catch(() => null);
+    c.emit('claimVipRewards');
+    // Sent right as claimVipRewards' updateOne is in flight — see _withDbDelay.
+    await sleep(20);
+    c.emit('equipItem', { idx: 0 });
+    await claimedP;
+  });
+  await sleep(200);
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const invCopies = (row.savedData.inventory || []).filter(i => i && i.id === 'uq_sword_l').length;
+  const eqHasSword = !!(row.savedData.equipment && row.savedData.equipment.weapon
+    && row.savedData.equipment.weapon.id === 'uq_sword_l');
+  eq(invCopies + (eqHasSword ? 1 : 0), 1,
+    `the original sword survives exactly once (inventoryCopies:${invCopies} equipped:${eqHasSword})`);
+
+  await c.close();
+});
+
+scenario('race: spendUpgrade cannot exceed the skill point budget by racing two keys', async () => {
+  // Budget/gold were read from _lastStats, then _serverSpendGold was
+  // awaited, and only THEN was upgrades[key] written off a `lvl` captured
+  // before that await — with nothing serializing two spendUpgrade calls
+  // against each other. Racing two DIFFERENT keys let both read the same
+  // pre-write "spent" total and both pass the same one-point-left budget
+  // check, so both committed — one point over budget, for free. The fix
+  // wraps the whole handler in _withEconLock so only one can run at a time.
+  //
+  // lvl 1 with no rebirths gives a tiny, known budget (skillPointBudget) —
+  // seeded with gold to spare so only the point budget, not gold, gates this.
+  const c = await connectWithSaved('harness_race_upgrade_budget', {
+    lvl: 1, gold: 1_000_000, upgrades: {},
+  });
+  await enterWorld(c, 'ranger');
+
+  const budget = require('../shared/definitions').skillPointBudget(1, 0);
+  if (budget < 1) {
+    // Nothing to prove at budget 0 — a fresh level-1 account with no rebirth
+    // bonus may simply have none to spend yet.
+    ok(true, 'skipped — level 1 has no skill points to budget-test');
+    await c.close();
+    return;
+  }
+  // Spend the budget down to exactly one point left, sequentially (each one
+  // awaited), so what's left is deterministic before the race below.
+  const keys = require('../shared/definitions').UPGRADE_KEYS;
+  for (let i = 0; i < budget - 1; i++) {
+    const sync = c.wait('progressSync', { timeout: 5000 });
+    c.emit('spendUpgrade', { key: keys[0] });
+    await sync;
+  }
+
+  // Exactly one point of budget left. Race it across two DIFFERENT keys —
+  // the bug is specifically a cross-key bypass (same-key racing just
+  // double-charges gold for one committed level, which _withEconLock closes
+  // too, but this is the one that lets a player exceed their true budget).
+  const p1 = c.wait('progressSync', { timeout: 8000 }).catch(() => null);
+  c.emit('spendUpgrade', { key: keys[0] });
+  c.emit('spendUpgrade', { key: keys[1] });
+  await p1;
+  await sleep(400);
+
+  const after = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const spentAfter = Object.values(after.savedData.upgrades || {})
+    .reduce((s, v) => s + (Number(v) || 0), 0);
+  ok(spentAfter <= budget,
+    `total spent upgrade points (${spentAfter}) never exceeds the real budget (${budget})`);
+
+  await c.close();
+});
+
 scenario('market: buying a lot pays the seller', async () => {
   // MARKET_FEE_PCT used to be undefined here (exported from inventory.js but
   // never imported into index.js): price * (1 - undefined) is NaN, and

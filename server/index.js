@@ -6026,6 +6026,16 @@ io.on('connection', socket => {
   // Gold spent on those upgrades is deliberately not refunded.
   safeOn('resetUpgrades', async () => {
     if (!authed) return;
+    _itemOpBusy++;
+    let _ran;
+    try {
+    // Serialized like gramShopBuy/craftGear — spent is read here and the
+    // upgrades map is only cleared after two awaits, so two resets sent in
+    // the same tick both saw a nonzero spent, both charged UPGRADE_RESET_COST
+    // (each atomically affordable on its own), and both then cleared the same
+    // already-empty map: a real double-charge for a single reset. See
+    // _withEconLock.
+    _ran = await _withEconLock(async () => {
     try {
       const cur = (_lastStats && _lastStats.upgrades) || {};
       const spent = Object.values(cur).reduce((s, v) => s + (Number(v) || 0), 0);
@@ -6052,6 +6062,11 @@ io.on('connection', socket => {
       console.error('resetUpgrades:', err);
       socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
     }
+    });
+    } finally {
+      _itemOpBusy--;
+    }
+    if (!_ran) socket.emit('resetUpgradesError', { msg: 'Операция уже выполняется' });
   });
 
   // Drinking a buff potion. Client-side until now: it removed the item and
@@ -6065,6 +6080,7 @@ io.on('connection', socket => {
   // from a potion it watched being consumed.
   safeOn('useBuffPotion', ({ id } = {}) => {
     if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     const def = ITEM_DEF.find(d => d.id === id);
     if (!def || def.slot !== 'buff_potion' || !def.buffType) return;
     if (!_lastStats.buffs || typeof _lastStats.buffs !== 'object') _lastStats.buffs = {};
@@ -6321,8 +6337,24 @@ io.on('connection', socket => {
   }
   function _itemErr(msg) { socket.emit('itemError', { msg }); }
 
+  // True while an async handler that CLONES _lastStats.inventory before an
+  // await (gramShopBuy/specialShopBuy/claimVipRewards — see _itemOpBusy's own
+  // comment, above) is mid-flight. Every handler below moves an item into or
+  // out of the SAME live inventory array synchronously; if one of those
+  // clone-and-commit handlers is holding a snapshot taken before this runs,
+  // this handler's own splice/push is invisible to it — and gets silently
+  // discarded, or for a move INTO a slot (equip, an unequip landing back in
+  // inventory), duplicated, since the item survives in both the stale clone
+  // and its new home the instant that handler's delayed _commitServerItems
+  // stamps the snapshot back over the live array. Refusing here for the
+  // brief window _itemOpBusy is raised closes the race at the source rather
+  // than trying to reconcile it after the fact.
+  function _itemsBusy() { return _itemOpBusy > 0; }
+  const _ITEMS_BUSY_MSG = 'Секунду, идёт другая операция — повторите';
+
   safeOn('equipItem', ({ idx } = {}) => {
     if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     const inv = _lastStats.inventory;
     const i = Math.floor(Number(idx));
     const it = (Number.isInteger(i) && i >= 0) ? inv[i] : null;
@@ -6345,6 +6377,7 @@ io.on('connection', socket => {
 
   safeOn('unequipItem', ({ slot } = {}) => {
     if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     const it = _lastStats.equipment[slot];
     if (!it) return;
     const inv = _lastStats.inventory;
@@ -6378,6 +6411,7 @@ io.on('connection', socket => {
 
   safeOn('storageDeposit', ({ idx } = {}) => {
     if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     const beforeLen = _lastStats.inventory.length;
     const res = _moveBetween(_lastStats.inventory, _lastStats.storage, idx, SERVER_STORAGE_MAX);
     if (res === 'full') return _itemErr('Хранилище полно!');
@@ -6387,6 +6421,7 @@ io.on('connection', socket => {
 
   safeOn('storageWithdraw', ({ idx } = {}) => {
     if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     const beforeLen = _lastStats.inventory.length;
     const res = _moveBetween(_lastStats.storage, _lastStats.inventory, idx, SERVER_INV_MAX);
     if (res === 'full') return _itemErr('Инвентарь полон!');
@@ -6564,25 +6599,31 @@ io.on('connection', socket => {
   safeOn('spendUpgrade', async ({ key } = {}) => {
     if (!authed || !_lastStats) return;
     if (!UPGRADE_KEYS.includes(key)) return;
-    if (!_lastStats.upgrades || typeof _lastStats.upgrades !== 'object') _lastStats.upgrades = {};
-    const u = _lastStats.upgrades;
-    const lvl = Math.max(0, Math.floor(Number(u[key])) || 0);
-    const cost = upgradeCost(lvl);
-    // Exactly the budget getAvailableSkillPoints (js/player.js) shows, from
-    // the same shared function — so the button and the rule cannot disagree.
-    const spent = UPGRADE_KEYS.reduce((sum, k) => sum + Math.max(0, Math.floor(Number(u[k])) || 0), 0);
-    const budget = skillPointBudget(_lastStats.lvl, _lastStats.rebirths) + (_lastStats.bonusSP || 0);
-    if (budget - spent < 1) return socket.emit('progressError', { msg: 'Мало очков навыка!' });
-    if ((Math.floor(Number(_lastStats.gold)) || 0) < cost) {
-      return socket.emit('progressError', { msg: 'Мало золота!' });
-    }
-    // _serverSpendGold awaits its own write, and a saveProgress landing in
-    // that window replaces _lastStats wholesale — so `u` above would be a
-    // reference into the previous object. Same hazard every item handler
-    // guards with this flag, and the same answer: hold saves off for the
-    // duration, then read the map back out rather than trusting the capture.
     _itemOpBusy++;
+    let _ran;
     try {
+    // Serialized — the budget/gold checks below read _lastStats.upgrades,
+    // then `await _serverSpendGold`, and only THEN write upgrades[key] off a
+    // `lvl` captured before that await. Nothing previously stopped a second
+    // spendUpgrade (any key) from starting in that window: it would read the
+    // exact same pre-write upgrades map, so the SAME budget check passed
+    // twice for keys A and B that individually fit but together exceed it —
+    // a free stat point past skillPointBudget. Racing the SAME key instead
+    // just double-charged gold for one committed level, since both writers
+    // computed `lvl+1` off the same stale `lvl`. See _withEconLock.
+    _ran = await _withEconLock(async () => {
+      if (!_lastStats.upgrades || typeof _lastStats.upgrades !== 'object') _lastStats.upgrades = {};
+      const u = _lastStats.upgrades;
+      const lvl = Math.max(0, Math.floor(Number(u[key])) || 0);
+      const cost = upgradeCost(lvl);
+      // Exactly the budget getAvailableSkillPoints (js/player.js) shows, from
+      // the same shared function — so the button and the rule cannot disagree.
+      const spent = UPGRADE_KEYS.reduce((sum, k) => sum + Math.max(0, Math.floor(Number(u[k])) || 0), 0);
+      const budget = skillPointBudget(_lastStats.lvl, _lastStats.rebirths) + (_lastStats.bonusSP || 0);
+      if (budget - spent < 1) return socket.emit('progressError', { msg: 'Мало очков навыка!' });
+      if ((Math.floor(Number(_lastStats.gold)) || 0) < cost) {
+        return socket.emit('progressError', { msg: 'Мало золота!' });
+      }
       // Charges, persists the new balance and pushes goldSync.
       await _serverSpendGold(cost, 'upgrade:' + key);
       if (!_lastStats.upgrades || typeof _lastStats.upgrades !== 'object') _lastStats.upgrades = {};
@@ -6591,9 +6632,11 @@ io.on('connection', socket => {
       if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
       logPlayer(authed.telegramId, authed.username, 'stat_upgrade', { key, to: lvl + 1, cost });
       socket.emit('progressSync', { upgrades: _lastStats.upgrades });
+    });
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('progressError', { msg: 'Секунду, повторите' });
   });
 
   // ── Перерождение (Rebirth) ──────────────────────────────────────────────
@@ -6622,6 +6665,7 @@ io.on('connection', socket => {
       if (lvl < REBIRTH_LEVEL) {
         return socket.emit('rebirthError', { msg: `Нужен ${REBIRTH_LEVEL} уровень` });
       }
+      if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
       const inv = _lastStats.inventory;
       const _beforeLen = inv.length;
       const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
@@ -6918,6 +6962,7 @@ io.on('connection', socket => {
     if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
       return socket.emit('enhanceError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
+    if (_itemsBusy()) return socket.emit('enhanceError', { msg: _ITEMS_BUSY_MSG });
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     const curEnh = Math.max(0, Math.floor(Number(enhance)) || 0);
@@ -7091,6 +7136,7 @@ io.on('connection', socket => {
     if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
       return socket.emit('craftBoxError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
+    if (_itemsBusy()) return socket.emit('craftBoxError', { msg: _ITEMS_BUSY_MSG });
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
@@ -7132,6 +7178,7 @@ io.on('connection', socket => {
     if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
       return socket.emit('craftMatUpgradeError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
+    if (_itemsBusy()) return socket.emit('craftMatUpgradeError', { msg: _ITEMS_BUSY_MSG });
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     const countOf = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
@@ -7838,6 +7885,15 @@ io.on('connection', socket => {
 
   safeOn('seasonBurn', async ({ idx, id, enhance } = {}) => {
     if (!authed) return;
+    // _seasonAddPoints below is an await, and the re-check after it only
+    // re-resolves the index WITHIN `inv` — it can't notice `inv` itself going
+    // stale. A saveProgress landing in that window replaces _lastStats (and
+    // its inventory array) wholesale; this handler is still holding the OLD
+    // array, and the eventual _commitServerItems(inv, ...) would stamp it
+    // back over the save's real one, discarding whatever the save legitimately
+    // changed. Same hazard _itemOpBusy already closes for craftGear/etc.
+    _itemOpBusy++;
+    try {
     await _withEconLock(async () => {
       try {
         if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
@@ -7878,12 +7934,23 @@ io.on('connection', socket => {
         socket.emit('seasonBurnError', { msg: 'Ошибка сервера' });
       }
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // Bulk form — burning a full inventory one tap at a time is not a real
   // option. Equipped items are untouched: this only ever walks the inventory.
   safeOn('seasonBurnAll', async ({ rarity } = {}) => {
     if (!authed) return;
+    // Same hazard as seasonBurn above: a saveProgress landing during the
+    // _seasonAddPoints await would replace _lastStats.inventory wholesale,
+    // and this handler is still holding the OLD array in `inv` — closing the
+    // window with _itemOpBusy is what makes the "re-checked because the await
+    // above is a window" comment below actually complete, rather than only
+    // covering moves within the same array.
+    _itemOpBusy++;
+    try {
     await _withEconLock(async () => {
       try {
         if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
@@ -7928,6 +7995,9 @@ io.on('connection', socket => {
         socket.emit('seasonBurnError', { msg: 'Ошибка сервера' });
       }
     });
+    } finally {
+      _itemOpBusy--;
+    }
   });
 
   // ── Story quest reward ────────────────────────────────────────────────────
@@ -7950,6 +8020,7 @@ io.on('connection', socket => {
     if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
       return socket.emit('questClaimError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
+    if (_itemsBusy()) return socket.emit('questClaimError', { msg: _ITEMS_BUSY_MSG });
     const cur = Math.max(0, Math.floor(Number(_lastStats.questIdx)) || 0);
     // The claim names the quest it means, so a save still in flight can't
     // make this grant the NEXT quest's reward by accident.
@@ -8095,6 +8166,12 @@ io.on('connection', socket => {
     if (!authed || !id || !currentRoom) return;
     const p = currentRoom.players.get(socket.id);
     if (!p || p.hp <= 0) return;
+    // Left on the floor rather than claimed: a clone-and-commit handler
+    // (gramShopBuy/specialShopBuy/claimVipRewards) holding a stale inventory
+    // snapshot would silently erase this pickup the moment it commits — see
+    // _itemsBusy. The drop stays put for the brief window that takes, same
+    // as the room-full refusal below.
+    if (_itemsBusy()) return socket.emit('worldDropError', { msg: _ITEMS_BUSY_MSG });
     const inv = (_lastStats && Array.isArray(_lastStats.inventory)) ? _lastStats.inventory : null;
     // Peek at the pile first: a full inventory must be rejected BEFORE the
     // claim consumes it, otherwise the item is destroyed instead of staying
@@ -8232,8 +8309,23 @@ io.on('connection', socket => {
       // Take the item out of the server's copy too, and persist immediately —
       // otherwise the item only left the account once the CLIENT's own save
       // landed, and listing-then-killing-the-app duplicated it.
+      //
+      // The create() above is itself an await — a second yield point after
+      // the ownership re-check just before it. A synchronous handler that
+      // moves this SAME item out of plain inventory (equipItem, storageDeposit,
+      // enhanceItem's relocation) can run in that gap, and _invRemove then
+      // finds nothing to take: the listing is already live in the DB, but the
+      // item was never actually removed — still equipped/stored AND for sale.
+      // That combination IS the duplication, so the removal's result has to
+      // gate the listing rather than be fired and ignored.
       const _beforeLen = _lastStats.inventory.length;
-      _invRemove(_lastStats.inventory, canonItem);
+      const _removed = _invRemove(_lastStats.inventory, canonItem);
+      if (!_removed) {
+        await MarketListingModel.deleteOne({ _id: listing._id }).catch(() => {});
+        logPlayer(authed.telegramId, authed.username, 'market_list_vanished',
+          { item: canonItem.id, enhance: canonItem.enhance || 0 });
+        return socket.emit('marketListError', { msg: 'Предмет переместился — попробуйте снова' });
+      }
       _commitServerItems(_lastStats.inventory, null, 'market_list',
         { item: canonItem.id, enhance: canonItem.enhance || 0, qty: canonItem.qty || 1, price: _round2(p) }, { beforeLen: _beforeLen });
       socket.emit('marketListed', { listing: _marketListingData(listing) });
