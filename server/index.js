@@ -5141,6 +5141,26 @@ io.on('connection', socket => {
   const GRAM_DROP_CHANCE = 0.075;
   const GRAM_PER_LEVEL = 0.0000001;
 
+  // calcBM (shared/anticheat.js) reads sd.atk/sd.def/sd.maxHp — the FULL,
+  // gear-inclusive combat stats — but _buildSaveStats() (js/network.js)
+  // never sends those fields at all, in any saveProgress call, ever; only
+  // baseAtk/baseDef (pre-equipment) reach _sanitizeSavedStats. So calling
+  // calcBM directly on _lastStats/clean silently treated atk/def as 0 for
+  // every player: BM collapsed to roughly lvl*50 + maxHp*0.5 the moment
+  // their first real saveProgress landed, discarding gear entirely — while
+  // the client's own HUD (recompute()'s live, correct atk/def) kept showing
+  // the real number. That mismatch is exactly what made the rating look
+  // wrong: two players at the same level with wildly different gear ended
+  // up with nearly identical stored bm. publicProfile (requestPlayerProfile,
+  // further down) never had this bug — it already goes through
+  // Room.computeStats for the "Инфо" panel's own BM. This gives calcBM the
+  // same authoritative input.
+  function _bmStatsFor(sd) {
+    const cd = CHAR_DEF[sd.type] || CHAR_DEF.lev;
+    const stats = Room.computeStats(sd, cd, sd.type, clanAtkBonusPct(_myClanLevel));
+    return { lvl: sd.lvl, upgrades: sd.upgrades, atk: stats.atk, def: stats.def, maxHp: stats.maxHp };
+  }
+
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
     _autoSaveInterval = setInterval(() => {
@@ -5153,7 +5173,7 @@ io.on('connection', socket => {
         const p = currentRoom.players.get(socket.id);
         if (p && p.hp > 0) saveData.hp = p.hp;
       }
-      const bmNow = calcBM(_lastStats);
+      const bmNow = calcBM(_bmStatsFor(_lastStats));
       authed.bm = bmNow;
       _persistSavedFields(authed, saveData, { bm: bmNow });
     }, 60000);
@@ -10341,7 +10361,7 @@ io.on('connection', socket => {
     // now taken from the session copy a few lines above, so a blank save
     // overwrites nothing worth having — there is no reset left to catch.
     _lastStats = clean;
-    authed.bm = calcBM(clean);
+    authed.bm = calcBM(_bmStatsFor(clean));
     // Catches the friend crossing level 20 mid-session rather than only at the
     // next login. Self-limiting: it returns immediately below level 20 and
     // runs at most once per session above it.

@@ -1053,6 +1053,67 @@ scenario('items: a storage move is one server-side operation', async () => {
   await c.close();
 });
 
+scenario('rating: bm reflects real gear, not just level and maxHp', async () => {
+  // calcBM (server/anticheat.js) reads sd.atk/sd.def — the full, gear-
+  // inclusive combat stats — but _buildSaveStats() (js/network.js) never
+  // sends those fields in ANY saveProgress call, ever; only baseAtk/baseDef
+  // (pre-equipment) ever reach the server. Calling calcBM directly on the
+  // saved blob silently treated atk/def as 0 for every player, so the
+  // stored bm (what the rating panel sorts by) collapsed to roughly
+  // lvl*50 + maxHp*0.5 the moment a real saveProgress landed — discarding
+  // gear entirely — while the client's own HUD (recompute()'s real atk/def)
+  // kept showing the correct number. That's what made the rating look
+  // wrong: two players at the same level with very different gear ended up
+  // with nearly-identical stored bm.
+  //
+  // uq_sword_l is a legendary deathknight weapon worth +130 atk — enough to
+  // move calcBM's atk*5 term by 650, an unmissable jump if gear is actually
+  // being counted at all.
+  const { calcBM } = require('../server/anticheat');
+  const RoomClass = require('../server/game/Room');
+  const { CHAR_DEF } = require('../shared/definitions');
+  const bare = await connectWithSaved('harness_bm_bare', { lvl: 20, type: 'deathknight' });
+  await enterWorld(bare, 'deathknight');
+  // The exact bare shape _buildSaveStats() sends — no atk/def, ever.
+  bare.emit('saveProgress', { stats: {
+    type: 'deathknight', floor: 1, hp: 100, maxHp: 100, kills: 0,
+    hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const bareRow = memory.__dump('Player').find(p => p.username === bare.auth.username);
+  await bare.close();
+
+  const geared = await connectWithSaved('harness_bm_geared', {
+    lvl: 20, type: 'deathknight',
+    equipment: { weapon: { id: 'uq_sword_l', enhance: 0 } },
+  });
+  await enterWorld(geared, 'deathknight');
+  geared.emit('saveProgress', { stats: {
+    type: 'deathknight', floor: 1, hp: 100, maxHp: 100, kills: 0,
+    hudPotion: 'pt1', autoHpPct: 0.5, autoBuffTypes: {}, lang: 'ru', savedAt: Date.now(),
+  } });
+  await sleep(3400);
+  const gearedRow = memory.__dump('Player').find(p => p.username === geared.auth.username);
+  await geared.close();
+
+  ok(bareRow.bm > 0, 'the bare account still gets a real bm (not zero/undefined)');
+  ok(gearedRow.bm >= bareRow.bm + 600,
+    `the legendary weapon actually moves bm (bare=${bareRow.bm}, geared=${gearedRow.bm})`);
+
+  // Not just "some number changed" — has to match what Room.computeStats
+  // (the same authoritative source combat/publicProfile already trust)
+  // derives for this exact level+gear, so a regression that over- or
+  // under-counts gear doesn't slip through unnoticed.
+  const cd = CHAR_DEF.deathknight;
+  const trueStats = RoomClass.computeStats(
+    { lvl: 20, baseAtk: cd.baseAtk + 19, baseDef: cd.baseDef + 19, baseMaxHp: cd.baseHP + 19 * 20,
+      equipment: { weapon: { atk: 130, def: 0, hp: 1000, critChance: 0.50, enhance: 0 } }, upgrades: {} },
+    cd, 'deathknight', 0,
+  );
+  const expected = calcBM({ lvl: 20, atk: trueStats.atk, def: trueStats.def, maxHp: trueStats.maxHp, upgrades: {} });
+  eq(gearedRow.bm, expected, 'the stored bm matches the real computeStats-derived figure exactly');
+});
+
 scenario('party: growing an existing party doesn\'t break it for the others', async () => {
   // Investigated a report that a party "breaks apart" when someone else
   // sends a party invite. Covers every shape that report could reasonably

@@ -3062,3 +3062,8 @@ class Room {
 }
 
 module.exports = Room;
+// Also reachable as Room.computeStats — server/index.js's calcBM (rating/BM
+// display) needs the exact same authoritative atk/def/maxHp this class
+// already trusts for combat and the statsUpdate anti-cheat ceiling, rather
+// than duplicating (and inevitably drifting from) its own copy.
+module.exports.computeStats = computeStats;
