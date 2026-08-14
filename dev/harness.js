@@ -818,6 +818,41 @@ scenario('floors: Страх deploys into its own floor and a death returns the 
   await c.close();
 });
 
+scenario('floors: Страх holds monsters back for FEAR_START_DELAY_MS after entry, then spawns wave 1', async () => {
+  // Wave 1 used to spawn (and pre-aggro onto the player) in the same tick as
+  // fearDeploy — the exact instant the client was still behind the
+  // near-opaque events panel closing itself, or just hadn't finished
+  // rendering the new floor. From the player's side that read as "I walked
+  // into Страх and the monsters were already on me / invisible", every
+  // time. fearEnter now hands out a wave:0 grace record and only calls
+  // _fearStartWave 5s later (FEAR_START_DELAY_MS, server/index.js) — this
+  // checks both halves: nothing is alive right at entry, and wave 1 really
+  // does show up roughly 5s later, not immediately.
+  const c = await connectWithSaved('harness_fear_delay', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(c, 'ranger');
+
+  const started = c.wait('fearStarted', { timeout: 3000 });
+  const t0 = Date.now();
+  c.emit('fearEnter');
+  const st = await started;
+  ok(st && st.readyAt > t0, 'fearStarted reports when wave 1 will actually spawn');
+
+  const onFear = c.last('gameStart');
+  eq(onFear?.floor, 11, 'entering Fear force-joins its own floor');
+  eq((onFear?.enemies || []).length, 0, 'and the initial enemy snapshot is empty — nothing has spawned yet');
+
+  // Well inside the grace window — wave 1 must not have fired yet.
+  const tooEarly = await c.wait('fearWave', { timeout: 2500 }).catch(() => null);
+  eq(tooEarly, null, 'wave 1 does not spawn before the grace window elapses');
+
+  const wave1 = await c.wait('fearWave', { timeout: 4000 });
+  const elapsed = Date.now() - t0;
+  eq(wave1?.wave, 1, 'wave 1 spawns once the grace window elapses');
+  ok(elapsed >= 4500, `and only after roughly FEAR_START_DELAY_MS, not immediately (took ${elapsed}ms)`);
+
+  await c.close();
+});
+
 scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own floor, not the hub', async () => {
   const a1 = await connectWithSaved('harness_fear_reconnect', { lvl: 10, xp: 0, xpNext: 100 });
   await enterWorld(a1, 'ranger');
@@ -830,6 +865,11 @@ scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own f
   // An ordinary disconnect (not a clean exit) — the run is meant to be held
   // open for a possible reconnect (_fearHoldOnDisconnect/_fearGraceStart),
   // not ended outright the way arena3/race10/death battle disconnects are.
+  // This also lands well inside FEAR_START_DELAY_MS's grace window, so it
+  // doubles as coverage for the reconnect-during-countdown path: the
+  // deferred wave-1 setTimeout was scheduled against the now-dead socket
+  // and must no-op, with the fearCarry reclaim starting wave 1 itself
+  // instead (see its comment in server/index.js).
   await a1.close();
 
   // Reconnect as the SAME account. Every fresh connection's own currentFloor
@@ -842,6 +882,7 @@ scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own f
   const start2 = await enterWorld(a2, 'ranger');
   eq(start2.floor, 11, 'reconnecting mid-run lands back on the fear floor, not the hub');
   eq(start2.fear && start2.fear.inRun, true, 'and the run itself is reported as still live');
+  eq(start2.fear && start2.fear.wave, 1, 'and reconnecting during the countdown starts wave 1 immediately, not a resumed countdown nobody can see');
 
   await a2.close();
 });

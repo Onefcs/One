@@ -206,6 +206,8 @@ const I18N_UI = {
   fearLbl:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },
   fearPhaseIdle:{ ru: 'Войдите, чтобы начать', en: 'Enter to begin', uk: 'Увійдіть, щоб почати', es: 'Entra para empezar', tr: 'Başlamak için gir', pt: 'Entre para começar' },
   fearPhaseFighting: { ru: 'Волна {wave}/{max}', en: 'Wave {wave}/{max}', uk: 'Хвиля {wave}/{max}', es: 'Oleada {wave}/{max}', tr: 'Dalga {wave}/{max}', pt: 'Onda {wave}/{max}' },
+  fearPhaseReady: { ru: 'Приготовьтесь...', en: 'Get ready...', uk: 'Приготуйтеся...', es: 'Prepárate...', tr: 'Hazır ol...', pt: 'Prepare-se...' },
+  fearFreezeLbl: { ru: 'Монстры появятся через', en: 'Monsters arrive in', uk: 'Монстри з\'являться через', es: 'Los monstruos llegan en', tr: 'Canavarlar geliyor', pt: 'Monstros chegam em' },
   fearInRunBtn: { ru: 'В бою', en: 'Fighting', uk: 'У бою', es: 'En combate', tr: 'Savaşta', pt: 'Em combate' },
   fearEnterBtn: { ru: 'Войти', en: 'Enter', uk: 'Увійти', es: 'Entrar', tr: 'Gir', pt: 'Entrar' },
   fearWaveMsg:  { ru: 'Волна {wave} из {max}', en: 'Wave {wave} of {max}', uk: 'Хвиля {wave} з {max}', es: 'Oleada {wave} de {max}', tr: 'Dalga {wave}/{max}', pt: 'Onda {wave} de {max}' },

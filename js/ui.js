@@ -4162,7 +4162,14 @@ function _fearBodyHTML() {
 
   let phaseTxt, action;
   if (inRun) {
-    phaseTxt = tVars('fearPhaseFighting', { wave: _fearWave || 1, max: st.maxWave });
+    // wave is 0 for the FEAR_START_DELAY_MS grace window between landing in
+    // the hall and wave 1 actually spawning (see server's fearEnter) — the
+    // #db-freeze countdown overlay is already covering the screen at that
+    // point, but this panel can still be reopened during it, so it needs its
+    // own "not fighting yet" phase rather than claiming wave 1 is already up.
+    phaseTxt = _fearWave > 0
+      ? tVars('fearPhaseFighting', { wave: _fearWave, max: st.maxWave })
+      : t('fearPhaseReady');
     action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
   } else if (tooLow) {
     phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
@@ -4182,7 +4189,7 @@ function _fearBodyHTML() {
   }
 
   const countdown = inRun
-    ? `${_fearWave || 1}/${st.maxWave}`
+    ? `${_fearWave > 0 ? _fearWave : '–'}/${st.maxWave}`
     : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
   const lanesLine = !inRun && st.freeLanes !== null && st.freeLanes !== undefined && st.totalLanes
     ? ` · ${tVars('fearLanesFmt', { n: st.freeLanes, max: st.totalLanes })}`
@@ -4553,6 +4560,11 @@ function showDeathBattleWin(gram, items) {
 // frozen, until this hits zero — big and centred so it's unmissable, and
 // pointer-events:none so it can't swallow a joystick touch the instant the
 // freeze lifts. Built lazily like the event-boss banner.
+//
+// Shared by Death Battle's pre-fight freeze and Fear's pre-wave-1 grace
+// window (FEAR_START_DELAY_MS on the server) — a player can never be in
+// both at once, so one DOM node/timer pair is safe to reuse rather than
+// forking a near-identical copy.
 let _dbFreezeTick = null;
 function _dbFreezeEl() {
   let el = document.getElementById('db-freeze');
@@ -4565,15 +4577,15 @@ function _dbFreezeEl() {
   return el;
 }
 
-function showDeathBattleFreeze(fightAt) {
+function showFreezeCountdown(untilTs, label) {
   const el = _dbFreezeEl();
   const num = el.querySelector('.db-freeze-num');
   const lbl = el.querySelector('.db-freeze-lbl');
-  lbl.textContent = t('dbFreezeLbl');
+  lbl.textContent = label;
   clearInterval(_dbFreezeTick);
   const paint = () => {
-    const left = Math.max(0, (fightAt || 0) - Date.now());
-    if (left <= 0) { hideDeathBattleFreeze(); return; }
+    const left = Math.max(0, (untilTs || 0) - Date.now());
+    if (left <= 0) { hideFreezeCountdown(); return; }
     num.textContent = Math.ceil(left / 1000);
     el.style.display = 'flex';
   };
@@ -4581,12 +4593,18 @@ function showDeathBattleFreeze(fightAt) {
   _dbFreezeTick = setInterval(paint, 200);
 }
 
-function hideDeathBattleFreeze() {
+function hideFreezeCountdown() {
   clearInterval(_dbFreezeTick);
   _dbFreezeTick = null;
   const el = document.getElementById('db-freeze');
   if (el) el.style.display = 'none';
 }
+
+function showDeathBattleFreeze(fightAt) { showFreezeCountdown(fightAt, t('dbFreezeLbl')); }
+function hideDeathBattleFreeze() { hideFreezeCountdown(); }
+
+function showFearCountdown(readyAt) { showFreezeCountdown(readyAt, t('fearFreezeLbl')); }
+function hideFearCountdown() { hideFreezeCountdown(); }
 
 function closeDeathBattleWin() {
   const modal = document.getElementById('db-win-modal');

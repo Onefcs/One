@@ -2923,10 +2923,13 @@ function _initFearHandlers(s) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
-  s.on('fearStarted', ({ x, y, hp, maxWave, attemptsLeft }) => {
+  s.on('fearStarted', ({ x, y, hp, maxWave, attemptsLeft, readyAt }) => {
     if (!player) return;
     _fearInRun = true;
-    _fearWave = 1;
+    // Wave 1 doesn't actually spawn until readyAt (FEAR_START_DELAY_MS after
+    // entry — see server's fearEnter); wave stays 0 until the fearWave event
+    // below confirms it's really up.
+    _fearWave = 0;
     if (maxWave) _fearState = { ..._fearState, maxWave };
     if (attemptsLeft !== undefined) _fearState = { ..._fearState, attemptsLeft };
     if (hp) player.hp = hp;
@@ -2935,25 +2938,28 @@ function _initFearHandlers(s) {
     // Unlike deathBattle/race10/arena3 — which all sit behind a registration
     // window, giving the player time to close this panel themselves before
     // anything actually happens — clicking "Войти" here teleports the
-    // player into Fear and spawns wave 1 immediately. Left open, the
-    // near-opaque #events-panel (97% alpha, z-index 120) still covers the
-    // whole screen at that instant, so the run was already live — monsters
-    // and all — behind a panel still showing "Войдите, чтобы начать". From
-    // the player's side that reads as "I entered Fear and no monsters ever
-    // appeared", every single time, since every entry goes through this
-    // exact button.
+    // player into Fear right away. Left open, the near-opaque #events-panel
+    // (97% alpha, z-index 120) would still cover the whole screen for the
+    // readyAt grace window, so close it up front and show the same
+    // freeze-countdown overlay Death Battle uses instead — wave 1 (and its
+    // banner/sound) only fires for real once the fearWave event below
+    // arrives.
     if (typeof closeEventsPanel === 'function') closeEventsPanel();
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('fearWaveMsg', { wave: 1, max: _fearState.maxWave }), '#8a3ffc');
-    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (readyAt && typeof showFearCountdown === 'function') showFearCountdown(readyAt);
     if (typeof onFearState === 'function') onFearState();
   });
 
   // The previous wave fell and the next one just spawned in the same lane —
   // a HUD update only, no teleport: the player stays exactly where they are.
+  // Also fires for wave 1 itself once the post-entry grace window elapses
+  // (see fearStarted above), which is why the countdown overlay is hidden
+  // and the spawn banner/sound played here rather than at fearStarted.
   s.on('fearWave', ({ wave, maxWave }) => {
     _fearWave = wave || 0;
     if (maxWave) _fearState = { ..._fearState, maxWave };
+    if (typeof hideFearCountdown === 'function') hideFearCountdown();
     if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('fearWaveMsg', { wave: _fearWave, max: _fearState.maxWave }), '#8a3ffc');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
     if (typeof onFearState === 'function') onFearState();
   });
 
@@ -2964,6 +2970,7 @@ function _initFearHandlers(s) {
   s.on('fearFinished', ({ cleared, wave }) => {
     _fearInRun = false;
     _fearWave = 0;
+    if (typeof hideFearCountdown === 'function') hideFearCountdown();
     const msg = cleared ? t('fearClearedMsg') : tVars('fearDiedMsg', { wave: wave || 0, max: _fearState.maxWave });
     if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
     if (cleared && typeof netFearReturn === 'function') netFearReturn();

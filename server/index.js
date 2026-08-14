@@ -4094,6 +4094,15 @@ async function _race10Finish(winnerId, timedOut) {
 // way to fail out and keep the attempt, and no way to "win" beyond that.
 const FEAR_ATTEMPTS = 2;
 const FEAR_MIN_LEVEL = 10;
+// Grace window between landing in a hall and wave 1 actually spawning —
+// long enough to get your bearings before 20 pre-aggroed monsters close in,
+// short enough that it doesn't feel like waiting. A _fear record at wave:0
+// (see fearEnter) means "deployed, wave 1 not up yet"; the same disconnect
+// grace/reclaim machinery that already carries wave>=1 runs across a
+// reconnect carries this state too (see fearEnter's setTimeout guard and the
+// fearCarry reclaim below, which starts the wave immediately on reconnect
+// rather than resuming a countdown no client is around to show).
+const FEAR_START_DELAY_MS = 5000;
 
 // socketId -> { lane, wave } for whoever currently has a run going — read by
 // the attack/skillAttack handlers to advance the run one kill at a time, by
@@ -9012,7 +9021,20 @@ io.on('connection', socket => {
       // case there was never a stale room record left to find above at all.
       if (fearCarry) {
         const g = _fearDisconnectGrace.get(authed.telegramId);
-        if (g) { clearTimeout(g.timer); _fearDisconnectGrace.delete(authed.telegramId); _fear.set(socket.id, g.run); }
+        if (g) {
+          clearTimeout(g.timer);
+          _fearDisconnectGrace.delete(authed.telegramId);
+          _fear.set(socket.id, g.run);
+          // Disconnected during the pre-wave countdown (see
+          // FEAR_START_DELAY_MS): the setTimeout that would have started
+          // wave 1 was scheduled against the now-dead old socketId and no
+          // longer applies (its own guard confirms this and no-ops) — start
+          // the wave right here instead, immediately rather than resuming a
+          // countdown no client is around to display. currentRoom is the
+          // fear floor's Room at this point (currentFloor was forced to it
+          // above specifically because this account had a hold to reclaim).
+          if (g.run.wave === 0) _fearStartWave(currentRoom, socket.id, g.run.lane, 1);
+        }
       }
       // Reclaim a party slot held across a disconnect (_partyHoldOnDisconnect,
       // the 'disconnect' handler below) — same independent-of-staleSocketId
@@ -9970,8 +9992,24 @@ io.on('connection', socket => {
       });
     }
     _lockFearDaily(socket.id);
-    _fearStartWave(currentRoom, socket.id, spot.lane, 1);
-    socket.emit('fearStarted', { x: spot.x, y: spot.y, hp: cp.hp, maxWave: FEAR_MAX_WAVE, attemptsLeft: left - 1 });
+    // wave:0 first — see FEAR_START_DELAY_MS's own comment for why this has
+    // to be a real _fear record (not just a bare setTimeout with nothing
+    // backing it) rather than calling _fearStartWave immediately.
+    const fearRoom = currentRoom;
+    const readyAt = Date.now() + FEAR_START_DELAY_MS;
+    _fear.set(socket.id, { lane: spot.lane, wave: 0 });
+    socket.emit('fearStarted', { x: spot.x, y: spot.y, hp: cp.hp, maxWave: FEAR_MAX_WAVE, attemptsLeft: left - 1, readyAt });
+    setTimeout(() => {
+      // Still exactly the run this timer was scheduled for? A disconnect
+      // during the countdown deletes this socket's _fear entry (moved to
+      // _fearDisconnectGrace instead — see _fearHoldOnDisconnect), so a
+      // stale timer for a socket that's since gone quietly no-ops here
+      // rather than double-spawning the wave once the reconnect path
+      // starts it (see the fearCarry reclaim, further up this file).
+      const run = _fear.get(socket.id);
+      if (!run || run.lane !== spot.lane || run.wave !== 0) return;
+      _fearStartWave(fearRoom, socket.id, spot.lane, 1);
+    }, FEAR_START_DELAY_MS);
   });
 
   safeOn('fearSync', async () => {
