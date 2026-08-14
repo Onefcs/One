@@ -563,9 +563,18 @@ class Room {
     const lane = p._fearLane;
     if (lane == null) return;
     if (!p.telegramId) { this.fearReleaseLane(lane); return; }
+    // Guarded for the same reason server/index.js's safeTimeout exists: a
+    // timer callback runs on an empty stack, so a throw here reaches process
+    // scope, where uncaughtException exits the process and drops every player
+    // online. The tick loop below has had this protection all along; this one
+    // is the only other timer Room owns.
     const timer = setTimeout(() => {
-      this._fearGrace.delete(lane);
-      this.fearReleaseLane(lane);
+      try {
+        this._fearGrace.delete(lane);
+        this.fearReleaseLane(lane);
+      } catch (err) {
+        console.error(`[Room ${this.floor} fearGrace]`, err);
+      }
     }, FEAR_RECONNECT_GRACE_MS);
     this._fearGrace.set(lane, { telegramId: p.telegramId, timer, x: p.x, y: p.y, hp: p.hp });
   }

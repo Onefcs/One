@@ -36,6 +36,42 @@ const {
 function _marketMaxActive(vipLevel) {
   return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? Infinity : MARKET_MAX_ACTIVE;
 }
+
+// ── Timers that cannot take the process down ─────────────────────────────────
+// A timer callback runs on an empty stack: nothing is above it to catch a
+// throw, so it reaches process scope, where uncaughtException (bottom of this
+// file) logs it and calls process.exit(1). Every player online loses their
+// connection over it, the client wipes the world it was rendering (the
+// 'disconnect' handler in js/network.js clears serverEnemies/otherPlayers and
+// the Pixi pools) and rebuilds from the reconnect's gameStart — which is
+// exactly what "мир сломался и игра перезагрузилась" looks like from a phone.
+// Worse, the cause is usually per-player and periodic (one bad savedData blob
+// under a 60s autosave), so the restart repeats on a timer and reads as an
+// overloaded server rather than as one bug.
+//
+// safeOn already gives socket handlers this protection; these give it to the
+// other half — the scheduled work. A throw is logged with its timer's name and
+// swallowed: one broken tick of one timer, not the whole world.
+//
+// Deliberately NOT applied to the shutdown/exit timer itself (see
+// uncaughtException), which must stay a bare setTimeout.
+function _safeFire(name, fn) {
+  try {
+    const ret = fn();
+    // An async callback's rejection lands in unhandledRejection instead, which
+    // only logs — but it logs without saying which timer it came from, so name
+    // it here too.
+    if (ret && typeof ret.catch === 'function') ret.catch(err => console.error(`[timer ${name}]`, err));
+  } catch (err) {
+    console.error(`[timer ${name}]`, err);
+  }
+}
+function safeTimeout(name, fn, ms) {
+  return setTimeout(() => _safeFire(name, fn), ms);
+}
+function safeInterval(name, fn, ms) {
+  return setInterval(() => _safeFire(name, fn), ms);
+}
 const PlayerModel       = require('./models/Player');
 const ClanModel         = require('./models/Clan');
 const GramTxModel       = require('./models/GramTx');
@@ -655,7 +691,7 @@ async function _pollTg() {
       }
     }
   } catch { /* ignore network errors */ }
-  setTimeout(_pollTg, 500);
+  safeTimeout('tgPoll', _pollTg, 500);
 }
 
 async function _handleAdminCallback(cq) {
@@ -2032,9 +2068,26 @@ app.get('/api/special-quests', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Health check for container orchestrators / uptime monitors — the
-// catch-all static handler below returns 200 for "/" regardless of DB
-// state, which would otherwise report "healthy" even with Mongo down.
+// ── Health ───────────────────────────────────────────────────────────────────
+// LIVENESS, not readiness: 200 whenever this process is up and its event loop
+// is still turning, whatever Mongo happens to be doing this second.
+//
+// It used to answer 503 the moment mongoose.connection.readyState left 1, and
+// this instance runs behind a platform whose health check restarts the
+// container on a failing probe (see app.set('trust proxy') below). So a few
+// seconds of Atlas failover — a blip the game itself rides out fine, since the
+// simulation is in memory and the driver queues and retries — got the whole
+// process killed and restarted, disconnecting every player at once. On the
+// client that reads as the world breaking: js/network.js's 'disconnect'
+// handler wipes serverEnemies/otherPlayers and the Pixi pools, and the world
+// is rebuilt from the reconnect's gameStart. A restart cannot fix a database
+// that is unreachable, and it costs every session in flight, so a DB blip must
+// not be able to trigger one.
+//
+// The DB state is still reported, just not as an HTTP failure: `ok`/`db` say
+// exactly what they always did, and /health/ready below is the endpoint that
+// does answer 503 — point a *dashboard* alert at that one, never a restarting
+// health check.
 app.get('/health', (req, res) => {
   const dbOk = mongoose.connection.readyState === 1; // 1 = connected
   // Room tick timings alongside the DB state. "Иногда тупит" reports were
@@ -2049,12 +2102,40 @@ app.get('/health', (req, res) => {
   // is already struggling.
   const brief = { ok: dbOk, db: mongoose.connection.readyState };
   if (!_verifyAdminToken((req.headers.authorization || '').replace('Bearer ', ''))) {
-    return res.status(dbOk ? 200 : 503).json(brief);
+    return res.json(brief);
   }
   const rooms = [];
-  floorRooms.forEach(r => { try { rooms.push(r.stats()); } catch {} });
+  // Every floor EXCEPT Fear reports its one shared Room directly. Fear's entry
+  // in floorRooms is a permanently empty placeholder — it exists only so
+  // /api/world-map/11 has bytes to serve — while the runs themselves happen on
+  // private Rooms deliberately kept out of that map (see _createFearRoom).
+  // Reporting the placeholder is what made this endpoint answer "no rooms with
+  // players" while N people were mid-run in Страх, each on their own 40Hz
+  // loop: the load being asked about was the only load not shown.
+  floorRooms.forEach(r => {
+    if (r.floor === FLOOR_IDS.fear) return;
+    try { rooms.push(r.stats()); } catch {}
+  });
+  // One aggregate row for Fear instead of N nearly identical ones. Always
+  // present, so the floor never silently disappears from the table; instances
+  // is 0 when nobody is in there.
+  const fearRooms = _liveFearRooms();
+  // stats() RESETS its window, so it is read exactly once per room here —
+  // calling it twice would hand the second reader a freshly zeroed window.
+  const fearStats = fearRooms.map(r => { try { return r.stats(); } catch { return {}; } });
+  rooms.push({
+    floor: FLOOR_IDS.fear,
+    instances: fearRooms.length,
+    players: fearStats.reduce((n, s) => n + (s.players || 0), 0),
+    enemies: fearStats.reduce((n, s) => n + (s.enemies || 0), 0),
+    // Worst instance, not the sum: these are parallel loops, so the question
+    // "is any Fear run missing its budget" is what a max answers and a total
+    // does not.
+    tickMsMax: fearStats.reduce((n, s) => Math.max(n, s.tickMsMax || 0), 0),
+    tickOverruns: fearStats.reduce((n, s) => n + (s.tickOverruns || 0), 0),
+  });
   const mem = process.memoryUsage();
-  res.status(dbOk ? 200 : 503).json({
+  res.json({
     ...brief,
     sockets: io.engine.clientsCount,
     uptimeS: Math.round(process.uptime()),
@@ -2062,6 +2143,21 @@ app.get('/health', (req, res) => {
     rssMb: Math.round(mem.rss / 1048576),
     rooms,
   });
+});
+
+// READINESS: "can this process serve a login right now", which /health
+// deliberately no longer answers with a status code (see above). 503 here
+// means Mongo is unreachable — logins, saves and every DB-backed handler will
+// fail until it comes back, while the world itself keeps simulating.
+//
+// Point dashboards, pager alerts and load-balancer *traffic* decisions at this
+// one. Do NOT point a health check that RESTARTS the container at it: killing
+// the process cannot reach a database it cannot reach either, and it drops
+// every player mid-session to achieve nothing. That misconfiguration is what
+// this split exists to make hard to repeat.
+app.get('/health/ready', (req, res) => {
+  const dbOk = mongoose.connection.readyState === 1;
+  res.status(dbOk ? 200 : 503).json({ ok: dbOk, db: mongoose.connection.readyState });
 });
 
 // ── World map ────────────────────────────────────────────────────────────────
@@ -2428,6 +2524,86 @@ async function _dbPushInventory(authed, items, reason) {
   }
 }
 
+
+// ── Rating tables ────────────────────────────────────────────────────────────
+// Both tabs of the rating panel, built at most once every RATING_TTL_MS for
+// the whole process instead of once per request.
+//
+// getRating is a heavy-bucket event, which still allows 40 calls per 5s per
+// socket — 8 rebuilds a second from one client, and the clans tab in
+// particular is not a small query: it reads EVERY clan document and then a bm
+// document for EVERY member of every clan, unbounded, and sorts the result in
+// JS. That ran against the same connection pool every progress save shares, so
+// a few players idly flipping between the tabs could starve saves and logins
+// while nothing looked wrong anywhere. A leaderboard does not need to be
+// fresher than a minute; anyone's own live rank is still computed per request
+// (see getRating), so the one number a player watches is never stale.
+//
+// In flight requests share a single promise, so N callers arriving during a
+// rebuild queue behind it instead of each starting their own.
+const RATING_TTL_MS = 60000;
+const _ratingCache = { players: { at: 0, rows: [], p: null }, clans: { at: 0, rows: [], p: null } };
+function _cachedRating(key, build) {
+  const slot = _ratingCache[key];
+  if (slot.p) return slot.p;
+  if (Date.now() - slot.at < RATING_TTL_MS) return Promise.resolve(slot.rows);
+  slot.p = build()
+    .then(rows => { slot.rows = rows; slot.at = Date.now(); return rows; })
+    // Keep serving the last good table on a failed rebuild rather than
+    // blanking the panel, and let the next caller retry immediately.
+    .catch(err => { console.error('rating rebuild:', err); return slot.rows; })
+    .finally(() => { slot.p = null; });
+  return slot.p;
+}
+
+function _ratingPlayers() {
+  return _cachedRating('players', async () => {
+    // 'savedData.lvl', not 'savedData': the whole blob carries the player's
+    // inventory, equipment and every counter — tens of KB each, fetched and
+    // BSON-decoded 50 at a time purely to read one number off it.
+    const players = await PlayerModel.find({}, 'username bm savedData.lvl savedData.level')
+      .sort({ bm: -1 }).limit(50).lean();
+    return players.map(p => ({
+      username: p.username,
+      bm: p.bm || 0,
+      level: p.savedData?.lvl || p.savedData?.level || 1,
+    }));
+  });
+}
+
+// Capped as well as cached. Ranking by summed member BM means every clan has
+// to be read to rank any of them, so the cap is on the WIDEST reasonable
+// candidate set rather than on the answer: the top RATING_CLAN_SCAN clans by
+// level/xp (the clan collection's own existing sort key) are the only ones
+// that could plausibly hold a top-50 total, and it bounds the second query's
+// $in list at the same time.
+const RATING_CLAN_SCAN = 300;
+function _ratingClans() {
+  return _cachedRating('clans', async () => {
+    const clans = await ClanModel.find({}, 'name icon members')
+      .sort({ level: -1, xp: -1 }).limit(RATING_CLAN_SCAN).lean();
+    // One query for every clan's members instead of one aggregate per clan
+    // in a loop: at a few dozen clans the old shape queued thousands of
+    // aggregations against the same connection pool everyone's saves share.
+    const memberIds = [...new Set(clans.flatMap(c => (c.members || []).map(m => m.telegramId)))];
+    const bmDocs = memberIds.length
+      ? await PlayerModel.find({ telegramId: { $in: memberIds } }, 'telegramId bm').lean()
+      : [];
+    const bmByTid = new Map(bmDocs.map(d => [d.telegramId, d.bm || 0]));
+    const rows = [];
+    for (const clan of clans) {
+      if (!clan.members?.length) continue;
+      rows.push({
+        name: clan.name,
+        icon: clan.icon,
+        memberCount: clan.members.length,
+        totalBm: clan.members.reduce((s, m) => s + (bmByTid.get(m.telegramId) || 0), 0),
+      });
+    }
+    rows.sort((a, b) => b.totalBm - a.totalBm);
+    return rows.slice(0, 50);
+  });
+}
 
 // ── Rating leader ─────────────────────────────────────────────────────────────
 // Whoever currently sits at #1 in the players rating gets a visible aura in the
@@ -2800,7 +2976,7 @@ function _partyHoldOnDisconnect(socketId, telegramId) {
   if (!telegramId) { _removeFromParty(partyId, socketId); return; }
   const prior = _partyDisconnectGrace.get(telegramId);
   if (prior) clearTimeout(prior.timer);
-  const timer = setTimeout(() => {
+  const timer = safeTimeout('partyGrace', () => {
     _partyDisconnectGrace.delete(telegramId);
     _removeFromParty(partyId, socketId);
   }, PARTY_RECONNECT_GRACE_MS);
@@ -2960,8 +3136,8 @@ function _wbSchedule() {
   // restart inside the 30-minute window fires a "coming soon" the instant the
   // process boots — every redeploy would spam everyone.
   const warnIn = at - EVENT_NOTIFY_BEFORE_MS - Date.now();
-  if (warnIn > 0) _wbNotifyTimer = setTimeout(() => notifyEventSoon('boss', at), warnIn);
-  _wbSpawnTimer = setTimeout(() => {
+  if (warnIn > 0) _wbNotifyTimer = safeTimeout('wbNotify', () => notifyEventSoon('boss', at), warnIn);
+  _wbSpawnTimer = safeTimeout('wbSpawn', () => {
     const r = scheduleEventBoss();
     // A summon refused because an admin already called the boss (or it is
     // still on the map) is not worth alarming anyone about — just skip the
@@ -3030,14 +3206,14 @@ function _dbSchedule() {
   _db.phase = 'idle';
   _db.startAt = 0;
   const startAt = _dbNextStartAt();
-  _db.regTimer = setTimeout(() => _dbOpenReg(startAt), Math.max(0, startAt - DEATH_BATTLE_REG_MS - Date.now()));
+  _db.regTimer = safeTimeout('dbOpenReg', () => _dbOpenReg(startAt), Math.max(0, startAt - DEATH_BATTLE_REG_MS - Date.now()));
   // The 30-minute warning is its own timer rather than part of the
   // registration one: registration only opens DEATH_BATTLE_REG_MS ahead, far
   // too late to get anyone into the game in time. Skipped when that moment
   // has already passed, so a restart inside the window doesn't fire it late
   // (see the same guard in _wbSchedule).
   const warnIn = startAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
-  if (warnIn > 0) _db.notifyTimer = setTimeout(() => notifyEventSoon('battle', startAt), warnIn);
+  if (warnIn > 0) _db.notifyTimer = safeTimeout('dbNotify', () => notifyEventSoon('battle', startAt), warnIn);
 }
 
 function _dbOpenReg(startAt) {
@@ -3050,7 +3226,7 @@ function _dbOpenReg(startAt) {
   _db.reg.clear();
   _db.alive.clear();
   clearTimeout(_db.startTimer);
-  _db.startTimer = setTimeout(_dbStart, Math.max(0, startAt - Date.now()));
+  _db.startTimer = safeTimeout('dbStart', _dbStart, Math.max(0, startAt - Date.now()));
   _dbBroadcast();
 }
 
@@ -3101,14 +3277,14 @@ function _dbStart() {
   // Lift the freeze on a timer as well as by clock, so clients get a clean
   // "go" push instead of each deciding for itself when the countdown ended.
   clearTimeout(_db.freezeTimer);
-  _db.freezeTimer = setTimeout(() => {
+  _db.freezeTimer = safeTimeout('dbFreeze', () => {
     if (_db.phase !== 'live') return;
     _db.alive.forEach((_, sid) => io.to(sid).emit('deathBattleFight'));
   }, DEATH_BATTLE_FREEZE_MS);
   // Safety net: a round where nobody can finish anybody off (everyone hiding,
   // a wedged client) would otherwise block every later round forever.
   clearTimeout(_db.maxTimer);
-  _db.maxTimer = setTimeout(() => _dbFinish(true), DEATH_BATTLE_MAX_MS);
+  _db.maxTimer = safeTimeout('dbMax', () => _dbFinish(true), DEATH_BATTLE_MAX_MS);
   _dbBroadcast();
 }
 
@@ -3278,9 +3454,9 @@ function _a3Schedule() {
   clearTimeout(_a3.notifyTimer);
   _a3.phase = 'idle';
   const openAt = _a3NextOpenAt();
-  _a3.openTimer = setTimeout(() => _a3OpenWindow(openAt), Math.max(0, openAt - Date.now()));
+  _a3.openTimer = safeTimeout('a3Open', () => _a3OpenWindow(openAt), Math.max(0, openAt - Date.now()));
   const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
-  if (warnIn > 0) _a3.notifyTimer = setTimeout(() => notifyEventSoon('a3', openAt), warnIn);
+  if (warnIn > 0) _a3.notifyTimer = safeTimeout('a3Notify', () => notifyEventSoon('a3', openAt), warnIn);
 }
 
 // Opens the hour-long registration window. Like race10, the queue keeps
@@ -3290,7 +3466,7 @@ function _a3OpenWindow(openAt) {
   _a3.phase = 'reg';
   notifyEventStarted('a3', openAt);
   clearTimeout(_a3.closeTimer);
-  _a3.closeTimer = setTimeout(_a3CloseWindow, ARENA3_WINDOW_MS);
+  _a3.closeTimer = safeTimeout('a3Close', _a3CloseWindow, ARENA3_WINDOW_MS);
   _a3Broadcast();
   _a3TryStartSafe();
 }
@@ -3492,13 +3668,13 @@ async function _a3Deploy(ready, room) {
   });
 
   clearTimeout(_a3.freezeTimer);
-  _a3.freezeTimer = setTimeout(() => {
+  _a3.freezeTimer = safeTimeout('a3Freeze', () => {
     if (!_a3.live) return;
     _a3.alive.forEach((_, sid) => io.to(sid).emit('arena3Fight', { roundEndAt: _a3.roundEndAt }));
   }, ARENA3_FREEZE_MS);
 
   clearTimeout(_a3.roundTimer);
-  _a3.roundTimer = setTimeout(() => _a3Finish(null, true), ARENA3_FREEZE_MS + ARENA3_ROUND_MS);
+  _a3.roundTimer = safeTimeout('a3Round', () => _a3Finish(null, true), ARENA3_FREEZE_MS + ARENA3_ROUND_MS);
   _a3Broadcast();
 }
 
@@ -3618,16 +3794,16 @@ function _gwSchedule() {
   clearTimeout(_gw.openTimer);
   clearTimeout(_gw.notifyTimer);
   const openAt = _gwNextOpenAt();
-  _gw.openTimer = setTimeout(() => _gwOpenWindow(openAt), Math.max(0, openAt - Date.now()));
+  _gw.openTimer = safeTimeout('gwOpen', () => _gwOpenWindow(openAt), Math.max(0, openAt - Date.now()));
   const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
-  if (warnIn > 0) _gw.notifyTimer = setTimeout(() => notifyEventSoon('guildWar', openAt), warnIn);
+  if (warnIn > 0) _gw.notifyTimer = safeTimeout('gwNotify', () => notifyEventSoon('guildWar', openAt), warnIn);
 }
 
 function _gwOpenWindow(openAt = Date.now()) {
   _gw.phase = 'live';
   notifyEventStarted('guildWar', openAt);
   clearTimeout(_gw.closeTimer);
-  _gw.closeTimer = setTimeout(_gwCloseWindow, GUILD_WAR_WINDOW_MS);
+  _gw.closeTimer = safeTimeout('gwClose', _gwCloseWindow, GUILD_WAR_WINDOW_MS);
   io.emit('guildWarState', _gwPublicState());
 }
 
@@ -3743,14 +3919,14 @@ async function _gwGrantIncome() {
 
 function _gwIncomeSafe() {
   _gwGrantIncome().catch(err => console.error('_gwGrantIncome:', err));
-  _gw.incomeTimer = setTimeout(_gwIncomeSafe, GUILD_WAR_INCOME_INTERVAL_MS);
+  _gw.incomeTimer = safeTimeout('gwIncome', _gwIncomeSafe, GUILD_WAR_INCOME_INTERVAL_MS);
 }
 
 function _gwIncomeSchedule() {
   clearTimeout(_gw.incomeTimer);
   const now = Date.now();
   const nextHour = Math.ceil(now / GUILD_WAR_INCOME_INTERVAL_MS) * GUILD_WAR_INCOME_INTERVAL_MS;
-  _gw.incomeTimer = setTimeout(_gwIncomeSafe, nextHour - now);
+  _gw.incomeTimer = safeTimeout('gwIncome', _gwIncomeSafe, nextHour - now);
 }
 
 // ── Кровавая Башня (corridor race) ──────────────────────────────────────────
@@ -3848,9 +4024,9 @@ function _race10Schedule() {
   clearTimeout(_race10.notifyTimer);
   _race10.phase = 'idle';
   const openAt = _race10NextOpenAt();
-  _race10.openTimer = setTimeout(() => _race10OpenWindow(openAt), Math.max(0, openAt - Date.now()));
+  _race10.openTimer = safeTimeout('race10Open', () => _race10OpenWindow(openAt), Math.max(0, openAt - Date.now()));
   const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
-  if (warnIn > 0) _race10.notifyTimer = setTimeout(() => notifyEventSoon('race10', openAt), warnIn);
+  if (warnIn > 0) _race10.notifyTimer = safeTimeout('race10Notify', () => notifyEventSoon('race10', openAt), warnIn);
 }
 
 // Opens registration at 20:30 MSK and arms the single start RACE10_REG_MS
@@ -3868,7 +4044,7 @@ function _race10OpenWindow(openAt, regMs = RACE10_REG_MS) {
   _race10.startAt = Date.now() + regMs;
   notifyEventStarted('race10', openAt);
   clearTimeout(_race10.startTimer);
-  _race10.startTimer = setTimeout(_race10StartSafe, regMs);
+  _race10.startTimer = safeTimeout('race10Start', _race10StartSafe, regMs);
   _race10Broadcast();
 }
 
@@ -4007,13 +4183,13 @@ async function _race10Deploy(ready, room) {
   });
 
   clearTimeout(_race10.freezeTimer);
-  _race10.freezeTimer = setTimeout(() => {
+  _race10.freezeTimer = safeTimeout('race10Freeze', () => {
     if (!_race10.live) return;
     _race10.alive.forEach((_, sid) => io.to(sid).emit('race10Fight'));
   }, RACE10_FREEZE_MS);
 
   clearTimeout(_race10.maxTimer);
-  _race10.maxTimer = setTimeout(() => _race10Finish(null, true), RACE10_FREEZE_MS + RACE10_MAX_MS);
+  _race10.maxTimer = safeTimeout('race10Max', () => _race10Finish(null, true), RACE10_FREEZE_MS + RACE10_MAX_MS);
   _race10Broadcast();
 }
 
@@ -4134,7 +4310,37 @@ const _fear = new Map();
 // no boss content on this floor, hence the empty bossState and null
 // onBossDeath.
 function _createFearRoom() {
-  return new Room(FLOOR_IDS.fear, io, {}, null);
+  const room = new Room(FLOOR_IDS.fear, io, {}, null);
+  _fearRooms.add(room);
+  return room;
+}
+
+// Weak, observation-only index of the private Rooms above. It exists because
+// keeping them out of floorRooms also kept them out of everything that reads
+// floorRooms: /health reported no rooms with players at all while N people
+// were mid-run in Страх (each on their own 40Hz loop), and _gracefulShutdown's
+// "stop all floor game loops" pass never stopped a single one of them.
+//
+// A WeakSet cannot be enumerated, so this is a plain Set that is swept rather
+// than trusted: an entry is dropped as soon as its Room has no players left
+// (its loop is already stopped by then — see Room.removePlayer — so neither
+// reader has anything to do with it, and a reconnect within the grace window
+// re-registers it through _trackFearRoom). Without the sweep this would be the
+// very leak the private-Room design was careful to avoid: one retained Room,
+// grid and all, per Fear run ever started.
+const _fearRooms = new Set();
+function _liveFearRooms() {
+  const live = [];
+  _fearRooms.forEach(r => {
+    if (r.players.size > 0) live.push(r);
+    else _fearRooms.delete(r);
+  });
+  return live;
+}
+// Re-registers a room a reconnect landed back on (see the fearCarry path in
+// the login flow) — it may have been swept while the player was away.
+function _trackFearRoom(room) {
+  if (room && room.floor === FLOOR_IDS.fear) _fearRooms.add(room);
 }
 
 // Spawns wave `wave` in `lane` and tells the client — split out since both
@@ -4246,7 +4452,7 @@ function _fearHoldOnDisconnect(socketId, telegramId) {
   if (!tid) return true;
   const prior = _fearDisconnectGrace.get(tid);
   if (prior) clearTimeout(prior.timer);
-  const timer = setTimeout(() => { _fearDisconnectGrace.delete(tid); }, FEAR_RECONNECT_GRACE_MS);
+  const timer = safeTimeout('fearGrace', () => { _fearDisconnectGrace.delete(tid); }, FEAR_RECONNECT_GRACE_MS);
   _fearDisconnectGrace.set(tid, { run, timer });
   return true;
 }
@@ -4293,7 +4499,7 @@ async function _initFloorRooms() {
   console.log('Floor rooms initialized');
   // Needs Mongo, so it starts here rather than at require time.
   _refreshTopPlayer();
-  setInterval(_refreshTopPlayer, TOP_PLAYER_POLL_MS);
+  safeInterval('topPlayer', _refreshTopPlayer, TOP_PLAYER_POLL_MS);
 }
 // 'open' only ever fires once per connection and never fires at all if
 // Mongo wasn't reachable yet at the moment this ran — so the game world
@@ -4306,7 +4512,7 @@ if (mongoose.connection.readyState === 1) {
   _initFloorRooms();
 } else {
   mongoose.connection.once('open', _initFloorRooms);
-  const _roomInitRetry = setInterval(() => {
+  const _roomInitRetry = safeInterval('roomInitRetry', () => {
     if (mongoose.connection.readyState !== 1) return;
     clearInterval(_roomInitRetry);
     _initFloorRooms();
@@ -4449,7 +4655,7 @@ async function _flushClanXp() {
     } catch (err) { console.error('_flushClanXp:', err); }
   }
 }
-setInterval(() => { _flushClanXp().catch(() => {}); }, CLAN_XP_FLUSH_MS).unref();
+safeInterval('clanXpFlush', () => { _flushClanXp().catch(() => {}); }, CLAN_XP_FLUSH_MS).unref();
 
 // ── Combat fan-out ───────────────────────────────────────────────────────────
 // enemyHurt/enemyKilled describe ONE enemy, and they used to go to the whole
@@ -4500,7 +4706,7 @@ io.on('connection', socket => {
   // (and their fds) open indefinitely, for free, with no cap. Real clients
   // authenticate within a second or two of connecting; this is generous
   // slack on top of that, not a tight budget.
-  const _authTimeout = setTimeout(() => {
+  const _authTimeout = safeTimeout('authTimeout', () => {
     if (!authed) socket.disconnect(true);
   }, 20000);
   let currentRoom = null;
@@ -4710,7 +4916,7 @@ io.on('connection', socket => {
   }
   function _persistBalancesSoon() {
     if (_balancePersistTimer) return;
-    _balancePersistTimer = setTimeout(() => {
+    _balancePersistTimer = safeTimeout('balancePersist', () => {
       _balancePersistTimer = null;
       _flushBalances().catch(err => console.error('_flushBalances:', err));
     }, BALANCE_PERSIST_MS);
@@ -5198,7 +5404,7 @@ io.on('connection', socket => {
 
   function _startAutosave() {
     if (_autoSaveInterval) clearInterval(_autoSaveInterval);
-    _autoSaveInterval = setInterval(() => {
+    _autoSaveInterval = safeInterval('autosave', () => {
       if (!authed || !_lastStats) return;
       // Progress only. Balances are moved by $inc from their own paths and must
       // never be written as an absolute from here — that is precisely what let
@@ -6124,7 +6330,7 @@ io.on('connection', socket => {
   // The buff timers run down in real time. The client counts them for its own
   // HUD, but the server needs its own clock or a buff would last forever here —
   // which, for the gold and XP multipliers, is the whole exposure.
-  const _buffTick = setInterval(() => {
+  const _buffTick = safeInterval('buffTick', () => {
     if (!_lastStats || !_lastStats.buffs) return;
     let changed = false;
     for (const [k, v] of Object.entries(_lastStats.buffs)) {
@@ -8643,14 +8849,9 @@ io.on('connection', socket => {
   safeOn('getRating', async ({ tab }) => {
     try {
       if (tab === 'players') {
-        const players = await PlayerModel.find({}, 'username bm savedData')
-          .sort({ bm: -1 }).limit(50).lean();
-        const rows = players.map(p => ({
-          username: p.username,
-          bm: p.bm || 0,
-          level: p.savedData?.lvl || p.savedData?.level || 1,
-        }));
-        // If current player not in top-50, find their rank and append
+        const rows = (await _ratingPlayers()).slice();
+        // If current player not in top-50, find their rank and append. Not
+        // part of the shared cached table — it is this player's own row.
         const myUsername = authed?.username;
         const inTop = rows.some(r => r.username === myUsername);
         if (!inTop && authed) {
@@ -8666,29 +8867,7 @@ io.on('connection', socket => {
         }
         socket.emit('ratingData', { tab: 'players', rows });
       } else {
-        const clans = await ClanModel.find({}, 'name icon members').lean();
-        // One query for every clan's members instead of one aggregate per clan
-        // in a loop: this handler is rate-limited as a heavy event (40 per 5s
-        // per socket), so at a few dozen clans the old shape let a single
-        // client queue thousands of aggregations against the same connection
-        // pool everyone's saves share.
-        const _allMemberIds = [...new Set(clans.flatMap(c => (c.members || []).map(m => m.telegramId)))];
-        const _bmDocs = _allMemberIds.length
-          ? await PlayerModel.find({ telegramId: { $in: _allMemberIds } }, 'telegramId bm').lean()
-          : [];
-        const _bmByTid = new Map(_bmDocs.map(d => [d.telegramId, d.bm || 0]));
-        const clanBm = [];
-        for (const clan of clans) {
-          if (!clan.members?.length) continue;
-          clanBm.push({
-            name: clan.name,
-            icon: clan.icon,
-            memberCount: clan.members.length,
-            totalBm: clan.members.reduce((s, m) => s + (_bmByTid.get(m.telegramId) || 0), 0),
-          });
-        }
-        clanBm.sort((a, b) => b.totalBm - a.totalBm);
-        socket.emit('ratingData', { tab: 'clans', rows: clanBm.slice(0, 50) });
+        socket.emit('ratingData', { tab: 'clans', rows: await _ratingClans() });
       }
     } catch (err) { console.error('getRating:', err); }
   });
@@ -9077,6 +9256,10 @@ io.on('connection', socket => {
       const _fearHeld = _fearDisconnectGrace.get(authed.telegramId);
       if (_fearHeld) currentFloor = FLOOR_IDS.fear;
       currentRoom = _fearHeld ? _fearHeld.run.room : getRoom(currentFloor);
+      // The instance may have been swept out of _fearRooms while this player
+      // was away (it had no players for the length of the drop) — put it back
+      // so /health and the shutdown pass can see it again.
+      if (_fearHeld) _trackFearRoom(currentRoom);
       playerFloorMap.set(socket.id, currentFloor);
       // See _doEnterLocation's identical guard: Fear players never join the
       // shared floor_<id> broadcast group, since each one is alone on their
@@ -10131,7 +10314,7 @@ io.on('connection', socket => {
     const readyAt = Date.now() + FEAR_START_DELAY_MS;
     _fear.set(socket.id, { room: fearRoom, lane: spot.lane, wave: 0 });
     socket.emit('fearStarted', { x: spot.x, y: spot.y, hp: cp.hp, maxWave: FEAR_MAX_WAVE, attemptsLeft: left - 1, readyAt });
-    setTimeout(() => {
+    safeTimeout('fearWave1', () => {
       // Still exactly the run this timer was scheduled for? A disconnect
       // during the countdown deletes this socket's _fear entry (moved to
       // _fearDisconnectGrace instead — see _fearHoldOnDisconnect), so a
@@ -10572,7 +10755,7 @@ io.on('connection', socket => {
       }
     }
     clearTimeout(_saveDebounceTimer);
-    _saveDebounceTimer = setTimeout(() => {
+    _saveDebounceTimer = safeTimeout('saveDebounce', () => {
       if (!authed) return;
       // Progress only — balances move by $inc from their own paths. `clean` has
       // already had both stripped by _sanitizeSavedStats, so nothing here can
@@ -11673,8 +11856,12 @@ const SHUTDOWN_FLUSH_MS = 8000;
 
 async function _gracefulShutdown(signal) {
   console.log(`${signal}: shutting down...`);
-  // Stop all floor game loops
+  // Stop all game loops — the static per-floor ones AND the private Fear
+  // instances, which are deliberately not in floorRooms (_createFearRoom) and
+  // so were left ticking through the whole shutdown, right across the final
+  // save flush below.
   floorRooms.forEach(r => r._stopLoop());
+  _liveFearRooms().forEach(r => r._stopLoop());
   // Land whatever clan XP has accumulated since the last 20s flush, so a
   // redeploy doesn't quietly discard it.
   await _flushClanXp().catch(() => {});

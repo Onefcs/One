@@ -5,11 +5,20 @@
 // distribution. Sockets are stubbed so encode+emit still runs (the encode is
 // real work; the emit is a no-op sink).
 //
-//   node .roombench.js [players] [ticks] [layout]
-//     layout: hub (all in the spawn cluster) | spread
+//   node dev/roombench.js [players] [ticks] [layout]
+//     layout: hub    — the hub floor, everyone in the spawn cluster
+//             arm    — an arm floor, everyone crowded on one farming spot
+//                      (outside any safe zone, so the enemy AI engages)
+//             spread — the hub floor, players scattered wide
+//
+// Each layout names the FLOOR it benchmarks, not just a position: since the
+// world was split into one Room per floor (server/game/floors.js) the hub has
+// no enemies at all, so timing "the arm layout" against floor 1 measured an
+// empty room. `arm` builds the real arm floor instead.
 
 const path = require('path');
 const Room = require(path.join(__dirname, '..', 'server', 'game', 'Room.js'));
+const { FLOOR_IDS } = require(path.join(__dirname, '..', 'server', 'game', 'floors.js'));
 
 const N = Number(process.argv[2] || 200);
 const TICKS = Number(process.argv[3] || 400);
@@ -26,8 +35,20 @@ const io = {
   sockets: { sockets: { get: () => fakeSocket } },
 };
 
-const room = new Room(1, io, {}, null);
+const room = new Room(LAYOUT === 'arm' ? FLOOR_IDS.top : FLOOR_IDS.hub, io, {}, null);
 const spawn = room._dungeon.spawn;
+// Where the crowd stands for the `arm` layout. Derived from where this
+// floor's enemies actually are rather than from a named bounding box:
+// _dungeon.armBounds is gone (every arm is its own floor now, so a floor's
+// enemies already belong to exactly one arm) and reading it was what made
+// this script crash outright on startup.
+const enemyMid = (() => {
+  const es = room.enemies;
+  if (!es.length) return { x: spawn.x, y: spawn.y };
+  let sx = 0, sy = 0;
+  es.forEach(e => { sx += e.x; sy += e.y; });
+  return { x: sx / es.length, y: sy / es.length };
+})();
 for (let i = 0; i < N; i++) {
   const id = `bot${i}`;
   room.addPlayer(id, `bot${i}`, null, null, 0, String(1000000 + i));
@@ -36,9 +57,8 @@ for (let i = 0; i < N; i++) {
   if (LAYOUT === 'arm') {
     // A crowded farming spot inside one arm: outside the safe zone, so the
     // enemy AI actually engages — the state real players spend hours in.
-    const b = room._dungeon.armBounds.top;
-    p.x = 700 + (Math.random() - 0.5) * 1200;
-    p.y = (b.y0 + b.y1) / 2 + (Math.random() - 0.5) * 1200;
+    p.x = enemyMid.x + (Math.random() - 0.5) * 1200;
+    p.y = enemyMid.y + (Math.random() - 0.5) * 1200;
   } else {
     const r = LAYOUT === 'hub' ? 260 : 4000;
     p.x = spawn.x + (Math.random() - 0.5) * r * 2;

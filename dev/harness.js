@@ -917,6 +917,100 @@ scenario('floors: Страх never refuses an entrant for lack of space', async 
   await Promise.all(clients.map(c => c.close()));
 });
 
+scenario('health: a live Fear run is visible to /health, not hidden with its private Room', async () => {
+  // Fear instances are deliberately kept OUT of floorRooms (_createFearRoom),
+  // and /health only ever walked floorRooms — so with N players mid-run in
+  // Страх, each on their own 40Hz loop, this endpoint reported no rooms with
+  // players at all. Whoever is on call cannot see the load they are being
+  // asked about.
+  const c = await connectWithSaved('harness_fear_health', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(c, 'ranger');
+  const started = c.wait('fearStarted', { timeout: 3000 });
+  c.emit('fearEnter');
+  await started;
+
+  const { token } = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  }).then(r => r.json());
+  const _fearRow = async () => {
+    const h = await fetch(`${BASE}/health`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    return (h.rooms || []).find(r => r.floor === 11);
+  };
+  const live = await _fearRow();
+  ok(live, '/health reports the Fear floor while a run is live');
+  eq(live && live.players, 1, 'and counts the player standing in it');
+  ok(live && live.instances >= 1, 'and says how many private instances are running');
+
+  // The index behind that count is a plain Set, so it has to be swept or it
+  // becomes the very leak the private-Room design set out to avoid: one
+  // retained Room, grid and all, for every Fear run ever started. Ending the
+  // run must drop it.
+  const finished = c.wait('fearFinished', { timeout: 3000 });
+  c.emit('respawn');
+  await finished;
+  const idle = await _fearRow();
+  eq(idle && idle.instances, 0, 'and the instance is released once the run ends, not retained forever');
+
+  await c.close();
+});
+
+scenario('health: a DB outage is reported without failing the liveness check', async () => {
+  // /health used to answer 503 whenever mongoose left readyState 1. Behind a
+  // platform health check that restarts the container on a failing probe, a
+  // few seconds of DB trouble therefore killed the process and disconnected
+  // every player — which is precisely what "мир сломался, игра
+  // перезагрузилась" looks like from a phone, and a restart cannot reach a
+  // database that is unreachable anyway. Liveness is now about THIS process;
+  // /health/ready is the endpoint that still fails on a DB outage.
+  const memoryMod = require('./mongo-memory');
+  const real = memoryMod.connection.readyState;
+  memoryMod.connection.readyState = 0;              // pretend Mongo went away
+  try {
+    const live = await fetch(`${BASE}/health`);
+    eq(live.status, 200, '/health still answers 200 with the DB down');
+    const liveBody = await live.json();
+    eq(liveBody.ok, false, 'and still reports the outage in the body');
+    eq(liveBody.db, 0, 'and reports the raw readyState');
+
+    const ready = await fetch(`${BASE}/health/ready`);
+    eq(ready.status, 503, '/health/ready is the one that fails, for dashboards');
+  } finally {
+    memoryMod.connection.readyState = real;
+  }
+  const back = await fetch(`${BASE}/health`).then(r => r.json());
+  eq(back.ok, true, 'and it reports healthy again once the DB is back');
+});
+
+scenario('rating: the tables are built once and shared, not rebuilt per request', async () => {
+  // getRating sits in the heavy bucket, which still allows 40 calls per 5s per
+  // socket. The clans tab reads EVERY clan plus a bm document for EVERY member
+  // of every clan — unbounded, against the same connection pool every progress
+  // save shares. Cached process-wide for RATING_TTL_MS: a change landing in the
+  // database mid-window must NOT show up until the window turns over, which is
+  // the observable proof the second request never went to the database.
+  const c = await connectWithSaved('harness_rating_cache', { lvl: 5 });
+  await enterWorld(c, 'mage');
+
+  const first = c.wait('ratingData', { timeout: 5000 });
+  c.emit('getRating', { tab: 'players' });
+  const before = await first;
+  ok(Array.isArray(before.rows), 'the players tab answers with rows');
+
+  // A brand-new account at the very top of the table by bm. Written straight
+  // to the database, the way a real bm update lands.
+  const Player = require('../server/models/Player');
+  await Player.create({ telegramId: 'harness_rating_top', username: 'harness_rating_top', savedData: { lvl: 99 }, bm: 999999999 });
+
+  const second = c.wait('ratingData', { timeout: 5000 });
+  c.emit('getRating', { tab: 'players' });
+  const after = await second;
+  ok(!after.rows.some(r => r.username === 'harness_rating_top'),
+    'the second request is served from the cache, not from a fresh query');
+
+  await c.close();
+});
+
 scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own floor, not the hub', async () => {
   const a1 = await connectWithSaved('harness_fear_reconnect', { lvl: 10, xp: 0, xpNext: 100 });
   await enterWorld(a1, 'ranger');
@@ -2142,6 +2236,72 @@ scenario('browser: entering Страх closes the events panel instead of leavin
     }));
     eq(after.floor, 11, 'the client followed the server onto the fear floor');
     eq(after.panelDisplay, 'none', 'and the events panel closed itself, uncovering the world');
+  } finally {
+    await browser.close();
+  }
+});
+
+scenario('browser: a kicked session stays down instead of reloading into a kick loop', async () => {
+  // One live session per account: a second login kicks the first (see
+  // loginTelegramWebApp, server/index.js). The client used to answer that by
+  // reloading the page two seconds later — which re-ran the login, which
+  // kicked whichever session was now live, which reloaded and kicked this one
+  // back. Two clients on one account (a phone plus Telegram Desktop, two
+  // tabs) ping-ponged forever, each paying for a full login round trip every
+  // couple of seconds. From inside either one it is indistinguishable from a
+  // server that keeps restarting — which is exactly the report this whole
+  // branch started from.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    let navigations = 0;
+    page.on('framenavigated', f => { if (f === page.mainFrame()) navigations++; });
+    await page.goto(`${BASE}/?dev=harness_kickloop`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4000);
+    const needsClass = await page.evaluate(() => typeof state !== 'undefined' && state === 'select');
+    if (needsClass) {
+      await page.evaluate(() => selectChar('mage'));
+      await page.waitForTimeout(4000);
+    }
+    ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
+    const navsBefore = navigations;
+    // Read the same field on a HEALTHY socket first, so the assertion after
+    // the kick is known to be reading a real property rather than quietly
+    // passing on undefined.
+    eq(await page.evaluate(() => !!(socket && socket.io && socket.io._reconnection)), true,
+      'socket.io auto-reconnect is on for a normal session');
+
+    // The second login for the same account, from outside the browser — the
+    // other device.
+    const rival = await connectAs('harness_kickloop');
+    await enterWorld(rival, 'mage');
+
+    // Long enough to cover the old two-second reload timer several times over.
+    await page.waitForTimeout(7000);
+
+    const after = await page.evaluate(() => ({
+      connected: typeof socket !== 'undefined' && !!(socket && socket.connected),
+      // The manager must not be waiting to reconnect on its own either.
+      willReconnect: typeof socket !== 'undefined' && !!(socket && socket.io && socket.io._reconnection),
+      err: document.getElementById('auth-error')?.textContent || '',
+    }));
+    eq(navigations, navsBefore, 'the kicked page did not reload itself');
+    eq(after.connected, false, 'its socket stayed down');
+    eq(after.willReconnect, false, 'and socket.io will not reconnect it behind our back');
+    ok(after.err.length > 0, 'the player is told why', after.err);
+
+    // And the session that did the kicking is still the live one — the whole
+    // point of the rule.
+    const sync = rival.wait('fearState', { timeout: 4000 });
+    rival.emit('fearSync');
+    ok(await sync, 'the surviving session is still served');
+    await rival.close();
   } finally {
     await browser.close();
   }

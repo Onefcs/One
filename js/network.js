@@ -104,6 +104,11 @@ const _PING_EVERY_MS = 2000;
 // observed by a running client counts against the link.
 let _pongMissed = 0;
 const _PONG_MISS_LIMIT = 4;
+// Set once this session has been kicked in favour of another login (see the
+// 'kicked' handler). Every automatic path back onto the wire checks it: this
+// session is over by the server's decision, and re-establishing it would just
+// kick the session that replaced it.
+let _kicked = false;
 // Wall-clock time the watchdog tick last ran, to detect that it did not.
 let _lastPingTickAt = 0;
 // How late a tick may be before we treat it as the timer having been frozen
@@ -133,6 +138,7 @@ function _pingTick() {
   const now = Date.now();
   const sinceTick = _lastPingTickAt ? now - _lastPingTickAt : 0;
   _lastPingTickAt = now;
+  if (_kicked) return;
   if (!socket?.connected) return;
 
   // This tick fired far later than it was scheduled to, so the timer itself
@@ -271,14 +277,31 @@ function netConnect(onReady) {
 
   socket.on('authError', ({ message }) => { showAuthError(message); });
 
+  // The server allows one live session per account: a second login kicks the
+  // first (see loginTelegramWebApp, server/index.js). This is that message.
+  //
+  // It must NOT reconnect on its own. Reloading here re-runs the login, which
+  // kicks whichever session is now the live one, which reloads and kicks this
+  // one back — two clients on one account (a phone plus Telegram Desktop, two
+  // browser tabs) ping-ponged forever, each reloading every couple of seconds
+  // and paying for a full login round trip every time. From inside either one
+  // that is indistinguishable from a server that keeps restarting.
+  //
+  // So: stop the transport for good — socket.io would otherwise reconnect on
+  // its own the moment anything nudged it — and let the player decide when to
+  // come back. Telegram still closes the Mini App, which is that platform's
+  // own "you're done here" and does not re-enter the loop.
   socket.on('kicked', ({ reason } = {}) => {
     const msg = reason || (typeof t === 'function' ? t('loggedInElsewhere') : 'Вы вошли с другого устройства');
     showAuthError(msg);
+    _kicked = true;
+    if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null; }
+    if (socket.io) socket.io.reconnection(false);
+    socket.disconnect();
     const _ls = document.getElementById('login-screen');
     if (_ls) { _ls.style.display = ''; _ls.classList.remove('splash-out'); }
     setTimeout(() => {
       if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
-      else location.reload();
     }, 2000);
   });
 

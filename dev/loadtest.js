@@ -43,20 +43,26 @@ function pct(arr, p) {
   return s[Math.min(s.length - 1, Math.floor(s.length * p))];
 }
 
-// The world map, fetched once per process (a browser would cache it per
-// device). Only the spawn point is needed here — bots don't render.
-let _mapPromise = null;
-function worldSpawn(version) {
-  if (!_mapPromise) {
-    _mapPromise = fetch(`${URL}/api/world-map/${version}`)
-      .then(r => r.arrayBuffer())
+// The world map, fetched once per floor per process (a browser would cache it
+// per device). Only the spawn point is needed here — bots don't render.
+//
+// Keyed and requested BY FLOOR: since the world was split into one Room per
+// floor the route is /api/world-map/:floor/:ver and each floor has its own
+// bytes, so the old single-slot cache under a bare version string asked for a
+// URL that no longer exists (every call 404'd, and the await never produced a
+// spawn) and would have mixed two floors' maps if it had.
+const _mapPromises = new Map(); // floor -> Promise<spawn>
+function worldSpawn(floor, version) {
+  if (!_mapPromises.has(floor)) {
+    _mapPromises.set(floor, fetch(`${URL}/api/world-map/${floor}/${version}`)
+      .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`world-map ${r.status}`))))
       .then(buf => {
         const dv = new DataView(buf);
         const jsonLen = dv.getUint32(0, true);
         return JSON.parse(Buffer.from(buf, 4, jsonLen).toString('utf8')).spawn;
-      });
+      }));
   }
-  return _mapPromise;
+  return _mapPromises.get(floor);
 }
 
 async function initData(name) {
@@ -83,12 +89,12 @@ async function makeBot(i) {
     authed++;
     socket.emit('selectChar', { type: TYPES[i % TYPES.length], savedStats: null });
   });
-  socket.on('gameStart', async ({ mapVersion, enemies }) => {
+  socket.on('gameStart', async ({ floor, mapVersion, enemies }) => {
     started++;
     st.startMs = Date.now() - st.t0;
     // Same path as the real client: the map comes over HTTP, cached per
     // process here the way the browser caches it per device.
-    const spawn = await worldSpawn(mapVersion);
+    const spawn = await worldSpawn(floor, mapVersion);
     st.spawn = spawn;
     if (MODE === 'far') {
       // One bot every 3000px down the map: nobody is inside anybody else's
