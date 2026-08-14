@@ -1389,6 +1389,26 @@ function deathBattleRewards() {
   return out;
 }
 
+// Кровавая Башня payout, built the same way deathBattleRewards is: every entry
+// is a fully-formed inventory item, so the granting code never has to know what
+// any of them are.
+//
+// Two tiers, and the line between them is "did you reach the boss and land a
+// hit on it" — corridor kills do not count (the server only tallies damage
+// against the shared boss, see _race10TrackHit). Everyone who managed that
+// takes a share home; the top damage-dealer takes triple the Liberty and
+// double the potions. Nobody who never reached the boss is paid, so the
+// corridors still have to be run.
+const RACE10_LIBERTY        = 10;   // to every entrant who hit the boss at least once
+const RACE10_LIBERTY_WINNER = 30;   // to the top damage-dealer instead
+function race10Rewards(won) {
+  const qty = won ? 2 : 1;
+  return ITEM_DEF.filter(i => i.slot === 'buff_potion').map(bp => ({ ...bp, qty }));
+}
+function race10Liberty(won) {
+  return won ? RACE10_LIBERTY_WINNER : RACE10_LIBERTY;
+}
+
 // ── Passive skills ────────────────────────────────────────────────────────────
 // Second skill track next to SKILL_DEF's active Q/W/E/R (js/definitions.js):
 // every class gets its OWN pair of passives (one ATK-flavored, one
@@ -1711,6 +1731,7 @@ if (typeof module !== 'undefined') module.exports = {
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H,
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
+  RACE10_LIBERTY, RACE10_LIBERTY_WINNER, race10Rewards, race10Liberty,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,

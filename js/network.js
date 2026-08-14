@@ -489,7 +489,7 @@ function netConnect(onReady) {
     if (r10s) {
       _race10State = {
         queued: r10s.queued || 0, needed: r10s.needed || 10, live: !!r10s.live,
-        minLevel: r10s.minLevel || 10, reward: r10s.reward || 50,
+        minLevel: r10s.minLevel || 10, reward: r10s.reward || 10, winReward: r10s.winReward || 30,
         maxAttempts: r10s.maxAttempts || 3, attemptsLeft: null,
         phase: r10s.phase || 'idle', nextAt: r10s.nextAt || 0, startAt: r10s.startAt || 0,
       };
@@ -2876,7 +2876,7 @@ function _initRace10Handlers(s) {
   s.on('race10State', (st) => {
     _race10State = {
       queued: st.queued || 0, needed: st.needed || 10, live: !!st.live,
-      minLevel: st.minLevel || 10, reward: st.reward || 50,
+      minLevel: st.minLevel || 10, reward: st.reward || 10, winReward: st.winReward || 30,
       maxAttempts: st.maxAttempts || _race10State.maxAttempts || 3,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _race10State.attemptsLeft,
       // 'idle' outside the 20:30 MSK, 5-minute window, 'reg' while it's open —
@@ -2943,7 +2943,7 @@ function _initRace10Handlers(s) {
     if (typeof onRace10State === 'function') onRace10State();
   });
 
-  s.on('race10Result', ({ won, winnerName, myDamage, timedOut, reward }) => {
+  s.on('race10Result', ({ won, winnerName, myDamage, timedOut, reward, items }) => {
     _race10InMatch = false;
     _race10Lane = null;
     _dbFightAt = 0;
@@ -2952,7 +2952,7 @@ function _initRace10Handlers(s) {
     // server's _race10GrantWin already sent an authoritative
     // 'nexumBalanceUpdate' for this reward, so adding it again double-counted
     // the win client-side.
-    if (typeof showRace10Result === 'function') showRace10Result(!!won, winnerName, myDamage || 0, !!timedOut, reward || 0);
+    if (typeof showRace10Result === 'function') showRace10Result(!!won, winnerName, myDamage || 0, !!timedOut, reward || 0, items || []);
     if (typeof netRace10Sync === 'function') netRace10Sync();
     if (typeof onRace10State === 'function') onRace10State();
   });

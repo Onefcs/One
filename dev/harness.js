@@ -2566,6 +2566,79 @@ scenario('race10: 31 entrants for 30 corridors — the 31st is refused, not stuf
   await Promise.all(clients.map(c => c.close()));
 });
 
+scenario('race10: everyone who hits the boss is paid, the winner more, and nobody else', async () => {
+  // Reaching the boss and landing a hit on it is the qualifying line — corridor
+  // kills never count, because only damage to the shared boss is tallied
+  // (_race10TrackHit, server/index.js). Two entrants both reach the boss and
+  // hit it; a third runs the race but never touches it. The winner takes the
+  // bigger tier of the same reward, not a different one.
+  const a = await connectWithSaved('harness_r10_pay_a', { lvl: 10, xp: 0, xpNext: 100 });
+  const b = await connectWithSaved('harness_r10_pay_b', { lvl: 10, xp: 0, xpNext: 100 });
+  const c = await connectWithSaved('harness_r10_pay_c', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(a, 'ranger');
+  await enterWorld(b, 'mage');
+  await enterWorld(c, 'lev');
+  await fetch(`${BASE}/dev/race10/open?reg=1500`, { method: 'POST' });
+
+  const regs = [a, b, c].map(x => x.wait('race10Registered', { timeout: 4000 }));
+  [a, b, c].forEach(x => x.emit('race10Register'));
+  await Promise.all(regs);
+
+  const starts = [a, b, c].map(x => x.wait('race10Started', { timeout: 8000 }));
+  const fights = [a, b, c].map(x => x.wait('race10Fight', { timeout: 20000 }));
+  await Promise.all(starts);
+  // Entrants are frozen for RACE10_FREEZE_MS after the deploy — the server
+  // refuses both movement and attacks until race10Fight goes out, so swinging
+  // before it lands would silently do nothing.
+  await Promise.all(fights);
+
+  // Walk a and b onto the boss and hit it; c stays in its corridor.
+  const boss = require('../server/game/dungeon').generateRace10().race10.boss;
+  const results = [a, b, c].map(x => x.wait('race10Result', { timeout: 20000 }).catch(() => null));
+  for (const x of [a, b]) {
+    x.emit('playerMove', { x: boss.x + 30, y: boss.y, facing: 1, moving: false });
+  }
+  await sleep(300);
+  // a swings far more than b, so a is the top damage-dealer. The server rate
+  // limits one hit per 150ms per socket, so these are paced.
+  const bossId = (await fetch(`${BASE}/dev/race10/state`).then(r => r.json())).bossId;
+  ok(bossId, 'the shared boss is up and nameable');
+  for (let i = 0; i < 14; i++) {
+    a.emit('attack', { enemyId: bossId });
+    if (i % 4 === 0) b.emit('attack', { enemyId: bossId });
+    await sleep(170);
+  }
+  // End the race on the clock rather than by killing the boss — the payout
+  // rule is the same either way and this keeps the scenario short.
+  await fetch(`${BASE}/dev/race10/finish`, { method: 'POST' });
+
+  const [ra, rb, rc] = await Promise.all(results);
+  ok(ra && rb && rc, 'all three get a result');
+
+  const winner = [ra, rb].find(r => r.won);
+  const loser  = [ra, rb].find(r => !r.won);
+  ok(winner, 'the top damage-dealer is marked the winner');
+  eq(winner.reward, 30, 'the winner takes 30 Liberty');
+  eq(loser.reward, 10, 'the other boss-hitter takes 10 Liberty');
+  eq(rc.reward, 0, 'and the entrant who never reached the boss takes nothing');
+
+  const qtyOf = r => (r.items || []).map(i => i.qty);
+  eq((winner.items || []).length, 6, 'the winner gets every kind of buff potion');
+  ok(qtyOf(winner).every(q => q === 2), 'two of each', JSON.stringify(qtyOf(winner)));
+  eq((loser.items || []).length, 6, 'so does the other boss-hitter');
+  ok(qtyOf(loser).every(q => q === 1), 'one of each', JSON.stringify(qtyOf(loser)));
+  eq((rc.items || []).length, 0, 'and the non-participant gets no potions either');
+
+  // The potions really landed in the inventory, not just in the modal.
+  await sleep(400);
+  const rowW = memory.__dump('Player').find(p => p.username === (winner === ra ? a : b).auth.username);
+  const bag = (rowW.savedData.inventory || []).filter(i => i && i.id.startsWith('bp_'));
+  eq(bag.length, 6, 'the winner\'s inventory really holds all six kinds');
+  ok(bag.every(i => i.qty === 2), 'at two each', JSON.stringify(bag.map(i => i.qty)));
+
+  await a.close(); await b.close(); await c.close();
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

@@ -160,6 +160,7 @@ const {
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
+  RACE10_LIBERTY, RACE10_LIBERTY_WINNER, race10Rewards, race10Liberty,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
@@ -2459,6 +2460,28 @@ if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
     res.json({ ok: true, regMs, startsAt: _race10.startAt });
   });
 
+  // The live boss's enemy id, so a test client can hit the thing the payout
+  // rule is written against. A real client learns this from the enemy stream
+  // it decodes; the harness speaks the protocol but does not render, so it
+  // has no other way to name the boss.
+  app.get('/dev/race10/state', (req, res) => {
+    res.json({
+      live: _race10.live, bossId: _race10.bossId,
+      dmg: Object.fromEntries(_race10.dmg), alive: _race10.alive.size,
+    });
+  });
+
+  // Ends the current race the way its own clock would, awarding the win to
+  // whoever has dealt the most damage — the same _race10Finish path a real
+  // ending takes, just without waiting out RACE10_MAX_MS.
+  app.post('/dev/race10/finish', (req, res) => {
+    if (!_race10.live) return res.status(409).json({ error: 'no race running' });
+    let winnerId = null, best = 0;
+    _race10.dmg.forEach((d, sid) => { if (d > best) { best = d; winnerId = sid; } });
+    _race10Finish(winnerId, true);
+    res.json({ ok: true, winnerId, best });
+  });
+
   // Same idea, for Death Battle (Битва на смерть): opens registration on the
   // spot with a short window instead of waiting for the next scheduled slot,
   // so the deploy/eliminate/finish flow (arena floor join, return-to-
@@ -4058,7 +4081,14 @@ const RACE10_REG_MS    = 5 * 60 * 1000;  // registration window before the start
 const RACE10_ATTEMPTS  = 1;              // per UTC day — its own limit, not the shared dungeon pool
 const RACE10_MIN_LEVEL = 10;
 const RACE10_FREEZE_MS = 10 * 1000;
-const RACE10_REWARD    = 10;             // Liberty (Nexum) to the top damage-dealer only — the boss drops no loot
+// Liberty (Nexum) and potions, from shared/definitions.js so the client's
+// events panel advertises exactly what the server pays. Two tiers: every
+// entrant who landed at least one hit ON THE BOSS takes RACE10_LIBERTY plus
+// one of each buff potion, and the top damage-dealer takes
+// RACE10_LIBERTY_WINNER plus two of each instead. Corridor kills do not
+// qualify anybody — only damage to the shared boss is tallied
+// (_race10TrackHit), so the corridors still have to be run to be paid.
+const RACE10_REWARD    = RACE10_LIBERTY;
 // Operational guard only, same idea as the 3v3 arena's old wedge — ends the
 // race with no winner if the boss just never comes down, so the one shared
 // instance can't be tied up forever.
@@ -4107,7 +4137,11 @@ function _race10PublicState() {
     minPlayers: RACE10_MIN_PLAYERS,
     live: _race10.live,
     minLevel: RACE10_MIN_LEVEL,
+    // Both tiers, so the panel advertises exactly what gets paid rather than
+    // only the winner's line: `reward` is what every entrant who lands a hit
+    // on the boss takes, `winReward` what the top damage-dealer takes instead.
     reward: RACE10_REWARD,
+    winReward: RACE10_LIBERTY_WINNER,
     maxAttempts: RACE10_ATTEMPTS,
   };
 }
@@ -4369,11 +4403,21 @@ async function _race10Finish(winnerId, timedOut) {
   for (const sid of participants) {
     const won = !!winnerId && sid === winnerId;
     const s = io.sockets.sockets.get(sid);
-    let reward = 0;
-    if (won && s?.data?._race10GrantWin) reward = await s.data._race10GrantWin();
+    // Reaching the boss and landing at least one hit on it is what qualifies
+    // for a payout — dmg only ever counts damage to the shared boss
+    // (_race10TrackHit), never corridor kills. Someone who died in their
+    // corridor, or who ran it but never got a swing in, takes nothing; the
+    // winner takes the bigger tier of the same reward.
+    const hitTheBoss = (dmg.get(sid) || 0) > 0;
+    let reward = 0, rewardItems = [];
+    if (hitTheBoss && s?.data?._race10GrantReward) {
+      const paid = await s.data._race10GrantReward(won);
+      if (paid) { reward = paid.nexum; rewardItems = paid.items; }
+    }
     io.to(sid).emit('race10Result', {
       won, winnerName: winnerId ? names.get(winnerId) : null,
       myDamage: dmg.get(sid) || 0, timedOut: !!timedOut, reward,
+      items: rewardItems.map(i => ({ id: i.id, name: i.name, img: i.img, qty: i.qty })),
     });
     logPlayer(_socketTid(sid), names.get(sid), 'race10_end', {
       result: winnerId ? (won ? 'win' : 'lose') : (timedOut ? 'timeout' : 'no_survivors'),
@@ -5540,15 +5584,42 @@ io.on('connection', socket => {
     return ARENA3_REWARD;
   };
 
-  // Pays out a race10 win — same reasoning as _a3GrantWin above.
-  socket.data._race10GrantWin = async () => {
-    if (!authed) return 0;
-    const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', RACE10_REWARD);
-    if (_rcBal !== null) _nexumBalance = _rcBal;
-    socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
-    logPlayer(authed.telegramId, authed.username, 'race10_reward',
-      { nexum: RACE10_REWARD, balance: _liveNexum() });
-    return RACE10_REWARD;
+  // Pays out a race10 finish. Unlike _a3GrantWin above this runs for EVERY
+  // entrant who landed a hit on the boss, not only the winner — `won` picks
+  // the tier (see race10Rewards/race10Liberty, shared/definitions.js).
+  //
+  // Items go through _applyGrant against whichever socket is the account's
+  // live session right now, not through this closure: a three-minute race is
+  // long enough that the account may have reconnected on a different socket
+  // since _race10Finish resolved this one, and writing the prize through a
+  // socket nobody's client is listening to would lose it. Same race
+  // _dbGrantWin already handles; the _dbPushInventory fallback covers the
+  // case where there is no live session at all.
+  socket.data._race10GrantReward = async (won) => {
+    if (!authed) return null;
+    _itemOpBusy++;
+    try {
+      const nexum = race10Liberty(won);
+      const items = race10Rewards(won);
+      const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', nexum);
+      if (_rcBal !== null) _nexumBalance = _rcBal;
+      socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
+      const _liveSid = activeSessions.get(authed.telegramId);
+      const _target = _liveSid === socket.id ? socket : _socketForTelegramId(authed.telegramId);
+      const _result = _target && _target.data._applyGrant
+        ? _target.data._applyGrant({ addItems: items.map(it => ({ item: it })) }, 'race10_reward',
+            { items: items.map(i => i.id), nexum })
+        : null;
+      const _delivered = !!_result;
+      if (!_delivered && items.length) {
+        await _dbPushInventory(authed, items, 'race10_reward');
+      }
+      logPlayer(authed.telegramId, authed.username, 'race10_reward',
+        { won: !!won, nexum, balance: _liveNexum(), items: items.map(i => i.id), delivered: _delivered });
+      return { nexum, items, delivered: _delivered };
+    } finally {
+      _itemOpBusy--;
+    }
   };
 
   const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];

@@ -4056,7 +4056,15 @@ function _race10BodyHTML() {
         </div>
         <div class="db-reward-row">
           <img src="/images/nexum-coin_v2.png" alt="">
-          <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
+          <span>${t('race10RewardAll')}</span><span class="db-reward-qty">+${st.reward}</span>
+        </div>
+        <div class="db-reward-row">
+          <img src="/images/nexum-coin_v2.png" alt="">
+          <span>${t('race10RewardWin')}</span><span class="db-reward-qty">+${st.winReward}</span>
+        </div>
+        <div class="db-reward-row">
+          <span class="db-reward-fallback">🧪</span>
+          <span>${t('race10RewardPotions')}</span><span class="db-reward-qty">×1 / ×2</span>
         </div>
       </div>
     </div>`;
@@ -4147,7 +4155,7 @@ function onRace10Score(rank, total) {
   if (_eventsPanelOpen() && _eventTab === 'race10') _renderEventsBody();
 }
 
-function showRace10Result(won, winnerName, myDamage, timedOut, reward) {
+function showRace10Result(won, winnerName, myDamage, timedOut, reward, items) {
   const modal = document.getElementById('race10-result-modal');
   if (!modal) return;
   const title = won ? t('race10Victory') : (timedOut ? t('a3NoResult') : t('race10Defeat'));
@@ -4157,10 +4165,22 @@ function showRace10Result(won, winnerName, myDamage, timedOut, reward) {
   document.getElementById('race10-result-sub').textContent = won
     ? t('race10VictorySub')
     : (timedOut ? t('race10NoResultSub') : tVars('race10DefeatSub', { name: winnerName || '?', dmg: Math.floor(myDamage || 0) }));
-  document.getElementById('race10-result-rewards').innerHTML = reward
-    ? `<div class="db-reward-row"><img src="/images/nexum-coin_v2.png" alt="">
-       <span>Liberty</span><span class="db-reward-qty">+${reward}</span></div>`
-    : '';
+  // Paid to everyone who landed a hit on the boss, not only the winner — so
+  // this block is no longer a victory-only decoration and has to render an
+  // item list too. Empty (and hidden) for anyone who never reached the boss:
+  // claiming a reward that did not land is the one thing it must not do.
+  const _rwRows = [];
+  if (reward) {
+    _rwRows.push(`<div class="db-reward-row"><img src="/images/nexum-coin_v2.png" alt="">
+       <span>Liberty</span><span class="db-reward-qty">+${reward}</span></div>`);
+  }
+  (items || []).forEach(it => {
+    _rwRows.push(`<div class="db-reward-row">${it.img
+      ? `<img src="${it.img}" alt="">`
+      : '<span class="db-reward-fallback">🧪</span>'}
+       <span>${it.name || it.id}</span><span class="db-reward-qty">×${it.qty || 1}</span></div>`);
+  });
+  document.getElementById('race10-result-rewards').innerHTML = _rwRows.join('');
   modal.style.display = 'flex';
 }
 
