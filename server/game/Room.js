@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { TILE, WALL } = require('./dungeon');
 const { floorEntry } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        ARENA3_BOSS_HP, ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
+        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
@@ -716,8 +716,8 @@ class Room {
         // stays on the player wherever they go. The client runs the identical
         // rule off this same field (js/game.js), so both sides agree.
         atkTimer: 1 + Math.random(), aggro: true, aggroR: FEAR_AGGRO_R,
-        // Every other runtime spawn (spawnEventBoss, spawnRaceBoss,
-        // spawnPvpArenaBosses) sets this at push time — without it, every
+        // Every other runtime spawn (spawnEventBoss, spawnRaceBoss) sets
+        // this at push time — without it, every
         // monster in the wave shared the same `undefined` _idx, which drives
         // BOTH the AI target-recheck stagger (_closestTargetFor's caller) AND
         // the network stream's per-enemy refresh cadence (_pushEnemyEntry).
@@ -1228,11 +1228,6 @@ class Room {
     this._aiTickNo++;
     this.enemies.forEach(e => {
       if (e.hp <= 0) {
-        // 3v3 guard boss: killing one ends the match on the spot (see the
-        // a3Team check in server/index.js's attack/skillAttack handlers,
-        // which calls despawnPvpArenaBosses() in the same tick it dies) — it
-        // never lingers here long enough to loot or respawn.
-        if (e.a3Team) return;
         // Guild War tower: same reasoning — the capture branch in
         // attackEnemy/skillAttackEnemy resets its hp to maxHp in the same
         // tick it would otherwise hit 0, so this is a defensive no-op in
@@ -1288,12 +1283,6 @@ class Room {
         }
         return;
       }
-
-      // 3v3 guard boss: stands exactly where it spawned for the whole match —
-      // no targeting, no movement, no attack, no leash. Damage still applies
-      // normally via attackEnemy/skillAttackEnemy, which don't go through
-      // this loop at all.
-      if (e.a3Passive) return;
 
       // Guild War tower: stationary for the Room's entire lifetime — no
       // targeting, no movement, no attack, no leash. Damage/capture applies
@@ -2545,17 +2534,37 @@ class Room {
   // PvP on. Returns what was actually placed so the caller only counts players
   // who really made it in. Falls back to the arena centre if a lane spawn ever
   // lands on a wall, so a map tweak can't strand someone inside geometry.
+  // The base slots a match can actually put people in, per side. Validated
+  // rather than assumed, for the same reason raceUsableLanes is: the deploy
+  // used to fall back to the arena's CENTRE when a slot came out inside
+  // geometry, which is both the middle of the lane the two teams fight over
+  // and the exact silent misplacement that made everyone appear in the middle
+  // of the map for real. A slot that cannot be honoured is dropped, so a side
+  // with fewer usable slots simply reuses the ones it has (the modulo below)
+  // instead of quietly teleporting someone into the crossfire.
+  //
+  // Also what server/index.js reads to join each entrant AT the slot it is
+  // about to be given — dungeonData deliberately does not carry pvpArena
+  // (the client needs no arena geometry), so this is the way in.
+  pvpArenaSlots() {
+    const ar = this._dungeon.pvpArena;
+    if (!ar) return { teamA: [], teamB: [] };
+    const ok = spots => (spots || []).filter(s => this.canStandAt(s.x, s.y));
+    return { teamA: ok(ar.teamA), teamB: ok(ar.teamB) };
+  }
+
   pvpArenaDeploy(teamA, teamB) {
     const ar = this._dungeon.pvpArena;
     if (!ar) return [];
     const placed = [];
+    const slots = this.pvpArenaSlots();
     const put = (ids, spots, team) => {
+      if (!spots.length) return;
       ids.forEach((sid, i) => {
         const p = this.players.get(sid);
         if (!p) return;
         const spot = spots[i % spots.length];
-        let x = spot.x, y = spot.y;
-        if (this._isWall(x, y)) { x = ar.cx; y = ar.cy; }
+        const x = spot.x, y = spot.y;
         p.x = x; p.y = y;
         p.hp = p.maxHp;
         p.pvpMode = true;
@@ -2569,8 +2578,8 @@ class Room {
         placed.push({ socketId: sid, x, y, hp: p.hp, team });
       });
     };
-    put(teamA, ar.teamA, 'A');
-    put(teamB, ar.teamB, 'B');
+    put(teamA, slots.teamA, 'A');
+    put(teamB, slots.teamB, 'B');
     return placed;
   }
 
@@ -2661,10 +2670,9 @@ class Room {
       atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
       aggro: false, aggroR: 900,
       raceBoss: true,
-      // Holds its ground in the middle of the shared room instead of chasing.
-      // Unlike the 3v3 guard bosses (a3Passive) it is NOT inert: it still
-      // aggros and still hits whoever comes into reach — see the stationary
-      // branch in _tick. Chasing made it drag the fight back down whichever
+      // Holds its ground in the middle of the shared room instead of chasing,
+      // but is otherwise a live boss: it still aggros and still hits whoever
+      // comes into reach — see the stationary branch in _tick. Chasing made it drag the fight back down whichever
       // corridor it happened to pick, which is neither fair to that runner nor
       // to the ones it walked away from.
       stationary: true,
@@ -2711,62 +2719,6 @@ class Room {
       e._shp = -1;
       delete e.respawnTimer;
     });
-  }
-
-  // Spawns the two stationary guard bosses for a 3v3 match — same identity as
-  // the world EVENT_BOSS, but ARENA3_BOSS_HP and no loot. a3Team marks which
-  // side owns each one (that team can't damage it — see the a3Team check in
-  // server/index.js's attack/skillAttack handlers); a3Passive tells the AI
-  // tick loop to skip it entirely, so it never moves, aggros or attacks.
-  // Returns { A: bossId, B: bossId } for the caller to hand to both clients.
-  spawnPvpArenaBosses() {
-    const ar = this._dungeon.pvpArena;
-    if (!ar || !ar.bossA || !ar.bossB) return null;
-    const mk = (spot, team) => {
-      const e = {
-        id: `a3boss_${team}_${Date.now()}`,
-        ...EVENT_BOSS,
-        // Own eid (not EVENT_BOSS's demon_event_boss) — the client keys the
-        // world event boss's HP-bar overlay and alive-tracking off that exact
-        // string (js/ui.js updateEventBossHpBar), and this boss sharing it
-        // would show up there too. Its sprite entry (js/sprites.js
-        // arena3_guard_boss) points at the identical sheets, so it still
-        // looks the same.
-        eid: 'arena3_guard_boss',
-        arm: 'a3', rlvl: 0,
-        atk: 0, spd: 0,
-        maxHp: ARENA3_BOSS_HP, hp: ARENA3_BOSS_HP,
-        x: spot.x, y: spot.y, spawnX: spot.x, spawnY: spot.y,
-        atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
-        aggro: false, aggroR: 0,
-        a3Team: team, a3Passive: true,
-        _sx: spot.x, _sy: spot.y, _shp: ARENA3_BOSS_HP,
-        _idx: this._allocIdx(),
-      };
-      this.enemies.push(e);
-      this._enemyMap.set(e.id, e);
-      return e;
-    };
-    const bossA = mk(ar.bossA, 'A');
-    const bossB = mk(ar.bossB, 'B');
-    this._a3BossIds = { A: bossA.id, B: bossB.id };
-    return this._a3BossIds;
-  }
-
-  // Removes whatever's left of the two guard bosses — called once a match
-  // ends, win or wedge, so a leftover boss (dead or still standing) never
-  // lingers into the next match.
-  despawnPvpArenaBosses() {
-    if (!this._a3BossIds) return;
-    const ids = new Set([this._a3BossIds.A, this._a3BossIds.B]);
-    this.enemies = this.enemies.filter(e => {
-      if (!ids.has(e.id)) return true;
-      this._enemyMap.delete(e.id);
-      this._forgetEnemy(e.id);
-      this._releaseIdx(e);
-      return false;
-    });
-    this._a3BossIds = null;
   }
 
   // Война гильдий (Guild War): spawns the one stationary tower/castle at the
@@ -2928,9 +2880,8 @@ class Room {
     if (rdx * rdx + rdy * rdy > _reach * _reach) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     // Guild War tower: only a clanned attacker from a DIFFERENT clan than the
-    // current owner may damage it — checked here, inside Room.js, unlike
-    // a3Team's equivalent check which lives in server/index.js, since this
-    // needs to run before damage is computed rather than after.
+    // current owner may damage it — checked here, inside Room.js rather than
+    // in the handler, since this needs to run before damage is computed.
     if (enemy.guildWar) {
       if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
       if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
@@ -2960,10 +2911,6 @@ class Room {
           newOwnerClanIcon: enemy.ownerClanIcon, prevOwnerClanName,
         };
       }
-      // 3v3 guard boss: no xp/gold/loot, just enough (ex/ey/color) for the
-      // caller to still show the death visually — it ends the match off
-      // a3Team instead of running the normal kill-reward flow.
-      if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
       // Race10 boss: no xp/gold/loot either — server/index.js tallies dmg per
       // attacker across every hit (not just this killing one) to decide the
       // race's winner, so raceBoss has to come back on non-kills too (below).
@@ -3046,7 +2993,6 @@ class Room {
           newOwnerClanIcon: enemy.ownerClanIcon, prevOwnerClanName,
         };
       }
-      if (enemy.a3Team) return { killed: true, dmg, isCrit, a3Team: enemy.a3Team, ex: enemy.x, ey: enemy.y, color: enemy.color };
       if (enemy.raceBoss) return { killed: true, dmg, isCrit, raceBoss: true, ex: enemy.x, ey: enemy.y, color: enemy.color };
       const g = calcGoldDrop(enemy);
       // Assigned right here rather than left for the AI tick loop to notice

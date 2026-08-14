@@ -106,12 +106,11 @@ function _isOnScreen(wx, wy) {
 }
 
 // True while in a live 3v3 match for an id that shouldn't be selectable as a
-// target: your own teammates (assist should only ever offer the enemy team)
-// and your own side's guard boss (it can't be hit — see the a3Team check in
-// server/index.js — so it shouldn't be offered as a target either).
+// target: your own teammates, since assist should only ever offer the enemy
+// team. There is nothing else on this floor to exclude — the match is
+// players only now.
 function _a3Unselectable(id) {
   if (typeof _a3InMatch === 'undefined' || !_a3InMatch || !_a3Team) return false;
-  if (id === (typeof _a3BossIds !== 'undefined' && _a3BossIds[_a3Team])) return true;
   return (_a3Mates[_a3Team] || []).includes(id);
 }
 

@@ -2768,14 +2768,13 @@ function _initArena3Handlers(s) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
-  s.on('arena3Started', ({ x, y, hp, team, fightAt, roundEndAt, roster, bossIds }) => {
+  s.on('arena3Started', ({ x, y, hp, team, fightAt, roundEndAt, roster }) => {
     if (!player) return;
     _a3InMatch = true;
     _a3Registered = false;
     _a3Team = team;
     _a3Mates = { A: [], B: [] };
     (roster || []).forEach(r => { if (_a3Mates[r.team]) _a3Mates[r.team].push(r.id); });
-    _a3BossIds = bossIds || { A: null, B: null };
     _a3RoundEndAt = 0; // countdown only starts once the freeze ends — see arena3Fight below
     _a3Score = { a: 3, b: 3 };
     if (hp) player.hp = hp;
@@ -2791,11 +2790,6 @@ function _initArena3Handlers(s) {
     }
     if (typeof Sound !== 'undefined') Sound.bossSpawn();
     if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
-    // Guard bosses use their own sprite entry (js/sprites.js arena3_guard_boss)
-    // rather than piggybacking on the world event boss's — see the eid
-    // comment in spawnPvpArenaBosses (server/game/Room.js). Unlike that one,
-    // nothing else preloads it, so it has to happen here.
-    if (typeof loadEnemySprites === 'function') loadEnemySprites('arena3_guard_boss');
     if (typeof onArena3State === 'function') onArena3State();
   });
 
@@ -2836,7 +2830,6 @@ function _initArena3Handlers(s) {
     _a3InMatch = false;
     _a3Team = null;
     _a3Mates = { A: [], B: [] };
-    _a3BossIds = { A: null, B: null };
     _a3RoundEndAt = 0;
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();

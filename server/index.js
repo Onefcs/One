@@ -3614,8 +3614,21 @@ function _a3PublicState() {
 // rather than the whole floor.
 function _a3Broadcast() {
   const st = _a3PublicState();
+  // To EVERYONE, not just to the queue and the players in a live match. The
+  // queue size is the one number on this panel that changes because of what
+  // other people do, and it was only ever pushed to people who had already
+  // signed up — so anyone sitting on the panel deciding whether to join saw
+  // whatever count happened to be in their last gameStart or arena3Sync and
+  // watched it never move. That is the "счётчик записанных неправильно
+  // считается" report: the figure was not wrong when it was sent, it was
+  // simply never sent again.
+  //
+  // Safe to send without a `registered` field: the client only overwrites its
+  // own flag when the field is actually present (see the arena3State handler,
+  // js/network.js), so a broadcast cannot un-register anybody. The per-socket
+  // push below is what carries the flag to the people it is true for.
+  io.emit('arena3State', st);
   _a3.queue.forEach((_, sid) => io.to(sid).emit('arena3State', { ...st, registered: true }));
-  _a3.names.forEach((_, sid) => io.to(sid).emit('arena3State', st));
 }
 
 // Arms the next daily window (21:00 MSK) plus its 30-minute warning. Called
@@ -3793,8 +3806,33 @@ async function _a3Deploy(ready, room) {
   // lay out the two bases — force each entrant's own connection onto the
   // pvpArena floor first (bypassing any gate: this is a matchmade deploy,
   // not a walk-in, and there is none to bypass anyway — see _doEnterLocation).
-  const joinedA = teamA.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('pvpArena'));
-  const joinedB = teamB.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('pvpArena'));
+  //
+  // Each one is joined AT the base slot it is about to be given, not at the
+  // floor's default spawn. That default is the middle of the arena
+  // (generateArena3's `spawn` is the centre tile), and joining is also what
+  // builds gameStart — so gameStart went out saying "you are in the middle of
+  // the map", pvpArenaDeploy moved them to their base a moment later, and
+  // arena3Started reported the real spot. The client applies arena3Started
+  // immediately but defers gameStart behind the world-map fetch on a first
+  // visit to this floor, so the stale centre position won by arriving last
+  // and both teams appeared standing on each other in the middle. Exactly the
+  // Bloody Tower's bug, on a different floor.
+  //
+  // Indexed by how many have actually joined, not by position in the source
+  // list: pvpArenaDeploy indexes the array it RECEIVES, so a player who fails
+  // to join would otherwise shift everyone behind them onto a different slot
+  // than the one they were placed at.
+  const _ar = room.pvpArenaSlots();
+  const _joinTeam = (ids, spots) => {
+    const out = [];
+    ids.forEach(sid => {
+      const pos = (spots && spots.length) ? spots[out.length % spots.length] : undefined;
+      if (io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('pvpArena', { pos })) out.push(sid);
+    });
+    return out;
+  };
+  const joinedA = _joinTeam(teamA, _ar.teamA);
+  const joinedB = _joinTeam(teamB, _ar.teamB);
 
   const placed = room.pvpArenaDeploy(joinedA, joinedB);
   // Someone can vanish between the readiness filter above and the deploy. A
@@ -3810,11 +3848,6 @@ async function _a3Deploy(ready, room) {
     _a3Broadcast();
     return;
   }
-  // One guard boss per side (see spawnPvpArenaBosses in server/game/Room.js) —
-  // 30k HP each, no drop; the owning team can't damage its own (checked in
-  // the attack/skillAttack handlers below) and destroying the enemy's ends
-  // the match immediately (see the a3Team branch in those same handlers).
-  const bossIds = room.spawnPvpArenaBosses();
   placed.forEach(({ socketId, team }) => {
     const name = _a3.queue.get(socketId)?.name || '?';
     _a3.teams.set(socketId, team);
@@ -3833,7 +3866,7 @@ async function _a3Deploy(ready, room) {
   const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
   placed.forEach(({ socketId, x, y, hp, team }) => {
     io.to(socketId).emit('arena3Started', {
-      x, y, hp, team, fightAt: _a3.fightAt, roundEndAt: _a3.roundEndAt, roster, bossIds,
+      x, y, hp, team, fightAt: _a3.fightAt, roundEndAt: _a3.roundEndAt, roster,
     });
     logPlayer(_socketTid(socketId), _a3.names.get(socketId), 'arena3_start', { team });
   });
@@ -3891,10 +3924,9 @@ async function _a3Finish(winner, wedged) {
   _a3.live = false;
   _a3.fightAt = 0;
   _a3.roundEndAt = 0;
-  const room = getRoom(FLOOR_IDS.pvpArena);
-  // Match is over either way — clear both guard bosses so a dead-or-alive
-  // leftover never carries into the next one.
-  if (room) room.despawnPvpArenaBosses();
+  // The match is decided by wiping the other side — there are no guard
+  // bosses to knock down as a shortcut any more, so this needs nothing torn
+  // down between rounds.
   // Everyone still standing goes home too — the match is over for them as
   // well, they just didn't die to get there.
   _a3.alive.forEach((_, sid) => _returnToHub(sid));
@@ -4197,8 +4229,11 @@ function _race10PublicState() {
 
 function _race10Broadcast() {
   const st = _race10PublicState();
+  // Same reasoning as _a3Broadcast above — the queue size is only interesting
+  // to someone who has NOT signed up yet, and they were the one group never
+  // told when it changed.
+  io.emit('race10State', st);
   _race10.queue.forEach((_, sid) => io.to(sid).emit('race10State', { ...st, registered: true }));
-  _race10.names.forEach((_, sid) => io.to(sid).emit('race10State', st));
 }
 
 // Arms the next daily window (20:30 MSK) plus its 30-minute warning. Called
@@ -9997,11 +10032,6 @@ io.on('connection', socket => {
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id)) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
-    // Arena3 guard boss: the owning team can't damage its own — the only
-    // team check needed here, since attackEnemy already refuses anything
-    // dead/out of range on its own.
-    const _a3TargetEnemy = currentRoom._enemyMap.get(enemyId);
-    if (_a3TargetEnemy && _a3TargetEnemy.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy.a3Team) return;
     const result = currentRoom.attackEnemy(socket.id, enemyId);
     if (!result) return;
     if (result.immune) {
@@ -10019,20 +10049,10 @@ io.on('connection', socket => {
     _seasonTrackBossHit(enemyId);
     // Guild War tower: no xp/gold/loot — capture just flips ownership. The
     // tower's hp already bounced back to maxHp inside Room.attackEnemy, so no
-    // enemyKilled/death-animation broadcast either, unlike a3Team below —
-    // the next tick's normal hp stream is enough, and js/sprites.js's
-    // guildwar_castle entry has no death sheet to play anyway.
+    // enemyKilled/death-animation broadcast either — the next tick's normal
+    // hp stream is enough, and js/sprites.js's guildwar_castle entry has no
+    // death sheet to play anyway.
     if (result.captured) { _gwApplyCapture(result); return; }
-    if (result.a3Team) {
-      // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
-      // enemyKilled handler plays the death animation and removes the corpse
-      // — otherwise the boss would just freeze on screen since _a3Finish
-      // despawns it server-side before the next tick ever reports hp: 0.
-      _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
-        { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
-      _a3Finish(result.a3Team === 'A' ? 'B' : 'A', false);
-      return;
-    }
     if (result.killed) {
       if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: result.respawnAt });
       const partyId    = playerParty.get(socket.id);
@@ -10146,8 +10166,6 @@ io.on('connection', socket => {
     if (_pvpFrozen(socket.id)) return;
     if (!currentRoom) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
-    const _a3TargetEnemy2 = currentRoom._enemyMap.get(enemyId);
-    if (_a3TargetEnemy2 && _a3TargetEnemy2.a3Team && _a3.teams.get(socket.id) === _a3TargetEnemy2.a3Team) return;
     const result = currentRoom.skillAttackEnemy(socket.id, enemyId, key);
     if (!result) return;
     if (result.immune) {
@@ -10164,16 +10182,6 @@ io.on('connection', socket => {
     // per boss appearance rather than once per swing.
     _seasonTrackBossHit(enemyId);
     if (result.captured) { _gwApplyCapture(result); return; }
-    if (result.a3Team) {
-      // Visual-only kill broadcast (no xp/gold/loot fields) so every client's
-      // enemyKilled handler plays the death animation and removes the corpse
-      // — otherwise the boss would just freeze on screen since _a3Finish
-      // despawns it server-side before the next tick ever reports hp: 0.
-      _emitToEnemyViewers(currentRoom, enemyId, 'enemyKilled',
-        { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
-      _a3Finish(result.a3Team === 'A' ? 'B' : 'A', false);
-      return;
-    }
     if (result.killed) {
       if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: result.respawnAt });
       const partyId    = playerParty.get(socket.id);

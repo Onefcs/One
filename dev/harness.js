@@ -2786,6 +2786,135 @@ scenario('race10: a racer cannot damage another corridor\'s monsters even when t
   }
 });
 
+scenario('arena3: entrants are joined AT their base, not in the middle of the map', async () => {
+  // Same shape the Bloody Tower had. The join that builds gameStart runs
+  // before pvpArenaDeploy assigns base slots, so gameStart carried this
+  // floor's default spawn — which for the arena is the CENTRE tile, right on
+  // the lane between the two bases — while arena3Started carried the real
+  // slot moments later. The client applies arena3Started at once but defers
+  // gameStart behind the world-map fetch on a first visit, so the stale
+  // centre won by arriving last and both teams appeared standing on top of
+  // each other in the middle.
+  const arena = require('../server/game/dungeon').generatePvpArena();
+  const centre = arena.spawn;
+
+  const players = [];
+  for (let i = 0; i < 6; i++) {
+    const c = await connectWithSaved(`harness_a3_pos_${i}`, { lvl: 15, xp: 0, xpNext: 100 });
+    await enterWorld(c, 'ranger');
+    players.push(c);
+  }
+  await fetch(`${BASE}/dev/arena3/open`, { method: 'POST' });
+
+  const started = players.map(c => c.wait('arena3Started', { timeout: 8000 }));
+  players.forEach(c => c.emit('arena3Register'));
+  const starts = await Promise.all(started);
+
+  players.forEach((c, i) => {
+    const gs = c.last('gameStart');
+    eq(gs.floor, 9, `${c.name} is on the arena floor`);
+    eq(gs.spawn.x, starts[i].x, `${c.name}: gameStart agrees with arena3Started on x`);
+    eq(gs.spawn.y, starts[i].y, `${c.name}: and on y`);
+    ok(!(gs.spawn.x === centre.x && gs.spawn.y === centre.y),
+      `${c.name} is not dropped on the centre tile`);
+  });
+
+  // The two teams start apart, which is the point of the base slots.
+  const xsA = starts.filter(s => s.team === 'A').map(s => s.x);
+  const xsB = starts.filter(s => s.team === 'B').map(s => s.x);
+  eq(xsA.length, 3, 'three on each side');
+  eq(xsB.length, 3, 'three on the other');
+  ok(Math.min(...xsB) - Math.max(...xsA) > 500,
+    'and the two bases really are at opposite ends', `${Math.max(...xsA)} vs ${Math.min(...xsB)}`);
+  // Within a team nobody stacks on anybody.
+  eq(new Set(starts.filter(s => s.team === 'A').map(s => `${s.x},${s.y}`)).size, 3,
+    'teammates get distinct slots rather than the same tile');
+
+  await Promise.all(players.map(c => c.close()));
+});
+
+scenario('arena3: the queue counter reaches people who have NOT signed up', async () => {
+  // The counter on the panel is the one number that moves because of what
+  // OTHER people do, and _a3Broadcast only ever pushed it to the queue and to
+  // players already in a match. So somebody sitting on the panel deciding
+  // whether to join watched a figure that never changed — "счётчик записанных
+  // неправильно считается". It was not wrong when sent, it was never re-sent.
+  const watcher = await connectWithSaved('harness_a3_watch', { lvl: 15, xp: 0, xpNext: 100 });
+  const joiner  = await connectWithSaved('harness_a3_join',  { lvl: 15, xp: 0, xpNext: 100 });
+  await enterWorld(watcher, 'ranger');
+  await enterWorld(joiner, 'mage');
+  await fetch(`${BASE}/dev/arena3/open`, { method: 'POST' });
+
+  // The watcher asks once, the way opening the panel does, and then does
+  // nothing else at all.
+  const first = watcher.wait('arena3State', { timeout: 4000 });
+  watcher.emit('arena3Sync');
+  const before = await first;
+  const baseline = before.queued;
+
+  // Somebody else signs up. The watcher must hear about it without asking.
+  const pushed = watcher.wait('arena3State', { timeout: 4000 });
+  joiner.emit('arena3Register');
+  const after = await pushed;
+  eq(after.queued, baseline + 1, 'an unregistered onlooker is told the queue grew');
+  ok(!after.registered, 'and is not told it is registered itself');
+
+  // And shrinking is pushed too.
+  const shrunk = watcher.wait('arena3State', { timeout: 4000 });
+  joiner.emit('arena3Unregister');
+  eq((await shrunk).queued, baseline, 'and told when it shrinks again');
+
+  await watcher.close(); await joiner.close();
+});
+
+scenario('arena3: the arena holds no bosses — the match is players only', async () => {
+  // The two stationary guard bosses are gone: no spawn, no geometry, no
+  // sprite entry, and no "destroy the enemy's to win instantly" shortcut. A
+  // match is decided by wiping the other side and nothing else.
+  const arena = require('../server/game/dungeon').generatePvpArena();
+  eq(arena.enemies.length, 0, 'the arena floor is generated with no enemies at all');
+  ok(!('bossA' in arena.pvpArena) && !('bossB' in arena.pvpArena),
+    'and carries no boss placements', JSON.stringify(Object.keys(arena.pvpArena)));
+
+  const Room = require('../server/game/Room');
+  const { FLOOR_IDS } = require('../server/game/floors');
+  const _io = { to: () => ({ emit() {} }), sockets: { sockets: { get: () => null } } };
+  const room = new Room(FLOOR_IDS.pvpArena, _io, {}, null);
+  try {
+    eq(room.enemies.length, 0, 'and its live Room has none either');
+    eq(typeof room.spawnPvpArenaBosses, 'undefined', 'the spawn helper is gone, not just unused');
+    eq(typeof room.despawnPvpArenaBosses, 'undefined', 'and so is its teardown');
+  } finally {
+    room._stopLoop();
+  }
+
+  // A real match still runs and still ends by elimination.
+  const players = [];
+  for (let i = 0; i < 6; i++) {
+    const c = await connectWithSaved(`harness_a3_nb_${i}`, { lvl: 15, xp: 0, xpNext: 100 });
+    await enterWorld(c, 'ranger');
+    players.push(c);
+  }
+  await fetch(`${BASE}/dev/arena3/open`, { method: 'POST' });
+  const started = players.map(c => c.wait('arena3Started', { timeout: 8000 }));
+  players.forEach(c => c.emit('arena3Register'));
+  const starts = await Promise.all(started);
+  ok(starts.every(s => s && s.bossIds === undefined), 'arena3Started no longer carries boss ids');
+
+  // Wipe one whole side; the other must be declared the winner.
+  const teamOf = new Map(players.map((c, i) => [c, starts[i].team]));
+  const losers = players.filter(c => teamOf.get(c) === 'A');
+  const results = players.map(c => c.wait('arena3Result', { timeout: 8000 }).catch(() => null));
+  for (const c of losers) { c.emit('respawn'); await sleep(150); }
+  const res = await Promise.all(results);
+  ok(res.every(r => r), 'everyone gets a result');
+  players.forEach((c, i) => {
+    eq(res[i].won, teamOf.get(c) === 'B', `${c.name} (team ${teamOf.get(c)}) has the right outcome`);
+  });
+
+  await Promise.all(players.map(c => c.close()));
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';

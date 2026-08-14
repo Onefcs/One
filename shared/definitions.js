@@ -1235,13 +1235,6 @@ const EVENT_BOSS = {
   ignoresSafeZone: true,
 };
 
-// ── 3v3 arena guard boss (one per side) ─────────────────────────────────────
-// Same identity as EVENT_BOSS (name/color/size) but a fixed, much smaller HP
-// pool and no loot table — see spawnPvpArenaBosses in server/game/Room.js. It
-// never moves or attacks and the owning team can't damage it; the opposing
-// team destroying it ends the match immediately in their favour.
-const ARENA3_BOSS_HP = 30000;
-
 const _EVENT_BOSS_ARMOR_SLOTS = ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
 
 // Builds the full ground-loot list for one kill. Every entry becomes its own
@@ -1727,7 +1720,6 @@ if (typeof module !== 'undefined') module.exports = {
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   EVENT_BOSS, EVENT_BOSS_ANNOUNCE_MS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-  ARENA3_BOSS_HP,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H,
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,

@@ -60,9 +60,9 @@ const ARENA = 40;
 // other across a single central corridor — one lane, so both teams meet
 // head-on instead of splitting into side skirmishes. Sealed off the same way
 // every other special zone is: the only way in is being placed there by the
-// match, and the only way out is dying or the match ending. Each base also
-// holds a stationary guard boss (see A3_BOSS_DX below) — the opposing team
-// destroying it wins the match instantly.
+// match, and the only way out is dying or the match ending. Players only —
+// the match is decided by wiping the other side, with nothing else on the
+// floor to hit.
 const A3_W = 60, A3_H = 27;
 const A3_BASE_W = 10;                       // depth of each team's starting box
 const A3_LANE_YS = [13];                    // single corridor row, relative to the floor's own Y0
@@ -71,7 +71,6 @@ const A3_LANE_YS = [13];                    // single corridor row, relative to 
 // stacking on the one lane spawn.
 const A3_SPAWN_YS = [4, 13, 22];
 const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corridor
-const A3_BOSS_DX = 2;                       // guard boss sits this many tiles inside the base's back wall
 
 // ── Corridor race ("Кровавая Башня") ─────────────────────────────────────────
 // Its own floor now (generateRace10, below). Every entrant runs their own
@@ -584,8 +583,7 @@ function generateArena() {
 // rectangle painted into the hub's mega-grid. Two team bases at either end
 // joined by a single central lane; teamA/teamB are per-player spawn points
 // set back inside each base so a match never starts with the two teams
-// already in contact, bossA/bossB each team's stationary guard boss, further
-// back still so the owning team stands between it and the lane.
+// already in contact.
 function generatePvpArena() {
   const w = A3_W + MARGIN * 2, h = A3_H + MARGIN * 2;
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
@@ -619,12 +617,6 @@ function generatePvpArena() {
       teamB: A3_SPAWN_YS.map(dy => ({
         x: (X0 + A3_W - 5) * TILE + TILE / 2, y: (Y0 + dy) * TILE + TILE / 2,
       })),
-      bossA: {
-        x: (X0 + A3_BOSS_DX) * TILE + TILE / 2, y: (Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
-      },
-      bossB: {
-        x: (X0 + A3_W - 1 - A3_BOSS_DX) * TILE + TILE / 2, y: (Y0 + Math.floor(A3_H / 2)) * TILE + TILE / 2,
-      },
     },
     enemies: [],
   };

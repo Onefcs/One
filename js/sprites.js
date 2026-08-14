@@ -491,25 +491,10 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
     }
   },
-  // 3v3 arena guard boss (server/game/Room.js spawnPvpArenaBosses) — visually
-  // identical to the world event boss above, but its own eid: the world
-  // boss's HP-bar overlay and "is it alive" tracking (js/ui.js
-  // updateEventBossHpBar, js/network.js) key off eid === 'demon_event_boss',
-  // and a guard boss sharing that id would show up in — and get confused
-  // with — the real world event boss's UI.
-  arena3_guard_boss: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
-      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
-    }
-  },
   // Guild War tower/castle (server/game/Room.js spawnGuildWarTower) — a
   // single static illustration, no facing/movement/attack of its own
-  // (guildWar enemies are permanently stationary, see Room.js's a3Passive-
-  // style tick-loop skip). The loader/rasterizer above hard-require 4 facing
+  // (guildWar enemies are permanently stationary — see the stationary branch
+  // in Room.js's tick loop). The loader/rasterizer above hard-require 4 facing
   // rows per sheet, so the one idle sheet is the same picture duplicated
   // into all 4 rows (cols:1) rather than a pipeline change — it never turns
   // to face anything, so every row draws identically anyway. No walk/attack
@@ -522,9 +507,10 @@ const ENEMY_SPRITE_DEF = {
       idle: { src: 'images/enemy/guildwar_castle.png', cols: 1, fps: 1, loop: false },
     },
   },
-  // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) — same
-  // reasoning as arena3_guard_boss above: visually the world boss, own eid so
-  // it doesn't show up in the real world boss's HP-bar/alive tracking.
+  // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) —
+  // visually the world event boss, but its own eid so it doesn't show up in
+  // the real world boss's HP-bar/alive tracking (js/ui.js
+  // updateEventBossHpBar keys off eid === 'demon_event_boss').
   race10_boss: {
     frameW: 128, frameH: 128,
     sheets: {
