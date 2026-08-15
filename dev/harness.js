@@ -1869,6 +1869,55 @@ scenario('race: marketList racing equipItem cannot duplicate the item', async ()
   await c.close();
 });
 
+scenario('race: claimVipRewards racing openLootBox neither duplicates the box nor eats the prize', async () => {
+  // openLootBox is synchronous and mutates the LIVE inventory twice: it spends
+  // the box (splice/qty--) and adds whatever the roll won. Every other
+  // synchronous item handler defers to _itemOpBusy for exactly this reason —
+  // openLootBox was the one that never got the check. With claimVipRewards
+  // holding a clone taken before the open, its delayed commit stamps that
+  // clone back: the box returns (openable again, and again) and the prize the
+  // roll already announced to the client is gone. A duplicated box AND a lost
+  // item out of one race.
+  const c = await connectWithSaved('harness_race_vip_box', {
+    inventory: [{ id: 'box_rare', qty: 1 }],
+    vipPending: [1],
+  });
+  await enterWorld(c, 'deathknight');
+
+  const Player = require('../server/models/Player');
+  await _withDbDelay(Player, 'updateOne', 60, async () => {
+    const claimedP = c.wait('vipRewardsClaimed', { timeout: 8000 }).catch(() => null);
+    c.emit('claimVipRewards');
+    // Sent right as claimVipRewards' updateOne is in flight — see _withDbDelay.
+    await sleep(20);
+    const openedP = c.wait('boxOpened', { timeout: 8000 }).catch(() => null);
+    const boxErrP = c.wait('openBoxError', { timeout: 8000 }).catch(() => null);
+    c.emit('openLootBox', { id: 'box_rare' });
+    const opened = await Promise.race([openedP, boxErrP]);
+    await claimedP;
+    // If the open was refused (the fix), the box must still be there to retry.
+    // If it went through, its prize must have survived the claim's commit.
+    c._openResult = opened;
+  });
+  await sleep(300);
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const inv = row.savedData.inventory || [];
+  const boxes = inv.reduce((s, i) => s + (i && i.id === 'box_rare' ? (i.qty || 1) : 0), 0);
+  const res = c._openResult;
+  if (res && res.boxId) {
+    // The open was served: the box is spent and the prize is really in stock.
+    eq(boxes, 0, 'the opened box was really spent, not restored by the stale commit');
+    ok(!res.item || inv.some(i => i && i.id === res.item.id),
+      `the prize the server announced (${res.item ? res.item.id : 'none'}) is actually in the inventory`);
+  } else {
+    // The open was refused: nothing was consumed, so the box survives intact.
+    eq(boxes, 1, 'a refused open leaves the box untouched so it can be retried');
+  }
+
+  await c.close();
+});
+
 scenario('race: claimVipRewards racing equipItem cannot duplicate or lose the item', async () => {
   // claimVipRewards clones _lastStats.inventory before its DB awaits
   // (findById, updateOne) and commits that clone wholesale at the end via

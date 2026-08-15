@@ -7435,8 +7435,9 @@ io.on('connection', socket => {
   safeOn('craftGear', async ({ itemId } = {}) => {
     if (!authed) return;
     _itemOpBusy++;
+    let _ran;
     try {
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
     try {
       const rec = GEAR_CRAFT_RECIPES.find(r => r.itemId === itemId)
                || GEAR_TIER_CRAFT_RECIPES.find(r => r.itemId === itemId)
@@ -7566,6 +7567,11 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    // The lock was already held, so the body above never ran. Saying so is
+    // what the client needs: netCraftGear waits for gearCrafted OR
+    // craftGearError and shows a spinner until one arrives — dropping both
+    // left the craft dialog spinning forever on a tap that did nothing.
+    if (!_ran) socket.emit('craftGearError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // ── Enhance / заточка (inventory item modal + equipped item modal) ─────────
@@ -7854,6 +7860,13 @@ io.on('connection', socket => {
     if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
       return socket.emit('openBoxError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
     }
+    // The one synchronous item handler that never got this check. Both halves
+    // of an open — spending the box and adding the prize — land in the LIVE
+    // inventory, so a clone-and-commit handler holding a snapshot from before
+    // them stamps BOTH away when it commits: the box comes back (openable
+    // again, for another free roll) and the prize the client was already told
+    // about is gone. See _itemsBusy.
+    if (_itemsBusy()) return socket.emit('openBoxError', { msg: _ITEMS_BUSY_MSG });
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     const boxIdx = inv.findIndex(i => i && i.id === id);
@@ -7899,11 +7912,12 @@ io.on('connection', socket => {
     // between the balance spend and the commit below could replace _lastStats
     // wholesale and have the grant stamped back over it.
     _itemOpBusy++;
+    let _ran;
     try {
     // Serialized like the other spend handlers — the charge below is a DB
     // round trip, and two crafts overlapping across it would interleave their
     // inventory writes.
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
     try {
       const rec = PET_CRAFT_RECIPES.find(r => r.rarity === rarity);
       if (!rec) return socket.emit('petCraftError', { msg: 'Неизвестная редкость питомца' });
@@ -7970,6 +7984,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('petCraftError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // ── Class cloak/artifact crafting (Кузнец → Материалы → Плащи и артефакты
@@ -7982,8 +7997,9 @@ io.on('connection', socket => {
   safeOn('craftClassGear', async ({ slot, rarity } = {}) => {
     if (!authed) return;
     _itemOpBusy++;
+    let _ran;
     try {
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
     try {
       const rec = CLASS_GEAR_SALVAGE_RECIPES.find(r => r.resultSlot === slot && r.resultRarity === rarity);
       if (!rec) return socket.emit('craftClassGearError', { msg: 'Неизвестный рецепт' });
@@ -8063,6 +8079,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('craftClassGearError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // ── Market ────────────────────────────────────────────────────────────────
@@ -8525,8 +8542,9 @@ io.on('connection', socket => {
     // back over the save's real one, discarding whatever the save legitimately
     // changed. Same hazard _itemOpBusy already closes for craftGear/etc.
     _itemOpBusy++;
+    let _ran;
     try {
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
       try {
         if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
         const inv = _liveInventory();
@@ -8569,6 +8587,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('seasonBurnError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // Bulk form — burning a full inventory one tap at a time is not a real
@@ -8582,8 +8601,9 @@ io.on('connection', socket => {
     // above is a window" comment below actually complete, rather than only
     // covering moves within the same array.
     _itemOpBusy++;
+    let _ran;
     try {
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
       try {
         if (!seasonActive()) return socket.emit('seasonBurnError', { msg: 'Сезон завершён' });
         if (!SEASON_BURN_POINTS[rarity]) return socket.emit('seasonBurnError', { msg: 'Эту редкость нельзя сжечь' });
@@ -8630,6 +8650,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('seasonBurnError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // ── Story quest reward ────────────────────────────────────────────────────
@@ -8752,7 +8773,7 @@ io.on('connection', socket => {
   const SELL_COMMON_PRICE = 100;
   safeOn('sellItem', async ({ idx, id, enhance } = {}) => {
     if (!authed) return;
-    await _withEconLock(async () => {
+    const _ran = await _withEconLock(async () => {
       try {
         const inv = _liveInventory();
         if (!inv) return socket.emit('sellItemError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
@@ -8789,6 +8810,7 @@ io.on('connection', socket => {
         socket.emit('sellItemError', { msg: 'Ошибка сервера' });
       }
     });
+    if (!_ran) socket.emit('sellItemError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // where _lastStats — the server's own inventory copy — lives; same pattern
@@ -9304,11 +9326,12 @@ io.on('connection', socket => {
     if (!authed) return;
     if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     _itemOpBusy++;
+    let _ran;
     try {
     // Serialized: vipPending is read here and only cleared after an await, so
     // two claims in one tick both saw the same pending list and each handed
     // out the full item set. See _withEconLock.
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
     try {
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
@@ -9422,6 +9445,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) _itemErr(_ITEMS_BUSY_MSG);
   });
 
   safeOn('selectChar', ({ type, savedStats }) => {
@@ -11678,7 +11702,7 @@ io.on('connection', socket => {
   // autosave would put the million straight back.
   safeOn('clanStorageUnlock', async () => {
     if (!authed) return;
-    await _withEconLock(async () => {
+    const _ran = await _withEconLock(async () => {
       const clan = await _myClan();
       if (!clan) return socket.emit('clanStorageError', { msg: 'Вы не в клане' });
       if (clan.members.find(m => m.telegramId === authed.telegramId)?.role !== 'leader') {
@@ -11710,13 +11734,15 @@ io.on('connection', socket => {
       socket.emit('clanStorageUnlocked', { newGold: _lastStats.gold, cost: CLAN_STORAGE_UNLOCK_GOLD });
       await _clanStoragePush(claimed);
     });
+    if (!_ran) socket.emit('clanStorageError', { msg: _ITEMS_BUSY_MSG });
   });
 
   safeOn('clanStorageDeposit', async ({ id, qty } = {}) => {
     if (!authed) return;
     _itemOpBusy++;
+    let _ran;
     try {
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
       const n = Math.floor(Number(qty));
       if (!Number.isFinite(n) || n <= 0) return;
       // Only Осколки. The pool is a flat id→count list precisely because
@@ -11834,6 +11860,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('clanStorageError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // Leader hands part of the pool to a member. Nothing reaches their inventory
@@ -11920,8 +11947,9 @@ io.on('connection', socket => {
   safeOn('clanStorageClaim', async () => {
     if (!authed) return;
     _itemOpBusy++;
+    let _ran;
     try {
-    await _withEconLock(async () => {
+    _ran = await _withEconLock(async () => {
       const clan = await _myClan();
       if (!clan) return;
       if (!clan.storageUnlocked) {
@@ -12048,6 +12076,7 @@ io.on('connection', socket => {
     } finally {
       _itemOpBusy--;
     }
+    if (!_ran) socket.emit('clanStorageError', { msg: _ITEMS_BUSY_MSG });
   });
 
   // One point of clan XP for the kill — now a Map increment and nothing else.
