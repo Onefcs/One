@@ -4659,9 +4659,16 @@ function _fearTrackKill(socketId, result) {
 // Sends the player home and frees their lane — either because they cleared
 // FEAR_MAX_WAVE (cleared: true) or died mid-run (cleared: false, called from
 // _fearEliminate). Safe to call on someone not currently in a run.
-function _fearFinish(socketId, cleared) {
+// Ends the run record and gives the hall back, without deciding where the
+// player goes next — that differs between the two callers. _fearFinish below
+// sends them home and tells them how it ended; leaving the floor under their
+// own steam (_doEnterLocation) has already chosen a destination.
+//
+// Returns the run it ended, or null if there wasn't one, so a caller can
+// report the wave it died at.
+function _fearReleaseRun(socketId) {
   const run = _fear.get(socketId);
-  if (!run) return;
+  if (!run) return null;
   _fear.delete(socketId);
   const room = run.room;
   // Release the lane BEFORE the floor change below, not after. _returnToHub
@@ -4681,6 +4688,12 @@ function _fearFinish(socketId, cleared) {
   // stale if the hall was already reassigned since this player last held it.
   const ownedBefore = room ? room.fearOwnerOf(run.lane) === socketId : false;
   if (room && ownedBefore) room.fearReleaseLane(run.lane);
+  return run;
+}
+
+function _fearFinish(socketId, cleared) {
+  const run = _fearReleaseRun(socketId);
+  if (!run) return;
   const spot = _returnToHub(socketId);
   io.to(socketId).emit('fearFinished', { cleared, wave: run.wave, x: spot?.x, y: spot?.y });
 }
@@ -9889,6 +9902,38 @@ io.on('connection', socket => {
     // no-op for Fear on its own — nothing else here needs to know the
     // difference.
     if (oldFloor !== FLOOR_IDS.fear) socket.leave(`floor_${oldFloor}`);
+    // Walking out of Страх ends the run, exactly as dying in it does.
+    //
+    // Only two things used to end a run: clearing wave FEAR_MAX_WAVE and
+    // dying (_fearFinish / _fearEliminate). Leaving the floor any other way —
+    // the player choosing a destination from the map, or an event window
+    // closing and force-moving them — took them off the fear floor and left
+    // the _fear record behind. That record is what every later fearEnter
+    // checks first, and it returns SILENTLY on a hit: the player is standing
+    // in the hub, the button does nothing at all, no error is shown, and
+    // their remaining attempts are never spent. It reads as "попытки в Страх
+    // не уходят", and only for the players who happen to leave that way —
+    // anyone who dies or clears the run is unaffected.
+    //
+    // Released before removePlayer, for the reason spelled out in
+    // _fearFinish: removePlayer holds a still-owned lane open on the 45s
+    // reconnect grace, which is meant for a genuine disconnect and not for
+    // someone who deliberately walked out.
+    //
+    // A real disconnect does NOT come through here — it goes to
+    // _fearHoldOnDisconnect and keeps its grace window, which is the whole
+    // point of the distinction.
+    if (oldFloor === FLOOR_IDS.fear && _fearReleaseRun(socket.id)) {
+      // The client mirrors this state in page-level JS (_fearInRun,
+      // js/network.js) and would otherwise keep drawing the wave HUD for a
+      // run that no longer exists. attemptsLeft is deliberately omitted —
+      // it costs a DB read and the client keeps its previous value for any
+      // field this event leaves out.
+      socket.emit('fearState', {
+        maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
+        inRun: false, wave: 0,
+      });
+    }
     currentRoom.removePlayer(socket.id);
     socket.to(`floor_${oldFloor}`).emit('playerLeft', { id: socket.id });
 

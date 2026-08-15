@@ -1133,6 +1133,54 @@ scenario('floors: a mid-run disconnect+reconnect resumes a Fear run on its own f
   await a2.close();
 });
 
+// "У некоторых игроков попытки в Страх не уходят", and the "некоторых" is the
+// whole shape of it: it depends entirely on HOW the player leaves.
+//
+// Only clearing the last wave and dying used to end a run. Walking out — the
+// map panel, or an event window closing and force-moving everyone — moved the
+// player off the fear floor and left the _fear record behind. Every later
+// fearEnter checks that record first and returns SILENTLY on a hit, so the
+// button did nothing, no error appeared, and the remaining attempts were never
+// spent. Players who die or clear the run never saw it.
+scenario('fear: walking out of Страх ends the run, so the next entry is charged', async () => {
+  const c = await connectWithSaved('harness_fear_attempts', { lvl: 20, xp: 0, xpNext: 100 });
+  await enterWorld(c, 'ranger');
+
+  const first = c.wait('fearStarted', { timeout: 4000 });
+  c.emit('fearEnter');
+  eq((await first).attemptsLeft, 1, 'the first entry spends one of the two attempts');
+
+  // Out through the front door: alive, mid-run, not having cleared anything.
+  // Both waiters are armed before the emit — the run-over notice is sent
+  // ahead of the floor change, so arming it afterwards would miss it.
+  const back = c.wait('gameStart', { timeout: 4000 });
+  // The client mirrors the run flag in page-level JS, so being told is part
+  // of the fix — without it the wave HUD keeps drawing a finished run.
+  const told = c.wait('fearState', { timeout: 4000 }).catch(() => null);
+  c.emit('enterLocation', { target: 'hub' });
+  eq((await back).floor, 1, 'the player is back on the hub floor');
+  eq((await told)?.inRun, false, 'and is told the run is over');
+
+  // The actual report: this entry used to be swallowed in silence.
+  const second = Promise.race([
+    c.wait('fearStarted', { timeout: 4000 }),
+    c.wait('fearError', { timeout: 4000 }).then(e => { throw new Error('refused: ' + JSON.stringify(e)); }),
+  ]);
+  c.emit('fearEnter');
+  eq((await second).attemptsLeft, 0, 'entering again works and spends the second attempt');
+
+  // And the cap still means something afterwards.
+  const outAgain = c.wait('gameStart', { timeout: 4000 });
+  c.emit('enterLocation', { target: 'hub' });
+  await outAgain;
+  const refused = c.wait('fearError', { timeout: 4000 });
+  c.emit('fearEnter');
+  ok(/закончились/.test((await refused).msg || ''),
+     'a third entry is refused for want of attempts, not swallowed', (await refused).msg);
+
+  await c.close();
+});
+
 scenario('floors: leaving for an arm tells hub-side players you left, not just moved', async () => {
   const a = await connectAs('harness_floors_a');
   const b = await connectAs('harness_floors_b');

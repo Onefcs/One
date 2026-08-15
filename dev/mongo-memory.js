@@ -21,6 +21,8 @@
 //   chaining  sort limit skip select lean collation exec + thenable
 //   filters   $in $nin $ne $gt $gte $lt $lte $or $and $exists $regex $elemMatch
 //   updates   $set $inc $push($each) $pull $unset  — all with dotted paths
+//             plus AGGREGATION-PIPELINE updates (an array of stages), which
+//             are what the daily-attempt counters are written with
 //
 // Dotted paths matter more than anything else here: _persistSavedFields writes
 // `savedData.<field>` precisely so it never replaces the whole nested object,
@@ -121,9 +123,97 @@ function matchFilter(doc, filter) {
   });
 }
 
+// ── Aggregation-expression evaluation, for pipeline updates ─────────────────
+// Mongo lets an update be an ARRAY of aggregation stages instead of a set of
+// operators, and the difference matters: a pipeline can read the document it
+// is writing, which is the only way to do "bump today's counter, or start a
+// new one if the stored date is not today" in a single atomic write. That is
+// exactly how the daily attempt counters for Страх, Кровавая Башня and the
+// arena are recorded (_lockDailyAttempt, server/index.js).
+//
+// Without this, `Object.keys([{...}])` gave ['0'], the stage object was folded
+// into $set as a field literally named "0", and the counter was never written
+// at all. Every read then reported a full set of attempts, so entering an
+// event looked free — and no test could see it, because the double was the
+// thing making it look free. A double that silently drops a whole class of
+// write is worse than one that refuses it, so unknown operators throw here
+// rather than evaluate to undefined.
+function evalExpr(expr, doc) {
+  if (typeof expr === 'string') return expr.startsWith('$') ? getPath(doc, expr.slice(1)) : expr;
+  if (expr === null || typeof expr !== 'object') return expr;
+  if (Array.isArray(expr)) return expr.map(e => evalExpr(e, doc));
+
+  const keys = Object.keys(expr);
+  const op = keys.find(k => k.startsWith('$'));
+  if (!op) {
+    // A plain object literal — every value is itself an expression.
+    const out = {};
+    for (const k of keys) out[k] = evalExpr(expr[k], doc);
+    return out;
+  }
+  const a = expr[op];
+  const ev = x => evalExpr(x, doc);
+  switch (op) {
+    case '$literal':  return a;
+    case '$ifNull':   { const v = ev(a[0]); return v === undefined || v === null ? ev(a[1]) : v; }
+    case '$cond': {
+      // Both spellings: [if, then, else] and { if, then, else }.
+      const [i, t, e] = Array.isArray(a) ? a : [a.if, a.then, a.else];
+      return ev(i) ? ev(t) : ev(e);
+    }
+    case '$eq':  return ev(a[0]) === ev(a[1]);
+    case '$ne':  return ev(a[0]) !== ev(a[1]);
+    case '$gt':  return ev(a[0]) >   ev(a[1]);
+    case '$gte': return ev(a[0]) >=  ev(a[1]);
+    case '$lt':  return ev(a[0]) <   ev(a[1]);
+    case '$lte': return ev(a[0]) <=  ev(a[1]);
+    case '$not': return !ev(Array.isArray(a) ? a[0] : a);
+    case '$and': return a.every(x => ev(x));
+    case '$or':  return a.some(x => ev(x));
+    case '$in':  { const list = ev(a[1]); return Array.isArray(list) && list.includes(ev(a[0])); }
+    case '$add': return a.reduce((n, x) => n + (Number(ev(x)) || 0), 0);
+    case '$subtract': return (Number(ev(a[0])) || 0) - (Number(ev(a[1])) || 0);
+    case '$multiply': return a.reduce((n, x) => n * (Number(ev(x)) || 0), 1);
+    case '$max': return Math.max(...(Array.isArray(a) ? a : [a]).map(x => Number(ev(x)) || 0));
+    case '$min': return Math.min(...(Array.isArray(a) ? a : [a]).map(x => Number(ev(x)) || 0));
+    case '$concat': return a.map(x => String(ev(x) ?? '')).join('');
+    default:
+      throw new Error(`mongo-memory: aggregation operator ${op} is not implemented — ` +
+        'add it here rather than letting a pipeline update silently do nothing');
+  }
+}
+
+function applyPipeline(doc, stages) {
+  for (const stage of stages) {
+    if (!stage || typeof stage !== 'object') continue;
+    if (stage.$set || stage.$addFields) {
+      const fields = stage.$set || stage.$addFields;
+      // Evaluated against a snapshot: within one stage every expression sees
+      // the document as it was when the stage began, same as Mongo.
+      const before = deepCopy(doc);
+      for (const [p, expr] of Object.entries(fields)) setPath(doc, p, evalExpr(expr, before));
+      continue;
+    }
+    if (stage.$unset) {
+      const list = Array.isArray(stage.$unset) ? stage.$unset : [stage.$unset];
+      list.forEach(p => unsetPath(doc, p));
+      continue;
+    }
+    if (stage.$replaceWith || stage.$replaceRoot) {
+      const expr = stage.$replaceWith || stage.$replaceRoot.newRoot;
+      const next = evalExpr(expr, deepCopy(doc));
+      Object.keys(doc).forEach(k => { if (k !== '_id') delete doc[k]; });
+      Object.assign(doc, next);
+      continue;
+    }
+    throw new Error(`mongo-memory: pipeline update stage ${Object.keys(stage)[0]} is not implemented`);
+  }
+}
+
 // ── Update application ──────────────────────────────────────────────────────
 function applyUpdate(doc, update) {
   if (!update) return;
+  if (Array.isArray(update)) return applyPipeline(doc, update);
   // Mongoose's castUpdate ("fix up $set sugar") folds every bare top-level key
   // into $set before the driver ever sees it — Model.updateOne({}, { foo: 1 })
   // is a partial update, not a whole-document replace, and that is real
