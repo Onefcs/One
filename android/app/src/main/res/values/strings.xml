@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LIBERTY</string>
+    <string name="offline_message">Нет соединения с сервером.\nПроверьте интернет и попробуйте снова.</string>
+    <string name="retry">Повторить</string>
+</resources>

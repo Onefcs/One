@@ -3,3 +3,12 @@ node_modules/
 .dev-mongo/
 prof/
 dev-smoke.png
+
+# Android app (android/) — build output and machine-local config; never the
+# release keystore, which must not be committed at all (see android/README.md).
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/*.keystore
+android/**/*.keystore

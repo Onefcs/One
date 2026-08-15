@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Liberty" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/liberty_bg</item>
+        <item name="colorPrimary">@color/liberty_accent</item>
+        <item name="android:statusBarColor">@color/liberty_bg</item>
+        <item name="android:navigationBarColor">@color/liberty_bg</item>
+    </style>
+
+    <!-- Launch theme: shows the splash art as the window background itself,
+         before the first frame of activity_main.xml is even inflated, so
+         there's no black flash between the launcher icon and the WebView. -->
+    <style name="Theme.Liberty.Splash" parent="Theme.Liberty">
+        <item name="android:windowBackground">@drawable/splash</item>
+    </style>
+</resources>

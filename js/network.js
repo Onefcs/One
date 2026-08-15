@@ -1801,7 +1801,50 @@ function _initTelegramWidget() {
     return;
   }
 
+  // Standalone Android wrapper (see android/ — its WebView appends this UA
+  // token): no Telegram WebApp context to read initData from, so it logs in
+  // through Telegram's own Login Widget instead. The server verifies that
+  // with a separate HMAC scheme (verifyTelegramAuth / socket event
+  // 'loginTelegram'), distinct from the Mini App one used above.
+  if (/LibertyAndroidApp/.test(navigator.userAgent)) {
+    _showTelegramLoginWidget();
+    return;
+  }
+
   _showTelegramOnlySplash();
+}
+
+// Renders the Telegram Login Widget button on the splash screen and wires
+// its callback to the 'loginTelegram' path (see _initTelegramWidget above).
+function _showTelegramLoginWidget() {
+  const loginScreen = document.getElementById('login-screen');
+  if (!loginScreen) return;
+  fetch('/tg-botname')
+    .then(r => r.json())
+    .then(({ username }) => {
+      if (!username) return _showTelegramOnlySplash();
+      const splashContent = loginScreen.querySelector('.splash-content');
+      if (!splashContent) return;
+      const dots = document.getElementById('splash-dots');
+      if (dots) dots.style.display = 'none';
+      window.onTelegramAuth = (user) => {
+        netConnect(() => socket.emit('loginTelegram', user));
+      };
+      const box = document.createElement('div');
+      box.id = 'tg-login-widget';
+      box.style.marginTop = '28px';
+      splashContent.appendChild(box);
+      const script = document.createElement('script');
+      script.async = true;
+      script.src = 'https://telegram.org/js/telegram-widget.js?22';
+      script.setAttribute('data-telegram-login', username);
+      script.setAttribute('data-size', 'large');
+      script.setAttribute('data-radius', '12');
+      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+      script.setAttribute('data-request-access', 'write');
+      box.appendChild(script);
+    })
+    .catch(() => _showTelegramOnlySplash());
 }
 
 // The "Доступно только в Telegram" screen shown when the game is opened

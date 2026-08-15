@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="liberty_bg">#000000</color>
+    <color name="liberty_text">#FFFFFF</color>
+    <color name="liberty_accent">#7C3AED</color>
+</resources>

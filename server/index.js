@@ -1288,6 +1288,11 @@ app.use(helmet({
       imgSrc:        ["'self'", 'data:', 'blob:', 'https:'],
       connectSrc:    ["'self'", 'https://cdn.socket.io', 'wss:', 'ws:', 'https:'],
       fontSrc:       ["'self'", 'data:'],
+      // The Telegram Login Widget (js/network.js _showTelegramLoginWidget,
+      // used by the standalone Android app) embeds its confirm UI in an
+      // iframe from oauth.telegram.org — frame-src falls back to child-src
+      // otherwise, which only allows 'self'/blob: and would silently block it.
+      frameSrc:      ["'self'", 'https://oauth.telegram.org', 'https://telegram.org'],
       frameAncestors: ["'self'", 'https://web.telegram.org', 'https://*.web.telegram.org', 'https://telegram.org', 'https://*.telegram.org'],
     },
   },
