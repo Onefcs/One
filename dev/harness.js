@@ -1869,6 +1869,101 @@ scenario('race: marketList racing equipItem cannot duplicate the item', async ()
   await c.close();
 });
 
+scenario('race: a cross-session market item arriving mid-purchase survives it', async () => {
+  // _grantMarketItem is how a cancelled/bought lot reaches an account whose
+  // live socket is a different one from the handler that is running. It is a
+  // pure addition into the live inventory, so a clone-holder's stale stamp
+  // erased it outright — the lot was gone AND the item never arrived, which
+  // is the worst of the two outcomes. The replay queue (_pendingOobGrants)
+  // pours it back into the snapshot instead of refusing, because there is
+  // nowhere to retry a cancellation from once the listing is closed.
+  const seller = await connectWithSaved('harness_oob_market_seller', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 4 }], vipPending: [1],
+  });
+  await enterWorld(seller, 'deathknight');
+
+  const listed = seller.wait('marketListed', { timeout: 8000 }).catch(() => null);
+  seller.emit('marketList', { item: { id: 'uq_sword_l', enhance: 4 }, price: 10 });
+  const l = await listed;
+  ok(l && l.listing, 'the sword is listed to begin with');
+  if (!l || !l.listing) return seller.close();
+
+  const Player = require('../server/models/Player');
+  await _withDbDelay(Player, 'updateOne', 120, async () => {
+    const claimedP = seller.wait('vipRewardsClaimed', { timeout: 8000 }).catch(() => null);
+    seller.emit('claimVipRewards');
+    await sleep(25);
+    const backP = seller.wait('marketCancelled', { timeout: 8000 }).catch(() => null);
+    const errP = seller.wait('marketError', { timeout: 8000 }).catch(() => null);
+    seller.emit('marketCancel', { listingId: l.listing.id });
+    await Promise.race([backP, errP]);
+    await claimedP;
+  });
+  await sleep(400);
+
+  const row = memory.__dump('Player').find(p => p.username === seller.auth.username);
+  const live = memory.__dump('MarketListing')
+    .filter(x => x.sellerUsername === seller.auth.username && x.status === 'active');
+  const held = (row.savedData.inventory || []).filter(i => i && i.id === 'uq_sword_l').length;
+  eq(held + live.length, 1,
+    `the sword exists exactly once — never in limbo (inventory:${held} activeListings:${live.length})`);
+
+  await seller.close();
+});
+
+scenario('race: a grant landing during a shop purchase is not erased by its stale commit', async () => {
+  // Every cross-socket/out-of-band item grant — _grantKillLoot (the mob loot
+  // table, fired on every single kill), _applyGrant (death-battle and Tower
+  // rewards), _grantMarketItem, _applyCraftResult, _adminApplyItems — writes
+  // straight into the LIVE inventory and commits, with no _itemsBusy guard.
+  // A claimVipRewards/gramShopBuy clone taken before one of them stamps the
+  // grant away on commit: the player is told "+1×" (or the admin is told the
+  // gift landed) and nothing arrives.
+  //
+  // Driven here through the admin item-edit endpoint, which goes through the
+  // very same _adminApplyItems -> _commitServerItems path the loot grant uses
+  // and is the one reachable from a test without a live mob.
+  const c = await connectWithSaved('harness_race_grant_shop', {
+    inventory: [], vipPending: [1],
+  });
+  await enterWorld(c, 'deathknight');
+
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+  const tid = memory.__dump('Player').find(p => p.username === c.auth.username).telegramId;
+
+  const Player = require('../server/models/Player');
+  let giveStatus = 0;
+  await _withDbDelay(Player, 'updateOne', 120, async () => {
+    const claimedP = c.wait('vipRewardsClaimed', { timeout: 8000 }).catch(() => null);
+    c.emit('claimVipRewards');
+    // Sent right as claimVipRewards' updateOne is in flight — see _withDbDelay.
+    await sleep(25);
+    const giveRes = await fetch(`${BASE}/admin/player/${tid}/items`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add', itemId: 'norm_stone', qty: 3 }),
+    });
+    giveStatus = giveRes.status;
+    await claimedP;
+  });
+  await sleep(400);
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const stones = (row.savedData.inventory || [])
+    .reduce((s, i) => s + (i && i.id === 'norm_stone' ? (i.qty || 1) : 0), 0);
+  if (giveStatus === 200) {
+    eq(stones, 3, 'a grant the server reported as applied really survived the purchase commit');
+  } else {
+    eq(stones, 0, 'a grant the server refused was not half-applied either');
+  }
+
+  await c.close();
+});
+
 scenario('race: claimVipRewards racing openLootBox neither duplicates the box nor eats the prize', async () => {
   // openLootBox is synchronous and mutates the LIVE inventory twice: it spends
   // the box (splice/qty--) and adds whatever the roll won. Every other

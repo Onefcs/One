@@ -1815,7 +1815,12 @@ app.post('/admin/player/:tid/items', adminAuth, async (req, res) => {
     }
 
     if (live) {
-      await liveSocket.data._adminApplyItems(inv, eq);
+      // Refused only while that session has an item op in flight — see
+      // _adminApplyItems. Saying so beats reporting a write that is about to
+      // be stamped away by it.
+      if (!await liveSocket.data._adminApplyItems(inv, eq)) {
+        return res.status(409).json({ error: 'Игрок сейчас в другой операции с предметами — повторите' });
+      }
     } else {
       await PlayerModel.updateOne({ _id: p._id },
         { $set: { 'savedData.inventory': inv, 'savedData.equipment': eq } });
@@ -2062,11 +2067,15 @@ async function _adminCancelListing(listingId) {
   );
   if (!listing) return { ok: false, error: 'Лот не найден или уже закрыт' };
 
-  const delivered = _invAdd(sellerInv, listing.item);
+  // A refused live apply (the seller has an item op in flight) is treated as
+  // "not delivered", which takes the branch below that puts the LISTING back
+  // — the item is never left nowhere.
+  let delivered = _invAdd(sellerInv, listing.item);
   if (delivered) {
-    if (live) await liveSocket.data._adminApplyItems(sellerInv, sellerEq);
+    if (live) delivered = await liveSocket.data._adminApplyItems(sellerInv, sellerEq);
     else await PlayerModel.updateOne({ _id: sellerDoc._id }, { $set: { 'savedData.inventory': sellerInv } });
-  } else {
+  }
+  if (!delivered) {
     // The room check above already refused this case, so we only get here if
     // the seller's inventory changed in between. Put the listing back rather
     // than leaving it cancelled with the item nowhere — same reasoning as the
@@ -5229,6 +5238,38 @@ io.on('connection', socket => {
   let _itemOpBusy = 0;
   let _saveDebounceTimer = null;
 
+  // Items granted from OUTSIDE a player-initiated handler while one of the
+  // clone-and-commit handlers above is mid-flight: mob loot (every kill),
+  // a market item arriving cross-session, a death-battle/Tower reward, a
+  // craft result landing on a reconnected socket.
+  //
+  // Those grants go straight into the live inventory, and the clone-holder's
+  // eventual wholesale commit stamps them away — the "+1×" floating text
+  // plays for an item that never arrives. A player-initiated handler can
+  // simply refuse and be retried (that is what _itemsBusy is for), but a
+  // grant has nowhere to be retried FROM: the mob is already dead, the lot
+  // already sold. Refusing would destroy it just as surely.
+  //
+  // So they are recorded here as well as applied, and the stale commit
+  // re-applies them on top of the snapshot it is about to install (see
+  // _commitServerItems). Nothing is refused and nothing is lost: the grant
+  // survives whichever way the two land.
+  let _pendingOobGrants = [];
+  // Takes either a full item object or a bare {id, qty} (the loot roll reports
+  // its drops in a display shape, not a catalog one). Either way what is
+  // stored is rebuilt from the catalog, so the replay is a real item _invAdd
+  // can place — slot included, which is what decides stacking.
+  function _recordOobGrant(items) {
+    if (_itemOpBusy <= 0) return;
+    for (const it of items) {
+      if (!it || !it.id) continue;
+      const base = _catalogBase(it.id);
+      if (!base) continue;
+      const qty = Math.max(1, Math.floor(Number(it.qty)) || 1);
+      _pendingOobGrants.push(isStackableItem(base) ? { ...base, qty } : { ...base, ...(it.enhance ? { enhance: it.enhance } : {}) });
+    }
+  }
+
   // ── Coalesced balance writes ──────────────────────────────────────────────
   // Kill drops (Liberty on a few percent of kills, GRAM on 30% of them) used
   // to hit Mongo the instant they landed — one findByIdAndUpdate per drop, per
@@ -5446,6 +5487,27 @@ io.on('connection', socket => {
     const _before = (opts && Number.isFinite(opts.beforeLen))
       ? opts.beforeLen
       : (Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0);
+    // A commit of a DETACHED array (one of the clone-and-commit handlers
+    // installing the snapshot it took before its DB awaits) would drop every
+    // out-of-band grant that landed in the live array in the meantime. Pour
+    // them back in first, so the snapshot carries them too — see
+    // _pendingOobGrants. A commit of the live array itself already holds
+    // them, so there is only the bookkeeping to clear.
+    if (_pendingOobGrants.length) {
+      if (Array.isArray(inventory) && inventory !== _lastStats.inventory) {
+        const _rescued = [];
+        for (const it of _pendingOobGrants) {
+          if (_invAdd(inventory, it)) _rescued.push(it.id);
+        }
+        if (authed) {
+          logPlayer(authed.telegramId, authed.username, 'inv:oob_rescued', {
+            reason: reason || 'change', n: _rescued.length,
+            of: _pendingOobGrants.length, ids: _rescued.slice(0, 10).join(','),
+          });
+        }
+      }
+      _pendingOobGrants = [];
+    }
     _lastStats.inventory = inventory;
     if (equipment) _lastStats.equipment = equipment;
     _invRev++;
@@ -5488,9 +5550,18 @@ io.on('connection', socket => {
       ? _lastStats.equipment : {},
   });
 
+  // Unlike the grants below this is a WHOLESALE replace, so it cannot be
+  // replayed on top of a stale snapshot the way _pendingOobGrants are — there
+  // is no delta to replay, only "this is the inventory now". Committing it
+  // while a clone-and-commit handler is outstanding just means that handler
+  // stamps the edit away a moment later and the admin is told it worked.
+  // Refusing and saying so is the honest answer: the admin retries, and the
+  // window is a fraction of a second.
   socket.data._adminApplyItems = async (inventory, equipment) => {
-    if (!authed) return;
+    if (!authed) return false;
+    if (_itemsBusy()) return false;
     await _commitServerItems(inventory, equipment, 'admin');
+    return true;
   };
 
   // Cross-socket kill-loot grant. A party member other than the attacker can
@@ -5531,6 +5602,17 @@ io.on('connection', socket => {
       blessStone  = _rollInto(0.01, { ..._STONE_DEFS.bless_stone, qty: 1 });
     }
     if (items.length || boxUncommon || boxRare || normStone || blessStone) {
+      // Recorded before the commit so a clone-holder's later stamp re-applies
+      // them instead of erasing the drop — see _pendingOobGrants. Kills are by
+      // far the most frequent grant in the game, so this is the path that path
+      // exists for.
+      _recordOobGrant([
+        ...items,
+        ...(boxUncommon ? [{ id: 'box_uncommon', qty: 1 }] : []),
+        ...(boxRare ? [{ id: 'box_rare', qty: 1 }] : []),
+        ...(normStone ? [{ id: 'norm_stone', qty: 1 }] : []),
+        ...(blessStone ? [{ id: 'bless_stone', qty: 1 }] : []),
+      ]);
       _commitServerItems(inv, null, 'mob_loot', { eid, rlvl, n: items.length, boxUncommon, boxRare, normStone, blessStone }, { beforeLen: _beforeLen });
     }
     return { items, boxUncommon, boxRare, normStone, blessStone };
@@ -5558,6 +5640,7 @@ io.on('connection', socket => {
       const _beforeLen = inv.length;
       const delivered = _invAdd(inv, item);
       if (delivered) {
+        _recordOobGrant([item]);
         _commitServerItems(inv, null, 'market_cross_session_grant', { item: item.id }, { beforeLen: _beforeLen });
       }
       return { delivered };
@@ -5594,6 +5677,11 @@ io.on('connection', socket => {
       (patch.addItems || []).forEach(({ item, qty }) => {
         if (item) _invAdd(inv, qty != null ? { ...item, qty } : item);
       });
+      // Same replay bookkeeping as _grantKillLoot's — this is the path the
+      // death-battle and Tower rewards arrive on. Only the additions: a
+      // removal that gets undone by a stale stamp costs the player nothing.
+      _recordOobGrant((patch.addItems || []).map(({ item, qty }) => (
+        item ? { id: item.id, qty: qty != null ? qty : item.qty, enhance: item.enhance } : null)));
       if (patch.goldDelta) _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + patch.goldDelta);
       if (patch.bonusSPDelta) _lastStats.bonusSP = (_lastStats.bonusSP || 0) + patch.bonusSPDelta;
       let vipLeveled = false;
@@ -5646,6 +5734,7 @@ io.on('connection', socket => {
       const _beforeLen = inv.length;
       removeFn(inv);
       const delivered = resultItem ? _invAdd(inv, resultItem) : true;
+      if (delivered && resultItem) _recordOobGrant([resultItem]);
       _commitServerItems(inv, null, reason, meta, { beforeLen: _beforeLen });
       return { delivered };
     } finally {
