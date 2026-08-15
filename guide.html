@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Liberty — Вторая профессия</title>
+<title>Liberty — Полный гайд</title>
 <style>
   :root {
     --ink: #0b0805;
@@ -70,9 +70,9 @@
   }
   .brand-sub { font-size: 10px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; }
 
-  .topbar-links { margin-left: auto; display: flex; gap: 4px; }
+  .topbar-links { margin-left: auto; display: flex; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .topbar-links a {
-    text-decoration: none; font-size: 12px; color: var(--muted);
+    text-decoration: none; font-size: 12px; color: var(--muted); white-space: nowrap;
     padding: 7px 12px; border-radius: 7px; border: 1px solid transparent;
     transition: color .15s, border-color .15s, background .15s;
   }
@@ -141,7 +141,23 @@
     font-family: var(--serif); font-size: 27px; font-weight: 700;
     color: var(--gold-bright); margin: 0 0 8px; text-wrap: balance;
   }
+  h3.sub-h {
+    font-family: var(--serif); font-size: 17px; font-weight: 700;
+    color: var(--gold-bright); margin: 30px 0 12px; text-wrap: balance;
+  }
   .sec-dek { color: var(--muted); font-size: 14px; margin: 0 0 26px; max-width: 68ch; }
+
+  /* ── Table of contents ──────────────────────────────────── */
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; }
+  .toc a {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    text-decoration: none; font-size: 12.5px; color: var(--text); font-weight: 600;
+    padding: 9px 15px; border-radius: 20px;
+    background: var(--panel); border: 1px solid var(--hairline);
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .toc a:hover { border-color: var(--hairline-strong); color: var(--gold-bright); background: var(--panel-raised); }
+  .toc a span { color: var(--muted); font-size: 11px; font-weight: 400; }
 
   /* ── Steps ──────────────────────────────────────────────── */
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -163,6 +179,32 @@
   .step b { color: var(--gold-bright); font-size: 14.5px; display: block; margin-bottom: 5px; }
   .step p { margin: 0; font-size: 13px; color: var(--muted); position: relative; z-index: 1; }
   .step p b.inline { display: inline; color: var(--arcane-bright); font-size: inherit; }
+
+  /* ── Data tables ────────────────────────────────────────── */
+  .table-wrap {
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 14px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  table.dtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.dtable th, table.dtable td { padding: 10px 14px; border-bottom: 1px solid var(--hairline); text-align: left; white-space: nowrap; }
+  table.dtable tr:last-child td { border-bottom: none; }
+  table.dtable th {
+    color: var(--gold); font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    font-weight: 700; background: var(--panel-raised);
+  }
+  table.dtable td { color: var(--text); }
+  table.dtable td.mut { color: var(--muted); }
+  table.dtable td b { color: var(--gold-bright); }
+  .rdot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 7px; vertical-align: middle; background: currentColor; box-shadow: 0 0 6px currentColor; }
+
+  /* ── Pills (quick facts) ────────────────────────────────── */
+  .pillrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .pill {
+    font-size: 11.5px; padding: 5px 12px; border-radius: 20px;
+    background: var(--panel-raised); border: 1px solid var(--hairline);
+    color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .pill b { color: var(--gold-bright); }
 
   /* ── Effects legend ─────────────────────────────────────── */
   .fx-legend {
@@ -283,7 +325,7 @@
     .fx::before, .fx::after, .sigil, .sigil::before, .sigil::after { animation: none !important; }
   }
 
-  /* ── Class sections ─────────────────────────────────────── */
+  /* ── Class sections (shared by base + advanced skills) ─── */
   .class-section {
     background: var(--panel);
     border: 1px solid var(--hairline);
@@ -330,15 +372,71 @@
   .adv-skill-card > .fx { width: 46px; height: 46px; }
   .adv-skill-card > .fx .fx-icon { width: 28px; height: 28px; }
 
+  /* ── Base skill cards (no fx swirl — static icon chip) ──── */
+  .bsk-card {
+    display: flex; gap: 14px; align-items: flex-start;
+    background: var(--panel-raised); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 14px 15px;
+  }
+  .bsk-icon {
+    width: 46px; height: 46px; flex-shrink: 0; border-radius: 11px;
+    background: var(--panel); border: 1px solid var(--cc, var(--hairline-strong));
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bsk-icon img { width: 27px; height: 27px; }
+  .bsk-body { flex: 1; min-width: 0; }
+  .bsk-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+  .bsk-name { font-family: var(--serif); font-weight: 700; font-size: 14.5px; color: var(--gold-bright); }
+  .bsk-cd { margin-left: auto; font-size: 10.5px; color: var(--muted); flex-shrink: 0; white-space: nowrap; }
+  .bsk-desc { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.5; }
+
+  /* ── Class overview cards (portraits) ───────────────────── */
+  .classgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .classcard {
+    background: var(--panel); border: 1px solid var(--hairline); border-top: 3px solid var(--cc, var(--gold));
+    border-radius: 14px; padding: 18px 14px; text-align: center;
+  }
+  .classcard-portrait {
+    width: 84px; height: 84px; margin: 0 auto 12px; border-radius: 14px;
+    background-repeat: no-repeat; background-position: 0 0; background-size: 1260px 84px;
+    border: 1px solid var(--cc, var(--hairline-strong));
+    box-shadow: 0 0 16px color-mix(in srgb, var(--cc, var(--gold)) 32%, transparent);
+    background-color: var(--panel-raised);
+  }
+  .classcard-name { font-family: var(--serif); font-weight: 700; font-size: 14.5px; color: var(--cc, var(--gold-bright)); margin-bottom: 2px; }
+  .classcard-role { font-size: 9.5px; color: var(--muted); margin-bottom: 12px; letter-spacing: .02em; }
+  .classcard-stats { display: flex; flex-direction: column; gap: 5px; text-align: left; }
+  .classcard-stats div { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .classcard-stats div b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ── Feature cards (currencies etc.) ────────────────────── */
+  .cardgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .infocard {
+    background: var(--panel); border: 1px solid var(--hairline); border-top: 3px solid var(--cc, var(--gold));
+    border-radius: 14px; padding: 20px;
+  }
+  .infocard h3 { font-family: var(--serif); font-size: 16px; color: var(--cc, var(--gold-bright)); margin: 0 0 8px; }
+  .infocard p { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; line-height: 1.6; }
+  .infocard p:last-child { margin-bottom: 0; }
+  .infocard p b.inline { color: var(--arcane-bright); font-weight: 700; }
+
+  @media (max-width: 900px) {
+    .classgrid { grid-template-columns: repeat(3, 1fr); }
+    .cardgrid { grid-template-columns: 1fr 1fr; }
+  }
   @media (max-width: 720px) {
     .adv-skill-grid { grid-template-columns: 1fr; }
     .steps { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .classgrid { grid-template-columns: repeat(2, 1fr); }
+    .cardgrid { grid-template-columns: 1fr; }
   }
 
   /* ── Farm zone ──────────────────────────────────────────── */
   .farm-panel {
     display: grid; grid-template-columns: 220px 1fr; gap: 30px; align-items: center;
-    background: var(--panel); border: 1px solid var(--hairline-strong); border-radius: 16px;
+    background: var(--panel-raised); border: 1px solid var(--hairline-strong); border-radius: 16px;
     padding: 28px 30px;
     position: relative; overflow: hidden;
   }
@@ -363,12 +461,6 @@
   .farm-copy h3 { font-family: var(--serif); font-size: 17px; color: var(--gold-bright); margin: 0 0 8px; }
   .farm-copy p { margin: 0 0 10px; font-size: 13.5px; color: var(--text); max-width: 56ch; }
   .farm-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .farm-stats .pill {
-    font-size: 11.5px; padding: 5px 11px; border-radius: 20px;
-    background: var(--panel-raised); border: 1px solid var(--hairline);
-    color: var(--text); font-variant-numeric: tabular-nums;
-  }
-  .farm-stats .pill b { color: var(--gold-bright); }
 
   @media (max-width: 720px) {
     .farm-panel { grid-template-columns: 1fr; text-align: center; }
@@ -389,11 +481,12 @@
   </div>
   <div class="brandline">
     <span class="brand">LIBERTY</span>
-    <span class="brand-sub">Кодекс · Вторая профессия</span>
+    <span class="brand-sub">Полный кодекс игрока</span>
   </div>
   <div class="topbar-links">
-    <a href="#skills">Навыки</a>
-    <a href="#farmzone">Фарм зона</a>
+    <a href="#toc">Оглавление</a>
+    <a href="#advskills">Профессия</a>
+    <a href="#pvp">PvP</a>
   </div>
 </div>
 
@@ -403,16 +496,359 @@
     <div class="sigil">
       <svg viewBox="0 0 24 24" fill="none" stroke="#f4d8a7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.8 2.8M16.2 16.2 19 19M19 5l-2.8 2.8M7.8 16.2 5 19"/><circle cx="12" cy="12" r="3.4"/></svg>
     </div>
-    <div class="hero-eyebrow">Скрытая ступень мастерства</div>
-    <h1 class="hero-title">Вторая профессия</h1>
-    <p class="hero-lede">Когда базовый навык прокачан до предела, под ним пробуждается
-      <b>иная форма</b> — та же клавиша, но иная сила. Её нельзя купить: только заслужить
-      в бою и найти в глубине Фарм зоны.</p>
+    <div class="hero-eyebrow">Кодекс искателя</div>
+    <h1 class="hero-title">Гайд по Liberty</h1>
+    <p class="hero-lede">От первого удара до осады замка: классы, прокачка, экономика GRAM, кланы,
+      подземелья и все события одной MMORPG в Telegram. <b>Один документ, вся игра.</b></p>
   </div>
 </div>
 
 <main>
-  <!-- ── HOW IT WORKS ──────────────────────────────── -->
+  <!-- ── TABLE OF CONTENTS ────────────────────────────── -->
+  <section class="doc" id="toc">
+    <div class="sec-eyebrow">Карта кодекса</div>
+    <h2>Оглавление</h2>
+    <p class="sec-dek">Каждый раздел живёт своей жизнью — переходи сразу к тому, что нужно.</p>
+    <div class="toc">
+      <a href="#classes">Классы <span>кто есть кто</span></a>
+      <a href="#progress">Прогресс <span>уровни и очки</span></a>
+      <a href="#baseskills">Навыки <span>Q/W/E/R</span></a>
+      <a href="#advskills">Вторая профессия <span>20 навыков</span></a>
+      <a href="#world">Мир Liberty <span>коридоры и фарм-зона</span></a>
+      <a href="#quests">Квесты <span>сюжет и сезон</span></a>
+      <a href="#gear">Снаряжение <span>редкость и крафт</span></a>
+      <a href="#economy">Экономика <span>золото, GRAM, Liberty</span></a>
+      <a href="#clans">Кланы <span>война гильдий</span></a>
+      <a href="#pvp">PvP и события <span>расписание</span></a>
+      <a href="#ui">Управление <span>интерфейс</span></a>
+    </div>
+  </section>
+
+  <!-- ── CLASSES ───────────────────────────────────── -->
+  <section class="doc" id="classes">
+    <div class="sec-eyebrow">Пять судеб</div>
+    <h2>Выбери класс</h2>
+    <p class="sec-dek">Класс задаёт характеристики, дальность атаки и набор из четырёх навыков на клавишах
+      Q/W/E/R. Сменить его на уже созданном персонаже нельзя — но ничто не мешает завести другого.</p>
+
+    <div class="classgrid">
+      <div class="classcard" style="--cc:var(--c-tank)">
+        <div class="classcard-portrait" style="background-image:url('/images/Lev/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Танк</div>
+        <div class="classcard-role">Ближний бой · щит группы</div>
+        <div class="classcard-stats">
+          <div>HP <b>260</b></div>
+          <div>Атака <b>2</b></div>
+          <div>Защита <b>14</b></div>
+          <div>Скорость <b>130</b></div>
+          <div>Атак/сек <b>1.00</b></div>
+        </div>
+      </div>
+      <div class="classcard" style="--cc:var(--c-dk)">
+        <div class="classcard-portrait" style="background-image:url('/images/DeathKnight/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Рыцарь Смерти</div>
+        <div class="classcard-role">Ближний бой · вампиризм</div>
+        <div class="classcard-stats">
+          <div>HP <b>200</b></div>
+          <div>Атака <b>3</b></div>
+          <div>Защита <b>10</b></div>
+          <div>Скорость <b>145</b></div>
+          <div>Атак/сек <b>1.20</b></div>
+        </div>
+      </div>
+      <div class="classcard" style="--cc:var(--c-ranger)">
+        <div class="classcard-portrait" style="background-image:url('/images/Ranger/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Егерь</div>
+        <div class="classcard-role">Дальний бой · много стрел</div>
+        <div class="classcard-stats">
+          <div>HP <b>140</b></div>
+          <div>Атака <b>2</b></div>
+          <div>Защита <b>5</b></div>
+          <div>Скорость <b>175</b></div>
+          <div>Атак/сек <b>1.59</b></div>
+        </div>
+      </div>
+      <div class="classcard" style="--cc:var(--c-mage)">
+        <div class="classcard-portrait" style="background-image:url('/images/Mage/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Маг</div>
+        <div class="classcard-role">Дальний бой · контроль</div>
+        <div class="classcard-stats">
+          <div>HP <b>110</b></div>
+          <div>Атака <b>4</b></div>
+          <div>Защита <b>3</b></div>
+          <div>Скорость <b>155</b></div>
+          <div>Атак/сек <b>0.84</b></div>
+        </div>
+      </div>
+      <div class="classcard" style="--cc:var(--c-heal)">
+        <div class="classcard-portrait" style="background-image:url('/images/Warlock/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Целитель</div>
+        <div class="classcard-role">Дальний бой · саппорт пати</div>
+        <div class="classcard-stats">
+          <div>HP <b>160</b></div>
+          <div>Атака <b>2</b></div>
+          <div>Защита <b>7</b></div>
+          <div>Скорость <b>148</b></div>
+          <div>Атак/сек <b>1.20</b></div>
+        </div>
+      </div>
+    </div>
+    <p class="sec-dek" style="margin-top:16px;margin-bottom:0">Радиус атаки решает, кто в первой линии, а кто позади: у ближних классов он 58, у дальних — 170–210.
+      Автобой по ближайшему врагу открывается с <b class="inline" style="color:var(--arcane-bright)">3 уровня</b> — до этого удары наносятся вручную.</p>
+  </section>
+
+  <!-- ── PROGRESSION ───────────────────────────────── -->
+  <section class="doc" id="progress">
+    <div class="sec-eyebrow">Путь героя</div>
+    <h2>Персонаж и прогресс</h2>
+    <p class="sec-dek">Опыт, золото и очки навыка капают с каждого убитого монстра — а на 30 уровне
+      открывается способ обменять уровень на постоянную силу.</p>
+
+    <h3 class="sub-h">Опыт и золото</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 10px">С каждого монстра — опыт, равный его уровню, и золото той же величины с шансом 30%
+      (у боссов — гарантированно). Порог до следующего уровня растёт по экспоненте и резко
+      ускоряется после 5 и особенно после 20 уровня. Левелап лечит <b style="color:var(--arcane-bright)">+35 HP</b> и
+      выдаёт <b style="color:var(--arcane-bright)">3 очка навыка</b>.</p>
+
+    <h3 class="sub-h">Очки навыка и улучшения</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 14px">Каждое очко навыка тратится на +1 уровень одной из 7 характеристик — вместе с очком
+      каждое улучшение стоит золото по формуле <b style="color:var(--arcane-bright)">300 × (текущий уровень характеристики + 1)</b>.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Характеристика</th><th>Даёт за уровень</th></tr>
+        <tr><td>Атака</td><td class="mut">+1 ATK</td></tr>
+        <tr><td>Защита</td><td class="mut">+1 DEF</td></tr>
+        <tr><td>Здоровье</td><td class="mut">+10 макс. HP</td></tr>
+        <tr><td>Скорость атаки</td><td class="mut">+0.05 уд/с</td></tr>
+        <tr><td>Шанс крита</td><td class="mut">+1%</td></tr>
+        <tr><td>Сила крита</td><td class="mut">+3%</td></tr>
+        <tr><td>Реген HP</td><td class="mut">+0.1/сек</td></tr>
+      </table>
+    </div>
+
+    <h3 class="sub-h">Что открывается по уровням</h3>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Уровень</th><th>Открывает</th></tr>
+        <tr><td><b>3</b></td><td>Автобой по ближайшему врагу</td></tr>
+        <tr><td><b>20</b></td><td>Верхний коридор (Гнилые топи) и вход в Фарм-зону</td></tr>
+        <tr><td><b>30</b></td><td>Перерождение</td></tr>
+        <tr><td><b>40</b></td><td>Нижний коридор (Кровавые чертоги)</td></tr>
+        <tr><td><b>60</b></td><td>Правый коридор (Врата преисподней)</td></tr>
+      </table>
+    </div>
+
+    <h3 class="sub-h">Перерождение</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">С 30 уровня можно переродиться: уровень сбрасывается до 1, но взамен —
+      <b style="color:var(--arcane-bright)">+15 очков навыка навсегда</b>. Уже вложенные улучшения не сбрасываются.
+      Пока не вернёшься на 30 уровень, новые очки за левелап не капают — только уже полученные +15.
+      Стоимость: 10 необычных боксов, 5 редких боксов, 100 свитков эпического рецепта и 30 легендарного.</p>
+  </section>
+
+  <!-- ── BASE SKILLS ───────────────────────────────── -->
+  <section class="doc" id="baseskills">
+    <div class="sec-eyebrow">Первая профессия</div>
+    <h2>Базовые навыки классов</h2>
+    <p class="sec-dek">Четыре активных навыка на Q/W/E/R плюс пассивки. Разблокировка стоит 1 книгу
+      навыка, каждая попытка прокачки — 2 книги с шансом успеха 30%, до 10 уровня. Дальше в дело
+      вступает <a href="#advskills">вторая профессия</a>.</p>
+
+    <!-- Tank -->
+    <div class="class-section" style="--cc:var(--c-tank)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-tank)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v6c0 5 4 8 9 9 5-1 9-4 9-9V7l-9-5Z"/></svg></div>
+        <div><div class="class-section-title">Танк</div><div class="class-section-role">Ближний бой · щит группы</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/wstun_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Ледяной удар</span><span class="bsk-cd">кд 18с</span></div>
+            <p class="bsk-desc">×2 урон по цели + стан 3 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/wvixr_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Смерч клинков</span><span class="bsk-cd">кд 12с</span></div>
+            <p class="bsk-desc">АОЕ урон, радиус 110</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/wboevoy_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Гнев мертвеца</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">+80% защиты на 10 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/wrivok_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Рывок света</span><span class="bsk-cd">кд 15с</span></div>
+            <p class="bsk-desc">Прыгает к цели, нанося урон</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deathknight -->
+    <div class="class-section" style="--cc:var(--c-dk)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-dk)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5.5 3.4 9 8 10 4.6-1 8-4.5 8-10V6l-8-4Z"/><path d="M9 12h6M12 9v6"/></svg></div>
+        <div><div class="class-section-title">Рыцарь Смерти</div><div class="class-section-role">Ближний бой · вампиризм</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/adim_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Вампиризм</span><span class="bsk-cd">кд 28с</span></div>
+            <p class="bsk-desc">Вампиризм 10% от удара на 10 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/asmertudar.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Вихрь клинка</span><span class="bsk-cd">кд 12с</span></div>
+            <p class="bsk-desc">АОЕ урон, радиус 110</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/ainvidible_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Ярость</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">+20% атака на 5 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/audarteni.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Кувырок</span><span class="bsk-cd">кд 15с</span></div>
+            <p class="bsk-desc">Прыгает к цели, нанося урон</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ranger -->
+    <div class="class-section" style="--cc:var(--c-ranger)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-ranger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 19 14-14M14 5h5v5M9 15l-4 4"/></svg></div>
+        <div><div class="class-section-title">Егерь</div><div class="class-section-role">Дальний бой · много стрел</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/lmulti.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Мульти-выстрел</span><span class="bsk-cd">кд 6с</span></div>
+            <p class="bsk-desc">3 стрелы под углом ±0.35 рад</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/lkombo.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Комбо стрела</span><span class="bsk-cd">кд 10с</span></div>
+            <p class="bsk-desc">3 стрелы ×1 урон в одну цель</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/lprijok.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Прыжок</span><span class="bsk-cd">кд 8с</span></div>
+            <p class="bsk-desc">Рывок на 80px</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/latkspeed.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Скорость атаки</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">×1.5 скорость атаки на 5 сек</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mage -->
+    <div class="class-section" style="--cc:var(--c-mage)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-mage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="3.6"/></svg></div>
+        <div><div class="class-section-title">Маг</div><div class="class-section-role">Дальний бой · контроль</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/mshar_v2.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Ледяной шар</span><span class="bsk-cd">кд 5с</span></div>
+            <p class="bsk-desc">Снаряд ×2 урона</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/mnova.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Ледяная нова</span><span class="bsk-cd">кд 10с</span></div>
+            <p class="bsk-desc">АОЕ урон 130 + заморозка 3 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/mbarier.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Барьер</span><span class="bsk-cd">кд 18с</span></div>
+            <p class="bsk-desc">Защита +50% на 3 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/mteleport.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Телепорт</span><span class="bsk-cd">кд 12с</span></div>
+            <p class="bsk-desc">Рывок на 180px по направлению</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Healer -->
+    <div class="class-section" style="--cc:var(--c-heal)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-heal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg></div>
+        <div><div class="class-section-title">Целитель</div><div class="class-section-role">Дальний бой · саппорт пати</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/sheal.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Тёмное исцеление</span><span class="bsk-cd">кд 8с</span></div>
+            <p class="bsk-desc">+20% от максимального HP</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/socepinenie.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Оковы тьмы</span><span class="bsk-cd">кд 15с</span></div>
+            <p class="bsk-desc">Удерживает цель на месте 3 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/sshit.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Тёмный щит</span><span class="bsk-cd">кд 18с</span></div>
+            <p class="bsk-desc">+50% защита себе и пати на 4 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/spartyheal.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Тёмная молитва</span><span class="bsk-cd">кд 25с</span></div>
+            <p class="bsk-desc">+10% HP себе и +10% HP пати</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="sec-dek" style="margin-top:6px;margin-bottom:0">Кроме Q/W/E/R, у каждого класса есть 2 уникальные пассивки и ещё 6 общих для всех
+      (скорость атаки, здоровье, крит. урон, скорость передвижения, кулдаун навыков, реген) —
+      качаются отдельными книгами до 5 уровня и работают постоянно, без переключения.</p>
+  </section>
+
+  <!-- ── HOW IT WORKS (advanced skill unlock) ──────── -->
   <section class="doc" id="how">
     <div class="sec-eyebrow">Ритуал пробуждения</div>
     <h2>Как открыть продвинутый навык</h2>
@@ -485,8 +921,8 @@
     </div>
   </section>
 
-  <!-- ── SKILLS ────────────────────────────────────── -->
-  <section class="doc" id="skills">
+  <!-- ── ADVANCED SKILLS ───────────────────────────── -->
+  <section class="doc" id="advskills">
     <div class="sec-eyebrow">Все 20 продвинутых навыков</div>
     <h2>Второе лицо каждого класса</h2>
     <p class="sec-dek">По одному продвинутому навыку на каждый слот — сильнее, зрелищнее, и полностью меняет ритм боя.</p>
@@ -722,12 +1158,43 @@
     </div>
   </section>
 
-  <!-- ── FARM ZONE ─────────────────────────────────── -->
-  <section class="doc" id="farmzone">
-    <div class="sec-eyebrow">Единственный источник</div>
-    <h2>Фарм зона</h2>
-    <p class="sec-dek">Квадратная locked-локация в сердце мира — единственное место, где падают книги продвинутых навыков.</p>
+  <!-- ── WORLD ─────────────────────────────────────── -->
+  <section class="doc" id="world">
+    <div class="sec-eyebrow">Карта странствий</div>
+    <h2>Мир Liberty</h2>
+    <p class="sec-dek">Один центральный зал и четыре обособленных коридора-подземелья — каждый следующий
+      открывается по мере роста уровня и заметно опаснее предыдущего.</p>
 
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Коридор</th><th>Открывается</th><th>Комнат</th><th>Уровни</th><th>Существа</th><th>Босс</th></tr>
+        <tr>
+          <td><b>Левый</b><br><span class="mut">Крысиные катакомбы</span></td>
+          <td class="mut">с начала</td><td class="mut">20</td><td class="mut">1–20</td>
+          <td class="mut">крысы → слизни → бесы</td><td class="mut">Босс бесов · 3 600 HP</td>
+        </tr>
+        <tr>
+          <td><b>Верхний</b><br><span class="mut">Гнилые топи</span></td>
+          <td class="mut">с 20 ур.</td><td class="mut">20</td><td class="mut">21–40</td>
+          <td class="mut">зомби → ящеролюди → орки</td><td class="mut">Босс орков · 7 200 HP</td>
+        </tr>
+        <tr>
+          <td><b>Нижний</b><br><span class="mut">Кровавые чертоги</span></td>
+          <td class="mut">с 40 ур.</td><td class="mut">20</td><td class="mut">41–60</td>
+          <td class="mut">растения → вампиры → бехолдеры</td><td class="mut">Босс бехолдеров · 10 800 HP</td>
+        </tr>
+        <tr>
+          <td><b>Правый</b><br><span class="mut">Врата преисподней</span></td>
+          <td class="mut">с 60 ур.</td><td class="mut">18</td><td class="mut">61–78</td>
+          <td class="mut">энты → демоны</td><td class="mut">Босс демонов · 14 400 HP</td>
+        </tr>
+      </table>
+    </div>
+    <p class="sec-dek" style="margin-top:14px;margin-bottom:0">Внутри одного коридора вид монстра меняется от комнаты к комнате, чтобы соседние
+      никогда не повторялись, а его ранг растёт вместе с HP и атакой — от «Слабого» в первой комнате
+      до «Запредельного» перед боссом.</p>
+
+    <h3 class="sub-h">Фарм-зона</h3>
     <div class="farm-panel">
       <div class="lock-pair">
         <div class="lock-node">
@@ -758,7 +1225,263 @@
     </div>
   </section>
 
-  <footer>Кодекс второй профессии Liberty — детали урона, длительности и шансов дропа могут меняться с обновлениями.</footer>
+  <!-- ── QUESTS ────────────────────────────────────── -->
+  <section class="doc" id="quests">
+    <div class="sec-eyebrow">Путеводная нить</div>
+    <h2>Квесты и сезон</h2>
+    <p class="sec-dek">Сюжет ведёт по всем четырём коридорам, отдельные вкладки собирают разовые
+      задания и сезонную гонку очков.</p>
+
+    <h3 class="sub-h">Сюжетная цепочка</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Единая линейная цепочка — по 15 квестов на каждый из 4 коридоров, 60 всего.
+      Цели разных типов: убить N монстров вида X, достичь уровня, купить зелье, зачистить
+      подземелье, вступить в клан, дойти до этажа или зоны. Награда каждого следующего коридора
+      растёт примерно ×2 / ×4 / ×8 относительно первого.</p>
+    <div class="pillrow" style="margin-top:0">
+      <span class="pill">Всего квестов <b>60</b></span>
+      <span class="pill">На коридор <b>15</b></span>
+      <span class="pill">Рост награды <b>×2 / ×4 / ×8</b></span>
+    </div>
+
+    <h3 class="sub-h">Специальные квесты</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Отдельная вкладка с разовыми заданиями от разработчиков (подписки на каналы,
+      социальные активности и похожее) — награда золотом, опытом или Liberty.</p>
+
+    <h3 class="sub-h">Сезон</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Ограниченная по времени гонка очков, отдельная от сюжета: ротация заданий на
+      убийства в двух уровневых диапазонах, очки за участие в ивентах (арена, битва, мировой
+      босс), за заточку и переработку экипировки и за приглашённых друзей. Лидеры финального
+      рейтинга получают призы в USDT.</p>
+  </section>
+
+  <!-- ── GEAR & CRAFTING ───────────────────────────── -->
+  <section class="doc" id="gear">
+    <div class="sec-eyebrow">Кузница и трофеи</div>
+    <h2>Снаряжение и крафт</h2>
+    <p class="sec-dek">10 слотов экипировки, 5 ступеней редкости и полная цепочка заточки и крафта —
+      от обычного дропа до сборного уникального оружия.</p>
+
+    <h3 class="sub-h">Слоты</h3>
+    <div class="pillrow" style="margin-top:0">
+      <span class="pill">Оружие</span><span class="pill">Шлем</span><span class="pill">Тело</span>
+      <span class="pill">Перчатки</span><span class="pill">Плащ</span><span class="pill">Обувь</span>
+      <span class="pill">Кольцо</span><span class="pill">Пояс</span><span class="pill">Питомец</span>
+      <span class="pill">Артефакт</span>
+    </div>
+
+    <h3 class="sub-h">Редкость</h3>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Редкость</th><th>Падает с уровней</th></tr>
+        <tr><td><span class="rdot" style="color:#9c9086"></span>Обычная</td><td class="mut">1–10</td></tr>
+        <tr><td><span class="rdot" style="color:#6f9c4a"></span>Необычная</td><td class="mut">11–20</td></tr>
+        <tr><td><span class="rdot" style="color:#4a7bab"></span>Редкая</td><td class="mut">21–40</td></tr>
+        <tr><td><span class="rdot" style="color:#8a5cc2"></span>Эпическая</td><td class="mut">41–60</td></tr>
+        <tr><td><span class="rdot" style="color:#e8b93e"></span>Легендарная</td><td class="mut">61–78</td></tr>
+      </table>
+    </div>
+
+    <h3 class="sub-h">Заточка</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Камнями заточки любой предмет усиливается до <b style="color:var(--arcane-bright)">+15</b> — каждый
+      уровень добавляет около 10% от базовых атаки/защиты/HP предмета.</p>
+
+    <h3 class="sub-h">Крафт</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 6px">Нижние тиры (обычный → необычный → редкий) собираются у кузнеца за золото и материалы.
+      Выше — только за <b style="color:var(--arcane-bright)">Liberty</b>:</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Тир</th><th>Материалы</th><th>Liberty</th></tr>
+        <tr><td><b>Эпический</b></td><td class="mut">2 копии редкого предмета того же вида на +8 заточки + 10 свитков рецепта</td><td class="mut">7 000</td></tr>
+        <tr><td><b>Легендарный</b></td><td class="mut">2 копии эпического предмета того же вида на +8 заточки + 15 свитков рецепта</td><td class="mut">20 000</td></tr>
+      </table>
+    </div>
+
+    <h3 class="sub-h">Уникальное оружие</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Собирается из 20 видов «осколков», которые редко падают в бою и в Фарм-зоне.
+      Эпическая версия требует 1000 осколков каждого вида, легендарная — 5000. Сама сборка,
+      в отличие от обычного крафта, срабатывает гарантированно — предметы этой линии нельзя
+      ни купить, ни выбить как готовые.</p>
+  </section>
+
+  <!-- ── ECONOMY ───────────────────────────────────── -->
+  <section class="doc" id="economy">
+    <div class="sec-eyebrow">Три монеты</div>
+    <h2>Экономика</h2>
+    <p class="sec-dek">Золото добывается в бою и тратится там же, GRAM привязан к TON и выводится
+      в реальные деньги, Liberty — валюта высокого крафта, которую нельзя купить напрямую.</p>
+
+    <div class="cardgrid">
+      <div class="infocard" style="--cc:var(--gold)">
+        <h3>Золото</h3>
+        <p>Бесплатная валюта — падает с монстров (30% шанс, у боссов гарантированно) в количестве,
+        равном их уровню.</p>
+        <p>Тратится на прокачку характеристик, зелья у торговца, крафт нижних тиров и
+        создание клана (<b class="inline">100 золота</b>).</p>
+      </div>
+      <div class="infocard" style="--cc:#3ef07a">
+        <h3>GRAM</h3>
+        <p>Премиум-валюта, привязанная к TON 1:1. Падает с монстров вне Фарм-зоны с шансом
+        <b class="inline">7.5%</b> в микроскопическом количестве, растущем с уровнем монстра.</p>
+        <p>Пополняется переводом TON (вручную по адресу и memo или через TON Connect), каждое
+        пополнение проверяет администратор. Выводится обратно в TON с комиссией
+        <b class="inline">10%</b>, минимум <b class="inline">1 GRAM</b>. Тратится на Маркет, Магазин GRAM и VIP.</p>
+      </div>
+      <div class="infocard" style="--cc:var(--arcane)">
+        <h3>Liberty</h3>
+        <p>Вторая премиум-валюта — не покупается напрямую, только выдаётся сервером за игровые
+        достижения.</p>
+        <p>Нужна для крафта эпической и легендарной экипировки (7 000 / 20 000), питомцев
+        (500–5 000 по редкости) и крафта классовых плащей и артефактов.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-h">VIP</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Статус растёт с суммарно потраченным GRAM и даёт постоянные бонусы к опыту, золоту
+      и шансу дропа. С <b style="color:var(--arcane-bright)">VIP 2</b> открывается автокаст навыков (кроме рывков и
+      телепортов), с <b style="color:var(--arcane-bright)">VIP 3</b> снимается лимит на активные лоты в Маркете.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>VIP</th><th>Всего GRAM потрачено</th><th>Опыт</th><th>Золото</th><th>Дроп</th></tr>
+        <tr><td>1</td><td class="mut">1</td><td class="mut">+5%</td><td class="mut">+0%</td><td class="mut">+0%</td></tr>
+        <tr><td>2</td><td class="mut">5</td><td class="mut">+5%</td><td class="mut">+5%</td><td class="mut">+0%</td></tr>
+        <tr><td>3</td><td class="mut">10</td><td class="mut">+10%</td><td class="mut">+10%</td><td class="mut">+0%</td></tr>
+        <tr><td>4</td><td class="mut">25</td><td class="mut">+20%</td><td class="mut">+20%</td><td class="mut">+0%</td></tr>
+        <tr><td>5</td><td class="mut">50</td><td class="mut">+35%</td><td class="mut">+35%</td><td class="mut">+10%</td></tr>
+        <tr><td>6</td><td class="mut">100</td><td class="mut">+50%</td><td class="mut">+50%</td><td class="mut">+20%</td></tr>
+        <tr><td>7</td><td class="mut">150</td><td class="mut">+60%</td><td class="mut">+60%</td><td class="mut">+25%</td></tr>
+        <tr><td>8</td><td class="mut">200</td><td class="mut">+75%</td><td class="mut">+75%</td><td class="mut">+30%</td></tr>
+        <tr><td>9</td><td class="mut">300</td><td class="mut">+90%</td><td class="mut">+90%</td><td class="mut">+40%</td></tr>
+        <tr><td><b>10</b></td><td class="mut">500</td><td class="mut">+100%</td><td class="mut">+100%</td><td class="mut">+100%</td></tr>
+      </table>
+    </div>
+
+    <h3 class="sub-h">Маркет и Магазин GRAM</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Маркет — торговля между игроками за GRAM, комиссия сделки 10% (сгорает). До VIP 3
+      разрешено не больше 5 активных лотов одновременно. Магазин GRAM — готовые наборы
+      (золото, Liberty, предметы) за GRAM, разбитые на обычные, специальные и сезонные паки.</p>
+  </section>
+
+  <!-- ── CLANS ─────────────────────────────────────── -->
+  <section class="doc" id="clans">
+    <div class="sec-eyebrow">Сила вместе</div>
+    <h2>Кланы и Война гильдий</h2>
+    <p class="sec-dek">Клан объединяет до 30 игроков вокруг общих бонусов, хранилища осколков и
+      борьбы за башню.</p>
+
+    <div class="pillrow" style="margin-top:0">
+      <span class="pill">Создание <b>100 золота</b></span>
+      <span class="pill">Участников до <b>30</b></span>
+      <span class="pill">Название до <b>10 симв.</b></span>
+      <span class="pill">Описание до <b>200 симв.</b></span>
+    </div>
+
+    <h3 class="sub-h">Уровни клана</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Растут за клановый опыт и дают накопительные бонусы всем участникам.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Уровень</th><th>Клановый опыт</th><th>Золото</th><th>Опыт</th><th>Атака</th></tr>
+        <tr><td>1 · Новообразованный</td><td class="mut">0</td><td class="mut">+0%</td><td class="mut">+0%</td><td class="mut">+0%</td></tr>
+        <tr><td>3 · Сплочённый</td><td class="mut">1 500</td><td class="mut">+5%</td><td class="mut">+5%</td><td class="mut">+0%</td></tr>
+        <tr><td>5 · Именитый</td><td class="mut">10 000</td><td class="mut">+10%</td><td class="mut">+5%</td><td class="mut">+5%</td></tr>
+        <tr><td>7 · Легендарный</td><td class="mut">60 000</td><td class="mut">+15%</td><td class="mut">+10%</td><td class="mut">+5%</td></tr>
+        <tr><td>9 · Непобедимый</td><td class="mut">350 000</td><td class="mut">+15%</td><td class="mut">+15%</td><td class="mut">+10%</td></tr>
+        <tr><td><b>10 · Бессмертный</b></td><td class="mut">800 000</td><td class="mut">+20%</td><td class="mut">+20%</td><td class="mut">+15%</td></tr>
+      </table>
+    </div>
+
+    <h3 class="sub-h">Хранилище клана</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Общий пул осколков редкого оружия. Лидер открывает его один раз за
+      <b style="color:var(--arcane-bright)">1 000 000 золота</b>; вкладывать и забирать могут участники со стажем от 10 дней.</p>
+
+    <h3 class="sub-h">Война гильдий</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Ежедневно <b style="color:var(--arcane-bright)">22:00–22:15 МСК</b> открывается отдельная зона с башней
+      (1 000 000 HP — как у мирового босса). Клан, добивший башню, владеет землёй до следующего
+      захвата и получает 10–30 осколков в час — даже когда локация закрыта. Бой внутри открытый,
+      PvP разрешён.</p>
+  </section>
+
+  <!-- ── PVP & EVENTS ──────────────────────────────── -->
+  <section class="doc" id="pvp">
+    <div class="sec-eyebrow">Проверка силой</div>
+    <h2>PvP и события</h2>
+    <p class="sec-dek">От дуэлей в открытом мире до осады замка — расписание всех схваток Liberty
+      (время указано по Москве).</p>
+
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Событие</th><th>Когда</th><th>Правила</th><th>Награда</th></tr>
+        <tr>
+          <td><b>Открытый PvP</b></td><td class="mut">в любое время</td>
+          <td class="mut">Тумблер боевого режима — дерись с любым другим игроком в мире</td>
+          <td class="mut">—</td>
+        </tr>
+        <tr>
+          <td><b>Битва на смерть</b></td><td class="mut">Вт / Чт / Сб, 10:00</td>
+          <td class="mut">Королевская битва: 30 сек заморозки в начале, последний живой побеждает</td>
+          <td class="mut">0.05 GRAM</td>
+        </tr>
+        <tr>
+          <td><b>Арена 3×3</b></td><td class="mut">ежедневно, 21:00–22:00</td>
+          <td class="mut">Матч стартует при наборе 6 игроков; у каждой команды свой страж на 30 000 HP</td>
+          <td class="mut">команде-победителю</td>
+        </tr>
+        <tr>
+          <td><b>Кровавая Башня</b></td><td class="mut">ежедневно, 20:30, на 5 минут</td>
+          <td class="mut">Забег по своему коридору из 120 монстров к общему боссу — награда по нанесённому урону</td>
+          <td class="mut">Liberty всем, больше — победителю</td>
+        </tr>
+        <tr>
+          <td><b>Страх</b></td><td class="mut">в любое время</td>
+          <td class="mut">Волны по 20 монстров, растущий уровень, опыт ×10; смерть — вылет из подземелья</td>
+          <td class="mut">опыт по волне</td>
+        </tr>
+        <tr>
+          <td><b>Мировой босс</b></td><td class="mut">Пн / Ср / Пт / Вс, 20:00</td>
+          <td class="mut">«Владыка Демонов», 1 000 000 HP, закрытая арена</td>
+          <td class="mut">эпическая/легендарная экипировка</td>
+        </tr>
+        <tr>
+          <td><b>Война гильдий</b></td><td class="mut">ежедневно, 22:00–22:15</td>
+          <td class="mut">Захват башни кланом, открытый PvP внутри зоны</td>
+          <td class="mut">контроль над землёй + осколки/час</td>
+        </tr>
+      </table>
+    </div>
+    <p class="sec-dek" style="margin-top:14px;margin-bottom:0">У большинства ивентов есть минимальный уровень входа и ограниченное число попыток в
+      день — они списываются при старте, а не при регистрации.</p>
+  </section>
+
+  <!-- ── UI / CONTROLS ─────────────────────────────── -->
+  <section class="doc" id="ui">
+    <div class="sec-eyebrow">Как всё устроено на экране</div>
+    <h2>Управление и интерфейс</h2>
+    <p class="sec-dek">Liberty — приложение внутри Telegram (есть и версия для Android): джойстик для
+      движения, кнопки Q/W/E/R для навыков.</p>
+
+    <h3 class="sub-h">Бой и движение</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Джойстик слева отвечает за перемещение. С 3 уровня персонаж автоматически атакует
+      ближайшего врага; активные навыки вызываются четырьмя кнопками Q/W/E/R. С VIP 2 навыки без
+      перемещения (не рывки и не телепорты) можно поставить на автокаст.</p>
+
+    <h3 class="sub-h">Нижняя навигация</h3>
+    <div class="pillrow" style="margin-top:0">
+      <span class="pill">Игра</span><span class="pill">Персонаж</span><span class="pill">Карта</span>
+      <span class="pill">Квесты</span><span class="pill">Кланы</span><span class="pill">Профиль</span>
+    </div>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:10px 0 0">Персонаж — это инвентарь, улучшения, навыки и перерождение в одной вкладке.
+      Профиль — кошелёк, друзья, история и настройки языка/звука.</p>
+
+    <h3 class="sub-h">Кнопки на HUD</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Сверху экрана — Рейтинг (игроки/кланы), VIP, Маркет, Магазин GRAM, События (все PvP-режимы
+      и мировой босс под одной кнопкой), Сезон, Профессия (кодекс продвинутых навыков этой
+      страницы) и чат с тремя каналами — общий, клановый и личные сообщения с переводом.</p>
+
+    <h3 class="sub-h">Хранение предметов</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Рюкзак и склад у NPC (200 ячеек) — отдельная от общеклановой копилка, не путать с
+      хранилищем клана из раздела выше.</p>
+  </section>
+
+  <footer>Кодекс Liberty — цифры урона, расписание событий и шансы дропа могут меняться с обновлениями игры.</footer>
 </main>
 
 <script>
