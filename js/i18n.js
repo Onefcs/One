@@ -821,6 +821,7 @@ Object.assign(I18N_UI, {
   className_mage:        { ru: 'Маг',            en: 'Mage',          uk: 'Маг',           es: 'Mago',                   tr: 'Büyücü',         pt: 'Mago' },
   className_warlock:     { ru: 'Целитель',       en: 'Healer',        uk: 'Цілитель',      es: 'Sanador',               tr: 'Şifacı',         pt: 'Curandeiro' },
   navRatingBtn: { ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
+  navCodexBtn: { ru: 'Кодекс', en: 'Codex', uk: 'Кодекс', es: 'Códice', tr: 'Kodeks', pt: 'Códex' },
   navMarketBtn: { ru: 'Маркет', en: 'Market', uk: 'Маркет', es: 'Mercado', tr: 'Pazar', pt: 'Mercado' },
   navShopBtn: { ru: 'Магазин', en: 'Shop', uk: 'Магазин', es: 'Tienda', tr: 'Mağaza', pt: 'Loja' },
   skillsHdrUpper: { ru: 'НАВЫКИ', en: 'SKILLS', uk: 'НАВИЧКИ', es: 'HABILIDADES', tr: 'YETENEKLER', pt: 'HABILIDADES' },

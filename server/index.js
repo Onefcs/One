@@ -153,6 +153,7 @@ const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
+  isCodexEligible, codexBonusTotal,
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
@@ -7015,6 +7016,41 @@ io.on('connection', socket => {
     _commitServerItems(inv, _lastStats.equipment, 'unequip', { id: it.id, slot }, { beforeLen });
   });
 
+  function _codexFor() {
+    if (!_lastStats) return null;
+    if (!Array.isArray(_lastStats.codex)) _lastStats.codex = [];
+    return _lastStats.codex;
+  }
+
+  // Pushes the authoritative codex list + its resulting stat bonus to the
+  // client — same "server decides, client mirrors" shape as _pushProgress.
+  function _pushCodex() {
+    socket.emit('codexSync', { codex: _lastStats.codex, bonus: codexBonusTotal(_lastStats.codex) });
+  }
+
+  // Кодекс предметов: permanently consumes a unique gear item out of the
+  // inventory in exchange for a small, fixed, rarity-scaled stat bonus (see
+  // CODEX_BONUS_BY_RARITY, shared/definitions.js) that then applies forever,
+  // regardless of what's equipped. One registration per item id — a second
+  // copy of the same sword has nothing left to register.
+  safeOn('registerCodexItem', ({ idx } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
+    const codex = _codexFor();
+    const inv = _lastStats.inventory;
+    const i = Math.floor(Number(idx));
+    const it = (Number.isInteger(i) && i >= 0) ? inv[i] : null;
+    if (!it) return;
+    if (!isCodexEligible(it)) return _itemErr('Этот предмет нельзя внести в кодекс');
+    if (codex.includes(it.id)) return _itemErr('Этот предмет уже в кодексе');
+    const beforeLen = inv.length;
+    inv.splice(i, 1);
+    codex.push(it.id);
+    _commitServerItems(inv, null, 'codex_register', { id: it.id, rarity: it.rarity }, { beforeLen });
+    _persistSavedFields(authed, { codex });
+    _pushCodex();
+  });
+
   // Inventory -> storage and back. Both are MOVES: the item is spliced out of
   // one array and merged into the other in a single handler, so the two halves
   // can never be observed apart the way they could when a save carried them.
@@ -9519,6 +9555,11 @@ io.on('connection', socket => {
       effectiveSaved.passiveLevels   = (_dbBase && _dbBase.passiveLevels)   || {};
       effectiveSaved.advSkillLearned = (_dbBase && _dbBase.advSkillLearned) || {};
       effectiveSaved.advSkillActive  = (_dbBase && _dbBase.advSkillActive)  || {};
+      // Codex registrations, same pinning as the progression maps above —
+      // server-applied and persisted the moment registerCodexItem ran, so a
+      // reconnect reads the stored record rather than whatever list a stale
+      // client blob happened to carry.
+      effectiveSaved.codex = Array.isArray(_dbBase && _dbBase.codex) ? _dbBase.codex : [];
       socket.emit('progressSync', {
         upgrades:        effectiveSaved.upgrades,
         skillLevels:     effectiveSaved.skillLevels,
@@ -9526,6 +9567,7 @@ io.on('connection', socket => {
         advSkillLearned: effectiveSaved.advSkillLearned,
         advSkillActive:  effectiveSaved.advSkillActive,
       });
+      socket.emit('codexSync', { codex: effectiveSaved.codex, bonus: codexBonusTotal(effectiveSaved.codex) });
       _lastStats = effectiveSaved;
       // Baseline for saveProgress's own rate-based gold cap — without this,
       // the time this session spends actually playing before its first
@@ -11068,6 +11110,9 @@ io.on('connection', socket => {
       clean.advSkillLearned = _lastStats.advSkillLearned || {};
       clean.advSkillActive  = _lastStats.advSkillActive  || {};
       clean.upgrades        = _lastStats.upgrades        || {};
+      // Кодекс: same reasoning — registerCodexItem is the only path that ever
+      // adds to it, so a save has nothing left to say about it either.
+      clean.codex            = Array.isArray(_lastStats.codex) ? _lastStats.codex : [];
     }
 
     // Gold is server-owned: every credit (kills, quests, sales, VIP, admin)

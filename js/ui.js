@@ -919,6 +919,86 @@ function renderProfessionPanel() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  CODEX PANEL — permanently consumes a unique gear item for a small, fixed,
+//  rarity-scaled stat bonus (L2M/Night Crow-style item codex). The server owns
+//  the registered list and the resulting bonus (registerCodexItem/codexSync,
+//  server/index.js); this only renders what arrived and asks for a change.
+// ─────────────────────────────────────────────────────────
+function openCodexPanel() {
+  const panel = document.getElementById('codex-panel');
+  if (!panel || !player) return;
+  panel.style.display = 'flex';
+  renderCodexPanel();
+}
+
+function closeCodexPanel() {
+  const panel = document.getElementById('codex-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _refreshCodexPanelIfOpen() {
+  const panel = document.getElementById('codex-panel');
+  if (panel && panel.style.display !== 'none') renderCodexPanel();
+}
+
+// Confirmed here, client-side, purely so a misclick doesn't destroy an item —
+// the server checks eligibility/ownership/dedup on its own regardless.
+function confirmRegisterCodexItem(idx) {
+  if (!player || !Array.isArray(player.inventory)) return;
+  const it = player.inventory[idx];
+  if (!it) return;
+  if (!confirm(`Внести «${it.name}» в кодекс? Предмет будет уничтожен, бонус к статам останется навсегда.`)) return;
+  netRegisterCodexItem(idx);
+}
+
+function renderCodexPanel() {
+  const body = document.getElementById('codex-panel-body');
+  if (!body || !player) return;
+  const registered = new Set(player.codex || []);
+  const bonus = player.codexBonus || { atk: 0, def: 0, hp: 0 };
+  const bonusParts = [];
+  if (bonus.atk) bonusParts.push(`+${bonus.atk} АТК`);
+  if (bonus.def) bonusParts.push(`+${bonus.def} ЗАЩ`);
+  if (bonus.hp)  bonusParts.push(`+${bonus.hp} HP`);
+  const total = (typeof CODEX_ITEM_IDS !== 'undefined') ? CODEX_ITEM_IDS.length : 0;
+  const totalHtml = `<div class="codex-total">
+    <div class="codex-total-label">Бонус кодекса (${registered.size}/${total})</div>
+    <div class="codex-total-stats">${bonusParts.length ? bonusParts.join(' &nbsp; ') : '—'}</div>
+  </div>`;
+
+  // One row per inventory slot, not per item id — a second copy of an
+  // already-registered item still shows (with a badge instead of a button)
+  // rather than silently vanishing from the list.
+  const candidates = [];
+  (player.inventory || []).forEach((it, idx) => {
+    if (it && typeof isCodexEligible === 'function' && isCodexEligible(it)) candidates.push({ it, idx });
+  });
+
+  const rowsHtml = candidates.length ? candidates.map(({ it, idx }) => {
+    const rc = RARITY_COLOR[it.rarity] || '#aea599';
+    const already = registered.has(it.id);
+    const action = already
+      ? `<span class="codex-registered-badge">В кодексе</span>`
+      : `<button class="codex-reg-btn" onclick="confirmRegisterCodexItem(${idx})">Внести</button>`;
+    return `<div class="market-row">
+      <div class="market-row-icon">${_itemIcon(it, 32)}</div>
+      <div class="market-row-info">
+        <div class="market-row-name" style="color:${rc}">${it.name}${it.enhance ? ' +' + it.enhance : ''}</div>
+        <div class="market-row-sub">${statStr(it)}</div>
+      </div>
+      ${action}
+    </div>`;
+  }).join('') : `<div class="rating-empty">Нет подходящих предметов в инвентаре</div>`;
+
+  body.innerHTML = `
+    <div class="codex-hint">Каждый уникальный предмет экипировки можно один раз внести в кодекс — предмет расходуется, а его небольшой бонус к статам остаётся навсегда, даже если позже продать или заменить снаряжение.</div>
+    ${totalHtml}
+    <div class="codex-section-title">Из инвентаря</div>
+    ${rowsHtml}
+  `;
+}
+
+// ─────────────────────────────────────────────────────────
 //  PASSIVE SKILL UI
 // ─────────────────────────────────────────────────────────
 let _activeSkillSubTab = 'active';
@@ -1639,7 +1719,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -3196,6 +3276,25 @@ function _positionSeasonBtn() {
 function showSeasonBtn() {
   const btn = document.getElementById('season-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSeasonBtn(); }
+}
+
+// Stacks directly below the Season button, same offset every other button in
+// this column uses.
+function _positionCodexBtn() {
+  const seasonBtn = document.getElementById('season-btn');
+  const btn        = document.getElementById('codex-btn');
+  if (!btn || !seasonBtn) return;
+  const sTop = parseFloat(seasonBtn.style.top) || 0;
+  btn.style.top       = (sTop + 28 + 4) + 'px';
+  btn.style.left      = seasonBtn.style.left;
+  btn.style.width     = seasonBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showCodexBtn() {
+  const btn = document.getElementById('codex-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionCodexBtn(); }
 }
 
 let _seasonTab = 'quests';

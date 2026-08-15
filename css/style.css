@@ -2556,3 +2556,59 @@ canvas { display:block; width:100%; height:100%; }
 .profp-toggle-switch.adv .profp-toggle-knob { left: 20px; background: var(--cc); box-shadow: 0 0 8px var(--cc); }
 
 .profp-hint { margin-top: 16px; font-size: 11px; color: #6b6152; text-align: center; line-height: 1.5; }
+
+/* ── Codex button ──────────────────────────────────────────────────────────── */
+#codex-btn {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  background: rgba(16,12,6,.90);
+  border: 1px solid rgba(209,204,197,.08);
+  border-left: 3px solid #8b5cf6;
+  border-radius: 6px;
+  color: #c9a6f0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
+}
+#codex-btn:active { background: rgba(28,16,35,.96); border-left-color: #c9a6f0; }
+
+/* ── Codex panel overlay ───────────────────────────────────────────────────── */
+#codex-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: rgba(15,11,4,.97);
+  overflow: hidden;
+}
+#codex-panel, #codex-panel * { touch-action: pan-y; pointer-events: auto; }
+.codex-hint { font-size: 11.5px; color: #968a7a; line-height: 1.5; margin-bottom: 12px; }
+.codex-total {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-radius: 10px; margin-bottom: 14px;
+  background: rgba(139,92,246,.10); border: 1px solid rgba(139,92,246,.30);
+}
+.codex-total-label { font-size: 12px; font-weight: 700; color: #c9a6f0; }
+.codex-total-stats { font-size: 13px; font-weight: 800; color: #d1ccc5; text-align: right; }
+.codex-section-title { font-size: 11.5px; font-weight: 700; color: #746a5a; text-transform: uppercase; letter-spacing: .4px; margin: 4px 0 8px; }
+.codex-reg-btn {
+  margin-left: auto; flex-shrink: 0;
+  padding: 7px 14px;
+  background: linear-gradient(135deg, #8b5cf6, #c9a6f0);
+  border: none; border-radius: 8px;
+  color: #150f08; font-size: 11.5px; font-weight: 800;
+  cursor: pointer;
+}
+.codex-reg-btn:active { filter: brightness(1.1); }
+.codex-registered-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10.5px; font-weight: 700; color: #7ee0c0;
+  background: rgba(126,224,192,.12); border: 1px solid rgba(126,224,192,.3);
+  border-radius: 7px; padding: 5px 10px; white-space: nowrap;
+}

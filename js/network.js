@@ -1707,6 +1707,18 @@ function netConnect(onReady) {
     if (typeof updateProfileUI === 'function') updateProfileUI();
   });
 
+  // The authoritative codex — same "applied verbatim, not merged" reasoning
+  // as progressSync above: registerCodexItem is the only path that ever adds
+  // to it, so there is never a newer local version to protect.
+  socket.on('codexSync', ({ codex, bonus } = {}) => {
+    if (!player) return;
+    if (Array.isArray(codex)) player.codex = codex.slice();
+    player.codexBonus = bonus && typeof bonus === 'object' ? bonus : { atk: 0, def: 0, hp: 0 };
+    if (typeof recompute === 'function') recompute();
+    if (typeof _refreshCodexPanelIfOpen === 'function') _refreshCodexPanelIfOpen();
+    if (typeof updateInvUI === 'function') updateInvUI();
+  });
+
   // The outcome of one upgrade attempt. The level itself arrives in the
   // progressSync above; this is only what the player sees happen.
   socket.on('upgradeRolled', ({ kind, ok, level } = {}) => {
@@ -2335,6 +2347,11 @@ function netLearnPassive(id)     { if (socket?.connected) socket.emit('learnPass
 function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePassive', { id }); }
 function netLearnAdvSkill(key)   { if (socket?.connected) socket.emit('learnAdvSkill', { key }); }
 function netToggleAdvSkill(key)  { if (socket?.connected) socket.emit('toggleAdvSkill', { key }); }
+
+// Consumes an inventory item into the codex. A request, not a result — the
+// server checks eligibility/ownership, deletes the item and answers with
+// codexSync (authoritative list + bonus) or itemError.
+function netRegisterCodexItem(idx) { if (socket?.connected) socket.emit('registerCodexItem', { idx }); }
 function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgrade', { key }); }
 
 // ── Item placement ──────────────────────────────────────────────────────────
@@ -2653,6 +2670,7 @@ function _finishOnlineStart() {
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
+  if (typeof showCodexBtn === 'function') showCodexBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type

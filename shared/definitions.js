@@ -1163,6 +1163,44 @@ function itemCatalogBase(id) {
   return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
 }
 
+// ── Кодекс предметов (item codex) ───────────────────────────────────────────
+// Registering a unique gear item permanently consumes it and grants a small,
+// fixed stat bonus that scales with the item's rarity — same idea as L2M/
+// Night Crow's item codex. Only gear that already carries combat stats
+// (ENHANCEABLE_SLOTS — weapon/armor/accessory/pet) is eligible; materials,
+// recipes, potions, keys and boxes never register.
+const CODEX_BONUS_BY_RARITY = {
+  common:    { atk: 1 },
+  uncommon:  { atk: 1, def: 1 },
+  rare:      { atk: 2, def: 1, hp: 8  },
+  epic:      { atk: 3, def: 2, hp: 16 },
+  legendary: { atk: 5, def: 3, hp: 30 },
+};
+
+function isCodexEligible(it) { return !!it && ENHANCEABLE_SLOTS.has(it.slot); }
+
+// Every ITEM_DEF entry that's eligible, in catalog order — the codex panel
+// lists exactly these ids as "known" vs "unregistered" without needing to
+// re-filter ITEM_DEF itself.
+const CODEX_ITEM_IDS = ITEM_DEF.filter(isCodexEligible).map(it => it.id);
+
+// Sums the fixed per-rarity bonus over a list of already-registered item ids.
+// An id with no (or no longer eligible) catalog entry is skipped rather than
+// thrown on — same as every other lookup against this catalog.
+function codexBonusTotal(registeredIds) {
+  const total = { atk: 0, def: 0, hp: 0 };
+  (registeredIds || []).forEach(id => {
+    const base = itemCatalogBase(id);
+    if (!isCodexEligible(base)) return;
+    const b = CODEX_BONUS_BY_RARITY[base.rarity];
+    if (!b) return;
+    total.atk += b.atk || 0;
+    total.def += b.def || 0;
+    total.hp  += b.hp  || 0;
+  });
+  return total;
+}
+
 // ── Room-level monster progression ─────────────────────────────────────────────
 // Each corridor (server/game/dungeon.js) chains roomsInArm(armIdx) rooms of
 // increasing "local room level" 1..roomsInArm(armIdx) (room 1 = weakest, the
@@ -1670,6 +1708,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  itemCatalogBase, CODEX_BONUS_BY_RARITY, CODEX_ITEM_IDS, isCodexEligible, codexBonusTotal,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
