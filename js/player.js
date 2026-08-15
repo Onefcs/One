@@ -100,6 +100,11 @@ function makePlayer(type) {
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     bonusSP: 0,
     rebirths: 0,
+    // Кодекс: { [setId]: boolean[] } filled-slot progress per set
+    // (server-owned, see registerCodexSetItem/codexSync) and the flat stat
+    // bonus every COMPLETED set totals to.
+    codex: {},
+    codexBonus: { atk: 0, def: 0, hp: 0 },
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
     critChance: 0.05, critPower: 1.5,
@@ -197,6 +202,12 @@ function recompute() {
   let a = player.baseAtk + (u.atk || 0) * 1;
   let d = player.baseDef + (u.def || 0) * 1;
   let h = player.baseMaxHp + (u.hp || 0) * 10;
+  // Кодекс предметов — small, flat, permanent bonus from registered items
+  // (server-authoritative, see codexSync/js/network.js). Applies regardless
+  // of what's currently equipped, so it sits with the base stats above
+  // rather than the per-slot equipment loop below.
+  const cx = player.codexBonus || null;
+  if (cx) { a += cx.atk || 0; d += cx.def || 0; h += cx.hp || 0; }
   let extraCrit = 0, extraAS = 0, hpPct = 0, skillPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
@@ -1021,6 +1032,12 @@ function restoreFromSave(data) {
   // other loadout choice — see _activeSkillDef, js/player.js.
   player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...(data.advSkillLearned || {}) };
   player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...(data.advSkillActive || {}) };
+  // Server corrects this via codexSync moments after connect
+  // (registerCodexSetItem is the only path that ever changes it), same as
+  // skillLevels/passiveLevels above — restoring it here just avoids a stat
+  // flash on load. Guards against the old (pre-sets) array-shaped field too.
+  player.codex = (data.codex && typeof data.codex === 'object' && !Array.isArray(data.codex)) ? { ...data.codex } : {};
+  player.codexBonus = (typeof codexTotalBonus === 'function') ? codexTotalBonus(player.codex) : { atk:0, def:0, hp:0 };
   recompute();
   player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }

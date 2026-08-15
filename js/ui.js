@@ -919,6 +919,209 @@ function renderProfessionPanel() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  CODEX PANEL — L2M/Night Crow-style item collections. Each of CODEX_SETS
+//  (shared/definitions.js, ~1000 generated entries) needs 2-4 specific items,
+//  each at its own minimum enchant level, consumed one at a time into that
+//  set's slots; completing every slot folds the set's flat stat bonus into
+//  player.codexBonus forever. The server owns all progress and the resulting
+//  bonus (registerCodexSetItem/codexSync, server/index.js) — this only
+//  renders what arrived and asks for a change (tryFillCodexSlot below).
+// ─────────────────────────────────────────────────────────
+let _codexFilters = { q: '', cls: 'all', rarity: 'all', status: 'all' };
+const _CODEX_PAGE = 40;
+let _codexShown = _CODEX_PAGE;
+
+function openCodexPanel() {
+  const panel = document.getElementById('codex-panel');
+  if (!panel || !player) return;
+  panel.style.display = 'flex';
+  renderCodexPanel();
+}
+
+function closeCodexPanel() {
+  const panel = document.getElementById('codex-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _refreshCodexPanelIfOpen() {
+  const panel = document.getElementById('codex-panel');
+  if (panel && panel.style.display !== 'none') renderCodexPanel();
+}
+
+function _codexSetDone(set, filled) {
+  return Array.isArray(filled) && filled.length === set.slots.length && filled.every(Boolean);
+}
+
+// Filtered + sorted view over CODEX_SETS: sets with progress (but not yet
+// complete) surface first — that's the list a player mid-grind actually
+// wants to see — completed ones sink to the bottom since there's nothing
+// left to do with them.
+function _codexSetsFiltered() {
+  if (typeof CODEX_SETS === 'undefined') return [];
+  const { q, cls, rarity, status } = _codexFilters;
+  const qLower = q.trim().toLowerCase();
+  const codex = (player && player.codex) || {};
+  return CODEX_SETS
+    .filter(set => {
+      // Class-agnostic sets (universal armor combos) pass every class filter
+      // — they're not the pursuit of one class over another, so narrowing to
+      // "Танк" shouldn't hide them, only the OTHER classes' own weapon sets.
+      if (cls !== 'all' && set.cls && set.cls !== cls) return false;
+      if (rarity !== 'all' && set.rarity !== rarity) return false;
+      if (qLower && !set.name.toLowerCase().includes(qLower)) return false;
+      const filled = codex[set.id];
+      const doneCount = Array.isArray(filled) ? filled.filter(Boolean).length : 0;
+      const done = _codexSetDone(set, filled);
+      if (status === 'progress' && (doneCount === 0 || done)) return false;
+      if (status === 'done' && !done) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const fa = codex[a.id], fb = codex[b.id];
+      const da = Array.isArray(fa) ? fa.filter(Boolean).length : 0;
+      const db = Array.isArray(fb) ? fb.filter(Boolean).length : 0;
+      const doneA = _codexSetDone(a, fa), doneB = _codexSetDone(b, fb);
+      if (doneA !== doneB) return doneA ? 1 : -1;
+      if (da !== db) return db - da;
+      return 0;
+    });
+}
+
+function _codexSetFilter(key, val) {
+  _codexFilters[key] = val;
+  _codexShown = _CODEX_PAGE;
+  renderCodexPanel();
+}
+
+function _codexShowMore() {
+  _codexShown += _CODEX_PAGE;
+  renderCodexPanel();
+}
+
+// Tries to fill one slot of one set from whatever's in the inventory right
+// now. Confirmed client-side purely so a misclick doesn't destroy an item —
+// the server re-checks the item/enchant match and slot availability itself
+// regardless. When nothing in the inventory qualifies, this just tells the
+// player exactly what the slot still needs instead of failing silently.
+function tryFillCodexSlot(setId, slotIdx) {
+  if (!player || typeof codexSetById !== 'function') return;
+  const set = codexSetById(setId);
+  if (!set) return;
+  const req = set.slots[slotIdx];
+  if (!req) return;
+  const idx = (player.inventory || []).findIndex(it => typeof codexItemMeetsReq === 'function' && codexItemMeetsReq(it, req));
+  if (idx < 0) {
+    const base = typeof itemCatalogBase === 'function' ? itemCatalogBase(req.itemId) : null;
+    const label = base ? base.name : req.itemId;
+    const msg = `Нужен «${label}»${req.minEnhance ? ' не ниже +' + req.minEnhance : ''}`;
+    if (typeof _marketToast === 'function') _marketToast(msg, 'err');
+    return;
+  }
+  const it = player.inventory[idx];
+  if (!confirm(`Внести «${it.name}${it.enhance ? ' +' + it.enhance : ''}» в набор «${set.name}»? Предмет будет уничтожен без возврата.`)) return;
+  netRegisterCodexSetItem(setId, slotIdx, idx);
+}
+
+function _codexSetRowHtml(set) {
+  const codex = (player && player.codex) || {};
+  const filled = Array.isArray(codex[set.id]) ? codex[set.id] : set.slots.map(() => false);
+  const doneCount = filled.filter(Boolean).length;
+  const done = doneCount === set.slots.length;
+  const bonusParts = [];
+  if (set.bonus.atk) bonusParts.push(`+${set.bonus.atk} АТК`);
+  if (set.bonus.def) bonusParts.push(`+${set.bonus.def} ЗАЩ`);
+  if (set.bonus.hp)  bonusParts.push(`+${set.bonus.hp} HP`);
+
+  const slotsHtml = set.slots.map((req, i) => {
+    const base = typeof itemCatalogBase === 'function' ? itemCatalogBase(req.itemId) : null;
+    const rc = base ? (RARITY_COLOR[base.rarity] || '#aea599') : '#aea599';
+    const isFilled = !!filled[i];
+    const title = `${base ? base.name : req.itemId}${req.minEnhance ? ' +' + req.minEnhance : ''}${isFilled ? ' — уже внесено' : ''}`;
+    return `<div class="codexslot${isFilled ? ' filled' : ''}" style="--rc:${rc}" title="${_escAttr(title)}"
+      ${isFilled ? '' : `onclick="tryFillCodexSlot('${set.id}', ${i})"`}>
+      ${base ? _itemIcon(base, 28) : ''}
+      ${req.minEnhance ? `<span class="codexslot-enh">+${req.minEnhance}</span>` : ''}
+      ${isFilled ? `<span class="codexslot-check">✓</span>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<div class="codex-set-row${done ? ' done' : ''}">
+    <span class="codex-set-star">${iconHTML('star', 15, done ? '#e8b93e' : '#4a4438')}</span>
+    <div class="codex-set-main">
+      <div class="codex-set-name">${set.name}</div>
+      <div class="codex-set-bonus">${bonusParts.join(' &nbsp; ') || '—'}</div>
+    </div>
+    <div class="codex-set-slots">${slotsHtml}</div>
+    <div class="codex-set-frac${done ? ' done' : ''}">${doneCount}/${set.slots.length}</div>
+  </div>`;
+}
+
+function renderCodexPanel() {
+  const body = document.getElementById('codex-panel-body');
+  if (!body || !player) return;
+
+  // Re-rendering the whole body on every keystroke (the search input lives
+  // inside it) would otherwise steal focus and the caret on each character —
+  // restore both afterward when the search box was the thing being typed in.
+  const prevInput = document.getElementById('codex-search-input');
+  const hadFocus = prevInput && document.activeElement === prevInput;
+  const caret = hadFocus ? prevInput.selectionStart : null;
+
+  const bonus = player.codexBonus || { atk: 0, def: 0, hp: 0 };
+  const bonusParts = [];
+  if (bonus.atk) bonusParts.push(`+${bonus.atk} АТК`);
+  if (bonus.def) bonusParts.push(`+${bonus.def} ЗАЩ`);
+  if (bonus.hp)  bonusParts.push(`+${bonus.hp} HP`);
+  const codex = player.codex || {};
+  const allSets = (typeof CODEX_SETS !== 'undefined') ? CODEX_SETS : [];
+  const doneTotal = allSets.filter(s => _codexSetDone(s, codex[s.id])).length;
+
+  const filtered = _codexSetsFiltered();
+  const shown = filtered.slice(0, _codexShown);
+  const rowsHtml = shown.length ? shown.map(_codexSetRowHtml).join('') : `<div class="rating-empty">Ничего не найдено</div>`;
+  const moreBtn = filtered.length > _codexShown
+    ? `<button class="codex-more-btn" onclick="_codexShowMore()">Показать ещё (${filtered.length - _codexShown})</button>` : '';
+
+  const clsOptions = ['lev', 'deathknight', 'ranger', 'mage', 'warlock']
+    .map(c => `<option value="${c}"${_codexFilters.cls === c ? ' selected' : ''}>${CHAR_DEF[c].name}</option>`).join('');
+  const rarityOptions = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+    .map(r => `<option value="${r}"${_codexFilters.rarity === r ? ' selected' : ''}>${_RARITY_NAMES[r]}</option>`).join('');
+
+  body.innerHTML = `
+    <div class="codex-hint">Каждый набор — 2-4 конкретных предмета, часто с требованием по заточке. Внесённый предмет расходуется без возврата; бонус набора остаётся навсегда, как только заполнены все его слоты.</div>
+    <div class="codex-total">
+      <div class="codex-total-label">Бонус кодекса · наборов завершено ${doneTotal}/${allSets.length}</div>
+      <div class="codex-total-stats">${bonusParts.length ? bonusParts.join(' &nbsp; ') : '—'}</div>
+    </div>
+    <div class="codex-toolbar">
+      <input id="codex-search-input" class="codex-search" type="text" placeholder="Поиск по названию…"
+        value="${_escAttr(_codexFilters.q)}" oninput="_codexSetFilter('q', this.value)">
+      <select class="codex-select" onchange="_codexSetFilter('cls', this.value)">
+        <option value="all"${_codexFilters.cls === 'all' ? ' selected' : ''}>Все классы</option>
+        ${clsOptions}
+      </select>
+      <select class="codex-select" onchange="_codexSetFilter('rarity', this.value)">
+        <option value="all"${_codexFilters.rarity === 'all' ? ' selected' : ''}>Все редкости</option>
+        ${rarityOptions}
+      </select>
+    </div>
+    <div class="codex-status-tabs">
+      <button class="codex-status-tab${_codexFilters.status === 'all' ? ' active' : ''}" onclick="_codexSetFilter('status','all')">Все</button>
+      <button class="codex-status-tab${_codexFilters.status === 'progress' ? ' active' : ''}" onclick="_codexSetFilter('status','progress')">В процессе</button>
+      <button class="codex-status-tab${_codexFilters.status === 'done' ? ' active' : ''}" onclick="_codexSetFilter('status','done')">Завершено</button>
+    </div>
+    <div class="codex-set-list-meta">Показано ${shown.length} из ${filtered.length}</div>
+    <div class="codex-set-list">${rowsHtml}</div>
+    ${moreBtn}
+  `;
+
+  if (hadFocus) {
+    const el = document.getElementById('codex-search-input');
+    if (el) { el.focus(); if (caret != null) el.setSelectionRange(caret, caret); }
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 //  PASSIVE SKILL UI
 // ─────────────────────────────────────────────────────────
 let _activeSkillSubTab = 'active';
@@ -1639,7 +1842,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -3196,6 +3399,25 @@ function _positionSeasonBtn() {
 function showSeasonBtn() {
   const btn = document.getElementById('season-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSeasonBtn(); }
+}
+
+// Stacks directly below the Season button, same offset every other button in
+// this column uses.
+function _positionCodexBtn() {
+  const seasonBtn = document.getElementById('season-btn');
+  const btn        = document.getElementById('codex-btn');
+  if (!btn || !seasonBtn) return;
+  const sTop = parseFloat(seasonBtn.style.top) || 0;
+  btn.style.top       = (sTop + 28 + 4) + 'px';
+  btn.style.left      = seasonBtn.style.left;
+  btn.style.width     = seasonBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showCodexBtn() {
+  const btn = document.getElementById('codex-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionCodexBtn(); }
 }
 
 let _seasonTab = 'quests';
@@ -6437,7 +6659,7 @@ function _gramMsg(text, type) {
 // .market-modal-overlay for the backdrop (blur + touch-action fix already
 // there) with .whatsnew-modal-sheet overriding it to a centered, full-radius
 // box instead of a bottom sheet — see css/style.css.
-const WHATS_NEW_VERSION = 'farmzone1';
+const WHATS_NEW_VERSION = 'codex1';
 function openWhatsNewModal() {
   const existing = document.getElementById('whatsnew-ov');
   if (existing) existing.remove();
@@ -6451,13 +6673,9 @@ function openWhatsNewModal() {
         <div style="font-size:17px;font-weight:800;color:#90d653">${t('whatsNewTitle')}</div>
         <button onclick="closeWhatsNewModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
-      <div style="padding:12px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:12px">
-        <div style="font-weight:700;color:#eec379;margin-bottom:6px">${t('whatsNewFarmZoneTitle')}</div>
-        <div style="font-size:12.5px;line-height:1.5;color:#c9bfae">${t('whatsNewFarmZoneDesc')}</div>
-      </div>
       <div style="padding:12px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:16px">
-        <div style="font-weight:700;color:#eec379;margin-bottom:6px">${t('whatsNewGuildWarTitle')}</div>
-        <div style="font-size:12.5px;line-height:1.5;color:#c9bfae">${t('whatsNewGuildWarDesc')}</div>
+        <div style="font-weight:700;color:#c9a6f0;margin-bottom:6px">${t('whatsNewCodexTitle')}</div>
+        <div style="font-size:12.5px;line-height:1.5;color:#c9bfae">${t('whatsNewCodexDesc')}</div>
       </div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
     </div>`;

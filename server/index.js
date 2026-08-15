@@ -153,6 +153,7 @@ const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
+  codexSetById, codexItemMeetsReq, codexTotalBonus,
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
@@ -7109,6 +7110,54 @@ io.on('connection', socket => {
     _commitServerItems(inv, _lastStats.equipment, 'unequip', { id: it.id, slot }, { beforeLen });
   });
 
+  // { [setId]: boolean[] } — one flag per slot of that set, true once the
+  // slot's item has been consumed into it. Sparse: a set the player has never
+  // touched simply has no key.
+  function _codexFor() {
+    if (!_lastStats) return null;
+    if (!_lastStats.codex || typeof _lastStats.codex !== 'object' || Array.isArray(_lastStats.codex)) {
+      _lastStats.codex = {};
+    }
+    return _lastStats.codex;
+  }
+
+  // Pushes the authoritative codex progress + its resulting stat bonus to the
+  // client — same "server decides, client mirrors" shape as _pushProgress.
+  function _pushCodex() {
+    socket.emit('codexSync', { codex: _lastStats.codex, bonus: codexTotalBonus(_lastStats.codex) });
+  }
+
+  // Кодекс: наборы предметов. Registering consumes an owned item into ONE
+  // specific slot of ONE specific set (see CODEX_SETS, shared/definitions.js)
+  // — the same item id can be required by many different sets, and each one
+  // needs its own copy, same as a real L2M item collection. Completing every
+  // slot in a set folds its flat stat bonus into codexTotalBonus forever,
+  // regardless of what's equipped or later sold.
+  safeOn('registerCodexSetItem', ({ setId, slotIdx, idx } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
+    const set = codexSetById(setId);
+    if (!set) return;
+    const si = Math.floor(Number(slotIdx));
+    if (!Number.isInteger(si) || si < 0 || si >= set.slots.length) return;
+    const codex = _codexFor();
+    let filled = codex[setId];
+    if (!Array.isArray(filled) || filled.length !== set.slots.length) filled = set.slots.map(() => false);
+    if (filled[si]) return _itemErr('Этот слот набора уже заполнен');
+    const inv = _lastStats.inventory;
+    const i = Math.floor(Number(idx));
+    const it = (Number.isInteger(i) && i >= 0) ? inv[i] : null;
+    if (!it) return;
+    if (!codexItemMeetsReq(it, set.slots[si])) return _itemErr('Этот предмет не подходит для выбранного слота набора');
+    const beforeLen = inv.length;
+    inv.splice(i, 1);
+    filled[si] = true;
+    codex[setId] = filled;
+    _commitServerItems(inv, null, 'codex_register', { setId, slotIdx: si, id: it.id, enhance: it.enhance || 0 }, { beforeLen });
+    _persistSavedFields(authed, { codex });
+    _pushCodex();
+  });
+
   // Inventory -> storage and back. Both are MOVES: the item is spliced out of
   // one array and merged into the other in a single handler, so the two halves
   // can never be observed apart the way they could when a save carried them.
@@ -9678,6 +9727,15 @@ io.on('connection', socket => {
       effectiveSaved.passiveLevels   = (_dbBase && _dbBase.passiveLevels)   || {};
       effectiveSaved.advSkillLearned = (_dbBase && _dbBase.advSkillLearned) || {};
       effectiveSaved.advSkillActive  = (_dbBase && _dbBase.advSkillActive)  || {};
+      // Кодекс progress, same pinning as the progression maps above —
+      // server-applied and persisted the moment registerCodexSetItem ran, so
+      // a reconnect reads the stored record rather than whatever a stale
+      // client blob happened to carry. Also guards against the old (pre-sets)
+      // array-shaped codex field — Object.keys of an array just yields index
+      // strings codexSetById won't match, so it degrades to an empty bonus
+      // instead of throwing.
+      const _dbCodex = _dbBase && _dbBase.codex;
+      effectiveSaved.codex = (_dbCodex && typeof _dbCodex === 'object' && !Array.isArray(_dbCodex)) ? _dbCodex : {};
       socket.emit('progressSync', {
         upgrades:        effectiveSaved.upgrades,
         skillLevels:     effectiveSaved.skillLevels,
@@ -9685,6 +9743,7 @@ io.on('connection', socket => {
         advSkillLearned: effectiveSaved.advSkillLearned,
         advSkillActive:  effectiveSaved.advSkillActive,
       });
+      socket.emit('codexSync', { codex: effectiveSaved.codex, bonus: codexTotalBonus(effectiveSaved.codex) });
       _lastStats = effectiveSaved;
       // Baseline for saveProgress's own rate-based gold cap — without this,
       // the time this session spends actually playing before its first
@@ -11227,6 +11286,10 @@ io.on('connection', socket => {
       clean.advSkillLearned = _lastStats.advSkillLearned || {};
       clean.advSkillActive  = _lastStats.advSkillActive  || {};
       clean.upgrades        = _lastStats.upgrades        || {};
+      // Кодекс: same reasoning — registerCodexSetItem is the only path that
+      // ever changes it, so a save has nothing left to say about it either.
+      clean.codex = (_lastStats.codex && typeof _lastStats.codex === 'object' && !Array.isArray(_lastStats.codex))
+        ? _lastStats.codex : {};
     }
 
     // Gold is server-owned: every credit (kills, quests, sales, VIP, admin)
