@@ -1644,6 +1644,88 @@ scenario('save: a blank save no longer resets anything', async () => {
   await c.close();
 });
 
+scenario('race: claimVipRewards racing marketList cannot duplicate an enhanced item', async () => {
+  // claimVipRewards clones _lastStats.inventory before its DB awaits and
+  // commits that clone wholesale (_lastStats.inventory = inv) once they
+  // resolve — see claimVipRewards' own comment and _itemsBusy's. marketList
+  // is async too: it re-verifies ownership, then awaits
+  // MarketListingModel.create(), and only removes the item from the live
+  // inventory once that resolves. Neither side is the other's clone, so
+  // nothing before this fix stopped them interleaving: claimVipRewards
+  // clones the inventory (sword still in it), marketList's removal runs and
+  // the listing goes live, and THEN claimVipRewards' delayed commit stamps
+  // its stale clone — sword included — back over the live array. The sword
+  // ends up both sold (an active listing) and back in the inventory, at
+  // whatever enhance level the stale clone happened to carry. The fix makes
+  // marketList refuse outright (like every other item handler already does)
+  // while a clone-and-commit handler is mid-flight, via the shared
+  // _itemOpBusy flag.
+  const c = await connectWithSaved('harness_race_vip_marketlist', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 5 }],
+    vipPending: [1],
+  });
+  await enterWorld(c, 'deathknight');
+
+  const Player = require('../server/models/Player');
+  await _withDbDelay(Player, 'updateOne', 60, async () => {
+    const claimedP = c.wait('vipRewardsClaimed', { timeout: 8000 }).catch(() => null);
+    c.emit('claimVipRewards');
+    // Sent right as claimVipRewards' updateOne is in flight — see _withDbDelay.
+    await sleep(20);
+    const listedP = c.wait('marketListed', { timeout: 8000 }).catch(() => null);
+    const listErrP = c.wait('marketListError', { timeout: 8000 }).catch(() => null);
+    c.emit('marketList', { item: { id: 'uq_sword_l', enhance: 5 }, price: 10 });
+    await Promise.race([listedP, listErrP]);
+    await claimedP;
+  });
+  await sleep(300);
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const listings = memory.__dump('MarketListing')
+    .filter(l => l.sellerUsername === c.auth.username && l.status === 'active');
+  const invCopies = (row.savedData.inventory || []).filter(i => i && i.id === 'uq_sword_l').length;
+  eq(invCopies + listings.length, 1,
+    `exactly one copy of the sword survives the race (inventoryCopies:${invCopies} activeListings:${listings.length})`);
+
+  await c.close();
+});
+
+scenario('race: marketList racing claimVipRewards (listing first) cannot duplicate the item', async () => {
+  // The mirror ordering of the scenario above: marketList's own removal runs
+  // BEFORE claimVipRewards clones the inventory, but claimVipRewards' commit
+  // (delayed here) still lands after it. Proves the fix holds regardless of
+  // which one started first — what matters is that marketList now holds
+  // _itemOpBusy for its own critical section too, so claimVipRewards' entry
+  // check refuses it instead of cloning a soon-to-be-stale snapshot.
+  const c = await connectWithSaved('harness_race_marketlist_vip', {
+    vipLevel: 1, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+    vipPending: [1],
+  });
+  await enterWorld(c, 'deathknight');
+
+  const Player = require('../server/models/Player');
+  await _withDbDelay(Player, 'updateOne', 80, async () => {
+    const listedP = c.wait('marketListed', { timeout: 8000 }).catch(() => null);
+    const listErrP = c.wait('marketListError', { timeout: 8000 }).catch(() => null);
+    c.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+    await sleep(5);
+    const claimedP = c.wait('vipRewardsClaimed', { timeout: 8000 }).catch(() => null);
+    c.emit('claimVipRewards');
+    await Promise.race([listedP, listErrP]);
+    await claimedP;
+  });
+  await sleep(300);
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const listings = memory.__dump('MarketListing')
+    .filter(l => l.sellerUsername === c.auth.username && l.status === 'active');
+  const invCopies = (row.savedData.inventory || []).filter(i => i && i.id === 'uq_sword_l').length;
+  eq(invCopies + listings.length, 1,
+    `exactly one copy of the sword survives the race (inventoryCopies:${invCopies} activeListings:${listings.length})`);
+
+  await c.close();
+});
+
 scenario('market: listing an item and reading my lots back', async () => {
   // VIP 1 is the gate on selling; the item has to be in the SERVER's inventory.
   const c = await connectWithSaved('harness_market', {

@@ -6081,6 +6081,10 @@ io.on('connection', socket => {
 
   safeOn('gramShopBuy', async ({ pkgId, petId } = {}) => {
     if (!authed || !pkgId) return;
+    // Refuse rather than clone a snapshot that a concurrently-running market
+    // op could invalidate — see _itemsBusy's own comment and marketList's
+    // busy check, below, for the duplication this closes.
+    if (_itemsBusy()) return socket.emit('gramShopError', { msg: _ITEMS_BUSY_MSG });
     _itemOpBusy++;
     let _ran;
     try {
@@ -6376,6 +6380,7 @@ io.on('connection', socket => {
   // branch-per-reward-kind body risked the two kinds of packages interfering.
   safeOn('specialShopBuy', async ({ pkgId, books, petId } = {}) => {
     if (!authed || !pkgId) return;
+    if (_itemsBusy()) return socket.emit('specialShopError', { msg: _ITEMS_BUSY_MSG });
     _itemOpBusy++;
     let _ran;
     try {
@@ -8884,6 +8889,19 @@ io.on('connection', socket => {
     if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
       return socket.emit('marketListError', { msg: 'Слишком часто — подождите немного' });
     }
+    // gramShopBuy/specialShopBuy/claimVipRewards clone _lastStats.inventory
+    // before their own DB awaits and stamp that clone back over the live
+    // array wholesale when they finally commit — see _itemsBusy's comment.
+    // This handler's own removal below runs synchronously once its awaits
+    // resolve, so if one of those clone-and-commit handlers is holding a
+    // snapshot taken before the removal, its later commit resurrects the
+    // item this handler already sold: the listing goes live AND the item
+    // reappears in the live array the moment that stale commit lands —
+    // exactly the "market clones items" duplication. Refusing up front,
+    // before the item is touched at all, is the only way to close it, since
+    // the clone was already taken by the time this handler could otherwise
+    // detect anything wrong.
+    if (_itemsBusy()) return socket.emit('marketListError', { msg: _ITEMS_BUSY_MSG });
     // Only id + enhance are trusted from the client — every other field
     // (stats, rarity, name, img...) is rebuilt from the canonical catalog.
     // Computed before the price check below: the minimum price depends on
@@ -8917,6 +8935,12 @@ io.on('connection', socket => {
       _lastMarketListAt = _prevListAt;
       return socket.emit('marketListError', { msg: 'Предмета нет в инвентаре' });
     }
+    // Raised for the rest of this handler: everything from here on runs
+    // against _lastStats.inventory across the two awaits below, and every
+    // other synchronous item handler (equip/enhance/storage/craft/...)
+    // already defers to this flag — this is what makes THAT deference
+    // actually protect a listing in flight, not just a clone-and-commit one.
+    _itemOpBusy++;
     try {
       const cap = _marketMaxActive(socket.data.vipLevel);
       const activeCount = await MarketListingModel.countDocuments({ sellerId: authed.telegramId, status: 'active' });
@@ -8964,11 +8988,17 @@ io.on('connection', socket => {
       logPlayerErr(authed.telegramId, authed.username, 'market_list', err,
         { item: canonItem && canonItem.id });
       socket.emit('marketListError', { msg: 'Ошибка сервера' });
+    } finally {
+      _itemOpBusy--;
     }
   });
 
   safeOn('marketCancel', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
+    // See marketList's own busy check: a clone-and-commit handler
+    // (gramShopBuy/specialShopBuy/claimVipRewards) mid-flight would have its
+    // stale clone stamp back over whatever this returns to the inventory.
+    if (_itemsBusy()) return socket.emit('marketError', { msg: _ITEMS_BUSY_MSG });
     _itemOpBusy++;
     try {
       // Peek at the item before cancelling: if there's nowhere to put it back,
@@ -9073,6 +9103,9 @@ io.on('connection', socket => {
 
   safeOn('marketBuy', async ({ listingId } = {}) => {
     if (!authed || !listingId) return;
+    // See marketList's own busy check: a clone-and-commit handler mid-flight
+    // would have its stale clone stamp back over the item this hands out.
+    if (_itemsBusy()) return socket.emit('marketError', { msg: _ITEMS_BUSY_MSG });
     _itemOpBusy++;
     try {
       const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
@@ -9269,6 +9302,7 @@ io.on('connection', socket => {
 
   safeOn('claimVipRewards', async () => {
     if (!authed) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     _itemOpBusy++;
     try {
     // Serialized: vipPending is read here and only cleared after an await, so
