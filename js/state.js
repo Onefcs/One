@@ -11,7 +11,7 @@ let worldDrops = new Map();
 let _worldDropPending = new Map();
 let camera = { x: 0, y: 0 };
 let dungeonLvl = 1;
-let frameCount = 0, lastTs = 0;
+let frameCount = 0;
 let activeTab = 0;
 let keys = {};
 let joy = { active: false, id: null, sx: 0, sy: 0, dx: 0, dy: 0 };
@@ -34,7 +34,6 @@ let serverEnemies = [];     // authoritative enemy list (server-driven, near the
 let _mapBlips = null;
 let serverEnemiesMap = new Map(); // id → enemy for O(1) lookup
 let netUsername = null;
-let netRoom = null;
 
 // NPCs in current floor
 let npcs = [];

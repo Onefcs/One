@@ -2233,24 +2233,6 @@ function respawnPlayer() {
   netSaveProgress();
 }
 
-function restartGame() {
-  if (state !== 'dead') return;
-  try { localStorage.removeItem(_lastCharTypeKey()); } catch (_) {}
-  document.getElementById('death-modal').style.display = 'none';
-  targetId = null; targetIsPlayer = false; pvpMode = false; autoAttackMode = false;
-  serverEnemies = []; otherPlayers = new Map();
-  npcs = []; nearNpc = null;
-  _tileChunks.clear();
-  if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
-  document.getElementById('bottom-nav').style.display = 'none';
-  document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); p.style.display = 'none'; });
-  setTab(0);
-  player = null; dungeonLvl = 1;
-  projs = []; otherProjs = []; drops = []; particles = []; dmgNums = [];
-  state = 'select';
-  csShow(null);
-}
-
 // ─────────────────────────────────────────────────────────
 //  LOOP
 // ─────────────────────────────────────────────────────────

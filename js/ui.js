@@ -104,10 +104,6 @@ function updateInvUI() {
     </div>
   `;
 
-  // Potion shelf hidden — HP potions managed via HUD picker
-  const ptEl = document.getElementById('potion-shelf');
-  if (ptEl) ptEl.innerHTML = '';
-
   // Inventory grid — materials stack by id
   document.getElementById('inv-count').textContent = invSlotCount() + '/150';
   const _displayInv = [];
@@ -281,24 +277,6 @@ function closePotionModal() {
   if (el) el.remove();
   const el2 = document.getElementById('pt-modal');
   if (el2) el2.style.display = 'none';
-}
-
-function usePotionById(itemId) {
-  if (!player || state !== 'playing') return;
-  if ((player.potCd || 0) > 0) return;
-  const bag = player.potionBag || {};
-  if ((bag[itemId] || 0) <= 0 || player.hp >= player.maxHp) return;
-  // Not decremented here: the server spends from its own bag and answers
-  // with potionBag, which is what the HUD and the shop read.
-  const def = ITEM_DEF.find(d => d.id === itemId);
-  const heal = (def && def.hp) || 20;
-  player.hp = Math.min(player.maxHp, player.hp + heal);
-  player.potCd = 4;
-  dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#98e456');
-  spawnBurst(player.x, player.y, '#98e456', 5);
-  if (typeof netUsePotion === 'function') netUsePotion(itemId, heal);
-  updateInvUI();
-  netSaveProgress();
 }
 
 function setHudPotion(itemId) {
@@ -500,13 +478,18 @@ function _rebirthReady() {
   return Object.entries(REBIRTH_COST).every(([id, need]) => countMaterial(id) >= need);
 }
 
+// One reward row — icon + label — shared by every shop/reward panel below
+// (rebirth cost, VIP tiers, GRAM packs, season packs). It was copy-pasted as a
+// local `ri()` inside five of them, which is how the same markup ended up
+// maintained in five places at once.
+function ri(img, label, cls) {
+  return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
+}
+
 function updateRebirthUI() {
   if (!player) return;
   const el = document.getElementById('rebirth-body');
   if (!el) return;
-  function ri(img, label, cls) {
-    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
-  }
   const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
   const rows = Object.entries(REBIRTH_COST).map(([id, need]) => {
     const def = _rebirthCostDef(id);
@@ -1712,7 +1695,7 @@ function setTab(n) {
 // ─────────────────────────────────────────────────────────
 let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
 let _hpGradGreen = null, _hpGradOrange = null, _hpGradRed = null;
-let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null, _hdrGradH = 0;
+let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null;
 // Avatar bg gradient (re-created only when character color changes)
 let _avBgGrad = null, _avBgColor = '';
 // All button + target-frame gradients — rebuilt when null (set null on resize)
@@ -2336,7 +2319,6 @@ function drawTargetButton() {
 function drawBuffStrip() {
   if (!player) return;
   const p = player;
-  const F = 'system-ui, -apple-system, Arial';
 
   // Collect active buffs / debuffs
   const chips = [];
@@ -2506,7 +2488,6 @@ function drawProfessionButton() {
 function drawTargetFrame() {
   if (!targetId || !player) return;
   const isOnline = !!(socket?.connected);
-  const activeEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
 
   let name, hp, maxHp, color;
   if (targetIsPlayer && isOnline) {
@@ -2799,7 +2780,6 @@ function drawPartyInvitePopup() {
 // ─────────────────────────────────────────────────────────
 //  INVENTORY ITEM MODAL
 // ─────────────────────────────────────────────────────────
-const _ENH_RARITY_COST = { common:40, uncommon:70, rare:120, epic:200, legendary:350 };
 const _ENH_MAX = 15;
 function _enhSuccessRate(enh) { return Math.max(10, 80 - enh * 10); }
 function _enhStoneQty(stoneId) {
@@ -2952,13 +2932,14 @@ function equipFromModal(idx) {
   equipItem(idx);
 }
 
-const SELL_COMMON_PRICE = 100;
-// Server-side now (see the sellItem handler, server/index.js): it owns both
-// halves of the trade. Removing the item and adding the gold locally, then
-// relying on the next saveProgress to carry it, is exactly the pattern the
-// save path no longer accepts — the item removal would land but the gold
-// would be clamped back off, i.e. the player would sell for nothing.
-// The inventory and the balance both come back over inventorySync/itemSold.
+// Selling is server-side (see the sellItem handler, server/index.js): it owns
+// both halves of the trade, including the price. Removing the item and adding
+// the gold locally, then relying on the next saveProgress to carry it, is
+// exactly the pattern the save path no longer accepts — the item removal would
+// land but the gold would be clamped back off, i.e. the player would sell for
+// nothing. The inventory and the balance both come back over
+// inventorySync/itemSold.
+
 // Season points this item is worth if burned, or 0 when it cannot be burned.
 // Mirrors the server's own rule (SEASON_BURN_POINTS, and non-stackable only)
 // — the server re-checks it anyway, this just decides whether to offer it.
@@ -3284,9 +3265,10 @@ function _seasonWinRewardRow(taskId) {
   </div>`;
 }
 
-// The exact levels this species can be found at — see SEASON_SPECIES_LEVELS.
-// Naming the band instead would point players at rooms that cannot contain
-// the monster they were asked for.
+// The exact levels this species can be found at — see
+// SEASON_TIER_SPECIES_LEVELS (shared/definitions.js). Naming the band instead
+// would point players at rooms that cannot contain the monster they were
+// asked for.
 function _seasonLevelsText(q) {
   const ls = (q && q.levels) || [];
   if (!ls.length) return '?';
@@ -3715,9 +3697,6 @@ function _vipItemDesc(lvl) {
   const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s' }[player?.type] || 't';
   const wepPfx = { uncommon:'u', rare:'r', epic:'e', legendary:'l' };
 
-  function ri(img, label, cls) {
-    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
-  }
   function wep(rarity, enhance) {
     return ri(`/images/wep/${wepPfx[rarity]}${wepSfx}.png`, enhance ? `+${enhance}` : '★', rarity);
   }
@@ -5254,9 +5233,7 @@ function _seasonPkgContents(pkg) {
 function _seasonShopPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
   const { icons, line } = _seasonPkgContents(pkg);
-  const rows = icons.map(r =>
-    `<div class="vip-ri"><img class="vip-ri-img" src="${r.img}"><span class="vip-ri-label">${r.label}</span></div>`
-  ).join('');
+  const rows = icons.map(r => ri(r.img, r.label, '')).join('');
   return `
     <div class="gram-shop-card" style="border-color:rgba(80,175,149,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
@@ -5386,9 +5363,6 @@ const _seasonPointsUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/
 
 function _specialPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
-  function ri(img, label, cls) {
-    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
-  }
   const bookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c542' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
   // bless/seasonPoints guarded rather than assumed: special270 (the top
   // tier) carries bless but no seasonPoints, and adds armor/weapon/bonusSP/
@@ -5594,9 +5568,6 @@ function _petCloakArtifactRows(pkg, ri) {
 
 function _specialPetPkgHtml(pkg, bal) {
   const canAfford = bal >= pkg.gram;
-  function ri(img, label, cls) {
-    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
-  }
   const rows = _petCloakArtifactRows(pkg, ri);
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
@@ -5734,9 +5705,6 @@ function _gramShopPkgHtml(pkg, bal) {
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
 
   // same ri() pattern as VIP
-  function ri(img, label, cls) {
-    return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
-  }
 
   // gold (guarded, not assumed — kept defensive for any future gold-free
   // package), then everything _shopExtraRewardRows also renders for

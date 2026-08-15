@@ -558,38 +558,6 @@ function clanIconSVG(id, size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="${sz}" height="${sz}" style="image-rendering:pixelated;display:block;border-radius:3px">${rects.join('')}</svg>`;
 }
 
-// ── Offscreen clan tag canvas (cached, invalidated on clan change) ────────────
-let _clanTagCanvas = null, _clanTagKey = null;
-function getClanTagCanvas() {
-  if (!clanData || !clanData.name) return null;
-  const key = (clanData.icon || 1) + '|' + clanData.name;
-  if (_clanTagCanvas && _clanTagKey === key) return _clanTagCanvas;
-
-  const iconPx = 1, iconSz = 16 * iconPx, gap = 3;
-  // Measure text width using a throwaway canvas
-  const tmp = document.createElement('canvas');
-  const tc = tmp.getContext('2d');
-  tc.font = 'bold 9px system-ui, Arial';
-  const ctw = tc.measureText(clanData.name).width;
-  const w = Math.ceil(iconSz + gap + ctw) + 4;
-  const h = 10;
-
-  const oc = document.createElement('canvas');
-  oc.width = w; oc.height = h;
-  const c = oc.getContext('2d');
-  c.textBaseline = 'middle';
-  drawClanIconOnCtx(c, clanData.icon, iconSz / 2, h / 2, iconPx);
-  c.font = 'bold 9px system-ui, Arial';
-  c.strokeStyle = '#000000'; c.lineWidth = 2; c.textAlign = 'left';
-  c.strokeText(clanData.name, iconSz + gap, h / 2);
-  c.fillStyle = '#eaa742';
-  c.fillText(clanData.name, iconSz + gap, h / 2);
-
-  _clanTagCanvas = oc;
-  _clanTagKey = key;
-  return _clanTagCanvas;
-}
-
 // ── Active clan bonuses (cumulative at current level) ─────
 function getClanBonus() {
   if (!clanData) return { gold: 0, xp: 0, atk: 0 };
@@ -1119,7 +1087,6 @@ function onClanData(data) {
   const prevLevel = clanData ? clanData.level : null;
   if (_pendingClanCreateGold) { _pendingClanCreateGold = false; netSaveProgress(); }
   clanData = data;
-  _clanTagCanvas = null; _clanTagKey = null;
   if (data && prevLevel !== null && data.level > prevLevel) {
     showClanLevelUp(data.level);
   }

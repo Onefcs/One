@@ -23,30 +23,6 @@ function addToInventory(it) {
   return true;
 }
 
-// Same as addToInventory but adds `qty` units at once (e.g. a Market
-// purchase of a stacked item) instead of always exactly 1.
-function addToInventoryQty(it, qty) {
-  qty = Math.max(1, Math.floor(qty) || 1);
-  if (!_isStackable(it)) return addToInventory(it);
-  const existing = player.inventory.find(i => i.id === it.id);
-  if (existing) { existing.qty = (existing.qty || 1) + qty; return true; }
-  if (!invHasSpace()) return false;
-  player.inventory.push({ ...it, qty });
-  return true;
-}
-
-function removeFromInventory(id, n) {
-  const item = player.inventory.find(i => i.id === id);
-  if (!item) return false;
-  const qty = item.qty || 1;
-  if (qty <= n) {
-    player.inventory.splice(player.inventory.indexOf(item), 1);
-  } else {
-    item.qty = qty - n;
-  }
-  return true;
-}
-
 function countMaterial(id) {
   const item = player.inventory.find(i => i.id === id);
   return item ? (item.qty || 1) : 0;
@@ -54,18 +30,6 @@ function countMaterial(id) {
 
 function countEnhancedItem(id, minEnh) {
   return player.inventory.filter(i => i.id === id && (i.enhance || 0) >= minEnh).length;
-}
-
-function removeEnhancedItem(id, n, minEnh) {
-  let removed = 0;
-  for (let i = player.inventory.length - 1; i >= 0 && removed < n; i--) {
-    const it = player.inventory[i];
-    if (it.id === id && (it.enhance || 0) >= minEnh) {
-      player.inventory.splice(i, 1);
-      removed++;
-    }
-  }
-  return removed >= n;
 }
 
 // ── Storage (Хранилище NPC) ──────────────────────────────────────
@@ -164,8 +128,6 @@ function _skillDmgMult(key)    { return skillScaleMult(_skillLvl(key), (player &
 // so these must come from the one table rather than from literals here.
 function _skillMult(key)       { return skillDamageMult(player && player.type, key, _advActive(key), _skillLvl(key), (player && player.skillPct) || 0); }
 function _skillBuffSec(key)    { return _skillLvl(key); }
-function _skillBarrierSec(key) { return _skillLvl(key) * 0.2; }
-function _skillInvisSec(key)   { return _skillLvl(key) * 0.2; }
 function _skillHealMult(key)   { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 
@@ -355,22 +317,6 @@ function upgradeStats(key) {
   netSpendUpgrade(key);
 }
 
-// Gold counterpart to gainXP below, and deliberately the same shape: `flat`
-// marks a fixed amount the server already finalised (a special-quest payout, a
-// VIP reward, an admin grant, the proceeds of a sale) and skips the multiplier,
-// exactly as gainXP's flat path does for XP.
-//
-// Every place that EARNS gold has to go through here, because this is the only
-// place the ×2 gold potion is applied. It used to be applied in pickup()
-// (js/combat.js) instead — the old walk-over-the-pile gold path. Gold now
-// arrives directly on the server's enemyKilled event and nothing fills `drops`
-// any more, so that branch became unreachable and the potion quietly did
-// nothing at all: it was consumed, it counted down in the HUD, and it
-// multiplied no gold whatsoever. Keeping the multiplier in one function is what
-// stops the next change to a reward path from re-breaking it the same way.
-//
-// Returns the amount actually credited, so callers can show the real number
-// rather than the pre-buff one.
 // Display only. Gold is the server's number now: it applies the clan bonus and
 // the x2 potion itself and sends the new total (goldTotal on enemyKilled,
 // goldSync everywhere else), so adding here as well would double-count it and
@@ -380,16 +326,6 @@ function upgradeStats(key) {
 // over the player's head; it just no longer touches player.gold.
 function gainGold(amount) {
   return Math.max(0, Math.floor(Number(amount)) || 0);
-}
-
-// Display only, like gainGold above. XP is the server's number now: it applies
-// the clan bonus, the x2 exp potion and the death penalty, runs the level
-// curve and sends the resulting lvl/xp/xpNext and base stats (the `level`
-// field on enemyKilled, levelSync elsewhere). Adding here as well would
-// double-count it and put the client back in the business of composing a
-// level — which is exactly what the entitlement ledger existed to audit.
-function gainXP(amount) {
-  return Math.max(0, Math.round(Number(amount) || 0));
 }
 
 // Applies a level state the server computed. Everything derived from the level
@@ -583,11 +519,6 @@ function _dashTo(tx, ty) {
   player.x = safeX; player.y = safeY;
 }
 
-// Send attack to all server enemies within range
-function _skillAOE(r) {
-  serverEnemies.forEach(e => { if (dist(e.x, e.y, player.x, player.y) < r) netAttack(e.id); });
-}
-
 // PvP: return targeted/nearest other player as {id, op}, or null
 function _pvpPlayerTarget() {
   if (!pvpMode) return null;
@@ -623,18 +554,6 @@ function _pvpSkillSlow(r, duration) {
       op.slowTimer = duration;
       netPvpSkillCC(id, 'slow', duration);
     }
-  });
-}
-
-// Send attack to enemies in joystick direction within range
-function _skillDir(dx, dy, r, arcDot) {
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = dx / len, ny = dy / len;
-  serverEnemies.forEach(e => {
-    const ex = e.x - player.x, ey = e.y - player.y;
-    const d = Math.hypot(ex, ey);
-    if (d > r + (e.size || 0) || d < 1) return;
-    if ((ex / d) * nx + (ey / d) * ny > (arcDot ?? 0.3)) netAttack(e.id);
   });
 }
 

@@ -31,9 +31,7 @@ const FLOOR_REGISTRY = [
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));
-const _byKey = new Map(FLOOR_REGISTRY.map(f => [f.key, f]));
 
 function floorEntry(floorId) { return _byId.get(floorId); }
-function floorEntryForKey(key) { return _byKey.get(key); }
 
-module.exports = { FLOOR_IDS, FLOOR_REGISTRY, floorEntry, floorEntryForKey };
+module.exports = { FLOOR_IDS, FLOOR_REGISTRY, floorEntry };

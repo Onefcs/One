@@ -94,37 +94,12 @@ canvas { display:block; width:100%; height:100%; }
   40%        {transform:scale(1.2);opacity:1}
 }
 
-/* ── LOBBY SCREENS ─────────────────────── */
-#lobby-screen, #room-lobby-screen {
-  position:absolute; inset:0;
-  background:radial-gradient(ellipse at center,#29200f 0%,#110d07 100%);
-  display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  color:#d1ccc5; z-index:200;
-}
-#lobby-screen h1, #room-lobby-screen h1 {
-  font-size:clamp(1.6em,5vw,2.6em); color:#e69419;
-  text-shadow:0 0 20px #e6941944; margin-bottom:24px; letter-spacing:2px;
-}
 .auth-error { color:#ee6676; font-size:12px; min-height:16px; text-align:center; margin-top:16px; }
 #login-screen.splash-out {
   animation: splash-out 0.4s ease both;
   pointer-events: none;
 }
 @keyframes splash-out { to { opacity:0; transform:scale(1.04); } }
-.join-row { display:flex; gap:8px; align-items:center; }
-.lobby-welcome { color:#eece94; font-size:15px; text-align:center; font-weight:bold; }
-.room-code-label { color:#a2988a; font-size:11px; text-align:center; text-transform:uppercase; letter-spacing:1px; }
-.room-code-big {
-  font-size:clamp(2em,8vw,3.2em); font-weight:bold; text-align:center;
-  color:#e69419; letter-spacing:8px; text-shadow:0 0 20px #e6941955;
-  padding:8px 0;
-}
-.room-players { display:flex; flex-direction:column; gap:6px; min-height:60px; }
-.room-player {
-  background:rgba(209,204,197,0.04); border:1px solid #2e2920;
-  border-radius:8px; padding:9px 14px; font-size:13px; color:#c5bfb7;
-}
 
 /* ── CHARACTER SELECT ─────────────────── */
 #char-select {
@@ -310,19 +285,6 @@ canvas { display:block; width:100%; height:100%; }
 }
 .csl-status { font-size:12px; color:#4c453c; letter-spacing:2px; text-transform:uppercase; }
 
-
-/* ── FLOOR INFO BUTTON ────────────────── */
-.floor-info-btn {
-  display:block; width:calc(100% - 24px); margin:10px 12px 4px;
-  padding:10px; border:1px solid rgba(209,204,197,.1);
-  border-radius:10px; background:rgba(209,204,197,.04);
-  color:#c0ab87; font-size:13px; font-weight:600;
-  cursor:pointer; transition:background .15s,color .15s;
-  touch-action:manipulation;
-}
-.floor-info-btn:hover  { background:rgba(209,204,197,.09); color:#f2d197; }
-.floor-info-btn:active { background:rgba(209,204,197,.05); }
-
 /* ── MONSTER LIST (flat, accordion) ────── */
 .mon-list { display:flex; flex-direction:column; gap:5px; }
 .mon-item {
@@ -475,15 +437,6 @@ canvas { display:block; width:100%; height:100%; }
 }
 .death-btn-respawn:active { opacity:.7; }
 .death-btn-respawn:hover { filter:brightness(1.1); }
-.death-btn-exit {
-  width:100%; padding:10px;
-  background:transparent; border:1px solid var(--iron-dim); border-radius:2px;
-  font-family:var(--font-display); text-transform:uppercase; letter-spacing:1px;
-  color:#5f574b; font-size:12px; cursor:pointer;
-  transition:color .15s, border-color .15s;
-}
-.death-btn-exit:hover { color:var(--parchment-dim); border-color:var(--iron); }
-.death-btn-exit:active { color:var(--parchment); }
 
 /* ── NPC OVERLAY & DIALOG ─────────────── */
 #npc-overlay {
@@ -594,9 +547,6 @@ canvas { display:block; width:100%; height:100%; }
 .craft-mats-info {
   font-size:11px; color:#5d564b; padding:4px 0 10px;
 }
-.craft-row-clickable { cursor:pointer; transition:background 0.15s; }
-.craft-row-clickable:active { background:rgba(209,204,197,0.07); }
-.craft-arrow { color:#39342d; font-size:20px; flex-shrink:0; line-height:1; }
 .craft-tabs {
   display:flex; gap:6px; margin:8px 0 10px;
 }
@@ -613,7 +563,7 @@ canvas { display:block; width:100%; height:100%; }
   font-size:10px; text-transform:uppercase; letter-spacing:1px;
   color:#5d564b; margin:10px 0 5px; padding-left:2px;
 }
-.craft-can .craft-arrow { color:#b28d4e; }
+
 /* ── Craft item grid ─────────────────────────── */
 .craft-items-grid {
   display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:4px;
@@ -633,6 +583,7 @@ canvas { display:block; width:100%; height:100%; }
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   width:100%; max-width:60px;
 }
+
 /* ── Craft detail modal (inside npc-body) ────── */
 .craft-back-btn {
   display:inline-flex; align-items:center; gap:4px;
@@ -674,46 +625,6 @@ canvas { display:block; width:100%; height:100%; }
 }
 .craft-do-btn { width:100%; text-align:center; padding:10px; font-size:13px; }
 
-/* ── CRAFT ITEM MODAL ──────────────────── */
-.cmod-overlay {
-  position:absolute; inset:0; z-index:170;
-  background:rgba(0,0,0,0.65);
-  display:flex; align-items:center; justify-content:center;
-}
-.cmod-box {
-  background:#1c160c;
-  border:1px solid rgba(184,144,76,0.5);
-  border-radius:16px;
-  width:min(310px,92vw);
-  padding:16px;
-  display:flex; flex-direction:column; gap:12px;
-}
-.cmod-hdr { display:flex; align-items:center; gap:10px; }
-.cmod-icon { flex-shrink:0; }
-.cmod-title { flex:1; font-size:15px; font-weight:bold; color:#d1ccc5; line-height:1.2; }
-.cmod-stats {
-  font-size:13px; color:#c5bfb7;
-  background:rgba(209,204,197,0.04);
-  border-radius:8px; padding:8px 10px;
-  min-height:28px;
-}
-.cmod-sec {
-  font-size:10px; text-transform:uppercase; letter-spacing:1px;
-  color:#5d564b; margin-bottom:-4px;
-}
-.cmod-mats { display:flex; flex-direction:column; gap:7px; }
-.cmod-mat {
-  display:flex; align-items:center; gap:8px;
-  font-size:12px; color:#c5bfb7;
-}
-.cmod-mat-icon { width:22px; text-align:center; flex-shrink:0; }
-.cmod-mat-name { flex:1; }
-.cmod-mat-count { font-weight:bold; color:#90d653; }
-.cmod-mat-lack .cmod-mat-count { color:#ee6676; }
-.cmod-gold { font-size:12px; color:#aea599; }
-.cmod-gold b { color:#ebab4b; }
-.cmod-craft-btn { width:100%; padding:10px; font-size:14px; }
-
 /* ── INVENTORY ITEM MODAL ──────────────────── */
 .imod-overlay {
   position:absolute; inset:0; z-index:170;
@@ -746,7 +657,6 @@ canvas { display:block; width:100%; height:100%; }
 }
 .imod-enh-title { font-size:12px; font-weight:bold; color:#e69419; }
 .imod-enh-preview { font-size:11px; color:#c5bfb7; }
-.imod-enh-cost { font-size:11px; color:#bab2a8; }
 .imod-enh-chance { font-size:11px; color:#bab2a8; }
 .imod-enh-stones { display:flex; gap:6px; margin-top:4px; }
 /* The item-burns warning. It used to be a title= tooltip on the normal-stone
@@ -776,9 +686,6 @@ canvas { display:block; width:100%; height:100%; }
 .imod-equip:active { opacity:0.8; }
 .imod-sell { background:linear-gradient(135deg,#3a1f1f,#5e3232); color:#e5a546; }
 .imod-sell:active { opacity:0.8; }
-.imod-sharpen { background:linear-gradient(135deg,#281d0c,#46300e); color:#e69419; }
-.imod-sharpen:active { opacity:0.8; }
-.imod-sharpen.disabled { background:#26221c; color:#4c453c; pointer-events:none; }
 
 /* ── LOOT BOX ODDS ──────────────────────── */
 .box-odds-list { display:flex; flex-direction:column; gap:8px; }
@@ -812,27 +719,6 @@ canvas { display:block; width:100%; height:100%; }
 .panel-body { padding:14px 16px 24px; }
 .sec-title  { font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:var(--gold-dim); margin-bottom:8px; }
 
-/* ── POTION SHELF ──────────────────────────── */
-.pt-shelf {
-  display:flex; gap:10px; flex-wrap:wrap; margin-bottom:4px;
-}
-.pt-cell {
-  position:relative; flex:1; min-width:100px;
-  background:rgba(209,204,197,0.03); border:2px solid rgba(209,204,197,0.07);
-  border-radius:12px; padding:10px 8px 8px; text-align:center;
-  cursor:pointer; user-select:none; transition:border-color 0.15s, background 0.15s;
-  display:flex; flex-direction:column; align-items:center; gap:4px;
-}
-.pt-cell:active { opacity:0.7; }
-.pt-cell.pt-hud { border-color:rgba(144,214,83,0.4); background:rgba(144,214,83,0.05); }
-.pt-cell-name { font-size:10px; color:#9c9383; white-space:normal; word-break:break-word; overflow:hidden; max-width:100%; text-align:center; }
-.pt-cell-cnt  { font-size:13px; font-weight:800; color:#90d653; }
-.pt-cell-cnt.pt-zero { color:#5c5344; }
-.pt-hud-badge {
-  position:absolute; top:4px; right:6px;
-  font-size:7px; font-weight:800; letter-spacing:.5px;
-  color:#90d653; text-transform:uppercase;
-}
 /* disable button styling inside modal when disabled */
 #pt-modal-use:disabled, #pt-modal-hud:disabled { opacity:0.4; pointer-events:none; }
 
@@ -936,7 +822,6 @@ canvas { display:block; width:100%; height:100%; }
 .inv-cell:active { opacity:0.7; }
 .inv-cell.filled { border-color:#4c4332; background:rgba(209,204,197,0.04); }
 
-
 /* ── PROFILE ──────────────────────────── */
 .prof-hero  { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
 .prof-emoji { font-size:52px; line-height:1; }
@@ -950,10 +835,6 @@ canvas { display:block; width:100%; height:100%; }
 .stat-ic    { font-size:18px; margin-bottom:4px; }
 .stat-vl    { font-size:18px; font-weight:bold; color:#d1ccc5; }
 .stat-nm    { font-size:10px; color:#5d564b; margin-top:3px; }
-.equip-sum  { background:rgba(209,204,197,0.02); border:1px solid #26221c; border-radius:10px; padding:12px 14px; }
-.eq-row     { display:flex; align-items:center; justify-content:space-between; padding:5px 0; border-bottom:1px solid #1e1a13; font-size:12px; }
-.eq-row:last-child { border-bottom:none; }
-.eq-sl-nm   { color:#5d564b; font-size:11px; }
 
 /* ── QUESTS ───────────────────────────── */
 .quest-item       { border-radius:10px; padding:12px 14px; margin-bottom:10px; border:1px solid #2c261c; }
@@ -973,7 +854,6 @@ canvas { display:block; width:100%; height:100%; }
 .quest-claim-btn  { margin-top:10px; width:100%; padding:10px 0; border:none; border-radius:10px; background:linear-gradient(135deg,#d8a54c,#dfb362); color:#d1ccc5; font-size:14px; font-weight:700; cursor:pointer; letter-spacing:0.02em; }
 .quest-claim-btn:active { opacity:0.8; }
 .quest-floor-hdr    { font-size:12px; font-weight:700; color:#b6a281; padding:8px 0 4px; margin-bottom:4px; border-bottom:1px solid #2c261c; }
-.quest-floor-teaser { text-align:center; padding:14px 0 4px; color:#4c4334; font-size:12px; font-style:italic; }
 
 /* ── CLAN PANEL ───────────────────────── */
 /* Хранилище клана — pooled Осколки and the leader's allocations */
@@ -1051,7 +931,6 @@ canvas { display:block; width:100%; height:100%; }
 .clan-member       { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid rgba(209,204,197,0.04); }
 .clan-member-role  { flex-shrink:0; font-size:14px; }
 .clan-member-name  { flex:1; font-size:13px; color:#c5bfb7; }
-.clan-levels       { display:flex; flex-direction:column; gap:4px; }
 .inv-tabs          { display:flex; border-bottom:1px solid rgba(209,204,197,0.07); margin-bottom:4px; }
 .inv-tab           { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#5f574b; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
 .inv-tab.active    { color:#e7b765; border-bottom-color:#e0aa4b; }
@@ -1188,19 +1067,6 @@ canvas { display:block; width:100%; height:100%; }
   background:linear-gradient(90deg,#ac8844,#e3941d);
   border-color:#e3941d44;
 }
-.sk-xp-row {
-  display:flex; align-items:center; gap:8px;
-}
-.sk-xp-bar-bg {
-  flex:1; height:5px; background:#1d1913;
-  border-radius:3px; overflow:hidden;
-}
-.sk-xp-bar-fill {
-  height:100%; border-radius:3px;
-  background:linear-gradient(90deg,#b08740,#b59469);
-  transition:width 0.3s;
-}
-.sk-xp-lbl { font-size:10px; color:#645f57; white-space:nowrap; }
 .sk-bonus-row {
   display:flex; gap:8px; align-items:center; min-height:16px;
 }
@@ -1312,10 +1178,6 @@ canvas { display:block; width:100%; height:100%; }
 .lang-card-flag { font-size: 20px; line-height: 1; }
 .lang-card-name { flex: 1; text-align: left; }
 .lang-card-check { color: #90d653; font-weight: 700; }
-.gram-input-row {
-  display: flex;
-  gap: 8px;
-}
 .gram-input {
   flex: 1;
   background: rgba(0,0,0,0.4);
@@ -2141,6 +2003,7 @@ canvas { display:block; width:100%; height:100%; }
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+
 /* ── "What's new" login modal — centered dialog, not a bottom sheet ────────── */
 .whatsnew-modal-overlay { align-items: center; z-index: 401; }
 .whatsnew-modal-sheet {

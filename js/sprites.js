@@ -522,24 +522,6 @@ const ENEMY_SPRITE_DEF = {
   },
 };
 
-// Warm up an already-loaded image so the canvas 2D pipeline never has to
-// decode/rasterize it lazily on the first real drawImage() call. decode()
-// alone isn't reliable enough here — under the load of many concurrent large
-// sheets it can silently reject (falling back to a no-op), and even on
-// success it doesn't always warm the same raster cache canvas drawing uses.
-// Actually drawing one pixel into a throwaway canvas forces genuine
-// rasterization through the exact code path the game canvas will use.
-let _warmCanvas = null, _warmCtx = null;
-function _warmUpImage(img, onDone) {
-  function draw() {
-    if (!_warmCanvas) { _warmCanvas = document.createElement('canvas'); _warmCanvas.width = _warmCanvas.height = 1; _warmCtx = _warmCanvas.getContext('2d'); }
-    try { _warmCtx.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1); } catch (e) { /* ignore */ }
-    onDone();
-  }
-  if (img.decode) img.decode().then(draw, draw);
-  else draw();
-}
-
 const enemySpriteCache = {};
 // eid -> Promise resolved once every sheet for that enemy is loaded AND decoded.
 // Callers may ask for the same eid again while a load is still in flight (e.g.

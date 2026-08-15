@@ -10,14 +10,9 @@ function getCurrentQuest() {
   return QUEST_DEF[player.questIdx] || null;
 }
 
-// Both of these now read the shared rules (questProgress/questComplete,
-// shared/definitions.js), because the server decides whether a claim is paid
-// and the two sides must not be able to disagree about what "done" means.
-function getQuestProgress(q) {
-  if (!player || !q) return {};
-  return questProgress(q, player.questKills, player.lvl);
-}
-
+// Reads the shared rule (questComplete, shared/definitions.js), because the
+// server decides whether a claim is paid and the two sides must not be able
+// to disagree about what "done" means.
 function isQuestComplete(q) {
   if (!player || !q) return false;
   return questComplete(q, player.questKills, player.lvl);
@@ -71,9 +66,9 @@ function onQuestSync({ questIdx, questKills } = {}) {
 }
 
 // Server confirmed the grant: the items are already in player.inventory via
-// the inventorySync that preceded this, so only the numbers are left. XP is
-// added flat because the server sent the exact figure it recorded.
-function onQuestClaimed({ idx, gold, xp, newGold, questIdx } = {}) {
+// the inventorySync that preceded this, so only the numbers are left — and
+// only as display, since the server sends the totals it recorded.
+function onQuestClaimed({ idx, newGold, questIdx } = {}) {
   clearTimeout(_questClaimTimer);
   _questClaimPending = false;
   if (!player) return;
@@ -108,25 +103,20 @@ function tickQuestNotif(dt) {
 }
 
 // ── Event hooks ───────────────────────────────────────────
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onEnemyKill() {
+// Every one of these is counted server-side now (_questOnKill / buyPotion,
+// server/index.js) and pushed back as questSync, so all that is left of them
+// is the UI half they also always were: refresh the quest tab while it is the
+// one on screen. They stay separate named hooks because that is how their
+// call sites read (js/network.js, and the join-guild button below).
+function _questTabRefresh() {
   if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
 }
 
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onBuyPotion() {
-  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
-}
+function onEnemyKill() { _questTabRefresh(); }
 
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onCraftWeapon() {
-  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
-}
+function onBuyPotion() { _questTabRefresh(); }
 
-function onLevelUp(lvl) {
+function onLevelUp() {
   if (!player) return;
   const q = getCurrentQuest();
   if (!q || q.type !== 'level') return;
@@ -140,29 +130,9 @@ function onLevelUp(lvl) {
 // (dungeon_clear is awarded in full since repeated "runs" have no real
 // equivalent in one seamless world). Called from the enemyKilled handler
 // with the killed monster's global room level.
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onEnterArm() {
-  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
-}
+function onEnterArm() { _questTabRefresh(); }
 
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onDungeonClear() {
-  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
-}
-
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onGotoFloor() {
-  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
-}
-
-// Counted server-side now (_questOnKill / buyPotion, server/index.js) and
-// pushed back as questSync. Kept as the UI hook it also was.
-function onJoinGuild() {
-  if (activeTab === 3 && typeof updateQuestUI === "function") updateQuestUI();
-}
+function onJoinGuild() { _questTabRefresh(); }
 
 function drawQuestNotif() {
   if (!questNotif || !player || !dungeon) return;
@@ -178,82 +148,6 @@ function drawQuestNotif() {
   ctx.fillStyle = '#e69419';
   ctx.fillText(questNotif.title, W / 2, HEADER_H + 31);
   ctx.globalAlpha = 1;
-  ctx.restore();
-}
-
-// ── Canvas quest tracker (below minimap, top-right) ───────
-function drawQuestTracker() {
-  const q = getCurrentQuest();
-  if (!player || !dungeon) return;
-
-  // Mirror minimap position from drawHeader
-  const mmPad = 6;
-  const mmH = HEADER_H - mmPad * 2;
-  const mmW = Math.floor(Math.min(mmH * (dungeon.w / dungeon.h), W * 0.27));
-  const mmX = W - mmW - mmPad - 4;
-  const panelX = mmX - 4;
-  const panelW = mmW + 8;
-
-  // Quest notif banner (centered)
-  if (questNotif) {
-    ctx.save();
-    const alpha = Math.min(1, questNotif.timer, 3.5 - questNotif.timer + 0.5);
-    ctx.globalAlpha = Math.max(0, alpha);
-    ctx.fillStyle = 'rgba(46,37,20,0.95)';
-    ctx.beginPath();
-    ctx.roundRect(W / 2 - 130, HEADER_H + 10, 260, 32, 8);
-    ctx.fill();
-    ctx.font = 'bold 13px system-ui, Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#e69419';
-    ctx.fillText(questNotif.title, W / 2, HEADER_H + 31);
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  if (!q) return;
-
-  let lines = [];
-  if (q.type === 'kill') {
-    const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
-    lines.push(done + '/' + q.count + ' ' + q.enemies.join(', '));
-  } else if (q.type === 'kill_multi') {
-    q.enemies.forEach(name => {
-      lines.push((player.questKills[name] || 0) + '/' + q.count + ' ' + name);
-    });
-  } else if (q.type === 'level') {
-    lines.push((typeof t === 'function' ? t('questLevelLbl') : 'Уровень') + ' ' + player.lvl + '/' + q.level);
-  } else if (q.type === 'buy_potion') {
-    lines.push((typeof t === 'function' ? t('questBoughtLbl') : 'Куплено') + ': ' + (player.questKills['_potion'] || 0) + '/' + q.count);
-  } else if (q.type === 'craft') {
-    lines.push((typeof t === 'function' ? t('questCraftWeapon') : 'Скрафтить оружие'));
-  }
-
-  const pad = 7, lineH = 14;
-  const panelH = pad * 2 + lineH + lines.length * lineH + 2;
-  const py = HEADER_H + 4;
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(15,11,5,0.90)';
-  ctx.strokeStyle = 'rgba(143,111,57,0.5)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.roundRect(panelX, py, panelW, panelH, 5);
-  ctx.fill(); ctx.stroke();
-
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.font = 'bold 9px system-ui, Arial';
-  ctx.fillStyle = '#e69419';
-  // Truncate title to fit panel
-  const titleMax = Math.floor((panelW - pad * 2) / 5.5);
-  const titleStr = q.title.slice(0, titleMax);
-  ctx.fillText(titleStr, panelX + pad, py + pad + 9);
-
-  ctx.font = '8px system-ui, Arial';
-  ctx.fillStyle = '#bab2a8';
-  lines.forEach((ln, i) => {
-    ctx.fillText(ln, panelX + pad, py + pad + lineH + (i + 1) * lineH);
-  });
-
   ctx.restore();
 }
 
@@ -361,13 +255,10 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   reward = reward || {};
   player.specialQuestsDone = player.specialQuestsDone || [];
   if (!player.specialQuestsDone.includes(questId)) player.specialQuestsDone.push(questId);
-  // Apply EVERY reward the server granted to the local player. Gold and XP live
-  // in the client's save blob, so if we don't mirror them here the next
-  // saveProgress overwrites the server's freshly-added reward with our stale
-  // value — the reward silently vanishes. XP is added flat (server already
-  // applied its own multipliers) via gainXP's flat path, which also handles
-  // level-ups. Nexum is server-authoritative and not in the save blob, so we
-  // only refresh the displayed balance.
+  // Gold and XP are the server's numbers and arrive on their own channels
+  // (goldSync / xpSync), so nothing about them is composed here. Nexum is
+  // server-authoritative too but isn't in the save blob, so all that is left
+  // to do locally is refresh the displayed balance.
   if (!alreadyDone) {
     // The balance arrives as a total via goldSync; this is display only.
     // Level state arrives via xpSync.
@@ -445,7 +336,6 @@ function updateQuestUI() {
   floors.forEach(floorNum => {
     const floorQuests = QUEST_DEF.map((q, i) => ({ q, i })).filter(({ q }) => (q.floor || 1) === floorNum);
     const firstIdx    = floorQuests[0].i;
-    const lastIdx     = floorQuests[floorQuests.length - 1].i;
     // Floor section is locked if player hasn't reached its first quest yet —
     // just don't show anything for it yet (no "will unlock on floor N" teaser;
     // completing everything above is what reveals it, see player.questIdx).

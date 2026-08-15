@@ -3351,7 +3351,7 @@ function _initPetCraftHandlers(s) {
     player.rebirths = rebirths || 0;
     if (typeof recompute === 'function') recompute();
     // Rebirth is framed as a fresh start — full heal, matching the +HP an
-    // ordinary level-up already grants (gainXP, js/player.js).
+    // ordinary level-up already grants (applyLevelState, js/player.js).
     player.hp = player.maxHp;
     if (typeof netSaveProgress === 'function') netSaveProgress();
     if (typeof onRebirthDone === 'function') onRebirthDone();

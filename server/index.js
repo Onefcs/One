@@ -5876,6 +5876,67 @@ io.on('connection', socket => {
 
   safeOn('_ping', t0 => socket.emit('_pong', t0));
 
+  // ── Shared login plumbing ──────────────────────────────────────────────
+  // loginTelegramWebApp (Mini App) and loginTelegram (bot widget) differ only
+  // in how they establish WHO is logging in; everything after that was two
+  // byte-identical copies, which is how a fix to one of them could silently
+  // miss the other.
+
+  // One live session per telegramId: kick whatever socket holds the slot,
+  // wait for its save to land, then claim it. Both awaits must complete
+  // before the caller's DB read, or that read can return stale data.
+  async function _claimSession(telegramId) {
+    if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
+      const _prevSocket = io.sockets.sockets.get(activeSessions.get(telegramId));
+      if (_prevSocket) {
+        _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' });
+        await _prevSocket.data._flushNow?.();
+        _prevSocket.disconnect(true);
+      }
+    }
+    // Covers the far more common refresh case: the old socket already
+    // disconnected on its own (faster than this page loaded) and its
+    // flush is registered here instead of reachable via a live socket.
+    const _pending = _pendingFlush.get(telegramId);
+    if (_pending) await _pending.catch(() => {});
+    activeSessions.set(telegramId, socket.id);
+  }
+
+  // The gates every login has to pass, then the connection state it primes.
+  // Returns false when the login was refused (the caller has nothing left to
+  // do — the authError is already out).
+  async function _finishLogin(doc, telegramId, isNewAccount) {
+    if (doc.banned) {
+      activeSessions.delete(telegramId);
+      socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
+      return false;
+    }
+    if (_maintenanceMode && telegramId !== TG_ADMIN_ID) {
+      activeSessions.delete(telegramId);
+      socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
+      return false;
+    }
+    authed = doc;
+    clearTimeout(_authTimeout);
+    socket.data.username = doc.username;
+    socket.data.telegramId = telegramId;
+    if (doc.savedData) _lastStats = doc.savedData;
+    _setGram(doc.savedData?.gramBalance || 0);
+    _setNexum(doc.savedData?.nexumBalance || 0);
+    _startAutosave();
+    socket.join(`tg_${telegramId}`);
+    const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
+    const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
+    _myClanName  = _clanInfo ? _clanInfo.name : null;
+    _myClanIcon  = _clanInfo ? _clanInfo.icon : null;
+    _myClanId    = _clan ? String(_clan._id) : null;
+    _myClanLevel = _clanInfo ? _clanInfo.level : null;
+    socket.data.vipLevel = doc.savedData?.vipLevel || 0;
+    _setVipAura(doc.username, socket.data.vipLevel);
+    socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
+    return true;
+  }
+
   safeOn('loginTelegramWebApp', async ({ initData }) => {
     try {
       const verified = verifyTelegramWebApp(initData);
@@ -5883,23 +5944,7 @@ io.on('connection', socket => {
       const { user, startParam } = verified;
       const telegramId = String(user.id);
       const username = _safeUsername(user.username || user.first_name, telegramId);
-      // Reserve slot before first await to prevent concurrent logins
-      if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
-        const _prevSocket = io.sockets.sockets.get(activeSessions.get(telegramId));
-        if (_prevSocket) {
-          _prevSocket.emit('kicked', { reason: 'Вы вошли с другого устройства' });
-          // Must land before the DB read below — otherwise this read can race
-          // the old socket's async disconnect-flush and return stale data.
-          await _prevSocket.data._flushNow?.();
-          _prevSocket.disconnect(true);
-        }
-      }
-      // Covers the far more common refresh case: the old socket already
-      // disconnected on its own (faster than this page loaded) and its
-      // flush is registered here instead of reachable via a live socket.
-      const _pending = _pendingFlush.get(telegramId);
-      if (_pending) await _pending.catch(() => {});
-      activeSessions.set(telegramId, socket.id);
+      await _claimSession(telegramId);
       let doc = await PlayerModel.findOne({ telegramId });
       // isNewAccount tells the client this telegramId has no prior server
       // record — either a genuine first login, or (just as importantly) one
@@ -5926,32 +5971,7 @@ io.on('connection', socket => {
         doc.savedData = {};
         await PlayerModel.updateOne({ telegramId }, { $set: { savedData: {} } }).catch(() => {});
       }
-      if (doc.banned) {
-        activeSessions.delete(telegramId);
-        return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
-      }
-      if (_maintenanceMode && telegramId !== TG_ADMIN_ID) {
-        activeSessions.delete(telegramId);
-        return socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
-      }
-      authed = doc;
-      clearTimeout(_authTimeout);
-      socket.data.username = doc.username;
-      socket.data.telegramId = telegramId;
-      if (doc.savedData) _lastStats = doc.savedData;
-      _setGram(doc.savedData?.gramBalance || 0);
-      _setNexum(doc.savedData?.nexumBalance || 0);
-      _startAutosave();
-      socket.join(`tg_${telegramId}`);
-      const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
-      const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
-      _myClanName  = _clanInfo ? _clanInfo.name : null;
-      _myClanIcon  = _clanInfo ? _clanInfo.icon : null;
-      _myClanId    = _clan ? String(_clan._id) : null;
-      _myClanLevel = _clanInfo ? _clanInfo.level : null;
-      socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      _setVipAura(doc.username, socket.data.vipLevel);
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
+      await _finishLogin(doc, telegramId, isNewAccount);
     } catch (err) {
       console.error('loginTelegramWebApp:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });
@@ -5964,23 +5984,7 @@ io.on('connection', socket => {
         return socket.emit('authError', { message: 'Ошибка авторизации Telegram' });
       const telegramId = String(data.id);
       const username = _safeUsername(data.username || data.first_name, telegramId);
-      // Reserve slot before first await to prevent concurrent logins
-      if (activeSessions.has(telegramId) && activeSessions.get(telegramId) !== socket.id) {
-        const _prevSocket2 = io.sockets.sockets.get(activeSessions.get(telegramId));
-        if (_prevSocket2) {
-          _prevSocket2.emit('kicked', { reason: 'Вы вошли с другого устройства' });
-          // Must land before the DB read below — otherwise this read can race
-          // the old socket's async disconnect-flush and return stale data.
-          await _prevSocket2.data._flushNow?.();
-          _prevSocket2.disconnect(true);
-        }
-      }
-      // Covers the far more common refresh case: the old socket already
-      // disconnected on its own (faster than this page loaded) and its
-      // flush is registered here instead of reachable via a live socket.
-      const _pending2 = _pendingFlush.get(telegramId);
-      if (_pending2) await _pending2.catch(() => {});
-      activeSessions.set(telegramId, socket.id);
+      await _claimSession(telegramId);
       let doc = await PlayerModel.findOne({ telegramId });
       // See the matching comment in loginTelegramWebApp — tells the client
       // not to resurrect a deleted account from its localStorage backup.
@@ -5990,32 +5994,7 @@ io.on('connection', socket => {
         doc.savedData = {};
         await PlayerModel.updateOne({ telegramId }, { $set: { savedData: {} } }).catch(() => {});
       }
-      if (doc.banned) {
-        activeSessions.delete(telegramId);
-        return socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
-      }
-      if (_maintenanceMode && telegramId !== TG_ADMIN_ID) {
-        activeSessions.delete(telegramId);
-        return socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
-      }
-      authed = doc;
-      clearTimeout(_authTimeout);
-      socket.data.username = doc.username;
-      socket.data.telegramId = telegramId;
-      if (doc.savedData) _lastStats = doc.savedData;
-      _setGram(doc.savedData?.gramBalance || 0);
-      _setNexum(doc.savedData?.nexumBalance || 0);
-      _startAutosave();
-      socket.join(`tg_${telegramId}`);
-      const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
-      const _clanInfo = _clan ? await _clanDataFor(_clan, telegramId) : null;
-      _myClanName  = _clanInfo ? _clanInfo.name : null;
-      _myClanIcon  = _clanInfo ? _clanInfo.icon : null;
-      _myClanId    = _clan ? String(_clan._id) : null;
-      _myClanLevel = _clanInfo ? _clanInfo.level : null;
-      socket.data.vipLevel = doc.savedData?.vipLevel || 0;
-      _setVipAura(doc.username, socket.data.vipLevel);
-      socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
+      await _finishLogin(doc, telegramId, isNewAccount);
     } catch (err) {
       console.error('loginTelegram:', err);
       socket.emit('authError', { message: 'Ошибка сервера' });

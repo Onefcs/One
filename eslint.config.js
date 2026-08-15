@@ -123,7 +123,6 @@ module.exports = [
       'node_modules/**',
       'js/pixi.min.js',   // vendored, minified — not ours to lint
       'js/vendor/**',     // vendored third-party
-      'js/dungeon.js',    // one-line stub, not part of the bundle
       '.dev-mongo/**',
       'prof/**',
     ],

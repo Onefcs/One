@@ -405,10 +405,6 @@ function armIndexForLevel(lvl) {
   }
   return ARM_ROOM_COUNTS.length;
 }
-function armNameForLevel(lvl) {
-  return ARM_NAMES[armIndexForLevel(lvl) - 1];
-}
-
 // Character level required to pass through each arm's hub door — a level-1
 // player wandering straight into arm 3's monsters would just get shredded, so
 // the entrance doubles as a gate matching where the PREVIOUS arm tops out.
@@ -425,7 +421,6 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // the world a player has already got.
 const SEASON_END_AT   = Date.UTC(2026, 7, 20, 15, 0, 0); // 20 Aug 2026, 18:00 MSK (UTC+3)
 const SEASON_MIN_LVL  = 10;
-const SEASON_MAX_LVL  = 19;
 const SEASON_QUEST_KILLS  = 5000;
 const SEASON_QUEST_POINTS = 100;
 // One quest is active at a time; clearing it rolls the next at random from
@@ -538,10 +533,6 @@ const SEASON_TIER_SPECIES_LEVELS = (() => {
   }
   return out;
 })();
-// Kept for the 10+ band alone, which is what everything referred to before
-// there were two.
-const SEASON_SPECIES_LEVELS = SEASON_TIER_SPECIES_LEVELS[SEASON_TIER_DEFAULT];
-
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
 // the client to add them to its own inventory (see the claimQuest handler,
@@ -1206,14 +1197,13 @@ function roomEnchantStoneChance(lvl) {
 // ── Event boss (summoned from the admin panel) ──────────────────────────────
 // Not part of any room chain: spawned on demand into its own sealed arena
 // (server/game/dungeon.js), reachable only through the event teleport pad
-// that appears in the hub while the event runs. Announced
-// EVENT_BOSS_ANNOUNCE_MS ahead, and gone for good once killed (the per-arm
-// bosses in ENEMY_DEF respawn on a timer — this one only ever comes back when
+// that appears in the hub while the event runs. Gone for good once killed
+// (the per-arm bosses in ENEMY_DEF respawn on a timer — this one only ever
+// comes back when
 // an admin summons it again). Its loot does NOT roll per-killer like ordinary
 // monsters: the whole table below lands on the ground at once for everyone,
 // first come first served (see rollEventBossDrops / the worldDrops system in
 // server/game/Room.js).
-const EVENT_BOSS_ANNOUNCE_MS  = 5 * 60 * 1000; // warning shown before it appears
 const EVENT_BOSS_DROP_LIFE_MS = 3 * 60 * 1000; // how long loot stays on the ground
 
 const EVENT_BOSS = {
@@ -1491,18 +1481,6 @@ function skillDamageMult(cls, key, advActive, skillLvl, skillPct) {
   return base * skillScaleMult(skillLvl, skillPct);
 }
 
-// Every point of skillPct a player could possibly be wearing. Used as the
-// ceiling when the server has to bound a claim it cannot attribute to a
-// specific slot (see pvpSkillAttack) — derived so a new item can't leave a
-// stale number behind.
-function maxSkillDamageMult() {
-  let best = 0;
-  Object.values(SKILL_DMG_MULT).forEach(byKey => Object.values(byKey).forEach(v => {
-    best = Math.max(best, v.base || 0, v.adv || 0);
-  }));
-  return best;
-}
-
 // The stat-upgrade slots (UPGRADE_DEF, js/definitions.js) and what the next
 // point in one costs. Shared so the server can charge it: upgradeStats used to
 // deduct the gold and raise the level client-side and let the save carry both.
@@ -1519,23 +1497,6 @@ function upgradeCost(level) { return 300 * (Math.max(0, Math.floor(Number(level)
 // `kills` is the same flat map both sides keep (savedData.questKills): enemy
 // names for the kill types, and a handful of underscore-prefixed keys for the
 // others.
-function questProgress(q, kills, lvl) {
-  const k = kills || {};
-  const n = key => Math.max(0, Math.floor(Number(k[key])) || 0);
-  switch (q && q.type) {
-    case 'kill':          return { done: (q.enemies || []).reduce((s, name) => s + n(name), 0), total: q.count };
-    case 'kill_multi':    return (q.enemies || []).reduce((o, name) => (o[name] = { done: n(name), total: q.count }, o), {});
-    case 'level':         return { done: Math.max(1, Math.floor(Number(lvl)) || 1), total: q.level };
-    case 'buy_potion':    return { done: n('_potion'), total: q.count };
-    case 'craft':         return { done: n('_craft'), total: 1 };
-    case 'dungeon_clear': return { done: n('_dungeon_' + q.floor), total: q.count };
-    case 'join_guild':    return { done: n('_guild'), total: 1 };
-    case 'goto_floor':    return { done: n('_floor_' + q.targetFloor), total: 1 };
-    case 'enter_zone':    return { done: n('_zone_' + q.zone), total: 1 };
-    default:              return {};
-  }
-}
-
 function questComplete(q, kills, lvl) {
   const k = kills || {};
   const n = key => Math.max(0, Math.floor(Number(k[key])) || 0);
@@ -1688,11 +1649,11 @@ if (typeof module !== 'undefined') module.exports = {
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armNameForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
+  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
   QUEST_DEF,
-  SEASON_END_AT, SEASON_MIN_LVL, SEASON_MAX_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
+  SEASON_END_AT, SEASON_MIN_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_SPECIES_LEVELS, SEASON_ENHANCE_POINTS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
   SEASON_WIN_POINTS,
   SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
@@ -1702,10 +1663,10 @@ if (typeof module !== 'undefined') module.exports = {
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
-  SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult, maxSkillDamageMult,
+  SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
-  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questProgress, questComplete,
+  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
@@ -1719,7 +1680,7 @@ if (typeof module !== 'undefined') module.exports = {
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
-  EVENT_BOSS, EVENT_BOSS_ANNOUNCE_MS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
+  EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H,
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
