@@ -136,12 +136,12 @@ function _netClockReset() {
   _clkBucketIdx = 0;
   _clkOffset = null;
   _jitIdx = 0; _jitCount = 0;
-  // The margin history describes the old route's buffer needs, not the new
-  // one's. Dropped rather than kept: holding a wide buffer earned on a dying
-  // cellular link would follow the player back onto wifi for 20 seconds.
+  // The peak describes the old route's buffer needs, not the new one's.
+  // Dropped rather than kept: holding a wide buffer earned on a dying
+  // cellular link would follow the player back onto wifi for the next TAU.
   // _interpMs itself is left where it is and re-converges by the same slow
   // release as always, so the reconnect costs no hitch.
-  _marginBuf.fill(Infinity); _marginIdx = 0; _marginAt = 0; _marginFilled = 0;
+  _neededPeak = _INTERP_MIN - _INTERP_FLOOR; _neededAt = 0;
   _netLastSnapT = -Infinity; _netLastPktAt = -Infinity;
 }
 
@@ -176,81 +176,84 @@ function _netClockSample(t) {
 // stutter on the links that actually suffer from it, and needlessly far in the
 // past for everyone else.
 //
-// It is sized by a closed loop rather than from jitter statistics: measure the
-// MARGIN — how far the newest snapshot's timestamp sits ahead of where
-// playback currently is — and hold its worst recent value at _MARGIN_FLOOR.
-// Margin is the buffer doing its job in the only units that matter, and it
-// accounts for jitter, packet loss, clock drift, irregular cast spacing and
-// server tick overruns at once without modelling any of them.
+// Sized from neededInterp = clkNow - _netLastSnapT: the delay that would be
+// EXACTLY enough, right now, with nothing to spare, for playback to not have
+// run past the newest snapshot. Computed every rendered frame (not just on
+// packet arrival — see the note below) from _clkNow and _netLastSnapT alone,
+// which is what makes it safe to feed into a peak/decay filter: neither of
+// those depends on the CURRENT interpolation delay, so a value recorded a
+// moment ago means exactly the same thing now as it did then. (An earlier
+// version of this stored raw MARGIN — literally "newest snapshot minus
+// current playback time" — which bakes in whatever the delay happened to be
+// at sample time. As the delay grew in response to one bad moment, old
+// samples recorded before it grew kept comparing as "still not enough" for as
+// long as they sat in history, which is what caused the runaway growth this
+// replaces.)
 //
-// Sampled EVERY FRAME, not on packet arrival. Arrival is when margin is at its
-// maximum — it then decays until the next packet lands — so sampling there
-// measures the best case and misses the whole failure mode where the stream
-// itself is uneven rather than late. That is not hypothetical: Room.js skips a
-// cast entirely when it has nothing to say to a player and drops to a 1Hz idle
-// heartbeat, and the stream is volatile, so casts are dropped on a busy link
-// by design. Replaying the arrival-sampled version against those patterns, the
-// buffer sat at its starting 110ms while playback starved 31% of frames on a
-// perfectly clean link with half the casts skipped.
+// Sampled EVERY FRAME, not on packet arrival. Arrival is when the equivalent
+// "how far ahead did this land" quantity is at its best — it only gets worse
+// between packets — so sampling only there measures the best case and misses
+// the whole failure mode where the stream itself is uneven rather than late.
+// That is not hypothetical: Room.js skips a cast entirely when it has nothing
+// to say to a player and drops to a 1Hz idle heartbeat, and the stream is
+// volatile, so casts are dropped on a busy link by design.
 //
-// Gated on at least one remote player actually MOVING. Without that gate the
-// idle heartbeat alone would peg the buffer at maximum: margin goes a full
-// second negative between heartbeats, which is meaningless when the reason the
-// server sent nothing is that nothing moved.
+// Gated on at least one remote player actually MOVING (and on the stream
+// still flowing — see _INTERP_STALE_MS below). Without the moving gate, the
+// idle heartbeat alone would drive neededInterp up by a full second between
+// packets — meaningless when the reason the server sent nothing is that
+// nothing moved, and disastrous fed into a peak detector that can't tell "no
+// data because nothing happened" from "no data because the link died."
 const _INTERP_MIN = 70;    // one packet interval + a little
 const _INTERP_MAX = 320;   // past this the link is broken, not jittery
-// Target for the worst margin in the recent window — a bit over one packet
-// interval. Swept against the traces (25/40/55/70): below 55 a link with
-// congestion episodes runs at roughly twice the playback-rate deviation and
-// starves 2% of frames instead of 0.6%; above it nothing improves and a lossy
-// link starts paying ~45ms of latency for no gain.
-const _MARGIN_FLOOR = 55;
-// Only give width back once there is this much more than the floor to spare.
-// Deliberately wide, and the width was measured rather than guessed: the
-// steady-state margin on a clean link sits inside this dead zone, so in
-// practice the loop only ever GROWS the buffer for a link that needs it and
-// leaves a good one at its 110ms starting value. Narrowing the zone does drop
-// a clean link to ~45-55ms — but it also puts the controller back into the
-// shrink/re-grow cycle this asymmetry exists to prevent, and that costs far
-// more than it buys: at slack 20 a link with congestion episodes goes from
-// 0.014 to 0.050 playback-rate deviation, and at slack 10 a 5%-loss link
-// oscillates outright (0.046, and 198ms of latency instead of 53ms). Trading
-// ~11ms on good links for stability on bad ones is the whole point here.
+// Safety margin added on top of whatever the peak detector below says is
+// strictly required, covering frame-scheduling noise (rAF jitter, a
+// main-thread hiccup) that isn't a network signal at all and so isn't part of
+// neededInterp itself.
+const _INTERP_FLOOR = 15;
+// How long a single bad moment keeps costing buffer. neededInterp jumps the
+// peak up INSTANTLY on a new worse sample (an under-sized buffer is a visible
+// stall — there's nothing to gain by phasing that in), then relaxes back down
+// toward whatever is currently being observed with this time constant. A
+// pattern that recurs faster than TAU (a bad episode every few seconds) keeps
+// re-triggering the peak before it has decayed, so the buffer stays sized for
+// it; a single isolated blip decays away within a couple of TAU and stops
+// costing anything.
 //
-// The shrink path is not dead code — it is what recovers a player whose link
-// improves. Measured: 60s of a bad link grows the buffer, and ~2s after the
-// link clears it is back at 110ms.
-const _MARGIN_SLACK = 45;
-// Fast attack, slow release. Widening is urgent: the alternative is a visible
-// stall. Narrowing is pure optimisation and must never itself cause the next
-// stall, so it waits for a long quiet stretch and then moves at a trickle.
-// A symmetric controller was measurably worse — on a link that spikes every
-// few seconds it re-widened and re-narrowed in step with the spikes, and that
-// oscillation is itself a playback-rate wobble (rate σ 0.084 vs 0.052).
-// Per-frame samples are reduced into 100ms buckets holding that slot's
-// minimum, so the windows below cost a fixed ~240 comparisons per bucket roll
-// (10/s) instead of a full rescan of thousands of frame samples every frame.
-const _MARGIN_BUCKET_MS   = 100;
-const _MARGIN_BUCKETS     = 200;  // 20s of history
-const _MARGIN_SHORT_BUCKETS = 40; //  4s — drives widening
-const _MARGIN_RELEASE     = 3;    // ms per bucket once the long window is clear
-const _marginBuf = new Float32Array(_MARGIN_BUCKETS).fill(Infinity);
-let _marginIdx = 0, _marginAt = 0, _marginFilled = 0;
+// This replaces two earlier designs that both tracked "the worst value over a
+// fixed window" and both failed for reasons a window structurally cannot
+// avoid. A hard minimum is dominated by a single outlier for that outlier's
+// ENTIRE window lifetime: one 150ms hiccup on an otherwise perfect link pinned
+// the buffer at its 320ms ceiling for over 20 seconds, because the min stayed
+// poisoned by that one sample for as long as it remained anywhere in the 4s
+// window, re-triggering a fresh widen on every one of the ~40 bucket-rolls it
+// was visible for. A percentile fixed THAT (a lone sample can't move a
+// percentile), but then needed the real pattern it was sized against to be
+// wide enough, in bucket-count terms, to cross the percentile threshold — a
+// genuine 300ms burst inside a 4-second/40-bucket window needed 5+ bad
+// buckets to register at p90 and simply went undetected, so a link with real
+// periodic trouble (180ms spikes every 4s) still starved. A continuous decay
+// has neither failure mode: there is no "in window / out of window" edge for
+// any one sample to land on the wrong side of.
+const _INTERP_TAU_MS = 2000;
+// Nothing for this long means the stream has stopped rather than fallen
+// behind. Generously past the server's own 1Hz idle heartbeat, because the
+// heartbeat is the floor on how often ANYTHING arrives, and a player with
+// company gets 20 casts a second. A stream that has genuinely stopped is not
+// a buffer that's too small — widening cannot help a link with nothing coming
+// down it at all — so those moments are excluded rather than read as an
+// infinite deficit.
+const _INTERP_STALE_MS = 400;
+
+// Peak-hold state: the current (decaying) worst neededInterp, and when it was
+// last updated.
+let _neededPeak = _INTERP_MIN - _INTERP_FLOOR;
+let _neededAt = 0;
 // Newest server timestamp seen on any snapshot — the front edge playback is
-// chasing — and when the last one actually landed, for the staleness guard in
-// netMarginTick.
+// chasing — and when the last packet actually landed, for the staleness guard
+// above.
 let _netLastSnapT = -Infinity;
 let _netLastPktAt = -Infinity;
-// Nothing for this long means the stream has stopped rather than fallen
-// behind. Generously past the server's own 1Hz idle heartbeat would suggest,
-// because the heartbeat is the floor on how often ANYTHING arrives, and a
-// player with company gets 20 casts a second.
-const _MARGIN_STALE_MS = 400;
-// Ceiling on how much one bucket may widen the buffer (10 buckets/s, so up to
-// 400ms/s — still faster than any real link degrades). Without it a single bad
-// sample sets the target hundreds of ms away in one step, and the slow release
-// then takes seconds to undo it.
-const _MARGIN_GROW_MAX = 40;
 // Current (smoothed) and desired interpolation delay.
 let _interpMs = 110, _interpTarget = 110;
 let _interpAt = 0;
@@ -269,68 +272,34 @@ function _netJitterSample(ms) {
 }
 
 // Called once per rendered frame from the interpolation loop (js/game.js).
-// `renderT` is the playback time that frame actually drew at, `anyMoving`
-// whether any remote player was being interpolated in motion — see the gate
-// note above for why an idle world must not feed this.
-function netMarginTick(renderT, anyMoving) {
+// `anyMoving`: whether any remote player was actually being interpolated in
+// motion this frame — see the gate note above for why an idle world must not
+// feed this.
+function netMarginTick(anyMoving) {
   if (_clkNow === null || _netLastSnapT === -Infinity) return;
   const perf = performance.now();
-  if (_marginAt === 0) _marginAt = perf;
-  // A stream that has STOPPED is not a buffer that is too small, and the two
-  // have to be told apart or every interruption pegs the buffer at maximum.
-  // Once nothing has arrived for _MARGIN_STALE_MS the margin falls without
-  // bound — a 3s gap reads as -3000 — and a controller fed that ratchets to
-  // the ceiling in a couple of buckets and then needs several seconds of slow
-  // release to come back down. Backgrounding the tab, a reconnect, or simply
-  // walking somewhere with nobody else around would each do it. Widening the
-  // buffer cannot help any of them; extrapolation and the reconnect path are
-  // what cover a stopped stream.
-  const flowing = (perf - _netLastPktAt) <= _MARGIN_STALE_MS;
+  if (_neededAt === 0) _neededAt = perf;
+  const dt = Math.max(0, perf - _neededAt);
+  _neededAt = perf;
+
+  const flowing = (perf - _netLastPktAt) <= _INTERP_STALE_MS;
   if (anyMoving && flowing) {
-    const m = _netLastSnapT - renderT;
-    if (m < _marginBuf[_marginIdx]) _marginBuf[_marginIdx] = m;
+    const needed = _clkNow - _netLastSnapT;
+    if (needed > _neededPeak) {
+      _neededPeak = needed;   // instant attack
+    } else {
+      // Exponential relax toward the current sample — old peaks fade
+      // continuously rather than falling off a window's edge.
+      const decay = Math.exp(-dt / _INTERP_TAU_MS);
+      _neededPeak = needed + (_neededPeak - needed) * decay;
+    }
   }
-  if (perf - _marginAt < _MARGIN_BUCKET_MS) return;
-
-  // Roll forward, clearing every bucket passed so a quiet stretch cannot leave
-  // a stale minimum behind.
-  const rolls = Math.min(_MARGIN_BUCKETS, Math.floor((perf - _marginAt) / _MARGIN_BUCKET_MS));
-  for (let i = 0; i < rolls; i++) {
-    _marginIdx = (_marginIdx + 1) % _MARGIN_BUCKETS;
-    _marginBuf[_marginIdx] = Infinity;
-  }
-  _marginAt += rolls * _MARGIN_BUCKET_MS;
-  _marginFilled = Math.min(_MARGIN_BUCKETS, _marginFilled + rolls);
-
-  let mnShort = Infinity;
-  const shortN = Math.min(_marginFilled, _MARGIN_SHORT_BUCKETS);
-  for (let i = 1; i <= shortN; i++) {
-    const v = _marginBuf[(_marginIdx - i + _MARGIN_BUCKETS) % _MARGIN_BUCKETS];
-    if (v < mnShort) mnShort = v;
-  }
-  // Infinity means no moving player was seen in the whole short window —
-  // nothing to size the buffer against, so leave it where it is.
-  if (mnShort === Infinity) { _interpTarget = _interpMs; return; }
-  if (mnShort < _MARGIN_FLOOR) {
-    // Widen by the shortfall, bounded — see _MARGIN_GROW_MAX.
-    const grow = Math.min(_MARGIN_FLOOR - mnShort, _MARGIN_GROW_MAX);
-    _interpTarget = Math.min(_INTERP_MAX, _interpMs + grow);
-    return;
-  }
-  if (_marginFilled < _MARGIN_BUCKETS) { _interpTarget = _interpMs; return; }
-  let mnLong = Infinity;
-  for (let i = 0; i < _MARGIN_BUCKETS; i++) if (_marginBuf[i] < mnLong) mnLong = _marginBuf[i];
-  _interpTarget = (mnLong !== Infinity && mnLong > _MARGIN_FLOOR + _MARGIN_SLACK)
-    ? Math.max(_INTERP_MIN, _interpMs - _MARGIN_RELEASE)
-    : _interpMs;
+  // Recomputed every call (not only when the peak actually moved) so the
+  // target stays in lockstep with the peak with no separate "did it change"
+  // bookkeeping — this is cheap, it's one clamp.
+  _interpTarget = Math.max(_INTERP_MIN, Math.min(_INTERP_MAX, _neededPeak + _INTERP_FLOOR));
 }
 
-// The delay itself has to move gently. Playback time is (clock - delay), so
-// GROWING the delay pushes playback back toward the past: change it in one
-// step and every other player visibly stalls for exactly that many ms. Capped
-// at 0.15ms per ms of real time, playback still advances at 85% speed while
-// the buffer widens, which reads as a barely perceptible slow-motion instead
-// of a hitch.
 // Read-only views for the perf overlay (js/game.js): the measured jitter the
 // buffer is sized from, and the buffer itself. Separate from netInterpMs()
 // below because that one ADVANCES the smoothing — the overlay must be able to
@@ -345,13 +314,33 @@ function netJitterP95() {
   return tmp[Math.min(tmp.length - 1, Math.floor(tmp.length * 0.95))] || 0;
 }
 
+// The delay itself has to move gently, and NOT symmetrically. Playback time is
+// (clock - delay), so GROWING the delay pushes playback back toward the past:
+// change it in one step and every other player visibly stalls for exactly
+// that many ms. Capped at up to 1ms of delay per ms of real time — i.e.
+// growth can fully absorb a deficit that is itself growing in real time,
+// which matters because the peak detector above can raise its target within a
+// single ~200-300ms burst, and if the smoothing here can't keep pace with
+// THAT, the buffer is sized correctly on paper but still starves during every
+// occurrence (measured: at the old single shared rate of 0.15, a recurring
+// 180ms-spike link still starved ~9-13% of frames despite the peak detector
+// correctly flagging the need; at up to 1.0 that drops to under 1%, with
+// overshoot bounded to single-digit ms — comfortably inside what the
+// extrapolation in js/game.js already covers on its own).
+//
+// Shrinking stays at the old slow rate: it is optimisation, never urgent, and
+// a symmetric (fast/fast) controller was measurably worse for the same reason
+// found in the earlier window-based design — a link that spikes every few
+// seconds re-widened and re-narrowed in step with the spikes, and that
+// oscillation is itself a playback-rate wobble.
 function netInterpMs() {
   const perf = performance.now();
   if (!_interpAt) { _interpAt = perf; return _interpMs; }
   const dt = Math.max(0, perf - _interpAt);
   _interpAt = perf;
   const err = _interpTarget - _interpMs;
-  const step = Math.min(Math.abs(err), dt * 0.15);
+  const rate = err > 0 ? 1.0 : 0.15;
+  const step = Math.min(Math.abs(err), dt * rate);
   _interpMs += Math.sign(err) * step;
   return _interpMs;
 }

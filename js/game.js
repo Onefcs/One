@@ -35,6 +35,9 @@ const _EXTRAP_MAX_V = 175 * 2 / 1000;
 // dropping the odd packet, a steady stream of them means the interpolation
 // delay is not keeping up and the adaptive sizing should be widening it.
 let _netStarvedFrames = 0;
+// Last snapshot-interpolation playback time actually rendered at — the
+// monotonic floor for _renderT above.
+let _lastRenderT = 0;
 // _netStarvedFrames sampled into a per-second rate, so the overlay reads a
 // stable number instead of a counter racing upward.
 let _netStarvedRate = 0, _netStarvedAt = 0, _netStarvedBase = 0;
@@ -893,15 +896,25 @@ function update(dt, realDt) {
   // Snapshot interpolation — render others at (serverNow - interpolation
   // delay). Between two known positions this is exact and perfectly linear:
   // no prediction, so no prediction error to correct. netClockNow() is
-  // monotonic and netInterpMs() is sized from the link's measured jitter —
-  // see both in js/network.js.
+  // monotonic by construction; netInterpMs() is sized from the link's
+  // measured needs — see both in js/network.js.
   const _clkNow = netClockNow();
-  const _renderT = _clkNow > 0 ? _clkNow - netInterpMs() : 0;
+  let _renderT = _clkNow > 0 ? _clkNow - netInterpMs() : 0;
+  // Playback must never run backward — an interpolation buffer growing
+  // faster than the render clock advances (both are independently
+  // rate-limited; see netInterpMs) can, in rare overlap, still let
+  // (clock - delay) dip below its own last value by a fraction of a
+  // millisecond. netClockNow()'s own monotonicity guarantee is about the
+  // clock alone, not about clock-minus-a-separately-growing-delay, so this
+  // needs its own hard floor rather than inheriting one. Cheap, and it's the
+  // difference between "provably can't happen" and "practically doesn't."
+  if (_renderT > 0 && _renderT < _lastRenderT) _renderT = _lastRenderT;
+  if (_renderT > 0) _lastRenderT = _renderT;
   // Whether anyone is actually in motion this frame. The interpolation buffer
   // is only sized against frames where this is true — an idle world tells us
-  // nothing about whether the buffer is big enough, and counting it would peg
-  // the buffer at maximum every time the server correctly goes quiet. See
-  // netMarginTick (js/network.js).
+  // nothing about whether the buffer is big enough, and counting it would
+  // read a full second of silence between idle heartbeats as an unbounded
+  // deficit. See netMarginTick (js/network.js).
   let _anyMoving = false;
   otherPlayers.forEach((op, id) => {
     if (op.moving && (op.hp || 0) > 0) _anyMoving = true;
@@ -999,8 +1012,8 @@ function update(dt, realDt) {
       }
     }
   });
-  // After the loop, so it sees this frame's real playback time and motion state.
-  netMarginTick(_renderT, _anyMoving);
+  // After the loop, so it sees this frame's motion state.
+  netMarginTick(_anyMoving);
   let _corpseExpired = false;
   serverEnemies.forEach(e => {
     // Corpse cleanup must run regardless of distance (a far corpse would
