@@ -1581,7 +1581,7 @@ function netConnect(onReady) {
   // storage moves too — and this is how the change reaches the screen. The
   // client no longer holds an item set of its own to reconcile against; it
   // renders this one.
-  socket.on('inventorySync', ({ inventory, equipment, storage } = {}) => {
+  socket.on('inventorySync', ({ inventory, equipment, storage, codex } = {}) => {
     if (!player) return;
     if (Array.isArray(inventory) && typeof _migrateInventory === 'function') {
       player.inventory = _migrateInventory(inventory);
@@ -1604,11 +1604,19 @@ function netConnect(onReady) {
       Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
       player.equipment = { ...blank, ...rebuilt };
     }
+    // Item codex (shared/definitions.js) — server-computed (_syncCodex,
+    // server/inventory.js) off whatever inventory/equipment/storage it just
+    // sent, so it always arrives alongside them. Only ever grows, so merging
+    // is as safe as replacing and survives an out-of-order arrival either way.
+    if (codex && typeof codex === 'object') {
+      player.codex = { ...(player.codex || {}), ...codex };
+    }
     if (typeof recompute === 'function') recompute();
     if (typeof updateInvUI === 'function') updateInvUI();
     // The storage NPC panel indexes straight into the arrays just replaced —
     // see refreshStorageNpc (js/npc.js). No-op when it isn't open.
     if (typeof refreshStorageNpc === 'function') refreshStorageNpc();
+    if (typeof _refreshCodexPanelIfOpen === 'function') _refreshCodexPanelIfOpen();
   });
 
   // Merchant sale confirmed — the item is already gone via the
@@ -2653,6 +2661,7 @@ function _finishOnlineStart() {
   if (typeof showGramShopBtn === 'function') showGramShopBtn();
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
+  if (typeof showCodexBtn === 'function') showCodexBtn();
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { TILE, WALL } = require('./dungeon');
 const { floorEntry } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
+        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal, codexBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
@@ -45,7 +45,7 @@ const { encodeGameState, packGrid } = require('../../shared/netcodec');
 // Replicates client recompute() formula — single source of truth for server
 // stats. Must stay step-for-step identical to recompute() (js/player.js) for
 // every PERMANENT stat source: base + upgrades + equipment (including its
-// enhancement) + passive skills. Temporary buffs (potions, skill buffs) are
+// enhancement) + passive skills + the item codex. Temporary buffs (potions, skill buffs) are
 // deliberately left out — those are exactly what the *_BUFF_HEADROOM ceilings
 // below leave room for on top of this value.
 //
@@ -95,10 +95,18 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
   // level to PASSIVE_MAX_LEVEL and only reads known passive ids, so a client
   // can't inflate these by sending junk in savedData.passiveLevels.
   const pt = passiveBonusTotal(sd.passiveLevels, type || sd.type);
-  hpPct += pt.hpPct;
+  // Item codex (shared/definitions.js) — sd.codex is server-computed only
+  // (_syncCodex, server/inventory.js, called from _commitServerItems and the
+  // login/reconnect hydrate path in server/index.js), never taken from the
+  // client's save blob, so codexBonusTotal only ever sees ids this session
+  // actually held.
+  const cx = codexBonusTotal(sd.codex);
+  hpPct += pt.hpPct + cx.hpPct;
   h = Math.floor(h * (1 + hpPct));
   a = Math.floor(a * (1 + pt.atkPct));
   d = Math.floor(d * (1 + pt.defPct));
+  a = Math.floor(a * (1 + cx.atkPct));
+  d = Math.floor(d * (1 + cx.defPct));
   // Same multiplier recompute() applies via getClanBonus() — after passives,
   // like there.
   if (clanAtkBonusPct > 0) a = Math.floor(a * (1 + clanAtkBonusPct / 100));

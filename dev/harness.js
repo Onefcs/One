@@ -1486,7 +1486,13 @@ scenario('rating: bm reflects real gear, not just level and maxHp', async () => 
   const cd = CHAR_DEF.deathknight;
   const trueStats = RoomClass.computeStats(
     { lvl: 20, baseAtk: cd.baseAtk + 19, baseDef: cd.baseDef + 19, baseMaxHp: cd.baseHP + 19 * 20,
-      equipment: { weapon: { atk: 130, def: 0, hp: 1000, critChance: 0.50, enhance: 0 } }, upgrades: {} },
+      equipment: { weapon: { atk: 130, def: 0, hp: 1000, critChance: 0.50, enhance: 0 } }, upgrades: {},
+      // uq_sword_l is also an item-codex entry (CODEX_SETS's 'uniq' set,
+      // shared/definitions.js) — the geared account's login/reconnect
+      // hydrate registered it into sd.codex the moment it connected wearing
+      // it (see _syncCodex, server/inventory.js), so the real stored bm has
+      // the codex bonus folded in too and this mock has to match.
+      codex: { uq_sword_l: true } },
     cd, 'deathknight', 0,
   );
   const expected = calcBM({ lvl: 20, atk: trueStats.atk, def: trueStats.def, maxHp: trueStats.maxHp, upgrades: {} });

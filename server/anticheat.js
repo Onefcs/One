@@ -288,6 +288,11 @@ function _sanitizeSavedStats(raw) {
   // entitlement check.
   s.skillLevels    = _sanitizeKeyMap(s.skillLevels,    v => _clampInt(v, 0, 99, 0));
   s.passiveLevels  = _sanitizeKeyMap(s.passiveLevels,  v => _clampInt(v, 0, 99, 0));
+  // Item codex — same bounded-shape-only treatment as passiveLevels above.
+  // Unknown ids are harmless either way (codexBonusTotal, shared/
+  // definitions.js, only ever counts ids in CODEX_ITEM_IDS), but this is the
+  // one place every field's *shape* gets bounded regardless of what reads it.
+  s.codex          = _sanitizeKeyMap(s.codex,          v => !!v);
   s.advSkillLearned = _sanitizeKeyMap(s.advSkillLearned, v => !!v);
   s.advSkillActive  = _sanitizeKeyMap(s.advSkillActive,  v => !!v);
   // Active buff timers, in seconds. Only the buff types that exist, and never

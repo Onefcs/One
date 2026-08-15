@@ -919,6 +919,84 @@ function renderProfessionPanel() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ITEM CODEX ("Кодекс предметов") — permanent bonuses for gear ever owned.
+//  See CODEX_SETS/codexBonusTotal (shared/definitions.js) for the data and
+//  the bonus formula; player.codex is filled server-side (_syncCodex,
+//  server/inventory.js) and arrives via inventorySync (js/network.js), never
+//  written to from here — this file only renders it.
+// ─────────────────────────────────────────────────────────
+let _itemDefById = null;
+function _codexItemDef(id) {
+  if (!_itemDefById) {
+    _itemDefById = new Map();
+    ITEM_DEF.forEach(d => _itemDefById.set(d.id, d));
+  }
+  return _itemDefById.get(id) || null;
+}
+
+function openCodexPanel() {
+  const panel = document.getElementById('codex-panel');
+  if (!panel || !player) return;
+  panel.style.display = 'flex';
+  renderCodexPanel();
+}
+
+function closeCodexPanel() {
+  const panel = document.getElementById('codex-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _refreshCodexPanelIfOpen() {
+  const panel = document.getElementById('codex-panel');
+  if (panel && panel.style.display !== 'none') renderCodexPanel();
+}
+
+function renderCodexPanel() {
+  const body = document.getElementById('codex-panel-body');
+  if (!body || !player) return;
+  const codex = player.codex || {};
+  const bonus = (typeof codexBonusTotal === 'function') ? codexBonusTotal(codex) : { atkPct:0, defPct:0, hpPct:0 };
+  const totalItems = CODEX_ITEM_IDS.size;
+  const ownedItems = CODEX_SETS.reduce((n, s) => n + s.items.filter(id => codex[id]).length, 0);
+  const setsDone = CODEX_SETS.filter(s => s.items.every(id => codex[id])).length;
+
+  const summary = `
+    <div class="cdx-summary">
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.atkPct * 100).toFixed(1)}%</div><div class="cdx-summary-lbl">${t('cdxAtkLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.defPct * 100).toFixed(1)}%</div><div class="cdx-summary-lbl">${t('cdxDefLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.hpPct  * 100).toFixed(1)}%</div><div class="cdx-summary-lbl">${t('cdxHpLbl')}</div></div>
+    </div>
+    <div class="cdx-progress">${tVars('cdxProgressFmt', { have: ownedItems, total: totalItems, sets: setsDone, setsTotal: CODEX_SETS.length })}</div>
+  `;
+
+  const sets = CODEX_SETS.map(s => {
+    const have = s.items.filter(id => codex[id]).length;
+    const done = have === s.items.length;
+    const cells = s.items.map(id => {
+      const def = _codexItemDef(id);
+      if (!def) return '';
+      const owned = !!codex[id];
+      const rc = RARITY_COLOR[def.rarity] || '#aea599';
+      return `<div class="cdx-cell${owned ? ' owned' : ' locked'}" style="--cc:${rc}" title="${def.name}${owned ? '' : ' — ' + t('cdxLockedLbl')}">
+        ${def.img ? `<img src="${def.img}" width="26" height="26" style="image-rendering:pixelated">` : ''}
+        ${!owned ? `<div class="cdx-lock">${iconHTML('lock', 12, '#d1ccc5')}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `
+      <div class="cdx-set${done ? ' done' : ''}">
+        <div class="cdx-set-hdr">
+          <div class="cdx-set-name">${s.name}</div>
+          <div class="cdx-set-count">${have}/${s.items.length}</div>
+        </div>
+        <div class="cdx-set-bar"><div class="cdx-set-bar-fill" style="width:${(have / s.items.length) * 100}%"></div></div>
+        <div class="cdx-set-items">${cells}</div>
+      </div>`;
+  }).join('');
+
+  body.innerHTML = summary + `<div class="cdx-sets">${sets}</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
 //  PASSIVE SKILL UI
 // ─────────────────────────────────────────────────────────
 let _activeSkillSubTab = 'active';
@@ -1639,7 +1717,7 @@ function setInvTab(n) {
 // sense while actually playing — hidden on every other bottom-nav tab.
 // dataset.shown gates this so a button that hasn't been unlocked yet
 // (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn'];
+const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
 function _syncGameOnlyBtns(n) {
   _GAME_ONLY_BTNS.forEach(id => {
     const el = document.getElementById(id);
@@ -3196,6 +3274,24 @@ function _positionSeasonBtn() {
 function showSeasonBtn() {
   const btn = document.getElementById('season-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSeasonBtn(); }
+}
+
+// Codex button — stacks directly under Season, same rule as every button above it.
+function _positionCodexBtn() {
+  const seasonBtn = document.getElementById('season-btn');
+  const btn       = document.getElementById('codex-btn');
+  if (!btn || !seasonBtn) return;
+  const sTop = parseFloat(seasonBtn.style.top) || 0;
+  btn.style.top       = (sTop + 28 + 4) + 'px';
+  btn.style.left      = seasonBtn.style.left;
+  btn.style.width     = seasonBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
+function showCodexBtn() {
+  const btn = document.getElementById('codex-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionCodexBtn(); }
 }
 
 let _seasonTab = 'quests';

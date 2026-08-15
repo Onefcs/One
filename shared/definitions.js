@@ -1618,6 +1618,67 @@ const VIP_BONUSES = [
   { xp:100, gold:100, drop:100 }, // VIP 10
 ];
 
+// ── Item Codex ("Кодекс предметов") ─────────────────────────────────────────
+// A permanent, per-account "ever owned" record over a curated slice of
+// ITEM_DEF/UNIQUE_WEAPONS, grouped into themed sets (one line of gear per
+// set — e.g. every tier of the Death Knight's sword). Registering an item
+// (having ever held it, tracked server-side — see _syncCodex,
+// server/inventory.js) grants a tiny permanent stat bonus; completing every
+// item in a set grants a bigger one on top. Both fold into
+// recompute()/computeStats() exactly like PASSIVE_*/passiveBonusTotal above,
+// via codexBonusTotal below, so they're bounded by the same server-side
+// ceiling that already guards equipment and passives.
+//
+// Deliberately excludes materials, potions, boxes, keys and pets — this is a
+// gear-collection codex, not a full item census.
+const CODEX_SETS = [
+  { id:'sw', name:'Мечи Рыцаря смерти',    items:['sw1','sw2','sw3','sw4','sw5'] },
+  { id:'tw', name:'Топоры Лева',           items:['tw1','tw2','tw3','tw4','tw5'] },
+  { id:'bw', name:'Луки Рейнджера',        items:['bw1','bw2','bw3','bw4','bw5'] },
+  { id:'st', name:'Посохи',                items:['st1','st2','st3','st4','st5'] },
+  { id:'hm', name:'Шлемы',                 items:['hm1','hm2','hm3','hm4','hm5'] },
+  { id:'ar', name:'Броня',                 items:['ar1','ar2','ar3','ar4','ar5'] },
+  { id:'gl', name:'Перчатки',              items:['gl1','gl2','gl3','gl4','gl5'] },
+  { id:'bt', name:'Ботинки',               items:['bt1','bt2','bt3','bt4','bt5'] },
+  { id:'rn', name:'Кольца',                items:['rn1','rn2','rn3','rn4','rn5'] },
+  { id:'nd', name:'Пояса',                 items:['nd1','nd2','nd3','nd4','nd5'] },
+  { id:'cls_lev',         name:'Снаряжение Лева',              items:['cloak_c_lev','cloak_u_lev','artifact_c_lev','artifact_u_lev'] },
+  { id:'cls_deathknight',  name:'Снаряжение Рыцаря смерти',     items:['cloak_c_deathknight','cloak_u_deathknight','artifact_c_deathknight','artifact_u_deathknight'] },
+  { id:'cls_ranger',       name:'Снаряжение Рейнджера',         items:['cloak_c_ranger','cloak_u_ranger','artifact_c_ranger','artifact_u_ranger'] },
+  { id:'cls_mage',         name:'Снаряжение Мага',              items:['cloak_c_mage','cloak_u_mage','artifact_c_mage','artifact_u_mage'] },
+  { id:'cls_warlock',      name:'Снаряжение Чернокнижника',     items:['cloak_c_warlock','cloak_u_warlock','artifact_c_warlock','artifact_u_warlock'] },
+  { id:'uniq', name:'Легендарное оружие', items:['uq_sword_e','uq_sword_l','uq_axe_e','uq_axe_l','uq_bow_e','uq_bow_l','uq_staff_e','uq_staff_l','uq_heal_e','uq_heal_l'] },
+];
+
+// Every id CODEX_SETS ever mentions — the one place that decides whether an
+// owned item counts toward the codex at all (_syncCodex checks membership
+// against this, not against ITEM_DEF directly, precisely so it stays scoped
+// to gear and never picks up a material/potion/box/key/pet id).
+const CODEX_ITEM_IDS = new Set(CODEX_SETS.flatMap(s => s.items));
+
+// Flat bonus per stat, per uniquely-registered item / per fully-completed
+// set. Small on purpose — this is a completionist's long tail on top of
+// gear/passives/VIP, not a power spike: at full completion (80 items, 16
+// sets) it works out to roughly +16% atk, +16% def, +24% hp.
+const CODEX_ITEM_PCT = { atk: 0.001,  def: 0.001,  hp: 0.0015 };
+const CODEX_SET_PCT  = { atk: 0.005,  def: 0.005,  hp: 0.0075 };
+
+// `codex` is the {itemId: true} bag from _syncCodex/restoreFromSave. Sums it
+// into the same { atkPct, defPct, hpPct } shape passiveBonusTotal returns, so
+// recompute() (js/player.js) and computeStats (server/game/Room.js) can fold
+// it in with one extra line each, right next to the passive bonus.
+function codexBonusTotal(codex) {
+  const owned = codex && typeof codex === 'object'
+    ? Object.keys(codex).filter(id => codex[id] && CODEX_ITEM_IDS.has(id))
+    : [];
+  const setsDone = codex ? CODEX_SETS.filter(s => s.items.every(id => codex[id])).length : 0;
+  return {
+    atkPct: owned.length * CODEX_ITEM_PCT.atk + setsDone * CODEX_SET_PCT.atk,
+    defPct: owned.length * CODEX_ITEM_PCT.def + setsDone * CODEX_SET_PCT.def,
+    hpPct:  owned.length * CODEX_ITEM_PCT.hp  + setsDone * CODEX_SET_PCT.hp,
+  };
+}
+
 // ── Clan levels & cumulative bonuses ──────────────────────────
 // Each level's bonus is the CUMULATIVE total at that level (not the increment).
 // Shared (not just js/definitions.js) because the server needs the same atk%
@@ -1663,6 +1724,7 @@ if (typeof module !== 'undefined') module.exports = {
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
+  CODEX_SETS, CODEX_ITEM_IDS, CODEX_ITEM_PCT, CODEX_SET_PCT, codexBonusTotal,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,

@@ -32,6 +32,7 @@ const {
   MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
+  _syncCodex,
 } = require('./inventory');
 // VIP 3+ trades away the flat MARKET_MAX_ACTIVE cap for no cap at all —
 // Infinity compares false against activeCount forever, so the check below
@@ -5448,6 +5449,12 @@ io.on('connection', socket => {
       : (Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0);
     _lastStats.inventory = inventory;
     if (equipment) _lastStats.equipment = equipment;
+    // Item codex (shared/definitions.js) — every server-side item change
+    // funnels through here (see the file header comment above), so this is
+    // the one place a codex backfill needs to run rather than a hook on each
+    // of the dozen-plus individual grant paths. _syncCodex only ever adds
+    // keys, so re-scanning on every single call is cheap and safe.
+    _lastStats.codex = _syncCodex(_lastStats.codex, inventory, _lastStats.equipment, _lastStats.storage);
     _invRev++;
     // Every server-side item change funnels through here, so logging it here
     // covers all of them at once — and records the slot count before/after,
@@ -5463,13 +5470,13 @@ io.on('connection', socket => {
     // an inventory <-> storage move changes both halves at once — so writing
     // and syncing only part of it is what left the client holding an item in
     // two places at the same time.
-    const _fields = { inventory };
+    const _fields = { inventory, codex: _lastStats.codex };
     if (equipment) _fields.equipment = equipment;
     if (opts && opts.storage) _fields.storage = _lastStats.storage || [];
     const written = (opts && opts.persist === false) ? null : _persistSavedFields(authed, _fields);
     socket.emit('inventorySync', {
       inventory, equipment: _lastStats.equipment || {},
-      storage: _lastStats.storage || [],
+      storage: _lastStats.storage || [], codex: _lastStats.codex,
     });
     return written;
   }
@@ -9526,6 +9533,12 @@ io.on('connection', socket => {
         advSkillLearned: effectiveSaved.advSkillLearned,
         advSkillActive:  effectiveSaved.advSkillActive,
       });
+      // Item codex — the stored record plus a fresh scan of what this login
+      // is about to seat the session with, so an account that already owned
+      // qualifying gear before this feature shipped gets backfilled the first
+      // time it connects rather than only from its next item change.
+      effectiveSaved.codex = _syncCodex((_dbBase && _dbBase.codex) || {},
+        effectiveSaved.inventory, effectiveSaved.equipment, effectiveSaved.storage);
       _lastStats = effectiveSaved;
       // Baseline for saveProgress's own rate-based gold cap — without this,
       // the time this session spends actually playing before its first
@@ -9539,7 +9552,7 @@ io.on('connection', socket => {
       // has, not left to find out on the next unrelated sync.
       socket.emit('inventorySync', {
         inventory: effectiveSaved.inventory, equipment: effectiveSaved.equipment || {},
-        storage: effectiveSaved.storage || [],
+        storage: effectiveSaved.storage || [], codex: effectiveSaved.codex,
       });
       socket.emit('goldSync', { gold: effectiveSaved.gold });
       socket.emit('xpSync', {
@@ -11011,6 +11024,10 @@ io.on('connection', socket => {
       clean.inventory = _lastStats.inventory || [];
       clean.equipment = _lastStats.equipment || {};
       clean.storage   = _lastStats.storage   || [];
+      // Item codex — server-owned exactly like the three above (_syncCodex,
+      // server/inventory.js), taken from the session copy rather than
+      // whatever the client's save blob says.
+      clean.codex     = _lastStats.codex     || {};
     }
 
     // Quest progress is server-tracked: the counters are incremented from the

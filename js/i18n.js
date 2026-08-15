@@ -774,6 +774,16 @@ Object.assign(I18N_UI, {
   profpWillBeLbl: { ru: 'Станет', en: 'Will become', uk: 'Стане', es: 'Se convertirá', tr: 'Olacak', pt: 'Se tornará' },
   profpFarmHint: { ru: '📖 Книги продвинутых навыков падают только в Фарм зоне (21-30 ур.)', en: '📖 Advanced-skill books drop only in the Farm Zone (lvl 21-30)', uk: '📖 Книги просунутих навичок падають лише у Ферм-зоні (21-30 рів.)', es: '📖 Los libros de habilidad avanzada solo caen en la Zona de Farmeo (niv. 21-30)', tr: '📖 Gelişmiş yetenek kitapları yalnızca Farm Bölgesi\'nde düşer (sv. 21-30)', pt: '📖 Livros de habilidade avançada só caem na Zona de Farm (nv. 21-30)' },
 
+  // ── Item Codex (openCodexPanel, js/ui.js) — permanent bonuses for gear
+  // ever owned, see CODEX_SETS/codexBonusTotal in shared/definitions.js.
+  codexBtn: { ru: 'Кодекс', en: 'Codex' },
+  codexHdr: { ru: 'Кодекс предметов', en: 'Item Codex' },
+  cdxAtkLbl: { ru: 'к атаке', en: 'to attack' },
+  cdxDefLbl: { ru: 'к защите', en: 'to defense' },
+  cdxHpLbl: { ru: 'к здоровью', en: 'to health' },
+  cdxProgressFmt: { ru: 'Собрано {have}/{total} предметов · {sets}/{setsTotal} наборов', en: 'Collected {have}/{total} items · {sets}/{setsTotal} sets' },
+  cdxLockedLbl: { ru: 'не найден', en: 'not found' },
+
   // ── "What's new" login modal (js/ui.js's openWhatsNewModal, shown once per
   // WHATS_NEW_VERSION via localStorage — see js/network.js's _finishOnlineStart) ──
   whatsNewTitle: { ru: '🎉 Обновление!', en: '🎉 Update!', uk: '🎉 Оновлення!', es: '🎉 ¡Actualización!', tr: '🎉 Güncelleme!', pt: '🎉 Atualização!' },
