@@ -1163,12 +1163,25 @@ function itemCatalogBase(id) {
   return ITEM_DEF.find(d => d.id === id) || CRAFT_MATS.find(d => d.id === id) || BOX_DEF.find(d => d.id === id) || null;
 }
 
-// ── Кодекс предметов (item codex) ───────────────────────────────────────────
-// Registering a unique gear item permanently consumes it and grants a small,
-// fixed stat bonus that scales with the item's rarity — same idea as L2M/
-// Night Crow's item codex. Only gear that already carries combat stats
-// (ENHANCEABLE_SLOTS — weapon/armor/accessory/pet) is eligible; materials,
-// recipes, potions, keys and boxes never register.
+// ── Кодекс: наборы предметов (item collections, L2M/Night Crow-style) ──────
+// Each entry ("set") requires 2-4 SPECIFIC catalog items, each at its own
+// minimum enchant level ("точёный шмот") — registering an owned item that
+// meets a slot's {itemId, minEnhance} consumes it into that one slot of that
+// one set (see server's registerCodexSetItem). Completing every slot in a
+// set grants that set's flat stat bonus permanently. The same base item can
+// be required by many different sets, same as a real L2M item collection —
+// completing more than one of them needs a separate copy for each.
+//
+// The list itself is GENERATED deterministically from ITEM_DEF below, not
+// hand-authored and never randomized (no Math.random, no Date.now, fixed
+// iteration order throughout) — this file is loaded by both the server and
+// the client bundle, and the two have to agree on exactly what set #482
+// requires without ever shipping the ~1000 entries as hand-maintained data.
+//
+// Real crafted uniques (UNIQUE_WEAPONS, id-prefixed uq_) are deliberately
+// left out of the pool: they're a ~1-in-a-million drop, and consuming one
+// into a set for the same flat bonus an ordinary epic gets would be a trap,
+// not a sink.
 const CODEX_BONUS_BY_RARITY = {
   common:    { atk: 1 },
   uncommon:  { atk: 1, def: 1 },
@@ -1177,26 +1190,148 @@ const CODEX_BONUS_BY_RARITY = {
   legendary: { atk: 5, def: 3, hp: 30 },
 };
 
-function isCodexEligible(it) { return !!it && ENHANCEABLE_SLOTS.has(it.slot); }
+const _CODEX_UNIVERSAL_SLOTS = ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+const _CODEX_RARITY_TIERS = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+const _CODEX_RARITY_RU = { common: 'Обычный', uncommon: 'Необычный', rare: 'Редкий', epic: 'Эпический', legendary: 'Легендарный' };
+// How many enchant levels a set at rarity tier `i` (0-4) asks of its slots,
+// before a small per-slot offset (below) spreads that into the "mixed
+// +levels per slot" shape a real gear collection has, instead of every slot
+// demanding the exact same +N.
+const _CODEX_TIER_ENHANCE = [0, 2, 4, 6, 8];
 
-// Every ITEM_DEF entry that's eligible, in catalog order — the codex panel
-// lists exactly these ids as "known" vs "unregistered" without needing to
-// re-filter ITEM_DEF itself.
-const CODEX_ITEM_IDS = ITEM_DEF.filter(isCodexEligible).map(it => it.id);
+function _codexItemsFor(slot, rarity, cls) {
+  return ITEM_DEF.filter(it => it.slot === slot && it.rarity === rarity && !it.id.startsWith('uq_') &&
+    (!cls || (Array.isArray(it.forClass) && it.forClass.includes(cls))));
+}
 
-// Sums the fixed per-rarity bonus over a list of already-registered item ids.
-// An id with no (or no longer eligible) catalog entry is skipped rather than
-// thrown on — same as every other lookup against this catalog.
-function codexBonusTotal(registeredIds) {
+// Every k-combination of `arr`, in one fixed order — stands in for
+// Math.random so the generated set list is exactly reproducible between the
+// server process and the client bundle.
+function _kCombos(arr, k) {
+  const out = []; const combo = [];
+  (function rec(start) {
+    if (combo.length === k) { out.push(combo.slice()); return; }
+    for (let i = start; i < arr.length; i++) { combo.push(arr[i]); rec(i + 1); combo.pop(); }
+  })(0);
+  return out;
+}
+
+function _codexSlotReq(item, tierIdx, offset) {
+  return { itemId: item.id, minEnhance: Math.min(ENHANCE_MAX, _CODEX_TIER_ENHANCE[tierIdx] + offset) };
+}
+
+// Sums CODEX_BONUS_BY_RARITY over every required slot, plus a small (15%)
+// cut of what each slot's own minEnhance would be worth on that item via
+// enhanceBonus() — the same curve enhancing the item itself already uses,
+// just dialed down: this is a collection bonus, not a second copy of
+// enhancing the gear.
+function _codexSetBonus(slots) {
   const total = { atk: 0, def: 0, hp: 0 };
-  (registeredIds || []).forEach(id => {
-    const base = itemCatalogBase(id);
-    if (!isCodexEligible(base)) return;
-    const b = CODEX_BONUS_BY_RARITY[base.rarity];
-    if (!b) return;
-    total.atk += b.atk || 0;
-    total.def += b.def || 0;
-    total.hp  += b.hp  || 0;
+  slots.forEach(({ itemId, minEnhance }) => {
+    const base = itemCatalogBase(itemId);
+    if (!base) return;
+    const b = CODEX_BONUS_BY_RARITY[base.rarity] || {};
+    total.atk += b.atk || 0; total.def += b.def || 0; total.hp += b.hp || 0;
+    if (minEnhance > 0) {
+      const eb = enhanceBonus(base, minEnhance);
+      total.atk += Math.ceil((eb.atk || 0) * 0.15);
+      total.def += Math.ceil((eb.def || 0) * 0.15);
+      total.hp  += Math.ceil((eb.hp  || 0) * 0.15);
+    }
+  });
+  return total;
+}
+
+function _buildCodexSets() {
+  const CLASSES = ['deathknight', 'lev', 'ranger', 'mage', 'warlock'];
+  const sets = [];
+  let n = 0;
+  const ctr = {};
+  const nextIdx = key => (ctr[key] = (ctr[key] || 0) + 1);
+  const push = (name, cls, rarity, slots) => {
+    if (slots.some(s => !s)) return; // a required slot had no matching catalog item — skip rather than ship a broken set
+    sets.push({ id: 'col' + (n++), name, cls: cls || null, rarity, slots, bonus: _codexSetBonus(slots) });
+  };
+
+  // A) Armor-only sets: 2, 3 or 4 of the 6 universal slots, per rarity tier.
+  _CODEX_RARITY_TIERS.forEach((rarity, tIdx) => {
+    [2, 3, 4].forEach(k => {
+      _kCombos(_CODEX_UNIVERSAL_SLOTS, k).forEach(slotNames => {
+        const items = slotNames.map(sl => _codexItemsFor(sl, rarity, null)[0]);
+        const reqs = items.map((it, i) => it && _codexSlotReq(it, tIdx, i % 3));
+        push(`Комплект стойкости: ${_CODEX_RARITY_RU[rarity]} №${nextIdx('A:' + rarity)}`, null, rarity, reqs);
+      });
+    });
+  });
+
+  // B) Class weapon + 1-2 universal armor pieces, per class, per tier.
+  CLASSES.forEach(cls => {
+    _CODEX_RARITY_TIERS.forEach((rarity, tIdx) => {
+      const weapon = _codexItemsFor('weapon', rarity, cls)[0];
+      if (!weapon) return;
+      [1, 2].forEach(k => {
+        _kCombos(_CODEX_UNIVERSAL_SLOTS, k).forEach(slotNames => {
+          const armorItems = slotNames.map(sl => _codexItemsFor(sl, rarity, null)[0]);
+          const reqs = [_codexSlotReq(weapon, tIdx, 0), ...armorItems.map((it, i) => it && _codexSlotReq(it, tIdx, (i + 1) % 3))];
+          push(`Боевой комплект ${CHAR_DEF[cls].name}: ${_CODEX_RARITY_RU[rarity]} №${nextIdx('B:' + cls + rarity)}`, cls, rarity, reqs);
+        });
+      });
+    });
+  });
+
+  // C) Cloak+artifact (and weapon+cloak+artifact) per class — only common/
+  // uncommon exist for either slot (CLASS_GEAR_SALVAGE_RECIPES above).
+  ['common', 'uncommon'].forEach((rarity, tIdx) => {
+    CLASSES.forEach(cls => {
+      const cloak = _codexItemsFor('cloak', rarity, cls)[0];
+      const artifact = _codexItemsFor('artifact', rarity, cls)[0];
+      push(`Комплект силы: ${CHAR_DEF[cls].name} (${_CODEX_RARITY_RU[rarity]})`, cls, rarity,
+        [cloak && _codexSlotReq(cloak, tIdx, 0), artifact && _codexSlotReq(artifact, tIdx, 2)]);
+      const weapon = _codexItemsFor('weapon', rarity, cls)[0];
+      if (weapon) {
+        push(`Полный доспех: ${CHAR_DEF[cls].name} (${_CODEX_RARITY_RU[rarity]})`, cls, rarity,
+          [_codexSlotReq(weapon, tIdx, 0), cloak && _codexSlotReq(cloak, tIdx, 1), artifact && _codexSlotReq(artifact, tIdx, 2)]);
+      }
+    });
+  });
+
+  // D) Pet + 1-2 universal armor pieces, one running numeral per pet.
+  ITEM_DEF.filter(it => it.slot === 'pet').forEach(pet => {
+    const tIdx = _CODEX_RARITY_TIERS.indexOf(pet.rarity);
+    [1, 2].forEach(k => {
+      _kCombos(_CODEX_UNIVERSAL_SLOTS, k).forEach(slotNames => {
+        const armorItems = slotNames.map(sl => _codexItemsFor(sl, pet.rarity, null)[0]);
+        const reqs = [_codexSlotReq(pet, tIdx, 0), ...armorItems.map((it, i) => it && _codexSlotReq(it, tIdx, (i + 1) % 3))];
+        push(`Комплект спутника «${pet.name}» №${nextIdx('D:' + pet.id)}`, null, pet.rarity, reqs);
+      });
+    });
+  });
+
+  return sets;
+}
+
+const CODEX_SETS = _buildCodexSets();
+const _CODEX_SETS_BY_ID = new Map(CODEX_SETS.map(s => [s.id, s]));
+function codexSetById(id) { return _CODEX_SETS_BY_ID.get(id) || null; }
+
+// Does inventory item `it` satisfy requirement `req` ({itemId, minEnhance})?
+function codexItemMeetsReq(it, req) {
+  return !!it && !!req && it.id === req.itemId && (it.enhance || 0) >= req.minEnhance;
+}
+
+// Sums every COMPLETED set's bonus. `progress` is { [setId]: boolean[] } —
+// one flag per slot, true once that slot's item has been consumed into it.
+function codexTotalBonus(progress) {
+  const total = { atk: 0, def: 0, hp: 0 };
+  if (!progress) return total;
+  Object.keys(progress).forEach(setId => {
+    const set = codexSetById(setId);
+    const filled = progress[setId];
+    if (!set || !Array.isArray(filled) || filled.length !== set.slots.length) return;
+    if (!filled.every(Boolean)) return;
+    total.atk += set.bonus.atk || 0;
+    total.def += set.bonus.def || 0;
+    total.hp  += set.bonus.hp  || 0;
   });
   return total;
 }
@@ -1708,7 +1843,8 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
-  itemCatalogBase, CODEX_BONUS_BY_RARITY, CODEX_ITEM_IDS, isCodexEligible, codexBonusTotal,
+  itemCatalogBase, CODEX_BONUS_BY_RARITY,
+  CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,

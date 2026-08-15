@@ -100,9 +100,10 @@ function makePlayer(type) {
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     bonusSP: 0,
     rebirths: 0,
-    // Кодекс предметов — ids of permanently-registered gear (server-owned,
-    // see registerCodexItem/codexSync) and the flat stat bonus they total to.
-    codex: [],
+    // Кодекс: { [setId]: boolean[] } filled-slot progress per set
+    // (server-owned, see registerCodexSetItem/codexSync) and the flat stat
+    // bonus every COMPLETED set totals to.
+    codex: {},
     codexBonus: { atk: 0, def: 0, hp: 0 },
     // derived combat stats (computed by recompute)
     atkSpeed: d.atkSpeed,
@@ -1031,11 +1032,12 @@ function restoreFromSave(data) {
   // other loadout choice — see _activeSkillDef, js/player.js.
   player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...(data.advSkillLearned || {}) };
   player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...(data.advSkillActive || {}) };
-  // Server corrects this via codexSync moments after connect (registerCodexItem
-  // is the only path that ever changes it), same as skillLevels/passiveLevels
-  // above — restoring it here just avoids a stat flash on load.
-  player.codex = Array.isArray(data.codex) ? data.codex.slice() : [];
-  player.codexBonus = (typeof codexBonusTotal === 'function') ? codexBonusTotal(player.codex) : { atk:0, def:0, hp:0 };
+  // Server corrects this via codexSync moments after connect
+  // (registerCodexSetItem is the only path that ever changes it), same as
+  // skillLevels/passiveLevels above — restoring it here just avoids a stat
+  // flash on load. Guards against the old (pre-sets) array-shaped field too.
+  player.codex = (data.codex && typeof data.codex === 'object' && !Array.isArray(data.codex)) ? { ...data.codex } : {};
+  player.codexBonus = (typeof codexTotalBonus === 'function') ? codexTotalBonus(player.codex) : { atk:0, def:0, hp:0 };
   recompute();
   player.hp = (data.hp && data.hp > 0) ? Math.min(data.hp, player.maxHp) : player.maxHp;
 }

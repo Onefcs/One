@@ -1707,12 +1707,12 @@ function netConnect(onReady) {
     if (typeof updateProfileUI === 'function') updateProfileUI();
   });
 
-  // The authoritative codex — same "applied verbatim, not merged" reasoning
-  // as progressSync above: registerCodexItem is the only path that ever adds
-  // to it, so there is never a newer local version to protect.
+  // The authoritative codex progress — same "applied verbatim, not merged"
+  // reasoning as progressSync above: registerCodexSetItem is the only path
+  // that ever changes it, so there is never a newer local version to protect.
   socket.on('codexSync', ({ codex, bonus } = {}) => {
     if (!player) return;
-    if (Array.isArray(codex)) player.codex = codex.slice();
+    if (codex && typeof codex === 'object' && !Array.isArray(codex)) player.codex = { ...codex };
     player.codexBonus = bonus && typeof bonus === 'object' ? bonus : { atk: 0, def: 0, hp: 0 };
     if (typeof recompute === 'function') recompute();
     if (typeof _refreshCodexPanelIfOpen === 'function') _refreshCodexPanelIfOpen();
@@ -2348,10 +2348,13 @@ function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePa
 function netLearnAdvSkill(key)   { if (socket?.connected) socket.emit('learnAdvSkill', { key }); }
 function netToggleAdvSkill(key)  { if (socket?.connected) socket.emit('toggleAdvSkill', { key }); }
 
-// Consumes an inventory item into the codex. A request, not a result — the
-// server checks eligibility/ownership, deletes the item and answers with
-// codexSync (authoritative list + bonus) or itemError.
-function netRegisterCodexItem(idx) { if (socket?.connected) socket.emit('registerCodexItem', { idx }); }
+// Consumes an inventory item into one slot of one codex set. A request, not
+// a result — the server checks the item/enchant match and slot availability,
+// deletes the item and answers with codexSync (authoritative progress +
+// bonus) or itemError.
+function netRegisterCodexSetItem(setId, slotIdx, idx) {
+  if (socket?.connected) socket.emit('registerCodexSetItem', { setId, slotIdx, idx });
+}
 function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgrade', { key }); }
 
 // ── Item placement ──────────────────────────────────────────────────────────
