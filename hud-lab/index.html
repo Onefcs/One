@@ -1,0 +1,2149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кузница HUD</title>
+<style>
+/* ══════════════════════════════════════════════════════════════
+   HUD LAB — четыре живых макета игрового интерфейса
+   Ноль внешних зависимостей: только CSS, inline-SVG и canvas.
+   Кадр строится в натуральном размере игры (430×932) и
+   масштабируется трансформом, поэтому пропорции честные.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Токены витрины (наследуют палитру игры из css/style.css) ── */
+:root{
+  --void:#0c0906;
+  --void-2:#151009;
+  --leather:#2a1c12;
+  --leather-hi:#3c2917;
+  --iron:#6b5f52;
+  --iron-dim:#463c33;
+  --gold:#c9a34e;
+  --gold-hi:#f0cf83;
+  --gold-dim:#8a6c37;
+  --blood:#9c2a3a;
+  --ember:#d97f3f;
+  --parchment:#e9ddc4;
+  --parchment-dim:#a2977e;
+  --line:#33281d;
+
+  --font-display:Georgia,"Iowan Old Style","Palatino Linotype",serif;
+  --font-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-data:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+
+  --s:.68;                 /* масштаб макета телефона */
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--void);
+  color:var(--parchment);
+  font-family:var(--font-ui);
+  font-size:15px;
+  line-height:1.55;
+  overflow-x:hidden;
+}
+body::before{
+  content:"";
+  position:fixed;inset:0;
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(217,127,63,.16), transparent 60%),
+    radial-gradient(80% 50% at 15% 110%, rgba(156,42,58,.10), transparent 65%);
+  pointer-events:none;z-index:0;
+}
+.wrap{position:relative;z-index:1;max-width:1560px;margin:0 auto;padding:56px 28px 96px}
+
+/* ── Шапка витрины ─────────────────────────────────────────── */
+.eyebrow{
+  font-family:var(--font-data);
+  font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--gold-dim);
+  display:flex;align-items:center;gap:12px;
+}
+.eyebrow::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+h1{
+  font-family:var(--font-display);
+  font-weight:400;
+  font-size:clamp(38px,6vw,68px);
+  line-height:1.02;
+  letter-spacing:-.01em;
+  margin:18px 0 0;
+  text-wrap:balance;
+  color:var(--parchment);
+}
+h1 em{font-style:italic;color:var(--gold)}
+.lede{max-width:62ch;margin-top:18px;color:var(--parchment-dim);font-size:17px}
+.lede b{color:var(--parchment);font-weight:600}
+
+/* ── Панель управления демонстрацией ───────────────────────── */
+.console{
+  margin-top:34px;
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  padding:14px 16px;
+  background:linear-gradient(180deg,rgba(42,28,18,.62),rgba(18,13,9,.62));
+  border:1px solid var(--line);
+  border-radius:3px;
+  box-shadow:inset 0 1px 0 rgba(240,207,131,.09);
+}
+.console .lbl{
+  font-family:var(--font-data);font-size:10px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--gold-dim);margin-right:4px;
+}
+.btn{
+  font-family:var(--font-ui);font-size:13px;font-weight:600;
+  color:var(--parchment);
+  background:linear-gradient(180deg,#3a2917,#241811);
+  border:1px solid #4d3a22;
+  border-radius:2px;
+  padding:8px 15px;
+  cursor:pointer;
+  transition:border-color .16s,color .16s,transform .06s;
+}
+.btn:hover{border-color:var(--gold-dim);color:var(--gold-hi)}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.btn[aria-pressed="true"]{
+  border-color:var(--gold);color:var(--void);
+  background:linear-gradient(180deg,var(--gold-hi),var(--gold-dim));
+}
+.console .sep{width:1px;align-self:stretch;background:var(--line);margin:0 6px}
+
+/* ── Галерея макетов ───────────────────────────────────────── */
+.gallery{
+  margin-top:44px;
+  display:grid;
+  gap:40px 30px;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,322px),1fr));
+  align-items:start;
+}
+.card{display:flex;flex-direction:column;gap:18px;min-width:0}
+
+.card-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.card-num{
+  font-family:var(--font-data);font-size:11px;color:var(--gold-dim);
+  letter-spacing:.14em;
+}
+.card-name{font-family:var(--font-display);font-size:26px;line-height:1.1;color:var(--parchment)}
+.card-tag{font-size:13px;color:var(--parchment-dim);width:100%;margin-top:-4px}
+
+.swatches{display:flex;gap:5px;margin-top:2px}
+.sw{width:26px;height:11px;border-radius:1px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5)}
+
+.notes{list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:var(--parchment-dim)}
+.notes li{display:flex;gap:9px;line-height:1.45}
+.notes li::before{
+  content:"";flex:none;width:5px;height:5px;margin-top:8px;
+  background:var(--gold-dim);transform:rotate(45deg);
+}
+.notes b{color:var(--parchment);font-weight:600}
+
+/* ── Сцена телефона ────────────────────────────────────────── */
+.stage{
+  position:relative;
+  width:calc(430px * var(--s));
+  height:calc(932px * var(--s));
+  align-self:center;
+}
+.frame{
+  position:absolute;top:0;left:0;
+  width:430px;height:932px;
+  transform:scale(var(--s));
+  transform-origin:top left;
+  overflow:hidden;
+  background:#05060a;
+  border-radius:26px;
+  box-shadow:
+    0 0 0 6px #191410,
+    0 0 0 7px #3a2e22,
+    0 34px 70px -22px rgba(0,0,0,.9);
+  font-family:var(--font-ui);
+  user-select:none;
+  -webkit-user-select:none;
+}
+.scene{position:absolute;inset:0;width:430px;height:932px}
+.hud{position:absolute;inset:0}
+
+/* Зона большого пальца — включаемая диагностика, не украшение */
+.reach{position:absolute;inset:0;opacity:0;transition:opacity .25s;pointer-events:none}
+.frame.show-reach .reach{opacity:1}
+.reach i{
+  position:absolute;bottom:-150px;width:660px;height:660px;border-radius:50%;
+  border:1px dashed rgba(111,156,74,.55);
+  background:radial-gradient(circle,rgba(111,156,74,.13),rgba(111,156,74,0) 70%);
+}
+.reach i.l{left:-220px}
+.reach i.r{right:-220px}
+.reach span{
+  position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+  font-family:var(--font-data);font-size:10px;letter-spacing:.12em;
+  color:#9fc47a;background:rgba(8,14,6,.8);padding:4px 9px;border:1px solid rgba(111,156,74,.4);
+  white-space:nowrap;
+}
+
+/* Всплывающий урон — общий примитив для всех макетов */
+.dmg{
+  position:absolute;font-family:var(--font-display);font-weight:700;
+  pointer-events:none;animation:dmgFloat 1.05s cubic-bezier(.2,.7,.3,1) forwards;
+  text-shadow:0 2px 5px rgba(0,0,0,.95);
+}
+@keyframes dmgFloat{
+  0%{opacity:0;transform:translate(-50%,0) scale(.7)}
+  16%{opacity:1;transform:translate(-50%,-14px) scale(1.14)}
+  100%{opacity:0;transform:translate(-50%,-74px) scale(.94)}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   МАКЕТ 1 · ГОРН — развитие текущей темы игры: кожа, латунь,
+   гравировка. Строгая горизонтальная шапка, соты навыков.
+   ══════════════════════════════════════════════════════════════ */
+.v-ember{--e-gold:#c9a34e;--e-gold-hi:#f0cf83;--e-gold-dim:#8a6c37;--e-hp:#b8323f;--e-mp:#3f6fb8}
+
+.em-bar{
+  position:absolute;top:0;left:0;right:0;height:78px;
+  background:linear-gradient(180deg,rgba(30,22,12,.97),rgba(14,10,5,.99));
+  border-bottom:1px solid rgba(170,133,70,.5);
+  box-shadow:0 6px 18px -8px rgba(0,0,0,.9);
+}
+.em-bar::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(240,207,131,.75) 18%,rgba(240,207,131,.75) 82%,transparent);
+}
+.em-portrait{
+  position:absolute;left:11px;top:9px;width:60px;height:60px;border-radius:50%;
+  background:radial-gradient(circle at 34% 28%,#4a3a24,#150f08 72%);
+  border:2px solid var(--e-gold-hi);
+  box-shadow:0 0 0 1px #100c06,0 0 16px rgba(217,127,63,.35),inset 0 0 14px rgba(0,0,0,.8);
+  display:grid;place-items:center;overflow:hidden;
+}
+.em-portrait svg{width:38px;height:38px;color:#e8c98c;opacity:.92}
+.em-lvl{
+  position:absolute;left:52px;top:52px;
+  min-width:24px;height:20px;padding:0 4px;
+  display:grid;place-items:center;
+  background:linear-gradient(180deg,#3a2a14,#191006);
+  border:1px solid var(--e-gold);border-radius:3px;
+  font-family:var(--font-data);font-size:11px;font-weight:700;color:var(--e-gold-hi);
+  z-index:2;
+}
+.em-info{position:absolute;left:82px;top:9px;right:84px}
+.em-name{
+  font-family:var(--font-display);font-size:15px;color:#f2e6cb;letter-spacing:.01em;
+  display:flex;align-items:baseline;gap:7px;
+}
+.em-name span{font-family:var(--font-ui);font-size:10px;color:#a98c5c;letter-spacing:.04em}
+.em-gauge{
+  position:relative;height:13px;margin-top:5px;
+  background:linear-gradient(180deg,#100b06,#1d150c);
+  border:1px solid #4a3a22;border-radius:2px;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.9);
+  overflow:hidden;
+}
+.em-gauge i{
+  position:absolute;inset:1px;transform-origin:left;
+  transform:scaleX(var(--fill,1));
+  transition:transform .4s cubic-bezier(.3,.9,.3,1);
+  border-radius:1px;
+}
+.em-gauge::after{           /* блик стекла поверх заливки */
+  content:"";position:absolute;left:0;right:0;top:0;height:45%;
+  background:linear-gradient(180deg,rgba(255,255,255,.22),transparent);
+  pointer-events:none;
+}
+.em-hp i{background:linear-gradient(180deg,#d8465a,#8e1f2c)}
+.em-mp i{background:linear-gradient(180deg,#5b8fd8,#254a8e)}
+.em-gauge b{
+  position:absolute;inset:0;z-index:2;
+  font-family:var(--font-data);font-size:9px;font-weight:600;
+  color:#f5ead2;text-shadow:0 1px 2px rgba(0,0,0,.95);
+  display:flex;align-items:center;justify-content:center;letter-spacing:.03em;
+}
+.em-xp{
+  position:absolute;top:78px;left:0;right:0;height:4px;background:rgba(8,6,3,.9);
+}
+.em-xp i{
+  position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--fill,.4));
+  background:linear-gradient(90deg,#8a6c37,var(--e-gold-hi));
+  box-shadow:0 0 8px rgba(240,207,131,.55);
+  transition:transform .5s ease;
+}
+
+.em-map{
+  position:absolute;right:10px;top:7px;width:64px;height:64px;border-radius:50%;
+  background:radial-gradient(circle,#0d1408,#05070a 78%);
+  border:2px solid rgba(170,133,70,.75);
+  box-shadow:inset 0 0 18px rgba(0,0,0,.9),0 0 0 1px #120d07;
+  overflow:hidden;
+}
+.em-map .grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(120,160,90,.16) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(120,160,90,.16) 1px,transparent 1px);
+  background-size:9px 9px;
+  animation:mapDrift 12s linear infinite;
+}
+@keyframes mapDrift{to{background-position:0 -90px,-90px 0}}
+.em-map .me{
+  position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;
+  background:#8ee03a;border-radius:50%;box-shadow:0 0 8px #8ee03a;
+}
+.em-map .foe{position:absolute;width:4px;height:4px;background:#e5344a;border-radius:50%}
+.em-map .npc{position:absolute;width:4px;height:4px;background:#e69419;border-radius:50%}
+.em-zone{
+  position:absolute;left:0;right:0;bottom:4px;text-align:center;
+  font-family:var(--font-data);font-size:7.5px;font-weight:600;color:#e9c98a;
+  letter-spacing:.02em;text-shadow:0 1px 3px #000,0 0 6px #000;
+}
+
+/* Валюта */
+.em-purse{
+  position:absolute;right:10px;top:92px;display:flex;gap:6px;
+}
+.em-coin{
+  display:flex;align-items:center;gap:5px;
+  font-family:var(--font-data);font-size:11px;color:#e8d5a8;
+  background:linear-gradient(180deg,rgba(46,33,17,.9),rgba(20,14,7,.9));
+  border:1px solid #4a3a22;border-radius:2px;padding:2px 7px 2px 5px;
+}
+.em-coin svg{width:11px;height:11px}
+
+/* Бафы */
+.em-buffs{position:absolute;left:12px;top:94px;display:flex;gap:6px}
+.em-buff{
+  position:relative;width:32px;height:32px;
+  background:linear-gradient(180deg,var(--e-gold),var(--e-gold-dim));
+  display:grid;place-items:center;color:#f0cf83;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+}
+.em-buff::before{
+  content:"";position:absolute;inset:1px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:linear-gradient(180deg,#33240f,#150e06);
+}
+.em-buff svg{width:16px;height:16px;position:relative;z-index:1}
+.em-buff u{
+  position:absolute;z-index:2;bottom:-1px;left:0;right:0;height:2px;background:#f0cf83;
+  transform-origin:left;transform:scaleX(var(--t,1));
+}
+
+/* Цель */
+.em-target{
+  position:absolute;left:50%;top:140px;transform:translateX(-50%);
+  width:236px;padding:7px 10px 9px;
+  background:linear-gradient(180deg,rgba(28,19,10,.95),rgba(12,8,4,.95));
+  border:1px solid rgba(170,133,70,.55);
+  border-radius:3px;
+  box-shadow:0 10px 24px -12px rgba(0,0,0,.95);
+}
+.em-target::before,.em-target::after{
+  content:"";position:absolute;top:-1px;width:14px;height:14px;border:1px solid var(--e-gold-hi);
+}
+.em-target::before{left:-1px;border-right:0;border-bottom:0}
+.em-target::after{right:-1px;border-left:0;border-bottom:0}
+.em-tname{
+  font-family:var(--font-display);font-size:13px;color:#f0d9a8;
+  display:flex;justify-content:space-between;align-items:baseline;
+}
+.em-tname i{font-style:normal;font-family:var(--font-data);font-size:10px;color:#d2495a}
+.em-tbar{
+  position:relative;height:9px;margin-top:5px;
+  background:#120c06;border:1px solid #4a3a22;overflow:hidden;
+}
+.em-tbar i{
+  position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,1));
+  background:linear-gradient(180deg,#c8394c,#7b1b26);transition:transform .35s ease;
+}
+.em-cast{
+  position:relative;height:6px;margin-top:4px;background:#0e0a05;border:1px solid #4a3a22;overflow:hidden;
+}
+.em-cast i{
+  position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,0));
+  background:linear-gradient(90deg,#8a6c37,#f4a662);
+}
+.em-castlbl{
+  font-family:var(--font-data);font-size:8.5px;color:#c9a883;margin-top:3px;letter-spacing:.06em;
+}
+
+/* Квест-свиток */
+.em-quest{
+  position:absolute;right:10px;top:252px;width:126px;padding:9px 10px;
+  background:linear-gradient(180deg,rgba(233,221,196,.10),rgba(233,221,196,.04));
+  border-left:2px solid var(--e-gold);
+  backdrop-filter:blur(2px);
+}
+.em-qtitle{font-family:var(--font-display);font-size:11px;color:#f0d9a8}
+.em-qrow{
+  display:flex;justify-content:space-between;
+  font-family:var(--font-data);font-size:9.5px;color:#bda887;margin-top:5px;
+}
+.em-qrow b{color:#e9ddc4;font-weight:600}
+.em-qbar{height:3px;background:rgba(0,0,0,.6);margin-top:5px}
+.em-qbar i{display:block;height:100%;width:60%;background:var(--e-gold)}
+
+/* Отряд */
+.em-party{position:absolute;left:12px;top:252px;display:flex;flex-direction:column;gap:6px}
+.em-pcard{
+  width:112px;padding:4px 6px;
+  background:linear-gradient(180deg,rgba(30,21,12,.86),rgba(14,10,5,.86));
+  border:1px solid #3d2f1c;border-radius:2px;
+  display:flex;gap:6px;align-items:center;
+}
+.em-pav{
+  width:20px;height:20px;flex:none;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#4a3a24,#150f08);
+  border:1px solid #8a6c37;
+}
+.em-pinfo{flex:1;min-width:0}
+.em-pname{font-size:9.5px;color:#d8c9a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.em-pbar{height:4px;background:#120c06;margin-top:2px;border-radius:1px;overflow:hidden}
+.em-pbar i{display:block;height:100%;background:linear-gradient(90deg,#8e1f2c,#d8465a)}
+
+/* Журнал */
+.em-log{
+  position:absolute;left:12px;bottom:196px;width:200px;
+  font-family:var(--font-data);font-size:9.5px;line-height:1.7;color:#a9977a;
+  text-shadow:0 1px 3px #000;
+}
+.em-log b{color:#e0bd7c;font-weight:600}
+.em-log s{text-decoration:none;color:#d2495a}
+
+/* Джойстик */
+.em-joy{
+  position:absolute;left:28px;bottom:96px;width:116px;height:116px;border-radius:50%;
+  background:radial-gradient(circle,rgba(28,20,11,.55),rgba(10,7,4,.35));
+  border:1px solid rgba(170,133,70,.35);
+  box-shadow:inset 0 0 26px rgba(0,0,0,.65);
+}
+.em-joy::before,.em-joy::after{
+  content:"";position:absolute;background:rgba(170,133,70,.18);
+}
+.em-joy::before{left:8%;right:8%;top:50%;height:1px}
+.em-joy::after{top:8%;bottom:8%;left:50%;width:1px}
+.em-knob{
+  position:absolute;left:50%;top:50%;width:50px;height:50px;margin:-25px 0 0 -25px;
+  border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,#7a5f33,#2a1c10 75%);
+  border:1px solid rgba(240,207,131,.6);
+  box-shadow:0 5px 14px rgba(0,0,0,.7),inset 0 1px 5px rgba(255,220,150,.3);
+  animation:joyIdle 5.5s ease-in-out infinite;
+}
+@keyframes joyIdle{
+  0%,100%{transform:translate(0,0)}
+  25%{transform:translate(16px,-11px)}
+  55%{transform:translate(-13px,9px)}
+  80%{transform:translate(7px,14px)}
+}
+
+/* Соты навыков */
+.em-skills{position:absolute;right:16px;bottom:88px;width:172px;height:172px}
+.em-hex{
+  position:absolute;width:56px;height:62px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:linear-gradient(180deg,var(--e-gold-hi),var(--e-gold-dim));
+  display:grid;place-items:center;color:#f0cf83;
+  filter:drop-shadow(0 4px 10px rgba(0,0,0,.65));
+}
+.em-hex::before{                 /* тёмная сердцевина: кайма = 2 px рамка снаружи */
+  content:"";position:absolute;inset:2px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:linear-gradient(180deg,#3a2a14,#150e06);
+}
+.em-hex svg{width:26px;height:26px;position:relative;z-index:1}
+.em-hex .cd{
+  position:absolute;inset:0;
+  background:conic-gradient(from 0deg,rgba(4,3,2,.82) calc(var(--cd,0) * 360deg),transparent 0);
+  pointer-events:none;
+}
+.em-hex .cdn{
+  position:absolute;inset:0;display:grid;place-items:center;
+  font-family:var(--font-data);font-size:14px;font-weight:700;color:#f5e6c4;
+  text-shadow:0 2px 4px #000;
+}
+.em-hex[data-ready="1"] .cdn{display:none}
+.em-hex:not([data-ready="1"]) svg{opacity:.3}
+.em-hex[data-ready="1"]{animation:hexReady 2.6s ease-in-out infinite}
+@keyframes hexReady{0%,100%{filter:brightness(1)}50%{filter:brightness(1.22)}}
+.em-h1{right:96px;bottom:104px}
+.em-h2{right:104px;bottom:36px}
+.em-h3{right:42px;bottom:2px}
+.em-atk{
+  position:absolute;right:6px;bottom:74px;width:88px;height:88px;border-radius:50%;
+  background:radial-gradient(circle at 36% 30%,#8f2d33,#3c0f14 74%);
+  border:2px solid var(--e-gold-hi);
+  box-shadow:0 0 22px rgba(200,60,70,.4),inset 0 2px 10px rgba(255,190,140,.25);
+  display:grid;place-items:center;color:#ffe4b8;
+  animation:atkPulse 2.4s ease-in-out infinite;
+}
+.em-atk svg{width:38px;height:38px}
+@keyframes atkPulse{0%,100%{box-shadow:0 0 18px rgba(200,60,70,.32),inset 0 2px 10px rgba(255,190,140,.25)}50%{box-shadow:0 0 34px rgba(210,73,90,.55),inset 0 2px 10px rgba(255,190,140,.3)}}
+.em-pot{
+  position:absolute;left:36px;bottom:34px;width:52px;height:52px;
+  background:linear-gradient(180deg,#33240f,#150e06);
+  border:1px solid var(--e-gold-dim,#8a6c37);border-radius:4px;
+  display:grid;place-items:center;color:#e2607a;
+}
+.em-pot svg{width:26px;height:26px}
+.em-pot u{
+  position:absolute;right:-3px;top:-5px;
+  font-family:var(--font-data);font-size:9px;color:#f0e0bd;text-decoration:none;
+  background:#2a1c10;border:1px solid #8a6c37;border-radius:2px;padding:0 3px;
+}
+.em-auto{
+  position:absolute;left:104px;bottom:38px;
+  font-family:var(--font-data);font-size:9px;letter-spacing:.1em;color:#8ee03a;
+  border:1px solid rgba(142,224,58,.45);background:rgba(20,32,10,.7);
+  padding:5px 9px;border-radius:2px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   МАКЕТ 2 · СТЕКЛО — современная «безрамочная» подача: плавающие
+   матовые острова, дуговые шкалы, голо-миникарта.
+   ══════════════════════════════════════════════════════════════ */
+.v-glass{--g-cy:#5fd6e8;--g-vi:#9d7bff;--g-hp:#ff5d73;--g-glass:rgba(16,22,34,.52)}
+
+.gl-xp{position:absolute;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,.07)}
+.gl-xp i{
+  position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--fill,.4));
+  background:linear-gradient(90deg,var(--g-vi),var(--g-cy));
+  box-shadow:0 0 10px rgba(95,214,232,.7);transition:transform .5s ease;
+}
+
+.gl-hero{
+  position:absolute;left:14px;top:18px;width:196px;height:76px;
+  background:var(--g-glass);
+  backdrop-filter:blur(14px) saturate(1.25);
+  -webkit-backdrop-filter:blur(14px) saturate(1.25);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:38px 10px 10px 38px;
+  box-shadow:0 12px 34px -16px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.14);
+}
+.gl-ring{position:absolute;left:6px;top:6px;width:64px;height:64px}
+.gl-ring svg{width:64px;height:64px;transform:rotate(-90deg)}
+.gl-ring .trk{fill:none;stroke:rgba(255,255,255,.10);stroke-width:4}
+.gl-ring .hp{fill:none;stroke:var(--g-hp);stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 0 4px rgba(255,93,115,.8))}
+.gl-ring .mp{fill:none;stroke:var(--g-cy);stroke-width:3;stroke-linecap:round;filter:drop-shadow(0 0 4px rgba(95,214,232,.8))}
+.gl-face{
+  position:absolute;left:11px;top:11px;width:42px;height:42px;border-radius:50%;
+  background:radial-gradient(circle at 34% 28%,#2c3550,#0b1020);
+  display:grid;place-items:center;color:#bcd4ff;
+}
+.gl-face svg{width:24px;height:24px}
+.gl-meta{position:absolute;left:78px;top:13px;right:12px}
+.gl-name{
+  font-size:14px;font-weight:650;color:#eaf2ff;letter-spacing:.01em;
+  display:flex;align-items:center;gap:6px;
+}
+.gl-name u{
+  text-decoration:none;font-family:var(--font-data);font-size:9px;font-weight:700;
+  color:#0a0f18;background:linear-gradient(180deg,var(--g-cy),#39a7bb);
+  border-radius:3px;padding:1px 5px;
+}
+.gl-sub{font-family:var(--font-data);font-size:9.5px;color:#8fa3c4;letter-spacing:.06em;margin-top:1px}
+.gl-nums{
+  display:flex;gap:10px;margin-top:7px;
+  font-family:var(--font-data);font-size:10px;font-variant-numeric:tabular-nums;
+}
+.gl-nums span{color:#8fa3c4}
+.gl-nums span b{color:#eaf2ff;font-weight:600}
+.gl-nums .h b{color:#ff8e9f}
+.gl-nums .m b{color:#8fe4f2}
+
+.gl-map{
+  position:absolute;right:14px;top:18px;width:82px;height:92px;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:linear-gradient(180deg,rgba(95,214,232,.55),rgba(157,123,255,.4));
+}
+.gl-map::after{
+  content:"";position:absolute;inset:1.5px;z-index:-0;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:rgba(8,13,22,.92);
+}
+.gl-map>*{position:relative;z-index:1}
+.gl-map .grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(95,214,232,.18) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(95,214,232,.18) 1px,transparent 1px);
+  background-size:11px 11px;
+  animation:mapDrift 14s linear infinite;
+}
+.gl-map .scan{
+  position:absolute;left:0;right:0;height:26px;
+  background:linear-gradient(180deg,transparent,rgba(95,214,232,.22),transparent);
+  animation:scan 3.4s linear infinite;
+}
+@keyframes scan{0%{top:-26px}100%{top:100%}}
+.gl-map .me{
+  position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;
+  background:#eaf2ff;border-radius:50%;box-shadow:0 0 8px #5fd6e8;
+}
+.gl-map .foe{position:absolute;width:4px;height:4px;background:var(--g-hp);border-radius:50%;box-shadow:0 0 5px var(--g-hp)}
+.gl-mapl{
+  position:absolute;right:14px;top:114px;width:82px;text-align:center;
+  font-family:var(--font-data);font-size:9px;letter-spacing:.14em;color:#7fc9d8;
+}
+
+.gl-purse{
+  position:absolute;right:106px;top:22px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;
+}
+.gl-chip{
+  display:flex;align-items:center;gap:6px;
+  font-family:var(--font-data);font-size:10.5px;color:#dbe6f8;
+  background:rgba(16,22,34,.6);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:3px 9px 3px 6px;
+}
+.gl-chip svg{width:11px;height:11px}
+
+.gl-buffs{position:absolute;left:16px;top:106px;display:flex;gap:7px}
+.gl-buff{
+  position:relative;width:30px;height:30px;border-radius:9px;
+  background:rgba(16,22,34,.6);backdrop-filter:blur(8px);
+  border:1px solid rgba(157,123,255,.4);
+  display:grid;place-items:center;color:#c9b8ff;
+}
+.gl-buff svg{width:15px;height:15px}
+.gl-buff u{
+  position:absolute;bottom:2px;left:4px;right:4px;height:2px;border-radius:2px;
+  background:var(--g-vi);transform-origin:left;transform:scaleX(var(--t,1));
+}
+
+.gl-target{
+  position:absolute;left:50%;top:150px;transform:translateX(-50%);width:250px;
+  background:rgba(14,10,16,.55);backdrop-filter:blur(12px);
+  border:1px solid rgba(255,93,115,.3);border-radius:14px;padding:9px 12px 11px;
+}
+.gl-tname{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:#ffd9de;font-weight:600}
+.gl-tname i{font-style:normal;font-family:var(--font-data);font-size:9.5px;color:#ff8e9f}
+.gl-tbar{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.09);margin-top:7px;overflow:hidden}
+.gl-tbar i{
+  position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--fill,1));
+  background:linear-gradient(90deg,#c2334a,var(--g-hp));transition:transform .35s ease;
+}
+.gl-cast{position:relative;height:4px;border-radius:2px;background:rgba(255,255,255,.07);margin-top:7px;overflow:hidden}
+.gl-cast i{
+  position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--fill,0));
+  background:linear-gradient(90deg,var(--g-vi),#ffd48a);
+}
+.gl-castlbl{
+  display:flex;justify-content:space-between;
+  font-family:var(--font-data);font-size:8.5px;color:#b9a7d8;margin-top:4px;letter-spacing:.05em;
+}
+
+.gl-quest{
+  position:absolute;right:14px;top:258px;width:136px;padding:10px 12px;
+  background:rgba(16,22,34,.5);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.1);border-radius:12px;
+}
+.gl-qhdr{display:flex;align-items:center;gap:7px}
+.gl-qring{width:26px;height:26px;flex:none}
+.gl-qring svg{width:26px;height:26px;transform:rotate(-90deg)}
+.gl-qring .t{fill:none;stroke:rgba(255,255,255,.12);stroke-width:3}
+.gl-qring .p{fill:none;stroke:var(--g-cy);stroke-width:3;stroke-linecap:round}
+.gl-qtitle{font-size:11px;color:#eaf2ff;font-weight:600;line-height:1.25}
+.gl-qsub{font-family:var(--font-data);font-size:9px;color:#8fa3c4;margin-top:6px}
+.gl-qsub b{color:#8fe4f2;font-weight:600}
+
+.gl-party{position:absolute;left:16px;top:258px;display:flex;flex-direction:column;gap:7px}
+.gl-pill{
+  width:124px;padding:5px 8px;border-radius:10px;
+  background:rgba(16,22,34,.5);backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.08);
+}
+.gl-prow{display:flex;justify-content:space-between;font-size:9.5px;color:#c3d2ea}
+.gl-prow em{font-style:normal;font-family:var(--font-data);color:#7f8fab}
+.gl-pbar{height:3px;border-radius:2px;background:rgba(255,255,255,.1);margin-top:4px;overflow:hidden}
+.gl-pbar i{display:block;height:100%;background:linear-gradient(90deg,#c2334a,var(--g-hp))}
+
+.gl-joy{
+  position:absolute;left:30px;bottom:100px;width:112px;height:112px;border-radius:50%;
+  background:rgba(16,22,34,.34);backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,.12);
+}
+.gl-joy .tick{position:absolute;inset:8px;border-radius:50%;border:1px dashed rgba(255,255,255,.10)}
+.gl-knob{
+  position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.5),rgba(120,150,200,.22) 60%,rgba(30,40,60,.5));
+  border:1px solid rgba(255,255,255,.4);
+  box-shadow:0 8px 22px rgba(0,0,0,.5),inset 0 1px 6px rgba(255,255,255,.4);
+  animation:joyIdle 5.5s ease-in-out infinite;
+}
+
+.gl-rail{
+  position:absolute;right:14px;bottom:96px;
+  display:flex;flex-direction:column;gap:9px;
+}
+.gl-slot{
+  position:relative;width:54px;height:54px;border-radius:16px;
+  background:rgba(16,22,34,.56);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.14);
+  display:grid;place-items:center;color:#d7e6ff;
+  box-shadow:0 10px 24px -14px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.16);
+}
+.gl-slot svg{width:26px;height:26px;position:relative;z-index:1}
+.gl-slot .cd{
+  position:absolute;inset:0;border-radius:16px;
+  background:conic-gradient(from 0deg,rgba(6,9,16,.78) calc(var(--cd,0) * 360deg),transparent 0);
+}
+.gl-slot .cdn{
+  position:absolute;inset:0;display:grid;place-items:center;z-index:2;
+  font-family:var(--font-data);font-size:13px;font-weight:700;color:#eaf2ff;
+}
+.gl-slot[data-ready="1"] .cdn{display:none}
+.gl-slot:not([data-ready="1"]) svg{opacity:.3}
+.gl-slot[data-ready="1"]{border-color:rgba(95,214,232,.65);box-shadow:0 0 16px rgba(95,214,232,.28),inset 0 1px 0 rgba(255,255,255,.18)}
+.gl-slot u{
+  position:absolute;right:5px;bottom:3px;z-index:2;
+  font-family:var(--font-data);font-size:8px;color:#8fa3c4;text-decoration:none;
+}
+.gl-atk{
+  position:absolute;right:16px;bottom:16px;width:74px;height:74px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,rgba(157,123,255,.85),rgba(60,40,120,.6) 60%,rgba(14,18,30,.75));
+  border:1px solid rgba(200,180,255,.55);
+  box-shadow:0 0 26px rgba(157,123,255,.4),inset 0 2px 12px rgba(255,255,255,.28);
+  display:grid;place-items:center;color:#f2ecff;
+  animation:atkGlow 2.6s ease-in-out infinite;
+}
+.gl-atk svg{width:34px;height:34px}
+@keyframes atkGlow{0%,100%{box-shadow:0 0 20px rgba(157,123,255,.32),inset 0 2px 12px rgba(255,255,255,.26)}50%{box-shadow:0 0 40px rgba(157,123,255,.55),inset 0 2px 12px rgba(255,255,255,.3)}}
+.gl-pot{
+  position:absolute;left:38px;bottom:34px;width:50px;height:50px;border-radius:15px;
+  background:rgba(16,22,34,.56);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,93,115,.42);
+  display:grid;place-items:center;color:#ff8e9f;
+}
+.gl-pot svg{width:24px;height:24px}
+.gl-pot u{
+  position:absolute;right:-4px;top:-6px;text-decoration:none;
+  font-family:var(--font-data);font-size:9px;color:#0a0f18;background:var(--g-hp);
+  border-radius:9px;padding:1px 5px;
+}
+.gl-log{
+  position:absolute;left:16px;bottom:200px;width:200px;
+  font-family:var(--font-data);font-size:9.5px;line-height:1.75;color:#8fa3c4;
+}
+.gl-log b{color:#8fe4f2;font-weight:600}
+.gl-log s{text-decoration:none;color:#ff8e9f}
+
+/* ══════════════════════════════════════════════════════════════
+   МАКЕТ 3 · РУНЫ — камень и жидкие сферы, поклон классике PC-MMO,
+   перенесённый в вертикальный экран.
+   ══════════════════════════════════════════════════════════════ */
+.v-rune{--r-stone:#2b2b31;--r-stone-hi:#4a4a54;--r-rune:#7ad4c8;--r-hp:#c8354a;--r-mp:#3f7fd8}
+
+.rn-orbwrap{position:absolute;left:12px;top:14px;display:flex;flex-direction:column;gap:9px}
+.rn-orb{
+  position:relative;width:74px;height:74px;border-radius:50%;
+  background:#0b0d10;
+  box-shadow:
+    0 0 0 3px #23232a,
+    0 0 0 5px #43434e,
+    0 0 0 6px #16161b,
+    inset 0 0 18px rgba(0,0,0,.9),
+    0 8px 20px -8px rgba(0,0,0,.9);
+  overflow:hidden;
+}
+.rn-orb canvas{position:absolute;inset:0;width:74px;height:74px}
+.rn-orb .gloss{
+  position:absolute;inset:0;border-radius:50%;
+  background:radial-gradient(circle at 34% 24%,rgba(255,255,255,.34),rgba(255,255,255,0) 46%);
+  pointer-events:none;
+}
+.rn-orb b{
+  position:absolute;inset:0;display:grid;place-items:center;
+  font-family:var(--font-data);font-size:11px;font-weight:700;color:#fff;
+  text-shadow:0 1px 4px rgba(0,0,0,.95);letter-spacing:.02em;
+}
+.rn-plate{
+  position:absolute;left:96px;top:16px;right:100px;
+  padding:8px 12px 10px;
+  background:linear-gradient(180deg,#3a3a42,#1e1e24 62%,#17171c);
+  border:1px solid #55555f;
+  border-radius:4px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -2px 6px rgba(0,0,0,.6),0 8px 18px -10px #000;
+}
+.rn-plate::after{                 /* высеченная фаска */
+  content:"";position:absolute;inset:3px;border:1px solid rgba(0,0,0,.35);border-radius:2px;pointer-events:none;
+}
+.rn-name{
+  font-family:var(--font-display);font-size:15px;color:#e6e3dc;
+  text-shadow:0 1px 0 #000;display:flex;align-items:baseline;gap:8px;
+}
+.rn-name u{
+  text-decoration:none;font-family:var(--font-data);font-size:10px;
+  color:var(--r-rune);letter-spacing:.08em;
+}
+.rn-cls{font-family:var(--font-data);font-size:9px;color:#9a9aa4;letter-spacing:.1em;margin-top:2px}
+.rn-xp{
+  position:relative;height:7px;margin-top:8px;
+  background:#0e0e12;border:1px solid #4a4a54;border-radius:2px;overflow:hidden;
+  display:flex;gap:2px;padding:1px;
+}
+.rn-xp span{flex:1;background:#1a1a20;border-radius:1px}
+.rn-xp span.on{background:linear-gradient(180deg,#9be6da,#3f9a8c);box-shadow:0 0 6px rgba(122,212,200,.5)}
+
+.rn-map{
+  position:absolute;right:12px;top:14px;width:82px;height:82px;
+  background:#0a0c0a;
+  border:1px solid #55555f;
+  box-shadow:inset 0 0 16px rgba(0,0,0,.9),0 0 0 3px #23232a,0 0 0 4px #43434e;
+  overflow:hidden;
+}
+.rn-map .grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(122,212,200,.14) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(122,212,200,.14) 1px,transparent 1px);
+  background-size:10px 10px;animation:mapDrift 15s linear infinite;
+}
+.rn-map .me{position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;background:#9be6da;box-shadow:0 0 8px #7ad4c8}
+.rn-map .foe{position:absolute;width:4px;height:4px;background:#e2495c}
+.rn-mapl{
+  position:absolute;right:12px;top:100px;width:82px;text-align:center;
+  font-family:var(--font-data);font-size:9px;color:#9a9aa4;letter-spacing:.1em;
+}
+
+.rn-purse{position:absolute;left:96px;top:104px;display:flex;gap:8px}
+.rn-coin{
+  display:flex;align-items:center;gap:5px;font-family:var(--font-data);font-size:10px;color:#ded9cd;
+  background:linear-gradient(180deg,#2e2e35,#1b1b21);border:1px solid #4a4a54;border-radius:2px;padding:2px 7px 2px 5px;
+}
+.rn-coin svg{width:11px;height:11px}
+
+.rn-buffs{position:absolute;left:12px;top:190px;display:flex;flex-direction:column;gap:6px}
+.rn-buff{
+  position:relative;width:34px;height:34px;border-radius:3px;
+  background:linear-gradient(180deg,#33333b,#191920);
+  border:1px solid #55555f;box-shadow:inset 0 1px 0 rgba(255,255,255,.1);
+  display:grid;place-items:center;color:var(--r-rune);
+}
+.rn-buff svg{width:17px;height:17px}
+.rn-buff u{
+  position:absolute;left:0;bottom:0;height:2px;background:var(--r-rune);
+  width:100%;transform-origin:left;transform:scaleX(var(--t,1));
+}
+
+.rn-target{
+  position:absolute;left:50%;top:148px;transform:translateX(-50%);width:238px;
+  padding:8px 12px 10px;
+  background:linear-gradient(180deg,#35353d,#1b1b21);
+  border:1px solid #55555f;border-radius:4px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 10px 22px -12px #000;
+}
+.rn-tskull{
+  position:absolute;left:-12px;top:50%;transform:translateY(-50%);
+  width:30px;height:30px;border-radius:50%;
+  background:linear-gradient(180deg,#3d3d46,#1a1a20);border:1px solid #62626d;
+  display:grid;place-items:center;color:#d8d3c8;
+}
+.rn-tskull svg{width:17px;height:17px}
+.rn-tname{
+  margin-left:22px;font-family:var(--font-display);font-size:13px;color:#e8e3d8;
+  display:flex;justify-content:space-between;align-items:baseline;
+}
+.rn-tname i{font-style:normal;font-family:var(--font-data);font-size:9.5px;color:#e2495c}
+.rn-tbar{
+  position:relative;height:10px;margin:6px 0 0 22px;
+  background:#0e0e12;border:1px solid #4a4a54;border-radius:2px;overflow:hidden;
+}
+.rn-tbar i{
+  position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,1));
+  background:linear-gradient(180deg,#e2495c,#7d1a26);transition:transform .35s ease;
+}
+.rn-cast{position:relative;height:6px;margin:5px 0 0 22px;background:#0e0e12;border:1px solid #4a4a54;overflow:hidden}
+.rn-cast i{position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,0));background:linear-gradient(90deg,#3f9a8c,#9be6da)}
+.rn-castlbl{margin-left:22px;font-family:var(--font-data);font-size:8.5px;color:#a8a89f;margin-top:4px;letter-spacing:.05em}
+
+.rn-quest{
+  position:absolute;right:12px;top:256px;width:128px;
+  padding:9px 11px;
+  background:linear-gradient(180deg,rgba(53,53,61,.9),rgba(24,24,29,.9));
+  border:1px solid #4a4a54;border-radius:3px;
+}
+.rn-qt{font-family:var(--font-display);font-size:11.5px;color:#e2ddd0}
+.rn-qr{display:flex;justify-content:space-between;font-family:var(--font-data);font-size:9.5px;color:#a0a09a;margin-top:5px}
+.rn-qr b{color:var(--r-rune);font-weight:600}
+.rn-qb{height:4px;background:#0e0e12;margin-top:6px;border:1px solid #3b3b44}
+.rn-qb i{display:block;height:100%;width:45%;background:linear-gradient(90deg,#3f9a8c,#9be6da)}
+
+.rn-party{position:absolute;left:12px;top:330px;display:flex;flex-direction:column;gap:6px}
+.rn-pc{
+  width:116px;padding:5px 7px;
+  background:linear-gradient(180deg,#2f2f37,#1a1a20);
+  border:1px solid #45454f;border-radius:3px;
+}
+.rn-pr{display:flex;justify-content:space-between;font-size:9.5px;color:#cdc9bf}
+.rn-pr em{font-style:normal;font-family:var(--font-data);color:#8f8f98}
+.rn-pb{height:4px;background:#0e0e12;margin-top:3px;overflow:hidden}
+.rn-pb i{display:block;height:100%;background:linear-gradient(90deg,#7d1a26,#e2495c)}
+
+.rn-log{
+  position:absolute;left:12px;bottom:214px;width:200px;
+  font-family:var(--font-data);font-size:9.5px;line-height:1.75;color:#9a9a94;
+}
+.rn-log b{color:#9be6da;font-weight:600}
+.rn-log s{text-decoration:none;color:#e2495c}
+
+.rn-joy{
+  position:absolute;left:26px;bottom:112px;width:112px;height:112px;border-radius:50%;
+  background:radial-gradient(circle,rgba(40,40,47,.55),rgba(12,12,16,.4));
+  border:2px solid #43434e;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.7);
+}
+.rn-joy .runes{
+  position:absolute;inset:0;border-radius:50%;
+  animation:runeSpin 22s linear infinite;
+  color:rgba(122,212,200,.55);
+}
+.rn-joy .runes span{
+  position:absolute;left:50%;top:4px;transform:translateX(-50%);
+  font-family:var(--font-display);font-size:11px;
+}
+@keyframes runeSpin{to{transform:rotate(360deg)}}
+.rn-knob{
+  position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,#5c5c68,#22222a 74%);
+  border:1px solid #7a7a86;
+  box-shadow:0 6px 16px rgba(0,0,0,.7),inset 0 1px 5px rgba(255,255,255,.24);
+  animation:joyIdle 5.5s ease-in-out infinite;
+}
+
+/* Каменная панель умений — центр низа */
+.rn-bar{
+  position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
+  display:flex;gap:6px;padding:8px 10px;
+  background:linear-gradient(180deg,#3a3a42,#1c1c22 60%,#141419);
+  border:1px solid #55555f;border-radius:6px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 12px 26px -14px #000;
+}
+.rn-slot{
+  position:relative;width:52px;height:52px;border-radius:3px;
+  background:linear-gradient(180deg,#2a2a31,#141418);
+  border:1px solid #5c5c67;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1),inset 0 -3px 8px rgba(0,0,0,.6);
+  display:grid;place-items:center;color:#cfe9e4;
+}
+.rn-slot svg{width:26px;height:26px;position:relative;z-index:1}
+.rn-slot .cd{position:absolute;inset:0;background:conic-gradient(from 0deg,rgba(6,8,10,.82) calc(var(--cd,0) * 360deg),transparent 0)}
+.rn-slot .cdn{position:absolute;inset:0;display:grid;place-items:center;z-index:2;font-family:var(--font-data);font-size:13px;font-weight:700;color:#eafffb}
+.rn-slot[data-ready="1"] .cdn{display:none}
+.rn-slot:not([data-ready="1"]) svg{opacity:.3}
+.rn-slot[data-ready="1"]{border-color:var(--r-rune);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 12px rgba(122,212,200,.35)}
+.rn-slot u{
+  position:absolute;left:4px;top:2px;z-index:2;text-decoration:none;
+  font-family:var(--font-data);font-size:8px;color:#8f8f98;
+}
+.rn-atk{
+  position:absolute;right:22px;bottom:96px;width:84px;height:84px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#6d7078,#22242a 72%);
+  border:2px solid #8a8d96;
+  box-shadow:0 0 0 4px #1a1b20,0 10px 24px -10px #000,inset 0 2px 10px rgba(255,255,255,.2);
+  display:grid;place-items:center;color:#e8f6f3;
+}
+.rn-atk svg{width:38px;height:38px}
+.rn-atk::after{
+  content:"";position:absolute;inset:-10px;border-radius:50%;
+  border:1px solid rgba(122,212,200,.35);
+  animation:runePing 2.8s ease-out infinite;
+}
+@keyframes runePing{0%{transform:scale(.92);opacity:.8}100%{transform:scale(1.16);opacity:0}}
+
+/* ══════════════════════════════════════════════════════════════
+   МАКЕТ 4 · СИГИЛ — обсидиан и кровь, ломаная геометрия,
+   акцент на боссе и счётчике серии.
+   ══════════════════════════════════════════════════════════════ */
+.v-blood{--b-red:#e03a4e;--b-red-dk:#6d1220;--b-bone:#e8dfd2;--b-obs:#0e0c10;--b-rage:#ff9d3d}
+
+.bl-plate{
+  position:absolute;left:0;top:16px;width:298px;height:64px;
+  background:linear-gradient(100deg,rgba(20,14,18,.96),rgba(12,9,12,.88));
+  border-top:1px solid rgba(224,58,78,.5);
+  border-bottom:1px solid rgba(224,58,78,.5);
+  clip-path:polygon(0 0,100% 0,82% 100%,0 100%);
+}
+.bl-face{
+  position:absolute;left:10px;top:8px;width:46px;height:46px;
+  background:linear-gradient(180deg,rgba(224,58,78,.85),rgba(120,25,38,.9));
+  clip-path:polygon(50% 0,100% 26%,100% 74%,50% 100%,0 74%,0 26%);
+  display:grid;place-items:center;color:#f0c9cd;
+}
+.bl-face::before{
+  content:"";position:absolute;inset:1.5px;
+  clip-path:polygon(50% 0,100% 26%,100% 74%,50% 100%,0 74%,0 26%);
+  background:linear-gradient(180deg,#2a1a20,#0d0a0c);
+}
+.bl-face svg{width:24px;height:24px;position:relative;z-index:1}
+.bl-lvl{
+  position:absolute;left:12px;top:50px;z-index:2;
+  font-family:var(--font-data);font-size:10px;font-weight:700;color:#0d0a0c;
+  background:var(--b-red);padding:1px 5px;
+  clip-path:polygon(8% 0,100% 0,92% 100%,0 100%);
+}
+.bl-meta{position:absolute;left:64px;top:8px;right:44px}
+.bl-name{
+  font-family:var(--font-display);font-size:14px;color:var(--b-bone);letter-spacing:.02em;
+  text-transform:uppercase;
+}
+.bl-hp{
+  position:relative;height:12px;margin-top:5px;width:176px;
+  background:#150f12;border:1px solid #3b2229;
+  clip-path:polygon(0 0,100% 0,96% 100%,0 100%);
+  overflow:hidden;
+}
+.bl-hp i{
+  position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,1));
+  background:linear-gradient(180deg,#ff5266,#8c1a28);
+  transition:transform .35s cubic-bezier(.3,.9,.3,1);
+}
+.bl-hp i::after{
+  content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(115deg,rgba(0,0,0,.22) 0 3px,transparent 3px 8px);
+}
+.bl-hp b{
+  position:absolute;inset:0;z-index:2;display:flex;align-items:center;padding-left:6px;
+  font-family:var(--font-data);font-size:8.5px;color:#ffe6e9;text-shadow:0 1px 2px #000;
+}
+.bl-rage{display:flex;gap:3px;margin-top:5px;width:176px}
+.bl-rage span{
+  flex:1;height:5px;background:#1c1216;border:1px solid #3b2229;
+  clip-path:polygon(14% 0,100% 0,86% 100%,0 100%);
+}
+.bl-rage span.on{background:linear-gradient(180deg,#ffc36a,var(--b-rage));border-color:#7a4a18;box-shadow:0 0 6px rgba(255,157,61,.5)}
+
+.bl-xp{position:absolute;top:0;left:0;right:0;height:3px;background:rgba(255,255,255,.06)}
+.bl-xp i{
+  position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--fill,.4));
+  background:linear-gradient(90deg,var(--b-red-dk),var(--b-red));
+  box-shadow:0 0 10px rgba(224,58,78,.7);transition:transform .5s ease;
+}
+
+.bl-map{
+  position:absolute;right:12px;top:14px;width:86px;height:86px;
+  background:linear-gradient(140deg,rgba(224,58,78,.6),rgba(224,58,78,.25));
+  clip-path:polygon(18% 0,100% 0,100% 82%,82% 100%,0 100%,0 18%);
+}
+.bl-map::after{
+  content:"";position:absolute;inset:1.5px;
+  clip-path:polygon(18% 0,100% 0,100% 82%,82% 100%,0 100%,0 18%);
+  background:rgba(10,8,11,.94);
+}
+.bl-map>*{position:relative;z-index:1}
+.bl-map .grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(224,58,78,.14) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(224,58,78,.14) 1px,transparent 1px);
+  background-size:11px 11px;animation:mapDrift 13s linear infinite;
+}
+.bl-map .me{position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;background:#ffd9de;box-shadow:0 0 8px var(--b-red)}
+.bl-map .foe{position:absolute;width:4px;height:4px;background:var(--b-red);box-shadow:0 0 5px var(--b-red)}
+.bl-mapl{
+  position:absolute;right:12px;top:104px;width:86px;text-align:right;
+  font-family:var(--font-data);font-size:9px;color:#c98d97;letter-spacing:.12em;
+}
+
+.bl-purse{position:absolute;left:12px;top:88px;display:flex;gap:7px}
+.bl-chip{
+  display:flex;align-items:center;gap:5px;font-family:var(--font-data);font-size:10px;color:#e6d8d9;
+  background:linear-gradient(180deg,rgba(46,28,34,.92),rgba(16,11,14,.92));
+  padding:3px 9px 3px 7px;
+  clip-path:polygon(8% 0,100% 0,92% 100%,0 100%);
+  box-shadow:inset 0 1px 0 rgba(255,140,155,.22);
+}
+.bl-chip svg{width:11px;height:11px}
+
+.bl-buffs{position:absolute;left:12px;top:118px;display:flex;gap:6px}
+.bl-buff{
+  position:relative;width:30px;height:30px;
+  background:linear-gradient(180deg,#251820,#0f0b0e);
+  border:1px solid #4a2b33;transform:rotate(45deg);
+  display:grid;place-items:center;color:#ffb3bd;
+}
+.bl-buff svg{width:14px;height:14px;transform:rotate(-45deg)}
+.bl-buff u{
+  position:absolute;left:0;bottom:0;width:100%;height:2px;background:var(--b-red);
+  transform-origin:left;transform:scaleX(var(--t,1));
+}
+
+/* Босс-панель */
+.bl-boss{
+  position:absolute;left:50%;top:186px;transform:translateX(-50%);width:290px;
+}
+.bl-bhdr{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:var(--font-display);font-size:15px;color:#ffdfe3;text-transform:uppercase;letter-spacing:.05em;
+  text-shadow:0 2px 8px rgba(224,58,78,.5);
+}
+.bl-bhdr i{font-style:normal;font-family:var(--font-data);font-size:10px;color:#ff8a99}
+.bl-bbar{
+  position:relative;height:16px;margin-top:6px;
+  background:#140d10;border:1px solid #58252f;
+  clip-path:polygon(0 0,100% 0,98% 100%,2% 100%);
+  overflow:hidden;
+}
+.bl-bbar i{
+  position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,1));
+  background:linear-gradient(180deg,#ff4a5f,#7d1522);transition:transform .3s cubic-bezier(.3,.9,.3,1);
+}
+.bl-bbar .seg{
+  position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg,transparent 0 calc(20% - 1px),rgba(0,0,0,.45) calc(20% - 1px) 20%);
+  pointer-events:none;
+}
+.bl-bbar b{
+  position:absolute;inset:0;z-index:2;display:grid;place-items:center;
+  font-family:var(--font-data);font-size:9.5px;font-variant-numeric:tabular-nums;color:#fff;
+  text-shadow:0 1px 3px #000,0 0 6px rgba(0,0,0,.9);
+}
+.bl-cast{position:relative;height:8px;margin-top:6px;background:#120c0f;border:1px solid #58252f;overflow:hidden}
+.bl-cast i{position:absolute;inset:1px;transform-origin:left;transform:scaleX(var(--fill,0));background:linear-gradient(90deg,#7a4a18,var(--b-rage))}
+.bl-castlbl{display:flex;justify-content:space-between;font-family:var(--font-data);font-size:9px;color:#e0a06a;margin-top:4px;letter-spacing:.06em}
+
+/* Счётчик серии — фирменная деталь макета */
+.bl-combo{
+  position:absolute;right:16px;top:278px;text-align:right;
+}
+.bl-cnum{
+  font-family:var(--font-display);font-size:44px;line-height:.9;color:#ffd9de;
+  text-shadow:0 0 20px rgba(224,58,78,.75),0 3px 0 rgba(0,0,0,.6);
+  font-style:italic;
+}
+.bl-clbl{font-family:var(--font-data);font-size:9px;letter-spacing:.24em;color:#c98d97;margin-top:2px}
+.bl-cbar{width:96px;height:3px;background:#2a1a1e;margin-top:6px;margin-left:auto;overflow:hidden}
+.bl-cbar i{display:block;height:100%;background:var(--b-red);transform-origin:right;transform:scaleX(var(--t,1))}
+
+.bl-quest{
+  position:absolute;left:12px;top:280px;width:132px;padding:8px 10px;
+  background:linear-gradient(100deg,rgba(20,14,18,.9),rgba(12,9,12,.7));
+  border-left:2px solid var(--b-red);
+}
+.bl-qt{font-family:var(--font-display);font-size:11px;color:#f0e2e2;text-transform:uppercase;letter-spacing:.03em}
+.bl-qr{display:flex;justify-content:space-between;font-family:var(--font-data);font-size:9.5px;color:#b79aa0;margin-top:5px}
+.bl-qr b{color:#ff8a99;font-weight:600}
+
+.bl-log{
+  position:absolute;left:12px;bottom:206px;width:206px;
+  font-family:var(--font-data);font-size:9.5px;line-height:1.75;color:#a08f93;
+}
+.bl-log b{color:#ff8a99;font-weight:600}
+.bl-log s{text-decoration:none;color:var(--b-rage)}
+
+.bl-joy{
+  position:absolute;left:28px;bottom:98px;width:114px;height:114px;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(30,18,22,.5),rgba(10,7,9,.35));
+  border:1px dashed rgba(224,58,78,.35);
+}
+.bl-knob{
+  position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;
+  background:linear-gradient(180deg,#7a2230,#2a0f16);
+  border:1px solid rgba(255,140,155,.55);
+  clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);
+  box-shadow:0 6px 16px rgba(0,0,0,.65);
+  animation:joyIdle 5.5s ease-in-out infinite;
+}
+
+.bl-skills{position:absolute;right:14px;bottom:92px;width:186px;height:176px}
+.bl-dia{
+  position:absolute;width:56px;height:56px;transform:rotate(45deg);
+  background:linear-gradient(135deg,#2a1a20,#100b0e);
+  border:1px solid #5c303a;
+  box-shadow:0 6px 16px rgba(0,0,0,.6);
+}
+.bl-dia .ico{position:absolute;inset:0;display:grid;place-items:center;transform:rotate(-45deg);color:#ffc9d0;z-index:1}
+.bl-dia svg{width:24px;height:24px}
+.bl-dia .cd{position:absolute;inset:0;background:conic-gradient(from 0deg,rgba(6,4,6,.82) calc(var(--cd,0) * 360deg),transparent 0)}
+.bl-dia .cdn{
+  position:absolute;inset:0;display:grid;place-items:center;transform:rotate(-45deg);z-index:2;
+  font-family:var(--font-data);font-size:13px;font-weight:700;color:#ffe6e9;
+}
+.bl-dia[data-ready="1"] .cdn{display:none}
+.bl-dia:not([data-ready="1"]) .ico{opacity:.3}
+.bl-dia[data-ready="1"]{border-color:var(--b-red);box-shadow:0 0 14px rgba(224,58,78,.4)}
+.bl-d1{right:100px;bottom:100px}
+.bl-d2{right:104px;bottom:30px}
+.bl-d3{right:40px;bottom:-4px}
+.bl-atk{
+  position:absolute;right:8px;bottom:70px;width:90px;height:90px;
+  background:rgba(255,190,200,.85);
+  clip-path:polygon(50% 0,100% 26%,100% 74%,50% 100%,0 74%,0 26%);
+  display:grid;place-items:center;color:#fff0f1;
+  animation:bloodPulse 2.2s ease-in-out infinite;
+}
+.bl-atk::before{
+  content:"";position:absolute;inset:2px;
+  clip-path:polygon(50% 0,100% 26%,100% 74%,50% 100%,0 74%,0 26%);
+  background:radial-gradient(circle at 36% 30%,#ff5265,#5c101c 72%);
+}
+.bl-atk svg{width:40px;height:40px;position:relative;z-index:1}
+@keyframes bloodPulse{0%,100%{filter:drop-shadow(0 0 8px rgba(224,58,78,.5))}50%{filter:drop-shadow(0 0 22px rgba(224,58,78,.85))}}
+.bl-pot{
+  position:absolute;left:38px;bottom:30px;width:52px;height:52px;
+  background:#5c303a;
+  clip-path:polygon(12% 0,100% 0,88% 100%,0 100%);
+  display:grid;place-items:center;color:#ff8a99;
+}
+.bl-pot::before{
+  content:"";position:absolute;inset:1.5px;
+  clip-path:polygon(12% 0,100% 0,88% 100%,0 100%);
+  background:linear-gradient(180deg,#251820,#0f0b0e);
+}
+.bl-pot svg{width:25px;height:25px;position:relative;z-index:1}
+.bl-pot u{z-index:2}
+.bl-pot u{
+  position:absolute;right:3px;top:2px;text-decoration:none;
+  font-family:var(--font-data);font-size:9px;font-weight:700;color:#180d10;
+  background:var(--b-red);padding:0 4px;
+}
+
+/* ── Подвал ────────────────────────────────────────────────── */
+.footer{
+  margin-top:72px;padding-top:26px;border-top:1px solid var(--line);
+  display:grid;gap:30px;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));
+}
+.footer h2{
+  font-family:var(--font-display);font-size:20px;font-weight:400;color:var(--parchment);margin-bottom:10px;
+}
+.footer p,.footer li{font-size:13.5px;color:var(--parchment-dim);line-height:1.6}
+.footer ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.footer li{display:flex;gap:9px}
+.footer li::before{content:"";flex:none;width:5px;height:5px;margin-top:8px;background:var(--gold-dim);transform:rotate(45deg)}
+.footer code{
+  font-family:var(--font-data);font-size:12px;color:var(--gold-hi);
+  background:rgba(240,207,131,.08);padding:1px 5px;border-radius:2px;
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+@media (min-width:1400px){ :root{--s:.74} }
+@media (max-width:640px){
+  .wrap{padding:36px 16px 64px}
+  :root{--s:.74}
+}
+</style>
+</head>
+<body>
+
+<!-- Библиотека иконок: единый inline-спрайт, никакого внешнего шрифта иконок -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-helm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 12a8 8 0 0 1 16 0v5l-3 3H7l-3-3z"/><path d="M12 4v13"/><path d="M4 12h16"/>
+    </symbol>
+    <symbol id="i-sword" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2.5 14.4 7.5V15h-4.8V7.5z"/><path d="M7 15h10"/><path d="M12 15v4.5"/><path d="M9.8 19.5h4.4"/>
+    </symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2c1 4-3 5-3 9a3 3 0 0 0 6 0c0-1.5-.6-2.4-1-3 2 1 4 3.2 4 6a6 6 0 0 1-12 0C6 9 12 8 12 2z"/>
+    </symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2 4 14h6l-1 8 9-12h-6z"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5z"/><path d="M9 12l2 2 4-4"/>
+    </symbol>
+    <symbol id="i-frost" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2v20M4 6l16 12M20 6 4 18"/><path d="M12 6l2.5-2M12 6 9.5 4M12 18l2.5 2M12 18 9.5 20"/>
+    </symbol>
+    <symbol id="i-potion" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 2h4v5l3.5 8a4 4 0 0 1-3.6 5.6h-3.8A4 4 0 0 1 6.5 15L10 7z"/><path d="M7.6 14h8.8"/>
+    </symbol>
+    <symbol id="i-skull" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3a7 7 0 0 0-7 7v3l2 1.6V19h10v-4.4L19 13v-3a7 7 0 0 0-7-7z"/><circle cx="9.4" cy="11" r="1.7"/><circle cx="14.6" cy="11" r="1.7"/><path d="M12 14.4v2"/>
+    </symbol>
+    <symbol id="i-coin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h5M9.5 14.5h5"/>
+    </symbol>
+    <symbol id="i-gem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M11 3 8 9l4 12 4-12-3-6"/>
+    </symbol>
+    <symbol id="i-boot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 3h4v8l6 3 4 2v5H4V6z"/><path d="M10 11h4"/>
+    </symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20s-7-4.5-7-9.5A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 7 3.5C19 15.5 12 20 12 20z"/>
+    </symbol>
+    <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 3 2.7 5.8 6.3.8-4.6 4.3 1.2 6.1L12 17.1 6.4 20l1.2-6.1L3 9.6l6.3-.8z"/>
+    </symbol>
+    <symbol id="i-swords" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
+      <path d="M13 19l6-6M16 16l4 4M19 21l2-2"/>
+      <polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/>
+      <path d="M5 14l4 4M7 17l-3 3M3 19l2 2"/>
+    </symbol>
+    <symbol id="i-mace" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 13.5V21"/><path d="M9.8 21h4.4"/>
+      <path d="M12 3.5 15.5 7 12 10.5 8.5 7z"/>
+      <path d="M12 1.8v1.4M12 10.8v1.4M6.4 7H5M19 7h-1.4"/>
+    </symbol>
+    <symbol id="i-swirl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4a8 8 0 1 1-7.5 5.2"/><path d="M12 8a4 4 0 1 0 3.7 2.5"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Игровой интерфейс · 430 × 932 · портрет</div>
+    <h1>Кузница <em>HUD</em></h1>
+    <p class="lede">
+      Четыре живых направления интерфейса для боя: одна и та же телеметрия — здоровье, мана,
+      опыт, откаты, цель, отряд — разложена по-разному. Всё нарисовано <b>чистым CSS, inline-SVG и canvas</b>:
+      ни одной внешней библиотеки, ни одного растрового ассета, ни одного шрифта из сети.
+      Макеты в натуральном размере игры, поэтому размеры кнопок и зоны нажатия честные.
+    </p>
+
+    <div class="console" role="group" aria-label="Управление демонстрацией">
+      <span class="lbl">Симуляция</span>
+      <button class="btn" id="b-hit" type="button">Получить урон</button>
+      <button class="btn" id="b-cast" type="button">Каст босса</button>
+      <button class="btn" id="b-heal" type="button">Зелье</button>
+      <button class="btn" id="b-lvl" type="button">Уровень</button>
+      <span class="sep"></span>
+      <span class="lbl">Диагностика</span>
+      <button class="btn" id="b-reach" type="button" aria-pressed="false">Зона большого пальца</button>
+      <button class="btn" id="b-still" type="button" aria-pressed="false">Стоп-кадр</button>
+    </div>
+  </header>
+
+  <main class="gallery">
+
+    <!-- ═══ 1 · ГОРН ═══════════════════════════════════════════ -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-num">01</span>
+        <h2 class="card-name">Горн</h2>
+        <p class="card-tag">Кожа, латунь и гравировка — прямое развитие нынешней темы игры</p>
+      </div>
+      <div class="stage">
+        <div class="frame v-ember" data-hud="ember">
+          <canvas class="scene" width="430" height="932"></canvas>
+          <div class="hud">
+
+            <div class="em-bar">
+              <div class="em-portrait"><svg><use href="#i-helm"/></svg></div>
+              <div class="em-lvl">47</div>
+              <div class="em-info">
+                <div class="em-name">Кайрен <span>Тёмный рыцарь</span></div>
+                <div class="em-gauge em-hp"><i data-bar="hp"></i><b data-txt="hp">2480 / 3200</b></div>
+                <div class="em-gauge em-mp"><i data-bar="mp"></i><b data-txt="mp">640 / 900</b></div>
+              </div>
+              <div class="em-purse">
+                <span class="em-coin"><svg><use href="#i-coin"/></svg>184&nbsp;920</span>
+                <span class="em-coin"><svg><use href="#i-gem"/></svg>1 240</span>
+              </div>
+              <div class="em-map">
+                <div class="grid"></div>
+                <div class="foe" style="left:22px;top:18px"></div>
+                <div class="foe" style="left:44px;top:40px"></div>
+                <div class="foe" style="left:16px;top:46px"></div>
+                <div class="npc" style="left:48px;top:14px"></div>
+                <div class="me"></div>
+                <div class="em-zone">КРИПТА 52</div>
+              </div>
+
+            </div>
+            <div class="em-xp"><i data-bar="xp"></i></div>
+
+            <div class="em-buffs">
+              <div class="em-buff"><svg><use href="#i-shield"/></svg><u data-buff="0"></u></div>
+              <div class="em-buff"><svg><use href="#i-boot"/></svg><u data-buff="1"></u></div>
+              <div class="em-buff"><svg><use href="#i-star"/></svg><u data-buff="2"></u></div>
+            </div>
+
+            <div class="em-target">
+              <div class="em-tname">Костяной жрец <i>Ур. 54</i></div>
+              <div class="em-tbar"><i data-bar="boss"></i></div>
+              <div class="em-cast"><i data-bar="cast"></i></div>
+              <div class="em-castlbl" data-txt="cast">Призыв тьмы · 1.4с</div>
+            </div>
+
+            <div class="em-party">
+              <div class="em-pcard">
+                <div class="em-pav"></div>
+                <div class="em-pinfo"><div class="em-pname">Лиара</div><div class="em-pbar"><i style="width:78%"></i></div></div>
+              </div>
+              <div class="em-pcard">
+                <div class="em-pav"></div>
+                <div class="em-pinfo"><div class="em-pname">Торн</div><div class="em-pbar"><i style="width:41%"></i></div></div>
+              </div>
+            </div>
+
+            <div class="em-quest">
+              <div class="em-qtitle">Печати крипты</div>
+              <div class="em-qrow"><span>Жрецы</span><b>3 / 5</b></div>
+              <div class="em-qbar"><i></i></div>
+            </div>
+
+            <div class="em-log">
+              <div><b>Кайрен</b> наносит <s>842</s> урона</div>
+              <div>Костяной жрец готовит <b>Призыв тьмы</b></div>
+              <div>Получен предмет: <b>Клинок пепла</b></div>
+            </div>
+
+            <div class="em-joy"><div class="em-knob"></div></div>
+
+            <div class="em-skills">
+              <div class="em-hex em-h1" data-skill="0"><svg><use href="#i-flame"/></svg><div class="cd"></div><div class="cdn">3</div></div>
+              <div class="em-hex em-h2" data-skill="1"><svg><use href="#i-bolt"/></svg><div class="cd"></div><div class="cdn">7</div></div>
+              <div class="em-hex em-h3" data-skill="2"><svg><use href="#i-frost"/></svg><div class="cd"></div><div class="cdn">1</div></div>
+              <div class="em-atk"><svg><use href="#i-sword"/></svg></div>
+            </div>
+
+            <div class="em-pot"><svg><use href="#i-potion"/></svg><u>12</u></div>
+            <div class="em-auto">АВТО-БОЙ</div>
+          </div>
+          <div class="reach"><i class="l"></i><i class="r"></i><span>Комфортная зона большого пальца</span></div>
+        </div>
+      </div>
+      <div class="swatches" aria-hidden="true">
+        <span class="sw" style="background:#0e0a05"></span>
+        <span class="sw" style="background:#2a1c12"></span>
+        <span class="sw" style="background:#c9a34e"></span>
+        <span class="sw" style="background:#f0cf83"></span>
+        <span class="sw" style="background:#b8323f"></span>
+      </div>
+      <ul class="notes">
+        <li><b>Совместимость.</b> Берёт токены из <code>css/style.css</code>, поэтому садится на текущий арт без переделки сцены.</li>
+        <li><b>Шапка-планка.</b> Портрет, две шкалы и миникарта в 78 px; полоса опыта вынесена отдельной нитью под шапку.</li>
+        <li><b>Соты навыков</b> веером под большим пальцем: центры разнесены на 62 px — промахнуться сложно.</li>
+        <li><b>Риск:</b> самая «тяжёлая» подача — плотная шапка съедает 9 % высоты экрана.</li>
+      </ul>
+    </section>
+
+    <!-- ═══ 2 · СТЕКЛО ═════════════════════════════════════════ -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-num">02</span>
+        <h2 class="card-name">Стекло</h2>
+        <p class="card-tag">Плавающие матовые острова, дуговые шкалы, голографическая карта</p>
+      </div>
+      <div class="stage">
+        <div class="frame v-glass" data-hud="glass">
+          <canvas class="scene" width="430" height="932"></canvas>
+          <div class="hud">
+
+            <div class="gl-xp"><i data-bar="xp"></i></div>
+
+            <div class="gl-hero">
+              <div class="gl-ring">
+                <svg viewBox="0 0 64 64">
+                  <circle class="trk" cx="32" cy="32" r="28"/>
+                  <circle class="hp" cx="32" cy="32" r="28" data-arc="hp" stroke-dasharray="176" stroke-dashoffset="44"/>
+                  <circle class="trk" cx="32" cy="32" r="22" stroke-width="3"/>
+                  <circle class="mp" cx="32" cy="32" r="22" data-arc="mp" stroke-dasharray="138" stroke-dashoffset="55"/>
+                </svg>
+                <div class="gl-face"><svg><use href="#i-helm"/></svg></div>
+              </div>
+              <div class="gl-meta">
+                <div class="gl-name">Кайрен <u>47</u></div>
+                <div class="gl-sub">ТЁМНЫЙ РЫЦАРЬ</div>
+                <div class="gl-nums">
+                  <span class="h">HP <b data-txt="hp">2480</b></span>
+                  <span class="m">MP <b data-txt="mp">640</b></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="gl-purse">
+              <span class="gl-chip"><svg><use href="#i-coin"/></svg>184.9к</span>
+              <span class="gl-chip"><svg><use href="#i-gem"/></svg>1 240</span>
+            </div>
+
+            <div class="gl-map">
+              <div class="grid"></div>
+              <div class="scan"></div>
+              <div class="foe" style="left:24px;top:30px"></div>
+              <div class="foe" style="left:52px;top:52px"></div>
+              <div class="me"></div>
+            </div>
+            <div class="gl-mapl">КРИПТА · 52</div>
+
+            <div class="gl-buffs">
+              <div class="gl-buff"><svg><use href="#i-shield"/></svg><u data-buff="0"></u></div>
+              <div class="gl-buff"><svg><use href="#i-boot"/></svg><u data-buff="1"></u></div>
+              <div class="gl-buff"><svg><use href="#i-swirl"/></svg><u data-buff="2"></u></div>
+            </div>
+
+            <div class="gl-party">
+              <div class="gl-pill">
+                <div class="gl-prow"><span>Лиара</span><em>78%</em></div>
+                <div class="gl-pbar"><i style="width:78%"></i></div>
+              </div>
+              <div class="gl-pill">
+                <div class="gl-prow"><span>Торн</span><em>41%</em></div>
+                <div class="gl-pbar"><i style="width:41%"></i></div>
+              </div>
+            </div>
+
+            <div class="gl-target">
+              <div class="gl-tname">Костяной жрец <i>УР. 54 · БОСС</i></div>
+              <div class="gl-tbar"><i data-bar="boss"></i></div>
+              <div class="gl-cast"><i data-bar="cast"></i></div>
+              <div class="gl-castlbl"><span data-txt="cast">Призыв тьмы</span><span>прерываемо</span></div>
+            </div>
+
+            <div class="gl-quest">
+              <div class="gl-qhdr">
+                <div class="gl-qring">
+                  <svg viewBox="0 0 26 26">
+                    <circle class="t" cx="13" cy="13" r="11"/>
+                    <circle class="p" cx="13" cy="13" r="11" stroke-dasharray="69" stroke-dashoffset="28"/>
+                  </svg>
+                </div>
+                <div class="gl-qtitle">Печати крипты</div>
+              </div>
+              <div class="gl-qsub">Жрецы <b>3 / 5</b> · 240 м</div>
+            </div>
+
+            <div class="gl-log">
+              <div><b>Кайрен</b> → <s>842</s> урона</div>
+              <div>Жрец готовит <b>Призыв тьмы</b></div>
+              <div>Добыча: <b>Клинок пепла</b></div>
+            </div>
+
+            <div class="gl-joy"><div class="tick"></div><div class="gl-knob"></div></div>
+
+            <div class="gl-rail">
+              <div class="gl-slot" data-skill="0"><svg><use href="#i-flame"/></svg><div class="cd"></div><div class="cdn">3</div><u>Q</u></div>
+              <div class="gl-slot" data-skill="1"><svg><use href="#i-bolt"/></svg><div class="cd"></div><div class="cdn">7</div><u>W</u></div>
+              <div class="gl-slot" data-skill="2"><svg><use href="#i-frost"/></svg><div class="cd"></div><div class="cdn">1</div><u>E</u></div>
+            </div>
+            <div class="gl-atk"><svg><use href="#i-sword"/></svg></div>
+            <div class="gl-pot"><svg><use href="#i-potion"/></svg><u>12</u></div>
+          </div>
+          <div class="reach"><i class="l"></i><i class="r"></i><span>Комфортная зона большого пальца</span></div>
+        </div>
+      </div>
+      <div class="swatches" aria-hidden="true">
+        <span class="sw" style="background:#080b12"></span>
+        <span class="sw" style="background:#101622"></span>
+        <span class="sw" style="background:#5fd6e8"></span>
+        <span class="sw" style="background:#9d7bff"></span>
+        <span class="sw" style="background:#ff5d73"></span>
+      </div>
+      <ul class="notes">
+        <li><b>Никакой шапки.</b> Сцена видна целиком: интерфейс — острова на <code>backdrop-filter</code>, опыт ушёл в нить в 2 px по верхней кромке.</li>
+        <li><b>Дуги вместо полос.</b> HP и MP — два кольца вокруг портрета, читаются периферийным зрением в бою.</li>
+        <li><b>Вертикальная рейка</b> навыков у правого края: место под 5–6 слотов без наползания на сцену.</li>
+        <li><b>Риск:</b> размытие фона — самый дорогой эффект списка; на слабых Android держать <code>blur ≤ 14px</code> или подменять плоской заливкой.</li>
+      </ul>
+    </section>
+
+    <!-- ═══ 3 · РУНЫ ═══════════════════════════════════════════ -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-num">03</span>
+        <h2 class="card-name">Руны</h2>
+        <p class="card-tag">Камень, жидкие сферы и высеченная панель умений — поклон классике PC-MMO</p>
+      </div>
+      <div class="stage">
+        <div class="frame v-rune" data-hud="rune">
+          <canvas class="scene" width="430" height="932"></canvas>
+          <div class="hud">
+
+            <div class="rn-orbwrap">
+              <div class="rn-orb"><canvas data-orb="hp" width="74" height="74"></canvas><div class="gloss"></div><b data-txt="hp">2480</b></div>
+              <div class="rn-orb"><canvas data-orb="mp" width="74" height="74"></canvas><div class="gloss"></div><b data-txt="mp">640</b></div>
+            </div>
+
+            <div class="rn-plate">
+              <div class="rn-name">Кайрен <u>УР. 47</u></div>
+              <div class="rn-cls">ТЁМНЫЙ РЫЦАРЬ · КЛАН «ПЕПЕЛ»</div>
+              <div class="rn-xp" data-xpseg>
+                <span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+
+            <div class="rn-purse">
+              <span class="rn-coin"><svg><use href="#i-coin"/></svg>184 920</span>
+              <span class="rn-coin"><svg><use href="#i-gem"/></svg>1 240</span>
+            </div>
+
+            <div class="rn-map">
+              <div class="grid"></div>
+              <div class="foe" style="left:26px;top:22px"></div>
+              <div class="foe" style="left:54px;top:48px"></div>
+              <div class="me"></div>
+            </div>
+            <div class="rn-mapl">КРИПТА · 52</div>
+
+            <div class="rn-target">
+              <div class="rn-tskull"><svg><use href="#i-skull"/></svg></div>
+              <div class="rn-tname">Костяной жрец <i>УР. 54</i></div>
+              <div class="rn-tbar"><i data-bar="boss"></i></div>
+              <div class="rn-cast"><i data-bar="cast"></i></div>
+              <div class="rn-castlbl" data-txt="cast">ПРИЗЫВ ТЬМЫ</div>
+            </div>
+
+            <div class="rn-buffs">
+              <div class="rn-buff"><svg><use href="#i-shield"/></svg><u data-buff="0"></u></div>
+              <div class="rn-buff"><svg><use href="#i-boot"/></svg><u data-buff="1"></u></div>
+              <div class="rn-buff"><svg><use href="#i-star"/></svg><u data-buff="2"></u></div>
+            </div>
+
+            <div class="rn-quest">
+              <div class="rn-qt">Печати крипты</div>
+              <div class="rn-qr"><span>Жрецы</span><b>3 / 5</b></div>
+              <div class="rn-qb"><i></i></div>
+            </div>
+
+            <div class="rn-party">
+              <div class="rn-pc"><div class="rn-pr"><span>Лиара</span><em>78%</em></div><div class="rn-pb"><i style="width:78%"></i></div></div>
+              <div class="rn-pc"><div class="rn-pr"><span>Торн</span><em>41%</em></div><div class="rn-pb"><i style="width:41%"></i></div></div>
+            </div>
+
+            <div class="rn-log">
+              <div><b>Кайрен</b> наносит <s>842</s></div>
+              <div>Жрец читает <b>Призыв тьмы</b></div>
+              <div>Добыча: <b>Клинок пепла</b></div>
+            </div>
+
+            <div class="rn-joy">
+              <div class="runes"><span>ᛟ</span></div>
+              <div class="rn-knob"></div>
+            </div>
+
+            <div class="rn-atk"><svg><use href="#i-mace"/></svg></div>
+
+            <div class="rn-bar">
+              <div class="rn-slot" data-skill="0"><svg><use href="#i-flame"/></svg><div class="cd"></div><div class="cdn">3</div><u>1</u></div>
+              <div class="rn-slot" data-skill="1"><svg><use href="#i-bolt"/></svg><div class="cd"></div><div class="cdn">7</div><u>2</u></div>
+              <div class="rn-slot" data-skill="2"><svg><use href="#i-frost"/></svg><div class="cd"></div><div class="cdn">1</div><u>3</u></div>
+              <div class="rn-slot"><svg><use href="#i-potion"/></svg><u>4</u></div>
+            </div>
+          </div>
+          <div class="reach"><i class="l"></i><i class="r"></i><span>Комфортная зона большого пальца</span></div>
+        </div>
+      </div>
+      <div class="swatches" aria-hidden="true">
+        <span class="sw" style="background:#0b0d10"></span>
+        <span class="sw" style="background:#2b2b31"></span>
+        <span class="sw" style="background:#7ad4c8"></span>
+        <span class="sw" style="background:#c8354a"></span>
+        <span class="sw" style="background:#3f7fd8"></span>
+      </div>
+      <ul class="notes">
+        <li><b>Сферы вместо полос.</b> Уровень жидкости рисуется на canvas двумя синусоидами — состояние читается по форме, а не по числу.</li>
+        <li><b>Опыт сегментами</b> (10 делений) — прогресс до уровня виден без чтения процентов.</li>
+        <li><b>Панель умений по центру низа</b> оставляет обе диагонали экрана свободными для джойстика и удара.</li>
+        <li><b>Риск:</b> две сферы + плита занимают левый верх — на маленьких экранах туда не поставить кнопки навигации.</li>
+      </ul>
+    </section>
+
+    <!-- ═══ 4 · СИГИЛ ══════════════════════════════════════════ -->
+    <section class="card">
+      <div class="card-head">
+        <span class="card-num">04</span>
+        <h2 class="card-name">Сигил</h2>
+        <p class="card-tag">Обсидиан и кровь: ломаная геометрия, босс во весь экран, счётчик серии</p>
+      </div>
+      <div class="stage">
+        <div class="frame v-blood" data-hud="blood">
+          <canvas class="scene" width="430" height="932"></canvas>
+          <div class="hud">
+
+            <div class="bl-xp"><i data-bar="xp"></i></div>
+
+            <div class="bl-plate">
+              <div class="bl-face"><svg><use href="#i-helm"/></svg></div>
+              <div class="bl-lvl">47</div>
+              <div class="bl-meta">
+                <div class="bl-name">Кайрен</div>
+                <div class="bl-hp"><i data-bar="hp"></i><b data-txt="hp">2480 / 3200</b></div>
+                <div class="bl-rage" data-rage>
+                  <span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bl-map">
+              <div class="grid"></div>
+              <div class="foe" style="left:26px;top:26px"></div>
+              <div class="foe" style="left:56px;top:52px"></div>
+              <div class="me"></div>
+            </div>
+            <div class="bl-mapl">КРИПТА · 52</div>
+
+            <div class="bl-purse">
+              <span class="bl-chip"><svg><use href="#i-coin"/></svg>184 920</span>
+              <span class="bl-chip"><svg><use href="#i-gem"/></svg>1 240</span>
+            </div>
+
+            <div class="bl-buffs">
+              <div class="bl-buff"><svg><use href="#i-flame"/></svg><u data-buff="0"></u></div>
+              <div class="bl-buff"><svg><use href="#i-shield"/></svg><u data-buff="1"></u></div>
+              <div class="bl-buff"><svg><use href="#i-heart"/></svg><u data-buff="2"></u></div>
+            </div>
+
+            <div class="bl-quest">
+              <div class="bl-qt">Печати крипты</div>
+              <div class="bl-qr"><span>Жрецы</span><b>3 / 5</b></div>
+            </div>
+
+            <div class="bl-boss">
+              <div class="bl-bhdr">Костяной жрец <i>УР. 54 · БОСС</i></div>
+              <div class="bl-bbar"><i data-bar="boss"></i><div class="seg"></div><b data-txt="boss">412 000 / 640 000</b></div>
+              <div class="bl-cast"><i data-bar="cast"></i></div>
+              <div class="bl-castlbl"><span data-txt="cast">ПРИЗЫВ ТЬМЫ</span><span>ПРЕРВИ</span></div>
+            </div>
+
+            <div class="bl-combo">
+              <div class="bl-cnum" data-combo>14</div>
+              <div class="bl-clbl">СЕРИЯ</div>
+              <div class="bl-cbar"><i data-combobar></i></div>
+            </div>
+
+            <div class="bl-log">
+              <div><b>Кайрен</b> → <s>842</s> · крит</div>
+              <div>Жрец читает <b>Призыв тьмы</b></div>
+              <div>Добыча: <b>Клинок пепла</b></div>
+            </div>
+
+            <div class="bl-joy"><div class="bl-knob"></div></div>
+
+            <div class="bl-skills">
+              <div class="bl-dia bl-d1" data-skill="0"><div class="ico"><svg><use href="#i-flame"/></svg></div><div class="cd"></div><div class="cdn">3</div></div>
+              <div class="bl-dia bl-d2" data-skill="1"><div class="ico"><svg><use href="#i-bolt"/></svg></div><div class="cd"></div><div class="cdn">7</div></div>
+              <div class="bl-dia bl-d3" data-skill="2"><div class="ico"><svg><use href="#i-frost"/></svg></div><div class="cd"></div><div class="cdn">1</div></div>
+              <div class="bl-atk"><svg><use href="#i-swords"/></svg></div>
+            </div>
+
+            <div class="bl-pot"><svg><use href="#i-potion"/></svg><u>12</u></div>
+          </div>
+          <div class="reach"><i class="l"></i><i class="r"></i><span>Комфортная зона большого пальца</span></div>
+        </div>
+      </div>
+      <div class="swatches" aria-hidden="true">
+        <span class="sw" style="background:#0e0c10"></span>
+        <span class="sw" style="background:#2a1a20"></span>
+        <span class="sw" style="background:#e03a4e"></span>
+        <span class="sw" style="background:#ff9d3d"></span>
+        <span class="sw" style="background:#e8dfd2"></span>
+      </div>
+      <ul class="notes">
+        <li><b>Босс — главный герой экрана.</b> Полоса на 290 px с делениями по 20 % и отдельной шкалой каста со словом «ПРЕРВИ».</li>
+        <li><b>Ярость сегментами</b> под здоровьем: ресурс класса виден одним взглядом, без цифр.</li>
+        <li><b>Серия ударов</b> с таймером затухания — то, чего сейчас в HUD нет вообще, а игроку это интереснее числа урона.</li>
+        <li><b>Риск:</b> косые срезы <code>clip-path</code> дают тонкие «зубчики» на не-ретина экранах — нужны 1 px запасы по краям.</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div>
+      <h2>Как это собрано</h2>
+      <p>
+        Один HTML-файл. Сцена под интерфейсом — процедурный canvas: плиты пола, свет факелов,
+        летящие угли. Полосы двигаются через <code>transform: scaleX()</code>, откаты — через
+        <code>conic-gradient</code>, жидкость в сферах — две синусоиды на маленьком canvas 74×74.
+        Никаких изображений, шрифтов и пакетов.
+      </p>
+    </div>
+    <div>
+      <h2>Что дальше</h2>
+      <ul>
+        <li>Выбрать направление — можно смешивать: «Стекло» для шапки, «Сигил» для босса.</li>
+        <li>Перенести выбранное в <code>drawHeader()</code> и <code>drawSkillButtons()</code> в <code>js/ui.js</code>: HUD игры рисуется на canvas, а не в DOM.</li>
+        <li>Цвета взять из токенов <code>css/style.css</code>, чтобы тема осталась одна на весь клиент.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Проверено на макете</h2>
+      <ul>
+        <li>Кнопки удара — не меньше 74 px, навыки — 52–56 px: выше порога попадания пальцем.</li>
+        <li>Ничего важного не заходит в нижние 34 px — там жест «домой» на iOS.</li>
+        <li>Полосы читаются без цифр: форма и длина несут состояние, число — уточнение.</li>
+      </ul>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const frames = [...document.querySelectorAll('.frame')];
+
+  /* ─── Процедурная сцена подземелья ────────────────────────────
+     Пол рисуется один раз в offscreen-плитку, дальше только
+     блиты + свет + угли: дёшево даже при четырёх кадрах сразу. */
+  const TILE = 46;
+  function makeFloor(tint){
+    const c = document.createElement('canvas');
+    c.width = c.height = TILE * 6;
+    const x = c.getContext('2d');
+    x.fillStyle = tint.base;
+    x.fillRect(0, 0, c.width, c.height);
+    for (let ty = 0; ty < 6; ty++){
+      for (let tx = 0; tx < 6; tx++){
+        const n = (Math.sin(tx * 12.9898 + ty * 78.233) * 43758.5453) % 1;
+        const v = 0.5 + Math.abs(n) * 0.5;
+        x.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${0.012 + v * 0.03})`;
+        x.fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
+        x.strokeStyle = 'rgba(0,0,0,.55)';
+        x.lineWidth = 1;
+        x.strokeRect(tx * TILE + .5, ty * TILE + .5, TILE - 1, TILE - 1);
+        if (Math.abs(n) > 0.72){          // трещины/сколы
+          x.fillStyle = 'rgba(0,0,0,.35)';
+          x.fillRect(tx * TILE + 8 + v * 12, ty * TILE + 9 + v * 14, 12, 3);
+        }
+      }
+    }
+    return c;
+  }
+
+  const TINTS = {
+    ember: { base:'#0b0805', r:196, g:150, b:86,  torch:'217,127,63',  fog:'6,4,2'  },
+    glass: { base:'#05070c', r:120, g:160, b:210, torch:'95,214,232',  fog:'3,5,10' },
+    rune:  { base:'#07080a', r:150, g:160, b:170, torch:'122,212,200', fog:'4,5,7'  },
+    blood: { base:'#0a0507', r:200, g:110, b:125, torch:'224,58,78',   fog:'5,3,4'  }
+  };
+
+  const scenes = frames.map(f => {
+    const kind = f.dataset.hud;
+    const tint = TINTS[kind];
+    const cv = f.querySelector('.scene');
+    const ctx = cv.getContext('2d');
+    return {
+      f, ctx, tint,
+      floor: makeFloor(tint),
+      embers: Array.from({ length: 22 }, () => ({
+        x: Math.random() * 430, y: Math.random() * 932,
+        r: 0.6 + Math.random() * 1.9,
+        s: 6 + Math.random() * 20,
+        a: 0.15 + Math.random() * 0.5
+      })),
+      visible: true
+    };
+  });
+
+  function drawScene(sc, t){
+    const { ctx, tint } = sc;
+    const off = (t * 14) % (TILE * 6);
+    ctx.clearRect(0, 0, 430, 932);
+    for (let y = -TILE * 6; y < 932 + TILE * 6; y += TILE * 6)
+      for (let x = -TILE * 6; x < 430 + TILE * 6; x += TILE * 6)
+        ctx.drawImage(sc.floor, x, y + off);
+
+    // Свет факелов
+    const torches = [[64, 300], [370, 470], [180, 700]];
+    torches.forEach(([tx, ty], i) => {
+      const flick = 1 + Math.sin(t * (2.1 + i * .7)) * .07 + Math.sin(t * 7.3 + i) * .03;
+      const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, 190 * flick);
+      g.addColorStop(0,   `rgba(${tint.torch},.16)`);
+      g.addColorStop(.45, `rgba(${tint.torch},.05)`);
+      g.addColorStop(1,   `rgba(${tint.torch},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(tx - 200, ty - 200, 400, 400);
+    });
+
+    // Угли
+    ctx.save();
+    sc.embers.forEach(e => {
+      const y = ((e.y - t * e.s) % 952 + 952) % 952;
+      const x = e.x + Math.sin((t + e.x) * .6) * 7;
+      ctx.fillStyle = `rgba(${tint.torch},${e.a})`;
+      ctx.beginPath();
+      ctx.arc(x, y, e.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+
+    // Силуэты героя и цели — чтобы интерфейс не висел в пустоте
+    const bob = Math.sin(t * 1.9) * 3;
+    shadowBlob(ctx, 150, 560 + bob, 26, 40, tint);
+    shadowBlob(ctx, 292, 402 - bob * .6, 34, 52, tint);
+
+    // Виньетка
+    const v = ctx.createRadialGradient(215, 466, 120, 215, 466, 540);
+    v.addColorStop(0, `rgba(${tint.fog},.15)`);
+    v.addColorStop(1, `rgba(${tint.fog},.97)`);
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, 430, 932);
+  }
+
+  function shadowBlob(ctx, x, y, w, h, tint){
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + h * .55, w * .8, w * .32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const g = ctx.createLinearGradient(x, y - h / 2, x, y + h / 2);
+    g.addColorStop(0, `rgba(${tint.torch},.38)`);
+    g.addColorStop(1, 'rgba(6,5,4,.95)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, w * .45, h * .5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /* ─── Сферы «Рун»: жидкость двумя синусоидами ─────────────── */
+  const orbs = [...document.querySelectorAll('[data-orb]')].map(cv => ({
+    cv, ctx: cv.getContext('2d'),
+    color: cv.dataset.orb === 'hp' ? ['#e04a5e', '#7d1523'] : ['#5a95e8', '#1d3f80'],
+    key: cv.dataset.orb
+  }));
+
+  function drawOrb(o, level, t){
+    const { ctx } = o, S = 74;
+    ctx.clearRect(0, 0, S, S);
+    const surface = S * (1 - level);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(S / 2, S / 2, S / 2 - 1, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(6,8,12,.9)';
+    ctx.fillRect(0, 0, S, S);
+    ctx.beginPath();
+    ctx.moveTo(0, S);
+    ctx.lineTo(0, surface);
+    for (let x = 0; x <= S; x += 3){
+      const y = surface
+        + Math.sin(x / 13 + t * 2.4) * 2.4
+        + Math.sin(x / 7 - t * 1.6) * 1.3;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(S, S);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, surface - 6, 0, S);
+    g.addColorStop(0, o.color[0]);
+    g.addColorStop(1, o.color[1]);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ─── Общая телеметрия боя ───────────────────────────────── */
+  const S = {
+    hpMax: 3200, hp: 2480,
+    mpMax: 900,  mp: 640,
+    xp: .42,
+    bossMax: 640000, boss: 412000,
+    cast: 0, casting: true,
+    rage: 4, combo: 14, comboT: 1,
+    skills: [ { cd: .55, max: 8 }, { cd: .9, max: 14 }, { cd: .15, max: 6 } ],
+    buffs: [ .8, .55, .3 ],
+    lvl: 47
+  };
+
+  const fmt = n => n.toLocaleString('ru-RU').replace(/ /g, ' ');
+
+  function setBars(){
+    const hpF = S.hp / S.hpMax, mpF = S.mp / S.mpMax, bossF = S.boss / S.bossMax;
+
+    frames.forEach(f => {
+      const put = (sel, v) => f.querySelectorAll(sel).forEach(el => el.style.setProperty('--fill', v));
+      put('[data-bar="hp"]',   hpF);
+      put('[data-bar="mp"]',   mpF);
+      put('[data-bar="xp"]',   S.xp);
+      put('[data-bar="boss"]', bossF);
+      put('[data-bar="cast"]', S.cast);
+
+      f.querySelectorAll('[data-txt="hp"]').forEach(el => {
+        el.textContent = el.closest('.gl-hero') ? fmt(Math.round(S.hp))
+          : `${fmt(Math.round(S.hp))} / ${fmt(S.hpMax)}`;
+      });
+      f.querySelectorAll('[data-txt="mp"]').forEach(el => {
+        el.textContent = el.closest('.gl-hero') || el.closest('.rn-orb')
+          ? fmt(Math.round(S.mp)) : `${fmt(Math.round(S.mp))} / ${fmt(S.mpMax)}`;
+      });
+      f.querySelectorAll('.rn-orb [data-txt="hp"]').forEach(el => { el.textContent = Math.round(hpF * 100) + '%'; });
+      f.querySelectorAll('.rn-orb [data-txt="mp"]').forEach(el => { el.textContent = Math.round(mpF * 100) + '%'; });
+      f.querySelectorAll('[data-txt="boss"]').forEach(el => {
+        el.textContent = `${fmt(Math.round(S.boss))} / ${fmt(S.bossMax)}`;
+      });
+
+      // Дуги «Стекла»
+      const arc = (sel, len, v) => {
+        const el = f.querySelector(sel);
+        if (el) el.setAttribute('stroke-dashoffset', String(len * (1 - v)));
+      };
+      arc('[data-arc="hp"]', 176, hpF);
+      arc('[data-arc="mp"]', 138, mpF);
+
+      // Сегменты опыта «Рун»
+      const seg = f.querySelector('[data-xpseg]');
+      if (seg) [...seg.children].forEach((s, i) => s.classList.toggle('on', i < Math.round(S.xp * 10)));
+
+      // Ярость «Сигила»
+      const rage = f.querySelector('[data-rage]');
+      if (rage) [...rage.children].forEach((s, i) => s.classList.toggle('on', i < S.rage));
+
+      // Серия ударов
+      const cn = f.querySelector('[data-combo]');
+      if (cn) cn.textContent = String(S.combo);
+      const cb = f.querySelector('[data-combobar]');
+      if (cb) cb.style.setProperty('--t', S.comboT.toFixed(3));
+
+      // Откаты
+      S.skills.forEach((sk, i) => {
+        f.querySelectorAll(`[data-skill="${i}"]`).forEach(el => {
+          el.style.setProperty('--cd', sk.cd.toFixed(3));
+          el.dataset.ready = sk.cd <= 0 ? '1' : '0';
+          const n = el.querySelector('.cdn');
+          if (n) n.textContent = Math.ceil(sk.cd * sk.max);
+        });
+      });
+
+      // Таймеры бафов
+      S.buffs.forEach((b, i) => {
+        f.querySelectorAll(`[data-buff="${i}"]`).forEach(el => el.style.setProperty('--t', b.toFixed(3)));
+      });
+
+      // Подписи каста
+      f.querySelectorAll('[data-txt="cast"]').forEach(el => {
+        const base = el.dataset.base || (el.dataset.base = el.textContent.split('·')[0].trim());
+        el.textContent = S.casting
+          ? (el.closest('.em-target') ? `${base} · ${(2.2 * (1 - S.cast)).toFixed(1)}с` : base)
+          : (el.closest('.em-target') ? 'Готовится к атаке' : 'Ожидание');
+      });
+    });
+  }
+
+  /* ─── Всплывающий урон ───────────────────────────────────── */
+  const PALETTE = { ember:'#ffd28a', glass:'#8fe4f2', rune:'#9be6da', blood:'#ff8a99' };
+  function popDamage(value, crit){
+    frames.forEach(f => {
+      const el = document.createElement('div');
+      el.className = 'dmg';
+      el.textContent = value;
+      el.style.left = (150 + (Math.random() * 60 - 30)) + 'px';
+      el.style.top = (520 + (Math.random() * 30 - 15)) + 'px';
+      el.style.fontSize = (crit ? 30 : 21) + 'px';
+      el.style.color = crit ? '#ffdf8a' : PALETTE[f.dataset.hud];
+      f.querySelector('.hud').appendChild(el);
+      setTimeout(() => el.remove(), 1100);
+    });
+  }
+
+  /* ─── Кнопки витрины ─────────────────────────────────────── */
+  document.getElementById('b-hit').addEventListener('click', () => {
+    const dmg = 180 + Math.round(Math.random() * 420);
+    S.hp = Math.max(180, S.hp - dmg);
+    S.rage = Math.min(6, S.rage + 1);
+    S.combo = 0; S.comboT = 1;
+    frames.forEach(f => {
+      f.animate(
+        [{ filter:'brightness(1)' }, { filter:'brightness(1.45) saturate(1.3)' }, { filter:'brightness(1)' }],
+        { duration: 260, easing:'ease-out' }
+      );
+    });
+    popDamage(dmg, false);
+    setBars();
+  });
+
+  document.getElementById('b-cast').addEventListener('click', () => {
+    S.casting = true; S.cast = 0;
+    setBars();
+  });
+
+  document.getElementById('b-heal').addEventListener('click', () => {
+    S.hp = Math.min(S.hpMax, S.hp + 900);
+    S.mp = Math.min(S.mpMax, S.mp + 220);
+    popDamage('+900', false);
+    setBars();
+  });
+
+  document.getElementById('b-lvl').addEventListener('click', () => {
+    S.lvl++; S.xp = 0.02;
+    S.hpMax += 180; S.hp = S.hpMax;
+    S.mpMax += 60;  S.mp = S.mpMax;
+    frames.forEach(f => {
+      f.querySelectorAll('.em-lvl,.gl-name u,.rn-name u,.bl-lvl').forEach(el => {
+        el.textContent = el.classList.contains('em-lvl') || el.classList.contains('bl-lvl')
+          ? String(S.lvl) : (el.closest('.rn-name') ? 'УР. ' + S.lvl : String(S.lvl));
+      });
+      const flash = document.createElement('div');
+      flash.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 45%,rgba(255,225,160,.55),rgba(255,200,120,0) 60%)';
+      f.querySelector('.hud').appendChild(flash);
+      flash.animate([{ opacity:0 }, { opacity:1 }, { opacity:0 }], { duration: 850, easing:'ease-out' })
+        .finished.then(() => flash.remove()).catch(() => flash.remove());
+    });
+    popDamage('УРОВЕНЬ ' + S.lvl, true);
+    setBars();
+  });
+
+  const reachBtn = document.getElementById('b-reach');
+  reachBtn.addEventListener('click', () => {
+    const on = reachBtn.getAttribute('aria-pressed') !== 'true';
+    reachBtn.setAttribute('aria-pressed', String(on));
+    frames.forEach(f => f.classList.toggle('show-reach', on));
+  });
+
+  let paused = reduced;
+  const stillBtn = document.getElementById('b-still');
+  stillBtn.setAttribute('aria-pressed', String(paused));
+  stillBtn.addEventListener('click', () => {
+    paused = !paused;
+    stillBtn.setAttribute('aria-pressed', String(paused));
+  });
+
+  /* ─── Пауза для кадров вне экрана ────────────────────────── */
+  if ('IntersectionObserver' in window){
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        const sc = scenes.find(s => s.f === e.target);
+        if (sc) sc.visible = e.isIntersecting;
+      });
+    }, { rootMargin: '150px' });
+    frames.forEach(f => io.observe(f));
+  }
+
+  /* ─── Основной цикл ──────────────────────────────────────── */
+  let t = 0, last = performance.now(), acc = 0;
+  function loop(now){
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (!paused){
+      t += dt;
+
+      // Регенерация и расход
+      S.hp = Math.min(S.hpMax, S.hp + 120 * dt);
+      S.mp = Math.min(S.mpMax, S.mp + 45 * dt);
+      S.xp = (S.xp + dt * 0.012) % 1;
+      S.boss = Math.max(S.bossMax * 0.06, S.boss - 5200 * dt);
+      S.comboT = Math.max(0, S.comboT - dt * 0.22);
+      if (S.comboT <= 0){ S.combo = Math.min(99, S.combo + 1); S.comboT = 1; }
+
+      S.skills.forEach(sk => { sk.cd = Math.max(0, sk.cd - dt / sk.max); });
+      if (S.skills.every(sk => sk.cd === 0)) S.skills.forEach((sk, i) => { sk.cd = 0.6 + i * 0.15; });
+
+      S.buffs = S.buffs.map(b => b - dt * 0.05 <= 0 ? 1 : b - dt * 0.05);
+
+      if (S.casting){
+        S.cast += dt / 2.2;
+        if (S.cast >= 1){ S.cast = 0; S.casting = false; setTimeout(() => { S.casting = true; }, 2200); }
+      }
+
+      acc += dt;
+      if (acc > 0.1){ acc = 0; setBars(); }
+
+      scenes.forEach(sc => { if (sc.visible) drawScene(sc, t); });
+      const hpF = S.hp / S.hpMax, mpF = S.mp / S.mpMax;
+      orbs.forEach(o => drawOrb(o, o.key === 'hp' ? hpF : mpF, t));
+    }
+    requestAnimationFrame(loop);
+  }
+
+  setBars();
+  scenes.forEach(sc => drawScene(sc, 0));
+  orbs.forEach(o => drawOrb(o, o.key === 'hp' ? S.hp / S.hpMax : S.mp / S.mpMax, 0));
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
