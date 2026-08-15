@@ -31,28 +31,49 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const defs = require(path.join(ROOT, 'shared', 'definitions.js'));
+// Everything this check lifts used to live in server/index.js verbatim; a
+// later split moved the item-inventory arithmetic to server/inventory.js and
+// the save-blob sanitizing to server/anticheat.js (see those files' own
+// headers). SRC stays index.js alone — every pattern check further down
+// (handler bodies like craftPet's _itemOpBusy guard, usePotion's cooldown,
+// ...) is still index.js-only text. SRC_FILES is only for lift/liftConst,
+// searched inventory.js/anticheat.js first and index.js last, so a name that
+// exists in both (e.g. _ITEM_ID_ALIASES — index.js's copy is an unused
+// leftover from before the split) resolves to the copy the live handlers
+// actually require, not the stale one.
 const SRC = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+const SRC_FILES = [
+  fs.readFileSync(path.join(ROOT, 'server', 'inventory.js'), 'utf8'),
+  fs.readFileSync(path.join(ROOT, 'server', 'anticheat.js'), 'utf8'),
+  SRC,
+];
 
 // `function NAME(...) { ... }`, matched by brace depth so nested blocks are
 // included and the next function is not.
 function lift(name) {
-  const start = SRC.indexOf(`function ${name}(`);
-  if (start < 0) throw new Error(`item-loss-check: function ${name} not found in server/index.js`);
-  let i = SRC.indexOf('{', start), depth = 0;
-  for (; i < SRC.length; i++) {
-    if (SRC[i] === '{') depth++;
-    else if (SRC[i] === '}') { depth--; if (depth === 0) return SRC.slice(start, i + 1); }
+  for (const SRC of SRC_FILES) {
+    const start = SRC.indexOf(`function ${name}(`);
+    if (start < 0) continue;
+    let i = SRC.indexOf('{', start), depth = 0;
+    for (; i < SRC.length; i++) {
+      if (SRC[i] === '{') depth++;
+      else if (SRC[i] === '}') { depth--; if (depth === 0) return SRC.slice(start, i + 1); }
+    }
+    throw new Error(`item-loss-check: unbalanced braces in ${name}`);
   }
-  throw new Error(`item-loss-check: unbalanced braces in ${name}`);
+  throw new Error(`item-loss-check: function ${name} not found in server/{index,inventory,anticheat}.js`);
 }
 // `const NAME = ...` — either a one-liner or an object/array literal ending in
 // a line that starts at column 0.
 function liftConst(name) {
-  const start = SRC.indexOf(`const ${name} =`);
-  if (start < 0) throw new Error(`item-loss-check: const ${name} not found in server/index.js`);
-  const objEnd = SRC.indexOf('\n};', start);
-  if (objEnd > 0 && objEnd - start < 2000) return SRC.slice(start, objEnd + 3);
-  return SRC.slice(start, SRC.indexOf('\n', start));
+  for (const SRC of SRC_FILES) {
+    const start = SRC.indexOf(`const ${name} =`);
+    if (start < 0) continue;
+    const objEnd = SRC.indexOf('\n};', start);
+    if (objEnd > 0 && objEnd - start < 2000) return SRC.slice(start, objEnd + 3);
+    return SRC.slice(start, SRC.indexOf('\n', start));
+  }
+  throw new Error(`item-loss-check: const ${name} not found in server/{index,inventory,anticheat}.js`);
 }
 
 const ctx = vm.createContext({ ...defs, console });
