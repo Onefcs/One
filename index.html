@@ -16,6 +16,14 @@
 <body>
 <div id="app">
 
+<!-- Android app only (see js/network.js _switchTelegramAccount, android/):
+     the Telegram Login Widget re-authenticates the same Telegram account
+     automatically once authorized, with no built-in way to pick a
+     different one. This clears that session so the widget prompts fresh.
+     Hidden by default; shown by _initTelegramWidget() when the WebView's
+     "LibertyAndroidApp" user-agent token is detected. -->
+<button id="switch-account-btn" onclick="_switchTelegramAccount()" style="display:none;position:fixed;top:max(10px,env(safe-area-inset-top));right:10px;z-index:99999;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:10px;padding:6px 10px;font-size:11px;line-height:1.3;cursor:pointer;">⇄ Сменить аккаунт</button>
+
 <!-- Splash / Loading Screen -->
 <div id="login-screen">
   <img class="splash-bg" src="/images/splash-liberty.jpg" alt="Liberty MMORPG">

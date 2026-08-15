@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -115,7 +116,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Exposes AndroidLiberty.switchAccount() to js/network.js
+        // (_switchTelegramAccount). The Telegram Login Widget's session lives
+        // in a cookie on oauth.telegram.org — cross-origin from the game, so
+        // page JS can't clear it with document.cookie. This can, natively.
+        webView.addJavascriptInterface(JsBridge(), "AndroidLiberty")
+
         webView.loadUrl(GAME_URL)
+    }
+
+    private inner class JsBridge {
+        @JavascriptInterface
+        fun switchAccount() {
+            runOnUiThread {
+                val cookieManager = CookieManager.getInstance()
+                cookieManager.removeAllCookies(null)
+                cookieManager.flush()
+                webView.loadUrl(GAME_URL)
+            }
+        }
     }
 
     private fun openExternally(uri: Uri): Boolean {

@@ -1763,7 +1763,28 @@ function showAuthError(msg) {
 
 
 
+// See the button's comment in index.html: only the Android app (detected by
+// its WebView user-agent token) ever needs a way to log out of the Telegram
+// account the Login Widget auto-authenticated, so the button stays hidden
+// for the real Mini App. Clearing cookies is done natively (see
+// android/.../MainActivity.kt AndroidBridge) because the widget's session
+// lives in a cross-origin oauth.telegram.org cookie this page cannot touch
+// with document.cookie.
+function _switchTelegramAccount() {
+  if (!confirm('Выйти из текущего аккаунта Telegram и войти под другим?')) return;
+  if (window.AndroidLiberty?.switchAccount) {
+    window.AndroidLiberty.switchAccount();
+  } else {
+    location.reload();
+  }
+}
+
 function _initTelegramWidget() {
+  if (/LibertyAndroidApp/.test(navigator.userAgent)) {
+    const btn = document.getElementById('switch-account-btn');
+    if (btn) btn.style.display = 'block';
+  }
+
   const twa = window.Telegram?.WebApp;
 
   if (twa && twa.initData) {
