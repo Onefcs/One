@@ -897,7 +897,14 @@ function update(dt, realDt) {
   // see both in js/network.js.
   const _clkNow = netClockNow();
   const _renderT = _clkNow > 0 ? _clkNow - netInterpMs() : 0;
+  // Whether anyone is actually in motion this frame. The interpolation buffer
+  // is only sized against frames where this is true — an idle world tells us
+  // nothing about whether the buffer is big enough, and counting it would peg
+  // the buffer at maximum every time the server correctly goes quiet. See
+  // netMarginTick (js/network.js).
+  let _anyMoving = false;
   otherPlayers.forEach((op, id) => {
+    if (op.moving && (op.hp || 0) > 0) _anyMoving = true;
     const buf = op._buf;
     // op.moving is authoritative — set directly from the sender's own input
     // state on packet arrival (see js/network.js), not derived here from
@@ -992,6 +999,8 @@ function update(dt, realDt) {
       }
     }
   });
+  // After the loop, so it sees this frame's real playback time and motion state.
+  netMarginTick(_renderT, _anyMoving);
   let _corpseExpired = false;
   serverEnemies.forEach(e => {
     // Corpse cleanup must run regardless of distance (a far corpse would
