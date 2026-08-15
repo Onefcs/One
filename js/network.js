@@ -64,18 +64,237 @@ let _playerRestored = false;
 let _accountIsNew = false;
 let _sessionHasRealData = false;
 
-// Snapshot interpolation state
-let _svrTimeOffset = null; // null = not yet calibrated
-// How far in the past other players are rendered. Snapshots arrive every 50ms
-// (the server casts at 20Hz), so this is also the budget for a late one: at 65
-// a packet arriving 15ms behind schedule already pushed the render clock past
-// the newest snapshot, the interpolation clamped, and the avatar froze until
-// the packet landed and then jumped. Mobile jitter is routinely 20-50ms, which
-// is why other players stuttered for some people at an otherwise fine ping.
-// 110 gives a full extra interval of slack. The cost is that everyone else is
-// seen 45ms further behind — about 10px of movement, against a 350px hit
-// radius on the server, so it changes nothing about whether shots land.
-const _INTERP_MS  = 110;
+// ── Network clock ───────────────────────────────────────────────────────────
+// Every snapshot carries `t`, the server's Date.now() at the moment it was
+// cast. Comparing that to the moment it arrives here gives
+//
+//     t - arrival  =  (serverClock - localClock) - oneWayDelay
+//
+// so no single sample is the clock offset: every one of them is the offset
+// minus however long that particular packet spent in flight. Since the delay
+// term is always positive, the sample from the FASTEST packet is the closest
+// to the truth, i.e. the offset is the *maximum* of that expression, not its
+// average.
+//
+// Averaging it (the EMA this replaces) tracked "offset minus MEAN delay"
+// instead, which is the bug that made other players stutter at a perfectly
+// good ping: mean delay moves with congestion, so when the link got busier the
+// estimate slid, the render clock below slid back with it, the interpolation
+// buffer effectively shrank, and playback hit the end of the buffer — freeze,
+// then jump when the next packet landed. A burst of late packets dragged it
+// for about a second (the EMA's time constant) and then it drifted back, which
+// is the slow rubber-banding on top.
+//
+// The max is taken over a sliding window of one-second buckets rather than
+// over all time, so a genuinely fast sample can age out and the estimate can
+// still follow real clock drift between the two machines.
+const _CLK_BUCKET_MS = 1000;
+const _CLK_BUCKETS   = 8;             // 8s of history
+const _clkBuckets    = new Float64Array(_CLK_BUCKETS).fill(-Infinity);
+let _clkBucketAt     = 0;             // start time of the bucket being filled
+let _clkBucketIdx    = 0;
+// Best estimate of (serverClock - performance.now()), or null before the first
+// packet. performance.now() and not Date.now(): the render clock has to be
+// monotonic, and Date.now() is wall time — NTP steps it, and a phone waking
+// from sleep steps it hard.
+let _clkOffset = null;
+// The smoothed clock actually used for playback, and the real time it was last
+// advanced at. This is what never jumps: see netClockNow().
+let _clkNow = null, _clkNowAt = 0;
+// Beyond this the link is not jittering, something discontinuous happened (a
+// reconnect, the server's own clock stepping, the tab resuming) — ride the
+// rate limiter over that and playback would crawl for minutes.
+const _CLK_STEP_MS = 1000;
+
+// Server time as playback should see it: monotonic, and never stepped. When
+// the estimate moves, the clock's RATE is nudged by at most ±5% until it has
+// caught up, so a correction is spread over hundreds of milliseconds instead
+// of landing in one frame. Rate stays strictly positive, so this can never
+// run backwards — and running backwards is what interpolation cannot survive.
+function netClockNow() {
+  if (_clkOffset === null) return 0;
+  const perf = performance.now();
+  const target = perf + _clkOffset;
+  if (_clkNow === null) { _clkNow = target; _clkNowAt = perf; return _clkNow; }
+  const err = target - _clkNow;
+  if (Math.abs(err) > _CLK_STEP_MS) { _clkNow = target; _clkNowAt = perf; return _clkNow; }
+  const realDt = Math.max(0, perf - _clkNowAt);
+  _clkNowAt = perf;
+  // err/1000 → a 50ms error is corrected at 5%, i.e. over ~1s; anything
+  // smaller, proportionally gentler.
+  const rate = 1 + Math.max(-0.05, Math.min(0.05, err / 1000));
+  _clkNow += realDt * rate;
+  return _clkNow;
+}
+
+// Drops everything measured about the previous link. _clkNow deliberately
+// survives: it is the monotonic playback clock, and the first sample after
+// this re-seeds _clkOffset, which netClockNow() then converges to by rate.
+function _netClockReset() {
+  _clkBuckets.fill(-Infinity);
+  _clkBucketAt = 0;
+  _clkBucketIdx = 0;
+  _clkOffset = null;
+  _jitIdx = 0; _jitCount = 0;
+  // The margin history describes the old route's buffer needs, not the new
+  // one's. Dropped rather than kept: holding a wide buffer earned on a dying
+  // cellular link would follow the player back onto wifi for 20 seconds.
+  // _interpMs itself is left where it is and re-converges by the same slow
+  // release as always, so the reconnect costs no hitch.
+  _marginIdx = 0; _marginN = 0;
+}
+
+// Called with every snapshot's server timestamp.
+function _netClockSample(t) {
+  const perf = performance.now();
+  const sample = t - perf;
+  if (_clkBucketAt === 0) _clkBucketAt = perf;
+  // Roll forward however many buckets have elapsed, clearing each one we pass
+  // so stale maxima can't survive a quiet stretch.
+  while (perf - _clkBucketAt >= _CLK_BUCKET_MS) {
+    _clkBucketAt += _CLK_BUCKET_MS;
+    _clkBucketIdx = (_clkBucketIdx + 1) % _CLK_BUCKETS;
+    _clkBuckets[_clkBucketIdx] = -Infinity;
+  }
+  if (sample > _clkBuckets[_clkBucketIdx]) _clkBuckets[_clkBucketIdx] = sample;
+  let best = -Infinity;
+  for (let i = 0; i < _CLK_BUCKETS; i++) if (_clkBuckets[i] > best) best = _clkBuckets[i];
+  if (best > -Infinity) _clkOffset = best;
+  // How much longer than the best-case this packet took — zero on the fast
+  // path, the size of the spike for a late one. Diagnostics only.
+  _netJitterSample(Math.max(0, _clkOffset - sample));
+  // Sizes the interpolation buffer. Must run after _clkOffset is updated, so
+  // the margin is measured against the clock this packet already informed.
+  _netMarginSample(t);
+}
+
+// ── Adaptive interpolation delay ────────────────────────────────────────────
+// Other players are rendered this far in the past. A single fixed value (110ms,
+// what this used to be) is wrong in both directions: too small to stop the
+// stutter on the links that actually suffer from it, and needlessly far in the
+// past for everyone else.
+//
+// It is sized by a closed loop rather than from jitter statistics. On every
+// arriving snapshot, measure the MARGIN — how far ahead of current playback
+// that snapshot's timestamp landed. Margin is the buffer doing its job, in the
+// only units that matter, and it already accounts for jitter, packet loss,
+// clock drift and server tick overruns at once, without modelling any of them.
+// Hold its worst recent value at _MARGIN_FLOOR and the buffer is exactly as
+// wide as this link needs and no wider.
+//
+// Both halves were picked by replaying recorded and synthetic delay traces
+// (see the note on the floor below), not by feel.
+const _INTERP_MIN = 70;    // one packet interval + a little
+const _INTERP_MAX = 320;   // past this the link is broken, not jittery
+// Target for the worst margin in the recent window — a bit over one packet
+// interval. Swept against the traces (25/40/55/70): below 55 a link with
+// congestion episodes runs at roughly twice the playback-rate deviation and
+// starves 2% of frames instead of 0.6%; above it nothing improves and a lossy
+// link starts paying ~45ms of latency for no gain.
+const _MARGIN_FLOOR = 55;
+// Only give width back once there is this much more than the floor to spare.
+// Deliberately wide, and the width was measured rather than guessed: the
+// steady-state margin on a clean link sits inside this dead zone, so in
+// practice the loop only ever GROWS the buffer for a link that needs it and
+// leaves a good one at its 110ms starting value. Narrowing the zone does drop
+// a clean link to ~45-55ms — but it also puts the controller back into the
+// shrink/re-grow cycle this asymmetry exists to prevent, and that costs far
+// more than it buys: at slack 20 a link with congestion episodes goes from
+// 0.014 to 0.050 playback-rate deviation, and at slack 10 a 5%-loss link
+// oscillates outright (0.046, and 198ms of latency instead of 53ms). Trading
+// ~11ms on good links for stability on bad ones is the whole point here.
+//
+// The shrink path is not dead code — it is what recovers a player whose link
+// improves. Measured: 60s of a bad link grows the buffer, and ~2s after the
+// link clears it is back at 110ms.
+const _MARGIN_SLACK = 45;
+// Fast attack, slow release. Widening is urgent: the alternative is a visible
+// stall. Narrowing is pure optimisation and must never itself cause the next
+// stall, so it waits for a long quiet stretch and then moves at a trickle.
+// A symmetric controller was measurably worse — on a link that spikes every
+// few seconds it re-widened and re-narrowed in step with the spikes, and that
+// oscillation is itself a playback-rate wobble (rate σ 0.084 vs 0.052).
+const _MARGIN_WIN_SHORT = 80;    // ~4s — drives widening
+const _MARGIN_WIN_LONG  = 400;   // ~20s — gates narrowing
+const _MARGIN_RELEASE   = 6;     // ms per sample once the long window is clear
+const _marginBuf = new Float32Array(_MARGIN_WIN_LONG);
+let _marginIdx = 0, _marginN = 0;
+// Current (smoothed) and desired interpolation delay.
+let _interpMs = 110, _interpTarget = 110;
+let _interpAt = 0;
+
+// Diagnostics only (perf overlay): how much later than best-case packets are
+// arriving. Not what the buffer is sized from — see above — but the single
+// most useful number for telling a bad link from a bad server tick.
+const _JIT_N = 100;
+const _jitBuf = new Float32Array(_JIT_N);
+let _jitIdx = 0, _jitCount = 0;
+
+function _netJitterSample(ms) {
+  _jitBuf[_jitIdx] = ms;
+  _jitIdx = (_jitIdx + 1) % _JIT_N;
+  if (_jitCount < _JIT_N) _jitCount++;
+}
+
+// Called once per arriving snapshot with that snapshot's server timestamp.
+function _netMarginSample(t) {
+  // Nothing to compare against until playback has started.
+  if (_clkNow === null) return;
+  _marginBuf[_marginIdx] = t - (netClockNow() - _interpMs);
+  _marginIdx = (_marginIdx + 1) % _MARGIN_WIN_LONG;
+  if (_marginN < _MARGIN_WIN_LONG) _marginN++;
+  if (_marginN < 10) return;
+
+  const shortN = Math.min(_marginN, _MARGIN_WIN_SHORT);
+  let mnShort = Infinity;
+  for (let i = 1; i <= shortN; i++) {
+    const v = _marginBuf[(_marginIdx - i + _MARGIN_WIN_LONG) % _MARGIN_WIN_LONG];
+    if (v < mnShort) mnShort = v;
+  }
+  if (mnShort < _MARGIN_FLOOR) {
+    // Widen by exactly the shortfall — one correction, not a ramp.
+    _interpTarget = Math.min(_INTERP_MAX, _interpMs + (_MARGIN_FLOOR - mnShort));
+    return;
+  }
+  if (_marginN < _MARGIN_WIN_LONG) { _interpTarget = _interpMs; return; }
+  let mnLong = Infinity;
+  for (let i = 0; i < _MARGIN_WIN_LONG; i++) if (_marginBuf[i] < mnLong) mnLong = _marginBuf[i];
+  _interpTarget = (mnLong > _MARGIN_FLOOR + _MARGIN_SLACK)
+    ? Math.max(_INTERP_MIN, _interpMs - _MARGIN_RELEASE)
+    : _interpMs;
+}
+
+// The delay itself has to move gently. Playback time is (clock - delay), so
+// GROWING the delay pushes playback back toward the past: change it in one
+// step and every other player visibly stalls for exactly that many ms. Capped
+// at 0.15ms per ms of real time, playback still advances at 85% speed while
+// the buffer widens, which reads as a barely perceptible slow-motion instead
+// of a hitch.
+// Read-only views for the perf overlay (js/game.js): the measured jitter the
+// buffer is sized from, and the buffer itself. Separate from netInterpMs()
+// below because that one ADVANCES the smoothing — the overlay must be able to
+// display the value without also driving it.
+function netInterpCurrent() { return _interpMs; }
+// Computed on read rather than per packet — only the overlay ever asks, and
+// only while it is on screen.
+function netJitterP95() {
+  if (!_jitCount) return 0;
+  const tmp = Array.prototype.slice.call(_jitBuf, 0, _jitCount);
+  tmp.sort((a, b) => a - b);
+  return tmp[Math.min(tmp.length - 1, Math.floor(tmp.length * 0.95))] || 0;
+}
+
+function netInterpMs() {
+  const perf = performance.now();
+  if (!_interpAt) { _interpAt = perf; return _interpMs; }
+  const dt = Math.max(0, perf - _interpAt);
+  _interpAt = perf;
+  const err = _interpTarget - _interpMs;
+  const step = Math.min(Math.abs(err), dt * 0.15);
+  _interpMs += Math.sign(err) * step;
+  return _interpMs;
+}
+
 const _SNAP_MAX   = 10;   // ~250ms of buffer
 // Staggers the out-of-range enemy sweep in the gameState handler — once a
 // second is plenty for something the server already stopped sending.
@@ -203,6 +422,14 @@ function netConnect(onReady) {
     // force the next netSendMove to send rather than compare against a
     // position the old connection reported.
     _lastSentX = null;
+    // The clock estimate is about THIS link. A reconnect can land on a
+    // different route (wifi → cellular is the common one) with a different
+    // baseline delay, and the old window's maxima would hold the estimate at
+    // the previous route's value for the next 8 seconds. The jitter history
+    // is dropped for the same reason. Playback rides on _clkNow meanwhile,
+    // which is left alone — it is monotonic and re-converges by rate, so the
+    // reconnect costs no visible hitch.
+    _netClockReset();
     _resetPingWatchdog();
     // Start RTT ping loop
     if (_pingTimer) clearInterval(_pingTimer);
@@ -674,9 +901,9 @@ function netConnect(onReady) {
     const players = _st.players, enemies = _st.enemies, t = _st.t;
     const myId = socket.id;
 
-    // Calibrate server↔client clock once, then keep EMA
-    if (_svrTimeOffset === null) _svrTimeOffset = t - Date.now();
-    else _svrTimeOffset = _svrTimeOffset * 0.95 + (t - Date.now()) * 0.05;
+    // Feeds the clock offset estimate and the jitter measurement the
+    // interpolation buffer is sized from — see netClockNow/netInterpMs above.
+    _netClockSample(t);
 
     // Players arrive only every other tick (20Hz) — packets without a
     // players field must not touch (or prune) the player map.
@@ -1374,11 +1601,17 @@ function netConnect(onReady) {
   // a client that ignores this is playing somewhere nobody else can see.
   socket.on('posCorrect', ({ x, y } = {}) => {
     if (!player || !Number.isFinite(x) || !Number.isFinite(y)) return;
-    player.x = x; player.y = y;
+    // Small corrections are walked off over ~150ms rather than applied in one
+    // frame; big ones still snap. Either way the server's position is what we
+    // end up at — see netApplyPosCorrection (js/game.js) for why the two cases
+    // cannot be treated the same.
+    const snapped = netApplyPosCorrection(x, y);
     // The camera follows the player every frame anyway, but snapping it here
     // too keeps the correction from being rendered as one frame of the world
-    // sliding — and clampCamera is what stops it leaving the map bounds.
-    if (typeof camera !== 'undefined' && camera) {
+    // sliding — and clampCamera is what stops it leaving the map bounds. Only
+    // for the snap case: when the position is being eased, the camera easing
+    // with it is the whole point.
+    if (snapped && typeof camera !== 'undefined' && camera) {
       camera.x = player.x - W / (2 * ZOOM);
       camera.y = player.y - _visH() / 2;
       if (typeof clampCamera === 'function') clampCamera();
@@ -2418,7 +2651,7 @@ function netSendMove() {
   // uses (getSpriteAnimKey, js/sprites.js), not something a receiver has to
   // infer later from position deltas. Deltas are noisy by the time they've
   // gone through the network and the interpolation buffer (a dropped packet,
-  // a late one, the render clock sitting _INTERP_MS in the past all zero one
+  // a late one, the render clock sitting an interpolation delay in the past all zero one
   // out for a frame), which used to flip the run/idle animation key on and
   // off and reset the run cycle — the "twitching" other players stuttered.
   // Sending the true value directly means a stop is exact and immediate for

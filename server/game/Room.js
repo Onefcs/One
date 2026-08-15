@@ -189,9 +189,38 @@ function _petIdOf(sd) {
 
 const PARTY_SHARE_R = 700;
 const PARTY_SHARE_R2 = PARTY_SHARE_R * PARTY_SHARE_R;
-// At most this many other players per packet (screen fits ~15). Bounds the
-// N² blowup when hundreds of players stack in one spot.
-const PLAYER_CAP = 20;
+// At most this many other players per packet. Bounds the N² blowup when
+// hundreds of players stack in one spot.
+//
+// Raised from 20: a 600px AOI in a busy hub holds far more than 20, and the
+// ones past the cap were not merely "not drawn" — they dropped out of the
+// stream entirely, and the nearest-20 set churned as people milled about, so
+// a player near the boundary flickered in and out. Every time they came back
+// their snapshot buffer was stale, which the client can only render as a jump.
+// That is a stutter no amount of client-side smoothing can fix, because the
+// data genuinely is not being sent.
+//
+// The cost is real, and it was measured rather than estimated — dev/roombench
+// with 200 players stacked in the hub, which is the worst case this bound
+// exists for at all:
+//
+//     cap    tick p50   tick p99   per player
+//      20      2.5ms      4.4ms      8 KB/s
+//      40      4.2ms      7.1ms     15 KB/s
+//      60      5.5ms      8.4ms     22 KB/s
+//     100      8.2ms     11.1ms     37 KB/s
+//
+// CPU is the lesser half: 11ms p99 still fits the 25ms tick budget, though the
+// headroom drops from ~5.6x to ~2.2x. Bandwidth is the half to watch — 37 KB/s
+// of player positions on a phone is both a data-plan cost and, on a weak link,
+// a cause of the very jitter the client-side work here is fixing.
+//
+// It is an UPPER bound, not a typical case: the AOI test runs first, so
+// ordinary play (a handful of people in a corridor) is completely unaffected
+// and pays none of this. Only a genuine crowd in one spot reaches it. If the
+// hub does turn out to sustain crowds this size, 40-60 is where the curve is
+// still cheap — the numbers above are the whole basis for that call.
+const PLAYER_CAP = 100;
 // Every N casts a PLAYER entry goes out full even if the recipient "knows"
 // it — self-heals any client/server known-state divergence within ~2s.
 // Players are AOI-limited and capped at PLAYER_CAP, so this stays cheap.
@@ -221,7 +250,7 @@ const VISUAL_FANOUT_CAP = 24;
 const VISUAL_QUEUE_MAX = 48;
 
 // A player receiving nothing at all still gets one packet this often, purely
-// so their clock offset (js/network.js's _svrTimeOffset EMA) keeps tracking
+// so their clock offset (js/network.js's netClockNow estimate) keeps tracking
 // the server. At 20 casts/s this is once a second.
 const IDLE_HEARTBEAT_CASTS = 20;
 

@@ -16,6 +16,36 @@ let _qualityTier = 0, _lowFpsFrames = 0;
 // a short grace window after a tab change so the ~0.28s panel slide-in still
 // shows live world at the top instead of a frozen frame. Set by setTab().
 let _menuGraceUntil = 0;
+// How far past the newest snapshot another player may be dead-reckoned before
+// they are simply left where they were last seen. ~3 packet intervals: long
+// enough to ride out the dropped casts a volatile stream produces on a mobile
+// link, short enough that at a 175px/s run speed the worst-case error is ~26px
+// — under one character width, and corrected the instant a packet arrives.
+const _EXTRAP_MAX_MS = 150;
+// A snapshot pair wider than this is not a velocity measurement — see the
+// keepalive note at the extrapolation site. ~3 packet intervals.
+const _EXTRAP_MAX_SPAN_MS = 160;
+// Ceiling on extrapolated speed, in px per MILLISECOND. Derived from the
+// fastest class (ranger, speed 175 px/s) with generous headroom for the
+// movement buffs stacked on top, so the clamp only ever catches a pair that
+// straddles something that was not walking — a teleport pad, a respawn.
+const _EXTRAP_MAX_V = 175 * 2 / 1000;
+// Frames that ran out of buffer and had to extrapolate. Only meaningful as a
+// rate, which is what the perf overlay shows — a few per second is a link
+// dropping the odd packet, a steady stream of them means the interpolation
+// delay is not keeping up and the adaptive sizing should be widening it.
+let _netStarvedFrames = 0;
+// _netStarvedFrames sampled into a per-second rate, so the overlay reads a
+// stable number instead of a counter racing upward.
+let _netStarvedRate = 0, _netStarvedAt = 0, _netStarvedBase = 0;
+function _netStarvedTick() {
+  const now = performance.now();
+  if (!_netStarvedAt) { _netStarvedAt = now; _netStarvedBase = _netStarvedFrames; return; }
+  const dt = now - _netStarvedAt;
+  if (dt < 500) return;
+  _netStarvedRate = (_netStarvedFrames - _netStarvedBase) * 1000 / dt;
+  _netStarvedAt = now; _netStarvedBase = _netStarvedFrames;
+}
 
 function _perfToggleTap(cx, cy) {
   if (cx > 80 || cy > 80) return; // only top-left corner
@@ -26,6 +56,7 @@ function _perfToggleTap(cx, cy) {
 }
 
 function _drawPerf(frameMs) {
+  _netStarvedTick();
   // Store frame time
   _FT_BUF[_ftIdx] = frameMs;
   _ftIdx = (_ftIdx + 1) % 60;
@@ -73,6 +104,14 @@ function _drawPerf(frameMs) {
     `prt  ${particles.length}`,
     `enm  ${_visEnm}/${serverEnemies.length}`,
     `opl  ${otherPlayers.size}`,
+    // The two numbers that say whether remote players will look smooth.
+    // jit = p95 of how much later than best-case a snapshot arrived; itp = the
+    // interpolation delay currently derived from it (js/network.js). strv =
+    // starved frames per second — frames that ran past the newest snapshot and
+    // had to extrapolate. A healthy link sits at low jit, itp near its 70ms
+    // floor, and strv at 0.
+    `jit  ${netJitterP95().toFixed(0)}ms  itp ${netInterpCurrent().toFixed(0)}ms`,
+    `strv ${_netStarvedRate.toFixed(1)}/s`,
     `upd  ${_profUpdate.toFixed(1)}ms`,
     `rnd  ${_profRender.toFixed(1)}ms`,
     `skt  ${_profSocketEvtsSnap}e ${_profSocketMsSnap.toFixed(1)}ms`,
@@ -141,6 +180,51 @@ function _visH() { return (H - HEADER_H - NAV_H) / ZOOM; }
 // so this only keeps the local view honest rather than being the real guard.
 function _dbFrozen() {
   return typeof _dbFightAt !== 'undefined' && _dbFightAt > 0 && Date.now() < _dbFightAt;
+}
+
+// ── Server position correction ──────────────────────────────────────────────
+// Set by the posCorrect handler (js/network.js) when the server has refused a
+// move and is telling us where it still has us. Null when there is nothing to
+// converge on, which is almost always: the move guard ships in 'log' mode
+// (_MOVE_GUARD, server/game/Room.js) and never sends a correction at all —
+// this is what happens once it is switched to 'enforce'.
+//
+// A correction is authoritative and is applied in full; the only question is
+// whether it lands in one frame. A small one (a lag burst that coalesced a
+// second of running into one packet, and legitimate play near the budget) is
+// eased in over _POS_FIX_MS so the character walks the last stretch instead of
+// blinking. A large one is a teleport by definition — easing it would fly the
+// character across the map at impossible speed, and every intermediate
+// position would itself overdraw the budget and earn another correction, so
+// those still snap.
+let _posFixX = null, _posFixY = null;
+const _POS_FIX_MS  = 150;
+const _POS_FIX_MAX = 400;   // px; beyond this, snap
+
+function netApplyPosCorrection(x, y) {
+  if (!player) return;
+  const dx = x - player.x, dy = y - player.y;
+  if (dx * dx + dy * dy > _POS_FIX_MAX * _POS_FIX_MAX) {
+    player.x = x; player.y = y;
+    _posFixX = _posFixY = null;
+    return true;   // snapped — caller resnaps the camera
+  }
+  _posFixX = x; _posFixY = y;
+  return false;
+}
+
+function _applyPosCorrection(dt) {
+  if (_posFixX === null || !player) return;
+  // Exponential convergence, framerate-independent: at _POS_FIX_MS the
+  // remaining error is ~5% of what it started as.
+  const k = 1 - Math.exp(-(3000 / _POS_FIX_MS) * dt);
+  const dx = _posFixX - player.x, dy = _posFixY - player.y;
+  if (dx * dx + dy * dy < 1) {
+    player.x = _posFixX; player.y = _posFixY;
+    _posFixX = _posFixY = null;
+    return;
+  }
+  player.x += dx * k; player.y += dy * k;
 }
 
 function clampCamera() {
@@ -277,6 +361,8 @@ function update(dt, realDt) {
   if (realDt == null) realDt = dt;
   frameCount++;
   if (transTimer > 0) { transTimer -= dt; return; }
+
+  _applyPosCorrection(dt);
 
   {
     // Not gated to activeTab === 0 — target-chasing, auto-attack movement and
@@ -804,11 +890,13 @@ function update(dt, realDt) {
   const _chatOpenNow = document.getElementById('chat-panel')?.classList.contains('open');
   if (_talkBtn) _talkBtn.style.display = (nearNpc && activeTab === 0 && !_chatOpenNow) ? 'block' : 'none';
 
-  // Snapshot interpolation — render others at (serverNow - INTERP_MS)
-  // Always between two known positions → no prediction errors, perfectly linear
-  const _renderT = _svrTimeOffset !== null
-    ? Date.now() + _svrTimeOffset - _INTERP_MS
-    : 0;
+  // Snapshot interpolation — render others at (serverNow - interpolation
+  // delay). Between two known positions this is exact and perfectly linear:
+  // no prediction, so no prediction error to correct. netClockNow() is
+  // monotonic and netInterpMs() is sized from the link's measured jitter —
+  // see both in js/network.js.
+  const _clkNow = netClockNow();
+  const _renderT = _clkNow > 0 ? _clkNow - netInterpMs() : 0;
   otherPlayers.forEach((op, id) => {
     const buf = op._buf;
     // op.moving is authoritative — set directly from the sender's own input
@@ -823,10 +911,52 @@ function update(dt, realDt) {
       const span = s1.t - s0.t;
       if (span < 1) {
         op.x = s1.x; op.y = s1.y;
-      } else {
-        const a = Math.max(0, Math.min(1, (_renderT - s0.t) / span));
+      } else if (_renderT <= s1.t) {
+        const a = Math.max(0, (_renderT - s0.t) / span);
         op.x = s0.x + (s1.x - s0.x) * a;
         op.y = s0.y + (s1.y - s0.y) * a;
+      } else {
+        // ── Buffer starved: extrapolate ────────────────────────────────────
+        // Playback has caught up with the newest snapshot. This is NOT an
+        // exceptional case here: the server sends this stream volatile (see
+        // Room.js), i.e. it deliberately DROPS casts rather than queue them on
+        // a backed-up link, so a gap is the normal cost of not being stalled.
+        //
+        // Clamping to s1 (what this used to do) freezes the avatar in place
+        // and then teleports it when the next packet lands — the single most
+        // visible form of the stutter. Carrying the last known velocity
+        // forward instead keeps the motion continuous, and the next snapshot
+        // resumes exact interpolation from wherever it really is.
+        //
+        // Three guards, all of them load-bearing:
+        //
+        //  - op.moving is the sender's own authoritative input state, not
+        //    something inferred from these very positions, so a player who has
+        //    stopped never drifts no matter what the buffer does.
+        //  - only for _EXTRAP_MAX_MS. Past that the link is not jittering, it
+        //    is gone, and dead reckoning someone across the map is worse than
+        //    leaving them where they were last seen.
+        //  - only off a RECENT pair. A stationary player re-states their
+        //    position once a second (_MOVE_KEEPALIVE_MS, js/network.js), so
+        //    the moment they start walking the newest pair can still span a
+        //    full second — dividing a real step by 1000ms yields a velocity
+        //    several times too slow, which would read as the player wading.
+        //    Anything wider than a few packet intervals is not a velocity
+        //    measurement, so it isn't treated as one.
+        const ex = Math.min(_renderT - s1.t, _EXTRAP_MAX_MS);
+        if (op.moving && ex > 0 && span <= _EXTRAP_MAX_SPAN_MS) {
+          // Clamped to the fastest anything on foot can go, so a pair that
+          // straddles a teleport can't fling the sprite off screen before the
+          // next packet corrects it.
+          let vx = (s1.x - s0.x) / span, vy = (s1.y - s0.y) / span;
+          const v = Math.hypot(vx, vy);
+          if (v > _EXTRAP_MAX_V) { vx = vx / v * _EXTRAP_MAX_V; vy = vy / v * _EXTRAP_MAX_V; }
+          op.x = s1.x + vx * ex;
+          op.y = s1.y + vy * ex;
+        } else {
+          op.x = s1.x; op.y = s1.y;
+        }
+        _netStarvedFrames++;
       }
     } else if (op.targetX !== undefined) {
       // Fallback: exponential lerp — framerate-independent at any FPS
