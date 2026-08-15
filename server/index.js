@@ -9539,6 +9539,18 @@ io.on('connection', socket => {
 
   safeOn('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
+    // This handler replaces _lastStats wholesale further down — the same
+    // thing saveProgress does, and the same thing saveProgress is gated
+    // against _itemOpBusy for: a clone-and-commit handler mid-flight is
+    // holding a snapshot of the OLD object, and its commit lands on the new
+    // one, discarding whatever the re-read brought in.
+    //
+    // Only a REPEAT selection is refused. currentRoom is null until this
+    // handler assigns it, so a first join — the only one that can't have an
+    // item op in flight anyway, since nothing has run yet — is untouched and
+    // login can never be blocked by this. A duplicate arriving while the
+    // player is already in the world simply leaves them where they are.
+    if (currentRoom && _itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
     // authed.savedData is the DB-loaded record for this account (single save
     // blob, not per-type slots). If the client sent no savedStats — e.g. it
     // raced a fast refresh before its own savedData snapshot arrived — fall
