@@ -919,11 +919,13 @@ function renderProfessionPanel() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  ITEM CODEX ("Кодекс предметов") — permanent bonuses for gear ever owned.
-//  See CODEX_SETS/codexBonusTotal (shared/definitions.js) for the data and
-//  the bonus formula; player.codex is filled server-side (_syncCodex,
-//  server/inventory.js) and arrives via inventorySync (js/network.js), never
-//  written to from here — this file only renders it.
+//  ITEM CODEX ("Кодекс предметов") — sacrifice an inventory item at its exact
+//  enhance level to permanently fill one codex slot (see CODEX_ENTRIES/
+//  codexBonusTotal, shared/definitions.js). player.codex is filled
+//  server-side (registerCodexItem, server/index.js — see
+//  registerCodexItemFromModal above, which is the actual "register" action,
+//  offered from an eligible item's own inventory modal) and arrives via
+//  inventorySync (js/network.js); this file only renders progress.
 // ─────────────────────────────────────────────────────────
 let _itemDefById = null;
 function _codexItemDef(id) {
@@ -955,41 +957,53 @@ function renderCodexPanel() {
   const body = document.getElementById('codex-panel-body');
   if (!body || !player) return;
   const codex = player.codex || {};
-  const bonus = (typeof codexBonusTotal === 'function') ? codexBonusTotal(codex) : { atkPct:0, defPct:0, hpPct:0 };
-  const totalItems = CODEX_ITEM_IDS.size;
-  const ownedItems = CODEX_SETS.reduce((n, s) => n + s.items.filter(id => codex[id]).length, 0);
-  const setsDone = CODEX_SETS.filter(s => s.items.every(id => codex[id])).length;
+  const bonus = (typeof codexBonusTotal === 'function') ? codexBonusTotal(codex) : { atk:0, def:0, hp:0, critChance:0, hpRegen:0 };
+  const haveSlots = CODEX_ENTRIES.reduce((n, e) => n + (codex[e.key] ? 1 : 0), 0);
 
   const summary = `
     <div class="cdx-summary">
-      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.atkPct * 100).toFixed(1)}%</div><div class="cdx-summary-lbl">${t('cdxAtkLbl')}</div></div>
-      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.defPct * 100).toFixed(1)}%</div><div class="cdx-summary-lbl">${t('cdxDefLbl')}</div></div>
-      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.hpPct  * 100).toFixed(1)}%</div><div class="cdx-summary-lbl">${t('cdxHpLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${bonus.atk}</div><div class="cdx-summary-lbl">${t('cdxAtkLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${bonus.def}</div><div class="cdx-summary-lbl">${t('cdxDefLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${bonus.hp}</div><div class="cdx-summary-lbl">${t('cdxHpLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${(bonus.critChance * 100).toFixed(2)}%</div><div class="cdx-summary-lbl">${t('cdxCritLbl')}</div></div>
+      <div class="cdx-summary-card"><div class="cdx-summary-val">+${bonus.hpRegen.toFixed(3)}</div><div class="cdx-summary-lbl">${t('cdxRegenLbl')}</div></div>
     </div>
-    <div class="cdx-progress">${tVars('cdxProgressFmt', { have: ownedItems, total: totalItems, sets: setsDone, setsTotal: CODEX_SETS.length })}</div>
+    <div class="cdx-progress">${tVars('cdxProgressFmt', { have: haveSlots, total: CODEX_ENTRIES.length })}</div>
+    <div class="cdx-hint">${t('cdxRegisterHint')}</div>
   `;
 
   const sets = CODEX_SETS.map(s => {
-    const have = s.items.filter(id => codex[id]).length;
-    const done = have === s.items.length;
-    const cells = s.items.map(id => {
+    const setEntries = CODEX_ENTRIES.filter(e => e.setId === s.id);
+    const maxEnh = setEntries.reduce((m, e) => Math.max(m, e.enhance), 0);
+    const setTotal = setEntries.length;
+    const setHave = setEntries.filter(e => codex[e.key]).length;
+    const done = setHave === setTotal;
+
+    const rows = s.items.map(id => {
       const def = _codexItemDef(id);
       if (!def) return '';
-      const owned = !!codex[id];
       const rc = RARITY_COLOR[def.rarity] || '#aea599';
-      return `<div class="cdx-cell${owned ? ' owned' : ' locked'}" style="--cc:${rc}" title="${def.name}${owned ? '' : ' — ' + t('cdxLockedLbl')}">
-        ${def.img ? `<img src="${def.img}" width="26" height="26" style="image-rendering:pixelated">` : ''}
-        ${!owned ? `<div class="cdx-lock">${iconHTML('lock', 12, '#d1ccc5')}</div>` : ''}
-      </div>`;
+      const pips = Array.from({ length: maxEnh + 1 }, (_, enh) => {
+        const key = codexEntryKey(id, enh);
+        const owned = !!codex[key];
+        return `<div class="cdx-pip${owned ? ' owned' : ''}" style="--cc:${rc}" title="${def.name} +${enh}${owned ? '' : ' — ' + t('cdxLockedLbl')}"></div>`;
+      }).join('');
+      return `
+        <div class="cdx-item-row">
+          <div class="cdx-item-icon">${def.img ? `<img src="${def.img}" width="24" height="24" style="image-rendering:pixelated">` : ''}</div>
+          <div class="cdx-item-name" style="color:${rc}">${def.name}</div>
+          <div class="cdx-pips">${pips}</div>
+        </div>`;
     }).join('');
+
     return `
       <div class="cdx-set${done ? ' done' : ''}">
         <div class="cdx-set-hdr">
           <div class="cdx-set-name">${s.name}</div>
-          <div class="cdx-set-count">${have}/${s.items.length}</div>
+          <div class="cdx-set-count">${setHave}/${setTotal}</div>
         </div>
-        <div class="cdx-set-bar"><div class="cdx-set-bar-fill" style="width:${(have / s.items.length) * 100}%"></div></div>
-        <div class="cdx-set-items">${cells}</div>
+        <div class="cdx-set-bar"><div class="cdx-set-bar-fill" style="width:${(setHave / setTotal) * 100}%"></div></div>
+        <div class="cdx-set-rows">${rows}</div>
       </div>`;
   }).join('');
 
@@ -2995,6 +3009,7 @@ function openInvItemModal(idx) {
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">${t('equipBtn')}</button>
       ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
       ${_seasonBurnPts(it) ? `<button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0" onclick="burnItemForSeason(${idx})">${tVars('seasonBurnBtn', { n: _seasonBurnPts(it) })}</button>` : ''}
+      ${_codexOpenSlot(it) ? `<button class="imod-btn imod-sell" style="border-color:#e3941d;color:#eac47e" onclick="registerCodexItemFromModal(${idx})">${iconHTML('book',12,'#eac47e')} ${t('codexRegisterBtn')}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -3017,6 +3032,27 @@ function equipFromModal(idx) {
 // land but the gold would be clamped back off, i.e. the player would sell for
 // nothing. The inventory and the balance both come back over
 // inventorySync/itemSold.
+
+// The codex slot this exact (id, enhance) pair would fill, or null when
+// there isn't one / it's already been filled — mirrors codexEntryFor
+// (shared/definitions.js), the server re-checks it anyway, this just
+// decides whether to offer the button.
+function _codexOpenSlot(it) {
+  if (!it || typeof codexEntryFor !== 'function' || !player) return null;
+  const entry = codexEntryFor(it.id, it.enhance || 0);
+  if (!entry) return null;
+  if ((player.codex || {})[entry.key]) return null;
+  return entry;
+}
+
+// The server destroys the item and fills the slot — nothing local.
+function registerCodexItemFromModal(idx) {
+  if (!player) return;
+  const it = player.inventory[idx];
+  if (!_codexOpenSlot(it)) return;
+  if (typeof netRegisterCodexItem === 'function') netRegisterCodexItem(idx);
+  closeInvItemModal();
+}
 
 // Season points this item is worth if burned, or 0 when it cannot be burned.
 // Mirrors the server's own rule (SEASON_BURN_POINTS, and non-stackable only)

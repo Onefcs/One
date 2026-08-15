@@ -32,7 +32,6 @@ const {
   MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
-  _syncCodex,
 } = require('./inventory');
 // VIP 3+ trades away the flat MARKET_MAX_ACTIVE cap for no cap at all —
 // Infinity compares false against activeCount forever, so the check below
@@ -186,6 +185,7 @@ const {
   SEASON_WIN_POINTS,
   SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
+  codexEntryFor,
 } = require('../shared/definitions');
 
 // enterLocation's generic level gate (see _doEnterLocation) reads from this —
@@ -5449,12 +5449,6 @@ io.on('connection', socket => {
       : (Array.isArray(_lastStats.inventory) ? _lastStats.inventory.length : 0);
     _lastStats.inventory = inventory;
     if (equipment) _lastStats.equipment = equipment;
-    // Item codex (shared/definitions.js) — every server-side item change
-    // funnels through here (see the file header comment above), so this is
-    // the one place a codex backfill needs to run rather than a hook on each
-    // of the dozen-plus individual grant paths. _syncCodex only ever adds
-    // keys, so re-scanning on every single call is cheap and safe.
-    _lastStats.codex = _syncCodex(_lastStats.codex, inventory, _lastStats.equipment, _lastStats.storage);
     _invRev++;
     // Every server-side item change funnels through here, so logging it here
     // covers all of them at once — and records the slot count before/after,
@@ -7020,6 +7014,32 @@ io.on('connection', socket => {
     _lastStats.equipment[slot] = null;
     inv.push(it);
     _commitServerItems(inv, _lastStats.equipment, 'unequip', { id: it.id, slot }, { beforeLen });
+  });
+
+  // Item Codex ("Кодекс предметов", shared/definitions.js) — sacrifices an
+  // inventory item at its exact enhance level into a permanent codex slot.
+  // The item is gone (spliced out, never returned); the slot, once filled,
+  // stays filled forever, and codexBonusTotal reads _lastStats.codex on
+  // every recompute/computeStats call from here on. codexEntryFor is the
+  // one gate: only a (id, enhance) pair CODEX_ENTRIES actually generated is
+  // a real slot, so a forged request naming an arbitrary item/enhance simply
+  // finds nothing to register.
+  safeOn('registerCodexItem', ({ idx } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
+    const inv = _lastStats.inventory;
+    const i = Math.floor(Number(idx));
+    const it = (Number.isInteger(i) && i >= 0) ? inv[i] : null;
+    if (!it) return;
+    const entry = codexEntryFor(it.id, it.enhance || 0);
+    if (!entry) return _itemErr('Этот предмет нельзя зарегистрировать в Кодекс');
+    if (!_lastStats.codex || typeof _lastStats.codex !== 'object') _lastStats.codex = {};
+    if (_lastStats.codex[entry.key]) return _itemErr('Эта ячейка Кодекса уже заполнена');
+    const beforeLen = inv.length;
+    inv.splice(i, 1);
+    _lastStats.codex[entry.key] = true;
+    _commitServerItems(inv, undefined, 'codex_register',
+      { key: entry.key, itemId: it.id, enhance: it.enhance || 0 }, { beforeLen });
   });
 
   // Inventory -> storage and back. Both are MOVES: the item is spliced out of
@@ -9533,12 +9553,11 @@ io.on('connection', socket => {
         advSkillLearned: effectiveSaved.advSkillLearned,
         advSkillActive:  effectiveSaved.advSkillActive,
       });
-      // Item codex — the stored record plus a fresh scan of what this login
-      // is about to seat the session with, so an account that already owned
-      // qualifying gear before this feature shipped gets backfilled the first
-      // time it connects rather than only from its next item change.
-      effectiveSaved.codex = _syncCodex((_dbBase && _dbBase.codex) || {},
-        effectiveSaved.inventory, effectiveSaved.equipment, effectiveSaved.storage);
+      // Item codex — the stored record, exactly as persisted. Registration
+      // (registerCodexItem) is the only thing that ever adds to it, so unlike
+      // the fields above there's nothing here to re-derive from the rest of
+      // this login's blob.
+      effectiveSaved.codex = (_dbBase && _dbBase.codex) || {};
       _lastStats = effectiveSaved;
       // Baseline for saveProgress's own rate-based gold cap — without this,
       // the time this session spends actually playing before its first
@@ -11024,9 +11043,9 @@ io.on('connection', socket => {
       clean.inventory = _lastStats.inventory || [];
       clean.equipment = _lastStats.equipment || {};
       clean.storage   = _lastStats.storage   || [];
-      // Item codex — server-owned exactly like the three above (_syncCodex,
-      // server/inventory.js), taken from the session copy rather than
-      // whatever the client's save blob says.
+      // Item codex — server-owned exactly like the three above
+      // (registerCodexItem is the only thing that ever writes it), taken
+      // from the session copy rather than whatever the client's save blob says.
       clean.codex     = _lastStats.codex     || {};
     }
 

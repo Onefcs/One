@@ -8,7 +8,6 @@
 // that can be exercised directly is worth more than their line count suggests.
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, isStackableItem, ENHANCE_MAX, ENHANCEABLE_SLOTS,
-  CODEX_ITEM_IDS,
 } = require('../shared/definitions');
 const { _catalogBase, SERVER_INV_MAX } = require('./anticheat');
 
@@ -172,33 +171,6 @@ function _invHasRoomFor(inv, item) {
   return inv.length < SERVER_INV_MAX;
 }
 
-// ── Item Codex ────────────────────────────────────────────────────────────
-// Merges any currently-held codex item (CODEX_ITEM_IDS, shared/definitions.js)
-// — inventory, equipment or storage — into `codex`, mutating nothing (returns
-// a new object) and only ever ADDING entries. That's what makes registration
-// permanent: once an item has been seen here it stays in the returned bag even
-// after it's sold, salvaged or lost, because nothing ever removes a key again.
-//
-// Deliberately a pure scan over whatever the caller already has on hand
-// rather than a hook on every individual grant path (loot, craft, market,
-// boxes, quests, admin edits — a dozen-plus call sites across server/index.js,
-// see _invAdd above). _commitServerItems (server/index.js) is the one place
-// EVERY one of those already funnels through before touching _lastStats, so
-// calling this there catches all of them at once; the login/reconnect hydrate
-// path calls it too, so an account that already owned qualifying gear before
-// this feature shipped gets backfilled the first time it connects.
-function _syncCodex(codex, inventory, equipment, storage) {
-  const out = (codex && typeof codex === 'object') ? { ...codex } : {};
-  const scan = list => {
-    if (!Array.isArray(list)) return;
-    list.forEach(it => { if (it && CODEX_ITEM_IDS.has(it.id)) out[it.id] = true; });
-  };
-  scan(inventory);
-  scan(storage);
-  if (equipment && typeof equipment === 'object') scan(Object.values(equipment));
-  return out;
-}
-
 module.exports = {
   // The market's own bounds moved here with the price floors, but
   // server/index.js is where they are USED — exporting them is what that split
@@ -208,5 +180,4 @@ module.exports = {
   MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
-  _syncCodex,
 };

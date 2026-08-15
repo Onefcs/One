@@ -1604,10 +1604,10 @@ function netConnect(onReady) {
       Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
       player.equipment = { ...blank, ...rebuilt };
     }
-    // Item codex (shared/definitions.js) — server-computed (_syncCodex,
-    // server/inventory.js) off whatever inventory/equipment/storage it just
-    // sent, so it always arrives alongside them. Only ever grows, so merging
-    // is as safe as replacing and survives an out-of-order arrival either way.
+    // Item codex (shared/definitions.js) — server-owned (registerCodexItem,
+    // server/index.js), sent alongside inventory/equipment/storage on every
+    // change since a registration touches inventory too. Only ever grows, so
+    // merging is as safe as replacing and survives an out-of-order arrival.
     if (codex && typeof codex === 'object') {
       player.codex = { ...(player.codex || {}), ...codex };
     }
@@ -2350,6 +2350,12 @@ function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgr
 // chest is the server's job now; the answer comes back as inventorySync.
 function netEquipItem(idx)       { if (socket?.connected) socket.emit('equipItem', { idx }); }
 function netUnequipItem(slot)    { if (socket?.connected) socket.emit('unequipItem', { slot }); }
+// Item Codex — sacrifices inventory[idx] into its codex slot (permanently:
+// the item does not come back). The server validates the (id, enhance) pair
+// against CODEX_ENTRIES and answers with the usual inventorySync (item gone)
+// carrying the updated codex bag, or an itemError if the slot doesn't exist
+// or is already filled — see registerCodexItem, server/index.js.
+function netRegisterCodexItem(idx) { if (socket?.connected) socket.emit('registerCodexItem', { idx }); }
 function netStorageDeposit(idx)  { if (socket?.connected) socket.emit('storageDeposit', { idx }); }
 function netStorageWithdraw(idx) { if (socket?.connected) socket.emit('storageWithdraw', { idx }); }
 // The merchant is the only shop priced in gold, so it is the only purchase

@@ -94,11 +94,12 @@ function makePlayer(type) {
     // books exactly like skillLevels above (see studyPassiveSkill/
     // upgradePassiveSkillWithBook in js/ui.js).
     passiveLevels: {},
-    // {itemId: true} — the item codex's permanent "ever owned" record (see
-    // codexBonusTotal, shared/definitions.js). Server-owned like
-    // passiveLevels: kept here only so recompute() has something to read
-    // between syncs, never written to directly — see restoreFromSave and the
-    // inventorySync handler (js/network.js), which are the only two writers.
+    // {slotKey: true} — filled codex slots (see codexEntryKey/codexBonusTotal,
+    // shared/definitions.js). Server-owned like passiveLevels: registration
+    // (registerCodexItem — netRegisterCodexItem, js/network.js) sacrifices
+    // an inventory item into a slot server-side, and this only ever reflects
+    // what came back — see restoreFromSave and the inventorySync handler
+    // (js/network.js), which are the only two writers.
     codex: {},
     cdrPct: 0,
     questIdx: 0,
@@ -223,14 +224,17 @@ function recompute() {
   // recompute(), so it can never go stale.
   player.skillPct = skillPct;
 
+  // Item codex (shared/definitions.js) — flat per-stat, like a permanent
+  // extra piece of gear: added alongside equipment's own flat atk/def/hp,
+  // before any percentage multiplier touches them. See codexBonusTotal's own
+  // comment for what fills a slot and how its reward is sized.
+  const cx = (typeof codexBonusTotal === 'function') ? codexBonusTotal(player.codex) : null;
+  if (cx) { a += cx.atk; d += cx.def; h += cx.hp; extraCrit += cx.critChance; }
+
   // Passive skills (shared/definitions.js) — class-exclusive pair + six
   // universal ones, bought with gold in the Skills → Passive tab (js/ui.js).
   const pt = (typeof passiveBonusTotal === 'function') ? passiveBonusTotal(player.passiveLevels, player.type) : null;
   if (pt) hpPct += pt.hpPct;
-  // Item codex (shared/definitions.js) — see codexBonusTotal's own comment
-  // for the balance reasoning. Folded in right next to passives, same shape.
-  const cx = (typeof codexBonusTotal === 'function') ? codexBonusTotal(player.codex) : null;
-  if (cx) hpPct += cx.hpPct;
   h = Math.floor(h * (1 + hpPct));
 
   // Buff potion bonuses
@@ -243,10 +247,6 @@ function recompute() {
     a = Math.floor(a * (1 + pt.atkPct));
     d = Math.floor(d * (1 + pt.defPct));
     extraAS += (player.charDef.atkSpeed || 0) * pt.atkSpeedPct;
-  }
-  if (cx) {
-    a = Math.floor(a * (1 + cx.atkPct));
-    d = Math.floor(d * (1 + cx.defPct));
   }
 
   // Clan "Атака" perk (js/definitions.js CLAN_LEVELS, cumulative % at the
@@ -299,7 +299,7 @@ function recompute() {
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff);
   player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
-  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
+  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0) + (cx ? cx.hpRegen : 0);
   player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;
   player.speed      = player.baseSpeed * (1 + (pt ? pt.moveSpeedPct : 0));
 }

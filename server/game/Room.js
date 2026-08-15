@@ -91,22 +91,21 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
     if (it.critChance) extraCrit += it.critChance;
     if (it.atkSpeed)   extraAS   += it.atkSpeed;
   });
+  // Item codex (shared/definitions.js) — sd.codex is server-owned only
+  // (registerCodexItem, server/index.js — the only thing that ever writes
+  // it), never taken from the client's save blob. Flat per-stat, like a
+  // permanent extra piece of gear: added alongside equipment's own flat
+  // atk/def/hp, before any percentage multiplier touches them.
+  const cx = codexBonusTotal(sd.codex);
+  a += cx.atk; d += cx.def; h += cx.hp; extraCrit += cx.critChance;
   // Passive skills (shared/definitions.js). passiveBonusTotal clamps every
   // level to PASSIVE_MAX_LEVEL and only reads known passive ids, so a client
   // can't inflate these by sending junk in savedData.passiveLevels.
   const pt = passiveBonusTotal(sd.passiveLevels, type || sd.type);
-  // Item codex (shared/definitions.js) — sd.codex is server-computed only
-  // (_syncCodex, server/inventory.js, called from _commitServerItems and the
-  // login/reconnect hydrate path in server/index.js), never taken from the
-  // client's save blob, so codexBonusTotal only ever sees ids this session
-  // actually held.
-  const cx = codexBonusTotal(sd.codex);
-  hpPct += pt.hpPct + cx.hpPct;
+  hpPct += pt.hpPct;
   h = Math.floor(h * (1 + hpPct));
   a = Math.floor(a * (1 + pt.atkPct));
   d = Math.floor(d * (1 + pt.defPct));
-  a = Math.floor(a * (1 + cx.atkPct));
-  d = Math.floor(d * (1 + cx.defPct));
   // Same multiplier recompute() applies via getClanBonus() — after passives,
   // like there.
   if (clanAtkBonusPct > 0) a = Math.floor(a * (1 + clanAtkBonusPct / 100));
@@ -121,7 +120,7 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
     // Permanent-only — mirrors recompute() (js/player.js) minus its buff/skill
     // timer terms, same as every other field here (see the file header note).
     atkSpeed: (cd.atkSpeed || 0) * (1 + lvl * 0.015) + (u.atkSpeed || 0) * 0.05 + extraAS,
-    hpRegen:  lvl * 0.02 + (u.hpRegen || 0) * 0.1 + pt.hpRegenFlat,
+    hpRegen:  lvl * 0.02 + (u.hpRegen || 0) * 0.1 + pt.hpRegenFlat + cx.hpRegen,
   };
 }
 

@@ -1619,15 +1619,21 @@ const VIP_BONUSES = [
 ];
 
 // ── Item Codex ("Кодекс предметов") ─────────────────────────────────────────
-// A permanent, per-account "ever owned" record over a curated slice of
-// ITEM_DEF/UNIQUE_WEAPONS, grouped into themed sets (one line of gear per
-// set — e.g. every tier of the Death Knight's sword). Registering an item
-// (having ever held it, tracked server-side — see _syncCodex,
-// server/inventory.js) grants a tiny permanent stat bonus; completing every
-// item in a set grants a bigger one on top. Both fold into
-// recompute()/computeStats() exactly like PASSIVE_*/passiveBonusTotal above,
-// via codexBonusTotal below, so they're bounded by the same server-side
-// ceiling that already guards equipment and passives.
+// A permanent collection sink: the player SACRIFICES a specific item at a
+// specific enhancement level out of their inventory — it is destroyed on
+// registration, never returned — to permanently fill one codex slot. Each
+// (itemId, enhance) pair is its OWN slot: a +0 common sword and a +3 common
+// sword fill two different slots, both worth registering separately. That's
+// what stretches ~80 curated gear items (CODEX_SETS below) into roughly a
+// thousand slots (CODEX_ENTRIES) without inventing a thousand new items.
+//
+// Every slot of a given rarity pays the identical flat bonus — enhancement
+// decides which slot a copy can fill, not how much that slot is worth — so
+// total payoff scales with how many slots get cleared, not how hard any one
+// hit lands. Bonuses fold into recompute()/computeStats() exactly like
+// PASSIVE_*/passiveBonusTotal above, via codexBonusTotal below, so they're
+// covered by the same server-side ceiling that already guards equipment and
+// passives.
 //
 // Deliberately excludes materials, potions, boxes, keys and pets — this is a
 // gear-collection codex, not a full item census.
@@ -1651,32 +1657,87 @@ const CODEX_SETS = [
 ];
 
 // Every id CODEX_SETS ever mentions — the one place that decides whether an
-// owned item counts toward the codex at all (_syncCodex checks membership
-// against this, not against ITEM_DEF directly, precisely so it stays scoped
-// to gear and never picks up a material/potion/box/key/pet id).
+// item id is codex-eligible at all (regardless of enhance level).
 const CODEX_ITEM_IDS = new Set(CODEX_SETS.flatMap(s => s.items));
 
-// Flat bonus per stat, per uniquely-registered item / per fully-completed
-// set. Small on purpose — this is a completionist's long tail on top of
-// gear/passives/VIP, not a power spike: at full completion (80 items, 16
-// sets) it works out to roughly +16% atk, +16% def, +24% hp.
-const CODEX_ITEM_PCT = { atk: 0.001,  def: 0.001,  hp: 0.0015 };
-const CODEX_SET_PCT  = { atk: 0.005,  def: 0.005,  hp: 0.0075 };
+// How many enhance-level slots exist per item in a given set. Regular gear
+// (weapon/armor lines) spans the item's full possible enhance range; class
+// gear (cloaks/artifacts) is capped lower since it only ever comes in two
+// rarities to begin with; unique weapons — already the single strongest item
+// of their slot — get exactly one slot each, no enhance ladder.
+function _codexEnhanceMax(setId) {
+  if (setId === 'uniq') return 0;
+  if (setId.indexOf('cls_') === 0) return 9;
+  return ENHANCE_MAX; // 15 — see ENHANCE_MAX above
+}
 
-// `codex` is the {itemId: true} bag from _syncCodex/restoreFromSave. Sums it
-// into the same { atkPct, defPct, hpPct } shape passiveBonusTotal returns, so
-// recompute() (js/player.js) and computeStats (server/game/Room.js) can fold
-// it in with one extra line each, right next to the passive bonus.
-function codexBonusTotal(codex) {
-  const owned = codex && typeof codex === 'object'
-    ? Object.keys(codex).filter(id => codex[id] && CODEX_ITEM_IDS.has(id))
-    : [];
-  const setsDone = codex ? CODEX_SETS.filter(s => s.items.every(id => codex[id])).length : 0;
+// The codex slot key both client and server build for a given (item,
+// enhance) pair — the one shared format so a save's {key: true} bag and a
+// registration request always agree on what a slot is called.
+function codexEntryKey(itemId, enhance) {
+  return itemId + '+' + (enhance || 0);
+}
+
+// Every registrable slot, generated once at load: for each CODEX_SETS item,
+// one entry per enhance level from 0 to that set's _codexEnhanceMax. Works
+// out to roughly a thousand: 50 regular-gear items × 16 levels (0-15) + 20
+// class-gear items × 10 levels (0-9) + 10 unique weapons × 1 level (0 only).
+const CODEX_ENTRIES = CODEX_SETS.flatMap(s => {
+  const maxEnh = _codexEnhanceMax(s.id);
+  return s.items.flatMap(itemId => {
+    const def = ITEM_DEF.find(d => d.id === itemId);
+    if (!def) return [];
+    const out = [];
+    for (let enh = 0; enh <= maxEnh; enh++) {
+      out.push({ key: codexEntryKey(itemId, enh), setId: s.id, itemId, enhance: enh, rarity: def.rarity });
+    }
+    return out;
+  });
+});
+const CODEX_ENTRY_BY_KEY = new Map(CODEX_ENTRIES.map(e => [e.key, e]));
+
+// entry.itemId+enhance -> its CODEX_ENTRIES record, or null when that exact
+// (item, enhance) pair isn't a registrable slot (wrong enhance range, or the
+// item isn't codex-eligible at all). The one check registerCodexItem
+// (server/index.js) and the client's own "can I register this?" both use.
+function codexEntryFor(itemId, enhance) {
+  return CODEX_ENTRY_BY_KEY.get(codexEntryKey(itemId, enhance)) || null;
+}
+
+// Flat bonus at common rarity, and each higher rarity's multiplier on it —
+// common=1x ... legendary=5x, so e.g. a rare slot pays +3 atk/+3 hp/+3 def/
+// +0.03 crit chance/+0.015 hp-regen when registered.
+const CODEX_BASE_BONUS  = { atk: 1, hp: 1, def: 1, critChance: 0.01, hpRegen: 0.005 };
+const CODEX_RARITY_MULT = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
+
+function codexEntryBonus(rarity) {
+  const m = CODEX_RARITY_MULT[rarity] || 0;
   return {
-    atkPct: owned.length * CODEX_ITEM_PCT.atk + setsDone * CODEX_SET_PCT.atk,
-    defPct: owned.length * CODEX_ITEM_PCT.def + setsDone * CODEX_SET_PCT.def,
-    hpPct:  owned.length * CODEX_ITEM_PCT.hp  + setsDone * CODEX_SET_PCT.hp,
+    atk: CODEX_BASE_BONUS.atk * m,
+    hp: CODEX_BASE_BONUS.hp * m,
+    def: CODEX_BASE_BONUS.def * m,
+    critChance: CODEX_BASE_BONUS.critChance * m,
+    hpRegen: CODEX_BASE_BONUS.hpRegen * m,
   };
+}
+
+// `codex` is the {slotKey: true} bag — see codexEntryKey above. Server-owned
+// (registerCodexItem, server/index.js), only ever grows, never taken from a
+// client save blob. Sums every registered slot's flat bonus into one bag;
+// recompute() (js/player.js) and computeStats (server/game/Room.js) fold it
+// in right next to equipment's own flat atk/def/hp.
+function codexBonusTotal(codex) {
+  const out = { atk: 0, hp: 0, def: 0, critChance: 0, hpRegen: 0 };
+  if (!codex || typeof codex !== 'object') return out;
+  Object.keys(codex).forEach(key => {
+    if (!codex[key]) return;
+    const entry = CODEX_ENTRY_BY_KEY.get(key);
+    if (!entry) return;
+    const b = codexEntryBonus(entry.rarity);
+    out.atk += b.atk; out.hp += b.hp; out.def += b.def;
+    out.critChance += b.critChance; out.hpRegen += b.hpRegen;
+  });
+  return out;
 }
 
 // ── Clan levels & cumulative bonuses ──────────────────────────
@@ -1724,7 +1785,9 @@ if (typeof module !== 'undefined') module.exports = {
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
-  CODEX_SETS, CODEX_ITEM_IDS, CODEX_ITEM_PCT, CODEX_SET_PCT, codexBonusTotal,
+  CODEX_SETS, CODEX_ITEM_IDS, CODEX_ENTRIES, CODEX_ENTRY_BY_KEY,
+  CODEX_BASE_BONUS, CODEX_RARITY_MULT,
+  codexEntryKey, codexEntryFor, codexEntryBonus, codexBonusTotal,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,

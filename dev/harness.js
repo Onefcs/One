@@ -1432,6 +1432,45 @@ scenario('items: a storage move is one server-side operation', async () => {
   await c.close();
 });
 
+scenario('items: registering a codex item destroys it and fills the slot permanently', async () => {
+  const { codexEntryKey } = require('../shared/definitions');
+  // sw1 (common Death Knight sword) at +0 is a real codex slot — two copies,
+  // so a second registration attempt has something real to be refused on.
+  const c = await connectWithSaved('harness_codex', {
+    inventory: [{ id: 'sw1', enhance: 0 }, { id: 'sw1', enhance: 0 }],
+  });
+  await enterWorld(c, 'deathknight');
+  let sync = c.wait('inventorySync', { timeout: 6000 });
+  c.emit('registerCodexItem', { idx: 0 });
+  let got = await sync;
+  eq(got.inventory.length, 1, 'the sacrificed copy left the inventory');
+  ok(got.codex && got.codex[codexEntryKey('sw1', 0)], 'and its slot is now filled');
+  await sleep(120);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  ok(row.savedData.codex && row.savedData.codex[codexEntryKey('sw1', 0)], 'persisted immediately');
+
+  // Same slot, second copy at index 0 now — already filled, refused.
+  const err = c.wait('itemError', { timeout: 5000 }).catch(() => null);
+  c.emit('registerCodexItem', { idx: 0 });
+  ok(await err, 'registering an already-filled slot again is refused');
+  const row2 = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq((row2.savedData.inventory || []).length, 1, 'and the second copy was not consumed');
+  await c.close();
+});
+
+scenario('items: registering refuses an item that is not a codex slot', async () => {
+  const c = await connectWithSaved('harness_codex_bad', { inventory: [{ id: 'rece', qty: 5 }] });
+  await enterWorld(c, 'mage');
+  const err = c.wait('itemError', { timeout: 5000 }).catch(() => null);
+  c.emit('registerCodexItem', { idx: 0 });
+  ok(await err, 'a non-gear item has no codex slot to fill');
+  await sleep(120);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(Object.keys((row.savedData && row.savedData.codex) || {}).length, 0, 'nothing was registered');
+  eq((row.savedData.inventory || []).length, 1, 'and the item was not consumed');
+  await c.close();
+});
+
 scenario('rating: bm reflects real gear, not just level and maxHp', async () => {
   // calcBM (server/anticheat.js) reads sd.atk/sd.def — the full, gear-
   // inclusive combat stats — but _buildSaveStats() (js/network.js) never
@@ -1486,13 +1525,7 @@ scenario('rating: bm reflects real gear, not just level and maxHp', async () => 
   const cd = CHAR_DEF.deathknight;
   const trueStats = RoomClass.computeStats(
     { lvl: 20, baseAtk: cd.baseAtk + 19, baseDef: cd.baseDef + 19, baseMaxHp: cd.baseHP + 19 * 20,
-      equipment: { weapon: { atk: 130, def: 0, hp: 1000, critChance: 0.50, enhance: 0 } }, upgrades: {},
-      // uq_sword_l is also an item-codex entry (CODEX_SETS's 'uniq' set,
-      // shared/definitions.js) — the geared account's login/reconnect
-      // hydrate registered it into sd.codex the moment it connected wearing
-      // it (see _syncCodex, server/inventory.js), so the real stored bm has
-      // the codex bonus folded in too and this mock has to match.
-      codex: { uq_sword_l: true } },
+      equipment: { weapon: { atk: 130, def: 0, hp: 1000, critChance: 0.50, enhance: 0 } }, upgrades: {} },
     cd, 'deathknight', 0,
   );
   const expected = calcBM({ lvl: 20, atk: trueStats.atk, def: trueStats.def, maxHp: trueStats.maxHp, upgrades: {} });
