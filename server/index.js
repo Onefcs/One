@@ -17,6 +17,10 @@ const {
   _adminToken, _verifyAdminToken, _safeEqual,
   _loginLockedUntil, _recordLoginFail, _clearLoginFails, _tgEsc,
 } = require('./security');
+// Splits the hosting bill's one "network egress" number into player downloads,
+// the live game stream, and everything else (the database, the Telegram API).
+// See server/egress.js — nothing in the game depends on it.
+const egress = require('./egress');
 const {
   SERVER_INV_MAX, _SANITIZE_MAX, _HP_POTION_IDS, _HP_POTION_HEAL,
   _catalogBase, _unknownItemIds, _canonSavedItem,
@@ -1176,6 +1180,8 @@ const io = new Server(server, {
   pingInterval: 15000,
   maxHttpBufferSize: 512 * 1024,  // 512 KB max per socket message
 });
+// Counts the game stream by event name — see the [egress] report below.
+egress.attachSockets(io);
 
 // Cross-process fan-out. Everything in this file addresses other players
 // through io.to(...).emit(...), and socket.io routes those through its adapter
@@ -1286,6 +1292,12 @@ app.use(helmet({
     },
   },
 }));
+// BEFORE compression(), and that order is the whole trick: compression()
+// replaces res.write/res.end with its own and calls through to whatever was
+// there when it ran — which is this hook. So this counts compressed output,
+// i.e. bytes on the wire, which is what the bill counts. Registered after it,
+// it would count the uncompressed body and overstate JS/HTML ~3x.
+app.use(egress.httpMiddleware);
 app.use(compression());
 app.use(express.json({ limit: '256kb' }));
 
@@ -2252,6 +2264,11 @@ app.get('/health', (req, res) => {
     // Why sessions have been ending since this process started — the direct
     // answer to "почему мир перезагружается". See _sessionStats.
     sessions: _sessionStatsSnapshot(),
+    // Where the outbound bytes went since this process started — the direct
+    // answer to "почему такой счёт за трафик". Cumulative, so two polls a
+    // known time apart give a rate; the [egress] log line does that for you
+    // every SESSION_REPORT_MS. See server/egress.js.
+    egress: egress.snapshot(),
   });
 });
 
@@ -4949,6 +4966,32 @@ safeInterval('sessionReport', () => {
     `(${endedAuthed} authed, ${shortLived} under ${SHORT_SESSION_MS / 1000}s, ` +
     `avg ${now.avgSessionS}s all-time) — ` +
     Object.entries(delta).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' '));
+}, SESSION_REPORT_MS).unref();
+
+// The same window, for the other recurring question: the hosting bill says
+// egress is what costs money, and this says which egress. Unlike [sessions]
+// this prints even when the number is small — a quiet window is itself the
+// answer when the bill is large, because it means the traffic is arriving in
+// bursts (new devices downloading assets) rather than continuously (the game
+// stream, or a database being written to across a network boundary).
+//
+// What to do with the line, in the order the numbers appear:
+//   http dominates  — assets. Look at the by-type breakdown: it is per FRESH
+//                     DEVICE (everything but index.html is immutable for a
+//                     year), so a big number means new players, not online
+//                     ones. dev/egress.js prices one such load exactly.
+//   ws dominates    — the world stream, and it scales with concurrency and
+//                     with how tightly players are packed. dev/roombench.js
+//                     prices it per player per cast.
+//   other dominates — nothing to do with players. MongoDB (every autosave, and
+//                     Atlas is outside the hosting network so those bytes are
+//                     billed like a download) or the Telegram Bot API.
+let _lastEgress = egress.snapshot();
+safeInterval('egressReport', () => {
+  const now = egress.snapshot();
+  const d = egress.diff(_lastEgress, now);
+  _lastEgress = now;
+  console.log(egress.format(d));
 }, SESSION_REPORT_MS).unref();
 
 // ── Combat fan-out ───────────────────────────────────────────────────────────

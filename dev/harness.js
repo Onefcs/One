@@ -2117,6 +2117,56 @@ scenario('build: the launch path is cacheable and the legacy names still answer'
      'but is still fetchable on demand');
 });
 
+// The egress accounting is the thing that answers "why is the hosting bill
+// what it is", and it can only answer that if it is measuring the right bytes.
+// Two ways it silently stops doing so: the middleware ends up registered AFTER
+// compression() (then it counts uncompressed bodies and overstates every text
+// response about 3x), and socket.io's encoding changes shape so the event-name
+// regex stops matching (then the whole game stream collapses into 'unnamed'
+// and there is nothing to act on). Both look fine — numbers still appear.
+scenario('egress: the accounting counts wire bytes and names the events', async () => {
+  const egress = require('../server/egress');
+  const { token } = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  }).then(r => r.json());
+
+  const before = egress.snapshot();
+
+  // A gzip-capable request for something big and compressible.
+  const r = await fetch(`${BASE}/js/pixi.min.js`, { headers: { 'accept-encoding': 'gzip' } });
+  const decoded = Buffer.from(await r.arrayBuffer()).length;
+  eq(r.headers.get('content-encoding'), 'gzip', 'the vendor bundle is served compressed');
+
+  // A player, so the stream is exercised with a real event name.
+  const c = await connectAs('egress-meter');
+  await enterWorld(c, 'mage');
+  await sleep(700);
+
+  const d = egress.diff(before, egress.snapshot());
+  const js = d.http.js ? d.http.js.bytes : 0;
+  ok(js > 0, 'the JS response landed in the http accounting', JSON.stringify(d.http));
+  ok(js < decoded * 0.6,
+     `counted compressed bytes, not the decoded body (${Math.round(js / 1024)}K counted vs ` +
+     `${Math.round(decoded / 1024)}K decoded)`);
+
+  const names = Object.keys(d.ws);
+  ok(names.length > 0, 'the socket stream landed in the ws accounting');
+  ok(!names.includes('unnamed'),
+     'every packet was attributed to a named event', names.join(' '));
+  ok(names.some(n => !n.startsWith('_')),
+     'and at least one is a real game event, not just protocol traffic', names.join(' '));
+
+  // And it reaches an operator, which is the only reason any of it exists.
+  const h = await fetch(`${BASE}/health`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(x => x.json());
+  ok(h.egress && h.egress.http && h.egress.ws, '/health carries the breakdown');
+  ok('nicTx' in (h.egress || {}),
+     'including the interface total the bill is actually computed from');
+
+  c.close();
+});
+
 scenario('build: the bundle is minified, mapped, and keeps its HTML entry points', async () => {
   const html = await (await fetch(BASE + '/')).text();
   const jsPath = (html.match(/\/bundle\.[a-f0-9]+\.js/) || [])[0];

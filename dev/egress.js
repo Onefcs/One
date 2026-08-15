@@ -56,13 +56,23 @@ function chromiumPath() {
   const browser = await chromium.launch({ executablePath: exe });
   const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
 
+  // WIRE bytes, not decoded bytes. response.body() hands back the decompressed
+  // payload, so counting it credited gzipped text with its uncompressed size —
+  // it reported the JS bundle at 795 KB and pixi at 445 KB when what actually
+  // crosses the network is 232 KB and 134 KB. That is a 3x overstatement on
+  // exactly the files a bill would send you looking at first. request().sizes()
+  // reports what the transport moved, headers included.
   const byUrl = new Map();
+  const hits = new Map();
   page.on('response', async r => {
     try {
-      const buf = await r.body().catch(() => null);
-      const n = buf ? buf.length : 0;
       const u = r.url().replace(BASE, '');
+      let n = 0;
+      const s = await r.request().sizes().catch(() => null);
+      if (s) n = (s.responseBodySize || 0) + (s.responseHeadersSize || 0);
+      else { const buf = await r.body().catch(() => null); n = buf ? buf.length : 0; }
       byUrl.set(u, (byUrl.get(u) || 0) + n);
+      hits.set(u, (hits.get(u) || 0) + 1);
     } catch { /* ignore */ }
   });
 
@@ -100,9 +110,40 @@ function chromiumPath() {
   [...groups].sort((a, b) => b[1] - a[1])
     .forEach(([g, n]) => console.log(`  ${g.padEnd(20)} ${(n / 1024).toFixed(0).padStart(7)} KB`));
 
+  // Images are the bulk of a first load, and "images: 2.6 MB" is not
+  // actionable on its own — the decision is always per folder, because a
+  // folder is one kind of art with one answer (class sprites must stay at
+  // native size; UI icons must not).
+  const byFolder = new Map();
+  for (const [u, n] of byUrl) {
+    if (!u.startsWith('/images')) continue;
+    const parts = decodeURIComponent(u.split('?')[0]).split('/');
+    const f = parts.length > 3 ? `images/${parts[2]}` : 'images/(root)';
+    const e = byFolder.get(f) || { n: 0, files: 0 };
+    e.n += n; e.files++;
+    byFolder.set(f, e);
+  }
+  if (byFolder.size) {
+    console.log('\nimages by folder:');
+    [...byFolder].sort((a, b) => b[1].n - a[1].n).forEach(([f, e]) =>
+      console.log(`  ${(e.n / 1024).toFixed(0).padStart(7)} KB  ${String(e.files).padStart(3)} files  ${f}`));
+  }
+
   console.log('\ntop 15 single responses:');
   [...byUrl].sort((a, b) => b[1] - a[1]).slice(0, 15)
     .forEach(([u, n]) => console.log(`  ${(n / 1024).toFixed(0).padStart(7)} KB  ${u.slice(0, 72)}`));
+
+  // Anything fetched more than once on a single first load is paying for the
+  // same bytes twice — usually one URL referenced from two places (an <img>
+  // and a <link rel="icon">, say), which no amount of cache tuning fixes
+  // because both requests are in flight before either has an answer.
+  const twice = [...hits].filter(([, c]) => c > 1)
+    .sort((a, b) => (byUrl.get(b[0]) || 0) - (byUrl.get(a[0]) || 0));
+  if (twice.length) {
+    console.log('\nfetched more than once in one load:');
+    twice.forEach(([u, c]) =>
+      console.log(`  ${c}x  ${((byUrl.get(u) || 0) / 1024).toFixed(0).padStart(6)} KB total  ${u.slice(0, 66)}`));
+  }
 
   // Then just stand there and play, to price the steady state.
   const wsBefore = wsIn, framesBefore = wsFrames;
