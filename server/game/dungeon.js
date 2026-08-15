@@ -155,10 +155,12 @@ const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 // gap) is itself a square. Baked in at world-gen like a regular room (not
 // runtime-spawned like Fear's waves), since every monster here is a fixed
 // level with no escalation to track. Monsters spawn non-aggressive (aggroR:
-// 0 — never pull first, same pattern as spawnGuildWarTower) and skip the
-// normal loot table entirely: only an independent FARM_SHARD_CHANCE roll per
-// shard kind, no gold/gear/recipe/key drops at all (see the farmZone flag,
-// Room.attackEnemy/skillAttackEnemy and _rollFarmZoneLoot, server/index.js).
+// 0 — never pull first, same pattern as spawnGuildWarTower). On top of the
+// normal loot table (rolled here at ×2 the usual chance), a kill also gets
+// two drops exclusive to this zone: an independent FARM_SHARD_CHANCE roll
+// per shard kind, and a flat roll for a random advanced-skill book (see the
+// farmZone flag, Room.attackEnemy/skillAttackEnemy and _rollFarmZoneLoot /
+// _grantKillLoot's farmZone branch, server/index.js).
 // Entry is level-gated server-side (see _doEnterLocation, server/index.js)
 // at FARM_ENTRY_LEVEL. Each of the 80 monsters rolls its own level (21-30)
 // and species/archetype independently, so every room comes out mixed —

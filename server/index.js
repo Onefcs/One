@@ -274,7 +274,14 @@ const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 // since it fires on every kill in the game. Mutates `inv` in place via
 // _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
 // for (loot-winner arbitration among a party) and reports the result back.
-function _rollMobLoot(inv, eid, rlvl) {
+// `mult` scales every independent roll's chance uniformly (default 1, i.e.
+// unchanged) — used by the Фарм-зона branch of _grantKillLoot below to grant
+// this same table at ×2 the normal chance without duplicating its logic.
+// Applied to each already-computed chance rather than folded into _dropMult,
+// so it doubles what the roll would actually be even where that's capped
+// (the skill/passive-book Math.min(_dropMult, 3) below) instead of being
+// swallowed by the cap.
+function _rollMobLoot(inv, eid, rlvl, mult = 1) {
   const eDef = ENEMY_DEF.find(e => e.eid === eid);
   const eType = eDef ? eDef.eType : null;
   const granted = [];
@@ -291,15 +298,15 @@ function _rollMobLoot(inv, eid, rlvl) {
   // Recipe drop (all non-boss enemies)
   if (eType && eType !== 'boss') {
     const r = Math.random();
-    if      (r < 0.00001 * _dropMult) addMat('recl', 1);
-    else if (r < 0.00021 * _dropMult) addMat('rece', 1);
-    else if (r < 0.00071 * _dropMult) addMat('recr', 1);
-    else if (r < 0.00171 * _dropMult) addMat('recu', 1);
+    if      (r < 0.00001 * _dropMult * mult) addMat('recl', 1);
+    else if (r < 0.00021 * _dropMult * mult) addMat('rece', 1);
+    else if (r < 0.00071 * _dropMult * mult) addMat('recr', 1);
+    else if (r < 0.00171 * _dropMult * mult) addMat('recu', 1);
   }
 
   // Equipment drop — no cloak/artifact (craft-only), weapons unrestricted by
   // class (same as js/combat.js: any class's weapon can drop for anyone).
-  const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
+  const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1) * mult);
   if (Math.random() * 100 < _itemChance) {
     const rarity = itemRarityForLevel(rlvl);
     const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
@@ -313,11 +320,11 @@ function _rollMobLoot(inv, eid, rlvl) {
   }
 
   // Room-level key drops (forge box-crafting)
-  if (Math.random() < roomKeyChance(_localLvl, 'uncommon')) addMat('key_uncommon', 1);
-  if (Math.random() < roomKeyChance(_localLvl, 'rare'))     addMat('key_rare', 1);
+  if (Math.random() < roomKeyChance(_localLvl, 'uncommon') * mult) addMat('key_uncommon', 1);
+  if (Math.random() < roomKeyChance(_localLvl, 'rare') * mult)     addMat('key_rare', 1);
 
   // Room-level enchant-stone drop
-  if (Math.random() < roomEnchantStoneChance(_localLvl)) addMat('norm_stone', 1);
+  if (Math.random() < roomEnchantStoneChance(_localLvl) * mult) addMat('norm_stone', 1);
 
   // Осколки для уникального оружия. Every kind rolls on its own, so one kill
   // can yield several different shards but never more than
@@ -330,7 +337,7 @@ function _rollMobLoot(inv, eid, rlvl) {
   // rolled honestly rather than collapsing to never/always.
   if (rlvl >= UNIQUE_SHARD_MIN_LEVEL) {
     for (const sh of UNIQUE_SHARDS) {
-      if (Math.random() < UNIQUE_SHARD_CHANCE) {
+      if (Math.random() < UNIQUE_SHARD_CHANCE * mult) {
         addMat(sh.id, 1 + Math.floor(Math.random() * UNIQUE_SHARD_MAX_QTY));
       }
     }
@@ -340,8 +347,8 @@ function _rollMobLoot(inv, eid, rlvl) {
   const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
   if (_allBooks.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.001) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
-    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
+      if (Math.random() < 0.001 * mult) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3) * mult) {
       addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 1);
     }
   }
@@ -350,8 +357,8 @@ function _rollMobLoot(inv, eid, rlvl) {
   const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
   if (_allPassiveBooks.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.001) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);
-    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
+      if (Math.random() < 0.001 * mult) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3) * mult) {
       addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 1);
     }
   }
@@ -360,13 +367,16 @@ function _rollMobLoot(inv, eid, rlvl) {
 }
 
 // ── Фарм-зона kill loot ──────────────────────────────────────────────────
-// No recipe/equipment/key/enchant-stone/regular-skill-book drops at all —
-// just an independent FARM_SHARD_CHANCE roll per shard kind (same per-kind-
-// independent shape as the normal shard roll in _rollMobLoot above, just
-// flat and much higher, since farming shards is this zone's whole point),
-// plus one flat roll for a random advanced-skill book (FARM_ADV_SKILL_BOOK_
-// CHANCE — see its own comment, shared/definitions.js). Both are the ONLY
-// ways to get an advanced-skill book at all; it never drops anywhere else.
+// This is the zone's OWN loot, on top of what _grantKillLoot's farmZone
+// branch already adds by also calling _rollMobLoot at ×2 the normal chance —
+// so a farm kill gets everything a regular kill of that species/level would,
+// plus these two exclusive rolls: an independent FARM_SHARD_CHANCE roll per
+// shard kind (same per-kind-independent shape as the normal shard roll in
+// _rollMobLoot above, just flat and much higher, since farming shards is
+// this zone's whole point), and one flat roll for a random advanced-skill
+// book (FARM_ADV_SKILL_BOOK_CHANCE — see its own comment, shared/
+// definitions.js). Both are the ONLY ways to get an advanced-skill book at
+// all; it never drops anywhere else.
 function _rollFarmZoneLoot(inv) {
   const granted = [];
   function addMat(id, qty) {
@@ -5509,9 +5519,14 @@ io.on('connection', socket => {
     if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
-    // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
-    // reroll below) entirely — see _rollFarmZoneLoot's own comment.
-    const items = farmZone ? _rollFarmZoneLoot(inv) : _rollMobLoot(inv, eid, rlvl);
+    // Фарм-зона kills keep their own exclusive drops (shards + advanced-
+    // skill books, _rollFarmZoneLoot) AND roll the same loot table a regular
+    // kill of this exact species/level would use — at ×2 the normal chance.
+    // The VIP drop-bonus reroll right below still skips farm-zone kills
+    // entirely, same as before.
+    const items = farmZone
+      ? _rollFarmZoneLoot(inv).concat(_rollMobLoot(inv, eid, rlvl, 2))
+      : _rollMobLoot(inv, eid, rlvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
     if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl));
@@ -10167,8 +10182,10 @@ io.on('connection', socket => {
       }
 
       const _arm = armIndexForLevel(result.rlvl);
-      // Фарм-зона already skips the whole normal loot table (see farmZone in
-      // _grantKillLoot) — Liberty/GRAM are the same "no drop but shards" deal.
+      // Фарм-зона now grants the normal loot table too (see farmZone in
+      // _grantKillLoot) — Liberty/GRAM are the one exception left, still
+      // excluded here on purpose so this zone never becomes a premium-
+      // currency farm.
       const nexumDrop  = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
       const gramDrop   = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];

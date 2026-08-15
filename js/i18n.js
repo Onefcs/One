@@ -768,6 +768,7 @@ Object.assign(I18N_UI, {
   farmAdvBooksHdr: { ru: 'Книги допскиллов', en: 'Advanced-skill books', uk: 'Книги допнавичок', es: 'Libros de habilidad avanzada', tr: 'Gelişmiş yetenek kitapları', pt: 'Livros de habilidade avançada' },
   farmAdvBooksSub: { ru: 'Шанс на каждую книгу', en: 'Chance per book', uk: 'Шанс на кожну книгу', es: 'Probabilidad por libro', tr: 'Kitap başına şans', pt: 'Chance por livro' },
   farmLevelRangeLbl: { ru: 'Уровень 21-30', en: 'Level 21-30', uk: 'Рівень 21-30', es: 'Nivel 21-30', tr: 'Seviye 21-30', pt: 'Nível 21-30' },
+  farmNormalDropHint: { ru: 'Плюс всё, что выпадает с монстров такого же уровня в открытом мире — с шансом ×2 (снаряжение, ключи, свитки, камни, книги).', en: 'Plus everything a monster of the same level would drop in the open world — at ×2 the chance (gear, keys, scrolls, stones, books).', uk: 'Плюс усе, що випадає з монстрів такого ж рівня у відкритому світі — із шансом ×2 (спорядження, ключі, сувої, камені, книги).', es: 'Además de todo lo que un monstruo del mismo nivel soltaría en el mundo abierto — al doble de probabilidad (equipo, llaves, pergaminos, piedras, libros).', tr: 'Ayrıca aynı seviyedeki bir canavarın açık dünyada bırakacağı her şey — ×2 şansla (ekipman, anahtarlar, tomarlar, taşlar, kitaplar).', pt: 'Além de tudo que um monstro do mesmo nível soltaria no mundo aberto — com ×2 de chance (equipamento, chaves, pergaminhos, pedras, livros).' },
 
   // ── Профессия HUD panel (openProfessionPanel, js/ui.js) — second-profession
   // codex reachable from the HUD button under Мир/ПК.
@@ -853,6 +854,7 @@ Object.assign(I18N_UI, {
   hudBtnLbl: { ru: 'В HUD', en: 'To HUD', uk: 'У HUD', es: 'Al HUD', tr: 'HUD\'a', pt: 'No HUD' },
   mapPanelTitle: { ru: 'Карта подземелья', en: 'Dungeon Map', uk: 'Карта підземелля', es: 'Mapa de la Mazmorra', tr: 'Zindan Haritası', pt: 'Mapa da Masmorra' },
   mapYouLbl: { ru: 'Вы', en: 'You', uk: 'Ви', es: 'Tú', tr: 'Sen', pt: 'Você' },
+  mapNoMonstersHereLbl: { ru: 'В этой локации монстров нет.', en: 'No monsters in this location.', uk: 'У цій локації монстрів немає.', es: 'No hay monstruos en esta ubicación.', tr: 'Bu bölgede canavar yok.', pt: 'Não há monstros neste local.' },
   skillLevelUpToast: { ru: '↑ Навык +{n} ур.!', en: '↑ Skill +{n} lvl.!', uk: '↑ Навик +{n} рів.!', es: '↑ ¡Habilidad +{n} niv.!', tr: '↑ Yetenek +{n} sv.!', pt: '↑ Habilidade +{n} nív.!' },
   passiveLevelUpToast: { ru: '↑ Пассивка +{n} ур.!', en: '↑ Passive +{n} lvl.!', uk: '↑ Пасивка +{n} рів.!', es: '↑ ¡Pasiva +{n} niv.!', tr: '↑ Pasif +{n} sv.!', pt: '↑ Passiva +{n} nív.!' },
 });

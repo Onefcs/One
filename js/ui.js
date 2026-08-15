@@ -1246,23 +1246,41 @@ function _floorEnemyPool(n, localLvl) {
   return { regular, boss };
 }
 
-// Flat monster reference list (no corridor/location grouping) — one row per
-// GLOBAL LEVEL 1-MAX_MONSTER_LEVEL (matching what actually spawns at that
-// level, name/color included), collapsed by default; tapping a row expands
-// its full stat/drop breakdown for the one regular species+archetype that
-// room spawns (which one depends on the level's room within its arm, cycling
-// every room, see FLOOR_ENEMIES/bandForLocalLevel in shared/definitions.js —
-// or the zone boss on its one level).
+// Monster reference list, scoped to wherever the player is standing when the
+// map panel opens — one row per GLOBAL LEVEL within THAT arm's own level span
+// only (not the whole 1-MAX_MONSTER_LEVEL bestiary any more: showing every
+// corridor's monsters under a panel titled "here's your map" just buried the
+// handful actually relevant to it). Collapsed by default; tapping a row
+// expands its full stat/drop breakdown for the one regular species+archetype
+// that room spawns (which one depends on the level's room within its arm,
+// cycling every room, see FLOOR_ENEMIES/bandForLocalLevel in
+// shared/definitions.js — or the zone boss on its one level).
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
   // Фарм-зона isn't part of the arm/level system this list otherwise walks —
-  // showing the regular 1-78 bestiary while standing inside it would name
+  // showing the regular bestiary while standing inside it would name
   // monsters nobody here actually is. Swap to its own species list instead.
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && _b.zoneLabel === 'farmZoneLbl') { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
+  // Which arm (if any) the player is actually standing in right now —
+  // _pRoom.arm is one of ARM_NAMES for a normal corridor room, undefined in
+  // the hub, or a non-arm value ('guildWar'/'race10'/…) for the other named
+  // zones, which don't have a level-indexed bestiary of their own.
+  const _pRoom = (typeof _getRoomAt === 'function' && typeof player !== 'undefined' && player) ? _getRoomAt(player.x, player.y) : null;
+  const _armDir = _pRoom && _pRoom.arm;
+  // Hub, or no room resolved at all — a safe zone with nothing to fight.
+  // A named zone with no arm-style bestiary (guild war tower, race lanes…)
+  // falls through instead, straight to the full reference list below.
+  if (!_armDir) {
+    grid.innerHTML = `<div style="padding:10px 4px;color:#83725a;font-size:11px">${t('mapNoMonstersHereLbl')}</div>`;
+    return;
+  }
+  const _armIdx = ARM_NAMES.includes(_armDir) ? ARM_NAMES.indexOf(_armDir) + 1 : null;
+  const lvlFrom = _armIdx ? ARM_OFFSETS[_armIdx - 1] + 1 : 1;
+  const lvlTo = _armIdx ? ARM_OFFSETS[_armIdx - 1] + ARM_ROOM_COUNTS[_armIdx - 1] : MAX_MONSTER_LEVEL;
   let html = '';
-  for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
+  for (let lvl = lvlFrom; lvl <= lvlTo; lvl++) {
     const armIdx = armIndexForLevel(lvl);
     const floor = armIdx;
     const localLvl = armLocalLevel(lvl);
@@ -1326,12 +1344,14 @@ function _liveFarmEnemy(base) {
   };
 }
 
-// Drop breakdown shared by every Фарм-зона species — the zone skips the
-// normal loot table entirely (no recipes/gear/keys/stones/regular skill
-// books, no GRAM/Liberty — see _rollFarmZoneLoot, server/index.js), so this
-// is deliberately NOT _monsterDropBodyHtml: that function's rows would all
-// be either wrong (recipe/gear chances that never actually roll here) or
-// misleadingly absent (no hint that shards/adv books exist at all).
+// Drop breakdown shared by every Фарм-зона species — on top of the shard/
+// adv-book rows below, a farm kill also rolls the SAME loot table a regular
+// kill of that species/level would (recipes/gear/keys/stones/skill books) at
+// ×2 the normal chance (see _rollFarmZoneLoot + _grantKillLoot's farmZone
+// branch, server/index.js), summarized by the farmNormalDropHint line rather
+// than repeated row-by-row here — those chances are already spelled out in
+// full for every level via _monsterDropBodyHtml elsewhere in this same list,
+// and re-deriving them for a level RANGE (21-30) would just duplicate that.
 function _dropRow(icon, label, valHtml, color) {
   const st = color ? ` style="color:${color}"` : '';
   return `<div class="fi-drop">
@@ -1347,6 +1367,7 @@ function _farmDropBodyHtml(e) {
     ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
     ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
     ${_dropRow('💎', t('farmShardChanceLbl'), shardPct, '#c9a24b')}
+    <div style="padding:8px 4px 2px;color:#83725a;font-size:10.5px;line-height:1.5">${t('farmNormalDropHint')}</div>
   `;
 }
 
