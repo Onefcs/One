@@ -1609,6 +1609,11 @@ function netConnect(onReady) {
     // The storage NPC panel indexes straight into the arrays just replaced —
     // see refreshStorageNpc (js/npc.js). No-op when it isn't open.
     if (typeof refreshStorageNpc === 'function') refreshStorageNpc();
+    // Any inventory change can turn a codex slot "ready" (a matching item
+    // just arrived) or un-ready (it got sold/used/equipped away) — refresh
+    // the highlight live rather than only on the next codex-specific event.
+    // No-op when the panel isn't open.
+    if (typeof _refreshCodexPanelIfOpen === 'function') _refreshCodexPanelIfOpen();
   });
 
   // Merchant sale confirmed — the item is already gone via the
