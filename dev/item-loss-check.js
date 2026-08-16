@@ -346,6 +346,82 @@ const HELM = defs.ITEM_DEF.find(d => d.slot === 'helmet').id;
     run(`_catalogBase('still_unknown')`) === null);
 }
 
+// ── R1: rebirth must not re-bank points it already banked ───────────────────
+// bonusSP carries the free points AND the bank that keeps the KEPT upgrades
+// inside the budget check. The rebirth handler used to add the whole spent
+// total every time, so from the second rebirth on it re-paid the previous
+// bank — and compounded, since the next rebirth re-banked the inflated
+// figure. The invariant that stops it: a player standing at level 1 straight
+// after a rebirth has exactly (free points) available, never more, however
+// many times they have rebirthed. See rebirthBank, shared/definitions.js.
+{
+  const { rebirthSplitBonusSP, skillPointBudget, REBIRTH_BONUS_SP, REBIRTH_LEVEL } = defs;
+  const split = (b, banked, rb, spent) => rebirthSplitBonusSP(b, banked, rb, spent);
+
+  check('a character that never rebirthed has no bank',
+    JSON.stringify(split(50, undefined, 0, 30)) === JSON.stringify({ banked: 0, free: 50 }));
+  check('a stored bank splits bonusSP into its two halves',
+    JSON.stringify(split(260, 245, 2, 245)) === JSON.stringify({ banked: 245, free: 15 }));
+  check('a record from before the bank existed reads it as min(bonusSP, spent)',
+    JSON.stringify(split(155, undefined, 2, 245)) === JSON.stringify({ banked: 155, free: 0 }),
+    'legacy accounts: claim no more free points than actually exist');
+  check('a bank larger than bonusSP can never produce a negative free half',
+    JSON.stringify(split(100, 400, 3, 400)) === JSON.stringify({ banked: 100, free: 0 }));
+
+  // The rule every writer follows: bonusSP = free + (flat grant) + spent now.
+  const rebuild = (bonusSP, banked, rb, spent) =>
+    split(bonusSP, banked, rb, spent).free + REBIRTH_BONUS_SP + spent;
+  check('a rebirth never leaves bonusSP below what is spent',
+    rebuild(155, undefined, 1, 245) >= 245,
+    'otherwise the next save fails the budget check and wipes the kept upgrades');
+
+  // Walk five rebirths the way a player actually does: climb to REBIRTH_LEVEL,
+  // spend everything available, rebirth, repeat. Free points must grow by
+  // exactly REBIRTH_BONUS_SP each time — this is the check that fails loudly
+  // if the two halves of bonusSP are ever conflated again.
+  let bonusSP = 0, rebirths = 0, spent = 0, banked;
+  const seen = [];
+  for (let i = 0; i < 5; i++) {
+    spent += skillPointBudget(REBIRTH_LEVEL, rebirths) + bonusSP - spent;  // spend it all
+    const spentSP = Math.min(spent, skillPointBudget(REBIRTH_LEVEL, rebirths) + bonusSP);
+    bonusSP = rebuild(bonusSP, banked, rebirths, spentSP);
+    banked = spentSP;
+    rebirths++;
+    seen.push(skillPointBudget(1, rebirths) + bonusSP - spent);           // free at level 1
+    if (bonusSP < spent) seen.push('WIPED');
+  }
+  const want = [1, 2, 3, 4, 5].map(n => n * REBIRTH_BONUS_SP);
+  check('five rebirths grant exactly REBIRTH_BONUS_SP each, with no compounding',
+    JSON.stringify(seen) === JSON.stringify(want),
+    `free points at level 1 after each rebirth: ${JSON.stringify(seen)}, expected ${JSON.stringify(want)}`);
+
+  // Purchased bonusSP (shop packages) is free points and must survive intact.
+  let b2 = 50, rb2 = 0, sp2 = 0, bk2, seen2 = [];
+  for (let i = 0; i < 3; i++) {
+    sp2 += skillPointBudget(REBIRTH_LEVEL, rb2) + b2 - sp2;
+    const s = Math.min(sp2, skillPointBudget(REBIRTH_LEVEL, rb2) + b2);
+    b2 = rebuild(b2, bk2, rb2, s); bk2 = s; rb2++;
+    seen2.push(skillPointBudget(1, rb2) + b2 - sp2);
+  }
+  check('purchased bonusSP survives repeated rebirths',
+    JSON.stringify(seen2) === JSON.stringify([65, 80, 95]),
+    `got ${JSON.stringify(seen2)} — a max() of the two halves swallows the paid-for points`);
+
+  // Resetting upgrades releases the bank with them: available is unchanged,
+  // which is what stops rebirth+reset minting the kept spending a second time.
+  {
+    const bonus = 260, bank = 245, spentNow = 245;
+    const { banked, free } = split(bonus, bank, 2, spentNow);
+    check('resetting upgrades after a rebirth mints no new points',
+      (0 + free - 0) === (0 + bonus - spentNow),
+      `available before ${0 + bonus - spentNow}, after ${0 + free - 0}`);
+    check('and reports only the genuinely spendable points as returned',
+      Math.max(0, spentNow - banked) === 0);
+  }
+  check('a character that never rebirthed still gets every point back on reset',
+    Math.max(0, 30 - split(50, undefined, 0, 30).banked) === 30);
+}
+
 // ── Report ──────────────────────────────────────────────────────────────────
 let failed = 0;
 for (const r of results) {

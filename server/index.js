@@ -181,7 +181,7 @@ const {
   FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget, rebirthSplitBonusSP,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -6834,14 +6834,43 @@ io.on('connection', socket => {
         return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
       }
       _nexumBalance = _bal;
-      if (_lastStats) _lastStats.upgrades = {};
+      // Releasing the bank is part of clearing the upgrades, not a separate
+      // concern: bonusSP carries a banked half that exists ONLY to keep the
+      // upgrades a rebirth kept inside the budget check (see
+      // rebirthSplitBonusSP, shared/definitions.js). Emptying the map without
+      // dropping that half turned every banked point into a freely spendable
+      // one — rebirth, then hit Сбросить, and the kept spending came back a
+      // second time as points nobody earned. Nothing is spent after this, so
+      // the bank is exactly zero and bonusSP is exactly the free half.
+      let _returned = spent;
+      if (_lastStats) {
+        const { banked: _bankSP, free: _freeSP } = rebirthSplitBonusSP(
+          _lastStats.bonusSP, _lastStats.rebirthBankedSP, _lastStats.rebirths, spent);
+        _lastStats.upgrades = {};
+        _lastStats.bonusSP = _freeSP;
+        _lastStats.rebirthBankedSP = 0;
+        // What the player can actually spend again. The banked share was
+        // never spendable capacity — it only existed to hold the kept
+        // upgrades up — so releasing it alongside them nets out to zero.
+        // A character that never rebirthed has no bank and gets `spent`
+        // back in full, exactly as before.
+        _returned = Math.max(0, spent - _bankSP);
+      }
       // Keep the room's anti-cheat baseline in step, or its computeStats would
       // go on crediting the cleared upgrades until the next saveProgress.
       if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
-      _persistSavedFields(authed, { upgrades: {} });
+      _persistSavedFields(authed, {
+        upgrades: {},
+        bonusSP: (_lastStats && _lastStats.bonusSP) || 0,
+        rebirthBankedSP: 0,
+      });
       logPlayer(authed.telegramId, authed.username, 'upgrades_reset',
-        { pointsReturned: spent, cost: UPGRADE_RESET_COST });
-      socket.emit('upgradesReset', { pointsReturned: spent, newNexumBalance: _nexumBalance });
+        { pointsReturned: _returned, spent, cost: UPGRADE_RESET_COST,
+          bonusSP: (_lastStats && _lastStats.bonusSP) || 0 });
+      socket.emit('upgradesReset', {
+        pointsReturned: _returned, newNexumBalance: _nexumBalance,
+        bonusSP: (_lastStats && _lastStats.bonusSP) || 0,
+      });
     } catch (err) {
       console.error('resetUpgrades:', err);
       socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
@@ -7641,22 +7670,29 @@ io.on('connection', socket => {
       // getAvailableSkillPoints (js/player.js) computes available = budget +
       // bonusSP - spent — bonusSP is a credit line the anti-cheat check reads
       // against, not a wallet that depletes as points are spent, so spent
-      // itself never leaves player.upgrades. Adding spentSP on top of a
-      // bonusSP that ALREADY covered that same spend (oldBonus + spentSP, as
-      // an earlier version of this line did) inflated `available` by the
-      // full spentSP a second time: rebirthing and then immediately hitting
-      // "Сбросить" on Улучшения handed back spentSP points nobody ever
-      // earned, on top of the ones already invested and kept. max() instead
-      // only tops bonusSP up to whichever actually matters: the flat reward
-      // when the old bonus already had enough slack to cover the kept spend,
-      // or exactly the spent amount when it didn't — never both stacked.
+      // itself never leaves player.upgrades. That makes bonusSP two things at
+      // once, and the whole correctness of this block is keeping them apart:
+      // the FREE points (shop packages + REBIRTH_BONUS_SP per rebirth) and
+      // the BANK that exists only to cover the kept upgrades. Bank == spent,
+      // so the two cancel and available stays skillPointBudget + free.
+      //
+      // Two earlier versions each got one half wrong. `oldBonus + spentSP`
+      // re-banked the previous rebirth's bank (which was still in bonusSP
+      // covering those same kept upgrades) and compounded from the second
+      // rebirth on — five rebirths left a character at level 1 holding ~1590
+      // free points instead of 75. `max(oldBonus + REBIRTH_BONUS_SP, spentSP)`
+      // stopped that inflation but collapsed the two halves together, so
+      // whenever spent exceeded the free total it silently swallowed the free
+      // points as well — including purchased ones: anyone who had actually
+      // spent their points came out of a rebirth with 0 instead of +15.
+      // rebirthBank (shared/definitions.js) keeps them separate instead.
       //
       // An even earlier version banked the whole pre-reset BUDGET instead of
       // what was spent, which handed every UNSPENT level point too and then
       // paid that out a second time once REBIRTH_LEVEL was reclimbed and the
       // curve resumed — every rebirth was worth 105 points instead of the
-      // flat REBIRTH_BONUS_SP. That's why spentSP, not budget, is one of the
-      // two terms max() picks from here.
+      // flat REBIRTH_BONUS_SP. That's why spentSP, not budget, is what the
+      // bank tracks.
       //
       // Clamped to the pre-reset budget as a belt-and-braces measure: every
       // save has already been through the check above, so upgrades can't
@@ -7667,6 +7703,12 @@ io.on('connection', socket => {
         Object.values(_lastStats.upgrades || {})
           .reduce((s, v) => s + Math.max(0, Math.floor(Number(v)) || 0), 0),
         _oldBudget + _oldBonus);
+
+      // Split the old bonusSP into its free and banked halves, then rebuild
+      // it as free + REBIRTH_BONUS_SP + the bank the kept upgrades need now.
+      // See rebirthSplitBonusSP (shared/definitions.js).
+      const { banked: _bankedOld, free: _freeOld } =
+        rebirthSplitBonusSP(_oldBonus, _lastStats.rebirthBankedSP, _lastStats.rebirths, _spentSP);
       const _cd = CHAR_DEF[_lastStats.type] || CHAR_DEF.lev;
       _lastStats.lvl = 1;
       _lastStats.xp = 0;
@@ -7677,7 +7719,8 @@ io.on('connection', socket => {
       _lastStats.baseAtk = _cd.baseAtk;
       _lastStats.baseDef = _cd.baseDef;
       _lastStats.baseMaxHp = _cd.baseHP;
-      _lastStats.bonusSP = Math.max(_oldBonus + REBIRTH_BONUS_SP, _spentSP);
+      _lastStats.bonusSP = _freeOld + REBIRTH_BONUS_SP + _spentSP;
+      _lastStats.rebirthBankedSP = _spentSP;
       _lastStats.rebirths = (_lastStats.rebirths || 0) + 1;
       _lastStats.inventory = inv;
 
@@ -7693,12 +7736,16 @@ io.on('connection', socket => {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
         bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
+        rebirthBankedSP: _lastStats.rebirthBankedSP,
       });
       logPlayer(authed.telegramId, authed.username, 'rebirth', {
         rebirths: _lastStats.rebirths, fromLvl: lvl,
         // What the rebirth actually cost and paid in points — the one line
         // that makes a later "my skill points changed" report answerable.
-        spentSP: _spentSP, bonusSP: `${_oldBonus} -> ${_lastStats.bonusSP}`,
+        // banked/bankDelta are what separate the flat REBIRTH_BONUS_SP gain
+        // from the bookkeeping half of bonusSP (see the bank comment above).
+        spentSP: _spentSP, banked: `${_bankedOld} -> ${_spentSP}`, freeSP: `${_freeOld} -> ${_freeOld + REBIRTH_BONUS_SP}`,
+        bonusSP: `${_oldBonus} -> ${_lastStats.bonusSP}`,
       });
       socket.emit('rebirthDone', {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
@@ -9892,6 +9939,18 @@ io.on('connection', socket => {
       effectiveSaved.bonusSP   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.bonusSP)) || 0);
       effectiveSaved.rebirths  = Math.max(0, Math.floor(Number(_dbBase && _dbBase.rebirths)) || 0);
       effectiveSaved.upgrades  = (_dbBase && _dbBase.upgrades) || {};
+      // Server-owned exactly like bonusSP/rebirths above — it is half of the
+      // bonusSP bookkeeping the rebirth handler maintains, so a client blob
+      // that carried its own (lower) figure would re-enable the double-credit
+      // that handler exists to prevent. DELETED rather than defaulted to 0
+      // when the stored record has none: absent means "rebirthed before the
+      // field existed", which the rebirth handler treats differently from a
+      // real stored 0 (see its own _banked fallback).
+      if (_dbBase && _dbBase.rebirthBankedSP != null) {
+        effectiveSaved.rebirthBankedSP = Math.max(0, Math.floor(Number(_dbBase.rebirthBankedSP)) || 0);
+      } else {
+        delete effectiveSaved.rebirthBankedSP;
+      }
       const _rebasedLvl = _sanitizeSavedStats(effectiveSaved);
       effectiveSaved.baseAtk   = _rebasedLvl.baseAtk;
       effectiveSaved.baseDef   = _rebasedLvl.baseDef;
@@ -11468,6 +11527,12 @@ io.on('connection', socket => {
       clean.potionBag         = _lastStats.potionBag         || {};
       clean.bonusSP           = _lastStats.bonusSP           || 0;
       clean.rebirths          = _lastStats.rebirths          || 0;
+      // Same pin, same reason as bonusSP/rebirths — and the same absent-vs-0
+      // distinction the login rebase makes: writing a 0 for an account that
+      // has simply never carried the field would tell the rebirth handler
+      // "nothing is banked yet" and hand it the old double-credit once.
+      if (_lastStats.rebirthBankedSP != null) clean.rebirthBankedSP = _lastStats.rebirthBankedSP;
+      else delete clean.rebirthBankedSP;
       clean.specialQuestsDone = _lastStats.specialQuestsDone || [];
       // HP, from the room. The server is what lowers it (attackEnemy,
       // pvpAttack, the AI) and what raises it (healPlayer, respawn, and the
