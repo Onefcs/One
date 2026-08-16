@@ -1534,44 +1534,47 @@ function _dropRow(icon, label, valHtml, color) {
   </div>`;
 }
 
-function _farmDropBodyHtml(e) {
-  const shardPct = (FARM_SHARD_CHANCE * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%';
-  return `
-    ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
-    ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
-    ${_dropRow('💎', t('farmShardChanceLbl'), shardPct, '#c9a24b')}
-  `;
+function _pctSmall(v) {
+  return v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%';
 }
 
-// One shared roll picks a single random book out of the pool (see
+// One shared roll per kill picks a single random book out of THIS species'
+// own pool (FARM_SPECIES_BOOKS, shared/definitions.js — see
 // _rollFarmZoneLoot, server/index.js) — the drop itself is NOT per-book
-// independent. This just breaks that one shared chance down per book (equal
-// share of the pool) so players can see which class+skill book they're
-// actually after, instead of one opaque merged line.
+// independent. This breaks that one shared chance down per book (equal share
+// of the species' own pool) so players can see which class+skill book a
+// given species is actually good for, instead of one opaque merged line
+// shared by every species.
 const _FARM_ADV_BOOK_CLASS_COLOR = { lev: '#9aa3ab', deathknight: '#a58fc4', ranger: '#8fbf5a', mage: '#66aaff', warlock: '#c47a92' };
-function _farmAdvBooksHtml() {
-  const pool = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.advSkillKey);
+function _farmSpeciesBookRows(eid) {
+  const ids = (typeof FARM_SPECIES_BOOKS !== 'undefined' && FARM_SPECIES_BOOKS[eid]) || [];
+  const pool = ids.map(id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === id)).filter(Boolean);
   if (!pool.length) return '';
-  const perBookPct = (FARM_ADV_SKILL_BOOK_CHANCE / pool.length * 100).toPrecision(2) + '%';
-  const rows = pool.map(b => {
+  const perBookPct = _pctSmall(FARM_ADV_SKILL_BOOK_CHANCE / pool.length * 100);
+  return pool.map(b => {
     const def = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass] || []).find(s => s.key === b.advSkillKey);
     const icon = def && def.img
       ? `<img src="${def.img}" style="width:20px;height:20px;border-radius:5px;image-rendering:pixelated">`
       : '📖';
     return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542');
   }).join('');
+}
+
+function _farmDropBodyHtml(e) {
+  const shardPct = _pctSmall(FARM_SHARD_CHANCE * 100);
+  const normPct  = _pctSmall(FARM_NORM_STONE_CHANCE * 100);
+  const blessPct = _pctSmall(FARM_BLESS_STONE_CHANCE * 100);
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const normStone  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone')  : null;
+  const blessStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'bless_stone') : null;
   return `
-    <div class="mon-item">
-      <div class="mon-hdr" onclick="_toggleMonster(this)">
-        <span class="dot" style="background:#f5c542"></span>
-        <div class="mon-titles">
-          <span class="mon-lvl">${t('farmAdvBooksHdr')}</span>
-          <div class="mon-name-row"><span class="mon-name">${t('farmAdvBooksSub')}</span></div>
-        </div>
-        <span class="mon-chevron">›</span>
-      </div>
-      <div class="mon-body">${rows}</div>
-    </div>`;
+    ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
+    ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
+    ${_dropRow('💎', t('farmShardChanceLbl'), shardPct, '#c9a24b')}
+    ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
+    ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
+    ${_farmSpeciesBookRows(e.eid)}
+  `;
 }
 
 function _farmZoneMonsterListHtml() {
@@ -1590,7 +1593,7 @@ function _farmZoneMonsterListHtml() {
       </div>
       <div class="mon-body">${_farmDropBodyHtml(e)}</div>
     </div>`).join('');
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}${_farmAdvBooksHtml()}`;
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {

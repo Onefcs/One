@@ -759,8 +759,6 @@ Object.assign(I18N_UI, {
   // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.
   farmBestiaryHint: { ru: 'Уровень варьируется 21-30 у каждого монстра отдельно — здесь показан средний.', en: 'Each monster rolls its own level 21-30 — shown here is the average.', uk: 'Рівень варіюється 21-30 в кожного монстра окремо — тут показано середній.', es: 'Cada monstruo tiene su propio nivel 21-30 — aquí se muestra el promedio.', tr: 'Her canavarın kendi seviyesi 21-30 arasında — burada ortalama gösteriliyor.', pt: 'Cada monstro sorteia seu próprio nível 21-30 — aqui é mostrada a média.' },
   farmShardChanceLbl: { ru: 'Осколок (за вид, ×20 видов)', en: 'Shard (per kind, ×20 kinds)', uk: 'Осколок (за видом, ×20 видів)', es: 'Fragmento (por tipo, ×20 tipos)', tr: 'Parça (tür başına, ×20 tür)', pt: 'Fragmento (por tipo, ×20 tipos)' },
-  farmAdvBooksHdr: { ru: 'Книги допскиллов', en: 'Advanced-skill books', uk: 'Книги допнавичок', es: 'Libros de habilidad avanzada', tr: 'Gelişmiş yetenek kitapları', pt: 'Livros de habilidade avançada' },
-  farmAdvBooksSub: { ru: 'Шанс на каждую книгу', en: 'Chance per book', uk: 'Шанс на кожну книгу', es: 'Probabilidad por libro', tr: 'Kitap başına şans', pt: 'Chance por livro' },
   farmLevelRangeLbl: { ru: 'Уровень 21-30', en: 'Level 21-30', uk: 'Рівень 21-30', es: 'Nivel 21-30', tr: 'Seviye 21-30', pt: 'Nível 21-30' },
 
   // ── Профессия HUD panel (openProfessionPanel, js/ui.js) — second-profession

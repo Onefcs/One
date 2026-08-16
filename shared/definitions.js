@@ -978,6 +978,24 @@ const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'liza
 // down from). Only rolled for farmZone kills, never regular ones.
 const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100;
 
+// Enchant stones, Фарм-зона's other kill-loot roll (_rollFarmZoneLoot) — sized
+// off the book chance above rather than a standalone figure, since that's the
+// zone's existing reference rate: обычная заточка 5x as common, безопасная 3x.
+const FARM_NORM_STONE_CHANCE  = FARM_ADV_SKILL_BOOK_CHANCE * 5;
+const FARM_BLESS_STONE_CHANCE = FARM_ADV_SKILL_BOOK_CHANCE * 3;
+
+// Which advanced-skill books each Фарм-зона species can drop. Splitting the
+// full 20-book pool (_ADV_SKILL_BOOK_SRC, 5 classes × Q/W/E/R) round-robin
+// across the 6 species — in that source list's own class/skill order — gives
+// every species its own distinct ~3-4 book subset instead of the single
+// shared pool every species used to roll from. No thematic pairing intended,
+// just an even, deterministic split.
+const FARM_SPECIES_BOOKS = {};
+FARM_SPECIES.forEach(sp => { FARM_SPECIES_BOOKS[sp] = []; });
+_ADV_SKILL_BOOK_SRC.forEach(([cls, key], i) => {
+  FARM_SPECIES_BOOKS[FARM_SPECIES[i % FARM_SPECIES.length]].push(`book_adv_${cls}_${key}`);
+});
+
 // How many of EVERY kind one weapon costs. All 20 are required, so the two
 // numbers below mean 20 000 and 100 000 shards respectively.
 const UNIQUE_SHARD_COST = { epic: 1000, legendary: 5000 };
@@ -1879,6 +1897,7 @@ if (typeof module !== 'undefined') module.exports = {
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
+  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
