@@ -160,6 +160,7 @@ const {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
+  FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
@@ -364,17 +365,19 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
 }
 
 // ── Фарм-зона kill loot ──────────────────────────────────────────────────
-// No recipe/equipment/key/regular-skill-book drops at all — just an
-// independent FARM_SHARD_CHANCE roll per shard kind (same per-kind-
-// independent shape as the normal shard roll in _rollMobLoot above, just
-// flat and much higher, since farming shards is this zone's whole point) —
-// picked from the KILLED SPECIES' OWN subset (FARM_SPECIES_SHARDS) rather
-// than the full 20-shard catalog, same species-split treatment the books
-// below get — independent norm/bless enchant-stone rolls (FARM_NORM_STONE_
-// CHANCE/FARM_BLESS_STONE_CHANCE — 5x/3x the book chance, see their own
-// comment in shared/definitions.js), and one flat roll for a random
-// advanced-skill book, picked from the killed species' own pool
-// (FARM_SPECIES_BOOKS) rather than the full 20-book catalog — different
+// No equipment/key/regular-skill-book drops at all — just an independent
+// FARM_SHARD_CHANCE roll per shard kind (same per-kind-independent shape as
+// the normal shard roll in _rollMobLoot above, just flat and much higher,
+// since farming shards is this zone's whole point) — picked from the KILLED
+// SPECIES' OWN subset (FARM_SPECIES_SHARDS) rather than the full 20-shard
+// catalog, same species-split treatment the books below get — independent
+// norm/bless enchant-stone rolls (FARM_NORM_STONE_CHANCE/FARM_BLESS_STONE_
+// CHANCE — 5x/3x the book chance, see their own comment in shared/
+// definitions.js), independent epic/legendary recipe-scroll rolls
+// (FARM_EPIC_RECIPE_CHANCE/FARM_LEGENDARY_RECIPE_CHANCE — flat, not species-
+// split: a recipe isn't tied to any class or unique weapon), and one flat
+// roll for a random advanced-skill book, picked from the killed species' own
+// pool (FARM_SPECIES_BOOKS) rather than the full 20-book catalog — different
 // species now drop different shards and books instead of all sharing one
 // pool. This is the ONLY way to get an advanced-skill book at all; it never
 // drops anywhere else.
@@ -395,6 +398,8 @@ function _rollFarmZoneLoot(inv, eid) {
   }
   if (Math.random() < FARM_NORM_STONE_CHANCE) addMat('norm_stone', 1);
   if (Math.random() < FARM_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
+  if (Math.random() < FARM_EPIC_RECIPE_CHANCE) addMat('rece', 1);
+  if (Math.random() < FARM_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
   if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) {
     // Falls back to the full pool for a species FARM_SPECIES_BOOKS doesn't
     // recognize (shouldn't happen for a real farmZone kill, but an empty

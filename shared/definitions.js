@@ -995,6 +995,14 @@ const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100;
 const FARM_NORM_STONE_CHANCE  = FARM_ADV_SKILL_BOOK_CHANCE * 5;
 const FARM_BLESS_STONE_CHANCE = FARM_ADV_SKILL_BOOK_CHANCE * 3;
 
+// Epic/legendary recipe scrolls, Фарм-зона's other kill-loot roll — flat
+// rates given directly (0.05%/0.005%), not derived from the book chance the
+// way the enchant stones above are. Independent rolls, not split per
+// species like the shards/books: a recipe isn't tied to any class or unique
+// weapon, so every species in the zone drops both at the same rate.
+const FARM_EPIC_RECIPE_CHANCE      = 0.05 / 100;
+const FARM_LEGENDARY_RECIPE_CHANCE = 0.005 / 100;
+
 // Which advanced-skill books each Фарм-зона species can drop. Splitting the
 // full 20-book pool (_ADV_SKILL_BOOK_SRC, 5 classes × Q/W/E/R) round-robin
 // across the 6 species — in that source list's own class/skill order — gives
@@ -1922,6 +1930,7 @@ if (typeof module !== 'undefined') module.exports = {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
+  FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,

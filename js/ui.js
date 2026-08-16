@@ -1647,15 +1647,21 @@ function _farmSpeciesBookRows(eid) {
 function _farmDropBodyHtml(e) {
   const normPct  = _pctSmall(FARM_NORM_STONE_CHANCE * 100);
   const blessPct = _pctSmall(FARM_BLESS_STONE_CHANCE * 100);
+  const epicRecPct = _pctSmall(FARM_EPIC_RECIPE_CHANCE * 100);
+  const legRecPct  = _pctSmall(FARM_LEGENDARY_RECIPE_CHANCE * 100);
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
   const normStone  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone')  : null;
   const blessStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'bless_stone') : null;
+  const epicRec = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'rece') : null;
+  const legRec  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'recl') : null;
   return `
     ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
     ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
     ${_farmSpeciesShardRows(e.eid)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
+    ${epicRec ? _dropRow(_mi(epicRec, 16), epicRec.name, epicRecPct, '#c98fef') : ''}
+    ${legRec  ? _dropRow(_mi(legRec, 16),  legRec.name,  legRecPct,  '#f5c542') : ''}
     ${_farmSpeciesBookRows(e.eid)}
   `;
 }
