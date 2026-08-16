@@ -7634,26 +7634,29 @@ io.on('connection', socket => {
       // check (_sanitizeSavedStats) wiping them right back out on the very
       // next save: it drops the WHOLE upgrades map the instant spent exceeds
       // skillPointBudget(lvl, rebirths) + bonusSP, and post-rebirth that
-      // budget is 0 until level REBIRTH_LEVEL again. So what the kept
-      // upgrades cost is folded into bonusSP here, permanently, and the check
-      // is satisfied by construction however much was invested.
+      // budget is 0 until level REBIRTH_LEVEL again. So bonusSP has to cover
+      // at least what's currently spent, or the very next save would erase
+      // the upgrades this whole mechanic just promised to keep.
       //
-      // What is banked is what was actually SPENT, not the whole level-derived
-      // budget. Banking the budget handed the player every UNSPENT level point
-      // as well, and those are exactly what the level reset is supposed to
-      // take away: someone who rebirthed at 30 without spending walked into
-      // level 1 with the full 90 still on the counter, which is the "rebirth
-      // gives skill points below level 30" players were seeing. It also paid
-      // that 90 out a second time when they re-climbed to REBIRTH_LEVEL and
-      // skillPointBudget started counting the curve again, so every rebirth
-      // was worth 105 points rather than the flat REBIRTH_BONUS_SP.
+      // getAvailableSkillPoints (js/player.js) computes available = budget +
+      // bonusSP - spent — bonusSP is a credit line the anti-cheat check reads
+      // against, not a wallet that depletes as points are spent, so spent
+      // itself never leaves player.upgrades. Adding spentSP on top of a
+      // bonusSP that ALREADY covered that same spend (oldBonus + spentSP, as
+      // an earlier version of this line did) inflated `available` by the
+      // full spentSP a second time: rebirthing and then immediately hitting
+      // "Сбросить" on Улучшения handed back spentSP points nobody ever
+      // earned, on top of the ones already invested and kept. max() instead
+      // only tops bonusSP up to whichever actually matters: the flat reward
+      // when the old bonus already had enough slack to cover the kept spend,
+      // or exactly the spent amount when it didn't — never both stacked.
       //
-      // Spending stays exactly as it was, the flat bonus is the whole gain:
-      // available afterwards is (old bonusSP + REBIRTH_BONUS_SP), and once
-      // REBIRTH_LEVEL is re-climbed the curve pays for that level once, same
-      // as it does for anyone else. Matches shared/definitions.js's own
-      // description of the rule — below REBIRTH_LEVEL "the flat
-      // REBIRTH_BONUS_SP from the rebirth itself is all there is".
+      // An even earlier version banked the whole pre-reset BUDGET instead of
+      // what was spent, which handed every UNSPENT level point too and then
+      // paid that out a second time once REBIRTH_LEVEL was reclimbed and the
+      // curve resumed — every rebirth was worth 105 points instead of the
+      // flat REBIRTH_BONUS_SP. That's why spentSP, not budget, is one of the
+      // two terms max() picks from here.
       //
       // Clamped to the pre-reset budget as a belt-and-braces measure: every
       // save has already been through the check above, so upgrades can't
@@ -7674,7 +7677,7 @@ io.on('connection', socket => {
       _lastStats.baseAtk = _cd.baseAtk;
       _lastStats.baseDef = _cd.baseDef;
       _lastStats.baseMaxHp = _cd.baseHP;
-      _lastStats.bonusSP = _oldBonus + REBIRTH_BONUS_SP + _spentSP;
+      _lastStats.bonusSP = Math.max(_oldBonus + REBIRTH_BONUS_SP, _spentSP);
       _lastStats.rebirths = (_lastStats.rebirths || 0) + 1;
       _lastStats.inventory = inv;
 
