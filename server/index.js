@@ -161,7 +161,7 @@ const {
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
-  BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel,
+  BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
@@ -275,7 +275,7 @@ const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 // since it fires on every kill in the game. Mutates `inv` in place via
 // _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
 // for (loot-winner arbitration among a party) and reports the result back.
-function _rollMobLoot(inv, eid, rlvl) {
+function _rollMobLoot(inv, eid, rlvl, plvl) {
   const eDef = ENEMY_DEF.find(e => e.eid === eid);
   const eType = eDef ? eDef.eType : null;
   const granted = [];
@@ -300,7 +300,8 @@ function _rollMobLoot(inv, eid, rlvl) {
 
   // Equipment drop — no cloak/artifact (craft-only), weapons unrestricted by
   // class (same as js/combat.js: any class's weapon can drop for anyone).
-  const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1));
+  const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1))
+    / dropLevelGapDivisor(plvl, rlvl);
   if (Math.random() * 100 < _itemChance) {
     const rarity = itemRarityForLevel(rlvl);
     const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
@@ -5583,10 +5584,10 @@ io.on('connection', socket => {
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
     // reroll below) entirely — see _rollFarmZoneLoot's own comment.
-    const items = farmZone ? _rollFarmZoneLoot(inv) : _rollMobLoot(inv, eid, rlvl);
+    const items = farmZone ? _rollFarmZoneLoot(inv) : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
     if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
-      items.push(..._rollMobLoot(inv, eid, rlvl));
+      items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
     if (isBoss) {
