@@ -1012,39 +1012,57 @@ function _codexSetDone(set, filled) {
   return Array.isArray(filled) && filled.length === set.slots.length && filled.every(Boolean);
 }
 
-// Filtered + sorted view over CODEX_SETS: sets with progress (but not yet
-// complete) surface first — that's the list a player mid-grind actually
-// wants to see — completed ones sink to the bottom since there's nothing
-// left to do with them.
+// Does this (not-yet-complete) set have at least one unfilled slot the
+// inventory can fill RIGHT NOW — the same {itemId, minEnhance} match
+// tryFillCodexSlot uses (codexItemMeetsReq, shared/definitions.js). These
+// are the sets a player can act on immediately, so they're worth surfacing
+// above ones that still need farming.
+function _codexSetHasReadySlot(set, filled, inv) {
+  if (_codexSetDone(set, filled)) return false;
+  return set.slots.some((req, i) => !(filled && filled[i]) &&
+    inv.some(it => typeof codexItemMeetsReq === 'function' && codexItemMeetsReq(it, req)));
+}
+
+// Filtered + sorted view over CODEX_SETS: sets with an immediately-fillable
+// slot surface first (there's something to DO right now), then sets with
+// progress but nothing ready, then completed ones sink to the bottom since
+// there's nothing left to do with them.
 function _codexSetsFiltered() {
   if (typeof CODEX_SETS === 'undefined') return [];
   const { q, cls, rarity, status } = _codexFilters;
   const qLower = q.trim().toLowerCase();
   const codex = (player && player.codex) || {};
-  return CODEX_SETS
-    .filter(set => {
-      // Class-agnostic sets (universal armor combos) pass every class filter
-      // — they're not the pursuit of one class over another, so narrowing to
-      // "Танк" shouldn't hide them, only the OTHER classes' own weapon sets.
-      if (cls !== 'all' && set.cls && set.cls !== cls) return false;
-      if (rarity !== 'all' && set.rarity !== rarity) return false;
-      if (qLower && !set.name.toLowerCase().includes(qLower)) return false;
-      const filled = codex[set.id];
-      const doneCount = Array.isArray(filled) ? filled.filter(Boolean).length : 0;
-      const done = _codexSetDone(set, filled);
-      if (status === 'progress' && (doneCount === 0 || done)) return false;
-      if (status === 'done' && !done) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const fa = codex[a.id], fb = codex[b.id];
-      const da = Array.isArray(fa) ? fa.filter(Boolean).length : 0;
-      const db = Array.isArray(fb) ? fb.filter(Boolean).length : 0;
-      const doneA = _codexSetDone(a, fa), doneB = _codexSetDone(b, fb);
-      if (doneA !== doneB) return doneA ? 1 : -1;
-      if (da !== db) return db - da;
-      return 0;
-    });
+  const inv = (player && player.inventory) || [];
+  const filtered = CODEX_SETS.filter(set => {
+    // Class-agnostic sets (universal armor combos) pass every class filter
+    // — they're not the pursuit of one class over another, so narrowing to
+    // "Танк" shouldn't hide them, only the OTHER classes' own weapon sets.
+    if (cls !== 'all' && set.cls && set.cls !== cls) return false;
+    if (rarity !== 'all' && set.rarity !== rarity) return false;
+    if (qLower && !set.name.toLowerCase().includes(qLower)) return false;
+    const filled = codex[set.id];
+    const doneCount = Array.isArray(filled) ? filled.filter(Boolean).length : 0;
+    const done = _codexSetDone(set, filled);
+    if (status === 'progress' && (doneCount === 0 || done)) return false;
+    if (status === 'done' && !done) return false;
+    return true;
+  });
+  // Readiness is computed once per set here rather than inline in the
+  // comparator below — the comparator runs O(n log n) times during sort,
+  // and re-scanning the whole inventory per slot on every one of those
+  // calls would be needlessly quadratic.
+  const readyById = new Map(filtered.map(set => [set.id, _codexSetHasReadySlot(set, codex[set.id], inv)]));
+  return filtered.sort((a, b) => {
+    const readyA = readyById.get(a.id), readyB = readyById.get(b.id);
+    if (readyA !== readyB) return readyA ? -1 : 1;
+    const fa = codex[a.id], fb = codex[b.id];
+    const da = Array.isArray(fa) ? fa.filter(Boolean).length : 0;
+    const db = Array.isArray(fb) ? fb.filter(Boolean).length : 0;
+    const doneA = _codexSetDone(a, fa), doneB = _codexSetDone(b, fb);
+    if (doneA !== doneB) return doneA ? 1 : -1;
+    if (da !== db) return db - da;
+    return 0;
+  });
 }
 
 function _codexSetFilter(key, val) {
@@ -1073,7 +1091,7 @@ function tryFillCodexSlot(setId, slotIdx) {
   if (idx < 0) {
     const base = typeof itemCatalogBase === 'function' ? itemCatalogBase(req.itemId) : null;
     const label = base ? base.name : req.itemId;
-    const msg = `Нужен «${label}»${req.minEnhance ? ' не ниже +' + req.minEnhance : ''}`;
+    const msg = `Нужен «${label}» ровно +${req.minEnhance}`;
     if (typeof _marketToast === 'function') _marketToast(msg, 'err');
     return;
   }

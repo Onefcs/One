@@ -1397,8 +1397,13 @@ const _CODEX_SETS_BY_ID = new Map(CODEX_SETS.map(s => [s.id, s]));
 function codexSetById(id) { return _CODEX_SETS_BY_ID.get(id) || null; }
 
 // Does inventory item `it` satisfy requirement `req` ({itemId, minEnhance})?
+// Exact match, not a floor: a slot asking for +1 only takes a +1, never a
+// +5 — this used to accept anything AT LEAST minEnhance, which let
+// tryFillCodexSlot's first-match pick (js/ui.js) grab whichever matching
+// item happened to sit first in the inventory and permanently consume a
+// far more valuable over-enchanted item into a low requirement.
 function codexItemMeetsReq(it, req) {
-  return !!it && !!req && it.id === req.itemId && (it.enhance || 0) >= req.minEnhance;
+  return !!it && !!req && it.id === req.itemId && (it.enhance || 0) === req.minEnhance;
 }
 
 // Sums every COMPLETED set's bonus. `progress` is { [setId]: boolean[] } —
