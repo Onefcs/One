@@ -811,6 +811,7 @@ Object.assign(I18N_UI, {
   className_ranger:      { ru: 'Егерь',          en: 'Ranger',        uk: 'Єгер',          es: 'Guardabosques',         tr: 'Avcı',           pt: 'Guardião' },
   className_mage:        { ru: 'Маг',            en: 'Mage',          uk: 'Маг',           es: 'Mago',                   tr: 'Büyücü',         pt: 'Mago' },
   className_warlock:     { ru: 'Целитель',       en: 'Healer',        uk: 'Цілитель',      es: 'Sanador',               tr: 'Şifacı',         pt: 'Curandeiro' },
+  hudMenuBtn: { ru: 'Меню', en: 'Menu', uk: 'Меню', es: 'Menú', tr: 'Menü', pt: 'Menu' },
   navRatingBtn: { ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
   navCodexBtn: { ru: 'Кодекс', en: 'Codex', uk: 'Кодекс', es: 'Códice', tr: 'Kodeks', pt: 'Códex' },
   navMarketBtn: { ru: 'Маркет', en: 'Market', uk: 'Маркет', es: 'Mercado', tr: 'Pazar', pt: 'Mercado' },

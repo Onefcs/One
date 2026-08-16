@@ -1838,20 +1838,46 @@ function setInvTab(n) {
   if (n === 3) updateRebirthUI();
 }
 
-// Chat / VIP / Market / Rating float above the world canvas and only make
-// sense while actually playing — hidden on every other bottom-nav tab.
-// dataset.shown gates this so a button that hasn't been unlocked yet
-// (before login/char-select finishes) never gets forced visible.
-const _GAME_ONLY_BTNS = ['chat-btn', 'vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
+// Chat floats above the world canvas and only makes sense while actually
+// playing — hidden on every other bottom-nav tab. dataset.shown gates this
+// so a button that hasn't been unlocked yet (before login/char-select
+// finishes) never gets forced visible.
+const _CHAT_BTN_ID = 'chat-btn';
+// VIP/Market/Магазин/События/Сезон/Кодекс — seven of them got crowded enough
+// to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
+// whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
+// only ever show while the menu is expanded.
+const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
+let _hudMenuExpanded = false;
+// hud-menu-btn's own visibility is tab-only (like chat); the seven behind it
+// need tab AND expanded — this is that second check, shared by every
+// showXBtn below and by the tab-switch sync.
+function _hudSubBtnDisplay() { return (activeTab === 0 && _hudMenuExpanded) ? 'flex' : 'none'; }
+
 function _syncGameOnlyBtns(n) {
-  _GAME_ONLY_BTNS.forEach(id => {
+  const chatEl = document.getElementById(_CHAT_BTN_ID);
+  if (chatEl && chatEl.dataset.shown === '1') chatEl.style.display = (n === 0) ? 'flex' : 'none';
+  const menuEl = document.getElementById('hud-menu-btn');
+  if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
+  const subDisplay = (n === 0 && _hudMenuExpanded) ? 'flex' : 'none';
+  _HUD_MENU_BTN_IDS.forEach(id => {
     const el = document.getElementById(id);
-    if (el && el.dataset.shown === '1') el.style.display = (n === 0) ? 'flex' : 'none';
+    if (el && el.dataset.shown === '1') el.style.display = subDisplay;
   });
   // chat-btn's own visibility just changed above — keep the last-message
   // preview bubble (js/network.js) in sync with it (also hidden off the
   // Игра tab).
   if (typeof _refreshChatPreview === 'function') _refreshChatPreview();
+}
+
+// Folds the VIP/Market/.../Кодекс column away behind hud-menu-btn — seven
+// buttons permanently on screen was too much clutter, so only the toggle
+// stays put and the rest render only while expanded.
+function toggleHudMenu() {
+  _hudMenuExpanded = !_hudMenuExpanded;
+  const btn = document.getElementById('hud-menu-btn');
+  if (btn) btn.classList.toggle('expanded', _hudMenuExpanded);
+  _syncGameOnlyBtns(activeTab);
 }
 
 function setTab(n) {
@@ -3398,7 +3424,7 @@ function _positionSeasonBtn() {
 
 function showSeasonBtn() {
   const btn = document.getElementById('season-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionSeasonBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionSeasonBtn(); }
 }
 
 // Stacks directly below the Season button, same offset every other button in
@@ -3417,7 +3443,7 @@ function _positionCodexBtn() {
 
 function showCodexBtn() {
   const btn = document.getElementById('codex-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionCodexBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionCodexBtn(); }
 }
 
 let _seasonTab = 'quests';
@@ -3669,10 +3695,13 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
-function _positionRatingBtn() {
-  const btn = document.getElementById('rating-btn');
+// hud-menu-btn takes the slot rating-btn used to sit in (below the minimap,
+// aligned to its right edge) — everything else in this column already
+// chains its position off the button above it, so moving just this one
+// anchor cascades the whole stack down by one slot.
+function _positionHudMenuBtn() {
+  const btn = document.getElementById('hud-menu-btn');
   if (!btn) return;
-  // Position below the minimap, aligned to the right edge
   const mmPad = 6;
   const mmH = HEADER_H - mmPad * 2;
   const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.27));
@@ -3684,9 +3713,26 @@ function _positionRatingBtn() {
   btn.style.transform = 'none';
 }
 
+function showHudMenuBtn() {
+  const btn = document.getElementById('hud-menu-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudMenuBtn(); }
+}
+
+function _positionRatingBtn() {
+  const menuBtn = document.getElementById('hud-menu-btn');
+  const btn     = document.getElementById('rating-btn');
+  if (!btn || !menuBtn) return;
+  const mTop = parseFloat(menuBtn.style.top) || 0;
+  btn.style.top       = (mTop + 28 + 4) + 'px';
+  btn.style.left      = menuBtn.style.left;
+  btn.style.width     = menuBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+
 function showRatingBtn() {
   const btn = document.getElementById('rating-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionRatingBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionRatingBtn(); }
 }
 
 function openRatingPanel() {
@@ -3819,7 +3865,7 @@ function _positionVipBtn() {
 
 function showVipBtn() {
   const btn = document.getElementById('vip-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionVipBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionVipBtn(); }
 }
 
 function openVipPanel() {
@@ -4011,7 +4057,7 @@ function _positionGramShopBtn() {
 
 function showMarketBtn() {
   const btn = document.getElementById('market-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionMarketBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionMarketBtn(); }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4035,7 +4081,7 @@ function _positionEventsBtn() {
 
 function showEventsBtn() {
   const btn = document.getElementById('events-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionEventsBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionEventsBtn(); }
 }
 
 function _fmtBossTime(ms) {
@@ -5485,7 +5531,7 @@ function openSeasonShopConfirm(pkgId) {
 
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionGramShopBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionGramShopBtn(); }
 }
 
 // ─────────────────────────────────────────────────────────

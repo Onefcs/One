@@ -2667,6 +2667,7 @@ function _finishOnlineStart() {
   const chatBtn = document.getElementById('chat-btn');
   if (chatBtn) { chatBtn.dataset.shown = '1'; chatBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
   _refreshChatPreview();
+  if (typeof showHudMenuBtn === 'function') showHudMenuBtn();
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
   if (typeof showMarketBtn === 'function') showMarketBtn();
