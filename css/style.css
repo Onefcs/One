@@ -26,6 +26,13 @@
   --panel-line:#3a2e22;
   --ink:#170f0a;
   --font-display:Georgia,"Iowan Old Style","Palatino Linotype",serif;
+  /* MMO chrome: shared bevel/ornament tokens for HUD chips, panel frames and
+     tab bars (nav column, bottom-nav, side panels) — one carved-metal-and-gold
+     language reused everywhere instead of the flatter ad-hoc rgba() each of
+     those grew independently. */
+  --bevel-hi: rgba(255,238,196,.16);
+  --bevel-lo: rgba(0,0,0,.6);
+  --gold-line: linear-gradient(90deg, transparent, var(--gold) 15%, var(--gold-hi) 50%, var(--gold) 85%, transparent);
 }
 
 * {
@@ -702,6 +709,7 @@ canvas { display:block; width:100%; height:100%; }
   height:0; overflow:hidden;
   background:linear-gradient(175deg,var(--void-2),var(--void) 60%);
   border-top:2px solid var(--gold-dim);
+  box-shadow:inset 0 1px 0 rgba(240,207,131,.18);
   z-index:40;
   transition:height 0.28s cubic-bezier(.4,0,.2,1);
   display:none;
@@ -711,11 +719,21 @@ canvas { display:block; width:100%; height:100%; }
 .bpanel.open, #npc-dialog, #char-select { touch-action:pan-y; }
 .panel-hdr {
   padding:13px 16px 11px; border-bottom:1px solid var(--panel-line, #3a2e22);
+  box-shadow:0 1px 0 rgba(240,207,131,.12);
   font-family:var(--font-display); text-transform:uppercase;
-  font-size:15px; font-weight:700; letter-spacing:0.06em; color:var(--parchment);
+  font-size:15px; font-weight:700; letter-spacing:0.1em; color:var(--parchment);
+  text-shadow:0 1px 0 rgba(0,0,0,.6);
   position:sticky; top:0; background:var(--void-2); z-index:2;
   display:flex; align-items:center; justify-content:space-between;
 }
+/* Small carved-corner flourish echoing .death-panel's brackets — reads the
+   open panel as a codex page rather than a flat sheet. */
+.panel-hdr::before, .panel-hdr::after {
+  content:""; position:absolute; top:6px; width:8px; height:8px;
+  border:1.5px solid var(--gold); opacity:.75; pointer-events:none;
+}
+.panel-hdr::before { left:6px; border-right:none; border-bottom:none; }
+.panel-hdr::after  { right:6px; border-left:none; border-bottom:none; }
 .panel-body { padding:14px 16px 24px; }
 .sec-title  { font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:var(--gold-dim); margin-bottom:8px; }
 
@@ -932,11 +950,11 @@ canvas { display:block; width:100%; height:100%; }
 .clan-member-role  { flex-shrink:0; font-size:14px; }
 .clan-member-name  { flex:1; font-size:13px; color:#c5bfb7; }
 .inv-tabs          { display:flex; border-bottom:1px solid rgba(209,204,197,0.07); margin-bottom:4px; }
-.inv-tab           { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#5f574b; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
-.inv-tab.active    { color:#e7b765; border-bottom-color:#e0aa4b; }
+.inv-tab           { flex:1; text-align:center; padding:8px 0; font-family:var(--font-display); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; font-weight:700; color:#5f574b; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
+.inv-tab.active    { color:#e7b765; border-bottom-color:#e0aa4b; text-shadow:0 0 10px rgba(231,183,101,.4); }
 .clan-tabs         { display:flex; border-bottom:1px solid rgba(209,204,197,0.07); margin-bottom:12px; }
-.clan-tab          { flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700; color:#5f574b; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
-.clan-tab.active   { color:#e8c481; border-bottom-color:#d8a54c; }
+.clan-tab          { flex:1; text-align:center; padding:8px 0; font-family:var(--font-display); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; font-weight:700; color:#5f574b; cursor:pointer; border-bottom:2px solid transparent; touch-action:manipulation; transition:color .15s; }
+.clan-tab.active   { color:#e8c481; border-bottom-color:#d8a54c; text-shadow:0 0 10px rgba(216,165,76,.4); }
 .clan-member-bm    { font-size:10px; color:#eaa742; font-weight:700; white-space:nowrap; margin-right:4px; }
 .clan-my-bm        { font-size:13px; color:#968a7a; padding:6px 0; }
 .clan-my-bm span   { color:#eaa742; font-weight:800; }
@@ -961,8 +979,17 @@ canvas { display:block; width:100%; height:100%; }
   position:absolute; bottom:0; left:0; right:0; height:62px;
   background:linear-gradient(0deg,var(--void),var(--leather-lo) 70%);
   border-top:2px solid var(--gold-dim);
+  box-shadow:inset 0 2px 0 -1px rgba(240,207,131,.35), 0 -6px 16px rgba(0,0,0,.35);
   z-index:50; display:none;
 }
+/* Rivet studs at the bar's top corners — small carved-metal detail. */
+#bottom-nav::before, #bottom-nav::after {
+  content:""; position:absolute; top:-3px; width:5px; height:5px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, var(--gold-hi), var(--gold-dim) 75%);
+  box-shadow:0 0 4px rgba(0,0,0,.6);
+}
+#bottom-nav::before { left:10px; }
+#bottom-nav::after  { right:10px; }
 .nav-tabs { display:flex; height:100%; }
 .nav-tab  {
   flex:1; display:flex; flex-direction:column;
@@ -972,10 +999,17 @@ canvas { display:block; width:100%; height:100%; }
   transition:color 0.15s;
   user-select:none;
 }
+.nav-tab + .nav-tab { box-shadow:inset 1px 0 0 rgba(240,207,131,.07); }
 .nav-tab:active { opacity:0.7; }
 .nav-tab.active { color:var(--gold-hi); }
 .nav-tab.active::before {
   content:""; position:absolute; top:0; left:22%; right:22%; height:2px;
+  background:var(--gold-line);
+  box-shadow:0 0 8px var(--gold-hi);
+}
+.nav-tab.active::after {
+  content:""; position:absolute; top:-1px; left:50%; width:5px; height:5px;
+  transform:translateX(-50%) rotate(45deg);
   background:var(--gold-hi); box-shadow:0 0 6px var(--gold-hi);
 }
 .nav-tab.active .ni { filter:drop-shadow(0 0 4px rgba(240,207,131,0.5)); }
@@ -1277,16 +1311,26 @@ canvas { display:block; width:100%; height:100%; }
   background: none;
   border: none;
   color: #b2a288;
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
   padding: 10px 0;
   cursor: pointer;
+  position: relative;
   border-bottom: 2px solid transparent;
   transition: color .15s, border-color .15s;
 }
 .profile-tab.active {
   color: #eec379;
   border-bottom-color: #eec379;
+  text-shadow: 0 0 10px rgba(238,195,121,.4);
+}
+.profile-tab.active::after {
+  content:""; position:absolute; bottom:-2px; left:50%; width:5px; height:5px;
+  transform:translateX(-50%) rotate(45deg);
+  background:var(--gold-hi); box-shadow:0 0 6px var(--gold-hi);
 }
 
 /* ── Friends tab ──────────────────────────────────────────────────────────── */
@@ -1378,52 +1422,55 @@ canvas { display:block; width:100%; height:100%; }
 .pvp-hist-win { color: #e6ac19; }
 .pvp-hist-lose { color: #a3957c; }
 
-/* ── HUD menu toggle — folds the Рейтинг/VIP/.../Кодекс column away ────────── */
-#hud-menu-btn {
+/* ── HUD nav chip column — shared "carved gold-and-leather plaque" base for
+   the Меню/Рейтинг/VIP/Маркет/Магазин/События/Сезон/Кодекс stack (each one
+   below only overrides its accent color). Position/width/height are all
+   driven from JS (_positionRatingBtn & co., js/ui.js — 28px + 4px gap per
+   slot is baked into that stacking math), so this only ever touches
+   surface treatment, never geometry. */
+#hud-menu-btn, #rating-btn, #vip-btn, #market-btn, #gram-shop-btn,
+#events-btn, #season-btn, #codex-btn {
   position: absolute;
   display: none;
   align-items: center;
   justify-content: center;
   gap: 5px;
   height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #968a7a;
-  border-radius: 6px;
-  color: #c5bfb7;
+  padding: 0 3px;
+  background: linear-gradient(180deg, rgba(44,32,18,.94), rgba(13,10,4,.97));
+  border: 1px solid rgba(201,163,78,.25);
+  border-left: 3px solid var(--iron-dim);
+  border-radius: 4px;
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
+  font-family: var(--font-display);
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: #c5bfb7;
   cursor: pointer;
-  z-index: 51;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
+  z-index: 50;
+  box-shadow: 0 2px 10px rgba(0,0,0,.55), inset 0 1px 0 var(--bevel-hi), inset 0 -2px 3px var(--bevel-lo);
+  transition: border-left-color .15s, box-shadow .15s, color .15s;
 }
-#hud-menu-btn:active { background: rgba(35,28,15,.96); }
-#hud-menu-btn.expanded { border-left-color: #ebaa49; color: #e5a546; }
+#hud-menu-btn:active, #rating-btn:active, #vip-btn:active, #market-btn:active,
+#gram-shop-btn:active, #events-btn:active, #season-btn:active, #codex-btn:active {
+  background: linear-gradient(180deg, rgba(60,44,22,.97), rgba(24,18,8,.98));
+  box-shadow: inset 0 2px 4px rgba(0,0,0,.6), inset 0 -1px 0 var(--bevel-hi);
+}
+
+/* ── HUD menu toggle — folds the Рейтинг/VIP/.../Кодекс column away ────────── */
+#hud-menu-btn { z-index: 51; border-left-color: #968a7a; }
+#hud-menu-btn.expanded {
+  border-left-color: #ebaa49; color: #e5a546;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -2px 3px var(--bevel-lo), 0 0 9px rgba(235,170,73,.4);
+}
 .hud-menu-icon { transition: transform .18s ease; }
 #hud-menu-btn.expanded .hud-menu-icon { transform: rotate(90deg); }
 
 /* ── Rating button ────────────────────────────────────────────────────────── */
-#rating-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #d18717;
-  border-radius: 6px;
-  color: #e5a546;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
-#rating-btn:active { background: rgba(35,28,15,.96); border-left-color: #ebaa49; }
+#rating-btn { border-left-color: #d18717; color: #e5a546; }
+#rating-btn:active { border-left-color: #ebaa49; }
 
 /* ── Rating panel overlay ─────────────────────────────────────────────────── */
 #rating-panel {
@@ -1440,50 +1487,64 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   padding: 14px 16px 0;
   flex-shrink: 0;
+  position: relative;
 }
 .rating-title {
   flex: 1;
+  font-family: var(--font-display);
   font-size: 16px;
   font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
   color: #ebaa49;
+  text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 0 12px rgba(235,170,73,.25);
 }
-.rating-close {
-  background: rgba(209,204,197,.08);
-  border: none;
+.rating-close, .vip-close {
+  background: linear-gradient(180deg, rgba(44,32,18,.9), rgba(13,10,4,.94));
+  border: 1px solid rgba(201,163,78,.4);
   border-radius: 50%;
   width: 30px;
   height: 30px;
-  color: #968a7a;
-  font-size: 14px;
+  color: #c5bfb7;
+  font-size: 13px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -1px 2px var(--bevel-lo);
+  transition: color .15s, border-color .15s;
 }
+.rating-close:active, .vip-close:active { color: var(--gold-hi); border-color: var(--gold); }
 .rating-tabs {
   display: flex;
   gap: 0;
   margin: 12px 16px 0;
-  background: rgba(0,0,0,.3);
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(201,163,78,.18);
   border-radius: 10px;
   padding: 3px;
   flex-shrink: 0;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.5);
 }
 .rating-tab {
   flex: 1;
   background: none;
   border: none;
   color: #b2a288;
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
   padding: 8px 0;
   border-radius: 8px;
   cursor: pointer;
   transition: background .15s, color .15s;
 }
 .rating-tab.active {
-  background: rgba(235,170,73,.15);
-  color: #ebaa49;
+  background: linear-gradient(180deg, rgba(235,170,73,.22), rgba(235,170,73,.1));
+  box-shadow: inset 0 1px 0 rgba(255,224,160,.25), 0 0 8px rgba(235,170,73,.18);
+  color: #f0cd83;
 }
 .rating-body {
   flex: 1;
@@ -1593,26 +1654,8 @@ canvas { display:block; width:100%; height:100%; }
 }
 
 /* ── VIP button ───────────────────────────────────────────────────────────── */
-#vip-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #d0a24c;
-  border-radius: 6px;
-  color: #e8c481;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
-#vip-btn:active { background: rgba(35,28,15,.96); border-left-color: #eac47e; }
+#vip-btn { border-left-color: #d0a24c; color: #e8c481; }
+#vip-btn:active { border-left-color: #eac47e; }
 
 /* ── VIP panel overlay ────────────────────────────────────────────────────── */
 #vip-panel {
@@ -1630,26 +1673,19 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   padding: 0 16px;
   background: rgba(15,11,4,.97);
+  border-bottom: 1px solid rgba(201,163,78,.18);
+  box-shadow: 0 1px 0 rgba(240,207,131,.1);
   z-index: 1;
 }
 .vip-title {
   flex: 1;
+  font-family: var(--font-display);
   font-size: 16px;
   font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
   color: #eac47e;
-}
-.vip-close {
-  background: rgba(209,204,197,.08);
-  border: none;
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
-  color: #968a7a;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 0 12px rgba(234,196,126,.22);
 }
 .vip-body {
   position: absolute;
@@ -1839,26 +1875,8 @@ canvas { display:block; width:100%; height:100%; }
 .vip-claim-btn:active { opacity: .85; }
 
 /* ── Market button ────────────────────────────────────────────────────────── */
-#market-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #598f2a;
-  border-radius: 6px;
-  color: #8fc95c;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
-#market-btn:active { background: rgba(35,28,15,.96); border-left-color: #8fc95c; }
+#market-btn { border-left-color: #598f2a; color: #8fc95c; }
+#market-btn:active { border-left-color: #a3e372; }
 
 /* ── Market panel overlay (reuses .vip-header / .vip-body / .rating-tab*) ──── */
 #market-panel {
@@ -2093,47 +2111,12 @@ canvas { display:block; width:100%; height:100%; }
 .market-pick-cell.selected { border-color: #90d653; background: rgba(144,214,83,.12); }
 
 /* ── GRAM Shop ─────────────────────────────────────────────── */
-#gram-shop-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #aa6e13;
-  border-radius: 6px;
-  color: #e9a135;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
-#gram-shop-btn:active { background: rgba(35,28,15,.96); border-left-color: #ecae52; }
+#gram-shop-btn { border-left-color: #aa6e13; color: #e9a135; }
+#gram-shop-btn:active { border-left-color: #ecae52; }
 
 /* ── Events button (События) ──────────────────────────────── */
-#events-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #e14c5d;
-  border-radius: 6px;
-  color: #f07886;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
+#events-btn { border-left-color: #e14c5d; color: #f07886; }
+#events-btn:active { border-left-color: #ff8d9a; }
 
 #events-panel {
   position: absolute;
@@ -2220,26 +2203,8 @@ canvas { display:block; width:100%; height:100%; }
 /* Lives inside the Events panel now; only the shared bits below are left.
    Battle registration being open highlights the Events button itself. */
 /* ── Season button (Сезон) ─────────────────────────────────── */
-#season-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #50af95;
-  border-radius: 6px;
-  color: #7ee0c0;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
-#season-btn:active { background: rgba(16,35,28,.96); border-left-color: #7ee0c0; }
+#season-btn { border-left-color: #50af95; color: #7ee0c0; }
+#season-btn:active { border-left-color: #a0f0d5; }
 
 /* Season panel — same overlay geometry as the events panel it sits under. */
 #season-panel {
@@ -2307,8 +2272,8 @@ canvas { display:block; width:100%; height:100%; }
   animation: dbPulse 1.6s ease-in-out infinite;
 }
 @keyframes dbPulse {
-  0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04); }
-  50%      { box-shadow: 0 2px 12px rgba(0,0,0,.55), 0 0 12px rgba(255,180,84,.55), inset 0 1px 0 rgba(209,204,197,.04); }
+  0%, 100% { box-shadow: 0 2px 10px rgba(0,0,0,.55), inset 0 1px 0 var(--bevel-hi), inset 0 -2px 3px var(--bevel-lo); }
+  50%      { box-shadow: 0 2px 10px rgba(0,0,0,.55), 0 0 12px rgba(255,180,84,.55), inset 0 1px 0 var(--bevel-hi), inset 0 -2px 3px var(--bevel-lo); }
 }
 @media (prefers-reduced-motion: reduce) {
   #events-btn.db-open { animation: none; }
@@ -2620,26 +2585,8 @@ canvas { display:block; width:100%; height:100%; }
 .profp-hint { margin-top: 16px; font-size: 11px; color: #6b6152; text-align: center; line-height: 1.5; }
 
 /* ── Codex button ──────────────────────────────────────────────────────────── */
-#codex-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(16,12,6,.90);
-  border: 1px solid rgba(209,204,197,.08);
-  border-left: 3px solid #8b5cf6;
-  border-radius: 6px;
-  color: #c9a6f0;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
-}
-#codex-btn:active { background: rgba(28,16,35,.96); border-left-color: #c9a6f0; }
+#codex-btn { border-left-color: #8b5cf6; color: #c9a6f0; }
+#codex-btn:active { border-left-color: #d9c2f7; }
 
 /* ── Codex panel overlay ───────────────────────────────────────────────────── */
 #codex-panel {

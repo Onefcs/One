@@ -2107,6 +2107,15 @@ function drawHeader() {
   ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
 
+  // Carved-corner flourish, bottom two corners — same L-bracket motif as
+  // .panel-hdr/.death-panel (css/style.css) so the header reads as part of
+  // the same gold-and-leather frame system as the rest of the chrome.
+  ctx.strokeStyle = 'rgba(201,163,78,.55)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(1, HEADER_H - 10); ctx.lineTo(1, HEADER_H - 1); ctx.lineTo(10, HEADER_H - 1);
+  ctx.moveTo(W - 10, HEADER_H - 1); ctx.lineTo(W - 1, HEADER_H - 1); ctx.lineTo(W - 1, HEADER_H - 10);
+  ctx.stroke();
+
   // ── Minimap (right side) ──────────────────────────────────
   // Local window only — shows just the area around the player instead of
   // the whole (huge) world. The window follows the player continuously
