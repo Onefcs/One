@@ -5562,6 +5562,9 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg30',  gram:30,  get label() { return t('gramPkgLabel_pkg30'); },  gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 },  enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:0, nexum:4000 },
   { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
+  // Mirror of server/index.js's pkg300 — the top regular-tab tier: full epic
+  // set +3, 50 safe-enchant stones, 60 class books, full potion restock.
+  { id:'pkg300', gram:300, get label() { return t('gramPkgLabel_pkg300'); }, gold:0, potions:100, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#8a5cc2', skillBooks:{ each:15 }, enhance:3, nexum:10000, stones:{ bless_stone:50 } },
 ];
 
 // Сезонные паки — shown in the GRAM shop's own Сезонные tab (used to be a
@@ -6096,6 +6099,11 @@ function _gramShopPkgHtml(pkg, bal) {
     rows += _boxesLabel(pkg.boxes).map(({ img, label, cls }) => ri(img, label, cls)).join('');
   }
 
+  // Enchant stones (pkg300 — same _STONE_IMG catalog the Сезонные tab uses)
+  if (pkg.stones) {
+    rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_STONE_IMG[id], `×${qty}`, '')).join('');
+  }
+
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
@@ -6153,6 +6161,7 @@ function openGramShopConfirm(pkgId) {
   const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
   const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
   const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
+  const stoneLine  = pkg.stones ? `<div style="color:#c5bfb7">• ${Object.entries(pkg.stones).map(([id, qty]) => `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ')}</div>` : '';
   const nexumLine  = pkg.nexum ? `<div style="color:#6fc7ff">• +${pkg.nexum} Liberty</div>` : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
@@ -6165,7 +6174,7 @@ function openGramShopConfirm(pkgId) {
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
-        ${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${nexumLine}
+        ${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>

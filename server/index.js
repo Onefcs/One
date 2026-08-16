@@ -618,6 +618,11 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 },  enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:0, nexum:4000 },
   { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
+  // "Эпический" tier — full epic armor+weapon set at +3, 50 safe-enchant
+  // (bless_stone) stones, 60 class skill books (each:15 × the class's 4
+  // books), a full buff-potion restock, bonus skill points and Liberty.
+  { id:'pkg300', gram:300, gold:0, potions:100, armor:'epic', weapon:'epic', bonusSP:20,
+    skillBooks:{ each:15 }, enhance:3, nexum:10000, stones:{ bless_stone:50 } },
   // Pet+cloak+artifact packages (rendered on the "Special" HUD panel, js/
   // ui.js's _SPECIAL_PET_PKGS_UI — bought through this same handler since
   // petChoice/classCloak/classArtifact/enhance are already fully supported

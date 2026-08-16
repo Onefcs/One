@@ -685,6 +685,7 @@ Object.assign(I18N_UI, {
   gramPkgLabel_pkg30: { ru: 'Продвинутый', en: 'Advanced', uk: 'Просунутий', es: 'Avanzado', tr: 'Gelişmiş', pt: 'Avançado' },
   gramPkgLabel_pkg50: { ru: 'Элитный', en: 'Elite', uk: 'Елітний', es: 'Élite', tr: 'Elit', pt: 'Elite' },
   gramPkgLabel_pkg100: { ru: 'Легендарный', en: 'Legendary', uk: 'Легендарний', es: 'Legendario', tr: 'Efsanevi', pt: 'Lendário' },
+  gramPkgLabel_pkg300: { ru: 'Эпический', en: 'Epic', uk: 'Епічний', es: 'Épico', tr: 'Epik', pt: 'Épico' },
   goldAmountFmt: { ru: '• {n} золота', en: '• {n} gold', uk: '• {n} золота', es: '• {n} de oro', tr: '• {n} altın', pt: '• {n} de ouro' },
   eachPotionFmt: { ru: '• {n}× каждое зелье (6 видов)', en: '• {n}× of each potion (6 kinds)', uk: '• {n}× кожне зілля (6 видів)', es: '• {n}× de cada poción (6 tipos)', tr: '• her iksirden {n}× (6 çeşit)', pt: '• {n}× de cada poção (6 tipos)' },
   costLbl: { ru: 'Стоимость', en: 'Cost', uk: 'Вартість', es: 'Costo', tr: 'Maliyet', pt: 'Custo' },
