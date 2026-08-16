@@ -1182,14 +1182,14 @@ function itemCatalogBase(id) {
 // left out of the pool: they're a ~1-in-a-million drop, and consuming one
 // into a set for the same flat bonus an ordinary epic gets would be a trap,
 // not a sink.
-// common/uncommon carry half-point values on purpose: a set's total is the
-// SUM of these across its 2-4 slots, floored once at the end (see
-// _codexSetBonus below) — so a 2-slot common set nets +1 atk instead of +2,
-// half of what a whole-number 1 would have given every set regardless of
-// size.
+// common/uncommon carry quarter-point values on purpose (halved twice from
+// a starting whole-number 1): a set's total is the SUM of these across its
+// 2-4 slots, floored once at the end (see _codexSetBonus below), so a
+// 4-slot common set nets +1 atk instead of the +4 a whole-number 1 would
+// have given every set regardless of size.
 const CODEX_BONUS_BY_RARITY = {
-  common:    { atk: 0.5 },
-  uncommon:  { atk: 0.5, def: 0.5 },
+  common:    { atk: 0.25 },
+  uncommon:  { atk: 0.25, def: 0.25 },
   rare:      { atk: 2, def: 1, hp: 8  },
   epic:      { atk: 3, def: 2, hp: 16 },
   legendary: { atk: 5, def: 3, hp: 30 },
