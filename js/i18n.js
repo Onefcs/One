@@ -776,8 +776,8 @@ Object.assign(I18N_UI, {
 
   // ── "What's new" login modal (js/ui.js's openWhatsNewModal, shown once per
   // WHATS_NEW_VERSION via localStorage — see js/network.js's _finishOnlineStart) ──
-  whatsNewTitle: { ru: '🎉 Обновление!', en: '🎉 Update!', uk: '🎉 Оновлення!', es: '🎉 ¡Actualización!', tr: '🎉 Güncelleme!', pt: '🎉 Atualização!' },
-  whatsNewCodexTitle: { ru: '📖 Новое: Кодекс наборов', en: '📖 New: Item Collections', uk: '📖 Нове: Кодекс наборів', es: '📖 Novedad: Colecciones de objetos', tr: '📖 Yeni: Eşya Koleksiyonları', pt: '📖 Novidade: Coleções de itens' },
+  whatsNewTitle: { ru: 'Обновление', en: 'Update', uk: 'Оновлення', es: 'Actualización', tr: 'Güncelleme', pt: 'Atualização' },
+  whatsNewCodexTitle: { ru: 'Кодекс наборов', en: 'Item Collections', uk: 'Кодекс наборів', es: 'Colecciones de objetos', tr: 'Eşya Koleksiyonları', pt: 'Coleções de itens' },
   whatsNewCodexDesc: {
     ru: 'Собирай наборы из 2-4 предметов (часто на определённой заточке) в новой панели «Кодекс» на HUD — за каждый завершённый набор персонаж навсегда получает бонус к статам. Всего почти 1000 наборов.',
     en: 'Collect sets of 2-4 items — often at a specific enchant level — in the new Codex panel on the HUD. Completing a set grants your character a permanent stat bonus. Almost 1000 collections in total.',

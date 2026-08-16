@@ -6659,7 +6659,14 @@ function _gramMsg(text, type) {
 // .market-modal-overlay for the backdrop (blur + touch-action fix already
 // there) with .whatsnew-modal-sheet overriding it to a centered, full-radius
 // box instead of a bottom sheet — see css/style.css.
+//
+// A glowing icon badge (real SVG, matching every other icon in this game)
+// stands in for the emoji the previous version used inline in the title
+// text — consistent with the rest of the UI, which never uses emoji as an
+// icon, and the badge/eyebrow/display-font title read as a considered
+// moment rather than a plain text popup.
 const WHATS_NEW_VERSION = 'codex1';
+const WHATS_NEW_ICON = 'chest';
 function openWhatsNewModal() {
   const existing = document.getElementById('whatsnew-ov');
   if (existing) existing.remove();
@@ -6669,15 +6676,16 @@ function openWhatsNewModal() {
   ov.onclick = () => closeWhatsNewModal();
   ov.innerHTML = `
     <div class="market-modal-sheet whatsnew-modal-sheet" onclick="event.stopPropagation()">
-      <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:17px;font-weight:800;color:#90d653">${t('whatsNewTitle')}</div>
-        <button onclick="closeWhatsNewModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      <div class="whatsnew-hero">
+        <button class="whatsnew-close" onclick="closeWhatsNewModal()">✕</button>
+        <div class="whatsnew-badge">${iconHTML(WHATS_NEW_ICON, 28, '#c9a6f0')}</div>
+        <div class="whatsnew-eyebrow">${t('whatsNewTitle')}</div>
+        <div class="whatsnew-title">${t('whatsNewCodexTitle')}</div>
       </div>
-      <div style="padding:12px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:16px">
-        <div style="font-weight:700;color:#c9a6f0;margin-bottom:6px">${t('whatsNewCodexTitle')}</div>
-        <div style="font-size:12.5px;line-height:1.5;color:#c9bfae">${t('whatsNewCodexDesc')}</div>
+      <div class="whatsnew-body">
+        <div class="whatsnew-desc">${t('whatsNewCodexDesc')}</div>
+        <button class="whatsnew-cta" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
       </div>
-      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
     </div>`;
   document.body.appendChild(ov);
 }
