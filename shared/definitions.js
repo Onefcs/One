@@ -1231,19 +1231,24 @@ function _codexSlotReq(item, tierIdx, offset) {
 // enhanceBonus() — the same curve enhancing the item itself already uses,
 // just dialed down: this is a collection bonus, not a second copy of
 // enhancing the gear.
+// A set's bonus is a pure function of CODEX_BONUS_BY_RARITY — each slot's
+// minEnhance is a REQUIREMENT (which item qualifies for that slot), not a
+// second reward on top of it. An earlier version also added a cut of the
+// item's own enhanceBonus() here, keyed off that specific item's individual
+// atk/def/hp — since most gear only carries one or two of those stats, two
+// slots at the same rarity and minEnhance could net different atk/def
+// totals depending on which item happened to fill them (e.g. gloves-only
+// atk vs. a piece with both), which broke the atk == def symmetry
+// CODEX_BONUS_BY_RARITY is built around. Removed rather than symmetrized —
+// simplest way to keep a set's total fully predictable from its rarity and
+// slot count alone.
 function _codexSetBonus(slots) {
   const total = { atk: 0, def: 0, hp: 0 };
-  slots.forEach(({ itemId, minEnhance }) => {
+  slots.forEach(({ itemId }) => {
     const base = itemCatalogBase(itemId);
     if (!base) return;
     const b = CODEX_BONUS_BY_RARITY[base.rarity] || {};
     total.atk += b.atk || 0; total.def += b.def || 0; total.hp += b.hp || 0;
-    if (minEnhance > 0) {
-      const eb = enhanceBonus(base, minEnhance);
-      total.atk += Math.ceil((eb.atk || 0) * 0.15);
-      total.def += Math.ceil((eb.def || 0) * 0.15);
-      total.hp  += Math.ceil((eb.hp  || 0) * 0.15);
-    }
   });
   // Round to one decimal once at the end, not per slot — common/uncommon's
   // fractional per-slot values (above) need to sum across the whole set
