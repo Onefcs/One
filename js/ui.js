@@ -5707,16 +5707,6 @@ const _SPECIAL_PET_PKGS_UI = [
   { id:'petpkg3', gram:110, get label() { return _packNLabel(3); }, petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5, color:'#4a7bab' },
 ];
 
-// Stone-only convenience pack — mirror of server/index.js's _SPECIAL_STONE_PKGS.
-// Bought through the plain gramShopBuy flow (openGramShopConfirm/
-// _gramShopPkgHtml, same cards the Паки tab uses), just rendered on the
-// Специальные tab instead — there's no book split or pet choice to make,
-// so it doesn't need specialShopBuy's own picker modal. #8 continues the
-// pet(1-3)/book(4-7) numbering above.
-const _SPECIAL_STONE_PKGS_UI = [
-  { id:'special541', gram:541, get label() { return _packNLabel(8); }, color:'#4a7bab', stones:{ bless_stone:3 } },
-];
-
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
 // coin icon) — split out of _gramShopPkgHtml so _specialPkgHtml can render
 // the same reward kinds for special270 without re-declaring them.
@@ -6097,8 +6087,7 @@ function _renderGramShopPanel() {
     body = _SEASON_SHOP_PKGS_UI.map(pkg => _seasonShopPkgHtml(pkg, bal)).join('');
   } else if (_shopTab === 'special') {
     body = _SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('')
-      + _SPECIAL_SHOP_PKGS_UI.map(pkg => _specialPkgHtml(pkg, bal)).join('')
-      + _SPECIAL_STONE_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
+      + _SPECIAL_SHOP_PKGS_UI.map(pkg => _specialPkgHtml(pkg, bal)).join('');
   } else {
     body = _GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   }
@@ -6176,7 +6165,7 @@ function _boxesLine(boxes) {
 }
 
 function openGramShopConfirm(pkgId) {
-  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || _SPECIAL_STONE_PKGS_UI.find(p => p.id === pkgId);
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
   if (bal < pkg.gram) return;
@@ -6237,7 +6226,7 @@ function onGramShopResult(data) {
     if (data.newNexumBalance != null) player.nexumBalance = data.newNexumBalance;
   }
   if (data.vipData) window._vipData = data.vipData;
-  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId) || _SPECIAL_STONE_PKGS_UI.find(p => p.id === data.pkgId);
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
   // Season packages live in their own list and have no label of
   // their own — name them by price so the toast still says what was bought.
   const spkg = pkg ? null : _SEASON_SHOP_PKGS_UI.find(p => p.id === data.pkgId);

@@ -690,15 +690,6 @@ const _SPECIAL_SHOP_PKGS = [
     bonusSP:15, nexum:10000, potions:100 },
 ];
 
-// Stone-only convenience pack, also shown on the Специальные tab — bought
-// through the plain gramShopBuy handler below (its `stones` field is
-// already generic, see the enhance-stones comment on _SEASON_SHOP_PKGS)
-// rather than specialShopBuy, since there's no buyer-picked book split or
-// pet choice to make.
-const _SPECIAL_STONE_PKGS = [
-  { id:'special541', gram:541, stones:{ bless_stone:3 } },
-];
-
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
 const _SHOP_CLASS_WEAPONS = {
   lev:         { common:'tw1', uncommon:'tw2', rare:'tw3', epic:'tw4' },
@@ -6252,8 +6243,7 @@ io.on('connection', socket => {
     _ran = await _withEconLock(async () => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId)
-                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId)
-                || _SPECIAL_STONE_PKGS.find(p => p.id === pkgId);
+                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
       // petChoice packages need a valid pick of the right rarity BEFORE any
       // GRAM is spent — refusing here (rather than after the deduction) means
