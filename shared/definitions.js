@@ -305,6 +305,50 @@ function skillPointBudget(lvl, rebirths) {
   return L * 3;
 }
 
+// bonusSP is two separate things stored as one number: the FREE points (shop
+// packages, plus REBIRTH_BONUS_SP for each rebirth) and the BANKED points
+// that exist only so the upgrades a rebirth KEEPS stay inside the budget
+// check (_sanitizeSavedStats, server/anticheat.js) after the level reset
+// zeroes skillPointBudget. The banked half must always equal exactly what is
+// currently spent, so the two cancel and a player's real, usable total stays
+// `skillPointBudget(lvl, rebirths) + free`.
+//
+// That means a rebirth may only bank what is NOT banked already. Banking the
+// whole spent total every time — which is what this used to do — re-paid the
+// previous rebirth's bank, and compounded, because the next rebirth then
+// re-banked the inflated figure in turn: five rebirths left a character at
+// level 1 holding ~1590 free points instead of 75.
+//
+// This splits a stored bonusSP back into those two halves so a caller can
+// rebuild it correctly. Every writer follows the same rule afterwards:
+//
+//     bonusSP = free (+ any new flat grant) + whatever is spent now
+//
+// which keeps `bonusSP >= spent` by construction — the condition the budget
+// check needs, and the one a naive "credit only the difference" version
+// misses: an account whose spending has outgrown its old bonusSP would come
+// out of a rebirth with bonusSP BELOW spent, and the next save would wipe
+// the very upgrades the rebirth promised to keep.
+//
+// `storedBanked` absent (not a number) means the account last rebirthed
+// before the figure was recorded. Its bank is unknown, so it is read as
+// min(bonusSP, spent): the largest share the old bonus could legitimately
+// have been covering. That leaves no inflated free points behind, and can
+// never claim more free points than actually exist.
+//
+// banked is also capped at bonusSP because bonusSP is the thing being split —
+// a stored bank larger than it (a bonusSP lowered elsewhere) would otherwise
+// produce a negative free half.
+function rebirthSplitBonusSP(bonusSP, storedBanked, rebirths, spentSP) {
+  const bonus = Math.max(0, Math.floor(Number(bonusSP)) || 0);
+  const spent = Math.max(0, Math.floor(Number(spentSP)) || 0);
+  const raw = Number(storedBanked);
+  const banked = Number.isFinite(raw)
+    ? Math.min(bonus, Math.max(0, Math.floor(raw)))
+    : ((rebirths || 0) > 0 ? Math.min(bonus, spent) : 0);
+  return { banked, free: bonus - banked };
+}
+
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
@@ -1906,7 +1950,7 @@ function clanAtkBonusPct(level) {
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget, rebirthSplitBonusSP,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,

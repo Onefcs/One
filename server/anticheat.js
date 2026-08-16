@@ -203,6 +203,13 @@ function _sanitizeSavedStats(raw) {
   s.kills   = _clampInt(s.kills,   0, _SANITIZE_MAX.kills, 0);
   s.bonusSP = _clampInt(s.bonusSP, 0, _SANITIZE_MAX.bonusSP, 0);
   s.rebirths = _clampInt(s.rebirths, 0, _SANITIZE_MAX.rebirths, 0);
+  // The banked half of bonusSP (rebirth handler, server/index.js). Bounded
+  // only when present — absent is meaningful here (a record from before the
+  // field existed) and must stay absent rather than becoming a stored 0,
+  // which would read as "nothing banked yet" and re-credit an old rebirth.
+  if (s.rebirthBankedSP != null) {
+    s.rebirthBankedSP = _clampInt(s.rebirthBankedSP, 0, _SANITIZE_MAX.bonusSP, 0);
+  }
   if (s.maxHp     != null) s.maxHp     = _clampInt(s.maxHp,     1, _SANITIZE_MAX.maxHp, 100);
   if (s.hp        != null) s.hp        = _clampNum(s.hp,        0, s.maxHp ?? _SANITIZE_MAX.maxHp, 0);
   if (s.atk       != null) s.atk       = _clampNum(s.atk,       0, _SANITIZE_MAX.atk, 0);
