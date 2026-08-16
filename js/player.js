@@ -356,7 +356,20 @@ function applyLevelState(st) {
     // The heal itself was applied server-side; this is the part the player sees.
     player.hp = Math.min(player.maxHp, player.hp + 35 * (player.lvl - before));
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
-    dmgNum(player.x, player.y - 54, '+3 очка навыка', '#a0f0a0');
+    // Below REBIRTH_LEVEL after a rebirth, skillPointBudget (shared/
+    // definitions.js) grants nothing per level until the curve resumes at
+    // REBIRTH_LEVEL. This message used to hardcode "+3 очка навыка" on every
+    // level-up regardless, so a rebirthed player kept seeing the promise
+    // while their actual Улучшения budget (getAvailableSkillPoints) never
+    // moved. Diffing the budget before/after is what the level actually
+    // paid, so the floating text now says exactly that, and says nothing at
+    // all when the level paid 0.
+    const gained = skillPointBudget(player.lvl, player.rebirths) - skillPointBudget(before, player.rebirths);
+    if (gained > 0) {
+      const m10 = gained % 10, m100 = gained % 100;
+      const word = (m10 === 1 && m100 !== 11) ? 'очко' : (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) ? 'очка' : 'очков';
+      dmgNum(player.x, player.y - 54, `+${gained} ${word} навыка`, '#a0f0a0');
+    }
     spawnBurst(player.x, player.y, '#ff0', 14);
     if (typeof onLevelUp === 'function') onLevelUp(player.lvl);
   }
