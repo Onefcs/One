@@ -28,8 +28,9 @@ const MARKET_MIN_PRICE_KEY         = 0.01; // key_uncommon / key_rare, per key
 const MARKET_MIN_PRICE_RECIPE      = 0.01; // slot:'recipe' (recu/recr/rece/recl), per scroll
 const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
-const MARKET_MIN_PRICE_BOX         = 2;    // box_uncommon / box_rare (BOX_DEF), per box
-const MARKET_MIN_PRICE_RARE_GEAR   = 5;    // rarity:'rare' armor/weapon, flat
+const MARKET_MIN_PRICE_BOX         = 1;    // box_uncommon / box_rare (BOX_DEF), per box
+const MARKET_MIN_PRICE_EPIC_GEAR   = 10;   // rarity:'epic' armor/weapon, flat
+const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' armor/weapon, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
 const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any rarity below 'rare'
 
@@ -88,6 +89,7 @@ function _marketMinPrice(item) {
   // otherwise an uncommon cloak (cloak_u_<class>) would fall through to the
   // cheaper uncommon-gear floor instead.
   if (item.slot === 'cloak' || item.slot === 'artifact') return MARKET_MIN_PRICE_CLOAK_ARTIFACT;
+  if (item.rarity === 'epic' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_EPIC_GEAR;
   if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
   if (item.rarity === 'uncommon' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_UNCOMMON_GEAR;
   return MARKET_MIN_PRICE;
