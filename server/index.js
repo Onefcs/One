@@ -6117,6 +6117,9 @@ io.on('connection', socket => {
 
   safeOn('gramWithdrawRequest', async ({ amount, address }) => {
     if (!authed || !amount || amount < GRAM_MIN_WITHDRAW || !address) return;
+    if ((socket.data.vipLevel || 0) < 2) {
+      return socket.emit('gramError', { msg: 'Вывод GRAM доступен с VIP 2' });
+    }
     try {
       const amt = Number(amount);
       if (!Number.isFinite(amt) || amt <= 0) return;
@@ -9043,8 +9046,8 @@ io.on('connection', socket => {
   // error that happens to land while a listing request is in flight.
   safeOn('marketList', async ({ item, price } = {}) => {
     if (!authed) return;
-    if ((socket.data.vipLevel || 0) < 1) {
-      return socket.emit('marketListError', { msg: 'Продажа на маркете доступна с VIP 1' });
+    if ((socket.data.vipLevel || 0) < 2) {
+      return socket.emit('marketListError', { msg: 'Продажа на маркете доступна с VIP 2' });
     }
     const now = Date.now();
     if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
