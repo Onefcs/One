@@ -1182,17 +1182,18 @@ function itemCatalogBase(id) {
 // left out of the pool: they're a ~1-in-a-million drop, and consuming one
 // into a set for the same flat bonus an ordinary epic gets would be a trap,
 // not a sink.
-// common/uncommon are set directly as small fractional values (not derived
-// by halving a whole number) — a set's total is the SUM of these across its
-// 2-4 slots, rounded to one decimal at the end (see _codexSetBonus below)
-// rather than floored to a whole number, so the fraction actually shows up
-// instead of rounding away to 0 on a small set.
+// atk/def are set directly per rarity, atk and def always equal — a set's
+// total is the SUM of these across its 2-4 slots, rounded to one decimal at
+// the end (see _codexSetBonus below) rather than floored to a whole number,
+// so a fractional tier's contribution actually shows up instead of rounding
+// away to 0 on a small set. hp keeps its own, unrelated per-tier values —
+// only rare+ carry it.
 const CODEX_BONUS_BY_RARITY = {
-  common:    { atk: 0.3 },
-  uncommon:  { atk: 0.6 },
-  rare:      { atk: 2, def: 1, hp: 8  },
-  epic:      { atk: 3, def: 2, hp: 16 },
-  legendary: { atk: 5, def: 3, hp: 30 },
+  common:    { atk: 0.1, def: 0.1 },
+  uncommon:  { atk: 0.2, def: 0.2 },
+  rare:      { atk: 0.5, def: 0.5, hp: 8  },
+  epic:      { atk: 1,   def: 1,   hp: 16 },
+  legendary: { atk: 3,   def: 3,   hp: 30 },
 };
 
 const _CODEX_UNIVERSAL_SLOTS = ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
