@@ -755,6 +755,14 @@ Object.assign(I18N_UI, {
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
   portalLbl: { ru: '🌀 Телепорт', en: '🌀 Portal', uk: '🌀 Телепорт', es: '🌀 Portal', tr: '🌀 Portal', pt: '🌀 Portal' },
   portalPickTitle: { ru: 'Куда телепортироваться?', en: 'Where to teleport?', uk: 'Куди телепортуватися?', es: '¿A dónde teletransportarse?', tr: 'Nereye ışınlanmak istersin?', pt: 'Para onde teleportar?' },
+  // Teleport-stone button (above the chat button) — opens the same
+  // destination picker the hub portal shows, but usable from anywhere by
+  // spending a stone bought from the merchant (see teleportStoneMerchantHdr).
+  teleportBtnTitle: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
+  teleportStoneNoneMsg: { ru: 'Нет камня телепортации — купите у торговца', en: 'No teleport stone — buy one from the merchant', uk: 'Немає каменя телепортації — купіть у торговця', es: 'Sin piedra de teletransporte — cómprala al mercader', tr: 'Işınlanma taşı yok — tüccardan satın al', pt: 'Sem pedra de teleporte — compre com o mercador' },
+  teleportStoneMerchantHdr: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
+  teleportStoneMerchantSub: { ru: 'Открывает телепорт в любую локацию', en: 'Opens teleport to any location', uk: 'Відкриває телепорт у будь-яку локацію', es: 'Abre teletransporte a cualquier lugar', tr: 'Herhangi bir yere ışınlanmayı açar', pt: 'Abre teleporte para qualquer local' },
+  npcNotEnoughLiberty: { ru: 'Мало Liberty!', en: 'Not enough Liberty!', uk: 'Мало Liberty!', es: '¡Falta Liberty!', tr: 'Yetersiz Liberty!', pt: 'Liberty insuficiente!' },
   // Map panel's monster reference list, Фарм-зона variant — see
   // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.
   farmBestiaryHint: { ru: 'Уровень варьируется 21-30 у каждого монстра отдельно — здесь показан средний.', en: 'Each monster rolls its own level 21-30 — shown here is the average.', uk: 'Рівень варіюється 21-30 в кожного монстра окремо — тут показано середній.', es: 'Cada monstruo tiene su propio nivel 21-30 — aquí se muestra el promedio.', tr: 'Her canavarın kendi seviyesi 21-30 arasında — burada ortalama gösteriliyor.', pt: 'Cada monstro sorteia seu próprio nível 21-30 — aqui é mostrada a média.' },
@@ -1186,6 +1194,7 @@ const I18N_MATS = {
   recl: { en: 'Legendary Recipe', uk: 'Легендарний рецепт', es: 'Receta Legendaria', tr: 'Efsane Tarif',       pt: 'Receita Lendária' },
   norm_stone:   { en: 'Stone of Normal Enchant', uk: 'Камінь звичайного гартування', es: 'Piedra de Encantamiento Normal', tr: 'Normal Büyü Taşı', pt: 'Pedra de Encantamento Normal' },
   bless_stone:  { en: 'Stone of Safe Enchant',   uk: 'Камінь безпечного гартування', es: 'Piedra de Encantamiento Seguro', tr: 'Güvenli Büyü Taşı', pt: 'Pedra de Encantamento Seguro' },
+  teleport_stone: { en: 'Teleport Stone', uk: 'Камінь телепортації', es: 'Piedra de Teletransporte', tr: 'Işınlanma Taşı', pt: 'Pedra de Teleporte' },
   key_uncommon: { en: 'Uncommon Key', uk: 'Незвичайний ключ', es: 'Llave Poco Común', tr: 'Nadir Olmayan Anahtar', pt: 'Chave Incomum' },
   key_rare:     { en: 'Rare Key',      uk: 'Рідкісний ключ',   es: 'Llave Rara',       tr: 'Nadir Anahtar',        pt: 'Chave Rara' },
   book_lev_Q: { en: 'Book: Frost Strike',  uk: 'Книга: Крижаний удар', es: 'Libro: Golpe Helado', tr: 'Kitap: Buz Darbesi', pt: 'Livro: Golpe Gélido' },

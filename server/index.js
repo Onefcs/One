@@ -160,6 +160,7 @@ const {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
+  TELEPORT_STONE_PRICE, TELEPORT_DESTINATIONS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
@@ -5367,6 +5368,7 @@ io.on('connection', socket => {
     'clanStorageCancel', 'clanStorageClaim', 'clanStorageUnlock',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'rebirth', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
+    'buyTeleportStone',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
     // Both hit the database on every call — seasonRating sorts the whole
     // player collection, seasonSetTier writes the selected band.
@@ -6833,6 +6835,38 @@ io.on('connection', socket => {
     socket.emit('buffSync', { buffs: _lastStats.buffs });
   });
 
+  // ── Using a teleport stone (bought from the merchant, see buyTeleportStone
+  // above) ─────────────────────────────────────────────────────────────────
+  // Offers the same destinations the hub portal does (TELEPORT_DESTINATIONS,
+  // shared/definitions.js — a static mirror of the hub's own armEntries/
+  // farmZoneEntry) but works from any floor, consuming one stone per jump.
+  // _doEnterLocation (further down this file, a hoisted function declaration
+  // so the forward reference is fine) re-checks the level gate itself and is
+  // the one source of truth for whether the move actually happened.
+  safeOn('useTeleportStone', ({ target } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
+    const dest = TELEPORT_DESTINATIONS.find(d => d.target === target);
+    if (!dest) return;
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (dest.req > 0 && lvl < dest.req) return _itemErr(`Нужен ${dest.req} уровень`);
+    const inv = _lastStats.inventory;
+    const beforeLen = inv.length;
+    if (!_invRemove(inv, { id: 'teleport_stone', qty: 1, slot: 'material' })) {
+      return _itemErr('Нет камня телепортации');
+    }
+    const moved = _doEnterLocation(dest.target);
+    if (!moved) {
+      // Nothing actually happened (already there, or the target refused the
+      // move for a reason _doEnterLocation checks itself) — refund the stone.
+      _invAdd(inv, { id: 'teleport_stone', name: 'Камень телепортации', rarity: 'rare', slot: 'material', qty: 1 });
+      _commitServerItems(inv, null, 'teleport_stone_use_refund', { target }, { beforeLen });
+      return _itemErr('Не удалось телепортироваться');
+    }
+    _commitServerItems(inv, null, 'teleport_stone_use', { target }, { beforeLen });
+    logPlayer(authed.telegramId, authed.username, 'teleport_stone_use', { target });
+  });
+
   // The buff timers run down in real time. The client counts them for its own
   // HUD, but the server needs its own clock or a buff would last forever here —
   // which, for the gold and XP multipliers, is the whole exposure.
@@ -7047,6 +7081,76 @@ io.on('connection', socket => {
     socket.emit('potionBag', { potionBag: _lastStats.potionBag, bought: { id: entry.itemId, n } });
     // buy_potion quests count purchases, and this is the only place one happens.
     if (_currentQuest() && _currentQuest().type === 'buy_potion') { _questBump('_potion', n); _questPush(); }
+  });
+
+  // ── Buying teleport stones from the merchant (Liberty/Nexum) ───────────────
+  // The one merchant purchase NOT priced in gold — Liberty is
+  // server-authoritative only (see resetUpgrades/craftPet above for why), so
+  // unlike buyPotion the charge and the grant both have to happen here rather
+  // than trusting a client-side gold deduction. Mirrors craftPet's shape: an
+  // atomic balance spend, then a deterministic item grant (no roll — a
+  // purchase always delivers exactly the stones paid for).
+  safeOn('buyTeleportStone', async ({ qty } = {}) => {
+    if (!authed) return;
+    const n = Math.max(1, Math.min(99, Math.floor(Number(qty)) || 1));
+    _itemOpBusy++;
+    let _ran;
+    try {
+    // Serialized like craftPet/resetUpgrades — the spend below is a DB round
+    // trip, and two purchases overlapping across it would interleave their
+    // inventory writes.
+    _ran = await _withEconLock(async () => {
+    try {
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('teleportStoneError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      const mat = CRAFT_MATS.find(m => m.id === 'teleport_stone');
+      if (!mat) return;
+      if (!_invHasRoomFor(_lastStats.inventory, mat)) {
+        return socket.emit('teleportStoneError', { msg: 'Инвентарь полон' });
+      }
+      const cost = TELEPORT_STONE_PRICE * n;
+
+      // Atomic charge — the grant below only happens if the Liberty was
+      // really taken, same reasoning as every other Liberty spend in this file.
+      await _flushBalances();
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', cost);
+      if (_bal === null) return socket.emit('teleportStoneError', { msg: `Нужно ${cost} Liberty` });
+      _nexumBalance = _bal;
+
+      // Cross-session guard, same as craftPet's own: the spend above is a DB
+      // round trip, and the account may have reconnected on a different
+      // socket by the time it resolves.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        if (!_target || !_target.data._applyGrant) {
+          // Nothing live to grant into. Refund rather than charge for stones
+          // that cannot be delivered.
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', cost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('teleportStoneError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+        const _res = _target.data._applyGrant(
+          { addItems: [{ item: mat, qty: n }] }, 'teleport_stone_buy_cross_session', { qty: n, cost });
+        _target.emit('teleportStoneBought', { qty: n, newNexumBalance: _nexumBalance, delivered: !!_res });
+        return;
+      }
+
+      const _beforeLen = _lastStats.inventory.length;
+      const _delivered = _invAdd(_lastStats.inventory, { ...mat, qty: n });
+      _commitServerItems(_lastStats.inventory, null, 'teleport_stone_buy', { qty: n, cost }, { beforeLen: _beforeLen });
+      logPlayer(authed.telegramId, authed.username, 'teleport_stone_buy', { qty: n, cost });
+      socket.emit('teleportStoneBought', { qty: n, newNexumBalance: _nexumBalance, delivered: _delivered });
+    } catch (err) {
+      console.error('buyTeleportStone:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'teleport_stone_buy', err, { qty: n });
+      socket.emit('teleportStoneError', { msg: 'Ошибка сервера' });
+    }
+    });
+    } finally {
+      _itemOpBusy--;
+    }
+    if (!_ran) socket.emit('teleportStoneError', { msg: 'Секунду, идёт другая операция — повторите' });
   });
 
   // ── Item placement (equip, unequip, storage) ──────────────────────────────

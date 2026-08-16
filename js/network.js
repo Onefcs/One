@@ -863,6 +863,8 @@ function netConnect(onReady) {
       // hidden, reading as if the whole client had reset.
       const _chatBtn = document.getElementById('chat-btn');
       if (_chatBtn) { _chatBtn.dataset.shown = '1'; _chatBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
+      const _teleBtn = document.getElementById('teleport-btn');
+      if (_teleBtn) { _teleBtn.dataset.shown = '1'; _teleBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
       if (typeof _refreshChatPreview === 'function') _refreshChatPreview();
       // A reconnect (background tab suspended mid-session, brief network
       // drop, etc.) re-joins as a fresh server-side room entry — if the
@@ -1923,6 +1925,9 @@ function _scheduleWorldWipe() {
     if (chatPanel) chatPanel.classList.remove('open');
     const chatPreview = document.getElementById('chat-preview');
     if (chatPreview) chatPreview.style.display = 'none';
+    const teleBtn = document.getElementById('teleport-btn');
+    if (teleBtn) teleBtn.style.display = 'none';
+    if (typeof _closeTeleportModal === 'function') _closeTeleportModal();
   }, _WORLD_WIPE_AFTER_MS);
 }
 
@@ -2671,6 +2676,9 @@ function _finishOnlineStart() {
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   const chatBtn = document.getElementById('chat-btn');
   if (chatBtn) { chatBtn.dataset.shown = '1'; chatBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
+  const teleBtn = document.getElementById('teleport-btn');
+  if (teleBtn) { teleBtn.dataset.shown = '1'; teleBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
+  if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   _refreshChatPreview();
   if (typeof showHudMenuBtn === 'function') showHudMenuBtn();
   if (typeof showRatingBtn === 'function') showRatingBtn();
@@ -2892,6 +2900,13 @@ function netMarketBuy(listingId) {
 
 function netCraftPet(rarity) {
   if (socket?.connected) socket.emit('craftPet', { rarity });
+}
+
+function netBuyTeleportStone(qty) {
+  if (socket?.connected) socket.emit('buyTeleportStone', { qty });
+}
+function netUseTeleportStone(target) {
+  if (socket?.connected) socket.emit('useTeleportStone', { target });
 }
 
 function netCraftStone(matId) {
@@ -3552,6 +3567,19 @@ function _initPetCraftHandlers(s) {
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
+  });
+
+  // Teleport stones — bought from the merchant for Liberty (buyTeleportStone,
+  // server/index.js), same round-trip reasoning as a pet craft: the balance
+  // and the grant are both server-authoritative, so the button only ever
+  // asks, and the actual stone/balance come back here.
+  s.on('teleportStoneBought', ({ qty, newNexumBalance, delivered }) => {
+    window._nexumBalance = newNexumBalance;
+    if (player) player.nexumBalance = newNexumBalance;
+    if (typeof onTeleportStoneBought === 'function') onTeleportStoneBought(qty, delivered);
+  });
+  s.on('teleportStoneError', ({ msg }) => {
+    if (typeof onTeleportStoneError === 'function') onTeleportStoneError(msg);
   });
 
   // Enchant stones. Materials and the stone itself both move server-side (it

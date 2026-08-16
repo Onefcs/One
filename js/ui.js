@@ -131,6 +131,127 @@ function updateInvUI() {
       ${enh}${cntBadge}
     </div>`;
   }).join('');
+  _refreshTeleportBadge();
+}
+
+// ── Teleport stones ─────────────────────────────────────────────────────
+// Badge on #teleport-btn (index.html) mirrors how many teleport_stone the
+// player currently holds — hidden at 0, same shape as #chat-badge's unread
+// count. Refreshed here (every inventory redraw already covers a purchase's
+// inventorySync) and again explicitly after a teleport is used, since that
+// consumes a stone without necessarily re-running updateInvUI first.
+function _refreshTeleportBadge() {
+  const badge = document.getElementById('teleport-stone-badge');
+  if (!badge) return;
+  const n = (typeof countMaterial === 'function' && player) ? countMaterial('teleport_stone') : 0;
+  if (n > 0) { badge.textContent = n > 99 ? '99+' : String(n); badge.style.display = 'flex'; }
+  else { badge.style.display = 'none'; }
+}
+
+let _teleportModalOpen = false;
+let _teleportStonePending = false;
+
+function _teleportDestLabel(target) {
+  if (target === 'hub') return typeof t === 'function' ? t('centralHall') : 'Центральный зал';
+  if (target === 'farmZone') return typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона';
+  return typeof _teleportLabel === 'function' ? _teleportLabel(target) : target;
+}
+
+// Same shop-list/shop-row shell _openPortalModal (js/game.js) uses for the
+// hub pad's own destination picker — this is that same picker, just reached
+// via a consumed stone instead of standing on the pad, and offered from any
+// floor (TELEPORT_DESTINATIONS, shared/definitions.js, is a static list for
+// exactly that reason).
+function _openTeleportModal() {
+  if (!player) return;
+  _closeTeleportModal();
+  _teleportModalOpen = true;
+  const have = typeof countMaterial === 'function' ? countMaterial('teleport_stone') : 0;
+  const lvl = player.lvl || 1;
+  const rowsHtml = (typeof TELEPORT_DESTINATIONS !== 'undefined' ? TELEPORT_DESTINATIONS : []).map(d => {
+    const locked = d.req > 0 && lvl < d.req;
+    const sub = d.req > 0
+      ? (typeof t === 'function' ? `${t('levelAbbrev')} ${d.req}` : `Ур. ${d.req}`)
+      : '';
+    return `<div class="shop-row" style="cursor:pointer;touch-action:manipulation;${locked ? 'opacity:.7' : 'border-color:rgba(79,195,255,0.35)'}" onclick="_pickTeleportDestination('${d.target}')">
+      <div class="shop-item-icon">${locked ? '🔒' : '🌀'}</div>
+      <div class="shop-item-info">
+        <div class="shop-item-name">${_teleportDestLabel(d.target)}</div>
+        ${sub ? `<div class="shop-item-stat" style="color:${locked ? '#f17e8b' : '#7fd7ff'}">${sub}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.id = 'teleport-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = () => _closeTeleportModal();
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
+    <div class="imod-hdr">
+      <span class="imod-big-icon" style="font-size:32px;filter:drop-shadow(0 0 6px #4fc3ff)">🌀</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:#8fd8ff">${typeof t === 'function' ? t('portalPickTitle') : 'Куда телепортироваться?'}</div>
+        <div class="imod-sub" style="color:${have > 0 ? '#7fd7ff' : '#f17e8b'}">
+          ${(typeof t === 'function' ? t('teleportBtnTitle') : 'Камни телепортации')}: <b>${have}</b>
+        </div>
+      </div>
+      <button class="npc-close" onclick="_closeTeleportModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="shop-list">${rowsHtml}</div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _closeTeleportModal() {
+  _teleportModalOpen = false;
+  const el = document.getElementById('teleport-modal-ov');
+  if (el) el.remove();
+}
+
+function _pickTeleportDestination(target) {
+  if (!player) return;
+  const dest = (typeof TELEPORT_DESTINATIONS !== 'undefined' ? TELEPORT_DESTINATIONS : []).find(d => d.target === target);
+  if (!dest) return;
+  const lvl = player.lvl || 1;
+  if (dest.req > 0 && lvl < dest.req) {
+    dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: dest.req }) : `🔒 Нужен ${dest.req} уровень`, '#f17e8b');
+    return;
+  }
+  const have = typeof countMaterial === 'function' ? countMaterial('teleport_stone') : 0;
+  if (have <= 0) {
+    _closeTeleportModal();
+    dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('teleportStoneNoneMsg') : 'Нет камня телепортации', '#f17e8b');
+    return;
+  }
+  if (_teleportStonePending) return;
+  _closeTeleportModal();
+  _teleportStonePending = true;
+  if (typeof csStartFloorLoading === 'function') {
+    csStartFloorLoading(_teleportDestLabel(target), '🌀', () => {
+      _teleportStonePending = false;
+      if (typeof csHide === 'function') csHide();
+    });
+    if (typeof csOnSpritesReady === 'function') csOnSpritesReady();
+  } else {
+    _teleportStonePending = false;
+  }
+  if (typeof netUseTeleportStone === 'function') netUseTeleportStone(target);
+}
+
+// Merchant purchase result (buyTeleportStone, server/index.js) — the stone
+// itself arrives via the usual inventorySync, this only has to refresh what
+// displays a count (merchant panel, badge) and report the outcome.
+function onTeleportStoneBought(qty, delivered) {
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
+  _refreshTeleportBadge();
+  if (typeof _shopMsg === 'function') {
+    _shopMsg(delivered
+      ? (typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + `×${qty} ` + (typeof t === 'function' ? t('teleportBtnTitle') : 'Камни телепортации')
+      : (typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'));
+  }
+}
+function onTeleportStoneError(msg) {
+  if (typeof _shopMsg === 'function') _shopMsg(msg || 'Ошибка');
 }
 
 // ── Inventory portrait (eq-center-canvas) ──────────────────
@@ -1853,6 +1974,9 @@ function setInvTab(n) {
 // so a button that hasn't been unlocked yet (before login/char-select
 // finishes) never gets forced visible.
 const _CHAT_BTN_ID = 'chat-btn';
+// Teleport-stone button sits right above chat-btn and follows the exact same
+// tab-only visibility rule (see _syncGameOnlyBtns below).
+const _TELEPORT_BTN_ID = 'teleport-btn';
 // VIP/Market/Магазин/События/Сезон/Кодекс — seven of them got crowded enough
 // to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
 // whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
@@ -1867,6 +1991,8 @@ function _hudSubBtnDisplay() { return (activeTab === 0 && _hudMenuExpanded) ? 'f
 function _syncGameOnlyBtns(n) {
   const chatEl = document.getElementById(_CHAT_BTN_ID);
   if (chatEl && chatEl.dataset.shown === '1') chatEl.style.display = (n === 0) ? 'flex' : 'none';
+  const teleEl = document.getElementById(_TELEPORT_BTN_ID);
+  if (teleEl && teleEl.dataset.shown === '1') teleEl.style.display = (n === 0) ? 'flex' : 'none';
   const menuEl = document.getElementById('hud-menu-btn');
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
   const subDisplay = (n === 0 && _hudMenuExpanded) ? 'flex' : 'none';

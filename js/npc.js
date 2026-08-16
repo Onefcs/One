@@ -117,6 +117,32 @@ function _merchantBody() {
     </div>`;
   });
   html += '</div>';
+
+  // Teleport stones — the one merchant row NOT priced in gold. Liberty is
+  // server-authoritative (see buyTeleportStone, server/index.js), so unlike
+  // every row above, the button only ever asks; the actual stone and the new
+  // balance come back through 'teleportStoneBought' (js/network.js).
+  const tsMat = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'teleport_stone') : null;
+  if (tsMat) {
+    const tsHave = typeof countMaterial === 'function' ? countMaterial('teleport_stone') : 0;
+    const tsAfford = TELEPORT_STONE_PRICE > 0 ? Math.floor((window._nexumBalance || 0) / TELEPORT_STONE_PRICE) : 0;
+    const tsWant = _potionQty === 'max' ? tsAfford : _potionQty;
+    const tsCost = TELEPORT_STONE_PRICE * tsWant;
+    const tsCanBuy = tsWant > 0 && tsAfford >= tsWant;
+    html += `<div class="shop-sec">${typeof t === 'function' ? t('teleportStoneMerchantHdr') : 'Камни телепортации'}
+      &nbsp;·&nbsp; ${typeof _nexumIconHtml === 'function' ? _nexumIconHtml(14) : ''} Liberty: <b>${window._nexumBalance || 0}</b></div><div class="shop-list">`;
+    html += `<div class="shop-row">
+      <span class="shop-item-icon">${_matIcon(tsMat, 22)}</span>
+      <div class="shop-item-info">
+        <span class="shop-item-name">${tsMat.name}</span>
+        <span class="shop-item-stat">${typeof t === 'function' ? t('teleportStoneMerchantSub') : 'Открывает телепорт в любую локацию'} · <b style="color:#7fd7ff">×${tsHave}</b></span>
+      </div>
+      <button class="shop-btn${tsCanBuy ? '' : ' disabled'}" onclick="buyTeleportStone(${tsWant})">
+        ${tsWant > 1 ? `<span class="shop-btn-qty">×${tsWant}</span> ` : ''}${tsCost} Liberty
+      </button>
+    </div>`;
+    html += '</div>';
+  }
   return html;
 }
 
@@ -134,6 +160,18 @@ function buyPotion(idx, qty) {
   if (cur + n > POTION_CAP) { _shopMsg(typeof t === 'function' ? t('npcMaxPotions') : 'Максимум 999 зелий!'); return; }
   if (player.gold < entry.price * n) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
   netBuyPotion(idx, n);
+}
+
+// Liberty-priced, unlike buyPotion above — the charge and the grant both
+// happen server-side (buyTeleportStone, server/index.js), so this is only a
+// courtesy pre-check before asking; the real inventory/balance come back via
+// 'teleportStoneBought' (onTeleportStoneBought, js/ui.js).
+function buyTeleportStone(qty) {
+  if (!player) return;
+  const n = Math.max(1, Math.floor(qty) || 1);
+  const cost = TELEPORT_STONE_PRICE * n;
+  if ((window._nexumBalance || 0) < cost) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughLiberty') : 'Мало Liberty!'); return; }
+  netBuyTeleportStone(n);
 }
 
 // ── Craftsman ───────────────────────────────────────────
