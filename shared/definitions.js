@@ -1035,6 +1035,19 @@ const UNIQUE_SHARDS = [
   { id:'shard_void',     name:'Осколок пустоты',  img:'/images/uniq/shard/void.png'     },
 ];
 
+// Which unique-weapon shards each Фарм-зона species can drop — same
+// round-robin split (and the same 4/4/3/3/3/3 shape) as FARM_SPECIES_BOOKS
+// above, in UNIQUE_SHARDS' own display order. Each shard in a species' own
+// subset still rolls independently at FARM_SHARD_CHANCE per kill, exactly
+// as before — only WHICH 20 shards a given species can drop changes, not
+// the per-shard rate — so every species has its own distinct shard subset
+// instead of all 20 being rollable off any kill regardless of species.
+const FARM_SPECIES_SHARDS = {};
+FARM_SPECIES.forEach(sp => { FARM_SPECIES_SHARDS[sp] = []; });
+UNIQUE_SHARDS.forEach((sh, i) => {
+  FARM_SPECIES_SHARDS[FARM_SPECIES[i % FARM_SPECIES.length]].push(sh.id);
+});
+
 // The weapons themselves. Every stat carried over from the ordinary line is
 // exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
 // bw4/bw5, st4/st5) — see ITEM_DEF above. Warlocks share the staff line for
@@ -1908,7 +1921,7 @@ if (typeof module !== 'undefined') module.exports = {
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
-  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
+  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
