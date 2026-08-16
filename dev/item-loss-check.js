@@ -207,7 +207,7 @@ const HELM = defs.ITEM_DEF.find(d => d.slot === 'helmet').id;
   check('craftPet has a cross-session guard like the other crafts',
     /pet_craft_cross_session/.test(SRC));
   check('craftPet is wrapped in _itemOpBusy',
-    /_itemOpBusy\+\+;\n\s*try \{\n\s*\/\/ Serialized like the other spend handlers/.test(SRC));
+    /_itemOpBusy\+\+;\n(?:\s*let _ran;\n)?\s*try \{\n\s*\/\/ Serialized like the other spend handlers/.test(SRC));
   check('claimQuest refuses up front when the reward will not fit',
     /quest_reward_refused/.test(SRC));
   check('boss drops report only what _invAdd actually placed',
