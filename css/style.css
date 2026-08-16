@@ -2700,6 +2700,21 @@ canvas { display:block; width:100%; height:100%; }
 .codexslot.filled { border-color: #90d653; background: rgba(144,214,83,.12); cursor: default; }
 .codexslot:not(.filled) { opacity: .68; }
 .codexslot:not(.filled):active { opacity: 1; }
+/* Ready = the inventory already holds a matching item for this slot —
+   pulses gold so it reads as "tap this" at a glance among the dimmed rest. */
+.codexslot.ready {
+  opacity: 1;
+  border-color: #e69419;
+  box-shadow: 0 0 0 1px rgba(230,148,25,.35), 0 0 9px rgba(230,148,25,.55);
+  animation: codexReadyPulse 1.6s ease-in-out infinite;
+}
+@keyframes codexReadyPulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(230,148,25,.35), 0 0 9px rgba(230,148,25,.55); }
+  50%      { box-shadow: 0 0 0 1px rgba(230,148,25,.6), 0 0 15px rgba(230,148,25,.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .codexslot.ready { animation: none; }
+}
 .codexslot-enh {
   position: absolute; left: -2px; bottom: -3px; font-size: 8px; font-weight: 800;
   color: #e69419; background: rgba(10,8,5,.9); border-radius: 4px; padding: 0 2px; line-height: 1.3;

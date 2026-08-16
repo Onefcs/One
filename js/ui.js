@@ -1032,12 +1032,19 @@ function _codexSetRowHtml(set) {
   if (set.bonus.def) bonusParts.push(`+${set.bonus.def} ЗАЩ`);
   if (set.bonus.hp)  bonusParts.push(`+${set.bonus.hp} HP`);
 
+  const inv = player.inventory || [];
   const slotsHtml = set.slots.map((req, i) => {
     const base = typeof itemCatalogBase === 'function' ? itemCatalogBase(req.itemId) : null;
     const rc = base ? (RARITY_COLOR[base.rarity] || '#aea599') : '#aea599';
     const isFilled = !!filled[i];
-    const title = `${base ? base.name : req.itemId}${req.minEnhance ? ' +' + req.minEnhance : ''}${isFilled ? ' — уже внесено' : ''}`;
-    return `<div class="codexslot${isFilled ? ' filled' : ''}" style="--rc:${rc}" title="${_escAttr(title)}"
+    // Ready = not filled yet, but the inventory already holds an item that
+    // meets this slot's {itemId, minEnhance} — same check tryFillCodexSlot
+    // uses to auto-fill, so "highlighted" and "actually fillable by one tap"
+    // never disagree.
+    const isReady = !isFilled && inv.some(it => typeof codexItemMeetsReq === 'function' && codexItemMeetsReq(it, req));
+    const title = `${base ? base.name : req.itemId}${req.minEnhance ? ' +' + req.minEnhance : ''}` +
+      (isFilled ? ' — уже внесено' : isReady ? ' — есть в инвентаре, нажми чтобы внести' : '');
+    return `<div class="codexslot${isFilled ? ' filled' : ''}${isReady ? ' ready' : ''}" style="--rc:${rc}" title="${_escAttr(title)}"
       ${isFilled ? '' : `onclick="tryFillCodexSlot('${set.id}', ${i})"`}>
       ${base ? _itemIcon(base, 28) : ''}
       ${req.minEnhance ? `<span class="codexslot-enh">+${req.minEnhance}</span>` : ''}
