@@ -160,7 +160,7 @@ const {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
-  TELEPORT_STONE_PRICE, TELEPORT_DESTINATIONS,
+  TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
@@ -2982,6 +2982,11 @@ const parties     = new Map();
 const playerParty = new Map();
 // socketId -> current floor number (for proximity check)
 const playerFloorMap = new Map();
+// socketId -> Date.now() ms when an in-progress teleport-stone cast
+// completes (useTeleportStone, below). Module-level rather than a
+// per-connection closure var so _pvpFrozen (which every movement/attack
+// handler already gates on) can see it — see _teleportCastFrozen.
+const _teleportCasting = new Map();
 
 // Looks up a player's own record on whichever floor they're actually on
 // right now, without the caller having to know which Room that is —
@@ -3734,12 +3739,24 @@ function _a3Enemies(a, b) {
   return !!ta && !!tb && ta !== tb;
 }
 
+// True while this socket is mid-cast on a teleport stone (useTeleportStone,
+// below) — folded into _pvpFrozen so the same movement/attack guards that
+// already hold a player still during a PvP pre-fight freeze hold them still
+// for the cast too, with no extra per-handler check needed.
+function _teleportCastFrozen(socketId) {
+  const until = _teleportCasting.get(socketId);
+  return until != null && Date.now() < until;
+}
+
 // Both PvP modes can hold a player in a pre-fight freeze, and both need to
-// know when one goes down. Every combat path goes through these rather than
-// checking each mode separately — adding a third mode later means changing
-// these two functions, not every attack handler. Each half no-ops for a
-// socket that isn't in that mode.
-function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId) || _race10Frozen(socketId); }
+// know when one goes down; the teleport-stone cast is a third kind of the
+// same thing. Every movement/combat path goes through this rather than
+// checking each mode separately — adding another one later means changing
+// this function, not every attack handler. Each half no-ops for a socket
+// that isn't in that mode.
+function _pvpFrozen(socketId) {
+  return _dbFrozen(socketId) || _a3Frozen(socketId) || _race10Frozen(socketId) || _teleportCastFrozen(socketId);
+}
 // killerSocketId is only passed by the actual PvP attack handlers below —
 // the 'respawn' and disconnect call sites leave it undefined, since dying to
 // a monster mid-round (or just leaving) isn't a kill by another player.
@@ -5252,6 +5269,10 @@ io.on('connection', socket => {
   // window for every handler below without touching their internal logic.
   let _itemOpBusy = 0;
   let _saveDebounceTimer = null;
+  // Pending teleport-stone cast's setTimeout handle (server/index.js's own
+  // useTeleportStone below) — cleared on disconnect so a dead connection
+  // never fires _doEnterLocation against a socket that is no longer live.
+  let _teleportCastTimer = null;
 
   // Items granted from OUTSIDE a player-initiated handler while one of the
   // clone-and-commit handlers above is mid-flight: mob loot (every kill),
@@ -6837,34 +6858,38 @@ io.on('connection', socket => {
 
   // ── Using a teleport stone (bought from the merchant, see buyTeleportStone
   // above) ─────────────────────────────────────────────────────────────────
-  // Offers the same destinations the hub portal does (TELEPORT_DESTINATIONS,
-  // shared/definitions.js — a static mirror of the hub's own armEntries/
-  // farmZoneEntry) but works from any floor, consuming one stone per jump.
-  // _doEnterLocation (further down this file, a hoisted function declaration
-  // so the forward reference is fine) re-checks the level gate itself and is
-  // the one source of truth for whether the move actually happened.
-  safeOn('useTeleportStone', ({ target } = {}) => {
+  // Always recalls to the hub, after a TELEPORT_CAST_MS channel during which
+  // the player is held still — _teleportCasting (module-level, above) is
+  // what _pvpFrozen reads to enforce that, so movement/attacks are already
+  // refused everywhere else in this file without a change to those handlers.
+  // The stone is spent the instant the cast starts (not on completion): a
+  // successful cast is the one thing this handler can guarantee, and gating
+  // the spend on the setTimeout below firing would let a second tap start a
+  // free second cast in the same window if the first stone hadn't been
+  // deducted yet.
+  safeOn('useTeleportStone', () => {
     if (!authed || !_itemsFor()) return;
     if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
-    const dest = TELEPORT_DESTINATIONS.find(d => d.target === target);
-    if (!dest) return;
-    const lvl = (_lastStats && _lastStats.lvl) || 1;
-    if (dest.req > 0 && lvl < dest.req) return _itemErr(`Нужен ${dest.req} уровень`);
+    if (_teleportCastFrozen(socket.id)) return _itemErr('Уже произносится телепорт');
+    if (currentFloor === FLOOR_IDS.hub) return _itemErr('Вы уже в зале');
     const inv = _lastStats.inventory;
     const beforeLen = inv.length;
     if (!_invRemove(inv, { id: 'teleport_stone', qty: 1, slot: 'material' })) {
       return _itemErr('Нет камня телепортации');
     }
-    const moved = _doEnterLocation(dest.target);
-    if (!moved) {
-      // Nothing actually happened (already there, or the target refused the
-      // move for a reason _doEnterLocation checks itself) — refund the stone.
-      _invAdd(inv, { id: 'teleport_stone', name: 'Камень телепортации', rarity: 'rare', slot: 'material', qty: 1 });
-      _commitServerItems(inv, null, 'teleport_stone_use_refund', { target }, { beforeLen });
-      return _itemErr('Не удалось телепортироваться');
-    }
-    _commitServerItems(inv, null, 'teleport_stone_use', { target }, { beforeLen });
-    logPlayer(authed.telegramId, authed.username, 'teleport_stone_use', { target });
+    _commitServerItems(inv, null, 'teleport_stone_use', {}, { beforeLen });
+    logPlayer(authed.telegramId, authed.username, 'teleport_stone_use', {});
+
+    _teleportCasting.set(socket.id, Date.now() + TELEPORT_CAST_MS);
+    socket.emit('teleportCastStarted', { ms: TELEPORT_CAST_MS });
+
+    if (_teleportCastTimer) clearTimeout(_teleportCastTimer);
+    _teleportCastTimer = setTimeout(() => {
+      _teleportCastTimer = null;
+      _teleportCasting.delete(socket.id);
+      if (!authed || !currentRoom) return; // disconnected mid-cast
+      _doEnterLocation('hub');
+    }, TELEPORT_CAST_MS);
   });
 
   // The buff timers run down in real time. The client counts them for its own
@@ -12544,6 +12569,8 @@ io.on('connection', socket => {
     // shared/competitive instances a lone reconnect can't safely resume into.
     _pvpEliminate(socket.id, undefined, undefined, { fearGrace: true, telegramId: authed?.telegramId });
     playerFloorMap.delete(socket.id);
+    _teleportCasting.delete(socket.id);
+    if (_teleportCastTimer) { clearTimeout(_teleportCastTimer); _teleportCastTimer = null; }
     // Held for PARTY_RECONNECT_GRACE_MS instead of dissolved on the spot — a
     // small network drop (see the fearGrace comment just above) used to kick
     // the member out of their party immediately, same class of bug as Fear's

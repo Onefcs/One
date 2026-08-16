@@ -148,93 +148,32 @@ function _refreshTeleportBadge() {
   else { badge.style.display = 'none'; }
 }
 
-let _teleportModalOpen = false;
-let _teleportStonePending = false;
-
-function _teleportDestLabel(target) {
-  if (target === 'hub') return typeof t === 'function' ? t('centralHall') : 'Центральный зал';
-  if (target === 'farmZone') return typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона';
-  return typeof _teleportLabel === 'function' ? _teleportLabel(target) : target;
+// Client-local mirror of the server's cast window (set from
+// 'teleportCastStarted', js/network.js). Purely cosmetic — the server is
+// sole authority over whether the player can actually move or attack during
+// a cast (_teleportCastFrozen folded into _pvpFrozen, server/index.js) —
+// but this is what drives the blue swirl (drawTeleportPads, js/game.js) and
+// lets the button itself ignore extra taps while one is already running.
+let _teleportCastUntil = 0;
+function _teleportCasting() {
+  return Date.now() < _teleportCastUntil;
 }
 
-// Same shop-list/shop-row shell _openPortalModal (js/game.js) uses for the
-// hub pad's own destination picker — this is that same picker, just reached
-// via a consumed stone instead of standing on the pad, and offered from any
-// floor (TELEPORT_DESTINATIONS, shared/definitions.js, is a static list for
-// exactly that reason).
-function _openTeleportModal() {
+// Always recalls to the hub after a channelled cast — no destination picker
+// any more, a teleport stone only ever goes home. Consuming the stone and
+// starting/timing the cast are both server-side (useTeleportStone,
+// server/index.js); this is only the button's own courtesy pre-check (a
+// 0-stone tap refuses locally instead of paying a round trip for a message
+// 'itemError' would show anyway) plus the request itself.
+function _useTeleportStone() {
   if (!player) return;
-  _closeTeleportModal();
-  _teleportModalOpen = true;
-  const have = typeof countMaterial === 'function' ? countMaterial('teleport_stone') : 0;
-  const lvl = player.lvl || 1;
-  const rowsHtml = (typeof TELEPORT_DESTINATIONS !== 'undefined' ? TELEPORT_DESTINATIONS : []).map(d => {
-    const locked = d.req > 0 && lvl < d.req;
-    const sub = d.req > 0
-      ? (typeof t === 'function' ? `${t('levelAbbrev')} ${d.req}` : `Ур. ${d.req}`)
-      : '';
-    return `<div class="shop-row" style="cursor:pointer;touch-action:manipulation;${locked ? 'opacity:.7' : 'border-color:rgba(79,195,255,0.35)'}" onclick="_pickTeleportDestination('${d.target}')">
-      <div class="shop-item-icon">${locked ? '🔒' : '🌀'}</div>
-      <div class="shop-item-info">
-        <div class="shop-item-name">${_teleportDestLabel(d.target)}</div>
-        ${sub ? `<div class="shop-item-stat" style="color:${locked ? '#f17e8b' : '#7fd7ff'}">${sub}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-  const ov = document.createElement('div');
-  ov.id = 'teleport-modal-ov';
-  ov.className = 'imod-overlay';
-  ov.onclick = () => _closeTeleportModal();
-  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
-    <div class="imod-hdr">
-      <span class="imod-big-icon" style="font-size:32px;filter:drop-shadow(0 0 6px #4fc3ff)">🌀</span>
-      <div class="imod-title-block">
-        <div class="imod-name" style="color:#8fd8ff">${typeof t === 'function' ? t('portalPickTitle') : 'Куда телепортироваться?'}</div>
-        <div class="imod-sub" style="color:${have > 0 ? '#7fd7ff' : '#f17e8b'}">
-          ${(typeof t === 'function' ? t('teleportBtnTitle') : 'Камни телепортации')}: <b>${have}</b>
-        </div>
-      </div>
-      <button class="npc-close" onclick="_closeTeleportModal()" style="touch-action:manipulation">✕</button>
-    </div>
-    <div class="shop-list">${rowsHtml}</div>
-  </div>`;
-  document.getElementById('app').appendChild(ov);
-}
-
-function _closeTeleportModal() {
-  _teleportModalOpen = false;
-  const el = document.getElementById('teleport-modal-ov');
-  if (el) el.remove();
-}
-
-function _pickTeleportDestination(target) {
-  if (!player) return;
-  const dest = (typeof TELEPORT_DESTINATIONS !== 'undefined' ? TELEPORT_DESTINATIONS : []).find(d => d.target === target);
-  if (!dest) return;
-  const lvl = player.lvl || 1;
-  if (dest.req > 0 && lvl < dest.req) {
-    dmgNum(player.x, player.y - 40, typeof tVars === 'function' ? tVars('lockedNeedLevel', { n: dest.req }) : `🔒 Нужен ${dest.req} уровень`, '#f17e8b');
-    return;
-  }
+  if (_teleportCasting()) return; // already mid-cast, ignore the extra tap
   const have = typeof countMaterial === 'function' ? countMaterial('teleport_stone') : 0;
   if (have <= 0) {
-    _closeTeleportModal();
     dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('teleportStoneNoneMsg') : 'Нет камня телепортации', '#f17e8b');
     return;
   }
-  if (_teleportStonePending) return;
-  _closeTeleportModal();
-  _teleportStonePending = true;
-  if (typeof csStartFloorLoading === 'function') {
-    csStartFloorLoading(_teleportDestLabel(target), '🌀', () => {
-      _teleportStonePending = false;
-      if (typeof csHide === 'function') csHide();
-    });
-    if (typeof csOnSpritesReady === 'function') csOnSpritesReady();
-  } else {
-    _teleportStonePending = false;
-  }
-  if (typeof netUseTeleportStone === 'function') netUseTeleportStone(target);
+  if (typeof netUseTeleportStone === 'function') netUseTeleportStone();
 }
 
 // Merchant purchase result (buyTeleportStone, server/index.js) — the stone

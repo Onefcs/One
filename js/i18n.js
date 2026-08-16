@@ -755,13 +755,13 @@ Object.assign(I18N_UI, {
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
   portalLbl: { ru: '🌀 Телепорт', en: '🌀 Portal', uk: '🌀 Телепорт', es: '🌀 Portal', tr: '🌀 Portal', pt: '🌀 Portal' },
   portalPickTitle: { ru: 'Куда телепортироваться?', en: 'Where to teleport?', uk: 'Куди телепортуватися?', es: '¿A dónde teletransportarse?', tr: 'Nereye ışınlanmak istersin?', pt: 'Para onde teleportar?' },
-  // Teleport-stone button (above the chat button) — opens the same
-  // destination picker the hub portal shows, but usable from anywhere by
-  // spending a stone bought from the merchant (see teleportStoneMerchantHdr).
+  // Teleport-stone button (above the chat button) — spends a stone bought
+  // from the merchant (see teleportStoneMerchantHdr) to recall to the hub
+  // after a channelled cast, from anywhere.
   teleportBtnTitle: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
   teleportStoneNoneMsg: { ru: 'Нет камня телепортации — купите у торговца', en: 'No teleport stone — buy one from the merchant', uk: 'Немає каменя телепортації — купіть у торговця', es: 'Sin piedra de teletransporte — cómprala al mercader', tr: 'Işınlanma taşı yok — tüccardan satın al', pt: 'Sem pedra de teleporte — compre com o mercador' },
   teleportStoneMerchantHdr: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
-  teleportStoneMerchantSub: { ru: 'Открывает телепорт в любую локацию', en: 'Opens teleport to any location', uk: 'Відкриває телепорт у будь-яку локацію', es: 'Abre teletransporte a cualquier lugar', tr: 'Herhangi bir yere ışınlanmayı açar', pt: 'Abre teleporte para qualquer local' },
+  teleportStoneMerchantSub: { ru: 'Телепорт в центральный зал (каст 7 сек)', en: 'Teleports to the central hall (7s cast)', uk: 'Телепорт у центральний зал (каст 7 сек)', es: 'Teletransporta al salón central (canalización de 7s)', tr: 'Merkez salona ışınlanma (7sn kanal)', pt: 'Teleporta para o salão central (canalização de 7s)' },
   npcNotEnoughLiberty: { ru: 'Мало Liberty!', en: 'Not enough Liberty!', uk: 'Мало Liberty!', es: '¡Falta Liberty!', tr: 'Yetersiz Liberty!', pt: 'Liberty insuficiente!' },
   // Map panel's monster reference list, Фарм-зона variant — see
   // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.

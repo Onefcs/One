@@ -974,22 +974,11 @@ const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'liza
 
 // ── Teleport stones ──────────────────────────────────────────────────────
 // A consumable bought from the merchant for Liberty (not gold — MERCHANT_SHOP
-// above is gold-only) that opens the same destination picker the hub portal
-// shows (_openPortalModal, js/game.js), usable from anywhere instead of only
-// standing on the hub pad.
+// above is gold-only) that recalls the player to the hub from any floor,
+// after a channelled cast (see TELEPORT_CAST_MS) that holds them still —
+// useTeleportStone, server/index.js.
 const TELEPORT_STONE_PRICE = 20; // Liberty (Nexum) per stone
-// Static mirror of what the hub portal builds dynamically from the current
-// floor's own dungeon payload (_buildArmGates, js/game.js) — a teleport
-// stone has to offer the same destinations from ANY floor, so this list
-// can't depend on the armEntries a hub-only payload carries.
-const TELEPORT_DESTINATIONS = [
-  { target: 'hub',      req: 0 },
-  { target: 'left',     req: ARM_LEVEL_REQ.left },
-  { target: 'top',      req: ARM_LEVEL_REQ.top },
-  { target: 'bottom',   req: ARM_LEVEL_REQ.bottom },
-  { target: 'right',    req: ARM_LEVEL_REQ.right },
-  { target: 'farmZone', req: FARM_ENTRY_LEVEL },
-];
+const TELEPORT_CAST_MS = 7000;   // channel time before the recall lands
 
 // Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat
 // roll per kill, same "roll once, pick a random book from the pool" shape
@@ -1920,7 +1909,7 @@ if (typeof module !== 'undefined') module.exports = {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
-  TELEPORT_STONE_PRICE, TELEPORT_DESTINATIONS,
+  TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,

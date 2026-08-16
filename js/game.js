@@ -319,6 +319,7 @@ function _autoCastSkills(dt) {
   if (_autoSkillTimer > 0) return;
   if ((player.stunTimer || 0) > 0) return;
   if (typeof _dbFrozen === 'function' && _dbFrozen()) return;
+  if (typeof _teleportCasting === 'function' && _teleportCasting()) return;
   // Never interrupt a swing or another cast that is already playing.
   if ((player.atkAnimTimer || 0) > 0) return;
   // Nor an approach. A cast locks atkAnimTimer for ~0.68s and the chase loop
@@ -375,7 +376,8 @@ function update(dt, realDt) {
     // joystick input naturally can't reach inp.dx/dy while its touch target is
     // covered by another panel, so this only ever resumes real movement here
     // via the auto-chase path below.
-    if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen()) {
+    if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen() &&
+        !(typeof _teleportCasting === 'function' && _teleportCasting())) {
       const inp = inputDir();
       const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if (inp.len > 0) {
@@ -576,7 +578,8 @@ function update(dt, realDt) {
   // or the joystick cancels it (see inp.len > 0 below), instead of requiring
   // another tap per swing.
   if ((autoAttackMode || _chaseArmed) && (player.stunTimer || 0) <= 0) player.atkTimer -= dt;
-  if (player.atkTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen()) {
+  if (player.atkTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen() &&
+      !(typeof _teleportCasting === 'function' && _teleportCasting())) {
     let closest = null, closestD = Infinity;
     let closestIsPlayer = false;
 
@@ -1857,6 +1860,11 @@ function drawTeleportPads() {
   // other pad still uses — see _SWIRL_THEMES.
   if (_evtArenaOpen() && _evtPad) _drawSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
   if (_gwOpen() && _gwPad) _drawSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', 'green');
+  // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue
+  // swirl the hub portal itself uses, redrawn every frame centred on the
+  // player so it visibly follows them while they're held still. No label:
+  // it's already right under the character, a name would just clutter it.
+  if (typeof _teleportCasting === 'function' && _teleportCasting()) _drawSwirlPad(player.x, player.y, '', 'blue');
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',

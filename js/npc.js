@@ -135,7 +135,7 @@ function _merchantBody() {
       <span class="shop-item-icon">${_matIcon(tsMat, 22)}</span>
       <div class="shop-item-info">
         <span class="shop-item-name">${tsMat.name}</span>
-        <span class="shop-item-stat">${typeof t === 'function' ? t('teleportStoneMerchantSub') : 'Открывает телепорт в любую локацию'} · <b style="color:#7fd7ff">×${tsHave}</b></span>
+        <span class="shop-item-stat">${typeof t === 'function' ? t('teleportStoneMerchantSub') : 'Телепорт в центральный зал (каст 7 сек)'} · <b style="color:#7fd7ff">×${tsHave}</b></span>
       </div>
       <button class="shop-btn${tsCanBuy ? '' : ' disabled'}" onclick="buyTeleportStone(${tsWant})">
         ${tsWant > 1 ? `<span class="shop-btn-qty">×${tsWant}</span> ` : ''}${tsCost} Liberty

@@ -291,7 +291,7 @@
 <!-- Teleport stones — opens the same destination picker the hub portal shows,
      but usable from anywhere by spending a stone bought from the merchant
      (see buyTeleportStone/useTeleportStone, server/index.js). -->
-<button id="teleport-btn" onclick="_openTeleportModal()" style="display:none" title="Камни телепортации">
+<button id="teleport-btn" onclick="_useTeleportStone()" style="display:none" title="Камни телепортации">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="M5 21h14"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><polyline points="9,8 12,11 15,8"/><polyline points="9,16 12,13 15,16"/></svg>
   <span id="teleport-stone-badge"></span>
 </button>

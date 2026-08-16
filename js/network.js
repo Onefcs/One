@@ -695,6 +695,10 @@ function netConnect(onReady) {
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
+    // Any teleport-stone cast ends the moment a real floor transition lands
+    // (its own recall included) — defensive cleanup so the blue swirl can
+    // never keep drawing past the jump it was announcing.
+    _teleportCastUntil = 0;
     // Did the server place this player AFTER it sent this payload? Then the
     // position in here is stale and must not be applied. gameStart carries
     // wherever the player stood at the moment it was built, and for an
@@ -1927,7 +1931,7 @@ function _scheduleWorldWipe() {
     if (chatPreview) chatPreview.style.display = 'none';
     const teleBtn = document.getElementById('teleport-btn');
     if (teleBtn) teleBtn.style.display = 'none';
-    if (typeof _closeTeleportModal === 'function') _closeTeleportModal();
+    _teleportCastUntil = 0;
   }, _WORLD_WIPE_AFTER_MS);
 }
 
@@ -2905,8 +2909,8 @@ function netCraftPet(rarity) {
 function netBuyTeleportStone(qty) {
   if (socket?.connected) socket.emit('buyTeleportStone', { qty });
 }
-function netUseTeleportStone(target) {
-  if (socket?.connected) socket.emit('useTeleportStone', { target });
+function netUseTeleportStone() {
+  if (socket?.connected) socket.emit('useTeleportStone');
 }
 
 function netCraftStone(matId) {
@@ -3580,6 +3584,18 @@ function _initPetCraftHandlers(s) {
   });
   s.on('teleportStoneError', ({ msg }) => {
     if (typeof onTeleportStoneError === 'function') onTeleportStoneError(msg);
+  });
+
+  // The server just started a teleport-stone cast (useTeleportStone,
+  // server/index.js) — it, not this timer, is what actually holds the
+  // player still for the duration (_teleportCastFrozen/_pvpFrozen). This is
+  // only the client's own copy of when that window ends, for the blue swirl
+  // (drawTeleportPads, js/game.js) and so the button ignores a second tap
+  // mid-cast (_teleportCasting, js/ui.js). The real recall itself arrives
+  // the normal way, as a 'gameStart' once the server-side timer fires.
+  s.on('teleportCastStarted', ({ ms }) => {
+    _teleportCastUntil = Date.now() + (Number(ms) || 0);
+    if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   });
 
   // Enchant stones. Materials and the stone itself both move server-side (it
