@@ -982,18 +982,20 @@ const TELEPORT_CAST_MS = 7000;   // channel time before the recall lands
 
 // Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat
 // roll per kill, same "roll once, pick a random book from the pool" shape
-// _rollMobLoot's own skillKey-book roll already uses — just 100x rarer, and
-// with no arm/room dropMult multiplier (the normal roll's base rate before
-// that multiplier is 0.00002; Фарм-зона has no dropMult concept at all, so
-// that flat pre-multiplier rate is the closest "normal book chance" to scale
-// down from). Only rolled for farmZone kills, never regular ones.
-const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100;
+// _rollMobLoot's own skillKey-book roll already uses. Originally scaled down
+// from the normal roll's own pre-dropMult base rate (0.00002/100), then
+// bumped ×100 on top of that per user request — Фарм-зона's whole point is
+// being the fast route to these. Only rolled for farmZone kills, never
+// regular ones.
+const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100 * 100; // 0.00002
 
-// Enchant stones, Фарм-зона's other kill-loot roll (_rollFarmZoneLoot) — sized
-// off the book chance above rather than a standalone figure, since that's the
-// zone's existing reference rate: обычная заточка 5x as common, безопасная 3x.
-const FARM_NORM_STONE_CHANCE  = FARM_ADV_SKILL_BOOK_CHANCE * 5;
-const FARM_BLESS_STONE_CHANCE = FARM_ADV_SKILL_BOOK_CHANCE * 3;
+// Enchant stones, Фарм-зона's other kill-loot roll (_rollFarmZoneLoot).
+// Originally 5x/3x the book chance above; no longer derived from it now
+// that normal and safe are bumped by different factors (×100/×50) than the
+// book roll's own ×100 — each is its own flat number below, still
+// traceable back to that original book×5/book×3 baseline.
+const FARM_NORM_STONE_CHANCE  = 0.00002 / 100 * 5 * 100; // book(orig)×5, ×100 = 0.0001
+const FARM_BLESS_STONE_CHANCE = 0.00002 / 100 * 3 * 50;  // book(orig)×3, ×50  = 0.00003
 
 // Epic/legendary recipe scrolls, Фарм-зона's other kill-loot roll — flat
 // rates given directly (0.05%/0.005%), not derived from the book chance the
