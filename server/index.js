@@ -159,6 +159,7 @@ const {
   UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
+  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
@@ -362,14 +363,18 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
 }
 
 // ── Фарм-зона kill loot ──────────────────────────────────────────────────
-// No recipe/equipment/key/enchant-stone/regular-skill-book drops at all —
-// just an independent FARM_SHARD_CHANCE roll per shard kind (same per-kind-
+// No recipe/equipment/key/regular-skill-book drops at all — just an
+// independent FARM_SHARD_CHANCE roll per shard kind (same per-kind-
 // independent shape as the normal shard roll in _rollMobLoot above, just
 // flat and much higher, since farming shards is this zone's whole point),
-// plus one flat roll for a random advanced-skill book (FARM_ADV_SKILL_BOOK_
-// CHANCE — see its own comment, shared/definitions.js). Both are the ONLY
-// ways to get an advanced-skill book at all; it never drops anywhere else.
-function _rollFarmZoneLoot(inv) {
+// independent norm/bless enchant-stone rolls (FARM_NORM_STONE_CHANCE/
+// FARM_BLESS_STONE_CHANCE — 5x/3x the book chance, see their own comment in
+// shared/definitions.js), and one flat roll for a random advanced-skill
+// book, picked from the KILLED SPECIES' OWN pool (FARM_SPECIES_BOOKS) rather
+// than the full 20-book catalog — different species now drop different
+// books instead of all sharing one pool. This is the ONLY way to get an
+// advanced-skill book at all; it never drops anywhere else.
+function _rollFarmZoneLoot(inv, eid) {
   const granted = [];
   function addMat(id, qty) {
     const mat = CRAFT_MATS.find(m => m.id === id);
@@ -378,9 +383,16 @@ function _rollFarmZoneLoot(inv) {
   for (const sh of UNIQUE_SHARDS) {
     if (Math.random() < FARM_SHARD_CHANCE) addMat(sh.id, 1);
   }
+  if (Math.random() < FARM_NORM_STONE_CHANCE) addMat('norm_stone', 1);
+  if (Math.random() < FARM_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
   if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) {
-    const pool = CRAFT_MATS.filter(m => m.advSkillKey);
-    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)].id, 1);
+    // Falls back to the full pool for a species FARM_SPECIES_BOOKS doesn't
+    // recognize (shouldn't happen for a real farmZone kill, but an empty
+    // pool must never make this roll silently grant nothing).
+    const pool = (FARM_SPECIES_BOOKS[eid] && FARM_SPECIES_BOOKS[eid].length)
+      ? FARM_SPECIES_BOOKS[eid]
+      : CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
+    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
   }
   return granted;
 }
@@ -5584,7 +5596,7 @@ io.on('connection', socket => {
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
     // reroll below) entirely — see _rollFarmZoneLoot's own comment.
-    const items = farmZone ? _rollFarmZoneLoot(inv) : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
+    const items = farmZone ? _rollFarmZoneLoot(inv, eid) : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
     if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
