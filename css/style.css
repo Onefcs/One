@@ -1378,6 +1378,31 @@ canvas { display:block; width:100%; height:100%; }
 .pvp-hist-win { color: #e6ac19; }
 .pvp-hist-lose { color: #a3957c; }
 
+/* ── HUD menu toggle — folds the Рейтинг/VIP/.../Кодекс column away ────────── */
+#hud-menu-btn {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  background: rgba(16,12,6,.90);
+  border: 1px solid rgba(209,204,197,.08);
+  border-left: 3px solid #968a7a;
+  border-radius: 6px;
+  color: #c5bfb7;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  cursor: pointer;
+  z-index: 51;
+  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(209,204,197,.04);
+}
+#hud-menu-btn:active { background: rgba(35,28,15,.96); }
+#hud-menu-btn.expanded { border-left-color: #ebaa49; color: #e5a546; }
+.hud-menu-icon { transition: transform .18s ease; }
+#hud-menu-btn.expanded .hud-menu-icon { transform: rotate(90deg); }
+
 /* ── Rating button ────────────────────────────────────────────────────────── */
 #rating-btn {
   position: absolute;
