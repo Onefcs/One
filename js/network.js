@@ -695,6 +695,10 @@ function netConnect(onReady) {
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
+    // Any teleport-stone cast ends the moment a real floor transition lands
+    // (its own recall included) — defensive cleanup so the blue swirl can
+    // never keep drawing past the jump it was announcing.
+    _teleportCastUntil = 0;
     // Did the server place this player AFTER it sent this payload? Then the
     // position in here is stale and must not be applied. gameStart carries
     // wherever the player stood at the moment it was built, and for an
@@ -863,6 +867,8 @@ function netConnect(onReady) {
       // hidden, reading as if the whole client had reset.
       const _chatBtn = document.getElementById('chat-btn');
       if (_chatBtn) { _chatBtn.dataset.shown = '1'; _chatBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
+      const _teleBtn = document.getElementById('teleport-btn');
+      if (_teleBtn) { _teleBtn.dataset.shown = '1'; _teleBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
       if (typeof _refreshChatPreview === 'function') _refreshChatPreview();
       // A reconnect (background tab suspended mid-session, brief network
       // drop, etc.) re-joins as a fresh server-side room entry — if the
@@ -1923,6 +1929,9 @@ function _scheduleWorldWipe() {
     if (chatPanel) chatPanel.classList.remove('open');
     const chatPreview = document.getElementById('chat-preview');
     if (chatPreview) chatPreview.style.display = 'none';
+    const teleBtn = document.getElementById('teleport-btn');
+    if (teleBtn) teleBtn.style.display = 'none';
+    _teleportCastUntil = 0;
   }, _WORLD_WIPE_AFTER_MS);
 }
 
@@ -2671,6 +2680,9 @@ function _finishOnlineStart() {
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   const chatBtn = document.getElementById('chat-btn');
   if (chatBtn) { chatBtn.dataset.shown = '1'; chatBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
+  const teleBtn = document.getElementById('teleport-btn');
+  if (teleBtn) { teleBtn.dataset.shown = '1'; teleBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
+  if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   _refreshChatPreview();
   if (typeof showHudMenuBtn === 'function') showHudMenuBtn();
   if (typeof showRatingBtn === 'function') showRatingBtn();
@@ -2892,6 +2904,13 @@ function netMarketBuy(listingId) {
 
 function netCraftPet(rarity) {
   if (socket?.connected) socket.emit('craftPet', { rarity });
+}
+
+function netBuyTeleportStone(qty) {
+  if (socket?.connected) socket.emit('buyTeleportStone', { qty });
+}
+function netUseTeleportStone() {
+  if (socket?.connected) socket.emit('useTeleportStone');
 }
 
 function netCraftStone(matId) {
@@ -3552,6 +3571,31 @@ function _initPetCraftHandlers(s) {
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
+  });
+
+  // Teleport stones — bought from the merchant for Liberty (buyTeleportStone,
+  // server/index.js), same round-trip reasoning as a pet craft: the balance
+  // and the grant are both server-authoritative, so the button only ever
+  // asks, and the actual stone/balance come back here.
+  s.on('teleportStoneBought', ({ qty, newNexumBalance, delivered }) => {
+    window._nexumBalance = newNexumBalance;
+    if (player) player.nexumBalance = newNexumBalance;
+    if (typeof onTeleportStoneBought === 'function') onTeleportStoneBought(qty, delivered);
+  });
+  s.on('teleportStoneError', ({ msg }) => {
+    if (typeof onTeleportStoneError === 'function') onTeleportStoneError(msg);
+  });
+
+  // The server just started a teleport-stone cast (useTeleportStone,
+  // server/index.js) — it, not this timer, is what actually holds the
+  // player still for the duration (_teleportCastFrozen/_pvpFrozen). This is
+  // only the client's own copy of when that window ends, for the blue swirl
+  // (drawTeleportPads, js/game.js) and so the button ignores a second tap
+  // mid-cast (_teleportCasting, js/ui.js). The real recall itself arrives
+  // the normal way, as a 'gameStart' once the server-side timer fires.
+  s.on('teleportCastStarted', ({ ms }) => {
+    _teleportCastUntil = Date.now() + (Number(ms) || 0);
+    if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   });
 
   // Enchant stones. Materials and the stone itself both move server-side (it

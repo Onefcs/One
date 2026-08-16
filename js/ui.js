@@ -131,6 +131,66 @@ function updateInvUI() {
       ${enh}${cntBadge}
     </div>`;
   }).join('');
+  _refreshTeleportBadge();
+}
+
+// ── Teleport stones ─────────────────────────────────────────────────────
+// Badge on #teleport-btn (index.html) mirrors how many teleport_stone the
+// player currently holds — hidden at 0, same shape as #chat-badge's unread
+// count. Refreshed here (every inventory redraw already covers a purchase's
+// inventorySync) and again explicitly after a teleport is used, since that
+// consumes a stone without necessarily re-running updateInvUI first.
+function _refreshTeleportBadge() {
+  const badge = document.getElementById('teleport-stone-badge');
+  if (!badge) return;
+  const n = (typeof countMaterial === 'function' && player) ? countMaterial('teleport_stone') : 0;
+  if (n > 0) { badge.textContent = n > 99 ? '99+' : String(n); badge.style.display = 'flex'; }
+  else { badge.style.display = 'none'; }
+}
+
+// Client-local mirror of the server's cast window (set from
+// 'teleportCastStarted', js/network.js). Purely cosmetic — the server is
+// sole authority over whether the player can actually move or attack during
+// a cast (_teleportCastFrozen folded into _pvpFrozen, server/index.js) —
+// but this is what drives the blue swirl (drawTeleportPads, js/game.js) and
+// lets the button itself ignore extra taps while one is already running.
+let _teleportCastUntil = 0;
+function _teleportCasting() {
+  return Date.now() < _teleportCastUntil;
+}
+
+// Always recalls to the hub after a channelled cast — no destination picker
+// any more, a teleport stone only ever goes home. Consuming the stone and
+// starting/timing the cast are both server-side (useTeleportStone,
+// server/index.js); this is only the button's own courtesy pre-check (a
+// 0-stone tap refuses locally instead of paying a round trip for a message
+// 'itemError' would show anyway) plus the request itself.
+function _useTeleportStone() {
+  if (!player) return;
+  if (_teleportCasting()) return; // already mid-cast, ignore the extra tap
+  const have = typeof countMaterial === 'function' ? countMaterial('teleport_stone') : 0;
+  if (have <= 0) {
+    dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('teleportStoneNoneMsg') : 'Нет камня телепортации', '#f17e8b');
+    return;
+  }
+  if (typeof netUseTeleportStone === 'function') netUseTeleportStone();
+}
+
+// Merchant purchase result (buyTeleportStone, server/index.js) — the stone
+// itself arrives via the usual inventorySync, this only has to refresh what
+// displays a count (merchant panel, badge) and report the outcome.
+function onTeleportStoneBought(qty, delivered) {
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
+  _refreshTeleportBadge();
+  if (typeof _shopMsg === 'function') {
+    _shopMsg(delivered
+      ? (typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + `×${qty} ` + (typeof t === 'function' ? t('teleportBtnTitle') : 'Камни телепортации')
+      : (typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'));
+  }
+}
+function onTeleportStoneError(msg) {
+  if (typeof _shopMsg === 'function') _shopMsg(msg || 'Ошибка');
 }
 
 // ── Inventory portrait (eq-center-canvas) ──────────────────
@@ -1853,6 +1913,9 @@ function setInvTab(n) {
 // so a button that hasn't been unlocked yet (before login/char-select
 // finishes) never gets forced visible.
 const _CHAT_BTN_ID = 'chat-btn';
+// Teleport-stone button sits right above chat-btn and follows the exact same
+// tab-only visibility rule (see _syncGameOnlyBtns below).
+const _TELEPORT_BTN_ID = 'teleport-btn';
 // VIP/Market/Магазин/События/Сезон/Кодекс — seven of them got crowded enough
 // to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
 // whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
@@ -1867,6 +1930,8 @@ function _hudSubBtnDisplay() { return (activeTab === 0 && _hudMenuExpanded) ? 'f
 function _syncGameOnlyBtns(n) {
   const chatEl = document.getElementById(_CHAT_BTN_ID);
   if (chatEl && chatEl.dataset.shown === '1') chatEl.style.display = (n === 0) ? 'flex' : 'none';
+  const teleEl = document.getElementById(_TELEPORT_BTN_ID);
+  if (teleEl && teleEl.dataset.shown === '1') teleEl.style.display = (n === 0) ? 'flex' : 'none';
   const menuEl = document.getElementById('hud-menu-btn');
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
   const subDisplay = (n === 0 && _hudMenuExpanded) ? 'flex' : 'none';

@@ -690,6 +690,9 @@ const CRAFT_MATS = [
   // ── Enchant stones ──────────────────────────────────────
   { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
+  // ── Teleport stone (bought from the merchant for Liberty, see
+  // TELEPORT_STONE_PRICE below — not a drop) ──────────────────
+  { id:'teleport_stone', name:'Камень телепортации', icon:'teleport', slot:'material', rarity:'rare' },
   // ── Room-level keys (от монстров в комнатах подземелья) ──
   { id:'key_uncommon', name:'Необычный ключ', img:'/images/material/keyu.png', slot:'material', rarity:'uncommon' },
   { id:'key_rare',      name:'Редкий ключ',    img:'/images/material/keyr.png', slot:'material', rarity:'rare'     },
@@ -968,6 +971,14 @@ const FARM_XP_MULT = 3; // 3x normal XP — the zone's own reward, on top of the
 // 21-40 range (ARM_OFFSETS[1] = 20), so these are the species already tuned
 // for exactly this level band.
 const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'lizardman_warrior', 'orc_guard', 'orc_warrior'];
+
+// ── Teleport stones ──────────────────────────────────────────────────────
+// A consumable bought from the merchant for Liberty (not gold — MERCHANT_SHOP
+// above is gold-only) that recalls the player to the hub from any floor,
+// after a channelled cast (see TELEPORT_CAST_MS) that holds them still —
+// useTeleportStone, server/index.js.
+const TELEPORT_STONE_PRICE = 20; // Liberty (Nexum) per stone
+const TELEPORT_CAST_MS = 7000;   // channel time before the recall lands
 
 // Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat
 // roll per kill, same "roll once, pick a random book from the pool" shape
@@ -1898,6 +1909,7 @@ if (typeof module !== 'undefined') module.exports = {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
+  TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,

@@ -160,6 +160,7 @@ const {
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
+  TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
@@ -2981,6 +2982,11 @@ const parties     = new Map();
 const playerParty = new Map();
 // socketId -> current floor number (for proximity check)
 const playerFloorMap = new Map();
+// socketId -> Date.now() ms when an in-progress teleport-stone cast
+// completes (useTeleportStone, below). Module-level rather than a
+// per-connection closure var so _pvpFrozen (which every movement/attack
+// handler already gates on) can see it — see _teleportCastFrozen.
+const _teleportCasting = new Map();
 
 // Looks up a player's own record on whichever floor they're actually on
 // right now, without the caller having to know which Room that is —
@@ -3733,12 +3739,24 @@ function _a3Enemies(a, b) {
   return !!ta && !!tb && ta !== tb;
 }
 
+// True while this socket is mid-cast on a teleport stone (useTeleportStone,
+// below) — folded into _pvpFrozen so the same movement/attack guards that
+// already hold a player still during a PvP pre-fight freeze hold them still
+// for the cast too, with no extra per-handler check needed.
+function _teleportCastFrozen(socketId) {
+  const until = _teleportCasting.get(socketId);
+  return until != null && Date.now() < until;
+}
+
 // Both PvP modes can hold a player in a pre-fight freeze, and both need to
-// know when one goes down. Every combat path goes through these rather than
-// checking each mode separately — adding a third mode later means changing
-// these two functions, not every attack handler. Each half no-ops for a
-// socket that isn't in that mode.
-function _pvpFrozen(socketId) { return _dbFrozen(socketId) || _a3Frozen(socketId) || _race10Frozen(socketId); }
+// know when one goes down; the teleport-stone cast is a third kind of the
+// same thing. Every movement/combat path goes through this rather than
+// checking each mode separately — adding another one later means changing
+// this function, not every attack handler. Each half no-ops for a socket
+// that isn't in that mode.
+function _pvpFrozen(socketId) {
+  return _dbFrozen(socketId) || _a3Frozen(socketId) || _race10Frozen(socketId) || _teleportCastFrozen(socketId);
+}
 // killerSocketId is only passed by the actual PvP attack handlers below —
 // the 'respawn' and disconnect call sites leave it undefined, since dying to
 // a monster mid-round (or just leaving) isn't a kill by another player.
@@ -5251,6 +5269,10 @@ io.on('connection', socket => {
   // window for every handler below without touching their internal logic.
   let _itemOpBusy = 0;
   let _saveDebounceTimer = null;
+  // Pending teleport-stone cast's setTimeout handle (server/index.js's own
+  // useTeleportStone below) — cleared on disconnect so a dead connection
+  // never fires _doEnterLocation against a socket that is no longer live.
+  let _teleportCastTimer = null;
 
   // Items granted from OUTSIDE a player-initiated handler while one of the
   // clone-and-commit handlers above is mid-flight: mob loot (every kill),
@@ -5367,6 +5389,7 @@ io.on('connection', socket => {
     'clanStorageCancel', 'clanStorageClaim', 'clanStorageUnlock',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'rebirth', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
+    'buyTeleportStone',
     'craftBox', 'craftMatUpgrade', 'openLootBox',
     // Both hit the database on every call — seasonRating sorts the whole
     // player collection, seasonSetTier writes the selected band.
@@ -6833,6 +6856,42 @@ io.on('connection', socket => {
     socket.emit('buffSync', { buffs: _lastStats.buffs });
   });
 
+  // ── Using a teleport stone (bought from the merchant, see buyTeleportStone
+  // above) ─────────────────────────────────────────────────────────────────
+  // Always recalls to the hub, after a TELEPORT_CAST_MS channel during which
+  // the player is held still — _teleportCasting (module-level, above) is
+  // what _pvpFrozen reads to enforce that, so movement/attacks are already
+  // refused everywhere else in this file without a change to those handlers.
+  // The stone is spent the instant the cast starts (not on completion): a
+  // successful cast is the one thing this handler can guarantee, and gating
+  // the spend on the setTimeout below firing would let a second tap start a
+  // free second cast in the same window if the first stone hadn't been
+  // deducted yet.
+  safeOn('useTeleportStone', () => {
+    if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return _itemErr(_ITEMS_BUSY_MSG);
+    if (_teleportCastFrozen(socket.id)) return _itemErr('Уже произносится телепорт');
+    if (currentFloor === FLOOR_IDS.hub) return _itemErr('Вы уже в зале');
+    const inv = _lastStats.inventory;
+    const beforeLen = inv.length;
+    if (!_invRemove(inv, { id: 'teleport_stone', qty: 1, slot: 'material' })) {
+      return _itemErr('Нет камня телепортации');
+    }
+    _commitServerItems(inv, null, 'teleport_stone_use', {}, { beforeLen });
+    logPlayer(authed.telegramId, authed.username, 'teleport_stone_use', {});
+
+    _teleportCasting.set(socket.id, Date.now() + TELEPORT_CAST_MS);
+    socket.emit('teleportCastStarted', { ms: TELEPORT_CAST_MS });
+
+    if (_teleportCastTimer) clearTimeout(_teleportCastTimer);
+    _teleportCastTimer = setTimeout(() => {
+      _teleportCastTimer = null;
+      _teleportCasting.delete(socket.id);
+      if (!authed || !currentRoom) return; // disconnected mid-cast
+      _doEnterLocation('hub');
+    }, TELEPORT_CAST_MS);
+  });
+
   // The buff timers run down in real time. The client counts them for its own
   // HUD, but the server needs its own clock or a buff would last forever here —
   // which, for the gold and XP multipliers, is the whole exposure.
@@ -7047,6 +7106,76 @@ io.on('connection', socket => {
     socket.emit('potionBag', { potionBag: _lastStats.potionBag, bought: { id: entry.itemId, n } });
     // buy_potion quests count purchases, and this is the only place one happens.
     if (_currentQuest() && _currentQuest().type === 'buy_potion') { _questBump('_potion', n); _questPush(); }
+  });
+
+  // ── Buying teleport stones from the merchant (Liberty/Nexum) ───────────────
+  // The one merchant purchase NOT priced in gold — Liberty is
+  // server-authoritative only (see resetUpgrades/craftPet above for why), so
+  // unlike buyPotion the charge and the grant both have to happen here rather
+  // than trusting a client-side gold deduction. Mirrors craftPet's shape: an
+  // atomic balance spend, then a deterministic item grant (no roll — a
+  // purchase always delivers exactly the stones paid for).
+  safeOn('buyTeleportStone', async ({ qty } = {}) => {
+    if (!authed) return;
+    const n = Math.max(1, Math.min(99, Math.floor(Number(qty)) || 1));
+    _itemOpBusy++;
+    let _ran;
+    try {
+    // Serialized like craftPet/resetUpgrades — the spend below is a DB round
+    // trip, and two purchases overlapping across it would interleave their
+    // inventory writes.
+    _ran = await _withEconLock(async () => {
+    try {
+      if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+        return socket.emit('teleportStoneError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+      }
+      const mat = CRAFT_MATS.find(m => m.id === 'teleport_stone');
+      if (!mat) return;
+      if (!_invHasRoomFor(_lastStats.inventory, mat)) {
+        return socket.emit('teleportStoneError', { msg: 'Инвентарь полон' });
+      }
+      const cost = TELEPORT_STONE_PRICE * n;
+
+      // Atomic charge — the grant below only happens if the Liberty was
+      // really taken, same reasoning as every other Liberty spend in this file.
+      await _flushBalances();
+      const _bal = await _spendBalance(authed.telegramId, 'nexumBalance', cost);
+      if (_bal === null) return socket.emit('teleportStoneError', { msg: `Нужно ${cost} Liberty` });
+      _nexumBalance = _bal;
+
+      // Cross-session guard, same as craftPet's own: the spend above is a DB
+      // round trip, and the account may have reconnected on a different
+      // socket by the time it resolves.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _target = _socketForTelegramId(authed.telegramId);
+        if (!_target || !_target.data._applyGrant) {
+          // Nothing live to grant into. Refund rather than charge for stones
+          // that cannot be delivered.
+          const back = await _incBalance(authed.telegramId, 'nexumBalance', cost);
+          if (back !== null) _nexumBalance = back;
+          return socket.emit('teleportStoneError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
+        }
+        const _res = _target.data._applyGrant(
+          { addItems: [{ item: mat, qty: n }] }, 'teleport_stone_buy_cross_session', { qty: n, cost });
+        _target.emit('teleportStoneBought', { qty: n, newNexumBalance: _nexumBalance, delivered: !!_res });
+        return;
+      }
+
+      const _beforeLen = _lastStats.inventory.length;
+      const _delivered = _invAdd(_lastStats.inventory, { ...mat, qty: n });
+      _commitServerItems(_lastStats.inventory, null, 'teleport_stone_buy', { qty: n, cost }, { beforeLen: _beforeLen });
+      logPlayer(authed.telegramId, authed.username, 'teleport_stone_buy', { qty: n, cost });
+      socket.emit('teleportStoneBought', { qty: n, newNexumBalance: _nexumBalance, delivered: _delivered });
+    } catch (err) {
+      console.error('buyTeleportStone:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'teleport_stone_buy', err, { qty: n });
+      socket.emit('teleportStoneError', { msg: 'Ошибка сервера' });
+    }
+    });
+    } finally {
+      _itemOpBusy--;
+    }
+    if (!_ran) socket.emit('teleportStoneError', { msg: 'Секунду, идёт другая операция — повторите' });
   });
 
   // ── Item placement (equip, unequip, storage) ──────────────────────────────
@@ -12440,6 +12569,8 @@ io.on('connection', socket => {
     // shared/competitive instances a lone reconnect can't safely resume into.
     _pvpEliminate(socket.id, undefined, undefined, { fearGrace: true, telegramId: authed?.telegramId });
     playerFloorMap.delete(socket.id);
+    _teleportCasting.delete(socket.id);
+    if (_teleportCastTimer) { clearTimeout(_teleportCastTimer); _teleportCastTimer = null; }
     // Held for PARTY_RECONNECT_GRACE_MS instead of dissolved on the spot — a
     // small network drop (see the fearGrace comment just above) used to kick
     // the member out of their party immediately, same class of bug as Fear's
