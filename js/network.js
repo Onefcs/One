@@ -3732,8 +3732,15 @@ function _initMarketHandlers(s) {
   s.on('marketCancelled', ({ listingId, item, delivered }) => {
     if (typeof onMarketCancelled === 'function') onMarketCancelled(listingId, item, delivered);
   });
-  s.on('marketBought', ({ listingId, item, newBalance, delivered }) => {
+  s.on('marketBought', ({ listingId, item, newBalance, delivered, vipData }) => {
     window._gramBalance = newBalance;
+    if (vipData) {
+      window._vipData = vipData;
+      if (typeof renderVipPanel === 'function') {
+        const panel = document.getElementById('vip-panel');
+        if (panel && panel.style.display !== 'none') renderVipPanel();
+      }
+    }
     if (typeof onMarketBought === 'function') onMarketBought(listingId, item, delivered);
   });
   s.on('marketSold', (data) => {

@@ -41,6 +41,10 @@ function _marketMaxActive(vipLevel) {
   return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? Infinity : MARKET_MAX_ACTIVE;
 }
 
+// 10% of what a market BUYER pays counts toward their VIP bar, same deposit
+// mechanic gramShopBuy's own pkg.gram uses — see marketBuy below.
+const MARKET_VIP_PCT = 0.10;
+
 // ── Why sessions end ─────────────────────────────────────────────────────────
 // "Мир перезагружается" is, from the server's side, always the same event: a
 // socket went away and the client reconnected — which re-runs selectChar and
@@ -6171,8 +6175,8 @@ io.on('connection', socket => {
 
   safeOn('gramWithdrawRequest', async ({ amount, address }) => {
     if (!authed || !amount || amount < GRAM_MIN_WITHDRAW || !address) return;
-    if ((socket.data.vipLevel || 0) < 2) {
-      return socket.emit('gramError', { msg: 'Вывод GRAM доступен с VIP 2' });
+    if ((socket.data.vipLevel || 0) < 3) {
+      return socket.emit('gramError', { msg: 'Вывод GRAM доступен с VIP 3' });
     }
     try {
       const amt = Number(amount);
@@ -9206,8 +9210,8 @@ io.on('connection', socket => {
   // error that happens to land while a listing request is in flight.
   safeOn('marketList', async ({ item, price } = {}) => {
     if (!authed) return;
-    if ((socket.data.vipLevel || 0) < 2) {
-      return socket.emit('marketListError', { msg: 'Продажа на маркете доступна с VIP 2' });
+    if ((socket.data.vipLevel || 0) < 1) {
+      return socket.emit('marketListError', { msg: 'Продажа на маркете доступна с VIP 1' });
     }
     const now = Date.now();
     if (now - _lastMarketListAt < MARKET_LIST_COOLDOWN_MS) {
@@ -9531,6 +9535,22 @@ io.on('connection', socket => {
             seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
       }
 
+      // VIP progress for the BUYER — 10% of what they actually paid, applied
+      // through _applyGrant so it lands on whichever socket is live for this
+      // account right now (same mechanism gramShopBuy's own cross-session
+      // branch uses, see _applyGrant's comment above). Placed after the
+      // no-room unwind above (which refunds the trade outright) so a
+      // purchase that never actually completed can't still fill the bar.
+      let _vipRes = null;
+      const _vipGram = _round2(claimed.price * MARKET_VIP_PCT);
+      if (_vipGram > 0) {
+        const _vipTarget = _socketForTelegramId(authed.telegramId);
+        _vipRes = _vipTarget && _vipTarget.data._applyGrant
+          ? _vipTarget.data._applyGrant({ vipGramDelta: _vipGram }, 'market_buy_vip',
+              { listingId: String(listingId), price: claimed.price })
+          : null;
+      }
+
       // Credit the seller (10% fee burned — not paid to anyone), online or not.
       // A plain "+payout" against the live document: the seller may be farming,
       // spending or being paid by someone else at this very moment, and this is
@@ -9556,6 +9576,10 @@ io.on('connection', socket => {
 
       socket.emit('marketBought', {
         listingId, item: claimed.item, newBalance: _gramBalance, delivered: _delivered,
+        ...(_vipRes ? {
+          vipData: { level: _vipRes.vipLevel, deposited: _vipRes.vipDeposited, pending: _vipRes.vipPending },
+          leveled: _vipRes.vipLeveled,
+        } : {}),
       });
     } catch (err) {
       console.error('marketBuy:', err);
