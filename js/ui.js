@@ -1594,8 +1594,32 @@ function _dropRow(icon, label, valHtml, color) {
   </div>`;
 }
 
+// Formats a percentage that can be arbitrarily tiny (a Фарм-зона book/shard
+// chance split across a species' own few-item pool routinely lands well
+// below 0.0001%) without collapsing to a misleading "0%". A fixed 4-decimal
+// format is enough for the zone's coarser rates (gold, stones) but truncates
+// anything smaller than that to all zeros — this picks enough decimal
+// places to keep the first couple of significant digits instead, however
+// small v is.
 function _pctSmall(v) {
-  return v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%';
+  if (!(v > 0)) return '0%';
+  const leadingZeros = Math.max(0, -Math.floor(Math.log10(v)));
+  const digits = Math.min(15, leadingZeros + 3);
+  return v.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '') + '%';
+}
+
+// Unlike the books below, a shard roll is independent PER SHARD (see
+// _rollFarmZoneLoot, server/index.js) — every shard in the killed species'
+// own subset (FARM_SPECIES_SHARDS, shared/definitions.js) has its own
+// FARM_SHARD_CHANCE shot on every kill, so the per-shard rate shown here
+// doesn't get divided by the pool size the way the shared book roll does.
+function _farmSpeciesShardRows(eid) {
+  const ids = (typeof FARM_SPECIES_SHARDS !== 'undefined' && FARM_SPECIES_SHARDS[eid]) || [];
+  const pool = ids.map(id => (typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : []).find(s => s.id === id)).filter(Boolean);
+  if (!pool.length) return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const pct = _pctSmall(FARM_SHARD_CHANCE * 100);
+  return pool.map(sh => _dropRow(_mi(sh, 20), sh.name, pct, '#c9a24b')).join('');
 }
 
 // One shared roll per kill picks a single random book out of THIS species'
@@ -1621,18 +1645,23 @@ function _farmSpeciesBookRows(eid) {
 }
 
 function _farmDropBodyHtml(e) {
-  const shardPct = _pctSmall(FARM_SHARD_CHANCE * 100);
   const normPct  = _pctSmall(FARM_NORM_STONE_CHANCE * 100);
   const blessPct = _pctSmall(FARM_BLESS_STONE_CHANCE * 100);
+  const epicRecPct = _pctSmall(FARM_EPIC_RECIPE_CHANCE * 100);
+  const legRecPct  = _pctSmall(FARM_LEGENDARY_RECIPE_CHANCE * 100);
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
   const normStone  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone')  : null;
   const blessStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'bless_stone') : null;
+  const epicRec = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'rece') : null;
+  const legRec  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'recl') : null;
   return `
     ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
     ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
-    ${_dropRow('💎', t('farmShardChanceLbl'), shardPct, '#c9a24b')}
+    ${_farmSpeciesShardRows(e.eid)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
+    ${epicRec ? _dropRow(_mi(epicRec, 16), epicRec.name, epicRecPct, '#c98fef') : ''}
+    ${legRec  ? _dropRow(_mi(legRec, 16),  legRec.name,  legRecPct,  '#f5c542') : ''}
     ${_farmSpeciesBookRows(e.eid)}
   `;
 }

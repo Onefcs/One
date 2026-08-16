@@ -982,18 +982,28 @@ const TELEPORT_CAST_MS = 7000;   // channel time before the recall lands
 
 // Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat
 // roll per kill, same "roll once, pick a random book from the pool" shape
-// _rollMobLoot's own skillKey-book roll already uses — just 100x rarer, and
-// with no arm/room dropMult multiplier (the normal roll's base rate before
-// that multiplier is 0.00002; Фарм-зона has no dropMult concept at all, so
-// that flat pre-multiplier rate is the closest "normal book chance" to scale
-// down from). Only rolled for farmZone kills, never regular ones.
-const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100;
+// _rollMobLoot's own skillKey-book roll already uses. Originally scaled down
+// from the normal roll's own pre-dropMult base rate (0.00002/100), then
+// bumped ×100 on top of that per user request — Фарм-зона's whole point is
+// being the fast route to these. Only rolled for farmZone kills, never
+// regular ones.
+const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100 * 100; // 0.00002
 
-// Enchant stones, Фарм-зона's other kill-loot roll (_rollFarmZoneLoot) — sized
-// off the book chance above rather than a standalone figure, since that's the
-// zone's existing reference rate: обычная заточка 5x as common, безопасная 3x.
-const FARM_NORM_STONE_CHANCE  = FARM_ADV_SKILL_BOOK_CHANCE * 5;
-const FARM_BLESS_STONE_CHANCE = FARM_ADV_SKILL_BOOK_CHANCE * 3;
+// Enchant stones, Фарм-зона's other kill-loot roll (_rollFarmZoneLoot).
+// Originally 5x/3x the book chance above; no longer derived from it now
+// that normal and safe are bumped by different factors (×100/×50) than the
+// book roll's own ×100 — each is its own flat number below, still
+// traceable back to that original book×5/book×3 baseline.
+const FARM_NORM_STONE_CHANCE  = 0.00002 / 100 * 5 * 100; // book(orig)×5, ×100 = 0.0001
+const FARM_BLESS_STONE_CHANCE = 0.00002 / 100 * 3 * 50;  // book(orig)×3, ×50  = 0.00003
+
+// Epic/legendary recipe scrolls, Фарм-зона's other kill-loot roll — flat
+// rates given directly (0.05%/0.005%), not derived from the book chance the
+// way the enchant stones above are. Independent rolls, not split per
+// species like the shards/books: a recipe isn't tied to any class or unique
+// weapon, so every species in the zone drops both at the same rate.
+const FARM_EPIC_RECIPE_CHANCE      = 0.05 / 100;
+const FARM_LEGENDARY_RECIPE_CHANCE = 0.005 / 100;
 
 // Which advanced-skill books each Фарм-зона species can drop. Splitting the
 // full 20-book pool (_ADV_SKILL_BOOK_SRC, 5 classes × Q/W/E/R) round-robin
@@ -1034,6 +1044,19 @@ const UNIQUE_SHARDS = [
   { id:'shard_thunder',  name:'Осколок грозы',    img:'/images/uniq/shard/thunder.png'  },
   { id:'shard_void',     name:'Осколок пустоты',  img:'/images/uniq/shard/void.png'     },
 ];
+
+// Which unique-weapon shards each Фарм-зона species can drop — same
+// round-robin split (and the same 4/4/3/3/3/3 shape) as FARM_SPECIES_BOOKS
+// above, in UNIQUE_SHARDS' own display order. Each shard in a species' own
+// subset still rolls independently at FARM_SHARD_CHANCE per kill, exactly
+// as before — only WHICH 20 shards a given species can drop changes, not
+// the per-shard rate — so every species has its own distinct shard subset
+// instead of all 20 being rollable off any kill regardless of species.
+const FARM_SPECIES_SHARDS = {};
+FARM_SPECIES.forEach(sp => { FARM_SPECIES_SHARDS[sp] = []; });
+UNIQUE_SHARDS.forEach((sh, i) => {
+  FARM_SPECIES_SHARDS[FARM_SPECIES[i % FARM_SPECIES.length]].push(sh.id);
+});
 
 // The weapons themselves. Every stat carried over from the ordinary line is
 // exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
@@ -1908,7 +1931,8 @@ if (typeof module !== 'undefined') module.exports = {
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
-  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS,
+  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
+  FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
