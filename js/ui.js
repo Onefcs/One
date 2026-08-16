@@ -4117,12 +4117,13 @@ function _marketMinPriceFor(it, qty) {
   if (it.id === 'bless_stone') return 1.5 * n;
   if (it.id && it.id.startsWith('key_')) return 0.01 * n;
   if (it.slot === 'recipe') return 0.01 * n;
-  if (it.slot === 'box') return 2 * n;
+  if (it.slot === 'box') return (it.id === 'box_rare' ? 2 : 1) * n;
   // Cloak/artifact keep their own flat floor at every rarity below 'rare' —
   // has to win over the rarity-based gear checks below, or an uncommon
   // cloak (cloak_u_<class>) would fall through to the cheaper floor.
   if (it.slot === 'cloak' || it.slot === 'artifact') return 2;
-  if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 5;
+  if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 10;
+  if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 3;
   if (it.rarity === 'uncommon' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 0.3;
   return MARKET_MIN_PRICE;
 }

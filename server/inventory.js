@@ -28,7 +28,8 @@ const MARKET_MIN_PRICE_KEY         = 0.01; // key_uncommon / key_rare, per key
 const MARKET_MIN_PRICE_RECIPE      = 0.01; // slot:'recipe' (recu/recr/rece/recl), per scroll
 const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
-const MARKET_MIN_PRICE_BOX         = 1;    // box_uncommon / box_rare (BOX_DEF), per box
+const MARKET_MIN_PRICE_BOX_UNCOMMON = 1;   // box_uncommon (green, BOX_DEF), per box
+const MARKET_MIN_PRICE_BOX_RARE     = 2;   // box_rare (blue, BOX_DEF), per box
 const MARKET_MIN_PRICE_EPIC_GEAR   = 10;   // rarity:'epic' armor/weapon, flat
 const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' armor/weapon, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
@@ -82,7 +83,9 @@ function _marketMinPrice(item) {
   if (item.id === 'bless_stone') return MARKET_MIN_PRICE_BLESS_STONE * qty;
   if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY * qty;
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
-  if (item.slot === 'box') return MARKET_MIN_PRICE_BOX * qty;
+  if (item.slot === 'box') {
+    return (item.id === 'box_rare' ? MARKET_MIN_PRICE_BOX_RARE : MARKET_MIN_PRICE_BOX_UNCOMMON) * qty;
+  }
   // Cloak/artifact have their own flat floor at every rarity below 'rare'
   // (there's no 'rare' tier for either), so this has to win over the
   // rarity-based gear checks below rather than the other way around —
