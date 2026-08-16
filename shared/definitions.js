@@ -1182,14 +1182,14 @@ function itemCatalogBase(id) {
 // left out of the pool: they're a ~1-in-a-million drop, and consuming one
 // into a set for the same flat bonus an ordinary epic gets would be a trap,
 // not a sink.
-// common/uncommon carry quarter-point values on purpose (halved twice from
-// a starting whole-number 1): a set's total is the SUM of these across its
-// 2-4 slots, floored once at the end (see _codexSetBonus below), so a
-// 4-slot common set nets +1 atk instead of the +4 a whole-number 1 would
-// have given every set regardless of size.
+// common/uncommon are set directly as small fractional values (not derived
+// by halving a whole number) — a set's total is the SUM of these across its
+// 2-4 slots, rounded to one decimal at the end (see _codexSetBonus below)
+// rather than floored to a whole number, so the fraction actually shows up
+// instead of rounding away to 0 on a small set.
 const CODEX_BONUS_BY_RARITY = {
-  common:    { atk: 0.25 },
-  uncommon:  { atk: 0.25, def: 0.25 },
+  common:    { atk: 0.3 },
+  uncommon:  { atk: 0.6 },
   rare:      { atk: 2, def: 1, hp: 8  },
   epic:      { atk: 3, def: 2, hp: 16 },
   legendary: { atk: 5, def: 3, hp: 30 },
@@ -1244,14 +1244,14 @@ function _codexSetBonus(slots) {
       total.hp  += Math.ceil((eb.hp  || 0) * 0.15);
     }
   });
-  // Floor once at the end, not per slot — common/uncommon's half-point
-  // per-slot values (above) need to sum across the whole set before
-  // rounding, or every slot would round its own 0.5 up to 1 and undo the
-  // halving entirely. rare+ are whole numbers already, so this is a no-op
-  // for them.
-  total.atk = Math.floor(total.atk);
-  total.def = Math.floor(total.def);
-  total.hp  = Math.floor(total.hp);
+  // Round to one decimal once at the end, not per slot — common/uncommon's
+  // fractional per-slot values (above) need to sum across the whole set
+  // first, and this only cleans up float noise (0.30000000000000004) rather
+  // than throwing the fraction away like flooring to a whole number would.
+  // rare+ are whole numbers already, so this is a no-op for them.
+  total.atk = Math.round(total.atk * 10) / 10;
+  total.def = Math.round(total.def * 10) / 10;
+  total.hp  = Math.round(total.hp * 10) / 10;
   return total;
 }
 
