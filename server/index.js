@@ -9535,20 +9535,49 @@ io.on('connection', socket => {
             seller: claimed.sellerId, listingId: String(listingId) }, { beforeLen: _buyerBeforeLen });
       }
 
-      // VIP progress for the BUYER — 10% of what they actually paid, applied
-      // through _applyGrant so it lands on whichever socket is live for this
-      // account right now (same mechanism gramShopBuy's own cross-session
-      // branch uses, see _applyGrant's comment above). Placed after the
-      // no-room unwind above (which refunds the trade outright) so a
-      // purchase that never actually completed can't still fill the bar.
+      // VIP progress for the BUYER — 10% of what they actually paid. Read
+      // fresh from the DB and $set the result directly, the same way
+      // gramShopBuy's own (non-cross-session) VIP write does — NOT through
+      // _applyGrant/_lastStats: _sanitizeSavedStats unconditionally deletes
+      // vipLevel/vipDeposited/vipPending from any object that passes through
+      // it (server/anticheat.js), and every selectChar/reconnect rebuilds
+      // _lastStats through exactly that path. _applyGrant's vipGramDelta
+      // would have read that wiped (usually 0/undefined) value as the
+      // starting point and written it straight back over the account's real
+      // VIP progress — which is what reset players' VIP after a purchase.
+      // Placed after the no-room unwind above (which refunds the trade
+      // outright) so a purchase that never actually completed can't still
+      // fill the bar.
       let _vipRes = null;
       const _vipGram = _round2(claimed.price * MARKET_VIP_PCT);
       if (_vipGram > 0) {
-        const _vipTarget = _socketForTelegramId(authed.telegramId);
-        _vipRes = _vipTarget && _vipTarget.data._applyGrant
-          ? _vipTarget.data._applyGrant({ vipGramDelta: _vipGram }, 'market_buy_vip',
-              { listingId: String(listingId), price: claimed.price })
-          : null;
+        try {
+          const _vipDoc = await PlayerModel.findOne(
+            { telegramId: authed.telegramId },
+            'savedData.vipLevel savedData.vipDeposited savedData.vipPending',
+          ).lean();
+          let _vipLvl = _vipDoc?.savedData?.vipLevel || 0;
+          let _vipDep = (_vipDoc?.savedData?.vipDeposited || 0) + _vipGram;
+          const _vipPend = Array.isArray(_vipDoc?.savedData?.vipPending) ? [..._vipDoc.savedData.vipPending] : [];
+          const _prevVipLvl = _vipLvl;
+          while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
+            _vipDep -= VIP_THRESHOLDS[_vipLvl + 1]; _vipLvl++; _vipPend.push(_vipLvl);
+          }
+          await PlayerModel.updateOne({ telegramId: authed.telegramId }, { $set: {
+            'savedData.vipLevel': _vipLvl, 'savedData.vipDeposited': _vipDep, 'savedData.vipPending': _vipPend,
+          } });
+          const _vipLeveled = _vipLvl > _prevVipLvl;
+          _vipRes = { vipLevel: _vipLvl, vipDeposited: _vipDep, vipPending: _vipPend, vipLeveled: _vipLeveled };
+          const _vipTarget = _socketForTelegramId(authed.telegramId);
+          if (_vipTarget) {
+            _vipTarget.data.vipLevel = _vipLvl;
+            _setVipAura(authed.username, _vipLvl);
+            if (_vipLeveled) _vipTarget.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
+          }
+        } catch (err) {
+          console.error('marketBuy vip progress:', err);
+          logPlayerErr(authed.telegramId, authed.username, 'market_buy_vip', err, { listingId: String(listingId), price: claimed.price });
+        }
       }
 
       // Credit the seller (10% fee burned — not paid to anyone), online or not.
