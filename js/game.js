@@ -2197,21 +2197,25 @@ function _drawCrack(c, x, y, tx, ty, color, segLen) {
   c.stroke();
 }
 
-// One tile of the Ascent staircase's visible steps strip (dungeon.ascent.
-// stairs) — dark basalt at the low/entry end warming to gold-lit stone at
-// the high/landing end, with a bright riser line along each tile's east
-// edge standing in for a step's leading edge. Baked straight into the floor
-// raster (not an HUD overlay) so the player's own avatar visibly crosses it
-// with ordinary movement — real steps to walk up, not a swirl to step onto.
-function _drawAscentStepTile(c, x, y, tx, ty) {
-  const f = _ascentStepFrac(tx);
-  const base = _lerpHexColor('#241512', '#8a5a2a', f);
+// One tile of the Ascent spiral staircase (dungeon.ascent.spiral) — dark
+// basalt at the outer/entry end warming to gold-lit stone at the centre/
+// landing end. Baked straight into the floor raster (not an HUD overlay) so
+// the player's own avatar visibly winds up a real corridor with ordinary
+// movement — a genuine spiral climbed by walking it, not a straight strip
+// of tinted floor standing in for one.
+function _drawAscentSpiralTile(c, x, y, tx, ty, prog) {
+  const base = _lerpHexColor('#241512', '#8a5a2a', prog);
   c.fillStyle = _shadeHexColor(base, (_tileHash(tx, ty, 30) - 0.5) * 0.08);
   c.fillRect(x, y, TILE, TILE);
-  c.fillStyle = `rgba(255,214,140,${0.25 + f * 0.5})`;
-  c.fillRect(x + TILE - 3, y, 3, TILE);
-  c.fillStyle = 'rgba(20,10,6,0.5)';
-  c.fillRect(x, y, TILE, 2);
+  // Seam lines on the tile's own right/bottom edge, same convention the
+  // normal floor pass uses below — brighter toward the landing, standing in
+  // for lit stone rather than shadowed mortar. Every leg of a spiral runs a
+  // different direction, so (unlike the old straight strip) there's no
+  // single "leading edge" to highlight — this reads consistently from any
+  // approach angle instead.
+  c.fillStyle = `rgba(255,214,140,${0.2 + prog * 0.5})`;
+  c.fillRect(x, y + TILE - 2, TILE, 2);
+  c.fillRect(x + TILE - 2, y, 2, TILE);
 }
 
 // A soft radial grime/blood stain blob.
@@ -2277,21 +2281,37 @@ function _isAscentTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
-// The visible ascending-steps strip (dungeon.ascent.stairs, server/game/
-// dungeon.js) — real floor tiles the player walks across to actually climb,
-// not just an instant-trigger pad floating in an otherwise flat room. See
-// the "stairs, not a portal" reasoning at _drawStaircase's own comment.
-function _isAscentStairTile(tx, ty) {
-  const s = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.stairs;
-  return !!s && tx >= s.x0 && tx < s.x1 && ty >= s.y0 && ty < s.y1;
-}
-
-// 0 at the strip's low (west/entry) end, 1 at its high (east/landing) end —
-// same axis the up-chevron in drawTeleportPads points along.
-function _ascentStepFrac(tx) {
-  const s = dungeon.ascent.stairs;
-  const span = Math.max(1, s.x1 - s.x0 - 1);
-  return Math.min(1, Math.max(0, (tx - s.x0) / span));
+// The spiral staircase itself (dungeon.ascent.spiral, server/game/
+// dungeon.js) — a real winding corridor of floor tiles the player walks
+// across to actually climb, not an instant-trigger pad floating in an
+// otherwise flat room. See the "stairs, not a portal" reasoning at
+// _drawStaircase's own comment. Returns a progress fraction (0 at the
+// spiral's outer/entry end, 1 at its centre/landing end) for any tile
+// that's part of it, or null for a tile that isn't.
+function _ascentSpiralProgressAt(tx, ty) {
+  const sp = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.spiral;
+  if (!sp) return null;
+  const land = sp.landing;
+  if (land && tx >= land.x - land.half && tx <= land.x + land.half &&
+      ty >= land.y - land.half && ty <= land.y + land.half) return 1;
+  for (let i = 0; i < sp.legs.length; i++) {
+    const leg = sp.legs[i];
+    const lo = sp.half;
+    if (leg.y0 === leg.y1) {
+      if (ty < leg.y0 - lo || ty > leg.y0 + lo) continue;
+      const xa = Math.min(leg.x0, leg.x1), xb = Math.max(leg.x0, leg.x1);
+      if (tx < xa || tx > xb) continue;
+      const f = (leg.x1 - leg.x0) === 0 ? 0 : (tx - leg.x0) / (leg.x1 - leg.x0);
+      return leg.t0 + (leg.t1 - leg.t0) * Math.max(0, Math.min(1, f));
+    } else {
+      if (tx < leg.x0 - lo || tx > leg.x0 + lo) continue;
+      const ya = Math.min(leg.y0, leg.y1), yb = Math.max(leg.y0, leg.y1);
+      if (ty < ya || ty > yb) continue;
+      const f = (leg.y1 - leg.y0) === 0 ? 0 : (ty - leg.y0) / (leg.y1 - leg.y0);
+      return leg.t0 + (leg.t1 - leg.t0) * Math.max(0, Math.min(1, f));
+    }
+  }
+  return null;
 }
 
 function _buildChunk(cx, cy) {
@@ -2367,10 +2387,13 @@ function _buildChunk(cx, cy) {
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
       const inAscent = !inTower && !inGw && !inFarm && _isAscentTile(tx, ty);
-      // The visible steps strip overrides the flat lava floor entirely for
-      // its own tiles — real ground the player walks up, not a texture
-      // variant of the surrounding room.
-      if (inAscent && _isAscentStairTile(tx, ty)) { _drawAscentStepTile(c, x, y, tx, ty); continue; }
+      // The spiral staircase overrides the flat lava floor entirely for its
+      // own tiles — real ground the player winds up, not a texture variant
+      // of the surrounding room.
+      if (inAscent) {
+        const spiralProg = _ascentSpiralProgressAt(tx, ty);
+        if (spiralProg != null) { _drawAscentSpiralTile(c, x, y, tx, ty, spiralProg); continue; }
+      }
       const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inAscent ? _ASCENT_FLOOR_A : th.floorA;
       const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inAscent ? _ASCENT_FLOOR_B : th.floorB;
       const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inAscent ? mortarFloorAscent : mortarFloor;

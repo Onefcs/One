@@ -1313,10 +1313,10 @@ class Room {
     // War, Фарм-зона, arena, …) — the pad that requests a transition back to
     // the hub; armEntries/farmZoneEntry only on the hub (the outbound pads,
     // now just {req} or {dir,req} — no target x/y, each zone is its own floor).
-    // ascent only ever carries `bounds`/`stairs` here (see generateAscent's
+    // ascent only ever carries `bounds`/`spiral` here (see generateAscent's
     // own comment) — `lanes` is per-player instance state Room.js reads
     // directly off this._dungeon.ascent, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, ascent: d.ascent ? { bounds: d.ascent.bounds, stairs: d.ascent.stairs } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, ascent: d.ascent ? { bounds: d.ascent.bounds, spiral: d.ascent.spiral } : undefined };
   }
 
   _inSafeZone(x, y) {

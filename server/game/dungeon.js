@@ -146,17 +146,44 @@ const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
 // monsters spawn in a ring around the room's centre, and the staircase sits
 // at the east wall: a floor's fight happens moving from the door towards the
 // stairs, not standing still in the middle of an empty box.
-const ASCENT_LANES = 1;
-const ASCENT_ROOM   = 20;   // room size (tiles)
-const ASCENT_GAP    = 8;    // wall padding (irrelevant with only one room, kept for the shared pitch math below)
-const ASCENT_PITCH  = ASCENT_ROOM + ASCENT_GAP;
-// Width (tiles, along the entry->stair axis) of the visible ascending-steps
-// strip leading up to the staircase trigger — real floor tiles the player
-// walks across (js/game.js's _buildChunk renders them as ascending stone
-// steps instead of the normal lava floor), not just a swirl the player pops
-// through. Ends exactly on the trigger column (stairX below) so the last,
-// brightest step is where climbing actually fires.
-const ASCENT_STAIR_TILES = 7;
+const ASCENT_LANES = 1;     // always 1 — kept only because Room.js addresses this._dungeon.ascent.lanes[lane] generically, same as Fear's own always-1 FEAR_LANES
+const ASCENT_ROOM   = 20;   // battle room size (tiles)
+
+// ── Ascent spiral staircase ──────────────────────────────────────────────
+// A real winding corridor (square-spiral turtle path), not a straight strip
+// of tinted floor — this game's camera looks straight down, so a tower's
+// spiral staircase seen from above genuinely traces a spiral, and walking
+// it with ordinary movement is what makes it read as climbing rather than
+// crossing a re-coloured hallway. Carved as its own wing east of the battle
+// room, connected by a short straight corridor; see _buildAscentSpiral and
+// its call site in generateAscent below for the actual tile math.
+const ASCENT_SPIRAL_HALF   = 1;  // corridor half-width (3 tiles wide) — same CW convention used everywhere else in this file
+const ASCENT_SPIRAL_LEG0   = 4;  // first leg's length (tiles)
+const ASCENT_SPIRAL_GROWTH = 4;  // each leg's length grows by this every 2 legs — also the ring-to-ring spacing, kept equal to LEG0 so consecutive loops of the spiral are never closer than a full wall's width apart
+const ASCENT_SPIRAL_LEGS   = 6;  // 1.5 full turns — enough to read as an actual spiral, short enough it isn't a slog to re-walk on every one of the 50 floors a climb has
+const ASCENT_SPIRAL_LAND   = 2;  // landing chamber half-size at the spiral's centre (5x5) — where the climb trigger sits
+const ASCENT_SPIRAL_GAP    = 4;  // straight connector tiles between the battle room's east wall and the spiral's outer end
+
+// Builds the spiral's centerline as a sequence of points in LOCAL tile space
+// (not yet placed in the dungeon grid — see generateAscent for that), turtle-
+// graphics style: turn left (CCW) every leg, length growing by
+// ASCENT_SPIRAL_GROWTH every 2 legs. pts[0] is (0,0) — the spiral's centre,
+// where the landing chamber and climb trigger end up — and pts[last] is the
+// outer end, where the connector corridor from the battle room attaches.
+// Every intermediate leg is pts[i] -> pts[i+1], always purely horizontal or
+// vertical (each turn is a right angle), so painting it is just a rectangle.
+function _buildAscentSpiral() {
+  const dirs = [[1, 0], [0, -1], [-1, 0], [0, 1]]; // right, up, left, down
+  const pts = [{ x: 0, y: 0 }];
+  let x = 0, y = 0, len = ASCENT_SPIRAL_LEG0;
+  for (let i = 0; i < ASCENT_SPIRAL_LEGS; i++) {
+    const [dx, dy] = dirs[i % 4];
+    x += dx * len; y += dy * len;
+    pts.push({ x, y });
+    if (i % 2 === 1) len += ASCENT_SPIRAL_GROWTH;
+  }
+  return pts;
+}
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
 // Its own floor now (generateGuildWar, below). One square sealed zone with a
@@ -814,7 +841,40 @@ function generateFear() {
 // dynamically at runtime by Room.ascentSpawnFloor once the player is
 // deployed or climbs, so only the geometry needs to exist ahead of time.
 function generateAscent() {
-  const w = ASCENT_ROOM + MARGIN * 2, h = ASCENT_LANES * ASCENT_PITCH + MARGIN * 2;
+  const X0 = MARGIN, Y0 = MARGIN;
+  const cy = Y0 + Math.floor(ASCENT_ROOM / 2);
+
+  // Spiral geometry in LOCAL tile space (spiral[0] = (0,0), the centre/
+  // landing) — computed before anything is placed in the real dungeon grid,
+  // because the grid has to be sized to fit it first (see w/h below).
+  const spiral = _buildAscentSpiral();
+  const entryLocal = spiral[spiral.length - 1];
+  let lMinX = 0, lMaxX = 0, lMinY = 0, lMaxY = 0;
+  spiral.forEach(p => {
+    lMinX = Math.min(lMinX, p.x); lMaxX = Math.max(lMaxX, p.x);
+    lMinY = Math.min(lMinY, p.y); lMaxY = Math.max(lMaxY, p.y);
+  });
+  // Clears the corridor's own half-width, the landing chamber's half-size,
+  // and one wall tile to spare.
+  const PAD = ASCENT_SPIRAL_HALF + ASCENT_SPIRAL_LAND + 1;
+  lMinX -= PAD; lMaxX += PAD; lMinY -= PAD; lMaxY += PAD;
+
+  // Where the spiral's outer end attaches: straight out from the battle
+  // room's east wall, on the same row its entry/battle points already
+  // share, ASCENT_SPIRAL_GAP tiles of plain connector corridor out. Every
+  // other local coordinate is placed relative to this one anchor.
+  const gEntryX = X0 + ASCENT_ROOM + ASCENT_SPIRAL_GAP, gEntryY = cy;
+  const originX = gEntryX - entryLocal.x, originY = gEntryY - entryLocal.y;
+  const toGX = lx => originX + lx, toGY = ly => originY + ly;
+
+  // Grid sized to fit the battle room AND the transformed spiral bbox,
+  // computed BEFORE the grid array is allocated — painting outside a too-
+  // small grid silently no-ops (paintFloor's inBounds check below) instead
+  // of erroring, which would leave silent gaps in the corridor rather than
+  // a loud failure.
+  const w = Math.max(X0 + ASCENT_ROOM + MARGIN, toGX(lMaxX) + MARGIN);
+  const h = Math.max(Y0 + ASCENT_ROOM + MARGIN, toGY(lMaxY) + MARGIN);
+
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
   function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
   function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
@@ -822,26 +882,53 @@ function generateAscent() {
     for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
   }
 
-  const X0 = MARGIN, Y0 = MARGIN;
-  const lanes = [];
-  for (let i = 0; i < ASCENT_LANES; i++) {
-    const x0 = X0, y0 = Y0 + i * ASCENT_PITCH;
-    paintRect(x0, y0, x0 + ASCENT_ROOM - 1, y0 + ASCENT_ROOM - 1);
-    const cy = y0 + Math.floor(ASCENT_ROOM / 2);
-    lanes.push({
-      x0, y0, size: ASCENT_ROOM,
-      // Where the player lands on entry / after climbing a floor.
-      entryX: (x0 + 3) * TILE + TILE / 2, entryY: cy * TILE + TILE / 2,
-      // Where a floor's 30 monsters spawn in a ring around — see
-      // Room.ascentSpawnFloor. Dead centre of the room.
-      battleX: (x0 + Math.floor(ASCENT_ROOM / 2)) * TILE + TILE / 2, battleY: cy * TILE + TILE / 2,
-      // The staircase — walking onto it (once the floor is cleared) sends
-      // ascentClimb. Client-detected proximity, server-validated against
-      // the floor's cleared state, same trust model as every other pad/
-      // teleport trigger in the game (js/game.js's _updateTeleportPads).
-      stairX: (x0 + ASCENT_ROOM - 3) * TILE + TILE / 2, stairY: cy * TILE + TILE / 2,
-    });
+  // Battle room.
+  paintRect(X0, Y0, X0 + ASCENT_ROOM - 1, Y0 + ASCENT_ROOM - 1);
+  // Straight connector out to the spiral's outer end — picks up exactly
+  // where the room's own floor stops, so nothing needs to be "carved
+  // through" a wall that was never painted there in the first place.
+  paintRect(X0 + ASCENT_ROOM, cy - ASCENT_SPIRAL_HALF, gEntryX, cy + ASCENT_SPIRAL_HALF);
+
+  // The spiral itself: one rectangle per leg, half-width padded, each
+  // sharing its endpoint tile with the next so consecutive legs always
+  // connect at their turn — same "shared endpoint" reasoning buildArm's
+  // branch stubs rely on elsewhere in this file. Also records each leg's
+  // progress fraction (1 at the landing, 0 at the outer end — legs are
+  // built outward FROM the landing, see _buildAscentSpiral) for the
+  // client's ascending-steps shading (js/game.js's _buildChunk).
+  const legLens = [];
+  for (let i = 0; i < spiral.length - 1; i++) {
+    const a = spiral[i], b = spiral[i + 1];
+    legLens.push(Math.abs(b.x - a.x) + Math.abs(b.y - a.y));
   }
+  const totalLen = legLens.reduce((s, l) => s + l, 0) || 1;
+  const legs = [];
+  let cum = 0;
+  for (let i = 0; i < spiral.length - 1; i++) {
+    const a = spiral[i], b = spiral[i + 1];
+    const ga = { x: toGX(a.x), y: toGY(a.y) }, gb = { x: toGX(b.x), y: toGY(b.y) };
+    const lo = ASCENT_SPIRAL_HALF;
+    if (ga.y === gb.y) paintRect(Math.min(ga.x, gb.x), ga.y - lo, Math.max(ga.x, gb.x), ga.y + lo);
+    else paintRect(ga.x - lo, Math.min(ga.y, gb.y), ga.x + lo, Math.max(ga.y, gb.y));
+    const t0 = 1 - cum / totalLen;
+    cum += legLens[i];
+    const t1 = 1 - cum / totalLen;
+    legs.push({ x0: ga.x, y0: ga.y, x1: gb.x, y1: gb.y, t0, t1 });
+  }
+  // Landing chamber at the spiral's centre — a real little room, not just a
+  // corridor tile, so the climb trigger doesn't sit in a bare hallway.
+  const landCx = toGX(0), landCy = toGY(0);
+  paintRect(landCx - ASCENT_SPIRAL_LAND, landCy - ASCENT_SPIRAL_LAND, landCx + ASCENT_SPIRAL_LAND, landCy + ASCENT_SPIRAL_LAND);
+
+  const entryX = (X0 + 3) * TILE + TILE / 2, entryY = cy * TILE + TILE / 2;
+  const battleX = (X0 + Math.floor(ASCENT_ROOM / 2)) * TILE + TILE / 2, battleY = cy * TILE + TILE / 2;
+  // The staircase — walking onto it (once the floor is cleared) sends
+  // ascentClimb. Client-detected proximity, server-validated against the
+  // floor's cleared state, same trust model as every other pad/teleport
+  // trigger in the game (js/game.js's _updateTeleportPads). Sits dead
+  // centre of the landing chamber, at the spiral's own centre.
+  const stairX = landCx * TILE + TILE / 2, stairY = landCy * TILE + TILE / 2;
+  const lanes = [{ x0: X0, y0: Y0, size: ASCENT_ROOM, entryX, entryY, battleX, battleY, stairX, stairY }];
 
   return {
     grid, rooms: [], w, h,
@@ -850,22 +937,18 @@ function generateAscent() {
     // directly (this._dungeon.ascent.lanes), same as this._dungeon.fear:
     // entry and every floor transition are server-pushed teleports, so the
     // client never needs it (the staircase coordinate itself IS sent
-    // separately, see ascentStarted/ascentFloor, server/index.js). `bounds`
-    // is the one thing about this floor that IS sent to the client — see
-    // Room.dungeonData — purely so it can tint the whole room to look like a
-    // lava dungeon instead of the default biome theme (_isAscentTile,
-    // js/game.js), same as race10.bounds/guildWar.bounds/farmZone.bounds.
-    // `stairs` is the visible-steps strip's own tile bounds, fixed geometry
-    // derived the same way `bounds` is (ASCENT_LANES is always 1, so lane 0's
-    // own X0/ASCENT_ROOM/stairX already fully determine it) — see
-    // _isAscentStairTile/_ascentStepShade, js/game.js.
+    // separately, see ascentStarted/ascentFloor, server/index.js). `bounds`/
+    // `spiral` are the two things about this floor that ARE sent to the
+    // client — see Room.dungeonData — purely for rendering: `bounds` tints
+    // the whole room to look like a lava dungeon instead of the default
+    // biome theme (_isAscentTile, js/game.js), `spiral` paints the winding
+    // staircase itself as ascending stone instead of flat lava floor
+    // (_isAscentSpiralTile/_ascentSpiralLegAt, js/game.js). Both are fixed
+    // geometry (ASCENT_LANES is always 1), safe to send unconditionally.
     ascent: {
       lanes,
       bounds: { x0: 0, y0: 0, x1: w, y1: h },
-      stairs: {
-        x0: X0 + ASCENT_ROOM - 3 - (ASCENT_STAIR_TILES - 1), y0: Y0,
-        x1: X0 + ASCENT_ROOM - 3 + 1, y1: Y0 + ASCENT_ROOM,
-      },
+      spiral: { half: ASCENT_SPIRAL_HALF, legs, landing: { x: landCx, y: landCy, half: ASCENT_SPIRAL_LAND } },
     },
     enemies: [],
   };
