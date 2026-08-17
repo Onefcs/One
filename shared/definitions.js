@@ -308,6 +308,11 @@ function skillPointBudget(lvl, rebirths) {
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
+  // Сотрудничество (Coop) grants no gold at all, boss included — its only
+  // rewards are the flat COOP_LIBERTY_CHANCE Liberty roll on a regular kill
+  // (server/index.js's attack/skillAttack handlers) and the boss's own fixed
+  // 1 bless_stone + 100 Liberty payout (_coopBossTrackKill).
+  if (enemy.arm === 'coop') return 0;
   const g = goldAtLevel(enemy.rlvl || 1);
   if (enemy.isBoss) return g;
   return Math.random() > 0.30 ? 0 : g;
@@ -639,6 +644,17 @@ const QUEST_DEF = [
 // index.js (the UI's wave counter), so it lives here rather than being
 // duplicated in both.
 const FEAR_MAX_WAVE = 39;
+
+// ── Сотрудничество (Coop) event ──────────────────────────────────────────────
+// A private, 2-player-only co-op climb (server/game/dungeon.js's `coop`
+// lanes, server/game/Room.js's coopSpawnStage/coopRegisterKill): stage N is
+// COOP_MOBS_PER_STAGE monsters at COOP_STAGE_LEVELS[N-1], scattered across a
+// wide room per lane, gated so neither lane's next stage spawns until BOTH
+// have cleared the current one. Shared between Room.js (spawning) and
+// server/index.js (the UI's stage counter + level preview), so the level
+// list lives here rather than being duplicated in both.
+const COOP_STAGE_LEVELS = [10, 15, 20, 25, 30, 40, 50, 60];
+const COOP_BOSS_LEVEL = 40;
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
@@ -1909,7 +1925,7 @@ if (typeof module !== 'undefined') module.exports = {
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
+  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,

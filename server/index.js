@@ -186,7 +186,7 @@ const {
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS, questComplete,
-  FEAR_MAX_WAVE, QUEST_DEF,
+  FEAR_MAX_WAVE, COOP_STAGE_LEVELS, QUEST_DEF,
   SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
@@ -1635,6 +1635,28 @@ app.post('/admin/player/:tid/reset-fear-attempts', adminAuth, async (req, res) =
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Same trick as reset-fear-attempts just above, for Сотрудничество (Coop).
+app.post('/admin/player/:tid/reset-coop-attempts', adminAuth, async (req, res) => {
+  try {
+    const p = await PlayerModel.findOneAndUpdate(
+      { telegramId: req.params.tid },
+      { $unset: { 'savedData.coopAttempts': '' } },
+      { new: true },
+    );
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    logPlayer(p.telegramId, p.username, 'admin_reset_coop_attempts', { by: 'admin' });
+    const target = _socketForTelegramId(req.params.tid);
+    if (target) {
+      const run = _coop.get(target.id);
+      target.emit('coopState', {
+        maxAttempts: COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length, minLevel: COOP_MIN_LEVEL,
+        attemptsLeft: COOP_ATTEMPTS, inRun: !!run, stage: run?.room ? run.room.coopStage() : 0,
+      });
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
   try {
     // Validated before anything is added: an unparseable figure used to reach
@@ -2276,35 +2298,39 @@ app.get('/health', (req, res) => {
     return res.json(brief);
   }
   const rooms = [];
-  // Every floor EXCEPT Fear reports its one shared Room directly. Fear's entry
-  // in floorRooms is a permanently empty placeholder — it exists only so
-  // /api/world-map/11 has bytes to serve — while the runs themselves happen on
-  // private Rooms deliberately kept out of that map (see _createFearRoom).
-  // Reporting the placeholder is what made this endpoint answer "no rooms with
-  // players" while N people were mid-run in Страх, each on their own 40Hz
-  // loop: the load being asked about was the only load not shown.
+  // Every floor EXCEPT Fear/Coop reports its one shared Room directly.
+  // Their own floorRooms entries are permanently empty placeholders — they
+  // exist only so /api/world-map/<id> has bytes to serve — while the runs
+  // themselves happen on private Rooms deliberately kept out of that map
+  // (see _createFearRoom/_createCoopRoom). Reporting the placeholder is what
+  // made this endpoint answer "no rooms with players" while N people were
+  // mid-run in Страх, each on their own 40Hz loop: the load being asked
+  // about was the only load not shown.
   floorRooms.forEach(r => {
-    if (r.floor === FLOOR_IDS.fear) return;
+    if (r.floor === FLOOR_IDS.fear || r.floor === FLOOR_IDS.coop) return;
     try { rooms.push(r.stats()); } catch {}
   });
-  // One aggregate row for Fear instead of N nearly identical ones. Always
-  // present, so the floor never silently disappears from the table; instances
-  // is 0 when nobody is in there.
-  const fearRooms = _liveFearRooms();
-  // stats() RESETS its window, so it is read exactly once per room here —
-  // calling it twice would hand the second reader a freshly zeroed window.
-  const fearStats = fearRooms.map(r => { try { return r.stats(); } catch { return {}; } });
-  rooms.push({
-    floor: FLOOR_IDS.fear,
-    instances: fearRooms.length,
-    players: fearStats.reduce((n, s) => n + (s.players || 0), 0),
-    enemies: fearStats.reduce((n, s) => n + (s.enemies || 0), 0),
-    // Worst instance, not the sum: these are parallel loops, so the question
-    // "is any Fear run missing its budget" is what a max answers and a total
-    // does not.
-    tickMsMax: fearStats.reduce((n, s) => Math.max(n, s.tickMsMax || 0), 0),
-    tickOverruns: fearStats.reduce((n, s) => n + (s.tickOverruns || 0), 0),
-  });
+  // One aggregate row per private-instance event instead of N nearly
+  // identical ones. Always present, so the floor never silently disappears
+  // from the table; instances is 0 when nobody is in there.
+  const _aggregateRoomStats = (floorId, liveRooms) => {
+    // stats() RESETS its window, so it is read exactly once per room here —
+    // calling it twice would hand the second reader a freshly zeroed window.
+    const statsList = liveRooms.map(r => { try { return r.stats(); } catch { return {}; } });
+    return {
+      floor: floorId,
+      instances: liveRooms.length,
+      players: statsList.reduce((n, s) => n + (s.players || 0), 0),
+      enemies: statsList.reduce((n, s) => n + (s.enemies || 0), 0),
+      // Worst instance, not the sum: these are parallel loops, so the
+      // question "is any run missing its budget" is what a max answers and
+      // a total does not.
+      tickMsMax: statsList.reduce((n, s) => Math.max(n, s.tickMsMax || 0), 0),
+      tickOverruns: statsList.reduce((n, s) => n + (s.tickOverruns || 0), 0),
+    };
+  };
+  rooms.push(_aggregateRoomStats(FLOOR_IDS.fear, _liveFearRooms()));
+  rooms.push(_aggregateRoomStats(FLOOR_IDS.coop, _liveCoopRooms()));
   const mem = process.memoryUsage();
   res.json({
     ...brief,
@@ -3102,6 +3128,7 @@ function _race10BonusReset() {
 function _attemptCap(field) {
   if (field === 'race10Attempts') { _race10BonusReset(); return RACE10_ATTEMPTS + _race10BonusCount; }
   if (field === 'fearAttempts') return FEAR_ATTEMPTS;
+  if (field === 'coopAttempts') return COOP_ATTEMPTS;
   return DAILY_DUNGEON_ATTEMPTS;
 }
 
@@ -3124,6 +3151,8 @@ function _lockRace10Daily(socketId)                  { _lockDailyAttempt(socketI
 async function _race10AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'race10Attempts'); }
 function _lockFearDaily(socketId)                    { _lockDailyAttempt(socketId, 'fearAttempts'); }
 async function _fearAttemptsLeft(socketId)           { return _dailyAttemptsLeft(socketId, 'fearAttempts'); }
+function _lockCoopDaily(socketId)                    { _lockDailyAttempt(socketId, 'coopAttempts'); }
+async function _coopAttemptsLeft(socketId)           { return _dailyAttemptsLeft(socketId, 'coopAttempts'); }
 
 // Remove leaverId from their party; notify remaining members.
 // If only 1 member remains the party dissolves entirely.
@@ -3229,6 +3258,14 @@ function _buildGameStartPayload(socket, room, floor) {
     // when nothing's running — only present at all when a run is live for
     // this socket.
     fear: _fear.has(socket.id) ? { inRun: true, wave: _fear.get(socket.id).wave, maxWave: FEAR_MAX_WAVE } : null,
+    // Same "only present when a run is live" shape as Fear above — stage
+    // comes from the shared Room (both lanes are always on the same one),
+    // not the run record itself.
+    coop: (() => {
+      const run = _coop.get(socket.id);
+      if (!run || !run.room) return null;
+      return { inRun: true, stage: run.room.coopStage(), maxStage: COOP_STAGE_LEVELS.length };
+    })(),
   };
 }
 
@@ -3801,11 +3838,15 @@ function _pvpEliminate(socketId, killerSocketId, room, opts) {
   const fearHandled = (opts && opts.fearGrace)
     ? _fearHoldOnDisconnect(socketId, opts.telegramId)
     : _fearEliminate(socketId);
+  const coopHandled = (opts && opts.fearGrace)
+    ? _coopHoldOnDisconnect(socketId, opts.telegramId)
+    : _coopEliminate(socketId);
   // A PvP kill (setPvpMode duel) that isn't part of any live Death
-  // Battle/Arena3/race10/Fear round falls through all four above untouched —
-  // they only record when the victim was in their own alive map. Without
-  // this, open-world PvP kills/deaths never appeared in the История tab.
-  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !fearHandled) {
+  // Battle/Arena3/race10/Fear/Coop round falls through all five above
+  // untouched — they only record when the victim was in their own alive
+  // map. Without this, open-world PvP kills/deaths never appeared in the
+  // История tab.
+  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !fearHandled && !coopHandled) {
     const victimTid = _socketTid(socketId), killerTid = _socketTid(killerSocketId);
     const victim = room?.players.get(socketId);
     const killer = room?.players.get(killerSocketId);
@@ -4816,6 +4857,195 @@ function _fearHoldOnDisconnect(socketId, telegramId) {
   return true;
 }
 
+// ── Сотрудничество (Coop) ────────────────────────────────────────────────────
+// A private, 2-player-only instance: entering requires standing in a party
+// of exactly 2, and both members have to click in — the first to arrive
+// waits (_coopWaiting), the second one's arrival deploys both together (see
+// coopEnter, below the socket handlers further down this file). 8 stages of
+// COOP_MOBS_PER_STAGE monsters (server/game/Room.js) escalate through
+// COOP_STAGE_LEVELS (shared/definitions.js, read by both here and Room.js);
+// neither lane's next stage spawns until BOTH lanes have cleared the current
+// one (Room.coopRegisterKill), then a shared level-COOP_BOSS_LEVEL boss.
+// Dying anywhere, or a disconnect hold lapsing for good, ends the run for
+// BOTH participants — there is no way to keep going with only one of them.
+const COOP_ATTEMPTS = 2;
+const COOP_MIN_LEVEL = 10;
+// Same role FEAR_START_DELAY_MS plays — see its own comment.
+const COOP_START_DELAY_MS = 5000;
+// Flat per-kill Liberty chance — Coop's only per-kill reward besides xp; see
+// calcGoldDrop's `arm === 'coop'` branch (shared/definitions.js) for why
+// there's no gold, and the coop-specific nexumDrop branch in the attack/
+// skillAttack handlers below for how this is actually rolled.
+const COOP_LIBERTY_CHANCE = 0.1;
+
+// socketId -> { room, lane, partnerId } for whoever currently has a run
+// going — read by the attack/skillAttack handlers to advance the run one
+// kill at a time, by _coopEliminate on death, and by the disconnect handler
+// if they drop mid-run. Stage/cleared state itself lives on the Room
+// (coopRegisterKill/coopStage), not here, since by design both lanes are
+// always on the same stage — this only needs to remember which room, which
+// lane, and who the partner is so an event can be told to both of them.
+const _coop = new Map();
+
+// partyId -> socketId of whichever member already clicked "enter" and is
+// waiting for their partner to do the same — see coopEnter. Cleared the
+// moment the second member arrives (both get deployed together).
+const _coopWaiting = new Map();
+
+// Every Coop run gets its OWN Room, shared by exactly the 2 participants,
+// created here and never registered in floorRooms — same reasoning as
+// _createFearRoom's own comment, just seating two players instead of one.
+function _createCoopRoom() {
+  const room = new Room(FLOOR_IDS.coop, io, {}, null);
+  _coopRooms.add(room);
+  return room;
+}
+
+// Same sweep-rather-than-trust shape as _liveFearRooms — see its own
+// comment for why (health reporting, _gracefulShutdown).
+const _coopRooms = new Set();
+function _liveCoopRooms() {
+  const live = [];
+  _coopRooms.forEach(r => {
+    if (r.players.size > 0) live.push(r);
+    else _coopRooms.delete(r);
+  });
+  return live;
+}
+// Re-registers a room a reconnect landed back on — see _trackFearRoom.
+function _trackCoopRoom(room) {
+  if (room && room.floor === FLOOR_IDS.coop) _coopRooms.add(room);
+}
+
+// Called right after a kill lands on a `coop`-tagged, non-boss enemy (see
+// the attack/skillAttack handlers). The kill itself already paid out xp
+// through the normal reward path — this only owns the stage-progression
+// side effect, entirely driven by Room.coopRegisterKill's own return value
+// (left>0: still fighting; waiting: this lane finished first; stage: both
+// cleared, the next one is up; bossSpawned: both cleared the last stage).
+function _coopTrackKill(socketId, result) {
+  if (result.arm !== 'coop') return;
+  const run = _coop.get(socketId);
+  if (!run) return;
+  const room = run.room;
+  if (!room) return;
+  // Same staleness guard _fearTrackKill uses — the run record is only
+  // trustworthy while the player is still actually standing in that lane.
+  if (room.coopLaneOf(socketId) !== run.lane || room.coopOwnerOf(run.lane) !== socketId) {
+    _coop.delete(socketId);
+    return;
+  }
+  const res = room.coopRegisterKill(run.lane);
+  if (res.left > 0) return;
+  const partnerId = run.partnerId;
+  if (res.waiting) {
+    io.to(socketId).emit('coopWaitingPartner', {});
+    return;
+  }
+  if (res.bossSpawned) {
+    io.to(socketId).emit('coopBossSpawned', {});
+    if (partnerId) io.to(partnerId).emit('coopBossSpawned', {});
+    return;
+  }
+  io.to(socketId).emit('coopStage', { stage: res.stage, maxStage: COOP_STAGE_LEVELS.length });
+  if (partnerId) io.to(partnerId).emit('coopStage', { stage: res.stage, maxStage: COOP_STAGE_LEVELS.length });
+}
+
+// Called right after a kill lands on the coop boss (see the attack/
+// skillAttack handlers). Picks one of the two participants at random for the
+// fixed reward (1 bless_stone + 100 Liberty — see socket.data.
+// _grantCoopBossReward) and ends the run for BOTH with cleared:true.
+async function _coopBossTrackKill(socketId, result) {
+  if (result.arm !== 'coop') return;
+  const run = _coop.get(socketId);
+  if (!run) return;
+  const partnerId = run.partnerId;
+  const participants = [socketId, partnerId].filter(sid => sid && _coop.has(sid));
+  if (!participants.length) return;
+  const winnerId = participants[Math.floor(Math.random() * participants.length)];
+  const winnerSocket = io.sockets.sockets.get(winnerId);
+  const reward = winnerSocket?.data?._grantCoopBossReward
+    ? await winnerSocket.data._grantCoopBossReward()
+    : null;
+  participants.forEach(sid => io.to(sid).emit('coopBossReward', { winnerId, nexum: reward?.nexum || 0 }));
+  participants.forEach(sid => _coopFinish(sid, true));
+}
+
+// Ends this ONE participant's own half of the run — releases their lane and
+// drops the run record, without deciding where they go or telling the
+// partner anything (callers that need to end the run for BOTH — death, the
+// boss falling — call this once per participant). Returns the run it ended,
+// or null if there wasn't one.
+function _coopReleaseRun(socketId) {
+  const run = _coop.get(socketId);
+  if (!run) return null;
+  _coop.delete(socketId);
+  const room = run.room;
+  const ownedBefore = room ? room.coopOwnerOf(run.lane) === socketId : false;
+  if (room && ownedBefore) room.coopReleaseLane(run.lane);
+  return run;
+}
+
+function _coopFinish(socketId, cleared) {
+  const run = _coopReleaseRun(socketId);
+  if (!run) return;
+  const spot = _returnToHub(socketId);
+  io.to(socketId).emit('coopFinished', { cleared, x: spot?.x, y: spot?.y });
+}
+
+// Wired into _pvpEliminate's fan-out (mirrors _fearEliminate) — dying
+// anywhere while in a Coop lane ends the run for BOTH participants: there is
+// no way to keep going with only one of the two, so the partner is sent
+// home too rather than left stuck waiting on a stage that can never clear.
+function _coopEliminate(socketId) {
+  const run = _coop.get(socketId);
+  if (!run) return false;
+  const partnerId = run.partnerId;
+  _coopFinish(socketId, false);
+  if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
+  return true;
+}
+
+// How long a disconnected participant's run record is held before the WHOLE
+// run (both participants) is ended for good — kept equal to Room.js's own
+// COOP_RECONNECT_GRACE_MS (not imported, same "kept in sync by comment"
+// reasoning FEAR_RECONNECT_GRACE_MS documents). Room's copy is what actually
+// holds THIS lane/its monsters open for a lone reconnect; this one decides
+// whether the PARTNER also gets to keep waiting.
+const COOP_RECONNECT_GRACE_MS = 45000;
+// telegramId -> { run: {room, lane, partnerId}, timer } — a Coop half held
+// across a disconnect. See _pvpEliminate's opts.fearGrace (a generic
+// "this is a disconnect, not a real elimination" flag reused across every
+// instanced mode despite the name — see its own comment) and the reconnect
+// handling in the login flow below.
+const _coopDisconnectGrace = new Map();
+function _coopHoldOnDisconnect(socketId, telegramId) {
+  const run = _coop.get(socketId);
+  if (!run) return false;
+  _coop.delete(socketId);
+  const tid = telegramId || _socketTid(socketId);
+  if (!tid) {
+    // No account to reconnect against — nobody will ever reclaim this half,
+    // so end the whole run right away rather than making the partner wait
+    // out a hold that can never resolve.
+    const partnerId = run.partnerId;
+    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
+    return true;
+  }
+  const prior = _coopDisconnectGrace.get(tid);
+  if (prior) clearTimeout(prior.timer);
+  const timer = safeTimeout('coopGrace', () => {
+    _coopDisconnectGrace.delete(tid);
+    // The window lapsed with no reconnect — end the run for the partner too
+    // (this half is already gone; Room's own coopGrace timer, running in
+    // parallel, releases its lane/monsters on the same schedule).
+    const partnerId = run.partnerId;
+    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
+  }, COOP_RECONNECT_GRACE_MS);
+  _coopDisconnectGrace.set(tid, { run, timer });
+  return true;
+}
+
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
 // safe to trigger from more than one path below — _floorRoomsStarted is set
 // synchronously (before the first await) so two calls racing in before
@@ -5635,20 +5865,25 @@ io.on('connection', socket => {
   // that used to be rolled by the caller but only ever granted by the
   // client) so the caller only has to decide who won and relay what comes
   // back for that player's floating-text feedback.
-  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone }) => {
+  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone, coop }) => {
     const empty = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
-    // reroll below) entirely — see _rollFarmZoneLoot's own comment.
-    const items = farmZone ? _rollFarmZoneLoot(inv, eid) : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
+    // reroll below) entirely — see _rollFarmZoneLoot's own comment. Coop
+    // kills skip it too (including a boss kill's box/stone rolls just
+    // below) and grant nothing from this function at all — a regular kill's
+    // only reward beyond xp is the flat COOP_LIBERTY_CHANCE Liberty roll in
+    // the attack/skillAttack handlers, and the boss's own fixed reward is
+    // granted separately by _coopBossTrackKill.
+    const items = farmZone ? _rollFarmZoneLoot(inv, eid) : coop ? [] : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-    if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
+    if (!farmZone && !coop && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
-    if (isBoss) {
+    if (isBoss && !coop) {
       // The flag is set from what _invAdd ACTUALLY placed, not from the roll.
       // Setting it first and ignoring the return (as this did) meant a full
       // inventory still told the client "+1× Ящик" — the floating text played,
@@ -5916,6 +6151,38 @@ io.on('connection', socket => {
       logPlayer(authed.telegramId, authed.username, 'race10_reward',
         { won: !!won, nexum, balance: _liveNexum(), items: items.map(i => i.id), delivered: _delivered });
       return { nexum, items, delivered: _delivered };
+    } finally {
+      _itemOpBusy--;
+    }
+  };
+
+  // Coop's fixed boss reward — 1 bless_stone (a "safe" enchant stone, i.e.
+  // one that can't fail/break an attempt) + 100 Liberty, to whichever
+  // participant _coopBossTrackKill (server/index.js) randomly picked. Same
+  // cross-socket-safe shape as _race10GrantReward just above: _incBalance is
+  // a DB-level atomic op (safe to call from another connection's context),
+  // and the item goes through _applyGrant against whichever socket is the
+  // account's LIVE session right now (it may have reconnected on a
+  // different one since the run started), falling back to a raw DB push if
+  // there is no live session at all.
+  socket.data._grantCoopBossReward = async () => {
+    if (!authed) return null;
+    _itemOpBusy++;
+    try {
+      const nexum = 100;
+      const stone = { ..._STONE_DEFS.bless_stone, qty: 1 };
+      const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', nexum);
+      if (_rcBal !== null) _nexumBalance = _rcBal;
+      socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
+      const _liveSid = activeSessions.get(authed.telegramId);
+      const _target = _liveSid === socket.id ? socket : _socketForTelegramId(authed.telegramId);
+      const _result = _target && _target.data._applyGrant
+        ? _target.data._applyGrant({ addItems: [{ item: stone }] }, 'coop_boss_reward', { items: ['bless_stone'], nexum })
+        : null;
+      const _delivered = !!_result;
+      if (!_delivered) await _dbPushInventory(authed, [stone], 'coop_boss_reward');
+      logPlayer(authed.telegramId, authed.username, 'coop_boss_reward', { nexum, balance: _liveNexum(), delivered: _delivered });
+      return { nexum, items: [stone], delivered: _delivered };
     } finally {
       _itemOpBusy--;
     }
@@ -10050,24 +10317,28 @@ io.on('connection', socket => {
       // and the worst case if it somehow hasn't is the same as any other
       // missed reconnect window: the run just times out normally.
       const _fearHeld = _fearDisconnectGrace.get(authed.telegramId);
+      // Same idea, for a held Coop half — see _coopDisconnectGrace.
+      const _coopHeld = !_fearHeld ? _coopDisconnectGrace.get(authed.telegramId) : null;
       // Everything else comes back to the floor it was standing on — see
       // _restoreFloorFor, which re-checks the level gate and any window rather
       // than trusting the stored number, and falls back to the hub when the
       // floor is no longer somewhere this account may be. Read off the DB
       // record, never off `savedStats`: that blob is the client's.
       if (_fearHeld) currentFloor = FLOOR_IDS.fear;
+      else if (_coopHeld) currentFloor = FLOOR_IDS.coop;
       else currentFloor = _restoreFloorFor((authed.savedData || {}).floor, effectiveSaved && effectiveSaved.lvl);
-      currentRoom = _fearHeld ? _fearHeld.run.room : getRoom(currentFloor);
-      // The instance may have been swept out of _fearRooms while this player
-      // was away (it had no players for the length of the drop) — put it back
-      // so /health and the shutdown pass can see it again.
+      currentRoom = _fearHeld ? _fearHeld.run.room : (_coopHeld ? _coopHeld.run.room : getRoom(currentFloor));
+      // The instance may have been swept out of _fearRooms/_coopRooms while
+      // this player was away (it had no players for the length of the drop) —
+      // put it back so /health and the shutdown pass can see it again.
       if (_fearHeld) _trackFearRoom(currentRoom);
+      if (_coopHeld) _trackCoopRoom(currentRoom);
       playerFloorMap.set(socket.id, currentFloor);
-      // See _doEnterLocation's identical guard: Fear players never join the
-      // shared floor_<id> broadcast group, since each one is alone on their
-      // own private Room.
-      if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
-      const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
+      // See _doEnterLocation's identical guard: Fear/Coop players never join
+      // the shared floor_<id> broadcast group, since each is alone (or, for
+      // Coop, paired) on its own private Room.
+      if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop) socket.join(`floor_${currentFloor}`);
+      const { staleSocketId, fearCarry, coopCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
       // Anything this account had signed up for before the drop comes back
       // onto this socket, in the position it signed up at. Unconditional: the
       // registration survives the disconnect now (see the 'disconnect'
@@ -10078,10 +10349,10 @@ io.on('connection', socket => {
       // Back to the exact spot, not just the right floor — but only when the
       // stored floor is the one actually being restored (an arm's coordinates
       // land far outside the hub's own grid) and the spot is still standable.
-      // Anything else keeps addPlayer's spawn placement. Fear is excluded: its
-      // grace path re-deploys into the held hall itself, which is a stricter
-      // placement than this.
-      if (!_fearHeld) {
+      // Anything else keeps addPlayer's spawn placement. Fear/Coop are
+      // excluded: their grace path re-deploys into the held lane itself,
+      // which is a stricter placement than this.
+      if (!_fearHeld && !_coopHeld) {
         const _sd = authed.savedData || {};
         if (Number(_sd.floor) === currentFloor && currentRoom.canStandAt(_sd.x, _sd.y)) {
           const _me = currentRoom.players.get(socket.id);
@@ -10164,6 +10435,34 @@ io.on('connection', socket => {
           // fear floor's Room at this point (currentFloor was forced to it
           // above specifically because this account had a hold to reclaim).
           if (g.run.wave === 0) _fearStartWave(currentRoom, socket.id, g.run.lane, 1);
+        }
+      }
+      // Same reclaim, for a held Coop half — see _coopDisconnectGrace above.
+      // Note g.run.partnerId still names whatever socketId the partner was
+      // using when THIS disconnect started; if the partner also dropped and
+      // reconnected in the same window their own run record now points back
+      // at a socketId that no longer exists. Rare (both halves of a pair
+      // dropping at once) and not chased further here — the run simply
+      // times out normally for both if it happens, same as any other missed
+      // reconnect window.
+      if (coopCarry) {
+        const g = _coopDisconnectGrace.get(authed.telegramId);
+        if (g) {
+          clearTimeout(g.timer);
+          _coopDisconnectGrace.delete(authed.telegramId);
+          _coop.set(socket.id, g.run);
+          // Disconnected during the pre-stage-1 countdown (see
+          // COOP_START_DELAY_MS): the setTimeout that would have started it
+          // was scheduled against the now-dead old socketId pair and no
+          // longer applies — start it right here instead if it hasn't
+          // already gone up (coopStage() reads 0 until coopStartFirstStage
+          // runs). currentRoom is the coop floor's Room at this point
+          // (currentFloor was forced to it above specifically because this
+          // account had a hold to reclaim).
+          if (currentRoom.coopStage() === 0) {
+            currentRoom.coopStartFirstStage();
+            io.to(socket.id).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
+          }
         }
       }
       // Reclaim a party slot held across a disconnect (_partyHoldOnDisconnect,
@@ -10322,15 +10621,16 @@ io.on('connection', socket => {
     const charType = oldP.type;
     const savedStats = oldP._sd;
 
-    // Fear players never join the shared floor_<id> broadcast group — each
-    // one is on their own private Room now (see _createFearRoom), so there
-    // is never anyone else legitimately on "floor_11" to tell about a join/
-    // leave/char change, and joining them all into one group would leak
-    // exactly that across otherwise-isolated runs. Skipping the join means
-    // every socket.to(`floor_${currentFloor}`) broadcast below is already a
-    // no-op for Fear on its own — nothing else here needs to know the
+    // Fear/Coop players never join the shared floor_<id> broadcast group —
+    // each Fear entrant (and each Coop pair) is on its own private Room now
+    // (see _createFearRoom/_createCoopRoom), so there is never anyone else
+    // legitimately on that floor id to tell about a join/leave/char change,
+    // and joining them all into one group would leak exactly that across
+    // otherwise-isolated runs. Skipping the join means every
+    // socket.to(`floor_${currentFloor}`) broadcast below is already a no-op
+    // for Fear/Coop on their own — nothing else here needs to know the
     // difference.
-    if (oldFloor !== FLOOR_IDS.fear) socket.leave(`floor_${oldFloor}`);
+    if (oldFloor !== FLOOR_IDS.fear && oldFloor !== FLOOR_IDS.coop) socket.leave(`floor_${oldFloor}`);
     // Walking out of Страх ends the run, exactly as dying in it does.
     //
     // Only two things used to end a run: clearing wave FEAR_MAX_WAVE and
@@ -10363,12 +10663,31 @@ io.on('connection', socket => {
         inRun: false, wave: 0,
       });
     }
+    // Same reasoning as Fear's own block just above, for Сотрудничество —
+    // walking off the coop floor any other way than clearing/dying also has
+    // to end the run, and (there being no way to continue with only one of
+    // the two) end it for the partner too. This function is only already
+    // moving THIS connection, so the partner has to be redirected home
+    // explicitly rather than left mid-lane forever waiting on a stage that
+    // can now never clear.
+    if (oldFloor === FLOOR_IDS.coop) {
+      const run = _coop.get(socket.id);
+      if (run) {
+        const partnerId = run.partnerId;
+        _coopReleaseRun(socket.id);
+        if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
+        socket.emit('coopState', {
+          maxAttempts: COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length, minLevel: COOP_MIN_LEVEL,
+          inRun: false, stage: 0,
+        });
+      }
+    }
     currentRoom.removePlayer(socket.id);
     socket.to(`floor_${oldFloor}`).emit('playerLeft', { id: socket.id });
 
     currentFloor = targetFloor;
     playerFloorMap.set(socket.id, currentFloor);
-    if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
+    if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop) socket.join(`floor_${currentFloor}`);
     // `room`, when given, is a fresh private instance this connection just
     // created (fearEnter) — the ordinary getRoom(floorId) lookup only ever
     // returns the one shared Room per floor, which Fear no longer has one of.
@@ -10560,6 +10879,14 @@ io.on('connection', socket => {
     // only advances the wave counter (spawns the next wave, or ends the run
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
+    // Coop kills also pay out xp through the normal path below — a regular
+    // one only advances the stage counter (_coopTrackKill), the boss instead
+    // grants its own fixed reward and ends the run for both participants
+    // (_coopBossTrackKill), neither of which gates the rest of the handler.
+    if (result.killed && result.arm === 'coop') {
+      if (result.isBoss) _coopBossTrackKill(socket.id, result).catch(err => console.error('[coop boss reward]', err));
+      else _coopTrackKill(socket.id, result);
+    }
     if (result.killed) _seasonTrackKill(result);
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
@@ -10591,10 +10918,15 @@ io.on('connection', socket => {
       }
 
       const _arm = armIndexForLevel(result.rlvl);
+      const _isCoop = result.arm === 'coop';
       // Фарм-зона already skips the whole normal loot table (see farmZone in
       // _grantKillLoot) — Liberty/GRAM are the same "no drop but shards" deal.
-      const nexumDrop  = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
-      const gramDrop   = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
+      // Coop replaces both with one flat COOP_LIBERTY_CHANCE Liberty roll and
+      // no GRAM at all — see its own comment above.
+      const nexumDrop  = _isCoop ? (Math.random() < COOP_LIBERTY_CHANCE ? 1 : 0)
+        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
+      const gramDrop   = (_isCoop || result.farmZone) ? 0
+        : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
@@ -10611,7 +10943,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, coop: result.arm === 'coop' })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
 
       if (memberIds.length > 0) {
@@ -10694,6 +11026,14 @@ io.on('connection', socket => {
     // only advances the wave counter (spawns the next wave, or ends the run
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
+    // Coop kills also pay out xp through the normal path below — a regular
+    // one only advances the stage counter (_coopTrackKill), the boss instead
+    // grants its own fixed reward and ends the run for both participants
+    // (_coopBossTrackKill), neither of which gates the rest of the handler.
+    if (result.killed && result.arm === 'coop') {
+      if (result.isBoss) _coopBossTrackKill(socket.id, result).catch(err => console.error('[coop boss reward]', err));
+      else _coopTrackKill(socket.id, result);
+    }
     if (result.killed) _seasonTrackKill(result);
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
@@ -10714,8 +11054,12 @@ io.on('connection', socket => {
         });
       }
       const _arm2 = armIndexForLevel(result.rlvl);
-      const nexumDrop2 = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
-      const gramDrop2  = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
+      const _isCoop2 = result.arm === 'coop';
+      // Same Сотрудничество override as the basic-attack path above.
+      const nexumDrop2 = _isCoop2 ? (Math.random() < COOP_LIBERTY_CHANCE ? 1 : 0)
+        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
+      const gramDrop2  = (_isCoop2 || result.farmZone) ? 0
+        : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
@@ -10727,7 +11071,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, coop: result.arm === 'coop' })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -11182,6 +11526,128 @@ io.on('connection', socket => {
   // the run ended (_fearFinish), this just makes the client catch up
   // visually if it somehow missed the fearFinished payload's x/y.
   safeOn('fearReturn', () => {
+    const spot = _returnToHub(socket.id);
+    if (spot) socket.emit('deathBattleReturned', spot);
+  });
+
+  // ── Сотрудничество (Coop) ────────────────────────────────────────────────
+  // Unlike every event above, entering isn't a solo/queued action — it
+  // needs a party of exactly 2, and BOTH members have to click in. The
+  // first one to arrive is parked in _coopWaiting; the second one's arrival
+  // (same partyId) deploys both together in one shot. Every real gate
+  // (level, attempts, conflicts with the other instanced modes) only runs
+  // for the connection actually calling this — the waiting partner already
+  // passed all of it when THEY first called coopEnter, same trust model
+  // race10/arena3's registration queues already use for a stored entry.
+  safeOn('coopEnter', async () => {
+    if (!authed) return;
+    if (_coop.has(socket.id)) return; // already running — the client shouldn't offer the button
+    if (!currentRoom) return;
+    const cp = currentRoom.players.get(socket.id);
+    if (!cp) return socket.emit('coopError', { msg: 'Выберите персонажа' });
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('coopError', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
+      return socket.emit('coopError', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
+      return socket.emit('coopError', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    if (_fear.has(socket.id)) {
+      return socket.emit('coopError', { msg: 'Вы сейчас в Страхе' });
+    }
+    const partyId = playerParty.get(socket.id);
+    const pmap = partyId ? parties.get(partyId) : null;
+    if (!pmap || pmap.size !== 2) {
+      return socket.emit('coopError', { msg: 'Нужна пати ровно из 2 игроков' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < COOP_MIN_LEVEL) {
+      return socket.emit('coopError', { msg: `Нужен ${COOP_MIN_LEVEL} уровень` });
+    }
+    const left = await _coopAttemptsLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('coopError', { msg: 'Попытки в Сотрудничество на сегодня закончились' });
+    }
+
+    const waitingSid = _coopWaiting.get(partyId);
+    const waitingSocket = (waitingSid && waitingSid !== socket.id) ? io.sockets.sockets.get(waitingSid) : null;
+    if (!waitingSocket || !pmap.has(waitingSid)) {
+      // First to arrive (or the previous waiter is gone/left the party) —
+      // wait for the partner.
+      _coopWaiting.set(partyId, socket.id);
+      socket.emit('coopWaiting', {});
+      return;
+    }
+
+    // Partner is here and still in the same 2-person party — deploy both at
+    // once. Coop is its own floor (server/game/floors.js), but like Fear
+    // there is no shared Room to walk onto — this connection creates a
+    // brand-new private instance right here and force-joins BOTH
+    // connections onto it via the `room` override (_forceEnterLocation,
+    // exposed per-connection so this handler can move a socket that isn't
+    // its own).
+    _coopWaiting.delete(partyId);
+    const coopRoom = _createCoopRoom();
+    const ok1 = waitingSocket.data._forceEnterLocation?.('coop', { room: coopRoom });
+    const ok2 = socket.data._forceEnterLocation?.('coop', { room: coopRoom });
+    if (!ok1 || !ok2) {
+      // Something about one of the two connections refused the move (no
+      // character selected any more, already elsewhere) — don't strand
+      // either one on a half-joined floor.
+      if (ok1) waitingSocket.data._forceEnterLocation?.('hub');
+      if (ok2) socket.data._forceEnterLocation?.('hub');
+      socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+      waitingSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+      return;
+    }
+    const spot1 = coopRoom.coopDeploy(waitingSid);
+    const spot2 = coopRoom.coopDeploy(socket.id);
+    if (!spot1 || !spot2) {
+      waitingSocket.data._forceEnterLocation?.('hub');
+      socket.data._forceEnterLocation?.('hub');
+      socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+      waitingSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+      return;
+    }
+    _lockCoopDaily(waitingSid);
+    _lockCoopDaily(socket.id);
+    _coop.set(waitingSid, { room: coopRoom, lane: spot1.lane, partnerId: socket.id });
+    _coop.set(socket.id, { room: coopRoom, lane: spot2.lane, partnerId: waitingSid });
+    const p1 = coopRoom.players.get(waitingSid), p2 = coopRoom.players.get(socket.id);
+    const readyAt = Date.now() + COOP_START_DELAY_MS;
+    io.to(waitingSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await _coopAttemptsLeft(waitingSid), readyAt });
+    socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: left - 1, readyAt });
+    safeTimeout('coopStage1', () => {
+      // Still exactly the run this timer was scheduled for? A disconnect
+      // during the countdown moves the run record into _coopDisconnectGrace
+      // instead (see _coopHoldOnDisconnect) — a stale timer for a socket
+      // that's since gone quietly no-ops here rather than double-spawning
+      // stage 1 once the reconnect path starts it (see the coopCarry
+      // reclaim, further up this file).
+      const r1 = _coop.get(waitingSid), r2 = _coop.get(socket.id);
+      if (!r1 || !r2 || r1.room !== coopRoom || r2.room !== coopRoom || coopRoom.coopStage() !== 0) return;
+      coopRoom.coopStartFirstStage();
+      io.to(waitingSid).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
+      io.to(socket.id).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
+    }, COOP_START_DELAY_MS);
+  });
+
+  safeOn('coopSync', async () => {
+    const run = _coop.get(socket.id);
+    const partyId = playerParty.get(socket.id);
+    socket.emit('coopState', {
+      maxAttempts: COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length, minLevel: COOP_MIN_LEVEL,
+      attemptsLeft: await _coopAttemptsLeft(socket.id),
+      inRun: !!run, stage: run?.room ? run.room.coopStage() : 0,
+      waiting: !run && !!partyId && _coopWaiting.get(partyId) === socket.id,
+    });
+  });
+
+  // Sent once the player closes the coop result modal — same reasoning as
+  // fearReturn above.
+  safeOn('coopReturn', () => {
     const spot = _returnToHub(socket.id);
     if (spot) socket.emit('deathBattleReturned', spot);
   });
@@ -12709,6 +13175,7 @@ async function _gracefulShutdown(signal) {
   // save flush below.
   floorRooms.forEach(r => r._stopLoop());
   _liveFearRooms().forEach(r => r._stopLoop());
+  _liveCoopRooms().forEach(r => r._stopLoop());
   // Land whatever clan XP has accumulated since the last 20s flush, so a
   // redeploy doesn't quietly discard it.
   await _flushClanXp().catch(() => {});

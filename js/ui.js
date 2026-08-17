@@ -4241,6 +4241,7 @@ function openEventsPanel() {
   if (typeof netArena3Sync === 'function') netArena3Sync();
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
+  if (typeof netCoopSync === 'function') netCoopSync();
   _renderEventsBody();
 }
 
@@ -4267,6 +4268,7 @@ function _renderEventsBody() {
                  : _eventTab === 'a3'        ? _arena3BodyHTML()
                  : _eventTab === 'race10'    ? _race10BodyHTML()
                  : _eventTab === 'fear'      ? _fearBodyHTML()
+                 : _eventTab === 'coop'      ? _coopBodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
                  : _deathBattleBodyHTML();
 }
@@ -4502,6 +4504,84 @@ function _fearBodyHTML() {
         </ul>
       </div>
     </div>`;
+}
+
+// ── Сотрудничество (Coop) tab ────────────────────────────────────────────────
+// Party-gated: the only way in is standing in a party of exactly 2, and both
+// members clicking the button (see netCoopEnter/coopWaiting). Headline
+// number is the current stage while running, otherwise how many of the
+// daily attempts are left.
+function _coopBodyHTML() {
+  const st = (typeof _coopState !== 'undefined' && _coopState) || { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
+  const inRun = typeof _coopInRun !== 'undefined' && _coopInRun;
+  const waiting = typeof _coopIsWaiting !== 'undefined' && _coopIsWaiting;
+  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = !inRun && lvl < (st.minLevel || 10);
+  const partySize = (typeof partyMembers !== 'undefined' && partyMembers.length > 0) ? partyMembers.length + 1 : 0;
+  const wrongParty = !inRun && !waiting && partySize !== 2;
+
+  let phaseTxt, action;
+  if (inRun) {
+    // stage is 0 for the COOP_START_DELAY_MS grace window between landing
+    // and stage 1 actually spawning (see server's coopEnter) — the
+    // #db-freeze countdown overlay is already covering the screen at that
+    // point, but this panel can still be reopened during it, so it needs
+    // its own "not fighting yet" phase rather than claiming stage 1 is
+    // already up.
+    phaseTxt = _coopStageNo > 0
+      ? tVars('coopPhaseFighting', { stage: _coopStageNo, max: st.maxStage })
+      : t('coopPhaseReady');
+    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+  } else if (waiting) {
+    phaseTxt = t('coopPhaseWaitingPartner');
+    action = `<button class="db-action" disabled>${t('coopPhaseWaitingPartner')}</button>`;
+  } else if (wrongParty) {
+    phaseTxt = t('coopNeedPartyMsg');
+    action = `<button class="db-action disabled" disabled>${t('coopNeedPartyMsg')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (spent) {
+    phaseTxt = t('a3NoAttempts');
+    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+  } else {
+    phaseTxt = t('fearPhaseIdle');
+    action = `<button class="db-action" onclick="netCoopEnter()">${t('fearEnterBtn')}</button>`;
+  }
+
+  const countdown = inRun
+    ? `${_coopStageNo > 0 ? _coopStageNo : '–'}/${st.maxStage}`
+    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
+  const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
+    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
+    : '';
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${countdown}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${score}
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${t('coopRule1')}</li>
+          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
+          <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
+          <li>${t('coopRule2')}</li>
+          <li>${t('coopRule3')}</li>
+          <li>${t('coopRule4')}</li>
+          <li>${t('coopRule5')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+// Called from the network handlers on every server push.
+function onCoopState() {
+  _updateEventsBtnHighlight();
+  if (_eventsPanelOpen() && _eventTab === 'coop') _renderEventsBody();
 }
 
 // Called from the network handlers on every server push.
@@ -4903,6 +4983,8 @@ function hideDeathBattleFreeze() { hideFreezeCountdown(); }
 
 function showFearCountdown(readyAt) { showFreezeCountdown(readyAt, t('fearFreezeLbl')); }
 function hideFearCountdown() { hideFreezeCountdown(); }
+function showCoopCountdown(readyAt) { showFreezeCountdown(readyAt, t('coopFreezeLbl')); }
+function hideCoopCountdown() { hideFreezeCountdown(); }
 
 function closeDeathBattleWin() {
   const modal = document.getElementById('db-win-modal');

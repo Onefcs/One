@@ -782,8 +782,101 @@ function generateFear() {
   };
 }
 
+// ── Сотрудничество (Cooperation) ─────────────────────────────────────────────
+// A 2-player-only co-op climb, its own floor (see server/game/floors.js).
+// Called fresh for every pair (see _createCoopRoom, server/index.js) —
+// same "one fresh private Room per run" shape Fear uses just above, just
+// seating two players in their own lanes instead of one. Each lane is a
+// straight line of COOP_STAGE_COUNT rooms (wider than Кровавая Башня's
+// tight 3-tile corridor, so COOP_MOBS_PER_STAGE monsters can scatter across
+// one instead of standing shoulder-to-shoulder), connected by short
+// corridors, converging into ONE shared boss room at the far end — same
+// convergence Кровавая Башня's lanes use. No baked-in monsters: each
+// stage's pack is spawned dynamically at runtime by Room.coopSpawnStage,
+// gated on BOTH lanes clearing the current stage (Room.coopRegisterKill),
+// which a baked-in world-gen layout can't express.
+const COOP_LANES      = 2;
+const COOP_STAGE_ROOM = 16;  // one stage's room size (tiles)
+const COOP_STAGE_GAP  = 4;   // connector corridor length between consecutive stage rooms
+const COOP_LANE_HW    = 1;   // connector corridor half-width (3 tiles), same convention as every other corridor
+const COOP_LANE_PITCH = COOP_STAGE_ROOM + 6; // row-to-row spacing between the 2 lanes
+const COOP_STAGE_COUNT = 8;
+const COOP_BOSS_ROOM  = 34;  // shared boss room, at least this big (also stretched to cover every lane's own row — see bossSize below)
+
+function generateCoop() {
+  const stageSpan = COOP_STAGE_ROOM + COOP_STAGE_GAP;
+  const X0 = MARGIN, Y0 = MARGIN;
+  const bossX0 = X0 + COOP_STAGE_COUNT * stageSpan;
+  // Tall enough to cover every lane's own row (so each lane's connector
+  // lands inside it regardless of how many lanes there are), at least
+  // COOP_BOSS_ROOM square otherwise.
+  const bossSize = Math.max(COOP_BOSS_ROOM, (COOP_LANES - 1) * COOP_LANE_PITCH + COOP_STAGE_ROOM);
+  const w = bossX0 + bossSize + MARGIN;
+  const h = Y0 + bossSize + MARGIN;
+
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const lanes = [];
+  for (let i = 0; i < COOP_LANES; i++) {
+    const laneY0 = Y0 + i * COOP_LANE_PITCH;
+    const cy = laneY0 + Math.floor(COOP_STAGE_ROOM / 2);
+    const stages = [];
+    for (let k = 0; k < COOP_STAGE_COUNT; k++) {
+      const sx0 = X0 + k * stageSpan;
+      paintRect(sx0, laneY0, sx0 + COOP_STAGE_ROOM - 1, laneY0 + COOP_STAGE_ROOM - 1);
+      // Connector out of this stage — into the next stage's room, or (the
+      // last stage) straight into the shared boss room's west wall.
+      const connEndX = (k === COOP_STAGE_COUNT - 1) ? (bossX0 - 1) : (sx0 + stageSpan - 1);
+      paintRect(sx0 + COOP_STAGE_ROOM, cy - COOP_LANE_HW, connEndX, cy + COOP_LANE_HW);
+      stages.push({
+        // Tile bounds for Room.coopSpawnStage's random scatter — deliberately
+        // NOT a single ring-around-a-point the way Fear/race10 spawn: "не
+        // стоят в ряд ... монстры в разброс" wants them scattered across the
+        // whole room, not converging from one centre.
+        x0: sx0, y0: laneY0, x1: sx0 + COOP_STAGE_ROOM - 1, y1: laneY0 + COOP_STAGE_ROOM - 1,
+        cx: (sx0 + Math.floor(COOP_STAGE_ROOM / 2)) * TILE + TILE / 2, cy: cy * TILE + TILE / 2,
+      });
+    }
+    lanes.push({
+      entryX: (X0 + 2) * TILE + TILE / 2, entryY: cy * TILE + TILE / 2,
+      stages,
+    });
+  }
+
+  paintRect(bossX0, Y0, bossX0 + bossSize - 1, Y0 + bossSize - 1);
+  const bossCx = (bossX0 + Math.floor(bossSize / 2)) * TILE + TILE / 2;
+  const bossCy = (Y0 + Math.floor(bossSize / 2)) * TILE + TILE / 2;
+
+  return {
+    grid, rooms: [], w, h,
+    // Lane 0's entry as a fallback default (Room.addPlayer needs SOME valid
+    // spawn point) — every real entrant is placed precisely by
+    // Room.coopDeploy right after joining, same as Fear.
+    spawn: { x: lanes[0].entryX, y: lanes[0].entryY },
+    // Lane/boss geometry only — Room.js reaches into this directly
+    // (this._dungeon.coop), deliberately NOT part of Room.dungeonData: no
+    // special rendering/tinting hint is needed, and every stage transition
+    // is a server-pushed spawn, not something the client discovers by
+    // walking around (same reasoning as this._dungeon.fear).
+    coop: {
+      lanes,
+      boss: { x: bossCx, y: bossCy },
+      // Where the shared boss room starts (px, world x) — same role
+      // race10.bossRoomX0 plays: tells "still in my own lane" apart from
+      // "reached the shared room" (Room.js's _raceVisible-style isolation).
+      bossRoomX0: bossX0 * TILE,
+    },
+    enemies: [],
+  };
+}
+
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
-  generateRace10, generateFear,
+  generateRace10, generateFear, generateCoop,
   TILE, WALL, FLOOR,
 };

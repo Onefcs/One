@@ -161,6 +161,16 @@ let _serverPlacedAt = 0;
 let _fearInRun = false;
 let _fearWave = 0;
 
+// Сотрудничество (Coop) — 2-player-only, party-gated instance: no solo
+// entry (see js/network.js's netCoopEnter/coopStarted). stageNo/maxStage
+// track progress through the current run, pushed by coopStage/coopStarted.
+// isWaiting is true from the moment THIS account clicks coopEnter until
+// either the partner also does (coopStarted) or this account leaves.
+let _coopState = { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
+let _coopInRun = false;
+let _coopStageNo = 0;
+let _coopIsWaiting = false;
+
 // Сезон — points race with a fixed end date. Everything here is pushed by the
 // server (points and quest progress are server-owned, see the seasonSync
 // handler in server/index.js); nothing is computed locally.

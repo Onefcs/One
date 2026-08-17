@@ -691,7 +691,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d, rxAt) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs } = payload;
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
@@ -824,6 +824,17 @@ function netConnect(onReady) {
       _fearInRun = false;
       _fearWave = 0;
       if (typeof onFearState === 'function') onFearState();
+    }
+    // Сотрудничество: same reconnect-resume reasoning as Fear just above.
+    if (cs && cs.inRun) {
+      _coopInRun = true;
+      _coopStageNo = cs.stage || 0;
+      if (cs.maxStage) _coopState = { ..._coopState, maxStage: cs.maxStage };
+      if (typeof onCoopState === 'function') onCoopState();
+    } else if (_coopInRun) {
+      _coopInRun = false;
+      _coopStageNo = 0;
+      if (typeof onCoopState === 'function') onCoopState();
     }
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
@@ -3012,6 +3023,7 @@ function _initEventBossHandlers(s) {
   _initArena3Handlers(s);
   _initRace10Handlers(s);
   _initFearHandlers(s);
+  _initCoopHandlers(s);
   _initGuildWarHandlers(s);
 }
 
@@ -3448,6 +3460,112 @@ function _initFearHandlers(s) {
     if (cleared && typeof netFearReturn === 'function') netFearReturn();
     if (typeof netFearSync === 'function') netFearSync();
     if (typeof onFearState === 'function') onFearState();
+  });
+}
+
+function netCoopEnter()  { if (socket?.connected) socket.emit('coopEnter'); }
+function netCoopSync()   { if (socket?.connected) socket.emit('coopSync'); }
+// Same round-trip fearReturn uses — the server already moved this player
+// back to the hub when the run ended, this just makes the client catch up
+// visually.
+function netCoopReturn() { if (socket?.connected) socket.emit('coopReturn'); }
+
+// ── Сотрудничество (Coop) ────────────────────────────────────────────────────
+// 2-player-only: entering isn't instant the way Fear's is — the first party
+// member to click coopEnter waits (coopWaiting) until their partner does the
+// same, only then does coopStarted actually deploy both.
+function _initCoopHandlers(s) {
+  s.on('coopState', (st) => {
+    _coopState = {
+      maxAttempts: st.maxAttempts || _coopState.maxAttempts || 2,
+      maxStage: st.maxStage || _coopState.maxStage || 8,
+      minLevel: st.minLevel != null ? st.minLevel : (_coopState.minLevel || 10),
+      attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _coopState.attemptsLeft,
+    };
+    _coopInRun = !!st.inRun;
+    _coopStageNo = st.stage || 0;
+    _coopIsWaiting = !!st.waiting;
+    if (typeof onCoopState === 'function') onCoopState();
+  });
+
+  s.on('coopError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  // This account clicked coopEnter first — parked until the partner does
+  // the same (see coopStarted below, which fires for BOTH at once).
+  s.on('coopWaiting', () => {
+    _coopIsWaiting = true;
+    if (typeof onCoopState === 'function') onCoopState();
+  });
+
+  s.on('coopStarted', ({ x, y, hp, maxStage, attemptsLeft, readyAt }) => {
+    if (!player) return;
+    _coopInRun = true;
+    _coopIsWaiting = false;
+    // Stage 1 doesn't actually spawn until readyAt (COOP_START_DELAY_MS
+    // after both entered) — stage stays 0 until the coopStage event below
+    // confirms it's really up.
+    _coopStageNo = 0;
+    if (maxStage) _coopState = { ..._coopState, maxStage };
+    if (attemptsLeft !== undefined) _coopState = { ..._coopState, attemptsLeft };
+    if (hp) player.hp = hp;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('coopLbl'));
+    else { player.x = x; player.y = y; }
+    // Same reasoning as fearStarted above — close the events panel and show
+    // the freeze-countdown overlay for the entry grace window.
+    if (typeof closeEventsPanel === 'function') closeEventsPanel();
+    if (readyAt && typeof showCoopCountdown === 'function') showCoopCountdown(readyAt);
+    if (typeof onCoopState === 'function') onCoopState();
+  });
+
+  // A stage just spawned in both lanes at once (stage 1, or the next one
+  // after both partners cleared the last) — a HUD update only, no teleport:
+  // the player stays exactly where they are, same as fearWave.
+  s.on('coopStage', ({ stage, maxStage }) => {
+    _coopStageNo = stage || 0;
+    if (maxStage) _coopState = { ..._coopState, maxStage };
+    if (typeof hideCoopCountdown === 'function') hideCoopCountdown();
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('coopStageMsg', { stage: _coopStageNo, max: _coopState.maxStage }), '#8fd6ff');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof onCoopState === 'function') onCoopState();
+  });
+
+  // This lane cleared its current stage first — waiting on the partner's
+  // own lane before the next one opens.
+  s.on('coopWaitingPartner', () => {
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('coopWaitingPartnerMsg'), '#8fd6ff');
+  });
+
+  // Both lanes cleared the last stage — the shared boss is up.
+  s.on('coopBossSpawned', () => {
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('coopBossSpawnedMsg'), '#ffd18a');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+  });
+
+  // The boss fell — one of the two participants (winnerId) won the fixed
+  // reward. coopFinished (below) follows right behind this for both.
+  s.on('coopBossReward', ({ winnerId }) => {
+    const won = winnerId === socket.id;
+    if (typeof showEventBossBanner === 'function') {
+      showEventBossBanner(won ? t('coopBossWonMsg') : t('coopBossLostMsg'), '#ffd18a');
+    }
+  });
+
+  // Run over — either died mid-stage (cleared: false) or beat the boss
+  // (cleared: true). A death already sends the player home through the
+  // generic death/respawn flow (js/game.js's respawnPlayer), so only the
+  // "cleared" case still needs an explicit return trip.
+  s.on('coopFinished', ({ cleared }) => {
+    _coopInRun = false;
+    _coopStageNo = 0;
+    _coopIsWaiting = false;
+    if (typeof hideCoopCountdown === 'function') hideCoopCountdown();
+    const msg = cleared ? t('coopClearedMsg') : t('coopDiedMsg');
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
+    if (cleared && typeof netCoopReturn === 'function') netCoopReturn();
+    if (typeof netCoopSync === 'function') netCoopSync();
+    if (typeof onCoopState === 'function') onCoopState();
   });
 }
 

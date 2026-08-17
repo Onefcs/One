@@ -6,7 +6,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
-        skillDamageMult } = require('../../shared/definitions');
+        skillDamageMult, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
@@ -301,6 +301,23 @@ const FEAR_AGGRO_R = 500;
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
 const _FEAR_ENEMY_BY_EID = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
+// ── Сотрудничество (Coop) tuning ────────────────────────────────────────────
+// COOP_STAGE_LEVELS/COOP_BOSS_LEVEL live in shared/definitions.js — the
+// client needs the level list too (for its own stage preview), same reason
+// FARM_SPECIES etc. live there rather than here. COOP_STAGE_LEVELS.length is
+// the number of stages (8) — read wherever the stage count matters instead
+// of a separate constant, so the two can never drift apart. Monsters use
+// the SAME standard aggro rule the open world and Кровавая Башня's own
+// corridors do (aggro:false, normal aggroR) rather than Fear's pre-aggroed
+// wide-leash wave — "не стоят в ряд ... монстры в разброс" only asked for a
+// spatial change (scattered across a wider room instead of packed single-
+// file), not a behavioural one.
+const COOP_MOBS_PER_STAGE = 40;
+// Same window Fear's own hold uses — see FEAR_RECONNECT_GRACE_MS's own
+// comment for why. Kept in sync with server/index.js's COOP_RECONNECT_GRACE_MS
+// by comment only, same as Fear's pair of constants.
+const COOP_RECONNECT_GRACE_MS = 45000;
+
 // Enemy interest management. ENEMY_AOI_R (shared/definitions.js — the client
 // prunes against the same number) is the radius each player is streamed
 // enemies within; the grid cell is sized to match it so the per-player query
@@ -505,6 +522,27 @@ class Room {
     // lane index -> { telegramId, timer, x, y, hp } for a hall whose owner
     // just disconnected — see _fearGraceStart/_fearGraceClaim.
     this._fearGrace = new Map();
+    // ── Сотрудничество (Coop) lane bookkeeping ──────────────────────────────
+    // Same shape as Fear's just above, but for exactly 2 lanes sharing one
+    // room: lane -> socketId (coopDeploy/coopReleaseLane), lane -> monsters
+    // still alive in that lane's CURRENT stage (coopSpawnStage/
+    // coopRegisterKill), and lane -> whether that lane has already cleared
+    // the current stage and is waiting on its partner — coopRegisterKill
+    // only advances BOTH lanes once every lane's flag is true.
+    this._coopOwner = new Map();
+    this._coopAlive = new Map();
+    this._coopClearedLane = new Map();
+    // 0 = not started yet; 1..COOP_STAGE_LEVELS.length while a stage is
+    // live; past the end once the boss is up. Room-level (not per-lane) —
+    // by construction both lanes are always on the same stage.
+    this._coopStage = 0;
+    // lane -> { telegramId, timer, x, y, hp } for a lane whose owner just
+    // disconnected — see _coopGraceStart/_coopGraceClaim. Releasing only
+    // THAT lane (not the whole run) mirrors Fear's own hold exactly; ending
+    // the run for both when a hold lapses without a reclaim is
+    // server/index.js's job (_coopDisconnectGrace), the same division of
+    // responsibility Fear's pair of grace mechanisms already uses.
+    this._coopGrace = new Map();
   }
 
   // ── Event boss ────────────────────────────────────────────────────────────
@@ -846,6 +884,286 @@ class Room {
     if (ownerSid && removedIds.length) this.io.to(ownerSid).emit('enemiesRemoved', { ids: removedIds });
   }
 
+  // ── Сотрудничество (Coop) ────────────────────────────────────────────────
+  // Claims the first unoccupied lane (0 or 1) and places the player at its
+  // entry point, full HP — the 2-player sibling of fearDeploy. Called twice,
+  // once per participant, by server/index.js's coopEnter once both halves of
+  // the pair are ready. Stage 1 is spawned separately (coopStartFirstStage)
+  // after the same kind of pre-fight grace window Fear uses.
+  coopDeploy(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const lanes = this._dungeon.coop.lanes;
+    const occupied = new Set(this._coopOwner.keys());
+    this.players.forEach(op => { if (op._coopLane != null) occupied.add(op._coopLane); });
+    let lane = -1;
+    for (let i = 0; i < lanes.length; i++) if (!occupied.has(i)) { lane = i; break; }
+    if (lane === -1) return null;
+    const spot = lanes[lane];
+    p.x = spot.entryX; p.y = spot.entryY;
+    p.hp = p.maxHp;
+    p._coopLane = lane;
+    p._raceLane = null;
+    p._fearLane = null;
+    p._profileRev++;
+    this._coopOwner.set(lane, socketId);
+    return { x: p.x, y: p.y, lane };
+  }
+
+  // Spawns COOP_MOBS_PER_STAGE monsters at COOP_STAGE_LEVELS[stage-1],
+  // scattered at random points across lane `lane`'s stage-`stage` room —
+  // deliberately NOT a ring around one centre the way fearSpawnWave spawns
+  // a wave: "не стоят в ряд ... монстры в разброс" wants them spread across
+  // the whole room, not converging from one point. Reuses the same global-
+  // level species/name/color/stat functions the open world's own rooms use.
+  coopSpawnStage(lane, stage) {
+    this._coopPurgeDead(lane);
+    const laneData = this._dungeon.coop.lanes[lane];
+    const room = laneData && laneData.stages[stage - 1];
+    if (!room) return;
+    const lvl = COOP_STAGE_LEVELS[stage - 1];
+    const armIdx = armIndexForLevel(lvl);
+    const fe = FLOOR_ENEMIES[armIdx];
+    const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
+    const maxLocalLvl = roomsInArm(armIdx) - 1;
+    let spawned = 0;
+    for (let n = 0; n < COOP_MOBS_PER_STAGE; n++) {
+      const pool = bandForLocalLevel(fe, localLvl).pool;
+      const d = _FEAR_ENEMY_BY_EID.get(pool[Math.floor(Math.random() * pool.length)]);
+      if (!d) continue;
+      let ex = room.cx, ey = room.cy;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const tx = room.x0 + 1 + Math.floor(Math.random() * Math.max(1, room.x1 - room.x0 - 1));
+        const ty = room.y0 + 1 + Math.floor(Math.random() * Math.max(1, room.y1 - room.y0 - 1));
+        const px = tx * TILE + TILE / 2, py = ty * TILE + TILE / 2;
+        if (!this._isWall(px, py)) { ex = px; ey = py; break; }
+      }
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      // Same halving every other packed room applies — 40 in a 16x16 room is
+      // denser than the usual 5-10, so this matters here too.
+      const weakMult = 0.5;
+      const e = {
+        id: `coop_${lane}_${this._coopSeq = (this._coopSeq || 0) + 1}`,
+        ...d, isBoss: false, arm: 'coop', lane, rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
+        // No gold at all — see calcGoldDrop's `arm === 'coop'` branch
+        // (shared/definitions.js). Coop's only per-kill reward is the flat
+        // COOP_LIBERTY_CHANCE Liberty roll (server/index.js's attack/
+        // skillAttack handlers).
+        xp: xpAtLevel(lvl), gold: 0,
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        // Standard aggro — see this file's "Сотрудничество tuning" comment.
+        atkTimer: 1 + Math.random(), aggro: false, aggroR: 175 + Math.random() * 55,
+        // MUST be set individually — see fearSpawnWave's identical comment on
+        // why a shared/undefined _idx reads as the whole stage being frozen
+        // and then jumping in lockstep.
+        _idx: this._allocIdx(),
+      };
+      this.enemies.push(e);
+      this._enemyMap.set(e.id, e);
+      spawned++;
+    }
+    this._coopAlive.set(lane, spawned);
+  }
+
+  // Sets stage 1 live in both lanes and marks the room "started" — called
+  // once by server/index.js's coopEnter once the post-entry grace window
+  // elapses, mirroring _fearStartWave's role for Fear's wave 1.
+  coopStartFirstStage() {
+    this._coopStage = 1;
+    this._coopClearedLane.set(0, false);
+    this._coopClearedLane.set(1, false);
+    for (let l = 0; l < 2; l++) if (this._coopOwner.has(l)) this.coopSpawnStage(l, 1);
+  }
+
+  // Spawns the shared level-COOP_BOSS_LEVEL boss in the room both lanes'
+  // corridors converge into — a normal levelled boss (monsterStatsAtLevel's
+  // 'boss' curve), not the fixed world-boss identity spawnRaceBoss reuses,
+  // since the ask here was specifically "a level-40 boss", not a scaled-up
+  // world event. Standing (not stationary): unlike race10's shared room this
+  // one only ever holds the exact 2 players who earned it, so there's no
+  // "drags the fight down whichever corridor it picks" concern to guard
+  // against — it can chase like any other boss.
+  coopSpawnBoss() {
+    const coop = this._dungeon.coop;
+    if (!coop || !coop.boss) return null;
+    const lvl = COOP_BOSS_LEVEL;
+    const armIdx = armIndexForLevel(lvl);
+    const fe = FLOOR_ENEMIES[armIdx];
+    const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
+    const maxLocalLvl = roomsInArm(armIdx) - 1;
+    const d = _FEAR_ENEMY_BY_EID.get(fe.boss);
+    if (!d) return null;
+    const stats = monsterStatsAtLevel(lvl, 'boss');
+    const { x, y } = coop.boss;
+    const e = {
+      id: `coop_boss_${this._coopSeq = (this._coopSeq || 0) + 1}`,
+      ...d, isBoss: true, arm: 'coop', coopBoss: true, rlvl: lvl,
+      name: monsterNameAtLevel(d.name, localLvl, true, d.fem, maxLocalLvl),
+      color: monsterColorAtLevel(d.color, d.endColor, localLvl, true, maxLocalLvl),
+      maxHp: stats.hp, hp: stats.hp, atk: stats.atk, def: stats.def, spd: d.spd,
+      // No xp/gold table role either — its own fixed reward (1 bless_stone
+      // + 100 Liberty, to one random participant) is granted directly by
+      // server/index.js's _coopBossTrackKill, not through the normal
+      // kill-reward path.
+      xp: 0, gold: 0,
+      x, y, spawnX: x, spawnY: y,
+      atkTimer: 1, aggro: false, aggroR: 250,
+      _idx: this._allocIdx(),
+    };
+    this.enemies.push(e);
+    this._enemyMap.set(e.id, e);
+    return e.id;
+  }
+
+  // Who currently owns lane `lane`, or null.
+  coopOwnerOf(lane) { return this._coopOwner.get(lane) ?? null; }
+
+  // Current stage number (0 = not started, 1..COOP_STAGE_LEVELS.length while
+  // live, past the end once the boss is up) — read by server/index.js's
+  // coopSync so a panel reopened mid-run shows the real stage.
+  coopStage() { return this._coopStage; }
+
+  // The lane a player is currently inside, or null.
+  coopLaneOf(socketId) {
+    const p = this.players.get(socketId);
+    return p ? (p._coopLane ?? null) : null;
+  }
+
+  // Drops the corpses of a lane's just-cleared stage — the between-stages
+  // sweep, same role _fearPurgeDead plays, called right before the next
+  // stage's monsters are laid down.
+  _coopPurgeDead(lane) {
+    let found = false;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.arm === 'coop' && e.lane === lane && e.hp <= 0) { found = true; break; }
+    }
+    if (!found) return;
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'coop' || e.lane !== lane || e.hp > 0) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      this._releaseIdx(e);
+      return false;
+    });
+  }
+
+  // Called by server/index.js right after a kill lands on a `coop`-tagged,
+  // non-boss enemy. This is the whole synchronization mechanism: a lane that
+  // empties out marks itself cleared and waits; only once BOTH lanes are
+  // cleared for the SAME stage does either one actually advance — spawning
+  // stage+1 in both lanes at once, or (past the last stage) the shared boss.
+  // Returns what happened so the caller knows what to tell each player:
+  // { left } while monsters remain, { left:0, waiting:true } for a lane that
+  // finished first and is waiting on its partner, or { left:0, stage } /
+  // { left:0, bossSpawned:true } once both clear and something new spawns.
+  coopRegisterKill(lane) {
+    const left = Math.max(0, (this._coopAlive.get(lane) || 0) - 1);
+    this._coopAlive.set(lane, left);
+    if (left > 0) return { left };
+    this._coopClearedLane.set(lane, true);
+    const otherLane = lane === 0 ? 1 : 0;
+    if (!this._coopClearedLane.get(otherLane)) return { left: 0, waiting: true };
+    // Both lanes cleared the current stage — advance.
+    this._coopClearedLane.set(0, false);
+    this._coopClearedLane.set(1, false);
+    this._coopStage++;
+    if (this._coopStage > COOP_STAGE_LEVELS.length) {
+      // coopSpawnStage purges the PREVIOUS stage's corpses on its own way
+      // in (see its own comment) — the boss has no such call, so the last
+      // stage's 80 dead have to be swept here or they'd sit in this.enemies,
+      // walked by the AI tick loop and the enemy-grid rebuild 40 times a
+      // second, for the rest of the boss fight.
+      this._coopPurgeDead(0);
+      this._coopPurgeDead(1);
+      this.coopSpawnBoss();
+      return { left: 0, bossSpawned: true };
+    }
+    for (let l = 0; l < 2; l++) if (this._coopOwner.has(l)) this.coopSpawnStage(l, this._coopStage);
+    return { left: 0, stage: this._coopStage };
+  }
+
+  // Releases lane `lane` and clears out whatever is left of its current
+  // stage (dead or still standing) — the per-lane building block both
+  // coopReleaseRoom (a clean end, both lanes) and _coopGraceStart's timeout
+  // (a lapsed disconnect hold, one lane) call. Idempotent. Also clears the
+  // owner's own p._coopLane, for the identical reason fearReleaseLane does —
+  // _raceVisible keys isolation off it.
+  coopReleaseLane(lane) {
+    if (lane == null || !this._coopOwner.has(lane)) return;
+    const ownerSid = this._coopOwner.get(lane);
+    const owner = this.players.get(ownerSid);
+    if (owner && owner._coopLane === lane) owner._coopLane = null;
+    this._coopOwner.delete(lane);
+    this._coopAlive.delete(lane);
+    this._coopClearedLane.delete(lane);
+    const removedIds = [];
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'coop' || e.lane !== lane) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      this._releaseIdx(e);
+      removedIds.push(e.id);
+      return false;
+    });
+    if (ownerSid && removedIds.length) this.io.to(ownerSid).emit('enemiesRemoved', { ids: removedIds });
+  }
+
+  // Full teardown — both lanes AND the shared (laneless) boss if it was up.
+  // Called once, by server/index.js, whenever the whole run ends for both
+  // participants: cleared, a death, or a disconnect hold lapsing for good.
+  coopReleaseRoom() {
+    this.coopReleaseLane(0);
+    this.coopReleaseLane(1);
+    const bossRemoved = [];
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'coop' || !e.coopBoss) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      this._releaseIdx(e);
+      bossRemoved.push(e.id);
+      return false;
+    });
+    this._coopStage = 0;
+  }
+
+  // Holds a disconnecting lane open instead of releasing it on the spot —
+  // same reasoning as _fearGraceStart. Only releases THIS lane; ending the
+  // whole run for both participants if the hold lapses without a reclaim is
+  // server/index.js's job (_coopDisconnectGrace), same division as Fear's
+  // own pair of grace mechanisms.
+  _coopGraceStart(p) {
+    const lane = p._coopLane;
+    if (lane == null) return;
+    if (!p.telegramId) { this.coopReleaseLane(lane); return; }
+    const timer = setTimeout(() => {
+      try {
+        this._coopGrace.delete(lane);
+        this.coopReleaseLane(lane);
+      } catch (err) {
+        console.error(`[Room ${this.floor} coopGrace]`, err);
+      }
+    }, COOP_RECONNECT_GRACE_MS);
+    this._coopGrace.set(lane, { telegramId: p.telegramId, timer, x: p.x, y: p.y, hp: p.hp });
+  }
+
+  // Reclaims a held lane for a reconnecting account — called from addPlayer.
+  // See _fearGraceClaim for the same shape.
+  _coopGraceClaim(telegramId, newSocketId) {
+    for (const [lane, g] of this._coopGrace) {
+      if (g.telegramId !== telegramId) continue;
+      clearTimeout(g.timer);
+      this._coopGrace.delete(lane);
+      this._coopOwner.set(lane, newSocketId);
+      return { lane, x: g.x, y: g.y, hp: g.hp };
+    }
+    return null;
+  }
+
   // Scatters `items` on the floor around (cx, cy) as individually claimable
   // piles and tells everyone about them. Positions are rejected if they'd
   // land in a wall so nothing spawns unreachable.
@@ -1123,14 +1441,17 @@ class Room {
   //
   // The boss is deliberately laneless: it stands in the one shared room every
   // corridor opens into, and every entrant must be able to see and fight it.
-  // Also covers Страх (Fear): its lanes are isolated by the same rule, just
-  // keyed off p._fearLane/e.arm === 'fear' instead of the tower's own fields
-  // — a player can only ever be in at most one of the two instance types at
-  // once, so the two checks never both apply.
+  // Also covers Страх (Fear) and Сотрудничество (Coop): their lanes are
+  // isolated by the same rule, just keyed off p._fearLane/e.arm === 'fear'
+  // and p._coopLane/e.arm === 'coop' instead of the tower's own fields — a
+  // player can only ever be in at most one of the three instance types at
+  // once, so the checks never overlap. Coop's own boss is laneless for the
+  // identical reason the tower's is: both participants converge on it.
   _raceVisible(p, e) {
     if (e.arm === 'race10') return p._raceLane != null && (e.lane == null || e.lane === p._raceLane);
     if (e.arm === 'fear') return p._fearLane != null && (e.lane == null || e.lane === p._fearLane);
-    return p._raceLane == null && p._fearLane == null;
+    if (e.arm === 'coop') return p._coopLane != null && (e.lane == null || e.lane === p._coopLane);
+    return p._raceLane == null && p._fearLane == null && p._coopLane == null;
   }
 
   // The composite lane identity used to scope visual fan-out (nearbyPlayerIds/
@@ -1154,6 +1475,15 @@ class Room {
       return 'r' + p._raceLane;
     }
     if (p._fearLane != null) return 'f' + p._fearLane;
+    // Same convergence treatment as race10: once a Coop participant reaches
+    // the shared boss room both lanes open into, they share one key with
+    // their partner regardless of which lane they each ran — the whole
+    // point of a co-op finish is fighting the boss together, visibly.
+    if (p._coopLane != null) {
+      const coop = this._dungeon.coop;
+      if (coop && p.x >= coop.bossRoomX0) return 'coopboss';
+      return 'c' + p._coopLane;
+    }
     return null;
   }
 
@@ -1277,6 +1607,14 @@ class Room {
         // would let an early kill silently come back and never let
         // fearRegisterKill's count reach zero.
         if (e.arm === 'fear') return;
+        // Coop boss: same reasoning as the race10 boss — server/index.js
+        // grants its fixed reward and ends the run for both participants in
+        // the same tick it dies, no loot table needed here.
+        if (e.coopBoss) return;
+        // Coop stage monsters: same reasoning as Fear's wave monsters — stay
+        // dead until both lanes clear the stage (coopRegisterKill) and
+        // coopSpawnStage lays down the next batch, or the lane is released.
+        if (e.arm === 'coop') return;
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -1455,8 +1793,13 @@ class Room {
       // "nowhere to drag anything in a sealed room" reasoning as the aggroR
       // widening — the hall has walls, so there's nothing left for a leash to
       // protect against here.
+      // Also skipped for Coop (arm === 'coop'): its stage rooms (16 tiles,
+      // ~906px diagonal) are themselves bigger than this flat 420px radius,
+      // so ordinary play chasing a scattered monster across one room would
+      // trip the exact same "snaps back mid-fight" symptom Fear's own
+      // exemption above describes.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
-      if (!e.ignoresSafeZone && e.arm !== 'fear' && ldx * ldx + ldy * ldy > LEASH_R2) {
+      if (!e.ignoresSafeZone && e.arm !== 'fear' && e.arm !== 'coop' && ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;
@@ -2047,12 +2390,13 @@ class Room {
     // RACE10_LANES corridors at once would be both wrong and the single
     // biggest packet in the game.
     const cache = new Map();
+    const _laned = arm => arm === 'race10' || arm === 'fear' || arm === 'coop';
     const bufFor = (arm, lane) => {
-      const key = (arm === 'race10' || arm === 'fear') ? `${arm}#${lane}` : arm;
+      const key = _laned(arm) ? `${arm}#${lane}` : arm;
       let b = cache.get(key);
       if (b !== undefined) return b;
       const want = e => e.hp > 0 && !e.isBoss && e.arm === arm &&
-        ((arm !== 'race10' && arm !== 'fear') || e.lane == null || e.lane === lane);
+        (!_laned(arm) || e.lane == null || e.lane === lane);
       let n = 0;
       for (let i = 0; i < this.enemies.length; i++) if (want(this.enemies[i])) n++;
       const buf = new Int16Array(n * 2);
@@ -2072,7 +2416,7 @@ class Room {
       // single arm now that each arm is its own floor/Room (or to none, on
       // the hub floor) — no more Y-band lookup needed to tell which arm a
       // viewer is standing in, see this._soleArm in the constructor.
-      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : this._soleArm);
+      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : (p._coopLane != null ? 'coop' : this._soleArm));
       // In the hub (or anywhere outside an arm) there are no regular monsters
       // to plot, so there is nothing to send at all.
       if (!arm) return;
@@ -2080,7 +2424,8 @@ class Room {
       // thing that should be queuing up behind a stalled client, and the next
       // one is a second away regardless.
       const sock = this._socketFor(p);
-      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, arm === 'fear' ? p._fearLane : p._raceLane));
+      const lane = arm === 'fear' ? p._fearLane : arm === 'coop' ? p._coopLane : p._raceLane;
+      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, lane));
     });
   }
 
@@ -2155,16 +2500,21 @@ class Room {
       if (staleSocketId) this.removePlayer(staleSocketId);
     }
     const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
+    // Same reasoning as fearCarry just above, for a held Coop lane — see
+    // _coopGraceStart/_coopGraceClaim.
+    const coopCarry = telegramId ? this._coopGraceClaim(telegramId, socketId) : null;
     const spawn = this._dungeon.spawn;
+    const carry = fearCarry || coopCarry;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
       clanId: clanId || null,
-      x: fearCarry ? fearCarry.x : spawn.x, y: fearCarry ? fearCarry.y : spawn.y, facing: 'front', moving: false,
-      hp: fearCarry ? fearCarry.hp : 200, maxHp: 200, atk: 5, def: 5,
+      x: carry ? carry.x : spawn.x, y: carry ? carry.y : spawn.y, facing: 'front', moving: false,
+      hp: carry ? carry.hp : 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
       _fearLane: fearCarry ? fearCarry.lane : null,
+      _coopLane: coopCarry ? coopCarry.lane : null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -2183,7 +2533,7 @@ class Room {
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();
-    return { spawn, staleSocketId, fearCarry };
+    return { spawn, staleSocketId, fearCarry, coopCarry };
   }
 
   setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus, clanId) {
@@ -2295,6 +2645,8 @@ class Room {
     // window that elapses with no reconnect turns into a real release.
     const p = this.players.get(socketId);
     if (p && p._fearLane != null) this._fearGraceStart(p);
+    // Same hold, for a Coop lane — see _coopGraceStart's own comment.
+    if (p && p._coopLane != null) this._coopGraceStart(p);
     this.players.delete(socketId);
     this.players.forEach(p2 => p2._known.delete(socketId));
     if (this.players.size === 0) this._stopLoop();
