@@ -4858,10 +4858,12 @@ function _fearHoldOnDisconnect(socketId, telegramId) {
 }
 
 // ── Сотрудничество (Coop) ────────────────────────────────────────────────────
-// A private, 2-player-only instance: entering requires standing in a party
-// of exactly 2, and both members have to click in — the first to arrive
-// waits (_coopWaiting), the second one's arrival deploys both together (see
-// coopEnter, below the socket handlers further down this file). 8 stages of
+// A private, 2-player instance — no pre-existing party required: clicking
+// in joins a waiting pool (_coopWaiting), and the next player to click in
+// is paired with a RANDOM member of that pool (not necessarily whoever's
+// waited longest), a fresh 2-person party is created between exactly those
+// two on the spot, and both are deployed together (see coopEnter, below the
+// socket handlers further down this file). 8 stages of
 // COOP_MOBS_PER_STAGE monsters (server/game/Room.js) escalate through
 // COOP_STAGE_LEVELS (shared/definitions.js, read by both here and Room.js);
 // neither lane's next stage spawns until BOTH lanes have cleared the current
@@ -4887,10 +4889,15 @@ const COOP_LIBERTY_CHANCE = 0.1;
 // lane, and who the partner is so an event can be told to both of them.
 const _coop = new Map();
 
-// partyId -> socketId of whichever member already clicked "enter" and is
-// waiting for their partner to do the same — see coopEnter. Cleared the
-// moment the second member arrives (both get deployed together).
-const _coopWaiting = new Map();
+// socketIds waiting for a random partner — see coopEnter. No party is
+// required to register any more: the first entrant just waits here, and
+// the next one to register is paired with a RANDOM member of this pool
+// (not necessarily whoever's been waiting longest), a fresh 2-person party
+// is created between them on the spot, and both are deployed together.
+// Membership is removed the moment a match is made; a socket that
+// disconnects while waiting is filtered out lazily at match time rather
+// than cleaned up eagerly (see coopEnter's own `pool` filter).
+const _coopWaiting = new Set();
 
 // Every Coop run gets its OWN Room, shared by exactly the 2 participants,
 // created here and never registered in floorRooms — same reasoning as
@@ -11531,17 +11538,20 @@ io.on('connection', socket => {
   });
 
   // ── Сотрудничество (Coop) ────────────────────────────────────────────────
-  // Unlike every event above, entering isn't a solo/queued action — it
-  // needs a party of exactly 2, and BOTH members have to click in. The
-  // first one to arrive is parked in _coopWaiting; the second one's arrival
-  // (same partyId) deploys both together in one shot. Every real gate
-  // (level, attempts, conflicts with the other instanced modes) only runs
-  // for the connection actually calling this — the waiting partner already
-  // passed all of it when THEY first called coopEnter, same trust model
-  // race10/arena3's registration queues already use for a stored entry.
+  // Unlike every event above, entering isn't a solo/queued action, but it
+  // no longer requires an existing party either: clicking in just joins a
+  // waiting pool (_coopWaiting), and the moment a second player also
+  // clicks in, a RANDOM member of that pool is picked as their partner —
+  // not necessarily whoever's been waiting longest — a fresh 2-person party
+  // is created between exactly those two, and both are deployed together.
+  // Every real gate (level, attempts, conflicts with the other instanced
+  // modes) only runs for the connection actually calling this — the
+  // waiting partner already passed all of it when THEY first called
+  // coopEnter, same trust model race10/arena3's registration queues already
+  // use for a stored entry.
   safeOn('coopEnter', async () => {
     if (!authed) return;
-    if (_coop.has(socket.id)) return; // already running — the client shouldn't offer the button
+    if (_coop.has(socket.id) || _coopWaiting.has(socket.id)) return; // already running or already queued
     if (!currentRoom) return;
     const cp = currentRoom.players.get(socket.id);
     if (!cp) return socket.emit('coopError', { msg: 'Выберите персонажа' });
@@ -11557,11 +11567,6 @@ io.on('connection', socket => {
     if (_fear.has(socket.id)) {
       return socket.emit('coopError', { msg: 'Вы сейчас в Страхе' });
     }
-    const partyId = playerParty.get(socket.id);
-    const pmap = partyId ? parties.get(partyId) : null;
-    if (!pmap || pmap.size !== 2) {
-      return socket.emit('coopError', { msg: 'Нужна пати ровно из 2 игроков' });
-    }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < COOP_MIN_LEVEL) {
       return socket.emit('coopError', { msg: `Нужен ${COOP_MIN_LEVEL} уровень` });
@@ -11571,53 +11576,75 @@ io.on('connection', socket => {
       return socket.emit('coopError', { msg: 'Попытки в Сотрудничество на сегодня закончились' });
     }
 
-    const waitingSid = _coopWaiting.get(partyId);
-    const waitingSocket = (waitingSid && waitingSid !== socket.id) ? io.sockets.sockets.get(waitingSid) : null;
-    if (!waitingSocket || !pmap.has(waitingSid)) {
-      // First to arrive (or the previous waiter is gone/left the party) —
-      // wait for the partner.
-      _coopWaiting.set(partyId, socket.id);
+    // Dead sockets (disconnected while waiting) are filtered out here rather
+    // than cleaned up eagerly on disconnect — cheap, and this is the only
+    // place that ever reads the pool.
+    const pool = Array.from(_coopWaiting).filter(sid => io.sockets.sockets.get(sid));
+    if (!pool.length) {
+      _coopWaiting.add(socket.id);
       socket.emit('coopWaiting', {});
       return;
     }
+    const partnerSid = pool[Math.floor(Math.random() * pool.length)];
+    const partnerSocket = io.sockets.sockets.get(partnerSid);
+    _coopWaiting.delete(partnerSid);
 
-    // Partner is here and still in the same 2-person party — deploy both at
-    // once. Coop is its own floor (server/game/floors.js), but like Fear
-    // there is no shared Room to walk onto — this connection creates a
+    // Group the two into a fresh party of exactly themselves — same shape
+    // partyAccept's "create new party" branch uses. Either one is detached
+    // from whatever party (if any) they already belonged to first, so a
+    // random pairing can never corrupt an unrelated group of friends.
+    const oldPartyA = playerParty.get(partnerSid);
+    if (oldPartyA) _removeFromParty(oldPartyA, partnerSid);
+    const oldPartyB = playerParty.get(socket.id);
+    if (oldPartyB) _removeFromParty(oldPartyB, socket.id);
+    const partyId = partnerSid + '_' + socket.id;
+    const partyMap = new Map();
+    partyMap.set(partnerSid, partnerSocket.data?.username || partnerSid.slice(0, 6));
+    partyMap.set(socket.id, authed.username);
+    parties.set(partyId, partyMap);
+    playerParty.set(partnerSid, partyId);
+    playerParty.set(socket.id, partyId);
+    partyMap.forEach((_, mid) => {
+      const others = [];
+      partyMap.forEach((name, oid) => { if (oid !== mid) others.push({ id: oid, name }); });
+      io.to(mid).emit('partyUpdated', { members: others });
+    });
+
+    // Deploy both. Coop is its own floor (server/game/floors.js), but like
+    // Fear there is no shared Room to walk onto — this connection creates a
     // brand-new private instance right here and force-joins BOTH
     // connections onto it via the `room` override (_forceEnterLocation,
     // exposed per-connection so this handler can move a socket that isn't
     // its own).
-    _coopWaiting.delete(partyId);
     const coopRoom = _createCoopRoom();
-    const ok1 = waitingSocket.data._forceEnterLocation?.('coop', { room: coopRoom });
+    const ok1 = partnerSocket.data._forceEnterLocation?.('coop', { room: coopRoom });
     const ok2 = socket.data._forceEnterLocation?.('coop', { room: coopRoom });
     if (!ok1 || !ok2) {
       // Something about one of the two connections refused the move (no
       // character selected any more, already elsewhere) — don't strand
       // either one on a half-joined floor.
-      if (ok1) waitingSocket.data._forceEnterLocation?.('hub');
+      if (ok1) partnerSocket.data._forceEnterLocation?.('hub');
       if (ok2) socket.data._forceEnterLocation?.('hub');
       socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
-      waitingSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+      partnerSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
       return;
     }
-    const spot1 = coopRoom.coopDeploy(waitingSid);
+    const spot1 = coopRoom.coopDeploy(partnerSid);
     const spot2 = coopRoom.coopDeploy(socket.id);
     if (!spot1 || !spot2) {
-      waitingSocket.data._forceEnterLocation?.('hub');
+      partnerSocket.data._forceEnterLocation?.('hub');
       socket.data._forceEnterLocation?.('hub');
       socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
-      waitingSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+      partnerSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
       return;
     }
-    _lockCoopDaily(waitingSid);
+    _lockCoopDaily(partnerSid);
     _lockCoopDaily(socket.id);
-    _coop.set(waitingSid, { room: coopRoom, lane: spot1.lane, partnerId: socket.id });
-    _coop.set(socket.id, { room: coopRoom, lane: spot2.lane, partnerId: waitingSid });
-    const p1 = coopRoom.players.get(waitingSid), p2 = coopRoom.players.get(socket.id);
+    _coop.set(partnerSid, { room: coopRoom, lane: spot1.lane, partnerId: socket.id });
+    _coop.set(socket.id, { room: coopRoom, lane: spot2.lane, partnerId: partnerSid });
+    const p1 = coopRoom.players.get(partnerSid), p2 = coopRoom.players.get(socket.id);
     const readyAt = Date.now() + COOP_START_DELAY_MS;
-    io.to(waitingSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await _coopAttemptsLeft(waitingSid), readyAt });
+    io.to(partnerSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await _coopAttemptsLeft(partnerSid), readyAt });
     socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: left - 1, readyAt });
     safeTimeout('coopStage1', () => {
       // Still exactly the run this timer was scheduled for? A disconnect
@@ -11626,22 +11653,21 @@ io.on('connection', socket => {
       // that's since gone quietly no-ops here rather than double-spawning
       // stage 1 once the reconnect path starts it (see the coopCarry
       // reclaim, further up this file).
-      const r1 = _coop.get(waitingSid), r2 = _coop.get(socket.id);
+      const r1 = _coop.get(partnerSid), r2 = _coop.get(socket.id);
       if (!r1 || !r2 || r1.room !== coopRoom || r2.room !== coopRoom || coopRoom.coopStage() !== 0) return;
       coopRoom.coopStartFirstStage();
-      io.to(waitingSid).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
+      io.to(partnerSid).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
       io.to(socket.id).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
     }, COOP_START_DELAY_MS);
   });
 
   safeOn('coopSync', async () => {
     const run = _coop.get(socket.id);
-    const partyId = playerParty.get(socket.id);
     socket.emit('coopState', {
       maxAttempts: COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length, minLevel: COOP_MIN_LEVEL,
       attemptsLeft: await _coopAttemptsLeft(socket.id),
       inRun: !!run, stage: run?.room ? run.room.coopStage() : 0,
-      waiting: !run && !!partyId && _coopWaiting.get(partyId) === socket.id,
+      waiting: !run && _coopWaiting.has(socket.id),
     });
   });
 

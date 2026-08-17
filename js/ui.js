@@ -4507,10 +4507,11 @@ function _fearBodyHTML() {
 }
 
 // ── Сотрудничество (Coop) tab ────────────────────────────────────────────────
-// Party-gated: the only way in is standing in a party of exactly 2, and both
-// members clicking the button (see netCoopEnter/coopWaiting). Headline
-// number is the current stage while running, otherwise how many of the
-// daily attempts are left.
+// No party required to register any more — clicking the button joins a
+// waiting pool, and the server randomly pairs the next arrival with
+// whoever's already in it, grouping them into a party itself (see
+// netCoopEnter/coopWaiting). Headline number is the current stage while
+// running, otherwise how many of the daily attempts are left.
 function _coopBodyHTML() {
   const st = (typeof _coopState !== 'undefined' && _coopState) || { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
   const inRun = typeof _coopInRun !== 'undefined' && _coopInRun;
@@ -4518,8 +4519,6 @@ function _coopBodyHTML() {
   const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
   const lvl = (player && player.lvl) || 1;
   const tooLow = !inRun && lvl < (st.minLevel || 10);
-  const partySize = (typeof partyMembers !== 'undefined' && partyMembers.length > 0) ? partyMembers.length + 1 : 0;
-  const wrongParty = !inRun && !waiting && partySize !== 2;
 
   let phaseTxt, action;
   if (inRun) {
@@ -4536,9 +4535,6 @@ function _coopBodyHTML() {
   } else if (waiting) {
     phaseTxt = t('coopPhaseWaitingPartner');
     action = `<button class="db-action" disabled>${t('coopPhaseWaitingPartner')}</button>`;
-  } else if (wrongParty) {
-    phaseTxt = t('coopNeedPartyMsg');
-    action = `<button class="db-action disabled" disabled>${t('coopNeedPartyMsg')}</button>`;
   } else if (tooLow) {
     phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
     action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
