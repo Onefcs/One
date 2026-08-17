@@ -691,7 +691,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d, rxAt) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, ascent: as } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws } = payload;
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
@@ -824,26 +824,6 @@ function netConnect(onReady) {
       _fearInRun = false;
       _fearWave = 0;
       if (typeof onFearState === 'function') onFearState();
-    }
-    // Восхождение: same reconnect-resume reasoning as Fear just above. Also
-    // re-arms the staircase pad (_ascentStair/_ascentReady, js/game.js) since
-    // ascentStarted — the event that normally carries the stair position —
-    // only ever fires once, on the original entry.
-    if (as && as.inRun) {
-      _ascentInRun = true;
-      _ascentFloor = as.floor || 0;
-      _ascentCleared = !!as.cleared;
-      if (as.maxFloor) _ascentState = { ..._ascentState, maxFloor: as.maxFloor };
-      if (as.stairX != null && as.stairY != null && typeof _ascentStair !== 'undefined') {
-        _ascentStair = { x: as.stairX, y: as.stairY };
-      }
-      if (typeof _ascentReady !== 'undefined') _ascentReady = _ascentCleared;
-      if (typeof onAscentState === 'function') onAscentState();
-    } else if (_ascentInRun) {
-      _ascentInRun = false;
-      _ascentFloor = 0;
-      _ascentCleared = false;
-      if (typeof onAscentState === 'function') onAscentState();
     }
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
@@ -3032,7 +3012,6 @@ function _initEventBossHandlers(s) {
   _initArena3Handlers(s);
   _initRace10Handlers(s);
   _initFearHandlers(s);
-  _initAscentHandlers(s);
   _initGuildWarHandlers(s);
 }
 
@@ -3469,116 +3448,6 @@ function _initFearHandlers(s) {
     if (cleared && typeof netFearReturn === 'function') netFearReturn();
     if (typeof netFearSync === 'function') netFearSync();
     if (typeof onFearState === 'function') onFearState();
-  });
-}
-
-function netAscentEnter()  { if (socket?.connected) socket.emit('ascentEnter'); }
-function netAscentSync()   { if (socket?.connected) socket.emit('ascentSync'); }
-// Sent once the player walks onto the staircase (js/game.js's
-// _updateTeleportPads) — a same-floor round trip (climbing reuses the same
-// private room, see server/index.js's ascentClimb), not netEnterLocation.
-function netAscentClimb()  { if (socket?.connected) socket.emit('ascentClimb'); }
-// Sent once the result banner has been shown for a finished climb — same
-// round-trip netFearReturn uses.
-function netAscentReturn() { if (socket?.connected) socket.emit('ascentReturn'); }
-
-// ── Восхождение (Ascent) ─────────────────────────────────────────────────────
-// On-demand climbing instance, same shape as Fear just above: entering IS
-// starting (ascentStarted), no separate register/queue step. Differs from
-// Fear in one way — clearing a floor doesn't auto-advance, it arms the
-// staircase (ascentCleared) and waits for the player to walk onto it
-// (js/game.js's _ascentReady/_ascentStair), which is what actually fires
-// ascentClimb and gets the next floor's ascentFloor event back.
-function _initAscentHandlers(s) {
-  s.on('ascentState', (st) => {
-    _ascentState = {
-      maxAttempts: st.maxAttempts || _ascentState.maxAttempts || 2,
-      maxFloor: st.maxFloor || _ascentState.maxFloor || 50,
-      minLevel: st.minLevel != null ? st.minLevel : (_ascentState.minLevel || 1),
-      attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _ascentState.attemptsLeft,
-    };
-    _ascentInRun = !!st.inRun;
-    _ascentFloor = st.floor || 0;
-    _ascentCleared = !!st.cleared;
-    if (typeof _ascentReady !== 'undefined') _ascentReady = _ascentCleared;
-    if (typeof onAscentState === 'function') onAscentState();
-  });
-
-  s.on('ascentError', ({ msg }) => {
-    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
-  });
-
-  s.on('ascentStarted', ({ x, y, stairX, stairY, hp, maxFloor, attemptsLeft, readyAt }) => {
-    if (!player) return;
-    _ascentInRun = true;
-    // Floor 1 doesn't actually spawn until readyAt (ASCENT_START_DELAY_MS
-    // after entry) — floor stays 0 until the ascentFloor event below
-    // confirms it's really up. Same grace-window shape as Fear's own wave 1.
-    _ascentFloor = 0;
-    _ascentCleared = false;
-    if (maxFloor) _ascentState = { ..._ascentState, maxFloor };
-    if (attemptsLeft !== undefined) _ascentState = { ..._ascentState, attemptsLeft };
-    if (hp) player.hp = hp;
-    if (typeof _ascentStair !== 'undefined' && stairX != null && stairY != null) {
-      _ascentStair = { x: stairX, y: stairY };
-    }
-    if (typeof _ascentReady !== 'undefined') _ascentReady = false;
-    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('ascentLbl'));
-    else { player.x = x; player.y = y; }
-    // Same reasoning as fearStarted above — close the events panel and show
-    // the freeze-countdown overlay for the entry grace window.
-    if (typeof closeEventsPanel === 'function') closeEventsPanel();
-    if (readyAt && typeof showAscentCountdown === 'function') showAscentCountdown(readyAt);
-    if (typeof onAscentState === 'function') onAscentState();
-  });
-
-  // A new floor just spawned — either floor 1 (after the entry grace window)
-  // or the floor just climbed to. x/y are only present for the latter (a
-  // climb repositions the player back to the entry point; floor 1 doesn't
-  // need to, ascentStarted already placed them there).
-  s.on('ascentFloor', ({ floor, maxFloor, x, y }) => {
-    _ascentFloor = floor || 0;
-    _ascentCleared = false;
-    if (maxFloor) _ascentState = { ..._ascentState, maxFloor };
-    if (typeof _ascentReady !== 'undefined') _ascentReady = false;
-    if (typeof _ascentClimbSent !== 'undefined') _ascentClimbSent = false;
-    if (x != null && y != null) {
-      // Gold + an up-chevron instead of the default blue "warped through a
-      // portal" look (_teleportTo) — this is a climb, not a teleport, and
-      // js/game.js now draws the staircase itself as real stone steps rather
-      // than a swirl, so the reposition fx should match.
-      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('ascentLbl'), '#ffcf50', '⬆');
-      else if (player) { player.x = x; player.y = y; }
-    }
-    if (typeof hideAscentCountdown === 'function') hideAscentCountdown();
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('ascentFloorMsg', { floor: _ascentFloor, max: _ascentState.maxFloor }), '#ffcf50');
-    if (typeof Sound !== 'undefined') Sound.bossSpawn();
-    if (typeof onAscentState === 'function') onAscentState();
-  });
-
-  // The current floor's last monster just fell — the staircase is now
-  // active (js/game.js draws/arms it via _ascentReady/_ascentStair).
-  s.on('ascentCleared', () => {
-    _ascentCleared = true;
-    if (typeof _ascentReady !== 'undefined') _ascentReady = true;
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('ascentClearedMsg'), '#ffe08f');
-    if (typeof onAscentState === 'function') onAscentState();
-  });
-
-  // Run over — either died mid-climb (cleared: false) or climbed past
-  // ASCENT_MAX_FLOOR (cleared: true). Same death-already-handled-elsewhere
-  // reasoning as fearFinished above.
-  s.on('ascentFinished', ({ cleared, floor }) => {
-    _ascentInRun = false;
-    _ascentFloor = 0;
-    _ascentCleared = false;
-    if (typeof _ascentReady !== 'undefined') _ascentReady = false;
-    if (typeof hideAscentCountdown === 'function') hideAscentCountdown();
-    const msg = cleared ? t('ascentClimbedAllMsg') : tVars('ascentDiedMsg', { floor: floor || 0, max: _ascentState.maxFloor });
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
-    if (cleared && typeof netAscentReturn === 'function') netAscentReturn();
-    if (typeof netAscentSync === 'function') netAscentSync();
-    if (typeof onAscentState === 'function') onAscentState();
   });
 }
 

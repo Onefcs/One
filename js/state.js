@@ -161,16 +161,6 @@ let _serverPlacedAt = 0;
 let _fearInRun = false;
 let _fearWave = 0;
 
-// Восхождение (Ascent) — same on-demand shape as Fear above (see js/
-// network.js's netAscentEnter/ascentStarted), but with a floor cleared
-// separately from advancing it: `cleared` marks the current floor's
-// staircase active (js/game.js's _ascentReady mirrors this), `floor` only
-// changes once the player actually climbs (ascentClimb).
-let _ascentState = { attemptsLeft: null, maxAttempts: 2, maxFloor: 50, minLevel: 1 };
-let _ascentInRun = false;
-let _ascentFloor = 0;
-let _ascentCleared = false;
-
 // Сезон — points race with a fixed end date. Everything here is pushed by the
 // server (points and quest progress are server-owned, see the seasonSync
 // handler in server/index.js); nothing is computed locally.

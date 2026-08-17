@@ -1520,16 +1520,6 @@ const _GW_PAD_DY = _PORTAL_DY;
 let _gwPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
-// Восхождение (Ascent) staircase — unlike every other pad above (fixed hub
-// geometry, rebuilt in _buildArmGates from the dungeon payload), this one's
-// position is private per-run and comes from the ascentStarted socket event
-// (js/network.js), not from `dungeon` at all — Ascent's own lane geometry is
-// deliberately excluded from Room.dungeonData server-side, same as Fear's.
-// Only drawn/triggerable once the current floor is cleared (_ascentReady) —
-// before that the room is mid-fight and there's nothing to climb yet.
-let _ascentStair = null;   // {x, y} — set once per run, same room reused every floor
-let _ascentReady = false;  // true once the current floor's monsters are cleared
-let _ascentClimbSent = false; // guards against re-emitting netAscentClimb every frame while standing on the stairs
 let _portalModalOpen = false; // true while the destination-picker modal is up
 let _portalDismissed = false; // player closed it manually; don't reopen until they step away and back
 // World boss state as the server last reported it: spawnAt is a summon already
@@ -1540,12 +1530,6 @@ let _evtHpCd = 0;
 
 function _buildArmGates() {
   _closePortalModal();
-  // Ascent's staircase is private-run state, not part of any `dungeon`
-  // payload (see _ascentStair's own comment) — reset it on every floor
-  // rebuild so a stale marker/trigger can never survive onto a different
-  // floor. The ascentStarted/ascentFloor/ascentCleared handlers (js/
-  // network.js) set it back for as long as an Ascent run is actually live.
-  _ascentStair = null; _ascentReady = false; _ascentClimbSent = false;
   if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _raceBarriers = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
@@ -1614,20 +1598,15 @@ function _evtArenaOpen() {
          (typeof worldDrops !== 'undefined' && worldDrops.size > 0);
 }
 
-// color/arrow default to the blue "warped through a portal" look every
-// other caller wants (deathBattleStarted, arena3Started, race10Started,
-// fearStarted and each event's return path); Ascent's own floor climbs pass
-// a gold color and an up-chevron instead, so a climb reads as "walked up a
-// step" rather than "teleported somewhere" — see the ascentStarted/
-// ascentFloor handlers, js/network.js.
-function _teleportTo(tx, ty, label, color = '#7fd7ff', arrow = '→') {
-  // Every server-driven placement lands here, so this is the one place that
-  // has to record when it happened.
+function _teleportTo(tx, ty, label) {
+  // Every server-driven placement lands here (deathBattleStarted,
+  // arena3Started, race10Started, fearStarted and each event's return path),
+  // so this is the one place that has to record when it happened.
   _serverPlacedAt = Date.now();
   player.x = tx; player.y = ty;
   camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2; clampCamera();
-  spawnBurst(player.x, player.y, color, 20);
-  dmgNum(player.x, player.y - 30, `${arrow} ${label}`, color, 15);
+  spawnBurst(player.x, player.y, '#7fd7ff', 20);
+  dmgNum(player.x, player.y - 30, `→ ${label}`, '#7fd7ff', 15);
 }
 
 // Real floor transition (hub <-> arm) — replaces _teleportTo for the pads
@@ -1700,17 +1679,6 @@ function _updateTeleportPads(dt) {
   // "stranded with the window shut" case left to special-case here.
   if (_gwOpen() && _gwPad && dist(player.x, player.y, _gwPad.x, _gwPad.y) < TRIGGER_R) {
     _requestEnterLocation('guildWar', typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
-  }
-  // Восхождение: walking onto the staircase once the floor is cleared sends
-  // netAscentClimb (a same-floor socket round trip, not netEnterLocation —
-  // climbing doesn't change floors, the server just reuses the same private
-  // room for the next one). _ascentClimbSent guards against re-sending every
-  // frame while standing there; the ascentFloor/ascentFinished handlers
-  // (js/network.js) reset it back to false for the next climb.
-  if (_ascentReady && _ascentStair && !_ascentClimbSent &&
-      dist(player.x, player.y, _ascentStair.x, _ascentStair.y) < TRIGGER_R) {
-    _ascentClimbSent = true;
-    if (typeof netAscentClimb === 'function') netAscentClimb();
   }
 }
 
@@ -1883,68 +1851,6 @@ function _drawSwirlPad(x, y, label, theme) {
   ctx.fillText(label, sx, sy + baseR + 16);
 }
 
-// Восхождение's staircase — a real flight of stone steps (viewed from
-// above), not a magic teleport swirl: a player reading _drawSwirlPad's ring
-// as "a portal" kept expecting to be warped, when climbing a floor is meant
-// to feel like walking up stairs in a castle. Steps run along +X because
-// that is the direction the player actually approaches from (battleX sits
-// west of stairX — see generateAscent, server/game/dungeon.js): each step
-// is drawn a shade lighter than the last toward the east/landing edge, the
-// way a real staircase catches more light near its top, and a chevron at
-// the far edge points the way up.
-function _drawStaircase(x, y, label) {
-  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
-  if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
-  if (sx < -90 || sx > W + 90 || sy < -90 || sy > H + 90) return;
-  const STEPS = 6;
-  const totalW = 100 * ZOOM, totalH = 54 * ZOOM;
-  const stepW = totalW / STEPS;
-  const x0 = sx - totalW / 2, y0 = sy - totalH / 2;
-  const tsec = _nowMs / 1000;
-  const pulse = 0.5 + 0.5 * Math.sin(tsec * 2.1);
-
-  ctx.save();
-  // Soft gold glow underneath, so the staircase still reads as "special/
-  // interactive" from a distance the way every other pad's glow does.
-  const glow = ctx.createRadialGradient(sx, sy, totalW * 0.1, sx, sy, totalW * 0.85);
-  glow.addColorStop(0, `rgba(255,196,80,${0.26 + 0.08 * pulse})`);
-  glow.addColorStop(1, 'rgba(255,196,80,0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(sx, sy, totalW * 0.85, 0, Math.PI * 2); ctx.fill();
-
-  // Stone treads, each a touch lighter than the last toward the landing —
-  // a flat top-down stand-in for rising steps, same trick top-down tile art
-  // uses to fake elevation with shading alone.
-  for (let i = 0; i < STEPS; i++) {
-    const f = i / (STEPS - 1);
-    const shade = 74 + Math.round(f * 92); // 74 (bottom, shadowed) -> 166 (top, lit)
-    ctx.fillStyle = `rgb(${shade},${shade - 8},${Math.max(0, shade - 34)})`;
-    ctx.fillRect(x0 + i * stepW, y0, Math.max(1, stepW - 2), totalH);
-    // Riser highlight — a bright line along each step's leading (east) edge.
-    ctx.fillStyle = `rgba(255,224,150,${0.3 + f * 0.4})`;
-    ctx.fillRect(x0 + (i + 1) * stepW - 2.2 * ZOOM, y0, 2.2 * ZOOM, totalH);
-  }
-  ctx.strokeStyle = 'rgba(40,26,10,0.7)';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(x0, y0, totalW, totalH);
-
-  // Up-chevron pulsing at the landing end, pointing the way to climb.
-  ctx.globalAlpha = 0.6 + 0.35 * pulse;
-  ctx.strokeStyle = '#ffe9b0';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(x0 + totalW - 16, sy - 9); ctx.lineTo(x0 + totalW - 5, sy); ctx.lineTo(x0 + totalW - 16, sy + 9);
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.font = 'bold 11px system-ui, Arial';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-  ctx.strokeText(label, sx, sy + totalH / 2 + 16);
-  ctx.fillStyle = '#ffe08f';
-  ctx.fillText(label, sx, sy + totalH / 2 + 16);
-}
-
 function drawTeleportPads() {
   if (!player) return;
   if (_portalPad) _drawSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт', 'blue');
@@ -1954,11 +1860,6 @@ function drawTeleportPads() {
   // other pad still uses — see _SWIRL_THEMES.
   if (_evtArenaOpen() && _evtPad) _drawSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
   if (_gwOpen() && _gwPad) _drawSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', 'green');
-  // Ascent staircase — only drawn once the current floor is actually
-  // cleared (_ascentReady); before that there's nothing to climb yet.
-  if (_ascentReady && _ascentStair) {
-    _drawStaircase(_ascentStair.x, _ascentStair.y, typeof t === 'function' ? t('ascentStairLbl') : 'Лестница');
-  }
   // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue
   // swirl the hub portal itself uses, redrawn every frame centred on the
   // player so it visibly follows them while they're held still. No label:
@@ -2197,27 +2098,6 @@ function _drawCrack(c, x, y, tx, ty, color, segLen) {
   c.stroke();
 }
 
-// One tile of the Ascent spiral staircase (dungeon.ascent.spiral) — dark
-// basalt at the outer/entry end warming to gold-lit stone at the centre/
-// landing end. Baked straight into the floor raster (not an HUD overlay) so
-// the player's own avatar visibly winds up a real corridor with ordinary
-// movement — a genuine spiral climbed by walking it, not a straight strip
-// of tinted floor standing in for one.
-function _drawAscentSpiralTile(c, x, y, tx, ty, prog) {
-  const base = _lerpHexColor('#241512', '#8a5a2a', prog);
-  c.fillStyle = _shadeHexColor(base, (_tileHash(tx, ty, 30) - 0.5) * 0.08);
-  c.fillRect(x, y, TILE, TILE);
-  // Seam lines on the tile's own right/bottom edge, same convention the
-  // normal floor pass uses below — brighter toward the landing, standing in
-  // for lit stone rather than shadowed mortar. Every leg of a spiral runs a
-  // different direction, so (unlike the old straight strip) there's no
-  // single "leading edge" to highlight — this reads consistently from any
-  // approach angle instead.
-  c.fillStyle = `rgba(255,214,140,${0.2 + prog * 0.5})`;
-  c.fillRect(x, y + TILE - 2, TILE, 2);
-  c.fillRect(x + TILE - 2, y, 2, TILE);
-}
-
 // A soft radial grime/blood stain blob.
 function _drawStain(c, x, y, radius, color) {
   const g = c.createRadialGradient(x, y, 0, x, y, radius);
@@ -2267,53 +2147,6 @@ function _isFarmZoneTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
-// Восхождение (Ascent) gets its own dark, lava-lit palette instead of the
-// default biome theme — near-black scorched basalt walls/floor, with bright
-// glowing orange fissures standing in for the blood/ember stains the other
-// reskinned zones get (see the stain pass in _buildChunk below), so a "dark,
-// lava" dungeon actually looks like one instead of just another normal room
-// reused across all 50 floors.
-const _ASCENT_WALL    = '#190d09';
-const _ASCENT_FLOOR_A = '#0f0705';
-const _ASCENT_FLOOR_B = '#1c0d07';
-function _isAscentTile(tx, ty) {
-  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.bounds;
-  return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
-}
-
-// The spiral staircase itself (dungeon.ascent.spiral, server/game/
-// dungeon.js) — a real winding corridor of floor tiles the player walks
-// across to actually climb, not an instant-trigger pad floating in an
-// otherwise flat room. See the "stairs, not a portal" reasoning at
-// _drawStaircase's own comment. Returns a progress fraction (0 at the
-// spiral's outer/entry end, 1 at its centre/landing end) for any tile
-// that's part of it, or null for a tile that isn't.
-function _ascentSpiralProgressAt(tx, ty) {
-  const sp = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.spiral;
-  if (!sp) return null;
-  const land = sp.landing;
-  if (land && tx >= land.x - land.half && tx <= land.x + land.half &&
-      ty >= land.y - land.half && ty <= land.y + land.half) return 1;
-  for (let i = 0; i < sp.legs.length; i++) {
-    const leg = sp.legs[i];
-    const lo = sp.half;
-    if (leg.y0 === leg.y1) {
-      if (ty < leg.y0 - lo || ty > leg.y0 + lo) continue;
-      const xa = Math.min(leg.x0, leg.x1), xb = Math.max(leg.x0, leg.x1);
-      if (tx < xa || tx > xb) continue;
-      const f = (leg.x1 - leg.x0) === 0 ? 0 : (tx - leg.x0) / (leg.x1 - leg.x0);
-      return leg.t0 + (leg.t1 - leg.t0) * Math.max(0, Math.min(1, f));
-    } else {
-      if (tx < leg.x0 - lo || tx > leg.x0 + lo) continue;
-      const ya = Math.min(leg.y0, leg.y1), yb = Math.max(leg.y0, leg.y1);
-      if (ty < ya || ty > yb) continue;
-      const f = (leg.y1 - leg.y0) === 0 ? 0 : (ty - leg.y0) / (leg.y1 - leg.y0);
-      return leg.t0 + (leg.t1 - leg.t0) * Math.max(0, Math.min(1, f));
-    }
-  }
-  return null;
-}
-
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -2347,7 +2180,6 @@ function _buildChunk(cx, cy) {
   const mortarWallRace10 = _shadeHexColor(_RACE10_WALL, -0.45);
   const mortarWallGw = _shadeHexColor(_GW_WALL, -0.45);
   const mortarWallFarm = _shadeHexColor(_FARM_WALL, -0.45);
-  const mortarWallAscent = _shadeHexColor(_ASCENT_WALL, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
@@ -2355,9 +2187,8 @@ function _buildChunk(cx, cy) {
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
-      const inAscent = !inTower && !inGw && !inFarm && _isAscentTile(tx, ty);
-      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : inAscent ? _ASCENT_WALL : th.wallColor;
-      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : inAscent ? mortarWallAscent : mortarWall;
+      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : th.wallColor;
+      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : mortarWall;
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2378,7 +2209,6 @@ function _buildChunk(cx, cy) {
   const mortarFloorRace10 = _shadeHexColor(_RACE10_FLOOR_A, -0.35);
   const mortarFloorGw = _shadeHexColor(_GW_FLOOR_A, -0.35);
   const mortarFloorFarm = _shadeHexColor(_FARM_FLOOR_A, -0.35);
-  const mortarFloorAscent = _shadeHexColor(_ASCENT_FLOOR_A, -0.35);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -2386,46 +2216,26 @@ function _buildChunk(cx, cy) {
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
-      const inAscent = !inTower && !inGw && !inFarm && _isAscentTile(tx, ty);
-      // The spiral staircase overrides the flat lava floor entirely for its
-      // own tiles — real ground the player winds up, not a texture variant
-      // of the surrounding room.
-      if (inAscent) {
-        const spiralProg = _ascentSpiralProgressAt(tx, ty);
-        if (spiralProg != null) { _drawAscentSpiralTile(c, x, y, tx, ty, spiralProg); continue; }
-      }
-      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inAscent ? _ASCENT_FLOOR_A : th.floorA;
-      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inAscent ? _ASCENT_FLOOR_B : th.floorB;
-      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inAscent ? mortarFloorAscent : mortarFloor;
+      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : th.floorA;
+      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : th.floorB;
+      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : mortarFloor;
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
       c.fillRect(x, y + TILE - 2, TILE, 2);
       c.fillRect(x + TILE - 2, y, 2, TILE);
-      // Ascent's cracks glow like lava fissures instead of the usual dark
-      // mortar line — everywhere else a crack is a shadowed seam, here it's
-      // the molten rock showing through.
-      if (_tileHash(tx, ty, 1) < (inAscent ? 0.22 : 0.1)) {
+      if (_tileHash(tx, ty, 1) < 0.1) {
         const crx = x + 8 + _tileHash(tx, ty, 2) * (TILE - 16);
         const cry = y + 8 + _tileHash(tx, ty, 3) * (TILE - 16);
-        _drawCrack(c, crx, cry, tx, ty, inAscent ? 'rgba(255,110,20,0.85)' : mortar, 6);
+        _drawCrack(c, crx, cry, tx, ty, mortar, 6);
       }
       // Bloodier and far more frequent stains inside the tower — the whole
-      // point of the reskin is that it actually looks like the name. Ascent
-      // gets its own frequent, bright glowing lava-pool stains instead.
-      const stainChance = inTower ? 0.35 : inAscent ? 0.28 : 0.06;
+      // point of the reskin is that it actually looks like the name.
+      const stainChance = inTower ? 0.35 : 0.06;
       if (_tileHash(tx, ty, 4) < stainChance) {
         const sx = x + TILE * (0.3 + _tileHash(tx, ty, 5) * 0.4);
         const sy = y + TILE * (0.3 + _tileHash(tx, ty, 6) * 0.4);
-        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6,
-          inTower ? 'rgba(140,10,10,0.55)' : inAscent ? 'rgba(255,90,20,0.5)' : 'rgba(60,10,10,0.35)');
-      }
-      // A second, smaller, brighter core inside some of those lava pools —
-      // reads as a hot molten centre rather than a flat orange blob.
-      if (inAscent && _tileHash(tx, ty, 22) < 0.12) {
-        const sx = x + TILE * (0.35 + _tileHash(tx, ty, 23) * 0.3);
-        const sy = y + TILE * (0.35 + _tileHash(tx, ty, 24) * 0.3);
-        _drawStain(c, sx, sy, 3 + _tileHash(tx, ty, 25) * 3, 'rgba(255,220,120,0.75)');
+        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, inTower ? 'rgba(140,10,10,0.55)' : 'rgba(60,10,10,0.35)');
       }
       // Guild War: scorched siege ground — frequent dark ash patches, plus a
       // rare glowing violet ember that echoes the tower's crystal roof gems,
@@ -2455,8 +2265,7 @@ function _buildChunk(cx, cy) {
       if (!isFloor(tx, ty + 1)) continue;
       const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
         : _isGuildWarTile(tx, ty) ? _GW_WALL
-        : _isFarmZoneTile(tx, ty) ? _FARM_WALL
-        : _isAscentTile(tx, ty) ? _ASCENT_WALL : th.wallColor;
+        : _isFarmZoneTile(tx, ty) ? _FARM_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));

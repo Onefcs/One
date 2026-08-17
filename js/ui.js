@@ -1379,7 +1379,6 @@ function _currentLocationBounds() {
     { z: dungeon.farmZone, zoneLabel: 'farmZoneLbl' },
     { z: dungeon.guildWar, zoneLabel: 'guildWarLbl' },
     { z: dungeon.race10,   zoneLabel: 'race10ArenaLbl' },
-    { z: dungeon.ascent,   zoneLabel: 'ascentLbl' },
   ];
   for (const { z, zoneLabel } of namedZones) {
     const zb = z && z.bounds;
@@ -1533,15 +1532,6 @@ function updateFloorUI() {
   // monsters nobody here actually is. Swap to its own species list instead.
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && _b.zoneLabel === 'farmZoneLbl') { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
-  // Восхождение (Ascent) isn't part of the arm/level system either — its 50
-  // floors reuse the exact same species pipeline as the open world (see
-  // Room.ascentSpawnFloor), just capped at ASCENT_MAX_FLOOR, and its reward
-  // is a completely different shape (xp ×10 + a flat Liberty chance, no gold
-  // or item loot at all — see _rollAscentLoot's removal, server/index.js) so
-  // showing the normal 1-78 bestiary (with its gold/recipe/gear rows) would
-  // both name monsters nobody here fights past floor 50 AND lie about what
-  // they actually drop. Swap to its own list instead.
-  if (_b && _b.zoneLabel === 'ascentLbl') { grid.innerHTML = _ascentMonsterListHtml(); return; }
   let html = '';
   for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
     const armIdx = armIndexForLevel(lvl);
@@ -1711,90 +1701,6 @@ function _farmZoneMonsterListHtml() {
       <div class="mon-body">${_farmDropBodyHtml(e)}</div>
     </div>`).join('');
   return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}`;
-}
-
-// ── Восхождение (Ascent) reference list ─────────────────────────────────
-// Builds the enemy instance exactly as Room.ascentSpawnFloor would spawn it
-// at this floor (same weakMult halving, same xp ×10 — kept in sync with
-// ASCENT_XP_MULT, server/game/Room.js, by comment only, same as every other
-// Ascent constant duplicated client-side elsewhere in this file). No gold
-// field at all: Ascent grants none (calcGoldDrop, shared/definitions.js).
-const _ASCENT_XP_MULT = 10;
-function _liveAscentEnemy(base, lvl, localLvl, maxLocalLvl) {
-  const stats = monsterStatsAtLevel(lvl, base.eType);
-  const weakMult = 0.5;
-  return {
-    ...base, isBoss: false,
-    name: monsterNameAtLevel(base.name, localLvl, false, base.fem, maxLocalLvl),
-    color: monsterColorAtLevel(base.color, base.endColor, localLvl, false, maxLocalLvl),
-    hp: Math.floor(stats.hp * weakMult), atk: Math.floor(stats.atk * weakMult), def: stats.def,
-    spd: base.spd,
-    xp: xpAtLevel(lvl) * _ASCENT_XP_MULT,
-  };
-}
-
-// Deliberately NOT _monsterDropBodyHtml — Ascent's reward shape is
-// completely different (no gold, no recipes/keys/gear/shards/books at all,
-// see the ascent branch removed from _grantKillLoot, server/index.js) so
-// showing that body would just list drops that can never actually happen
-// here. Only stats, xp (already ×10 above) and the one flat Liberty roll.
-function _ascentDropBodyHtml(e) {
-  return `
-    <div class="fi-mstats">
-      <span>HP <b>${e.hp}</b></span>
-      <span>ATK <b>${e.atk}</b></span>
-      <span>DEF <b>${e.def}</b></span>
-      <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
-    </div>
-    <div class="fi-drops-hdr">${t('dropHdr')}</div>
-    <div class="fi-drops">
-      <div class="fi-drop">
-        <span class="fi-drop-lbl">${t('clanPerkXp')}</span>
-        <span class="fi-drop-val" style="color:#b4eb84">${e.xp} XP</span>
-      </div>
-      <div class="fi-drop">
-        <span class="fi-drop-icon"><img src="/images/nexum-coin_v2.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
-        <span class="fi-drop-lbl" style="color:#b2864d">Liberty</span>
-        <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">20%</b></span>
-      </div>
-    </div>`;
-}
-
-// One row per floor 1-ASCENT_MAX_FLOOR, same per-level accordion shape
-// updateFloorUI's main loop builds for the open world — Ascent reuses the
-// identical species pipeline (armIndexForLevel/FLOOR_ENEMIES/
-// bandForLocalLevel), just capped short of the open world's full range and
-// never a boss (Room.ascentSpawnFloor always spawns from the regular pool,
-// even on a level that would be a boss's local level in a real arm).
-function _ascentMonsterListHtml() {
-  let html = '';
-  for (let lvl = 1; lvl <= ASCENT_MAX_FLOOR; lvl++) {
-    const armIdx = armIndexForLevel(lvl);
-    const localLvl = armLocalLevel(lvl);
-    const maxLocalLvl = roomsInArm(armIdx) - 1;
-    const { regular } = _floorEnemyPool(armIdx, localLvl);
-    const variants = regular.map(base => _liveAscentEnemy(base, lvl, localLvl, maxLocalLvl));
-    if (!variants.length) continue;
-    const head = variants[0];
-    const body = variants.map(e => `
-      <div class="mon-variant">
-        ${variants.length > 1 ? `<div class="mon-variant-hdr"><span class="dot" style="background:${e.color}"></span>${e.name}</div>` : ''}
-        ${_ascentDropBodyHtml(e)}
-      </div>`).join('');
-    html += `
-      <div class="mon-item">
-        <div class="mon-hdr" onclick="_toggleMonster(this)">
-          <span class="dot" style="background:${head.color}"></span>
-          <div class="mon-titles">
-            <span class="mon-lvl">${tVars('charLevelFmt', { lvl })}</span>
-            <div class="mon-name-row"><span class="mon-name">${variants.map(v => v.name).join(' / ')}</span></div>
-          </div>
-          <span class="mon-chevron">›</span>
-        </div>
-        <div class="mon-body">${body}</div>
-      </div>`;
-  }
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('ascentBestiaryHint')}</div>${html}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
@@ -4335,7 +4241,6 @@ function openEventsPanel() {
   if (typeof netArena3Sync === 'function') netArena3Sync();
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
-  if (typeof netAscentSync === 'function') netAscentSync();
   _renderEventsBody();
 }
 
@@ -4362,7 +4267,6 @@ function _renderEventsBody() {
                  : _eventTab === 'a3'        ? _arena3BodyHTML()
                  : _eventTab === 'race10'    ? _race10BodyHTML()
                  : _eventTab === 'fear'      ? _fearBodyHTML()
-                 : _eventTab === 'ascent'    ? _ascentBodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
                  : _deathBattleBodyHTML();
 }
@@ -4604,74 +4508,6 @@ function _fearBodyHTML() {
 function onFearState() {
   _updateEventsBtnHighlight();
   if (_eventsPanelOpen() && _eventTab === 'fear') _renderEventsBody();
-}
-
-// ── Восхождение (Ascent) tab ─────────────────────────────────────────────────
-// Same on-demand shape as Fear's own tab above — the action button either
-// starts a climb or shows it's already running. Headline number is the
-// current floor while climbing, otherwise how many daily attempts are left.
-// Unlike Fear, "climbing" itself isn't a button: once a floor clears, the
-// phase line just tells the player to reach the staircase (js/game.js draws
-// and triggers it automatically on approach).
-function _ascentBodyHTML() {
-  const st = (typeof _ascentState !== 'undefined' && _ascentState) || { attemptsLeft: null, maxAttempts: 2, maxFloor: 50, minLevel: 1 };
-  const inRun = typeof _ascentInRun !== 'undefined' && _ascentInRun;
-  const cleared = typeof _ascentCleared !== 'undefined' && _ascentCleared;
-  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = !inRun && lvl < (st.minLevel || 1);
-
-  let phaseTxt, action;
-  if (inRun) {
-    if (_ascentFloor <= 0) phaseTxt = t('fearPhaseReady');
-    else phaseTxt = cleared
-      ? t('ascentPhaseCleared')
-      : tVars('ascentPhaseFighting', { floor: _ascentFloor, max: st.maxFloor });
-    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
-  } else if (tooLow) {
-    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
-  } else if (spent) {
-    phaseTxt = t('a3NoAttempts');
-    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
-  } else {
-    phaseTxt = t('fearPhaseIdle');
-    action = `<button class="db-action" onclick="netAscentEnter()">${t('fearEnterBtn')}</button>`;
-  }
-
-  const countdown = inRun
-    ? `${_ascentFloor > 0 ? _ascentFloor : '–'}/${st.maxFloor}`
-    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
-  const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
-    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
-    : '';
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${score}
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          ${st.minLevel > 1 ? `<li>${tVars('a3Rule5', { n: st.minLevel })}</li>` : ''}
-          <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
-          <li>${tVars('ascentRule2', { n: 30 })}</li>
-          <li>${t('ascentRule3')}</li>
-          <li>${tVars('ascentRule4', { n: st.maxFloor })}</li>
-          <li>${t('fearRule4')}</li>
-          <li>${t('fearRule5')}</li>
-          <li>${t('ascentRule6')}</li>
-        </ul>
-      </div>
-    </div>`;
-}
-
-// Called from the network handlers on every server push.
-function onAscentState() {
-  _updateEventsBtnHighlight();
-  if (_eventsPanelOpen() && _eventTab === 'ascent') _renderEventsBody();
 }
 
 // Called from the network handlers on every server push.
@@ -5067,9 +4903,6 @@ function hideDeathBattleFreeze() { hideFreezeCountdown(); }
 
 function showFearCountdown(readyAt) { showFreezeCountdown(readyAt, t('fearFreezeLbl')); }
 function hideFearCountdown() { hideFreezeCountdown(); }
-
-function showAscentCountdown(readyAt) { showFreezeCountdown(readyAt, t('ascentFreezeLbl')); }
-function hideAscentCountdown() { hideFreezeCountdown(); }
 
 function closeDeathBattleWin() {
   const modal = document.getElementById('db-win-modal');

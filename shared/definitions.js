@@ -308,10 +308,6 @@ function skillPointBudget(lvl, rebirths) {
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
-  // Восхождение (Ascent) grants no gold at all — its only reward besides xp
-  // is the flat ASCENT_LIBERTY_CHANCE Liberty roll (server/index.js's
-  // attack/skillAttack handlers, gated on `arm === 'ascent'`).
-  if (enemy.arm === 'ascent') return 0;
   const g = goldAtLevel(enemy.rlvl || 1);
   if (enemy.isBoss) return g;
   return Math.random() > 0.30 ? 0 : g;
@@ -643,16 +639,6 @@ const QUEST_DEF = [
 // index.js (the UI's wave counter), so it lives here rather than being
 // duplicated in both.
 const FEAR_MAX_WAVE = 39;
-
-// ── Восхождение (Ascent) event ─────────────────────────────────────────────
-// A private, on-demand climb instance (server/game/dungeon.js's `ascent`
-// lane, server/game/Room.js's ascentSpawnFloor/ascentRegisterKill): floor N
-// is 30 aggressive monsters at global level N, N running 1..ASCENT_MAX_FLOOR.
-// Unlike Страх's waves, clearing a floor doesn't auto-advance — the player
-// has to walk to the floor's staircase (ascentClimb) to go up. Shared between
-// Room.js (spawning + the floor-clear check) and server/index.js (the UI's
-// floor counter), so it lives here rather than being duplicated in both.
-const ASCENT_MAX_FLOOR = 50;
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
@@ -1923,7 +1909,7 @@ if (typeof module !== 'undefined') module.exports = {
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, ASCENT_MAX_FLOOR,
+  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
   QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
