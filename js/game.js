@@ -1520,6 +1520,16 @@ const _GW_PAD_DY = _PORTAL_DY;
 let _gwPad = null;
 let _gwPhase = 'closed';
 function _gwOpen() { return _gwPhase === 'live'; }
+// Восхождение (Ascent) staircase — unlike every other pad above (fixed hub
+// geometry, rebuilt in _buildArmGates from the dungeon payload), this one's
+// position is private per-run and comes from the ascentStarted socket event
+// (js/network.js), not from `dungeon` at all — Ascent's own lane geometry is
+// deliberately excluded from Room.dungeonData server-side, same as Fear's.
+// Only drawn/triggerable once the current floor is cleared (_ascentReady) —
+// before that the room is mid-fight and there's nothing to climb yet.
+let _ascentStair = null;   // {x, y} — set once per run, same room reused every floor
+let _ascentReady = false;  // true once the current floor's monsters are cleared
+let _ascentClimbSent = false; // guards against re-emitting netAscentClimb every frame while standing on the stairs
 let _portalModalOpen = false; // true while the destination-picker modal is up
 let _portalDismissed = false; // player closed it manually; don't reopen until they step away and back
 // World boss state as the server last reported it: spawnAt is a summon already
@@ -1530,6 +1540,12 @@ let _evtHpCd = 0;
 
 function _buildArmGates() {
   _closePortalModal();
+  // Ascent's staircase is private-run state, not part of any `dungeon`
+  // payload (see _ascentStair's own comment) — reset it on every floor
+  // rebuild so a stale marker/trigger can never survive onto a different
+  // floor. The ascentStarted/ascentFloor/ascentCleared handlers (js/
+  // network.js) set it back for as long as an Ascent run is actually live.
+  _ascentStair = null; _ascentReady = false; _ascentClimbSent = false;
   if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _raceBarriers = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
@@ -1680,6 +1696,17 @@ function _updateTeleportPads(dt) {
   if (_gwOpen() && _gwPad && dist(player.x, player.y, _gwPad.x, _gwPad.y) < TRIGGER_R) {
     _requestEnterLocation('guildWar', typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий');
   }
+  // Восхождение: walking onto the staircase once the floor is cleared sends
+  // netAscentClimb (a same-floor socket round trip, not netEnterLocation —
+  // climbing doesn't change floors, the server just reuses the same private
+  // room for the next one). _ascentClimbSent guards against re-sending every
+  // frame while standing there; the ascentFloor/ascentFinished handlers
+  // (js/network.js) reset it back to false for the next climb.
+  if (_ascentReady && _ascentStair && !_ascentClimbSent &&
+      dist(player.x, player.y, _ascentStair.x, _ascentStair.y) < TRIGGER_R) {
+    _ascentClimbSent = true;
+    if (typeof netAscentClimb === 'function') netAscentClimb();
+  }
 }
 
 // Destination-picker modal for the single hub portal — lists every arm +
@@ -1781,6 +1808,8 @@ const _SWIRL_THEMES = {
   blue:  { glow: '70,170,255',  disc: 'rgba(12,55,110,0.45)', ring1: '#4fc3ff', ring2: '#bfe9ff', label: '#8fd8ff' },
   red:   { glow: '255,80,80',   disc: 'rgba(110,15,15,0.45)', ring1: '#ff5252', ring2: '#ffb0b0', label: '#ff9a9a' },
   green: { glow: '80,235,140',  disc: 'rgba(12,90,45,0.45)',  ring1: '#4fe38a', ring2: '#bfffd9', label: '#8fffbf' },
+  // Восхождение's staircase — gold, distinct from every other pad's family.
+  gold:  { glow: '255,196,80',  disc: 'rgba(110,80,12,0.45)', ring1: '#ffcf50', ring2: '#ffe9b0', label: '#ffe08f' },
 };
 
 // A swirling teleport circle — a soft outer glow, a slowly counter-rotating
@@ -1860,6 +1889,11 @@ function drawTeleportPads() {
   // other pad still uses — see _SWIRL_THEMES.
   if (_evtArenaOpen() && _evtPad) _drawSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
   if (_gwOpen() && _gwPad) _drawSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', 'green');
+  // Ascent staircase — only drawn once the current floor is actually
+  // cleared (_ascentReady); before that there's nothing to climb yet.
+  if (_ascentReady && _ascentStair) {
+    _drawSwirlPad(_ascentStair.x, _ascentStair.y, typeof t === 'function' ? t('ascentStairLbl') : 'Лестница', 'gold');
+  }
   // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue
   // swirl the hub portal itself uses, redrawn every frame centred on the
   // player so it visibly follows them while they're held still. No label:

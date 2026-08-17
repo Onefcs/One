@@ -220,6 +220,22 @@ const I18N_UI = {
   fearRule4:    { ru: 'Смерть выбрасывает из подземелья в центральный зал', en: 'Dying kicks you out of the dungeon, back to the central hall', uk: 'Смерть викидає з підземелля до центрального залу', es: 'Morir te expulsa de la mazmorra, de vuelta al salón central', tr: 'Ölmek seni zindandan atıp merkez salona geri gönderir', pt: 'Morrer te expulsa da masmorra, de volta ao salão central' },
   fearRule5:    { ru: 'Опыт с монстров увеличен в 10 раз', en: 'XP from monsters is multiplied by 10', uk: 'Досвід з монстрів збільшено у 10 разів', es: 'La XP de los monstruos se multiplica por 10', tr: 'Canavarlardan gelen tecrübe 10 kat artırıldı', pt: 'XP dos monstros multiplicada por 10' },
 
+  // ── Восхождение (Ascent) ──────────────────────────────────────────────────
+  ascentTab:      { ru: 'Восхождение', en: 'Ascent' },
+  ascentLbl:      { ru: 'Восхождение', en: 'Ascent' },
+  ascentFreezeLbl: { ru: 'Монстры появятся через', en: 'Monsters arrive in' },
+  ascentPhaseFighting: { ru: 'Этаж {floor}/{max}', en: 'Floor {floor}/{max}' },
+  ascentPhaseCleared: { ru: 'Этаж зачищен! Дойдите до лестницы', en: 'Floor cleared! Reach the staircase' },
+  ascentFloorMsg: { ru: 'Этаж {floor} из {max}', en: 'Floor {floor} of {max}' },
+  ascentClearedMsg: { ru: 'Этаж зачищен! Лестница открыта', en: 'Floor cleared! The staircase is open' },
+  ascentClimbedAllMsg: { ru: 'Вы поднялись на самый верх башни!', en: 'You reached the very top!' },
+  ascentDiedMsg:  { ru: 'Вы погибли на этаже {floor} из {max}', en: 'You died on floor {floor} of {max}' },
+  ascentRule2:    { ru: 'На каждом этаже {n} агрессивных монстров', en: 'Each floor has {n} aggressive monsters' },
+  ascentRule3:    { ru: 'Монстры становятся сильнее с каждым этажом — уровень равен номеру этажа', en: 'Monsters get stronger with every floor — level equals the floor number' },
+  ascentRule4:    { ru: 'Поднимитесь до {n}-го этажа, чтобы пройти испытание целиком', en: 'Reach floor {n} to clear the whole climb' },
+  ascentRule6:    { ru: 'Шанс получить предмет с убитого монстра — 30%', en: '30% chance to get an item from a killed monster' },
+  ascentStairLbl: { ru: 'Лестница', en: 'Staircase' },
+
   wbPhaseAlive: { ru: 'Босс на карте', en: 'Boss is on the map', uk: 'Бос на карті', es: 'El jefe está en el mapa', tr: 'Patron haritada', pt: 'O chefe está no mapa' },
   wbPhaseSummon:{ ru: 'До появления босса', en: 'Boss appears in', uk: 'До появи боса', es: 'El jefe aparece en', tr: 'Patron geliyor', pt: 'O chefe aparece em' },
   wbPhaseIdle:  { ru: 'До следующего босса', en: 'Next boss in', uk: 'До наступного боса', es: 'Próximo jefe en', tr: 'Sonraki patrona', pt: 'Próximo chefe em' },

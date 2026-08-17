@@ -299,7 +299,32 @@ const FEAR_AGGRO_R = 500;
 // Species/stat lookup by eid, built once — same table server/game/dungeon.js
 // builds locally for the open world's own spawns (`_enemyByEid` there), needed
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
+// Reused below for Ascent's floors too — it's just a full eid->def lookup,
+// nothing fear-specific about it.
 const _FEAR_ENEMY_BY_EID = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+
+// ── Восхождение (Ascent) tuning ───────────────────────────────────────────────
+// ASCENT_MAX_FLOOR (the last floor's level) is shared with server/index.js for
+// the UI's floor counter (shared/definitions.js); these two are only ever
+// read inside ascentSpawnFloor below, so they stay local.
+const ASCENT_MOBS_PER_FLOOR = 30; // monsters per floor
+const ASCENT_XP_MULT        = 10; // XP multiplier for every Ascent-event kill
+// Same reconnect-hold reasoning as FEAR_RECONNECT_GRACE_MS above, kept in
+// sync by comment with server/index.js's own ASCENT_RECONNECT_GRACE_MS.
+const ASCENT_RECONNECT_GRACE_MS = 45000;
+// A floor spawns in a ring this far from the room's centre (see
+// ascentSpawnFloor) — proportioned the same way FEAR_SPAWN_RING_MIN/MAX are
+// to FEAR_ROOM, just scaled up for ASCENT_ROOM's bigger 20-tile room
+// (dungeon.js) — inside the room's own walls with margin to spare, and well
+// inside the aggro/target-search radius below so every monster finds the
+// player on its first AI tick.
+const ASCENT_SPAWN_RING_MIN = 200;
+const ASCENT_SPAWN_RING_MAX = 300;
+// Aggro radius for an Ascent floor — same "must clear the room's own
+// diagonal" reasoning FEAR_AGGRO_R's comment spells out. ASCENT_ROOM (20
+// tiles) has a diagonal of ~1131px; aggroR * 2.2 (the de-aggro/target-search
+// threshold) needs to clear that with room to spare.
+const ASCENT_AGGRO_R = 900;
 
 // Enemy interest management. ENEMY_AOI_R (shared/definitions.js — the client
 // prunes against the same number) is the radius each player is streamed
@@ -505,6 +530,16 @@ class Room {
     // lane index -> { telegramId, timer, x, y, hp } for a hall whose owner
     // just disconnected — see _fearGraceStart/_fearGraceClaim.
     this._fearGrace = new Map();
+    // ── Восхождение (Ascent) lane bookkeeping ───────────────────────────────
+    // Same shape as the Fear bookkeeping just above, keyed off p._ascentLane
+    // instead of p._fearLane: owner, monsters still alive on the CURRENT
+    // floor, a reconnect-disconnect grace hold, and (unique to Ascent) which
+    // lanes have cleared their current floor and are waiting at the
+    // staircase for ascentClimb — see ascentRegisterKill/ascentReadyToClimb.
+    this._ascentOwner = new Map();
+    this._ascentAlive = new Map();
+    this._ascentGrace = new Map();
+    this._ascentCleared = new Map();
   }
 
   // ── Event boss ────────────────────────────────────────────────────────────
@@ -846,6 +881,268 @@ class Room {
     if (ownerSid && removedIds.length) this.io.to(ownerSid).emit('enemiesRemoved', { ids: removedIds });
   }
 
+  // ── Восхождение (Ascent) ────────────────────────────────────────────────
+  // A private climb instance, one lane per concurrent entrant (server/game/
+  // dungeon.js's `ascent.lanes` — in practice always length 1, since a fresh
+  // private Room is created per climber, see _createAscentRoom, server/
+  // index.js). Isolation from the rest of the world reuses the exact same
+  // machinery race10/Fear lanes rely on (_raceVisible, nearbyPlayerIds,
+  // mapBlips), keyed off p._ascentLane; see those for the actual filtering.
+  //
+  // Unlike Fear's waves, clearing a floor's monsters does NOT immediately
+  // spawn the next floor — it marks the lane "cleared" (_ascentCleared) and
+  // waits for the player to walk onto the room's staircase (ascentClimb,
+  // server/index.js), which is what actually calls ascentSpawnFloor for the
+  // next level. See ascentRegisterKill/ascentReadyToClimb below.
+
+  // Same reconciliation reasoning as _fearReconcile — re-derives lane
+  // ownership from live player state rather than trusting the bookkeeping,
+  // so a socket that vanished without going through any exit path can't
+  // leave a lane stuck occupied forever. A lane on hold in _ascentGrace is
+  // left alone for the same reason _fearReconcile leaves _fearGrace holds
+  // alone: the grace window's whole point is that "gone" isn't final yet.
+  _ascentReconcile() {
+    if (!this._ascentOwner.size) return;
+    for (const [lane, sid] of [...this._ascentOwner]) {
+      if (this._ascentGrace.has(lane)) continue;
+      const owner = this.players.get(sid);
+      if (owner && owner._ascentLane === lane) continue;
+      if (owner) owner._ascentLane = null;
+      this.ascentReleaseLane(lane);
+    }
+  }
+
+  // Holds a disconnecting climber's room open instead of releasing it on the
+  // spot — same reasoning as _fearGraceStart. Floor 1 isn't spawned yet (see
+  // ascentEnter's ASCENT_START_DELAY_MS grace) has no monsters to preserve,
+  // but the lane claim itself still needs to survive the disconnect.
+  _ascentGraceStart(p) {
+    const lane = p._ascentLane;
+    if (lane == null) return;
+    if (!p.telegramId) { this.ascentReleaseLane(lane); return; }
+    const timer = setTimeout(() => {
+      try {
+        this._ascentGrace.delete(lane);
+        this.ascentReleaseLane(lane);
+      } catch (err) {
+        console.error(`[Room ${this.floor} ascentGrace]`, err);
+      }
+    }, ASCENT_RECONNECT_GRACE_MS);
+    this._ascentGrace.set(lane, { telegramId: p.telegramId, timer, x: p.x, y: p.y, hp: p.hp });
+  }
+
+  // Reclaims a held lane for a reconnecting account — called from addPlayer.
+  // Returns the spot to resume at, or null if this account has no lane on
+  // hold. See _fearGraceClaim for the same shape.
+  _ascentGraceClaim(telegramId, newSocketId) {
+    for (const [lane, g] of this._ascentGrace) {
+      if (g.telegramId !== telegramId) continue;
+      clearTimeout(g.timer);
+      this._ascentGrace.delete(lane);
+      this._ascentOwner.set(lane, newSocketId);
+      return { lane, x: g.x, y: g.y, hp: g.hp };
+    }
+    return null;
+  }
+
+  // Claims the first unoccupied lane and places the player at its entry
+  // point, full HP, in one step — the Ascent sibling of fearDeploy. Floor 1
+  // is spawned separately (ascentSpawnFloor), by the caller, after the same
+  // kind of pre-fight grace window Fear uses.
+  ascentDeploy(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const lanes = this._dungeon.ascent.lanes;
+    this._ascentReconcile();
+    const occupied = new Set(this._ascentOwner.keys());
+    this.players.forEach(op => { if (op._ascentLane != null) occupied.add(op._ascentLane); });
+    let lane = -1;
+    for (let i = 0; i < lanes.length; i++) if (!occupied.has(i)) { lane = i; break; }
+    if (lane === -1) return null;
+    const spot = lanes[lane];
+    p.x = spot.entryX; p.y = spot.entryY;
+    p.hp = p.maxHp;
+    p._ascentLane = lane;
+    p._raceLane = null;
+    p._fearLane = null;
+    p._profileRev++;
+    this._ascentOwner.set(lane, socketId);
+    // stairX/stairY: unlike Fear (which sends nothing beyond x/y — every
+    // transition there is a server-pushed teleport), Ascent's climb is a
+    // player-walked trigger, so the client needs the staircase's position
+    // once, up front, to render it and detect proximity to it (see
+    // ascentStarted, server/index.js, and js/game.js's
+    // _updateTeleportPads-style check). It never moves between floors —
+    // the room is reused — so this is only ever sent this one time.
+    return { x: p.x, y: p.y, lane, stairX: spot.stairX, stairY: spot.stairY };
+  }
+
+  // Spawns ASCENT_MOBS_PER_FLOOR monsters at global level `lvl` (capped by
+  // the caller at ASCENT_MAX_FLOOR), scattered in a ring around lane `lane`'s
+  // battle centre — same runtime-spawn approach fearSpawnWave uses, just a
+  // bigger ring for the bigger room. Reuses the same global-level species/
+  // name/color/stat functions the open world's own rooms use, so an Ascent
+  // floor at level 30 looks and hits exactly like an open-world level-30
+  // room would.
+  ascentSpawnFloor(lane, lvl) {
+    // Clear out the floor that just fell before laying down the next one —
+    // same reasoning as _fearPurgeDead: Ascent monsters are exempt from the
+    // tick loop's 12s respawn (they must stay dead for ascentRegisterKill's
+    // count to ever reach zero), so without this every corpse of the climb
+    // stayed in this.enemies until the lane was released.
+    this._ascentPurgeDead(lane);
+    const room = this._dungeon.ascent.lanes[lane];
+    if (!room) return;
+    const armIdx = armIndexForLevel(lvl);
+    const fe = FLOOR_ENEMIES[armIdx];
+    const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
+    const maxLocalLvl = roomsInArm(armIdx) - 1;
+    let spawned = 0;
+    for (let n = 0; n < ASCENT_MOBS_PER_FLOOR; n++) {
+      const pool = bandForLocalLevel(fe, localLvl).pool;
+      const d = _FEAR_ENEMY_BY_EID.get(pool[Math.floor(Math.random() * pool.length)]);
+      if (!d) continue;
+      let ex = room.battleX, ey = room.battleY;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const ang = Math.random() * Math.PI * 2;
+        const ring = ASCENT_SPAWN_RING_MIN + Math.random() * (ASCENT_SPAWN_RING_MAX - ASCENT_SPAWN_RING_MIN);
+        const tx = room.battleX + Math.cos(ang) * ring, ty = room.battleY + Math.sin(ang) * ring;
+        if (!this._isWall(tx, ty)) { ex = tx; ey = ty; break; }
+      }
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      // Same halving buildArm's spawnRoomEnemies applies to every regular
+      // room's monster pack — 30 full-strength monsters converging at once
+      // would be a much rougher fight than the open world ever presents.
+      const weakMult = 0.5;
+      const e = {
+        id: `ascent_${lane}_${this._ascentSeq = (this._ascentSeq || 0) + 1}`,
+        ...d, isBoss: false, arm: 'ascent', lane, rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * weakMult), hp: Math.floor(stats.hp * weakMult),
+        atk: Math.floor(stats.atk * weakMult), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl) * ASCENT_XP_MULT, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        // Pre-aggroed straight out of the spawn, same reasoning as Fear's
+        // waves — a floor is meant to charge the player immediately, not
+        // wait to be pulled. ASCENT_AGGRO_R clears the room's own diagonal
+        // (see its own comment above) so the whole floor stays engaged
+        // wherever the player moves towards the staircase.
+        atkTimer: 1 + Math.random(), aggro: true, aggroR: ASCENT_AGGRO_R,
+        // MUST be set individually — see fearSpawnWave's identical comment
+        // on why a shared/undefined _idx reads as the whole floor being
+        // frozen and then jumping in lockstep.
+        _idx: this._allocIdx(),
+      };
+      this.enemies.push(e);
+      this._enemyMap.set(e.id, e);
+      spawned++;
+    }
+    this._ascentAlive.set(lane, spawned);
+    this._ascentCleared.set(lane, false);
+  }
+
+  // Teleports the player back to lane's entry point and spawns floor `lvl`
+  // there — the single call the ascentClimb handler (server/index.js) makes
+  // once a floor is confirmed cleared, so the reposition and the next
+  // floor's spawn can never land out of step with each other. Returns the
+  // spot teleported to, or null if the player/lane isn't valid.
+  ascentAdvanceFloor(socketId, lane, lvl) {
+    const room = this._dungeon.ascent.lanes[lane];
+    const p = this.players.get(socketId);
+    if (!room || !p) return null;
+    p.x = room.entryX; p.y = room.entryY;
+    p._profileRev++;
+    this.ascentSpawnFloor(lane, lvl);
+    return { x: p.x, y: p.y };
+  }
+
+  // Stair coordinates for a lane — used by server/index.js's
+  // _buildGameStartPayload to re-tell a reconnecting client where the
+  // staircase is, since ascentStarted (which normally carries it) only ever
+  // fires once, on the original entry.
+  ascentStairSpot(lane) {
+    const room = this._dungeon.ascent.lanes[lane];
+    return room ? { x: room.stairX, y: room.stairY } : null;
+  }
+
+  // Who currently owns this lane, or null.
+  ascentOwnerOf(lane) {
+    return this._ascentOwner.get(lane) ?? null;
+  }
+
+  // The lane a player is currently inside, or null.
+  ascentLaneOf(socketId) {
+    const p = this.players.get(socketId);
+    return p ? (p._ascentLane ?? null) : null;
+  }
+
+  // Whether lane's current floor has been fully cleared and is waiting for
+  // ascentClimb — checked server-side by the ascentClimb handler
+  // (server/index.js) before it lets a player advance, the same "server is
+  // the one that actually decides" rule every other trigger tile in the game
+  // follows (client-side proximity is UX only, see js/game.js's
+  // _updateTeleportPads).
+  ascentReadyToClimb(lane) {
+    return this._ascentCleared.get(lane) === true;
+  }
+
+  // Drops the corpses of a lane's just-cleared floor. Split out from
+  // ascentReleaseLane the same way _fearPurgeDead is split from
+  // fearReleaseLane — this is the between-floors sweep, called right before
+  // the next floor's monsters are laid down.
+  _ascentPurgeDead(lane) {
+    let found = false;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.arm === 'ascent' && e.lane === lane && e.hp <= 0) { found = true; break; }
+    }
+    if (!found) return;
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'ascent' || e.lane !== lane || e.hp > 0) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      this._releaseIdx(e);
+      return false;
+    });
+  }
+
+  // Called by server/index.js right after a kill lands on an `ascent`-tagged
+  // enemy. Returns the lane's remaining alive count (0 means the floor is
+  // clear — the caller marks it ready and waits for ascentClimb instead of
+  // spawning the next floor itself, unlike Fear's equivalent).
+  ascentRegisterKill(lane) {
+    const left = Math.max(0, (this._ascentAlive.get(lane) || 0) - 1);
+    this._ascentAlive.set(lane, left);
+    if (left === 0) this._ascentCleared.set(lane, true);
+    return left;
+  }
+
+  // Frees a lane and clears out whatever is left of its current floor (dead
+  // or still standing) — called on every exit path: death, clearing
+  // ASCENT_MAX_FLOOR, or a disconnect mid-climb. Idempotent. See
+  // fearReleaseLane for why clearing the owner's own p._ascentLane here
+  // (rather than only from the caller) matters for isolation correctness.
+  ascentReleaseLane(lane) {
+    if (lane == null || !this._ascentOwner.has(lane)) return;
+    const ownerSid = this._ascentOwner.get(lane);
+    const owner = this.players.get(ownerSid);
+    if (owner && owner._ascentLane === lane) owner._ascentLane = null;
+    this._ascentOwner.delete(lane);
+    this._ascentAlive.delete(lane);
+    this._ascentCleared.delete(lane);
+    const removedIds = [];
+    this.enemies = this.enemies.filter(e => {
+      if (e.arm !== 'ascent' || e.lane !== lane) return true;
+      this._enemyMap.delete(e.id);
+      this._forgetEnemy(e.id);
+      this._releaseIdx(e);
+      removedIds.push(e.id);
+      return false;
+    });
+    if (ownerSid && removedIds.length) this.io.to(ownerSid).emit('enemiesRemoved', { ids: removedIds });
+  }
+
   // Scatters `items` on the floor around (cx, cy) as individually claimable
   // piles and tells everyone about them. Positions are rejected if they'd
   // land in a wall so nothing spawns unreachable.
@@ -1123,21 +1420,23 @@ class Room {
   //
   // The boss is deliberately laneless: it stands in the one shared room every
   // corridor opens into, and every entrant must be able to see and fight it.
-  // Also covers Страх (Fear): its lanes are isolated by the same rule, just
-  // keyed off p._fearLane/e.arm === 'fear' instead of the tower's own fields
-  // — a player can only ever be in at most one of the two instance types at
-  // once, so the two checks never both apply.
+  // Also covers Страх (Fear) and Восхождение (Ascent): their lanes are
+  // isolated by the same rule, just keyed off p._fearLane/e.arm === 'fear'
+  // and p._ascentLane/e.arm === 'ascent' respectively — a player can only
+  // ever be in at most one of the three instance types at once, so the
+  // checks never overlap.
   _raceVisible(p, e) {
     if (e.arm === 'race10') return p._raceLane != null && (e.lane == null || e.lane === p._raceLane);
     if (e.arm === 'fear') return p._fearLane != null && (e.lane == null || e.lane === p._fearLane);
-    return p._raceLane == null && p._fearLane == null;
+    if (e.arm === 'ascent') return p._ascentLane != null && (e.lane == null || e.lane === p._ascentLane);
+    return p._raceLane == null && p._fearLane == null && p._ascentLane == null;
   }
 
   // The composite lane identity used to scope visual fan-out (nearbyPlayerIds/
   // queueProjectile/queueAoe/laneOf) — distinguishes "not in any instance",
-  // "tower lane N" and "Fear lane N" with one comparable value, since a raw
-  // _raceLane number and a raw _fearLane number would otherwise collide (lane
-  // 0 of one instance type must never see lane 0 of the other).
+  // "race10 lane N", "Fear lane N" and "Ascent lane N" with one comparable
+  // value, since raw per-type lane numbers would otherwise collide (lane 0
+  // of one instance type must never see lane 0 of another).
   //
   // A race10 racer past bossRoomX0 shares one key with every other racer
   // there, regardless of which lane they ran — same "laneless" treatment the
@@ -1154,6 +1453,7 @@ class Room {
       return 'r' + p._raceLane;
     }
     if (p._fearLane != null) return 'f' + p._fearLane;
+    if (p._ascentLane != null) return 'a' + p._ascentLane;
     return null;
   }
 
@@ -1277,6 +1577,12 @@ class Room {
         // would let an early kill silently come back and never let
         // fearRegisterKill's count reach zero.
         if (e.arm === 'fear') return;
+        // Ascent floor monsters: same reasoning — stay dead until the floor
+        // is cleared and ascentReleaseLane purges them (or ascentSpawnFloor
+        // replaces them with the next floor's fresh batch, once ascentClimb
+        // fires). A 12s auto-respawn here would let an early kill silently
+        // come back and never let ascentRegisterKill's count reach zero.
+        if (e.arm === 'ascent') return;
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -1454,9 +1760,13 @@ class Room {
       // fighting it, which is exactly the "monsters disappear" symptom. Same
       // "nowhere to drag anything in a sealed room" reasoning as the aggroR
       // widening — the hall has walls, so there's nothing left for a leash to
-      // protect against here.
+      // protect against here. Ascent (arm === 'ascent') is skipped for the
+      // identical reason, scaled up: ASCENT_ROOM's bigger room and wider
+      // ASCENT_SPAWN_RING routinely exceed 420px from spawn during ordinary
+      // play too, and it has the same wide ASCENT_AGGRO_R*2.2 leash already
+      // doing this job instead.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
-      if (!e.ignoresSafeZone && e.arm !== 'fear' && ldx * ldx + ldy * ldy > LEASH_R2) {
+      if (!e.ignoresSafeZone && e.arm !== 'fear' && e.arm !== 'ascent' && ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;
@@ -2047,12 +2357,13 @@ class Room {
     // RACE10_LANES corridors at once would be both wrong and the single
     // biggest packet in the game.
     const cache = new Map();
+    const _isInstanced = arm => arm === 'race10' || arm === 'fear' || arm === 'ascent';
     const bufFor = (arm, lane) => {
-      const key = (arm === 'race10' || arm === 'fear') ? `${arm}#${lane}` : arm;
+      const key = _isInstanced(arm) ? `${arm}#${lane}` : arm;
       let b = cache.get(key);
       if (b !== undefined) return b;
       const want = e => e.hp > 0 && !e.isBoss && e.arm === arm &&
-        ((arm !== 'race10' && arm !== 'fear') || e.lane == null || e.lane === lane);
+        (!_isInstanced(arm) || e.lane == null || e.lane === lane);
       let n = 0;
       for (let i = 0; i < this.enemies.length; i++) if (want(this.enemies[i])) n++;
       const buf = new Int16Array(n * 2);
@@ -2072,7 +2383,7 @@ class Room {
       // single arm now that each arm is its own floor/Room (or to none, on
       // the hub floor) — no more Y-band lookup needed to tell which arm a
       // viewer is standing in, see this._soleArm in the constructor.
-      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : this._soleArm);
+      const arm = p._raceLane != null ? 'race10' : (p._fearLane != null ? 'fear' : (p._ascentLane != null ? 'ascent' : this._soleArm));
       // In the hub (or anywhere outside an arm) there are no regular monsters
       // to plot, so there is nothing to send at all.
       if (!arm) return;
@@ -2080,7 +2391,8 @@ class Room {
       // thing that should be queuing up behind a stalled client, and the next
       // one is a second away regardless.
       const sock = this._socketFor(p);
-      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, arm === 'fear' ? p._fearLane : p._raceLane));
+      const lane = arm === 'fear' ? p._fearLane : (arm === 'ascent' ? p._ascentLane : p._raceLane);
+      if (sock) sock.volatile.emit('mapBlips', bufFor(arm, lane));
     });
   }
 
@@ -2155,16 +2467,21 @@ class Room {
       if (staleSocketId) this.removePlayer(staleSocketId);
     }
     const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
+    // Same reclaim, for a held Ascent lane — see _ascentGraceStart's own
+    // comment for why a network blip must not end the climb.
+    const ascentCarry = telegramId ? this._ascentGraceClaim(telegramId, socketId) : null;
+    const carry = fearCarry || ascentCarry;
     const spawn = this._dungeon.spawn;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
       clanId: clanId || null,
-      x: fearCarry ? fearCarry.x : spawn.x, y: fearCarry ? fearCarry.y : spawn.y, facing: 'front', moving: false,
-      hp: fearCarry ? fearCarry.hp : 200, maxHp: 200, atk: 5, def: 5,
+      x: carry ? carry.x : spawn.x, y: carry ? carry.y : spawn.y, facing: 'front', moving: false,
+      hp: carry ? carry.hp : 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
       _fearLane: fearCarry ? fearCarry.lane : null,
+      _ascentLane: ascentCarry ? ascentCarry.lane : null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -2183,7 +2500,7 @@ class Room {
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();
-    return { spawn, staleSocketId, fearCarry };
+    return { spawn, staleSocketId, fearCarry, ascentCarry };
   }
 
   setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus, clanId) {
@@ -2295,6 +2612,9 @@ class Room {
     // window that elapses with no reconnect turns into a real release.
     const p = this.players.get(socketId);
     if (p && p._fearLane != null) this._fearGraceStart(p);
+    // Same hold-open-across-a-blip reasoning as the Fear hall above, applied
+    // to an Ascent lane.
+    if (p && p._ascentLane != null) this._ascentGraceStart(p);
     this.players.delete(socketId);
     this.players.forEach(p2 => p2._known.delete(socketId));
     if (this.players.size === 0) this._stopLoop();

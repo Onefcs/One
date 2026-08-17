@@ -134,6 +134,23 @@ const FEAR_ROOM   = 12;    // room size (tiles) — tight enough that a wave doe
 const FEAR_GAP    = 8;     // wall padding (irrelevant now with only one room, kept for the shared pitch math below)
 const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
 
+// ── Восхождение (Ascent) — one private instance per entrant ────────────────
+// Same "no baked-in monsters, everything spawned at runtime" shape as Страх
+// (Fear) just above — a fresh Room is created per climber (see
+// _createAscentRoom, server/index.js), and only one sealed room is needed
+// per run: climbing a floor reuses the same room instead of allocating a new
+// one, escalating what Room.ascentSpawnFloor spawns into it instead of the
+// geometry itself. Bigger than Fear's 12-tile room since a floor holds 30
+// aggressive monsters instead of 20 — they need room to spread into before
+// they all converge on the player at once. Entry sits at the west wall,
+// monsters spawn in a ring around the room's centre, and the staircase sits
+// at the east wall: a floor's fight happens moving from the door towards the
+// stairs, not standing still in the middle of an empty box.
+const ASCENT_LANES = 1;
+const ASCENT_ROOM   = 20;   // room size (tiles)
+const ASCENT_GAP    = 8;    // wall padding (irrelevant with only one room, kept for the shared pitch math below)
+const ASCENT_PITCH  = ASCENT_ROOM + ASCENT_GAP;
+
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
 // Its own floor now (generateGuildWar, below). One square sealed zone with a
 // single stationary tower/castle dead centre. Whichever clan lands the
@@ -782,8 +799,59 @@ function generateFear() {
   };
 }
 
+// Восхождение (Ascent), its own floor (see server/game/floors.js). Called
+// fresh for every ascentEnter (see _createAscentRoom, server/index.js)
+// rather than once at boot, so every climber gets a newly generated, single-
+// lane room of their own — same private-instance shape as generateFear()
+// just above. No baked-in monsters: each floor's 30 monsters are spawned
+// dynamically at runtime by Room.ascentSpawnFloor once the player is
+// deployed or climbs, so only the geometry needs to exist ahead of time.
+function generateAscent() {
+  const w = ASCENT_ROOM + MARGIN * 2, h = ASCENT_LANES * ASCENT_PITCH + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const lanes = [];
+  for (let i = 0; i < ASCENT_LANES; i++) {
+    const x0 = X0, y0 = Y0 + i * ASCENT_PITCH;
+    paintRect(x0, y0, x0 + ASCENT_ROOM - 1, y0 + ASCENT_ROOM - 1);
+    const cy = y0 + Math.floor(ASCENT_ROOM / 2);
+    lanes.push({
+      x0, y0, size: ASCENT_ROOM,
+      // Where the player lands on entry / after climbing a floor.
+      entryX: (x0 + 3) * TILE + TILE / 2, entryY: cy * TILE + TILE / 2,
+      // Where a floor's 30 monsters spawn in a ring around — see
+      // Room.ascentSpawnFloor. Dead centre of the room.
+      battleX: (x0 + Math.floor(ASCENT_ROOM / 2)) * TILE + TILE / 2, battleY: cy * TILE + TILE / 2,
+      // The staircase — walking onto it (once the floor is cleared) sends
+      // ascentClimb. Client-detected proximity, server-validated against
+      // the floor's cleared state, same trust model as every other pad/
+      // teleport trigger in the game (js/game.js's _updateTeleportPads).
+      stairX: (x0 + ASCENT_ROOM - 3) * TILE + TILE / 2, stairY: cy * TILE + TILE / 2,
+    });
+  }
+
+  return {
+    grid, rooms: [], w, h,
+    spawn: { x: lanes[0].entryX, y: lanes[0].entryY },
+    // Lane geometry only — Room.js reaches into this directly
+    // (this._dungeon.ascent), same as this._dungeon.fear: the client needs
+    // no rendering/tinting hints for it since entry and every floor
+    // transition are server-pushed teleports, but the staircase coordinate
+    // itself IS sent to the client separately (see ascentStarted/ascentFloor,
+    // server/index.js) so it can render the pad and detect proximity to it.
+    ascent: { lanes },
+    enemies: [],
+  };
+}
+
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
-  generateRace10, generateFear,
+  generateRace10, generateFear, generateAscent,
   TILE, WALL, FLOOR,
 };

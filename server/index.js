@@ -186,7 +186,7 @@ const {
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS, questComplete,
-  FEAR_MAX_WAVE, QUEST_DEF,
+  FEAR_MAX_WAVE, ASCENT_MAX_FLOOR, QUEST_DEF,
   SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
@@ -414,6 +414,18 @@ function _rollFarmZoneLoot(inv, eid) {
     if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
   }
   return granted;
+}
+
+// ── Восхождение (Ascent) kill loot ──────────────────────────────────────────
+// A flat 30% chance per kill to roll the normal, level-appropriate loot
+// table (_rollMobLoot) — everything else about a drop (rarity odds, recipe/
+// key/shard/book chances) stays exactly what it would be for the same
+// monster in the open world, just gated behind one extra flat roll up
+// front, the same 30% calcGoldDrop already uses for a regular mob's gold.
+const ASCENT_DROP_CHANCE = 0.3;
+function _rollAscentLoot(inv, eid, rlvl, plvl) {
+  if (Math.random() >= ASCENT_DROP_CHANCE) return [];
+  return _rollMobLoot(inv, eid, rlvl, plvl);
 }
 
 function _marketListingData(l) {
@@ -2284,7 +2296,7 @@ app.get('/health', (req, res) => {
   // players" while N people were mid-run in Страх, each on their own 40Hz
   // loop: the load being asked about was the only load not shown.
   floorRooms.forEach(r => {
-    if (r.floor === FLOOR_IDS.fear) return;
+    if (r.floor === FLOOR_IDS.fear || r.floor === FLOOR_IDS.ascent) return;
     try { rooms.push(r.stats()); } catch {}
   });
   // One aggregate row for Fear instead of N nearly identical ones. Always
@@ -2304,6 +2316,18 @@ app.get('/health', (req, res) => {
     // does not.
     tickMsMax: fearStats.reduce((n, s) => Math.max(n, s.tickMsMax || 0), 0),
     tickOverruns: fearStats.reduce((n, s) => n + (s.tickOverruns || 0), 0),
+  });
+  // Same one-aggregate-row treatment for Восхождение (Ascent) — see the Fear
+  // block just above.
+  const ascentRooms = _liveAscentRooms();
+  const ascentStats = ascentRooms.map(r => { try { return r.stats(); } catch { return {}; } });
+  rooms.push({
+    floor: FLOOR_IDS.ascent,
+    instances: ascentRooms.length,
+    players: ascentStats.reduce((n, s) => n + (s.players || 0), 0),
+    enemies: ascentStats.reduce((n, s) => n + (s.enemies || 0), 0),
+    tickMsMax: ascentStats.reduce((n, s) => Math.max(n, s.tickMsMax || 0), 0),
+    tickOverruns: ascentStats.reduce((n, s) => n + (s.tickOverruns || 0), 0),
   });
   const mem = process.memoryUsage();
   res.json({
@@ -3102,6 +3126,7 @@ function _race10BonusReset() {
 function _attemptCap(field) {
   if (field === 'race10Attempts') { _race10BonusReset(); return RACE10_ATTEMPTS + _race10BonusCount; }
   if (field === 'fearAttempts') return FEAR_ATTEMPTS;
+  if (field === 'ascentAttempts') return ASCENT_ATTEMPTS;
   return DAILY_DUNGEON_ATTEMPTS;
 }
 
@@ -3124,6 +3149,8 @@ function _lockRace10Daily(socketId)                  { _lockDailyAttempt(socketI
 async function _race10AttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'race10Attempts'); }
 function _lockFearDaily(socketId)                    { _lockDailyAttempt(socketId, 'fearAttempts'); }
 async function _fearAttemptsLeft(socketId)           { return _dailyAttemptsLeft(socketId, 'fearAttempts'); }
+function _lockAscentDaily(socketId)                  { _lockDailyAttempt(socketId, 'ascentAttempts'); }
+async function _ascentAttemptsLeft(socketId)         { return _dailyAttemptsLeft(socketId, 'ascentAttempts'); }
 
 // Remove leaverId from their party; notify remaining members.
 // If only 1 member remains the party dissolves entirely.
@@ -3229,6 +3256,19 @@ function _buildGameStartPayload(socket, room, floor) {
     // when nothing's running — only present at all when a run is live for
     // this socket.
     fear: _fear.has(socket.id) ? { inRun: true, wave: _fear.get(socket.id).wave, maxWave: FEAR_MAX_WAVE } : null,
+    // Same "only present when a run is live" shape as Fear above. stairX/Y
+    // is what lets a reconnecting client redraw/re-arm the staircase pad —
+    // ascentStarted (the event that normally carries it) only ever fires
+    // once, on the original entry, so a mid-run reconnect needs it here.
+    ascent: (() => {
+      const run = _ascent.get(socket.id);
+      if (!run) return null;
+      const stair = room.ascentStairSpot ? room.ascentStairSpot(run.lane) : null;
+      return {
+        inRun: true, floor: run.floor, maxFloor: ASCENT_MAX_FLOOR, cleared: !!run.cleared,
+        stairX: stair?.x, stairY: stair?.y,
+      };
+    })(),
   };
 }
 
@@ -3801,11 +3841,15 @@ function _pvpEliminate(socketId, killerSocketId, room, opts) {
   const fearHandled = (opts && opts.fearGrace)
     ? _fearHoldOnDisconnect(socketId, opts.telegramId)
     : _fearEliminate(socketId);
+  const ascentHandled = (opts && opts.fearGrace)
+    ? _ascentHoldOnDisconnect(socketId, opts.telegramId)
+    : _ascentEliminate(socketId);
   // A PvP kill (setPvpMode duel) that isn't part of any live Death
-  // Battle/Arena3/race10/Fear round falls through all four above untouched —
-  // they only record when the victim was in their own alive map. Without
-  // this, open-world PvP kills/deaths never appeared in the История tab.
-  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !fearHandled) {
+  // Battle/Arena3/race10/Fear/Ascent round falls through all five above
+  // untouched — they only record when the victim was in their own alive map.
+  // Without this, open-world PvP kills/deaths never appeared in the История
+  // tab.
+  if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !fearHandled && !ascentHandled) {
     const victimTid = _socketTid(socketId), killerTid = _socketTid(killerSocketId);
     const victim = room?.players.get(socketId);
     const killer = room?.players.get(killerSocketId);
@@ -4816,6 +4860,148 @@ function _fearHoldOnDisconnect(socketId, telegramId) {
   return true;
 }
 
+// ── Восхождение (Ascent) ─────────────────────────────────────────────────────
+// A private, on-demand climbing instance — same "spend one of ASCENT_ATTEMPTS
+// daily attempts the instant you enter, own private Room, no shared pool"
+// shape as Страх (Fear) just above, with one structural difference: clearing
+// a floor's 30 monsters does NOT auto-advance to the next one. It marks the
+// floor cleared and waits for the player to walk onto the room's staircase
+// (ascentClimb, the socket handler further down this file) — see
+// Room.ascentRegisterKill/ascentReadyToClimb. Floors run 1..ASCENT_MAX_FLOOR,
+// each one global monster level N (shared/definitions.js, read by both here
+// and Room.js). Dying or clearing the last floor both send the player home —
+// same "no way to fail out and keep the attempt" rule Fear follows.
+const ASCENT_ATTEMPTS = 2;
+const ASCENT_MIN_LEVEL = 1;
+// Grace window between landing in the room and floor 1 actually spawning —
+// same reasoning as FEAR_START_DELAY_MS.
+const ASCENT_START_DELAY_MS = 5000;
+
+// socketId -> { room, lane, floor, cleared } for whoever currently has a
+// climb going — read by the attack/skillAttack handlers to track floor
+// progress one kill at a time, by _ascentEliminate on death, and by the
+// disconnect handler if they drop mid-climb. `room` is that socket's own
+// private Room instance (see _createAscentRoom). `cleared` mirrors
+// Room.ascentReadyToClimb(lane) so the ascentClimb handler doesn't need an
+// extra Room call just to reject a premature climb attempt.
+const _ascent = new Map();
+
+// Every Ascent run gets its OWN Room, created here and never registered in
+// floorRooms — identical reasoning to _createFearRoom just above.
+function _createAscentRoom() {
+  const room = new Room(FLOOR_IDS.ascent, io, {}, null);
+  _ascentRooms.add(room);
+  return room;
+}
+
+// Weak, observation-only index of the private Rooms above — same reasoning
+// as _fearRooms/_liveFearRooms (keeps /health and _gracefulShutdown honest
+// about load that would otherwise be invisible outside floorRooms).
+const _ascentRooms = new Set();
+function _liveAscentRooms() {
+  const live = [];
+  _ascentRooms.forEach(r => {
+    if (r.players.size > 0) live.push(r);
+    else _ascentRooms.delete(r);
+  });
+  return live;
+}
+// Re-registers a room a reconnect landed back on (see the ascentCarry path
+// in the login flow) — it may have been swept while the player was away.
+function _trackAscentRoom(room) {
+  if (room && room.floor === FLOOR_IDS.ascent) _ascentRooms.add(room);
+}
+
+// Spawns floor `floor` in `lane` and tells the client, WITHOUT repositioning
+// the player — used for floor 1 (ascentEnter, where ascentDeploy already
+// placed them at the entry point) and for resuming a reconnected run
+// (where they're already exactly where they were). Climbing past floor 1
+// goes through Room.ascentAdvanceFloor instead (see the ascentClimb
+// handler), which also teleports the player back to the entry point first.
+function _ascentStartFloor(room, socketId, lane, floor) {
+  room.ascentSpawnFloor(lane, floor);
+  _ascent.set(socketId, { room, lane, floor, cleared: false });
+  io.to(socketId).emit('ascentFloor', { floor, maxFloor: ASCENT_MAX_FLOOR });
+}
+
+// Called right after a kill lands on an `ascent`-tagged enemy (see the
+// attack/skillAttack handlers, alongside the existing _fearTrackKill call).
+// The kill itself already paid out xp/gold through the normal reward path —
+// this only owns the "floor cleared, stairs are now active" side effect;
+// actually advancing floors happens in the ascentClimb handler once the
+// player reaches them.
+function _ascentTrackKill(socketId, result) {
+  if (result.arm !== 'ascent') return;
+  const run = _ascent.get(socketId);
+  if (!run || run.lane !== result.lane) return;
+  const room = run.room;
+  if (!room) return;
+  // Same staleness guard _fearTrackKill uses — the run record is only
+  // trustworthy while the player is still actually standing in that room.
+  if (room.ascentLaneOf(socketId) !== run.lane || room.ascentOwnerOf(run.lane) !== socketId) {
+    _ascent.delete(socketId);
+    return;
+  }
+  const left = room.ascentRegisterKill(result.lane);
+  if (left > 0) return;
+  run.cleared = true;
+  io.to(socketId).emit('ascentCleared', { floor: run.floor });
+}
+
+// Sends the player home and frees their lane — either because they climbed
+// past ASCENT_MAX_FLOOR (cleared: true) or died mid-climb (cleared: false,
+// called from _ascentEliminate). Safe to call on someone not currently in a
+// run. Returns the run it ended, or null if there wasn't one.
+function _ascentReleaseRun(socketId) {
+  const run = _ascent.get(socketId);
+  if (!run) return null;
+  _ascent.delete(socketId);
+  const room = run.room;
+  // Release the lane BEFORE the floor change a caller might make next — same
+  // ordering reasoning as _fearReleaseRun (a clean finish shouldn't leave a
+  // stale grace hold for removePlayer to create).
+  const ownedBefore = room ? room.ascentOwnerOf(run.lane) === socketId : false;
+  if (room && ownedBefore) room.ascentReleaseLane(run.lane);
+  return run;
+}
+
+function _ascentFinish(socketId, cleared) {
+  const run = _ascentReleaseRun(socketId);
+  if (!run) return;
+  const spot = _returnToHub(socketId);
+  io.to(socketId).emit('ascentFinished', { cleared, floor: run.floor, x: spot?.x, y: spot?.y });
+}
+
+// Wired into _pvpEliminate's fan-out (mirrors _fearEliminate) — dying
+// anywhere while in an Ascent lane ends the climb on the spot.
+function _ascentEliminate(socketId) {
+  if (!_ascent.has(socketId)) return false;
+  _ascentFinish(socketId, false);
+  return true;
+}
+
+// How long a disconnected climber's run record is held before it's dropped
+// for real — kept equal to Room.js's own ASCENT_RECONNECT_GRACE_MS (not
+// imported, kept in sync by comment, same as Fear's pair of constants).
+const ASCENT_RECONNECT_GRACE_MS = 45000;
+// telegramId -> { run: {lane, floor, cleared}, timer } — an Ascent run held
+// across a disconnect. See _pvpEliminate's opts.fearGrace (reused generically
+// for every disconnect-class elimination, not just Fear's) and the reconnect
+// handling in the login flow below.
+const _ascentDisconnectGrace = new Map();
+function _ascentHoldOnDisconnect(socketId, telegramId) {
+  const run = _ascent.get(socketId);
+  if (!run) return false;
+  _ascent.delete(socketId);
+  const tid = telegramId || _socketTid(socketId);
+  if (!tid) return true;
+  const prior = _ascentDisconnectGrace.get(tid);
+  if (prior) clearTimeout(prior.timer);
+  const timer = safeTimeout('ascentGrace', () => { _ascentDisconnectGrace.delete(tid); }, ASCENT_RECONNECT_GRACE_MS);
+  _ascentDisconnectGrace.set(tid, { run, timer });
+  return true;
+}
+
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
 // safe to trigger from more than one path below — _floorRoomsStarted is set
 // synchronously (before the first await) so two calls racing in before
@@ -5635,14 +5821,18 @@ io.on('connection', socket => {
   // that used to be rolled by the caller but only ever granted by the
   // client) so the caller only has to decide who won and relay what comes
   // back for that player's floating-text feedback.
-  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone }) => {
+  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone, ascent }) => {
     const empty = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
-    // reroll below) entirely — see _rollFarmZoneLoot's own comment.
-    const items = farmZone ? _rollFarmZoneLoot(inv, eid) : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
+    // reroll below) entirely — see _rollFarmZoneLoot's own comment. Ascent
+    // kills still use the normal table, just gated behind one flat 30%
+    // roll first — see _rollAscentLoot's own comment.
+    const items = farmZone ? _rollFarmZoneLoot(inv, eid)
+      : ascent ? _rollAscentLoot(inv, eid, rlvl, _lastStats.lvl)
+      : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
     if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
@@ -10050,24 +10240,31 @@ io.on('connection', socket => {
       // and the worst case if it somehow hasn't is the same as any other
       // missed reconnect window: the run just times out normally.
       const _fearHeld = _fearDisconnectGrace.get(authed.telegramId);
+      // Same held-run lookup, for Ascent (see _ascentDisconnectGrace above).
+      // A player can only ever hold one of the two at once (fearEnter/
+      // ascentEnter each refuse a second entry while the other already has
+      // them), so checking Fear first is safe.
+      const _ascentHeld = !_fearHeld ? _ascentDisconnectGrace.get(authed.telegramId) : null;
       // Everything else comes back to the floor it was standing on — see
       // _restoreFloorFor, which re-checks the level gate and any window rather
       // than trusting the stored number, and falls back to the hub when the
       // floor is no longer somewhere this account may be. Read off the DB
       // record, never off `savedStats`: that blob is the client's.
       if (_fearHeld) currentFloor = FLOOR_IDS.fear;
+      else if (_ascentHeld) currentFloor = FLOOR_IDS.ascent;
       else currentFloor = _restoreFloorFor((authed.savedData || {}).floor, effectiveSaved && effectiveSaved.lvl);
-      currentRoom = _fearHeld ? _fearHeld.run.room : getRoom(currentFloor);
-      // The instance may have been swept out of _fearRooms while this player
-      // was away (it had no players for the length of the drop) — put it back
-      // so /health and the shutdown pass can see it again.
+      currentRoom = _fearHeld ? _fearHeld.run.room : (_ascentHeld ? _ascentHeld.run.room : getRoom(currentFloor));
+      // The instance may have been swept out of _fearRooms/_ascentRooms while
+      // this player was away (it had no players for the length of the drop)
+      // — put it back so /health and the shutdown pass can see it again.
       if (_fearHeld) _trackFearRoom(currentRoom);
+      if (_ascentHeld) _trackAscentRoom(currentRoom);
       playerFloorMap.set(socket.id, currentFloor);
-      // See _doEnterLocation's identical guard: Fear players never join the
-      // shared floor_<id> broadcast group, since each one is alone on their
-      // own private Room.
-      if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
-      const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
+      // See _doEnterLocation's identical guard: Fear/Ascent players never
+      // join the shared floor_<id> broadcast group, since each one is alone
+      // on their own private Room.
+      if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.ascent) socket.join(`floor_${currentFloor}`);
+      const { staleSocketId, fearCarry, ascentCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
       // Anything this account had signed up for before the drop comes back
       // onto this socket, in the position it signed up at. Unconditional: the
       // registration survives the disconnect now (see the 'disconnect'
@@ -10164,6 +10361,20 @@ io.on('connection', socket => {
           // fear floor's Room at this point (currentFloor was forced to it
           // above specifically because this account had a hold to reclaim).
           if (g.run.wave === 0) _fearStartWave(currentRoom, socket.id, g.run.lane, 1);
+        }
+      }
+      // Same reclaim, for a held Ascent run — see the Fear block just above.
+      if (ascentCarry) {
+        const g = _ascentDisconnectGrace.get(authed.telegramId);
+        if (g) {
+          clearTimeout(g.timer);
+          _ascentDisconnectGrace.delete(authed.telegramId);
+          _ascent.set(socket.id, g.run);
+          // Disconnected during the pre-floor countdown (see
+          // ASCENT_START_DELAY_MS) — same reasoning as the Fear reclaim
+          // above: start floor 1 right here instead of resuming a countdown
+          // no client is around to display.
+          if (g.run.floor === 0) _ascentStartFloor(currentRoom, socket.id, g.run.lane, 1);
         }
       }
       // Reclaim a party slot held across a disconnect (_partyHoldOnDisconnect,
@@ -10322,15 +10533,16 @@ io.on('connection', socket => {
     const charType = oldP.type;
     const savedStats = oldP._sd;
 
-    // Fear players never join the shared floor_<id> broadcast group — each
-    // one is on their own private Room now (see _createFearRoom), so there
-    // is never anyone else legitimately on "floor_11" to tell about a join/
-    // leave/char change, and joining them all into one group would leak
-    // exactly that across otherwise-isolated runs. Skipping the join means
-    // every socket.to(`floor_${currentFloor}`) broadcast below is already a
-    // no-op for Fear on its own — nothing else here needs to know the
+    // Fear/Ascent players never join the shared floor_<id> broadcast group —
+    // each one is on their own private Room now (see _createFearRoom/
+    // _createAscentRoom), so there is never anyone else legitimately on
+    // "floor_11"/"floor_12" to tell about a join/leave/char change, and
+    // joining them all into one group would leak exactly that across
+    // otherwise-isolated runs. Skipping the join means every
+    // socket.to(`floor_${currentFloor}`) broadcast below is already a no-op
+    // for Fear/Ascent on their own — nothing else here needs to know the
     // difference.
-    if (oldFloor !== FLOOR_IDS.fear) socket.leave(`floor_${oldFloor}`);
+    if (oldFloor !== FLOOR_IDS.fear && oldFloor !== FLOOR_IDS.ascent) socket.leave(`floor_${oldFloor}`);
     // Walking out of Страх ends the run, exactly as dying in it does.
     //
     // Only two things used to end a run: clearing wave FEAR_MAX_WAVE and
@@ -10363,12 +10575,21 @@ io.on('connection', socket => {
         inRun: false, wave: 0,
       });
     }
+    // Walking out of Восхождение any other way than dying/climbing past
+    // ASCENT_MAX_FLOOR — same leaked-attempt bug _fearReleaseRun's own
+    // comment describes, same fix.
+    if (oldFloor === FLOOR_IDS.ascent && _ascentReleaseRun(socket.id)) {
+      socket.emit('ascentState', {
+        maxAttempts: ASCENT_ATTEMPTS, maxFloor: ASCENT_MAX_FLOOR, minLevel: ASCENT_MIN_LEVEL,
+        inRun: false, floor: 0,
+      });
+    }
     currentRoom.removePlayer(socket.id);
     socket.to(`floor_${oldFloor}`).emit('playerLeft', { id: socket.id });
 
     currentFloor = targetFloor;
     playerFloorMap.set(socket.id, currentFloor);
-    if (currentFloor !== FLOOR_IDS.fear) socket.join(`floor_${currentFloor}`);
+    if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.ascent) socket.join(`floor_${currentFloor}`);
     // `room`, when given, is a fresh private instance this connection just
     // created (fearEnter) — the ordinary getRoom(floorId) lookup only ever
     // returns the one shared Room per floor, which Fear no longer has one of.
@@ -10560,6 +10781,11 @@ io.on('connection', socket => {
     // only advances the wave counter (spawns the next wave, or ends the run
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
+    // Ascent kills also pay out xp/gold through the normal path below — this
+    // only tracks whether the current floor is now cleared (see
+    // _ascentTrackKill); actually advancing floors happens via the
+    // ascentClimb handler once the player reaches the staircase.
+    if (result.killed && result.arm === 'ascent') _ascentTrackKill(socket.id, result);
     if (result.killed) _seasonTrackKill(result);
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
@@ -10611,7 +10837,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, ascent: result.arm === 'ascent' })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
 
       if (memberIds.length > 0) {
@@ -10694,6 +10920,11 @@ io.on('connection', socket => {
     // only advances the wave counter (spawns the next wave, or ends the run
     // on FEAR_MAX_WAVE), so it doesn't gate the rest of the handler.
     if (result.killed && result.arm === 'fear') _fearTrackKill(socket.id, result);
+    // Ascent kills also pay out xp/gold through the normal path below — this
+    // only tracks whether the current floor is now cleared (see
+    // _ascentTrackKill); actually advancing floors happens via the
+    // ascentClimb handler once the player reaches the staircase.
+    if (result.killed && result.arm === 'ascent') _ascentTrackKill(socket.id, result);
     if (result.killed) _seasonTrackKill(result);
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
@@ -10727,7 +10958,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, ascent: result.arm === 'ascent' })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -11105,6 +11336,9 @@ io.on('connection', socket => {
     if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
       return socket.emit('fearError', { msg: 'Вы сейчас в Кровавой Башне' });
     }
+    if (_ascent.has(socket.id)) {
+      return socket.emit('fearError', { msg: 'Вы сейчас в Восхождении' });
+    }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < FEAR_MIN_LEVEL) {
       return socket.emit('fearError', { msg: `Нужен ${FEAR_MIN_LEVEL} уровень` });
@@ -11182,6 +11416,99 @@ io.on('connection', socket => {
   // the run ended (_fearFinish), this just makes the client catch up
   // visually if it somehow missed the fearFinished payload's x/y.
   safeOn('fearReturn', () => {
+    const spot = _returnToHub(socket.id);
+    if (spot) socket.emit('deathBattleReturned', spot);
+  });
+
+  // ── Восхождение (Ascent) ────────────────────────────────────────────────
+  // On-demand, same shape as fearEnter above: entering IS starting, no
+  // registration queue.
+  safeOn('ascentEnter', async () => {
+    if (!authed) return;
+    if (_ascent.has(socket.id)) return; // already climbing — the client shouldn't offer the button
+    if (!currentRoom) return;
+    const cp = currentRoom.players.get(socket.id);
+    if (!cp) return socket.emit('ascentError', { msg: 'Выберите персонажа' });
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('ascentError', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    // Same cross-checks fearEnter runs — see its own comment for why the
+    // queue (not just live participation) has to be checked too.
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
+      return socket.emit('ascentError', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
+      return socket.emit('ascentError', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    if (_fear.has(socket.id)) {
+      return socket.emit('ascentError', { msg: 'Вы сейчас в Страхе' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < ASCENT_MIN_LEVEL) {
+      return socket.emit('ascentError', { msg: `Нужен ${ASCENT_MIN_LEVEL} уровень` });
+    }
+    const left = await _ascentAttemptsLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('ascentError', { msg: 'Попытки в Восхождение на сегодня закончились' });
+    }
+    // Same private-instance force-join as fearEnter — see its own comment.
+    const ascentRoom = _createAscentRoom();
+    if (!_doEnterLocation('ascent', { force: true, room: ascentRoom })) {
+      return socket.emit('ascentError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+    }
+    const spot = currentRoom.ascentDeploy(socket.id);
+    if (!spot) {
+      _doEnterLocation('hub', { force: true });
+      return socket.emit('ascentError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+    }
+    _lockAscentDaily(socket.id);
+    const readyAt = Date.now() + ASCENT_START_DELAY_MS;
+    _ascent.set(socket.id, { room: ascentRoom, lane: spot.lane, floor: 0, cleared: false });
+    socket.emit('ascentStarted', {
+      x: spot.x, y: spot.y, stairX: spot.stairX, stairY: spot.stairY,
+      hp: cp.hp, maxFloor: ASCENT_MAX_FLOOR, attemptsLeft: left - 1, readyAt,
+    });
+    safeTimeout('ascentFloor1', () => {
+      // Same identity/staleness guard fearEnter's wave-1 timer uses — see its
+      // own comment for why `run.room !== ascentRoom` (not just lane/floor)
+      // is the check that actually matters.
+      const run = _ascent.get(socket.id);
+      if (!run || run.room !== ascentRoom || run.lane !== spot.lane || run.floor !== 0) return;
+      _ascentStartFloor(ascentRoom, socket.id, spot.lane, 1);
+    }, ASCENT_START_DELAY_MS);
+  });
+
+  safeOn('ascentSync', async () => {
+    const run = _ascent.get(socket.id);
+    socket.emit('ascentState', {
+      maxAttempts: ASCENT_ATTEMPTS, maxFloor: ASCENT_MAX_FLOOR, minLevel: ASCENT_MIN_LEVEL,
+      attemptsLeft: await _ascentAttemptsLeft(socket.id),
+      inRun: !!run, floor: run?.floor || 0, cleared: !!run?.cleared,
+    });
+  });
+
+  // Sent once the floor-cleared/climb prompt has been shown — a proximity
+  // trigger (js/game.js, mirroring _updateTeleportPads) fires this once the
+  // player actually walks onto the staircase. Server-validated against the
+  // run record's own `cleared` flag (kept in lockstep with
+  // Room.ascentReadyToClimb by _ascentTrackKill) rather than trusting the
+  // client's proximity check alone — same "client proximity is UX only"
+  // rule every other pad in the game follows.
+  safeOn('ascentClimb', () => {
+    const run = _ascent.get(socket.id);
+    if (!run || !run.cleared) return;
+    const room = run.room;
+    if (!room || room.ascentLaneOf(socket.id) !== run.lane || !room.ascentReadyToClimb(run.lane)) return;
+    if (run.floor >= ASCENT_MAX_FLOOR) { _ascentFinish(socket.id, true); return; }
+    const nextFloor = run.floor + 1;
+    const spot = room.ascentAdvanceFloor(socket.id, run.lane, nextFloor);
+    _ascent.set(socket.id, { room, lane: run.lane, floor: nextFloor, cleared: false });
+    io.to(socket.id).emit('ascentFloor', { floor: nextFloor, maxFloor: ASCENT_MAX_FLOOR, x: spot?.x, y: spot?.y });
+  });
+
+  // Sent once the result banner has been shown for a finished climb — same
+  // round-trip fearReturn uses.
+  safeOn('ascentReturn', () => {
     const spot = _returnToHub(socket.id);
     if (spot) socket.emit('deathBattleReturned', spot);
   });
@@ -12709,6 +13036,7 @@ async function _gracefulShutdown(signal) {
   // save flush below.
   floorRooms.forEach(r => r._stopLoop());
   _liveFearRooms().forEach(r => r._stopLoop());
+  _liveAscentRooms().forEach(r => r._stopLoop());
   // Land whatever clan XP has accumulated since the last 20s flush, so a
   // redeploy doesn't quietly discard it.
   await _flushClanXp().catch(() => {});

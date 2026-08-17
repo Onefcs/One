@@ -4241,6 +4241,7 @@ function openEventsPanel() {
   if (typeof netArena3Sync === 'function') netArena3Sync();
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
+  if (typeof netAscentSync === 'function') netAscentSync();
   _renderEventsBody();
 }
 
@@ -4267,6 +4268,7 @@ function _renderEventsBody() {
                  : _eventTab === 'a3'        ? _arena3BodyHTML()
                  : _eventTab === 'race10'    ? _race10BodyHTML()
                  : _eventTab === 'fear'      ? _fearBodyHTML()
+                 : _eventTab === 'ascent'    ? _ascentBodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
                  : _deathBattleBodyHTML();
 }
@@ -4508,6 +4510,74 @@ function _fearBodyHTML() {
 function onFearState() {
   _updateEventsBtnHighlight();
   if (_eventsPanelOpen() && _eventTab === 'fear') _renderEventsBody();
+}
+
+// ── Восхождение (Ascent) tab ─────────────────────────────────────────────────
+// Same on-demand shape as Fear's own tab above — the action button either
+// starts a climb or shows it's already running. Headline number is the
+// current floor while climbing, otherwise how many daily attempts are left.
+// Unlike Fear, "climbing" itself isn't a button: once a floor clears, the
+// phase line just tells the player to reach the staircase (js/game.js draws
+// and triggers it automatically on approach).
+function _ascentBodyHTML() {
+  const st = (typeof _ascentState !== 'undefined' && _ascentState) || { attemptsLeft: null, maxAttempts: 2, maxFloor: 50, minLevel: 1 };
+  const inRun = typeof _ascentInRun !== 'undefined' && _ascentInRun;
+  const cleared = typeof _ascentCleared !== 'undefined' && _ascentCleared;
+  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = !inRun && lvl < (st.minLevel || 1);
+
+  let phaseTxt, action;
+  if (inRun) {
+    if (_ascentFloor <= 0) phaseTxt = t('fearPhaseReady');
+    else phaseTxt = cleared
+      ? t('ascentPhaseCleared')
+      : tVars('ascentPhaseFighting', { floor: _ascentFloor, max: st.maxFloor });
+    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (spent) {
+    phaseTxt = t('a3NoAttempts');
+    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+  } else {
+    phaseTxt = t('fearPhaseIdle');
+    action = `<button class="db-action" onclick="netAscentEnter()">${t('fearEnterBtn')}</button>`;
+  }
+
+  const countdown = inRun
+    ? `${_ascentFloor > 0 ? _ascentFloor : '–'}/${st.maxFloor}`
+    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
+  const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
+    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
+    : '';
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${countdown}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${score}
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          ${st.minLevel > 1 ? `<li>${tVars('a3Rule5', { n: st.minLevel })}</li>` : ''}
+          <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
+          <li>${tVars('ascentRule2', { n: 30 })}</li>
+          <li>${t('ascentRule3')}</li>
+          <li>${tVars('ascentRule4', { n: st.maxFloor })}</li>
+          <li>${t('fearRule4')}</li>
+          <li>${t('fearRule5')}</li>
+          <li>${t('ascentRule6')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+// Called from the network handlers on every server push.
+function onAscentState() {
+  _updateEventsBtnHighlight();
+  if (_eventsPanelOpen() && _eventTab === 'ascent') _renderEventsBody();
 }
 
 // Called from the network handlers on every server push.
@@ -4903,6 +4973,9 @@ function hideDeathBattleFreeze() { hideFreezeCountdown(); }
 
 function showFearCountdown(readyAt) { showFreezeCountdown(readyAt, t('fearFreezeLbl')); }
 function hideFearCountdown() { hideFreezeCountdown(); }
+
+function showAscentCountdown(readyAt) { showFreezeCountdown(readyAt, t('ascentFreezeLbl')); }
+function hideAscentCountdown() { hideFreezeCountdown(); }
 
 function closeDeathBattleWin() {
   const modal = document.getElementById('db-win-modal');

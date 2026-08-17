@@ -640,6 +640,16 @@ const QUEST_DEF = [
 // duplicated in both.
 const FEAR_MAX_WAVE = 39;
 
+// ── Восхождение (Ascent) event ─────────────────────────────────────────────
+// A private, on-demand climb instance (server/game/dungeon.js's `ascent`
+// lane, server/game/Room.js's ascentSpawnFloor/ascentRegisterKill): floor N
+// is 30 aggressive monsters at global level N, N running 1..ASCENT_MAX_FLOOR.
+// Unlike Страх's waves, clearing a floor doesn't auto-advance — the player
+// has to walk to the floor's staircase (ascentClimb) to go up. Shared between
+// Room.js (spawning + the floor-clear check) and server/index.js (the UI's
+// floor counter), so it lives here rather than being duplicated in both.
+const ASCENT_MAX_FLOOR = 50;
+
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
 // and server-side validation (e.g. the Market only ever stores a listing's
@@ -1909,7 +1919,7 @@ if (typeof module !== 'undefined') module.exports = {
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE,
+  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, ASCENT_MAX_FLOOR,
   QUEST_DEF,
   SEASON_END_AT, SEASON_MIN_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
