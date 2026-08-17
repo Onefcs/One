@@ -97,6 +97,11 @@ const ICON_SVG = {
 
   // ── Lock (studied/locked skill overlay) ─────────────────────────────────────
   lock:        `<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>`,
+
+  // ── Events panel (index.html's #events-tab-list) ────────────────────────────
+  ghost: `<path d="M12 2a7 7 0 0 0-7 7v12l2.5-2.5L10 21l2-2 2 2 2.5-2.5L19 21V9a7 7 0 0 0-7-7z"/><circle cx="9.5" cy="10" r="1"/><circle cx="14.5" cy="10" r="1"/>`,
+  crown: `<path d="M3 8L7 11L12 5L17 11L21 8L19 18H5L3 8Z"/><line x1="5" y1="21" x2="19" y2="21"/>`,
+  flag:  `<line x1="5" y1="21" x2="5" y2="3"/><path d="M5 4l13 4-13 4z"/>`,
 };
 
 // ── DOM helper: returns an <svg> string ───────────────────────────────────────

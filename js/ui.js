@@ -4232,6 +4232,11 @@ function _fmtEventWhen(at) {
 }
 
 let _eventTab = 'battle';
+// 'list' — the event picker (events-tab-list) fills the whole panel.
+// 'detail' — a single event's own page (openEventDetail's target) instead,
+// reached by tapping a row in the list; the back arrow (showEventsList)
+// returns to it. See the .events-detail toggle in css/style.css.
+let _eventsView = 'list';
 
 function openEventsPanel() {
   const panel = document.getElementById('events-panel');
@@ -4242,7 +4247,7 @@ function openEventsPanel() {
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
   if (typeof netCoopSync === 'function') netCoopSync();
-  _renderEventsBody();
+  showEventsList();
 }
 
 function closeEventsPanel() {
@@ -4250,10 +4255,26 @@ function closeEventsPanel() {
   if (panel) panel.style.display = 'none';
 }
 
-function switchEventTab(tab) {
+// Back to the event picker — the panel's "home" page.
+function showEventsList() {
+  _eventsView = 'list';
+  document.getElementById('events-panel')?.classList.remove('events-detail');
+  document.querySelectorAll('#events-panel .events-title-detail').forEach(el => { el.style.display = 'none'; });
+}
+
+// Navigate into one event's own page — tapping a row in the list, not a
+// same-screen tab swap: the list is replaced by the event's page (a back
+// arrow in the header returns to the list), and the header's title/icon
+// swaps to that event's (the matching #etitle-<tab> span).
+function openEventDetail(tab) {
   _eventTab = tab;
+  _eventsView = 'detail';
+  document.getElementById('events-panel')?.classList.add('events-detail');
   document.querySelectorAll('#events-panel .event-tab-item').forEach(b => b.classList.remove('active'));
   document.getElementById('etab-' + tab)?.classList.add('active');
+  document.querySelectorAll('#events-panel .events-title-detail').forEach(el => { el.style.display = 'none'; });
+  const dt = document.getElementById('etitle-' + tab);
+  if (dt) dt.style.display = 'inline';
   _renderEventsBody();
 }
 
@@ -4262,6 +4283,7 @@ function _eventsPanelOpen() {
 }
 
 function _renderEventsBody() {
+  if (_eventsView !== 'detail') return;
   const body = document.getElementById('events-panel-body');
   if (!body) return;
   body.innerHTML = _eventTab === 'boss'      ? _worldBossBodyHTML()

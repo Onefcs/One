@@ -2147,21 +2147,32 @@ canvas { display:block; width:100%; height:100%; }
 #events-panel, #events-panel * { touch-action: pan-y; pointer-events: auto; }
 /* The panel reuses .vip-header/.vip-body, both of which are absolutely
    positioned — so the tab list has to be placed under the 50px header
-   explicitly and the body pushed below it, rather than relying on flex order
-   (which would just put the tabs behind the header).
-   A plain row of .rating-tab buttons (the pattern every other panel with 2-3
-   tabs uses) stopped fitting once this panel grew to 7 events — labels
-   clipped or wrapped mid-word. A vertical list instead: one row per event,
-   each carrying its own icon and a tint of that location's actual world
-   colour (--cc, set inline per button — race10's is its corridor's blood
-   red, coop's its grass green, etc.) via the same --cc + color-mix() pattern
-   .profp-card/.profp-banner-icon already use for the profession codex. */
+   explicitly, rather than relying on flex order (which would just put it
+   behind the header).
+   Two views, toggled by the .events-detail class on #events-panel (see
+   openEventDetail/showEventsList, js/ui.js):
+     • list (default) — .event-tab-list is the whole panel: one row per
+       event, each with its own SVG icon and a tint of that location's
+       actual world colour (--cc, set inline per button — race10's is its
+       corridor's blood red, coop's its grass green, etc.) via the same
+       --cc + color-mix() pattern .profp-card/.profp-banner-icon already use
+       for the profession codex. Replaced a plain row of .rating-tab buttons
+       (the pattern every other panel with 2-3 tabs uses) that stopped
+       fitting once this panel grew to 7 events — labels clipped or wrapped.
+     • detail — tapping a row navigates to that event's own page instead of
+       swapping content in place under a still-visible tab strip: the list
+       hides, the header grows a back arrow and swaps its title/icon to the
+       open event's (via the matching #etitle-<tab> span), and .vip-body
+       takes the full area below the header. */
 .event-tab-list {
   position: absolute;
-  top: 54px; left: 16px; right: 16px;
+  top: 54px; left: 16px; right: 16px; bottom: 16px;
   display: flex;
   flex-direction: column;
   gap: 7px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   z-index: 1;
 }
 .event-tab-item {
@@ -2169,7 +2180,8 @@ canvas { display:block; width:100%; height:100%; }
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 12px;
+  flex-shrink: 0;
+  padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--cc) 32%, rgba(209,204,197,.12));
   background: color-mix(in srgb, var(--cc) 10%, rgba(209,204,197,.03));
@@ -2184,12 +2196,40 @@ canvas { display:block; width:100%; height:100%; }
   background: color-mix(in srgb, var(--cc) 24%, rgba(209,204,197,.03));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 30%, transparent), 0 4px 14px rgba(0,0,0,.35);
 }
-.event-tab-icon { flex-shrink: 0; width: 20px; font-size: 16px; text-align: center; }
-.event-tab-label { flex: 1; font-size: 13px; font-weight: 700; }
+.event-tab-icon {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  background: rgba(9,7,4,.6);
+  border: 1px solid color-mix(in srgb, var(--cc) 45%, transparent);
+  color: var(--cc);
+  display: flex; align-items: center; justify-content: center;
+}
+.event-tab-item.active .event-tab-icon { box-shadow: 0 0 10px color-mix(in srgb, var(--cc) 45%, transparent); }
+.event-tab-label { flex: 1; font-size: 13.5px; font-weight: 700; }
 .event-tab-item.active .event-tab-label { color: #f2ead9; }
-.event-tab-arrow { flex-shrink: 0; font-size: 15px; color: var(--cc); opacity: .5; }
+.event-tab-arrow { flex-shrink: 0; color: var(--cc); opacity: .5; }
 .event-tab-item.active .event-tab-arrow { opacity: 1; }
-#events-panel .vip-body { top: 382px; }
+
+.vip-back {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  margin-right: 8px;
+  background: rgba(209,204,197,.08);
+  border: none;
+  border-radius: 50%;
+  color: #968a7a;
+  cursor: pointer;
+}
+.events-title-detail { display: none; }
+#events-panel.events-detail .vip-back { display: flex; }
+#events-panel.events-detail .events-title-home { display: none; }
+#events-panel.events-detail .event-tab-list { display: none; }
+#events-panel:not(.events-detail) .vip-body { display: none; }
+#events-panel.events-detail .vip-body { display: block; top: 50px; }
 
 #gram-shop-panel {
   position: absolute;

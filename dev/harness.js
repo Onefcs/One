@@ -2628,7 +2628,7 @@ scenario('browser: entering Страх closes the events panel instead of leavin
     }
     ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
 
-    await page.evaluate(() => { openEventsPanel(); switchEventTab('fear'); });
+    await page.evaluate(() => { openEventsPanel(); openEventDetail('fear'); });
     await page.waitForTimeout(300);
     ok(await page.evaluate(() => document.getElementById('events-panel')?.style.display === 'flex'),
       'the events panel is open, same as a real player checking Страх');
