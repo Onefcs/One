@@ -1614,15 +1614,20 @@ function _evtArenaOpen() {
          (typeof worldDrops !== 'undefined' && worldDrops.size > 0);
 }
 
-function _teleportTo(tx, ty, label) {
-  // Every server-driven placement lands here (deathBattleStarted,
-  // arena3Started, race10Started, fearStarted and each event's return path),
-  // so this is the one place that has to record when it happened.
+// color/arrow default to the blue "warped through a portal" look every
+// other caller wants (deathBattleStarted, arena3Started, race10Started,
+// fearStarted and each event's return path); Ascent's own floor climbs pass
+// a gold color and an up-chevron instead, so a climb reads as "walked up a
+// step" rather than "teleported somewhere" — see the ascentStarted/
+// ascentFloor handlers, js/network.js.
+function _teleportTo(tx, ty, label, color = '#7fd7ff', arrow = '→') {
+  // Every server-driven placement lands here, so this is the one place that
+  // has to record when it happened.
   _serverPlacedAt = Date.now();
   player.x = tx; player.y = ty;
   camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2; clampCamera();
-  spawnBurst(player.x, player.y, '#7fd7ff', 20);
-  dmgNum(player.x, player.y - 30, `→ ${label}`, '#7fd7ff', 15);
+  spawnBurst(player.x, player.y, color, 20);
+  dmgNum(player.x, player.y - 30, `${arrow} ${label}`, color, 15);
 }
 
 // Real floor transition (hub <-> arm) — replaces _teleportTo for the pads
@@ -1808,8 +1813,6 @@ const _SWIRL_THEMES = {
   blue:  { glow: '70,170,255',  disc: 'rgba(12,55,110,0.45)', ring1: '#4fc3ff', ring2: '#bfe9ff', label: '#8fd8ff' },
   red:   { glow: '255,80,80',   disc: 'rgba(110,15,15,0.45)', ring1: '#ff5252', ring2: '#ffb0b0', label: '#ff9a9a' },
   green: { glow: '80,235,140',  disc: 'rgba(12,90,45,0.45)',  ring1: '#4fe38a', ring2: '#bfffd9', label: '#8fffbf' },
-  // Восхождение's staircase — gold, distinct from every other pad's family.
-  gold:  { glow: '255,196,80',  disc: 'rgba(110,80,12,0.45)', ring1: '#ffcf50', ring2: '#ffe9b0', label: '#ffe08f' },
 };
 
 // A swirling teleport circle — a soft outer glow, a slowly counter-rotating
@@ -1880,6 +1883,68 @@ function _drawSwirlPad(x, y, label, theme) {
   ctx.fillText(label, sx, sy + baseR + 16);
 }
 
+// Восхождение's staircase — a real flight of stone steps (viewed from
+// above), not a magic teleport swirl: a player reading _drawSwirlPad's ring
+// as "a portal" kept expecting to be warped, when climbing a floor is meant
+// to feel like walking up stairs in a castle. Steps run along +X because
+// that is the direction the player actually approaches from (battleX sits
+// west of stairX — see generateAscent, server/game/dungeon.js): each step
+// is drawn a shade lighter than the last toward the east/landing edge, the
+// way a real staircase catches more light near its top, and a chevron at
+// the far edge points the way up.
+function _drawStaircase(x, y, label) {
+  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
+  if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
+  if (sx < -90 || sx > W + 90 || sy < -90 || sy > H + 90) return;
+  const STEPS = 6;
+  const totalW = 100 * ZOOM, totalH = 54 * ZOOM;
+  const stepW = totalW / STEPS;
+  const x0 = sx - totalW / 2, y0 = sy - totalH / 2;
+  const tsec = _nowMs / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(tsec * 2.1);
+
+  ctx.save();
+  // Soft gold glow underneath, so the staircase still reads as "special/
+  // interactive" from a distance the way every other pad's glow does.
+  const glow = ctx.createRadialGradient(sx, sy, totalW * 0.1, sx, sy, totalW * 0.85);
+  glow.addColorStop(0, `rgba(255,196,80,${0.26 + 0.08 * pulse})`);
+  glow.addColorStop(1, 'rgba(255,196,80,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(sx, sy, totalW * 0.85, 0, Math.PI * 2); ctx.fill();
+
+  // Stone treads, each a touch lighter than the last toward the landing —
+  // a flat top-down stand-in for rising steps, same trick top-down tile art
+  // uses to fake elevation with shading alone.
+  for (let i = 0; i < STEPS; i++) {
+    const f = i / (STEPS - 1);
+    const shade = 74 + Math.round(f * 92); // 74 (bottom, shadowed) -> 166 (top, lit)
+    ctx.fillStyle = `rgb(${shade},${shade - 8},${Math.max(0, shade - 34)})`;
+    ctx.fillRect(x0 + i * stepW, y0, Math.max(1, stepW - 2), totalH);
+    // Riser highlight — a bright line along each step's leading (east) edge.
+    ctx.fillStyle = `rgba(255,224,150,${0.3 + f * 0.4})`;
+    ctx.fillRect(x0 + (i + 1) * stepW - 2.2 * ZOOM, y0, 2.2 * ZOOM, totalH);
+  }
+  ctx.strokeStyle = 'rgba(40,26,10,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x0, y0, totalW, totalH);
+
+  // Up-chevron pulsing at the landing end, pointing the way to climb.
+  ctx.globalAlpha = 0.6 + 0.35 * pulse;
+  ctx.strokeStyle = '#ffe9b0';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x0 + totalW - 16, sy - 9); ctx.lineTo(x0 + totalW - 5, sy); ctx.lineTo(x0 + totalW - 16, sy + 9);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.font = 'bold 11px system-ui, Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.strokeText(label, sx, sy + totalH / 2 + 16);
+  ctx.fillStyle = '#ffe08f';
+  ctx.fillText(label, sx, sy + totalH / 2 + 16);
+}
+
 function drawTeleportPads() {
   if (!player) return;
   if (_portalPad) _drawSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт', 'blue');
@@ -1892,7 +1957,7 @@ function drawTeleportPads() {
   // Ascent staircase — only drawn once the current floor is actually
   // cleared (_ascentReady); before that there's nothing to climb yet.
   if (_ascentReady && _ascentStair) {
-    _drawSwirlPad(_ascentStair.x, _ascentStair.y, typeof t === 'function' ? t('ascentStairLbl') : 'Лестница', 'gold');
+    _drawStaircase(_ascentStair.x, _ascentStair.y, typeof t === 'function' ? t('ascentStairLbl') : 'Лестница');
   }
   // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue
   // swirl the hub portal itself uses, redrawn every frame centred on the

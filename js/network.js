@@ -3543,7 +3543,11 @@ function _initAscentHandlers(s) {
     if (typeof _ascentReady !== 'undefined') _ascentReady = false;
     if (typeof _ascentClimbSent !== 'undefined') _ascentClimbSent = false;
     if (x != null && y != null) {
-      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('ascentLbl'));
+      // Gold + an up-chevron instead of the default blue "warped through a
+      // portal" look (_teleportTo) — this is a climb, not a teleport, and
+      // js/game.js now draws the staircase itself as real stone steps rather
+      // than a swirl, so the reposition fx should match.
+      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('ascentLbl'), '#ffcf50', '⬆');
       else if (player) { player.x = x; player.y = y; }
     }
     if (typeof hideAscentCountdown === 'function') hideAscentCountdown();
