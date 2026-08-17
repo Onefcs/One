@@ -839,13 +839,16 @@ function generateAscent() {
   return {
     grid, rooms: [], w, h,
     spawn: { x: lanes[0].entryX, y: lanes[0].entryY },
-    // Lane geometry only — Room.js reaches into this directly
-    // (this._dungeon.ascent), same as this._dungeon.fear: the client needs
-    // no rendering/tinting hints for it since entry and every floor
-    // transition are server-pushed teleports, but the staircase coordinate
-    // itself IS sent to the client separately (see ascentStarted/ascentFloor,
-    // server/index.js) so it can render the pad and detect proximity to it.
-    ascent: { lanes },
+    // `lanes` is per-player instance state — Room.js reaches into it
+    // directly (this._dungeon.ascent.lanes), same as this._dungeon.fear:
+    // entry and every floor transition are server-pushed teleports, so the
+    // client never needs it (the staircase coordinate itself IS sent
+    // separately, see ascentStarted/ascentFloor, server/index.js). `bounds`
+    // is the one thing about this floor that IS sent to the client — see
+    // Room.dungeonData — purely so it can tint the whole room to look like a
+    // lava dungeon instead of the default biome theme (_isAscentTile,
+    // js/game.js), same as race10.bounds/guildWar.bounds/farmZone.bounds.
+    ascent: { lanes, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
     enemies: [],
   };
 }

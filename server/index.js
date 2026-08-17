@@ -416,18 +416,6 @@ function _rollFarmZoneLoot(inv, eid) {
   return granted;
 }
 
-// ── Восхождение (Ascent) kill loot ──────────────────────────────────────────
-// A flat 30% chance per kill to roll the normal, level-appropriate loot
-// table (_rollMobLoot) — everything else about a drop (rarity odds, recipe/
-// key/shard/book chances) stays exactly what it would be for the same
-// monster in the open world, just gated behind one extra flat roll up
-// front, the same 30% calcGoldDrop already uses for a regular mob's gold.
-const ASCENT_DROP_CHANCE = 0.3;
-function _rollAscentLoot(inv, eid, rlvl, plvl) {
-  if (Math.random() >= ASCENT_DROP_CHANCE) return [];
-  return _rollMobLoot(inv, eid, rlvl, plvl);
-}
-
 function _marketListingData(l) {
   return {
     id: l._id.toString(), sellerId: l.sellerId, sellerUsername: l.sellerUsername,
@@ -5828,13 +5816,14 @@ io.on('connection', socket => {
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
     // reroll below) entirely — see _rollFarmZoneLoot's own comment. Ascent
-    // kills still use the normal table, just gated behind one flat 30%
-    // roll first — see _rollAscentLoot's own comment.
+    // kills skip it too, and grant nothing from this function at all — its
+    // only reward beyond xp is the flat ASCENT_LIBERTY_CHANCE Liberty roll in
+    // the attack/skillAttack handlers below, not an item.
     const items = farmZone ? _rollFarmZoneLoot(inv, eid)
-      : ascent ? _rollAscentLoot(inv, eid, rlvl, _lastStats.lvl)
+      : ascent ? []
       : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-    if (!farmZone && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
+    if (!farmZone && !ascent && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
@@ -6117,6 +6106,14 @@ io.on('connection', socket => {
   // level-2 mob 0.000002, and so on.
   const GRAM_DROP_CHANCE = 0.075;
   const GRAM_PER_LEVEL = 0.0000001;
+  // Восхождение (Ascent) replaces every other kill reward (gold — see the
+  // `arm === 'ascent'` branch in calcGoldDrop, shared/definitions.js — GRAM,
+  // and the whole item loot table — see the ascent branch in
+  // _grantKillLoot above) with exactly one thing: a flat 20% chance per kill
+  // at Liberty (Nexum). No level/arm scaling, no stacking with
+  // NEXUM_DROP_CHANCE — see the nexumDrop/nexumDrop2 branches in the attack/
+  // skillAttack handlers below.
+  const ASCENT_LIBERTY_CHANCE = 0.2;
 
   // calcBM (shared/anticheat.js) reads sd.atk/sd.def/sd.maxHp — the FULL,
   // gear-inclusive combat stats — but _buildSaveStats() (js/network.js)
@@ -10817,10 +10814,15 @@ io.on('connection', socket => {
       }
 
       const _arm = armIndexForLevel(result.rlvl);
+      const _isAscent = result.arm === 'ascent';
       // Фарм-зона already skips the whole normal loot table (see farmZone in
       // _grantKillLoot) — Liberty/GRAM are the same "no drop but shards" deal.
-      const nexumDrop  = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
-      const gramDrop   = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
+      // Восхождение replaces both with one flat ASCENT_LIBERTY_CHANCE Liberty
+      // roll and no GRAM at all — see its own comment above.
+      const nexumDrop  = _isAscent ? (Math.random() < ASCENT_LIBERTY_CHANCE ? 1 : 0)
+        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
+      const gramDrop   = (_isAscent || result.farmZone) ? 0
+        : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
@@ -10945,8 +10947,12 @@ io.on('connection', socket => {
         });
       }
       const _arm2 = armIndexForLevel(result.rlvl);
-      const nexumDrop2 = (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
-      const gramDrop2  = (!result.farmZone && Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
+      const _isAscent2 = result.arm === 'ascent';
+      // Same Восхождение override as the basic-attack path above.
+      const nexumDrop2 = _isAscent2 ? (Math.random() < ASCENT_LIBERTY_CHANCE ? 1 : 0)
+        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
+      const gramDrop2  = (_isAscent2 || result.farmZone) ? 0
+        : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));

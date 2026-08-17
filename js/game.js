@@ -2246,6 +2246,20 @@ function _isFarmZoneTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
+// Восхождение (Ascent) gets its own dark, lava-lit palette instead of the
+// default biome theme — near-black scorched basalt walls/floor, with bright
+// glowing orange fissures standing in for the blood/ember stains the other
+// reskinned zones get (see the stain pass in _buildChunk below), so a "dark,
+// lava" dungeon actually looks like one instead of just another normal room
+// reused across all 50 floors.
+const _ASCENT_WALL    = '#190d09';
+const _ASCENT_FLOOR_A = '#0f0705';
+const _ASCENT_FLOOR_B = '#1c0d07';
+function _isAscentTile(tx, ty) {
+  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.bounds;
+  return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -2279,6 +2293,7 @@ function _buildChunk(cx, cy) {
   const mortarWallRace10 = _shadeHexColor(_RACE10_WALL, -0.45);
   const mortarWallGw = _shadeHexColor(_GW_WALL, -0.45);
   const mortarWallFarm = _shadeHexColor(_FARM_WALL, -0.45);
+  const mortarWallAscent = _shadeHexColor(_ASCENT_WALL, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
@@ -2286,8 +2301,9 @@ function _buildChunk(cx, cy) {
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
-      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : th.wallColor;
-      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : mortarWall;
+      const inAscent = !inTower && !inGw && !inFarm && _isAscentTile(tx, ty);
+      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : inAscent ? _ASCENT_WALL : th.wallColor;
+      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : inAscent ? mortarWallAscent : mortarWall;
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2308,6 +2324,7 @@ function _buildChunk(cx, cy) {
   const mortarFloorRace10 = _shadeHexColor(_RACE10_FLOOR_A, -0.35);
   const mortarFloorGw = _shadeHexColor(_GW_FLOOR_A, -0.35);
   const mortarFloorFarm = _shadeHexColor(_FARM_FLOOR_A, -0.35);
+  const mortarFloorAscent = _shadeHexColor(_ASCENT_FLOOR_A, -0.35);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -2315,26 +2332,39 @@ function _buildChunk(cx, cy) {
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
-      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : th.floorA;
-      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : th.floorB;
-      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : mortarFloor;
+      const inAscent = !inTower && !inGw && !inFarm && _isAscentTile(tx, ty);
+      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inAscent ? _ASCENT_FLOOR_A : th.floorA;
+      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inAscent ? _ASCENT_FLOOR_B : th.floorB;
+      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inAscent ? mortarFloorAscent : mortarFloor;
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
       c.fillRect(x, y + TILE - 2, TILE, 2);
       c.fillRect(x + TILE - 2, y, 2, TILE);
-      if (_tileHash(tx, ty, 1) < 0.1) {
+      // Ascent's cracks glow like lava fissures instead of the usual dark
+      // mortar line — everywhere else a crack is a shadowed seam, here it's
+      // the molten rock showing through.
+      if (_tileHash(tx, ty, 1) < (inAscent ? 0.22 : 0.1)) {
         const crx = x + 8 + _tileHash(tx, ty, 2) * (TILE - 16);
         const cry = y + 8 + _tileHash(tx, ty, 3) * (TILE - 16);
-        _drawCrack(c, crx, cry, tx, ty, mortar, 6);
+        _drawCrack(c, crx, cry, tx, ty, inAscent ? 'rgba(255,110,20,0.85)' : mortar, 6);
       }
       // Bloodier and far more frequent stains inside the tower — the whole
-      // point of the reskin is that it actually looks like the name.
-      const stainChance = inTower ? 0.35 : 0.06;
+      // point of the reskin is that it actually looks like the name. Ascent
+      // gets its own frequent, bright glowing lava-pool stains instead.
+      const stainChance = inTower ? 0.35 : inAscent ? 0.28 : 0.06;
       if (_tileHash(tx, ty, 4) < stainChance) {
         const sx = x + TILE * (0.3 + _tileHash(tx, ty, 5) * 0.4);
         const sy = y + TILE * (0.3 + _tileHash(tx, ty, 6) * 0.4);
-        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, inTower ? 'rgba(140,10,10,0.55)' : 'rgba(60,10,10,0.35)');
+        _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6,
+          inTower ? 'rgba(140,10,10,0.55)' : inAscent ? 'rgba(255,90,20,0.5)' : 'rgba(60,10,10,0.35)');
+      }
+      // A second, smaller, brighter core inside some of those lava pools —
+      // reads as a hot molten centre rather than a flat orange blob.
+      if (inAscent && _tileHash(tx, ty, 22) < 0.12) {
+        const sx = x + TILE * (0.35 + _tileHash(tx, ty, 23) * 0.3);
+        const sy = y + TILE * (0.35 + _tileHash(tx, ty, 24) * 0.3);
+        _drawStain(c, sx, sy, 3 + _tileHash(tx, ty, 25) * 3, 'rgba(255,220,120,0.75)');
       }
       // Guild War: scorched siege ground — frequent dark ash patches, plus a
       // rare glowing violet ember that echoes the tower's crystal roof gems,
@@ -2364,7 +2394,8 @@ function _buildChunk(cx, cy) {
       if (!isFloor(tx, ty + 1)) continue;
       const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
         : _isGuildWarTile(tx, ty) ? _GW_WALL
-        : _isFarmZoneTile(tx, ty) ? _FARM_WALL : th.wallColor;
+        : _isFarmZoneTile(tx, ty) ? _FARM_WALL
+        : _isAscentTile(tx, ty) ? _ASCENT_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));

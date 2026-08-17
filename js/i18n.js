@@ -223,6 +223,7 @@ const I18N_UI = {
   // ── Восхождение (Ascent) ──────────────────────────────────────────────────
   ascentTab:      { ru: 'Восхождение', en: 'Ascent' },
   ascentLbl:      { ru: 'Восхождение', en: 'Ascent' },
+  ascentBestiaryHint: { ru: 'Ни золота, ни обычного лута — только опыт ×10 и 20% шанс на Liberty с каждого убийства.', en: 'No gold, no regular loot — just ×10 xp and a 20% Liberty chance per kill.' },
   ascentFreezeLbl: { ru: 'Монстры появятся через', en: 'Monsters arrive in' },
   ascentPhaseFighting: { ru: 'Этаж {floor}/{max}', en: 'Floor {floor}/{max}' },
   ascentPhaseCleared: { ru: 'Этаж зачищен! Дойдите до лестницы', en: 'Floor cleared! Reach the staircase' },

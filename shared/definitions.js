@@ -308,6 +308,10 @@ function skillPointBudget(lvl, rebirths) {
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
+  // Восхождение (Ascent) grants no gold at all — its only reward besides xp
+  // is the flat ASCENT_LIBERTY_CHANCE Liberty roll (server/index.js's
+  // attack/skillAttack handlers, gated on `arm === 'ascent'`).
+  if (enemy.arm === 'ascent') return 0;
   const g = goldAtLevel(enemy.rlvl || 1);
   if (enemy.isBoss) return g;
   return Math.random() > 0.30 ? 0 : g;
