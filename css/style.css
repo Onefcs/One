@@ -2146,16 +2146,50 @@ canvas { display:block; width:100%; height:100%; }
 }
 #events-panel, #events-panel * { touch-action: pan-y; pointer-events: auto; }
 /* The panel reuses .vip-header/.vip-body, both of which are absolutely
-   positioned — so the tab strip has to be placed under the 50px header
+   positioned — so the tab list has to be placed under the 50px header
    explicitly and the body pushed below it, rather than relying on flex order
-   (which would just put the tabs behind the header). */
-#events-panel .rating-tabs {
+   (which would just put the tabs behind the header).
+   A plain row of .rating-tab buttons (the pattern every other panel with 2-3
+   tabs uses) stopped fitting once this panel grew to 7 events — labels
+   clipped or wrapped mid-word. A vertical list instead: one row per event,
+   each carrying its own icon and a tint of that location's actual world
+   colour (--cc, set inline per button — race10's is its corridor's blood
+   red, coop's its grass green, etc.) via the same --cc + color-mix() pattern
+   .profp-card/.profp-banner-icon already use for the profession codex. */
+.event-tab-list {
   position: absolute;
   top: 54px; left: 16px; right: 16px;
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
   z-index: 1;
 }
-#events-panel .vip-body { top: 100px; }
+.event-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--cc) 32%, rgba(209,204,197,.12));
+  background: color-mix(in srgb, var(--cc) 10%, rgba(209,204,197,.03));
+  color: #d8cfc0;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+}
+.event-tab-item.active {
+  border-color: var(--cc);
+  background: color-mix(in srgb, var(--cc) 24%, rgba(209,204,197,.03));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 30%, transparent), 0 4px 14px rgba(0,0,0,.35);
+}
+.event-tab-icon { flex-shrink: 0; width: 20px; font-size: 16px; text-align: center; }
+.event-tab-label { flex: 1; font-size: 13px; font-weight: 700; }
+.event-tab-item.active .event-tab-label { color: #f2ead9; }
+.event-tab-arrow { flex-shrink: 0; font-size: 15px; color: var(--cc); opacity: .5; }
+.event-tab-item.active .event-tab-arrow { opacity: 1; }
+#events-panel .vip-body { top: 382px; }
 
 #gram-shop-panel {
   position: absolute;

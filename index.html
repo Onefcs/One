@@ -182,14 +182,28 @@
     <div class="vip-title" style="color:#e8574f"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span data-i18n="eventsHdr">События</span></div>
     <button class="vip-close" onclick="closeEventsPanel()">✕</button>
   </div>
-  <div class="rating-tabs">
-    <button class="rating-tab active" id="etab-battle" onclick="switchEventTab('battle')" data-i18n="dbBtn">Битва</button>
-    <button class="rating-tab" id="etab-a3" onclick="switchEventTab('a3')" data-i18n="a3Tab">3х3</button>
-    <button class="rating-tab" id="etab-race10" onclick="switchEventTab('race10')" data-i18n="race10Tab">Забег</button>
-    <button class="rating-tab" id="etab-fear" onclick="switchEventTab('fear')" data-i18n="fearTab">Страх</button>
-    <button class="rating-tab" id="etab-coop" onclick="switchEventTab('coop')" data-i18n="coopTab">Сотрудничество</button>
-    <button class="rating-tab" id="etab-boss" onclick="switchEventTab('boss')" data-i18n="worldBossTab">Мировой босс</button>
-    <button class="rating-tab" id="etab-guildWar" onclick="switchEventTab('guildWar')" data-i18n="guildWarTab">Война гильдий</button>
+  <div class="event-tab-list" id="events-tab-list">
+    <button class="event-tab-item active" id="etab-battle" onclick="switchEventTab('battle')" style="--cc:#e8574f">
+      <span class="event-tab-icon">💀</span><span class="event-tab-label" data-i18n="dbBtn">Битва</span><span class="event-tab-arrow">›</span>
+    </button>
+    <button class="event-tab-item" id="etab-a3" onclick="switchEventTab('a3')" style="--cc:#5b8def">
+      <span class="event-tab-icon">🛡️</span><span class="event-tab-label" data-i18n="a3Tab">3х3</span><span class="event-tab-arrow">›</span>
+    </button>
+    <button class="event-tab-item" id="etab-race10" onclick="switchEventTab('race10')" style="--cc:#eb4e61">
+      <span class="event-tab-icon">🩸</span><span class="event-tab-label" data-i18n="race10Tab">Кровавая Башня</span><span class="event-tab-arrow">›</span>
+    </button>
+    <button class="event-tab-item" id="etab-fear" onclick="switchEventTab('fear')" style="--cc:#8a6fbf">
+      <span class="event-tab-icon">👻</span><span class="event-tab-label" data-i18n="fearTab">Страх</span><span class="event-tab-arrow">›</span>
+    </button>
+    <button class="event-tab-item" id="etab-coop" onclick="switchEventTab('coop')" style="--cc:#4caf6b">
+      <span class="event-tab-icon">🤝</span><span class="event-tab-label" data-i18n="coopTab">Сотрудничество</span><span class="event-tab-arrow">›</span>
+    </button>
+    <button class="event-tab-item" id="etab-boss" onclick="switchEventTab('boss')" style="--cc:#ffd18a">
+      <span class="event-tab-icon">👑</span><span class="event-tab-label" data-i18n="worldBossTab">Мировой босс</span><span class="event-tab-arrow">›</span>
+    </button>
+    <button class="event-tab-item" id="etab-guildWar" onclick="switchEventTab('guildWar')" style="--cc:#8a5cf6">
+      <span class="event-tab-icon">🏰</span><span class="event-tab-label" data-i18n="guildWarTab">Война гильдий</span><span class="event-tab-arrow">›</span>
+    </button>
   </div>
   <div id="events-panel-body" class="vip-body"></div>
 </div>

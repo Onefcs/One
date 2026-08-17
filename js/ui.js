@@ -4252,7 +4252,7 @@ function closeEventsPanel() {
 
 function switchEventTab(tab) {
   _eventTab = tab;
-  document.querySelectorAll('#events-panel .rating-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#events-panel .event-tab-item').forEach(b => b.classList.remove('active'));
   document.getElementById('etab-' + tab)?.classList.add('active');
   _renderEventsBody();
 }
