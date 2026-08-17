@@ -7641,15 +7641,22 @@ io.on('connection', socket => {
       // getAvailableSkillPoints (js/player.js) computes available = budget +
       // bonusSP - spent — bonusSP is a credit line the anti-cheat check reads
       // against, not a wallet that depletes as points are spent, so spent
-      // itself never leaves player.upgrades. Adding spentSP on top of a
-      // bonusSP that ALREADY covered that same spend (oldBonus + spentSP, as
-      // an earlier version of this line did) inflated `available` by the
-      // full spentSP a second time: rebirthing and then immediately hitting
-      // "Сбросить" on Улучшения handed back spentSP points nobody ever
-      // earned, on top of the ones already invested and kept. max() instead
-      // only tops bonusSP up to whichever actually matters: the flat reward
-      // when the old bonus already had enough slack to cover the kept spend,
-      // or exactly the spent amount when it didn't — never both stacked.
+      // itself never leaves player.upgrades. max(oldBonus, spentSP) is the
+      // floor that keeps that credit line covering the kept spend (whichever
+      // of the two actually needs covering), and REBIRTH_BONUS_SP is then
+      // added on top of that floor — unconditionally, every rebirth — so the
+      // advertised flat reward (rebirthDesc/rebirthConfirmBody: "+15 forever")
+      // always lands instead of being absorbed whenever spentSP alone already
+      // exceeded oldBonus + REBIRTH_BONUS_SP.
+      //
+      // Summing spentSP on top of a bonusSP that ALREADY covered that same
+      // spend (oldBonus + spentSP, as an earlier version of this line did)
+      // inflated `available` by the full spentSP a second time: rebirthing
+      // and then immediately hitting "Сбросить" on Улучшения handed back
+      // spentSP points nobody ever earned, on top of the ones already
+      // invested and kept. Taking max() of the two first, then adding the
+      // flat reward once, avoids that double count while still always paying
+      // the reward.
       //
       // An even earlier version banked the whole pre-reset BUDGET instead of
       // what was spent, which handed every UNSPENT level point too and then
@@ -7677,7 +7684,7 @@ io.on('connection', socket => {
       _lastStats.baseAtk = _cd.baseAtk;
       _lastStats.baseDef = _cd.baseDef;
       _lastStats.baseMaxHp = _cd.baseHP;
-      _lastStats.bonusSP = Math.max(_oldBonus + REBIRTH_BONUS_SP, _spentSP);
+      _lastStats.bonusSP = Math.max(_oldBonus, _spentSP) + REBIRTH_BONUS_SP;
       _lastStats.rebirths = (_lastStats.rebirths || 0) + 1;
       _lastStats.inventory = inv;
 
