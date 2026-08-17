@@ -1334,7 +1334,10 @@ class Room {
     // War, Фарм-зона, arena, …) — the pad that requests a transition back to
     // the hub; armEntries/farmZoneEntry only on the hub (the outbound pads,
     // now just {req} or {dir,req} — no target x/y, each zone is its own floor).
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone };
+    // coop only ever carries `bounds` here (see generateCoop's own comment)
+    // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
+    // directly off this._dungeon.coop, never meant for the wire.
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, coop: d.coop ? { bounds: d.coop.bounds } : undefined };
   }
 
   _inSafeZone(x, y) {

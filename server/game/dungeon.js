@@ -858,11 +858,14 @@ function generateCoop() {
     // spawn point) — every real entrant is placed precisely by
     // Room.coopDeploy right after joining, same as Fear.
     spawn: { x: lanes[0].entryX, y: lanes[0].entryY },
-    // Lane/boss geometry only — Room.js reaches into this directly
-    // (this._dungeon.coop), deliberately NOT part of Room.dungeonData: no
-    // special rendering/tinting hint is needed, and every stage transition
-    // is a server-pushed spawn, not something the client discovers by
-    // walking around (same reasoning as this._dungeon.fear).
+    // `lanes`/`boss`/`bossRoomX0` are geometry Room.js reaches into directly
+    // (this._dungeon.coop) — every stage transition is a server-pushed
+    // spawn, not something the client discovers by walking around (same
+    // reasoning as this._dungeon.fear). `bounds` is the one thing about this
+    // floor that IS sent to the client — see Room.dungeonData — purely so it
+    // can tint the whole room to look like a dark grassy dungeon instead of
+    // the default biome theme (_isCoopTile, js/game.js), same as
+    // race10.bounds/guildWar.bounds/farmZone.bounds.
     coop: {
       lanes,
       boss: { x: bossCx, y: bossCy },
@@ -870,6 +873,7 @@ function generateCoop() {
       // race10.bossRoomX0 plays: tells "still in my own lane" apart from
       // "reached the shared room" (Room.js's _raceVisible-style isolation).
       bossRoomX0: bossX0 * TILE,
+      bounds: { x0: 0, y0: 0, x1: w, y1: h },
     },
     enemies: [],
   };

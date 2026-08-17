@@ -2147,6 +2147,35 @@ function _isFarmZoneTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
+// Сотрудничество (Coop) gets a dark, overgrown palette instead of falling
+// through to the biome theme — near-black hedge walls and deep grass-green
+// floor with scattered bright-green tufts (see the grass pass in
+// _buildChunk below), so a "dark green with grass" dungeon actually looks
+// like one instead of just another normal room.
+const _COOP_WALL    = '#0f2413';
+const _COOP_FLOOR_A = '#173a1c';
+const _COOP_FLOOR_B = '#1f4726';
+function _isCoopTile(tx, ty) {
+  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.coop && dungeon.coop.bounds;
+  return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
+}
+
+// A little tuft of grass blades — a few short bright strokes fanning out
+// from a base point, same "cheap procedural detail" role _drawCrack/
+// _drawStain play for the other reskinned zones.
+function _drawGrassTuft(c, x, y, tx, ty, color) {
+  c.strokeStyle = color;
+  c.lineWidth = 2;
+  for (let i = 0; i < 3; i++) {
+    const ang = -Math.PI / 2 + (_tileHash(tx, ty, 40 + i) - 0.5) * 1.6;
+    const len = 5 + _tileHash(tx, ty, 43 + i) * 5;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+    c.stroke();
+  }
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
@@ -2180,6 +2209,7 @@ function _buildChunk(cx, cy) {
   const mortarWallRace10 = _shadeHexColor(_RACE10_WALL, -0.45);
   const mortarWallGw = _shadeHexColor(_GW_WALL, -0.45);
   const mortarWallFarm = _shadeHexColor(_FARM_WALL, -0.45);
+  const mortarWallCoop = _shadeHexColor(_COOP_WALL, -0.45);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
@@ -2187,8 +2217,9 @@ function _buildChunk(cx, cy) {
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
-      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : th.wallColor;
-      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : mortarWall;
+      const inCoop = !inTower && !inGw && !inFarm && _isCoopTile(tx, ty);
+      const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : inCoop ? _COOP_WALL : th.wallColor;
+      const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : inCoop ? mortarWallCoop : mortarWall;
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2209,6 +2240,7 @@ function _buildChunk(cx, cy) {
   const mortarFloorRace10 = _shadeHexColor(_RACE10_FLOOR_A, -0.35);
   const mortarFloorGw = _shadeHexColor(_GW_FLOOR_A, -0.35);
   const mortarFloorFarm = _shadeHexColor(_FARM_FLOOR_A, -0.35);
+  const mortarFloorCoop = _shadeHexColor(_COOP_FLOOR_A, -0.35);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -2216,9 +2248,10 @@ function _buildChunk(cx, cy) {
       const inTower = _isRace10Tile(tx, ty);
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
-      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : th.floorA;
-      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : th.floorB;
-      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : mortarFloor;
+      const inCoop = !inTower && !inGw && !inFarm && _isCoopTile(tx, ty);
+      const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inCoop ? _COOP_FLOOR_A : th.floorA;
+      const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inCoop ? _COOP_FLOOR_B : th.floorB;
+      const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inCoop ? mortarFloorCoop : mortarFloor;
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2230,9 +2263,11 @@ function _buildChunk(cx, cy) {
         _drawCrack(c, crx, cry, tx, ty, mortar, 6);
       }
       // Bloodier and far more frequent stains inside the tower — the whole
-      // point of the reskin is that it actually looks like the name.
+      // point of the reskin is that it actually looks like the name. Coop is
+      // excluded: a red blood blob doesn't fit "dark green with grass" the
+      // way it still reads fine on the other, still-stone-toned reskins.
       const stainChance = inTower ? 0.35 : 0.06;
-      if (_tileHash(tx, ty, 4) < stainChance) {
+      if (!inCoop && _tileHash(tx, ty, 4) < stainChance) {
         const sx = x + TILE * (0.3 + _tileHash(tx, ty, 5) * 0.4);
         const sy = y + TILE * (0.3 + _tileHash(tx, ty, 6) * 0.4);
         _drawStain(c, sx, sy, 8 + _tileHash(tx, ty, 8) * 6, inTower ? 'rgba(140,10,10,0.55)' : 'rgba(60,10,10,0.35)');
@@ -2253,6 +2288,21 @@ function _buildChunk(cx, cy) {
           _drawStain(c, sx, sy, 5 + _tileHash(tx, ty, 21) * 3, 'rgba(168,85,247,0.5)');
         }
       }
+      // Coop: frequent grass tufts (bright green blade clusters) plus rarer,
+      // darker earth patches where the grass thins out — reads as an
+      // overgrown dungeon floor rather than a flat colour swap.
+      if (inCoop) {
+        if (_tileHash(tx, ty, 25) < 0.5) {
+          const gx = x + TILE * (0.2 + _tileHash(tx, ty, 26) * 0.6);
+          const gy = y + TILE * (0.35 + _tileHash(tx, ty, 27) * 0.55);
+          _drawGrassTuft(c, gx, gy, tx, ty, `rgba(120,210,110,${0.5 + _tileHash(tx, ty, 28) * 0.35})`);
+        }
+        if (_tileHash(tx, ty, 29) < 0.05) {
+          const sx = x + TILE * (0.3 + _tileHash(tx, ty, 30) * 0.4);
+          const sy = y + TILE * (0.3 + _tileHash(tx, ty, 31) * 0.4);
+          _drawStain(c, sx, sy, 6 + _tileHash(tx, ty, 32) * 5, 'rgba(30,20,10,0.4)');
+        }
+      }
     }
   }
 
@@ -2265,7 +2315,8 @@ function _buildChunk(cx, cy) {
       if (!isFloor(tx, ty + 1)) continue;
       const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
         : _isGuildWarTile(tx, ty) ? _GW_WALL
-        : _isFarmZoneTile(tx, ty) ? _FARM_WALL : th.wallColor;
+        : _isFarmZoneTile(tx, ty) ? _FARM_WALL
+        : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));
