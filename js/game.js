@@ -2197,6 +2197,23 @@ function _drawCrack(c, x, y, tx, ty, color, segLen) {
   c.stroke();
 }
 
+// One tile of the Ascent staircase's visible steps strip (dungeon.ascent.
+// stairs) — dark basalt at the low/entry end warming to gold-lit stone at
+// the high/landing end, with a bright riser line along each tile's east
+// edge standing in for a step's leading edge. Baked straight into the floor
+// raster (not an HUD overlay) so the player's own avatar visibly crosses it
+// with ordinary movement — real steps to walk up, not a swirl to step onto.
+function _drawAscentStepTile(c, x, y, tx, ty) {
+  const f = _ascentStepFrac(tx);
+  const base = _lerpHexColor('#241512', '#8a5a2a', f);
+  c.fillStyle = _shadeHexColor(base, (_tileHash(tx, ty, 30) - 0.5) * 0.08);
+  c.fillRect(x, y, TILE, TILE);
+  c.fillStyle = `rgba(255,214,140,${0.25 + f * 0.5})`;
+  c.fillRect(x + TILE - 3, y, 3, TILE);
+  c.fillStyle = 'rgba(20,10,6,0.5)';
+  c.fillRect(x, y, TILE, 2);
+}
+
 // A soft radial grime/blood stain blob.
 function _drawStain(c, x, y, radius, color) {
   const g = c.createRadialGradient(x, y, 0, x, y, radius);
@@ -2258,6 +2275,23 @@ const _ASCENT_FLOOR_B = '#1c0d07';
 function _isAscentTile(tx, ty) {
   const b = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.bounds;
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
+}
+
+// The visible ascending-steps strip (dungeon.ascent.stairs, server/game/
+// dungeon.js) — real floor tiles the player walks across to actually climb,
+// not just an instant-trigger pad floating in an otherwise flat room. See
+// the "stairs, not a portal" reasoning at _drawStaircase's own comment.
+function _isAscentStairTile(tx, ty) {
+  const s = typeof dungeon !== 'undefined' && dungeon && dungeon.ascent && dungeon.ascent.stairs;
+  return !!s && tx >= s.x0 && tx < s.x1 && ty >= s.y0 && ty < s.y1;
+}
+
+// 0 at the strip's low (west/entry) end, 1 at its high (east/landing) end —
+// same axis the up-chevron in drawTeleportPads points along.
+function _ascentStepFrac(tx) {
+  const s = dungeon.ascent.stairs;
+  const span = Math.max(1, s.x1 - s.x0 - 1);
+  return Math.min(1, Math.max(0, (tx - s.x0) / span));
 }
 
 function _buildChunk(cx, cy) {
@@ -2333,6 +2367,10 @@ function _buildChunk(cx, cy) {
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
       const inAscent = !inTower && !inGw && !inFarm && _isAscentTile(tx, ty);
+      // The visible steps strip overrides the flat lava floor entirely for
+      // its own tiles — real ground the player walks up, not a texture
+      // variant of the surrounding room.
+      if (inAscent && _isAscentStairTile(tx, ty)) { _drawAscentStepTile(c, x, y, tx, ty); continue; }
       const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inAscent ? _ASCENT_FLOOR_A : th.floorA;
       const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inAscent ? _ASCENT_FLOOR_B : th.floorB;
       const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inAscent ? mortarFloorAscent : mortarFloor;

@@ -150,6 +150,13 @@ const ASCENT_LANES = 1;
 const ASCENT_ROOM   = 20;   // room size (tiles)
 const ASCENT_GAP    = 8;    // wall padding (irrelevant with only one room, kept for the shared pitch math below)
 const ASCENT_PITCH  = ASCENT_ROOM + ASCENT_GAP;
+// Width (tiles, along the entry->stair axis) of the visible ascending-steps
+// strip leading up to the staircase trigger — real floor tiles the player
+// walks across (js/game.js's _buildChunk renders them as ascending stone
+// steps instead of the normal lava floor), not just a swirl the player pops
+// through. Ends exactly on the trigger column (stairX below) so the last,
+// brightest step is where climbing actually fires.
+const ASCENT_STAIR_TILES = 7;
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
 // Its own floor now (generateGuildWar, below). One square sealed zone with a
@@ -848,7 +855,18 @@ function generateAscent() {
     // Room.dungeonData — purely so it can tint the whole room to look like a
     // lava dungeon instead of the default biome theme (_isAscentTile,
     // js/game.js), same as race10.bounds/guildWar.bounds/farmZone.bounds.
-    ascent: { lanes, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
+    // `stairs` is the visible-steps strip's own tile bounds, fixed geometry
+    // derived the same way `bounds` is (ASCENT_LANES is always 1, so lane 0's
+    // own X0/ASCENT_ROOM/stairX already fully determine it) — see
+    // _isAscentStairTile/_ascentStepShade, js/game.js.
+    ascent: {
+      lanes,
+      bounds: { x0: 0, y0: 0, x1: w, y1: h },
+      stairs: {
+        x0: X0 + ASCENT_ROOM - 3 - (ASCENT_STAIR_TILES - 1), y0: Y0,
+        x1: X0 + ASCENT_ROOM - 3 + 1, y1: Y0 + ASCENT_ROOM,
+      },
+    },
     enemies: [],
   };
 }
