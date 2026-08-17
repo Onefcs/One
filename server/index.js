@@ -3161,11 +3161,12 @@ function _removeFromParty(partyId, leaverId) {
   if (!members) return;
 
   // Сотрудничество's party is exactly the two participants (formed by
-  // coopEnter's matchmaking) — there's no way to keep going once it breaks,
-  // so losing it ends the run for both the same way a death does. Covers an
-  // explicit partyLeave from either side; a disconnect already ends the run
-  // immediately on its own (_coopEjectOnDisconnect), well before this could
-  // ever be reached through the party's own disconnect-grace timeout.
+  // coopGroupStart once the leader launches the run) — there's no way to
+  // keep going once it breaks, so losing it ends the run for both the same
+  // way a death does. Covers an explicit partyLeave from either side; a
+  // disconnect already ends the run immediately on its own
+  // (_coopEjectOnDisconnect), well before this could ever be reached
+  // through the party's own disconnect-grace timeout.
   _coopEliminate(leaverId);
 
   const leaverName = members.get(leaverId) || leaverId.slice(0, 6);
@@ -4866,18 +4867,21 @@ function _fearHoldOnDisconnect(socketId, telegramId) {
 }
 
 // ── Сотрудничество (Coop) ────────────────────────────────────────────────────
-// A private, 2-player instance — no pre-existing party required: clicking
-// in joins a waiting pool (_coopWaiting), and the next player to click in
-// is paired with a RANDOM member of that pool (not necessarily whoever's
-// waited longest), a fresh 2-person party is created between exactly those
-// two on the spot, and both are deployed together (see coopEnter, below the
-// socket handlers further down this file). 8 stages of
-// COOP_MOBS_PER_STAGE monsters (server/game/Room.js) escalate through
-// COOP_STAGE_LEVELS (shared/definitions.js, read by both here and Room.js);
-// neither lane's next stage spawns until BOTH lanes have cleared the current
-// one (Room.coopRegisterKill), then a shared level-COOP_BOSS_LEVEL boss.
-// Dying anywhere, or a disconnect hold lapsing for good, ends the run for
-// BOTH participants — there is no way to keep going with only one of them.
+// A private, 2-player instance, entered through a leader-run group rather
+// than random matchmaking: one player creates a group (coopGroupCreate) and
+// becomes its leader, the open group is broadcast to everyone so a second
+// player can join it (coopGroupJoin), the leader can boot the member back
+// out at any time (coopGroupKick), and only the leader can actually launch
+// the run (coopGroupStart) — never automatic, never a random pairing. See
+// the group handlers further down this file for the lobby itself; once
+// launched, both are deployed together exactly like the old flow did. 8
+// stages of COOP_MOBS_PER_STAGE monsters (server/game/Room.js) escalate
+// through COOP_STAGE_LEVELS (shared/definitions.js, read by both here and
+// Room.js); neither lane's next stage spawns until BOTH lanes have cleared
+// the current one (Room.coopRegisterKill), then a shared
+// level-COOP_BOSS_LEVEL boss. Dying anywhere, or a disconnect hold lapsing
+// for good, ends the run for BOTH participants — there is no way to keep
+// going with only one of them.
 const COOP_ATTEMPTS = 2;
 const COOP_MIN_LEVEL = 10;
 // Same role FEAR_START_DELAY_MS plays — see its own comment.
@@ -4897,15 +4901,94 @@ const COOP_LIBERTY_CHANCE = 0.1;
 // lane, and who the partner is so an event can be told to both of them.
 const _coop = new Map();
 
-// socketIds waiting for a random partner — see coopEnter. No party is
-// required to register any more: the first entrant just waits here, and
-// the next one to register is paired with a RANDOM member of this pool
-// (not necessarily whoever's been waiting longest), a fresh 2-person party
-// is created between them on the spot, and both are deployed together.
-// Membership is removed the moment a match is made; a socket that
-// disconnects while waiting is filtered out lazily at match time rather
-// than cleaned up eagerly (see coopEnter's own `pool` filter).
-const _coopWaiting = new Set();
+// ── Coop lobby (pre-run groups) ─────────────────────────────────────────────
+// leaderId -> { leaderName, memberId, memberName }. A group always has a
+// leader (the socketId that created it) and at most one member — the Room
+// this eventually deploys onto only has 2 lanes (see Room.coopDeploy). Groups
+// live here only until coopGroupStart consumes one (deleted at that point)
+// or it's dissolved without ever starting (leader leaves/disconnects).
+const _coopGroups = new Map();
+// socketId -> leaderId, for both the leader (points at itself) and the
+// member — the reverse lookup coopGroupKick/Leave/Start all need to find
+// which group (if any) a given connection currently belongs to.
+const _coopGroupOf = new Map();
+
+// Everything a given socket needs to render its own view of Coop group
+// membership — sent as coopGroupState after every change that touches it.
+function _coopGroupStateFor(socketId) {
+  const leaderId = _coopGroupOf.get(socketId);
+  const g = leaderId && _coopGroups.get(leaderId);
+  if (!g) return { inGroup: false };
+  return {
+    inGroup: true,
+    isLeader: socketId === leaderId,
+    leaderId, leaderName: g.leaderName,
+    memberId: g.memberId || null, memberName: g.memberName || null,
+  };
+}
+
+// `reason` is only set for a push the recipient didn't themselves trigger
+// (kicked, or the leader dissolved the group) — the client uses it to show
+// the right toast instead of silently updating.
+function _coopGroupPush(socketId, reason) {
+  const st = _coopGroupStateFor(socketId);
+  if (reason) st.reason = reason;
+  io.to(socketId).emit('coopGroupState', st);
+}
+
+// Only groups still missing a member are worth offering — a full group has
+// nothing left to join.
+function _coopGroupOpenList() {
+  const groups = [];
+  _coopGroups.forEach((g, leaderId) => {
+    if (!g.memberId && io.sockets.sockets.get(leaderId)) groups.push({ id: leaderId, leaderName: g.leaderName });
+  });
+  return groups;
+}
+
+// Broadcast to literally everyone, same as race10Broadcast/_a3Broadcast —
+// this is the lobby list any idle player's Events panel shows, not just the
+// two people involved.
+function _coopGroupBroadcastList() {
+  io.emit('coopGroupList', { groups: _coopGroupOpenList() });
+}
+
+// Leader gone (explicit leave, kick target having been the sole member is
+// handled separately) dissolves the whole group; the member, if any, is
+// notified so their panel drops back to idle rather than waiting forever on
+// a leader who's no longer there.
+function _coopGroupDissolve(leaderId, reason) {
+  const g = _coopGroups.get(leaderId);
+  if (!g) return;
+  _coopGroups.delete(leaderId);
+  _coopGroupOf.delete(leaderId);
+  if (g.memberId) {
+    _coopGroupOf.delete(g.memberId);
+    _coopGroupPush(g.memberId, reason);
+  }
+  _coopGroupBroadcastList();
+}
+
+// Disconnect while still in the lobby (never reached a live run) drops the
+// disconnecting side immediately — no reconnect grace, same as the random
+// pool this replaces never had one either. Called from the main disconnect
+// handler alongside _partyHoldOnDisconnect.
+function _coopGroupDropOnDisconnect(socketId) {
+  const leaderId = _coopGroupOf.get(socketId);
+  if (!leaderId) return;
+  if (leaderId === socketId) {
+    _coopGroupDissolve(leaderId, 'leaderLeft');
+  } else {
+    const g = _coopGroups.get(leaderId);
+    if (g && g.memberId === socketId) {
+      g.memberId = null;
+      g.memberName = null;
+      _coopGroupOf.delete(socketId);
+      _coopGroupPush(leaderId);
+      _coopGroupBroadcastList();
+    }
+  }
+}
 
 // Every Coop run gets its OWN Room, shared by exactly the 2 participants,
 // created here and never registered in floorRooms — same reasoning as
@@ -5649,6 +5732,10 @@ io.on('connection', socket => {
     // list; only the *Unregister/*Return/*ing-state variants stay in the fast
     // bucket because they're pure in-memory reads/writes.
     'arena3Register', 'arena3Sync', 'race10Register', 'race10Sync', 'fearEnter', 'fearSync',
+    // coopGroupCreate/Join/Kick/Leave all rewrite the lobby and re-broadcast
+    // it to every connected socket (_coopGroupBroadcastList) — same
+    // broadcast-amplification shape as arena3Register/race10Register above.
+    'coopGroupCreate', 'coopGroupJoin', 'coopGroupKick', 'coopGroupLeave', 'coopGroupStart', 'coopSync',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
@@ -11493,20 +11580,18 @@ io.on('connection', socket => {
   });
 
   // ── Сотрудничество (Coop) ────────────────────────────────────────────────
-  // Unlike every event above, entering isn't a solo/queued action, but it
-  // no longer requires an existing party either: clicking in just joins a
-  // waiting pool (_coopWaiting), and the moment a second player also
-  // clicks in, a RANDOM member of that pool is picked as their partner —
-  // not necessarily whoever's been waiting longest — a fresh 2-person party
-  // is created between exactly those two, and both are deployed together.
-  // Every real gate (level, attempts, conflicts with the other instanced
-  // modes) only runs for the connection actually calling this — the
-  // waiting partner already passed all of it when THEY first called
-  // coopEnter, same trust model race10/arena3's registration queues already
-  // use for a stored entry.
-  safeOn('coopEnter', async () => {
+  // Group-based lobby: coopGroupCreate makes this connection a leader,
+  // coopGroupJoin lets someone else take the one open slot, coopGroupKick
+  // lets the leader boot them back out, coopGroupLeave covers either side
+  // stepping away on their own, and coopGroupStart — leader only — is the
+  // sole way a run actually begins. All the real gates (level, attempts,
+  // conflicts with the other instanced modes) run at create/join time, same
+  // trust model race10/arena3's registration queues already use for a
+  // stored entry — coopGroupStart itself only rechecks that both sides are
+  // still actually connected before deploying.
+  safeOn('coopGroupCreate', async () => {
     if (!authed) return;
-    if (_coop.has(socket.id) || _coopWaiting.has(socket.id)) return; // already running or already queued
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) return;
     if (!currentRoom) return;
     const cp = currentRoom.players.get(socket.id);
     if (!cp) return socket.emit('coopError', { msg: 'Выберите персонажа' });
@@ -11530,32 +11615,114 @@ io.on('connection', socket => {
     if (left <= 0) {
       return socket.emit('coopError', { msg: 'Попытки в Сотрудничество на сегодня закончились' });
     }
+    _coopGroups.set(socket.id, { leaderName: authed.username, memberId: null, memberName: null });
+    _coopGroupOf.set(socket.id, socket.id);
+    _coopGroupPush(socket.id);
+    _coopGroupBroadcastList();
+  });
 
-    // Dead sockets (disconnected while waiting) are filtered out here rather
-    // than cleaned up eagerly on disconnect — cheap, and this is the only
-    // place that ever reads the pool.
-    const pool = Array.from(_coopWaiting).filter(sid => io.sockets.sockets.get(sid));
-    if (!pool.length) {
-      _coopWaiting.add(socket.id);
-      socket.emit('coopWaiting', {});
-      return;
+  safeOn('coopGroupJoin', ({ leaderId } = {}) => {
+    if (!authed || !leaderId) return;
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) return;
+    const g = _coopGroups.get(leaderId);
+    if (!g || g.memberId || !io.sockets.sockets.get(leaderId)) {
+      return socket.emit('coopError', { msg: 'Группа недоступна' });
     }
-    const partnerSid = pool[Math.floor(Math.random() * pool.length)];
+    if (!currentRoom) return;
+    const cp = currentRoom.players.get(socket.id);
+    if (!cp) return socket.emit('coopError', { msg: 'Выберите персонажа' });
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('coopError', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
+      return socket.emit('coopError', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
+      return socket.emit('coopError', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    if (_fear.has(socket.id)) {
+      return socket.emit('coopError', { msg: 'Вы сейчас в Страхе' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < COOP_MIN_LEVEL) {
+      return socket.emit('coopError', { msg: `Нужен ${COOP_MIN_LEVEL} уровень` });
+    }
+    // Re-check the slot is still open — two joins racing each other on the
+    // same open group must not both land.
+    if (g.memberId) return socket.emit('coopError', { msg: 'Группа недоступна' });
+    g.memberId = socket.id;
+    g.memberName = authed.username;
+    _coopGroupOf.set(socket.id, leaderId);
+    _coopGroupPush(leaderId);
+    _coopGroupPush(socket.id);
+    _coopGroupBroadcastList();
+  });
+
+  // Leader-only: boots the current member back to idle, freeing the slot
+  // for someone else to join. A no-op if there's no member to kick.
+  safeOn('coopGroupKick', () => {
+    const g = _coopGroups.get(socket.id);
+    if (!g || !g.memberId) return;
+    const memberId = g.memberId;
+    g.memberId = null;
+    g.memberName = null;
+    _coopGroupOf.delete(memberId);
+    _coopGroupPush(memberId, 'kicked');
+    _coopGroupPush(socket.id);
+    _coopGroupBroadcastList();
+  });
+
+  // Either side stepping away on their own. The leader leaving dissolves
+  // the whole group (the member, if any, is bounced back to idle); a
+  // member leaving just frees their own slot.
+  safeOn('coopGroupLeave', () => {
+    const leaderId = _coopGroupOf.get(socket.id);
+    if (!leaderId) return;
+    if (leaderId === socket.id) {
+      _coopGroupDissolve(leaderId, 'leaderLeft');
+    } else {
+      const g = _coopGroups.get(leaderId);
+      if (!g || g.memberId !== socket.id) return;
+      g.memberId = null;
+      g.memberName = null;
+      _coopGroupOf.delete(socket.id);
+      _coopGroupPush(leaderId);
+      _coopGroupBroadcastList();
+    }
+  });
+
+  // Leader-only, and only once a member has actually joined — this is the
+  // ONLY way a Coop run begins now, replacing the old random matchmaking.
+  safeOn('coopGroupStart', async () => {
+    if (!authed) return;
+    if (_coop.has(socket.id)) return;
+    const g = _coopGroups.get(socket.id);
+    if (!g) return; // not a leader (or not in a group at all)
+    if (!g.memberId) return socket.emit('coopError', { msg: 'Нужен второй участник' });
+    const partnerSid = g.memberId;
     const partnerSocket = io.sockets.sockets.get(partnerSid);
-    _coopWaiting.delete(partnerSid);
+    if (!partnerSocket) {
+      // Member vanished without the disconnect path catching it — clear the
+      // slot rather than trying to deploy a ghost.
+      g.memberId = null;
+      g.memberName = null;
+      _coopGroupPush(socket.id);
+      _coopGroupBroadcastList();
+      return socket.emit('coopError', { msg: 'Участник отключился' });
+    }
 
     // Group the two into a fresh party of exactly themselves — same shape
-    // partyAccept's "create new party" branch uses. Either one is detached
-    // from whatever party (if any) they already belonged to first, so a
-    // random pairing can never corrupt an unrelated group of friends.
+    // partyAccept's "create new party" branch uses, and needed for the PvP
+    // immunity/heal checks the run itself relies on (see arePlayersNear and
+    // playerParty's other readers).
     const oldPartyA = playerParty.get(partnerSid);
     if (oldPartyA) _removeFromParty(oldPartyA, partnerSid);
     const oldPartyB = playerParty.get(socket.id);
     if (oldPartyB) _removeFromParty(oldPartyB, socket.id);
     const partyId = partnerSid + '_' + socket.id;
     const partyMap = new Map();
-    partyMap.set(partnerSid, partnerSocket.data?.username || partnerSid.slice(0, 6));
-    partyMap.set(socket.id, authed.username);
+    partyMap.set(partnerSid, g.memberName);
+    partyMap.set(socket.id, g.leaderName);
     parties.set(partyId, partyMap);
     playerParty.set(partnerSid, partyId);
     playerParty.set(socket.id, partyId);
@@ -11577,7 +11744,8 @@ io.on('connection', socket => {
     if (!ok1 || !ok2) {
       // Something about one of the two connections refused the move (no
       // character selected any more, already elsewhere) — don't strand
-      // either one on a half-joined floor.
+      // either one on a half-joined floor, and leave the group intact so
+      // the leader can just try again.
       if (ok1) partnerSocket.data._forceEnterLocation?.('hub');
       if (ok2) socket.data._forceEnterLocation?.('hub');
       socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
@@ -11593,6 +11761,12 @@ io.on('connection', socket => {
       partnerSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
       return;
     }
+    // The group has done its job — clear it out before locking attempts and
+    // deploying, same as the old pool entry was cleared before deploy.
+    _coopGroups.delete(socket.id);
+    _coopGroupOf.delete(socket.id);
+    _coopGroupOf.delete(partnerSid);
+    _coopGroupBroadcastList();
     _lockCoopDaily(partnerSid);
     _lockCoopDaily(socket.id);
     _coop.set(partnerSid, { room: coopRoom, lane: spot1.lane, partnerId: socket.id });
@@ -11600,7 +11774,7 @@ io.on('connection', socket => {
     const p1 = coopRoom.players.get(partnerSid), p2 = coopRoom.players.get(socket.id);
     const readyAt = Date.now() + COOP_START_DELAY_MS;
     io.to(partnerSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await _coopAttemptsLeft(partnerSid), readyAt });
-    socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: left - 1, readyAt });
+    socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await _coopAttemptsLeft(socket.id), readyAt });
     safeTimeout('coopStage1', () => {
       // Still exactly the run this timer was scheduled for? A disconnect
       // during the countdown ends the run for both right away (see
@@ -11621,8 +11795,9 @@ io.on('connection', socket => {
       maxAttempts: COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length, minLevel: COOP_MIN_LEVEL,
       attemptsLeft: await _coopAttemptsLeft(socket.id),
       inRun: !!run, stage: run?.room ? run.room.coopStage() : 0,
-      waiting: !run && _coopWaiting.has(socket.id),
     });
+    socket.emit('coopGroupState', _coopGroupStateFor(socket.id));
+    socket.emit('coopGroupList', { groups: _coopGroupOpenList() });
   });
 
   // Sent once the player closes the coop result modal — same reasoning as
@@ -13104,6 +13279,11 @@ io.on('connection', socket => {
     // the member out of their party immediately, same class of bug as Fear's
     // hall-release-on-blip one.
     _partyHoldOnDisconnect(socket.id, authed?.telegramId);
+    // Coop groups are a pre-run lobby, not a live match — no reconnect grace
+    // (see _coopGroupDropOnDisconnect's own comment); this is unrelated to
+    // _coopEjectOnDisconnect above, which only ever fires for a run already
+    // under way.
+    _coopGroupDropOnDisconnect(socket.id);
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);

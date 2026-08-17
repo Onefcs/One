@@ -4529,15 +4529,56 @@ function _fearBodyHTML() {
 }
 
 // ── Сотрудничество (Coop) tab ────────────────────────────────────────────────
-// No party required to register any more — clicking the button joins a
-// waiting pool, and the server randomly pairs the next arrival with
-// whoever's already in it, grouping them into a party itself (see
-// netCoopEnter/coopWaiting). Headline number is the current stage while
-// running, otherwise how many of the daily attempts are left.
+// Group lobby instead of random matchmaking: a leader creates a group
+// (netCoopGroupCreate), it shows up in everyone else's open-group list
+// (_coopOpenGroups, pushed as coopGroupList), someone else joins it
+// (netCoopGroupJoin), the leader can kick that member back out
+// (netCoopGroupKick), and only the leader can actually launch the run
+// (netCoopGroupStart) — see js/network.js's _initCoopHandlers. Headline
+// number is the current stage while running, otherwise how many of the
+// daily attempts are left.
+function _coopGroupPanelHTML(g) {
+  const memberRow = g.memberId
+    ? `<div class="coop-grp-row">
+         <span class="coop-grp-name">${_esc(g.memberName)}</span>
+         ${g.isLeader ? `<button class="coop-grp-kick" onclick="netCoopGroupKick()">${t('coopKickBtn')}</button>` : `<span class="coop-grp-tag">${t('coopYouTag')}</span>`}
+       </div>`
+    : `<div class="coop-grp-row coop-grp-empty"><span class="coop-grp-name">${t('coopSlotOpenLbl')}</span></div>`;
+  const leaderRow = `<div class="coop-grp-row">
+       <span class="coop-grp-name">${_esc(g.leaderName)}</span>
+       <span class="coop-grp-tag">${g.isLeader ? t('coopYouTag') : t('coopLeaderTag')}</span>
+     </div>`;
+
+  const mainAction = g.isLeader
+    ? (g.memberId
+        ? `<button class="db-action" onclick="netCoopGroupStart()">${t('coopStartBtn')}</button>`
+        : `<button class="db-action" disabled>${t('coopWaitingMemberLbl')}</button>`)
+    : `<button class="db-action" disabled>${t('coopWaitingLeaderLbl')}</button>`;
+  const secondaryLbl = g.isLeader ? t('coopDisbandBtn') : t('coopLeaveGroupBtn');
+
+  return `
+    <div class="coop-grp-box">
+      ${leaderRow}
+      ${memberRow}
+    </div>
+    ${mainAction}
+    <button class="db-action db-leave" onclick="netCoopGroupLeave()">${secondaryLbl}</button>`;
+}
+
+function _coopOpenGroupsHTML() {
+  const groups = (typeof _coopOpenGroups !== 'undefined' && _coopOpenGroups) || [];
+  if (!groups.length) return `<div class="coop-open-empty">${t('coopNoGroupsLbl')}</div>`;
+  return `<div class="coop-open-list">${groups.map(gr => `
+    <div class="coop-open-row">
+      <span class="coop-grp-name">${_esc(gr.leaderName)}</span>
+      <button class="coop-join-btn" onclick="netCoopGroupJoin('${gr.id}')">${t('coopJoinBtn')}</button>
+    </div>`).join('')}</div>`;
+}
+
 function _coopBodyHTML() {
   const st = (typeof _coopState !== 'undefined' && _coopState) || { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
   const inRun = typeof _coopInRun !== 'undefined' && _coopInRun;
-  const waiting = typeof _coopIsWaiting !== 'undefined' && _coopIsWaiting;
+  const group = typeof _coopGroup !== 'undefined' ? _coopGroup : null;
   const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
   const lvl = (player && player.lvl) || 1;
   const tooLow = !inRun && lvl < (st.minLevel || 10);
@@ -4545,7 +4586,7 @@ function _coopBodyHTML() {
   let phaseTxt, action;
   if (inRun) {
     // stage is 0 for the COOP_START_DELAY_MS grace window between landing
-    // and stage 1 actually spawning (see server's coopEnter) — the
+    // and stage 1 actually spawning (see server's coopGroupStart) — the
     // #db-freeze countdown overlay is already covering the screen at that
     // point, but this panel can still be reopened during it, so it needs
     // its own "not fighting yet" phase rather than claiming stage 1 is
@@ -4554,9 +4595,9 @@ function _coopBodyHTML() {
       ? tVars('coopPhaseFighting', { stage: _coopStageNo, max: st.maxStage })
       : t('coopPhaseReady');
     action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
-  } else if (waiting) {
-    phaseTxt = t('coopPhaseWaitingPartner');
-    action = `<button class="db-action" disabled>${t('coopPhaseWaitingPartner')}</button>`;
+  } else if (group) {
+    phaseTxt = group.isLeader ? t('coopPhaseLeaderLbl') : t('coopPhaseMemberLbl');
+    action = _coopGroupPanelHTML(group);
   } else if (tooLow) {
     phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
     action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
@@ -4565,7 +4606,7 @@ function _coopBodyHTML() {
     action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
   } else {
     phaseTxt = t('fearPhaseIdle');
-    action = `<button class="db-action" onclick="netCoopEnter()">${t('fearEnterBtn')}</button>`;
+    action = `<button class="db-action" onclick="netCoopGroupCreate()">${t('coopCreateGroupBtn')}</button>${_coopOpenGroupsHTML()}`;
   }
 
   const countdown = inRun

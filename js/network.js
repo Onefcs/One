@@ -3463,17 +3463,22 @@ function _initFearHandlers(s) {
   });
 }
 
-function netCoopEnter()  { if (socket?.connected) socket.emit('coopEnter'); }
 function netCoopSync()   { if (socket?.connected) socket.emit('coopSync'); }
 // Same round-trip fearReturn uses — the server already moved this player
 // back to the hub when the run ended, this just makes the client catch up
 // visually.
 function netCoopReturn() { if (socket?.connected) socket.emit('coopReturn'); }
 
-// ── Сотрудничество (Coop) ────────────────────────────────────────────────────
-// 2-player-only: entering isn't instant the way Fear's is — the first party
-// member to click coopEnter waits (coopWaiting) until their partner does the
-// same, only then does coopStarted actually deploy both.
+// ── Сотрудничество (Coop) group lobby ────────────────────────────────────────
+// Create a group (becoming its leader), join someone else's open one, the
+// leader kicking the current member back out, either side leaving on their
+// own, and — leader only — actually launching the run. No random pairing.
+function netCoopGroupCreate() { if (socket?.connected) socket.emit('coopGroupCreate'); }
+function netCoopGroupJoin(leaderId) { if (socket?.connected) socket.emit('coopGroupJoin', { leaderId }); }
+function netCoopGroupKick()   { if (socket?.connected) socket.emit('coopGroupKick'); }
+function netCoopGroupLeave()  { if (socket?.connected) socket.emit('coopGroupLeave'); }
+function netCoopGroupStart()  { if (socket?.connected) socket.emit('coopGroupStart'); }
+
 function _initCoopHandlers(s) {
   s.on('coopState', (st) => {
     _coopState = {
@@ -3484,7 +3489,6 @@ function _initCoopHandlers(s) {
     };
     _coopInRun = !!st.inRun;
     _coopStageNo = st.stage || 0;
-    _coopIsWaiting = !!st.waiting;
     if (typeof onCoopState === 'function') onCoopState();
   });
 
@@ -3492,17 +3496,29 @@ function _initCoopHandlers(s) {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
-  // This account clicked coopEnter first — parked until the partner does
-  // the same (see coopStarted below, which fires for BOTH at once).
-  s.on('coopWaiting', () => {
-    _coopIsWaiting = true;
+  // Full snapshot of THIS account's group membership — sent after every
+  // create/join/kick/leave, and once on coopSync. reason is only present
+  // when the recipient didn't trigger the change themselves (kicked, or the
+  // leader dissolved the group), so a toast can explain what happened.
+  s.on('coopGroupState', (st) => {
+    _coopGroup = st && st.inGroup ? st : null;
+    if (st && st.reason && typeof _marketToast === 'function') {
+      const msg = st.reason === 'kicked' ? t('coopGroupKickedMsg') : t('coopGroupDissolvedMsg');
+      _marketToast(msg, 'err');
+    }
+    if (typeof onCoopState === 'function') onCoopState();
+  });
+
+  // The joinable lobby list — every open group, not just this account's own.
+  s.on('coopGroupList', ({ groups }) => {
+    _coopOpenGroups = groups || [];
     if (typeof onCoopState === 'function') onCoopState();
   });
 
   s.on('coopStarted', ({ x, y, hp, maxStage, attemptsLeft, readyAt }) => {
     if (!player) return;
     _coopInRun = true;
-    _coopIsWaiting = false;
+    _coopGroup = null;
     // Stage 1 doesn't actually spawn until readyAt (COOP_START_DELAY_MS
     // after both entered) — stage stays 0 until the coopStage event below
     // confirms it's really up.
@@ -3563,7 +3579,6 @@ function _initCoopHandlers(s) {
   s.on('coopFinished', ({ cleared }) => {
     _coopInRun = false;
     _coopStageNo = 0;
-    _coopIsWaiting = false;
     if (typeof hideCoopCountdown === 'function') hideCoopCountdown();
     const msg = cleared ? t('coopClearedMsg') : t('coopDiedMsg');
     if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');

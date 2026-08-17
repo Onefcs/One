@@ -876,8 +876,8 @@ class Room {
   // ── Сотрудничество (Coop) ────────────────────────────────────────────────
   // Claims the first unoccupied lane (0 or 1) and places the player at its
   // entry point, full HP — the 2-player sibling of fearDeploy. Called twice,
-  // once per participant, by server/index.js's coopEnter once both halves of
-  // the pair are ready. Stage 1 is spawned separately (coopStartFirstStage)
+  // once per participant, by server/index.js's coopGroupStart once both
+  // halves of the pair are ready. Stage 1 is spawned separately (coopStartFirstStage)
   // after the same kind of pre-fight grace window Fear uses.
   coopDeploy(socketId) {
     const p = this.players.get(socketId);
@@ -959,7 +959,7 @@ class Room {
   }
 
   // Sets stage 1 live in both lanes and marks the room "started" — called
-  // once by server/index.js's coopEnter once the post-entry grace window
+  // once by server/index.js's coopGroupStart once the post-entry grace window
   // elapses, mirroring _fearStartWave's role for Fear's wave 1.
   coopStartFirstStage() {
     this._coopStage = 1;
