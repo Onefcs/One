@@ -1635,6 +1635,31 @@ app.post('/admin/player/:tid/reset-fear-attempts', adminAuth, async (req, res) =
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Same trick as reset-fear-attempts just above, for Восхождение (Ascent).
+app.post('/admin/player/:tid/reset-ascent-attempts', adminAuth, async (req, res) => {
+  try {
+    const p = await PlayerModel.findOneAndUpdate(
+      { telegramId: req.params.tid },
+      { $unset: { 'savedData.ascentAttempts': '' } },
+      { new: true },
+    );
+    if (!p) return res.status(404).json({ error: 'Not found' });
+    logPlayer(p.telegramId, p.username, 'admin_reset_ascent_attempts', { by: 'admin' });
+    // Live-refresh the Events panel for anyone with it open right now —
+    // otherwise they'd see the old attemptsLeft until their next ascentSync
+    // (opening/reopening the panel).
+    const target = _socketForTelegramId(req.params.tid);
+    if (target) {
+      const run = _ascent.get(target.id);
+      target.emit('ascentState', {
+        maxAttempts: ASCENT_ATTEMPTS, maxFloor: ASCENT_MAX_FLOOR, minLevel: ASCENT_MIN_LEVEL,
+        attemptsLeft: ASCENT_ATTEMPTS, inRun: !!run, floor: run?.floor || 0, cleared: !!run?.cleared,
+      });
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
   try {
     // Validated before anything is added: an unparseable figure used to reach

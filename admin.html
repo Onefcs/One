@@ -366,6 +366,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
             <button class="btn btn-sm btn-red" id="ban-btn" onclick="banPlayer()">Заблокировать</button>
             <button class="btn btn-sm btn-green" id="unban-btn" onclick="unbanPlayer()">Разблокировать</button>
             <button class="btn btn-sm" onclick="resetFearAttempts()">Сбросить попытки «Страх»</button>
+            <button class="btn btn-sm" onclick="resetAscentAttempts()">Сбросить попытки «Восхождение»</button>
           </div>
         </div>
         <div class="card">
@@ -887,6 +888,15 @@ async function resetFearAttempts() {
   try {
     const r = await api('/admin/player/'+_currentPlayerId+'/reset-fear-attempts', { method:'POST' });
     if (r.ok) toast('Попытки «Страх» сброшены');
+    else { const d=await r.json(); toast(d.error||'Ошибка', false); }
+  } catch(e) { toast('Ошибка', false); }
+}
+
+async function resetAscentAttempts() {
+  if (!_currentPlayerId) return;
+  try {
+    const r = await api('/admin/player/'+_currentPlayerId+'/reset-ascent-attempts', { method:'POST' });
+    if (r.ok) toast('Попытки «Восхождение» сброшены');
     else { const d=await r.json(); toast(d.error||'Ошибка', false); }
   } catch(e) { toast('Ошибка', false); }
 }
