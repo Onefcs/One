@@ -390,8 +390,8 @@ function update(dt, realDt) {
         // (inputDir() normalizes them), so no inp.len factor here.
         const vx = inp.dx * player.speed * _spdMult * dt;
         const vy = inp.dy * player.speed * _spdMult * dt;
-        if (canMoveX(player, vx, 12) && !_isGateBlocked(player.x + vx, player.y) && !_isRaceBarrierBlocked(player.x + vx, player.y)) player.x += vx;
-        if (canMoveY(player, vy, 12) && !_isGateBlocked(player.x, player.y + vy) && !_isRaceBarrierBlocked(player.x, player.y + vy)) player.y += vy;
+        if (canMoveX(player, vx, 12) && !_isGateBlocked(player.x + vx, player.y) && !_isRaceBarrierBlocked(player.x + vx, player.y) && !_isCoopBarrierBlocked(player.x + vx, player.y)) player.x += vx;
+        if (canMoveY(player, vy, 12) && !_isGateBlocked(player.x, player.y + vy) && !_isRaceBarrierBlocked(player.x, player.y + vy) && !_isCoopBarrierBlocked(player.x, player.y + vy)) player.y += vy;
         // 8-way facing from joystick angle, with hysteresis: near a sector
         // boundary, tiny input jitter would otherwise flip facing (and
         // restart the run animation) every frame. The new angle must move
@@ -411,8 +411,8 @@ function update(dt, realDt) {
           if (_clen > (player.charDef.atkRange + _chR) * 0.85) {
             const nvx = (_cdx / _clen) * player.speed * _spdMult * dt;
             const nvy = (_cdy / _clen) * player.speed * _spdMult * dt;
-            if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y) && !_isRaceBarrierBlocked(player.x + nvx, player.y)) player.x += nvx;
-            if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy) && !_isRaceBarrierBlocked(player.x, player.y + nvy)) player.y += nvy;
+            if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y) && !_isRaceBarrierBlocked(player.x + nvx, player.y) && !_isCoopBarrierBlocked(player.x + nvx, player.y)) player.x += nvx;
+            if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy) && !_isRaceBarrierBlocked(player.x, player.y + nvy) && !_isCoopBarrierBlocked(player.x, player.y + nvy)) player.y += nvy;
             faceTowards(_chEnt.x, _chEnt.y);
             player._chasing = true;
           } else {
@@ -502,6 +502,7 @@ function update(dt, realDt) {
 
   _updateArmGates(dt);
   _updateRaceBarriers(dt);
+  _updateCoopBarriers(dt);
   _updateTeleportPads(dt);
 
   // Advance sprite animation frame
@@ -1397,6 +1398,7 @@ function render(dt, ts) {
   if (dungeon) _drawOtherPlayerNamesOnUI();
   if (player && dungeon) drawArmGates();
   if (player && dungeon) drawRaceBarriers();
+  if (player && dungeon) drawCoopBarriers();
   if (player && dungeon) drawTeleportPads();
   if (activeTab === 0) drawJoystick();
 
@@ -1476,7 +1478,9 @@ function inSafeZone(px, py) {
 // network.js/game.js).
 let _armGates = null;
 let _raceBarriers = null;
+let _coopBarriers = null;
 let _raceGateMsgCd = 0;
+let _coopGateMsgCd = 0;
 const _enteredArms = new Set();
 let _gateMsgCd = 0;
 function _armLabel(dir) { return typeof t === 'function' ? t({ left:'armLeft', top:'armTop', bottom:'armBottom', right:'armRight' }[dir]) : ({ left:'левый', top:'верхний', bottom:'нижний', right:'правый' }[dir]); }
@@ -1530,7 +1534,7 @@ let _evtHpCd = 0;
 
 function _buildArmGates() {
   _closePortalModal();
-  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _raceBarriers = []; return; }
+  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _raceBarriers = []; _coopBarriers = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
   ));
@@ -1538,6 +1542,13 @@ function _buildArmGates() {
   // (dungeon.race10.barriers); see _isRaceBarrierBlocked for how "cleared"
   // is decided.
   _raceBarriers = (dungeon.race10 && dungeon.race10.barriers) || [];
+  // Сотрудничество barriers — same idea, but "cleared" is the shared
+  // _coopStageNo counter (js/state.js, pushed by coopStage/gameStart) rather
+  // than a live-monster scan: the server only advances that counter once
+  // BOTH lanes have cleared the current stage (Room.coopRegisterKill), so
+  // there's no per-lane aliveness to check client-side — see
+  // _isCoopBarrierBlocked.
+  _coopBarriers = (dungeon.coop && dungeon.coop.barriers) || [];
 
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
 
@@ -1935,6 +1946,39 @@ function _isRaceBarrierBlocked(wx, wy) {
   return false;
 }
 
+// Сотрудничество (coop) barriers — same box-collision shape as the race10
+// barriers above, but "unlocked" reads off the shared _coopStageNo counter
+// (js/state.js) instead of scanning serverEnemies: the server only advances
+// it once BOTH lanes have cleared the current stage (Room.coopRegisterKill),
+// so by the time the counter passes a barrier's `stage`, that barrier's
+// corridor is already empty on both sides.
+const COOP_BARRIER_THICK  = 22;
+const COOP_BARRIER_HALF_W = TILE * 2;
+function _isCoopBarrierBlocked(wx, wy) {
+  if (!_coopBarriers || !_coopBarriers.length) return false;
+  const stageNo = (typeof _coopStageNo !== 'undefined' && _coopStageNo) || 0;
+  for (const b of _coopBarriers) {
+    if (Math.abs(wx - b.x) >= COOP_BARRIER_THICK || Math.abs(wy - b.y) >= COOP_BARRIER_HALF_W) continue;
+    if (stageNo <= b.stage) return true;
+  }
+  return false;
+}
+
+// Called once per frame from update(): throttled "clear the monsters first"
+// message while standing at a still-blocked coop barrier.
+function _updateCoopBarriers(dt) {
+  if (!player || !_coopBarriers || !_coopBarriers.length) return;
+  if (_coopGateMsgCd > 0) _coopGateMsgCd -= dt;
+  const stageNo = (typeof _coopStageNo !== 'undefined' && _coopStageNo) || 0;
+  for (const b of _coopBarriers) {
+    if (dist(player.x, player.y, b.x, b.y) >= 90) continue;
+    if (stageNo <= b.stage && _coopGateMsgCd <= 0) {
+      dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('coopBarrierLockedMsg') : 'Дождитесь напарника', '#8fe8a0');
+      _coopGateMsgCd = 1.5;
+    }
+  }
+}
+
 // Called once per frame from update(): throttled "clear the monsters first"
 // message while standing at a still-blocked barrier.
 function _updateRaceBarriers(dt) {
@@ -2005,6 +2049,40 @@ function drawRaceBarriers() {
     ctx.fillRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
     ctx.globalAlpha = 0.7 + 0.3 * pulse;
     ctx.strokeStyle = '#f7b0b8';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
+    ctx.restore();
+
+    ctx.font = 'bold 20px system-ui, Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+    ctx.strokeText('🔒', sx, sy);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('🔒', sx, sy);
+  }
+}
+
+// Same "solid pulsing wall" treatment for Сотрудничество, tinted green to
+// read as part of that zone rather than a copy-paste of race10's red — see
+// _isCoopBarrierBlocked for what "still blocked" means here.
+function drawCoopBarriers() {
+  if (!player || !_coopBarriers || !_coopBarriers.length) return;
+  const stageNo = (typeof _coopStageNo !== 'undefined' && _coopStageNo) || 0;
+  const tSec = _nowMs / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(tSec * 2.4);
+  for (const b of _coopBarriers) {
+    if (stageNo > b.stage) continue;
+    const sx = (b.x - _lastCamX) * ZOOM;
+    const sy = (b.y - _lastCamY) * ZOOM + HEADER_H;
+    const halfW = COOP_BARRIER_THICK * ZOOM, halfH = COOP_BARRIER_HALF_W * ZOOM;
+    if (sx + halfW < -20 || sx - halfW > W + 20 || sy + halfH < -20 || sy - halfH > H + 20) continue;
+
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.15 * pulse;
+    ctx.fillStyle = '#2f9e4f';
+    ctx.fillRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
+    ctx.globalAlpha = 0.7 + 0.3 * pulse;
+    ctx.strokeStyle = '#a8f0b8';
     ctx.lineWidth = 3;
     ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
     ctx.restore();

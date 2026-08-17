@@ -822,6 +822,17 @@ function generateCoop() {
   }
 
   const lanes = [];
+  // One barrier per lane at the exit of each stage room (into the next
+  // stage's room, or — the last one — into the shared boss room): blocks
+  // the connector corridor until BOTH lanes have cleared that stage
+  // (Room.coopRegisterKill only advances the shared `_coopStage` counter
+  // once both lanes report clear), same "physically can't walk ahead of
+  // your partner" idea as Кровавая Башня's barriers, just gated on the
+  // stage counter instead of a live-monster scan since Coop's sync is
+  // already tracked server-side. `stage` is 1-indexed to match
+  // Room.coopStage()/COOP_STAGE_LEVELS — see _isCoopBarrierBlocked,
+  // js/game.js.
+  const barriers = [];
   for (let i = 0; i < COOP_LANES; i++) {
     const laneY0 = Y0 + i * COOP_LANE_PITCH;
     const cy = laneY0 + Math.floor(COOP_STAGE_ROOM / 2);
@@ -840,6 +851,11 @@ function generateCoop() {
         // whole room, not converging from one centre.
         x0: sx0, y0: laneY0, x1: sx0 + COOP_STAGE_ROOM - 1, y1: laneY0 + COOP_STAGE_ROOM - 1,
         cx: (sx0 + Math.floor(COOP_STAGE_ROOM / 2)) * TILE + TILE / 2, cy: cy * TILE + TILE / 2,
+      });
+      barriers.push({
+        x: (sx0 + COOP_STAGE_ROOM + COOP_STAGE_GAP / 2) * TILE + TILE / 2,
+        y: cy * TILE + TILE / 2,
+        lane: i, stage: k + 1,
       });
     }
     lanes.push({
@@ -874,6 +890,7 @@ function generateCoop() {
       // "reached the shared room" (Room.js's _raceVisible-style isolation).
       bossRoomX0: bossX0 * TILE,
       bounds: { x0: 0, y0: 0, x1: w, y1: h },
+      barriers,
     },
     enemies: [],
   };

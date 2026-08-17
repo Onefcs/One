@@ -313,10 +313,6 @@ const _FEAR_ENEMY_BY_EID = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 // spatial change (scattered across a wider room instead of packed single-
 // file), not a behavioural one.
 const COOP_MOBS_PER_STAGE = 40;
-// Same window Fear's own hold uses — see FEAR_RECONNECT_GRACE_MS's own
-// comment for why. Kept in sync with server/index.js's COOP_RECONNECT_GRACE_MS
-// by comment only, same as Fear's pair of constants.
-const COOP_RECONNECT_GRACE_MS = 45000;
 
 // Enemy interest management. ENEMY_AOI_R (shared/definitions.js — the client
 // prunes against the same number) is the radius each player is streamed
@@ -536,13 +532,6 @@ class Room {
     // live; past the end once the boss is up. Room-level (not per-lane) —
     // by construction both lanes are always on the same stage.
     this._coopStage = 0;
-    // lane -> { telegramId, timer, x, y, hp } for a lane whose owner just
-    // disconnected — see _coopGraceStart/_coopGraceClaim. Releasing only
-    // THAT lane (not the whole run) mirrors Fear's own hold exactly; ending
-    // the run for both when a hold lapses without a reclaim is
-    // server/index.js's job (_coopDisconnectGrace), the same division of
-    // responsibility Fear's pair of grace mechanisms already uses.
-    this._coopGrace = new Map();
   }
 
   // ── Event boss ────────────────────────────────────────────────────────────
@@ -1088,11 +1077,12 @@ class Room {
   }
 
   // Releases lane `lane` and clears out whatever is left of its current
-  // stage (dead or still standing) — the per-lane building block both
-  // coopReleaseRoom (a clean end, both lanes) and _coopGraceStart's timeout
-  // (a lapsed disconnect hold, one lane) call. Idempotent. Also clears the
-  // owner's own p._coopLane, for the identical reason fearReleaseLane does —
-  // _raceVisible keys isolation off it.
+  // stage (dead or still standing) — the per-lane building block
+  // coopReleaseRoom (a clean end, both lanes) calls, and what server/
+  // index.js's _coopReleaseRun/_coopEjectOnDisconnect call per-lane whenever
+  // a single participant's own half of a run ends. Idempotent. Also clears
+  // the owner's own p._coopLane, for the identical reason fearReleaseLane
+  // does — _raceVisible keys isolation off it.
   coopReleaseLane(lane) {
     if (lane == null || !this._coopOwner.has(lane)) return;
     const ownerSid = this._coopOwner.get(lane);
@@ -1129,39 +1119,6 @@ class Room {
       return false;
     });
     this._coopStage = 0;
-  }
-
-  // Holds a disconnecting lane open instead of releasing it on the spot —
-  // same reasoning as _fearGraceStart. Only releases THIS lane; ending the
-  // whole run for both participants if the hold lapses without a reclaim is
-  // server/index.js's job (_coopDisconnectGrace), same division as Fear's
-  // own pair of grace mechanisms.
-  _coopGraceStart(p) {
-    const lane = p._coopLane;
-    if (lane == null) return;
-    if (!p.telegramId) { this.coopReleaseLane(lane); return; }
-    const timer = setTimeout(() => {
-      try {
-        this._coopGrace.delete(lane);
-        this.coopReleaseLane(lane);
-      } catch (err) {
-        console.error(`[Room ${this.floor} coopGrace]`, err);
-      }
-    }, COOP_RECONNECT_GRACE_MS);
-    this._coopGrace.set(lane, { telegramId: p.telegramId, timer, x: p.x, y: p.y, hp: p.hp });
-  }
-
-  // Reclaims a held lane for a reconnecting account — called from addPlayer.
-  // See _fearGraceClaim for the same shape.
-  _coopGraceClaim(telegramId, newSocketId) {
-    for (const [lane, g] of this._coopGrace) {
-      if (g.telegramId !== telegramId) continue;
-      clearTimeout(g.timer);
-      this._coopGrace.delete(lane);
-      this._coopOwner.set(lane, newSocketId);
-      return { lane, x: g.x, y: g.y, hp: g.hp };
-    }
-    return null;
   }
 
   // Scatters `items` on the floor around (cx, cy) as individually claimable
@@ -1337,7 +1294,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, coop: d.coop ? { bounds: d.coop.bounds } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
@@ -2503,11 +2460,8 @@ class Room {
       if (staleSocketId) this.removePlayer(staleSocketId);
     }
     const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
-    // Same reasoning as fearCarry just above, for a held Coop lane — see
-    // _coopGraceStart/_coopGraceClaim.
-    const coopCarry = telegramId ? this._coopGraceClaim(telegramId, socketId) : null;
     const spawn = this._dungeon.spawn;
-    const carry = fearCarry || coopCarry;
+    const carry = fearCarry;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
@@ -2517,7 +2471,11 @@ class Room {
       pvpMode: false, lastAtkSeq: 0,
       _raceLane: null,
       _fearLane: fearCarry ? fearCarry.lane : null,
-      _coopLane: coopCarry ? coopCarry.lane : null,
+      // Coop has no reconnect carry — a disconnect ends the run for both
+      // participants on the spot (see _coopEjectOnDisconnect, server/
+      // index.js), so there's never a held lane to reclaim here. Set for
+      // real by coopDeploy right after this player is placed.
+      _coopLane: null,
       _known: new Map(),
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
@@ -2536,7 +2494,7 @@ class Room {
       _profileRev: 1, _seq: ++this._pSeq,
     });
     if (this.players.size === 1) this._startLoop();
-    return { spawn, staleSocketId, fearCarry, coopCarry };
+    return { spawn, staleSocketId, fearCarry };
   }
 
   setPlayerClan(socketId, clanName, clanIcon, clanAtkBonus, clanId) {
@@ -2648,8 +2606,10 @@ class Room {
     // window that elapses with no reconnect turns into a real release.
     const p = this.players.get(socketId);
     if (p && p._fearLane != null) this._fearGraceStart(p);
-    // Same hold, for a Coop lane — see _coopGraceStart's own comment.
-    if (p && p._coopLane != null) this._coopGraceStart(p);
+    // Coop has no equivalent hold — a disconnect ends the run for both
+    // participants immediately (_coopEjectOnDisconnect, server/index.js),
+    // which releases this player's lane (and clears p._coopLane) before
+    // removePlayer is ever called, so there's nothing left here to hold.
     this.players.delete(socketId);
     this.players.forEach(p2 => p2._known.delete(socketId));
     if (this.players.size === 0) this._stopLoop();

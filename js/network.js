@@ -3537,8 +3537,12 @@ function _initCoopHandlers(s) {
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('coopWaitingPartnerMsg'), '#8fd6ff');
   });
 
-  // Both lanes cleared the last stage — the shared boss is up.
+  // Both lanes cleared the last stage — the shared boss is up. No further
+  // coopStage event follows this (there's no stage 9), so bump _coopStageNo
+  // past the last stage here directly — it's what _isCoopBarrierBlocked
+  // (js/game.js) reads to drop the barrier guarding the boss room's entrance.
   s.on('coopBossSpawned', () => {
+    _coopStageNo = (_coopState.maxStage || 8) + 1;
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('coopBossSpawnedMsg'), '#ffd18a');
     if (typeof Sound !== 'undefined') Sound.bossSpawn();
   });

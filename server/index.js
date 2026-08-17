@@ -3160,6 +3160,14 @@ function _removeFromParty(partyId, leaverId) {
   const members = parties.get(partyId);
   if (!members) return;
 
+  // Сотрудничество's party is exactly the two participants (formed by
+  // coopEnter's matchmaking) — there's no way to keep going once it breaks,
+  // so losing it ends the run for both the same way a death does. Covers an
+  // explicit partyLeave from either side; a disconnect already ends the run
+  // immediately on its own (_coopEjectOnDisconnect), well before this could
+  // ever be reached through the party's own disconnect-grace timeout.
+  _coopEliminate(leaverId);
+
   const leaverName = members.get(leaverId) || leaverId.slice(0, 6);
   members.delete(leaverId);
   playerParty.delete(leaverId);
@@ -3839,7 +3847,7 @@ function _pvpEliminate(socketId, killerSocketId, room, opts) {
     ? _fearHoldOnDisconnect(socketId, opts.telegramId)
     : _fearEliminate(socketId);
   const coopHandled = (opts && opts.fearGrace)
-    ? _coopHoldOnDisconnect(socketId, opts.telegramId)
+    ? _coopEjectOnDisconnect(socketId)
     : _coopEliminate(socketId);
   // A PvP kill (setPvpMode duel) that isn't part of any live Death
   // Battle/Arena3/race10/Fear/Coop round falls through all five above
@@ -5013,43 +5021,18 @@ function _coopEliminate(socketId) {
   return true;
 }
 
-// How long a disconnected participant's run record is held before the WHOLE
-// run (both participants) is ended for good — kept equal to Room.js's own
-// COOP_RECONNECT_GRACE_MS (not imported, same "kept in sync by comment"
-// reasoning FEAR_RECONNECT_GRACE_MS documents). Room's copy is what actually
-// holds THIS lane/its monsters open for a lone reconnect; this one decides
-// whether the PARTNER also gets to keep waiting.
-const COOP_RECONNECT_GRACE_MS = 45000;
-// telegramId -> { run: {room, lane, partnerId}, timer } — a Coop half held
-// across a disconnect. See _pvpEliminate's opts.fearGrace (a generic
-// "this is a disconnect, not a real elimination" flag reused across every
-// instanced mode despite the name — see its own comment) and the reconnect
-// handling in the login flow below.
-const _coopDisconnectGrace = new Map();
-function _coopHoldOnDisconnect(socketId, telegramId) {
-  const run = _coop.get(socketId);
+// Wired into _pvpEliminate's fan-out for the disconnect case (opts.fearGrace)
+// — unlike Fear/race10/arena3, a Coop run gets no reconnect grace at all:
+// "если один вылетел ... выкидывает с подземелья" (a dropped connection
+// ejects both). Releases the disconnecting half's own lane immediately
+// (_coopReleaseRun — same as a clean finish, just without the _returnToHub/
+// coopFinished round trip: this socket is on its way out, there's nothing to
+// tell it) and ends the partner's run for real right away, no wait.
+function _coopEjectOnDisconnect(socketId) {
+  const run = _coopReleaseRun(socketId);
   if (!run) return false;
-  _coop.delete(socketId);
-  const tid = telegramId || _socketTid(socketId);
-  if (!tid) {
-    // No account to reconnect against — nobody will ever reclaim this half,
-    // so end the whole run right away rather than making the partner wait
-    // out a hold that can never resolve.
-    const partnerId = run.partnerId;
-    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
-    return true;
-  }
-  const prior = _coopDisconnectGrace.get(tid);
-  if (prior) clearTimeout(prior.timer);
-  const timer = safeTimeout('coopGrace', () => {
-    _coopDisconnectGrace.delete(tid);
-    // The window lapsed with no reconnect — end the run for the partner too
-    // (this half is already gone; Room's own coopGrace timer, running in
-    // parallel, releases its lane/monsters on the same schedule).
-    const partnerId = run.partnerId;
-    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
-  }, COOP_RECONNECT_GRACE_MS);
-  _coopDisconnectGrace.set(tid, { run, timer });
+  const partnerId = run.partnerId;
+  if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
   return true;
 }
 
@@ -10324,28 +10307,27 @@ io.on('connection', socket => {
       // and the worst case if it somehow hasn't is the same as any other
       // missed reconnect window: the run just times out normally.
       const _fearHeld = _fearDisconnectGrace.get(authed.telegramId);
-      // Same idea, for a held Coop half — see _coopDisconnectGrace.
-      const _coopHeld = !_fearHeld ? _coopDisconnectGrace.get(authed.telegramId) : null;
       // Everything else comes back to the floor it was standing on — see
       // _restoreFloorFor, which re-checks the level gate and any window rather
       // than trusting the stored number, and falls back to the hub when the
       // floor is no longer somewhere this account may be. Read off the DB
-      // record, never off `savedStats`: that blob is the client's.
+      // record, never off `savedStats`: that blob is the client's. Coop has
+      // no equivalent hold to reclaim into (see _coopEjectOnDisconnect) — a
+      // reconnecting Coop participant just lands wherever the restore above
+      // sends them, same as anyone else whose run already ended.
       if (_fearHeld) currentFloor = FLOOR_IDS.fear;
-      else if (_coopHeld) currentFloor = FLOOR_IDS.coop;
       else currentFloor = _restoreFloorFor((authed.savedData || {}).floor, effectiveSaved && effectiveSaved.lvl);
-      currentRoom = _fearHeld ? _fearHeld.run.room : (_coopHeld ? _coopHeld.run.room : getRoom(currentFloor));
-      // The instance may have been swept out of _fearRooms/_coopRooms while
-      // this player was away (it had no players for the length of the drop) —
-      // put it back so /health and the shutdown pass can see it again.
+      currentRoom = _fearHeld ? _fearHeld.run.room : getRoom(currentFloor);
+      // The instance may have been swept out of _fearRooms while this player
+      // was away (it had no players for the length of the drop) — put it
+      // back so /health and the shutdown pass can see it again.
       if (_fearHeld) _trackFearRoom(currentRoom);
-      if (_coopHeld) _trackCoopRoom(currentRoom);
       playerFloorMap.set(socket.id, currentFloor);
       // See _doEnterLocation's identical guard: Fear/Coop players never join
       // the shared floor_<id> broadcast group, since each is alone (or, for
       // Coop, paired) on its own private Room.
       if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop) socket.join(`floor_${currentFloor}`);
-      const { staleSocketId, fearCarry, coopCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
+      const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
       // Anything this account had signed up for before the drop comes back
       // onto this socket, in the position it signed up at. Unconditional: the
       // registration survives the disconnect now (see the 'disconnect'
@@ -10356,10 +10338,11 @@ io.on('connection', socket => {
       // Back to the exact spot, not just the right floor — but only when the
       // stored floor is the one actually being restored (an arm's coordinates
       // land far outside the hub's own grid) and the spot is still standable.
-      // Anything else keeps addPlayer's spawn placement. Fear/Coop are
-      // excluded: their grace path re-deploys into the held lane itself,
-      // which is a stricter placement than this.
-      if (!_fearHeld && !_coopHeld) {
+      // Anything else keeps addPlayer's spawn placement. Fear is excluded:
+      // its grace path re-deploys into the held hall itself, a stricter
+      // placement than this (Coop isn't restorable at all — see
+      // _RESTORABLE_FLOORS — so it never reaches this branch either way).
+      if (!_fearHeld) {
         const _sd = authed.savedData || {};
         if (Number(_sd.floor) === currentFloor && currentRoom.canStandAt(_sd.x, _sd.y)) {
           const _me = currentRoom.players.get(socket.id);
@@ -10442,34 +10425,6 @@ io.on('connection', socket => {
           // fear floor's Room at this point (currentFloor was forced to it
           // above specifically because this account had a hold to reclaim).
           if (g.run.wave === 0) _fearStartWave(currentRoom, socket.id, g.run.lane, 1);
-        }
-      }
-      // Same reclaim, for a held Coop half — see _coopDisconnectGrace above.
-      // Note g.run.partnerId still names whatever socketId the partner was
-      // using when THIS disconnect started; if the partner also dropped and
-      // reconnected in the same window their own run record now points back
-      // at a socketId that no longer exists. Rare (both halves of a pair
-      // dropping at once) and not chased further here — the run simply
-      // times out normally for both if it happens, same as any other missed
-      // reconnect window.
-      if (coopCarry) {
-        const g = _coopDisconnectGrace.get(authed.telegramId);
-        if (g) {
-          clearTimeout(g.timer);
-          _coopDisconnectGrace.delete(authed.telegramId);
-          _coop.set(socket.id, g.run);
-          // Disconnected during the pre-stage-1 countdown (see
-          // COOP_START_DELAY_MS): the setTimeout that would have started it
-          // was scheduled against the now-dead old socketId pair and no
-          // longer applies — start it right here instead if it hasn't
-          // already gone up (coopStage() reads 0 until coopStartFirstStage
-          // runs). currentRoom is the coop floor's Room at this point
-          // (currentFloor was forced to it above specifically because this
-          // account had a hold to reclaim).
-          if (currentRoom.coopStage() === 0) {
-            currentRoom.coopStartFirstStage();
-            io.to(socket.id).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length });
-          }
         }
       }
       // Reclaim a party slot held across a disconnect (_partyHoldOnDisconnect,
@@ -11648,11 +11603,10 @@ io.on('connection', socket => {
     socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: left - 1, readyAt });
     safeTimeout('coopStage1', () => {
       // Still exactly the run this timer was scheduled for? A disconnect
-      // during the countdown moves the run record into _coopDisconnectGrace
-      // instead (see _coopHoldOnDisconnect) — a stale timer for a socket
-      // that's since gone quietly no-ops here rather than double-spawning
-      // stage 1 once the reconnect path starts it (see the coopCarry
-      // reclaim, further up this file).
+      // during the countdown ends the run for both right away (see
+      // _coopEjectOnDisconnect) and drops both _coop entries — a stale timer
+      // left over from that quietly no-ops here instead of spawning a stage
+      // 1 nobody's left to fight.
       const r1 = _coop.get(partnerSid), r2 = _coop.get(socket.id);
       if (!r1 || !r2 || r1.room !== coopRoom || r2.room !== coopRoom || coopRoom.coopStage() !== 0) return;
       coopRoom.coopStartFirstStage();
