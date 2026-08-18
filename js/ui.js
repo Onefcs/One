@@ -6927,6 +6927,15 @@ function updateGramUI() {
       </button>
     </div>
 
+    <!-- Where _gramMsg writes. It had nowhere to write at all: this element
+         existed in neither index.html nor any render, so every message that
+         function carries was dropped on the floor — including the server's
+         own refusals (gramError, e.g. the VIP gate on withdrawal and
+         "Недостаточно средств") and the "request created" confirmations. A
+         withdrawal that the server turned down looked exactly like one that
+         went through: nothing happened either way. -->
+    <div id="gram-msg" class="gram-msg" style="display:none;margin-bottom:14px"></div>
+
     <div class="gram-section">
       <div class="gram-section-title">${t('txHistoryHdr')}</div>
       <div id="gram-history-list"><div class="gram-hint" style="text-align:center;padding:12px 0">${t('questLoading')}</div></div>
@@ -7138,7 +7147,19 @@ function gramDepositConfirm(memo) {
 }
 
 // ── Withdraw modal ────────────────────────────────────────
+// Mirrors the server's own gate (gramWithdrawRequest, server/index.js), which
+// refuses below this level and is what actually enforces it. Said here, on the
+// press, because the refusal used to arrive only after the player had opened
+// the form, typed an amount and pasted a wallet address — the one moment they
+// had already decided the withdrawal was going to happen.
+const GRAM_WITHDRAW_VIP_MIN = 3;
+
 function openGramWithdrawModal() {
+  const vip = (window._vipData && window._vipData.level) || 0;
+  if (vip < GRAM_WITHDRAW_VIP_MIN) {
+    _gramMsg(tVars('withdrawVipRequiredFmt', { n: GRAM_WITHDRAW_VIP_MIN }), 'err');
+    return;
+  }
   const balance = window._gramBalance || 0;
   const html = `
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">

@@ -3082,6 +3082,77 @@ scenario('browser: АВТО casts only the skills left switched on, and none whe
   }
 });
 
+scenario('browser: pressing Вывести below VIP 3 says so instead of opening the form', async () => {
+  // The server has always refused a withdrawal below VIP 3
+  // (gramWithdrawRequest, server/index.js) — but its gramError went to
+  // _gramMsg, whose #gram-msg element existed nowhere, so the refusal was
+  // dropped on the floor: the player filled in an amount and a wallet
+  // address, submitted, and nothing happened, with no reason given. The gate
+  // is stated on the press now, and the message element is real.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const seed = await connectWithSaved('harness_withdraw_vip', { lvl: 15, vipLevel: 0, gramBalance: 500 });
+  await seed.close();
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    const errors = [];
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message.slice(0, 200)));
+    await page.goto(`${BASE}/?dev=harness_withdraw_vip`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4000);
+    if (await page.evaluate(() => typeof state !== 'undefined' && state === 'select')) {
+      await page.evaluate(() => selectChar('mage'));
+      await page.waitForTimeout(4000);
+    }
+
+    // Профиль → Кошелёк, the tab the button lives on.
+    await page.evaluate(() => { setTab(5); switchProfileTab('wallet'); });
+    await page.waitForTimeout(400);
+
+    const refused = await page.evaluate(() => {
+      window._vipData = { level: 0 };
+      openGramWithdrawModal();
+      const msg = document.getElementById('gram-msg');
+      return {
+        opened: !!document.getElementById('gram-modal-wrap'),
+        shown: !!msg && msg.style.display !== 'none',
+        text: msg ? msg.textContent : null,
+      };
+    });
+    eq(refused.opened, false, 'the withdrawal form does not open below VIP 3');
+    ok(refused.shown, 'a message is shown instead of nothing happening');
+    ok(/VIP 3/.test(refused.text || ''), `and it names the level required (got: ${refused.text})`);
+
+    // At VIP 3 the form opens as before — the gate is a gate, not a wall.
+    const allowed = await page.evaluate(() => {
+      window._vipData = { level: 3 };
+      openGramWithdrawModal();
+      return !!document.getElementById('gram-modal-wrap');
+    });
+    ok(allowed, 'at VIP 3 the form opens');
+    await page.evaluate(() => closeGramModal());
+
+    // And the server's own refusals reach the player now that the element
+    // they are written into exists at all.
+    const relayed = await page.evaluate(() => {
+      _gramMsg('серверный отказ', 'err');
+      const msg = document.getElementById('gram-msg');
+      return { shown: !!msg && msg.style.display !== 'none', text: msg ? msg.textContent : null };
+    });
+    ok(relayed.shown && relayed.text === 'серверный отказ',
+      `a gramError from the server lands somewhere visible (${JSON.stringify(relayed)})`);
+
+    eq(errors.length, 0, 'and nothing threw in the browser', errors.join(' | '));
+  } finally {
+    await browser.close();
+  }
+});
+
 scenario('browser: a short drop resumes in place instead of rebuilding the world', async () => {
   // The other half of "мир перезагружается". Even once the reconnect lands
   // back on the right floor, it used to rebuild everything on arrival —
