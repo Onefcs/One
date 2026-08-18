@@ -1418,9 +1418,10 @@ function render(dt, ts) {
     _uiCtx.font = 'bold 11px system-ui, Arial';
     _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
     const lw = _uiCtx.measureText(lbl).width;
-    _uiCtx.fillStyle = 'rgba(0,0,0,0.55)';
-    _uiCtx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
-    _uiCtx.fillStyle = '#94d15e';
+    cutRectPath(_uiCtx, W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18, 5);
+    _uiCtx.fillStyle = 'rgba(20,26,17,0.72)'; _uiCtx.fill();
+    _uiCtx.strokeStyle = 'rgba(111,156,74,0.5)'; _uiCtx.lineWidth = 1; _uiCtx.stroke();
+    _uiCtx.fillStyle = '#a8c98a';
     _uiCtx.fillText(lbl, W / 2, HEADER_H + 20);
   }
 

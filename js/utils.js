@@ -32,3 +32,33 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
   ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
 }
+
+// Pointy-top/bottom hexagon inscribed in a 2r×2r box, centered at (cx,cy) —
+// the Iron Fang skill/attack button shape (mirrors the CSS clip-path
+// polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%) used in the design
+// mockups this was built from).
+function hexPath(ctx, cx, cy, r) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx + r, cy - r * 0.5);
+  ctx.lineTo(cx + r, cy + r * 0.5);
+  ctx.lineTo(cx, cy + r);
+  ctx.lineTo(cx - r, cy + r * 0.5);
+  ctx.lineTo(cx - r, cy - r * 0.5);
+  ctx.closePath();
+}
+
+// Rectangle with corners cut at 45° by `cut` px — the Iron Fang riveted-plate
+// shape used for the rectangular HUD buttons (PvP, Профессия, Auto, party).
+function cutRectPath(ctx, x, y, w, h, cut) {
+  ctx.beginPath();
+  ctx.moveTo(x + cut, y);
+  ctx.lineTo(x + w - cut, y);
+  ctx.lineTo(x + w, y + cut);
+  ctx.lineTo(x + w, y + h - cut);
+  ctx.lineTo(x + w - cut, y + h);
+  ctx.lineTo(x + cut, y + h);
+  ctx.lineTo(x, y + h - cut);
+  ctx.lineTo(x, y + cut);
+  ctx.closePath();
+}

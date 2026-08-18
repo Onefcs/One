@@ -2207,13 +2207,13 @@ function drawHeader() {
     _avBgGrad = null;    // also invalidate avatar bg on resize
     _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
     _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
-    _hdrBgGrad.addColorStop(0, 'rgba(24,18,9,0.98)');
-    _hdrBgGrad.addColorStop(1, 'rgba(13,10,4,0.99)');
+    _hdrBgGrad.addColorStop(0, 'rgba(24,22,18,0.98)');
+    _hdrBgGrad.addColorStop(1, 'rgba(10,9,7,0.99)');
     _hdrSepGrad = ctx.createLinearGradient(0, 0, W, 0);
-    _hdrSepGrad.addColorStop(0,   'rgba(119,92,46,0)');
-    _hdrSepGrad.addColorStop(0.15,'rgba(170,133,70,0.75)');
-    _hdrSepGrad.addColorStop(0.85,'rgba(170,133,70,0.75)');
-    _hdrSepGrad.addColorStop(1,   'rgba(119,92,46,0)');
+    _hdrSepGrad.addColorStop(0,   'rgba(70,61,51,0)');
+    _hdrSepGrad.addColorStop(0.15,'rgba(107,95,82,0.8)');
+    _hdrSepGrad.addColorStop(0.85,'rgba(107,95,82,0.8)');
+    _hdrSepGrad.addColorStop(1,   'rgba(70,61,51,0)');
   }
   ctx.fillStyle = _hdrBgGrad;
   ctx.fillRect(0, 0, W, HEADER_H);
@@ -2240,9 +2240,9 @@ function drawHeader() {
   // Map panel border (circular)
   const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
   const mpX = mmX - 4; // left-edge reference used by the header divider/info-area layout below
-  ctx.fillStyle = 'rgba(15,11,4,0.92)';
+  ctx.fillStyle = 'rgba(11,10,8,0.92)';
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(107,95,82,0.7)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.stroke();
 
   // Clip, draw tiles and blips
@@ -2338,11 +2338,11 @@ function drawHeader() {
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(_hudLbl, mmX + mmW / 2 + 1, mmY + mmH - 2);
-  ctx.fillStyle = 'rgba(239,199,131,0.95)';
+  ctx.fillStyle = 'rgba(201,194,182,0.95)';
   ctx.fillText(_hudLbl, mmX + mmW / 2, mmY + mmH - 3);
 
   // Vertical divider
-  ctx.strokeStyle = 'rgba(120,96,55,0.3)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(107,95,82,0.35)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
@@ -2378,9 +2378,9 @@ function drawHeader() {
 
   // Row 1: Name + Level
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
+  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#e8e3da';
   ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
-  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
+  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(226,85,90,0.95)';
   ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
 
   // Row 2: Class name + inline stats (gold / atk / def)
@@ -2394,10 +2394,10 @@ function drawHeader() {
   ctx.textBaseline = 'middle';
   // БМ label + value
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#d2495a';
   ctx.fillText(t('bmAbbrev'), stxH, 24);
   const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
-  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
+  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#d2495a';
   ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
   stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
   // Gold
@@ -2435,7 +2435,7 @@ function drawHeader() {
   ctx.textBaseline = 'alphabetic';
 
   // Separator
-  ctx.strokeStyle = 'rgba(109,88,51,0.4)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(107,95,82,0.45)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
@@ -2476,16 +2476,16 @@ function drawHeader() {
   const xpY = 55, xbH = 6;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(237,190,110,0.9)';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(201,194,182,0.85)';
   ctx.fillText('XP', infoX, xpY);
 
   const xbX = infoX + 22, xbW = infoW - 22;
-  ctx.fillStyle = 'rgba(23,17,8,0.9)';
+  ctx.fillStyle = 'rgba(15,14,11,0.9)';
   roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
   if (xpPct > 0) {
     if (!_xpGrad || _hdrGradW !== W) {
       _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-      _xpGrad.addColorStop(0, '#523c17'); _xpGrad.addColorStop(1, '#eab457');
+      _xpGrad.addColorStop(0, '#3a332b'); _xpGrad.addColorStop(1, '#8a8074');
       _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
       _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
     }
@@ -2494,7 +2494,7 @@ function drawHeader() {
     ctx.fillStyle = _xpShineGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
-  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(241,204,141,0.7)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(201,194,182,0.7)';
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
   // that into "858.9999999999418" on the bar. The stored value keeps its
@@ -2532,7 +2532,7 @@ function drawJoystick() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  SKILL BUTTONS (2×2 grid)
+//  SKILL BUTTONS (orbiting the attack button — Iron Fang)
 // ─────────────────────────────────────────────────────────
 // Gradient cache: 4 buttons × 3 states (flash / ready / cooldown)
 // Invalidated on resize via _skillBtnGradCache = null in game.js
@@ -2541,11 +2541,11 @@ function _buildSkillBtnGrads() {
   _skillBtnGradCache = Array.from({ length: 4 }, (_, i) => {
     const b = getSkillBtnPos(i);
     const flash = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    flash.addColorStop(0, 'rgba(76,51,14,0.97)'); flash.addColorStop(1, 'rgba(38,26,7,0.99)');
+    flash.addColorStop(0, 'rgba(58,15,20,0.97)'); flash.addColorStop(1, 'rgba(24,6,8,0.99)');
     const ready = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    ready.addColorStop(0, 'rgba(37,30,17,0.97)'); ready.addColorStop(1, 'rgba(18,14,8,0.99)');
+    ready.addColorStop(0, 'rgba(51,46,38,0.97)'); ready.addColorStop(1, 'rgba(24,21,17,0.99)');
     const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    cd.addColorStop(0, 'rgba(20,16,10,0.97)'); cd.addColorStop(1, 'rgba(11,9,5,0.99)');
+    cd.addColorStop(0, 'rgba(19,17,14,0.97)'); cd.addColorStop(1, 'rgba(10,9,7,0.99)');
     return { flash, ready, cd, x: b.x, y: b.y, w: b.w, h: b.h };
   });
 }
@@ -2571,14 +2571,14 @@ function drawSkillButtons() {
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const r = b.w / 2;
 
-    // Background gradient (cached) — circular
+    // Background gradient (cached) — hexagonal iron-plate button
     ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    hexPath(ctx, cx, cy, r); ctx.fill();
 
-    // Icon — clipped to the circle and scaled to fully cover it, no padding
+    // Icon — clipped to the hex and scaled to fully cover it, no padding
     // and no key-letter label, so the art fills the whole button.
     ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, r - 1.5, 0, Math.PI * 2); ctx.clip();
+    hexPath(ctx, cx, cy, r - 1.5); ctx.clip();
     ctx.globalAlpha = ready ? 1 : 0.45;
     const img = sk.img ? _getPotImg(sk.img) : null;
     if (img && img.complete && img.naturalWidth > 0) {
@@ -2590,15 +2590,15 @@ function drawSkillButtons() {
     if (!ready) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      hexPath(ctx, cx, cy, r); ctx.fill();
     }
     ctx.restore();
     ctx.globalAlpha = 1;
 
     // Border
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = isFlash ? 'rgba(226,85,90,0.95)' : ready ? 'rgba(107,95,82,0.85)' : 'rgba(58,51,43,0.7)';
+    hexPath(ctx, cx, cy, r); ctx.stroke();
 
     // Not-yet-studied skills show a lock instead of a cooldown countdown
     if (locked) {
@@ -2627,22 +2627,22 @@ function _buildUiBtnGrads() {
   const hbX = tfX + 8, hbW = tfW - 16, hbY = tfY + 20;
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg0.addColorStop(0,'rgba(30,24,14,0.98)'); pg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pg0.addColorStop(0,'rgba(38,35,29,0.98)'); pg0.addColorStop(1,'rgba(18,16,13,0.99)');
   const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
   pg1.addColorStop(0,'rgba(44,63,27,0.98)'); pg1.addColorStop(1,'rgba(18,27,11,0.99)');
 
   const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg0.addColorStop(0,'rgba(30,24,14,0.98)'); tg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  tg0.addColorStop(0,'rgba(38,35,29,0.98)'); tg0.addColorStop(1,'rgba(18,16,13,0.99)');
   const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
   tg1.addColorStop(0,'rgba(52,13,18,0.98)'); tg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg0.addColorStop(0,'rgba(30,24,14,0.97)'); pvg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pvg0.addColorStop(0,'rgba(38,35,29,0.97)'); pvg0.addColorStop(1,'rgba(18,16,13,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
   pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
 
   const pfg0 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
-  pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pfg0.addColorStop(0,'rgba(38,35,29,0.97)'); pfg0.addColorStop(1,'rgba(18,16,13,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
@@ -2653,11 +2653,11 @@ function _buildUiBtnGrads() {
   ptg1.addColorStop(0,'rgba(47,13,17,0.97)'); ptg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const ag0 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag0.addColorStop(0,'rgba(26,21,12,0.90)'); ag0.addColorStop(1,'rgba(13,10,6,0.92)');
+  ag0.addColorStop(0,'rgba(34,31,26,0.90)'); ag0.addColorStop(1,'rgba(15,14,11,0.92)');
   const ag1 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag1.addColorStop(0,'rgba(56,14,19,0.98)'); ag1.addColorStop(1,'rgba(26,7,9,0.99)');
+  ag1.addColorStop(0,'rgba(90,15,24,0.98)'); ag1.addColorStop(1,'rgba(28,5,8,0.99)');
   const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag2.addColorStop(0,'rgba(37,30,17,0.98)'); ag2.addColorStop(1,'rgba(18,14,8,0.99)');
+  ag2.addColorStop(0,'rgba(42,38,32,0.98)'); ag2.addColorStop(1,'rgba(19,17,14,0.99)');
 
   const aag0 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
   aag0.addColorStop(0,'rgba(33,7,10,0.95)'); aag0.addColorStop(1,'rgba(17,4,6,0.97)');
@@ -2665,7 +2665,7 @@ function _buildUiBtnGrads() {
   aag1.addColorStop(0,'rgba(22,32,13,0.95)'); aag1.addColorStop(1,'rgba(11,16,7,0.97)');
 
   const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
-  tfBg.addColorStop(0,'rgba(26,20,11,0.97)'); tfBg.addColorStop(1,'rgba(15,12,6,0.99)');
+  tfBg.addColorStop(0,'rgba(34,31,26,0.97)'); tfBg.addColorStop(1,'rgba(16,15,12,0.99)');
   const hpHi = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
   hpHi.addColorStop(0,'#314f17'); hpHi.addColorStop(1,'#6fb136');
   const hpMid = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
@@ -2712,7 +2712,7 @@ function drawPotionButton() {
   ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(84,70,46,0.6)';
+  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(107,95,82,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
   if (ready && cd <= 0) {
@@ -2766,7 +2766,7 @@ function drawTargetButton() {
   ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(113,94,62,0.6)';
+  ctx.strokeStyle = hasTarget ? 'rgba(226,85,90,0.85)' : 'rgba(107,95,82,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
   if (hasTarget) {
@@ -2828,9 +2828,8 @@ function drawBuffStrip() {
   if (!chips.length) return;
 
   // 2-column icon grid to the left of the skill buttons panel
-  // Skill grid: left = W-14-(SKILL_SZ+SKILL_GAP)-SKILL_SZ = W-130, bottom = H-NAV_H-14
   const SZ = 22, GAP = 3, COLS = 2;
-  const skillLeft  = W - 14 - (SKILL_SZ + SKILL_GAP) - SKILL_SZ;  // W-130
+  const skillLeft  = getSkillClusterLeftX();
   const gridRight  = skillLeft - 8;                                  // 8px gap from skills
   const gridX      = gridRight - (COLS * SZ + (COLS - 1) * GAP);   // left edge of chip area
   // Raised clear of the chat widgets rather than bottom-aligned with the
@@ -2893,19 +2892,19 @@ function drawPvpButton() {
   ctx.save();
 
   ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+  cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.fill();
 
-  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(194,154,86,0.55)';
+  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(107,95,82,0.6)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+  cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.stroke();
 
   if (pvpMode) {
     ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
-    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+    cutRectPath(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 9); ctx.stroke();
   }
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
-  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(224,188,127,0.9)';
+  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(201,194,182,0.85)';
   drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
@@ -2927,19 +2926,19 @@ function drawProfessionButton() {
   ctx.save();
 
   ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+  cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.fill();
 
-  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(194,154,86,0.4)';
+  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(107,95,82,0.5)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+  cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.stroke();
 
   if (ready) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
     ctx.strokeStyle = `rgba(165,143,196,${(0.10 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+    cutRectPath(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 9); ctx.stroke();
   }
 
-  const profColor = ready ? '#cdb8ec' : 'rgba(224,188,127,0.9)';
+  const profColor = ready ? '#cdb8ec' : 'rgba(201,194,182,0.85)';
   drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, profColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
@@ -3019,9 +3018,10 @@ function drawAttackButton() {
 
   ctx.save();
   ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
-  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
+  hexPath(ctx, ab.x, ab.y, ab.r); ctx.fill();
 
-  // cooldown arc overlay while attack animation is playing
+  // cooldown arc overlay while attack animation is playing (kept circular —
+  // reads clearer as a sweep than a hex outline would)
   if (animBusy && player.castDuration > 0) {
     const frac = (player.atkAnimTimer || 0) / player.castDuration;
     ctx.strokeStyle = 'rgba(233,59,79,0.55)';
@@ -3032,17 +3032,17 @@ function drawAttackButton() {
   }
 
   const borderColor = !autoAttackMode
-    ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
-    : 'rgba(84,70,46,0.45)';
-  ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
+    ? (hasTarget && ready ? 'rgba(226,85,90,0.95)' : 'rgba(107,95,82,0.85)')
+    : 'rgba(70,61,51,0.5)';
+  ctx.strokeStyle = borderColor; ctx.lineWidth = 2;
+  hexPath(ctx, ab.x, ab.y, ab.r); ctx.stroke();
   if (!autoAttackMode && hasTarget && ready) {
-    ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(226,85,90,0.18)'; ctx.lineWidth = 4;
+    hexPath(ctx, ab.x, ab.y, ab.r + 3); ctx.stroke();
   }
 
   ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
+  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#c9c2b6');
   drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
 
   ctx.globalAlpha = 1;
@@ -3059,14 +3059,14 @@ function drawAutoToggle() {
   const F = 'system-ui, -apple-system, Arial';
   ctx.save();
   ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
-  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
+  cutRectPath(ctx, ab.x, ab.y, ab.w, ab.h, 6); ctx.fill();
 
-  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
+  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(107,95,82,0.65)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
+  cutRectPath(ctx, ab.x, ab.y, ab.w, ab.h, 6); ctx.stroke();
 
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
+  ctx.fillStyle = autoAttackMode ? '#90d653' : '#c9c2b6';
   ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), ab.x + ab.w / 2, ab.y + ab.h / 2);
   ctx.restore();
 }
@@ -3085,11 +3085,11 @@ function drawPartyButton() {
   ctx.save();
 
   ctx.fillStyle = _uiBtnGrads.ptg0;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+  cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.fill();
 
   ctx.strokeStyle = 'rgba(127,181,79,0.8)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+  cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.stroke();
 
   drawIconCtx(ctx, 'party', pb.x + 14, pb.y + pb.h / 2, 12, '#90d653');
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -3100,9 +3100,9 @@ function drawPartyButton() {
   // not just someone who invited you; see showPeerProfileModal, js/ui.js)
   const ib = getPartyInfoBtnPos();
   ctx.fillStyle = _uiBtnGrads.ptg0;
-  roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.fill();
+  cutRectPath(ctx, ib.x, ib.y, ib.w, ib.h, 7); ctx.fill();
   ctx.strokeStyle = 'rgba(127,181,79,0.8)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.stroke();
+  cutRectPath(ctx, ib.x, ib.y, ib.w, ib.h, 7); ctx.stroke();
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center';
   ctx.fillStyle = '#90d653';
   ctx.fillText(t('partyInfoBtnLbl'), ib.x + ib.w / 2, ib.y + ib.h / 2 + 1);

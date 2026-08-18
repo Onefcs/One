@@ -1,4 +1,3 @@
-const SKILL_SZ  = 54;
 const SKILL_GAP = 8;
 const POTION_R  = 26;
 
@@ -13,32 +12,41 @@ function _inJoyZone(cx, cy) {
          dist(cx, cy, jc.x, jc.y) < JOY_R * 1.35;
 }
 
-function getSkillBtnPos(idx) {
-  const sz = SKILL_SZ, gap = SKILL_GAP;
-  const rx = W - 14, by = H - NAV_H - 14;
-  const col = idx % 2;             // 0=left, 1=right
-  const row = Math.floor(idx / 2); // 0=top, 1=bottom
-  return {
-    x: rx - (1 - col) * (sz + gap) - sz,
-    y: by - (1 - row) * (sz + gap) - sz,
-    w: sz, h: sz,
-  };
-}
+// Attack sits as one big button in the bottom-right corner; the 4 class
+// skills orbit it in a fan overhead (screen-angle convention: 0°=right,
+// 90°=up) instead of the old 2×2 grid. All four angles stay in the upper
+// half (70°–169°) so every skill lands strictly above the attack button —
+// nothing in the fan needs its own clearance check against the nav bar.
+const ATK_MARGIN  = 20;
+const ATK_R       = 40;
+const SKILL_ARC_R = 74;
+const SKILL_R     = 25;
+const SKILL_ANGLES = [70, 103, 136, 169];
 
-// Attack and Target are stacked ABOVE the 2×2 skill grid (row); Potion takes
-// the primary slot above that row. Attack keeps the bigger (formerly
-// Potion's-slot-sized) radius here, Potion the smaller one below — icon size
-// scales off these radii, so this alone swaps how big each icon renders.
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
+  return { x: W - ATK_MARGIN - ATK_R, y: H - NAV_H - ATK_MARGIN - ATK_R, r: ATK_R };
 }
 
+function getSkillBtnPos(idx) {
+  const ab = getAttackBtnPos();
+  const rad = SKILL_ANGLES[idx] * Math.PI / 180;
+  const cx = ab.x + SKILL_ARC_R * Math.cos(rad);
+  const cy = ab.y - SKILL_ARC_R * Math.sin(rad);
+  return { x: cx - SKILL_R, y: cy - SKILL_R, w: SKILL_R * 2, h: SKILL_R * 2 };
+}
+
+// Leftmost point of the skill fan (always index 3, the largest angle) — the
+// buff strip (drawBuffStrip, js/ui.js) reads this so its chip column clears
+// the fan instead of the old fixed grid-width offset.
+function getSkillClusterLeftX() { return getSkillBtnPos(3).x; }
+
+// Target sits directly above Attack; Potion above Target; Auto (below) above
+// Potion — the same vertical stack the old layout used, just re-anchored to
+// the new Attack position.
 function getTargetBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz - gap - sz / 2, y: gridTop - gap - r, r };
+  const ab = getAttackBtnPos();
+  const gap = SKILL_GAP, r = POTION_R;
+  return { x: ab.x, y: ab.y - ab.r - gap - r, r };
 }
 
 function getPvpBtnPos() {
@@ -82,11 +90,11 @@ function getPartyInfoBtnPos() {
   return { x: pb.x + pb.w + 6, y: pb.y, w: 52, h: pb.h };
 }
 
-// Potion is above the attack/target row; AUTO sits directly above Potion
+// Potion sits above Target; AUTO sits directly above Potion
 function getPotionBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const ab = getAttackBtnPos();
-  return { x: W - 14 - sz / 2, y: ab.y - ab.r - gap - r, r };
+  const tb = getTargetBtnPos();
+  const gap = SKILL_GAP, r = POTION_R;
+  return { x: tb.x, y: tb.y - tb.r - gap - r, r };
 }
 
 function getAutoBtnPos() {
