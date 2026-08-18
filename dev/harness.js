@@ -571,10 +571,17 @@ scenario('floors: Элитная фарм-зона is a private party-of-3 insta
   eq(m1Gs.floor, 13, 'm1 is force-moved onto the Элитная фарм-зона floor');
   eq(m2Gs.floor, 13, 'so is m2');
   // gameStart only reports enemies within ENEMY_AOI_R (1400px) of the spawn
-  // point — the entrance sits in the corridor near room 1, with room 2 well
-  // outside that radius (they stream in via the live cast on approach, same
-  // as everywhere else in the game), so only one room's worth show up here.
-  eq((m1Gs.enemies || []).length, 50, 'the nearer room\'s baked-in monsters are visible from the entrance');
+  // point — the entrance corridor sits roughly equidistant from both forked
+  // rooms, so most (not necessarily all — a few of the deepest corners can
+  // fall just outside the radius) of the zone's 100 baked-in monsters are
+  // already visible from there.
+  ok((m1Gs.enemies || []).length > 50, 'most of the zone\'s baked-in monsters are visible from the entrance');
+  // The entrance corridor and its fork are never populated — every monster
+  // sits inside its own room, at least a few tiles past the fork/branch.
+  const spawnTileX = Math.round(m1Gs.spawn.x / 40), spawnTileY = Math.round(m1Gs.spawn.y / 40);
+  const closestTiles = Math.min(...(m1Gs.enemies || []).map(e =>
+    Math.hypot(Math.round(e.x / 40) - spawnTileX, Math.round(e.y / 40) - spawnTileY)));
+  ok(closestTiles > 8, `the entrance corridor is clear of monsters (closest is ${closestTiles.toFixed(1)} tiles away)`);
 
   // One member walking out (any way other than the run's own end) ends the
   // run for the other two as well — the zone was only ever entered as a

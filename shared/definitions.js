@@ -1083,11 +1083,11 @@ UNIQUE_SHARDS.forEach((sh, i) => {
 // generateFarmZone2, server/game/dungeon.js). Unlike the original farm
 // zone's monsters (aggroR kept, but tagged farmZone2 rather than farmZone
 // so the tick loop's self-pull exemption — which checks `!e.farmZone`
-// specifically — does NOT apply) these pull first, and they run the FULL
+// specifically — does NOT apply) these pull first, and they run
 // monsterStatsAtLevel() hp/atk with no weakMult halving — every OTHER
-// packed room's monsters (including the original Фарм-зона's) are halved,
-// so skipping that here already IS "2x an ordinary map monster" — on top
-// of FARM2_SPD_MULT move speed.
+// packed room's monsters (including the original Фарм-зона's) are halved —
+// scaled back down by FARM2_STAT_MULT on top, on top of FARM2_SPD_MULT move
+// speed.
 const FARM2_LVL_MIN = 30;
 const FARM2_LVL_MAX = 40;
 const FARM2_ENTRY_LEVEL = 25; // entry gate is below FARM2_LVL_MIN on purpose — see FARM2_LVL_MIN's own comment for what a level-25 party is actually walking into
@@ -1095,6 +1095,10 @@ const FARM2_PARTY_SIZE = 3;
 const FARM2_ROOM_COUNT = 2;
 const FARM2_MOBS_PER_ROOM = 50;
 const FARM2_SPD_MULT = 2;
+// Applied to hp/atk on top of skipping the weakMult halving (see this
+// section's own header comment) — i.e. final hp/atk = full monsterStatsAtLevel()
+// ÷ 1.5, not the un-scaled full value.
+const FARM2_STAT_MULT = 1 / 1.5;
 const FARM2_XP_PER_KILL = 1000; // flat, not level-scaled — see FARM_XP_MULT for the original zone's own approach
 const FARM2_DAILY_MINUTES = 120; // per-player cap inside the zone, resets daily (UTC) — see _farm2MinutesLeft, server/index.js
 // Same zombie/lizardman/orc rotation as the original Фарм-зона — 30-40 still
@@ -2002,7 +2006,7 @@ if (typeof module !== 'undefined') module.exports = {
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
-  FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
+  FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
   FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,

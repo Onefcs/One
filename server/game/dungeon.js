@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -174,16 +174,20 @@ const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
 // ── Элитная фарм-зона (Elite Farm Zone 2) ─────────────────────────────────
 // Its own floor now (generateFarmZone2, below) — a private instance built
 // fresh per party run (see server/index.js's farm2Group* lobby), not a
-// shared always-on floor the way the original Фарм-зона is. Two identical
-// square rooms side by side, joined by one straight corridor — FARM2_ROOM
-// is sized for FARM2_MOBS_PER_ROOM (50) monsters at roughly the same
-// density the original farm zone's 20-per-16x16-room uses, since these
-// monsters are aggressive (pull on approach, unlike the original zone's
-// aggroR-exempted ones) and run full (non-halved) stats — see FARM2_SPECIES
-// and shared/definitions.js's own comment on the Elite Farm Zone constants.
+// shared always-on floor the way the original Фарм-зона is. An entrance
+// corridor (dead straight, always empty — same convention every other
+// zone's own entrance corridor uses) forks at one point into two short
+// branches, one to each of the two identical rooms — reuses LEAD_IN/STUB,
+// the same corridor-length/branch-length constants generateArm's own
+// buildRoomChain uses for exactly this "branch off the main corridor into a
+// room" shape, just applied once per side (north/south) at a single fork
+// position instead of a whole chain of them. FARM2_ROOM is sized for
+// FARM2_MOBS_PER_ROOM (50) monsters at roughly the same density the
+// original farm zone's 20-per-16x16-room uses, since these monsters are
+// aggressive (pull on approach, unlike the original zone's aggroR-exempted
+// ones) and run full (non-halved) stats — see FARM2_SPECIES and shared/
+// definitions.js's own comment on the Elite Farm Zone constants.
 const FARM2_ROOM = 30;
-const FARM2_GAP = 10;
-const FARM2_SIZE = FARM2_ROOM * 2 + FARM2_GAP;
 
 // The hub is now the only thing that lives in its own grid — every special
 // zone and every leveling arm has moved out into its own floor (see
@@ -559,18 +563,31 @@ function generateFarmZone() {
 }
 
 // Элитная фарм-зона (Elite Farm Zone 2), its own floor (see
-// server/game/floors.js). Two identical square rooms side by side, joined
-// by one straight corridor — a private instance built fresh per party run
+// server/game/floors.js) — a private instance built fresh per party run
 // (server/index.js's _createFarm2Room, called from the farm2GroupStart
-// handler), not a shared always-on floor. Every monster is baked in at
-// world-gen exactly like the original Фарм-зона's own generator, just
-// aggressive (no aggroR:0, and tagged `farmZone2` rather than `farmZone` so
-// the tick loop's self-pull exemption — which checks `!e.farmZone`
-// specifically, see Room.js's _tick — does not apply here) and running full
-// (non-halved) monsterStatsAtLevel() stats at FARM2_SPD_MULT move speed.
+// handler), not a shared always-on floor. Players land in a dead-straight,
+// always-empty entrance corridor (no monster is ever placed outside a
+// room's own rectangle, so this stretch — and the fork below — is
+// guaranteed clear); it runs east from the entrance and forks at one point
+// into two short branches, one north to room A and one south to room B,
+// each identical. Every monster is baked in at world-gen exactly like the
+// original Фарм-зона's own generator, just aggressive (no aggroR:0, and
+// tagged `farmZone2` rather than `farmZone` so the tick loop's self-pull
+// exemption — which checks `!e.farmZone` specifically, see Room.js's
+// _tick — does not apply here) and running full (non-halved)
+// monsterStatsAtLevel() stats at FARM2_SPD_MULT move speed.
 function generateFarmZone2() {
   const rng = seededRng(2026 * 1337 + 777 + 900);
-  const w = FARM2_SIZE + MARGIN * 2, h = FARM2_ROOM + MARGIN * 2;
+  const roomSize = FARM2_ROOM;
+  const halfRoom = Math.floor(roomSize / 2);
+  // Fork column (x) and the entrance corridor's own row (y) — leaves
+  // headroom above fixedCoord for room A + its branch stub, the corridor's
+  // own half-width, then the same again below for room B.
+  const alongCenter = MARGIN + LEAD_IN;
+  const fixedCoord = MARGIN + roomSize + STUB + CW;
+
+  const w = alongCenter + halfRoom + MARGIN;
+  const h = fixedCoord + CW + STUB + roomSize + MARGIN;
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
   function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
   function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
@@ -578,27 +595,34 @@ function generateFarmZone2() {
     for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
   }
 
-  const X0 = MARGIN, Y0 = MARGIN;
-  const roomCoords = [
-    { x: X0, y: Y0 },                                  // left
-    { x: X0 + FARM2_ROOM + FARM2_GAP, y: Y0 },         // right
-  ];
-  const rooms = roomCoords.map(({ x, y }) => {
-    const room = {
-      x, y, size: FARM2_ROOM,
-      bx1: x - 1, by1: y - 1, bx2: x + FARM2_ROOM + 1, by2: y + FARM2_ROOM + 1,
-      cx: x + Math.floor(FARM2_ROOM / 2), cy: y + Math.floor(FARM2_ROOM / 2),
+  // Entrance corridor: dead straight, always empty, from the west edge to
+  // the fork column.
+  paintRect(MARGIN, fixedCoord - CW, alongCenter, fixedCoord + CW);
+
+  // side: -1 = north (above the corridor), +1 = south (below) — same
+  // branch-off-the-main-corridor shape buildRoomChain uses (generateArm,
+  // above), just one room per side instead of a chain.
+  function buildRoom(side) {
+    const cursor = side < 0 ? (fixedCoord - CW) : (fixedCoord + CW);
+    const x = alongCenter - halfRoom;
+    const y = side < 0 ? (cursor - STUB - roomSize) : (cursor + STUB);
+    const branchX0 = alongCenter - BW, branchX1 = alongCenter + BW;
+    const branchY0 = side < 0 ? (y + roomSize) : cursor;
+    const branchY1 = side < 0 ? (cursor - 1) : (y - 1);
+    paintRect(x, y, x + roomSize - 1, y + roomSize - 1);
+    paintRect(branchX0, branchY0, branchX1, branchY1);
+    const cx = x + halfRoom, cy = y + halfRoom;
+    return {
+      x, y, size: roomSize,
+      bx1: x - 1, by1: y - 1, bx2: x + roomSize + 1, by2: y + roomSize + 1,
+      cx, cy,
       // Representative midpoint for the HUD's single-number room label —
       // every monster's own level still varies (FARM2_LVL_MIN-FARM2_LVL_MAX),
       // same convention as the original farm zone's own rooms.
       isFarmZone2: true, monsterLvl: Math.round((FARM2_LVL_MIN + FARM2_LVL_MAX) / 2), arm: 'farmZone2',
     };
-    paintRect(x, y, x + FARM2_ROOM - 1, y + FARM2_ROOM - 1);
-    return room;
-  });
-  // One straight corridor through both rooms' shared center row.
-  const midY = rooms[0].cy;
-  paintRect(X0, midY - CW, X0 + FARM2_SIZE - 1, midY + CW);
+  }
+  const rooms = [buildRoom(-1), buildRoom(1)];
 
   const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19) — same species/level band
   const enemyList = [];
@@ -608,8 +632,8 @@ function generateFarmZone2() {
       const d = _enemyByEid.get(FARM2_SPECIES[Math.floor(rng() * FARM2_SPECIES.length)]);
       if (!d) continue;
       const lvl = FARM2_LVL_MIN + Math.floor(rng() * (FARM2_LVL_MAX - FARM2_LVL_MIN + 1));
-      // NOT halved — see this function's own header comment on why this
-      // already reads as "2x an ordinary map monster".
+      // NOT halved (see FARM2_STAT_MULT's own comment, shared/definitions.js)
+      // — full monsterStatsAtLevel(), then scaled by FARM2_STAT_MULT.
       const stats = monsterStatsAtLevel(lvl, d.eType);
       let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
       for (let attempt = 0; attempt < 40; attempt++) {
@@ -618,13 +642,15 @@ function generateFarmZone2() {
         if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
       }
       const localLvl = lvl - ARM_OFFSETS[1];
+      const hp = Math.max(1, Math.round(stats.hp * FARM2_STAT_MULT));
+      const atk = Math.max(1, Math.round(stats.atk * FARM2_STAT_MULT));
       enemyList.push({
         id: `farm2_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone2', farmZone2: true,
         rlvl: lvl,
         name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
         color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
-        maxHp: stats.hp, hp: stats.hp,
-        atk: stats.atk, def: stats.def, spd: d.spd * FARM2_SPD_MULT,
+        maxHp: hp, hp,
+        atk, def: stats.def, spd: d.spd * FARM2_SPD_MULT,
         xp: FARM2_XP_PER_KILL, gold: goldAtLevel(lvl),
         x: ex, y: ey, spawnX: ex, spawnY: ey,
         // Aggressive: standard aggroR, no exemption — see this function's
@@ -634,11 +660,11 @@ function generateFarmZone2() {
     }
   });
 
-  // Sits 2 tiles into the corridor from the west edge, clear of both rooms —
-  // same entrance/return-pad pattern every other zone uses.
-  const midYPx = midY * TILE + TILE / 2;
-  const returnPad = { x: (X0 + 2) * TILE + TILE / 2, y: midYPx };
-  const spawn = { x: (X0 + 4) * TILE + TILE / 2, y: midYPx };
+  // Sits in the entrance corridor, well clear of the fork (let alone either
+  // room) — same entrance/return-pad pattern every other zone uses.
+  const corridorYPx = fixedCoord * TILE + TILE / 2;
+  const returnPad = { x: (MARGIN + 2) * TILE + TILE / 2, y: corridorYPx };
+  const spawn = { x: (MARGIN + 4) * TILE + TILE / 2, y: corridorYPx };
 
   return {
     grid, rooms, w, h,
