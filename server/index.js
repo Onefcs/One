@@ -5690,6 +5690,14 @@ function _emitToEnemyViewers(room, enemyId, event, payload, exclude) {
   io.to(ids).emit(event, payload);
 }
 
+// Server-side floor between two 'healParty' casts from the same connection —
+// see the handler's own comment (below, inside io.on('connection')) for why
+// this exists at all. Same "far below the real cooldown, just tight enough
+// that spamming isn't worth anything" role SKILL_CD_MS plays for every other
+// skill (server/game/Room.js) — legitimate play (25s between casts, the
+// warlock R skill's own client-side cooldown) never gets near it.
+const HEAL_PARTY_CD_MS = 2000;
+
 io.on('connection', socket => {
   let authed = null;
   // When this connection opened — read by the disconnect handler to bucket
@@ -12556,6 +12564,15 @@ io.on('connection', socket => {
 
   safeOn('healParty', ({ amount } = {}) => {
     if (!authed || !currentRoom) return;
+    // HEAL_PARTY_CD_MS floor — unlike a damage skill this never went through
+    // skillAttackEnemy's own SKILL_CD_MS check, so nothing previously stopped
+    // a modified client firing this event as fast as the socket would carry
+    // it (see the constant's own comment).
+    const caster = currentRoom.players.get(socket.id);
+    if (!caster) return;
+    const now = Date.now();
+    if (now - (caster._lastHealParty || 0) < HEAL_PARTY_CD_MS) return;
+    caster._lastHealParty = now;
     // `|| 0` is what stops a non-numeric amount becoming NaN and freezing the
     // recipient's hp forever — see usePotion above. The party-dungeon twin of
     // this handler already had it; this one didn't.

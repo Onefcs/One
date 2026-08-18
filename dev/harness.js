@@ -1638,6 +1638,36 @@ scenario('party: growing an existing party doesn\'t break it for the others', as
   await Promise.all([a, b, c, d, e].map(x => x.close()));
 });
 
+scenario('heal: healParty is floored server-side at HEAL_PARTY_CD_MS, not just the client\'s 25s cooldown', async () => {
+  // The client-side cooldown on the warlock's party heal (25s) was purely
+  // advisory — nothing on the server stopped a modified client firing
+  // 'healParty' back to back. Two casts inside HEAL_PARTY_CD_MS (2s) from the
+  // same connection: only the first should land.
+  const healer = await connectAs('harness_heal_healer');
+  const ally = await connectAs('harness_heal_ally');
+  await enterWorld(healer, 'warlock');
+  await enterWorld(ally, 'ranger');
+
+  const allyUpd = ally.wait('partyUpdated', { timeout: 4000 });
+  const healerInv = healer.wait('partyInviteReceived', { timeout: 4000 });
+  ally.emit('partyInvite', { targetId: healer.sock.id });
+  await healerInv;
+  const healerUpd = healer.wait('partyUpdated', { timeout: 4000 });
+  healer.emit('partyAccept', { fromId: ally.sock.id });
+  await Promise.all([allyUpd, healerUpd]);
+
+  const firstHeal = ally.wait('healPartyMember', { timeout: 3000 });
+  healer.emit('healParty', { amount: 50 });
+  const h1 = await firstHeal;
+  eq(h1.amount, 50, 'the first cast lands in full');
+
+  const secondHeal = ally.wait('healPartyMember', { timeout: 800 }).then(() => 'landed').catch(() => 'nothing');
+  healer.emit('healParty', { amount: 50 });
+  eq(await secondHeal, 'nothing', 'a second cast inside HEAL_PARTY_CD_MS is silently dropped');
+
+  await Promise.all([healer, ally].map(x => x.close()));
+});
+
 scenario('reconnect: a second socket for the same account kicks the first', async () => {
   const c1 = await connectAs('harness_kick');
   await enterWorld(c1, 'warlock');
