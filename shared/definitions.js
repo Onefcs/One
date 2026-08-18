@@ -1074,6 +1074,51 @@ UNIQUE_SHARDS.forEach((sh, i) => {
   FARM_SPECIES_SHARDS[FARM_SPECIES[i % FARM_SPECIES.length]].push(sh.id);
 });
 
+// ── Элитная фарм-зона (Elite Farm Zone 2) ────────────────────────────────
+// A second, harder farm zone: level 30-40 monsters, entered only as a full
+// party of FARM2_PARTY_SIZE (see the farm2Group* lobby, server/index.js —
+// only the leader can launch the run, which force-moves every member in
+// together) rather than walked into freely like the original Фарм-зона.
+// Two baked-in rooms of FARM2_MOBS_PER_ROOM monsters each (own generator,
+// generateFarmZone2, server/game/dungeon.js). Unlike the original farm
+// zone's monsters (aggroR kept, but tagged farmZone2 rather than farmZone
+// so the tick loop's self-pull exemption — which checks `!e.farmZone`
+// specifically — does NOT apply) these pull first, and they run the FULL
+// monsterStatsAtLevel() hp/atk with no weakMult halving — every OTHER
+// packed room's monsters (including the original Фарм-зона's) are halved,
+// so skipping that here already IS "2x an ordinary map monster" — on top
+// of FARM2_SPD_MULT move speed.
+const FARM2_LVL_MIN = 30;
+const FARM2_LVL_MAX = 40;
+const FARM2_ENTRY_LEVEL = 30;
+const FARM2_PARTY_SIZE = 3;
+const FARM2_ROOM_COUNT = 2;
+const FARM2_MOBS_PER_ROOM = 50;
+const FARM2_SPD_MULT = 2;
+const FARM2_XP_PER_KILL = 1000; // flat, not level-scaled — see FARM_XP_MULT for the original zone's own approach
+const FARM2_DAILY_MINUTES = 120; // per-player cap inside the zone, resets daily (UTC) — see _farm2MinutesLeft, server/index.js
+// Same zombie/lizardman/orc rotation as the original Фарм-зона — 30-40 still
+// sits inside arm 2's own 21-40 range (ARM_OFFSETS[1] = 20), so these are
+// already the species tuned for this level band; only the level/stats differ.
+const FARM2_SPECIES = FARM_SPECIES;
+
+// Kill-loot rolls (_rollFarm2Loot, server/index.js) — flat 0-1 chances, one
+// independent roll per kind per kill, same convention as FARM_SHARD_CHANCE/
+// FARM_EPIC_RECIPE_CHANCE above. Liberty is not part of this table — it is
+// currency (nexum), rolled and granted the same way COOP_LIBERTY_CHANCE is
+// (see the attack/skillAttack handlers, server/index.js).
+const FARM2_LIBERTY_CHANCE          = 0.1 / 100;
+const FARM2_BOX_RARE_CHANCE         = 0.0001 / 100;
+const FARM2_BOX_UNCOMMON_CHANCE     = 0.001 / 100;
+const FARM2_NORM_STONE_CHANCE       = 0.03 / 100;
+const FARM2_BLESS_STONE_CHANCE      = 0.006 / 100;
+const FARM2_EPIC_RECIPE_CHANCE      = 0.1 / 100;
+const FARM2_LEGENDARY_RECIPE_CHANCE = 0.01 / 100;
+// One flat roll per kill picking a random book from the FULL 20-book pool —
+// unlike FARM_SPECIES_BOOKS above there is no per-species split here, every
+// book is equally reachable off any of this zone's kills.
+const FARM2_ADV_SKILL_BOOK_CHANCE   = 0.005 / 100;
+
 // The weapons themselves. Every stat carried over from the ordinary line is
 // exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
 // bw4/bw5, st4/st5) — see ITEM_DEF above. Warlocks share the staff line for
@@ -1956,6 +2001,11 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
+  FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
+  FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
+  FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
+  FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
+  FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   dropLevelGapDivisor,

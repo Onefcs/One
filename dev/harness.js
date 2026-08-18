@@ -510,6 +510,85 @@ scenario('floors: Фарм-зона is its own floor, gated server-side by level
   await high.close();
 });
 
+scenario('floors: Элитная фарм-зона is a private party-of-3 instance, leader-only, cascade-ejecting on a member leaving', async () => {
+  // Direct entry is always refused, even above the level gate — the only
+  // sanctioned way in is farm2GroupStart (see _doEnterLocation's own
+  // comment on why: the floor's monsters are baked in at world-gen, so a
+  // bare enterLocation would otherwise find a fully populated, ungated zone).
+  const solo = await connectWithSaved('harness_farm2_solo', { lvl: 30, xp: 0, xpNext: 100 });
+  await enterWorld(solo, 'ranger');
+  const deniedDirect = solo.wait('enterLocationDenied', { timeout: 3000 });
+  solo.emit('enterLocation', { target: 'farmZone2' });
+  const directDenial = await deniedDirect;
+  eq(directDenial && directDenial.reason, 'partyOnly', 'a direct enterLocation is refused regardless of level');
+  await solo.close();
+
+  // A leader below FARM2_ENTRY_LEVEL (30) cannot even open a lobby.
+  const lowLeader = await connectWithSaved('harness_farm2_low', { lvl: 10, xp: 0, xpNext: 100 });
+  await enterWorld(lowLeader, 'ranger');
+  const lowErr = lowLeader.wait('farm2Error', { timeout: 3000 });
+  lowLeader.emit('farm2GroupCreate');
+  const lowErrPayload = await lowErr;
+  ok(lowErrPayload && /30/.test(lowErrPayload.msg || ''), 'the level gate names the required level');
+  await lowLeader.close();
+
+  // A full party of 3, all at the level requirement.
+  const leader = await connectWithSaved('harness_farm2_leader', { lvl: 30, xp: 0, xpNext: 100 });
+  const m1 = await connectWithSaved('harness_farm2_m1', { lvl: 30, xp: 0, xpNext: 100 });
+  const m2 = await connectWithSaved('harness_farm2_m2', { lvl: 30, xp: 0, xpNext: 100 });
+  await enterWorld(leader, 'ranger'); await enterWorld(m1, 'ranger'); await enterWorld(m2, 'ranger');
+
+  const leaderState = leader.wait('farm2GroupState', { timeout: 3000 });
+  leader.emit('farm2GroupCreate');
+  const ls1 = await leaderState;
+  eq(ls1.isLeader, true, 'the creator is the leader of their own lobby');
+
+  const m1State = m1.wait('farm2GroupState', { timeout: 3000 });
+  const leaderState2 = leader.wait('farm2GroupState', { timeout: 3000 });
+  m1.emit('farm2GroupJoin', { leaderId: leader.sock.id });
+  const [m1s, ls2] = await Promise.all([m1State, leaderState2]);
+  eq(m1s.inGroup, true, 'm1 lands in the leader\'s group');
+  eq(ls2.members.length, 1, 'the leader sees m1 join');
+
+  const m2State = m2.wait('farm2GroupState', { timeout: 3000 });
+  const leaderState3 = leader.wait('farm2GroupState', { timeout: 3000 });
+  m2.emit('farm2GroupJoin', { leaderId: leader.sock.id });
+  const [m2s, ls3] = await Promise.all([m2State, leaderState3]);
+  eq(m2s.inGroup, true, 'm2 lands in the leader\'s group too');
+  eq(ls3.members.length, 2, 'the leader sees the group fill up to FARM2_PARTY_SIZE');
+
+  // Only the leader can start, and it force-moves every member in together.
+  const startDenied = m1.wait('farm2Error', { timeout: 1500 }).then(() => 'error').catch(() => 'nothing');
+  m1.emit('farm2GroupStart');
+  eq(await startDenied, 'nothing', 'a non-leader\'s farm2GroupStart is silently ignored');
+
+  const leaderStart = leader.wait('farm2Started', { timeout: 5000 });
+  const m1Start = m1.wait('gameStart', { where: 'm1 deployed into farmZone2' });
+  const m2Start = m2.wait('gameStart', { where: 'm2 deployed into farmZone2' });
+  leader.emit('farm2GroupStart');
+  const [lStarted, m1Gs, m2Gs] = await Promise.all([leaderStart, m1Start, m2Start]);
+  ok(lStarted, 'the leader gets a farm2Started payload');
+  eq(m1Gs.floor, 13, 'm1 is force-moved onto the Элитная фарм-зона floor');
+  eq(m2Gs.floor, 13, 'so is m2');
+  // gameStart only reports enemies within ENEMY_AOI_R (1400px) of the spawn
+  // point — the entrance sits in the corridor near room 1, with room 2 well
+  // outside that radius (they stream in via the live cast on approach, same
+  // as everywhere else in the game), so only one room's worth show up here.
+  eq((m1Gs.enemies || []).length, 50, 'the nearer room\'s baked-in monsters are visible from the entrance');
+
+  // One member walking out (any way other than the run's own end) ends the
+  // run for the other two as well — the zone was only ever entered as a
+  // full trio.
+  const m1Finished = m1.wait('farm2Finished', { timeout: 5000 });
+  const m2Finished = m2.wait('farm2Finished', { timeout: 5000 });
+  leader.emit('enterLocation', { target: 'hub' });
+  const [m1f, m2f] = await Promise.all([m1Finished, m2Finished]);
+  eq(m1f.reason, 'partyBroken', 'm1 is told the run ended because the party broke');
+  eq(m2f.reason, 'partyBroken', 'so is m2');
+
+  await Promise.all([leader, m1, m2].map(x => x.close()));
+});
+
 scenario('floors: the boss arena is its own floor, reachable only while a world boss is up', async () => {
   const c = await connectAs('harness_arena_boss');
   await enterWorld(c, 'ranger');

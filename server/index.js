@@ -187,6 +187,10 @@ const {
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS, questComplete,
   FEAR_MAX_WAVE, COOP_STAGE_LEVELS, QUEST_DEF,
+  FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_DAILY_MINUTES,
+  FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
+  FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
+  FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
@@ -411,6 +415,38 @@ function _rollFarmZoneLoot(inv, eid) {
     const pool = (FARM_SPECIES_BOOKS[eid] && FARM_SPECIES_BOOKS[eid].length)
       ? FARM_SPECIES_BOOKS[eid]
       : CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
+    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
+  }
+  return granted;
+}
+
+// ── Элитная фарм-зона kill loot ──────────────────────────────────────────
+// Same shape as _rollFarmZoneLoot above (independent flat rolls, no
+// equipment/key/regular-skill-book drops), but no per-species split: this
+// zone only runs FARM2_SPECIES' own two archetypes, so there is no reason to
+// carve the box/stone/recipe/book pool up further the way FARM_SPECIES_
+// SHARDS/FARM_SPECIES_BOOKS do — one random book from the FULL 20-book pool
+// on the one book roll that lands. Liberty is NOT rolled here — it's
+// currency (nexum), rolled and granted by the attack/skillAttack handlers
+// the same way COOP_LIBERTY_CHANCE is (see FARM2_LIBERTY_CHANCE there).
+function _rollFarm2Loot(inv) {
+  const granted = [];
+  function addMat(id, qty) {
+    const mat = CRAFT_MATS.find(m => m.id === id);
+    if (mat && _invAdd(inv, { ...mat, qty })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty });
+  }
+  function addBox(id, qty) {
+    const box = BOX_DEF.find(b => b.id === id);
+    if (box && _invAdd(inv, { ...box, qty })) granted.push({ id: box.id, name: box.name, rarity: box.rarity, qty });
+  }
+  if (Math.random() < FARM2_BOX_RARE_CHANCE) addBox('box_rare', 1);
+  if (Math.random() < FARM2_BOX_UNCOMMON_CHANCE) addBox('box_uncommon', 1);
+  if (Math.random() < FARM2_NORM_STONE_CHANCE) addMat('norm_stone', 1);
+  if (Math.random() < FARM2_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
+  if (Math.random() < FARM2_EPIC_RECIPE_CHANCE) addMat('rece', 1);
+  if (Math.random() < FARM2_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
+  if (Math.random() < FARM2_ADV_SKILL_BOOK_CHANCE) {
+    const pool = CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
     if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
   }
   return granted;
@@ -3154,6 +3190,45 @@ async function _fearAttemptsLeft(socketId)           { return _dailyAttemptsLeft
 function _lockCoopDaily(socketId)                    { _lockDailyAttempt(socketId, 'coopAttempts'); }
 async function _coopAttemptsLeft(socketId)           { return _dailyAttemptsLeft(socketId, 'coopAttempts'); }
 
+// Элитная фарм-зона's daily cap is minutes actually spent inside, not a
+// count of runs — same "$cond on the stored date" atomic-pipeline shape as
+// _lockDailyAttempt above, just $add-ing whole minutes instead of +1, and
+// read back against FARM2_DAILY_MINUTES instead of a fixed per-field cap.
+// Only ever called with small positive integers (the per-minute ticker in
+// server/index.js's farm2GroupStart, and the entry-time budget read below),
+// so there is no need for _attemptCap's field-keyed dispatch.
+function _lockDailyMinutes(socketId, field, minutes) {
+  const s = io.sockets.sockets.get(socketId);
+  const tid = s?.data?.telegramId;
+  if (tid == null || !(minutes > 0)) return;
+  const today = _todayStr();
+  const path = `savedData.${field}`;
+  PlayerModel.updateOne({ telegramId: tid }, [{
+    $set: {
+      [path]: {
+        $cond: [
+          { $eq: [`$${path}.date`, today] },
+          { date: today, minutes: { $add: [{ $ifNull: [`$${path}.minutes`, 0] }, minutes] } },
+          { date: today, minutes },
+        ],
+      },
+    },
+  }]).catch(() => {});
+}
+async function _dailyMinutesLeft(socketId, field, cap) {
+  const s = io.sockets.sockets.get(socketId);
+  const tid = s?.data?.telegramId;
+  if (tid == null) return cap;
+  try {
+    const doc = await PlayerModel.findOne({ telegramId: tid }).select(`savedData.${field}`).lean();
+    const rec = doc?.savedData?.[field];
+    if (!rec || rec.date !== _todayStr()) return cap;
+    return Math.max(0, cap - rec.minutes);
+  } catch (_) { return cap; }
+}
+function _lockFarm2Minutes(socketId, minutes)        { _lockDailyMinutes(socketId, 'farm2Minutes', minutes); }
+async function _farm2MinutesLeft(socketId)           { return _dailyMinutesLeft(socketId, 'farm2Minutes', FARM2_DAILY_MINUTES); }
+
 // Remove leaverId from their party; notify remaining members.
 // If only 1 member remains the party dissolves entirely.
 function _removeFromParty(partyId, leaverId) {
@@ -3168,6 +3243,10 @@ function _removeFromParty(partyId, leaverId) {
   // (_coopEjectOnDisconnect), well before this could ever be reached
   // through the party's own disconnect-grace timeout.
   _coopEliminate(leaverId);
+  // Элитная фарм-зона: same idea, generalized from exactly-2 to "fewer than
+  // FARM2_PARTY_SIZE of the run's original participants are still in" — see
+  // _farm2Eliminate's own comment. A no-op for anyone not currently on a run.
+  _farm2Eliminate(leaverId);
 
   const leaverName = members.get(leaverId) || leaverId.slice(0, 6);
   members.delete(leaverId);
@@ -3275,6 +3354,10 @@ function _buildGameStartPayload(socket, room, floor) {
       if (!run || !run.room) return null;
       return { inRun: true, stage: run.room.coopStage(), maxStage: COOP_STAGE_LEVELS.length };
     })(),
+    // Same "only present when a run is live" shape as Fear/Coop above — a
+    // reconnect mid-run needs this to resume the client's own "in the zone"
+    // UI state (see js/network.js's _applyGameStart).
+    farm2: _farm2.has(socket.id) ? { inRun: true } : null,
   };
 }
 
@@ -5119,6 +5202,197 @@ function _coopEjectOnDisconnect(socketId) {
   return true;
 }
 
+// ── Элитная фарм-зона (Elite Farm Zone 2) ───────────────────────────────────
+// Same leader/member group-lobby shape Coop's own _coopGroups uses, just
+// FARM2_PARTY_SIZE seats (leader + FARM2_PARTY_SIZE-1 members) instead of 2,
+// and one shared private instance instead of per-player lanes — every
+// monster here is baked in at world-gen (generateFarmZone2, server/game/
+// dungeon.js), not spawned per-stage, so there is nothing that needs the
+// per-player isolation Coop's stage progression relies on. Unlike Coop,
+// dying inside does NOT end the run (Room.respawnPlayer respawns in place,
+// same as any other free-roam zone) — only actually LEAVING the zone
+// (walking out, disconnecting, or dropping out of the run's temporary
+// party) does, and when it does, everyone else still in goes too: see
+// _farm2CascadeCheck.
+const FARM2_START_DELAY_MS = 3000;
+
+// leaderId -> { leaderName, members: Map<socketId, name> } — up to
+// FARM2_PARTY_SIZE-1 members. Lives here only until farm2GroupStart
+// consumes it (deleted at that point) or it's dissolved without ever
+// starting (leader leaves/disconnects).
+const _farm2Groups = new Map();
+// socketId -> leaderId, for the leader (points at itself) and every member —
+// the reverse lookup farm2GroupKick/Leave/Start all need.
+const _farm2GroupOf = new Map();
+// leaderId currently mid-farm2GroupStart. farm2GroupStart awaits a daily-
+// minutes DB read (_farm2MinutesLeft) BEFORE its first write to `_farm2` —
+// unlike coopGroupStart, which never yields to the event loop before its
+// own `_coop.set` — so without this, a double-click/duplicate event could
+// have two calls both pass the `_farm2.has(socket.id)` guard while the
+// first is still in flight and deploy the same leader twice. Same shape as
+// _a3.starting (see _a3TryStart's own comment).
+const _farm2Starting = new Set();
+
+function _farm2GroupStateFor(socketId) {
+  const leaderId = _farm2GroupOf.get(socketId);
+  const g = leaderId && _farm2Groups.get(leaderId);
+  if (!g) return { inGroup: false };
+  const members = [...g.members.entries()].map(([id, name]) => ({ id, name }));
+  return {
+    inGroup: true,
+    isLeader: socketId === leaderId,
+    leaderId, leaderName: g.leaderName,
+    members, maxMembers: FARM2_PARTY_SIZE - 1,
+  };
+}
+
+function _farm2GroupPush(socketId, reason) {
+  const st = _farm2GroupStateFor(socketId);
+  if (reason) st.reason = reason;
+  io.to(socketId).emit('farm2GroupState', st);
+}
+
+// Only groups still short a member are worth offering.
+function _farm2GroupOpenList() {
+  const groups = [];
+  _farm2Groups.forEach((g, leaderId) => {
+    if (g.members.size < FARM2_PARTY_SIZE - 1 && io.sockets.sockets.get(leaderId)) {
+      groups.push({ id: leaderId, leaderName: g.leaderName, size: g.members.size + 1, maxSize: FARM2_PARTY_SIZE });
+    }
+  });
+  return groups;
+}
+
+function _farm2GroupBroadcastList() {
+  io.emit('farm2GroupList', { groups: _farm2GroupOpenList() });
+}
+
+// Leader gone dissolves the whole group; every member is notified so their
+// panel drops back to idle rather than waiting forever on a leader who's no
+// longer there.
+function _farm2GroupDissolve(leaderId, reason) {
+  const g = _farm2Groups.get(leaderId);
+  if (!g) return;
+  _farm2Groups.delete(leaderId);
+  _farm2GroupOf.delete(leaderId);
+  g.members.forEach((_, mid) => {
+    _farm2GroupOf.delete(mid);
+    _farm2GroupPush(mid, reason);
+  });
+  _farm2GroupBroadcastList();
+}
+
+// Disconnect while still in the lobby (never reached a live run) drops the
+// disconnecting side immediately — no reconnect grace, same as Coop's own
+// lobby (_coopGroupDropOnDisconnect).
+function _farm2GroupDropOnDisconnect(socketId) {
+  const leaderId = _farm2GroupOf.get(socketId);
+  if (!leaderId) return;
+  if (leaderId === socketId) {
+    _farm2GroupDissolve(leaderId, 'leaderLeft');
+  } else {
+    const g = _farm2Groups.get(leaderId);
+    if (g && g.members.has(socketId)) {
+      g.members.delete(socketId);
+      _farm2GroupOf.delete(socketId);
+      _farm2GroupPush(leaderId);
+      _farm2GroupBroadcastList();
+    }
+  }
+}
+
+// Every Элитная фарм-зона run gets its OWN Room, shared by exactly its
+// FARM2_PARTY_SIZE participants, created here and never registered in
+// floorRooms — same reasoning as _createCoopRoom's own comment.
+function _createFarm2Room() {
+  const room = new Room(FLOOR_IDS.farmZone2, io, {}, null);
+  _farm2Rooms.add(room);
+  return room;
+}
+const _farm2Rooms = new Set();
+function _liveFarm2Rooms() {
+  const live = [];
+  _farm2Rooms.forEach(r => {
+    if (r.players.size > 0) live.push(r);
+    else _farm2Rooms.delete(r);
+  });
+  return live;
+}
+
+// socketId -> { room, participantIds, capTimer, minuteTimer } for whoever
+// currently has a run going. participantIds is every one of the
+// FARM2_PARTY_SIZE sockets that started this run together, captured once at
+// farm2GroupStart — read by _farm2CascadeCheck to know who else needs to be
+// pulled out the moment membership drops below the full party.
+const _farm2 = new Map();
+
+function _farm2ClearTimers(socketId) {
+  const run = _farm2.get(socketId);
+  if (!run) return;
+  if (run.capTimer) clearTimeout(run.capTimer);
+  if (run.minuteTimer) clearInterval(run.minuteTimer);
+}
+
+// Ends this ONE participant's own membership — releases their spot on the
+// room, clears their timers, and drops the run record, without deciding
+// where they go or telling anyone else anything (callers that need to end
+// the run for everyone still in call this once per participant still
+// present — see _farm2CascadeCheck). Returns the run it ended, or null.
+function _farm2ReleaseRun(socketId) {
+  const run = _farm2.get(socketId);
+  if (!run) return null;
+  _farm2ClearTimers(socketId);
+  _farm2.delete(socketId);
+  if (run.room) run.room.farm2Release(socketId);
+  return run;
+}
+
+function _farm2Finish(socketId, reason) {
+  const run = _farm2ReleaseRun(socketId);
+  if (!run) return;
+  const spot = _returnToHub(socketId);
+  io.to(socketId).emit('farm2Finished', { reason, x: spot?.x, y: spot?.y });
+}
+
+// Called after any ONE participant's own membership just ended (finished,
+// disconnected, dropped out of the run's party) — the zone was only ever
+// entered as a full FARM2_PARTY_SIZE, so if fewer than that are still
+// actually in the room, whoever's left can't continue and the whole run
+// ends for them too. `room`/`participantIds` are the ones captured on the
+// run record BEFORE the triggering release, since that release already
+// removed its own socket from `_farm2`.
+function _farm2CascadeCheck(room, participantIds) {
+  if (!room || !participantIds) return;
+  const stillIn = participantIds.filter(sid => _farm2.has(sid) && _farm2.get(sid).room === room);
+  if (stillIn.length > 0 && stillIn.length < FARM2_PARTY_SIZE) {
+    stillIn.forEach(sid => _farm2Finish(sid, 'partyBroken'));
+  }
+}
+
+// Wired into _removeFromParty's fan-out (mirrors _coopEliminate) — dropping
+// out of the run's temporary party (an explicit partyLeave, or any other
+// removal path) ends this participant's own membership and, if that leaves
+// fewer than a full party still in, ends the run for the rest too.
+function _farm2Eliminate(socketId) {
+  const run = _farm2.get(socketId);
+  if (!run) return false;
+  const { room, participantIds } = run;
+  _farm2Finish(socketId, 'left');
+  _farm2CascadeCheck(room, participantIds);
+  return true;
+}
+
+// Disconnect-class exit — no reconnect grace (same choice Coop made for its
+// own live runs): the disconnecting socket is already gone, so this only
+// releases its own spot/timers (no _returnToHub/farm2Finished round trip —
+// there is nothing to tell it) and cascades to whoever is still in.
+function _farm2EjectOnDisconnect(socketId) {
+  const run = _farm2ReleaseRun(socketId);
+  if (!run) return false;
+  _farm2CascadeCheck(run.room, run.participantIds);
+  return true;
+}
+
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
 // safe to trigger from more than one path below — _floorRoomsStarted is set
 // synchronously (before the first await) so two calls racing in before
@@ -5736,6 +6010,9 @@ io.on('connection', socket => {
     // it to every connected socket (_coopGroupBroadcastList) — same
     // broadcast-amplification shape as arena3Register/race10Register above.
     'coopGroupCreate', 'coopGroupJoin', 'coopGroupKick', 'coopGroupLeave', 'coopGroupStart', 'coopSync',
+    // Same shape as the coopGroup* bucket just above, for Элитная фарм-зона's
+    // own lobby.
+    'farm2GroupCreate', 'farm2GroupJoin', 'farm2GroupKick', 'farm2GroupLeave', 'farm2GroupStart', 'farm2Sync',
   ]);
   // A third bucket for the events that are cheap to ASK for and expensive to
   // ANSWER. enemyResync is the amplifier: one request makes the server encode
@@ -5942,25 +6219,27 @@ io.on('connection', socket => {
   // that used to be rolled by the caller but only ever granted by the
   // client) so the caller only has to decide who won and relay what comes
   // back for that player's floating-text feedback.
-  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone, coop }) => {
+  socket.data._grantKillLoot = ({ eid, rlvl, isBoss, farmZone, farmZone2, coop }) => {
     const empty = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory)) return empty;
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
-    // reroll below) entirely — see _rollFarmZoneLoot's own comment. Coop
-    // kills skip it too (including a boss kill's box/stone rolls just
-    // below) and grant nothing from this function at all — a regular kill's
-    // only reward beyond xp is the flat COOP_LIBERTY_CHANCE Liberty roll in
-    // the attack/skillAttack handlers, and the boss's own fixed reward is
-    // granted separately by _coopBossTrackKill.
-    const items = farmZone ? _rollFarmZoneLoot(inv, eid) : coop ? [] : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
+    // reroll below) entirely — see _rollFarmZoneLoot's own comment. Элитная
+    // фарм-зона kills skip it the same way, in favor of _rollFarm2Loot's own
+    // box/stone/recipe/book table. Coop kills skip it too (including a boss
+    // kill's box/stone rolls just below) and grant nothing from this
+    // function at all — a regular kill's only reward beyond xp is the flat
+    // COOP_LIBERTY_CHANCE Liberty roll in the attack/skillAttack handlers,
+    // and the boss's own fixed reward is granted separately by
+    // _coopBossTrackKill.
+    const items = farmZone ? _rollFarmZoneLoot(inv, eid) : farmZone2 ? _rollFarm2Loot(inv) : coop ? [] : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-    if (!farmZone && !coop && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
+    if (!farmZone && !farmZone2 && !coop && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
       items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
-    if (isBoss && !coop) {
+    if (isBoss && !coop && !farmZone2) {
       // The flag is set from what _invAdd ACTUALLY placed, not from the roll.
       // Setting it first and ignoring the return (as this did) meant a full
       // inventory still told the client "+1× Ящик" — the floating text played,
@@ -10484,7 +10763,7 @@ io.on('connection', socket => {
       // See _doEnterLocation's identical guard: Fear/Coop players never join
       // the shared floor_<id> broadcast group, since each is alone (or, for
       // Coop, paired) on its own private Room.
-      if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop) socket.join(`floor_${currentFloor}`);
+      if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop && currentFloor !== FLOOR_IDS.farmZone2) socket.join(`floor_${currentFloor}`);
       const { staleSocketId, fearCarry } = currentRoom.addPlayer(socket.id, authed.username, _myClanName, _myClanIcon, clanAtkBonusPct(_myClanLevel), authed.telegramId, _myClanId);
       // Anything this account had signed up for before the drop comes back
       // onto this socket, in the position it signed up at. Unconditional: the
@@ -10550,6 +10829,12 @@ io.on('connection', socket => {
         // now goes through the same fearGrace hold as a real disconnect (see
         // below) rather than a bespoke same-tick-only carry.
         _pvpEliminate(staleSocketId, undefined, undefined, { fearGrace: true, telegramId: authed.telegramId });
+        // Not routed through _pvpEliminate — that fan-out also fires on every
+        // death (the 'respawn' handler), and dying inside Элитная фарм-зона
+        // must NOT end the run (Room.respawnPlayer respawns in place, same
+        // as any other free-roam zone). This stale-socket path really is a
+        // disconnect-class event, so it gets its own direct call instead.
+        _farm2EjectOnDisconnect(staleSocketId);
         // Same-tick duplicate-login race: the stale socket's own 'disconnect'
         // hasn't fired yet (this addPlayer call is what's dropping it), so
         // nothing has put its party slot into _partyDisconnectGrace for the
@@ -10722,6 +11007,19 @@ io.on('connection', socket => {
       // with whether a world boss happens to be up at the same time.
       if (!force && !_arenaOpen()) { socket.emit('enterLocationDenied', { target, reason: 'closed' }); return false; }
       targetFloor = FLOOR_IDS.arena;
+    } else if (target === 'farmZone2') {
+      // Элитная фарм-зона has no walk-in pad — this floor's monsters are
+      // baked in at world-gen (unlike Fear/Coop's runtime-spawned ones), so
+      // an ordinary enterLocation landing here directly would find a fully
+      // populated, functional zone with no party-of-3/leader/daily-minutes
+      // gating ever having run. The only sanctioned way in is
+      // farm2GroupStart, which calls this with force:true — a plain client
+      // request always gets denied, same "no equivalent to a walk-in pad"
+      // deal Fear/Coop's own floors have (their own generic branch below
+      // would technically also accept a bare request, they just never spawn
+      // anything for it to find).
+      if (!force) { socket.emit('enterLocationDenied', { target, reason: 'partyOnly' }); return false; }
+      targetFloor = FLOOR_IDS.farmZone2;
     } else if (FLOOR_IDS[target] != null) {
       // Server-side level gate — the pad's own lock icon is client-side
       // decoration only, this is the check that actually matters. Фарм-зона
@@ -10750,7 +11048,7 @@ io.on('connection', socket => {
     // socket.to(`floor_${currentFloor}`) broadcast below is already a no-op
     // for Fear/Coop on their own — nothing else here needs to know the
     // difference.
-    if (oldFloor !== FLOOR_IDS.fear && oldFloor !== FLOOR_IDS.coop) socket.leave(`floor_${oldFloor}`);
+    if (oldFloor !== FLOOR_IDS.fear && oldFloor !== FLOOR_IDS.coop && oldFloor !== FLOOR_IDS.farmZone2) socket.leave(`floor_${oldFloor}`);
     // Walking out of Страх ends the run, exactly as dying in it does.
     //
     // Only two things used to end a run: clearing wave FEAR_MAX_WAVE and
@@ -10802,12 +11100,30 @@ io.on('connection', socket => {
         });
       }
     }
+    // Same reasoning as Coop's own block just above, generalized from
+    // exactly-2 to "fewer than FARM2_PARTY_SIZE still in" — walking off the
+    // Элитная фарм-зона floor any other way than the run's own end also has
+    // to end this connection's own membership, and cascades to whoever else
+    // is still in via _farm2CascadeCheck (self already excluded, since
+    // _farm2ReleaseRun above already removed it from `_farm2`).
+    if (oldFloor === FLOOR_IDS.farmZone2) {
+      const run = _farm2.get(socket.id);
+      if (run) {
+        const { room, participantIds } = run;
+        _farm2ReleaseRun(socket.id);
+        _farm2CascadeCheck(room, participantIds);
+        socket.emit('farm2State', {
+          entryLevel: FARM2_ENTRY_LEVEL, partySize: FARM2_PARTY_SIZE, dailyMinutes: FARM2_DAILY_MINUTES,
+          inRun: false,
+        });
+      }
+    }
     currentRoom.removePlayer(socket.id);
     socket.to(`floor_${oldFloor}`).emit('playerLeft', { id: socket.id });
 
     currentFloor = targetFloor;
     playerFloorMap.set(socket.id, currentFloor);
-    if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop) socket.join(`floor_${currentFloor}`);
+    if (currentFloor !== FLOOR_IDS.fear && currentFloor !== FLOOR_IDS.coop && currentFloor !== FLOOR_IDS.farmZone2) socket.join(`floor_${currentFloor}`);
     // `room`, when given, is a fresh private instance this connection just
     // created (fearEnter) — the ordinary getRoom(floorId) lookup only ever
     // returns the one shared Room per floor, which Fear no longer has one of.
@@ -11042,10 +11358,14 @@ io.on('connection', socket => {
       // Фарм-зона already skips the whole normal loot table (see farmZone in
       // _grantKillLoot) — Liberty/GRAM are the same "no drop but shards" deal.
       // Coop replaces both with one flat COOP_LIBERTY_CHANCE Liberty roll and
-      // no GRAM at all — see its own comment above.
+      // no GRAM at all — see its own comment above. Элитная фарм-зона rolls
+      // its own flat FARM2_LIBERTY_CHANCE Liberty (part of the drop table the
+      // task spec calls for) but still no GRAM, same "own table replaces the
+      // normal drops" deal as the original farm zone.
       const nexumDrop  = _isCoop ? (Math.random() < COOP_LIBERTY_CHANCE ? 1 : 0)
+        : result.farmZone2 ? (Math.random() < FARM2_LIBERTY_CHANCE ? 1 : 0)
         : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
-      const gramDrop   = (_isCoop || result.farmZone) ? 0
+      const gramDrop   = (_isCoop || result.farmZone || result.farmZone2) ? 0
         : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
@@ -11063,7 +11383,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, coop: result.arm === 'coop' })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, farmZone2: result.farmZone2, coop: result.arm === 'coop' })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
 
       if (memberIds.length > 0) {
@@ -11175,10 +11495,12 @@ io.on('connection', socket => {
       }
       const _arm2 = armIndexForLevel(result.rlvl);
       const _isCoop2 = result.arm === 'coop';
-      // Same Сотрудничество override as the basic-attack path above.
+      // Same Сотрудничество/Элитная фарм-зона override as the basic-attack
+      // path above.
       const nexumDrop2 = _isCoop2 ? (Math.random() < COOP_LIBERTY_CHANCE ? 1 : 0)
+        : result.farmZone2 ? (Math.random() < FARM2_LIBERTY_CHANCE ? 1 : 0)
         : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
-      const gramDrop2  = (_isCoop2 || result.farmZone) ? 0
+      const gramDrop2  = (_isCoop2 || result.farmZone || result.farmZone2) ? 0
         : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
       if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
@@ -11191,7 +11513,7 @@ io.on('connection', socket => {
       const lootWinnerId = allIds[Math.floor(Math.random() * allIds.length)];
       const winnerSocket = lootWinnerId === socket.id ? socket : io.sockets.sockets.get(lootWinnerId);
       const lootResult = winnerSocket?.data?._grantKillLoot
-        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, coop: result.arm === 'coop' })
+        ? winnerSocket.data._grantKillLoot({ eid: result.eid, rlvl: result.rlvl, isBoss: result.isBoss, farmZone: result.farmZone, farmZone2: result.farmZone2, coop: result.arm === 'coop' })
         : { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
       if (memberIds.length > 0) {
         const totalMembers = memberIds.length + 1;
@@ -11874,6 +12196,250 @@ io.on('connection', socket => {
   // Sent once the player closes the coop result modal — same reasoning as
   // fearReturn above.
   safeOn('coopReturn', () => {
+    const spot = _returnToHub(socket.id);
+    if (spot) socket.emit('deathBattleReturned', spot);
+  });
+
+  // ── Элитная фарм-зона (Elite Farm Zone 2) ────────────────────────────────
+  // Same group-based lobby shape as Coop just above, sized for
+  // FARM2_PARTY_SIZE (leader + FARM2_PARTY_SIZE-1 members) instead of 2, and
+  // — unlike Coop — the daily allowance (minutes, not run attempts) is
+  // re-checked for EVERY participant at Start, not just the leader at
+  // create/join time: an exhausted member silently deployed and then
+  // immediately timed back out would break the whole trio for the other
+  // two, which is worse than just refusing to start.
+  safeOn('farm2GroupCreate', async () => {
+    if (!authed) return;
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) return;
+    if (!currentRoom) return;
+    const cp = currentRoom.players.get(socket.id);
+    if (!cp) return socket.emit('farm2Error', { msg: 'Выберите персонажа' });
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('farm2Error', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    if (_fear.has(socket.id)) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас в Страхе' });
+    }
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < FARM2_ENTRY_LEVEL) {
+      return socket.emit('farm2Error', { msg: `Нужен ${FARM2_ENTRY_LEVEL} уровень` });
+    }
+    const left = await _farm2MinutesLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('farm2Error', { msg: 'Время в Элитной фарм-зоне на сегодня закончилось' });
+    }
+    _farm2Groups.set(socket.id, { leaderName: authed.username, members: new Map() });
+    _farm2GroupOf.set(socket.id, socket.id);
+    _farm2GroupPush(socket.id);
+    _farm2GroupBroadcastList();
+  });
+
+  safeOn('farm2GroupJoin', async ({ leaderId } = {}) => {
+    if (!authed || !leaderId) return;
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) return;
+    const g = _farm2Groups.get(leaderId);
+    if (!g || g.members.size >= FARM2_PARTY_SIZE - 1 || !io.sockets.sockets.get(leaderId)) {
+      return socket.emit('farm2Error', { msg: 'Группа недоступна' });
+    }
+    if (!currentRoom) return;
+    const cp = currentRoom.players.get(socket.id);
+    if (!cp) return socket.emit('farm2Error', { msg: 'Выберите персонажа' });
+    if (_db.reg.has(socket.id) || _db.alive.has(socket.id)) {
+      return socket.emit('farm2Error', { msg: 'Вы уже записаны на битву на смерть' });
+    }
+    if (_a3.queue.has(socket.id) || (_a3.live && _a3.teams.has(socket.id))) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас на арене 3х3' });
+    }
+    if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    if (_fear.has(socket.id)) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас в Страхе' });
+    }
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('farm2Error', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    const lvl = (_lastStats && _lastStats.lvl) || 1;
+    if (lvl < FARM2_ENTRY_LEVEL) {
+      return socket.emit('farm2Error', { msg: `Нужен ${FARM2_ENTRY_LEVEL} уровень` });
+    }
+    const left = await _farm2MinutesLeft(socket.id);
+    if (left <= 0) {
+      return socket.emit('farm2Error', { msg: 'Время в Элитной фарм-зоне на сегодня закончилось' });
+    }
+    // Re-check the slot is still open — two joins racing each other on the
+    // same open group must not both land.
+    if (g.members.size >= FARM2_PARTY_SIZE - 1) return socket.emit('farm2Error', { msg: 'Группа недоступна' });
+    g.members.set(socket.id, authed.username);
+    _farm2GroupOf.set(socket.id, leaderId);
+    _farm2GroupPush(leaderId);
+    _farm2GroupPush(socket.id);
+    _farm2GroupBroadcastList();
+  });
+
+  // Leader-only: boots the named member back to idle, freeing their slot for
+  // someone else to join. A no-op if that member isn't actually in the group.
+  safeOn('farm2GroupKick', ({ memberId } = {}) => {
+    const g = _farm2Groups.get(socket.id);
+    if (!g || !memberId || !g.members.has(memberId)) return;
+    g.members.delete(memberId);
+    _farm2GroupOf.delete(memberId);
+    _farm2GroupPush(memberId, 'kicked');
+    _farm2GroupPush(socket.id);
+    _farm2GroupBroadcastList();
+  });
+
+  // Any side stepping away on their own. The leader leaving dissolves the
+  // whole group (every member is bounced back to idle); a member leaving
+  // just frees their own slot.
+  safeOn('farm2GroupLeave', () => {
+    const leaderId = _farm2GroupOf.get(socket.id);
+    if (!leaderId) return;
+    if (leaderId === socket.id) {
+      _farm2GroupDissolve(leaderId, 'leaderLeft');
+    } else {
+      const g = _farm2Groups.get(leaderId);
+      if (!g || !g.members.has(socket.id)) return;
+      g.members.delete(socket.id);
+      _farm2GroupOf.delete(socket.id);
+      _farm2GroupPush(leaderId);
+      _farm2GroupBroadcastList();
+    }
+  });
+
+  // Leader-only, and only once the group is FULL (FARM2_PARTY_SIZE-1
+  // members) — this is the ONLY way an Элитная фарм-зона run begins: the
+  // leader is the one who "enters" and every member is force-moved in with
+  // them, exactly as the task spec asks.
+  safeOn('farm2GroupStart', async () => {
+    if (!authed) return;
+    if (_farm2.has(socket.id) || _farm2Starting.has(socket.id)) return;
+    const g = _farm2Groups.get(socket.id);
+    if (!g) return; // not a leader (or not in a group at all)
+    const memberIds = [...g.members.keys()];
+    if (memberIds.length < FARM2_PARTY_SIZE - 1) {
+      return socket.emit('farm2Error', { msg: `Нужна полная группа из ${FARM2_PARTY_SIZE} человек` });
+    }
+    const memberSockets = memberIds.map(id => io.sockets.sockets.get(id));
+    const vanished = memberIds.filter((id, i) => !memberSockets[i]);
+    if (vanished.length) {
+      // One or more members vanished without the disconnect path catching
+      // it — clear those slots rather than trying to deploy ghosts.
+      vanished.forEach(id => { g.members.delete(id); _farm2GroupOf.delete(id); });
+      _farm2GroupPush(socket.id);
+      _farm2GroupBroadcastList();
+      return socket.emit('farm2Error', { msg: 'Участник отключился' });
+    }
+
+    const allIds = [socket.id, ...memberIds];
+    const allNames = [authed.username, ...memberIds.map(id => g.members.get(id))];
+
+    // Marks this leader mid-start for the duration of the daily-minutes
+    // await below — see _farm2Starting's own comment. Cleared in the
+    // finally block covering every return path past this point.
+    _farm2Starting.add(socket.id);
+    try {
+      // Authoritative daily-minutes gate — see this section's own header
+      // comment on why every participant is checked here, not just the
+      // leader at create time.
+      const minutesLeft = await Promise.all(allIds.map(sid => _farm2MinutesLeft(sid)));
+      const exhaustedIdx = minutesLeft.findIndex(m => m <= 0);
+      if (exhaustedIdx !== -1) {
+        const msg = exhaustedIdx === 0
+          ? 'Ваше время в Элитной фарм-зоне на сегодня закончилось'
+          : `У ${allNames[exhaustedIdx]} закончилось время в Элитной фарм-зоне на сегодня`;
+        return socket.emit('farm2Error', { msg });
+      }
+
+      // Group everyone into a fresh party of exactly themselves — same shape
+      // coopGroupStart's own party formation uses, needed for the kill-share/
+      // party-heal/proximity checks the run itself relies on (arePlayersNear
+      // and playerParty's other readers).
+      allIds.forEach(sid => {
+        const oldPartyId = playerParty.get(sid);
+        if (oldPartyId) _removeFromParty(oldPartyId, sid);
+      });
+      const partyId = allIds.join('_');
+      const partyMap = new Map();
+      allIds.forEach((sid, i) => partyMap.set(sid, allNames[i]));
+      parties.set(partyId, partyMap);
+      allIds.forEach(sid => playerParty.set(sid, partyId));
+      partyMap.forEach((_, mid) => {
+        const others = [];
+        partyMap.forEach((name, oid) => { if (oid !== mid) others.push({ id: oid, name }); });
+        io.to(mid).emit('partyUpdated', { members: others });
+      });
+
+      // Deploy everyone. Элитная фарм-зона is its own floor (server/game/
+      // floors.js), but like Coop there is no shared, populated Room to walk
+      // onto — this connection creates a brand-new private instance right
+      // here and force-joins every connection onto it via the `room` override
+      // (_forceEnterLocation, exposed per-connection so this handler can move
+      // sockets that aren't its own).
+      const allSockets = [socket, ...memberSockets];
+      const farm2Room = _createFarm2Room();
+      const entered = allSockets.map(s => s.data._forceEnterLocation?.('farmZone2', { room: farm2Room }));
+      if (entered.some(ok => !ok)) {
+        // Something about one of the connections refused the move (no
+        // character selected any more, already elsewhere) — don't strand
+        // anyone on a half-joined floor, and leave the group intact so the
+        // leader can just try again.
+        allSockets.forEach((s, i) => { if (entered[i]) s.data._forceEnterLocation?.('hub'); });
+        allSockets.forEach(s => s.emit('farm2Error', { msg: 'Не удалось войти — попробуйте ещё раз' }));
+        return;
+      }
+      const spots = allIds.map(sid => farm2Room.farm2Deploy(sid));
+      if (spots.some(sp => !sp)) {
+        allSockets.forEach(s => s.data._forceEnterLocation?.('hub'));
+        allSockets.forEach(s => s.emit('farm2Error', { msg: 'Не удалось войти — попробуйте ещё раз' }));
+        return;
+      }
+
+      // The group has done its job — clear it out before tracking the run.
+      _farm2Groups.delete(socket.id);
+      allIds.forEach(sid => _farm2GroupOf.delete(sid));
+      _farm2GroupBroadcastList();
+
+      allIds.forEach((sid, i) => {
+        const capTimer = safeTimeout('farm2Cap_' + sid, () => {
+          _farm2Finish(sid, 'timeCap');
+          _farm2CascadeCheck(farm2Room, allIds);
+        }, minutesLeft[i] * 60000);
+        const minuteTimer = safeInterval('farm2Min_' + sid, () => _lockFarm2Minutes(sid, 1), 60000);
+        _farm2.set(sid, { room: farm2Room, participantIds: allIds, capTimer, minuteTimer });
+      });
+      allSockets.forEach((s, i) => {
+        const p = farm2Room.players.get(allIds[i]);
+        s.emit('farm2Started', { x: spots[i].x, y: spots[i].y, hp: p?.maxHp, minutesLeft: minutesLeft[i] });
+      });
+    } finally {
+      _farm2Starting.delete(socket.id);
+    }
+  });
+
+  safeOn('farm2Sync', async () => {
+    const run = _farm2.get(socket.id);
+    socket.emit('farm2State', {
+      entryLevel: FARM2_ENTRY_LEVEL, partySize: FARM2_PARTY_SIZE, dailyMinutes: FARM2_DAILY_MINUTES,
+      minutesLeft: await _farm2MinutesLeft(socket.id),
+      inRun: !!run,
+    });
+    socket.emit('farm2GroupState', _farm2GroupStateFor(socket.id));
+    socket.emit('farm2GroupList', { groups: _farm2GroupOpenList() });
+  });
+
+  // Sent once the player closes the farm2 result modal — same reasoning as
+  // coopReturn above.
+  safeOn('farm2Return', () => {
     const spot = _returnToHub(socket.id);
     if (spot) socket.emit('deathBattleReturned', spot);
   });
@@ -13342,6 +13908,11 @@ io.on('connection', socket => {
     // hall. Race10/arena3/deathBattle stay on the immediate path: they're
     // shared/competitive instances a lone reconnect can't safely resume into.
     _pvpEliminate(socket.id, undefined, undefined, { fearGrace: true, telegramId: authed?.telegramId });
+    // Not routed through _pvpEliminate — see the stale-socket reconnect
+    // path's own comment on why (it also fires on every death, which must
+    // not end an Элитная фарм-зона run). No reconnect grace, same immediate-
+    // eject choice Coop made for its own live runs.
+    _farm2EjectOnDisconnect(socket.id);
     playerFloorMap.delete(socket.id);
     _teleportCasting.delete(socket.id);
     if (_teleportCastTimer) { clearTimeout(_teleportCastTimer); _teleportCastTimer = null; }
@@ -13355,6 +13926,7 @@ io.on('connection', socket => {
     // _coopEjectOnDisconnect above, which only ever fires for a run already
     // under way.
     _coopGroupDropOnDisconnect(socket.id);
+    _farm2GroupDropOnDisconnect(socket.id);
     if (!currentRoom) return;
     socket.to(`floor_${currentFloor}`).emit('playerLeft', { id: socket.id });
     currentRoom.removePlayer(socket.id);

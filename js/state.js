@@ -175,6 +175,19 @@ let _coopStageNo = 0;
 let _coopGroup = null;
 let _coopOpenGroups = [];
 
+// Элитная фарм-зона — a FARM2_PARTY_SIZE-only instance entered through a
+// leader-run group, same shape as Coop's above (see js/network.js's
+// netFarm2Group*/farm2Started). No stages — this is a free-roam farm zone,
+// not a wave/boss run — so there is only inRun and the daily minutes cap.
+// _farm2Group mirrors the server's farm2GroupState: null while idle,
+// otherwise { isLeader, leaderId, leaderName, members, maxMembers }.
+// _farm2OpenGroups is the joinable lobby list (farm2GroupList) — groups
+// still short a member, from every player, not just this one.
+let _farm2State = { entryLevel: 30, partySize: 3, dailyMinutes: 120, minutesLeft: null };
+let _farm2InRun = false;
+let _farm2Group = null;
+let _farm2OpenGroups = [];
+
 // Сезон — points race with a fixed end date. Everything here is pushed by the
 // server (points and quest progress are server-owned, see the seasonSync
 // handler in server/index.js); nothing is computed locally.

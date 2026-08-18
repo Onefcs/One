@@ -1,16 +1,23 @@
 const {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop,
 } = require('./dungeon');
 
 // Every location the player can stand in is its own floor id + its own
 // generator, replacing the single generateOpenWorld() mega-grid. The hub,
 // the 4 leveling arms and every special zone (Guild War, Фарм-зона, the boss
-// arena/Death Battle venue, the 3v3 arena, Кровавая Башня, Страх and
-// Сотрудничество) are each their own floor now.
+// arena/Death Battle venue, the 3v3 arena, Кровавая Башня, Страх,
+// Сотрудничество and Элитная фарм-зона) are each their own floor now.
 const FLOOR_IDS = {
   hub: 1, left: 2, top: 3, bottom: 4, right: 5,
   guildWar: 6, farmZone: 7, arena: 8, pvpArena: 9, race10: 10, fear: 11, coop: 12,
+  // Private per-run instance, same shape as fear/coop — see
+  // server/index.js's _createFarm2Room. Registered here purely so
+  // generateFarmZone2's geometry template exists and FLOOR_IDS.farmZone2
+  // resolves; the boot-time shared Room _initFloorRooms creates for it is
+  // never actually reachable — _doEnterLocation explicitly denies a direct,
+  // non-force enterLocation onto this floor (see its own comment).
+  farmZone2: 13,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -29,6 +36,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.race10,   key: 'race10',   generate: () => generateRace10() },
   { id: FLOOR_IDS.fear,     key: 'fear',     generate: () => generateFear() },
   { id: FLOOR_IDS.coop,     key: 'coop',     generate: () => generateCoop() },
+  { id: FLOOR_IDS.farmZone2, key: 'farmZone2', generate: () => generateFarmZone2() },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

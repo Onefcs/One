@@ -1121,6 +1121,35 @@ class Room {
     this._coopStage = 0;
   }
 
+  // ── Элитная фарм-зона (Elite Farm Zone 2) ──────────────────────────────
+  // Unlike Coop's per-player lanes, all FARM2_PARTY_SIZE participants share
+  // this one instance and its baked-in monsters (generateFarmZone2, server/
+  // game/dungeon.js) — so deploy only needs to place the player at the
+  // zone's shared entrance and record them as a current member, for
+  // server/index.js's threshold-eject cascade (_farm2CascadeCheck) to read
+  // via farm2MemberCount/farm2Members.
+  farm2Deploy(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const spot = this._dungeon.spawn;
+    p.x = spot.x; p.y = spot.y;
+    p.hp = p.maxHp;
+    p._profileRev++;
+    if (!this._farm2Members) this._farm2Members = new Set();
+    this._farm2Members.add(socketId);
+    return { x: p.x, y: p.y };
+  }
+
+  // Called on every exit path (finished, disconnected, left the party) —
+  // idempotent, safe on a socket that was never a member.
+  farm2Release(socketId) {
+    if (this._farm2Members) this._farm2Members.delete(socketId);
+  }
+
+  farm2MemberCount() {
+    return this._farm2Members ? this._farm2Members.size : 0;
+  }
+
   // Scatters `items` on the floor around (cx, cy) as individually claimable
   // piles and tells everyone about them. Positions are rejected if they'd
   // land in a wall so nothing spawns unreachable.
@@ -1294,7 +1323,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmZone2: d.farmZone2, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
@@ -3271,7 +3300,7 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -3350,7 +3379,7 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone };
+      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

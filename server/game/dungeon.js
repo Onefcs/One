@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -170,6 +170,20 @@ const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
 const FARM_ROOM = 16;
 const FARM_GAP = 8;
 const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
+
+// ── Элитная фарм-зона (Elite Farm Zone 2) ─────────────────────────────────
+// Its own floor now (generateFarmZone2, below) — a private instance built
+// fresh per party run (see server/index.js's farm2Group* lobby), not a
+// shared always-on floor the way the original Фарм-зона is. Two identical
+// square rooms side by side, joined by one straight corridor — FARM2_ROOM
+// is sized for FARM2_MOBS_PER_ROOM (50) monsters at roughly the same
+// density the original farm zone's 20-per-16x16-room uses, since these
+// monsters are aggressive (pull on approach, unlike the original zone's
+// aggroR-exempted ones) and run full (non-halved) stats — see FARM2_SPECIES
+// and shared/definitions.js's own comment on the Elite Farm Zone constants.
+const FARM2_ROOM = 30;
+const FARM2_GAP = 10;
+const FARM2_SIZE = FARM2_ROOM * 2 + FARM2_GAP;
 
 // The hub is now the only thing that lives in its own grid — every special
 // zone and every leveling arm has moved out into its own floor (see
@@ -544,6 +558,97 @@ function generateFarmZone() {
   };
 }
 
+// Элитная фарм-зона (Elite Farm Zone 2), its own floor (see
+// server/game/floors.js). Two identical square rooms side by side, joined
+// by one straight corridor — a private instance built fresh per party run
+// (server/index.js's _createFarm2Room, called from the farm2GroupStart
+// handler), not a shared always-on floor. Every monster is baked in at
+// world-gen exactly like the original Фарм-зона's own generator, just
+// aggressive (no aggroR:0, and tagged `farmZone2` rather than `farmZone` so
+// the tick loop's self-pull exemption — which checks `!e.farmZone`
+// specifically, see Room.js's _tick — does not apply here) and running full
+// (non-halved) monsterStatsAtLevel() stats at FARM2_SPD_MULT move speed.
+function generateFarmZone2() {
+  const rng = seededRng(2026 * 1337 + 777 + 900);
+  const w = FARM2_SIZE + MARGIN * 2, h = FARM2_ROOM + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const roomCoords = [
+    { x: X0, y: Y0 },                                  // left
+    { x: X0 + FARM2_ROOM + FARM2_GAP, y: Y0 },         // right
+  ];
+  const rooms = roomCoords.map(({ x, y }) => {
+    const room = {
+      x, y, size: FARM2_ROOM,
+      bx1: x - 1, by1: y - 1, bx2: x + FARM2_ROOM + 1, by2: y + FARM2_ROOM + 1,
+      cx: x + Math.floor(FARM2_ROOM / 2), cy: y + Math.floor(FARM2_ROOM / 2),
+      // Representative midpoint for the HUD's single-number room label —
+      // every monster's own level still varies (FARM2_LVL_MIN-FARM2_LVL_MAX),
+      // same convention as the original farm zone's own rooms.
+      isFarmZone2: true, monsterLvl: Math.round((FARM2_LVL_MIN + FARM2_LVL_MAX) / 2), arm: 'farmZone2',
+    };
+    paintRect(x, y, x + FARM2_ROOM - 1, y + FARM2_ROOM - 1);
+    return room;
+  });
+  // One straight corridor through both rooms' shared center row.
+  const midY = rooms[0].cy;
+  paintRect(X0, midY - CW, X0 + FARM2_SIZE - 1, midY + CW);
+
+  const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19) — same species/level band
+  const enemyList = [];
+  let eid = 0;
+  rooms.forEach((room, ri) => {
+    for (let n = 0; n < FARM2_MOBS_PER_ROOM; n++) {
+      const d = _enemyByEid.get(FARM2_SPECIES[Math.floor(rng() * FARM2_SPECIES.length)]);
+      if (!d) continue;
+      const lvl = FARM2_LVL_MIN + Math.floor(rng() * (FARM2_LVL_MAX - FARM2_LVL_MIN + 1));
+      // NOT halved — see this function's own header comment on why this
+      // already reads as "2x an ordinary map monster".
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      const localLvl = lvl - ARM_OFFSETS[1];
+      enemyList.push({
+        id: `farm2_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone2', farmZone2: true,
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: stats.hp, hp: stats.hp,
+        atk: stats.atk, def: stats.def, spd: d.spd * FARM2_SPD_MULT,
+        xp: FARM2_XP_PER_KILL, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        // Aggressive: standard aggroR, no exemption — see this function's
+        // own header comment.
+        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  });
+
+  // Sits 2 tiles into the corridor from the west edge, clear of both rooms —
+  // same entrance/return-pad pattern every other zone uses.
+  const midYPx = midY * TILE + TILE / 2;
+  const returnPad = { x: (X0 + 2) * TILE + TILE / 2, y: midYPx };
+  const spawn = { x: (X0 + 4) * TILE + TILE / 2, y: midYPx };
+
+  return {
+    grid, rooms, w, h,
+    spawn,
+    returnPad,
+    farmZone2: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM2_ENTRY_LEVEL, partySize: FARM2_PARTY_SIZE },
+    enemies: enemyList,
+  };
+}
+
 // Boss arena, now its own floor (see server/game/floors.js) instead of a
 // square room off to the right of the hub. Doubles as the Death Battle
 // (Битва на смерть) venue — same zone, same sealed-off rules, just placed
@@ -897,7 +1002,7 @@ function generateCoop() {
 }
 
 module.exports = {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop,
   TILE, WALL, FLOOR,
 };

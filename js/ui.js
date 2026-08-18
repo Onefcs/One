@@ -4362,6 +4362,7 @@ function openEventsPanel() {
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
   if (typeof netCoopSync === 'function') netCoopSync();
+  if (typeof netFarm2Sync === 'function') netFarm2Sync();
   showEventsList();
 }
 
@@ -4406,6 +4407,7 @@ function _renderEventsBody() {
                  : _eventTab === 'race10'    ? _race10BodyHTML()
                  : _eventTab === 'fear'      ? _fearBodyHTML()
                  : _eventTab === 'coop'      ? _coopBodyHTML()
+                 : _eventTab === 'farm2'     ? _farm2BodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
                  : _deathBattleBodyHTML();
 }
@@ -4756,6 +4758,125 @@ function _coopBodyHTML() {
 function onCoopState() {
   _updateEventsBtnHighlight();
   if (_eventsPanelOpen() && _eventTab === 'coop') _renderEventsBody();
+}
+
+// ── Элитная фарм-зона tab ────────────────────────────────────────────────────
+// Same group-lobby shape as Coop's own tab above, just FARM2_PARTY_SIZE seats
+// (leader + up to 2 members) instead of 2 — a leader creates a group
+// (netFarm2GroupCreate), it shows up in everyone else's open-group list
+// (_farm2OpenGroups, pushed as farm2GroupList), someone else joins it
+// (netFarm2GroupJoin), the leader can kick any one member back out
+// (netFarm2GroupKick, which — unlike Coop — needs to say WHICH member), and
+// only the leader can actually launch the run (netFarm2GroupStart) — see
+// js/network.js's _initFarm2Handlers. No stage counter: this is a free-roam
+// farm zone, not a wave/boss run, so the headline number is minutes left of
+// the daily cap instead.
+function _farm2GroupPanelHTML(g) {
+  const openSlots = Math.max(0, (g.maxMembers || 2) - (g.members || []).length);
+  const memberRows = (g.members || []).map(m => `
+    <div class="coop-grp-row">
+      <span class="coop-grp-name">${_esc(m.name)}</span>
+      ${g.isLeader ? `<button class="coop-grp-kick" onclick="netFarm2GroupKick('${m.id}')">${t('coopKickBtn')}</button>` : (socket && m.id === socket.id ? `<span class="coop-grp-tag">${t('coopYouTag')}</span>` : '')}
+    </div>`).join('');
+  const openRows = Array.from({ length: openSlots }, () =>
+    `<div class="coop-grp-row coop-grp-empty"><span class="coop-grp-name">${t('coopSlotOpenLbl')}</span></div>`).join('');
+  const leaderRow = `<div class="coop-grp-row">
+       <span class="coop-grp-name">${_esc(g.leaderName)}</span>
+       <span class="coop-grp-tag">${g.isLeader ? t('coopYouTag') : t('coopLeaderTag')}</span>
+     </div>`;
+
+  const mainAction = g.isLeader
+    ? (openSlots === 0
+        ? `<button class="db-action" onclick="netFarm2GroupStart()">${t('coopStartBtn')}</button>`
+        : `<button class="db-action" disabled>${t('coopWaitingMemberLbl')}</button>`)
+    : `<button class="db-action" disabled>${t('coopWaitingLeaderLbl')}</button>`;
+  const secondaryLbl = g.isLeader ? t('coopDisbandBtn') : t('coopLeaveGroupBtn');
+
+  return `
+    <div class="coop-grp-box">
+      ${leaderRow}
+      ${memberRows}
+      ${openRows}
+    </div>
+    ${mainAction}
+    <button class="db-action db-leave" onclick="netFarm2GroupLeave()">${secondaryLbl}</button>`;
+}
+
+function _farm2OpenGroupsHTML() {
+  const groups = (typeof _farm2OpenGroups !== 'undefined' && _farm2OpenGroups) || [];
+  if (!groups.length) return `<div class="coop-open-empty">${t('coopNoGroupsLbl')}</div>`;
+  return `<div class="coop-open-list">${groups.map(gr => `
+    <div class="coop-open-row">
+      <span class="coop-grp-name">${_esc(gr.leaderName)} (${gr.size}/${gr.maxSize})</span>
+      <button class="coop-join-btn" onclick="netFarm2GroupJoin('${gr.id}')">${t('coopJoinBtn')}</button>
+    </div>`).join('')}</div>`;
+}
+
+function _farm2BodyHTML() {
+  const st = (typeof _farm2State !== 'undefined' && _farm2State) || { entryLevel: 30, partySize: 3, dailyMinutes: 120, minutesLeft: null };
+  const inRun = typeof _farm2InRun !== 'undefined' && _farm2InRun;
+  const group = typeof _farm2Group !== 'undefined' ? _farm2Group : null;
+  const spent = st.minutesLeft !== null && st.minutesLeft !== undefined && st.minutesLeft <= 0;
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = !inRun && lvl < (st.entryLevel || 30);
+
+  let phaseTxt, action;
+  if (inRun) {
+    phaseTxt = t('coopPhaseReady');
+    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+  } else if (group) {
+    phaseTxt = group.isLeader ? t('coopPhaseLeaderLbl') : t('coopPhaseMemberLbl');
+    action = _farm2GroupPanelHTML(group);
+  } else if (tooLow) {
+    phaseTxt = tVars('a3NeedLevelFmt', { n: st.entryLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.entryLevel })}</button>`;
+  } else if (spent) {
+    phaseTxt = t('farm2NoTimeLbl');
+    action = `<button class="db-action disabled" disabled>${t('farm2NoTimeLbl')}</button>`;
+  } else {
+    phaseTxt = t('fearPhaseIdle');
+    action = `<button class="db-action" onclick="netFarm2GroupCreate()">${t('coopCreateGroupBtn')}</button>${_farm2OpenGroupsHTML()}`;
+  }
+
+  const countdown = st.minutesLeft !== null && st.minutesLeft !== undefined
+    ? tVars('farm2MinutesFmt', { n: st.minutesLeft, max: st.dailyMinutes })
+    : `?/${st.dailyMinutes}`;
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${countdown}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${tVars('farm2Rule1', { n: st.entryLevel })}</li>
+          <li>${tVars('farm2Rule2', { n: st.partySize })}</li>
+          <li>${t('farm2Rule3')}</li>
+          <li>${t('farm2Rule4')}</li>
+          <li>${tVars('farm2Rule5', { n: st.dailyMinutes })}</li>
+        </ul>
+      </div>
+      <div class="db-rules">
+        ${t('farm2DropHdr')}
+        <ul>
+          <li>${t('farm2Drop1')}</li>
+          <li>${t('farm2Drop2')}</li>
+          <li>${t('farm2Drop3')}</li>
+          <li>${t('farm2Drop4')}</li>
+          <li>${t('farm2Drop5')}</li>
+          <li>${t('farm2Drop6')}</li>
+          <li>${t('farm2Drop7')}</li>
+          <li>${t('farm2Drop8')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+// Called from the network handlers on every server push.
+function onFarm2State() {
+  _updateEventsBtnHighlight();
+  if (_eventsPanelOpen() && _eventTab === 'farm2') _renderEventsBody();
 }
 
 // Called from the network handlers on every server push.

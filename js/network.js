@@ -691,7 +691,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d, rxAt) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs } = payload;
+            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs, farm2: f2 } = payload;
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
@@ -835,6 +835,14 @@ function netConnect(onReady) {
       _coopInRun = false;
       _coopStageNo = 0;
       if (typeof onCoopState === 'function') onCoopState();
+    }
+    // Элитная фарм-зона: same reconnect-resume reasoning as Fear/Coop above.
+    if (f2 && f2.inRun) {
+      _farm2InRun = true;
+      if (typeof onFarm2State === 'function') onFarm2State();
+    } else if (_farm2InRun) {
+      _farm2InRun = false;
+      if (typeof onFarm2State === 'function') onFarm2State();
     }
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
@@ -3026,6 +3034,7 @@ function _initEventBossHandlers(s) {
   _initRace10Handlers(s);
   _initFearHandlers(s);
   _initCoopHandlers(s);
+  _initFarm2Handlers(s);
   _initGuildWarHandlers(s);
 }
 
@@ -3587,6 +3596,86 @@ function _initCoopHandlers(s) {
     if (cleared && typeof netCoopReturn === 'function') netCoopReturn();
     if (typeof netCoopSync === 'function') netCoopSync();
     if (typeof onCoopState === 'function') onCoopState();
+  });
+}
+
+function netFarm2Sync()   { if (socket?.connected) socket.emit('farm2Sync'); }
+// Same round-trip coopReturn uses — the server already moved this player
+// back to the hub when the run ended, this just makes the client catch up
+// visually.
+function netFarm2Return() { if (socket?.connected) socket.emit('farm2Return'); }
+
+// ── Элитная фарм-зона group lobby ────────────────────────────────────────────
+// Same shape as Coop's own group lobby above, just FARM2_PARTY_SIZE seats
+// (leader + up to 2 members) instead of 2, and farm2GroupKick takes WHICH
+// member to boot since there can be more than one.
+function netFarm2GroupCreate() { if (socket?.connected) socket.emit('farm2GroupCreate'); }
+function netFarm2GroupJoin(leaderId) { if (socket?.connected) socket.emit('farm2GroupJoin', { leaderId }); }
+function netFarm2GroupKick(memberId) { if (socket?.connected) socket.emit('farm2GroupKick', { memberId }); }
+function netFarm2GroupLeave()  { if (socket?.connected) socket.emit('farm2GroupLeave'); }
+function netFarm2GroupStart()  { if (socket?.connected) socket.emit('farm2GroupStart'); }
+
+function _initFarm2Handlers(s) {
+  s.on('farm2State', (st) => {
+    _farm2State = {
+      entryLevel: st.entryLevel != null ? st.entryLevel : (_farm2State.entryLevel || 30),
+      partySize: st.partySize || _farm2State.partySize || 3,
+      dailyMinutes: st.dailyMinutes || _farm2State.dailyMinutes || 120,
+      minutesLeft: st.minutesLeft !== undefined ? st.minutesLeft : _farm2State.minutesLeft,
+    };
+    _farm2InRun = !!st.inRun;
+    if (typeof onFarm2State === 'function') onFarm2State();
+  });
+
+  s.on('farm2Error', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  // Full snapshot of THIS account's group membership — sent after every
+  // create/join/kick/leave, and once on farm2Sync. reason is only present
+  // when the recipient didn't trigger the change themselves (kicked, or the
+  // leader dissolved the group), so a toast can explain what happened.
+  s.on('farm2GroupState', (st) => {
+    _farm2Group = st && st.inGroup ? st : null;
+    if (st && st.reason && typeof _marketToast === 'function') {
+      const msg = st.reason === 'kicked' ? t('farm2GroupKickedMsg') : t('farm2GroupDissolvedMsg');
+      _marketToast(msg, 'err');
+    }
+    if (typeof onFarm2State === 'function') onFarm2State();
+  });
+
+  // The joinable lobby list — every open group, not just this account's own.
+  s.on('farm2GroupList', ({ groups }) => {
+    _farm2OpenGroups = groups || [];
+    if (typeof onFarm2State === 'function') onFarm2State();
+  });
+
+  s.on('farm2Started', ({ x, y, hp, minutesLeft }) => {
+    if (!player) return;
+    _farm2InRun = true;
+    _farm2Group = null;
+    if (minutesLeft !== undefined) _farm2State = { ..._farm2State, minutesLeft };
+    if (hp) player.hp = hp;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('farm2Lbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof closeEventsPanel === 'function') closeEventsPanel();
+    if (typeof onFarm2State === 'function') onFarm2State();
+  });
+
+  // The run ended without this connection choosing to leave — either the
+  // per-day time cap hit (reason:'timeCap') or the party dropped below
+  // FARM2_PARTY_SIZE and everyone still in was pulled out with it
+  // (reason:'partyBroken'). A voluntary exit (walking onto the return pad)
+  // never reaches this: the client already knows why in that case.
+  s.on('farm2Finished', ({ reason }) => {
+    _farm2InRun = false;
+    const msg = reason === 'timeCap' ? t('farm2TimeCapMsg')
+      : reason === 'partyBroken' ? t('farm2PartyBrokenMsg')
+      : null;
+    if (msg && typeof showEventBossBanner === 'function') showEventBossBanner(msg, '#f07886');
+    if (typeof netFarm2Return === 'function') netFarm2Return();
+    if (typeof netFarm2Sync === 'function') netFarm2Sync();
+    if (typeof onFarm2State === 'function') onFarm2State();
   });
 }
 
