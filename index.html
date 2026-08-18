@@ -197,67 +197,67 @@
     <button class="vip-close" onclick="closeEventsPanel()">✕</button>
   </div>
   <div class="event-tab-list" id="events-tab-list">
-    <button class="event-tab-item active" id="etab-battle" onclick="openEventDetail('battle')" style="--cc:#e8574f">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M9 17v-2a3 3 0 0 1 6 0v2"/><line x1="9" y1="21" x2="15" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+    <button class="event-tab-item active" id="etab-battle" onclick="openEventDetail('battle')" style="--cc:#e8574f; --art:url('/images/events/battle.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="dbBtn">Битва</span>
-        <span class="event-tab-sub" data-i18n="eventSubBattle">Схватка на выживание без союзников · Вт, Чт, Сб в 10:00 МСК</span>
+        <span class="event-tab-sub" data-i18n="eventSubBattle">Схватка на выживание без союзников</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedBattle">Вт, Чт, Сб в 10:00 МСК</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-a3" onclick="openEventDetail('a3')" style="--cc:#5b8def">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg></span>
+    <button class="event-tab-item" id="etab-a3" onclick="openEventDetail('a3')" style="--cc:#5b8def; --art:url('/images/events/a3.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="a3Tab">3х3</span>
-        <span class="event-tab-sub" data-i18n="eventSubA3">Командный бой 3 на 3 · Ежедневно 21:00–22:00 МСК</span>
+        <span class="event-tab-sub" data-i18n="eventSubA3">Командный бой 3 на 3</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedA3">Ежедневно 21:00–22:00 МСК</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-race10" onclick="openEventDetail('race10')" style="--cc:#eb4e61">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></span>
+    <button class="event-tab-item" id="etab-race10" onclick="openEventDetail('race10')" style="--cc:#eb4e61; --art:url('/images/events/race10.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="race10Tab">Кровавая Башня</span>
-        <span class="event-tab-sub" data-i18n="eventSubRace10">Забег через коридоры с монстрами · Ежедневно в 20:30 МСК</span>
+        <span class="event-tab-sub" data-i18n="eventSubRace10">Забег через коридоры с монстрами</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedRace10">Ежедневно в 20:30 МСК</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-fear" onclick="openEventDetail('fear')" style="--cc:#8a6fbf">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v12l2.5-2.5L10 21l2-2 2 2 2.5-2.5L19 21V9a7 7 0 0 0-7-7z"/><circle cx="9.5" cy="10" r="1"/><circle cx="14.5" cy="10" r="1"/></svg></span>
+    <button class="event-tab-item" id="etab-fear" onclick="openEventDetail('fear')" style="--cc:#8a6fbf; --art:url('/images/events/fear.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="fearTab">Страх</span>
-        <span class="event-tab-sub" data-i18n="eventSubFear">Волны монстров на выживание · Доступно всегда</span>
+        <span class="event-tab-sub" data-i18n="eventSubFear">Волны монстров на выживание</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedFear">Доступно всегда</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-coop" onclick="openEventDetail('coop')" style="--cc:#4caf6b">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg></span>
+    <button class="event-tab-item" id="etab-coop" onclick="openEventDetail('coop')" style="--cc:#4caf6b; --art:url('/images/events/coop.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="coopTab">Сотрудничество</span>
-        <span class="event-tab-sub" data-i18n="eventSubCoop">Совместное прохождение вдвоём · Доступно всегда</span>
+        <span class="event-tab-sub" data-i18n="eventSubCoop">Совместное прохождение вдвоём</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedCoop">Доступно всегда</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-farm2" onclick="openEventDetail('farm2')" style="--cc:#e0a23c">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg></span>
+    <button class="event-tab-item" id="etab-farm2" onclick="openEventDetail('farm2')" style="--cc:#e0a23c; --art:url('/images/events/farm2.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="farm2Tab">Элитная фарм-зона</span>
-        <span class="event-tab-sub" data-i18n="eventSubFarm2">Группа из 3 · Монстры 30-40 ур. · 120 мин/день</span>
+        <span class="event-tab-sub" data-i18n="eventSubFarm2">Группа из 3</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedFarm2">120 мин/день</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-boss" onclick="openEventDetail('boss')" style="--cc:#ffd18a">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8L7 11L12 5L17 11L21 8L19 18H5L3 8Z"/><line x1="5" y1="21" x2="19" y2="21"/></svg></span>
+    <button class="event-tab-item" id="etab-boss" onclick="openEventDetail('boss')" style="--cc:#ffd18a; --art:url('/images/events/boss.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="worldBossTab">Мировой босс</span>
-        <span class="event-tab-sub" data-i18n="eventSubBoss">Общий рейд на мирового босса · Пн, Ср, Пт, Вс в 20:00 МСК</span>
+        <span class="event-tab-sub" data-i18n="eventSubBoss">Общий рейд на мирового босса</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedBoss">Пн, Ср, Пт, Вс в 20:00 МСК</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>
-    <button class="event-tab-item" id="etab-guildWar" onclick="openEventDetail('guildWar')" style="--cc:#8a5cf6">
-      <span class="event-tab-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="21" x2="5" y2="3"/><path d="M5 4l13 4-13 4z"/></svg></span>
+    <button class="event-tab-item" id="etab-guildWar" onclick="openEventDetail('guildWar')" style="--cc:#8a5cf6; --art:url('/images/events/guildWar.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="guildWarTab">Война гильдий</span>
-        <span class="event-tab-sub" data-i18n="eventSubGuildWar">Кланы сражаются за замок · Ежедневно 22:00–22:15 МСК</span>
+        <span class="event-tab-sub" data-i18n="eventSubGuildWar">Кланы сражаются за замок</span>
+        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedGuildWar">Ежедневно 22:00–22:15 МСК</span></span>
       </span>
       <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
     </button>

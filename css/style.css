@@ -2231,42 +2231,54 @@ canvas { display:block; width:100%; height:100%; }
   overscroll-behavior: contain;
   z-index: 1;
 }
+/* Each card's own themed art (images/events/<key>.jpg — a crop of just the
+   hexagon-icon + scene, no text baked in, see the upload that prompted this)
+   sits under a left-to-right fade via mask-image on ::before, so real DOM
+   text (translatable, i18n'd, reflows with content) always renders on top
+   of it rather than the art carrying baked-in copy. --art is set inline per
+   button (style="--cc:#4caf6b; --art:url('/images/events/coop.jpg')"),
+   same convention --cc already uses for per-tab theming. */
 .event-tab-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
   flex-shrink: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--cc) 32%, rgba(209,204,197,.12));
-  background: color-mix(in srgb, var(--cc) 10%, rgba(209,204,197,.03));
+  min-height: 86px;
+  padding: 10px 14px 10px 148px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--cc) 38%, rgba(209,204,197,.12));
+  background: #0b0906;
   color: #d8cfc0;
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
-  transition: background .15s, border-color .15s, box-shadow .15s;
+  overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.event-tab-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--art);
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: auto 100%;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 48%, transparent 92%);
+          mask-image: linear-gradient(to right, #000 0%, #000 48%, transparent 92%);
+  z-index: 0;
 }
 .event-tab-item.active {
   border-color: var(--cc);
-  background: color-mix(in srgb, var(--cc) 24%, rgba(209,204,197,.03));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 30%, transparent), 0 4px 14px rgba(0,0,0,.35);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 35%, transparent), 0 4px 14px rgba(0,0,0,.4);
 }
-.event-tab-icon {
-  flex-shrink: 0;
-  width: 34px; height: 34px;
-  border-radius: 9px;
-  background: rgba(9,7,4,.6);
-  border: 1px solid color-mix(in srgb, var(--cc) 45%, transparent);
-  color: var(--cc);
-  display: flex; align-items: center; justify-content: center;
-}
-.event-tab-item.active .event-tab-icon { box-shadow: 0 0 10px color-mix(in srgb, var(--cc) 45%, transparent); }
-.event-tab-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.event-tab-label { font-size: 13.5px; font-weight: 700; }
-.event-tab-item.active .event-tab-label { color: #f2ead9; }
-.event-tab-sub { font-size: 11px; font-weight: 500; line-height: 1.35; color: #8f8471; }
-.event-tab-arrow { flex-shrink: 0; color: var(--cc); opacity: .5; }
+.event-tab-text { position: relative; z-index: 1; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.event-tab-label { font-size: 15px; font-weight: 700; color: var(--cc); text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.event-tab-sub { font-size: 11px; font-weight: 500; line-height: 1.35; color: #c2b9ac; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.event-tab-sched { display: flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500; color: #8f8471; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.event-tab-sched svg { flex-shrink: 0; opacity: .85; }
+.event-tab-arrow { position: relative; z-index: 1; flex-shrink: 0; color: var(--cc); opacity: .6; }
 .event-tab-item.active .event-tab-arrow { opacity: 1; }
 
 .vip-back {

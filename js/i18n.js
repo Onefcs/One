@@ -100,13 +100,27 @@ const I18N_UI = {
   // mirroring the real windows server/index.js runs them on (DEATH_BATTLE_/
   // ARENA3_/RACE10_/GUILD_WAR_*_DAYS_MSK/HOURS_MSK, shared/definitions.js),
   // not a live countdown (that's what the event's own detail page is for).
-  eventSubBattle:   { ru: 'Схватка на выживание без союзников · Вт, Чт, Сб в 10:00 МСК', en: 'Free-for-all survival duel · Tue, Thu, Sat at 10:00 MSK', uk: 'Бій на виживання без союзників · Вт, Чт, Сб о 10:00 МСК', es: 'Duelo de supervivencia sin aliados · Mar, Jue, Sáb a las 10:00 MSK', tr: 'Müttefiksiz hayatta kalma düellosu · Sal, Per, Cmt 10:00 MSK', pt: 'Duelo de sobrevivência sem aliados · Ter, Qui, Sáb às 10:00 MSK' },
-  eventSubA3:       { ru: 'Командный бой 3 на 3 · Ежедневно 21:00–22:00 МСК', en: '3v3 team battle · Daily 21:00–22:00 MSK', uk: 'Командний бій 3 на 3 · Щодня 21:00–22:00 МСК', es: 'Batalla en equipo 3 contra 3 · Todos los días 21:00–22:00 MSK', tr: '3v3 takım savaşı · Her gün 21:00–22:00 MSK', pt: 'Batalha em equipe 3x3 · Todos os dias 21:00–22:00 MSK' },
-  eventSubRace10:   { ru: 'Забег через коридоры с монстрами · Ежедневно в 20:30 МСК', en: 'Corridor run past waves of monsters · Daily at 20:30 MSK', uk: 'Забіг крізь коридори з монстрами · Щодня о 20:30 МСК', es: 'Carrera por pasillos con monstruos · Todos los días a las 20:30 MSK', tr: 'Canavar dolu koridorlarda yarış · Her gün 20:30 MSK', pt: 'Corrida por corredores com monstros · Todos os dias às 20:30 MSK' },
-  eventSubFear:     { ru: 'Волны монстров на выживание · Доступно всегда', en: 'Survive endless waves of monsters · Always available', uk: 'Хвилі монстрів на виживання · Доступно завжди', es: 'Oleadas de monstruos, sobrevive · Siempre disponible', tr: 'Canavar dalgalarına karşı hayatta kal · Her zaman açık', pt: 'Ondas de monstros, sobreviva · Sempre disponível' },
-  eventSubCoop:     { ru: 'Совместное прохождение вдвоём · Доступно всегда', en: 'Clear it together with a partner · Always available', uk: 'Спільне проходження удвох · Доступно завжди', es: 'Complétalo junto a otro jugador · Siempre disponible', tr: 'İki kişiyle birlikte tamamla · Her zaman açık', pt: 'Complete junto com outro jogador · Sempre disponível' },
-  eventSubBoss:     { ru: 'Общий рейд на мирового босса · Пн, Ср, Пт, Вс в 20:00 МСК', en: 'Raid the shared world boss · Mon, Wed, Fri, Sun at 20:00 MSK', uk: 'Спільний рейд на світового боса · Пн, Ср, Пт, Нд о 20:00 МСК', es: 'Asalto conjunto al jefe mundial · Lun, Mié, Vie, Dom a las 20:00 MSK', tr: 'Ortak dünya patronuna baskın · Pzt, Çar, Cum, Paz 20:00 MSK', pt: 'Ataque conjunto ao chefe mundial · Seg, Qua, Sex, Dom às 20:00 MSK' },
-  eventSubGuildWar: { ru: 'Кланы сражаются за замок · Ежедневно 22:00–22:15 МСК', en: 'Guilds fight for the castle · Daily 22:00–22:15 MSK', uk: 'Гільдії бʼються за замок · Щодня 22:00–22:15 МСК', es: 'Los clanes luchan por el castillo · Todos los días 22:00–22:15 MSK', tr: 'Klanlar kale için savaşır · Her gün 22:00–22:15 MSK', pt: 'Clãs lutam pelo castelo · Todos os dias 22:00–22:15 MSK' },
+  eventSubBattle:   { ru: 'Схватка на выживание без союзников', en: 'Free-for-all survival duel', uk: 'Бій на виживання без союзників', es: 'Duelo de supervivencia sin aliados', tr: 'Müttefiksiz hayatta kalma düellosu', pt: 'Duelo de sobrevivência sem aliados' },
+  eventSubA3:       { ru: 'Командный бой 3 на 3', en: '3v3 team battle', uk: 'Командний бій 3 на 3', es: 'Batalla en equipo 3 contra 3', tr: '3v3 takım savaşı', pt: 'Batalha em equipe 3x3' },
+  eventSubRace10:   { ru: 'Забег через коридоры с монстрами', en: 'Corridor run past waves of monsters', uk: 'Забіг крізь коридори з монстрами', es: 'Carrera por pasillos con monstruos', tr: 'Canavar dolu koridorlarda yarış', pt: 'Corrida por corredores com monstros' },
+  eventSubFear:     { ru: 'Волны монстров на выживание', en: 'Survive endless waves of monsters', uk: 'Хвилі монстрів на виживання', es: 'Oleadas de monstruos, sobrevive', tr: 'Canavar dalgalarına karşı hayatta kal', pt: 'Ondas de monstros, sobreviva' },
+  eventSubCoop:     { ru: 'Совместное прохождение вдвоём', en: 'Clear it together with a partner', uk: 'Спільне проходження удвох', es: 'Complétalo junto a otro jugador', tr: 'İki kişiyle birlikte tamamla', pt: 'Complete junto com outro jogador' },
+  eventSubBoss:     { ru: 'Общий рейд на мирового босса', en: 'Raid the shared world boss', uk: 'Спільний рейд на світового боса', es: 'Asalto conjunto al jefe mundial', tr: 'Ortak dünya patronuna baskın', pt: 'Ataque conjunto ao chefe mundial' },
+  eventSubGuildWar: { ru: 'Кланы сражаются за замок', en: 'Guilds fight for the castle', uk: 'Гільдії бʼються за замок', es: 'Los clanes luchan por el castillo', tr: 'Klanlar kale için savaşır', pt: 'Clãs lutam pelo castelo' },
+
+  // Schedule line (third row on each event card) — same fixed windows the
+  // eventSub* strings above used to carry after their own "·", split into
+  // its own row now that the card has room for one. Mirrors the real
+  // windows server/index.js runs them on (DEATH_BATTLE_/ARENA3_/RACE10_/
+  // GUILD_WAR_*_DAYS_MSK/HOURS_MSK, shared/definitions.js), not a live
+  // countdown (that's what the event's own detail page is for).
+  eventSchedBattle:   { ru: 'Вт, Чт, Сб в 10:00 МСК', en: 'Tue, Thu, Sat at 10:00 MSK', uk: 'Вт, Чт, Сб о 10:00 МСК', es: 'Mar, Jue, Sáb a las 10:00 MSK', tr: 'Sal, Per, Cmt 10:00 MSK', pt: 'Ter, Qui, Sáb às 10:00 MSK' },
+  eventSchedA3:       { ru: 'Ежедневно 21:00–22:00 МСК', en: 'Daily 21:00–22:00 MSK', uk: 'Щодня 21:00–22:00 МСК', es: 'Todos los días 21:00–22:00 MSK', tr: 'Her gün 21:00–22:00 MSK', pt: 'Todos os dias 21:00–22:00 MSK' },
+  eventSchedRace10:   { ru: 'Ежедневно в 20:30 МСК', en: 'Daily at 20:30 MSK', uk: 'Щодня о 20:30 МСК', es: 'Todos los días a las 20:30 MSK', tr: 'Her gün 20:30 MSK', pt: 'Todos os dias às 20:30 MSK' },
+  eventSchedFear:     { ru: 'Доступно всегда', en: 'Always available', uk: 'Доступно завжди', es: 'Siempre disponible', tr: 'Her zaman açık', pt: 'Sempre disponível' },
+  eventSchedCoop:     { ru: 'Доступно всегда', en: 'Always available', uk: 'Доступно завжди', es: 'Siempre disponible', tr: 'Her zaman açık', pt: 'Sempre disponível' },
+  eventSchedBoss:     { ru: 'Пн, Ср, Пт, Вс в 20:00 МСК', en: 'Mon, Wed, Fri, Sun at 20:00 MSK', uk: 'Пн, Ср, Пт, Нд о 20:00 МСК', es: 'Lun, Mié, Vie, Dom a las 20:00 MSK', tr: 'Pzt, Çar, Cum, Paz 20:00 MSK', pt: 'Seg, Qua, Sex, Dom às 20:00 MSK' },
+  eventSchedGuildWar: { ru: 'Ежедневно 22:00–22:15 МСК', en: 'Daily 22:00–22:15 MSK', uk: 'Щодня 22:00–22:15 МСК', es: 'Todos los días 22:00–22:15 MSK', tr: 'Her gün 22:00–22:15 MSK', pt: 'Todos os dias 22:00–22:15 MSK' },
   // ── 3v3 arena ───────────────────────────────────────────────────────────
   a3Tab:        { ru: '3х3', en: '3v3', uk: '3х3', es: '3v3', tr: '3v3', pt: '3v3' },
   a3ArenaLbl:   { ru: 'Арена 3х3', en: '3v3 Arena', uk: 'Арена 3х3', es: 'Arena 3v3', tr: '3v3 Arena', pt: 'Arena 3v3' },
@@ -270,7 +284,8 @@ const I18N_UI = {
   coopRule5: { ru: 'Смерть любого из двоих завершает забег для обоих', en: "Either player's death ends the run for both" },
 
   farm2Tab: { ru: 'Элитная фарм-зона', en: 'Elite Farm Zone' },
-  eventSubFarm2: { ru: 'Группа из 3 · Монстры 30-40 ур. · 120 мин/день', en: 'Party of 3 · Level 30-40 monsters · 120 min/day' },
+  eventSubFarm2: { ru: 'Группа из 3', en: 'Party of 3' },
+  eventSchedFarm2: { ru: '120 мин/день', en: '120 min/day' },
   farm2Lbl: { ru: 'Элитная фарм-зона', en: 'Elite Farm Zone' },
   farm2NoTimeLbl: { ru: 'Время на сегодня закончилось', en: 'Out of time for today' },
   farm2MinutesFmt: { ru: '{n}/{max} мин', en: '{n}/{max} min' },
