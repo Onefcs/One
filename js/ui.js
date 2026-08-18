@@ -2166,8 +2166,9 @@ let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null;
 let _avBgGrad = null, _avBgColor = '';
 // All button + target-frame gradients — rebuilt when null (set null on resize)
 let _uiBtnGrads = null;
-// Cached character name text width (measureText is expensive; name never changes mid-session)
-let _hdrNameW = 0, _hdrNameStr = '';
+// Level badge gradient (fixed screen position, so this never needs a resize
+// guard the way the W-dependent bar gradients below do)
+let _lvBadgeGrad = null;
 let _nexumIconImg = null;
 let _gramIconImg = null;
 
@@ -2216,7 +2217,7 @@ function drawHeader() {
     _hdrGradW = W;
     _hpGradGreen = null; // invalidate dependent bar gradients
     _avBgGrad = null;    // also invalidate avatar bg on resize
-    _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
+    _lvBadgeGrad = null; // ...and the level badge's
   }
 
   // ── Minimap (top-right, independent floating element) ─────
@@ -2337,14 +2338,16 @@ function drawHeader() {
 
   // ── Character card (own background — a separate floating panel, not a
   // slice of a shared header bar) ────────────────────────────
-  const cardTop = 6, cardBottom = 74;
+  const cardTop = 6, cardBottom = 82;
   const cardRight = mpX - 10;
   cutRectPath(ctx, 6, cardTop, cardRight - 6, cardBottom - cardTop, 10);
   ctx.fillStyle = 'rgba(12,20,32,0.88)'; ctx.fill();
   ctx.strokeStyle = 'rgba(74,127,168,0.55)'; ctx.lineWidth = 1; ctx.stroke();
 
-  // ── Avatar ────────────────────────────────────────────────
-  const avX = 32, avY = (cardTop + cardBottom) / 2, avR = 19;
+  // ── Avatar, with Level as a badge on its corner and БМ (battle power)
+  // as a small chip underneath — the usual MMORPG portrait treatment,
+  // instead of spelling the character's name/level out as header text.
+  const avX = 34, avY = 36, avR = 20;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
@@ -2367,54 +2370,71 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
   ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
-  if (!hasTgAvatar) drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 20, p.charDef.color);
+  if (!hasTgAvatar) drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 21, p.charDef.color);
+
+  // Level badge — overlaps the portrait's bottom-right corner
+  const lvBx = 48, lvBy = 50, lvBr = 10;
+  ctx.fillStyle = 'rgba(12,20,32,1)';
+  ctx.beginPath(); ctx.arc(lvBx, lvBy, lvBr + 2, 0, Math.PI * 2); ctx.fill();
+  if (!_lvBadgeGrad) {
+    _lvBadgeGrad = ctx.createRadialGradient(lvBx - 3, lvBy - 3, 1, lvBx, lvBy, lvBr);
+    _lvBadgeGrad.addColorStop(0, '#a0e8f5'); _lvBadgeGrad.addColorStop(1, '#4ecbe8');
+  }
+  ctx.fillStyle = _lvBadgeGrad;
+  ctx.beginPath(); ctx.arc(lvBx, lvBy, lvBr, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(12,20,32,0.9)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(lvBx, lvBy, lvBr, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#0a1622';
+  ctx.fillText(p.lvl, lvBx, lvBy + 1);
+
+  // БМ (battle power) — small chip centered under the portrait, clear of
+  // the level badge above it (badge's outer ring bottoms out at 62)
+  const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
+  ctx.font = `bold 10px ${F}`;
+  const _bmStr = String(bmVal);
+  const _bmChipW = 20 + ctx.measureText(_bmStr).width;
+  const _bmChipX = avX - _bmChipW / 2, _bmChipY = 67, _bmChipH = 14;
+  cutRectPath(ctx, _bmChipX, _bmChipY, _bmChipW, _bmChipH, 4);
+  ctx.fillStyle = 'rgba(24,48,72,0.9)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(74,127,168,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+  const _bmMidY = _bmChipY + _bmChipH / 2;
+  drawIconCtx(ctx, 'star', _bmChipX + 9, _bmMidY, 8, '#a0e8f5');
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#a0e8f5';
+  ctx.fillText(_bmStr, _bmChipX + 15, _bmMidY + 1);
+  ctx.textBaseline = 'alphabetic';
 
   // ── Info area ─────────────────────────────────────────────
-  const infoX = avX + avR + 9;
-  const infoRight = mpX - 10;
+  const infoX = avX + avR + 12;
+  const infoRight = cardRight;
   const infoW = infoRight - infoX;
 
-  // Row 1: Name + Level
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 14px ${F}`; ctx.fillStyle = '#dceaf5';
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 18);
-  ctx.textAlign = 'right'; ctx.font = `bold 12px ${F}`; ctx.fillStyle = 'rgba(160,232,245,0.95)';
-  ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 18);
+  // Class name — the primary label now that the character's own name is
+  // gone and Level lives on the portrait badge above.
+  ctx.textAlign = 'left'; ctx.font = `bold 15px ${F}`; ctx.fillStyle = '#dceaf5';
+  ctx.fillText(p.charDef.name, infoX, 20);
 
-  // Row 2: Class name + quiet secondary stats (БМ battle power, GRAM drops —
-  // gold/Nexum moved to their own pills below, which is what a "balance"
-  // reads as; these two stay small text since they aren't wallet balances.
-  ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
-  ctx.fillText(p.charDef.name, infoX, 33);
-  if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
-    _hdrNameStr = p.charDef.name;
-    _hdrNameW = ctx.measureText(p.charDef.name).width;
-  }
-  let stxH = infoX + _hdrNameW + 10;
+  // GRAM balance — tiny per-kill drop currency, kept quiet under the class
+  // name; Gold/Nexum get their own pills below since those are the real
+  // wallet balances.
   ctx.textBaseline = 'middle';
-  const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#a0e8f5';
-  ctx.fillText(t('bmAbbrev'), stxH, 29);
-  const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
-  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 29);
-  stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
   const _grBal = window._gramBalance || 0;
   const _grImg = _gramIconImg || (_gramIconImg = (() => { const i = new Image(); i.src = '/images/gram-icon.png'; return i; })());
+  ctx.font = `bold 9px ${F}`;
   if (_grImg.complete && _grImg.naturalWidth > 0) {
-    ctx.drawImage(_grImg, stxH, 29 - 5, 10, 10);
+    ctx.drawImage(_grImg, infoX, 35 - 5, 10, 10);
   } else {
-    ctx.fillStyle = '#4fd67a'; ctx.fillText('G', stxH + 2, 29);
+    ctx.fillStyle = '#4fd67a'; ctx.fillText('G', infoX + 2, 35);
   }
   ctx.fillStyle = '#4fd67a';
-  ctx.fillText(_grBal.toFixed(7), stxH + 12, 29);
+  ctx.fillText(_grBal.toFixed(7), infoX + 13, 35);
   ctx.textBaseline = 'alphabetic';
 
   // Separator (still inside the character card, between identity and bars)
   ctx.strokeStyle = 'rgba(74,127,168,0.4)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, 39); ctx.lineTo(infoRight, 39); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(infoX, 43); ctx.lineTo(infoRight, 43); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
-  const hpY = 51, hbH = 10;
+  const hpY = 56, hbH = 11;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
@@ -2483,7 +2503,7 @@ function drawHeader() {
   // HUD, matching the currency pills in the header design mockups. БМ/GRAM
   // stay as the quiet secondary text next to the class name above; they
   // aren't spendable balances.
-  const pillY = 88, pillH = 20;
+  const pillY = 93, pillH = 20;
   let px = infoX;
   ctx.textBaseline = 'middle';
 

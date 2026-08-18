@@ -1,9 +1,9 @@
 // TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF → shared/definitions.js
-// 104 (not the old 64) — reserves room for the character card (name/level,
-// HP, XP) plus a balance-pill row underneath it (drawHeader, js/ui.js). The
-// minimap is sized independently of this value now (it's its own floating
-// element, not part of a shared header bar).
-const HEADER_H = 104;
+// 108 (not the old 64) — reserves room for the character card (portrait +
+// level badge, class name, HP, XP) plus a balance-pill row underneath it
+// (drawHeader, js/ui.js). The minimap is sized independently of this value
+// now (it's its own floating element, not part of a shared header bar).
+const HEADER_H = 108;
 const NAV_H = 62;
 const JOY_R = 58, JOY_KNOB = 24;
 const ZOOM = 0.75;
