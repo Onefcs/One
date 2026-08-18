@@ -2346,7 +2346,7 @@ function drawHeader() {
   ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
-  const avX = 30, avY = HEADER_H / 2, avR = 18;
+  const avX = 32, avY = HEADER_H / 2, avR = 19;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
@@ -2378,68 +2378,86 @@ function drawHeader() {
 
   // Row 1: Name + Level
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#e8e3da';
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
-  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(226,85,90,0.95)';
-  ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
+  ctx.textAlign = 'left'; ctx.font = `bold 14px ${F}`; ctx.fillStyle = '#e8e3da';
+  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 18);
+  ctx.textAlign = 'right'; ctx.font = `bold 12px ${F}`; ctx.fillStyle = 'rgba(226,85,90,0.95)';
+  ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 18);
 
-  // Row 2: Class name + inline stats (gold / atk / def)
+  // Row 2: Class name + quiet secondary stats (БМ battle power, GRAM drops —
+  // gold/Nexum moved to their own pills below, which is what a "balance"
+  // reads as; these two stay small text since they aren't wallet balances.
   ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
-  ctx.fillText(p.charDef.name, infoX, 27);
+  ctx.fillText(p.charDef.name, infoX, 33);
   if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
     _hdrNameStr = p.charDef.name;
     _hdrNameW = ctx.measureText(p.charDef.name).width;
   }
   let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
-  // БМ label + value
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#d2495a';
-  ctx.fillText(t('bmAbbrev'), stxH, 24);
+  ctx.fillText(t('bmAbbrev'), stxH, 29);
   const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
-  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#d2495a';
-  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
+  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 29);
   stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
-  // Gold
-  drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#e3941d');
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
-  const _goldDisp = Math.floor(p.gold);
-  ctx.fillText(_goldDisp, stxH + 13, 24);
-  stxH += 13 + ctx.measureText(String(_goldDisp)).width + 8;
-  // Nexum balance — shown unconditionally, same as GRAM below, so a currency
-  // doesn't appear/disappear from the HUD as its balance crosses zero.
-  const _nxBal = window._nexumBalance || 0;
-  {
-    const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
-    if (_nxImg.complete && _nxImg.naturalWidth > 0) {
-      ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
-    } else {
-      ctx.fillStyle = '#b2864d'; ctx.font = `bold 9px ${F}`;
-      ctx.fillText('N', stxH + 2, 24);
-    }
-    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
-    ctx.fillText(_nxBal, stxH + 14, 24);
-    stxH += 14 + ctx.measureText(String(_nxBal)).width + 8;
-  }
-  // GRAM balance (tiny per-kill drop currency, see enemyKilled's 'gram' field)
   const _grBal = window._gramBalance || 0;
   const _grImg = _gramIconImg || (_gramIconImg = (() => { const i = new Image(); i.src = '/images/gram-icon.png'; return i; })());
   if (_grImg.complete && _grImg.naturalWidth > 0) {
-    ctx.drawImage(_grImg, stxH, 24 - 6, 12, 12);
+    ctx.drawImage(_grImg, stxH, 29 - 5, 10, 10);
   } else {
-    ctx.fillStyle = '#4fd67a'; ctx.font = `bold 9px ${F}`;
-    ctx.fillText('G', stxH + 2, 24);
+    ctx.fillStyle = '#4fd67a'; ctx.fillText('G', stxH + 2, 29);
   }
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#4fd67a';
-  ctx.fillText(_grBal.toFixed(7), stxH + 14, 24);
+  ctx.fillStyle = '#4fd67a';
+  ctx.fillText(_grBal.toFixed(7), stxH + 12, 29);
+  ctx.textBaseline = 'alphabetic';
+
+  // ── Balance pills ─────────────────────────────────────────
+  // Gold and Nexum are the two currencies a player actually spends, so they
+  // get proper pill badges — the ones that read as "wallet balance" in the
+  // HUD, matching the currency pills in the header design mockups.
+  const pillY = 51, pillH = 20;
+  let px = infoX;
+  ctx.textBaseline = 'middle';
+
+  const _goldDisp = Math.floor(p.gold);
+  const _goldStr = String(_goldDisp);
+  ctx.font = `bold 11px ${F}`;
+  const _goldW = 24 + ctx.measureText(_goldStr).width + 10;
+  cutRectPath(ctx, px, pillY - pillH / 2, _goldW, pillH, 5);
+  ctx.fillStyle = 'rgba(34,31,26,0.92)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(227,148,29,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+  drawIconCtx(ctx, 'coin', px + 14, pillY, 13, '#e3941d');
+  ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
+  ctx.fillText(_goldStr, px + 25, pillY + 1);
+  px += _goldW + 7;
+
+  // Nexum balance — shown unconditionally, same as GRAM above, so a currency
+  // doesn't appear/disappear from the HUD as its balance crosses zero.
+  const _nxBal = window._nexumBalance || 0;
+  const _nxStr = String(_nxBal);
+  ctx.font = `bold 11px ${F}`;
+  const _nxW = 24 + ctx.measureText(_nxStr).width + 10;
+  cutRectPath(ctx, px, pillY - pillH / 2, _nxW, pillH, 5);
+  ctx.fillStyle = 'rgba(34,31,26,0.92)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(178,134,77,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+  const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
+  if (_nxImg.complete && _nxImg.naturalWidth > 0) {
+    ctx.drawImage(_nxImg, px + 8, pillY - 7, 14, 14);
+  } else {
+    ctx.textAlign = 'center'; ctx.fillStyle = '#b2864d'; ctx.font = `bold 10px ${F}`;
+    ctx.fillText('N', px + 15, pillY);
+    ctx.font = `bold 11px ${F}`;
+  }
+  ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
+  ctx.fillText(_nxStr, px + 25, pillY + 1);
   ctx.textBaseline = 'alphabetic';
 
   // Separator
   ctx.strokeStyle = 'rgba(107,95,82,0.45)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(infoX, 62); ctx.lineTo(infoRight, 62); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
-  const hpY = 42, hbH = 9;
+  const hpY = 71, hbH = 10;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
@@ -2473,7 +2491,7 @@ function drawHeader() {
   ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
 
   // ── XP bar ────────────────────────────────────────────────
-  const xpY = 55, xbH = 6;
+  const xpY = 84, xbH = 6;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(201,194,182,0.85)';

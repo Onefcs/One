@@ -1,4 +1,4 @@
-const SKILL_GAP = 8;
+const SKILL_GAP = 10;
 const POTION_R  = 26;
 
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
@@ -14,14 +14,16 @@ function _inJoyZone(cx, cy) {
 
 // Attack sits as one big button in the bottom-right corner; the 4 class
 // skills orbit it in a fan overhead (screen-angle convention: 0°=right,
-// 90°=up) instead of the old 2×2 grid. All four angles stay in the upper
-// half (70°–169°) so every skill lands strictly above the attack button —
-// nothing in the fan needs its own clearance check against the nav bar.
-const ATK_MARGIN  = 20;
-const ATK_R       = 40;
-const SKILL_ARC_R = 74;
-const SKILL_R     = 25;
-const SKILL_ANGLES = [70, 103, 136, 169];
+// 90°=up) instead of the old 2×2 grid. Angles are chosen so adjacent skill
+// circles never touch — the chord between neighbors (2·SKILL_ARC_R·sin(Δ/2)
+// for the 38° step below) clears 2·SKILL_R + SKILL_GAP with room to spare —
+// and biased toward the left (64°–178°) since there's a lot more screen to
+// spare on that side of a corner-anchored attack button than to the right.
+const ATK_MARGIN  = 34;
+const ATK_R       = 42;
+const SKILL_ARC_R = 92;
+const SKILL_R     = 24;
+const SKILL_ANGLES = [64, 102, 140, 178];
 
 function getAttackBtnPos() {
   return { x: W - ATK_MARGIN - ATK_R, y: H - NAV_H - ATK_MARGIN - ATK_R, r: ATK_R };
@@ -40,13 +42,16 @@ function getSkillBtnPos(idx) {
 // the fan instead of the old fixed grid-width offset.
 function getSkillClusterLeftX() { return getSkillBtnPos(3).x; }
 
-// Target sits directly above Attack; Potion above Target; Auto (below) above
-// Potion — the same vertical stack the old layout used, just re-anchored to
-// the new Attack position.
+// Target sits straight above Attack, but far enough out to clear the whole
+// fan (its highest point is ~114px off Attack's center at these angles) —
+// not just Attack's own radius, which used to land Target ON the fan's ring
+// and make it read as a crowded 5th skill instead of a separate button.
+// Potion stacks above Target, Auto (below) above Potion.
+const TARGET_DIST = 150;
 function getTargetBtnPos() {
   const ab = getAttackBtnPos();
-  const gap = SKILL_GAP, r = POTION_R;
-  return { x: ab.x, y: ab.y - ab.r - gap - r, r };
+  const r = POTION_R;
+  return { x: ab.x, y: ab.y - TARGET_DIST, r };
 }
 
 function getPvpBtnPos() {

@@ -1,5 +1,7 @@
 // TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF → shared/definitions.js
-const HEADER_H = 64;
+// 92 (not the old 64) — the header now carries a dedicated balance-pill row
+// (drawHeader, js/ui.js) below the name/level line, above HP/XP.
+const HEADER_H = 92;
 const NAV_H = 62;
 const JOY_R = 58, JOY_KNOB = 24;
 const ZOOM = 0.75;
