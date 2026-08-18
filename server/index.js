@@ -191,6 +191,7 @@ const {
   FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
+  FARM2_UNIQUE_WEAPON_CHANCE,
   SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
@@ -448,6 +449,15 @@ function _rollFarm2Loot(inv) {
   if (Math.random() < FARM2_ADV_SKILL_BOOK_CHANCE) {
     const pool = CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
     if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
+  }
+  // One random EPIC-tier unique weapon — see FARM2_UNIQUE_WEAPON_CHANCE's
+  // own comment on why this is the one deliberate exception to `noDrop`.
+  if (Math.random() < FARM2_UNIQUE_WEAPON_CHANCE) {
+    const pool = ITEM_DEF.filter(d => d.unique && d.rarity === 'epic');
+    if (pool.length) {
+      const w = pool[Math.floor(Math.random() * pool.length)];
+      if (_invAdd(inv, { ...w, enhance: 0 })) granted.push({ id: w.id, name: w.name, rarity: w.rarity, qty: 1 });
+    }
   }
   return granted;
 }

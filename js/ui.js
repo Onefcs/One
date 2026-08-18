@@ -4858,19 +4858,37 @@ function _farm2BodyHTML() {
         </ul>
       </div>
       <div class="db-rules">
-        ${t('farm2DropHdr')}
-        <ul>
-          <li>${t('farm2Drop1')}</li>
-          <li>${t('farm2Drop2')}</li>
-          <li>${t('farm2Drop3')}</li>
-          <li>${t('farm2Drop4')}</li>
-          <li>${t('farm2Drop5')}</li>
-          <li>${t('farm2Drop6')}</li>
-          <li>${t('farm2Drop7')}</li>
-          <li>${t('farm2Drop8')}</li>
-        </ul>
+        <div class="fi-drops-hdr">${t('farm2DropHdr')}</div>
+        ${_farm2DropRows()}
       </div>
     </div>`;
+}
+
+// Icon + label + chance row per drop kind — same _dropRow/_itemIcon pattern
+// the original Фарм-зона's own monster-info panel uses (_farmDropBodyHtml
+// above), so a player can see at a glance WHAT each line actually is instead
+// of reading a name off a plain bullet list.
+function _farm2DropRows() {
+  const boxRare     = typeof BOX_DEF !== 'undefined' ? BOX_DEF.find(b => b.id === 'box_rare') : null;
+  const boxUncommon = typeof BOX_DEF !== 'undefined' ? BOX_DEF.find(b => b.id === 'box_uncommon') : null;
+  const normStone    = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone')  : null;
+  const blessStone   = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'bless_stone') : null;
+  const epicRec = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'rece') : null;
+  const legRec  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'recl') : null;
+
+  const rows = [
+    _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM2_LIBERTY_CHANCE * 100), '#e8c15a'),
+    boxRare     ? _dropRow(_itemIcon(boxRare, 16),     boxRare.name,     _pctSmall(FARM2_BOX_RARE_CHANCE * 100),     '#4a7bab') : '',
+    boxUncommon ? _dropRow(_itemIcon(boxUncommon, 16), boxUncommon.name, _pctSmall(FARM2_BOX_UNCOMMON_CHANCE * 100), '#90d653') : '',
+    normStone   ? _dropRow(_itemIcon(normStone, 16),   normStone.name,   _pctSmall(FARM2_NORM_STONE_CHANCE * 100),   '#f17e8b') : '',
+    blessStone  ? _dropRow(_itemIcon(blessStone, 16),  blessStone.name,  _pctSmall(FARM2_BLESS_STONE_CHANCE * 100),  '#efc680') : '',
+    epicRec     ? _dropRow(_itemIcon(epicRec, 16),     epicRec.name,     _pctSmall(FARM2_EPIC_RECIPE_CHANCE * 100),  '#c98fef') : '',
+    legRec      ? _dropRow(_itemIcon(legRec, 16),      legRec.name,      _pctSmall(FARM2_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : '',
+    _dropRow(iconHTML('star', 16, '#b4eb84'), t('clanPerkXp'), `<b style="color:#b4eb84">${FARM2_XP_PER_KILL}</b>`, '#b4eb84'),
+    _dropRow(iconHTML('book', 16, '#c48a3a'), t('farm2AdvBooksLbl'), _pctSmall(FARM2_ADV_SKILL_BOOK_CHANCE * 100), '#c48a3a'),
+    _dropRow(iconHTML('weapon', 16, '#ff8a3d'), t('farm2UniqueWeaponLbl'), _pctSmall(FARM2_UNIQUE_WEAPON_CHANCE * 100), '#ff8a3d'),
+  ];
+  return `<div class="fi-drops">${rows.join('')}</div>`;
 }
 
 // Called from the network handlers on every server push.

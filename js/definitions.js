@@ -178,7 +178,7 @@ const NPC_DEF = [
 // the server charges against), so the price on the button is the price taken.
 const _MERCHANT_UI = {
   pt1: { name:'Малое зелье',   img:'/images/potion/smallhp.png', desc:'HP +20' },
-  pt2: { name:'Большое зелье', img:'/images/potion/bighp.png',   desc:'HP +50' },
+  pt2: { name:'Большое зелье', img:'/images/potion/bighp.png',   desc:'HP +500' },
 };
 const MERCHANT_SHOP_UI = MERCHANT_SHOP.map(e => ({ ...e, ..._MERCHANT_UI[e.itemId] }));
 

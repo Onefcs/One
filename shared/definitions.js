@@ -884,7 +884,7 @@ const ITEM_DEF = [
   { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:550, atk:45, def:35, atkSpeed:0.25,   rarity:'rare'     },
   // ── HP Potions ────────────────────────────────────────────
   { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
-  { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:50, rarity:'uncommon' },
+  { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:500, rarity:'uncommon' },
   // ── Buff Potions ──────────────────────────────────────────
   { id:'bp_hp',       name:'Зелье здоровья',   slot:'buff_potion', img:'/images/potion/hp.png',       rarity:'uncommon', buffType:'hp',       buffDur:600, buffDesc:'+10% HP на 10 мин'            },
   { id:'bp_exp',      name:'Зелье опыта',       slot:'buff_potion', img:'/images/potion/exp.png',      rarity:'uncommon', buffType:'exp',      buffDur:600, buffDesc:'×2 опыт на 10 мин'            },
@@ -1129,6 +1129,12 @@ const FARM2_LEGENDARY_RECIPE_CHANCE = 0.01 / 100;
 // unlike FARM_SPECIES_BOOKS above there is no per-species split here, every
 // book is equally reachable off any of this zone's kills.
 const FARM2_ADV_SKILL_BOOK_CHANCE   = 0.005 / 100;
+// One random EPIC-tier unique weapon (UNIQUE_WEAPONS below, the `_e` ids —
+// legendary is not included) — the ONE deliberate exception to `noDrop`
+// (ITEM_DEF.push's own `noDrop: true` tag, further down this file), which
+// every other loot roll in the game respects. Not filtered to the killer's
+// own class: this is a random kill drop, not a player-chosen craft.
+const FARM2_UNIQUE_WEAPON_CHANCE    = 0.000006 / 100;
 
 // The weapons themselves. Every stat carried over from the ordinary line is
 // exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
@@ -1853,7 +1859,7 @@ function questComplete(q, kills, lvl) {
 // charges it now (buyPotion, server/index.js), so both sides read one copy.
 const MERCHANT_SHOP = [
   { itemId:'pt1', price:5  },
-  { itemId:'pt2', price:30 },
+  { itemId:'pt2', price:500 },
 ];
 const POTION_CAP = 999;          // per kind, in potionBag
 const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
@@ -2017,6 +2023,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
+  FARM2_UNIQUE_WEAPON_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   dropLevelGapDivisor,
