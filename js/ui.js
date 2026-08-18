@@ -2647,9 +2647,6 @@ function _buildUiBtnGrads() {
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
-  const pkg1 = ctx.createLinearGradient(pack.x, pack.y, pack.x, pack.y+pack.h);
-  pkg1.addColorStop(0,'rgba(66,50,10,0.97)'); pkg1.addColorStop(1,'rgba(33,25,5,0.99)');
-
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
   ptg0.addColorStop(0,'rgba(24,36,14,0.97)'); ptg0.addColorStop(1,'rgba(12,18,7,0.99)');
@@ -2680,7 +2677,7 @@ function _buildUiBtnGrads() {
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
-  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, pkg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
                   potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, packBtn: pack, ptyBtn: pty };
 }
@@ -2965,36 +2962,44 @@ function drawEpicPackButton() {
 
   ctx.save();
 
-  ctx.fillStyle = _uiBtnGrads.pkg1;
+  // Shimmering dark-emerald fill — a bright band sweeps back and forth
+  // across the button instead of sitting still ("переливается"). Rebuilt
+  // every frame (not cached in _uiBtnGrads) so the sweep can move.
+  const sweep = (Math.sin(Date.now() / 1100) + 1) / 2; // 0..1
+  const bandStart = Math.max(0, sweep - 0.3);
+  const bandEnd = Math.min(1, sweep + 0.3);
+  const grad = ctx.createLinearGradient(pb.x, pb.y, pb.x + pb.w, pb.y + pb.h);
+  grad.addColorStop(0, '#062f1c');
+  grad.addColorStop(bandStart, '#0a4a2c');
+  grad.addColorStop(sweep, '#2fd68f');
+  grad.addColorStop(bandEnd, '#0a4a2c');
+  grad.addColorStop(1, '#062f1c');
+  ctx.fillStyle = grad;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
-  ctx.strokeStyle = 'rgba(255,215,0,0.65)';
+  ctx.strokeStyle = 'rgba(60,235,160,0.7)';
   ctx.lineWidth = 1.5;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
 
   // Always pulses — unlike Профессия's "ready" glow, this one's a
   // permanent promo, not a state indicator.
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  ctx.strokeStyle = `rgba(255,215,0,${(0.10 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  ctx.strokeStyle = `rgba(60,235,160,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
   roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
 
-  drawIconCtx(ctx, 'coin', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, '#ffd700');
+  drawIconCtx(ctx, 'coin', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, '#7cf5b6');
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffd700';
+  ctx.fillStyle = '#7cf5b6';
   ctx.fillText('+Pack', pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
 
   ctx.restore();
 }
 
-// Tapped from the HUD button (drawEpicPackButton) rather than a card with
-// its own disabled state — so an unaffordable balance needs its own toast
-// instead of just doing nothing.
+// Tapped from the HUD button (drawEpicPackButton). Always opens — unlike a
+// shop card (which never calls openGramShopConfirm at all while unaffordable,
+// see its own canAfford-gated onclick), the modal itself now shows the
+// insufficient-balance state on its buy button instead of refusing to open.
 function openEpicPackFromHud() {
-  const bal = window._gramBalance || 0;
-  if (bal < _EPIC_PACK_PKG.gram) {
-    if (typeof _marketToast === 'function') _marketToast(t('notEnoughGramLbl'), 'err');
-    return;
-  }
   openGramShopConfirm(_EPIC_PACK_PKG.id);
 }
 
@@ -6815,7 +6820,7 @@ function _boxesLine(boxes) {
 // (rendered by openGramShopConfirm's modal via _epicPackPerksHtml).
 const _EPIC_PACK_PKG = {
   id:'pkg300', gram:600, get label() { return t('gramPkgLabel_pkg300'); }, gold:0, potions:100,
-  armor:'Epic', weapon:'Epic', bonusSP:20, color:'#8a5cc2', skillBooks:{ each:15 }, enhance:3,
+  armor:'Epic', weapon:'Epic', bonusSP:20, color:'#2fd68f', skillBooks:{ each:15 }, enhance:3,
   nexum:10000, stones:{ bless_stone:50 },
   perks: ['epicPackPerk1', 'epicPackPerk2', 'epicPackPerk3', 'epicPackPerk4', 'epicPackPerk5'],
 };
@@ -6832,7 +6837,7 @@ function openGramShopConfirm(pkgId) {
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || (pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
-  if (bal < pkg.gram) return;
+  const canAfford = bal >= pkg.gram;
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
@@ -6882,8 +6887,8 @@ function openGramShopConfirm(pkgId) {
         <span style="color:#b2a288">${t('yourBalanceLbl')}</span>
         <span style="font-weight:700;color:#f5dbae">${bal.toFixed(7)} GRAM</span>
       </div>
-      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
-        onclick="_confirmGramShopBuy('${pkgId}')">${tVars('buyForFmt', { price: pkg.gram })}</button>
+      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px${canAfford ? '' : ';opacity:.5;cursor:not-allowed'}"
+        onclick="${canAfford ? `_confirmGramShopBuy('${pkgId}')` : ''}">${canAfford ? tVars('buyForFmt', { price: pkg.gram }) : t('notEnoughGramLbl')}</button>
     </div>`;
   document.body.appendChild(ov);
 }
