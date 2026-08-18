@@ -42,16 +42,20 @@ function getSkillBtnPos(idx) {
 // the fan instead of the old fixed grid-width offset.
 function getSkillClusterLeftX() { return getSkillBtnPos(3).x; }
 
-// Target sits straight above Attack, but far enough out to clear the whole
-// fan (its highest point is ~114px off Attack's center at these angles) —
-// not just Attack's own radius, which used to land Target ON the fan's ring
-// and make it read as a crowded 5th skill instead of a separate button.
-// Potion stacks above Target, Auto (below) above Potion.
+// Target/Potion/Auto form their own column to the right of Attack's center,
+// right-edge-aligned with Attack itself (not centered over it) — a visibly
+// separate stack instead of sitting directly overhead. Target sits far
+// enough above Attack to clear the whole skill fan (its highest point is
+// ~114px off Attack's center at these angles), not just Attack's own
+// radius, which used to land Target ON the fan's ring and read as a
+// crowded 5th skill instead of a separate button. Potion stacks above
+// Target, Auto (the crossed-swords toggle) above Potion.
 const TARGET_DIST = 150;
+function _rightColX(r) { return W - ATK_MARGIN - r; } // right edge matches Attack's own
 function getTargetBtnPos() {
   const ab = getAttackBtnPos();
   const r = POTION_R;
-  return { x: ab.x, y: ab.y - TARGET_DIST, r };
+  return { x: _rightColX(r), y: ab.y - TARGET_DIST, r };
 }
 
 function getPvpBtnPos() {
@@ -102,11 +106,13 @@ function getPotionBtnPos() {
   return { x: tb.x, y: tb.y - tb.r - gap - r, r };
 }
 
+// Auto is a round icon toggle (crossed swords — see drawAutoToggle,
+// js/ui.js) matching Target/Potion's shape, not the old rectangular pill.
+const AUTO_R = 24;
 function getAutoBtnPos() {
   const pb = getPotionBtnPos();
-  const gap = SKILL_GAP;
-  const w = 52, h = 22;
-  return { x: pb.x - w / 2, y: pb.y - pb.r - gap - h, w, h };
+  const gap = SKILL_GAP, r = AUTO_R;
+  return { x: _rightColX(r), y: pb.y - pb.r - gap - r, r };
 }
 
 // Invite accept/decline buttons (for popup)
@@ -403,7 +409,7 @@ function _autoPressCancel(touchId) {
 
 function _checkAutoBtnTouch(cx, cy, touchId) {
   const ab = getAutoBtnPos();
-  if (cx >= ab.x && cx <= ab.x + ab.w && cy >= ab.y && cy <= ab.y + ab.h) {
+  if (Math.hypot(cx - ab.x, cy - ab.y) < ab.r + 8) {
     _autoPressStart(touchId);
     return true;
   }
@@ -488,9 +494,7 @@ function onTM(e) {
     if (t.identifier === _autoTouchId) {
       const p = _toCanvasXY(t.clientX, t.clientY);
       const ab = getAutoBtnPos();
-      if (p.x < ab.x - 40 || p.x > ab.x + ab.w + 40 || p.y < ab.y - 40 || p.y > ab.y + ab.h + 40) {
-        _autoPressCancel(t.identifier);
-      }
+      if (Math.hypot(p.x - ab.x, p.y - ab.y) > ab.r + 40) _autoPressCancel(t.identifier);
     }
   }
 }
@@ -538,9 +542,7 @@ function onMM(e) {
   if (_autoTouchId === 'mouse') {
     const p = _toCanvasXY(e.clientX, e.clientY);
     const ab = getAutoBtnPos();
-    if (p.x < ab.x - 40 || p.x > ab.x + ab.w + 40 || p.y < ab.y - 40 || p.y > ab.y + ab.h + 40) {
-      _autoPressCancel('mouse');
-    }
+    if (Math.hypot(p.x - ab.x, p.y - ab.y) > ab.r + 40) _autoPressCancel('mouse');
   }
   if (joy.active && joyGuard()) {
     const p = _toCanvasXY(e.clientX, e.clientY);

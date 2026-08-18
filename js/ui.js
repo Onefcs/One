@@ -2159,7 +2159,7 @@ function setTab(n) {
 // ─────────────────────────────────────────────────────────
 //  UNIFIED HEADER  (player info + minimap)
 // ─────────────────────────────────────────────────────────
-let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
+let _hdrGradW = 0;
 let _hpGradGreen = null, _hpGradOrange = null, _hpGradRed = null;
 let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null;
 // Avatar bg gradient (re-created only when character color changes)
@@ -2193,6 +2193,14 @@ function setTelegramAvatar(url) {
   _tgAvatarImg = img;
 }
 
+// Minimap geometry — shared by drawHeader (which paints it) and
+// _positionHudMenuBtn (which docks the folding-menu button under it), so a
+// change to one can't silently leave the other pointing at empty space.
+function _minimapGeom() {
+  const mmPad = 10, mmW = 68, mmH = 68;
+  return { mmPad, mmW, mmH, mmX: W - mmW - mmPad, mmY: mmPad };
+}
+
 function drawHeader() {
   if (!player || !dungeon) return;
   const p = player;
@@ -2200,46 +2208,32 @@ function drawHeader() {
 
   ctx.save();
 
-  // ── Background (cached gradient — same every frame) ───────
-  if (!_hdrBgGrad || _hdrGradW !== W) {
+  // Resize bookkeeping only — there's no full-width header fill any more:
+  // the character card, minimap and balance pills each paint their own
+  // independent background below, so they read as separate floating HUD
+  // elements instead of one bar.
+  if (_hdrGradW !== W) {
     _hdrGradW = W;
     _hpGradGreen = null; // invalidate dependent bar gradients
     _avBgGrad = null;    // also invalidate avatar bg on resize
     _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
-    _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
-    _hdrBgGrad.addColorStop(0, 'rgba(24,22,18,0.98)');
-    _hdrBgGrad.addColorStop(1, 'rgba(10,9,7,0.99)');
-    _hdrSepGrad = ctx.createLinearGradient(0, 0, W, 0);
-    _hdrSepGrad.addColorStop(0,   'rgba(70,61,51,0)');
-    _hdrSepGrad.addColorStop(0.15,'rgba(107,95,82,0.8)');
-    _hdrSepGrad.addColorStop(0.85,'rgba(107,95,82,0.8)');
-    _hdrSepGrad.addColorStop(1,   'rgba(70,61,51,0)');
   }
-  ctx.fillStyle = _hdrBgGrad;
-  ctx.fillRect(0, 0, W, HEADER_H);
 
-  // Bottom separator glow
-  ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
-
-  // ── Minimap (right side) ──────────────────────────────────
+  // ── Minimap (top-right, independent floating element) ─────
   // Local window only — shows just the area around the player instead of
   // the whole (huge) world. The window follows the player continuously
   // (float-precision top-left, not tile-snapped) and is small enough
   // (~60×60 tiles) to redraw from scratch every frame with no cache needed.
+  // Fixed size, not derived from HEADER_H — its own card, not a header slot.
   const _MM_RADIUS = 30; // tiles each direction from the player
-  const mmPad = 6;
-  const mmH = HEADER_H - mmPad * 2;
-  const mmW = mmH;
-  const mmX = W - mmW - mmPad - 4;
-  const mmY = mmPad;
+  const { mmW, mmH, mmX, mmY } = _minimapGeom();
   const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
   const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
 
   // Map panel border (circular)
   const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
-  const mpX = mmX - 4; // left-edge reference used by the header divider/info-area layout below
+  const mpX = mmX - 4; // left-edge reference used by the character-card layout below
   ctx.fillStyle = 'rgba(11,10,8,0.92)';
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(107,95,82,0.7)'; ctx.lineWidth = 1;
@@ -2341,12 +2335,16 @@ function drawHeader() {
   ctx.fillStyle = 'rgba(201,194,182,0.95)';
   ctx.fillText(_hudLbl, mmX + mmW / 2, mmY + mmH - 3);
 
-  // Vertical divider
-  ctx.strokeStyle = 'rgba(107,95,82,0.35)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
+  // ── Character card (own background — a separate floating panel, not a
+  // slice of a shared header bar) ────────────────────────────
+  const cardTop = 6, cardBottom = 74;
+  const cardRight = mpX - 10;
+  cutRectPath(ctx, 6, cardTop, cardRight - 6, cardBottom - cardTop, 10);
+  ctx.fillStyle = 'rgba(20,18,15,0.88)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(107,95,82,0.55)'; ctx.lineWidth = 1; ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
-  const avX = 32, avY = HEADER_H / 2, avR = 19;
+  const avX = 32, avY = (cardTop + cardBottom) / 2, avR = 19;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
@@ -2411,11 +2409,81 @@ function drawHeader() {
   ctx.fillText(_grBal.toFixed(7), stxH + 12, 29);
   ctx.textBaseline = 'alphabetic';
 
-  // ── Balance pills ─────────────────────────────────────────
+  // Separator (still inside the character card, between identity and bars)
+  ctx.strokeStyle = 'rgba(107,95,82,0.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(infoX, 39); ctx.lineTo(infoRight, 39); ctx.stroke();
+
+  // ── HP bar ────────────────────────────────────────────────
+  const hpY = 51, hbH = 10;
+  const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
+  ctx.fillText('HP', infoX, hpY);
+
+  const hbX = infoX + 22, hbW = infoW - 22;
+  ctx.fillStyle = 'rgba(33,12,14,0.92)';
+  roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
+  if (hpPct > 0) {
+    // Cache horizontal HP gradients — only depend on bar X/W, not HP amount
+    if (!_hpGradGreen || _hdrGradW !== W) {
+      _hpGradGreen  = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      _hpGradGreen.addColorStop(0, '#335118'); _hpGradGreen.addColorStop(1, '#79b644');
+      _hpGradOrange = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      _hpGradOrange.addColorStop(0, '#6e470c'); _hpGradOrange.addColorStop(1, '#e59620');
+      _hpGradRed    = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      _hpGradRed.addColorStop(0, '#64161f'); _hpGradRed.addColorStop(1, '#da4658');
+      _hpShineGrad  = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
+      _hpShineGrad.addColorStop(0, 'rgba(209,204,197,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
+    }
+    ctx.fillStyle = hpPct > 0.5 ? _hpGradGreen : hpPct > 0.25 ? _hpGradOrange : _hpGradRed;
+    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
+    ctx.fillStyle = _hpShineGrad;
+    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
+    if (hpPct < 0.3) {
+      ctx.strokeStyle = 'rgba(218,70,88,0.6)'; ctx.lineWidth = 1.5;
+      roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
+    }
+  }
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
+  ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
+
+  // ── XP bar ────────────────────────────────────────────────
+  const xpY = 65, xbH = 6;
+  const xpPct = Math.min(1, p.xp / p.xpNext);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(201,194,182,0.85)';
+  ctx.fillText('XP', infoX, xpY);
+
+  const xbX = infoX + 22, xbW = infoW - 22;
+  ctx.fillStyle = 'rgba(15,14,11,0.9)';
+  roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
+  if (xpPct > 0) {
+    if (!_xpGrad || _hdrGradW !== W) {
+      _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
+      _xpGrad.addColorStop(0, '#3a332b'); _xpGrad.addColorStop(1, '#8a8074');
+      _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
+      _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
+    }
+    ctx.fillStyle = _xpGrad;
+    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
+    ctx.fillStyle = _xpShineGrad;
+    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
+  }
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(201,194,182,0.7)';
+  // Floor the XP readout: party kills split their reward (result.xp / members
+  // on the server), so xp is legitimately fractional and float addition turns
+  // that into "858.9999999999418" on the bar. The stored value keeps its
+  // precision — only the display is whole.
+  ctx.fillText(Math.floor(p.xp) + '/' + p.xpNext, xbX + xbW / 2, xpY);
+
+  // ── Balance pills (own row, below the character card — a separate
+  // element, not squeezed inside it) ─────────────────────────
   // Gold and Nexum are the two currencies a player actually spends, so they
   // get proper pill badges — the ones that read as "wallet balance" in the
-  // HUD, matching the currency pills in the header design mockups.
-  const pillY = 51, pillH = 20;
+  // HUD, matching the currency pills in the header design mockups. БМ/GRAM
+  // stay as the quiet secondary text next to the class name above; they
+  // aren't spendable balances.
+  const pillY = 88, pillH = 20;
   let px = infoX;
   ctx.textBaseline = 'middle';
 
@@ -2451,73 +2519,6 @@ function drawHeader() {
   ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
   ctx.fillText(_nxStr, px + 25, pillY + 1);
   ctx.textBaseline = 'alphabetic';
-
-  // Separator
-  ctx.strokeStyle = 'rgba(107,95,82,0.45)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, 62); ctx.lineTo(infoRight, 62); ctx.stroke();
-
-  // ── HP bar ────────────────────────────────────────────────
-  const hpY = 71, hbH = 10;
-  const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
-  ctx.fillText('HP', infoX, hpY);
-
-  const hbX = infoX + 22, hbW = infoW - 22;
-  ctx.fillStyle = 'rgba(33,12,14,0.92)';
-  roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
-  if (hpPct > 0) {
-    // Cache horizontal HP gradients — only depend on bar X/W, not HP amount
-    if (!_hpGradGreen || _hdrGradW !== W) {
-      _hpGradGreen  = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradGreen.addColorStop(0, '#335118'); _hpGradGreen.addColorStop(1, '#79b644');
-      _hpGradOrange = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradOrange.addColorStop(0, '#6e470c'); _hpGradOrange.addColorStop(1, '#e59620');
-      _hpGradRed    = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradRed.addColorStop(0, '#64161f'); _hpGradRed.addColorStop(1, '#da4658');
-      _hpShineGrad  = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
-      _hpShineGrad.addColorStop(0, 'rgba(209,204,197,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
-    }
-    ctx.fillStyle = hpPct > 0.5 ? _hpGradGreen : hpPct > 0.25 ? _hpGradOrange : _hpGradRed;
-    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
-    ctx.fillStyle = _hpShineGrad;
-    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
-    if (hpPct < 0.3) {
-      ctx.strokeStyle = 'rgba(218,70,88,0.6)'; ctx.lineWidth = 1.5;
-      roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
-    }
-  }
-  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
-  ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
-
-  // ── XP bar ────────────────────────────────────────────────
-  const xpY = 84, xbH = 6;
-  const xpPct = Math.min(1, p.xp / p.xpNext);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(201,194,182,0.85)';
-  ctx.fillText('XP', infoX, xpY);
-
-  const xbX = infoX + 22, xbW = infoW - 22;
-  ctx.fillStyle = 'rgba(15,14,11,0.9)';
-  roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
-  if (xpPct > 0) {
-    if (!_xpGrad || _hdrGradW !== W) {
-      _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-      _xpGrad.addColorStop(0, '#3a332b'); _xpGrad.addColorStop(1, '#8a8074');
-      _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
-      _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
-    }
-    ctx.fillStyle = _xpGrad;
-    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
-    ctx.fillStyle = _xpShineGrad;
-    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
-  }
-  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(201,194,182,0.7)';
-  // Floor the XP readout: party kills split their reward (result.xp / members
-  // on the server), so xp is legitimately fractional and float addition turns
-  // that into "858.9999999999418" on the bar. The stored value keeps its
-  // precision — only the display is whole.
-  ctx.fillText(Math.floor(p.xp) + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
   ctx.restore();
 }
@@ -2677,10 +2678,10 @@ function _buildUiBtnGrads() {
   const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
   ag2.addColorStop(0,'rgba(42,38,32,0.98)'); ag2.addColorStop(1,'rgba(19,17,14,0.99)');
 
-  const aag0 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
-  aag0.addColorStop(0,'rgba(33,7,10,0.95)'); aag0.addColorStop(1,'rgba(17,4,6,0.97)');
-  const aag1 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
-  aag1.addColorStop(0,'rgba(22,32,13,0.95)'); aag1.addColorStop(1,'rgba(11,16,7,0.97)');
+  const aag0 = ctx.createRadialGradient(aab.x-5, aab.y-5, 2, aab.x, aab.y, aab.r);
+  aag0.addColorStop(0,'rgba(38,35,29,0.98)'); aag0.addColorStop(1,'rgba(18,16,13,0.99)');
+  const aag1 = ctx.createRadialGradient(aab.x-5, aab.y-5, 2, aab.x, aab.y, aab.r);
+  aag1.addColorStop(0,'rgba(90,15,24,0.98)'); aag1.addColorStop(1,'rgba(28,5,8,0.99)');
 
   const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
   tfBg.addColorStop(0,'rgba(34,31,26,0.97)'); tfBg.addColorStop(1,'rgba(16,15,12,0.99)');
@@ -3070,22 +3071,36 @@ function drawAttackButton() {
 // ─────────────────────────────────────────────────────────
 //  AUTO / MANUAL TOGGLE
 // ─────────────────────────────────────────────────────────
+// Round icon toggle — crossed swords (the 'sword' icon drawn once normally
+// and once mirrored, which cross since the icon's own blade already runs
+// diagonally) instead of the old "РУЧ/АВТО" text pill. Active (auto-attack
+// on) reads the same way Attack's own "ready" state does — blood-red fill
+// and glow — so the two buttons share one visual language for "engaged".
 function drawAutoToggle() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const ab = _uiBtnGrads.autoBtn;
-  const F = 'system-ui, -apple-system, Arial';
+
   ctx.save();
   ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
-  cutRectPath(ctx, ab.x, ab.y, ab.w, ab.h, 6); ctx.fill();
+  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(107,95,82,0.65)';
+  const iconColor = autoAttackMode ? '#ee6272' : '#a49783';
+  const sz = ab.r * 1.05;
+  drawIconCtx(ctx, 'sword', ab.x, ab.y, sz, iconColor);
+  ctx.save();
+  ctx.translate(ab.x, ab.y);
+  ctx.scale(-1, 1);
+  drawIconCtx(ctx, 'sword', 0, 0, sz, iconColor);
+  ctx.restore();
+
+  ctx.strokeStyle = autoAttackMode ? 'rgba(226,85,90,0.95)' : 'rgba(107,95,82,0.85)';
   ctx.lineWidth = 1.5;
-  cutRectPath(ctx, ab.x, ab.y, ab.w, ab.h, 6); ctx.stroke();
-
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = autoAttackMode ? '#90d653' : '#c9c2b6';
-  ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), ab.x + ab.w / 2, ab.y + ab.h / 2);
+  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
+  if (autoAttackMode) {
+    ctx.strokeStyle = 'rgba(226,85,90,0.18)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 3, 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -3957,13 +3972,10 @@ let _ratingData = { players: null, clans: null };
 function _positionHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
   if (!btn) return;
-  const mmPad = 6;
-  const mmH = HEADER_H - mmPad * 2;
-  const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.27));
-  const mmX = W - mmW - mmPad - 4;
-  btn.style.top   = (HEADER_H + 6) + 'px';
-  btn.style.left  = mmX + 'px';
-  btn.style.width = (mmW + 8) + 'px';
+  const { mmX, mmY, mmW, mmH, mmPad } = _minimapGeom();
+  btn.style.top   = (mmY + mmH + 8) + 'px';
+  btn.style.left  = (mmX - mmPad) + 'px';
+  btn.style.width = (mmW + mmPad * 2) + 'px';
   btn.style.right = 'auto';
   btn.style.transform = 'none';
 }
