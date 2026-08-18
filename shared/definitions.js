@@ -1090,7 +1090,7 @@ UNIQUE_SHARDS.forEach((sh, i) => {
 // of FARM2_SPD_MULT move speed.
 const FARM2_LVL_MIN = 30;
 const FARM2_LVL_MAX = 40;
-const FARM2_ENTRY_LEVEL = 30;
+const FARM2_ENTRY_LEVEL = 25; // entry gate is below FARM2_LVL_MIN on purpose — see FARM2_LVL_MIN's own comment for what a level-25 party is actually walking into
 const FARM2_PARTY_SIZE = 3;
 const FARM2_ROOM_COUNT = 2;
 const FARM2_MOBS_PER_ROOM = 50;

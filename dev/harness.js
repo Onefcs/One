@@ -523,13 +523,13 @@ scenario('floors: Элитная фарм-зона is a private party-of-3 insta
   eq(directDenial && directDenial.reason, 'partyOnly', 'a direct enterLocation is refused regardless of level');
   await solo.close();
 
-  // A leader below FARM2_ENTRY_LEVEL (30) cannot even open a lobby.
+  // A leader below FARM2_ENTRY_LEVEL (25) cannot even open a lobby.
   const lowLeader = await connectWithSaved('harness_farm2_low', { lvl: 10, xp: 0, xpNext: 100 });
   await enterWorld(lowLeader, 'ranger');
   const lowErr = lowLeader.wait('farm2Error', { timeout: 3000 });
   lowLeader.emit('farm2GroupCreate');
   const lowErrPayload = await lowErr;
-  ok(lowErrPayload && /30/.test(lowErrPayload.msg || ''), 'the level gate names the required level');
+  ok(lowErrPayload && /25/.test(lowErrPayload.msg || ''), 'the level gate names the required level');
   await lowLeader.close();
 
   // A full party of 3, all at the level requirement.
