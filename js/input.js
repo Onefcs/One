@@ -346,14 +346,52 @@ function _checkAttackBtnTouch(cx, cy) {
 }
 
 const AUTO_ATTACK_VIP_MIN = 2;
-function _checkAutoBtnTouch(cx, cy) {
+// AUTO button: a quick tap flips auto-attack, holding it opens the auto-cast
+// settings — which skills the auto may use, and whether it casts at all. Same
+// tap/hold split the potion button above uses for its own picker, so the
+// gesture is already one this HUD teaches.
+const AUTO_LONGPRESS_MS = 450;
+let _autoTouchId = null;
+let _autoPressTimer = null;
+let _autoLongFired = false;
+
+function _autoPressStart(touchId) {
+  _autoTouchId = touchId;
+  _autoLongFired = false;
+  clearTimeout(_autoPressTimer);
+  _autoPressTimer = setTimeout(() => {
+    _autoLongFired = true;
+    // Opened regardless of VIP: the settings are the player's own and worth
+    // seeing before they pay for the mode that uses them. The toggle itself
+    // (below) is what stays gated.
+    if (typeof openAutoSkillsPicker === 'function') openAutoSkillsPicker();
+  }, AUTO_LONGPRESS_MS);
+}
+
+function _autoPressEnd(touchId) {
+  if (_autoTouchId !== touchId) return;
+  clearTimeout(_autoPressTimer);
+  _autoPressTimer = null;
+  _autoTouchId = null;
+  if (_autoLongFired) return;
+  if (player && (window._vipData?.level || 0) < AUTO_ATTACK_VIP_MIN) {
+    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Авто-атака с VIP ${AUTO_ATTACK_VIP_MIN}`, '#f93');
+    return;
+  }
+  autoAttackMode = !autoAttackMode;
+}
+
+function _autoPressCancel(touchId) {
+  if (touchId !== undefined && _autoTouchId !== touchId) return;
+  clearTimeout(_autoPressTimer);
+  _autoPressTimer = null;
+  _autoTouchId = null;
+}
+
+function _checkAutoBtnTouch(cx, cy, touchId) {
   const ab = getAutoBtnPos();
   if (cx >= ab.x && cx <= ab.x + ab.w && cy >= ab.y && cy <= ab.y + ab.h) {
-    if (player && (window._vipData?.level || 0) < AUTO_ATTACK_VIP_MIN) {
-      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Авто-атака с VIP ${AUTO_ATTACK_VIP_MIN}`, '#f93');
-      return true;
-    }
-    autoAttackMode = !autoAttackMode;
+    _autoPressStart(touchId);
     return true;
   }
   return false;
@@ -390,7 +428,7 @@ function onTS(e) {
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
-    if (_checkAutoBtnTouch(p.x, p.y)) continue;
+    if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
     if (_checkPotionTouch(p.x, p.y, t.identifier)) continue;
     if (_checkTargetBtnTouch(p.x, p.y)) continue;
@@ -433,6 +471,14 @@ function onTM(e) {
       const pb = getPotionBtnPos();
       if (Math.hypot(p.x - pb.x, p.y - pb.y) > pb.r + 40) _potionPressCancel(t.identifier);
     }
+    // Same for the AUTO button's own tap/hold.
+    if (t.identifier === _autoTouchId) {
+      const p = _toCanvasXY(t.clientX, t.clientY);
+      const ab = getAutoBtnPos();
+      if (p.x < ab.x - 40 || p.x > ab.x + ab.w + 40 || p.y < ab.y - 40 || p.y > ab.y + ab.h + 40) {
+        _autoPressCancel(t.identifier);
+      }
+    }
   }
 }
 
@@ -440,11 +486,12 @@ function onTE(e) {
   for (const t of e.changedTouches) {
     if (t.identifier === joy.id) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
     _potionPressEnd(t.identifier);
+    _autoPressEnd(t.identifier);
   }
   if (e.touches.length === 0) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
 }
 
-function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; _potionPressCancel(); }
+function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; _potionPressCancel(); _autoPressCancel(); }
 
 function onMD(e) {
   const p = _toCanvasXY(e.clientX, e.clientY);
@@ -457,7 +504,7 @@ function onMD(e) {
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
-  if (_checkAutoBtnTouch(p.x, p.y)) return;
+  if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;
   if (_checkPotionTouch(p.x, p.y, 'mouse')) return;
   if (_checkTargetBtnTouch(p.x, p.y)) return;
@@ -475,12 +522,19 @@ function onMM(e) {
     const pb = getPotionBtnPos();
     if (Math.hypot(p.x - pb.x, p.y - pb.y) > pb.r + 40) _potionPressCancel('mouse');
   }
+  if (_autoTouchId === 'mouse') {
+    const p = _toCanvasXY(e.clientX, e.clientY);
+    const ab = getAutoBtnPos();
+    if (p.x < ab.x - 40 || p.x > ab.x + ab.w + 40 || p.y < ab.y - 40 || p.y > ab.y + ab.h + 40) {
+      _autoPressCancel('mouse');
+    }
+  }
   if (joy.active && joyGuard()) {
     const p = _toCanvasXY(e.clientX, e.clientY);
     setJoy(p.x, p.y);
   }
 }
-function onMU()  { joy.active = false; joy.dx = 0; joy.dy = 0; _potionPressEnd('mouse'); }
+function onMU()  { joy.active = false; joy.dx = 0; joy.dy = 0; _potionPressEnd('mouse'); _autoPressEnd('mouse'); }
 
 function setJoy(cx, cy) {
   const dx = cx - joy.sx, dy = cy - joy.sy, len = Math.hypot(dx, dy);

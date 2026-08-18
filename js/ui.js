@@ -332,6 +332,113 @@ function setAutoHpPct(pct) {
   openHpPicker();
 }
 
+// ─────────────────────────────────────────────────────────
+//  AUTO-CAST PICKER (which skills АВТО is allowed to use)
+// ─────────────────────────────────────────────────────────
+// Opened by holding the AUTO button (js/input.js) or from the skills panel.
+// АВТО used to cast whatever was off cooldown, in slot order, with no say in
+// it: no way to keep an ultimate for a boss, to stop a knockback scattering a
+// pull, or to have the auto simply attack without spending anything.
+function openAutoSkillsPicker() {
+  if (!player) return;
+  const existing = document.getElementById('auto-skills-ov');
+  if (existing) existing.remove();
+
+  const skills = SKILL_DEF[player.type] || [];
+  const master = player.autoSkillsOn !== false;
+  const off = player.autoSkillOff || {};
+  const vipMin = (typeof AUTO_SKILL_VIP_MIN !== 'undefined') ? AUTO_SKILL_VIP_MIN : 2;
+  const vipNow = (window._vipData && window._vipData.level) || 0;
+
+  const masterBtns = [true, false].map(on => `<button onclick="setAutoSkillsOn(${on})" style="
+    flex:1;padding:8px 4px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
+    background:${master === on ? '#29361e' : 'rgba(209,204,197,0.06)'};
+    color:${master === on ? '#90d653' : '#968a7a'};
+    border:1px solid ${master === on ? '#90d65344' : 'transparent'};
+  ">${on ? t('onLbl') : t('offLbl')}</button>`).join('');
+
+  const rows = skills.map((base, i) => {
+    // The variant actually in play — an advanced skill can be auto-castable
+    // where its base version isn't (or the other way round), and this has to
+    // agree with what _autoCastSkills (js/game.js) will really do.
+    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : base;
+    if (!sk) return '';
+    const learned = _skillLvl(sk.key) > 0;
+    const neverAuto = sk.auto === false;
+    const enabled = !off[sk.key];
+    const glyph = sk.img
+      ? `<img src="${sk.img}" width="22" height="22" style="image-rendering:pixelated;border-radius:3px;display:block">`
+      : iconHTML(sk.icon, 22, '#e3941d');
+    let right;
+    if (neverAuto) {
+      // Dash/jump/teleport: firing these unattended throws the character
+      // across the room, so they are not offered at all rather than offered
+      // and quietly ignored.
+      right = `<span style="font-size:11px;color:#645f57">${t('autoSkillNotForAuto')}</span>`;
+    } else if (!learned) {
+      right = `<span style="font-size:11px;color:#645f57">${t('notStudiedLbl')}</span>`;
+    } else {
+      right = `<button onclick="toggleAutoSkill('${sk.key}')" style="
+        min-width:62px;padding:7px 10px;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:800;
+        background:${enabled ? 'rgba(143,214,82,0.12)' : 'rgba(209,204,197,0.05)'};
+        color:${enabled ? '#90d653' : '#968a7a'};
+        border:1px solid ${enabled ? '#90d65355' : 'rgba(209,204,197,0.1)'};
+      ">${enabled ? t('onLbl') : t('offLbl')}</button>`;
+    }
+    const dim = (!master || neverAuto || !learned) ? 0.55 : 1;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;
+      background:rgba(209,204,197,0.04);opacity:${dim}">
+      <div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center">${glyph}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12.5px;font-weight:700;color:#d1ccc5">
+          <span style="color:#e3941d">${sk.key}</span> · ${sk.name}
+        </div>
+        <div style="font-size:10.5px;color:#72685a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sk.desc || ''}</div>
+      </div>
+      ${right}
+    </div>`;
+  }).join('');
+
+  const vipWarn = vipNow < vipMin
+    ? `<div style="font-size:11px;color:#eaa742;margin-top:10px">🔒 ${tVars('autoSkillsVipHintFmt', { n: vipMin })}</div>`
+    : '';
+
+  const ov = document.createElement('div');
+  ov.id = 'auto-skills-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:15px;font-weight:800;color:#90d653">${t('autoSkillsHdr')}</div>
+      <button onclick="document.getElementById('auto-skills-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:11px;color:#72685a;margin-bottom:10px">${t('autoSkillsHint')}</div>
+    <div style="font-size:11.5px;color:#b2a288;margin-bottom:6px">${t('autoSkillsMasterLbl')}</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">${masterBtns}</div>
+    <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+    ${vipWarn}
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function setAutoSkillsOn(on) {
+  if (!player) return;
+  player.autoSkillsOn = !!on;
+  netSaveProgress();
+  openAutoSkillsPicker();
+}
+
+// Stores the OFF set, not the ON one: a slot nobody has touched — and every
+// account that predates this picker — keeps auto-casting exactly as before.
+function toggleAutoSkill(key) {
+  if (!player) return;
+  const off = player.autoSkillOff || (player.autoSkillOff = {});
+  if (off[key]) delete off[key];
+  else off[key] = true;
+  netSaveProgress();
+  openAutoSkillsPicker();
+}
+
 function closePotionModal() {
   const el = document.getElementById('hp-picker-ov');
   if (el) el.remove();
@@ -686,6 +793,14 @@ function updateSkillsUI() {
       <span>${iconHTML('book', 13, '#e3941d')} ${t('skillBooksHdr')}</span>
       <span class="skill-upg-hint">${tVars('studyUpgradeHintFmt', { a: SKILL_STUDY_COST, b: SKILL_UPGRADE_COST, c: Math.round(SKILL_UPGRADE_CHANCE * 100) })}</span>
     </div>
+    <!-- Second way into the auto-cast picker. The first is holding the AUTO
+         button on the HUD, which nobody finds without being told. -->
+    <button onclick="openAutoSkillsPicker()" style="
+      width:100%;margin-bottom:10px;padding:10px;border:1px solid rgba(143,214,82,0.25);border-radius:10px;
+      background:rgba(143,214,82,0.08);color:#90d653;font-size:12.5px;font-weight:700;cursor:pointer;
+    ">${t('autoModeAbbrev')} · ${t('autoSkillsOpenBtn')}
+      <div style="font-size:10px;color:#72685a;font-weight:400;margin-top:3px">${t('autoSkillsHoldHint')}</div>
+    </button>
     ${skills.map(sk => {
       const level = sl[sk.key] || 0;
       const locked = level <= 0;

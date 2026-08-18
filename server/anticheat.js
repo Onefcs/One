@@ -94,6 +94,9 @@ const _KEY_MAP_MAX_KEY_LEN = 40;
 const _HP_POTION_IDS = ITEM_DEF.filter(d => d.slot === 'use').map(d => d.id);
 const _HP_POTION_HEAL = new Map(ITEM_DEF.filter(d => d.slot === 'use').map(d => [d.id, Math.max(0, Number(d.hp) || 0)]));
 const _BUFF_TYPES = new Set(ITEM_DEF.filter(d => d.slot === 'buff_potion' && d.buffType).map(d => d.buffType));
+// The four skill slots — same list server/index.js's own SKILL_SLOTS holds,
+// needed here to bound autoSkillOff (the АВТО auto-cast opt-outs).
+const _SKILL_SLOT_KEYS = new Set(['Q', 'W', 'E', 'R']);
 
 const _VALID_LANGS = ['ru', 'en', 'uk', 'es', 'tr', 'pt'];
 
@@ -314,6 +317,22 @@ function _sanitizeSavedStats(raw) {
       }
     }
     s.autoBuffTypes = ab;
+  }
+  // АВТО's auto-cast settings: a master switch and the set of skill slots the
+  // player switched off. Same bounded-shape treatment — only the four real
+  // slot keys survive, as booleans. Both are display preferences the client
+  // owns (nothing on this side reads them), so the only job here is to keep a
+  // junk blob from being stored and handed back.
+  if (s.autoSkillsOn != null) s.autoSkillsOn = !!s.autoSkillsOn;
+  if (s.autoSkillOff !== undefined) {
+    const as = {};
+    if (s.autoSkillOff && typeof s.autoSkillOff === 'object' && !Array.isArray(s.autoSkillOff)) {
+      for (const [k, v] of Object.entries(s.autoSkillOff)) {
+        if (!_SKILL_SLOT_KEYS.has(k) || !v) continue;
+        as[k] = true;
+      }
+    }
+    s.autoSkillOff = as;
   }
   // Freshness stamp used only to pick the newer of {DB, client localStorage
   // backup} on reload. Clamp to a sane range so a client can't write a

@@ -2954,6 +2954,134 @@ scenario('browser: the market category strip can be scrolled with a mouse', asyn
   }
 });
 
+scenario('browser: АВТО casts only the skills left switched on, and none when switched off', async () => {
+  // АВТО used to cast whatever was off cooldown, in slot order, with no say
+  // in it — no way to save an ultimate for a boss, to stop a knockback
+  // scattering a pull, or to have the auto attack without spending anything.
+  // The picker (hold the AUTO button, or the button in the skills panel)
+  // writes autoSkillsOn/autoSkillOff, and this is what _autoCastSkills does
+  // with them.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const seed = await connectWithSaved('harness_autoskills', {
+    lvl: 15, vipLevel: 2, skillLevels: { Q: 5, W: 5, E: 5, R: 5 },
+  });
+  await seed.close();
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    const errors = [];
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message.slice(0, 200)));
+    await page.goto(`${BASE}/?dev=harness_autoskills`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4000);
+    if (await page.evaluate(() => typeof state !== 'undefined' && state === 'select')) {
+      await page.evaluate(() => selectChar('lev'));
+      await page.waitForTimeout(4000);
+    }
+    ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
+
+    // A fight the auto-cast will actually engage with: one live enemy right
+    // next to the player, every cooldown clear, VIP high enough.
+    const arm = () => page.evaluate(() => {
+      window._vipData = { level: 2 };
+      autoAttackMode = true;
+      player.skillLevels = { Q: 5, W: 5, E: 5, R: 5 };
+      player.skillCooldowns = { Q: 0, W: 0, E: 0, R: 0 };
+      player.hp = player.maxHp;
+      player.stunTimer = 0; player.atkAnimTimer = 0; player._chasing = false;
+      serverEnemies.length = 0;
+      serverEnemies.push({ id: 'dummy', hp: 500, maxHp: 500, x: player.x + 40, y: player.y, size: 20 });
+      window.__cast = [];
+      window.useSkill = i => { window.__cast.push(i); };
+    });
+
+    // The real loop is running and calls _autoCastSkills itself, so these
+    // read every cast recorded over the window rather than assuming one:
+    // what matters is WHICH slots the auto reached for, and that it reached
+    // for none at all once switched off.
+    const castsOver = async ms => {
+      await arm();
+      await page.waitForTimeout(ms);
+      return page.evaluate(() => { _autoCastSkills(5); return window.__cast.slice(); });
+    };
+
+    // Everything on (the default, and what every existing account has).
+    const first = await castsOver(400);
+    ok(first.length > 0, 'the auto casts at all to begin with');
+    ok(first.every(i => i === 0), `and with nothing switched off it only reaches for the first slot (${first})`);
+
+    // Switch that slot off — the auto must move on to the next one, not go
+    // quiet and not cast it anyway.
+    await page.evaluate(() => toggleAutoSkill('Q'));
+    const second = await castsOver(400);
+    ok(second.length > 0, 'the auto still casts with one slot switched off');
+    ok(second.every(i => i === 1), `and skips the switched-off slot for the next one (${second})`);
+
+    // Master switch off: auto-ATTACK keeps running, casting stops entirely.
+    await page.evaluate(() => setAutoSkillsOn(false));
+    const third = await castsOver(600);
+    eq(third.length, 0, 'nothing is cast with auto-cast switched off');
+    eq(await page.evaluate(() => autoAttackMode), true, 'while auto-attack itself is untouched');
+
+    await page.evaluate(() => { setAutoSkillsOn(true); document.getElementById('auto-skills-ov')?.remove(); });
+
+    // The gesture that opens the picker: hold the AUTO button. A short tap on
+    // the same button must still be the auto-attack toggle. The what's-new
+    // modal is a full-screen overlay on a first login and would swallow both
+    // presses before the canvas ever sees them.
+    await page.evaluate(() => {
+      if (typeof closeWhatsNewModal === 'function') closeWhatsNewModal();
+      document.getElementById('whatsnew-ov')?.remove();
+    });
+    await page.waitForTimeout(150);
+    const btn = await page.evaluate(() => {
+      const a = getAutoBtnPos();
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + a.x + a.w / 2, y: r.top + a.y + a.h / 2, mode: autoAttackMode };
+    });
+    await page.mouse.move(btn.x, btn.y);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const held = await page.evaluate(() => ({
+      open: !!document.getElementById('auto-skills-ov'),
+      mode: autoAttackMode,
+    }));
+    ok(held.open, 'holding the AUTO button opens the auto-cast picker');
+    eq(held.mode, btn.mode, 'and does not also flip auto-attack');
+
+    await page.evaluate(() => document.getElementById('auto-skills-ov')?.remove());
+    await page.mouse.move(btn.x, btn.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    const tapped = await page.evaluate(() => ({
+      open: !!document.getElementById('auto-skills-ov'),
+      mode: autoAttackMode,
+    }));
+    eq(tapped.mode, !btn.mode, 'a short tap still toggles auto-attack');
+    eq(tapped.open, false, 'without opening the picker');
+
+    // And the settings survive a reload — they ride the save blob and come
+    // back from the stored record, like the potion/auto-HP preferences.
+    await page.waitForTimeout(4000);
+    await page.goto(`${BASE}/?dev=harness_autoskills`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(6000);
+    const restored = await page.evaluate(() => (player && player.autoSkillOff) || null);
+    ok(restored && restored.Q === true, `the switched-off slot came back after a reload (${JSON.stringify(restored)})`);
+
+    eq(errors.length, 0, 'and nothing threw in the browser', errors.join(' | '));
+  } finally {
+    await browser.close();
+  }
+});
+
 scenario('browser: a short drop resumes in place instead of rebuilding the world', async () => {
   // The other half of "мир перезагружается". Even once the reconnect lands
   // back on the right floor, it used to rebuild everything on arrival —

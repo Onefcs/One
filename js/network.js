@@ -2256,6 +2256,8 @@ function _buildSaveStats() {
     hudPotion: player.hudPotion || 'pt1',
     autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0,
     autoBuffTypes: player.autoBuffTypes || {},
+    autoSkillsOn: player.autoSkillsOn !== false,
+    autoSkillOff: player.autoSkillOff || {},
     lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
     savedAt: Date.now(),
   };

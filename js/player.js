@@ -83,6 +83,15 @@ function makePlayer(type) {
     potCd: 0,
     autoHpPct: 0,
     autoBuffTypes: {},
+    // Auto-cast (АВТО) settings — see _autoCastSkills (js/game.js) and the
+    // picker the AUTO button opens on a long press (openAutoSkillsPicker,
+    // js/ui.js). autoSkillsOn is the master switch; autoSkillOff holds the
+    // slots the player has switched OFF, so an account that predates this
+    // (and any slot never touched) keeps auto-casting exactly as before —
+    // storing the ENABLED set instead would have read as "all off" for
+    // everyone who upgraded.
+    autoSkillsOn: true,
+    autoSkillOff: {},
     skillCooldowns: { Q:0, W:0, E:0, R:0 },
     // 0 = locked/not yet studied (see studySkill/upgradeSkillWithBook in
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
@@ -1000,6 +1009,10 @@ function restoreFromSave(data) {
   player.potCd      = 0;
   player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0;
   player.autoBuffTypes = data.autoBuffTypes || {};
+  // Absent means "never set" — auto-cast stays on, which is what every
+  // account had before the switch existed.
+  player.autoSkillsOn  = data.autoSkillsOn !== false;
+  player.autoSkillOff  = data.autoSkillOff || {};
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;

@@ -313,6 +313,11 @@ let _autoSkillTimer = 0;
 function _autoCastSkills(dt) {
   if (_autoSkillTimer > 0) _autoSkillTimer -= dt;
   if (!autoAttackMode || !player || state !== 'playing') return;
+  // The player's own master switch (АВТО button, long press → the picker in
+  // js/ui.js). Auto-ATTACK is unaffected: this turns off casting only, which
+  // is the point — a player who wants the auto to keep hitting but stop
+  // burning cooldowns had no way to say so.
+  if (player.autoSkillsOn === false) return;
   // Re-checked here rather than trusted from when the toggle was flipped: the
   // mode persists across sessions and the VIP level can lapse.
   if ((window._vipData?.level || 0) < AUTO_SKILL_VIP_MIN) return;
@@ -339,6 +344,10 @@ function _autoCastSkills(dt) {
 
   const baseSkills = SKILL_DEF[player.type] || [];
   const hpFrac = player.maxHp > 0 ? (player.hp / player.maxHp) : 1;
+  // Slots the player switched off in the picker. Keyed by slot (Q/W/E/R), so
+  // it follows the slot rather than the variant — switching a slot to its
+  // advanced version does not silently re-enable one that was turned off.
+  const offSlots = player.autoSkillOff || {};
   const bonusTypes = (typeof SKILL_BONUS_TYPE !== 'undefined' && SKILL_BONUS_TYPE[player.type]) || {};
   for (let i = 0; i < baseSkills.length; i++) {
     // Resolved to whichever version (base/advanced) is actually active —
@@ -348,6 +357,7 @@ function _autoCastSkills(dt) {
     const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : baseSkills[i];
     if (!sk) continue;
     if (sk.auto === false) continue;                       // dash / jump / teleport
+    if (offSlots[sk.key]) continue;                        // switched off by the player
     if (_skillLvl(sk.key) <= 0) continue;                  // not learned
     if ((player.skillCooldowns[sk.key] || 0) > 0) continue;
     if (bonusTypes[sk.key] === 'heal' && hpFrac > AUTO_SKILL_HEAL_BELOW) continue;
