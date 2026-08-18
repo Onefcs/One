@@ -1726,6 +1726,87 @@ scenario('race: marketList racing claimVipRewards (listing first) cannot duplica
   await c.close();
 });
 
+scenario('race: a reconnect during marketList cannot leave the item listed AND in the inventory', async () => {
+  // marketList holds _lastStats.inventory across two awaits (countDocuments,
+  // then create) and only removes the item once they resolve. Every other
+  // item handler re-checks activeSessions after its awaits — marketCancel,
+  // marketBuy, craftGear, gramShopBuy — because a reconnect in that window
+  // orphans this closure's _lastStats. marketList was the one that did not,
+  // and it is the direction that DUPLICATES rather than loses: the removal
+  // lands in an inventory no client can see, the listing goes live anyway,
+  // and the reconnected session's next save writes its own inventory — item
+  // still in it — back over the removal. The lot then sells and the seller
+  // keeps the item and the GRAM both. Reported as "выставил книгу на маркет,
+  // она продалась, а книга вернулась в инвентарь, и GRAM с продажи остались".
+  const seller = await connectWithSaved('harness_race_marketlist_recon', {
+    vipLevel: 1, inventory: [{ id: 'book_lev_Q', qty: 3 }],
+  });
+  await enterWorld(seller, 'lev');
+
+  const MarketListing = require('../server/models/MarketListing');
+  let live = null;
+  await _withDbDelay(MarketListing, 'create', 400, async () => {
+    const listedP = seller.wait('marketListed', { timeout: 8000 }).catch(() => null);
+    const errP    = seller.wait('marketListError', { timeout: 8000 }).catch(() => null);
+    seller.emit('marketList', { item: { id: 'book_lev_Q', qty: 1 }, price: 1 });
+    // The phone backgrounds, the WebView blips: socket.io reconnects and the
+    // client logs in again while create() is still in flight. That login
+    // kicks this socket and re-reads the account from the database — with
+    // the book still in it, since the removal has not run yet.
+    await sleep(30);
+    live = await connectAs('harness_race_marketlist_recon');
+    await enterWorld(live, 'lev');
+    await Promise.race([listedP, errP]);
+  });
+  await sleep(300);
+
+  // The live session goes on playing and saves, as the real client does —
+  // this is the write that used to make the duplicate permanent.
+  live.emit('saveProgress', { stats: {
+    type: 'lev', floor: 1, hp: 100, maxHp: 100, kills: 0, lang: 'ru', savedAt: Date.now(),
+  } });
+  await sleep(3500);
+  await live.close();
+  await sleep(600);
+
+  const row = memory.__dump('Player').find(p => p.username === seller.auth.username);
+  const held = (row.savedData.inventory || [])
+    .filter(i => i && i.id === 'book_lev_Q').reduce((s, i) => s + (i.qty || 1), 0);
+  const lots = memory.__dump('MarketListing')
+    .filter(x => x.sellerUsername === seller.auth.username && x.status === 'active').length;
+  eq(held + lots, 3, `all 3 books exist exactly once (inventory:${held} activeListings:${lots})`);
+  await seller.close();
+});
+
+scenario('race: marketList with no session left to take the item from drops the lot', async () => {
+  // Same race as above with nobody to delegate to — the account reconnected
+  // (or simply went away) and there is no live socket at all when create()
+  // resolves. Listing an item that was never actually taken off the account
+  // is the duplication; dropping the lot costs the player only the request,
+  // since the book is untouched and can be listed again.
+  const seller = await connectWithSaved('harness_race_marketlist_gone', {
+    vipLevel: 1, inventory: [{ id: 'book_lev_W', qty: 2 }],
+  });
+  await enterWorld(seller, 'lev');
+
+  const MarketListing = require('../server/models/MarketListing');
+  await _withDbDelay(MarketListing, 'create', 400, async () => {
+    seller.emit('marketList', { item: { id: 'book_lev_W', qty: 1 }, price: 1 });
+    await sleep(30);
+    await seller.close();          // the app is closed mid-request
+    await sleep(500);
+  });
+  await sleep(400);
+
+  const row = memory.__dump('Player').find(p => p.username === seller.auth.username);
+  const held = (row.savedData.inventory || [])
+    .filter(i => i && i.id === 'book_lev_W').reduce((s, i) => s + (i.qty || 1), 0);
+  const lots = memory.__dump('MarketListing')
+    .filter(x => x.sellerUsername === seller.auth.username && x.status === 'active').length;
+  eq(held + lots, 2, `both books exist exactly once (inventory:${held} activeListings:${lots})`);
+  eq(lots, 0, 'the lot was dropped rather than left for sale over an item still in the inventory');
+});
+
 scenario('market: listing an item and reading my lots back', async () => {
   // VIP 1 is the gate on selling; the item has to be in the SERVER's inventory.
   const c = await connectWithSaved('harness_market', {

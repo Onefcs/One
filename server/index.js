@@ -6021,6 +6021,43 @@ io.on('connection', socket => {
     }
   };
 
+  // The mirror of _grantMarketItem: takes an item OUT of whichever socket is
+  // the account's live session, for marketList resuming after the account
+  // reconnected mid-flight. Same reasoning, opposite direction — and the
+  // direction is what makes it worse. A grant that lands in an orphaned
+  // _lastStats merely goes missing; a REMOVAL that lands there removes
+  // nothing anyone can see: the listing is live in the database while the
+  // item is still sitting in the live session's inventory, and that
+  // session's next save writes it back to the account for good. The seller
+  // then gets paid for a book they still own — "продал книгу, а она
+  // вернулась в инвентарь, и GRAM с продажи остались".
+  //
+  // Returns { removed } so the caller can undo the listing when the live
+  // session doesn't actually hold the item any more (it was equipped, spent
+  // or stored between the two sessions).
+  socket.data._takeMarketItem = (item) => {
+    if (!authed || !_lastStats || !Array.isArray(_lastStats.inventory) || !item) return { removed: false };
+    // Refused while THIS session has a clone-and-commit handler of its own in
+    // flight (gramShopBuy/specialShopBuy/claimVipRewards): its snapshot was
+    // taken before this removal and stamps the item straight back in — the
+    // very duplication marketList's own entry guard exists to stop, only
+    // arriving from the other session. There is nothing to replay it into
+    // either (_pendingOobGrants only carries additions), so the honest answer
+    // is "not taken", which drops the lot.
+    if (_itemsBusy()) return { removed: false };
+    _itemOpBusy++;
+    try {
+      const inv = _lastStats.inventory;
+      const _beforeLen = inv.length;
+      if (!_invRemove(inv, item)) return { removed: false };
+      _commitServerItems(inv, null, 'market_list_cross_session',
+        { item: item.id, enhance: item.enhance || 0, qty: item.qty || 1 }, { beforeLen: _beforeLen });
+      return { removed: true };
+    } finally {
+      _itemOpBusy--;
+    }
+  };
+
   // General-purpose version of _grantMarketItem above, for handlers that
   // touch more than one item and/or gold/bonusSP/VIP progress in one go
   // (crafts consuming materials, shop packages granting several rewards at
@@ -9653,6 +9690,40 @@ io.on('connection', socket => {
       // item was never actually removed — still equipped/stored AND for sale.
       // That combination IS the duplication, so the removal's result has to
       // gate the listing rather than be fired and ignored.
+      //
+      // The account may also have reconnected on a DIFFERENT socket across
+      // those same awaits — every other item handler already guards for it
+      // (marketCancel/marketBuy/craftGear/gramShopBuy/...), this one did not,
+      // and it is the direction that duplicates rather than loses. Removing
+      // from THIS closure's _lastStats.inventory once it has been orphaned
+      // takes the item off nobody's account: the listing goes live, the live
+      // session still holds the item, and its next save writes that inventory
+      // — item included — back over the removal this handler just persisted.
+      // The lot then sells and the seller keeps both the item and the GRAM.
+      // Redirect the removal at whichever socket is live NOW, and undo the
+      // listing when there is no live session to take it from.
+      if (activeSessions.get(authed.telegramId) !== socket.id) {
+        const _live = _socketForTelegramId(authed.telegramId);
+        const _res = _live && _live.data._takeMarketItem
+          ? _live.data._takeMarketItem(canonItem)
+          : null;
+        const _took = !!(_res && _res.removed);
+        if (!_took) {
+          // Nothing was taken from the account, so nothing may be for sale.
+          // Dropping the lot costs the player only the request itself — the
+          // item is untouched and can be listed again — whereas keeping it
+          // is the duplication above.
+          await MarketListingModel.deleteOne({ _id: listing._id }).catch(() => {});
+        }
+        logPlayer(authed.telegramId, authed.username, 'market_list_cross_session',
+          { item: canonItem.id, enhance: canonItem.enhance || 0, qty: canonItem.qty || 1,
+            price: _round2(p), hadLiveSocket: !!_live, removed: _took, listingKept: _took });
+        if (_live) {
+          if (_took) _live.emit('marketListed', { listing: _marketListingData(listing) });
+          else _live.emit('marketListError', { msg: 'Предмет переместился — попробуйте снова' });
+        }
+        return;
+      }
       const _beforeLen = _lastStats.inventory.length;
       const _removed = _invRemove(_lastStats.inventory, canonItem);
       if (!_removed) {
