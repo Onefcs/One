@@ -66,6 +66,7 @@ Object.assign(process.env, {
 
 const BASE = `http://127.0.0.1:${PORT}`;
 const io = require('socket.io-client');
+const { decodeGameState } = require('../shared/netcodec');
 
 // ── Watch for handlers that threw ────────────────────────────────────────────
 // safeOn (server/index.js) catches anything a socket handler throws so one bad
@@ -105,6 +106,31 @@ function waitFor(sock, event, { timeout = 8000, where = '' } = {}) {
     }, timeout);
     const on = payload => { clearTimeout(t); sock.off(event, on); resolve(payload); };
     sock.on(event, on);
+  });
+}
+
+// Waits for a binary 'gameState' push whose decoded enemies include FULL
+// records (id + eid, not just a position delta) for every id in `ids` —
+// used to pick the actual enemyResync response out of the room's own
+// ordinary periodic 'gameState' broadcasts, which fire on the same event
+// name but only ever carry nearby CHANGED enemies as deltas, not an
+// arbitrary requested set. c is a connectAs() client (its own .sock is
+// needed here — decoding is per-packet, not something the seen/counts maps
+// already track).
+function waitForEnemyResync(c, ids, { timeout = 4000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { c.sock.off('gameState', onMsg); reject(new Error(`timed out after ${timeout}ms waiting for an enemyResync covering ${ids.join(',')}`)); }, timeout);
+    function onMsg(raw) {
+      let decoded;
+      try { decoded = decodeGameState(raw); } catch (_) { return; }
+      const byId = new Map(decoded.enemies.filter(e => e.eid).map(e => [e.id, e]));
+      if (ids.every(id => byId.has(id))) {
+        clearTimeout(t);
+        c.sock.off('gameState', onMsg);
+        resolve(byId);
+      }
+    }
+    c.sock.on('gameState', onMsg);
   });
 }
 
@@ -582,6 +608,45 @@ scenario('floors: Элитная фарм-зона is a private party-of-3 insta
   const closestTiles = Math.min(...(m1Gs.enemies || []).map(e =>
     Math.hypot(Math.round(e.x / 40) - spawnTileX, Math.round(e.y / 40) - spawnTileY)));
   ok(closestTiles > 8, `the entrance corridor is clear of monsters (closest is ${closestTiles.toFixed(1)} tiles away)`);
+
+  // Monsters stand in packs of FARM2_PACK_SIZE (4) and never self-pull —
+  // find one by clustering (packMateIds itself isn't part of the wire
+  // payload), confirm proximity alone doesn't wake it, then hit it and
+  // confirm the whole cluster wakes while an unrelated, distant one doesn't.
+  {
+    const enemies = m1Gs.enemies || [];
+    // 3 tiles cleanly separates same-pack members (at most 2.83 tiles apart,
+    // the ±1-tile-offset placement in generateFarmZone2) from different
+    // packs' (never closer than 4 tiles — see PACK_MIN_SPACING/the grid
+    // layout there).
+    const withinTiles = (a, b, t) => Math.hypot(a.x - b.x, a.y - b.y) <= t * 40;
+    let anchor = null, cluster = null;
+    for (const e of enemies) {
+      const mates = enemies.filter(o => o.id !== e.id && withinTiles(e, o, 3));
+      if (mates.length >= 3) { anchor = e; cluster = mates; break; }
+    }
+    ok(anchor, 'found a pack of at least 4 (anchor + 3 clustered neighbours) among the visible monsters');
+    const control = enemies.find(e => e !== anchor && !cluster.includes(e) && !withinTiles(e, anchor, 15));
+    ok(control, 'found an unrelated, distant monster to use as a control');
+
+    if (anchor && control) {
+      m1.emit('playerMove', { x: anchor.x + 20, y: anchor.y, facing: 1, moving: false });
+      await sleep(120);
+      const hurt = m1.wait('enemyHurt', { timeout: 6000 }).catch(() => null);
+      m1.emit('attack', { enemyId: anchor.id });
+      const got = await hurt;
+      ok(got && got.id === anchor.id, 'the hit on the pack anchor landed');
+
+      await sleep(200); // let the tick loop actually flip aggro server-side
+      const resyncIds = [anchor.id, ...cluster.map(e => e.id), control.id];
+      const resync = waitForEnemyResync(m1, resyncIds);
+      m1.emit('enemyResync', { ids: resyncIds });
+      const byId = await resync;
+      ok(byId.get(anchor.id)?.aggro, 'the anchor itself is aggro after being hit');
+      ok(cluster.every(e => byId.get(e.id)?.aggro), 'every clustered pack mate woke up too, though none of them were hit');
+      ok(!byId.get(control.id)?.aggro, 'the unrelated, distant monster stayed asleep');
+    }
+  }
 
   // One member walking out (any way other than the run's own end) ends the
   // run for the other two as well — the zone was only ever entered as a

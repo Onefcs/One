@@ -1080,11 +1080,13 @@ UNIQUE_SHARDS.forEach((sh, i) => {
 // only the leader can launch the run, which force-moves every member in
 // together) rather than walked into freely like the original Фарм-зона.
 // Two baked-in rooms of FARM2_MOBS_PER_ROOM monsters each (own generator,
-// generateFarmZone2, server/game/dungeon.js). Unlike the original farm
-// zone's monsters (aggroR kept, but tagged farmZone2 rather than farmZone
-// so the tick loop's self-pull exemption — which checks `!e.farmZone`
-// specifically — does NOT apply) these pull first, and they run
-// monsterStatsAtLevel() hp/atk with no weakMult halving — every OTHER
+// generateFarmZone2, server/game/dungeon.js), standing in FARM2_PACK_SIZE
+// clusters rather than scattered independently. Like the original farm
+// zone's monsters, they never self-pull on proximity (Room.js's tick loop
+// excludes both `farmZone` and `farmZone2` from that trigger) — but hitting
+// any one member of a pack wakes the whole pack (Room.js's _wakePack),
+// unlike the original zone where only the hit monster itself reacts. They
+// run monsterStatsAtLevel() hp/atk with no weakMult halving — every OTHER
 // packed room's monsters (including the original Фарм-зона's) are halved —
 // scaled back down by FARM2_STAT_MULT on top, on top of FARM2_SPD_MULT move
 // speed.
@@ -1094,6 +1096,11 @@ const FARM2_ENTRY_LEVEL = 25; // entry gate is below FARM2_LVL_MIN on purpose �
 const FARM2_PARTY_SIZE = 3;
 const FARM2_ROOM_COUNT = 2;
 const FARM2_MOBS_PER_ROOM = 50;
+// Monsters stand in tight clusters of this size (generateFarmZone2, server/
+// game/dungeon.js) rather than scattered independently — none of them
+// self-pull on proximity (see Room.js's own aggro-tick comment), but hitting
+// ANY one member wakes the whole cluster (Room.js's _wakePack).
+const FARM2_PACK_SIZE = 4;
 const FARM2_SPD_MULT = 2;
 // Applied to hp/atk on top of skipping the weakMult halving (see this
 // section's own header comment) — i.e. final hp/atk = full monsterStatsAtLevel()
@@ -2006,7 +2013,7 @@ if (typeof module !== 'undefined') module.exports = {
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
-  FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
+  FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
   FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,

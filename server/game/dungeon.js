@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -571,11 +571,12 @@ function generateFarmZone() {
 // guaranteed clear); it runs east from the entrance and forks at one point
 // into two short branches, one north to room A and one south to room B,
 // each identical. Every monster is baked in at world-gen exactly like the
-// original Фарм-зона's own generator, just aggressive (no aggroR:0, and
-// tagged `farmZone2` rather than `farmZone` so the tick loop's self-pull
-// exemption — which checks `!e.farmZone` specifically, see Room.js's
-// _tick — does not apply here) and running full (non-halved)
-// monsterStatsAtLevel() stats at FARM2_SPD_MULT move speed.
+// original Фарм-зона's own generator, standing in FARM2_PACK_SIZE clusters
+// (packMateIds below) rather than scattered individually — passive like the
+// original zone's own monsters (never self-pulls on proximity, see Room.js's
+// tick-loop comment), but a hit on any one member wakes the whole pack
+// (Room.js's _wakePack) — and running full (non-halved) monsterStatsAtLevel()
+// stats, scaled by FARM2_STAT_MULT, at FARM2_SPD_MULT move speed.
 function generateFarmZone2() {
   const rng = seededRng(2026 * 1337 + 777 + 900);
   const roomSize = FARM2_ROOM;
@@ -627,36 +628,71 @@ function generateFarmZone2() {
   const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19) — same species/level band
   const enemyList = [];
   let eid = 0;
+  // Pack cluster centers sit on an evenly-spaced GRID_N×GRID_N grid instead
+  // of being retried into position — random placement plus a minimum-
+  // distance retry can still leave two packs' clusters close enough to blend
+  // into one visual blob (and to make a hit on one look, from position
+  // alone, like it woke its neighbour too), especially once most of a
+  // room's slots are already taken. A grid guarantees every pack's center is
+  // evenly clear of every other one; which of the grid's slots gets used
+  // (and in what order) is still shuffled per room, so the layout doesn't
+  // read as a rigid checkerboard.
+  const packsPerRoom = Math.ceil(FARM2_MOBS_PER_ROOM / FARM2_PACK_SIZE);
+  const gridN = Math.ceil(Math.sqrt(packsPerRoom));
   rooms.forEach((room, ri) => {
-    for (let n = 0; n < FARM2_MOBS_PER_ROOM; n++) {
-      const d = _enemyByEid.get(FARM2_SPECIES[Math.floor(rng() * FARM2_SPECIES.length)]);
-      if (!d) continue;
-      const lvl = FARM2_LVL_MIN + Math.floor(rng() * (FARM2_LVL_MAX - FARM2_LVL_MIN + 1));
-      // NOT halved (see FARM2_STAT_MULT's own comment, shared/definitions.js)
-      // — full monsterStatsAtLevel(), then scaled by FARM2_STAT_MULT.
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+    const usable = room.size - 4; // inset from the room's own walls
+    const pitch = usable / gridN;
+    const slots = [];
+    for (let gx = 0; gx < gridN; gx++) for (let gy = 0; gy < gridN; gy++) slots.push({ gx, gy });
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+
+    let placed = 0, slotIdx = 0;
+    while (placed < FARM2_MOBS_PER_ROOM) {
+      const packSize = Math.min(FARM2_PACK_SIZE, FARM2_MOBS_PER_ROOM - placed);
+      const slot = slots[slotIdx++];
+      let ccx = room.x + 2 + Math.round(pitch * (slot.gx + 0.5));
+      let ccy = room.y + 2 + Math.round(pitch * (slot.gy + 0.5));
+      if (!inBounds(ccx, ccy) || grid[ccy][ccx] !== FLOOR) { ccx = room.cx; ccy = room.cy; }
+      const pack = [];
+      for (let m = 0; m < packSize; m++) {
+        const d = _enemyByEid.get(FARM2_SPECIES[Math.floor(rng() * FARM2_SPECIES.length)]);
+        if (!d) continue;
+        const lvl = FARM2_LVL_MIN + Math.floor(rng() * (FARM2_LVL_MAX - FARM2_LVL_MIN + 1));
+        // NOT halved (see FARM2_STAT_MULT's own comment, shared/definitions.js)
+        // — full monsterStatsAtLevel(), then scaled by FARM2_STAT_MULT.
+        const stats = monsterStatsAtLevel(lvl, d.eType);
+        let ex = ccx * TILE + TILE / 2, ey = ccy * TILE + TILE / 2;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const gx = ccx + Math.floor(rng() * 3) - 1, gy = ccy + Math.floor(rng() * 3) - 1;
+          if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+        }
+        const localLvl = lvl - ARM_OFFSETS[1];
+        const hp = Math.max(1, Math.round(stats.hp * FARM2_STAT_MULT));
+        const atk = Math.max(1, Math.round(stats.atk * FARM2_STAT_MULT));
+        const enemy = {
+          id: `farm2_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone2', farmZone2: true,
+          rlvl: lvl,
+          name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+          color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+          maxHp: hp, hp,
+          atk, def: stats.def, spd: d.spd * FARM2_SPD_MULT,
+          xp: FARM2_XP_PER_KILL, gold: goldAtLevel(lvl),
+          x: ex, y: ey, spawnX: ex, spawnY: ey,
+          // Passive: standard aggroR (still the de-aggro leash distance —
+          // see Room.js's own tick-loop comment), never self-pulled. Room.js
+          // excludes farmZone2 from that proximity trigger entirely; waking
+          // up only ever happens via a hit — this enemy's own, or a pack
+          // mate's (packMateIds, wired below once the whole pack exists).
+          atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+        };
+        enemyList.push(enemy);
+        pack.push(enemy);
       }
-      const localLvl = lvl - ARM_OFFSETS[1];
-      const hp = Math.max(1, Math.round(stats.hp * FARM2_STAT_MULT));
-      const atk = Math.max(1, Math.round(stats.atk * FARM2_STAT_MULT));
-      enemyList.push({
-        id: `farm2_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone2', farmZone2: true,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
-        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
-        maxHp: hp, hp,
-        atk, def: stats.def, spd: d.spd * FARM2_SPD_MULT,
-        xp: FARM2_XP_PER_KILL, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        // Aggressive: standard aggroR, no exemption — see this function's
-        // own header comment.
-        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
-      });
+      pack.forEach(e => { e.packMateIds = pack.filter(o => o !== e).map(o => o.id); });
+      placed += packSize;
     }
   });
 

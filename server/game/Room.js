@@ -1717,13 +1717,16 @@ class Room {
       // most expensive call in this loop off every already-chasing enemy,
       // every tick — which in a busy arm is most of them.
       //
-      // farmZone is excluded from this self-pull trigger explicitly rather
-      // than via aggroR:0 — zeroing aggroR used to also zero the de-aggro
-      // leash below (aggroR * 2.2), which reset aggro back to false the very
-      // next tick after attackEnemy/skillAttackEnemy set it, so a farm-zone
-      // monster could set its own hp/target but could never actually swing
-      // back. It keeps a normal aggroR purely for that leash distance.
-      if (!e.aggro && !e.farmZone && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      // farmZone/farmZone2 are excluded from this self-pull trigger
+      // explicitly rather than via aggroR:0 — zeroing aggroR used to also
+      // zero the de-aggro leash below (aggroR * 2.2), which reset aggro back
+      // to false the very next tick after attackEnemy/skillAttackEnemy set
+      // it, so a farm-zone monster could set its own hp/target but could
+      // never actually swing back. It keeps a normal aggroR purely for that
+      // leash distance. farmZone2's own monsters stand in packs
+      // (packMateIds, generateFarmZone2) that wake together on a hit
+      // instead — see _wakePack — but never wake on proximity alone.
+      if (!e.aggro && !e.farmZone && !e.farmZone2 && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
@@ -2110,6 +2113,24 @@ class Room {
       }
     }
     return closest;
+  }
+
+  // Элитная фарм-зона: packs of FARM2_PACK_SIZE monsters standing together
+  // (see generateFarmZone2, server/game/dungeon.js) never self-pull — hitting
+  // ANY one of them wakes the whole pack, not just the one actually hit.
+  // packMateIds is the pack's OTHER members' ids, baked in at spawn time, so
+  // this is a handful of direct _enemyMap lookups rather than a scan of
+  // every enemy on the floor. Called right after the hit enemy's own
+  // `aggro = true` (attackEnemy/skillAttackEnemy) — a pack-mate simply
+  // getting `aggro = true` here is enough on its own: the tick loop's own
+  // target search (_closestTargetFor) picks up the attacker the very next
+  // tick since a freshly-aggroed enemy has no cached target yet.
+  _wakePack(enemy) {
+    if (!enemy.packMateIds || !enemy.packMateIds.length) return;
+    for (const id of enemy.packMateIds) {
+      const mate = this._enemyMap.get(id);
+      if (mate && mate.hp > 0) mate.aggro = true;
+    }
   }
 
   // Player equivalent of _rebuildEnemyGrid — same empty-and-refill discipline
@@ -3267,6 +3288,7 @@ class Room {
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
+    this._wakePack(enemy);
     if (enemy.hp <= 0) {
       // Guild War tower: never actually "dies" — capture resets its hp to
       // maxHp in place, on the exact same enemy object, and hands ownership
@@ -3353,6 +3375,7 @@ class Room {
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;
+    this._wakePack(enemy);
     if (enemy.hp <= 0) {
       if (enemy.guildWar) {
         const prevOwnerClanName = enemy.ownerClanName;

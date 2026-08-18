@@ -281,7 +281,7 @@ const I18N_UI = {
   farm2Rule1: { ru: 'Вход с {n} уровня, только полной группой из 3 человек', en: 'Entry from level {n}, only as a full party of 3' },
   farm2Rule2: { ru: 'Войти в зону может только лидер группы — он затягивает за собой остальных участников (группа из {n} человек)', en: 'Only the group leader can start the run — everyone else is pulled in with them (a party of {n})' },
   farm2Rule3: { ru: 'Если в зоне останется меньше 3 человек группы, всех выводит из зоны', en: 'If fewer than 3 of the party are still in the zone, everyone is pulled out' },
-  farm2Rule4: { ru: '2 комнаты по 50 агрессивных монстров, сильнее обычных и вдвое быстрее', en: '2 rooms of 50 aggressive monsters each, stronger than ordinary ones and twice as fast' },
+  farm2Rule4: { ru: '2 комнаты по 50 монстров, сильнее обычных и вдвое быстрее — стоят пачками по 4, сами не нападают, но удар по одному будит всю пачку', en: '2 rooms of 50 monsters each, stronger than ordinary ones and twice as fast — standing in packs of 4, they never attack first, but hitting one wakes the whole pack' },
   farm2Rule5: { ru: 'Не более {n} минут в зоне на игрока в день', en: 'Up to {n} minutes in the zone per player per day' },
   farm2DropHdr: { ru: 'Дроп с монстров', en: 'Monster drops' },
   farm2Drop1: { ru: 'Либерти — 0.1%', en: 'Liberty — 0.1%' },
