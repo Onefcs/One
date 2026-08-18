@@ -53,6 +53,14 @@ function getProfessionBtnPos() {
   return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 
+// Directly below Профессия, same column — opens the "+Pack" epic-pack
+// purchase (600 GRAM). See _checkEpicPackBtnTouch/input.js and
+// drawEpicPackButton/openEpicPackFromHud, js/ui.js.
+function getEpicPackBtnPos() {
+  const prof = getProfessionBtnPos();
+  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
+}
+
 function getPartyLeaveBtnPos() {
   const bh = 26, gap = 4;
   const startY = _partyHudStartY();
@@ -60,11 +68,12 @@ function getPartyLeaveBtnPos() {
   return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: 80, h: 22 };
 }
 
-// Party member list starts directly below Профессия — used to be two slots
-// further down, past the since-removed Special and "ТЕХ" gift buttons.
+// Party member list starts directly below +Pack (which itself sits below
+// Профессия) — used to be two slots further down, past the since-removed
+// Special and "ТЕХ" gift buttons.
 function _partyHudStartY() {
-  const prof = getProfessionBtnPos();
-  return prof.y + prof.h + 6;
+  const pack = getEpicPackBtnPos();
+  return pack.y + pack.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -278,6 +287,15 @@ function _checkProfessionBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkEpicPackBtnTouch(cx, cy) {
+  const pb = getEpicPackBtnPos();
+  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
+    if (typeof openEpicPackFromHud === 'function') openEpicPackFromHud();
+    return true;
+  }
+  return false;
+}
+
 
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
@@ -435,6 +453,7 @@ function onTS(e) {
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
+    if (_checkEpicPackBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -511,6 +530,7 @@ function onMD(e) {
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
+  if (_checkEpicPackBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;

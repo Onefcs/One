@@ -2621,6 +2621,7 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
+  const pack = getEpicPackBtnPos();
   const pty = getPartyBtnPos();
   const tfW = 160, tfH = 42;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
@@ -2645,6 +2646,9 @@ function _buildUiBtnGrads() {
   pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
+
+  const pkg1 = ctx.createLinearGradient(pack.x, pack.y, pack.x, pack.y+pack.h);
+  pkg1.addColorStop(0,'rgba(66,50,10,0.97)'); pkg1.addColorStop(1,'rgba(33,25,5,0.99)');
 
 
   const ptg0 = ctx.createLinearGradient(pty.x, pty.y, pty.x, pty.y+pty.h);
@@ -2676,9 +2680,9 @@ function _buildUiBtnGrads() {
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
-  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
+  _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, pkg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, packBtn: pack, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2946,6 +2950,52 @@ function drawProfessionButton() {
   ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
 
   ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  +PACK BUTTON — below Профессия, opens the epic-pack (former pkg300, now
+//  600 GRAM) purchase confirm. See openEpicPackFromHud/_EPIC_PACK_PKG below
+//  and _checkEpicPackBtnTouch/getEpicPackBtnPos, js/input.js.
+// ─────────────────────────────────────────────────────────
+function drawEpicPackButton() {
+  if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const pb = _uiBtnGrads.packBtn;
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  ctx.fillStyle = _uiBtnGrads.pkg1;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255,215,0,0.65)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+
+  // Always pulses — unlike Профессия's "ready" glow, this one's a
+  // permanent promo, not a state indicator.
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+  ctx.strokeStyle = `rgba(255,215,0,${(0.10 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+
+  drawIconCtx(ctx, 'coin', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, '#ffd700');
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffd700';
+  ctx.fillText('+Pack', pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
+
+  ctx.restore();
+}
+
+// Tapped from the HUD button (drawEpicPackButton) rather than a card with
+// its own disabled state — so an unaffordable balance needs its own toast
+// instead of just doing nothing.
+function openEpicPackFromHud() {
+  const bal = window._gramBalance || 0;
+  if (bal < _EPIC_PACK_PKG.gram) {
+    if (typeof _marketToast === 'function') _marketToast(t('notEnoughGramLbl'), 'err');
+    return;
+  }
+  openGramShopConfirm(_EPIC_PACK_PKG.id);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -6755,13 +6805,14 @@ function _boxesLine(boxes) {
 }
 
 // "+Pack" — the former pkg300 regular-tab tier. Pulled off the GRAM shop's
-// Паки tab (see the comment above _GRAM_SHOP_PKGS_UI) and sold instead as a
-// single promoted card on Профиль → Кошелёк (_epicPackCardHtml, wired into
-// updateGramUI). Same id/rewards server/index.js's gramShopBuy already
+// Паки tab (see the comment above _GRAM_SHOP_PKGS_UI) and sold instead from
+// its own HUD button below Профессия (drawEpicPackButton/
+// openEpicPackFromHud, js/ui.js; getEpicPackBtnPos/_checkEpicPackBtnTouch,
+// js/input.js). Same id/rewards server/index.js's gramShopBuy already
 // grants for 'pkg300' — only the price moved (300 → 600) and where it's
 // sold. `perks` are the real-world mentorship items bundled on top of the
 // in-game rewards; the server never sees them, they're pure presentation
-// (rendered by both this card and openGramShopConfirm's modal).
+// (rendered by openGramShopConfirm's modal via _epicPackPerksHtml).
 const _EPIC_PACK_PKG = {
   id:'pkg300', gram:600, get label() { return t('gramPkgLabel_pkg300'); }, gold:0, potions:100,
   armor:'Epic', weapon:'Epic', bonusSP:20, color:'#8a5cc2', skillBooks:{ each:15 }, enhance:3,
@@ -6777,27 +6828,6 @@ function _epicPackPerksHtml(pkg) {
   </div>`;
 }
 
-function _epicPackCardHtml(bal) {
-  const pkg = _EPIC_PACK_PKG;
-  const canAfford = bal >= pkg.gram;
-  let rows = _shopExtraRewardRows(pkg, ri);
-  rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
-  rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_STONE_IMG[id], `×${qty}`, '')).join('');
-  return `<div class="gram-shop-card" style="border-color:${pkg.color}44;margin-bottom:14px">
-    <div class="gram-shop-card-head">
-      <div>
-        <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${pkg.gram} GRAM</div>
-      </div>
-      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
-        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
-        onclick="${canAfford ? `openGramShopConfirm('${pkg.id}')` : ''}">+Pack</button>
-    </div>
-    ${_epicPackPerksHtml(pkg)}
-    <div class="vip-items-row">${rows}</div>
-  </div>`;
-}
-
 function openGramShopConfirm(pkgId) {
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || (pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   if (!pkg) return;
@@ -6808,15 +6838,29 @@ function openGramShopConfirm(pkgId) {
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
   const enhSuffix  = pkg.enhance ? ` +${pkg.enhance}` : '';
   const perksHtml  = _epicPackPerksHtml(pkg);
-  const goldLine   = pkg.gold ? `<div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>` : '';
-  const potionLine = pkg.potions ? `<div style="color:#c5bfb7">${tVars('eachPotionFmt', { n: pkg.potions })}</div>` : '';
-  const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}${enhSuffix}</div>` : '';
-  const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">${tVars('classWeaponFmt', { rarity: pkg.weapon })}${enhSuffix}</div>` : '';
-  const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
-  const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
-  const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
-  const stoneLine  = pkg.stones ? `<div style="color:#c5bfb7">• ${Object.entries(pkg.stones).map(([id, qty]) => `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ')}</div>` : '';
-  const nexumLine  = pkg.nexum ? `<div style="color:#6fc7ff">• +${pkg.nexum} Liberty</div>` : '';
+  // "+Pack" has no shop card of its own to preview icons on anymore (it's
+  // bought straight off the HUD button, see openEpicPackFromHud) — show the
+  // same icon row the shop cards use (_gramShopPkgHtml) instead of the
+  // plain text lines every other package's confirm still uses below.
+  let itemsHtml;
+  if (pkg.perks) {
+    let rows = pkg.gold ? ri(_shopCoinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold') : '';
+    rows += _shopExtraRewardRows(pkg, ri);
+    if (pkg.skillBooks) rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
+    if (pkg.stones) rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_STONE_IMG[id], `×${qty}`, '')).join('');
+    itemsHtml = `<div class="vip-items-row">${rows}</div>`;
+  } else {
+    const goldLine   = pkg.gold ? `<div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>` : '';
+    const potionLine = pkg.potions ? `<div style="color:#c5bfb7">${tVars('eachPotionFmt', { n: pkg.potions })}</div>` : '';
+    const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}${enhSuffix}</div>` : '';
+    const weaponLine = pkg.weapon ? `<div style="color:#c5bfb7">${tVars('classWeaponFmt', { rarity: pkg.weapon })}${enhSuffix}</div>` : '';
+    const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
+    const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
+    const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
+    const stoneLine  = pkg.stones ? `<div style="color:#c5bfb7">• ${Object.entries(pkg.stones).map(([id, qty]) => `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ')}</div>` : '';
+    const nexumLine  = pkg.nexum ? `<div style="color:#6fc7ff">• +${pkg.nexum} Liberty</div>` : '';
+    itemsHtml = `${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}`;
+  }
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
   ov.id = 'gram-shop-confirm-ov';
@@ -6828,7 +6872,7 @@ function openGramShopConfirm(pkgId) {
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
-        ${perksHtml}${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}
+        ${perksHtml}${itemsHtml}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
@@ -6880,8 +6924,9 @@ function onGramShopResult(data) {
   // single re-render covers whichever tab happens to be open.
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
-  // "+Pack" (pkg300) is bought from Профиль → Кошелёк, not the shop panel —
-  // refresh that tab too so its balance and afford-state stay in sync.
+  // "+Pack" (pkg300) is bought from its own HUD button, not the shop panel —
+  // if the wallet tab happens to be open behind it, keep its balance number
+  // in sync too.
   if (activeTab === 5 && window._profileTab === 'wallet') updateGramUI();
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
@@ -7133,8 +7178,6 @@ function updateGramUI() {
       <div class="gram-balance-label">${t('gramBalanceLbl')}</div>
       <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(7)} <span class="gram-unit">GRAM</span></div>
     </div>
-
-    ${_epicPackCardHtml(balance)}
 
     <div id="ton-connect-row" style="margin-bottom:14px"></div>
 

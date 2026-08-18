@@ -1337,6 +1337,7 @@ function _renderUI() {
   if (typeof drawQuestNotif === 'function') drawQuestNotif();
   drawPvpButton();
   drawProfessionButton();
+  drawEpicPackButton();
   drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();
