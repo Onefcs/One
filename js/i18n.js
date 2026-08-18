@@ -300,8 +300,6 @@ const I18N_UI = {
   farm2Rule5: { ru: 'Не более {n} минут в зоне на игрока в день', en: 'Up to {n} minutes in the zone per player per day' },
   farm2DropHdr: { ru: 'Дроп с монстров', en: 'Monster drops' },
   libertyLbl: { ru: 'Liberty', en: 'Liberty' },
-  farm2AdvBooksLbl: { ru: 'Книги второй профессии', en: 'Second-profession books' },
-  farm2UniqueWeaponLbl: { ru: 'Уникальное эпическое оружие', en: 'Unique epic weapon' },
 
   wbPhaseAlive: { ru: 'Босс на карте', en: 'Boss is on the map', uk: 'Бос на карті', es: 'El jefe está en el mapa', tr: 'Patron haritada', pt: 'O chefe está no mapa' },
   wbPhaseSummon:{ ru: 'До появления босса', en: 'Boss appears in', uk: 'До появи боса', es: 'El jefe aparece en', tr: 'Patron geliyor', pt: 'O chefe aparece em' },

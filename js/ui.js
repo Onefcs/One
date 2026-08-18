@@ -4864,6 +4864,36 @@ function _farm2BodyHTML() {
     </div>`;
 }
 
+// The advanced-skill-book roll is ONE shared chance across the FULL 20-book
+// pool (all classes × Q/W/E/R — see _rollFarm2Loot, server/index.js, which
+// picks from the exact same `CRAFT_MATS.filter(m => m.advSkillKey)` set), so
+// this breaks that single chance down per book (equal share of the pool) and
+// renders each one's own class-skill icon, same idea as the original
+// Фарм-зона's per-species _farmSpeciesBookRows above.
+function _farm2AdvBookRows() {
+  const pool = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.advSkillKey);
+  if (!pool.length) return '';
+  const perBookPct = _pctSmall(FARM2_ADV_SKILL_BOOK_CHANCE / pool.length * 100);
+  return pool.map(b => {
+    const def = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass] || []).find(s => s.key === b.advSkillKey);
+    const icon = def && def.img
+      ? `<img src="${def.img}" style="width:16px;height:16px;border-radius:4px;image-rendering:pixelated">`
+      : iconHTML('book', 16, '#f5c542');
+    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542');
+  }).join('');
+}
+
+// Same idea for the unique-weapon roll: one shared chance across the 5
+// EPIC-tier uniques (see _rollFarm2Loot's `ITEM_DEF.filter(d => d.unique &&
+// d.rarity === 'epic')` pool), broken down per weapon so each class's own
+// drop and art shows up by name instead of one opaque merged line.
+function _farm2UniqueWeaponRows() {
+  const pool = (typeof ITEM_DEF !== 'undefined' ? ITEM_DEF : []).filter(d => d.unique && d.rarity === 'epic');
+  if (!pool.length) return '';
+  const perWeaponPct = _pctSmall(FARM2_UNIQUE_WEAPON_CHANCE / pool.length * 100);
+  return pool.map(w => _dropRow(_itemIcon(w, 16), w.name, perWeaponPct, '#ff8a3d')).join('');
+}
+
 // Icon + label + chance row per drop kind — same _dropRow/_itemIcon pattern
 // the original Фарм-зона's own monster-info panel uses (_farmDropBodyHtml
 // above), so a player can see at a glance WHAT each line actually is instead
@@ -4885,8 +4915,8 @@ function _farm2DropRows() {
     epicRec     ? _dropRow(_itemIcon(epicRec, 16),     epicRec.name,     _pctSmall(FARM2_EPIC_RECIPE_CHANCE * 100),  '#c98fef') : '',
     legRec      ? _dropRow(_itemIcon(legRec, 16),      legRec.name,      _pctSmall(FARM2_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : '',
     _dropRow(iconHTML('star', 16, '#b4eb84'), t('clanPerkXp'), `<b style="color:#b4eb84">${FARM2_XP_PER_KILL}</b>`, '#b4eb84'),
-    _dropRow(iconHTML('book', 16, '#c48a3a'), t('farm2AdvBooksLbl'), _pctSmall(FARM2_ADV_SKILL_BOOK_CHANCE * 100), '#c48a3a'),
-    _dropRow(iconHTML('weapon', 16, '#ff8a3d'), t('farm2UniqueWeaponLbl'), _pctSmall(FARM2_UNIQUE_WEAPON_CHANCE * 100), '#ff8a3d'),
+    _farm2AdvBookRows(),
+    _farm2UniqueWeaponRows(),
   ];
   return `<div class="fi-drops">${rows.join('')}</div>`;
 }
