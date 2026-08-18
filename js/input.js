@@ -19,14 +19,18 @@ function _inJoyZone(cx, cy) {
 // for the 38° step below) clears 2·SKILL_R + SKILL_GAP with room to spare —
 // and biased toward the left (64°–178°) since there's a lot more screen to
 // spare on that side of a corner-anchored attack button than to the right.
-const ATK_MARGIN  = 34;
+// X and Y margins are separate: X still hugs the right edge, but Y leaves
+// extra room (68 vs the old 34) so Auto has a slot below Attack, between it
+// and the nav bar — see getAutoBtnPos.
+const ATK_MARGIN_X = 34;
+const ATK_MARGIN_Y = 68;
 const ATK_R       = 42;
 const SKILL_ARC_R = 92;
 const SKILL_R     = 24;
 const SKILL_ANGLES = [64, 102, 140, 178];
 
 function getAttackBtnPos() {
-  return { x: W - ATK_MARGIN - ATK_R, y: H - NAV_H - ATK_MARGIN - ATK_R, r: ATK_R };
+  return { x: W - ATK_MARGIN_X - ATK_R, y: H - NAV_H - ATK_MARGIN_Y - ATK_R, r: ATK_R };
 }
 
 function getSkillBtnPos(idx) {
@@ -42,16 +46,16 @@ function getSkillBtnPos(idx) {
 // the fan instead of the old fixed grid-width offset.
 function getSkillClusterLeftX() { return getSkillBtnPos(3).x; }
 
-// Target/Potion/Auto form their own column to the right of Attack's center,
-// right-edge-aligned with Attack itself (not centered over it) — a visibly
-// separate stack instead of sitting directly overhead. Target sits far
-// enough above Attack to clear the whole skill fan (its highest point is
-// ~114px off Attack's center at these angles), not just Attack's own
-// radius, which used to land Target ON the fan's ring and read as a
-// crowded 5th skill instead of a separate button. Potion stacks above
-// Target, Auto (the crossed-swords toggle) above Potion.
+// Target/Potion form their own column above Attack, right-edge-aligned with
+// it (not centered over it) — a visibly separate stack instead of sitting
+// directly overhead. Target sits far enough above Attack to clear the whole
+// skill fan (its highest point is ~114px off Attack's center at these
+// angles), not just Attack's own radius, which used to land Target ON the
+// fan's ring and read as a crowded 5th skill instead of a separate button.
+// Potion stacks above Target. Auto (the crossed-swords toggle) sits in its
+// own slot below Attack instead — see getAutoBtnPos.
 const TARGET_DIST = 150;
-function _rightColX(r) { return W - ATK_MARGIN - r; } // right edge matches Attack's own
+function _rightColX(r) { return W - ATK_MARGIN_X - r; } // right edge matches Attack's own
 function getTargetBtnPos() {
   const ab = getAttackBtnPos();
   const r = POTION_R;
@@ -108,11 +112,14 @@ function getPotionBtnPos() {
 
 // Auto is a round icon toggle (crossed swords — see drawAutoToggle,
 // js/ui.js) matching Target/Potion's shape, not the old rectangular pill.
+// It sits below Attack, in the slot ATK_MARGIN_Y leaves clear above the nav
+// bar — same right-edge alignment as Target/Potion, but its own spot rather
+// than stacked with them.
 const AUTO_R = 24;
 function getAutoBtnPos() {
-  const pb = getPotionBtnPos();
+  const ab = getAttackBtnPos();
   const gap = SKILL_GAP, r = AUTO_R;
-  return { x: _rightColX(r), y: pb.y - pb.r - gap - r, r };
+  return { x: _rightColX(r), y: ab.y + ab.r + gap + r, r };
 }
 
 // Invite accept/decline buttons (for popup)

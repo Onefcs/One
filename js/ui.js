@@ -2234,9 +2234,9 @@ function drawHeader() {
   // Map panel border (circular)
   const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
   const mpX = mmX - 4; // left-edge reference used by the character-card layout below
-  ctx.fillStyle = 'rgba(11,10,8,0.92)';
+  ctx.fillStyle = 'rgba(5,10,18,0.92)';
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(107,95,82,0.7)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(74,127,168,0.7)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.stroke();
 
   // Clip, draw tiles and blips
@@ -2332,7 +2332,7 @@ function drawHeader() {
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(_hudLbl, mmX + mmW / 2 + 1, mmY + mmH - 2);
-  ctx.fillStyle = 'rgba(201,194,182,0.95)';
+  ctx.fillStyle = 'rgba(220,234,245,0.95)';
   ctx.fillText(_hudLbl, mmX + mmW / 2, mmY + mmH - 3);
 
   // ── Character card (own background — a separate floating panel, not a
@@ -2340,8 +2340,8 @@ function drawHeader() {
   const cardTop = 6, cardBottom = 74;
   const cardRight = mpX - 10;
   cutRectPath(ctx, 6, cardTop, cardRight - 6, cardBottom - cardTop, 10);
-  ctx.fillStyle = 'rgba(20,18,15,0.88)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(107,95,82,0.55)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = 'rgba(12,20,32,0.88)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(74,127,168,0.55)'; ctx.lineWidth = 1; ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
   const avX = 32, avY = (cardTop + cardBottom) / 2, avR = 19;
@@ -2376,9 +2376,9 @@ function drawHeader() {
 
   // Row 1: Name + Level
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 14px ${F}`; ctx.fillStyle = '#e8e3da';
+  ctx.textAlign = 'left'; ctx.font = `bold 14px ${F}`; ctx.fillStyle = '#dceaf5';
   ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 18);
-  ctx.textAlign = 'right'; ctx.font = `bold 12px ${F}`; ctx.fillStyle = 'rgba(226,85,90,0.95)';
+  ctx.textAlign = 'right'; ctx.font = `bold 12px ${F}`; ctx.fillStyle = 'rgba(160,232,245,0.95)';
   ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 18);
 
   // Row 2: Class name + quiet secondary stats (БМ battle power, GRAM drops —
@@ -2393,7 +2393,7 @@ function drawHeader() {
   let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#d2495a';
+  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#a0e8f5';
   ctx.fillText(t('bmAbbrev'), stxH, 29);
   const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
   ctx.fillText(bmVal, stxH + _bmLabelW + 3, 29);
@@ -2410,7 +2410,7 @@ function drawHeader() {
   ctx.textBaseline = 'alphabetic';
 
   // Separator (still inside the character card, between identity and bars)
-  ctx.strokeStyle = 'rgba(107,95,82,0.4)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(74,127,168,0.4)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(infoX, 39); ctx.lineTo(infoRight, 39); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
@@ -2451,16 +2451,16 @@ function drawHeader() {
   const xpY = 65, xbH = 6;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(201,194,182,0.85)';
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(220,234,245,0.85)';
   ctx.fillText('XP', infoX, xpY);
 
   const xbX = infoX + 22, xbW = infoW - 22;
-  ctx.fillStyle = 'rgba(15,14,11,0.9)';
+  ctx.fillStyle = 'rgba(12,24,36,0.9)';
   roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
   if (xpPct > 0) {
     if (!_xpGrad || _hdrGradW !== W) {
       _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-      _xpGrad.addColorStop(0, '#3a332b'); _xpGrad.addColorStop(1, '#8a8074');
+      _xpGrad.addColorStop(0, '#2a4a63'); _xpGrad.addColorStop(1, '#4ecbe8');
       _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
       _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
     }
@@ -2469,7 +2469,7 @@ function drawHeader() {
     ctx.fillStyle = _xpShineGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
-  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(201,194,182,0.7)';
+  ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(220,234,245,0.7)';
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
   // that into "858.9999999999418" on the bar. The stored value keeps its
@@ -2492,7 +2492,7 @@ function drawHeader() {
   ctx.font = `bold 11px ${F}`;
   const _goldW = 24 + ctx.measureText(_goldStr).width + 10;
   cutRectPath(ctx, px, pillY - pillH / 2, _goldW, pillH, 5);
-  ctx.fillStyle = 'rgba(34,31,26,0.92)'; ctx.fill();
+  ctx.fillStyle = 'rgba(24,48,72,0.92)'; ctx.fill();
   ctx.strokeStyle = 'rgba(227,148,29,0.4)'; ctx.lineWidth = 1; ctx.stroke();
   drawIconCtx(ctx, 'coin', px + 14, pillY, 13, '#e3941d');
   ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
@@ -2506,7 +2506,7 @@ function drawHeader() {
   ctx.font = `bold 11px ${F}`;
   const _nxW = 24 + ctx.measureText(_nxStr).width + 10;
   cutRectPath(ctx, px, pillY - pillH / 2, _nxW, pillH, 5);
-  ctx.fillStyle = 'rgba(34,31,26,0.92)'; ctx.fill();
+  ctx.fillStyle = 'rgba(24,48,72,0.92)'; ctx.fill();
   ctx.strokeStyle = 'rgba(178,134,77,0.4)'; ctx.lineWidth = 1; ctx.stroke();
   const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
   if (_nxImg.complete && _nxImg.naturalWidth > 0) {
@@ -2564,7 +2564,7 @@ function _buildSkillBtnGrads() {
     const ready = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
     ready.addColorStop(0, 'rgba(51,46,38,0.97)'); ready.addColorStop(1, 'rgba(24,21,17,0.99)');
     const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    cd.addColorStop(0, 'rgba(19,17,14,0.97)'); cd.addColorStop(1, 'rgba(10,9,7,0.99)');
+    cd.addColorStop(0, 'rgba(12,24,36,0.97)'); cd.addColorStop(1, 'rgba(5,10,18,0.99)');
     return { flash, ready, cd, x: b.x, y: b.y, w: b.w, h: b.h };
   });
 }
@@ -2616,7 +2616,7 @@ function drawSkillButtons() {
 
     // Border
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isFlash ? 'rgba(226,85,90,0.95)' : ready ? 'rgba(107,95,82,0.85)' : 'rgba(58,51,43,0.7)';
+    ctx.strokeStyle = isFlash ? 'rgba(160,232,245,0.95)' : ready ? 'rgba(74,127,168,0.85)' : 'rgba(42,74,99,0.7)';
     hexPath(ctx, cx, cy, r); ctx.stroke();
 
     // Not-yet-studied skills show a lock instead of a cooldown countdown
@@ -2646,22 +2646,22 @@ function _buildUiBtnGrads() {
   const hbX = tfX + 8, hbW = tfW - 16, hbY = tfY + 20;
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg0.addColorStop(0,'rgba(38,35,29,0.98)'); pg0.addColorStop(1,'rgba(18,16,13,0.99)');
+  pg0.addColorStop(0,'rgba(24,48,72,0.98)'); pg0.addColorStop(1,'rgba(12,24,36,0.99)');
   const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
   pg1.addColorStop(0,'rgba(44,63,27,0.98)'); pg1.addColorStop(1,'rgba(18,27,11,0.99)');
 
   const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg0.addColorStop(0,'rgba(38,35,29,0.98)'); tg0.addColorStop(1,'rgba(18,16,13,0.99)');
+  tg0.addColorStop(0,'rgba(24,48,72,0.98)'); tg0.addColorStop(1,'rgba(12,24,36,0.99)');
   const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
   tg1.addColorStop(0,'rgba(52,13,18,0.98)'); tg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg0.addColorStop(0,'rgba(38,35,29,0.97)'); pvg0.addColorStop(1,'rgba(18,16,13,0.99)');
+  pvg0.addColorStop(0,'rgba(24,48,72,0.97)'); pvg0.addColorStop(1,'rgba(12,24,36,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
   pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
 
   const pfg0 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
-  pfg0.addColorStop(0,'rgba(38,35,29,0.97)'); pfg0.addColorStop(1,'rgba(18,16,13,0.99)');
+  pfg0.addColorStop(0,'rgba(24,48,72,0.97)'); pfg0.addColorStop(1,'rgba(12,24,36,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
@@ -2672,19 +2672,19 @@ function _buildUiBtnGrads() {
   ptg1.addColorStop(0,'rgba(47,13,17,0.97)'); ptg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const ag0 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag0.addColorStop(0,'rgba(34,31,26,0.90)'); ag0.addColorStop(1,'rgba(15,14,11,0.92)');
+  ag0.addColorStop(0,'rgba(24,48,72,0.90)'); ag0.addColorStop(1,'rgba(12,24,36,0.92)');
   const ag1 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag1.addColorStop(0,'rgba(90,15,24,0.98)'); ag1.addColorStop(1,'rgba(28,5,8,0.99)');
+  ag1.addColorStop(0,'rgba(20,110,130,0.98)'); ag1.addColorStop(1,'rgba(6,32,40,0.99)');
   const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag2.addColorStop(0,'rgba(42,38,32,0.98)'); ag2.addColorStop(1,'rgba(19,17,14,0.99)');
+  ag2.addColorStop(0,'rgba(24,48,72,0.98)'); ag2.addColorStop(1,'rgba(12,24,36,0.99)');
 
   const aag0 = ctx.createRadialGradient(aab.x-5, aab.y-5, 2, aab.x, aab.y, aab.r);
-  aag0.addColorStop(0,'rgba(38,35,29,0.98)'); aag0.addColorStop(1,'rgba(18,16,13,0.99)');
+  aag0.addColorStop(0,'rgba(24,48,72,0.98)'); aag0.addColorStop(1,'rgba(12,24,36,0.99)');
   const aag1 = ctx.createRadialGradient(aab.x-5, aab.y-5, 2, aab.x, aab.y, aab.r);
-  aag1.addColorStop(0,'rgba(90,15,24,0.98)'); aag1.addColorStop(1,'rgba(28,5,8,0.99)');
+  aag1.addColorStop(0,'rgba(20,110,130,0.98)'); aag1.addColorStop(1,'rgba(6,32,40,0.99)');
 
   const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
-  tfBg.addColorStop(0,'rgba(34,31,26,0.97)'); tfBg.addColorStop(1,'rgba(16,15,12,0.99)');
+  tfBg.addColorStop(0,'rgba(24,48,72,0.97)'); tfBg.addColorStop(1,'rgba(10,18,28,0.99)');
   const hpHi = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
   hpHi.addColorStop(0,'#314f17'); hpHi.addColorStop(1,'#6fb136');
   const hpMid = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
@@ -2731,7 +2731,7 @@ function drawPotionButton() {
   ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(107,95,82,0.6)';
+  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(74,127,168,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
   if (ready && cd <= 0) {
@@ -2785,7 +2785,7 @@ function drawTargetButton() {
   ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = hasTarget ? 'rgba(226,85,90,0.85)' : 'rgba(107,95,82,0.6)';
+  ctx.strokeStyle = hasTarget ? 'rgba(226,85,90,0.85)' : 'rgba(74,127,168,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
   if (hasTarget) {
@@ -2793,7 +2793,7 @@ function drawTargetButton() {
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, 20, hasTarget ? '#f17e8b' : '#a49783');
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, 20, hasTarget ? '#f17e8b' : '#8fb4cc');
 
   ctx.restore();
 }
@@ -2913,7 +2913,7 @@ function drawPvpButton() {
   ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
   cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.fill();
 
-  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(107,95,82,0.6)';
+  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(74,127,168,0.6)';
   ctx.lineWidth = 1.5;
   cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.stroke();
 
@@ -2923,7 +2923,7 @@ function drawPvpButton() {
   }
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
-  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(201,194,182,0.85)';
+  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(220,234,245,0.85)';
   drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
@@ -2947,7 +2947,7 @@ function drawProfessionButton() {
   ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
   cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.fill();
 
-  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(107,95,82,0.5)';
+  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(74,127,168,0.5)';
   ctx.lineWidth = 1.5;
   cutRectPath(ctx, pb.x, pb.y, pb.w, pb.h, 7); ctx.stroke();
 
@@ -2957,7 +2957,7 @@ function drawProfessionButton() {
     cutRectPath(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 9); ctx.stroke();
   }
 
-  const profColor = ready ? '#cdb8ec' : 'rgba(201,194,182,0.85)';
+  const profColor = ready ? '#cdb8ec' : 'rgba(220,234,245,0.85)';
   drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, profColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
@@ -3051,17 +3051,17 @@ function drawAttackButton() {
   }
 
   const borderColor = !autoAttackMode
-    ? (hasTarget && ready ? 'rgba(226,85,90,0.95)' : 'rgba(107,95,82,0.85)')
-    : 'rgba(70,61,51,0.5)';
+    ? (hasTarget && ready ? 'rgba(160,232,245,0.95)' : 'rgba(74,127,168,0.85)')
+    : 'rgba(42,74,99,0.5)';
   ctx.strokeStyle = borderColor; ctx.lineWidth = 2;
   hexPath(ctx, ab.x, ab.y, ab.r); ctx.stroke();
   if (!autoAttackMode && hasTarget && ready) {
-    ctx.strokeStyle = 'rgba(226,85,90,0.18)'; ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(160,232,245,0.18)'; ctx.lineWidth = 4;
     hexPath(ctx, ab.x, ab.y, ab.r + 3); ctx.stroke();
   }
 
   ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#c9c2b6');
+  const iconColor = hasTarget && ready ? '#c8f2fa' : (autoAttackMode ? '#3d5064' : '#dceaf5');
   drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
 
   ctx.globalAlpha = 1;
@@ -3074,8 +3074,9 @@ function drawAttackButton() {
 // Round icon toggle — crossed swords (the 'sword' icon drawn once normally
 // and once mirrored, which cross since the icon's own blade already runs
 // diagonally) instead of the old "РУЧ/АВТО" text pill. Active (auto-attack
-// on) reads the same way Attack's own "ready" state does — blood-red fill
-// and glow — so the two buttons share one visual language for "engaged".
+// on) reads the same way Attack's own "ready" state does — bright accent
+// fill and glow — so the two buttons share one visual language for
+// "engaged".
 function drawAutoToggle() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
@@ -3085,7 +3086,7 @@ function drawAutoToggle() {
   ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
 
-  const iconColor = autoAttackMode ? '#ee6272' : '#a49783';
+  const iconColor = autoAttackMode ? '#c8f2fa' : '#8fb4cc';
   const sz = ab.r * 1.05;
   drawIconCtx(ctx, 'sword', ab.x, ab.y, sz, iconColor);
   ctx.save();
@@ -3094,11 +3095,11 @@ function drawAutoToggle() {
   drawIconCtx(ctx, 'sword', 0, 0, sz, iconColor);
   ctx.restore();
 
-  ctx.strokeStyle = autoAttackMode ? 'rgba(226,85,90,0.95)' : 'rgba(107,95,82,0.85)';
+  ctx.strokeStyle = autoAttackMode ? 'rgba(160,232,245,0.95)' : 'rgba(74,127,168,0.85)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
   if (autoAttackMode) {
-    ctx.strokeStyle = 'rgba(226,85,90,0.18)'; ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(160,232,245,0.18)'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 3, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.restore();
