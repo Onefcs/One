@@ -1904,6 +1904,62 @@ canvas { display:block; width:100%; height:100%; }
   border-bottom: 1px solid rgba(209,204,197,.08);
 }
 .market-cat-tabs::-webkit-scrollbar { display: none; }
+/* A mouse has no flick gesture and no horizontal wheel, and the hidden
+   scrollbar above left nothing to grab — so on a PC every category past the
+   visible width was unreachable. Give fine-pointer devices a slim scrollbar
+   back (the wheel/drag handling that goes with it is in
+   _ensureMarketStripScroll, js/ui.js). */
+@media (hover: hover) and (pointer: fine) {
+  .market-cat-tabs {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(209,204,197,.22) transparent;
+    padding-bottom: 6px;
+    cursor: grab;
+  }
+  .market-cat-tabs:active { cursor: grabbing; }
+  .market-cat-tabs::-webkit-scrollbar { display: block; height: 6px; }
+  .market-cat-tabs::-webkit-scrollbar-track { background: transparent; }
+  .market-cat-tabs::-webkit-scrollbar-thumb {
+    background: rgba(209,204,197,.22);
+    border-radius: 3px;
+  }
+  .market-cat-tabs::-webkit-scrollbar-thumb:hover { background: rgba(209,204,197,.35); }
+}
+
+/* Search + rarity/sort selects above the category strip. The input takes a
+   full row of its own: at 430px the three side by side left it too narrow to
+   read a query in. */
+.market-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.market-search {
+  flex: 1 1 100%;
+  min-width: 0;
+  background: rgba(0,0,0,.3);
+  border: 1px solid rgba(209,204,197,.12);
+  border-radius: 8px;
+  color: #d1ccc5;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 8px 10px;
+}
+.market-search::placeholder { color: #6b6152; }
+.market-search:focus { outline: none; border-color: rgba(235,170,73,.35); }
+.market-select {
+  flex: 1 1 0;
+  min-width: 0;
+  background: rgba(0,0,0,.3);
+  border: 1px solid rgba(209,204,197,.12);
+  border-radius: 8px;
+  color: #b2a288;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px 6px;
+  cursor: pointer;
+}
 .market-cat-tab {
   flex-shrink: 0;
   background: rgba(209,204,197,.05);

@@ -2733,6 +2733,227 @@ scenario('browser: entering Страх closes the events panel instead of leavin
   }
 });
 
+scenario('browser: the market search, rarity filter and sort actually narrow the list', async () => {
+  // The market's category strip was the only way to narrow it, and on a PC
+  // the strip itself could not be scrolled past its visible width (see the
+  // next scenario). This drives the real panel in a real browser: seeded lots
+  // from another seller, then the toolbar the player types into.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const MarketListing = require('../server/models/MarketListing');
+  // Every scenario in a run shares one in-memory database, and the market
+  // ones above leave their lots behind — the panel shows all of them, so the
+  // counts below would mean nothing. Cleared here rather than counted around:
+  // no scenario after this one reads the market except the strip check right
+  // below, which seeds its own.
+  await MarketListing.deleteMany({});
+  const lots = [
+    { item: { id: 'sw5', name: 'Меч героя', slot: 'weapon', rarity: 'legendary' }, price: 90 },
+    { item: { id: 'hm3', name: 'Платиновый шлем', slot: 'helmet', rarity: 'rare' }, price: 12 },
+    { item: { id: 'ar1', name: 'Кожаная броня', slot: 'body', rarity: 'common' }, price: 3 },
+    { item: { id: 'book_lev_Q', name: 'Книга: Ледяной удар', slot: 'material', rarity: 'uncommon', qty: 1 }, price: 1 },
+  ];
+  for (const l of lots) {
+    await MarketListing.create({
+      sellerId: 'harness_market_ui_seller', sellerUsername: 'ui_seller',
+      item: l.item, price: l.price, status: 'active',
+    });
+  }
+
+  const seed = await connectWithSaved('harness_market_ui', { lvl: 15 });
+  await seed.close();
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    const errors = [];
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message.slice(0, 200)));
+    await page.goto(`${BASE}/?dev=harness_market_ui`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4000);
+    if (await page.evaluate(() => typeof state !== 'undefined' && state === 'select')) {
+      await page.evaluate(() => selectChar('mage'));
+      await page.waitForTimeout(4000);
+    }
+    ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
+
+    await page.evaluate(() => openMarketPanel());
+    await page.waitForTimeout(1200);
+    const rowCount = () => page.evaluate(() => document.querySelectorAll('#market-body .market-row').length);
+    eq(await rowCount(), 4, 'all four seeded lots are listed to begin with');
+    ok(await page.evaluate(() => !!document.getElementById('market-search-input')), 'the search box is there');
+
+    // Typing, the way a player does — one input event per keystroke, which is
+    // also what re-renders the body underneath the field.
+    await page.evaluate(async () => {
+      const el = document.getElementById('market-search-input');
+      el.focus();
+      for (const ch of 'книга') {
+        const cur = document.getElementById('market-search-input');
+        cur.value += ch;
+        cur.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(200);
+    eq(await rowCount(), 1, 'the search narrows the list to the matching item');
+    eq(await page.evaluate(() => document.activeElement && document.activeElement.id), 'market-search-input',
+      'and the field keeps focus across the re-render it causes');
+    eq(await page.evaluate(() => document.getElementById('market-search-input').value), 'книга',
+      'with everything typed still in it');
+
+    // Clear the search, then filter by rarity instead.
+    await page.evaluate(() => {
+      const el = document.getElementById('market-search-input');
+      el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForTimeout(150);
+    await page.evaluate(() => _marketSetFilter('rarity', 'legendary'));
+    await page.waitForTimeout(150);
+    eq(await rowCount(), 1, 'the rarity filter leaves only the legendary lot');
+
+    await page.evaluate(() => _marketSetFilter('rarity', 'all'));
+    await page.evaluate(() => _marketSetFilter('sort', 'rarity'));
+    await page.waitForTimeout(150);
+    const order = await page.evaluate(() =>
+      [...document.querySelectorAll('#market-body .market-row-name')].map(e => e.textContent.trim()));
+    eq(order[0], 'Меч героя', 'sorting by rarity puts the legendary lot first');
+    eq(order[order.length - 1], 'Кожаная броня', 'and the common one last');
+
+    // Typing into the box must not also play the game. The key listeners are
+    // on window (initInput, js/input.js), so every character used to reach
+    // them too: q/w/e/r cast, f drank a potion, w/a/s/d walked. Real key
+    // events through the focused field, not synthesised ones, since that is
+    // the whole point of the check.
+    await page.evaluate(() => {
+      window.__skills = 0; window.__potions = 0;
+      window.useSkill = () => { window.__skills++; };
+      window.usePotion = () => { window.__potions++; };
+      document.getElementById('market-search-input').focus();
+    });
+    await page.keyboard.type('wqerf');
+    await page.waitForTimeout(150);
+    const leaked = await page.evaluate(() => ({
+      skills: window.__skills, potions: window.__potions, walking: !!keys.w,
+      typed: document.getElementById('market-search-input').value,
+    }));
+    eq(leaked.typed, 'wqerf', 'the field took the keystrokes');
+    eq(leaked.skills, 0, 'and none of them cast a skill');
+    eq(leaked.potions, 0, 'or drank a potion');
+    eq(leaked.walking, false, 'or held a movement key down');
+
+    // Back to the default so the filter state cannot leak into the next
+    // scenario's page (a fresh page, but the same seeded lots).
+    await page.evaluate(() => {
+      const el = document.getElementById('market-search-input');
+      el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true }));
+      _marketSetFilter('sort', 'new');
+    });
+    eq(errors.length, 0, 'and nothing threw in the browser', errors.join(' | '));
+  } finally {
+    await browser.close();
+  }
+});
+
+scenario('browser: the market category strip can be scrolled with a mouse', async () => {
+  // The strip is overflow-x:auto with its scrollbar hidden — designed for a
+  // finger. On a PC there is no flick, an ordinary wheel only reports deltaY,
+  // and there was nothing visible to drag, so "Все / Оружие / Шлемы / …" past
+  // the panel's 430px was unreachable: the reported "с ПК невозможно листать
+  // вкладки". Both mouse gestures are checked here.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  // Seeded across enough categories that the strip is wider than the 430px
+  // panel whatever else the run left in the market — the whole point of the
+  // check is that it has somewhere to scroll to.
+  const MarketListing = require('../server/models/MarketListing');
+  const stripLots = [
+    { id: 'sw5', name: 'Меч героя', slot: 'weapon', rarity: 'legendary' },
+    { id: 'hm3', name: 'Платиновый шлем', slot: 'helmet', rarity: 'rare' },
+    { id: 'ar1', name: 'Кожаная броня', slot: 'body', rarity: 'common' },
+    { id: 'gl1', name: 'Кожаные перчи', slot: 'gloves', rarity: 'common' },
+    { id: 'bt1', name: 'Кожаные боты', slot: 'boots', rarity: 'common' },
+    { id: 'rn1', name: 'Кольцо силы', slot: 'ring', rarity: 'common' },
+    { id: 'nd1', name: 'Пояс силы', slot: 'belt', rarity: 'common' },
+    { id: 'cloak_c_lev', name: 'Плащ танка', slot: 'cloak', rarity: 'common' },
+    { id: 'artifact_c_lev', name: 'Артефакт танка', slot: 'artifact', rarity: 'common' },
+    { id: 'book_lev_Q', name: 'Книга: Ледяной удар', slot: 'material', rarity: 'uncommon', qty: 1 },
+  ];
+  for (const item of stripLots) {
+    await MarketListing.create({
+      sellerId: 'harness_market_strip_seller', sellerUsername: 'strip_seller',
+      item, price: 2, status: 'active',
+    });
+  }
+
+  const seed = await connectWithSaved('harness_market_strip', { lvl: 15 });
+  await seed.close();
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    await page.goto(`${BASE}/?dev=harness_market_strip`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4000);
+    if (await page.evaluate(() => typeof state !== 'undefined' && state === 'select')) {
+      await page.evaluate(() => selectChar('mage'));
+      await page.waitForTimeout(4000);
+    }
+    await page.evaluate(() => openMarketPanel());
+    await page.waitForTimeout(1200);
+
+    const strip = await page.evaluate(() => {
+      const s = document.querySelector('#market-body .market-cat-tabs');
+      return s ? { overflows: s.scrollWidth > s.clientWidth + 1, left: s.scrollLeft } : null;
+    });
+    ok(strip && strip.overflows, 'the strip is wider than the panel — there is something to reach');
+    if (!strip || !strip.overflows) return;
+
+    // A plain vertical wheel over the strip, which is all a mouse sends.
+    const afterWheel = await page.evaluate(() => {
+      const s = document.querySelector('#market-body .market-cat-tabs');
+      s.dispatchEvent(new WheelEvent('wheel', { deltaY: 200, bubbles: true, cancelable: true }));
+      return s.scrollLeft;
+    });
+    ok(afterWheel > 0, `the wheel scrolls the strip sideways (scrollLeft ${afterWheel})`);
+
+    // And dragging it like a finger, without that drag counting as a click on
+    // whichever tab the mouse happened to be released over.
+    const dragged = await page.evaluate(() => {
+      const s = document.querySelector('#market-body .market-cat-tabs');
+      s.scrollLeft = 0;
+      const before = _marketCategoryFilter;
+      const tab = s.querySelectorAll('.market-cat-tab')[2];
+      const r = tab.getBoundingClientRect();
+      const opts = { pointerType: 'mouse', button: 0, bubbles: true, cancelable: true, clientY: r.top + 5 };
+      tab.dispatchEvent(new PointerEvent('pointerdown', { ...opts, clientX: r.left + 30 }));
+      tab.dispatchEvent(new PointerEvent('pointermove', { ...opts, clientX: r.left - 90 }));
+      tab.dispatchEvent(new PointerEvent('pointerup',   { ...opts, clientX: r.left - 90 }));
+      tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return { left: s.scrollLeft, catBefore: before, catAfter: _marketCategoryFilter };
+    });
+    ok(dragged.left > 0, `dragging with the mouse scrolls it too (scrollLeft ${dragged.left})`);
+    eq(dragged.catAfter, dragged.catBefore, 'and the drag does not count as clicking the tab it ended on');
+
+    // An ordinary click still switches category — the drag suppression must
+    // not have eaten it.
+    const clicked = await page.evaluate(() => {
+      const s = document.querySelector('#market-body .market-cat-tabs');
+      const tab = s.querySelectorAll('.market-cat-tab')[1];
+      tab.click();
+      return _marketCategoryFilter;
+    });
+    ok(clicked !== 'all', `a plain click still selects a category (${clicked})`);
+  } finally {
+    await browser.close();
+  }
+});
+
 scenario('browser: a short drop resumes in place instead of rebuilding the world', async () => {
   // The other half of "мир перезагружается". Even once the reconnect lands
   // back on the right floor, it used to rebuild everything on arrival —

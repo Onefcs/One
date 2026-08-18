@@ -5059,6 +5059,7 @@ function openMarketPanel() {
     return;
   }
   panel.style.display = 'flex';
+  _ensureMarketStripScroll();
   switchMarketTab(_marketTab);
 }
 
@@ -5081,9 +5082,102 @@ function switchMarketTab(tab) {
 function _renderMarketBody() {
   const el = document.getElementById('market-body');
   if (!el) return;
+  // The search box lives inside the body, which is rewritten wholesale on
+  // every keystroke — restore focus and the caret afterwards, or typing a
+  // query loses the field after its first character. Same handling as the
+  // codex panel's own search (renderCodexPanel).
+  const prevInput = document.getElementById('market-search-input');
+  const hadFocus = prevInput && document.activeElement === prevInput;
+  const caret = hadFocus ? prevInput.selectionStart : null;
+  // Horizontal scroll position of the category strip: it is re-created by
+  // every render too, so without this a click on a tab far along the strip
+  // snaps the strip back to the start under the player's cursor.
+  const prevStrip = el.querySelector('.market-cat-tabs');
+  const stripLeft = prevStrip ? prevStrip.scrollLeft : 0;
+
   if (_marketTab === 'lots') _renderMarketLots(el);
   else if (_marketTab === 'mine') _renderMarketMine(el);
   else _renderMarketHistoryTab(el);
+
+  const strip = el.querySelector('.market-cat-tabs');
+  if (strip && stripLeft) strip.scrollLeft = stripLeft;
+  if (hadFocus) {
+    const input = document.getElementById('market-search-input');
+    if (input) { input.focus(); if (caret != null) input.setSelectionRange(caret, caret); }
+  }
+}
+
+// The category strip is a horizontal scroller with its scrollbar hidden by
+// design (a phone flicks it with a finger). On a PC there is no finger, no
+// horizontal wheel on an ordinary mouse, and nothing visible to drag — so
+// every category past the visible width was simply unreachable, which is the
+// reported "с ПК невозможно листать вкладки". A vertical wheel over the strip
+// is turned into horizontal scrolling here, and the strip can be dragged with
+// the mouse like a finger; the CSS gives fine-pointer devices a slim
+// scrollbar back on top of that.
+//
+// Delegated from the panel, not bound to the strip: every render replaces the
+// strip element, and re-binding on each of them would leak a listener per
+// keystroke.
+let _marketStripWired = false;
+function _ensureMarketStripScroll() {
+  if (_marketStripWired) return;
+  const panel = document.getElementById('market-panel');
+  if (!panel) return;
+  _marketStripWired = true;
+  const stripOf = e => (e.target && e.target.closest) ? e.target.closest('.market-cat-tabs') : null;
+  const scrollable = s => s && s.scrollWidth > s.clientWidth + 1;
+
+  panel.addEventListener('wheel', e => {
+    const strip = stripOf(e);
+    if (!scrollable(strip)) return;      // nothing to scroll: leave the body's own vertical scroll alone
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (!d) return;
+    strip.scrollLeft += d;
+    e.preventDefault();
+  }, { passive: false });
+
+  // Mouse drag. Touch is left alone — it already pans the strip natively
+  // (see the touch-action override in css/style.css) and hijacking it here
+  // would fight that.
+  let drag = null;
+  let swallowClick = false;
+  panel.addEventListener('pointerdown', e => {
+    // Cleared on the way in, not on a timer: a drag that ends outside the
+    // strip never produces the click that would consume the flag, and a
+    // stale one would then eat the next real tab click.
+    swallowClick = false;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    const strip = stripOf(e);
+    if (!scrollable(strip)) return;
+    drag = { strip, x: e.clientX, left: strip.scrollLeft, moved: false };
+  });
+  panel.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    // A few pixels of slack so an ordinary click on a tab still clicks it.
+    if (!drag.moved && Math.abs(dx) < 4) return;
+    drag.moved = true;
+    drag.strip.scrollLeft = drag.left - dx;
+    e.preventDefault();
+  });
+  const endDrag = () => {
+    if (drag && drag.moved) swallowClick = true;
+    drag = null;
+  };
+  panel.addEventListener('pointerup', endDrag);
+  panel.addEventListener('pointercancel', endDrag);
+  panel.addEventListener('pointerleave', endDrag);
+  // Swallow the click that ends a drag — releasing the mouse over a tab you
+  // only dragged past must not switch the category. Capture phase, since the
+  // tabs carry inline onclick handlers.
+  panel.addEventListener('click', e => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    if (!stripOf(e)) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
 }
 
 function _marketRowHtml(l, mode) {
@@ -5128,6 +5222,19 @@ const _MARKET_CATEGORIES = [
   { key: 'other',     get label() { return t('catOther'); },     match: () => true },
 ];
 let _marketCategoryFilter = 'all';
+// Search box + the two selects above the category strip. They compose with
+// the category filter rather than replacing it: the strip's counts are taken
+// over what these leave, so a tab always says how many rows it would show.
+const _marketFilters = { q: '', rarity: 'all', sort: 'new' };
+// Legendary first — someone sorting a market by rarity is scanning for the
+// best thing on it, not reading the tiers bottom-up.
+const _MARKET_RARITY_RANK = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
+const _MARKET_SORTS = [
+  { key: 'new',      get label() { return t('marketSortNew'); } },
+  { key: 'rarity',   get label() { return t('marketSortRarity'); } },
+  { key: 'priceAsc', get label() { return t('marketSortPriceAsc'); } },
+  { key: 'priceDsc', get label() { return t('marketSortPriceDsc'); } },
+];
 
 function _marketCategoryOf(it) {
   return (_MARKET_CATEGORIES.find(c => c.match(it)) || _MARKET_CATEGORIES[_MARKET_CATEGORIES.length - 1]).key;
@@ -5138,26 +5245,84 @@ function setMarketCategory(key) {
   _renderMarketBody();
 }
 
+function _marketSetFilter(key, val) {
+  _marketFilters[key] = val;
+  _renderMarketBody();
+}
+
+// Name match only, on the same string the row displays — the catalog name is
+// what a player is looking at when they type.
+function _marketMatchesSearch(it, q) {
+  if (!q) return true;
+  return String(it.name || '').toLowerCase().includes(q);
+}
+
+function _marketSortLots(lots) {
+  const rank = it => (_MARKET_RARITY_RANK[(it || {}).rarity] != null ? _MARKET_RARITY_RANK[it.rarity] : 9);
+  // slice(): _marketLots/_marketMine are the arrays the server's own order
+  // (newest first) lives in, and 'new' has to be able to go back to it.
+  const out = lots.slice();
+  if (_marketFilters.sort === 'rarity') {
+    out.sort((a, b) => rank(a.item) - rank(b.item) || a.price - b.price);
+  } else if (_marketFilters.sort === 'priceAsc') {
+    out.sort((a, b) => a.price - b.price);
+  } else if (_marketFilters.sort === 'priceDsc') {
+    out.sort((a, b) => b.price - a.price);
+  }
+  return out;
+}
+
+function _marketToolbarHtml() {
+  const rarityOpts = ['legendary', 'epic', 'rare', 'uncommon', 'common'].map(r =>
+    `<option value="${r}"${_marketFilters.rarity === r ? ' selected' : ''}>${_RARITY_NAMES[r] || r}</option>`).join('');
+  const sortOpts = _MARKET_SORTS.map(s =>
+    `<option value="${s.key}"${_marketFilters.sort === s.key ? ' selected' : ''}>${s.label}</option>`).join('');
+  return `<div class="market-toolbar">
+    <input id="market-search-input" class="market-search" type="text" autocomplete="off"
+      placeholder="${_escAttr(t('marketSearchPlaceholder'))}" value="${_escAttr(_marketFilters.q)}"
+      oninput="_marketSetFilter('q', this.value)">
+    <select class="market-select" onchange="_marketSetFilter('rarity', this.value)">
+      <option value="all"${_marketFilters.rarity === 'all' ? ' selected' : ''}>${t('allRaritiesLbl')}</option>
+      ${rarityOpts}
+    </select>
+    <select class="market-select" onchange="_marketSetFilter('sort', this.value)">${sortOpts}</select>
+  </div>`;
+}
+
 function _renderMarketFiltered(lots, mode) {
+  const q = (_marketFilters.q || '').trim().toLowerCase();
+  // Search and rarity first: the category counts below are what's left after
+  // them, so "Оружие 3" during a search means three weapons match the search.
+  const pool = lots.filter(l => {
+    const it = l.item || {};
+    if (_marketFilters.rarity !== 'all' && it.rarity !== _marketFilters.rarity) return false;
+    return _marketMatchesSearch(it, q);
+  });
+
   const counts = new Map(_MARKET_CATEGORIES.map(c => [c.key, 0]));
-  lots.forEach(l => {
+  pool.forEach(l => {
     const key = _marketCategoryOf(l.item || {});
     counts.set(key, counts.get(key) + 1);
   });
 
-  const allTab = `<button class="market-cat-tab${_marketCategoryFilter === 'all' ? ' active' : ''}" onclick="setMarketCategory('all')">${t('allCatLbl')} <span class="market-cat-count">${lots.length}</span></button>`;
+  const allTab = `<button class="market-cat-tab${_marketCategoryFilter === 'all' ? ' active' : ''}" onclick="setMarketCategory('all')">${t('allCatLbl')} <span class="market-cat-count">${pool.length}</span></button>`;
   const catTabs = _MARKET_CATEGORIES.map(c => {
     const n = counts.get(c.key);
-    if (!n) return '';
+    // The selected category keeps its tab even at zero — otherwise the strip
+    // drops the very tab that explains why the list below is empty, and the
+    // filter stays silently applied with nothing to switch off.
+    if (!n && _marketCategoryFilter !== c.key) return '';
     return `<button class="market-cat-tab${_marketCategoryFilter === c.key ? ' active' : ''}" onclick="setMarketCategory('${c.key}')">${c.label} <span class="market-cat-count">${n}</span></button>`;
   }).join('');
   const tabsHtml = `<div class="market-cat-tabs">${allTab}${catTabs}</div>`;
 
-  const shown = _marketCategoryFilter === 'all' ? lots : lots.filter(l => _marketCategoryOf(l.item || {}) === _marketCategoryFilter);
+  const inCat = _marketCategoryFilter === 'all' ? pool : pool.filter(l => _marketCategoryOf(l.item || {}) === _marketCategoryFilter);
+  const shown = _marketSortLots(inCat);
+  const emptyMsg = (q || _marketFilters.rarity !== 'all') ? t('marketNothingFoundHint') : t('noItemsInCategoryHint');
   const listHtml = shown.length
     ? shown.map(l => _marketRowHtml(l, mode)).join('')
-    : `<div class="rating-empty">${t('noItemsInCategoryHint')}</div>`;
-  return tabsHtml + listHtml;
+    : `<div class="rating-empty">${emptyMsg}</div>`;
+  return _marketToolbarHtml() + tabsHtml + listHtml;
 }
 
 function _renderMarketLots(el) {

@@ -526,6 +526,15 @@ function inputDir() {
 
 function initInput() {
   window.addEventListener('keydown', e => {
+    // Typing into a text field is not gameplay input. These listeners are on
+    // window, so every character typed into the chat line, the codex search
+    // or the market's own search box also reached the game: q/w/e/r cast
+    // skills, f drank a potion, and w/a/s/d were held as movement until the
+    // matching keyup. A PC player searching the market for "sword" fired two
+    // skills and walked. Movement is left to keyup to clear (it only ever
+    // sets keys to false, so a skipped keydown cannot strand a key down).
+    const el = e.target;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
     keys[e.key] = true;
     if (state === 'playing' && activeTab === 0) {
       const map = { q:0, w:1, e:2, r:3, Q:0, W:1, E:2, R:3 };
