@@ -6171,9 +6171,9 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg30',  gram:30,  get label() { return t('gramPkgLabel_pkg30'); },  gold:20000,  potions:30, armor:'Uncommon', weapon:'Uncommon', bonusSP:2,  color:'#e6b761', skillBooks:{ each:1 },  enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:0, nexum:4000 },
   { id:'pkg100', gram:220, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
-  // Mirror of server/index.js's pkg300 — the top regular-tab tier: full epic
-  // set +3, 50 safe-enchant stones, 60 class books, full potion restock.
-  { id:'pkg300', gram:300, get label() { return t('gramPkgLabel_pkg300'); }, gold:0, potions:100, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#8a5cc2', skillBooks:{ each:15 }, enhance:3, nexum:10000, stones:{ bless_stone:50 } },
+  // pkg300 ("Эпический"/"+Pack") used to sit here as the top regular-tab
+  // tier. It's now sold only via the "+Pack" card on Профиль → Кошелёк
+  // (_EPIC_PACK_PKG below) — see that comment for why.
 ];
 
 // Сезонные паки — shown in the GRAM shop's own Сезонные tab (used to be a
@@ -6310,6 +6310,7 @@ const _SHOP_WEP_PFX_MAP = { common:'c', uncommon:'u', rare:'r', epic:'e' };
 const _SHOP_POTION_NAMES = ['hp','exp','gold','regen','atkspeed','atk'];
 const _shopCoinUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f1c40f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v10'/><path d='M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0'/></svg>`;
 const _shopSpUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
+const _shopBookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e3941d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
 
 // Renders the armor/weapon/bonusSP/nexum/potions rows any pkg carries —
 // shared between _gramShopPkgHtml and _specialPkgHtml (special270), which
@@ -6699,8 +6700,7 @@ function _gramShopPkgHtml(pkg, bal) {
 
   // skill books — for the buyer's own class (see _skillBooksLabel below)
   if (pkg.skillBooks) {
-    const bookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e3941d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
-    rows += ri(bookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
+    rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
   }
 
   // boxes (BOX_DEF — see _boxesLabel below)
@@ -6754,8 +6754,52 @@ function _boxesLine(boxes) {
   }).join(', ');
 }
 
+// "+Pack" — the former pkg300 regular-tab tier. Pulled off the GRAM shop's
+// Паки tab (see the comment above _GRAM_SHOP_PKGS_UI) and sold instead as a
+// single promoted card on Профиль → Кошелёк (_epicPackCardHtml, wired into
+// updateGramUI). Same id/rewards server/index.js's gramShopBuy already
+// grants for 'pkg300' — only the price moved (300 → 600) and where it's
+// sold. `perks` are the real-world mentorship items bundled on top of the
+// in-game rewards; the server never sees them, they're pure presentation
+// (rendered by both this card and openGramShopConfirm's modal).
+const _EPIC_PACK_PKG = {
+  id:'pkg300', gram:600, get label() { return t('gramPkgLabel_pkg300'); }, gold:0, potions:100,
+  armor:'Epic', weapon:'Epic', bonusSP:20, color:'#8a5cc2', skillBooks:{ each:15 }, enhance:3,
+  nexum:10000, stones:{ bless_stone:50 },
+  perks: ['epicPackPerk1', 'epicPackPerk2', 'epicPackPerk3', 'epicPackPerk4', 'epicPackPerk5'],
+};
+
+function _epicPackPerksHtml(pkg) {
+  if (!pkg.perks) return '';
+  return `<div style="margin-bottom:10px">
+    <b style="color:${pkg.color}">${t('epicPackIncludesHdr')}</b>
+    ${pkg.perks.map(k => `<div style="color:#c5bfb7;margin-top:4px">• ${t(k)}</div>`).join('')}
+  </div>`;
+}
+
+function _epicPackCardHtml(bal) {
+  const pkg = _EPIC_PACK_PKG;
+  const canAfford = bal >= pkg.gram;
+  let rows = _shopExtraRewardRows(pkg, ri);
+  rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
+  rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_STONE_IMG[id], `×${qty}`, '')).join('');
+  return `<div class="gram-shop-card" style="border-color:${pkg.color}44;margin-bottom:14px">
+    <div class="gram-shop-card-head">
+      <div>
+        <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
+        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+      </div>
+      <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
+        style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
+        onclick="${canAfford ? `openGramShopConfirm('${pkg.id}')` : ''}">+Pack</button>
+    </div>
+    ${_epicPackPerksHtml(pkg)}
+    <div class="vip-items-row">${rows}</div>
+  </div>`;
+}
+
 function openGramShopConfirm(pkgId) {
-  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId);
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || (pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
   if (bal < pkg.gram) return;
@@ -6763,6 +6807,7 @@ function openGramShopConfirm(pkgId) {
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
   const enhSuffix  = pkg.enhance ? ` +${pkg.enhance}` : '';
+  const perksHtml  = _epicPackPerksHtml(pkg);
   const goldLine   = pkg.gold ? `<div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>` : '';
   const potionLine = pkg.potions ? `<div style="color:#c5bfb7">${tVars('eachPotionFmt', { n: pkg.potions })}</div>` : '';
   const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}${enhSuffix}</div>` : '';
@@ -6783,7 +6828,7 @@ function openGramShopConfirm(pkgId) {
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
-        ${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}
+        ${perksHtml}${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
@@ -6816,7 +6861,8 @@ function onGramShopResult(data) {
     if (data.newNexumBalance != null) player.nexumBalance = data.newNexumBalance;
   }
   if (data.vipData) window._vipData = data.vipData;
-  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId)
+    || (data.pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   // Season packages live in their own list and have no label of
   // their own — name them by price so the toast still says what was bought.
   const spkg = pkg ? null : _SEASON_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
@@ -6834,6 +6880,9 @@ function onGramShopResult(data) {
   // single re-render covers whichever tab happens to be open.
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
+  // "+Pack" (pkg300) is bought from Профиль → Кошелёк, not the shop panel —
+  // refresh that tab too so its balance and afford-state stay in sync.
+  if (activeTab === 5 && window._profileTab === 'wallet') updateGramUI();
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();
   if (activeTab === 1 && _invTab === 0) updateUpgradeUI();
@@ -7084,6 +7133,8 @@ function updateGramUI() {
       <div class="gram-balance-label">${t('gramBalanceLbl')}</div>
       <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(7)} <span class="gram-unit">GRAM</span></div>
     </div>
+
+    ${_epicPackCardHtml(balance)}
 
     <div id="ton-connect-row" style="margin-bottom:14px"></div>
 
