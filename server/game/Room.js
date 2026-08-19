@@ -1952,6 +1952,14 @@ class Room {
       cand.length = nCand;
       for (let i = 0; i < cand.length; i++) {
         const op = cand[i].op;
+        // How old the position about to be sent already is, in ms — see
+        // updatePlayerPos for what this is measuring and why the receiver
+        // cannot render smoothly without it. 255 is the "don't know / don't
+        // care" sentinel: a player who has never moved, or whose last sample
+        // predates the field's range, in both of which cases the cast time is
+        // the best the receiver can do and is also perfectly adequate (their
+        // position is not changing).
+        const ageMs = op._posAt ? Math.min(255, Math.max(0, now - op._posAt)) : 255;
         const k = p._known.get(op.socketId);
         const full = !k || k.rev !== op._profileRev || k.seen !== castId - 2 ||
           ((castId >> 1) + op._seq) % FULL_REFRESH_TICKS === 0;
@@ -1960,6 +1968,7 @@ class Room {
             id: op.socketId, seq: op._seq, username: op.username, type: op.type,
             x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
             pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
+            ageMs,
             clanName: op.clanName || null, clanIcon: op.clanIcon || null,
             // For the client's own target/assist filtering — see the pIsRacer
             // exception above. null for anyone not currently racing; _raceLane
@@ -1971,7 +1980,7 @@ class Room {
         } else {
           nearPlayers.push({
             id: op.socketId, seq: op._seq, x: op.x, y: op.y, facing: op.facing,
-            hp: op.hp, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
+            hp: op.hp, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving, ageMs,
           });
         }
         if (k) { k.rev = op._profileRev; k.seen = castId; }
@@ -2558,6 +2567,10 @@ class Room {
       // Memoised live Socket — see _socketFor.
       _socket: null,
       _profileRev: 1, _seq: ++this._pSeq,
+      // When p.x/p.y were last actually changed by a move packet — see
+      // updatePlayerPos and the ages section of the cast below. 0 until the
+      // first real move, which the cast reads as "no sample time known".
+      _posAt: 0,
     });
     if (this.players.size === 1) this._startLoop();
     return { spawn, staleSocketId, fearCarry };
@@ -2805,6 +2818,24 @@ class Room {
       const ddx = x - p.x, ddy = y - p.y;
       moving = (ddx * ddx + ddy * ddy) > 0.1;
     }
+    // WHEN this position was true, which is not the same thing as when the
+    // cast that carries it goes out. The client sends from its own frame loop
+    // (netSendMove, js/network.js) at whatever rate its display runs; the cast
+    // grid is a fixed 50ms. Sampling one on the other aliases: between two
+    // casts a 30Hz sender lands one new position sometimes and two other
+    // times, so consecutive casts report one step then two, and a receiver
+    // that assumes both spans are 50ms renders that as the player running at
+    // ~0.65x speed and then ~1.35x, ten times a second — a constant twitch on
+    // a perfect link, worse the further the sender's frame rate sits from a
+    // multiple of the cast rate. Stamping the sample time makes the receiver's
+    // interpolation exact instead: see the age section in shared/netcodec.js
+    // and the _buf push in js/network.js.
+    //
+    // Only bumped when the position actually moved. A re-stated position (the
+    // 1s keepalive, a facing-only or hp-only packet) is not a new sample, and
+    // treating it as one would hand the client a fresh timestamp for a point
+    // it already has — a zero-length span it can learn nothing from.
+    if (x !== p.x || y !== p.y) p._posAt = Date.now();
     p.x = x; p.y = y; p.facing = facing; p.moving = moving;
   }
 

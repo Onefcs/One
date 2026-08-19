@@ -164,10 +164,20 @@ function _netClockSample(t) {
   // How much longer than the best-case this packet took — zero on the fast
   // path, the size of the spike for a late one. Diagnostics only.
   _netJitterSample(Math.max(0, _clkOffset - sample));
-  // The front edge playback is chasing. Snapshots are ordered (socket.io runs
-  // over TCP), but guarded anyway rather than assumed.
-  if (t > _netLastSnapT) _netLastSnapT = t;
   _netLastPktAt = perf;
+}
+
+// The front edge playback is chasing — the newest POSITION SAMPLE time seen,
+// which is not the newest cast time: a cast carries positions its sender
+// produced up to a frame earlier, and the whole point of stamping that age
+// (shared/netcodec.js) is that the receiver stops pretending otherwise. Sizing
+// the buffer against the cast stamp instead would leave it short by exactly
+// the age it just went to the trouble of learning, so playback would run past
+// the newest sample and extrapolate on every sender whose frame rate is low.
+// Fed from the gameState handler, which is the only place that knows it.
+// Guarded rather than assumed monotonic, as before.
+function _netSnapEdge(st) {
+  if (st > _netLastSnapT) _netLastSnapT = st;
 }
 
 // ── Adaptive interpolation delay ────────────────────────────────────────────
@@ -345,7 +355,16 @@ function netInterpMs() {
   return _interpMs;
 }
 
-const _SNAP_MAX   = 10;   // ~250ms of buffer
+// Snapshots kept per remote player. Casts are 50ms apart, so ten of them span
+// ~450ms of history — comfortably more than _INTERP_MAX (320ms), which is what
+// this has to cover: playback sits _interpMs in the past, and it can only
+// interpolate while the buffer still reaches back that far.
+// How long a player may be missing from the cast stream before the client
+// drops them — see the prune in the gameState handler. Five casts: long enough
+// that a boundary crossing is not a teardown, short enough that anyone who
+// really has walked away is gone well before they could matter.
+const _AOI_DROP_GRACE_MS = 250;
+const _SNAP_MAX   = 10;
 // Staggers the out-of-range enemy sweep in the gameState handler — once a
 // second is plenty for something the server already stopped sending.
 let _aoiPruneTick = 0;
@@ -991,10 +1010,21 @@ function netConnect(onReady) {
     if (players) {
       players.forEach(p => {
         if (p.id === myId) return;
+        // When this position was actually true on the sender's machine, which
+        // is up to one of THEIR frames before the cast that carries it. See
+        // the ages section in shared/netcodec.js: without it the buffer below
+        // is stamped on the cast grid, positions sampled off a different clock
+        // get spread evenly over it regardless of when they were really taken,
+        // and interpolation renders that timing error as the sender speeding
+        // up and slowing down several times a second. undefined means a server
+        // that predates the section — fall back to the cast stamp, i.e.
+        // exactly the old behaviour.
+        const sampleT = p.ageMs !== undefined ? t - p.ageMs : t;
         if (!otherPlayers.has(p.id)) {
           otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
-            _buf: [{ x: p.x, y: p.y, t }],
+            _buf: [{ x: p.x, y: p.y, t: sampleT }],
             animFrame: 0, animTimer: 0, moving: !!p.moving });
+          _netSnapEdge(sampleT);
           if (p.type) loadSprites(p.type, () => {});
         } else {
           const op = otherPlayers.get(p.id);
@@ -1015,8 +1045,27 @@ function netConnect(onReady) {
 
           // Snapshot ring buffer
           if (!op._buf) op._buf = [];
-          op._buf.push({ x: p.x, y: p.y, t });
+          const prev = op._buf[op._buf.length - 1];
+          let st = sampleT;
+          if (prev) {
+            // A position identical to the one already held is not a new
+            // sample — it is the same one re-stated (the 1s keepalive, a
+            // facing-only packet, a player standing still). Stamping it with
+            // its own age would hand the buffer a timestamp OLDER than the
+            // entry it duplicates; stamping it with the cast time instead
+            // keeps the buffer's clock moving forward through an idle
+            // stretch, which is what lets playback stay inside it.
+            if (p.x === prev.x && p.y === prev.y) st = t;
+            // Sample times are the sender's, so two casts can in principle
+            // disagree about their order (a re-sent position, a clock the
+            // server re-read between them). Interpolation cannot survive a
+            // buffer that runs backwards, so the order is enforced here
+            // rather than assumed.
+            else if (st <= prev.t) st = prev.t + 1;
+          }
+          op._buf.push({ x: p.x, y: p.y, t: st });
           if (op._buf.length > _SNAP_MAX) op._buf.shift();
+          _netSnapEdge(st);
           op.targetX = p.x; op.targetY = p.y;
 
           if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
@@ -1039,14 +1088,39 @@ function netConnect(onReady) {
         });
       }
 
-      // Remove players that left AOI or disconnected
+      // Nobody in range at all: there is no sample time to take an edge from,
+      // and leaving it where it was would read to the buffer sizing below as
+      // playback falling further behind every cast. The cast stamp is the
+      // right answer here — there is nothing whose position could be older.
+      if (players.length === 0) _netSnapEdge(t);
+
+      // Players who stopped being streamed to us — they walked out of
+      // PLAYER_AOI_R (600px, Room.js).
+      //
+      // Not dropped on the first cast that omits them. The radius is a hard
+      // circle with no hysteresis on either side, so two players drifting
+      // around 600px apart cross it repeatedly: measured at three round trips
+      // in twelve seconds for a pair oscillating +/-12px about the boundary.
+      // Dropping on sight makes every one of those a full teardown — the
+      // snapshot buffer goes with the entry, so the re-entry starts from a
+      // single position with nothing to interpolate between, and
+      // pixiRemoveOtherPlayer destroys the sprite, so the run cycle restarts
+      // from frame 0. That is the pop at the edge of the screen.
+      //
+      // A grace of a few casts costs nothing: someone genuinely gone is
+      // off-screen for all of it (600px is past the viewport either way), and
+      // real departures — disconnect, floor change, a stale socket replaced by
+      // a reconnect — do NOT come through here at all. They arrive as an
+      // explicit 'playerLeft' (see its handler above), which still removes
+      // them at once.
       const pids = new Set();
       for (let i = 0; i < players.length; i++) pids.add(players[i].id);
-      otherPlayers.forEach((_, id) => {
-        if (!pids.has(id)) {
-          otherPlayers.delete(id);
-          if (typeof pixiRemoveOtherPlayer === 'function') pixiRemoveOtherPlayer(id);
-        }
+      otherPlayers.forEach((op, id) => {
+        if (pids.has(id)) { op._goneSince = 0; return; }
+        if (!op._goneSince) op._goneSince = t;
+        if (t - op._goneSince < _AOI_DROP_GRACE_MS) return;
+        otherPlayers.delete(id);
+        if (typeof pixiRemoveOtherPlayer === 'function') pixiRemoveOtherPlayer(id);
       });
     }
 
