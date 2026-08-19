@@ -1770,7 +1770,16 @@ class Room {
           // and this runs inside the 40Hz AI loop on every monster swing —
           // the same reasoning the gameState emit below already follows.
           const vsock = this._socketFor(closest);
-          if (vsock) vsock.emit('playerHurt', { id: closest.socketId, hp: closest.hp, dmg });
+          // atkId: lets the victim's client resync this specific enemy's
+          // position (see _queueEnemyResync in js/network.js) the instant a
+          // hit lands from one it either doesn't know or hasn't heard from
+          // recently — the gameState position stream is volatile (Room.js's
+          // per-cast emit above) and can silently drop on a bad connection
+          // while this reliable emit still gets through, which otherwise
+          // reads as "the monster is standing still/far away but still
+          // hitting me" until the next periodic full refresh (up to
+          // ENEMY_REFRESH_CASTS ticks away).
+          if (vsock) vsock.emit('playerHurt', { id: closest.socketId, hp: closest.hp, dmg, atkId: e.id });
         }
       }
 

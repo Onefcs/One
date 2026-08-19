@@ -1077,6 +1077,7 @@ function netConnect(onReady) {
     enemies.forEach(se => {
       const ex = serverEnemiesMap.get(se.id);
       if (ex) {
+        ex._st = t; // last tick this enemy actually heard from the server — see playerHurt's atkId resync
         ex.hp = se.hp;
         if (se.maxHp !== undefined) ex.maxHp = se.maxHp;
         // Compute facing + move signal from server position delta (not client lerp)
@@ -1161,8 +1162,21 @@ function netConnect(onReady) {
     if (activeTab === 2 && typeof drawMapPanel === 'function') drawMapPanel();
   });
 
-  socket.on('playerHurt', ({ id, hp, dmg }) => {
+  socket.on('playerHurt', ({ id, hp, dmg, atkId }) => {
     if (player && id === socket.id) {
+      // A hit just landed from atkId, so the server had it in melee range —
+      // if our copy of that enemy is missing or hasn't heard from the
+      // gameState stream in a while, our position for it is stale (that
+      // stream is volatile and can silently drop on a bad connection, see
+      // the comment on this emit in Room.js). Left alone it reads as "the
+      // monster is standing still/far away but still hitting me" for up to
+      // ENEMY_REFRESH_CASTS ticks; resync it now instead of waiting. 400ms
+      // is well above the ~50ms an aggro'd enemy is normally resent at, so
+      // this only fires on an actual drop, not ordinary jitter.
+      if (atkId !== undefined) {
+        const _atkEx = serverEnemiesMap.get(atkId);
+        if (!_atkEx || netClockNow() - (_atkEx._st || 0) > 400) _queueEnemyResync(atkId);
+      }
       // No safe-zone check here on purpose. The server decides who can be
       // hit and has ALREADY applied this damage to its own copy of our hp
       // (see the enemy attack in Room.js's tick loop); regular monsters skip
