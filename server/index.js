@@ -3777,7 +3777,7 @@ function _socketTid(socketId) {
 // order is the queue: _race10Start takes the first `capacity` entrants and
 // _a3TryStart the first six. The obvious set-then-delete rekey appends, so a
 // player whose connection blipped during registration silently went to the
-// back — and at 30+ registrants for the Tower's 30 corridors that is the
+// back — and at 50+ registrants for the Tower's 50 corridors that is the
 // difference between racing and being told there was no room. Rebuilding the
 // map preserves the position; these queues hold tens of entries at most, so
 // the cost is irrelevant next to being fair about who signed up first.

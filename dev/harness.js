@@ -3520,15 +3520,15 @@ scenario('race10: an entrant is joined AT its lane, so gameStart cannot say "bos
   await a.close(); await b.close();
 });
 
-scenario('race10: 31 entrants for 30 corridors — the 31st is refused, not stuffed into a shared lane', async () => {
-  // RACE10_LANES is 30 (server/game/dungeon.js) and the map is generated with
-  // exactly that many sealed corridors, so a 31st registrant cannot be given
+scenario('race10: 51 entrants for 50 corridors — the 51st is refused, not stuffed into a shared lane', async () => {
+  // RACE10_LANES is 50 (server/game/dungeon.js) and the map is generated with
+  // exactly that many sealed corridors, so a 51st registrant cannot be given
   // one. Sharing a corridor would put two players on the same monsters and
   // undo the isolation the whole design rests on; silently dropping them would
   // leave someone waiting for a race that never starts. Run at the real
-  // numbers rather than a scaled-down stand-in — 30 is the number in the
+  // numbers rather than a scaled-down stand-in — 50 is the number in the
   // question, so it is the number under test.
-  const N = 31;
+  const N = 51;
   const clients = await Promise.all(
     Array.from({ length: N }, (_, i) =>
       connectWithSaved(`harness_r10_cap_${i}`, { lvl: 10, xp: 0, xpNext: 100 })),
@@ -3540,7 +3540,7 @@ scenario('race10: 31 entrants for 30 corridors — the 31st is refused, not stuf
   clients.forEach(c => c.emit('race10Register'));
   const regged = await Promise.all(regs);
   eq(regged.filter(r => r && r.registered).length, N,
-    'all 31 are accepted into the queue — the cap is applied at deploy, not at sign-up');
+    'all 51 are accepted into the queue — the cap is applied at deploy, not at sign-up');
 
   const outcomes = clients.map(c => Promise.race([
     c.wait('race10Started', { timeout: 12000 }).then(v => ({ started: v })).catch(() => null),
@@ -3550,16 +3550,16 @@ scenario('race10: 31 entrants for 30 corridors — the 31st is refused, not stuf
 
   const started = res.filter(r => r && r.started);
   const refused = res.filter(r => r && r.error);
-  eq(started.length, 30, 'exactly 30 are deployed — one per corridor, never shared');
-  eq(refused.length, 1, 'and the 31st is refused rather than silently dropped');
+  eq(started.length, 50, 'exactly 50 are deployed — one per corridor, never shared');
+  eq(refused.length, 1, 'and the 51st is refused rather than silently dropped');
   ok(/коридор/i.test((refused[0].error.msg) || ''),
     'with a message naming the reason', refused[0].error.msg);
 
   // Every deployed entrant holds a corridor of its own.
   const lanes = started.map(r => r.started.lane);
-  eq(new Set(lanes).size, 30, 'all 30 lanes are distinct');
+  eq(new Set(lanes).size, 50, 'all 50 lanes are distinct');
   eq(Math.min(...lanes), 0, 'numbered from 0');
-  eq(Math.max(...lanes), 29, 'up to 29');
+  eq(Math.max(...lanes), 49, 'up to 49');
 
   // And the refused one is not left believing it is still in.
   const rejected = clients[res.findIndex(r => r && r.error)];
@@ -3661,7 +3661,7 @@ scenario('race10: a same-account reconnect during registration keeps its place i
   // `capacity` entrants — and the rekey onto the reconnecting socket used to
   // be set-then-delete, which appends. A player whose connection blipped
   // during registration therefore went to the back of a line they were at the
-  // front of, and at 30+ registrants for 30 corridors that decides who races.
+  // front of, and at 50+ registrants for 50 corridors that decides who races.
   //
   // The path under test is the duplicate-login one: a second socket for the
   // same account arrives while the first is still live (addPlayer reports it

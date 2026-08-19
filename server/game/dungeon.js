@@ -90,7 +90,7 @@ const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corri
 // RACE10_MOB_PER_TIER*2 monsters, and those monsters are skipped by the AI
 // loop entirely while no race is running (see the race10 branch in Room.js's
 // _tick), so an unused lane costs nothing per tick.
-const RACE10_LANES        = 30;
+const RACE10_LANES        = 50;
 const RACE10_LANE_HW      = 1;   // half-width — 3 tiles wide, same convention as every other corridor
 const RACE10_LANE_GAP     = 2;   // wall tiles between adjacent lanes
 const RACE10_LANE_PITCH   = RACE10_LANE_HW * 2 + 1 + RACE10_LANE_GAP; // 5 tiles, row to row
