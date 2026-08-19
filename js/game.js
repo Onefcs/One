@@ -605,7 +605,13 @@ function update(dt, realDt) {
       if (t && (t.hp || 0) > 0) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
     } else if (targetId && targetIsPlayer && pvpMode) {
       const op = otherPlayers.get(targetId);
-      if (op && (op.hp || 0) > 0 && op.x != null) {
+      // A locked target can only have become an ally here via a stale lock
+      // carried across a zone change (e.g. targeted in the open world, then
+      // walked into Guild War) — the selection UI itself already refuses to
+      // hand out an ally as targetId (see _a3Unselectable/_gwUnselectable,
+      // js/input.js). Dropping to the fallback search below is simpler than
+      // clearing targetId from every place that could invalidate it.
+      if (op && (op.hp || 0) > 0 && op.x != null && !_a3Unselectable(targetId) && !_gwUnselectable(targetId)) {
         _pvpSentinel._socketId = targetId; _pvpSentinel.x = op.x; _pvpSentinel.y = op.y;
         closest = _pvpSentinel;
         closestD = dist(op.x, op.y, player.x, player.y);
@@ -631,7 +637,13 @@ function update(dt, realDt) {
       });
       if (pvpMode) {
         otherPlayers.forEach((op, id) => {
-          if ((op.hp || 0) <= 0 || op.x == null) return;
+          // Unlike the locked-target branch above and the manual target-pick
+          // UI (js/input.js), this proximity scan had no ally exclusion at
+          // all — AUTO mode could lock onto and swing at your own 3v3
+          // teammate or Guild War clanmate (server refuses the hit, so it
+          // just wasted the swing and blocked a real target from being
+          // picked instead).
+          if ((op.hp || 0) <= 0 || op.x == null || _a3Unselectable(id) || _gwUnselectable(id)) return;
           const dx = op.x - player.x, dy = op.y - player.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < closestD2) { closestD2 = d2; _pvpSentinel._socketId = id; _pvpSentinel.x = op.x; _pvpSentinel.y = op.y; closest = _pvpSentinel; closestIsPlayer = true; }

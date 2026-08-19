@@ -122,6 +122,25 @@ function _a3Unselectable(id) {
   return (_a3Mates[_a3Team] || []).includes(id);
 }
 
+// True while standing inside Guild War's zone for a candidate sharing your
+// own clan. The zone deliberately suspends the usual clan-immunity rule for
+// everyone ELSE (see _isPvpImmune, server/index.js — "open PvP between
+// different clans"), but keeps it for your own clan, so the server always
+// refuses a hit on one anyway; offering one as a target/assist candidate is
+// just a wasted swing and a wrong lock. Gated on live position exactly like
+// the server's own nowInGw check (Room.js's tick loop), not on pvpMode alone
+// — that flag is shared with the open world's manual PvP toggle, where clan
+// ties still fully protect (the generic fallback in _isPvpImmune), so there
+// is nothing GW-specific to gate on there.
+function _gwUnselectable(id) {
+  if (!player || typeof _isGuildWarTile !== 'function') return false;
+  const myClan = (typeof clanData !== 'undefined' && clanData && clanData.name) || null;
+  if (!myClan) return false;
+  if (!_isGuildWarTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE))) return false;
+  const op = otherPlayers.get(id);
+  return !!op && op.clanName === myClan;
+}
+
 // True while racing (Кровавая Башня) for a racer in a different lane than
 // yours — visible (see the pIsRacer exception in Room.js's per-player
 // candidate filter, server/game/Room.js), but not selectable: every lane is
@@ -155,7 +174,7 @@ function cycleTarget() {
   // target unless pvpMode is separately on, so there's nothing to guard here.
   if (isOnline) {
     otherPlayers.forEach((op, id) => {
-      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y) && !_a3Unselectable(id) && !_raceUnselectable(id))
+      if ((op.hp || 0) > 0 && op.x != null && _isOnScreen(op.x, op.y) && !_a3Unselectable(id) && !_raceUnselectable(id) && !_gwUnselectable(id))
         candidates.push({ id, isPlayer: true, d: dist(op.x, op.y, player.x, player.y) });
     });
   }
@@ -183,7 +202,7 @@ function _trySelectEntityAtTouch(cx, cy) {
   });
   if (isOnline) {
     otherPlayers.forEach((op, id) => {
-      if ((op.hp || 0) <= 0 || op.x == null || _a3Unselectable(id)) return;
+      if ((op.hp || 0) <= 0 || op.x == null || _a3Unselectable(id) || _gwUnselectable(id)) return;
       const d = dist(worldX, worldY, op.x, op.y);
       if (d < 22 + tapR && d < bestD) { bestD = d; best = { id, isPlayer: true }; }
     });
