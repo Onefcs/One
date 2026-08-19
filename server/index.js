@@ -33,6 +33,7 @@ const {
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 } = require('./inventory');
+const { _rollMobLoot, _rollFarmZoneLoot, _rollFarm2Loot } = require('./loot');
 // VIP 3+ trades away the flat MARKET_MAX_ACTIVE cap for no cap at all —
 // Infinity compares false against activeCount forever, so the check below
 // simply never trips; .limit(0) is Mongo's own "no limit" convention, used
@@ -162,14 +163,9 @@ const {
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
-  UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
-  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
-  FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
-  armIndexForLevel, armLocalLevel,
-  BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
-  roomDropMult, roomKeyChance, roomEnchantStoneChance,
+  armIndexForLevel,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
   DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   RACE10_LIBERTY, RACE10_LIBERTY_WINNER, race10Rewards, race10Liberty,
@@ -188,10 +184,7 @@ const {
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, CLAN_LEVELS, questComplete,
   FEAR_MAX_WAVE, COOP_STAGE_LEVELS, QUEST_DEF,
   FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_DAILY_MINUTES,
-  FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
-  FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
-  FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
-  FARM2_UNIQUE_WEAPON_CHANCE,
+  FARM2_LIBERTY_CHANCE,
   SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
   SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
   SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
@@ -277,190 +270,6 @@ const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 
 
 
-
-// ── Mob kill loot roll ──────────────────────────────────────────────────────
-// Mirrors applyLootToInventory (js/combat.js) exactly — recipe/equipment/
-// room-key/enchant-stone/skill-book/passive-book drops on a regular kill.
-// This used to be entirely client-rolled and only ever reached the server via
-// the next saveProgress blob (which _canonSavedItem trusts for any valid id+
-// enhance+qty) — the single biggest "items appearing out of nowhere" vector,
-// since it fires on every kill in the game. Mutates `inv` in place via
-// _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
-// for (loot-winner arbitration among a party) and reports the result back.
-function _rollMobLoot(inv, eid, rlvl, plvl) {
-  const eDef = ENEMY_DEF.find(e => e.eid === eid);
-  const eType = eDef ? eDef.eType : null;
-  const granted = [];
-
-  function addMat(id, qty) {
-    const mat = CRAFT_MATS.find(m => m.id === id);
-    if (mat && _invAdd(inv, { ...mat, qty })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty });
-  }
-
-  // Same drop multiplier as the client used: corridor arm × room-level growth.
-  const _localLvl = armLocalLevel(rlvl);
-  const _dropMult = armIndexForLevel(rlvl) * roomDropMult(_localLvl);
-
-  // Recipe drop (all non-boss enemies)
-  if (eType && eType !== 'boss') {
-    const r = Math.random();
-    if      (r < 0.00001 * _dropMult) addMat('recl', 1);
-    else if (r < 0.00021 * _dropMult) addMat('rece', 1);
-    else if (r < 0.00071 * _dropMult) addMat('recr', 1);
-    else if (r < 0.00171 * _dropMult) addMat('recu', 1);
-  }
-
-  // Equipment drop — no cloak/artifact (craft-only), weapons unrestricted by
-  // class (same as js/combat.js: any class's weapon can drop for anyone).
-  const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1))
-    / dropLevelGapDivisor(plvl, rlvl);
-  if (Math.random() * 100 < _itemChance) {
-    const rarity = itemRarityForLevel(rlvl);
-    const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-    // !d.noDrop excludes the unique weapons: they are epic/legendary `weapon`
-    // entries like any other, so without it they would simply start dropping.
-    const candidates = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && _gearSlots.includes(d.slot));
-    if (candidates.length) {
-      const it = candidates[Math.floor(Math.random() * candidates.length)];
-      if (_invAdd(inv, { ...it })) granted.push({ id: it.id, name: it.name, rarity: it.rarity, qty: 1 });
-    }
-  }
-
-  // Room-level key drops (forge box-crafting)
-  if (Math.random() < roomKeyChance(_localLvl, 'uncommon')) addMat('key_uncommon', 1);
-  if (Math.random() < roomKeyChance(_localLvl, 'rare'))     addMat('key_rare', 1);
-
-  // Room-level enchant-stone drop
-  if (Math.random() < roomEnchantStoneChance(_localLvl)) addMat('norm_stone', 1);
-
-  // Осколки для уникального оружия. Every kind rolls on its own, so one kill
-  // can yield several different shards but never more than
-  // UNIQUE_SHARD_MAX_QTY of the same one. Deliberately flat: no arm/room
-  // multiplier and no boss bonus — the only gate is the monster's level, so
-  // the drop reads the same everywhere past it and cannot be farmed faster by
-  // finding a favourable room.
-  //
-  // Math.random() has ~2^-53 granularity, so a chance this small is still
-  // rolled honestly rather than collapsing to never/always.
-  if (rlvl >= UNIQUE_SHARD_MIN_LEVEL) {
-    for (const sh of UNIQUE_SHARDS) {
-      if (Math.random() < UNIQUE_SHARD_CHANCE) {
-        addMat(sh.id, 1 + Math.floor(Math.random() * UNIQUE_SHARD_MAX_QTY));
-      }
-    }
-  }
-
-  // Skill books — any class's book can drop for anyone (see js/combat.js).
-  const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
-  if (_allBooks.length) {
-    if (eType === 'boss') {
-      if (Math.random() < 0.001) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
-    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
-      addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 1);
-    }
-  }
-
-  // Passive skill books — own independent roll/pool, same odds as above.
-  const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
-  if (_allPassiveBooks.length) {
-    if (eType === 'boss') {
-      if (Math.random() < 0.001) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);
-    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
-      addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 1);
-    }
-  }
-
-  return granted;
-}
-
-// ── Фарм-зона kill loot ──────────────────────────────────────────────────
-// No equipment/key/regular-skill-book drops at all — just an independent
-// FARM_SHARD_CHANCE roll per shard kind (same per-kind-independent shape as
-// the normal shard roll in _rollMobLoot above, just flat and much higher,
-// since farming shards is this zone's whole point) — picked from the KILLED
-// SPECIES' OWN subset (FARM_SPECIES_SHARDS) rather than the full 20-shard
-// catalog, same species-split treatment the books below get — independent
-// norm/bless enchant-stone rolls (FARM_NORM_STONE_CHANCE/FARM_BLESS_STONE_
-// CHANCE — 5x/3x the book chance, see their own comment in shared/
-// definitions.js), independent epic/legendary recipe-scroll rolls
-// (FARM_EPIC_RECIPE_CHANCE/FARM_LEGENDARY_RECIPE_CHANCE — flat, not species-
-// split: a recipe isn't tied to any class or unique weapon), and one flat
-// roll for a random advanced-skill book, picked from the killed species' own
-// pool (FARM_SPECIES_BOOKS) rather than the full 20-book catalog — different
-// species now drop different shards and books instead of all sharing one
-// pool. This is the ONLY way to get an advanced-skill book at all; it never
-// drops anywhere else.
-function _rollFarmZoneLoot(inv, eid) {
-  const granted = [];
-  function addMat(id, qty) {
-    const mat = CRAFT_MATS.find(m => m.id === id);
-    if (mat && _invAdd(inv, { ...mat, qty })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty });
-  }
-  // Falls back to the full catalog for a species FARM_SPECIES_SHARDS doesn't
-  // recognize (shouldn't happen for a real farmZone kill, but an empty
-  // subset must never silently drop every shard roll for that species).
-  const shardPool = (FARM_SPECIES_SHARDS[eid] && FARM_SPECIES_SHARDS[eid].length)
-    ? FARM_SPECIES_SHARDS[eid]
-    : UNIQUE_SHARDS.map(s => s.id);
-  for (const shId of shardPool) {
-    if (Math.random() < FARM_SHARD_CHANCE) addMat(shId, 1);
-  }
-  if (Math.random() < FARM_NORM_STONE_CHANCE) addMat('norm_stone', 1);
-  if (Math.random() < FARM_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
-  if (Math.random() < FARM_EPIC_RECIPE_CHANCE) addMat('rece', 1);
-  if (Math.random() < FARM_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
-  if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) {
-    // Falls back to the full pool for a species FARM_SPECIES_BOOKS doesn't
-    // recognize (shouldn't happen for a real farmZone kill, but an empty
-    // pool must never make this roll silently grant nothing).
-    const pool = (FARM_SPECIES_BOOKS[eid] && FARM_SPECIES_BOOKS[eid].length)
-      ? FARM_SPECIES_BOOKS[eid]
-      : CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
-    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
-  }
-  return granted;
-}
-
-// ── Элитная фарм-зона kill loot ──────────────────────────────────────────
-// Same shape as _rollFarmZoneLoot above (independent flat rolls, no
-// equipment/key/regular-skill-book drops), but no per-species split: this
-// zone only runs FARM2_SPECIES' own two archetypes, so there is no reason to
-// carve the box/stone/recipe/book pool up further the way FARM_SPECIES_
-// SHARDS/FARM_SPECIES_BOOKS do — one random book from the FULL 20-book pool
-// on the one book roll that lands. Liberty is NOT rolled here — it's
-// currency (nexum), rolled and granted by the attack/skillAttack handlers
-// the same way COOP_LIBERTY_CHANCE is (see FARM2_LIBERTY_CHANCE there).
-function _rollFarm2Loot(inv) {
-  const granted = [];
-  function addMat(id, qty) {
-    const mat = CRAFT_MATS.find(m => m.id === id);
-    if (mat && _invAdd(inv, { ...mat, qty })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty });
-  }
-  function addBox(id, qty) {
-    const box = BOX_DEF.find(b => b.id === id);
-    if (box && _invAdd(inv, { ...box, qty })) granted.push({ id: box.id, name: box.name, rarity: box.rarity, qty });
-  }
-  if (Math.random() < FARM2_BOX_RARE_CHANCE) addBox('box_rare', 1);
-  if (Math.random() < FARM2_BOX_UNCOMMON_CHANCE) addBox('box_uncommon', 1);
-  if (Math.random() < FARM2_NORM_STONE_CHANCE) addMat('norm_stone', 1);
-  if (Math.random() < FARM2_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
-  if (Math.random() < FARM2_EPIC_RECIPE_CHANCE) addMat('rece', 1);
-  if (Math.random() < FARM2_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
-  if (Math.random() < FARM2_ADV_SKILL_BOOK_CHANCE) {
-    const pool = CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
-    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
-  }
-  // One random EPIC-tier unique weapon — see FARM2_UNIQUE_WEAPON_CHANCE's
-  // own comment on why this is the one deliberate exception to `noDrop`.
-  if (Math.random() < FARM2_UNIQUE_WEAPON_CHANCE) {
-    const pool = ITEM_DEF.filter(d => d.unique && d.rarity === 'epic');
-    if (pool.length) {
-      const w = pool[Math.floor(Math.random() * pool.length)];
-      if (_invAdd(inv, { ...w, enhance: 0 })) granted.push({ id: w.id, name: w.name, rarity: w.rarity, qty: 1 });
-    }
-  }
-  return granted;
-}
 
 function _marketListingData(l) {
   return {
@@ -6246,8 +6055,9 @@ io.on('connection', socket => {
     const inv = _lastStats.inventory;
     const _beforeLen = inv.length;
     // Фарм-зона kills skip the normal loot table (and its VIP drop-bonus
-    // reroll below) entirely — see _rollFarmZoneLoot's own comment. Элитная
-    // фарм-зона kills skip it the same way, in favor of _rollFarm2Loot's own
+    // reroll below) entirely — see _rollFarmZoneLoot's own comment in
+    // server/loot.js. Элитная фарм-зона kills skip it the same way, in favor
+    // of _rollFarm2Loot's own
     // box/stone/recipe/book table. Coop kills skip it too (including a boss
     // kill's box/stone rolls just below) and grant nothing from this
     // function at all — a regular kill's only reward beyond xp is the flat
@@ -6266,7 +6076,7 @@ io.on('connection', socket => {
       // inventory still told the client "+1× Ящик" — the floating text played,
       // nothing arrived, and the player had no way to tell the drop apart from
       // one that was stolen. Every other grant in this file already reports
-      // only what landed (see _rollMobLoot's addMat).
+      // only what landed (see _rollMobLoot's addMat, server/loot.js).
       const _rollInto = (chance, item) => (Math.random() < chance && _invAdd(inv, item)) ? 1 : 0;
       boxUncommon = _rollInto(0.50, { ...BOX_DEF.find(b => b.id === 'box_uncommon'), qty: 1 });
       boxRare     = _rollInto(0.10, { ...BOX_DEF.find(b => b.id === 'box_rare'), qty: 1 });

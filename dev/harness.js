@@ -176,6 +176,92 @@ async function enterWorld(c, type, savedStats) {
 const scenarios = [];
 const scenario = (name, fn) => scenarios.push({ name, fn });
 
+// ── Kill loot (server/loot.js) ───────────────────────────────────────────────
+// These call the roll functions directly instead of driving a kill through a
+// socket, which is the point of loot.js being its own file: the drop rules are
+// pure over the catalog and a caller-supplied inventory, so the properties
+// below can be stated as properties rather than inferred from what one lucky
+// kill happened to yield. A kill DOES also run through the 'attack' handler
+// elsewhere in this file — that proves the wiring, this proves the rules.
+//
+// Where a rule needs a drop that is rarer than any practical number of rolls,
+// Math.random is pinned to 0 so every gate opens and every pool picks its first
+// entry. Each pinned block is strictly synchronous and restores in a finally,
+// so no server timer can observe the stub.
+const { _rollMobLoot, _rollFarmZoneLoot, _rollFarm2Loot } = require('../server/loot');
+const {
+  UNIQUE_SHARDS, UNIQUE_SHARD_MIN_LEVEL, FARM_SPECIES_SHARDS, ITEM_DEF,
+} = require('../shared/definitions');
+
+// Runs fn with Math.random pinned to `v`. fn must not await.
+function withRandom(v, fn) {
+  const real = Math.random;
+  Math.random = () => v;
+  try { return fn(); } finally { Math.random = real; }
+}
+
+const _SHARD_IDS = new Set(UNIQUE_SHARDS.map(s => s.id));
+
+scenario('loot: everything a roll reports granted is actually in the inventory', async () => {
+  // The report and the grant are built in the same place (addMat), but they are
+  // two statements, and _invAdd can refuse — a report of an item the player
+  // never received is the failure mode worth naming.
+  let rolls = 0, mismatched = 0;
+  for (let i = 0; i < 500; i++) {
+    const inv = [];
+    const granted = _rollMobLoot(inv, 'rat_guard', 20, 20);
+    rolls += granted.length;
+    for (const g of granted) {
+      const held = inv.find(it => it && it.id === g.id);
+      if (!held) mismatched++;
+    }
+  }
+  eq(mismatched, 0, 'no roll reports an item the inventory did not receive');
+  ok(rolls > 0, '500 kills dropped something at all', `granted ${rolls} items`);
+});
+
+scenario('loot: a monster below the shard level never drops a shard, however lucky', async () => {
+  // UNIQUE_SHARD_MIN_LEVEL is the only gate on shards — no arm multiplier, no
+  // boss bonus — so a level below it must yield none even with every roll won.
+  const below = withRandom(0, () => _rollMobLoot([], 'rat_guard', UNIQUE_SHARD_MIN_LEVEL - 1, 20));
+  eq(below.filter(g => _SHARD_IDS.has(g.id)).length, 0, 'below the gate: no shards');
+  const at = withRandom(0, () => _rollMobLoot([], 'rat_guard', UNIQUE_SHARD_MIN_LEVEL, 20));
+  ok(at.some(g => _SHARD_IDS.has(g.id)), 'at the gate: shards do drop');
+});
+
+scenario('loot: a boss drops no recipe scrolls', async () => {
+  // The recipe roll is explicitly non-boss (eType !== 'boss'); bosses pay in
+  // equipment and books instead. With every roll won, a boss must still show none.
+  const recipes = ['recl', 'rece', 'recr', 'recu'];
+  const boss = withRandom(0, () => _rollMobLoot([], 'imp_boss', 30, 30));
+  eq(boss.filter(g => recipes.includes(g.id)).length, 0, 'boss: no recipe scrolls');
+  const mob = withRandom(0, () => _rollMobLoot([], 'rat_guard', 30, 30));
+  ok(mob.some(g => recipes.includes(g.id)), 'a regular monster: recipes do drop');
+});
+
+scenario('loot: a farm-zone kill only drops its own species\' shards', async () => {
+  // FARM_SPECIES_SHARDS is what makes farming a species mean something. A
+  // species leaking the full 20-shard catalog would be invisible in play until
+  // the economy noticed.
+  const eid = 'zombie_guard';
+  const own = new Set(FARM_SPECIES_SHARDS[eid]);
+  ok(own.size > 0 && own.size < _SHARD_IDS.size, 'the species owns a proper subset of the shards');
+  const granted = withRandom(0, () => _rollFarmZoneLoot([], eid));
+  const shards = granted.filter(g => _SHARD_IDS.has(g.id)).map(g => g.id);
+  ok(shards.length > 0, 'the species drops its shards');
+  eq(shards.filter(id => !own.has(id)).length, 0, 'and none belonging to another species');
+});
+
+scenario('loot: the elite farm zone\'s unique weapon is epic, never legendary', async () => {
+  // FARM2_UNIQUE_WEAPON_CHANCE is the one deliberate exception to `noDrop`.
+  // Widening it past epic would put a legendary unique on a farmable timer.
+  const uniques = new Map(ITEM_DEF.filter(d => d.unique).map(d => [d.id, d.rarity]));
+  const granted = withRandom(0, () => _rollFarm2Loot([]));
+  const gotUnique = granted.filter(g => uniques.has(g.id));
+  ok(gotUnique.length > 0, 'a unique weapon drops when the roll is won');
+  eq(gotUnique.filter(g => uniques.get(g.id) !== 'epic').length, 0, 'and every one of them is epic');
+});
+
 scenario('login: a fresh account authenticates and is told it is new', async () => {
   const c = await connectAs('harness_new');
   ok(c.auth && typeof c.auth.username === 'string', 'authOk carries a username');
