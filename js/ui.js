@@ -2245,11 +2245,16 @@ function drawHeader() {
   const th = getTheme(dungeonLvl);
   const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
 
-  // Map panel border (circular)
+  // Map panel border — a chunky double-ring gold bezel, no title/buttons
+  // attached to it anywhere.
   ctx.fillStyle = 'rgba(15,11,4,0.92)';
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(90,68,32,0.7)'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 5, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(224,188,127,0.85)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 2.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(143,111,57,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 7.5, 0, Math.PI * 2); ctx.stroke();
 
   // Clip, draw tiles and blips
   ctx.save();
@@ -2339,59 +2344,72 @@ function drawHeader() {
   ctx.restore();
 
   // ── Currency column (right side, between the info block and the map) ──
-  // Three rows — gold / Liberty (Nexum) / GRAM — each an icon badge, its
-  // value, and a small "+" that jumps to wherever that currency is topped
-  // up. Laid out top-down so drawAvatar/HP/XP below can size infoRight off
+  // Three rows — gold / Liberty (Nexum) / GRAM — each a rounded capsule
+  // (icon badge + value, same dark-gradient/gold-border pill used by the
+  // Мир/Проф buttons below) with a "+" button fused onto its right end.
+  // Laid out top-down so drawAvatar/HP/XP below can size infoRight off
   // curLeft instead of the map, same as the old single-divider layout did.
-  const curW = 102, curRowH = 24, curGap = 4;
-  const curRight = mmCx - mmR - 12;
+  const curW = 110, curRowH = 26, curGap = 5;
+  const curRight = mmCx - mmR - 20; // clear the map's thicker outer bezel ring
   const curLeft = curRight - curW;
   const curTop = HEADER_H / 2 - (curRowH * 3 + curGap * 2) / 2;
   _hdrCurBtns.length = 0;
   const _curRows = [
-    { icon: 'coin', img: null,           color: '#e3941d', val: Math.floor(p.gold) },
-    { icon: null,   img: _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })()), color: '#b2864d', val: window._nexumBalance || 0 },
+    { icon: 'coin', img: null,           color: '#e3941d', val: Math.floor(p.gold).toLocaleString('ru-RU') },
+    { icon: null,   img: _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })()), color: '#b2864d', val: (window._nexumBalance || 0).toLocaleString('ru-RU') },
     { icon: null,   img: _gramIconImg  || (_gramIconImg  = (() => { const i = new Image(); i.src = '/images/gram-icon.png';   return i; })()), color: '#4fd67a', val: (window._gramBalance || 0).toFixed(7) },
   ];
   _curRows.forEach((row, i) => {
     const cy = curTop + curRowH / 2 + i * (curRowH + curGap);
-    const icX = curLeft + 10;
+    const plusR = curRowH / 2 + 2;
+    const plusX = curRight - plusR + 1;
+    const pillX = curLeft, pillW = (plusX - plusR) - curLeft + 2;
+    const pillY = cy - curRowH / 2, pillR = curRowH / 2;
+    // Capsule background — same dark-gradient-over-gold-border pill the
+    // Мир/Проф buttons use, so the whole HUD reads as one family of shapes.
+    ctx.fillStyle = 'rgba(20,15,8,0.94)';
+    roundRect(ctx, pillX, pillY, pillW, curRowH, pillR); ctx.fill();
+    ctx.strokeStyle = 'rgba(194,154,86,0.55)'; ctx.lineWidth = 1.5;
+    roundRect(ctx, pillX, pillY, pillW, curRowH, pillR); ctx.stroke();
+
+    const icX = pillX + pillR;
     // Icon badge
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.arc(icX, cy, 10, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = row.color + '66'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(icX, cy, 10, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.arc(icX, cy, pillR - 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = row.color + '77'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(icX, cy, pillR - 3, 0, Math.PI * 2); ctx.stroke();
     if (row.icon) {
-      drawIconCtx(ctx, row.icon, icX, cy, 12, row.color);
+      drawIconCtx(ctx, row.icon, icX, cy, 13, row.color);
     } else if (row.img && row.img.complete && row.img.naturalWidth > 0) {
       ctx.save();
-      ctx.beginPath(); ctx.arc(icX, cy, 8, 0, Math.PI * 2); ctx.clip();
-      ctx.drawImage(row.img, icX - 8, cy - 8, 16, 16);
+      ctx.beginPath(); ctx.arc(icX, cy, pillR - 5, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(row.img, icX - (pillR - 5), cy - (pillR - 5), (pillR - 5) * 2, (pillR - 5) * 2);
       ctx.restore();
     }
     // Value — shrink the font until it clears the "+" button; GRAM's
     // 7-decimal balance (toFixed(7)) is the one that actually needs this.
-    const plusX = curRight - 9;
-    const valMaxW = (plusX - 13) - (icX + 13);
+    const valX = icX + pillR - 2;
+    const valMaxW = (pillX + pillW - 6) - valX;
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillStyle = row.color;
-    let _valFs = 11;
+    let _valFs = 12;
     ctx.font = `bold ${_valFs}px ${F}`;
     while (_valFs > 7 && ctx.measureText(String(row.val)).width > valMaxW) {
       _valFs--; ctx.font = `bold ${_valFs}px ${F}`;
     }
-    ctx.fillText(row.val, icX + 13, cy);
-    // "+" button
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.arc(plusX, cy, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(203,161,89,0.6)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(plusX, cy, 9, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = '#e3c98a'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+    ctx.fillText(row.val, valX, cy + 0.5);
+    // "+" button — fused onto the capsule's right end, one shade lighter so
+    // it reads as an attached control rather than a separate floating dot.
+    ctx.fillStyle = 'rgba(46,36,18,0.97)';
+    ctx.beginPath(); ctx.arc(plusX, cy, plusR, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(224,188,127,0.8)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(plusX, cy, plusR, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#f4d8a7'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(plusX - 4, cy); ctx.lineTo(plusX + 4, cy);
-    ctx.moveTo(plusX, cy - 4); ctx.lineTo(plusX, cy + 4);
+    ctx.moveTo(plusX - 4.5, cy); ctx.lineTo(plusX + 4.5, cy);
+    ctx.moveTo(plusX, cy - 4.5); ctx.lineTo(plusX, cy + 4.5);
     ctx.stroke();
-    _hdrCurBtns.push({ x: plusX, y: cy, r: 12 });
+    _hdrCurBtns.push({ x: plusX, y: cy, r: plusR + 2 });
   });
 
   // Vertical divider between the info block and the currency column

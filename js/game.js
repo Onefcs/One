@@ -1418,16 +1418,21 @@ function render(dt, ts) {
   if (player && dungeon) drawTeleportPads();
   if (activeTab === 0) drawJoystick();
 
-  // Safe zone HUD label (on top of HUD)
+  // Safe zone HUD label (on top of HUD) — a rounded pill, same family of
+  // shapes as the Мир/Проф buttons and the header currency capsules, just
+  // green-tinted instead of gold.
   if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
     const lbl = typeof t === 'function' ? t('safeZoneLbl') : '🛡 Безопасная зона · реген HP';
     _uiCtx.font = 'bold 11px system-ui, Arial';
-    _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'alphabetic';
+    _uiCtx.textAlign = 'center'; _uiCtx.textBaseline = 'middle';
     const lw = _uiCtx.measureText(lbl).width;
-    _uiCtx.fillStyle = 'rgba(0,0,0,0.55)';
-    _uiCtx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
+    const pillH = 22, pillY = HEADER_H + 6, pillX = W / 2 - lw / 2 - 12, pillW = lw + 24;
+    _uiCtx.fillStyle = 'rgba(14,22,8,0.88)';
+    roundRect(_uiCtx, pillX, pillY, pillW, pillH, pillH / 2); _uiCtx.fill();
+    _uiCtx.strokeStyle = 'rgba(148,209,94,0.6)'; _uiCtx.lineWidth = 1.5;
+    roundRect(_uiCtx, pillX, pillY, pillW, pillH, pillH / 2); _uiCtx.stroke();
     _uiCtx.fillStyle = '#94d15e';
-    _uiCtx.fillText(lbl, W / 2, HEADER_H + 20);
+    _uiCtx.fillText(lbl, W / 2, pillY + pillH / 2 + 1);
   }
 
   // Transition flash (topmost layer)
