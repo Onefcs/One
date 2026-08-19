@@ -1556,6 +1556,13 @@ class Room {
           p._guildWarZone = nowInGw;
           p.pvpMode = nowInGw;
           p._profileRev++;
+          // gameState never carries a player's own entry back to their own
+          // socket (js/network.js's handler returns early on p.id === myId,
+          // since every other field there is echoed from elsewhere) — so
+          // this flip needs its own explicit push, or the local client never
+          // finds out its own pvpMode changed and can neither attack nor be
+          // attacked despite the server already treating it as live PvP.
+          this.io.to(p.socketId).emit('pvpModeSync', { pvpMode: nowInGw });
         }
       }
     });

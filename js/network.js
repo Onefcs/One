@@ -848,6 +848,14 @@ function netConnect(onReady) {
       _farm2InRun = false;
       if (typeof onFarm2State === 'function') onFarm2State();
     }
+    // Обычная фарм-зона: same anti-bot reasoning as Элитная фарм-зона just
+    // above — AUTO must never run unattended there, so it's forced off on
+    // every landing here, including a reconnect that resumes this exact
+    // floor (d.farmZone is only present in this floor's own dungeon data,
+    // see generateFarmZone, server/game/dungeon.js). The toggle itself is
+    // refused while here too — see _autoPressEnd (js/input.js) and
+    // _autoCastSkills (js/game.js).
+    if (d.farmZone) autoAttackMode = false;
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
     // in. All four used to be fetched here — 104 sprite sheets, 2.1 MB, on
@@ -2721,14 +2729,6 @@ function _finishOnlineStart() {
   setTab(0);
   // Immediately save so a page refresh always finds the character type
   _emitSaveProgress();
-  // "What's new" announcement — once per WHATS_NEW_VERSION (js/ui.js), only
-  // on a genuine first join like everything else in this function, so a
-  // reconnect never re-shows it mid-session.
-  try {
-    if (typeof openWhatsNewModal === 'function' && localStorage.getItem('whatsNewSeen') !== WHATS_NEW_VERSION) {
-      openWhatsNewModal();
-    }
-  } catch (_) {}
 }
 
 // ── Move throttle ─────────────────────────────────────────────
@@ -3391,6 +3391,17 @@ function _initGuildWarHandlers(s) {
 
   s.on('guildWarError', ({ msg }) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  // Guild War drives pvpMode off live position server-side (Room.js's tick
+  // loop) the instant a player crosses the zone bounds, in either direction —
+  // no toggle press, no deploy event, nothing else client-side ever sets it
+  // for this zone. Mirror it here so combat actually works the moment
+  // everyone lands, instead of only for whoever happened to already have
+  // pvpMode on from a manual toggle before walking in.
+  s.on('pvpModeSync', ({ pvpMode: mode }) => {
+    pvpMode = !!mode;
+    if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
   });
 }
 
