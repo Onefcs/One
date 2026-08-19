@@ -318,10 +318,6 @@ function _autoCastSkills(dt) {
   // js/input.js's _autoPressEnd), but this is checked again directly here
   // too rather than trusted solely from those two call sites.
   if (typeof _farm2InRun !== 'undefined' && _farm2InRun) return;
-  // Обычная фарм-зона refuses AUTO entirely too — same reasoning and the
-  // same dungeon.farmZone check js/input.js's _autoPressEnd and
-  // js/network.js's _applyGameStart use.
-  if (typeof dungeon !== 'undefined' && dungeon && dungeon.farmZone) return;
   // The player's own master switch (АВТО button, long press → the picker in
   // js/ui.js). Auto-ATTACK is unaffected: this turns off casting only, which
   // is the point — a player who wants the auto to keep hitting but stop

@@ -848,14 +848,6 @@ function netConnect(onReady) {
       _farm2InRun = false;
       if (typeof onFarm2State === 'function') onFarm2State();
     }
-    // Обычная фарм-зона: same anti-bot reasoning as Элитная фарм-зона just
-    // above — AUTO must never run unattended there, so it's forced off on
-    // every landing here, including a reconnect that resumes this exact
-    // floor (d.farmZone is only present in this floor's own dungeon data,
-    // see generateFarmZone, server/game/dungeon.js). The toggle itself is
-    // refused while here too — see _autoPressEnd (js/input.js) and
-    // _autoCastSkills (js/game.js).
-    if (d.farmZone) autoAttackMode = false;
     // Preload only the corridors this character can actually be in: arm 1,
     // which everyone passes through, plus whichever arm their level puts them
     // in. All four used to be fetched here — 104 sprite sheets, 2.1 MB, on

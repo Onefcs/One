@@ -404,15 +404,6 @@ function _autoPressEnd(touchId) {
     if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, '🔒 АВТО недоступно в Элитной фарм-зоне', '#f93');
     return;
   }
-  // Обычная фарм-зона: same reasoning as Элитная фарм-зона above — AUTO must
-  // never run unattended there either. Forced off on entry (see
-  // _applyGameStart, js/network.js) and refused here too, on the same
-  // "dungeon.farmZone is only truthy while actually standing on that floor"
-  // check the zone's own rendering/HUD code already relies on.
-  if (player && typeof dungeon !== 'undefined' && dungeon && dungeon.farmZone) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, '🔒 АВТО недоступно в Фарм-зоне', '#f93');
-    return;
-  }
   autoAttackMode = !autoAttackMode;
 }
 
