@@ -572,10 +572,10 @@ function update(dt, realDt) {
         } else {
           netAttack(pa.id);
           // "Безумие" (advanced deathknight E) — while active, every basic
-          // melee hit also splashes onto nearby enemies. Plain netAttack per
-          // extra target (not a skill multiplier), matching "обычные удары
-          // наносят АОЕ урон" — these ARE still basic attacks, just several
-          // of them landing at once.
+          // melee hit also splashes onto nearby enemies at 50% damage
+          // (netAttack's splash flag — server/game/Room.js's attackEnemy is
+          // what actually enforces the 50%, this client never sends a
+          // damage number of its own).
           if (typeof madnessTimer !== 'undefined' && madnessTimer > 0 && player.type === 'deathknight') {
             const _te = serverEnemiesMap.get(pa.id);
             if (_te) {
@@ -583,7 +583,7 @@ function update(dt, realDt) {
               if (typeof netSpawnAoe === 'function') netSpawnAoe(_te.x, _te.y, 90, 'bloodwave', '#9c2a3a', '#d2495a');
               serverEnemies.forEach(e => {
                 if ((e.hp || 0) <= 0 || e.id === pa.id) return;
-                if (dist(e.x, e.y, _te.x, _te.y) < 90 && hasLOS(_te.x, _te.y, e.x, e.y)) netAttack(e.id);
+                if (dist(e.x, e.y, _te.x, _te.y) < 90 && hasLOS(_te.x, _te.y, e.x, e.y)) netAttack(e.id, true);
               });
             }
           }

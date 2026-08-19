@@ -2818,11 +2818,17 @@ function netStatsUpdate(atk, def, maxHp, critChance, critPower) {
   if (socket?.connected) socket.emit('statsUpdate', { atk, def, maxHp, critChance, critPower });
 }
 
-function netAttack(enemyId) {
+// `splash`: this hit is "Безумие"'s (advanced deathknight E) AOE side effect
+// of a primary attack, not a primary attack itself — the server always
+// scales it to exactly 50% damage and rate-limits it off the attacker's last
+// real hit rather than its own clock (see attackEnemy's comment, server/
+// game/Room.js), so a modified client sending splash:true on every packet
+// gains nothing over just attacking normally.
+function netAttack(enemyId, splash) {
   if (!socket?.connected) return;
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
   if (invisTimer > 0) { invisTimer = 0; socket.emit('playerInvis', { invis: false }); }
-  socket.emit('attack', { enemyId });
+  socket.emit('attack', splash ? { enemyId, splash: true } : { enemyId });
 }
 
 function netSelectChar(type, savedStats) {

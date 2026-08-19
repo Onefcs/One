@@ -3249,15 +3249,33 @@ class Room {
     };
   }
 
-  attackEnemy(socketId, enemyId) {
+  attackEnemy(socketId, enemyId, { splash = false } = {}) {
     const attacker = this.players.get(socketId);
     // Same reasoning as updatePlayerPos above — a dead attacker's client can
     // keep firing attack events; the server must independently refuse them.
     if (!attacker || attacker.hp <= 0) return null;
-    // Rate-limit: max one server hit every 150ms
     const now = Date.now();
-    if (now - (attacker._lastAtk || 0) < 150) return null;
-    attacker._lastAtk = now;
+    if (splash) {
+      // "Безумие" (advanced deathknight E) — every basic melee hit also
+      // splashes onto nearby enemies, several of them landing in the very
+      // same instant as the primary swing that triggered them. The flat
+      // 150ms-per-attacker floor below exists to pace independent swings,
+      // and rejected every one of these (they arrive milliseconds apart,
+      // all sharing attacker._lastAtk) — that's the "AOE иногда не
+      // работает" bug: only whichever splash hit happened to land more than
+      // 150ms after the primary survived, at random depending on network
+      // jitter. A splash hit is only ever a side effect of a primary swing
+      // that just landed, never a substitute for one, so it's allowed
+      // within a short window after the last REAL (non-splash) hit instead
+      // — bounded by how often those land (still floored at 150ms below),
+      // not by its own independent clock a modified client could hammer on
+      // its own to bypass that floor.
+      if (now - (attacker._lastAtk || 0) > 200) return null;
+    } else {
+      // Rate-limit: max one server hit every 150ms
+      if (now - (attacker._lastAtk || 0) < 150) return null;
+      attacker._lastAtk = now;
+    }
     const enemy = this._enemyMap.get(enemyId); // O(1) Map lookup
     if (!enemy || enemy.hp <= 0) return null;
     // Instance isolation, as a RULE rather than as a consequence of the map.
@@ -3291,7 +3309,10 @@ class Room {
     // defDownTimer is running (see applySkillEffect's 'defDown' branch).
     const _effDef = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
     const base = Math.max(1, attacker.atk - _effDef + Math.floor(Math.random() * 7) - 3);
-    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    const { dmg: _rawDmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    // Splash always lands at exactly 50% of what the same hit would have
+    // dealt directly — flat, not reduced further by anything above.
+    const dmg = splash ? Math.max(1, Math.round(_rawDmg * 0.5)) : _rawDmg;
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
     enemy.aggro = true;

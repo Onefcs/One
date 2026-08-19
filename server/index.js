@@ -11321,12 +11321,16 @@ io.on('connection', socket => {
     return true;
   }
 
-  safeOn('attack', ({ enemyId } = {}) => {
+  safeOn('attack', ({ enemyId, splash } = {}) => {
     if (!_atkAllowed()) return;
     if (!currentRoom) return;
     if (_pvpFrozen(socket.id)) return;
     if (currentRoom.isPlayerInSafeZone(socket.id)) return;
-    const result = currentRoom.attackEnemy(socket.id, enemyId);
+    // splash: "Безумие" (advanced deathknight E) — a basic hit that rides
+    // along with a primary attack rather than standing on its own. Always
+    // exactly 50% damage, gated by its own window off the attacker's last
+    // real hit — see attackEnemy's own comment (server/game/Room.js).
+    const result = currentRoom.attackEnemy(socket.id, enemyId, { splash: !!splash });
     if (!result) return;
     if (result.immune) {
       socket.emit('guildWarError', { msg: result.reason === 'no_clan' ? 'Нужен клан, чтобы атаковать замок' : 'Нельзя атаковать свой замок' });
