@@ -2171,6 +2171,11 @@ let _hdrNameW = 0, _hdrNameStr = '';
 let _nexumIconImg = null;
 let _gramIconImg = null;
 
+// Hit regions for the header currency "+" buttons (gold/Liberty/GRAM, top to
+// bottom), rebuilt every drawHeader() frame — see _checkCurrencyBtnTouch,
+// js/input.js.
+const _hdrCurBtns = [];
+
 // Minimap floor-tile buffer — see the cache block inside drawHeader() below.
 // Only rebuilt when the player crosses into a new tile (or theme/scale
 // changes); every other frame just blits it at the current sub-tile offset.
@@ -2227,19 +2232,20 @@ function drawHeader() {
   // the whole (huge) world. The window follows the player continuously
   // (float-precision top-left, not tile-snapped) and is small enough
   // (~60×60 tiles) to redraw from scratch every frame with no cache needed.
+  // Plain circle, on purpose — no title bar, no dropdown, no buttons around
+  // it. Whatever needs a zone label or a recenter/world-map shortcut lives
+  // elsewhere in the HUD (room-level readout was here once; removed — see
+  // git history if it needs to come back).
   const _MM_RADIUS = 30; // tiles each direction from the player
-  const mmPad = 6;
-  const mmH = HEADER_H - mmPad * 2;
-  const mmW = mmH;
-  const mmX = W - mmW - mmPad - 4;
-  const mmY = mmPad;
+  const mmR = HEADER_H / 2 - 8;
+  const mmCx = W - mmR - 10, mmCy = HEADER_H / 2;
+  const mmW = mmR * 2, mmH = mmR * 2;
+  const mmX = mmCx - mmR, mmY = mmCy - mmR;
   const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
   const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
 
   // Map panel border (circular)
-  const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
-  const mpX = mmX - 4; // left-edge reference used by the header divider/info-area layout below
   ctx.fillStyle = 'rgba(15,11,4,0.92)';
   ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
@@ -2332,21 +2338,69 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
-  // Current room-level label (global monster level 1-80, or "Зал" in the hub)
-  const _hudRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(p.x, p.y) : null;
-  const _hudLbl = _hudRoom?.monsterLvl ? (t('levelAbbrev') + _hudRoom.monsterLvl) : t('hallShort');
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillText(_hudLbl, mmX + mmW / 2 + 1, mmY + mmH - 2);
-  ctx.fillStyle = 'rgba(239,199,131,0.95)';
-  ctx.fillText(_hudLbl, mmX + mmW / 2, mmY + mmH - 3);
+  // ── Currency column (right side, between the info block and the map) ──
+  // Three rows — gold / Liberty (Nexum) / GRAM — each an icon badge, its
+  // value, and a small "+" that jumps to wherever that currency is topped
+  // up. Laid out top-down so drawAvatar/HP/XP below can size infoRight off
+  // curLeft instead of the map, same as the old single-divider layout did.
+  const curW = 102, curRowH = 24, curGap = 4;
+  const curRight = mmCx - mmR - 12;
+  const curLeft = curRight - curW;
+  const curTop = HEADER_H / 2 - (curRowH * 3 + curGap * 2) / 2;
+  _hdrCurBtns.length = 0;
+  const _curRows = [
+    { icon: 'coin', img: null,           color: '#e3941d', val: Math.floor(p.gold) },
+    { icon: null,   img: _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })()), color: '#b2864d', val: window._nexumBalance || 0 },
+    { icon: null,   img: _gramIconImg  || (_gramIconImg  = (() => { const i = new Image(); i.src = '/images/gram-icon.png';   return i; })()), color: '#4fd67a', val: (window._gramBalance || 0).toFixed(7) },
+  ];
+  _curRows.forEach((row, i) => {
+    const cy = curTop + curRowH / 2 + i * (curRowH + curGap);
+    const icX = curLeft + 10;
+    // Icon badge
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.arc(icX, cy, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = row.color + '66'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(icX, cy, 10, 0, Math.PI * 2); ctx.stroke();
+    if (row.icon) {
+      drawIconCtx(ctx, row.icon, icX, cy, 12, row.color);
+    } else if (row.img && row.img.complete && row.img.naturalWidth > 0) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(icX, cy, 8, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(row.img, icX - 8, cy - 8, 16, 16);
+      ctx.restore();
+    }
+    // Value — shrink the font until it clears the "+" button; GRAM's
+    // 7-decimal balance (toFixed(7)) is the one that actually needs this.
+    const plusX = curRight - 9;
+    const valMaxW = (plusX - 13) - (icX + 13);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = row.color;
+    let _valFs = 11;
+    ctx.font = `bold ${_valFs}px ${F}`;
+    while (_valFs > 7 && ctx.measureText(String(row.val)).width > valMaxW) {
+      _valFs--; ctx.font = `bold ${_valFs}px ${F}`;
+    }
+    ctx.fillText(row.val, icX + 13, cy);
+    // "+" button
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.arc(plusX, cy, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(203,161,89,0.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(plusX, cy, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#e3c98a'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(plusX - 4, cy); ctx.lineTo(plusX + 4, cy);
+    ctx.moveTo(plusX, cy - 4); ctx.lineTo(plusX, cy + 4);
+    ctx.stroke();
+    _hdrCurBtns.push({ x: plusX, y: cy, r: 12 });
+  });
 
-  // Vertical divider
+  // Vertical divider between the info block and the currency column
+  const dividerX = curLeft - 6;
   ctx.strokeStyle = 'rgba(120,96,55,0.3)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dividerX, 5); ctx.lineTo(dividerX, HEADER_H - 5); ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
-  const avX = 30, avY = HEADER_H / 2, avR = 18;
+  const avX = 30, avY = 32, avR = 20;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
@@ -2369,77 +2423,51 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
   ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
-  if (!hasTgAvatar) drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 20, p.charDef.color);
+  if (!hasTgAvatar) drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 22, p.charDef.color);
+
+  // Level badge — overlaps the avatar's bottom edge
+  const lvlBadgeY = avY + avR - 2, lvlBadgeR = 10;
+  ctx.fillStyle = '#150f08';
+  ctx.beginPath(); ctx.arc(avX, lvlBadgeY, lvlBadgeR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(avX, lvlBadgeY, lvlBadgeR, 0, Math.PI * 2); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#f4d8a7';
+  ctx.fillText(p.lvl, avX, lvlBadgeY + 1);
 
   // ── Info area ─────────────────────────────────────────────
-  const infoX = avX + avR + 9;
-  const infoRight = mpX - 10;
+  const infoX = avX + avR + 12;
+  const infoRight = dividerX - 6;
   const infoW = infoRight - infoX;
 
-  // Row 1: Name + Level
+  // Row 1: Name
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
   ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
-  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
-  ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
 
-  // Row 2: Class name + inline stats (gold / atk / def)
+  // Row 2: Class name + БМ (battle power)
   ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
-  ctx.fillText(p.charDef.name, infoX, 27);
+  ctx.fillText(p.charDef.name, infoX, 28);
   if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
     _hdrNameStr = p.charDef.name;
     _hdrNameW = ctx.measureText(p.charDef.name).width;
   }
   let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
-  // БМ label + value
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
-  ctx.fillText(t('bmAbbrev'), stxH, 24);
+  ctx.fillText(t('bmAbbrev'), stxH, 25);
   const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
   ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
-  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
-  stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
-  // Gold
-  drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#e3941d');
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
-  const _goldDisp = Math.floor(p.gold);
-  ctx.fillText(_goldDisp, stxH + 13, 24);
-  stxH += 13 + ctx.measureText(String(_goldDisp)).width + 8;
-  // Nexum balance — shown unconditionally, same as GRAM below, so a currency
-  // doesn't appear/disappear from the HUD as its balance crosses zero.
-  const _nxBal = window._nexumBalance || 0;
-  {
-    const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
-    if (_nxImg.complete && _nxImg.naturalWidth > 0) {
-      ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
-    } else {
-      ctx.fillStyle = '#b2864d'; ctx.font = `bold 9px ${F}`;
-      ctx.fillText('N', stxH + 2, 24);
-    }
-    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
-    ctx.fillText(_nxBal, stxH + 14, 24);
-    stxH += 14 + ctx.measureText(String(_nxBal)).width + 8;
-  }
-  // GRAM balance (tiny per-kill drop currency, see enemyKilled's 'gram' field)
-  const _grBal = window._gramBalance || 0;
-  const _grImg = _gramIconImg || (_gramIconImg = (() => { const i = new Image(); i.src = '/images/gram-icon.png'; return i; })());
-  if (_grImg.complete && _grImg.naturalWidth > 0) {
-    ctx.drawImage(_grImg, stxH, 24 - 6, 12, 12);
-  } else {
-    ctx.fillStyle = '#4fd67a'; ctx.font = `bold 9px ${F}`;
-    ctx.fillText('G', stxH + 2, 24);
-  }
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#4fd67a';
-  ctx.fillText(_grBal.toFixed(7), stxH + 14, 24);
+  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 25);
   ctx.textBaseline = 'alphabetic';
 
   // Separator
   ctx.strokeStyle = 'rgba(109,88,51,0.4)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(infoX, 35); ctx.lineTo(infoRight, 35); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
-  const hpY = 42, hbH = 9;
+  const hpY = 48, hbH = 10;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
@@ -2473,7 +2501,7 @@ function drawHeader() {
   ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
 
   // ── XP bar ────────────────────────────────────────────────
-  const xpY = 55, xbH = 6;
+  const xpY = 64, xbH = 7;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(237,190,110,0.9)';

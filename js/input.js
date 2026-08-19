@@ -296,6 +296,26 @@ function _checkEpicPackBtnTouch(cx, cy) {
   return false;
 }
 
+// The three "+" buttons next to the header's gold/Liberty(Nexum)/GRAM
+// balances — hit regions are pushed each frame by drawHeader (js/ui.js) into
+// _hdrCurBtns, top-to-bottom in that order. Each jumps to wherever that
+// currency actually gets topped up: gold has no direct purchase, so it opens
+// the Market (trade for it); Liberty is one of the GRAM shop's payouts;
+// GRAM itself deposits via TonConnect.
+function _checkCurrencyBtnTouch(cx, cy) {
+  if (typeof _hdrCurBtns === 'undefined' || !_hdrCurBtns.length) return false;
+  for (let i = 0; i < _hdrCurBtns.length; i++) {
+    const b = _hdrCurBtns[i];
+    if (Math.hypot(cx - b.x, cy - b.y) < b.r) {
+      if (i === 0 && typeof openMarketPanel === 'function') openMarketPanel();
+      else if (i === 1 && typeof openGramShopPanel === 'function') openGramShopPanel();
+      else if (i === 2 && typeof openGramDepositModal === 'function') openGramDepositModal();
+      return true;
+    }
+  }
+  return false;
+}
+
 
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
@@ -452,6 +472,7 @@ function onTS(e) {
     if (_checkPartyInviteTouch(p.x, p.y)) continue;
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
+    if (_checkCurrencyBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
     if (_checkEpicPackBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
@@ -529,6 +550,7 @@ function onMD(e) {
   if (_checkPartyInviteTouch(p.x, p.y)) return;
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
+  if (_checkCurrencyBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
   if (_checkEpicPackBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
