@@ -284,7 +284,9 @@ const {
   _STONE_DEFS, _GRAM_SHOP_PKGS, _SEASON_SHOP_PKGS, _SPECIAL_SHOP_PKGS,
   _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _shopNewSlots, _vipLevelItems, _vipGoldReward,
 } = require('../server/shop');
-const { CHAR_DEF, ITEM_DEF: _ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../shared/definitions');
+const {
+  CHAR_DEF, ITEM_DEF: _ITEM_DEF, CRAFT_MATS, BOX_DEF, GEAR_CRAFT_RECIPES,
+} = require('../shared/definitions');
 
 const _CLASSES = Object.keys(CHAR_DEF);
 const _ALL_PKGS = [..._GRAM_SHOP_PKGS, ..._SEASON_SHOP_PKGS, ..._SPECIAL_SHOP_PKGS];
@@ -2709,6 +2711,57 @@ scenario('race: a grant landing during a shop purchase is not erased by its stal
     eq(stones, 0, 'a grant the server refused was not half-applied either');
   }
 
+  await c.close();
+});
+
+scenario('forge: crafting gear spends the Liberty it costs and reports the balance left', async () => {
+  // The forge is 679 lines that move materials, gear and currency, and before
+  // this it had one scenario — a race on openLootBox — and nothing else. That
+  // was found by mutation while moving it to server/handlers/forge.js: zeroing
+  // the session.nexum setter, so the forge's ten balance writes went nowhere,
+  // left the harness green at 600 passed.
+  //
+  // GEAR_CRAFT_RECIPES[0] is sw4 from 2× sw3 at +8 and 10× rece, chance 1, for
+  // 7000 Liberty. Read from the table rather than hardcoded so retuning the
+  // recipe retunes the test with it.
+  const rec = GEAR_CRAFT_RECIPES[0];
+  const mats = [];
+  for (const m of rec.mats) {
+    if (m.minEnhance != null) {
+      for (let i = 0; i < m.n; i++) mats.push({ id: m.id, enhance: m.minEnhance });
+    } else {
+      mats.push({ id: m.id, qty: m.n });
+    }
+  }
+  const START_LIBERTY = rec.nexumCost + 123;   // an odd remainder, so a stale
+                                               // balance cannot pass by luck
+  const c = await connectWithSaved('harness_forge_craft', {
+    lvl: 40, inventory: mats, nexumBalance: START_LIBERTY,
+  });
+  await enterWorld(c, 'deathknight');
+
+  const done = c.wait('gearCrafted', { timeout: 8000 }).then(v => ({ ok: v }))
+    .catch(() => null);
+  const failed = c.wait('craftGearError', { timeout: 8000 }).then(v => ({ err: v }))
+    .catch(() => null);
+  c.emit('craftGear', { itemId: rec.itemId });
+  const res = await Promise.race([done, failed]);
+
+  ok(res && res.ok, 'the craft goes through', res && res.err ? res.err.msg : 'no reply');
+  if (res && res.ok) {
+    eq(res.ok.success, true, 'a chance-1 recipe always succeeds');
+    // The assertion the mutation turned on: the balance the client is shown
+    // has to be the one the spend produced, not the one the session started
+    // with. A setter that drops its write leaves this at START_LIBERTY.
+    eq(res.ok.newNexumBalance, START_LIBERTY - rec.nexumCost,
+      'the Liberty cost is spent and the remainder reported');
+  }
+
+  // And it is spent for real, not only in the reply: a fresh look at the
+  // session agrees with what the craft said.
+  const inv = c.wait('inventorySync', { timeout: 6000 }).catch(() => null);
+  c.emit('requestInventory');
+  await inv;
   await c.close();
 });
 

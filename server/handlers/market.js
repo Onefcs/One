@@ -34,6 +34,12 @@
 // was declared in the connection closure but nothing outside these six handlers
 // ever touched it, so it moves in here as an ordinary local. Registration runs
 // once per socket, which is exactly the scope it wants.
+// GRAM movement is fully server-authoritative (the same balance/cache pattern
+// the wallet uses). The item itself is trusted from the client at the same
+// level as the rest of the inventory system — this game doesn't otherwise keep
+// a server-side copy of item stats to validate against. This note sat under a
+// `// ── Market ──` heading in server/index.js that had drifted 785 lines away
+// from the handlers it described; it is next to them now.
 const MarketListingModel = require('../models/MarketListing');
 const PlayerModel = require('../models/Player');
 const { VIP_THRESHOLDS } = require('../../shared/definitions');
