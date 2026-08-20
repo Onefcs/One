@@ -2727,7 +2727,26 @@ async function _translateText(text, targetLang) {
 // absolute balance write — which is the entire bug the $inc migration removed.
 // Balances move only through _incBalance/_spendBalance.
 const _BALANCE_FIELDS = ['gramBalance', 'nexumBalance'];
-function _persistSavedFields(authed, fields, extra) {
+// Returns the write promise so callers that need the persist to actually
+// land before proceeding (see socket.data._flushNow above) can await it;
+// existing fire-and-forget call sites are unaffected since they don't.
+//
+// A failed write used to vanish here with a bare `.catch(() => {})` — total
+// silence, no log line, nothing. Every progress field funnels through this
+// one function: the 3s save debounce, the 60s autosave, every level-up
+// (_grantXp), every item grant (_commitServerItems), and critically the
+// flush a device-switch kick or a disconnect registers in _pendingFlush,
+// which the NEXT login on this account explicitly awaits before its own DB
+// read (_claimSession) — so a DB hiccup spanning that one write was enough
+// to make an entire session's worth of honestly-earned progress (a farm run
+// left going for hours, say) never reach the database at all, and the next
+// login would read back whatever was there before it. Nothing in the logs
+// ever said why, which is what made "I farmed for hours and it's gone"
+// unanswerable. One retry after a short delay covers a blip (a failover, a
+// dropped pool connection) without risk: every field here is a plain $set of
+// an absolute value pulled from the session's own live state, so re-sending
+// the exact same write a moment later is always safe to repeat.
+async function _persistSavedFields(authed, fields, extra) {
   if (!authed) return;
   const set = {};
   Object.keys(fields).forEach(k => {
@@ -2735,10 +2754,18 @@ function _persistSavedFields(authed, fields, extra) {
     set[`savedData.${k}`] = fields[k];
   });
   if (extra) Object.keys(extra).forEach(k => { set[k] = extra[k]; });
-  // Returns the write promise so callers that need the persist to actually
-  // land before proceeding (see socket.data._flushNow above) can await it;
-  // existing fire-and-forget call sites are unaffected since they don't.
-  return PlayerModel.findByIdAndUpdate(authed._id, { $set: set }).catch(() => {});
+  try {
+    return await PlayerModel.findByIdAndUpdate(authed._id, { $set: set });
+  } catch (err) {
+    console.error(`[_persistSavedFields] write failed telegramId=${authed.telegramId}, retrying once:`, err);
+    await new Promise(r => setTimeout(r, 400));
+    try {
+      return await PlayerModel.findByIdAndUpdate(authed._id, { $set: set });
+    } catch (err2) {
+      console.error(`[_persistSavedFields] retry also failed telegramId=${authed.telegramId} — progress NOT saved:`, err2);
+      return null;
+    }
+  }
 }
 
 // Last-resort delivery: append items straight to the stored inventory when
