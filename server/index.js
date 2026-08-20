@@ -181,7 +181,7 @@ const {
   FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_TIERS, skillPointBudget,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -658,22 +658,20 @@ const _VIP_BP = [
 ];
 
 // ── GRAM Shop ─────────────────────────────────────────────────────────────────
-// 30% discount across every GRAM-priced pack (regular/pet/epic +Pack, season,
-// special). Mirrors js/ui.js's own PACK_DISCOUNT_PCT/packPrice, which only
-// draws the struck-through price — this is what actually gets charged, in
-// both gramShopBuy and specialShopBuy below.
+// 30% discount across every GRAM-priced pack (regular/pet/epic +Pack).
+// Mirrors js/ui.js's own PACK_DISCOUNT_PCT/packPrice, which only draws the
+// struck-through price — this is what actually gets charged, in gramShopBuy.
 const PACK_DISCOUNT_PCT = 0.3;
 function packPrice(gram) { return Math.max(1, Math.round(gram * (1 - PACK_DISCOUNT_PCT))); }
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
 const _GRAM_SHOP_PKGS = [
-  { id:'pkg1',   gram:1,   gold:1000,   potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
-  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:'common',   weapon:'common',   bonusSP:0,  skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:10,  gold:7000,   potions:10,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:2 } },
-  { id:'pkg30',  gram:30,  gold:20000,  potions:30,  armor:'uncommon', weapon:'uncommon', bonusSP:2,  skillBooks:{ each:1 },  enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:10 }, enhance:0, nexum:4000 },
-  { id:'pkg100', gram:220, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:30 }, enhance:8, nexum:10000 },
+  { id:'pkg1',   gram:1,   gold:10000,  potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
+  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:'uncommon', weapon:'uncommon', bonusSP:0,  skillBooks:{ random:1 } },
+  { id:'pkg10',  gram:20,  gold:7000,   potions:20,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:5 }, enhance:5, nexum:500 },
+  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
+  { id:'pkg100', gram:180, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
   // "Эпический" tier ("+Pack") — full epic armor+weapon set at +3, 50
   // safe-enchant (bless_stone) stones, 60 class skill books (each:15 × the
   // class's 4 books), a full buff-potion restock, bonus skill points and
@@ -683,67 +681,19 @@ const _GRAM_SHOP_PKGS = [
   // nothing about. Same id/rewards as before, just 300 → 600 GRAM.
   { id:'pkg300', gram:600, gold:0, potions:100, armor:'epic', weapon:'epic', bonusSP:20,
     skillBooks:{ each:15 }, enhance:3, nexum:10000, stones:{ bless_stone:50 } },
-  // Pet+cloak+artifact packages (rendered on the "Special" HUD panel, js/
-  // ui.js's _SPECIAL_PET_PKGS_UI — bought through this same handler since
-  // petChoice/classCloak/classArtifact/enhance are already fully supported
-  // below, just never previously used by any package). classCloak/
-  // classArtifact only ever exist at common/uncommon (see ITEM_DEF) — there
-  // is no rare tier, so petpkg3's own pet jump to rare isn't mirrored there.
-  { id:'petpkg1', gram:20,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:3 },
-  { id:'petpkg2', gram:60,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:3 },
-  { id:'petpkg3', gram:110, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:5 },
-];
-// ── Сезонные паки ────────────────────────────────────────────────────────────
-// Enhance stones only, priced in GRAM. Kept in the same shape as the regular
-// packages (and bought through the same handler) so the purchase path — the
-// atomic spend, the inventory-space check, the single commit — is shared
-// rather than duplicated. `stones` maps a CRAFT_MATS id to a quantity; both
-// stones stack, so a pack needs at most one new slot per kind.
-const _SEASON_SHOP_PKGS = [
-  { id:'sp5',  gram:5,  season:true, stones:{ norm_stone:10 } },
-  { id:'sp10', gram:10, season:true, stones:{ norm_stone:10, bless_stone:2  } },
-  { id:'sp20', gram:20, season:true, stones:{ norm_stone:15, bless_stone:5  } },
-  { id:'sp50', gram:50, season:true, stones:{ norm_stone:35, bless_stone:15 } },
-  // Liberty + a full set of buff potions. `potions: N` grants N of EVERY buff
-  // potion (see _VIP_BP and the purchase handler), which is what "N банок
-  // бафов всех" means — not N split across them.
-  { id:'sl10', gram:10, season:true, nexum:1000, potions:10 },
-  { id:'sl20', gram:20, season:true, nexum:2200, potions:20 },
-  { id:'sl50', gram:50, season:true, nexum:6000, potions:60 },
-];
-
-// ── Special Shop ─────────────────────────────────────────────────────────────
-// Advanced-skill books ("вторая профессия" — CRAFT_MATS' advSkillKey entries)
-// in a distribution the BUYER picks, unlike the regular skillBooks above
-// (each/random, no choice). bookCount is the total the buyer must split
-// across their class's four Q/W/E/R slots — see specialShopBuy below, which
-// is where that split is actually validated. ADV_SKILL_STUDY_COST (js/ui.js)
-// is 5 books per slot to learn one advanced skill, so these totals aren't
-// arbitrary: 5 = exactly one skill, 10 = two, 20 = every slot for the class.
-const _SPECIAL_SHOP_PKGS = [
-  { id:'special20',  gram:20,  bookCount:5,  bless:2,  seasonPoints:200  },
-  { id:'special50',  gram:50,  bookCount:10, bless:5,  seasonPoints:600  },
-  { id:'special100', gram:100, bookCount:20, bless:12, seasonPoints:1000 },
-  // Top tier: same buyer-picked book split as the three above (now 50
-  // instead of 20 — every slot for the class twice over), the unique class
-  // weapon (no other epic gear — see uniqueWeapon below), a rare pet of
-  // choice, class cloak+artifact (no rare tier exists for those — see
-  // petpkg3's own comment above), bonus skill points, Liberty and a full
-  // buff-potion restock. specialShopBuy grants these the same way
-  // gramShopBuy grants its own armor/weapon/petChoice/classCloak/
-  // classArtifact/bonusSP/nexum/potions fields — see the extra grant block
-  // there. uniqueWeapon swaps the plain epic-tier weapon the `weapon` field
-  // would otherwise resolve to (_SHOP_CLASS_WEAPONS[class].epic) for the
-  // buyer's class's own UNIQUE_WEAPONS entry instead (Меч/Топор/Лук/Посох/
-  // Жезл бездны) — those are normally craft-only (noDrop keeps them out of
-  // every random loot pool, shared/definitions.js), but an explicit shop
-  // grant by id bypasses that the same way UNIQUE_CRAFT_RECIPES does.
-  { id:'special270', gram:270, bookCount:50, bless:30, weapon:'epic', uniqueWeapon:true,
-    petChoice:'rare', classCloak:'uncommon', classArtifact:'uncommon', enhance:5,
-    bonusSP:15, nexum:10000, potions:100 },
+  // Pet+cloak+artifact packages (rendered on the GRAM shop's own Питомцы
+  // tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same handler
+  // since petChoice/classCloak/classArtifact/enhance are already fully
+  // supported below, just never previously used by any other package).
+  // classCloak/classArtifact only ever exist at common/uncommon (see
+  // ITEM_DEF) — there is no rare tier, so petpkg3's own pet jump to rare
+  // isn't mirrored there.
+  { id:'petpkg1', gram:50,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:8 },
+  { id:'petpkg2', gram:150, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
+  { id:'petpkg3', gram:250, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
@@ -6008,7 +5958,7 @@ io.on('connection', socket => {
   // in-memory limiter — matches this server's existing state model.
   const _HEAVY_EVENTS = new Set([
     'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
-    'gramGetHistory', 'gramShopBuy', 'specialShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
+    'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
     'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
@@ -6930,8 +6880,7 @@ io.on('connection', socket => {
     try {
     _ran = await _withEconLock(async () => {
     try {
-      const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId)
-                || _SEASON_SHOP_PKGS.find(p => p.id === pkgId);
+      const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
       // petChoice packages need a valid pick of the right rarity BEFORE any
       // GRAM is spent — refusing here (rather than after the deduction) means
@@ -7213,279 +7162,6 @@ io.on('connection', socket => {
     if (!_ran) socket.emit('gramShopError', { msg: 'Покупка уже обрабатывается' });
   });
 
-  // ── Special Shop (advanced-skill books "of choice") ────────────────────────
-  // Same GRAM-purchase shape as gramShopBuy above (atomic spend, room check,
-  // one commit, VIP progress), kept as its own handler rather than folded
-  // into that one: this is the only package type where the BUYER decides the
-  // item split, and threading that through gramShopBuy's already-large
-  // branch-per-reward-kind body risked the two kinds of packages interfering.
-  safeOn('specialShopBuy', async ({ pkgId, books, petId } = {}) => {
-    if (!authed || !pkgId) return;
-    if (_itemsBusy()) return socket.emit('specialShopError', { msg: _ITEMS_BUSY_MSG });
-    _itemOpBusy++;
-    let _ran;
-    try {
-    _ran = await _withEconLock(async () => {
-    try {
-      const pkg = _SPECIAL_SHOP_PKGS.find(p => p.id === pkgId);
-      if (!pkg) return socket.emit('specialShopError', { msg: 'Пакет не найден' });
-
-      // books: { Q, W, E, R } — how the buyer wants pkg.bookCount split
-      // across their class's four advanced-skill slots. Validated in full
-      // BEFORE any GRAM moves: every key must be one of the four slot
-      // letters, every value a non-negative integer, and the sum must be
-      // exactly pkg.bookCount — no more, no less. A missing/invalid split
-      // never costs the player anything.
-      const SLOTS = ['Q', 'W', 'E', 'R'];
-      if (!books || typeof books !== 'object' || Array.isArray(books)) {
-        return socket.emit('specialShopError', { msg: 'Выберите книги' });
-      }
-      if (Object.keys(books).some(k => !SLOTS.includes(k))) {
-        return socket.emit('specialShopError', { msg: 'Некорректный выбор' });
-      }
-      const dist = {};
-      let sum = 0;
-      for (const k of SLOTS) {
-        const n = Math.floor(Number(books[k]));
-        if (!Number.isFinite(n) || n < 0) return socket.emit('specialShopError', { msg: 'Некорректный выбор' });
-        dist[k] = n;
-        sum += n;
-      }
-      if (sum !== pkg.bookCount) {
-        return socket.emit('specialShopError', { msg: `Выберите ровно ${pkg.bookCount} книг` });
-      }
-
-      // petChoice (special270): same rule as gramShopBuy's own — a valid
-      // pick of the right rarity BEFORE any GRAM is spent, so a missing/
-      // invalid choice never costs the player anything.
-      let _chosenPet = null;
-      if (pkg.petChoice) {
-        _chosenPet = ITEM_DEF.find(d => d.id === petId && d.slot === 'pet' && d.rarity === pkg.petChoice);
-        if (!_chosenPet) return socket.emit('specialShopError', { msg: 'Выберите питомца' });
-      }
-
-      const _price = packPrice(pkg.gram);
-      if (_liveGram() < _price) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
-
-      const doc = await PlayerModel.findById(authed._id);
-      if (!doc) return;
-      // Drop earnings first, so the price is tested against everything the
-      // player has actually earned — same reasoning as gramShopBuy.
-      await _flushBalances();
-      const saved = doc.savedData || {};
-      const charClass = saved.type || 'lev';
-      const classAdvBooks = {};
-      CRAFT_MATS.forEach(m => { if (m.forClass === charClass && m.advSkillKey) classAdvBooks[m.advSkillKey] = m; });
-
-      // Live copy first — a fresh DB read here is up to ~3s behind (the
-      // saveProgress debounce), so building the purchase on it rolled back
-      // anything picked up in that window. Same pattern as gramShopBuy.
-      const _liveInv = _liveInventory();
-      // Entries are CLONED, not just the array. A shallow [...inv] shares every
-      // item object with the live inventory, so the `existing.qty += n` merges
-      // below were landing in _lastStats immediately — including on the paths
-      // that then bail out with "nothing was consumed" (claimVipRewards'
-      // outOfRoom refusal), which left a grant half-applied to a purchase that
-      // never happened. Cloning keeps this a scratch copy until it is committed.
-      const inv = _liveInv ? _liveInv.map(i => (i && typeof i === 'object' ? { ...i } : i))
-        : (Array.isArray(saved.inventory) ? saved.inventory.map(i => (i && typeof i === 'object' ? { ...i } : i)) : []);
-
-      // Room check before anything is deducted. Books and the safe stone all
-      // stack, so this is at most one new slot per book slot the buyer
-      // actually put a nonzero count in, plus one for bless_stone — plus
-      // whatever the higher special270 tier's extra armor/weapon/potions
-      // fields need (_shopNewSlots, shared with gramShopBuy — none of the
-      // fields it looks at overlap with the book/bless count just above).
-      const has = id => inv.some(i => i && i.id === id);
-      let _newSlots = 0;
-      SLOTS.forEach(k => { if (dist[k] > 0 && classAdvBooks[k] && !has(classAdvBooks[k].id)) _newSlots++; });
-      if (pkg.bless > 0 && !has('bless_stone')) _newSlots++;
-      _newSlots += _shopNewSlots(pkg, inv, charClass);
-      if (inv.length + _newSlots > SERVER_INV_MAX) {
-        logPlayer(authed.telegramId, authed.username, 'special_shop_refused',
-          { pkg: pkg.id, need: _newSlots, slots: `${inv.length}/${SERVER_INV_MAX}` });
-        return socket.emit('specialShopError', {
-          msg: `Нужно ${_newSlots} свободных мест в инвентаре (занято ${inv.length}/${SERVER_INV_MAX})`,
-        });
-      }
-
-      // The deduction is the affordability check — same _spendBalance rule as
-      // every other GRAM purchase in this file.
-      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', _price);
-      if (_paid === null) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
-      _gramBalance = _paid;
-
-      // Parallel record of every item this purchase grants, as plain
-      // {item, qty} deltas — same shape/reasoning as gramShopBuy's own
-      // _addedItems: only consumed by the cross-session branch further down.
-      const _addedItems = [];
-      const _addStack = (base, qty) => {
-        if (!base || qty <= 0) return;
-        const existing = inv.find(i => i.id === base.id);
-        if (existing) existing.qty = (existing.qty || 1) + qty;
-        else inv.push({ ...base, qty });
-        _addedItems.push({ item: base, qty });
-      };
-      SLOTS.forEach(k => { if (dist[k] > 0) _addStack(classAdvBooks[k], dist[k]); });
-      if (pkg.bless > 0) _addStack(CRAFT_MATS.find(m => m.id === 'bless_stone'), pkg.bless);
-
-      // Extra rewards on the higher special270 tier — same fields/grant
-      // shape gramShopBuy uses for pkg.potions/armor/weapon/bonusSP/nexum,
-      // just also wired up here so one buyer-picked-books package can carry
-      // them too, instead of forcing a second purchase through the other shop.
-      if (pkg.potions > 0) _VIP_BP.forEach(bp => _addStack(bp, pkg.potions));
-      if (pkg.armor) {
-        (_SHOP_ARMOR_SETS[pkg.armor] || []).forEach(id => {
-          const base = ITEM_DEF.find(d => d.id === id);
-          if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
-        });
-      }
-      if (pkg.weapon) {
-        // uniqueWeapon (special270): the buyer's class's own UNIQUE_WEAPONS
-        // entry (unique:true on the merged ITEM_DEF copy — shared/
-        // definitions.js) instead of the plain epic-tier weapon `weapon`
-        // would otherwise resolve to via _SHOP_CLASS_WEAPONS.
-        const base = pkg.uniqueWeapon
-          ? ITEM_DEF.find(d => d.unique && d.forClass && d.forClass.includes(charClass))
-          : ITEM_DEF.find(d => d.id === (_SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev)[pkg.weapon]);
-        if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
-      }
-      // Class-locked cloak/artifact + the buyer's chosen pet — same fields/
-      // grant shape gramShopBuy uses for these three.
-      if (pkg.classArtifact) {
-        const base = ITEM_DEF.find(d => d.slot === 'artifact' && d.rarity === pkg.classArtifact && d.forClass && d.forClass.includes(charClass));
-        if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
-      }
-      if (pkg.classCloak) {
-        const base = ITEM_DEF.find(d => d.slot === 'cloak' && d.rarity === pkg.classCloak && d.forClass && d.forClass.includes(charClass));
-        if (base) { inv.push({ ...base, enhance: pkg.enhance || 0 }); _addedItems.push({ item: { ...base, enhance: pkg.enhance || 0 } }); }
-      }
-      if (_chosenPet) {
-        inv.push({ ..._chosenPet, enhance: pkg.enhance || 0 });
-        _addedItems.push({ item: { ..._chosenPet, enhance: pkg.enhance || 0 } });
-      }
-      if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
-      // Liberty (Nexum) — an atomic $inc via _incBalance, safe regardless of
-      // which socket ends up "live" by the time this lands (unlike the
-      // inventory/bonusSP writes below, which is exactly what the
-      // cross-session branch further down exists to protect).
-      if (pkg.nexum > 0) {
-        const _nb = await _incBalance(authed.telegramId, 'nexumBalance', pkg.nexum);
-        if (_nb !== null) _nexumBalance = _nb;
-      }
-
-      // VIP progress from purchase — identical rule to gramShopBuy, GRAM is
-      // GRAM regardless of which shop it was spent in.
-      let _vipLvl = saved.vipLevel || 0;
-      let _vipDep = saved.vipDeposited || 0;
-      const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
-      const _prevVipLvl = _vipLvl;
-      if (_vipLvl < 10) {
-        _vipDep += _price;
-        while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
-          _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
-          _vipLvl++;
-          _vipPend.push(_vipLvl);
-        }
-        saved.vipLevel = _vipLvl;
-        saved.vipDeposited = _vipDep;
-        saved.vipPending = _vipPend;
-      }
-
-      // Cross-session guard — same reasoning/shape as gramShopBuy's own:
-      // this handler holds across several awaits (findById, _flushBalances,
-      // _spendBalance, an optional nexum grant) before it gets here, and the
-      // `inv`/`saved.bonusSP` built above are a snapshot that a reconnect on
-      // a different socket in the meantime would make stale. Delegate the
-      // grant as a delta against whichever socket is live now instead of
-      // committing straight into this (possibly dead) closure's _lastStats.
-      // Only added once special270 started carrying real value beyond books/
-      // bless/season points (epic gear, 10000 Liberty) — the three original
-      // packages never needed it.
-      if (activeSessions.get(authed.telegramId) !== socket.id) {
-        const _target = _socketForTelegramId(authed.telegramId);
-        const _result = _target && _target.data._applyGrant
-          ? _target.data._applyGrant({
-              addItems: _addedItems, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: _price,
-            }, 'special_shop_cross_session', { pkg: pkg.id, gram: pkg.gram })
-          : null;
-        if (!_result) {
-          await PlayerModel.updateOne({ _id: doc._id }, {
-            $push: { 'savedData.inventory': { $each: _addedItems.map(({ item, qty }) => ({ ...item, ...(qty != null ? { qty } : {}) })) } },
-            ...(pkg.bonusSP > 0 ? { $inc: { 'savedData.bonusSP': pkg.bonusSP } } : {}),
-          }).catch(() => {});
-        }
-        logPlayer(authed.telegramId, authed.username, 'special_shop_cross_session',
-          { pkg: pkg.id, gram: pkg.gram, delivered: !!_result, hadLiveSocket: !!_target });
-        const _newInv = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : inv;
-        const _res = _result || { bonusSP: saved.bonusSP || 0, vipLevel: _vipLvl, vipDeposited: _vipDep, vipPending: _vipPend };
-        const _seasonTotalX = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
-        if (_target) {
-          _target.emit('specialShopResult', {
-            pkgId, newBalance: _gramBalance, newInventory: _newInv,
-            newBonusSP: _res.bonusSP, newNexumBalance: _nexumBalance,
-            vipData: { level: _res.vipLevel, deposited: _res.vipDeposited, pending: _res.vipPending },
-            leveled: _res.vipLevel > _prevVipLvl, seasonTotal: _seasonTotalX,
-          });
-          if (_res.vipLevel > _prevVipLvl) {
-            _target.emit('vipUpdate', { level: _res.vipLevel, deposited: _res.vipDeposited, pending: _res.vipPending });
-          }
-        }
-        io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
-        return;
-      }
-
-      saved.inventory = inv;
-      // Targeted $set, same reasoning as gramShopBuy's own — a full-document
-      // save from the doc fetched at the top of this handler could already be
-      // stale by the time this lands.
-      const _specialSet = {
-        'savedData.inventory':    inv,
-        'savedData.vipLevel':     _vipLvl,
-        'savedData.vipDeposited': _vipDep,
-        'savedData.vipPending':   _vipPend,
-      };
-      if (pkg.bonusSP > 0) _specialSet['savedData.bonusSP'] = saved.bonusSP;
-      await PlayerModel.updateOne({ _id: doc._id }, { $set: _specialSet });
-
-      if (_lastStats && pkg.bonusSP > 0) _lastStats.bonusSP = saved.bonusSP;
-
-      // Bumps the revision, so a client autosave queued before this purchase
-      // can no longer land afterwards and wipe the items out.
-      _commitServerItems(inv, null, 'special_shop', { pkg: pkg.id, gram: pkg.gram, books: dist });
-      socket.data.vipLevel = _vipLvl;
-      _setVipAura(authed.username, _vipLvl);
-
-      // Season points — best-effort. The rest of the purchase (books, safe
-      // stones, VIP progress) is real value already paid for and granted;
-      // not letting a season that happens to be over right now undo any of
-      // that, same as every other season-adjacent grant in this file.
-      const _seasonTotal = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
-
-      socket.emit('specialShopResult', {
-        pkgId,
-        newBalance: _gramBalance,
-        newInventory: inv,
-        newBonusSP: saved.bonusSP || 0,
-        newNexumBalance: _nexumBalance,
-        vipData: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
-        leveled: _vipLvl > _prevVipLvl,
-        seasonTotal: _seasonTotal,
-      });
-      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
-      if (_vipLvl > _prevVipLvl) {
-        socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
-      }
-    } catch (err) {
-      console.error('specialShopBuy:', err);
-      logPlayerErr(authed.telegramId, authed.username, 'special_shop', err, { pkgId });
-    }
-    });
-    } finally {
-      _itemOpBusy--;
-    }
-    if (!_ran) socket.emit('specialShopError', { msg: 'Покупка уже обрабатывается' });
-  });
 
   // ── Reset stat upgrades (Улучшения → Сбросить) ─────────────────────────────
   // Costs Liberty, so the charge has to happen here: Liberty is the one
@@ -8277,14 +7953,20 @@ io.on('connection', socket => {
   // upgrades-budget check above both call it, so client and server can't
   // disagree on the result).
   //
-  // Pure item cost (REBIRTH_COST) — no Liberty spend — so unlike craftGear/
-  // resetUpgrades this never awaits a balance call: everything here runs off
-  // _lastStats in one synchronous pass, which is also why it needs none of
-  // their cross-session-during-an-await machinery (nothing yields between
-  // the mat check and the mutation, so activeSessions/_lastStats can't have
-  // moved out from under it).
-  safeOn('rebirth', () => {
+  // Bought like a GRAM-shop pack: the buyer picks one of the three
+  // REBIRTH_TIERS (shared/definitions.js) — same GRAM+materials cost the
+  // client's rebirth UI shows, priced higher per tier. That GRAM leg means
+  // this now needs gramShopBuy's exact atomic-spend shape (an await between
+  // the balance check and its deduction), so it runs under _withEconLock
+  // the same way instead of the single synchronous pass the old flat item-
+  // cost version used.
+  safeOn('rebirth', async ({ tierId } = {}) => {
     if (!authed) return;
+    if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
+    _itemOpBusy++;
+    let _ran;
+    try {
+    _ran = await _withEconLock(async () => {
     try {
       if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
         return socket.emit('rebirthError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
@@ -8293,26 +7975,33 @@ io.on('connection', socket => {
       if (lvl < REBIRTH_LEVEL) {
         return socket.emit('rebirthError', { msg: `Нужен ${REBIRTH_LEVEL} уровень` });
       }
-      if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
+      const tier = REBIRTH_TIERS.find(tr => tr.id === tierId);
+      if (!tier) return socket.emit('rebirthError', { msg: 'Выберите тир перерождения' });
+
       const inv = _lastStats.inventory;
       const _beforeLen = inv.length;
       const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
       const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
-      // Every 5th rebirth costs double (rebirthCostFor, shared/definitions.js)
-      // — based on the rebirth about to happen (current rebirths + 1), not
-      // the count already banked.
-      const _cost = rebirthCostFor(_lastStats.rebirths || 0);
-      for (const [id, need] of Object.entries(_cost)) {
+      for (const [id, need] of Object.entries(tier.cost)) {
         const have = matCount(id);
         if (have < need) {
           return socket.emit('rebirthError', { msg: `Нужно ${need} × ${matName(id)} (есть ${have})` });
         }
       }
+      // GRAM checked/spent the same way gramShopBuy does — the deduction IS
+      // the affordability check (_spendBalance only writes if the stored
+      // balance covers it), so nothing here can spend GRAM the account
+      // doesn't have, whatever the cached figure said a moment ago.
+      if (_liveGram() < tier.gram) return socket.emit('rebirthError', { msg: 'Недостаточно GRAM' });
+      const _paidGram = await _spendBalance(authed.telegramId, 'gramBalance', tier.gram);
+      if (_paidGram === null) return socket.emit('rebirthError', { msg: 'Недостаточно GRAM' });
+      _gramBalance = _paidGram;
+
       // All four cost items stack (BOX_DEF/CRAFT_MATS' box/recipe slots —
       // isStackableItem, shared/definitions.js), so a plain qty-decrement
       // pass covers every one of them — no enhanced-item matching needed,
       // unlike craftGear's mats (which can carry a minEnhance).
-      for (const [id, need] of Object.entries(_cost)) {
+      for (const [id, need] of Object.entries(tier.cost)) {
         let left = need;
         for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
           const e = inv[i];
@@ -8389,14 +8078,14 @@ io.on('connection', socket => {
       // Emits inventorySync with the post-cost inventory —
       // rebirthDone below deliberately carries no inventory field of its own,
       // same "already landed via inventorySync" shape as craftGear/boxOpened.
-      _commitServerItems(inv, null, 'rebirth', { rebirths: _lastStats.rebirths }, { beforeLen: _beforeLen });
+      _commitServerItems(inv, null, 'rebirth', { rebirths: _lastStats.rebirths, tier: tier.id }, { beforeLen: _beforeLen });
       _persistSavedFields(authed, {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
         bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
       });
       logPlayer(authed.telegramId, authed.username, 'rebirth', {
-        rebirths: _lastStats.rebirths, fromLvl: lvl,
+        rebirths: _lastStats.rebirths, fromLvl: lvl, tier: tier.id, gramPaid: tier.gram,
         // What the rebirth actually cost and paid in points — the one line
         // that makes a later "my skill points changed" report answerable.
         spentSP: _spentSP, bonusSP: `${_oldBonus} -> ${_lastStats.bonusSP}`,
@@ -8405,12 +8094,19 @@ io.on('connection', socket => {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
         upgrades: _lastStats.upgrades || {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
+        newBalance: _gramBalance,
       });
+      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
     } catch (err) {
       console.error('rebirth:', err);
       logPlayerErr(authed.telegramId, authed.username, 'rebirth', err, {});
       socket.emit('rebirthError', { msg: 'Ошибка сервера' });
     }
+    });
+    } finally {
+      _itemOpBusy--;
+    }
+    if (!_ran) socket.emit('rebirthError', { msg: 'Секунду, повторите' });
   });
 
   // ── Enchant stone crafting — REMOVED ──────────────────────────────────────
