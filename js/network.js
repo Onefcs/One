@@ -3738,20 +3738,6 @@ function netClaimQuest(idx) {
   if (socket?.connected) socket.emit('claimQuest', { idx });
 }
 
-// ── Сезон ───────────────────────────────────────────────────────────────────
-function netSeasonSync()   { if (socket?.connected) socket.emit('seasonSync'); }
-function netSeasonRating() { if (socket?.connected) socket.emit('seasonRating'); }
-// Switch the quest band (10+ / 20+). The server answers with a full
-// seasonState, or a seasonError when the level isn't there yet.
-function netSeasonSetTier(tier) { if (socket?.connected) socket.emit('seasonSetTier', { tier }); }
-// Burning destroys the item for season points — the server owns both halves,
-// nothing is applied locally.
-// Same identity check as netSellItem above, and it matters more here: burning
-// accepts any burnable rarity, so a stale index could destroy a legendary the
-// player never picked.
-function netSeasonBurn(idx, id, enhance) { if (socket?.connected) socket.emit('seasonBurn', { idx, id, enhance }); }
-function netSeasonBurnAll(rarity) { if (socket?.connected) socket.emit('seasonBurnAll', { rarity }); }
-
 // Incoming GRAM events
 function _initGramHandlers(s) {
   s.on('gramTxCreated', ({ tx, newBalance }) => {

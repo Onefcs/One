@@ -2396,18 +2396,6 @@ canvas { display:block; width:100%; height:100%; }
   overflow: hidden;
 }
 #season-panel, #season-panel * { touch-action: pan-y; pointer-events: auto; }
-/* Same reason as the events panel above: .vip-header and .vip-body are both
-   absolutely positioned, so the tab strip has to be placed under the 50px
-   header explicitly and the body pushed below it. Relying on flex order
-   instead put the tabs BEHIND the header — which is why the Рейтинг tab was
-   neither visible nor clickable. */
-#season-panel .rating-tabs {
-  position: absolute;
-  top: 54px; left: 16px; right: 16px;
-  margin: 0;
-  z-index: 1;
-}
-#season-panel .vip-body { top: 100px; }
 /* Same reasoning as #season-panel above. */
 #gram-shop-panel .rating-tabs {
   position: absolute;
@@ -2416,34 +2404,59 @@ canvas { display:block; width:100%; height:100%; }
   z-index: 1;
 }
 #gram-shop-panel .vip-body { top: 100px; }
-.season-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 12px; border-radius: 8px;
-  background: rgba(255,255,255,.03);
-  border: 1px solid rgba(209,204,197,.07);
-  margin-bottom: 6px;
+/* Season-end closing card — the panel's only content now that Season 1 is
+   over. Same parchment/gold framing as .db-win-panel (victory modals), sized
+   to sit inline inside the season panel's scroll body instead of a fixed
+   overlay. */
+.season-end-card {
+  position: relative;
+  margin: 8px auto 0;
+  max-width: 320px;
+  background:
+    radial-gradient(ellipse 200px 140px at 50% -10%, rgba(255,180,84,0.16), transparent 65%),
+    linear-gradient(175deg, var(--leather-hi), var(--leather-lo) 85%);
+  border: 1px solid var(--gold-dim);
+  border-radius: 2px;
+  padding: 26px 20px 22px;
+  text-align: center;
+  box-shadow: 0 0 0 1px #000, 0 20px 40px -15px rgba(0,0,0,0.7);
 }
-.season-row.me { border-color: rgba(80,175,149,.55); background: rgba(80,175,149,.10); }
-.season-place { width: 30px; font-weight: 800; color: #d1ccc5; font-size: 13px; }
-.season-place.p1 { color: #ffd35c; } .season-place.p2 { color: #cfd6dd; } .season-place.p3 { color: #d99a5c; }
-.season-name { flex: 1; color: #d1ccc5; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.season-pts { color: #7ee0c0; font-weight: 800; font-size: 12.5px; }
-/* 10+ / 20+ quest band switch, above the active quest */
-.season-tier-bar { display: flex; gap: 8px; margin-bottom: 10px; }
-.season-tier {
-  flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
-  background: rgba(0,0,0,.3); border: 1px solid rgba(80,175,149,.22);
-  color: #a3957c; font-family: inherit; font-size: 13px; font-weight: 700;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
+.season-end-card::before, .season-end-card::after {
+  content: ""; position: absolute; width: 14px; height: 14px;
+  border: 1.5px solid var(--gold);
 }
-.season-tier > span { font-size: 10.5px; font-weight: 400; opacity: .75; }
-.season-tier.active { background: rgba(80,175,149,.16); border-color: #50af95; color: #7ee0c0; }
-.season-tier.locked { opacity: .5; }
-
-.season-bar { height: 8px; border-radius: 5px; background: rgba(0,0,0,.45); overflow: hidden; margin: 8px 0 4px; }
-.season-bar > i { display: block; height: 100%; background: linear-gradient(90deg,#50af95,#7ee0c0); }
-.season-burn-grid { display: flex; gap: 8px; margin-top: 8px; }
-.season-burn-grid > button { flex: 1; }
+.season-end-card::before { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+.season-end-card::after  { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+.season-end-rule {
+  display: flex; align-items: center; gap: 10px;
+  color: #ffcf8a; font-size: 12px; font-weight: 700; letter-spacing: 1px;
+  margin: 18px 0 10px;
+}
+.season-end-rule:first-child { margin-top: 0; }
+.season-end-rule::before, .season-end-rule::after {
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+}
+.season-end-title { font-size: 20px; font-weight: 800; letter-spacing: .5px; color: #f5dbae; margin-bottom: 4px; }
+.season-end-sub { font-size: 12.5px; color: #a2988a; margin-bottom: 6px; }
+.season-end-winners-hdr {
+  margin-top: 18px; margin-bottom: 10px;
+  font-size: 12px; font-weight: 700; letter-spacing: .5px;
+  color: #ffcf8a;
+}
+.season-end-winners { display: flex; flex-direction: column; gap: 8px; }
+.season-end-winner {
+  display: flex; align-items: center; gap: 9px;
+  background: rgba(209,204,197,.04);
+  border: 1px solid rgba(209,204,197,.09);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.season-end-medal { font-size: 15px; flex: 0 0 auto; }
+.season-end-name { flex: 1; text-align: left; color: #d7cfc2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.season-end-prize { color: #ffcf8a; font-weight: 700; font-variant-numeric: tabular-nums; }
+.season-end-next { font-size: 13px; color: #7ee0c0; font-weight: 700; margin-bottom: 2px; }
 
 #events-btn.db-open {
   color: #ffd18a;
