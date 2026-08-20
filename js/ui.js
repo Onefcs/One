@@ -639,8 +639,17 @@ function _rebirthCostDef(id) {
       || (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(d => d.id === id))
       || null;
 }
+// dungeonLvl === 1 is the hub — server/game/floors.js's FLOOR_IDS.hub, which
+// the client never imports (it's server-only), so this mirrors that literal
+// the same way _resumeSameFloor (js/network.js) already compares dungeonLvl
+// against a raw floor id. The server's own rebirth handler enforces the real
+// gate (currentFloor !== FLOOR_IDS.hub); this is only what disables the
+// button so a player isn't sent to the confirm dialog just to have the
+// server refuse it a moment later.
+function _inHub() { return dungeonLvl === 1; }
 function _rebirthReady() {
   if (!player) return false;
+  if (!_inHub()) return false;
   if ((player.lvl || 1) < REBIRTH_LEVEL) return false;
   return Object.entries(rebirthCostFor(player.rebirths || 0)).every(([id, need]) => countMaterial(id) >= need);
 }
@@ -671,6 +680,8 @@ function updateRebirthUI() {
   const doubleHint = _doubled
     ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('rebirthDoubleCostFmt', { n: _nextRebirthN })}</div>`
     : '';
+  const hubHint = _inHub() ? '' :
+    `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#f88">${t('rebirthNeedHubLbl')}</div>`;
 
   el.innerHTML = `
     <div class="sec-title">${t('rebirthTabLbl')}</div>
@@ -678,6 +689,7 @@ function updateRebirthUI() {
     <div style="padding:0 12px 12px;font-size:13px;font-weight:700;color:${lvlOk ? '#98e456' : '#f88'}">
       ${tVars('rebirthLevelReqFmt', { lvl: REBIRTH_LEVEL, cur: player.lvl || 1 })}
     </div>
+    ${hubHint}
     ${doubleHint}
     <div class="vip-items-row" style="padding:0 12px">${rows}</div>
     <div style="padding:16px 12px 20px">

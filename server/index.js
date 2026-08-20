@@ -8012,6 +8012,14 @@ io.on('connection', socket => {
       if (lvl < REBIRTH_LEVEL) {
         return socket.emit('rebirthError', { msg: `Нужен ${REBIRTH_LEVEL} уровень` });
       }
+      // Hub-only, same as the teleport-home check above (:7303) reads
+      // currentFloor against this exact constant. Keeps a rebirth from firing
+      // mid-run in a dungeon/instance — a boss pull, a party mid-fight, an
+      // event zone — where a level-1 reset lands the player (and whoever they
+      // were with) somewhere they can no longer survive or belong.
+      if (currentFloor !== FLOOR_IDS.hub) {
+        return socket.emit('rebirthError', { msg: 'Перерождение доступно только в Зале' });
+      }
       if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
       const inv = _lastStats.inventory;
       const _beforeLen = inv.length;
