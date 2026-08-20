@@ -805,6 +805,58 @@ scenario('floors: Guild War is its own floor, window-gated, and force-evicted wh
   await c.close();
 });
 
+scenario('admin: every /admin route refuses a missing or wrong token', async () => {
+  // Found by mutation, not by reading: gutting adminAuth so it calls next()
+  // unconditionally left the whole admin API open and the harness green at 595
+  // passed. Nothing here asserted that admin endpoints are guarded at all —
+  // they were only ever exercised WITH a valid token, which proves the happy
+  // path and nothing else. An admin API that silently loses its auth is worth
+  // more than one test.
+  const probes = [
+    ['GET', '/admin/stats'],
+    ['GET', '/admin/players?q='],
+    ['GET', '/admin/maintenance'],
+    ['GET', '/admin/market'],
+    ['GET', '/admin/special-quests'],
+    ['GET', '/admin/race10'],
+    ['GET', '/admin/guildwar'],
+    ['POST', '/admin/give-all'],
+    ['POST', '/admin/event-boss'],
+  ];
+
+  const open = [], wrongOk = [];
+  for (const [method, path] of probes) {
+    const bare = await fetch(`${BASE}${path}`, { method });
+    if (bare.status !== 401) open.push(`${path} → ${bare.status} with no token`);
+    const bad = await fetch(`${BASE}${path}`, {
+      method, headers: { Authorization: 'Bearer not-a-real-token' },
+    });
+    if (bad.status !== 401) wrongOk.push(`${path} → ${bad.status} with a junk token`);
+  }
+  eq(open.join(', '), '', 'no admin route answers without a token');
+  eq(wrongOk.join(', '), '', 'and none accepts a token it did not issue');
+
+  // The same routes DO answer once the token is real, so the check above is
+  // rejecting the caller rather than the route being broken outright.
+  const loginRes = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  });
+  const { token } = await loginRes.json();
+  const okRes = await fetch(`${BASE}/admin/stats`, { headers: { Authorization: `Bearer ${token}` } });
+  eq(okRes.status, 200, 'a real token still gets through');
+
+  // And the login endpoint itself refuses a wrong password rather than issuing
+  // a token anyone could then reuse.
+  const badLogin = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'not-the-password' }),
+  });
+  ok(badLogin.status >= 400, 'a wrong password is refused', `status ${badLogin.status}`);
+  const badBody = await badLogin.json().catch(() => ({}));
+  eq(badBody.token, undefined, 'and hands back no token');
+});
+
 scenario('admin: maintenance mode kicks everyone but TG_ADMIN_ID, and blocks new non-admin logins', async () => {
   const before = await connectAs('harness_maint_before');
   await enterWorld(before, 'ranger');

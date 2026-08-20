@@ -291,7 +291,9 @@ function _marketHistoryData(l, myId) {
 
 // Bot token — set TG_BOT_TOKEN env var in Railway
 const _TG_TOKEN      = process.env.TG_BOT_TOKEN    || '';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD  || '';
+// ADMIN_PASSWORD is read by server/security.js, which owns the token and the
+// brute-force lock; this file's own copy of it had no readers left once the
+// login route moved to server/admin/auth.js.
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME  || 'admin';
 const TG_ADMIN_ID  = process.env.TG_ADMIN_ID     || '';   // admin's Telegram chat ID
 const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address for deposits
@@ -993,12 +995,6 @@ app.use(egress.httpMiddleware);
 app.use(compression());
 app.use(express.json({ limit: '256kb' }));
 
-function adminAuth(req, res, next) {
-  const tok = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!_verifyAdminToken(tok)) return res.status(401).json({ error: 'Unauthorized' });
-  next();
-}
-
 // Sends `text` to every registered account over the bot. Paced at 30 messages
 // a second because Telegram throttles bulk sends and starts dropping (or
 // 429-ing) past roughly that rate.
@@ -1094,342 +1090,11 @@ async function _recordPvpHistory(telegramId, kind, mode, opponent) {
 }
 
 
-// ── Admin REST API ─────────────────────────────────────────────────────────────
-// Blanket per-IP ceiling over every /admin route. The login endpoint has its
-// own (much stricter) brute-force lock; this covers the rest, where several
-// endpoints run unindexed scans and aggregations — a leaked or brute-forced
-// token shouldn't also be a way to flatten the database. Registered before the
-// routes below so it actually sees them.
-const _ADMIN_RL_WINDOW_MS = 60000;
-const _ADMIN_RL_MAX = 240;
-const _adminHits = new Map(); // ip → { n, resetAt }
-app.use('/admin', (req, res, next) => {
-  const ip = req.ip || 'unknown';
-  const now = Date.now();
-  const e = _adminHits.get(ip);
-  if (!e || now > e.resetAt) {
-    _adminHits.set(ip, { n: 1, resetAt: now + _ADMIN_RL_WINDOW_MS });
-    if (_adminHits.size > 5000) {
-      _adminHits.forEach((v, k) => { if (now > v.resetAt) _adminHits.delete(k); });
-    }
-    return next();
-  }
-  if (++e.n > _ADMIN_RL_MAX) return res.status(429).json({ error: 'Слишком много запросов' });
-  next();
-});
-
-app.post('/admin/login', (req, res) => {
-  if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin disabled' });
-  const ip = req.ip || 'unknown';
-  const lockedUntil = _loginLockedUntil(ip);
-  if (lockedUntil) {
-    const mins = Math.ceil((lockedUntil - Date.now()) / 60000);
-    return res.status(429).json({ error: `Слишком много попыток. Повторите через ${mins} мин.` });
-  }
-  const { username, password } = req.body || {};
-  // Constant-time compare on both fields so login timing leaks neither.
-  const ok = _safeEqual(username, ADMIN_USERNAME) & _safeEqual(password, ADMIN_PASSWORD);
-  if (!ok) {
-    _recordLoginFail(ip);
-    return res.status(401).json({ error: 'Wrong credentials' });
-  }
-  _clearLoginFails(ip);
-  const ts  = Date.now();
-  const tok = Buffer.from(JSON.stringify({ ts, sig: _adminToken(ts) })).toString('base64url');
-  res.json({ token: tok });
-});
-
-app.get('/admin/stats', adminAuth, async (req, res) => {
-  try {
-    const now = new Date();
-    const dayAgo  = new Date(now - 86400000);
-    const weekAgo = new Date(now - 7 * 86400000);
-    const [total, newToday, newWeek, gramSum] = await Promise.all([
-      PlayerModel.countDocuments(),
-      PlayerModel.countDocuments({ createdAt: { $gte: dayAgo } }),
-      PlayerModel.countDocuments({ createdAt: { $gte: weekAgo } }),
-      GramTxModel.aggregate([{ $match: { type: 'deposit', status: 'confirmed' } }, { $group: { _id: null, s: { $sum: '$amount' } } }]),
-    ]);
-    const online = io.sockets.sockets.size;
-    const [topBm, topLvl, topGold, topNexum] = await Promise.all([
-      PlayerModel.find({}, 'username bm savedData').sort({ bm: -1 }).limit(5).lean(),
-      PlayerModel.find({}, 'username savedData').sort({ 'savedData.lvl': -1 }).limit(5).lean(),
-      PlayerModel.find({}, 'username savedData').sort({ 'savedData.gold': -1 }).limit(5).lean(),
-      PlayerModel.find({}, 'username savedData').sort({ 'savedData.nexumBalance': -1 }).limit(5).lean(),
-    ]);
-    const banned = await PlayerModel.countDocuments({ banned: true });
-    res.json({
-      total, newToday, newWeek, online, banned,
-      gramTotal: gramSum[0]?.s || 0,
-      tops: {
-        bm:    topBm.map(p    => ({ username: p.username, val: p.bm || 0 })),
-        lvl:   topLvl.map(p   => ({ username: p.username, val: p.savedData?.lvl || 1 })),
-        gold:  topGold.map(p  => ({ username: p.username, val: p.savedData?.gold || 0 })),
-        nexum: topNexum.map(p => ({ username: p.username, val: p.savedData?.nexumBalance || 0 })),
-      },
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/admin/players', adminAuth, async (req, res) => {
-  try {
-    const { q = '', page = 1, limit = 30 } = req.query;
-    const filter = q ? { username: { $regex: _escapeRegex(q).slice(0, 64), $options: 'i' } } : {};
-    const [players, count] = await Promise.all([
-      PlayerModel.find(filter, 'username telegramId bm banned savedData referredBy createdAt')
-        .sort({ bm: -1 }).skip((page - 1) * limit).limit(Number(limit)).lean(),
-      PlayerModel.countDocuments(filter),
-    ]);
-    const onlineIds = new Set([...io.sockets.sockets.values()].map(s => s.data?.telegramId).filter(Boolean));
-    res.json({
-      players: players.map(p => ({
-        id: p._id, telegramId: p.telegramId, username: p.username,
-        bm: p.bm || 0, banned: p.banned || false,
-        lvl: p.savedData?.lvl || 1, gold: p.savedData?.gold || 0,
-        nexum: p.savedData?.nexumBalance || 0, gram: p.savedData?.gramBalance || 0,
-        referredBy: p.referredBy, createdAt: p.createdAt,
-        online: onlineIds.has(p.telegramId),
-      })),
-      total: count,
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Top referrers — ranked by how many accounts list them in `referredBy`,
-// same 5%-of-confirmed-deposits bonus math as the player-facing 'getReferrals'
-// handler above, just summed across every referral instead of one player's own.
-app.get('/admin/top-referrals', adminAuth, async (req, res) => {
-  try {
-    const rows = await PlayerModel.aggregate([
-      { $match: { referredBy: { $ne: null } } },
-      { $group: { _id: '$referredBy', count: { $sum: 1 }, referredIds: { $push: '$telegramId' } } },
-      { $sort: { count: -1 } },
-      { $limit: 50 },
-    ]);
-    if (!rows.length) return res.json({ referrers: [] });
-
-    const referrers = await PlayerModel.find({ telegramId: { $in: rows.map(r => r._id) } }, 'username telegramId').lean();
-    const nameByTid = {};
-    referrers.forEach(r => { nameByTid[r.telegramId] = r.username; });
-
-    const deposits = await GramTxModel.find({
-      telegramId: { $in: rows.flatMap(r => r.referredIds) }, type: 'deposit', status: 'confirmed',
-    }, 'telegramId amount').lean();
-    const depositSumByTid = {};
-    deposits.forEach(d => { depositSumByTid[d.telegramId] = (depositSumByTid[d.telegramId] || 0) + d.amount; });
-
-    res.json({
-      referrers: rows.map(r => ({
-        telegramId: r._id,
-        username: nameByTid[r._id] || r._id,
-        count: r.count,
-        bonusEarned: Math.round(r.referredIds.reduce((s, tid) => s + (depositSumByTid[tid] || 0), 0) * 0.05 * 100) / 100,
-      })),
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/admin/player/:tid', adminAuth, async (req, res) => {
-  try {
-    const p = await PlayerModel.findOne({ telegramId: req.params.tid }).lean();
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    // Season rows come back as their own list. Folding them into `logs` would
-    // hide them again the moment a player has 100 newer ordinary rows, which
-    // after any real farming session is always.
-    const [logs, seasonLogs, referrer] = await Promise.all([
-      PlayerLogModel.find({ telegramId: req.params.tid }).sort({ at: -1 }).limit(LOG_KEEP_PER_PLAYER).lean(),
-      PlayerLogModel.find({ telegramId: req.params.tid, event: { $in: LOG_SEASON_EVENTS } })
-        .sort({ at: -1 }).limit(LOG_KEEP_SEASON_PER_PLAYER).lean(),
-      p.referredBy ? PlayerModel.findOne({ telegramId: p.referredBy }, 'username').lean() : null,
-    ]);
-    res.json({
-      player: p, logs, seasonLogs,
-      seasonPoints: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints) || 0)),
-      referrerUsername: referrer?.username || null,
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/admin/player/:tid/ban', adminAuth, async (req, res) => {
-  try {
-    const p = await PlayerModel.findOneAndUpdate({ telegramId: req.params.tid }, { banned: true }, { new: true });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    // Kick if online
-    io.sockets.sockets.forEach(s => {
-      if (s.data?.telegramId === req.params.tid) {
-        s.emit('kicked', { reason: 'Вы заблокированы администратором' });
-        s.disconnect(true);
-      }
-    });
-    logPlayer(p.telegramId, p.username, 'ban', { by: 'admin', reason: req.body?.reason || '' });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/admin/player/:tid/unban', adminAuth, async (req, res) => {
-  try {
-    const p = await PlayerModel.findOneAndUpdate({ telegramId: req.params.tid }, { banned: false }, { new: true });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    logPlayer(p.telegramId, p.username, 'unban', { by: 'admin' });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Wipes today's Страх (Fear) attempt counter for one player, back to the
-// full daily cap — same "unset the tracked record" trick _lockDailyAttempt's
-// own shape relies on: _dailyAttemptsLeft treats a missing/stale record as
-// "nothing spent today" (see server/index.js's _dailyAttemptsLeft), so this
-// doesn't need to know the current count at all, just clear it.
-app.post('/admin/player/:tid/reset-fear-attempts', adminAuth, async (req, res) => {
-  try {
-    const p = await PlayerModel.findOneAndUpdate(
-      { telegramId: req.params.tid },
-      { $unset: { 'savedData.fearAttempts': '' } },
-      { new: true },
-    );
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    logPlayer(p.telegramId, p.username, 'admin_reset_fear_attempts', { by: 'admin' });
-    // Live-refresh the Events panel for anyone with it open right now —
-    // otherwise they'd see the old attemptsLeft until their next fearSync
-    // (opening/reopening the panel).
-    const target = _socketForTelegramId(req.params.tid);
-    if (target) {
-      target.emit('fearState', {
-        maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
-        attemptsLeft: FEAR_ATTEMPTS, inRun: _fear.has(target.id), wave: _fear.get(target.id)?.wave || 0,
-      });
-    }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Same trick as reset-fear-attempts just above, for Сотрудничество (Coop).
-app.post('/admin/player/:tid/reset-coop-attempts', adminAuth, async (req, res) => {
-  try {
-    const p = await PlayerModel.findOneAndUpdate(
-      { telegramId: req.params.tid },
-      { $unset: { 'savedData.coopAttempts': '' } },
-      { new: true },
-    );
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    logPlayer(p.telegramId, p.username, 'admin_reset_coop_attempts', { by: 'admin' });
-    const target = _socketForTelegramId(req.params.tid);
-    if (target) {
-      const run = _coop.get(target.id);
-      target.emit('coopState', {
-        maxAttempts: COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length, minLevel: COOP_MIN_LEVEL,
-        attemptsLeft: COOP_ATTEMPTS, inRun: !!run, stage: run?.room ? run.room.coopStage() : 0,
-      });
-    }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/admin/player/:tid/give', adminAuth, async (req, res) => {
-  try {
-    // Validated before anything is added: an unparseable figure used to reach
-    // Mongo as NaN, and a savedData.gold of NaN breaks the client's whole
-    // money UI with no obvious cause.
-    const _amt = v => {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const gold  = _amt((req.body || {}).gold);
-    const nexum = _amt((req.body || {}).nexum);
-    const gram  = _amt((req.body || {}).gram);
-    // Skill points (очки навыка) — same field give-all already grants in
-    // bulk (savedData.bonusSP); this is its single-account counterpart.
-    // Truncated like give-all's own _amt does: a fractional skill point
-    // means nothing to skillPointBudget.
-    const sp    = Math.trunc(_amt((req.body || {}).sp));
-    if (!gold && !nexum && !gram && !sp) return res.status(400).json({ error: 'Нечего выдавать' });
-    const p = await PlayerModel.findOne({ telegramId: req.params.tid });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    const saved = p.savedData || {};
-    // Gold and skill points, unlike gram/nexum, have no server-side live
-    // cache — both ride the client's save blob. Writing them straight to the
-    // DB for a player who is online meant their next autosave (up to 60s
-    // later) overwrote the grant with whatever figure their client still
-    // held, and it silently vanished. Route both through the live session
-    // when there is one, via the same helper /admin/give-all already uses
-    // for a mass grant of this exact pair.
-    const _liveSock = io.sockets.sockets.get(activeSessions.get(String(req.params.tid)) || '');
-    const _giveLive = (gold || sp) ? _liveSock?.data?._adminGiveGoldSP : null;
-    if (gold) saved.gold    = (saved.gold || 0) + gold;
-    if (sp)   saved.bonusSP = (saved.bonusSP || 0) + sp;
-    // Both balances move by $inc against the live document — the player may be
-    // online and earning while the admin types, and neither side should
-    // overwrite the other. A negative figure is a valid way to take money back,
-    // which is why this uses _incBalance and not _spendBalance.
-    if (nexum) await _incBalance(p.telegramId, 'nexumBalance', nexum);
-    if (gram) {
-      const newG = await _incBalance(p.telegramId, 'gramBalance', gram);
-      if (newG !== null) io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
-    }
-    // Targeted $set on just the touched fields — a full-document save from
-    // this snapshot would revert any other savedData field this account's
-    // own gameplay autosave wrote in the same window.
-    // Only gold/bonusSP go through $set here — the two real balances were
-    // already moved atomically above and must never be written as an absolute.
-    const _giveSet = {};
-    // Gold/SP handled by the live session when the player is online (see
-    // above); only write them here when nobody is holding a newer copy in
-    // memory.
-    if (gold && !_giveLive) _giveSet['savedData.gold']    = saved.gold;
-    if (sp   && !_giveLive) _giveSet['savedData.bonusSP'] = saved.bonusSP;
-    if (Object.keys(_giveSet).length) await PlayerModel.updateOne({ _id: p._id }, { $set: _giveSet });
-    const _liveResult = _giveLive ? await _giveLive(gold, sp) : null;
-    io.to(`tg_${p.telegramId}`).emit('adminGive', {
-      gold, nexum, gram, sp,
-      newGold: _liveResult ? _liveResult.gold : undefined,
-      newBonusSP: _liveResult ? _liveResult.bonusSP : undefined,
-    });
-    logPlayer(p.telegramId, p.username, 'admin_give', { gold, nexum, gram, sp });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Same grant as above, applied to every registered account at once — the
-// "give to all" button pair on the dashboard. Online accounts go through
-// their live session (socket.data._adminGiveGoldSP, same reasoning as
-// _adminGiveGold above: their own 60s autosave would otherwise revert a
-// DB-only write); everyone else gets a straight $inc.
-app.post('/admin/give-all', adminAuth, async (req, res) => {
-  try {
-    const _amt = v => {
-      const n = Math.trunc(Number(v));
-      return Number.isFinite(n) ? n : 0;
-    };
-    const gold = _amt((req.body || {}).gold);
-    const sp   = _amt((req.body || {}).sp);
-    if (!gold && !sp) return res.status(400).json({ error: 'Нечего выдавать' });
-
-    const liveIds = [];
-    for (const s of io.sockets.sockets.values()) {
-      if (!s.data?.telegramId || typeof s.data._adminGiveGoldSP !== 'function') continue;
-      liveIds.push(s.data.telegramId);
-      const result = await s.data._adminGiveGoldSP(gold, sp);
-      s.emit('adminGive', {
-        gold, nexum: 0, gram: 0, sp,
-        newGold: result ? result.gold : undefined,
-        newBonusSP: result ? result.bonusSP : undefined,
-      });
-    }
-
-    // Legacy accounts can still have savedData: null — a dotted $inc through
-    // a null parent throws (see the season-points route above), so it has to
-    // be normalised first, same as there.
-    const offlineFilter = liveIds.length ? { telegramId: { $nin: liveIds } } : {};
-    await PlayerModel.updateMany({ ...offlineFilter, savedData: null }, { $set: { savedData: {} } });
-    const inc = {};
-    if (gold) inc['savedData.gold'] = gold;
-    if (sp)   inc['savedData.bonusSP'] = sp;
-    const r = await PlayerModel.updateMany(offlineFilter, { $inc: inc });
-
-    console.log(`[admin] give-all: gold=${gold} sp=${sp} — ${liveIds.length} online, ${r.modifiedCount || 0} offline`);
-    res.json({ ok: true, online: liveIds.length, offline: r.modifiedCount || 0 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// ── Admin REST API, part one ─────────────────────────────────────────────────
+// The five route groups that used to live here — the rate limiter and login,
+// the dashboard counters and searches, one player's card and ban, handing back
+// a spent attempt, and granting currency — are in server/admin/ now, along with
+// the adminAuth middleware itself. Registered with the rest, further down.
 
 // ── Admin REST API, part two ─────────────────────────────────────────────────
 // The nine route groups that used to live here are in server/admin/ now, one
@@ -2849,16 +2514,33 @@ const {
   _farm2GroupDropOnDisconnect,
 } = require('./events/farm2')({ io, _returnToHub });
 
-// ── Admin REST API, part two: registration ───────────────────────────────────
+// ── Admin REST API: registration ─────────────────────────────────────────────
 // Every /admin route group, each in its own file under server/admin/. Placed
-// here rather than beside the rest of the admin API because this is the first
-// point at which every machine handle above exists — see the note up there.
+// here rather than where the routes used to sit because this is the first point
+// at which every machine handle above exists — see the notes up there.
 //
 // Each group declares what it needs and refuses to register without it, the
-// same rule the event machines follow. What stands out is that only one group
-// needs more than five names: the event-control panel, which needs a handle on
-// every machine it can drive. That is the shape of a controller, not coupling
-// to be trimmed.
+// same rule the event machines follow. Nine of the thirteen need five names or
+// fewer. The two that need more — the event-control panel and the attempt
+// refunds — are the two that drive machines rather than tables, and a
+// controller needing a handle on each thing it controls is the shape working
+// as intended, not coupling to be trimmed.
+//
+// auth goes first: it mounts the per-IP ceiling that has to see every /admin
+// route registered after it, and it hands back the adminAuth middleware the
+// other twelve are given, so the token check has exactly one implementation.
+const { adminAuth } = require('./admin/auth')(app, { ADMIN_USERNAME });
+require('./admin/stats')(app, { adminAuth, io, _escapeRegex });
+require('./admin/players')(app, {
+  adminAuth, io, logPlayer,
+  LOG_KEEP_PER_PLAYER, LOG_KEEP_SEASON_PER_PLAYER, LOG_SEASON_EVENTS,
+});
+require('./admin/attempts')(app, {
+  adminAuth, logPlayer, _socketForTelegramId, _coop, _fear,
+  COOP_ATTEMPTS, COOP_MIN_LEVEL, COOP_STAGE_LEVELS,
+  FEAR_ATTEMPTS, FEAR_MIN_LEVEL, FEAR_MAX_WAVE,
+});
+require('./admin/give')(app, { adminAuth, io, logPlayer, activeSessions, _incBalance });
 require('./admin/quests')(app, { adminAuth });
 require('./admin/misc')(app, { adminAuth });
 require('./admin/season')(app, { adminAuth, io, logPlayer });
