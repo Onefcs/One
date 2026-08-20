@@ -29,16 +29,17 @@ const {
 } = require('./anticheat');
 const {
   MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_MAX_ACTIVE_VIP_LEVEL,
+  MARKET_MAX_ACTIVE_VIP,
   MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 } = require('./inventory');
-// VIP 3+ trades away the flat MARKET_MAX_ACTIVE cap for no cap at all —
-// Infinity compares false against activeCount forever, so the check below
-// simply never trips; .limit(0) is Mongo's own "no limit" convention, used
-// wherever this feeds a query instead of a comparison.
+// VIP 3+ trades the flat MARKET_MAX_ACTIVE cap for the higher
+// MARKET_MAX_ACTIVE_VIP cap. .limit(0) is Mongo's own "no limit" convention,
+// used wherever this feeds a query instead of a comparison — no longer hit
+// now that both tiers are finite, but harmless to keep.
 function _marketMaxActive(vipLevel) {
-  return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? Infinity : MARKET_MAX_ACTIVE;
+  return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? MARKET_MAX_ACTIVE_VIP : MARKET_MAX_ACTIVE;
 }
 
 // 10% of what a market BUYER pays counts toward their VIP bar, same deposit

@@ -4123,6 +4123,10 @@ function _marketMinPriceFor(it, qty) {
   // has to win over the rarity-based gear checks below, or an uncommon
   // cloak (cloak_u_<class>) would fall through to the cheaper floor.
   if (it.slot === 'cloak' || it.slot === 'artifact') return 2;
+  // Skill books — "вторая профессия" (advSkillKey) has its own, higher floor
+  // and must be checked before the regular skillKey floor below.
+  if (it.advSkillKey) return 10;
+  if (it.skillKey) return 0.4;
   if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 10;
   if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 3;
   if (it.rarity === 'uncommon' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 0.3;

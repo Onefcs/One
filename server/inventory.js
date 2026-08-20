@@ -15,8 +15,9 @@ const { _catalogBase, SERVER_INV_MAX } = require('./anticheat');
 const MARKET_MIN_PRICE   = 0.1;
 const MARKET_MAX_PRICE   = 1000;
 const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
-const MARKET_MAX_ACTIVE  = 5;      // active listings per seller — VIP 3+ has no cap, see _marketMaxActive (server/index.js)
-const MARKET_MAX_ACTIVE_VIP_LEVEL = 3; // VIP level at which the cap above stops applying
+const MARKET_MAX_ACTIVE  = 5;      // active listings per seller below MARKET_MAX_ACTIVE_VIP_LEVEL
+const MARKET_MAX_ACTIVE_VIP_LEVEL = 3; // VIP level at which the cap switches to MARKET_MAX_ACTIVE_VIP, see _marketMaxActive (server/index.js)
+const MARKET_MAX_ACTIVE_VIP = 10;  // active listings per seller at VIP 3+
 const MARKET_MAX_QTY     = 9999;   // sanity bound on a stackable listing's quantity
 const MARKET_LIST_COOLDOWN_MS = 3000;
 // Per-category floors, below the generic MARKET_MIN_PRICE above — these items
@@ -34,6 +35,8 @@ const MARKET_MIN_PRICE_EPIC_GEAR   = 10;   // rarity:'epic' armor/weapon, flat
 const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' armor/weapon, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
 const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any rarity below 'rare'
+const MARKET_MIN_PRICE_SKILL_BOOK  = 0.4;  // book_<cls>_<key> (has skillKey), flat, per book
+const MARKET_MIN_PRICE_ADV_SKILL_BOOK = 10; // book_adv_<cls>_<key> ("вторая профессия", has advSkillKey), flat, per book
 
 function _round2(n) { return Math.round(n * 100) / 100; }
 
@@ -92,6 +95,10 @@ function _marketMinPrice(item) {
   // otherwise an uncommon cloak (cloak_u_<class>) would fall through to the
   // cheaper uncommon-gear floor instead.
   if (item.slot === 'cloak' || item.slot === 'artifact') return MARKET_MIN_PRICE_CLOAK_ARTIFACT;
+  // Skill books — "вторая профессия" (advSkillKey) has its own, higher floor
+  // and must be checked before the regular skillKey floor below.
+  if (item.advSkillKey) return MARKET_MIN_PRICE_ADV_SKILL_BOOK;
+  if (item.skillKey) return MARKET_MIN_PRICE_SKILL_BOOK;
   if (item.rarity === 'epic' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_EPIC_GEAR;
   if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
   if (item.rarity === 'uncommon' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_UNCOMMON_GEAR;
@@ -182,6 +189,7 @@ module.exports = {
   // forgot, and every marketList/marketMyListings call has thrown a
   // ReferenceError since.
   MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_MAX_ACTIVE_VIP_LEVEL,
+  MARKET_MAX_ACTIVE_VIP,
   MARKET_LIST_COOLDOWN_MS,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
