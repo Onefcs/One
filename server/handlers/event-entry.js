@@ -36,9 +36,11 @@ const {
 // list is long because the surface is; each name here is one thing this entry
 // point can reach.
 const REQUIRED_DEPS = [
-  'ARENA3_MIN_LEVEL', 'RACE10_MIN_LEVEL', 'FEAR_ATTEMPTS', 'FEAR_MIN_LEVEL', 'FEAR_START_DELAY_MS', 'COOP_ATTEMPTS', 'COOP_MIN_LEVEL', 'COOP_START_DELAY_MS',
-  'socket', 'safeOn', 'session', '_a3', '_a3Broadcast', '_a3PublicState',
-  '_a3TryStartSafe', '_arena3AttemptsLeft', '_coop', '_coopAttemptsLeft',
+  'ARENA3_MIN_LEVEL', 'RACE10_MIN_LEVEL', 'FEAR_ATTEMPTS', 'FEAR_MIN_LEVEL',
+  'FEAR_START_DELAY_MS', 'COOP_ATTEMPTS', 'COOP_MIN_LEVEL',
+  'COOP_START_DELAY_MS', 'socket', 'safeOn', 'session', '_a3',
+  '_a3Broadcast', '_a3PublicState', '_a3TryStartSafe',
+  '_arena3AttemptsLeft', '_coop', '_coopAttemptsLeft',
   '_coopGroupBroadcastList', '_coopGroupDissolve', '_coopGroupOf',
   '_coopGroupOpenList', '_coopGroupPush', '_coopGroupStateFor',
   '_coopGroups', '_createCoopRoom', '_createFarm2Room', '_createFearRoom',
@@ -50,29 +52,40 @@ const REQUIRED_DEPS = [
   '_fearAttemptsLeft', '_fearStartWave', '_lockCoopDaily',
   '_lockFarm2Minutes', '_lockFearDaily', '_race10', '_race10AttemptsLeft',
   '_race10Broadcast', '_race10PublicState', '_removeFromParty',
-  '_returnToHub', 'io', 'parties', 'playerParty', 'safeInterval',
-  'safeTimeout',
+  '_returnToHub', 'parties', 'playerParty', 'safeInterval', 'safeTimeout',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'io',
 ];
 
 module.exports = function registerEventEntryHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('event-entry: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`event-entry: svc missing: ${missingSvc.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerEventEntryHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    ARENA3_MIN_LEVEL, RACE10_MIN_LEVEL, FEAR_ATTEMPTS, FEAR_MIN_LEVEL, FEAR_START_DELAY_MS, COOP_ATTEMPTS, COOP_MIN_LEVEL, COOP_START_DELAY_MS,
-    socket, safeOn, session, _a3, _a3Broadcast, _a3PublicState,
+    ARENA3_MIN_LEVEL, RACE10_MIN_LEVEL, FEAR_ATTEMPTS, FEAR_MIN_LEVEL,
+    FEAR_START_DELAY_MS, COOP_ATTEMPTS, COOP_MIN_LEVEL, COOP_START_DELAY_MS,
+    socket, safeOn, _a3, _a3Broadcast, _a3PublicState,
     _a3TryStartSafe, _arena3AttemptsLeft, _coop, _coopAttemptsLeft,
     _coopGroupBroadcastList, _coopGroupDissolve, _coopGroupOf,
     _coopGroupOpenList, _coopGroupPush, _coopGroupStateFor, _coopGroups,
     _createCoopRoom, _createFarm2Room, _createFearRoom, _db, _dbBroadcast,
     _dbPublicState, _dbReturnEntrant, _doEnterLocation, _farm2,
     _farm2CascadeCheck, _farm2Finish, _farm2GroupBroadcastList,
-    _farm2GroupDissolve, _farm2GroupOf, _farm2GroupOpenList, _farm2GroupPush,
-    _farm2GroupStateFor, _farm2Groups, _farm2MinutesLeft, _farm2Starting,
-    _fear, _fearAttemptsLeft, _fearStartWave, _lockCoopDaily,
-    _lockFarm2Minutes, _lockFearDaily, _race10, _race10AttemptsLeft,
-    _race10Broadcast, _race10PublicState, _removeFromParty, _returnToHub, io,
-    parties, playerParty, safeInterval, safeTimeout,
+    _farm2GroupDissolve, _farm2GroupOf, _farm2GroupOpenList,
+    _farm2GroupPush, _farm2GroupStateFor, _farm2Groups, _farm2MinutesLeft,
+    _farm2Starting, _fear, _fearAttemptsLeft, _fearStartWave,
+    _lockCoopDaily, _lockFarm2Minutes, _lockFearDaily, _race10,
+    _race10AttemptsLeft, _race10Broadcast, _race10PublicState,
+    _removeFromParty, _returnToHub, parties, playerParty, safeInterval,
+    safeTimeout,
   } = deps;
+  const { io } = svc;
 
     // ── Death Battle (Битва на смерть) ─────────────────────────────────────────
     safeOn('deathBattleRegister', () => {

@@ -34,29 +34,43 @@ const {
 
 // See createGuildWar (server/events/guildwar.js) for why this is checked.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'io', 'activeSessions', 'logPlayer', 'logPlayerErr',
-  'session', 'getRoom',
-  'ITEMS_BUSY_MSG', 'beginItemOp', 'endItemOp',
-  'commitServerItems', 'liveInventory',
-  'clanDataFor', 'clanXpAdd', 'clearOtherClanApplications', 'notifyClan',
-  'currentQuest', 'questBump', 'questPush',
-  'goldNow', 'serverSpendGold', 'withEconLock',
-  'escapeRegex', 'socketForTelegramId', 'gw', 'gwPublicState',
+  'socket', 'safeOn', 'session', 'getRoom', 'clanDataFor', 'clanXpAdd',
+  'clearOtherClanApplications', 'notifyClan', 'currentQuest', 'questBump',
+  'questPush', 'goldNow', 'escapeRegex', 'gw', 'gwPublicState',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'io', 'activeSessions', 'logPlayer', 'logPlayerErr', 'socketForTelegramId',
+];
+
+// ...and from the per-socket session. Both are checked below for the same
+// reason REQUIRED_DEPS is: a name missing from svc or session destructures to
+// undefined, which no linter sees and nothing throws on until that path runs.
+const REQUIRED_SESSION = [
+  'ITEMS_BUSY_MSG', 'beginItemOp', 'endItemOp', 'commitServerItems',
+  'liveInventory', 'serverSpendGold', 'withEconLock',
 ];
 
 module.exports = function registerClanHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('clans: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`clans: svc missing: ${missingSvc.join(', ')}`);
+  const missingSess = REQUIRED_SESSION.filter(k => session[k] == null);
+  if (missingSess.length) throw new Error(`clans: session missing: ${missingSess.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerClanHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, io, activeSessions, logPlayer, logPlayerErr,
-    session, getRoom,
-    ITEMS_BUSY_MSG, beginItemOp, endItemOp,
-    commitServerItems, liveInventory,
-    clanDataFor, clanXpAdd, clearOtherClanApplications, notifyClan,
-    currentQuest, questBump, questPush,
-    goldNow, serverSpendGold, withEconLock,
-    escapeRegex, socketForTelegramId, gw, gwPublicState,
+    socket, safeOn, getRoom, clanDataFor, clanXpAdd,
+    clearOtherClanApplications, notifyClan, currentQuest, questBump,
+    questPush, goldNow, escapeRegex, gw, gwPublicState,
   } = deps;
+  const { io, activeSessions, logPlayer, logPlayerErr, socketForTelegramId } = svc;
+  const {
+    ITEMS_BUSY_MSG, beginItemOp, endItemOp, commitServerItems,
+    liveInventory, serverSpendGold, withEconLock,
+  } = session;
 
     // ── Clan handlers ─────────────────────────────────────────────
     // _clanDataFor / _notifyClan now live at module scope (see the clan helpers

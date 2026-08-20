@@ -19,17 +19,25 @@ const {
 
 // See createGuildWar (server/events/guildwar.js) for why this is checked.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'logPlayer', 'logPlayerErr', 'session',
-  'persistSavedFields', 'seasonRollSpecies', 'seasonTierAllowed',
+  'socket', 'safeOn', 'session', 'seasonRollSpecies', 'seasonTierAllowed',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'logPlayer', 'logPlayerErr', 'persistSavedFields',
 ];
 
 module.exports = function registerSeasonHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('season: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`season: svc missing: ${missingSvc.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerSeasonHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, logPlayer, logPlayerErr, session,
-    persistSavedFields, seasonRollSpecies, seasonTierAllowed,
+    socket, safeOn, seasonRollSpecies, seasonTierAllowed,
   } = deps;
+  const { logPlayer, logPlayerErr, persistSavedFields } = svc;
 
     // ── Сезон ─────────────────────────────────────────────────────────────────
     // Every point is added right here. seasonPoints/seasonQuest never travel in

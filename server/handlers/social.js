@@ -23,21 +23,29 @@ const { calcBM } = require('../anticheat');
 
 // See createGuildWar (server/events/guildwar.js) for why this is checked.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'io', 'activeSessions', 'session',
-  'clanChatHistory', 'dmHistory', 'parties', 'playerParty',
-  'dmKey', 'logHandlerErr', 'recordClanChat', 'recordDm',
-  'removeFromParty', 'resolveUsername', 'socketForTelegramId', 'translateText',
+  'socket', 'safeOn', 'session', 'clanChatHistory', 'dmHistory', 'parties',
+  'playerParty', 'dmKey', 'logHandlerErr', 'recordClanChat', 'recordDm',
+  'removeFromParty', 'resolveUsername', 'translateText',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'io', 'activeSessions', 'socketForTelegramId',
 ];
 
 module.exports = function registerSocialHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('social: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`social: svc missing: ${missingSvc.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerSocialHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, io, activeSessions, session,
-    clanChatHistory, dmHistory, parties, playerParty,
-    dmKey, logHandlerErr, recordClanChat, recordDm,
-    removeFromParty, resolveUsername, socketForTelegramId, translateText,
+    socket, safeOn, clanChatHistory, dmHistory, parties,
+    playerParty, dmKey, logHandlerErr, recordClanChat, recordDm,
+    removeFromParty, resolveUsername, translateText,
   } = deps;
+  const { io, activeSessions, socketForTelegramId } = svc;
 
   // Per-socket translate cooldown — see the header for why it lives here.
   let _lastTranslateAt = 0;

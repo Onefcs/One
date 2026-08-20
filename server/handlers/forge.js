@@ -32,21 +32,43 @@ const {
 // per-socket, so a name missed in the wiring would not throw until some player
 // happened to open the forge.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'activeSessions', 'logPlayer', 'logPlayerErr',
-  'session', 'itemsBusy', 'beginItemOp', 'endItemOp', 'ITEMS_BUSY_MSG',
-  'commitServerItems', 'flushBalances', 'withEconLock', 'seasonAddPoints',
-  'incBalance', 'spendBalance', 'socketForTelegramId',
+  'socket', 'safeOn', 'session', 'seasonAddPoints',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'activeSessions', 'logPlayer', 'logPlayerErr', 'incBalance',
+  'spendBalance', 'socketForTelegramId',
+];
+
+// ...and from the per-socket session. Both are checked below for the same
+// reason REQUIRED_DEPS is: a name missing from svc or session destructures to
+// undefined, which no linter sees and nothing throws on until that path runs.
+const REQUIRED_SESSION = [
+  'itemsBusy', 'beginItemOp', 'endItemOp', 'ITEMS_BUSY_MSG',
+  'commitServerItems', 'flushBalances', 'withEconLock',
 ];
 
 module.exports = function registerForgeHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('forge: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`forge: svc missing: ${missingSvc.join(', ')}`);
+  const missingSess = REQUIRED_SESSION.filter(k => session[k] == null);
+  if (missingSess.length) throw new Error(`forge: session missing: ${missingSess.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerForgeHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, activeSessions, logPlayer, logPlayerErr,
-    session, itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG,
-    commitServerItems, flushBalances, withEconLock, seasonAddPoints,
-    incBalance, spendBalance, socketForTelegramId,
+    socket, safeOn, seasonAddPoints,
   } = deps;
+  const {
+    activeSessions, logPlayer, logPlayerErr, incBalance, spendBalance,
+    socketForTelegramId,
+  } = svc;
+  const {
+    itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG, commitServerItems,
+    flushBalances, withEconLock,
+  } = session;
 
     // ── Enchant stone crafting — REMOVED ──────────────────────────────────────
     // Stones are no longer craftable at the forge: the recipes are gone from

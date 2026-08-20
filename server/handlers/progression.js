@@ -24,21 +24,39 @@ const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 
 // See createGuildWar (server/events/guildwar.js) for why this is checked.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'logPlayer', 'logPlayerErr', 'session',
+  'socket', 'safeOn', 'session',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'logPlayer', 'logPlayerErr', 'persistSavedFields',
+];
+
+// ...and from the per-socket session. Both are checked below for the same
+// reason REQUIRED_DEPS is: a name missing from svc or session destructures to
+// undefined, which no linter sees and nothing throws on until that path runs.
+const REQUIRED_SESSION = [
   'itemsBusy', 'beginItemOp', 'endItemOp', 'ITEMS_BUSY_MSG',
-  'commitServerItems', 'liveInventory', 'persistSavedFields',
-  'serverSpendGold', 'withEconLock',
+  'commitServerItems', 'liveInventory', 'serverSpendGold', 'withEconLock',
 ];
 
 module.exports = function registerProgressionHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('progression: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`progression: svc missing: ${missingSvc.join(', ')}`);
+  const missingSess = REQUIRED_SESSION.filter(k => session[k] == null);
+  if (missingSess.length) throw new Error(`progression: session missing: ${missingSess.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerProgressionHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, logPlayer, logPlayerErr, session,
-    itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG,
-    commitServerItems, liveInventory, persistSavedFields,
-    serverSpendGold, withEconLock,
+    socket, safeOn,
   } = deps;
+  const { logPlayer, logPlayerErr, persistSavedFields } = svc;
+  const {
+    itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG, commitServerItems,
+    liveInventory, serverSpendGold, withEconLock,
+  } = session;
 
     // ── Learned progression (skills, passives, "вторая профессия") ────────────
     // These used to be decided entirely by the client: it checked the books,

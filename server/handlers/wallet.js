@@ -29,25 +29,44 @@ const {
 
 // See createGuildWar (server/events/guildwar.js) for why this is checked.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'io', 'activeSessions', 'logPlayer', 'logPlayerErr',
-  'session', 'season',
+  'socket', 'safeOn', 'session', 'season', 'txData', 'notifyAdminGram',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'io', 'activeSessions', 'logPlayer', 'logPlayerErr', 'incBalance',
+  'spendBalance', 'setVipAura', 'socketForTelegramId',
+];
+
+// ...and from the per-socket session. Both are checked below for the same
+// reason REQUIRED_DEPS is: a name missing from svc or session destructures to
+// undefined, which no linter sees and nothing throws on until that path runs.
+const REQUIRED_SESSION = [
   'itemsBusy', 'beginItemOp', 'endItemOp', 'ITEMS_BUSY_MSG',
   'commitServerItems', 'flushBalances', 'liveGram', 'liveInventory',
-  'incBalance', 'spendBalance', 'setVipAura', 'socketForTelegramId',
-  'withEconLock', 'txData', 'notifyAdminGram',
+  'withEconLock',
 ];
 
 module.exports = function registerWalletHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('wallet: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`wallet: svc missing: ${missingSvc.join(', ')}`);
+  const missingSess = REQUIRED_SESSION.filter(k => session[k] == null);
+  if (missingSess.length) throw new Error(`wallet: session missing: ${missingSess.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerWalletHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, io, activeSessions, logPlayer, logPlayerErr,
-    session, season,
-    itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG,
-    commitServerItems, flushBalances, liveGram, liveInventory,
-    incBalance, spendBalance, setVipAura, socketForTelegramId,
-    withEconLock, txData, notifyAdminGram,
+    socket, safeOn, season, txData, notifyAdminGram,
   } = deps;
+  const {
+    io, activeSessions, logPlayer, logPlayerErr, incBalance, spendBalance,
+    setVipAura, socketForTelegramId,
+  } = svc;
+  const {
+    itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG, commitServerItems,
+    flushBalances, liveGram, liveInventory, withEconLock,
+  } = session;
 
     // ── GRAM wallet ───────────────────────────────────────────────────────────
     safeOn('gramDepositRequest', async ({ amount, memo }) => {

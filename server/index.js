@@ -2823,6 +2823,33 @@ function _emitToEnemyViewers(room, enemyId, event, payload, exclude) {
 // warlock R skill's own client-side cooldown) never gets near it.
 const HEAL_PARTY_CD_MS = 2000;
 
+// ── Services the handler modules share ───────────────────────────────────────
+// Built ONCE, here, rather than assembled inside every require call in the
+// connection closure. These nine are per-PROCESS: they neither know nor care
+// which socket is asking, and eight of the modules under server/handlers/ were
+// being handed the same references over and over — eighteen names repeated
+// three to eight times each, in a hundred and twenty lines of wiring.
+//
+// The split is the point. Everything here is a process-wide service; everything
+// per-socket — the player's own state, and the operations that close over it —
+// travels in `session`, built inside the connection closure below. Mixing the
+// two into one object would have meant rebuilding these nine references for
+// every connection and putting `io` next to the player's gold.
+//
+// A module still destructures exactly what it uses and still declares it in its
+// own REQUIRED_DEPS, so an undeclared name is still a no-undef error and a
+// missing one still refuses to build. This moves the shared half of that
+// contract; it does not weaken it.
+const svc = {
+  io, activeSessions,
+  logPlayer, logPlayerErr,
+  incBalance: _incBalance,
+  spendBalance: _spendBalance,
+  persistSavedFields: _persistSavedFields,
+  setVipAura: _setVipAura,
+  socketForTelegramId: _socketForTelegramId,
+};
+
 io.on('connection', socket => {
   let authed = null;
   // When this connection opened — read by the disconnect handler to bucket
@@ -3047,6 +3074,25 @@ io.on('connection', socket => {
     // window, and they now live in different files, so it is a get/set pair.
     get lastChatAt() { return _lastChatAt; },
     set lastChatAt(v) { _lastChatAt = v; },
+
+    // ── Per-socket operations ────────────────────────────────────────────
+    // The other half of what the handler modules were each being handed
+    // separately. These close over this connection's own state, so unlike the
+    // nine in `svc` they cannot be built once per process.
+    //
+    // Written as forwarding methods rather than captured references on
+    // purpose: several of the functions below are declared further down this
+    // closure, and a method body is not evaluated until it is called.
+    itemsBusy: () => _itemsBusy(),
+    beginItemOp: () => { _itemOpBusy++; },
+    endItemOp: () => { _itemOpBusy--; },
+    get ITEMS_BUSY_MSG() { return _ITEMS_BUSY_MSG; },
+    commitServerItems: (...a) => _commitServerItems(...a),
+    flushBalances: (...a) => _flushBalances(...a),
+    liveInventory: (...a) => _liveInventory(...a),
+    liveGram: (...a) => _liveGram(...a),
+    withEconLock: (...a) => _withEconLock(...a),
+    serverSpendGold: (...a) => _serverSpendGold(...a),
   };
   let _saveDebounceTimer = null;
   // Pending teleport-stone cast's setTimeout handle (server/index.js's own
@@ -4565,16 +4611,7 @@ io.on('connection', socket => {
   // All of it lives in server/handlers/progression.js, on the same `session`
   // object as the rest — the module that leans on session.lastStats hardest.
   require('./handlers/progression')({
-    socket, safeOn, logPlayer, logPlayerErr, session,
-    itemsBusy: _itemsBusy,
-    beginItemOp: () => { _itemOpBusy++; },
-    endItemOp: () => { _itemOpBusy--; },
-    ITEMS_BUSY_MSG: _ITEMS_BUSY_MSG,
-    commitServerItems: _commitServerItems,
-    liveInventory: _liveInventory,
-    persistSavedFields: _persistSavedFields,
-    serverSpendGold: _serverSpendGold,
-    withEconLock: _withEconLock,
+    svc, session, socket, safeOn,
   });
 
   // ── Сезон ─────────────────────────────────────────────────────────────────
@@ -4584,8 +4621,7 @@ io.on('connection', socket => {
   // is owned there and read back here through getters — the opposite direction
   // from the other two, see that file's header.
   const season = require('./handlers/season')({
-    socket, safeOn, logPlayer, logPlayerErr, session,
-    persistSavedFields: _persistSavedFields,
+    svc, session, socket, safeOn,
     seasonRollSpecies: _seasonRollSpecies,
     seasonTierAllowed: _seasonTierAllowed,
   });
@@ -4597,39 +4633,15 @@ io.on('connection', socket => {
   // ── Кошелёк GRAM и магазины ───────────────────────────────────────────────
   // See the note further up for why this is registered here rather than there.
   require('./handlers/wallet')({
-    socket, safeOn, io, activeSessions, logPlayer, logPlayerErr,
-    session, season,
-    itemsBusy: _itemsBusy,
-    beginItemOp: () => { _itemOpBusy++; },
-    endItemOp: () => { _itemOpBusy--; },
-    ITEMS_BUSY_MSG: _ITEMS_BUSY_MSG,
-    commitServerItems: _commitServerItems,
-    flushBalances: _flushBalances,
-    liveGram: _liveGram,
-    liveInventory: _liveInventory,
-    incBalance: _incBalance,
-    spendBalance: _spendBalance,
-    setVipAura: _setVipAura,
-    socketForTelegramId: _socketForTelegramId,
-    withEconLock: _withEconLock,
+    svc, session, socket, safeOn,
+    season,
     txData: _txData,
     notifyAdminGram,
   });
 
   require('./handlers/forge')({
-    socket, safeOn, activeSessions, logPlayer, logPlayerErr,
-    session,
-    itemsBusy: _itemsBusy,
-    beginItemOp: () => { _itemOpBusy++; },
-    endItemOp: () => { _itemOpBusy--; },
-    ITEMS_BUSY_MSG: _ITEMS_BUSY_MSG,
-    commitServerItems: _commitServerItems,
-    flushBalances: _flushBalances,
-    withEconLock: _withEconLock,
+    svc, session, socket, safeOn,
     seasonAddPoints: season.addPoints,
-    incBalance: _incBalance,
-    spendBalance: _spendBalance,
-    socketForTelegramId: _socketForTelegramId,
   });
 
   // ── Ground loot (event-boss drops) ────────────────────────────────────────
@@ -5100,20 +5112,8 @@ io.on('connection', socket => {
   // object of LIVE accessors over the variables below, not their values. See
   // that file's header for why each one is an accessor and not a copy.
   require('./handlers/market')({
-    socket, safeOn, io, activeSessions, logPlayer, logPlayerErr,
-    session,
-    liveGram: _liveGram,
-    itemsBusy: _itemsBusy,
-    beginItemOp: () => { _itemOpBusy++; },
-    endItemOp: () => { _itemOpBusy--; },
-    ITEMS_BUSY_MSG: _ITEMS_BUSY_MSG,
-    commitServerItems: _commitServerItems,
-    flushBalances: _flushBalances,
+    svc, session, socket, safeOn,
     dbPushInventory: _dbPushInventory,
-    incBalance: _incBalance,
-    spendBalance: _spendBalance,
-    setVipAura: _setVipAura,
-    socketForTelegramId: _socketForTelegramId,
   });
 
 
@@ -6491,6 +6491,7 @@ io.on('connection', socket => {
   // long because this is where a player crosses into any of the six machines
   // under server/events/ — see that file's header.
   require('./handlers/event-entry')({
+    svc,
     ARENA3_MIN_LEVEL, RACE10_MIN_LEVEL, FEAR_ATTEMPTS, FEAR_MIN_LEVEL,
     FEAR_START_DELAY_MS, COOP_ATTEMPTS, COOP_MIN_LEVEL, COOP_START_DELAY_MS,
     socket, safeOn, session, _a3, _a3Broadcast, _a3PublicState,
@@ -6504,8 +6505,7 @@ io.on('connection', socket => {
     _farm2GroupStateFor, _farm2Groups, _farm2MinutesLeft, _farm2Starting,
     _fear, _fearAttemptsLeft, _fearStartWave, _lockCoopDaily,
     _lockFarm2Minutes, _lockFearDaily, _race10, _race10AttemptsLeft,
-    _race10Broadcast, _race10PublicState, _removeFromParty, _returnToHub, io,
-    parties, playerParty, safeInterval, safeTimeout
+    _race10Broadcast, _race10PublicState, _removeFromParty, _returnToHub, parties, playerParty, safeInterval, safeTimeout
   });
 
   safeOn('setPvpMode', ({ pvpMode } = {}) => {
@@ -6622,7 +6622,7 @@ io.on('connection', socket => {
   // saveProgress, which sat between the private-message handlers and the party
   // ones with no heading of its own, is directly below and stays here.
   require('./handlers/social')({
-    socket, safeOn, io, activeSessions, session,
+    svc, session, socket, safeOn,
     clanChatHistory, dmHistory, parties, playerParty,
     dmKey: _dmKey,
     logHandlerErr: _logHandlerErr,
@@ -6630,7 +6630,6 @@ io.on('connection', socket => {
     recordDm: _recordDm,
     removeFromParty: _removeFromParty,
     resolveUsername: _resolveUsername,
-    socketForTelegramId: _socketForTelegramId,
     translateText: _translateText,
   });
 
@@ -6838,13 +6837,7 @@ io.on('connection', socket => {
   // get/set pairs because they are written from both sides — see that file's
   // header.
   const { onKillClanXp } = require('./handlers/clans')({
-    socket, safeOn, io, activeSessions, logPlayer, logPlayerErr,
-    session, getRoom,
-    ITEMS_BUSY_MSG: _ITEMS_BUSY_MSG,
-    beginItemOp: () => { _itemOpBusy++; },
-    endItemOp: () => { _itemOpBusy--; },
-    commitServerItems: _commitServerItems,
-    liveInventory: _liveInventory,
+    svc, session, socket, safeOn, getRoom,
     clanDataFor: _clanDataFor,
     clanXpAdd: _clanXpAdd,
     clearOtherClanApplications: _clearOtherClanApplications,
@@ -6853,10 +6846,7 @@ io.on('connection', socket => {
     questBump: _questBump,
     questPush: _questPush,
     goldNow: _goldNow,
-    serverSpendGold: _serverSpendGold,
-    withEconLock: _withEconLock,
     escapeRegex: _escapeRegex,
-    socketForTelegramId: _socketForTelegramId,
     gw: _gw,
     gwPublicState: _gwPublicState,
   });

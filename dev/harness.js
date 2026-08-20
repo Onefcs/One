@@ -2715,6 +2715,63 @@ scenario('race: a grant landing during a shop purchase is not erased by its stal
   await c.close();
 });
 
+scenario('handlers: every module refuses to build short a service or a session op', async () => {
+  // The eight handler modules take two shared objects — svc (per-process
+  // services) and session (this socket's state and operations) — instead of the
+  // eighteen names they were each handed separately. That collapse quietly
+  // removed a guarantee: a name missing INSIDE svc destructures to undefined,
+  // which no linter sees and nothing throws on until that path happens to run.
+  // So each module declares REQUIRED_SVC and REQUIRED_SESSION alongside
+  // REQUIRED_DEPS, and this drops one name at a time to prove all three are
+  // enforced rather than decorative.
+  const fs = require('fs');
+  const dir = path.join(ROOT, 'server', 'handlers');
+  const noop = () => {};
+  const fakeIo = { to: () => ({ emit: noop }), emit: noop };
+  const fullSvc = {
+    io: fakeIo, activeSessions: new Map(), logPlayer: noop, logPlayerErr: noop,
+    incBalance: noop, spendBalance: noop, persistSavedFields: noop,
+    setVipAura: noop, socketForTelegramId: noop,
+  };
+  const fullSession = {
+    itemsBusy: noop, beginItemOp: noop, endItemOp: noop, ITEMS_BUSY_MSG: 'busy',
+    commitServerItems: noop, flushBalances: noop, liveInventory: noop,
+    liveGram: noop, withEconLock: noop, serverSpendGold: noop,
+  };
+
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+  ok(files.length >= 8, `found ${files.length} handler modules`);
+
+  const unguarded = [];
+  for (const file of files) {
+    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    const create = require(path.join(dir, file));
+    // Nothing at all: must refuse.
+    let bare = '';
+    try { create({}); } catch (e) { bare = e.message; }
+    if (!bare) unguarded.push(`${file}: built with no deps at all`);
+
+    for (const [listName, bag, key] of [['REQUIRED_SVC', fullSvc, 'svc'],
+                                        ['REQUIRED_SESSION', fullSession, 'session']]) {
+      const m = src.match(new RegExp(`const ${listName} = \\[([^\\]]*)\\]`));
+      if (!m) continue;
+      for (const name of [...m[1].matchAll(/'([A-Za-z_][A-Za-z0-9_]*)'/g)].map(x => x[1])) {
+        const short = { ...bag };
+        delete short[name];
+        let threw = '';
+        try {
+          create({ svc: key === 'svc' ? short : fullSvc,
+                   session: key === 'session' ? short : fullSession });
+        } catch (e) { threw = e.message; }
+        // It must complain about THIS name, not merely fail for some other
+        // reason — every one of these calls is missing domain deps too.
+        if (!threw.includes(name)) unguarded.push(`${file}: ${key}.${name} not checked`);
+      }
+    }
+  }
+  eq(unguarded.join(', '), '', 'every declared service and session op is enforced at construction');
+});
+
 scenario('events: a level-1 character is refused by every event that has a gate', async () => {
   // Four entry gates, and until this scenario none of them was tested. Found
   // the hard way while moving the entry handlers to

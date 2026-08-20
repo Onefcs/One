@@ -54,23 +54,43 @@ const {
 // than assumed. It matters more here: these are per-socket, so a name missed in
 // the wiring would not throw until some player happened to open the market.
 const REQUIRED_DEPS = [
-  'socket', 'safeOn', 'io', 'activeSessions', 'logPlayer', 'logPlayerErr',
-  'session', 'liveGram',
-  'itemsBusy', 'beginItemOp', 'endItemOp', 'ITEMS_BUSY_MSG',
-  'commitServerItems', 'flushBalances', 'dbPushInventory',
-  'incBalance', 'spendBalance', 'setVipAura', 'socketForTelegramId',
+  'socket', 'safeOn', 'session', 'dbPushInventory',
+];
+
+// What this file takes from the shared services object.
+const REQUIRED_SVC = [
+  'io', 'activeSessions', 'logPlayer', 'logPlayerErr', 'incBalance',
+  'spendBalance', 'setVipAura', 'socketForTelegramId',
+];
+
+// ...and from the per-socket session. Both are checked below for the same
+// reason REQUIRED_DEPS is: a name missing from svc or session destructures to
+// undefined, which no linter sees and nothing throws on until that path runs.
+const REQUIRED_SESSION = [
+  'liveGram', 'itemsBusy', 'beginItemOp', 'endItemOp', 'ITEMS_BUSY_MSG',
+  'commitServerItems', 'flushBalances',
 ];
 
 module.exports = function registerMarketHandlers(deps) {
-  const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
+  if (!deps || !deps.svc || !deps.session) throw new Error('market: needs svc and session');
+  const { svc, session } = deps;
+  const missingSvc = REQUIRED_SVC.filter(k => svc[k] == null);
+  if (missingSvc.length) throw new Error(`market: svc missing: ${missingSvc.join(', ')}`);
+  const missingSess = REQUIRED_SESSION.filter(k => session[k] == null);
+  if (missingSess.length) throw new Error(`market: session missing: ${missingSess.join(', ')}`);
+  const missing = REQUIRED_DEPS.filter(k => deps[k] == null);
   if (missing.length) throw new Error(`registerMarketHandlers: missing deps: ${missing.join(', ')}`);
   const {
-    socket, safeOn, io, activeSessions, logPlayer, logPlayerErr,
-    session, liveGram,
-    itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG,
-    commitServerItems, flushBalances, dbPushInventory,
-    incBalance, spendBalance, setVipAura, socketForTelegramId,
+    socket, safeOn, dbPushInventory,
   } = deps;
+  const {
+    io, activeSessions, logPlayer, logPlayerErr, incBalance, spendBalance,
+    setVipAura, socketForTelegramId,
+  } = svc;
+  const {
+    liveGram, itemsBusy, beginItemOp, endItemOp, ITEMS_BUSY_MSG,
+    commitServerItems, flushBalances,
+  } = session;
 
   // Per-seller listing cooldown — see the header for why it lives here now.
   let _lastMarketListAt = 0;
