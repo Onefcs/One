@@ -765,6 +765,55 @@ const CRAFT_MATS = [
   })),
 ];
 
+// ── Level-banded skill-book drop pools ──────────────────────────────────────
+// A single monster used to be able to drop ANY of the 20 base skill books
+// (any class/key) off one roll. Each kill's candidate pool is now just 5
+// books — one per class — decided by the monster's own level: arms 1-2
+// (levels 1-40) cycle through the 4 BASE skill books (Q/W/E/R) every 4
+// levels, arms 3-4 (levels 41-78) cycle through the 4 ADVANCED ("2
+// профессия") ones the same way. Same idea for the class-exclusive passive
+// books (2 per class: one offense-flavored, one defense-flavored) — offense
+// early, defense late, no cycling needed since there's only one of each per
+// half. The 6 universal (non-class) passives are untouched, still in every
+// pool unrestricted. Shared so the server's roll (_rollMobLoot, server/
+// index.js) and the map's drop-info panel (_monsterDropBodyHtml, js/ui.js)
+// can never drift apart on which books a given level actually offers.
+//
+// Arms 1 (levels 1-20) and 2 (levels 21-40) also get every drop chance below
+// cut to a third — EARLY_ZONE_DROP_MULT — applied as a flat multiplier on
+// top of the normal arm/room scaling rather than touching the base rates, so
+// later zones are untouched.
+const EARLY_ZONE_DROP_MULT = 1 / 3;
+const EARLY_ZONE_ARMS = new Set([1, 2]);
+const BOOK_SKILL_KEYS = ['Q', 'W', 'E', 'R'];
+function _booksByClassAndKey(pred, keyField) {
+  const out = {};
+  CRAFT_MATS.filter(pred).forEach(m => { (out[m.forClass] = out[m.forClass] || {})[m[keyField]] = m; });
+  return out;
+}
+const _BASE_SKILL_BOOKS_BY_CLASS = _booksByClassAndKey(m => m.skillKey, 'skillKey');
+const _ADV_SKILL_BOOKS_BY_CLASS  = _booksByClassAndKey(m => m.advSkillKey, 'advSkillKey');
+const _BOOK_CLASSES = Object.keys(_BASE_SKILL_BOOKS_BY_CLASS);
+// [offense book, defense book] pair per class — _PASSIVE_BOOK_SRC above
+// always lists the offense-flavored book before the defense-flavored one for
+// each class, so array order alone tells them apart.
+const _CLASS_PASSIVE_BOOKS_BY_CLASS = {};
+CRAFT_MATS.filter(m => m.passiveId && m.forClass).forEach(m => {
+  (_CLASS_PASSIVE_BOOKS_BY_CLASS[m.forClass] = _CLASS_PASSIVE_BOOKS_BY_CLASS[m.forClass] || []).push(m);
+});
+const UNIVERSAL_PASSIVE_BOOKS = CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
+
+function levelSkillBookPool(rlvl, armIdx) {
+  const early = armIdx <= 2;
+  const key = BOOK_SKILL_KEYS[Math.max(0, rlvl - (early ? 1 : 41)) % BOOK_SKILL_KEYS.length];
+  const byClass = early ? _BASE_SKILL_BOOKS_BY_CLASS : _ADV_SKILL_BOOKS_BY_CLASS;
+  return _BOOK_CLASSES.map(cls => byClass[cls] && byClass[cls][key]).filter(Boolean);
+}
+function levelClassPassivePool(armIdx) {
+  const idx = armIdx <= 2 ? 0 : 1;
+  return Object.values(_CLASS_PASSIVE_BOOKS_BY_CLASS).map(pair => pair[idx]).filter(Boolean);
+}
+
 // ── Loot boxes ────────────────────────────────────────────────────────────────
 // Crafted at the forge (Кузнец → Материалы) from room-level keys. Opening one
 // rolls a rarity tier from `odds`, then a random matching gear item.
@@ -2026,6 +2075,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,

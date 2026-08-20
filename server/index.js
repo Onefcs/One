@@ -170,6 +170,7 @@ const {
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
+  EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
@@ -289,13 +290,6 @@ const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 // since it fires on every kill in the game. Mutates `inv` in place via
 // _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
 // for (loot-winner arbitration among a party) and reports the result back.
-// Arms 1 (levels 1-20) and 2 (levels 21-40, i.e. "20-40") get every drop
-// chance below cut to a third, per request — applied as a flat multiplier
-// on top of the normal arm/room scaling rather than touching the base rates,
-// so later zones are untouched.
-const EARLY_ZONE_DROP_MULT = 1 / 3;
-const EARLY_ZONE_ARMS = new Set([1, 2]);
-
 function _rollMobLoot(inv, eid, rlvl, plvl) {
   const eDef = ENEMY_DEF.find(e => e.eid === eid);
   const eType = eDef ? eDef.eType : null;
@@ -362,18 +356,23 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
     }
   }
 
-  // Skill books — any class's book can drop for anyone (see js/combat.js).
-  const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
-  if (_allBooks.length) {
+  // Skill books — restricted to a 5-book pool (one per class) that rotates
+  // with this monster's own level/zone half; see levelSkillBookPool (shared/
+  // definitions.js).
+  const _skillBookPool = levelSkillBookPool(rlvl, _armIdx);
+  if (_skillBookPool.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.001 * _zoneMult) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
+      if (Math.random() < 0.001 * _zoneMult) addMat(_skillBookPool[Math.floor(Math.random() * _skillBookPool.length)].id, 2);
     } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3) * _zoneMult) {
-      addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 1);
+      addMat(_skillBookPool[Math.floor(Math.random() * _skillBookPool.length)].id, 1);
     }
   }
 
   // Passive skill books — own independent roll/pool, same odds as above.
-  const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
+  // The class-exclusive half rotates offense/defense with the level/zone
+  // half same as the skill books; the 6 universal ones stay in every pool
+  // unrestricted, same as they always were.
+  const _allPassiveBooks = levelClassPassivePool(_armIdx).concat(UNIVERSAL_PASSIVE_BOOKS);
   if (_allPassiveBooks.length) {
     if (eType === 'boss') {
       if (Math.random() < 0.001 * _zoneMult) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);

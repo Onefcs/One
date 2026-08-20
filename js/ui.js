@@ -1881,6 +1881,9 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   // growth (roomDropMult), used for recipes below.
   const localLvl = typeof armLocalLevel === 'function' ? armLocalLevel(lvl) : (floor >= 1 ? 1 : 1);
   const dropMult = floor * (typeof roomDropMult === 'function' ? roomDropMult(localLvl) : 1);
+  // Mirrors _zoneMult in _rollMobLoot (server/index.js) exactly: arms 1-2
+  // (levels 1-40) get every drop chance below cut to a third.
+  const zoneMult = (typeof EARLY_ZONE_ARMS !== 'undefined' && EARLY_ZONE_ARMS.has(floor)) ? EARLY_ZONE_DROP_MULT : 1;
   const NEXUM_CHANCES = [0, 0.1, 0.2, 0.5, 1, 2];
   const nexumChancePct = NEXUM_CHANCES[floor] || 0;
   function _pctText(v) {
@@ -1937,7 +1940,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       const mat = CRAFT_MATS.find(m => m.id === d.id);
       if (!mat) return '';
       const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[mat.rarity] : null) || '#aea599';
-      return _dropRow(_mi(mat, 16), mat.name, `&times;1 · <b style="color:${rc}">${_pctText(d.base * dropMult)}</b>`, rc);
+      return _dropRow(_mi(mat, 16), mat.name, `&times;1 · <b style="color:${rc}">${_pctText(d.base * dropMult * zoneMult)}</b>`, rc);
     }).join('');
     recipeSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('craftRecipesHdr')}</div><div class="fi-drops">${rows}</div>`;
   }
@@ -1950,9 +1953,9 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     const matR = CRAFT_MATS.find(m => m.id === 'key_rare');
     const matN = CRAFT_MATS.find(m => m.id === 'norm_stone');
     const rows =
-      (matU ? _dropRow(_mi(matU, 16), matU.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'uncommon') * 100)}</b>`) : '') +
-      (matR ? _dropRow(_mi(matR, 16), matR.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'rare') * 100)}</b>`) : '') +
-      (matN && typeof roomEnchantStoneChance === 'function' ? _dropRow(_mi(matN, 16), matN.name, `&times;1 · <b>${_pctText(roomEnchantStoneChance(localLvl) * 100)}</b>`) : '');
+      (matU ? _dropRow(_mi(matU, 16), matU.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'uncommon') * zoneMult * 100)}</b>`) : '') +
+      (matR ? _dropRow(_mi(matR, 16), matR.name, `&times;1 · <b>${_pctText(roomKeyChance(localLvl, 'rare') * zoneMult * 100)}</b>`) : '') +
+      (matN && typeof roomEnchantStoneChance === 'function' ? _dropRow(_mi(matN, 16), matN.name, `&times;1 · <b>${_pctText(roomEnchantStoneChance(localLvl) * zoneMult * 100)}</b>`) : '');
     keySection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('keysStonesHdr')}</div><div class="fi-drops">${rows}</div>`;
   }
 
@@ -1965,7 +1968,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   // not a fixed 1-in-7. No 'cloak'/'artifact' — craft-only, matches js/combat.js.
   let gearSection = '';
   if (typeof itemDropChanceAtLevel === 'function') {
-    const pct = Math.min(100, itemDropChanceAtLevel(lvl) * (isBoss ? BOSS_ITEM_DROP_MULT : 1));
+    const pct = Math.min(100, itemDropChanceAtLevel(lvl) * (isBoss ? BOSS_ITEM_DROP_MULT : 1)) * zoneMult;
     const rarity = itemRarityForLevel(lvl);
     const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
     const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
@@ -1978,38 +1981,45 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     gearSection = `<div class="fi-drops-hdr" style="margin-top:8px">${tVars('gearRarityFmt', { rn })}</div><div class="fi-drops">${rows}</div>`;
   }
 
-  // Skill books — one per class+skill (shared/definitions.js CRAFT_MATS).
-  // Any class's book can drop from any monster (not just the current
-  // character's own — see js/combat.js), so every book across all 5
-  // classes is listed here, each tagged with which class it's for.
+  // Skill books — restricted to a 5-book pool (one per class) that rotates
+  // with this monster's own level/zone half; see levelSkillBookPool (shared/
+  // definitions.js). Arms 1-2 draw from the base Q/W/E/R books, arms 3-4 from
+  // the advanced ("2 профессия") ones — same roll/pool the server rolls in
+  // _rollMobLoot (server/index.js), so this list is exactly what this
+  // monster can actually drop, not the full 20-book catalog.
   let bookSection = '';
   {
-    const allBooks = CRAFT_MATS.filter(m => m.skillKey);
-    if (allBooks.length) {
-      const rows = allBooks.map(b => {
+    const pool = typeof levelSkillBookPool === 'function' ? levelSkillBookPool(lvl, floor) : CRAFT_MATS.filter(m => m.skillKey);
+    if (pool.length) {
+      const isAdv = pool.some(b => b.advSkillKey);
+      const rows = pool.map(b => {
         const className = (CHAR_DEF[b.forClass] || {}).name || b.forClass;
         const label = `${b.name} <span style="opacity:.6">(${className})</span>`;
         return isBoss
-          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allBooks.length * 0.001)}</b>`, '#98e456')
-          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allBooks.length * 100)}</b>`);
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / pool.length * 0.001 * zoneMult)}</b>`, '#98e456')
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / pool.length * zoneMult * 100)}</b>`);
       }).join('');
-      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
+      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t(isAdv ? 'advSkillBooksAllClassesHdr' : 'skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
   }
 
   // Passive skill books — same mechanic/odds as active skill books above,
-  // separate roll and separate pool (js/combat.js).
+  // separate roll and separate pool (js/combat.js). The class-exclusive half
+  // rotates offense/defense with the level/zone half same as the skill
+  // books; the 6 universal ones stay in every pool unrestricted.
   let passiveBookSection = '';
   {
-    const allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
+    const classPool = typeof levelClassPassivePool === 'function' ? levelClassPassivePool(floor) : [];
+    const universalPool = typeof UNIVERSAL_PASSIVE_BOOKS !== 'undefined' ? UNIVERSAL_PASSIVE_BOOKS : CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
+    const allPassiveBooks = classPool.concat(universalPool);
     if (allPassiveBooks.length) {
       const rows = allPassiveBooks.map(b => {
         const label = b.forClass
           ? `${b.name} <span style="opacity:.6">(${(CHAR_DEF[b.forClass] || {}).name || b.forClass})</span>`
           : `${b.name} <span style="opacity:.6">(${t('commonTag')})</span>`;
         return isBoss
-          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.001)}</b>`, '#98e456')
-          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allPassiveBooks.length * 100)}</b>`);
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.001 * zoneMult)}</b>`, '#98e456')
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allPassiveBooks.length * zoneMult * 100)}</b>`);
       }).join('');
       passiveBookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('passiveBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
@@ -2026,7 +2036,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     const rows = UNIQUE_SHARDS.map(sh => {
       const def = CRAFT_MATS.find(m => m.id === sh.id) || sh;
       return _dropRow(_itemIcon(def, 16), def.name,
-        `&times;${qtyText} · <b style="color:#d9b3ff">${_pctText(UNIQUE_SHARD_CHANCE * 100)}</b>`,
+        `&times;${qtyText} · <b style="color:#d9b3ff">${_pctText(UNIQUE_SHARD_CHANCE * zoneMult * 100)}</b>`,
         '#d9b3ff');
     }).join('');
     shardSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('uniqueShardsHdr')}</div><div class="fi-drops">${rows}</div>`;
