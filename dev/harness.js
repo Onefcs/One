@@ -498,6 +498,21 @@ scenario('events: each extracted machine builds standalone, and refuses to build
       ['_coop', '_liveCoopRooms', '_createCoopRoom', '_coopTrackKill', '_coopBossTrackKill',
         '_coopEliminate', '_coopFinish', '_coopGroups', '_coopGroupOf', '_coopGroupPush',
         'COOP_ATTEMPTS', 'COOP_MIN_LEVEL']],
+    ['deathbattle', require('../server/events/deathbattle'),
+      { io: fakeIo, safeTimeout: timeout, getRoom: () => null, playerFloorMap: new Map(),
+        notifyEventSoon: noop, notifyEventStarted: noop,
+        _findPlayerAnyFloor: () => null, _recordPvpHistory: noop, _socketTid: () => null },
+      ['_db', '_dbPublicState', '_dbBroadcast', '_dbSchedule', '_dbNextStartAt',
+        '_dbOpenReg', '_dbStart', '_dbFinish', '_dbEliminate', '_dbReturnEntrant', '_dbFrozen']],
+    ['race10', require('../server/events/race10'),
+      { io: fakeIo, safeTimeout: timeout, getRoom: () => null,
+        notifyEventSoon: noop, notifyEventStarted: noop, logPlayer: noop,
+        _returnToHub: noop, _findPlayerAnyFloor: () => null, _socketTid: () => null,
+        _recordPvpHistory: noop, _lockRace10Daily: noop, _race10AttemptsLeft: async () => 3 },
+      ['_race10', '_race10PublicState', '_race10Broadcast', '_race10Schedule',
+        '_race10NextOpenAt', '_race10OpenWindow', '_race10CloseWindow',
+        '_race10Start', '_race10Finish', '_race10Eliminate', '_race10Frozen',
+        'RACE10_ATTEMPTS', 'RACE10_MIN_LEVEL']],
   ];
 
   for (const [name, create, deps, surface] of machines) {
@@ -514,13 +529,18 @@ scenario('events: each extracted machine builds standalone, and refuses to build
     }
   }
 
-  // The one machine with a schedule of its own answers for it.
-  const gw = createGuildWarForCheck();
-  eq(typeof gw._gwPublicState(), 'object', 'guildwar: the machine answers for its own state');
-  ok(gw._gwNextOpenAt() > Date.now(), 'guildwar: and schedules its next window in the future');
-
-  function createGuildWarForCheck() {
-    return machines[0][1](machines[0][2]);
+  // The three machines that own a schedule answer for it themselves — the
+  // next window is theirs to compute, not something server/index.js passes in.
+  const scheduled = [
+    ['guildwar', '_gwPublicState', '_gwNextOpenAt'],
+    ['deathbattle', '_dbPublicState', '_dbNextStartAt'],
+    ['race10', '_race10PublicState', '_race10NextOpenAt'],
+  ];
+  for (const [name, stateFn, nextFn] of scheduled) {
+    const [, create, deps] = machines.find(m => m[0] === name);
+    const built = create(deps);
+    eq(typeof built[stateFn](), 'object', `${name}: the machine answers for its own state`);
+    ok(built[nextFn]() > Date.now(), `${name}: and schedules its next window in the future`);
   }
 });
 
