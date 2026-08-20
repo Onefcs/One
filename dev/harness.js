@@ -262,6 +262,109 @@ scenario('loot: the elite farm zone\'s unique weapon is epic, never legendary', 
   eq(gotUnique.filter(g => uniques.get(g.id) !== 'epic').length, 0, 'and every one of them is epic');
 });
 
+// ── Shop and VIP grants (server/shop.js) ─────────────────────────────────────
+// The tables here are maintained by hand and read by two different handlers
+// (gramShopBuy, claimVipRewards). Nothing below drives a purchase — these are
+// the consistency rules the tables have to satisfy before a purchase can be
+// correct at all, and every one of them fails silently in play: a mistyped
+// rarity grants nothing, a mistyped id grants an item that does not exist, and
+// a class missing from the VIP weapon table quietly hands out the warrior's axe.
+const {
+  _STONE_DEFS, _GRAM_SHOP_PKGS, _SEASON_SHOP_PKGS, _SPECIAL_SHOP_PKGS,
+  _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _shopNewSlots, _vipLevelItems, _vipGoldReward,
+} = require('../server/shop');
+const { CHAR_DEF, ITEM_DEF: _ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../shared/definitions');
+
+const _CLASSES = Object.keys(CHAR_DEF);
+const _ALL_PKGS = [..._GRAM_SHOP_PKGS, ..._SEASON_SHOP_PKGS, ..._SPECIAL_SHOP_PKGS];
+
+scenario('shop: every VIP reward is an item that actually exists', async () => {
+  const known = new Set([..._ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF].map(x => x.id));
+  const missing = [];
+  let total = 0;
+  for (const cls of _CLASSES) {
+    for (let vip = 1; vip <= 10; vip++) {
+      for (const it of _vipLevelItems(vip, cls)) {
+        total++;
+        if (!known.has(it.id)) missing.push(`${it.id} (${cls} VIP${vip})`);
+        if (!it.slot) missing.push(`${it.id} has no slot (${cls} VIP${vip})`);
+      }
+    }
+  }
+  ok(total > 0, 'the VIP tiers grant something at all', `${total} items across all classes`);
+  eq(missing.join(', '), '', 'every granted id resolves in the catalog and carries a slot');
+});
+
+scenario('shop: the VIP weapon table and the shop weapon table name the same weapon', async () => {
+  // Two hand-maintained tables, one per handler. Drift means VIP 6 and a shop
+  // package hand out a different "uncommon weapon" for the same class — and
+  // _vipLevelItems falls back to the warrior's map for a class it does not
+  // know, so a class added to one table and not the other is silent.
+  const vipOf = { uncommon: 6, rare: 7, epic: 8 };
+  const wrong = [];
+  for (const cls of _CLASSES) {
+    for (const rarity of Object.keys(vipOf)) {
+      const granted = _vipLevelItems(vipOf[rarity], cls).find(i => i.slot === 'weapon');
+      const shopId = (_SHOP_CLASS_WEAPONS[cls] || {})[rarity];
+      if (!granted || !shopId || granted.id !== shopId) {
+        wrong.push(`${cls}/${rarity}: VIP ${granted ? granted.id : 'none'} vs shop ${shopId || 'none'}`);
+      }
+    }
+  }
+  eq(wrong.join(', '), '', 'both tables agree for every class and rarity');
+});
+
+scenario('shop: every package names a rarity the weapon and armor tables have', async () => {
+  const bad = [];
+  for (const pkg of _ALL_PKGS) {
+    if (pkg.armor && !_SHOP_ARMOR_SETS[pkg.armor]) bad.push(`${pkg.id}: armor '${pkg.armor}'`);
+    if (pkg.weapon) {
+      for (const cls of _CLASSES) {
+        if (!(_SHOP_CLASS_WEAPONS[cls] || {})[pkg.weapon]) bad.push(`${pkg.id}: weapon '${pkg.weapon}' for ${cls}`);
+      }
+    }
+    for (const sid of Object.keys(pkg.stones || {})) {
+      if (!_STONE_DEFS[sid] && !CRAFT_MATS.some(m => m.id === sid)) bad.push(`${pkg.id}: stone '${sid}'`);
+    }
+    for (const bid of Object.keys(pkg.boxes || {})) {
+      if (!BOX_DEF.some(b => b.id === bid)) bad.push(`${pkg.id}: box '${bid}'`);
+    }
+  }
+  ok(_ALL_PKGS.length > 0, 'there are packages to check', `${_ALL_PKGS.length} packages`);
+  eq(bad.join(', '), '', 'every package resolves against the tables');
+});
+
+scenario('shop: a stocked inventory never needs MORE new slots than an empty one', async () => {
+  // _shopNewSlots exists to reserve room before granting. Its one rule is that
+  // a stackable the player already holds merges instead of taking a slot — so
+  // holding things can only ever lower the count, never raise it. A reservation
+  // that comes out too low is what destroys the overflow silently.
+  const stocked = [
+    ...CRAFT_MATS.map(m => ({ id: m.id, slot: m.slot, qty: 1 })),
+    ...BOX_DEF.map(b => ({ id: b.id, slot: b.slot, qty: 1 })),
+  ];
+  const violations = [];
+  let anyPositive = false;
+  for (const pkg of _ALL_PKGS) {
+    for (const cls of _CLASSES) {
+      const empty = _shopNewSlots(pkg, [], cls);
+      const full = _shopNewSlots(pkg, stocked, cls);
+      if (empty > 0) anyPositive = true;
+      if (full > empty) violations.push(`${pkg.id}/${cls}: ${full} > ${empty}`);
+    }
+  }
+  ok(anyPositive, 'packages do reserve slots', 'at least one package needs room');
+  eq(violations.join(', '), '', 'holding stackables never raises the reservation');
+});
+
+scenario('shop: the VIP gold bonus is paid at exactly two tiers', async () => {
+  // A flat one-off at VIP 7 and 8 only. Stated here because it is three lines
+  // with no other guard: a tier added by hand elsewhere would not be noticed.
+  const paying = [];
+  for (let vip = 0; vip <= 12; vip++) if (_vipGoldReward(vip) > 0) paying.push(`${vip}:${_vipGoldReward(vip)}`);
+  eq(paying.join(', '), '7:10000, 8:20000', 'only VIP 7 and 8 pay gold, at their stated amounts');
+});
+
 scenario('login: a fresh account authenticates and is told it is new', async () => {
   const c = await connectAs('harness_new');
   ok(c.auth && typeof c.auth.username === 'string', 'authOk carries a username');
