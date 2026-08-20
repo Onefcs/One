@@ -171,11 +171,7 @@ const {
   FEAR_MAX_WAVE, COOP_STAGE_LEVELS, QUEST_DEF,
   FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_DAILY_MINUTES,
   FARM2_LIBERTY_CHANCE,
-  SEASON_END_AT, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
-  SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
-  SEASON_WIN_POINTS,
-  SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
+  SEASON_END_AT, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive, seasonTier,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
 } = require('../shared/definitions');
 
@@ -3251,12 +3247,7 @@ io.on('connection', socket => {
     // batched to the database every SEASON_FLUSH_EVERY kills. Without this it
     // was never written on the way out, so every disconnect, refresh or closed
     // tab threw away whatever had accumulated since the last batch.
-    if (authed && _seasonQuests && Object.keys(_seasonQuests).length) {
-      await _persistSavedFields(authed, {
-        seasonQuests: _seasonQuests, seasonTier: _seasonTierCur,
-      });
-      _seasonKillsUnsaved = 0;
-    }
+    await season.flushQuests();
   };
 
   // ── Admin inventory editing on a LIVE session ────────────────────────────
@@ -4567,7 +4558,7 @@ io.on('connection', socket => {
           { pkg: pkg.id, gram: pkg.gram, delivered: !!_result, hadLiveSocket: !!_target });
         const _newInv = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : inv;
         const _res = _result || { bonusSP: saved.bonusSP || 0, vipLevel: _vipLvl, vipDeposited: _vipDep, vipPending: _vipPend };
-        const _seasonTotalX = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
+        const _seasonTotalX = await season.addPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
         if (_target) {
           _target.emit('specialShopResult', {
             pkgId, newBalance: _gramBalance, newInventory: _newInv,
@@ -4608,7 +4599,7 @@ io.on('connection', socket => {
       // stones, VIP progress) is real value already paid for and granted;
       // not letting a season that happens to be over right now undo any of
       // that, same as every other season-adjacent grant in this file.
-      const _seasonTotal = await _seasonAddPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
+      const _seasonTotal = await season.addPoints(pkg.seasonPoints, 'special_shop', { pkg: pkg.id });
 
       socket.emit('specialShopResult', {
         pkgId,
@@ -5557,6 +5548,19 @@ io.on('connection', socket => {
     }
   });
 
+  // ── Сезон ─────────────────────────────────────────────────────────────────
+  // The season's handlers live in server/handlers/season.js, on the same
+  // `session` object the market and the forge use. Registered BEFORE the forge
+  // because the forge spends points through season.addPoints; the state itself
+  // is owned there and read back here through getters — the opposite direction
+  // from the other two, see that file's header.
+  const season = require('./handlers/season')({
+    socket, safeOn, logPlayer, logPlayerErr, session,
+    persistSavedFields: _persistSavedFields,
+    seasonRollSpecies: _seasonRollSpecies,
+    seasonTierAllowed: _seasonTierAllowed,
+  });
+
   // ── Кузница (forge) ───────────────────────────────────────────────────────
   // The eight forge handlers — crafting, material tier-ups, box opening and
   // заточка — live in server/handlers/forge.js, on the same `session` object
@@ -5571,7 +5575,7 @@ io.on('connection', socket => {
     commitServerItems: _commitServerItems,
     flushBalances: _flushBalances,
     withEconLock: _withEconLock,
-    seasonAddPoints: _seasonAddPoints,
+    seasonAddPoints: season.addPoints,
     incBalance: _incBalance,
     spendBalance: _spendBalance,
     socketForTelegramId: _socketForTelegramId,
@@ -5597,324 +5601,6 @@ io.on('connection', socket => {
     currentRoom.resendEnemies(socket.id, ids);
   });
 
-  // ── Сезон ─────────────────────────────────────────────────────────────────
-  // Every point is added right here. seasonPoints/seasonQuest never travel in
-  // from a client save (_sanitizeSavedStats drops them, same as the balances),
-  // so the leaderboard the prizes are read off cannot be written to by the
-  // people competing on it.
-  // Held here rather than on _lastStats: that object is REPLACED wholesale by
-  // every saveProgress with the sanitized client blob, and the sanitizer
-  // deletes both season fields (they must never arrive from a client). Keeping
-  // them there meant each save silently wiped the running total and the quest
-  // progress from memory — the panel fell back to 0 and a fresh quest was
-  // rolled every few seconds. Same reason the currency balances live in their
-  // own closure variables.
-  let _seasonPoints = 0;
-  // One quest per band, keyed by tier id, plus which band is selected. Both
-  // are kept rather than a single active quest so that switching bands and
-  // back resumes where the player left off — otherwise the switch would be a
-  // free reroll of a species someone didn't like, and 5000 kills of progress
-  // would evaporate on a mis-tap.
-  let _seasonQuests = {};
-  let _seasonTierCur = SEASON_TIER_DEFAULT;
-  let _seasonKillsUnsaved = 0;
-  // True while a completed quest's award is mid-flight. The award is async and
-  // kills keep arriving, so without this several of them would each fire their
-  // own award for the same finished quest.
-  let _seasonQuestAwarding = false;
-
-  // The selected band, demoted to the default if the player is not (or is no
-  // longer) high enough for it.
-  function _seasonTierId() {
-    const lvl = _lastStats ? _lastStats.lvl : 1;
-    return _seasonTierAllowed(_seasonTierCur, lvl) ? _seasonTierCur : SEASON_TIER_DEFAULT;
-  }
-
-  // The active band's quest, created on first use. An unknown species (a save
-  // from before this existed, or a table change) is re-rolled rather than
-  // trusted.
-  function _seasonQuest() {
-    if (!_lastStats) return null;
-    const tid = _seasonTierId();
-    const q = _seasonQuests[tid];
-    const lvl = Math.max(1, Math.floor(Number(_lastStats.lvl)) || 1);
-    const def = q && typeof q === 'object' ? seasonTier(tid).species.find(s => s.sp === q.sp) : null;
-    if (def && (def.req || 0) <= lvl) return q;
-    const fresh = { sp: _seasonRollSpecies(null, _lastStats.lvl, tid), kills: 0 };
-    _seasonQuests[tid] = fresh;
-    _persistSavedFields(authed, { seasonQuests: _seasonQuests, seasonTier: tid });
-    return fresh;
-  }
-
-  // A quest as the client renders it: the species' display name and the exact
-  // levels it can be found at, which is what the quest text names instead of
-  // the band (zombies only live at 21, so "21-23" would send players through
-  // rooms that cannot contain one).
-  function _seasonQuestPublic(q, tid) {
-    if (!q) return null;
-    const def = seasonTier(tid).species.find(s => s.sp === q.sp);
-    return {
-      sp: q.sp,
-      name: def ? def.name : q.sp,
-      levels: (SEASON_TIER_SPECIES_LEVELS[tid] || {})[q.sp] || [],
-      kills: Math.min(q.kills || 0, SEASON_QUEST_KILLS),
-      tier: tid,
-    };
-  }
-
-  function _seasonPublicState() {
-    const tid = _seasonTierId();
-    const q = _seasonQuest();
-    const lvl = _lastStats ? (Math.floor(Number(_lastStats.lvl)) || 1) : 1;
-    const t = seasonTier(tid);
-    return {
-      endAt: SEASON_END_AT,
-      active: seasonActive(),
-      points: _seasonPoints,
-      quest: _seasonQuestPublic(q, tid),
-      target: SEASON_QUEST_KILLS,
-      questPoints: SEASON_QUEST_POINTS,
-      // The selected band's own range, so the panel describes what is actually
-      // being hunted rather than the 10+ one it used to hard-code.
-      minLvl: t.minLvl, maxLvl: t.maxLvl,
-      tier: tid,
-      tiers: SEASON_TIERS.map(x => ({
-        id: x.id, label: x.label, reqLvl: x.reqLvl,
-        minLvl: x.minLvl, maxLvl: x.maxLvl,
-        locked: lvl < (x.reqLvl || 0),
-      })),
-      burn: SEASON_BURN_POINTS,
-      eventTasks: SEASON_EVENT_TASKS,
-      enhance: SEASON_ENHANCE_POINTS,
-      eventPoints: SEASON_EVENT_POINTS,
-      win: SEASON_WIN_POINTS,
-      ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
-      prizes: SEASON_PRIZES,
-    };
-  }
-
-  // Atomic, like the currency balances — two sockets for one account (a
-  // reconnect overlapping its predecessor) must not lose each other's points.
-  async function _seasonAddPoints(n, reason, meta) {
-    if (!authed || !Number.isFinite(n) || n <= 0) return null;
-    if (!seasonActive()) {
-      logPlayer(authed.telegramId, authed.username, 'season_points_failed',
-        { add: n, reason, why: 'season_over', ...(meta || {}) });
-      return null;
-    }
-    try {
-      // An account that only ever pressed /start has savedData: null, and a
-      // dotted $inc against a null parent THROWS instead of creating it — the
-      // same trap _incBalance documents. Without this the award was lost and
-      // the only trace was a console line.
-      await PlayerModel.updateOne(
-        { telegramId: String(authed.telegramId), savedData: null },
-        { $set: { savedData: {} } },
-      );
-      const doc = await PlayerModel.findOneAndUpdate(
-        { telegramId: String(authed.telegramId) },
-        { $inc: { 'savedData.seasonPoints': n } },
-        { new: true, projection: { 'savedData.seasonPoints': 1 } },
-      ).lean();
-      // No document matched: nothing was incremented. This used to fall
-      // through to `total = 0`, which both reported success to the caller AND
-      // wiped the running total held in memory — a failed award turned into a
-      // reset to zero. Report the failure instead and leave _seasonPoints be.
-      if (!doc) {
-        logPlayer(authed.telegramId, authed.username, 'season_points_failed',
-          { add: n, reason, why: 'player_not_found', ...(meta || {}) });
-        return null;
-      }
-      const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
-      _seasonPoints = total;
-      logPlayer(authed.telegramId, authed.username, 'season_points', { add: n, total, reason, ...(meta || {}) });
-      return total;
-    } catch (err) {
-      console.error('_seasonAddPoints:', err);
-      // Both rows on purpose: the 'error' one so it shows under Ошибки with a
-      // stack message, and the durable season one so it survives the ordinary
-      // log's 100-row window like every other points movement.
-      logPlayerErr(authed.telegramId, authed.username, 'season_points', err, { add: n, reason, ...(meta || {}) });
-      logPlayer(authed.telegramId, authed.username, 'season_points_failed',
-        { add: n, reason, why: 'db_error', message: err && err.message, ...(meta || {}) });
-      return null;
-    }
-  }
-
-  // Called on every kill. Progress lives in _lastStats and is only written out
-  // every SEASON_FLUSH_EVERY kills (and on completion) — a 5000-kill quest
-  // would otherwise be 5000 database writes per player.
-  const SEASON_FLUSH_EVERY = 10;
-  function _seasonTrackKill(result) {
-    if (!authed || !_lastStats || !seasonActive()) return;
-    if (!result || !result.eid) return;
-    // Only the SELECTED band counts. Kills in the other one are ignored
-    // rather than banked, which is the whole point of the switch: one quest
-    // is active at a time, and the player chooses which.
-    const tid = _seasonTierId();
-    const t = seasonTier(tid);
-    const lvl = result.rlvl || 0;
-    if (lvl < t.minLvl || lvl > t.maxLvl) return;
-    const q = _seasonQuest();
-    if (!q) return;
-    // Both the guard and the warrior variant of a species count.
-    if (String(result.eid).split('_')[0] !== q.sp) return;
-
-    q.kills = (q.kills || 0) + 1;
-    if (q.kills < SEASON_QUEST_KILLS) {
-      if (++_seasonKillsUnsaved >= SEASON_FLUSH_EVERY) {
-        _seasonKillsUnsaved = 0;
-        _persistSavedFields(authed, { seasonQuests: _seasonQuests });
-      }
-      return;
-    }
-    // Cleared. The award has to LAND before the quest is replaced: this used
-    // to roll the next species and persist it first, so any failed write —
-    // and _seasonAddPoints could fail silently in three different ways — ate
-    // 5000 kills and paid nothing, with no way for the player to retry. That
-    // is the "квест выполнен, очки не начислились" report.
-    //
-    // Leaving the finished quest in place on failure makes the next kill try
-    // again (kills is already at the target, so it re-enters this branch), and
-    // the count is flushed on the way out, so it survives a disconnect too.
-    if (_seasonQuestAwarding) return;   // one award in flight at a time
-    _seasonQuestAwarding = true;
-    _seasonKillsUnsaved = 0;
-    _persistSavedFields(authed, { seasonQuests: _seasonQuests });
-    const doneSp = q.sp;
-    _seasonAddPoints(SEASON_QUEST_POINTS, 'quest', { sp: doneSp, tier: tid, kills: q.kills })
-      .then(total => {
-        _seasonQuestAwarding = false;
-        if (total === null) {
-          // Not rolled over — the player keeps the completed quest and the
-          // next kill retries the award.
-          logPlayer(authed.telegramId, authed.username, 'season_quest_award_failed',
-            { sp: doneSp, tier: tid, points: SEASON_QUEST_POINTS, kills: q.kills });
-          return;
-        }
-        const next = { sp: _seasonRollSpecies(doneSp, _lastStats.lvl, tid), kills: 0 };
-        _seasonQuests[tid] = next;
-        _seasonKillsUnsaved = 0;
-        _persistSavedFields(authed, { seasonQuests: _seasonQuests });
-        logPlayer(authed.telegramId, authed.username, 'season_quest_done',
-          { sp: doneSp, tier: tid, points: SEASON_QUEST_POINTS, total, next: next.sp });
-        socket.emit('seasonQuestDone', {
-          sp: doneSp, points: SEASON_QUEST_POINTS, total,
-          next: _seasonQuestPublic(next, tid),
-        });
-      })
-      .catch(err => {
-        _seasonQuestAwarding = false;
-        logPlayerErr(authed.telegramId, authed.username, 'season_quest_award', err, { sp: doneSp, tier: tid });
-      });
-  }
-  socket.data._seasonTrackKill = _seasonTrackKill;
-
-  // Repeatable event tasks (SEASON_EVENT_TASKS). Each pays once per
-  // occurrence and then arms again — the caller decides what "an occurrence"
-  // is, because only it knows: one 3v3 match, one death-battle round, one
-  // world-boss appearance. Nothing is stored per task beyond what is needed
-  // to stop a single occurrence paying twice.
-  function _seasonAwardEvent(taskId) {
-    if (!authed || !seasonActive()) return;
-    if (!SEASON_EVENT_TASKS.some(t => t.id === taskId)) return;
-    // A failed award is only reported to the client as `total: null`, which
-    // it cannot distinguish from "no total to show" — so the miss is recorded
-    // here as well, where an admin can actually find it.
-    _seasonAddPoints(SEASON_EVENT_POINTS, 'event', { task: taskId }).then(total => {
-      if (total === null) return;   // _seasonAddPoints already logged why
-      socket.emit('seasonEventDone', { task: taskId, points: SEASON_EVENT_POINTS, total });
-    }).catch(err => logPlayerErr(authed.telegramId, authed.username, 'season_event', err, { task: taskId }));
-  }
-  socket.data._seasonAwardEvent = _seasonAwardEvent;
-
-  // Winning one, on top of the participation points above. Called from the
-  // match-end paths (_dbFinish / _a3Finish), which already know who took it —
-  // this side only turns that into points, so there is no way to claim a win
-  // from a client message.
-  function _seasonAwardWin(taskId) {
-    if (!authed || !seasonActive()) return;
-    const pts = SEASON_WIN_POINTS[taskId] || 0;
-    if (pts <= 0) return;
-    _seasonAddPoints(pts, 'win', { task: taskId }).then(total => {
-      if (total === null) return;   // _seasonAddPoints already logged why
-      socket.emit('seasonEventDone', { task: taskId, points: pts, total, win: true });
-    }).catch(err => logPlayerErr(authed.telegramId, authed.username, 'season_win', err, { task: taskId }));
-  }
-  socket.data._seasonAwardWin = _seasonAwardWin;
-
-  // Which world boss this account has already been paid for. The boss keeps
-  // one id for its whole appearance, so remembering the last one paid is
-  // enough to make it once-per-boss no matter how many times it is hit —
-  // otherwise every swing would be worth points.
-  //
-  // _seasonBossPaid used to be ONLY this in-memory variable, scoped to one
-  // socket connection — so it forgot on every reconnect, and a page refresh
-  // (or any ordinary mobile network blip; ordinary here) is a brand new
-  // connection. The very next hit on the still-alive boss then read as a
-  // fresh appearance and paid the 50 points again — the same failure shape
-  // any once-per-account flag has when it lives only in a connection. It
-  // still exists as a same-connection fast path (avoids a DB round trip on
-  // every one of a boss fight's many hits), but the actual "already paid"
-  // decision is now the persisted, atomically-guarded write below — a
-  // $ne-guarded findOneAndUpdate — which survives whatever connection asks
-  // and still "arms again" the moment a new boss spawns, since a fresh spawn
-  // always gets a fresh id (Room.spawnEventBoss).
-  let _seasonBossPaid = null;
-  function _seasonTrackBossHit(enemyId) {
-    if (!authed || !seasonActive() || !enemyId) return;
-    if (!String(enemyId).startsWith('evtboss_')) return;
-    if (_seasonBossPaid === enemyId) return;
-    _seasonBossPaid = enemyId;
-    PlayerModel.findOneAndUpdate(
-      { telegramId: String(authed.telegramId), 'savedData.seasonBossPaid': { $ne: enemyId } },
-      { $set: { 'savedData.seasonBossPaid': enemyId } },
-    ).then(doc => { if (doc) _seasonAwardEvent('worldboss'); })
-     .catch(err => console.error('_seasonTrackBossHit:', err));
-  }
-  socket.data._seasonTrackBossHit = _seasonTrackBossHit;
-
-  // Re-reads the running total from the database. Points can now be added by
-  // somebody ELSE's session — the referral bonus is paid to the referrer, who
-  // may well be online at the time — so the closure copy is no longer the only
-  // writer and a stale one would show the panel a number that is too low.
-  async function _seasonReloadPoints() {
-    if (!authed) return _seasonPoints;
-    try {
-      const doc = await PlayerModel.findById(authed._id, 'savedData.seasonPoints').lean();
-      const total = Math.max(0, Math.floor(Number(doc?.savedData?.seasonPoints) || 0));
-      _seasonPoints = total;
-    } catch (err) { console.error('_seasonReloadPoints:', err); }
-    return _seasonPoints;
-  }
-
-  safeOn('seasonSync', async () => {
-    if (!authed) return;
-    await _seasonReloadPoints();
-    socket.emit('seasonState', _seasonPublicState());
-  });
-
-  // Switching the quest band (10+ / 20+). The other band's quest is left
-  // untouched, so coming back resumes it — see _seasonQuests.
-  safeOn('seasonSetTier', ({ tier } = {}) => {
-    if (!authed || !_lastStats) return;
-    const t = SEASON_TIERS.find(x => x.id === String(tier));
-    if (!t) return;
-    if (!_seasonTierAllowed(t.id, _lastStats.lvl)) {
-      return socket.emit('seasonError', { msg: `Нужен ${t.reqLvl} уровень` });
-    }
-    if (_seasonTierCur !== t.id) {
-      // Whatever the old band had counted since its last flush would be lost
-      // otherwise: the counter is per-session, not per-band.
-      if (_seasonKillsUnsaved > 0) {
-        _seasonKillsUnsaved = 0;
-        _persistSavedFields(authed, { seasonQuests: _seasonQuests });
-      }
-      _seasonTierCur = t.id;
-      _persistSavedFields(authed, { seasonTier: t.id });
-    }
-    socket.emit('seasonState', _seasonPublicState());
-  });
 
   // ── Приведи друга ─────────────────────────────────────────────────────────
   // Paid to the REFERRER when someone they invited reaches SEASON_REF_LEVEL.
@@ -5970,7 +5656,7 @@ io.on('connection', socket => {
         place: i + 1, username: p.username,
         points: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints) || 0)),
       }));
-      const mine = _seasonPoints;
+      const mine = season.points;
       let myPlace = list.findIndex(r => r.username === authed.username) + 1;
       if (!myPlace && mine > 0) {
         myPlace = await PlayerModel.countDocuments({ 'savedData.seasonPoints': { $gt: mine } }) + 1;
@@ -6058,7 +5744,7 @@ io.on('connection', socket => {
         // exhausted connection pool — burned the item for nothing. Awarding
         // first means the worst case is points credited for a burn that then
         // didn't happen, which the player can simply redo.
-        const total = await _seasonAddPoints(pts, 'burn', { itemId: burned.id, n: 1 });
+        const total = await season.addPoints(pts, 'burn', { itemId: burned.id, n: 1 });
         if (total === null) {
           return socket.emit('seasonBurnError', { msg: 'Не удалось начислить очки — попробуйте ещё раз' });
         }
@@ -6114,7 +5800,7 @@ io.on('connection', socket => {
           _victims.push(i); pts += v;
         }
         if (!_victims.length) return socket.emit('seasonBurnError', { msg: 'Нечего сжигать' });
-        const total = await _seasonAddPoints(pts, 'burn_all', { rarity, n: _victims.length });
+        const total = await season.addPoints(pts, 'burn_all', { rarity, n: _victims.length });
         if (total === null) {
           return socket.emit('seasonBurnError', { msg: 'Не удалось начислить очки — попробуйте ещё раз' });
         }
@@ -6747,36 +6433,7 @@ io.on('connection', socket => {
     // the client blob — the sanitizer strips both fields so they can't be
     // written by the people competing for the prize — so this is the only
     // point at which it enters the session.
-    {
-      const _sd = authed.savedData || {};
-      _seasonPoints = Math.max(0, Math.floor(Number(_sd.seasonPoints) || 0));
-      // One quest per band. Each is validated against ITS OWN band's species
-      // list, so a stored quest naming a species that has since moved (or that
-      // never belonged to that band) is dropped and re-rolled rather than
-      // becoming an unfinishable "kill 5000 of something that isn't there".
-      const _readQuest = (raw, tid) => {
-        if (!raw || typeof raw !== 'object') return null;
-        if (!seasonTier(tid).species.some(x => x.sp === raw.sp)) return null;
-        return { sp: raw.sp, kills: Math.max(0, Math.floor(Number(raw.kills) || 0)) };
-      };
-      _seasonQuests = {};
-      const _sqs = _sd.seasonQuests;
-      if (_sqs && typeof _sqs === 'object') {
-        for (const tier of SEASON_TIERS) {
-          const q = _readQuest(_sqs[tier.id], tier.id);
-          if (q) _seasonQuests[tier.id] = q;
-        }
-      }
-      // Migration: before the bands existed there was a single seasonQuest,
-      // and it was always a 10+ one. Carried across so nobody loses progress
-      // to the upgrade.
-      if (!_seasonQuests[SEASON_TIER_DEFAULT]) {
-        const q = _readQuest(_sd.seasonQuest, SEASON_TIER_DEFAULT);
-        if (q) _seasonQuests[SEASON_TIER_DEFAULT] = q;
-      }
-      _seasonTierCur = SEASON_TIERS.some(x => x.id === _sd.seasonTier)
-        ? _sd.seasonTier : SEASON_TIER_DEFAULT;
-    }
+    season.hydrate(authed.savedData);
     // A friend invited by someone else may have crossed level 20 while this
     // session was away; the check is a no-op below that level and runs at most
     // once per session.
@@ -7385,10 +7042,10 @@ io.on('connection', socket => {
       if (result.isBoss) _coopBossTrackKill(socket.id, result).catch(err => console.error('[coop boss reward]', err));
       else _coopTrackKill(socket.id, result);
     }
-    if (result.killed) _seasonTrackKill(result);
+    if (result.killed) season.trackKill(result);
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
-    _seasonTrackBossHit(enemyId);
+    season.trackBossHit(enemyId);
     // Guild War tower: no xp/gold/loot — capture just flips ownership. The
     // tower's hp already bounced back to maxHp inside Room.attackEnemy, so no
     // enemyKilled/death-animation broadcast either — the next tick's normal
@@ -7536,10 +7193,10 @@ io.on('connection', socket => {
       if (result.isBoss) _coopBossTrackKill(socket.id, result).catch(err => console.error('[coop boss reward]', err));
       else _coopTrackKill(socket.id, result);
     }
-    if (result.killed) _seasonTrackKill(result);
+    if (result.killed) season.trackKill(result);
     // "Ударить Мирового босса" — any landed hit counts, and it pays once
     // per boss appearance rather than once per swing.
-    _seasonTrackBossHit(enemyId);
+    season.trackBossHit(enemyId);
     if (result.captured) { _gwApplyCapture(result); return; }
     if (result.killed) {
       if (result.isBoss) io.to(`floor_${currentFloor}`).emit('bossStatus', { arm: result.arm, alive: false, respawnAt: result.respawnAt });

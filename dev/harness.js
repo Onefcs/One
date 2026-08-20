@@ -286,6 +286,7 @@ const {
 } = require('../server/shop');
 const {
   CHAR_DEF, ITEM_DEF: _ITEM_DEF, CRAFT_MATS, BOX_DEF, GEAR_CRAFT_RECIPES,
+  SEASON_TIERS,
 } = require('../shared/definitions');
 
 const _CLASSES = Object.keys(CHAR_DEF);
@@ -2711,6 +2712,42 @@ scenario('race: a grant landing during a shop purchase is not erased by its stal
     eq(stones, 0, 'a grant the server refused was not half-applied either');
   }
 
+  await c.close();
+});
+
+scenario('season: stored points and quest progress survive into the session', async () => {
+  // Season points decide who takes a prize, and they are the one part of the
+  // save the sanitizer strips from the client blob entirely — the stored
+  // record is the only place they come from. Nothing tested that they are
+  // actually read out of it: making the hydration a no-op left the harness
+  // green at 603 passed, which is how this gap was found while moving the
+  // season to server/handlers/season.js.
+  const TIER = SEASON_TIERS[0];
+  const SPECIES = TIER.species[0].sp;
+  const STORED_POINTS = 4271;          // no round number, so a zeroed load
+  const STORED_KILLS = 37;             // cannot pass by coincidence
+  const c = await connectWithSaved('harness_season_load', {
+    lvl: 30,
+    seasonPoints: STORED_POINTS,
+    seasonTier: TIER.id,
+    seasonQuests: { [TIER.id]: { sp: SPECIES, kills: STORED_KILLS } },
+  });
+  await enterWorld(c, 'ranger');
+
+  const st = c.wait('seasonState', { timeout: 6000 });
+  c.emit('seasonSync');
+  const state = await st;
+
+  // Note which path each of these proves: seasonSync re-reads the point total
+  // from the database before answering, so `points` covers that reload, and
+  // the quest and band below are what the hydration itself has to carry.
+  eq(state.points, STORED_POINTS, 'the stored point total is the one the session reports');
+  eq(state.tier, TIER.id, 'and the stored band is the one selected');
+  ok(state.quest, 'a stored quest comes back rather than being re-rolled');
+  if (state.quest) {
+    eq(state.quest.sp, SPECIES, 'naming the species it was stored against');
+    eq(state.quest.kills, STORED_KILLS, 'with its kill progress intact');
+  }
   await c.close();
 });
 
