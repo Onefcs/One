@@ -98,13 +98,24 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Waits for one event, or rejects with something readable rather than a bare
 // timeout — a scenario that hangs should say which message never arrived.
-function waitFor(sock, event, { timeout = 8000, where = '' } = {}) {
+// `match` narrows which payload counts. Several events are BOTH a reply to a
+// request and a broadcast the server sends everyone — race10State is the one
+// that bit: the reply to race10Sync carries `registered`/`inMatch`, the
+// periodic broadcast of the same event name does not. Without a predicate the
+// first one to arrive wins, so a broadcast landing in the gap between arming
+// the wait and the reply made the caller read `undefined` off the wrong
+// message. Non-matching payloads are ignored and the wait keeps running until
+// its own timeout.
+function waitFor(sock, event, { timeout = 8000, where = '', match = null } = {}) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => {
       sock.off(event, on);
       reject(new Error(`timed out after ${timeout}ms waiting for '${event}'${where ? ' (' + where + ')' : ''}`));
     }, timeout);
-    const on = payload => { clearTimeout(t); sock.off(event, on); resolve(payload); };
+    const on = payload => {
+      if (match && !match(payload)) return;
+      clearTimeout(t); sock.off(event, on); resolve(payload);
+    };
     sock.on(event, on);
   });
 }
@@ -3846,7 +3857,12 @@ scenario('race10: 51 entrants for 50 corridors — the 51st is refused, not stuf
 
   // And the refused one is not left believing it is still in.
   const rejected = clients[res.findIndex(r => r && r.error)];
-  const sync = rejected.wait('race10State', { timeout: 5000 });
+  // The reply to race10Sync, not the periodic broadcast of the same event
+  // name — only the reply carries these two fields at all.
+  const sync = rejected.wait('race10State', {
+    timeout: 5000,
+    match: p => p && p.registered !== undefined && p.inMatch !== undefined,
+  });
   rejected.emit('race10Sync');
   const st = await sync;
   eq(st.registered, false, 'the refused entrant is unregistered, not left waiting for a race it is not in');
