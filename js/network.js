@@ -2981,11 +2981,11 @@ function netResetUpgrades() {
   if (socket?.connected) socket.emit('resetUpgrades');
 }
 
-// tierId picks one of REBIRTH_TIERS (shared/definitions.js) — the server
-// checks and spends that tier's GRAM + materials, resets level/xp/upgrades
-// and answers with 'rebirthDone' (see the handler below).
-function netRebirth(tierId) {
-  if (socket?.connected) socket.emit('rebirth', { tierId });
+// Item cost only (REBIRTH_COST, shared/definitions.js) — the server checks
+// and removes it, resets level/xp/upgrades and answers with 'rebirthDone'
+// (see the handler below).
+function netRebirth() {
+  if (socket?.connected) socket.emit('rebirth');
 }
 
 function netGetRating(tab) {
@@ -3932,10 +3932,8 @@ function _initPetCraftHandlers(s) {
   // Rebirth (Перерождение). Same "inventorySync already landed" shape as
   // boxOpened above — the server's own _commitServerItems call inside the
   // rebirth handler already pushed the item-cost removal; this only carries
-  // the progression reset (level/xp/upgrades/bonusSP/rebirths) plus the
-  // post-spend GRAM balance (rebirth now also costs GRAM, tier-dependent).
-  s.on('rebirthDone', (data = {}) => {
-    const { lvl, xp, xpNext, baseAtk, baseDef, baseMaxHp, upgrades, bonusSP, rebirths } = data;
+  // the progression reset (level/xp/upgrades/bonusSP/rebirths).
+  s.on('rebirthDone', ({ lvl, xp, xpNext, baseAtk, baseDef, baseMaxHp, upgrades, bonusSP, rebirths } = {}) => {
     if (!player) return;
     player.lvl = lvl; player.xp = xp; player.xpNext = xpNext;
     player.baseAtk = baseAtk; player.baseDef = baseDef; player.baseMaxHp = baseMaxHp;
@@ -3947,7 +3945,7 @@ function _initPetCraftHandlers(s) {
     // ordinary level-up already grants (applyLevelState, js/player.js).
     player.hp = player.maxHp;
     if (typeof netSaveProgress === 'function') netSaveProgress();
-    if (typeof onRebirthDone === 'function') onRebirthDone(data);
+    if (typeof onRebirthDone === 'function') onRebirthDone();
   });
   s.on('rebirthError', ({ msg }) => {
     if (typeof onRebirthError === 'function') onRebirthError(msg);

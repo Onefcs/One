@@ -181,7 +181,7 @@ const {
   FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_TIERS, skillPointBudget,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -663,6 +663,9 @@ const _VIP_BP = [
 // struck-through price — this is what actually gets charged, in gramShopBuy.
 const PACK_DISCOUNT_PCT = 0.3;
 function packPrice(gram) { return Math.max(1, Math.round(gram * (1 - PACK_DISCOUNT_PCT))); }
+// The three rmat (Перерождение tab) packs below are priced as-is — no 30%
+// off — so their GRAM cost stays exactly what's advertised (25/40/80).
+function pkgPrice(pkg) { return pkg.noDiscount ? pkg.gram : packPrice(pkg.gram); }
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
@@ -694,6 +697,16 @@ const _GRAM_SHOP_PKGS = [
     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
   { id:'petpkg3', gram:250, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
+  // Перерождение tab — pure material packs. These only GRANT the listed
+  // items (via the same pkg.boxes/pkg.stones handling every other package
+  // already uses below — `stones` isn't stone-specific, it resolves any
+  // CRAFT_MATS id, which is how rece/recl land here too); buying one never
+  // performs a rebirth by itself, that's still the separate 'rebirth' event
+  // above, spending materials out of the inventory these packs fill.
+  // noDiscount: true — sold at face value, not the usual 30% off.
+  { id:'rmat1', gram:25, noDiscount:true, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
+  { id:'rmat2', gram:40, noDiscount:true, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
+  { id:'rmat3', gram:80, noDiscount:true, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
@@ -6890,7 +6903,7 @@ io.on('connection', socket => {
         _chosenPet = ITEM_DEF.find(d => d.id === petId && d.slot === 'pet' && d.rarity === pkg.petChoice);
         if (!_chosenPet) return socket.emit('gramShopError', { msg: 'Выберите питомца' });
       }
-      const _price = packPrice(pkg.gram);
+      const _price = pkgPrice(pkg);
       if (_liveGram() < _price) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
 
       const doc = await PlayerModel.findById(authed._id);
@@ -7953,20 +7966,17 @@ io.on('connection', socket => {
   // upgrades-budget check above both call it, so client and server can't
   // disagree on the result).
   //
-  // Bought like a GRAM-shop pack: the buyer picks one of the three
-  // REBIRTH_TIERS (shared/definitions.js) — same GRAM+materials cost the
-  // client's rebirth UI shows, priced higher per tier. That GRAM leg means
-  // this now needs gramShopBuy's exact atomic-spend shape (an await between
-  // the balance check and its deduction), so it runs under _withEconLock
-  // the same way instead of the single synchronous pass the old flat item-
-  // cost version used.
-  safeOn('rebirth', async ({ tierId } = {}) => {
+  // Pure item cost (REBIRTH_COST) — no Liberty spend — so unlike craftGear/
+  // resetUpgrades this never awaits a balance call: everything here runs off
+  // _lastStats in one synchronous pass, which is also why it needs none of
+  // their cross-session-during-an-await machinery (nothing yields between
+  // the mat check and the mutation, so activeSessions/_lastStats can't have
+  // moved out from under it). The materials themselves can also be bought
+  // outright with GRAM from the shop's own Перерождение tab (rmat1-3 in
+  // _GRAM_SHOP_PKGS below, via the ordinary gramShopBuy) — that only grants
+  // items into the inventory, it never performs the rebirth itself.
+  safeOn('rebirth', () => {
     if (!authed) return;
-    if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
-    _itemOpBusy++;
-    let _ran;
-    try {
-    _ran = await _withEconLock(async () => {
     try {
       if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
         return socket.emit('rebirthError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
@@ -7975,33 +7985,26 @@ io.on('connection', socket => {
       if (lvl < REBIRTH_LEVEL) {
         return socket.emit('rebirthError', { msg: `Нужен ${REBIRTH_LEVEL} уровень` });
       }
-      const tier = REBIRTH_TIERS.find(tr => tr.id === tierId);
-      if (!tier) return socket.emit('rebirthError', { msg: 'Выберите тир перерождения' });
-
+      if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
       const inv = _lastStats.inventory;
       const _beforeLen = inv.length;
       const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
       const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
-      for (const [id, need] of Object.entries(tier.cost)) {
+      // Every 5th rebirth costs double (rebirthCostFor, shared/definitions.js)
+      // — based on the rebirth about to happen (current rebirths + 1), not
+      // the count already banked.
+      const _cost = rebirthCostFor(_lastStats.rebirths || 0);
+      for (const [id, need] of Object.entries(_cost)) {
         const have = matCount(id);
         if (have < need) {
           return socket.emit('rebirthError', { msg: `Нужно ${need} × ${matName(id)} (есть ${have})` });
         }
       }
-      // GRAM checked/spent the same way gramShopBuy does — the deduction IS
-      // the affordability check (_spendBalance only writes if the stored
-      // balance covers it), so nothing here can spend GRAM the account
-      // doesn't have, whatever the cached figure said a moment ago.
-      if (_liveGram() < tier.gram) return socket.emit('rebirthError', { msg: 'Недостаточно GRAM' });
-      const _paidGram = await _spendBalance(authed.telegramId, 'gramBalance', tier.gram);
-      if (_paidGram === null) return socket.emit('rebirthError', { msg: 'Недостаточно GRAM' });
-      _gramBalance = _paidGram;
-
       // All four cost items stack (BOX_DEF/CRAFT_MATS' box/recipe slots —
       // isStackableItem, shared/definitions.js), so a plain qty-decrement
       // pass covers every one of them — no enhanced-item matching needed,
       // unlike craftGear's mats (which can carry a minEnhance).
-      for (const [id, need] of Object.entries(tier.cost)) {
+      for (const [id, need] of Object.entries(_cost)) {
         let left = need;
         for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
           const e = inv[i];
@@ -8078,14 +8081,14 @@ io.on('connection', socket => {
       // Emits inventorySync with the post-cost inventory —
       // rebirthDone below deliberately carries no inventory field of its own,
       // same "already landed via inventorySync" shape as craftGear/boxOpened.
-      _commitServerItems(inv, null, 'rebirth', { rebirths: _lastStats.rebirths, tier: tier.id }, { beforeLen: _beforeLen });
+      _commitServerItems(inv, null, 'rebirth', { rebirths: _lastStats.rebirths }, { beforeLen: _beforeLen });
       _persistSavedFields(authed, {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
         bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
       });
       logPlayer(authed.telegramId, authed.username, 'rebirth', {
-        rebirths: _lastStats.rebirths, fromLvl: lvl, tier: tier.id, gramPaid: tier.gram,
+        rebirths: _lastStats.rebirths, fromLvl: lvl,
         // What the rebirth actually cost and paid in points — the one line
         // that makes a later "my skill points changed" report answerable.
         spentSP: _spentSP, bonusSP: `${_oldBonus} -> ${_lastStats.bonusSP}`,
@@ -8094,19 +8097,12 @@ io.on('connection', socket => {
         lvl: 1, xp: 0, xpNext: _lastStats.xpNext,
         baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
         upgrades: _lastStats.upgrades || {}, bonusSP: _lastStats.bonusSP, rebirths: _lastStats.rebirths,
-        newBalance: _gramBalance,
       });
-      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
     } catch (err) {
       console.error('rebirth:', err);
       logPlayerErr(authed.telegramId, authed.username, 'rebirth', err, {});
       socket.emit('rebirthError', { msg: 'Ошибка сервера' });
     }
-    });
-    } finally {
-      _itemOpBusy--;
-    }
-    if (!_ran) socket.emit('rebirthError', { msg: 'Секунду, повторите' });
   });
 
   // ── Enchant stone crafting — REMOVED ──────────────────────────────────────

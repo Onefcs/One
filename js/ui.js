@@ -628,77 +628,49 @@ function onUpgradesResetError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  REBIRTH  (Персонаж → Перерождение, and the GRAM shop's own Перерождение
-//  tab — the exact same three tier cards render in both places, see
-//  _renderRebirthTiersBody). REBIRTH_LEVEL/REBIRTH_BONUS_SP/REBIRTH_TIERS
-//  live in shared/definitions.js (mirrored by the server's own rebirth
-//  handler, server/index.js) so what's shown here can never drift from
-//  what actually gets charged and granted. Rebirth is bought like a GRAM-
-//  shop pack: the player picks any one of the three tiers each time (no
-//  auto-scaling by rebirth count), paying that tier's GRAM + materials.
+//  REBIRTH  (Персонаж → Перерождение)
+//  REBIRTH_LEVEL/REBIRTH_BONUS_SP/REBIRTH_COST live in shared/definitions.js
+//  (mirrored by the server's own rebirth handler, server/index.js) so the
+//  requirement/cost shown here can never drift from what actually gets
+//  charged and granted.
 // ─────────────────────────────────────────────────────────
 function _rebirthCostDef(id) {
   return (typeof BOX_DEF !== 'undefined' && BOX_DEF.find(d => d.id === id))
       || (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(d => d.id === id))
       || null;
 }
+function _rebirthReady() {
+  if (!player) return false;
+  if ((player.lvl || 1) < REBIRTH_LEVEL) return false;
+  return Object.entries(rebirthCostFor(player.rebirths || 0)).every(([id, need]) => countMaterial(id) >= need);
+}
 
 // One reward row — icon + label — shared by every shop/reward panel below
-// (rebirth tiers, VIP tiers, GRAM packs). It was copy-pasted as a local
-// `ri()` inside five of them, which is how the same markup ended up
+// (rebirth cost, VIP tiers, GRAM packs, season packs). It was copy-pasted as a
+// local `ri()` inside five of them, which is how the same markup ended up
 // maintained in five places at once.
 function ri(img, label, cls) {
   return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
-}
-
-const _REBIRTH_TIER_LABEL_KEYS = { rebirth1: 'rebirthTier1Lbl', rebirth2: 'rebirthTier2Lbl', rebirth3: 'rebirthTier3Lbl' };
-
-function _rebirthTierReady(tier, bal) {
-  if (!player) return false;
-  if ((player.lvl || 1) < REBIRTH_LEVEL) return false;
-  if (bal < tier.gram) return false;
-  return Object.entries(tier.cost).every(([id, need]) => countMaterial(id) >= need);
-}
-
-function _rebirthTierCardHtml(tier, bal) {
-  const gramOk = bal >= tier.gram;
-  const rows = Object.entries(tier.cost).map(([id, need]) => {
-    const def = _rebirthCostDef(id);
-    const have = countMaterial(id);
-    const ok = have >= need;
-    const label = `<span style="color:${ok ? '#98e456' : '#f88'}">${have}/${need}</span>`;
-    return ri(def ? def.img : '', label, '');
-  }).join('');
-  const ready = _rebirthTierReady(tier, bal);
-  return `<div class="gram-shop-card" style="border-color:rgba(229,170,82,.35)">
-    <div class="gram-shop-card-head">
-      <div>
-        <div class="gram-shop-title" style="color:#e5aa52">${t(_REBIRTH_TIER_LABEL_KEYS[tier.id])}</div>
-        <div class="gram-shop-price" style="color:${gramOk ? '#98e456' : '#f88'}">${tier.gram} GRAM</div>
-      </div>
-      <button class="gram-shop-buy-btn${ready ? '' : ' disabled'}"
-        style="border-color:#e5aa52;color:${ready ? '#e5aa52' : '#645f57'}"
-        onclick="${ready ? `openRebirthConfirm('${tier.id}')` : ''}">
-        ${t('rebirthBtn')}
-      </button>
-    </div>
-    <div class="vip-items-row">${rows}</div>
-  </div>`;
-}
-
-// Shared by the GRAM shop's own Перерождение tab (_renderGramShopPanel) and
-// the Персонаж → Перерождение panel (updateRebirthUI) — same three cards
-// either way, so the two entry points can never show different numbers.
-function _renderRebirthTiersBody(bal) {
-  return REBIRTH_TIERS.map(tier => _rebirthTierCardHtml(tier, bal)).join('');
 }
 
 function updateRebirthUI() {
   if (!player) return;
   const el = document.getElementById('rebirth-body');
   if (!el) return;
-  const bal = window._gramBalance || 0;
   const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
+  const _nextRebirthN = (player.rebirths || 0) + 1;
+  const _doubled = _nextRebirthN % 5 === 0;
+  const rows = Object.entries(rebirthCostFor(player.rebirths || 0)).map(([id, need]) => {
+    const def = _rebirthCostDef(id);
+    const have = countMaterial(id);
+    const ok = have >= need;
+    const label = `<span style="color:${ok ? '#98e456' : '#f88'}">${have}/${need}</span>`;
+    return ri(def ? def.img : '', label, '');
+  }).join('');
+  const ready = _rebirthReady();
+  const doubleHint = _doubled
+    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('rebirthDoubleCostFmt', { n: _nextRebirthN })}</div>`
+    : '';
 
   el.innerHTML = `
     <div class="sec-title">${t('rebirthTabLbl')}</div>
@@ -706,17 +678,18 @@ function updateRebirthUI() {
     <div style="padding:0 12px 12px;font-size:13px;font-weight:700;color:${lvlOk ? '#98e456' : '#f88'}">
       ${tVars('rebirthLevelReqFmt', { lvl: REBIRTH_LEVEL, cur: player.lvl || 1 })}
     </div>
-    <div style="padding:0 12px">${_renderRebirthTiersBody(bal)}</div>
-    <div style="padding:6px 12px 20px">
+    ${doubleHint}
+    <div class="vip-items-row" style="padding:0 12px">${rows}</div>
+    <div style="padding:16px 12px 20px">
+      <button class="upg-reset-btn${ready ? '' : ' disabled'}" onclick="${ready ? 'openRebirthConfirm()' : ''}">
+        ${t('rebirthBtn')}
+      </button>
       <div class="upg-reset-hint">${tVars('rebirthCountFmt', { n: player.rebirths || 0 })}</div>
     </div>`;
 }
 
-function openRebirthConfirm(tierId) {
-  const tier = REBIRTH_TIERS.find(tr => tr.id === tierId);
-  if (!tier) return;
-  const bal = window._gramBalance || 0;
-  if (!_rebirthTierReady(tier, bal)) return;
+function openRebirthConfirm() {
+  if (!_rebirthReady()) return;
   const existing = document.getElementById('rebirth-confirm-ov');
   if (existing) existing.remove();
   const ov = document.createElement('div');
@@ -724,13 +697,13 @@ function openRebirthConfirm(tierId) {
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
-    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('rebirthConfirmTitle')} — ${tier.gram} GRAM</div>
+    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('rebirthConfirmTitle')}</div>
     <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:16px">${t('rebirthConfirmBody')}</div>
     <div style="display:flex;gap:10px">
       <button onclick="document.getElementById('rebirth-confirm-ov').remove()" style="
         flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
         color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
-      <button onclick="_confirmRebirth('${tier.id}')" style="
+      <button onclick="_confirmRebirth()" style="
         flex:1;padding:11px;border:none;border-radius:10px;
         background:linear-gradient(135deg,#4a3410,#6b4a17);color:#e5aa52;
         font-size:14px;font-weight:700;cursor:pointer">${t('rebirthGo')}</button>
@@ -739,21 +712,17 @@ function openRebirthConfirm(tierId) {
   document.getElementById('app').appendChild(ov);
 }
 
-function _confirmRebirth(tierId) {
+function _confirmRebirth() {
   const ov = document.getElementById('rebirth-confirm-ov');
   if (ov) ov.remove();
-  if (typeof netRebirth === 'function') netRebirth(tierId);
+  if (typeof netRebirth === 'function') netRebirth();
 }
 
-function onRebirthDone(data) {
-  if (data && data.newBalance != null) window._gramBalance = data.newBalance;
+function onRebirthDone() {
   if (typeof updateRebirthUI === 'function') updateRebirthUI();
   if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
   if (typeof updateProfileUI === 'function') updateProfileUI();
   if (typeof updateInvUI === 'function') updateInvUI();
-  const panel = document.getElementById('gram-shop-panel');
-  if (panel && panel.style.display !== 'none') _renderGramShopPanel();
-  if (activeTab === 5 && window._profileTab === 'wallet') updateGramUI();
   if (player) dmgNum(player.x, player.y - 30, t('rebirthDoneToast'), '#98e456');
 }
 
@@ -6062,6 +6031,10 @@ function packPriceHtml(gram, color) {
        + `<span style="color:${color || '#8bd66a'}">${packPrice(gram)} GRAM</span>`
        + `<span style="margin-left:6px;padding:1px 5px;border-radius:4px;background:rgba(235,78,97,.18);color:#eb4e61;font-size:10px;font-weight:800;vertical-align:2px">-30%</span>`;
 }
+// rmat1-3 (Перерождение tab) sell at face value — no 30% off — so their
+// actual charged price has to skip packPrice() the same way server/index.js's
+// own pkgPrice(pkg) does.
+function pkgPrice(pkg) { return pkg.noDiscount ? pkg.gram : packPrice(pkg.gram); }
 const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
@@ -6071,9 +6044,30 @@ const _GRAM_SHOP_PKGS_UI = [
   // pkg300 ("Эпический"/"+Pack") used to sit here as the top regular-tab
   // tier. It's now sold only via the "+Pack" card on Профиль → Кошелёк
   // (_EPIC_PACK_PKG below) — see that comment for why.
+  // Перерождение tab — pure material packs (rebirth itself still happens
+  // from the Персонаж → Перерождение panel, see updateRebirthUI; these only
+  // grant the listed items, at face value — noDiscount skips the usual 30%).
+  { id:'rmat1', gram:25, get label() { return t('rebirthMatPkgLabel_rmat1'); }, color:'#e5aa52', noDiscount:true, shopTab:'rebirth',
+    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
+  { id:'rmat2', gram:40, get label() { return t('rebirthMatPkgLabel_rmat2'); }, color:'#e5aa52', noDiscount:true, shopTab:'rebirth',
+    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
+  { id:'rmat3', gram:80, get label() { return t('rebirthMatPkgLabel_rmat3'); }, color:'#e5aa52', noDiscount:true, shopTab:'rebirth',
+    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
 ];
 
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
+// pkg.stones isn't stone-specific — server/index.js's grant code resolves
+// any CRAFT_MATS id through it, which is how rece/recl (rmat1-3) land there
+// too. _STONE_IMG only covers the two actual stones, so fall back to
+// CRAFT_MATS' own img/name for everything else.
+function _stoneOrMatImg(id) {
+  return _STONE_IMG[id] || (CRAFT_MATS.find(m => m.id === id) || {}).img || '';
+}
+function _stoneOrMatLabel(id) {
+  if (id === 'bless_stone') return t('blessStoneLbl');
+  if (id === 'norm_stone') return t('normStoneLbl');
+  return (CRAFT_MATS.find(m => m.id === id) || {}).name || id;
+}
 
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
@@ -6258,11 +6252,12 @@ function closeGramShopPanel() {
   if (panel) panel.style.display = 'none';
 }
 
-// "Паки" (the regular _GRAM_SHOP_PKGS_UI list — pkg1's "Базовый"/pkg10's
-// "Стандарт" etc.) vs "Питомцы" (pet+cloak+artifact bundles,
-// _SPECIAL_PET_PKGS_UI) vs "Перерождение" (the REBIRTH_TIERS picker, same
-// tier cards the Персонаж → Перерождение panel shows — see
-// _rebirthTierCardHtml/_renderRebirthTiersBody).
+// "Паки" (the regular _GRAM_SHOP_PKGS_UI entries with no shopTab tag —
+// pkg1's "Базовый"/pkg10's "Стандарт" etc.) vs "Питомцы" (pet+cloak+artifact
+// bundles, _SPECIAL_PET_PKGS_UI) vs "Перерождение" (rmat1-3 — the same
+// _GRAM_SHOP_PKGS_UI array, tagged shopTab:'rebirth' — pure material packs
+// that only grant items; the actual rebirth is still done from the
+// Персонаж → Перерождение panel, see updateRebirthUI above).
 let _shopTab = 'packs';
 
 function switchShopTab(tab) {
@@ -6281,17 +6276,17 @@ function _renderGramShopPanel() {
     </div>`;
   let body;
   if (_shopTab === 'rebirth') {
-    body = _renderRebirthTiersBody(bal);
+    body = _GRAM_SHOP_PKGS_UI.filter(pkg => pkg.shopTab === 'rebirth').map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   } else if (_shopTab === 'pets') {
     body = _SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('');
   } else {
-    body = _GRAM_SHOP_PKGS_UI.map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
+    body = _GRAM_SHOP_PKGS_UI.filter(pkg => !pkg.shopTab).map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   }
   el.innerHTML = balBar + body;
 }
 
 function _gramShopPkgHtml(pkg, bal) {
-  const canAfford = bal >= packPrice(pkg.gram);
+  const canAfford = bal >= pkgPrice(pkg);
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
 
   // same ri() pattern as VIP
@@ -6313,16 +6308,16 @@ function _gramShopPkgHtml(pkg, bal) {
     rows += _boxesLabel(pkg.boxes).map(({ img, label, cls }) => ri(img, label, cls)).join('');
   }
 
-  // Enchant stones (pkg300 only)
+  // Enchant stones (pkg300) / arbitrary materials (rmat1-3 — rece/recl)
   if (pkg.stones) {
-    rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_STONE_IMG[id], `×${qty}`, '')).join('');
+    rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_stoneOrMatImg(id), `×${qty}`, '')).join('');
   }
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
+        <div class="gram-shop-price">${pkg.noDiscount ? pkg.gram + ' GRAM' : packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -6387,7 +6382,7 @@ function openGramShopConfirm(pkgId) {
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || (pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
-  const price = packPrice(pkg.gram);
+  const price = pkgPrice(pkg);
   const canAfford = bal >= price;
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
@@ -6403,7 +6398,7 @@ function openGramShopConfirm(pkgId) {
     let rows = pkg.gold ? ri(_shopCoinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold') : '';
     rows += _shopExtraRewardRows(pkg, ri);
     if (pkg.skillBooks) rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
-    if (pkg.stones) rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_STONE_IMG[id], `×${qty}`, '')).join('');
+    if (pkg.stones) rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_stoneOrMatImg(id), `×${qty}`, '')).join('');
     itemsHtml = `<div class="vip-items-row">${rows}</div>`;
   } else {
     const goldLine   = pkg.gold ? `<div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>` : '';
@@ -6413,7 +6408,7 @@ function openGramShopConfirm(pkgId) {
     const spLine     = pkg.bonusSP ? `<div style="color:#c5bfb7">${tVars('bonusSkillPointsFmt', { n: pkg.bonusSP })}</div>` : '';
     const bookLine   = pkg.skillBooks ? `<div style="color:#c5bfb7">• ${_skillBooksLabel(pkg.skillBooks)} ${t('classBooksSuffix')}</div>` : '';
     const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
-    const stoneLine  = pkg.stones ? `<div style="color:#c5bfb7">• ${Object.entries(pkg.stones).map(([id, qty]) => `${qty}× ${id === 'bless_stone' ? t('blessStoneLbl') : t('normStoneLbl')}`).join(', ')}</div>` : '';
+    const stoneLine  = pkg.stones ? `<div style="color:#c5bfb7">• ${Object.entries(pkg.stones).map(([id, qty]) => `${qty}× ${_stoneOrMatLabel(id)}`).join(', ')}</div>` : '';
     const nexumLine  = pkg.nexum ? `<div style="color:#6fc7ff">• +${pkg.nexum} Liberty</div>` : '';
     itemsHtml = `${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}`;
   }
@@ -6424,7 +6419,7 @@ function openGramShopConfirm(pkgId) {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.noDiscount ? price + ' GRAM' : packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
@@ -6432,7 +6427,7 @@ function openGramShopConfirm(pkgId) {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
-        <span style="font-weight:700">${packPriceHtml(pkg.gram, pkg.color)}</span>
+        <span style="font-weight:700">${pkg.noDiscount ? price + ' GRAM' : packPriceHtml(pkg.gram, pkg.color)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('yourBalanceLbl')}</span>
