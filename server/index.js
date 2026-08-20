@@ -288,6 +288,13 @@ const SKILL_SLOTS = ['Q', 'W', 'E', 'R'];
 // since it fires on every kill in the game. Mutates `inv` in place via
 // _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
 // for (loot-winner arbitration among a party) and reports the result back.
+// Arms 1 (levels 1-20) and 2 (levels 21-40, i.e. "20-40") get every drop
+// chance below cut to a third, per request — applied as a flat multiplier
+// on top of the normal arm/room scaling rather than touching the base rates,
+// so later zones are untouched.
+const EARLY_ZONE_DROP_MULT = 1 / 3;
+const EARLY_ZONE_ARMS = new Set([1, 2]);
+
 function _rollMobLoot(inv, eid, rlvl, plvl) {
   const eDef = ENEMY_DEF.find(e => e.eid === eid);
   const eType = eDef ? eDef.eType : null;
@@ -299,22 +306,24 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   }
 
   // Same drop multiplier as the client used: corridor arm × room-level growth.
+  const _armIdx = armIndexForLevel(rlvl);
   const _localLvl = armLocalLevel(rlvl);
-  const _dropMult = armIndexForLevel(rlvl) * roomDropMult(_localLvl);
+  const _dropMult = _armIdx * roomDropMult(_localLvl);
+  const _zoneMult = EARLY_ZONE_ARMS.has(_armIdx) ? EARLY_ZONE_DROP_MULT : 1;
 
   // Recipe drop (all non-boss enemies)
   if (eType && eType !== 'boss') {
     const r = Math.random();
-    if      (r < 0.00001 * _dropMult) addMat('recl', 1);
-    else if (r < 0.00021 * _dropMult) addMat('rece', 1);
-    else if (r < 0.00071 * _dropMult) addMat('recr', 1);
-    else if (r < 0.00171 * _dropMult) addMat('recu', 1);
+    if      (r < 0.00001 * _dropMult * _zoneMult) addMat('recl', 1);
+    else if (r < 0.00021 * _dropMult * _zoneMult) addMat('rece', 1);
+    else if (r < 0.00071 * _dropMult * _zoneMult) addMat('recr', 1);
+    else if (r < 0.00171 * _dropMult * _zoneMult) addMat('recu', 1);
   }
 
   // Equipment drop — no cloak/artifact (craft-only), weapons unrestricted by
   // class (same as js/combat.js: any class's weapon can drop for anyone).
   const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1))
-    / dropLevelGapDivisor(plvl, rlvl);
+    / dropLevelGapDivisor(plvl, rlvl) * _zoneMult;
   if (Math.random() * 100 < _itemChance) {
     const rarity = itemRarityForLevel(rlvl);
     const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
@@ -328,24 +337,25 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   }
 
   // Room-level key drops (forge box-crafting)
-  if (Math.random() < roomKeyChance(_localLvl, 'uncommon')) addMat('key_uncommon', 1);
-  if (Math.random() < roomKeyChance(_localLvl, 'rare'))     addMat('key_rare', 1);
+  if (Math.random() < roomKeyChance(_localLvl, 'uncommon') * _zoneMult) addMat('key_uncommon', 1);
+  if (Math.random() < roomKeyChance(_localLvl, 'rare') * _zoneMult)     addMat('key_rare', 1);
 
   // Room-level enchant-stone drop
-  if (Math.random() < roomEnchantStoneChance(_localLvl)) addMat('norm_stone', 1);
+  if (Math.random() < roomEnchantStoneChance(_localLvl) * _zoneMult) addMat('norm_stone', 1);
 
   // Осколки для уникального оружия. Every kind rolls on its own, so one kill
   // can yield several different shards but never more than
-  // UNIQUE_SHARD_MAX_QTY of the same one. Deliberately flat: no arm/room
-  // multiplier and no boss bonus — the only gate is the monster's level, so
-  // the drop reads the same everywhere past it and cannot be farmed faster by
+  // UNIQUE_SHARD_MAX_QTY of the same one. Deliberately flat otherwise: no
+  // arm/room multiplier and no boss bonus beyond the zone cut above — the
+  // only other gate is the monster's level, so the drop reads the same
+  // everywhere past it (outside arms 1-2) and cannot be farmed faster by
   // finding a favourable room.
   //
   // Math.random() has ~2^-53 granularity, so a chance this small is still
   // rolled honestly rather than collapsing to never/always.
   if (rlvl >= UNIQUE_SHARD_MIN_LEVEL) {
     for (const sh of UNIQUE_SHARDS) {
-      if (Math.random() < UNIQUE_SHARD_CHANCE) {
+      if (Math.random() < UNIQUE_SHARD_CHANCE * _zoneMult) {
         addMat(sh.id, 1 + Math.floor(Math.random() * UNIQUE_SHARD_MAX_QTY));
       }
     }
@@ -355,8 +365,8 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   const _allBooks = CRAFT_MATS.filter(m => m.skillKey);
   if (_allBooks.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.001) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
-    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
+      if (Math.random() < 0.001 * _zoneMult) addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 2);
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3) * _zoneMult) {
       addMat(_allBooks[Math.floor(Math.random() * _allBooks.length)].id, 1);
     }
   }
@@ -365,8 +375,8 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   const _allPassiveBooks = CRAFT_MATS.filter(m => m.passiveId);
   if (_allPassiveBooks.length) {
     if (eType === 'boss') {
-      if (Math.random() < 0.001) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);
-    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3)) {
+      if (Math.random() < 0.001 * _zoneMult) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);
+    } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3) * _zoneMult) {
       addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 1);
     }
   }
