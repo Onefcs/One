@@ -5,17 +5,45 @@
 const MarketListingModel = require('../models/MarketListing');
 const PlayerModel = require('../models/Player');
 const { _invAdd, _invHasRoomFor } = require('../inventory');
-const REQUIRED_DEPS = ['adminAuth', 'activeSessions', 'io', 'logPlayer'];
+const REQUIRED_DEPS = ['adminAuth', 'activeSessions', 'io', 'logPlayer', 'incBalance'];
 
 module.exports = function register(app, deps) {
   const missing = REQUIRED_DEPS.filter(k => !deps || deps[k] == null);
   if (missing.length) throw new Error(`market: missing deps: ${missing.join(', ')}`);
-  const { adminAuth, activeSessions, io, logPlayer } = deps;
+  const { adminAuth, activeSessions, io, logPlayer, incBalance } = deps;
+
+  // Settles one unpaid sale: pays the seller what the sale owed and clears the
+  // debt. Claim-then-pay would risk clearing a debt that was never paid, so
+  // this pays FIRST and only then marks it settled — a crash in between leaves
+  // the sale still owed and settles it again later. Paying a seller twice is a
+  // worse failure than paying them late, and $gt:0 in the filter means a second
+  // click after a successful settle finds nothing to pay.
+  app.post('/admin/market/:id/settle', adminAuth, async (req, res) => {
+    try {
+      const lot = await MarketListingModel.findOne(
+        { _id: req.params.id, status: 'sold', payoutOwed: { $gt: 0 } }).lean();
+      if (!lot) return res.status(404).json({ error: 'Нечего доплачивать по этому лоту' });
+      const bal = await incBalance(lot.sellerId, 'gramBalance', lot.payoutOwed);
+      if (bal === null) return res.status(409).json({ error: 'Продавец не найден' });
+      await MarketListingModel.updateOne({ _id: lot._id },
+        { $set: { payoutAt: new Date(), payoutOwed: 0 } });
+      io.to(`tg_${lot.sellerId}`).emit('gramBalanceUpdate', { balance: bal });
+      logPlayer(lot.sellerId, lot.sellerUsername, 'market_payout_settled',
+        { listingId: String(lot._id), payout: lot.payoutOwed, balance: bal });
+      res.json({ ok: true, paid: lot.payoutOwed, newBalance: bal });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
   app.get('/admin/market', adminAuth, async (req, res) => {
     try {
       const { page = 1, tab = 'active' } = req.query;
-      const filter = tab === 'history' ? { status: { $in: ['sold', 'cancelled'] } } : { status: 'active' };
+      // tab=owed: sales whose seller never got paid. marketBuy's payout is the
+      // one leg of the purchase with nothing after it to compensate a failure,
+      // so it writes the debt onto the listing instead of only logging it —
+      // see server/models/MarketListing.js. Normally an empty list.
+      const filter = tab === 'owed'
+        ? { status: 'sold', payoutOwed: { $gt: 0 } }
+        : tab === 'history' ? { status: { $in: ['sold', 'cancelled'] } } : { status: 'active' };
       const listings = await MarketListingModel.find(filter)
         .sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean();
       // Resolve referrers via sellerId (field name in model)

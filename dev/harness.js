@@ -2477,6 +2477,83 @@ scenario('race: marketList with no session left to take the item from drops the 
   eq(lots, 0, 'the lot was dropped rather than left for sale over an item still in the inventory');
 });
 
+scenario('market: a payout that cannot be made is recorded as a debt, and settles', async () => {
+  // marketBuy is a claim-check-compensate sequence and it is sound as far as
+  // the seller's payout, which is the last leg and the only one with nothing
+  // after it to undo. A failed $inc there used to be logged and swallowed:
+  // buyer keeps the item, buyer's GRAM is spent, seller never paid — and the
+  // log line is in PlayerLog, which is trimmed to the newest 100 rows per
+  // player, so on a busy account the only evidence rotated away.
+  //
+  // The failure is forced the way it actually happens: the seller's account
+  // stops existing between the listing and the sale.
+  const Player = require('../server/models/Player');
+  const Listing = require('../server/models/MarketListing');
+
+  const seller = await connectWithSaved('harness_payout_seller', {
+    vipLevel: 1, inventory: [{ id: 'uq_axe_l', enhance: 0 }],
+  });
+  await enterWorld(seller, 'lev');
+  const listed = seller.wait('marketListed', { timeout: 8000 }).catch(() => null);
+  seller.emit('marketList', { item: { id: 'uq_axe_l', enhance: 0 }, price: 10 });
+  const lot = await listed;
+  ok(lot && lot.listing, 'the lot is up for sale');
+  const listingId = lot.listing.id;
+  // authOk does not carry the telegramId, so it comes from the stored row the
+  // same way the other scenarios here get it.
+  const sellerRow = memory.__dump('Player').find(p => p.username === seller.auth.username);
+  ok(sellerRow, 'the seller has a stored row to remove');
+  const sellerTid = sellerRow && sellerRow.telegramId;
+  await seller.close();
+
+  // The seller's account is gone by the time the sale lands.
+  await Player.deleteOne({ telegramId: String(sellerTid) });
+
+  const buyer = await connectWithSaved('harness_payout_buyer', { gramBalance: 100, inventory: [] });
+  await enterWorld(buyer, 'mage');
+  const bought = buyer.wait('marketBought', { timeout: 8000 }).then(v => ({ ok: v })).catch(() => null);
+  const bErr   = buyer.wait('marketError', { timeout: 8000 }).then(v => ({ err: v })).catch(() => null);
+  buyer.emit('marketBuy', { listingId });
+  const res = await Promise.race([bought, bErr]);
+
+  // The buyer's side must still complete: unwinding here would take the item
+  // back off someone who did nothing wrong.
+  ok(res && res.ok, 'the buyer still gets the item', res && res.err ? res.err.msg : 'no reply');
+  if (res && res.ok) eq(res.ok.delivered, true, 'and it is actually delivered');
+
+  const row = await Listing.findOne({ _id: listingId }).lean();
+  ok(row, 'the sale row is there');
+  ok(row && row.payoutOwed > 0, 'the unpaid payout is written on the sale, not only logged',
+    `payoutOwed=${row && row.payoutOwed}`);
+  eq(row && row.payoutAt, null, 'and it is not marked paid');
+
+  // Admin sees it under its own tab and can settle it once the account is back.
+  const { token } = await (await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  })).json();
+  const owedRes = await fetch(`${BASE}/admin/market?tab=owed`, { headers: { Authorization: `Bearer ${token}` } });
+  const owed = await owedRes.json();
+  ok((owed.listings || []).some(l => l.id === listingId || String(l._id) === String(listingId)),
+    'the admin owed tab lists it');
+
+  await Player.create({ telegramId: String(sellerTid), username: 'harness_payout_seller', savedData: {} });
+  const settle = await fetch(`${BASE}/admin/market/${listingId}/settle`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  const settled = await settle.json();
+  eq(settle.status, 200, `settling pays the seller${settled.error ? ' — ' + settled.error : ''}`);
+  ok(settled.paid > 0, 'and reports what it paid', JSON.stringify(settled));
+
+  // Settling twice must not pay twice.
+  const again = await fetch(`${BASE}/admin/market/${listingId}/settle`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  eq(again.status, 404, 'a second settle finds nothing left owed');
+
+  await buyer.close();
+});
+
 scenario('market: listing an item and reading my lots back', async () => {
   // VIP 1 is the gate on selling; the item has to be in the SERVER's inventory.
   const c = await connectWithSaved('harness_market', {

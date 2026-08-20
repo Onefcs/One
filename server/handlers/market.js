@@ -543,8 +543,19 @@ module.exports = function registerMarketHandlers(deps) {
         // "продал лот, а GRAM не пришли / баланс перезаписался".
         const payout = _round7(claimed.price * (1 - MARKET_FEE_PCT));
         try {
-          const sellerNewBal = await incBalance(claimed.sellerId, 'gramBalance', payout);
+          // Retried once before giving up. The usual cause of a null here is a
+          // transient read of the seller's document, not a missing account, and
+          // one retry costs a round trip against a payout that is otherwise
+          // gone.
+          let sellerNewBal = await incBalance(claimed.sellerId, 'gramBalance', payout);
+          if (sellerNewBal === null) {
+            sellerNewBal = await incBalance(claimed.sellerId, 'gramBalance', payout);
+          }
           if (sellerNewBal === null) throw new Error('seller not found');
+          // Paid. Recorded on the sale so an unsettled one is findable — see
+          // the payoutAt/payoutOwed comment in server/models/MarketListing.js.
+          await MarketListingModel.updateOne({ _id: listingId },
+            { $set: { payoutAt: new Date(), payoutOwed: 0 } }).catch(() => {});
           io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
           io.to(`tg_${claimed.sellerId}`).emit('marketSold', {
             itemName: claimed.item?.name || '', price: claimed.price, payout,
@@ -557,6 +568,16 @@ module.exports = function registerMarketHandlers(deps) {
           console.error('marketBuy seller payout:', err);
           logPlayerErr(claimed.sellerId, claimed.sellerUsername, 'market_sold_payout', err,
             { listingId: String(listingId), payout });
+          // The buyer keeps the item and their GRAM is spent — unwinding the
+          // sale here would take the item back off a player who did nothing
+          // wrong. So the debt is written down instead of the sale being
+          // undone: payoutOwed on the listing outlives the log line above,
+          // which PlayerLog trims away on a busy account, and /admin/market
+          // lists it so it can be settled.
+          await MarketListingModel.updateOne({ _id: listingId },
+            { $set: { payoutOwed: payout } }).catch(e2 => {
+              console.error('marketBuy payout debt not recorded:', e2);
+            });
         }
 
         socket.emit('marketBought', {

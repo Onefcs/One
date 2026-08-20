@@ -2502,7 +2502,7 @@ require('./admin/chat')(app, {
   adminAuth, io, tgApi, tgBroadcastAll, _publicChatHistory, globalChatHistory,
 });
 require('./admin/items')(app, { adminAuth, activeSessions, io, logPlayer });
-require('./admin/market')(app, { adminAuth, activeSessions, io, logPlayer });
+require('./admin/market')(app, { adminAuth, activeSessions, io, logPlayer, incBalance: _incBalance });
 require('./admin/events')(app, {
   adminAuth, eventBossState, scheduleEventBoss,
   _gw, _gwPublicState, _gwOpenWindow, _gwCloseWindow,
