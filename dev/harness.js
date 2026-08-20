@@ -513,6 +513,16 @@ scenario('events: each extracted machine builds standalone, and refuses to build
         '_race10NextOpenAt', '_race10OpenWindow', '_race10CloseWindow',
         '_race10Start', '_race10Finish', '_race10Eliminate', '_race10Frozen',
         'RACE10_ATTEMPTS', 'RACE10_MIN_LEVEL']],
+    ['arena3', require('../server/events/arena3'),
+      { io: fakeIo, safeTimeout: timeout, getRoom: () => null,
+        notifyEventSoon: noop, notifyEventStarted: noop, logPlayer: noop,
+        _returnToHub: noop, _findPlayerAnyFloor: () => null, _socketTid: () => null,
+        _recordPvpHistory: noop, _lockArena3Daily: noop, _arena3AttemptsLeft: async () => 3,
+        DAILY_DUNGEON_ATTEMPTS: 3 },
+      ['_a3', '_a3PublicState', '_a3Broadcast', '_a3Schedule', '_a3NextOpenAt',
+        '_a3OpenWindow', '_a3TryStart', '_a3TryStartSafe', '_a3Deploy',
+        '_a3Eliminate', '_a3Finish', '_a3Frozen', '_a3Allies', '_a3Enemies',
+        'ARENA3_MIN_LEVEL', 'ARENA3_REWARD']],
   ];
 
   for (const [name, create, deps, surface] of machines) {
@@ -529,12 +539,13 @@ scenario('events: each extracted machine builds standalone, and refuses to build
     }
   }
 
-  // The three machines that own a schedule answer for it themselves — the
+  // The four machines that own a schedule answer for it themselves — the
   // next window is theirs to compute, not something server/index.js passes in.
   const scheduled = [
     ['guildwar', '_gwPublicState', '_gwNextOpenAt'],
     ['deathbattle', '_dbPublicState', '_dbNextStartAt'],
     ['race10', '_race10PublicState', '_race10NextOpenAt'],
+    ['arena3', '_a3PublicState', '_a3NextOpenAt'],
   ];
   for (const [name, stateFn, nextFn] of scheduled) {
     const [, create, deps] = machines.find(m => m[0] === name);
