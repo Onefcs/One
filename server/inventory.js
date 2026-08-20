@@ -97,10 +97,12 @@ function _marketMinPrice(item) {
   // otherwise an uncommon cloak (cloak_u_<class>) would fall through to the
   // cheaper uncommon-gear floor instead.
   if (item.slot === 'cloak' || item.slot === 'artifact') return MARKET_MIN_PRICE_CLOAK_ARTIFACT;
-  // Skill books — "вторая профессия" (advSkillKey) has its own, higher floor
-  // and must be checked before the regular skillKey floor below.
+  // Skill/passive books — "вторая профессия" (advSkillKey) has its own,
+  // higher floor and must be checked before the regular floor below, which
+  // covers both active skill books (skillKey) and passive ones (passiveId —
+  // class-exclusive and the 6 universal ones alike).
   if (item.advSkillKey) return MARKET_MIN_PRICE_ADV_SKILL_BOOK;
-  if (item.skillKey) return MARKET_MIN_PRICE_SKILL_BOOK;
+  if (item.skillKey || item.passiveId) return MARKET_MIN_PRICE_SKILL_BOOK;
   if (item.rarity === 'epic' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_EPIC_GEAR;
   if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
   if (item.rarity === 'uncommon' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_UNCOMMON_GEAR;
