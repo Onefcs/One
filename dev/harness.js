@@ -2715,6 +2715,46 @@ scenario('race: a grant landing during a shop purchase is not erased by its stal
   await c.close();
 });
 
+scenario('events: a level-1 character is refused by every event that has a gate', async () => {
+  // Four entry gates, and until this scenario none of them was tested. Found
+  // the hard way while moving the entry handlers to
+  // server/handlers/event-entry.js: eight of the thirteen constants that file
+  // needs are owned by the machines under server/events/, not by
+  // shared/definitions, and requiring them from the wrong place destructures
+  // keys that do not exist. `undefined` at every gate, no lint error, and
+  // `lvl < undefined` is false — so every event would admit anyone at any
+  // level. Pinning all eight to undefined left the harness green at 611
+  // passed, which is why this exists.
+  const c = await connectWithSaved('harness_gates_low', { lvl: 1, xp: 0, xpNext: 100 });
+  await enterWorld(c, 'ranger');
+
+  // Кровавая Башня checks its window BEFORE the level, so without this it
+  // refuses with "открыта в 20:30" and never reaches the gate under test.
+  await fetch(`${BASE}/dev/race10/open?reg=3000`, { method: 'POST' });
+
+  const gates = [
+    ['arena3Register', 'arena3Error'],
+    ['race10Register', 'race10Error'],
+    ['fearEnter', 'fearError'],
+    ['coopGroupCreate', 'coopError'],
+  ];
+  const admitted = [], unlabelled = [];
+  for (const [emit, errEvent] of gates) {
+    const err = c.wait(errEvent, { timeout: 4000 }).catch(() => null);
+    c.emit(emit);
+    const got = await err;
+    if (!got) { admitted.push(emit); continue; }
+    // It has to be the LEVEL refusal specifically. Checking only that SOME error
+    // came back is not enough: with the gates gone these events still refuse a
+    // level-1 character for their own reasons — a closed window, a spent
+    // attempt — so the weaker assertion passed while the gate did not exist.
+    if (!/уровень/i.test(got.msg || '')) unlabelled.push(`${emit}: "${got.msg}"`);
+  }
+  eq(admitted.join(', '), '', 'every gated event refuses a level-1 character');
+  eq(unlabelled.join(', '), '', 'and each refusal is the LEVEL gate, not some other reason');
+  await c.close();
+});
+
 scenario('wallet: a GRAM purchase spends the package price and reports the balance left', async () => {
   // The GRAM wallet is where real money enters the game, and it had the same
   // hole the forge and the season did: zeroing its balance writes — so the
