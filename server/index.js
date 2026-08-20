@@ -302,7 +302,6 @@ const GRAM_WALLET  = process.env.GRAM_WALLET      || '';   // TON wallet address
 // While on, only TG_ADMIN_ID may log in (see the `banned` checks inside
 // loginTelegramWebApp/loginTelegram below, which this sits right next to);
 // everyone else gets the same authError rejection a banned account gets.
-let _maintenanceMode = false;
 
 // Disconnects every currently-connected player except TG_ADMIN_ID, mirroring
 // /admin/player/:tid/ban's own kick — used when maintenance is switched on so
@@ -1000,6 +999,25 @@ function adminAuth(req, res, next) {
   next();
 }
 
+// Sends `text` to every registered account over the bot. Paced at 30 messages
+// a second because Telegram throttles bulk sends and starts dropping (or
+// 429-ing) past roughly that rate.
+//
+// Lives here rather than with the /admin/broadcast route that is its loudest
+// caller: _announceOnce below uses it for event announcements too, so it is a
+// Telegram helper that the admin panel borrows, not an admin route's private
+// worker.
+async function tgBroadcastAll(text) {
+  const players = await PlayerModel.find({}, 'telegramId').lean();
+  let sent = 0;
+  for (let i = 0; i < players.length; i++) {
+    tgApi('sendMessage', { chat_id: players[i].telegramId, text, parse_mode: 'HTML' }).catch(() => {});
+    sent++;
+    if (i % 30 === 29) await new Promise(r => setTimeout(r, 1000));
+  }
+  return sent;
+}
+
 // ── Player event log ─────────────────────────────────────────────────────────
 // Every economy-touching action lands here so a "where did my item go" report
 // can be answered from the admin panel instead of guesswork. The old comment
@@ -1413,495 +1431,14 @@ app.post('/admin/give-all', adminAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Admin: season points ─────────────────────────────────────────────────────
-// Hands out (or takes back) season points by hand — for compensating an award
-// that failed, and for anything else the automatic paths can't cover.
-// $inc against the live document for the same reason the balances use it: the
-// player may be earning while the admin types, and neither side should
-// overwrite the other. A negative figure is a valid way to correct a mistake.
-app.post('/admin/player/:tid/season-points', adminAuth, async (req, res) => {
-  try {
-    const raw = Number((req.body || {}).points);
-    if (!Number.isFinite(raw) || Math.trunc(raw) === 0) {
-      return res.status(400).json({ error: 'Укажи количество очков' });
-    }
-    const points = Math.trunc(raw);
-    const note = String((req.body || {}).note || '').slice(0, 200);
-    const p = await PlayerModel.findOne({ telegramId: req.params.tid }, 'telegramId username savedData.seasonPoints');
-    if (!p) return res.status(404).json({ error: 'Not found' });
-    // savedData may be null on an account that only ever pressed /start — a
-    // dotted $inc through a null parent throws (see _incBalance).
-    await PlayerModel.updateOne({ _id: p._id, savedData: null }, { $set: { savedData: {} } });
-    const doc = await PlayerModel.findOneAndUpdate(
-      { _id: p._id },
-      { $inc: { 'savedData.seasonPoints': points } },
-      { new: true, projection: { 'savedData.seasonPoints': 1 } },
-    ).lean();
-    if (!doc) return res.status(404).json({ error: 'Not found' });
-    // Never below zero: a correction bigger than the balance would otherwise
-    // leave a negative total sitting in the leaderboard.
-    let total = Math.floor(Number(doc.savedData?.seasonPoints) || 0);
-    if (total < 0) {
-      await PlayerModel.updateOne({ _id: p._id }, { $set: { 'savedData.seasonPoints': 0 } });
-      total = 0;
-    }
-    logPlayer(p.telegramId, p.username, 'admin_season_points', { add: points, total, note });
-    // The player's live session holds its own copy of the total; tell it to
-    // refetch rather than letting the panel show a number their game doesn't.
-    io.to(`tg_${p.telegramId}`).emit('seasonRefresh', { total });
-    res.json({ ok: true, total });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Admin: player inventory / equipment ──────────────────────────────────────
-// The whole catalog an admin can hand out, in the same shape the game itself
-// stores items in, so the panel can render real icons rather than raw ids.
-app.get('/admin/items', adminAuth, (req, res) => {
-  const pack = d => ({
-    id: d.id, name: d.name, img: d.img || null, slot: d.slot,
-    rarity: d.rarity || 'common', forClass: d.forClass || null,
-    stackable: isStackableItem(d), enhanceable: ENHANCEABLE_SLOTS.has(d.slot),
-  });
-  res.json({ items: [...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF].map(pack) });
-});
-
-// Applies an inventory/equipment edit. The player may be online, in which case
-// their socket holds the authoritative copy (_lastStats) and its next autosave
-// would simply overwrite whatever we wrote to the DB — so when a live session
-// exists the edit goes through it (socket.data._adminApplyItems, which updates
-// _lastStats, persists, and pushes the result to the client) and only falls
-// back to a direct DB write when the account is offline.
-app.post('/admin/player/:tid/items', adminAuth, async (req, res) => {
-  try {
-    const { action, itemId, slot, index, qty, enhance } = req.body || {};
-    const p = await PlayerModel.findOne({ telegramId: req.params.tid });
-    if (!p) return res.status(404).json({ error: 'Not found' });
-
-    const liveSocket = io.sockets.sockets.get(activeSessions.get(String(req.params.tid)) || '');
-    const live = liveSocket && liveSocket.data && liveSocket.data._adminApplyItems;
-
-    const saved = p.savedData || {};
-    // Work on the live copy when there is one, so a concurrent autosave can't
-    // race this edit; otherwise on the DB snapshot.
-    const base = live ? liveSocket.data._adminReadItems() : {
-      inventory: Array.isArray(saved.inventory) ? saved.inventory : [],
-      equipment: (saved.equipment && typeof saved.equipment === 'object') ? saved.equipment : {},
-    };
-    const inv = base.inventory.slice();
-    const eq  = { ...base.equipment };
-
-    if (action === 'add') {
-      const catalogItem = _catalogBase(itemId);
-      if (!catalogItem) return res.status(400).json({ error: 'Unknown item' });
-      const item = { ...catalogItem };
-      if (ENHANCEABLE_SLOTS.has(item.slot)) {
-        const e = Math.floor(Number(enhance));
-        item.enhance = (Number.isFinite(e) && e >= 0 && e <= ENHANCE_MAX) ? e : 0;
-      }
-      const n = Math.max(1, Math.min(Math.floor(Number(qty)) || 1, _SANITIZE_MAX.qty));
-      if (isStackableItem(item)) {
-        item.qty = n;
-        if (!_invAdd(inv, item)) return res.status(400).json({ error: 'Инвентарь полон' });
-      } else {
-        // Non-stackables occupy one slot each — add them one at a time so the
-        // capacity check is real rather than counting a single push as n items.
-        for (let i = 0; i < n; i++) {
-          if (!_invAdd(inv, { ...item })) return res.status(400).json({ error: 'Инвентарь полон' });
-        }
-      }
-    } else if (action === 'removeInv') {
-      const i = Math.floor(Number(index));
-      if (!(i >= 0 && i < inv.length)) return res.status(400).json({ error: 'Bad index' });
-      const entry = inv[i];
-      const take = Math.max(1, Math.floor(Number(qty)) || 1);
-      const have = entry && entry.qty ? entry.qty : 1;
-      if (isStackableItem(entry || {}) && have > take) entry.qty = have - take;
-      else inv.splice(i, 1);
-    } else if (action === 'removeEq') {
-      if (!slot || !eq[slot]) return res.status(400).json({ error: 'Слот пуст' });
-      delete eq[slot];
-    } else {
-      return res.status(400).json({ error: 'Unknown action' });
-    }
-
-    if (live) {
-      // Refused only while that session has an item op in flight — see
-      // _adminApplyItems. Saying so beats reporting a write that is about to
-      // be stamped away by it.
-      if (!await liveSocket.data._adminApplyItems(inv, eq)) {
-        return res.status(409).json({ error: 'Игрок сейчас в другой операции с предметами — повторите' });
-      }
-    } else {
-      await PlayerModel.updateOne({ _id: p._id },
-        { $set: { 'savedData.inventory': inv, 'savedData.equipment': eq } });
-    }
-    logPlayer(p.telegramId, p.username, 'admin_items', { action, itemId, slot, index, qty, enhance });
-    res.json({ ok: true, inventory: inv, equipment: eq, online: !!live });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/admin/transactions', adminAuth, async (req, res) => {
-  try {
-    const { status, page = 1 } = req.query;
-    const filter = status ? { status } : {};
-    const txs = await GramTxModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean();
-    res.json({ txs });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/admin/clans', adminAuth, async (req, res) => {
-  try {
-    const clans = await ClanModel.find({}, 'name icon level xp members').sort({ level: -1, xp: -1 }).lean();
-    res.json({ clans: clans.map(c => ({
-      id: c._id, name: c.name, icon: c.icon, level: c.level, xp: c.xp,
-      memberCount: c.members?.length || 0,
-      members: c.members?.map(m => ({ username: m.username, role: m.role, telegramId: m.telegramId })) || [],
-    })) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/admin/clan/:id', adminAuth, async (req, res) => {
-  try {
-    await ClanModel.deleteOne({ _id: req.params.id });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/admin/chat', adminAuth, (req, res) => {
-  res.json({ messages: _publicChatHistory() });
-});
-
-app.delete('/admin/chat/:idx', adminAuth, async (req, res) => {
-  const idx = Number(req.params.idx);
-  if (idx >= 0 && idx < globalChatHistory.length) {
-    const [removed] = globalChatHistory.splice(idx, 1);
-    // Also drop the persisted row — otherwise a deleted message came back on
-    // the next restart, now that the history is DB-backed.
-    if (removed && removed._id) {
-      await ChatMessageModel.deleteOne({ _id: removed._id }).catch(err => console.error('admin chat delete:', err));
-    }
-  }
-  res.json({ ok: true });
-});
-
-app.post('/admin/broadcast', adminAuth, async (req, res) => {
-  try {
-    const { text, target = 'all' } = req.body || {};
-    if (!text) return res.status(400).json({ error: 'text required' });
-    if (target === 'online') {
-      let sent = 0;
-      io.sockets.sockets.forEach(s => {
-        if (s.data?.telegramId) {
-          tgApi('sendMessage', { chat_id: s.data.telegramId, text, parse_mode: 'HTML' }).catch(() => {});
-          sent++;
-        }
-      });
-      return res.json({ ok: true, sent });
-    }
-    const sent = await tgBroadcastAll(text);
-    res.json({ ok: true, sent });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Sends `text` to every registered account over the bot. Paced at 30 messages
-// a second because Telegram throttles bulk sends and starts dropping (or
-// 429-ing) past roughly that rate.
-async function tgBroadcastAll(text) {
-  const players = await PlayerModel.find({}, 'telegramId').lean();
-  let sent = 0;
-  for (let i = 0; i < players.length; i++) {
-    tgApi('sendMessage', { chat_id: players[i].telegramId, text, parse_mode: 'HTML' }).catch(() => {});
-    sent++;
-    if (i % 30 === 29) await new Promise(r => setTimeout(r, 1000));
-  }
-  return sent;
-}
-
-// Summon the world-event boss (shared/definitions.js EVENT_BOSS) — it appears
-// on the map immediately.
-app.post('/admin/event-boss', adminAuth, (req, res) => {
-  const r = scheduleEventBoss();
-  if (r.error) return res.status(409).json({ error: r.error });
-  res.json(r);
-});
-
-app.get('/admin/event-boss', adminAuth, (req, res) => {
-  const st = eventBossState();
-  res.json({ spawnAt: st.spawnAt, alive: st.alive, dropsOnGround: st.drops.length });
-});
-
-// Force-opens the Кровавая Башня registration window right now, same
-// RACE10_REG_MS window as the normal 20:30 MSK schedule — for whenever an
-// admin wants to run it off-schedule. _race10OpenWindow/_race10PublicState
-// are defined further down the file; safe to reference here since this
-// callback only runs once a request arrives, well after the whole module
-// (and the const _race10 it closes over) has finished loading — same
-// pattern the DEV_LOCAL-only /dev/race10/open route above already relies on.
-//
-// Also grants everyone a bonus daily attempt for today (_race10BonusReset/
-// _race10BonusCount, near _attemptCap above) — an extra, unscheduled window
-// is worthless to anyone who already spent their one regular attempt in the
-// normal 20:30 slot (or an earlier admin open) unless it comes with a fresh
-// attempt to spend on it.
-app.post('/admin/race10/open', adminAuth, (req, res) => {
-  if (_race10.phase === 'reg') return res.status(409).json({ error: 'Регистрация уже открыта' });
-  if (_race10.live) return res.status(409).json({ error: 'Забег уже идёт' });
-  _race10BonusReset();
-  _race10BonusCount++;
-  _race10OpenWindow(Date.now());
-  res.json({ ok: true, startAt: _race10.startAt, bonusAttempts: _race10BonusCount });
-});
-
-// Cancels an open registration window early — same effect as the normal
-// close once the 5-minute registration period runs out (_race10CloseWindow):
-// bumps everyone still queued back to "not registered" and re-arms the
-// scheduler for the next regular 20:30 window. Does not touch an
-// already-running race (_race10.live) — there is nothing left in the queue
-// by the time a race starts anyway.
-app.post('/admin/race10/close', adminAuth, (req, res) => {
-  if (_race10.phase !== 'reg') return res.status(409).json({ error: 'Регистрация не открыта' });
-  _race10CloseWindow();
-  res.json({ ok: true });
-});
-
-app.get('/admin/race10', adminAuth, (req, res) => {
-  res.json(_race10PublicState());
-});
-
-// Guild War: force-opens the 22:00-22:15 MSK combat window right now. Unlike
-// race10's admin-open there's no per-player attempt counter to bump — the
-// zone has no capacity/attempt limit at all, so this behaves exactly like
-// the scheduled open (_gwOpenWindow always arms one GUILD_WAR_WINDOW_MS
-// closeTimer, admin-forced or not). Ownership/income are untouched by open/
-// close — these buttons only gate combat access. _gwOpenWindow/_gwCloseWindow
-// /_gwPublicState are defined further up the file; safe to reference here
-// since this callback only runs once a request arrives, same pattern
-// /admin/race10/open above already relies on.
-app.post('/admin/guildwar/open', adminAuth, (req, res) => {
-  if (_gw.phase === 'live') return res.status(409).json({ error: 'Уже открыто' });
-  clearTimeout(_gw.closeTimer);
-  _gwOpenWindow();
-  res.json({ ok: true });
-});
-
-app.post('/admin/guildwar/close', adminAuth, (req, res) => {
-  if (_gw.phase !== 'live') return res.status(409).json({ error: 'Уже закрыто' });
-  _gwCloseWindow();
-  res.json({ ok: true });
-});
-
-app.get('/admin/guildwar', adminAuth, (req, res) => {
-  res.json(_gwPublicState());
-});
-
-// Maintenance mode: while on, only TG_ADMIN_ID may log in (see the
-// _maintenanceMode check in loginTelegramWebApp/loginTelegram above) —
-// everyone else already connected gets kicked immediately, same as a ban.
-app.get('/admin/maintenance', adminAuth, (req, res) => {
-  res.json({ on: _maintenanceMode });
-});
-
-app.post('/admin/maintenance/on', adminAuth, (req, res) => {
-  if (_maintenanceMode) return res.status(409).json({ error: 'Уже включено' });
-  _maintenanceMode = true;
-  _kickAllForMaintenance();
-  res.json({ ok: true });
-});
-
-app.post('/admin/maintenance/off', adminAuth, (req, res) => {
-  if (!_maintenanceMode) return res.status(409).json({ error: 'Уже выключено' });
-  _maintenanceMode = false;
-  res.json({ ok: true });
-});
-
-app.get('/admin/market', adminAuth, async (req, res) => {
-  try {
-    const { page = 1, tab = 'active' } = req.query;
-    const filter = tab === 'history' ? { status: { $in: ['sold', 'cancelled'] } } : { status: 'active' };
-    const listings = await MarketListingModel.find(filter)
-      .sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean();
-    // Resolve referrers via sellerId (field name in model)
-    const sellerIds = [...new Set(listings.map(l => l.sellerId).filter(Boolean))];
-    const sellers = await PlayerModel.find({ telegramId: { $in: sellerIds } }, 'username telegramId referredBy').lean();
-    const sellerMap = Object.fromEntries(sellers.map(s => [s.telegramId, s]));
-    const refIds = [...new Set(sellers.map(s => s.referredBy).filter(Boolean))];
-    const refs = await PlayerModel.find({ telegramId: { $in: refIds } }, 'username telegramId').lean();
-    const refMap = Object.fromEntries(refs.map(r => [r.telegramId, r.username]));
-    res.json({ listings: listings.map(l => ({
-      _id: l._id, status: l.status,
-      itemName: l.item?.name || l.item?.id || '?',
-      itemRarity: l.item?.rarity || '',
-      price: l.price,
-      sellerUsername: l.sellerUsername || sellerMap[l.sellerId]?.username || l.sellerId,
-      buyerUsername: l.buyerUsername || null,
-      referrerUsername: sellerMap[l.sellerId]?.referredBy ? (refMap[sellerMap[l.sellerId].referredBy] || null) : null,
-      createdAt: l.createdAt, soldAt: l.soldAt,
-    })) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Cancels one active listing and returns its item to the seller — same
-// mechanics as the player's own marketCancel (server/index.js), just
-// initiated by an admin and for a seller who is very likely offline. Checks
-// for room BEFORE flipping the listing's status, same "never destroy the
-// item" rule marketCancel follows, so a full inventory refuses the cancel
-// entirely rather than cancelling and losing the item.
-async function _adminCancelListing(listingId) {
-  const pre = await MarketListingModel.findOne({ _id: listingId, status: 'active' }).lean();
-  if (!pre) return { ok: false, error: 'Лот не найден или уже закрыт' };
-
-  const liveSocket = io.sockets.sockets.get(activeSessions.get(String(pre.sellerId)) || '');
-  const live = liveSocket && liveSocket.data && liveSocket.data._adminApplyItems;
-  let sellerDoc = null, sellerInv, sellerEq;
-  if (live) {
-    const base = liveSocket.data._adminReadItems();
-    sellerInv = base.inventory.slice();
-    sellerEq = base.equipment;
-  } else {
-    sellerDoc = await PlayerModel.findOne({ telegramId: pre.sellerId });
-    if (!sellerDoc) return { ok: false, error: 'Продавец не найден' };
-    const saved = sellerDoc.savedData || {};
-    sellerInv = Array.isArray(saved.inventory) ? saved.inventory.slice() : [];
-  }
-  // _invHasRoomFor, not "!stackable && full" — see its own comment: a
-  // stackable with no existing stack still needs a slot, and letting it
-  // through here cancelled the listing and then destroyed the item.
-  if (!_invHasRoomFor(sellerInv, pre.item)) {
-    return { ok: false, error: 'У продавца полон инвентарь' };
-  }
-
-  const listing = await MarketListingModel.findOneAndUpdate(
-    { _id: listingId, status: 'active' },
-    { status: 'cancelled', soldAt: new Date() },
-    { new: false }, // pre-update doc, still carries the item
-  );
-  if (!listing) return { ok: false, error: 'Лот не найден или уже закрыт' };
-
-  // A refused live apply (the seller has an item op in flight) is treated as
-  // "not delivered", which takes the branch below that puts the LISTING back
-  // — the item is never left nowhere.
-  let delivered = _invAdd(sellerInv, listing.item);
-  if (delivered) {
-    if (live) delivered = await liveSocket.data._adminApplyItems(sellerInv, sellerEq);
-    else await PlayerModel.updateOne({ _id: sellerDoc._id }, { $set: { 'savedData.inventory': sellerInv } });
-  }
-  if (!delivered) {
-    // The room check above already refused this case, so we only get here if
-    // the seller's inventory changed in between. Put the listing back rather
-    // than leaving it cancelled with the item nowhere — same reasoning as the
-    // player-facing marketCancel handler.
-    await MarketListingModel.updateOne(
-      { _id: listing._id, status: 'cancelled' }, { status: 'active', soldAt: null },
-    ).catch(() => {});
-    logPlayer(listing.sellerId, listing.sellerUsername, 'admin_market_cancel_noroom',
-      { listingId: String(listing._id), item: listing.item && listing.item.id, listingRestored: true });
-    return { ok: false, error: 'У продавца полон инвентарь — лот оставлен активным' };
-  }
-  io.to(`tg_${listing.sellerId}`).emit('marketCancelled', {
-    listingId: String(listing._id), item: listing.item, delivered,
-  });
-  logPlayer(listing.sellerId, listing.sellerUsername, 'admin_market_cancel',
-    { listingId: String(listing._id), item: listing.item && listing.item.id, delivered });
-  return { ok: true, delivered };
-}
-
-app.post('/admin/market/:id/cancel', adminAuth, async (req, res) => {
-  try {
-    const result = await _adminCancelListing(req.params.id);
-    if (!result.ok) return res.status(400).json({ error: result.error });
-    res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Cancels every currently active listing, one at a time — same per-listing
-// safety (room check, item return) as the single-cancel endpoint above, just
-// looped. Not a hot path (an admin action, run rarely), so sequential is
-// fine and keeps each listing's DB round trip isolated from the others.
-// Each iteration is caught on its own: one listing throwing (a malformed
-// item, a lookup failure) used to abort the whole res.json below with a bare
-// 500, silently leaving every listing after it in the list still active with
-// no visible reason why. Now a bad one is just one more "failed" entry and
-// the rest still get processed.
-app.post('/admin/market/cancel-all', adminAuth, async (req, res) => {
-  try {
-    const listings = await MarketListingModel.find({ status: 'active' }, '_id').lean();
-    let delivered = 0, failed = 0;
-    const errors = [];
-    for (const l of listings) {
-      try {
-        const result = await _adminCancelListing(l._id);
-        if (result.ok && result.delivered) delivered++;
-        else { failed++; errors.push({ id: String(l._id), error: result.error || 'Инвентарь полон' }); }
-      } catch (e) {
-        failed++;
-        errors.push({ id: String(l._id), error: e.message });
-        console.error('admin_market_cancel_all item failed:', l._id, e);
-      }
-    }
-    // Each successful cancellation already logged itself individually
-    // (_adminCancelListing above) against its own seller — nothing aggregate
-    // to add here beyond the failures, capped so a bad batch can't bloat the
-    // response.
-    res.json({ ok: true, total: listings.length, delivered, failed, errors: errors.slice(0, 20) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/admin/suspicious', adminAuth, async (req, res) => {
-  try {
-    const weekAgo = new Date(Date.now() - 7 * 86400000);
-    const players = await PlayerModel.find(
-      { createdAt: { $gte: weekAgo }, bm: { $gt: 3000 } },
-      'username telegramId bm savedData createdAt'
-    ).sort({ bm: -1 }).limit(50).lean();
-    res.json({ players: players.map(p => ({
-      telegramId: p.telegramId, username: p.username,
-      bm: p.bm, lvl: p.savedData?.lvl || 1,
-      gold: p.savedData?.gold || 0, createdAt: p.createdAt,
-      ageHours: Math.round((Date.now() - new Date(p.createdAt)) / 3600000),
-    })) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Special Quests (admin CRUD) ──────────────────────────────────────────────
-app.get('/admin/special-quests', adminAuth, async (req, res) => {
-  try { res.json({ quests: await SpecialQuestModel.find({}).sort({ createdAt: -1 }).lean() }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-// Only the fields the quest editor actually offers are taken from the body —
-// passing req.body straight to the model let any document shape through,
-// including keys the game later reads as if the server had written them.
-function _questFields(body) {
-  const b = body || {};
-  const out = {};
-  if (b.title  != null) out.title  = String(b.title).slice(0, 120);
-  if (b.desc   != null) out.desc   = String(b.desc).slice(0, 500);
-  if (b.url    != null) out.url    = String(b.url).slice(0, 500);
-  if (b.icon   != null) out.icon   = String(b.icon).slice(0, 8);
-  if (b.type   != null) out.type   = ['link', 'subscribe', 'custom'].includes(b.type) ? b.type : 'link';
-  if (b.active != null) out.active = !!b.active;
-  if (b.reward) {
-    const n = v => Math.max(0, Math.min(Number(v) || 0, 1e9));
-    out.reward = { gold: n(b.reward.gold), xp: n(b.reward.xp), nexum: n(b.reward.nexum) };
-  }
-  return out;
-}
-app.post('/admin/special-quests', adminAuth, async (req, res) => {
-  try {
-    const f = _questFields(req.body);
-    if (!f.title) return res.status(400).json({ error: 'title required' });
-    res.json({ quest: await SpecialQuestModel.create(f) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.put('/admin/special-quests/:id', adminAuth, async (req, res) => {
-  try {
-    const q = await SpecialQuestModel.findByIdAndUpdate(req.params.id, _questFields(req.body), { new: true });
-    res.json({ quest: q });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.delete('/admin/special-quests/:id', adminAuth, async (req, res) => {
-  try { await SpecialQuestModel.deleteOne({ _id: req.params.id }); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
+// ── Admin REST API, part two ─────────────────────────────────────────────────
+// The nine route groups that used to live here are in server/admin/ now, one
+// file each. They are REGISTERED further down, not here: several of them need
+// handles on the event machines, and those are created by the requires in the
+// Death Battle / Арена / Башня sections below — a `const` binding is in the
+// temporal dead zone until then, so building the dependency objects at this
+// point would throw. Express does not care about the order as long as nothing
+// between here and there claims /admin/*, and nothing does.
 
 // ── Special Quests (public — game client) ─────────────────────────────────────
 app.get('/api/special-quests', async (req, res) => {
@@ -2766,6 +2303,16 @@ function _race10BonusReset() {
   if (_race10BonusDate !== today) { _race10BonusDate = today; _race10BonusCount = 0; }
 }
 
+// Grants one bonus attempt for today and answers the running total. The admin
+// panel used to do this by hand — reset, then ++, then read the variable — which
+// only worked for as long as it shared this file's scope. A verb crosses a
+// module boundary; a `let` does not.
+function _race10GrantBonusAttempt() {
+  _race10BonusReset();
+  _race10BonusCount++;
+  return _race10BonusCount;
+}
+
 // How many runs a day each event allows. They share one helper but not one
 // pool — the Кровавая Башня has a single start per day now, so a single
 // attempt is what makes that start the whole of the opportunity (plus
@@ -3301,6 +2848,38 @@ const {
   _farm2GroupStateFor, _farm2GroupOpenList, _farm2GroupDissolve,
   _farm2GroupDropOnDisconnect,
 } = require('./events/farm2')({ io, _returnToHub });
+
+// ── Admin REST API, part two: registration ───────────────────────────────────
+// Every /admin route group, each in its own file under server/admin/. Placed
+// here rather than beside the rest of the admin API because this is the first
+// point at which every machine handle above exists — see the note up there.
+//
+// Each group declares what it needs and refuses to register without it, the
+// same rule the event machines follow. What stands out is that only one group
+// needs more than five names: the event-control panel, which needs a handle on
+// every machine it can drive. That is the shape of a controller, not coupling
+// to be trimmed.
+require('./admin/quests')(app, { adminAuth });
+require('./admin/misc')(app, { adminAuth });
+require('./admin/season')(app, { adminAuth, io, logPlayer });
+require('./admin/chat')(app, {
+  adminAuth, io, tgApi, tgBroadcastAll, _publicChatHistory, globalChatHistory,
+});
+require('./admin/items')(app, { adminAuth, activeSessions, io, logPlayer });
+require('./admin/market')(app, { adminAuth, activeSessions, io, logPlayer });
+require('./admin/events')(app, {
+  adminAuth, eventBossState, scheduleEventBoss,
+  _gw, _gwPublicState, _gwOpenWindow, _gwCloseWindow,
+  _race10, _race10PublicState, _race10OpenWindow, _race10CloseWindow,
+  _race10GrantBonusAttempt,
+});
+// Owns the maintenance flag itself — the login gate below asks through this
+// rather than reading a module-level `let`, so the two /admin/maintenance
+// routes stay its only writers.
+const { isMaintenanceOn } = require('./admin/maintenance')(app, {
+  adminAuth, _kickAllForMaintenance,
+});
+
 
 
 // Pre-create all floor rooms once MongoDB is reachable. Idempotent so it's
@@ -4639,7 +4218,7 @@ io.on('connection', socket => {
       socket.emit('authError', { message: 'Ваш аккаунт заблокирован' });
       return false;
     }
-    if (_maintenanceMode && telegramId !== TG_ADMIN_ID) {
+    if (isMaintenanceOn() && telegramId !== TG_ADMIN_ID) {
       activeSessions.delete(telegramId);
       socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
       return false;
