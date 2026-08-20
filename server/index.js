@@ -3049,6 +3049,10 @@ io.on('connection', socket => {
     set clanIcon(v) { _myClanIcon = v; },
     // The Room this socket is standing in, reassigned on every floor change.
     get room() { return currentRoom; },
+    // Shared chat cooldown: global chat and clan chat draw on the same 3s
+    // window, and they now live in different files, so it is a get/set pair.
+    get lastChatAt() { return _lastChatAt; },
+    set lastChatAt(v) { _lastChatAt = v; },
   };
   let _saveDebounceTimer = null;
   // Pending teleport-stone cast's setTimeout handle (server/index.js's own
@@ -7702,77 +7706,29 @@ io.on('connection', socket => {
     io.emit('chatMsg', { username: authed.username, text: msg });
   });
 
-  // ── Clan chat — delivered only to members currently online, same
-  // "iterate connected sockets by telegramId" pattern _notifyClan uses ──
-  safeOn('clanChat', async ({ text }) => {
-    if (!authed || !text || typeof text !== 'string') return;
-    const now = Date.now();
-    if (now - _lastChatAt < 3000) return;
-    const msg = text.trim().slice(0, 100);
-    if (!msg) return;
-    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
-    if (!clan) return socket.emit('chatError', { channel: 'clan', msg: 'Вы не состоите в клане' });
-    _lastChatAt = now;
-    _recordClanChat(clan._id, authed.username, msg);
-    for (const m of clan.members) {
-      const target = _socketForTelegramId(m.telegramId);
-      if (target) target.emit('clanChatMsg', { username: authed.username, text: msg });
-    }
+  // ── Чат, личка и пати ─────────────────────────────────────────────────────
+  // All of it lives in server/handlers/social.js. Note what is NOT there:
+  // saveProgress, which sat between the private-message handlers and the party
+  // ones with no heading of its own, is directly below and stays here.
+  require('./handlers/social')({
+    socket, safeOn, io, activeSessions, session,
+    clanChatHistory, dmHistory, parties, playerParty,
+    dmKey: _dmKey,
+    logHandlerErr: _logHandlerErr,
+    recordClanChat: _recordClanChat,
+    recordDm: _recordDm,
+    removeFromParty: _removeFromParty,
+    resolveUsername: _resolveUsername,
+    socketForTelegramId: _socketForTelegramId,
+    translateText: _translateText,
   });
 
-  safeOn('clanChatHistory', async () => {
-    if (!authed) return;
-    const clan = await ClanModel.findOne({ 'members.telegramId': authed.telegramId }).catch(() => null);
-    socket.emit('clanChatHistory', { messages: clan ? (clanChatHistory.get(String(clan._id)) || []) : [] });
-  });
-
-  // "Translate" button on a chat bubble (global/clan/DM alike — this only
-  // ever sees the message text, never which channel it came from). Keyed by
-  // reqId so a reply can't land on the wrong bubble if the player fires off
-  // several translate clicks before any of them come back.
-  safeOn('translateChat', async ({ text, target, reqId } = {}) => {
-    if (!authed || !text || typeof text !== 'string') return;
-    const now = Date.now();
-    if (now - _lastTranslateAt < 1000) return;
-    _lastTranslateAt = now;
-    const msg = text.slice(0, 200);
-    const lang = (typeof target === 'string' && /^[a-z]{2}$/.test(target)) ? target : 'en';
-    try {
-      const translated = await _translateText(msg, lang);
-      socket.emit('translateChatResult', { reqId, text: translated });
-    } catch (err) {
-      _logHandlerErr('translateChat', err);
-      socket.emit('translateChatResult', { reqId, error: true });
-    }
-  });
-
-  // ── Private messages — @mention-addressed 1:1 conversation. Resolved via
-  // DB (works even if the recipient is offline, see _resolveUsername), but
-  // only delivered live if they currently have an active socket. ──
-  safeOn('privMsg', async ({ toUsername, text }) => {
-    if (!authed || !text || typeof text !== 'string' || !toUsername) return;
-    const now = Date.now();
-    if (now - _lastChatAt < 3000) return;
-    const msg = text.trim().slice(0, 100);
-    if (!msg) return;
-    const target = await _resolveUsername(toUsername);
-    if (!target) return socket.emit('privMsgError', { msg: 'Пользователь @' + toUsername + ' не найден' });
-    if (target.telegramId === authed.telegramId) return socket.emit('privMsgError', { msg: 'Нельзя написать самому себе' });
-    _lastChatAt = now;
-    _recordDm(authed.telegramId, target.telegramId, authed.username, msg);
-    socket.emit('privMsg', { withUsername: target.username, username: authed.username, text: msg });
-    const targetSocketId = activeSessions.get(target.telegramId);
-    const targetSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : null;
-    if (targetSocket) targetSocket.emit('privMsg', { withUsername: authed.username, username: authed.username, text: msg });
-  });
-
-  safeOn('privMsgHistory', async ({ withUsername }) => {
-    if (!authed || !withUsername) return;
-    const target = await _resolveUsername(withUsername);
-    if (!target) return socket.emit('privMsgError', { msg: 'Пользователь @' + withUsername + ' не найден' });
-    socket.emit('privMsgHistory', { withUsername: target.username, messages: dmHistory.get(_dmKey(authed.telegramId, target.telegramId)) || [] });
-  });
-
+  // ── Saving the character ──────────────────────────────────────────────────
+  // The handler that writes the character, and the source of every _lastStats
+  // reassignment the handler modules read through session's live getters. It
+  // had no heading of its own and sat between the private-message and party
+  // handlers, which is why probing that range as one block asked for
+  // _sanitizeSavedStats and calcBM.
   safeOn('saveProgress', ({ stats } = {}) => {
     if (!authed) return;
     // No blob, nothing to do. _sanitizeSavedStats returns its argument
@@ -7963,101 +7919,6 @@ io.on('connection', socket => {
       // reintroduce a client-supplied figure either.
       _persistSavedFields(authed, { ...clean, ..._wherePlayerIs() }, { bm: authed.bm });
     }, 3000);
-  });
-
-  // ── Party ─────────────────────────────────────────────────────────────────
-  safeOn('partyInvite', ({ targetId }) => {
-    if (!authed) return;
-    // Target must not already be in a party
-    if (playerParty.has(targetId)) return;
-    // Inviter's party must not be full (max 5)
-    const inviterPartyId = playerParty.get(socket.id);
-    if (inviterPartyId) {
-      const inviterParty = parties.get(inviterPartyId);
-      if (inviterParty && inviterParty.size >= 5) return;
-    }
-    const targetSocket = io.sockets.sockets.get(targetId);
-    if (!targetSocket || !targetSocket.data?.username) return;
-    // Authoritative — see racePairAllowed (Room.js): a race10 racer in
-    // another (still-corridor-bound) lane is now visible to invite from, but
-    // shouldn't actually be reachable until the shared boss room.
-    if (currentRoom && !currentRoom.racePairAllowed(socket.id, targetId)) return;
-    targetSocket.emit('partyInviteReceived', { fromId: socket.id, fromName: authed.username });
-  });
-
-  safeOn('partyAccept', ({ fromId }) => {
-    if (!authed || playerParty.has(socket.id)) return;
-    const fromSocket = io.sockets.sockets.get(fromId);
-    if (!fromSocket) return;
-
-    const fromPartyId = playerParty.get(fromId);
-    let partyId, partyMap;
-
-    if (fromPartyId) {
-      // Join inviter's existing party
-      partyMap = parties.get(fromPartyId);
-      if (!partyMap || partyMap.size >= 5) return;
-      partyId = fromPartyId;
-      partyMap.set(socket.id, authed.username);
-      playerParty.set(socket.id, partyId);
-    } else {
-      // Create new party
-      partyId = fromId + '_' + socket.id;
-      partyMap = new Map();
-      partyMap.set(fromId, fromSocket.data.username || fromId.slice(0, 6));
-      partyMap.set(socket.id, authed.username);
-      parties.set(partyId, partyMap);
-      playerParty.set(fromId, partyId);
-      playerParty.set(socket.id, partyId);
-    }
-
-    // Emit partyUpdated to each member with the list of OTHER members
-    partyMap.forEach((_, mid) => {
-      const others = [];
-      partyMap.forEach((name, oid) => { if (oid !== mid) others.push({ id: oid, name }); });
-      io.to(mid).emit('partyUpdated', { members: others });
-    });
-  });
-
-  // No server-side party state to clean up here — a pending invite was never
-  // tracked anywhere (partyInvite is fire-and-forget: it either lands as
-  // partyInviteReceived or the target was never reachable at all), so
-  // there's nothing to roll back. But the inviter WAS left with nothing:
-  // this used to be a pure no-op, so their client just sat there with no
-  // idea whether the invite is still pending, was declined, or vanished
-  // into a client that closed the popup without answering at all. Telling
-  // them closes that gap.
-  safeOn('partyDecline', ({ fromId } = {}) => {
-    if (!authed || typeof fromId !== 'string') return;
-    const fromSocket = io.sockets.sockets.get(fromId);
-    if (fromSocket) fromSocket.emit('partyInviteDeclined', { byName: authed.username });
-  });
-
-  // Answered straight from this Room's own record of the target (see
-  // Room.publicProfile) instead of relaying to their client — that earlier
-  // approach could go unanswered forever if their client was slow, on a
-  // menu, or gone. The requester can only ever target someone currently
-  // rendered in their own view, so they're guaranteed to be in this same
-  // Room; the null case below is just the rare race of them disconnecting
-  // in the instant between being targeted and the tap landing.
-  safeOn('requestPlayerProfile', ({ targetId }) => {
-    if (!authed || typeof targetId !== 'string' || !currentRoom) return;
-    // Being rendered is no longer the same as being reachable: race10 racers
-    // in a different (still-corridor-bound) lane are visible to each other
-    // but not to each other's profile — see racePairAllowed, Room.js.
-    if (!currentRoom.racePairAllowed(socket.id, targetId)) {
-      return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
-    }
-    const raw = currentRoom.publicProfile(targetId);
-    if (!raw) return socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
-    const { upgrades, ...profile } = raw;
-    profile.bm = calcBM({ lvl: raw.lvl, atk: raw.atk, def: raw.def, maxHp: raw.maxHp, upgrades });
-    socket.emit('playerProfileResult', { fromId: targetId, fromName: raw.name, profile });
-  });
-
-  safeOn('partyLeave', () => {
-    const partyId = playerParty.get(socket.id);
-    if (partyId) _removeFromParty(partyId, socket.id);
   });
 
   // ── Кланы и Хранилище клана ───────────────────────────────────────────────
