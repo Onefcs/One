@@ -365,6 +365,100 @@ scenario('shop: the VIP gold bonus is paid at exactly two tiers', async () => {
   eq(paying.join(', '), '7:10000, 8:20000', 'only VIP 7 and 8 pay gold, at their stated amounts');
 });
 
+// ── Event schedule (nextEventStartAt, shared/definitions.js) ─────────────────
+// Every timed event in the game resolves its start through this one function —
+// world boss, Death Battle, Кровавая Башня, Арена 3х3, Война гильдий — and it
+// had no test of any kind. It is pure and it is the kind of code that is wrong
+// in ways nobody notices until the event does not open: a weekday set in MSK
+// while the server thinks in UTC, a fractional hour (Башня starts at 20:30, so
+// RACE10_HOURS_MSK is [20.5]), and a week-long lookahead so a once-a-week
+// schedule still resolves when asked on the wrong day.
+//
+// The minimality check below does NOT re-run the same algorithm: it walks the
+// half-hour grid between `from` and the answer and asserts no valid slot was
+// skipped, which is the property, not the method.
+const _defs = require('../shared/definitions');
+const _MSK_OFF = _defs.DEATH_BATTLE_MSK_OFFSET_H * 3600000;
+
+// MSK weekday and hour-of-day (fractional) for an epoch time.
+function mskSlot(t) {
+  const m = new Date(t + _MSK_OFF);
+  return { day: m.getUTCDay(), hour: m.getUTCHours() + m.getUTCMinutes() / 60, sec: m.getUTCSeconds() };
+}
+const isSlot = (t, days, hours) => {
+  const s = mskSlot(t);
+  return s.sec === 0 && days.includes(s.day) && hours.includes(s.hour);
+};
+
+const _SCHEDULES = [
+  ['world boss',   _defs.WORLD_BOSS_DAYS_MSK,   _defs.WORLD_BOSS_HOURS_MSK],
+  ['death battle', _defs.DEATH_BATTLE_DAYS_MSK, _defs.DEATH_BATTLE_HOURS_MSK],
+  ['Башня',        _defs.RACE10_DAYS_MSK,       _defs.RACE10_HOURS_MSK],
+  ['арена 3х3',    _defs.ARENA3_DAYS_MSK,       _defs.ARENA3_HOURS_MSK],
+  ['война гильдий', _defs.GUILD_WAR_DAYS_MSK,   _defs.GUILD_WAR_HOURS_MSK],
+];
+
+scenario('schedule: every event resolves to the next real slot, and never skips one', async () => {
+  const { nextEventStartAt } = _defs;
+  const HALF = 1800000;
+  const notFuture = [], notASlot = [], skipped = [];
+  // A fixed start plus a week of odd offsets — every weekday, and times that
+  // land before, on and after a slot rather than only on round hours.
+  const base = Date.UTC(2026, 2, 1, 0, 0, 0);   // Sunday, so all 7 weekdays get covered
+  for (const [name, days, hours] of _SCHEDULES) {
+    for (let i = 0; i < 200; i++) {
+      const from = base + i * (7 * 3600000 + 137000);
+      const at = nextEventStartAt(days, hours, from);
+      if (!(at > from)) { notFuture.push(`${name} @${i}`); continue; }
+      if (!isSlot(at, days, hours)) { notASlot.push(`${name} @${i} → ${new Date(at).toISOString()}`); continue; }
+      // Nothing valid may lie between the two.
+      let t = Math.ceil((from + _MSK_OFF) / HALF) * HALF - _MSK_OFF;
+      for (; t < at; t += HALF) {
+        if (isSlot(t, days, hours)) { skipped.push(`${name} @${i} skipped ${new Date(t).toISOString()}`); break; }
+      }
+    }
+  }
+  eq(notFuture.join(', '), '', 'the answer is always strictly in the future');
+  eq(notASlot.join(', '), '', 'the answer always lands on a scheduled MSK weekday and hour');
+  eq(skipped.join(', '), '', 'and no earlier scheduled slot is passed over');
+});
+
+scenario('schedule: a once-a-week event resolves on every day of the week', async () => {
+  // The lookahead runs a full week PLUS today for exactly this case — asked on
+  // the event's own weekday, "today" is either still ahead or already spent.
+  const { nextEventStartAt } = _defs;
+  const bad = [];
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    for (const hour of [0, 9, 20, 23]) {
+      const from = Date.UTC(2026, 2, 1 + dayOffset, hour, 0, 0);
+      const at = nextEventStartAt([3], [20], from);   // Wednesdays 20:00 MSK only
+      if (!(at > from) || !isSlot(at, [3], [20])) bad.push(`day+${dayOffset} ${hour}h → ${at}`);
+      if (at - from > 7 * 86400000) bad.push(`day+${dayOffset} ${hour}h is more than a week out`);
+    }
+  }
+  eq(bad.join(', '), '', 'a single-weekday schedule resolves from any starting day, within a week');
+});
+
+scenario('schedule: asked at the very instant an event starts, it answers the NEXT one', async () => {
+  // `t > from` is strict on purpose: a re-arm that fires exactly on time must
+  // move on, not schedule the same moment again and spin.
+  const { nextEventStartAt } = _defs;
+  const bad = [];
+  for (const [name, days, hours] of _SCHEDULES) {
+    const first = nextEventStartAt(days, hours, Date.UTC(2026, 2, 1));
+    const again = nextEventStartAt(days, hours, first);
+    if (!(again > first)) bad.push(`${name}: ${again} did not advance past ${first}`);
+  }
+  eq(bad.join(', '), '', 'every schedule advances instead of returning the same instant');
+});
+
+scenario('schedule: an empty schedule answers 0 rather than a bogus time', async () => {
+  // 0 is what the callers test for; Infinity or NaN would be armed as a timer.
+  const { nextEventStartAt } = _defs;
+  eq(nextEventStartAt([], [20], Date.now()), 0, 'no weekdays → 0');
+  eq(nextEventStartAt([1, 3], [], Date.now()), 0, 'no hours → 0');
+});
+
 scenario('login: a fresh account authenticates and is told it is new', async () => {
   const c = await connectAs('harness_new');
   ok(c.auth && typeof c.auth.username === 'string', 'authOk carries a username');
