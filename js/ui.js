@@ -1641,6 +1641,29 @@ function drawMapPanel() {
     _locLabel + ' · ' + tVars('enemiesCountFmt', { n: aliveEnemies.length });
 }
 
+// Which corridor arm (1-4) the player currently stands in, by the same
+// room-Y-range check _currentLocationBounds uses — covers the corridor
+// between room pairs too, not just a room's own rectangle (unlike a bare
+// _getRoomAt, which returns null there). null in the hub/safe zone or any
+// zone that isn't one of the 4 arms (Фарм-зона, Guild War, race10 — those
+// have their own bestiary list or none at all).
+function _currentArmIdx() {
+  if (!dungeon || !dungeon.rooms || !player) return null;
+  const sz = dungeon.safeZone;
+  if (sz && player.x >= sz.x1 && player.x <= sz.x2 && player.y >= sz.y1 && player.y <= sz.y2) return null;
+  const margin = 6;
+  const playerTy = player.y / TILE;
+  for (let i = 0; i < ARM_NAMES.length; i++) {
+    const armRooms = dungeon.rooms.filter(r => r.arm === ARM_NAMES[i]);
+    if (!armRooms.length) continue;
+    const minTy = Math.min(...armRooms.map(r => r.by1));
+    const maxTy = Math.max(...armRooms.map(r => r.by2));
+    if (playerTy < minTy - margin || playerTy > maxTy + margin) continue;
+    return i + 1;
+  }
+  return null;
+}
+
 function _floorEnemyPool(n, localLvl) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   const fe = FLOOR_ENEMIES[n];
@@ -1657,17 +1680,49 @@ function _floorEnemyPool(n, localLvl) {
 // room spawns (which one depends on the level's room within its arm, cycling
 // every room, see FLOOR_ENEMIES/bandForLocalLevel in shared/definitions.js —
 // or the zone boss on its one level).
+// Which bestiary list should be showing right now — a specific arm, the
+// Фарм-зона species list, or the hub (no list). Movement doesn't pause while
+// this panel is open (mapBlips keeps drawMapPanel's canvas live for the same
+// reason — see js/network.js), so the list itself needs a way to notice the
+// player walked into a different corridor without rebuilding (and collapsing
+// any expanded row in) the DOM on every tick while they haven't actually
+// moved between locations — see _refreshFloorUIIfLocationChanged below.
+function _floorUISignature() {
+  const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
+  if (_b && _b.zoneLabel === 'farmZoneLbl') return 'farm';
+  return _currentArmIdx() || 'hub';
+}
+let _lastFloorUISignature = null;
+function _refreshFloorUIIfLocationChanged() {
+  const sig = _floorUISignature();
+  if (sig === _lastFloorUISignature) return;
+  updateFloorUI();
+}
+
 function updateFloorUI() {
   const grid = document.getElementById('floor-grid');
   if (!grid) return;
+  _lastFloorUISignature = _floorUISignature();
   // Фарм-зона isn't part of the arm/level system this list otherwise walks —
   // showing the regular 1-78 bestiary while standing inside it would name
   // monsters nobody here actually is. Swap to its own species list instead.
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && _b.zoneLabel === 'farmZoneLbl') { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
+
+  // Scoped to wherever the player actually is: the hub has no monsters at
+  // all, and each corridor only ever spawns its own level band (arm 1 =
+  // levels 1-20, arm 2 = 21-40, ...) — showing the full 1-78 reference list
+  // regardless of location named monsters nobody standing there could ever
+  // meet.
+  const _armIdx = _currentArmIdx();
+  if (!_armIdx) {
+    grid.innerHTML = `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('noMonstersHereHint')}</div>`;
+    return;
+  }
   let html = '';
   for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
     const armIdx = armIndexForLevel(lvl);
+    if (armIdx !== _armIdx) continue;
     const floor = armIdx;
     const localLvl = armLocalLevel(lvl);
     const roomCount = roomsInArm(armIdx);

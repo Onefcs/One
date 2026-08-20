@@ -871,6 +871,7 @@ Object.assign(I18N_UI, {
   // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.
   farmBestiaryHint: { ru: 'Уровень варьируется 21-30 у каждого монстра отдельно — здесь показан средний.', en: 'Each monster rolls its own level 21-30 — shown here is the average.', uk: 'Рівень варіюється 21-30 в кожного монстра окремо — тут показано середній.', es: 'Cada monstruo tiene su propio nivel 21-30 — aquí se muestra el promedio.', tr: 'Her canavarın kendi seviyesi 21-30 arasında — burada ortalama gösteriliyor.', pt: 'Cada monstro sorteia seu próprio nível 21-30 — aqui é mostrada a média.' },
   farmLevelRangeLbl: { ru: 'Уровень 21-30', en: 'Level 21-30', uk: 'Рівень 21-30', es: 'Nivel 21-30', tr: 'Seviye 21-30', pt: 'Nível 21-30' },
+  noMonstersHereHint: { ru: 'Здесь монстров нет — зайдите в один из коридоров, чтобы увидеть список.', en: 'No monsters here — enter one of the corridors to see the list.', uk: 'Тут монстрів немає — зайдіть в один з коридорів, щоб побачити список.', es: 'Aquí no hay monstruos — entra en uno de los corredores para ver la lista.', tr: 'Burada canavar yok — listeyi görmek için koridorlardan birine gir.', pt: 'Não há monstros aqui — entre em um dos corredores para ver a lista.' },
 
   // ── Профессия HUD panel (openProfessionPanel, js/ui.js) — second-profession
   // codex reachable from the HUD button under Мир/ПК.

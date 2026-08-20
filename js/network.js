@@ -1160,6 +1160,10 @@ function netConnect(onReady) {
     // Arrives once a second while the panel is open — redraw so the dots
     // actually move instead of freezing at whatever was there on open.
     if (activeTab === 2 && typeof drawMapPanel === 'function') drawMapPanel();
+    // Same cadence covers the bestiary list below the map — it's scoped to
+    // whichever corridor the player is currently in, so it has to notice a
+    // location change too, not just redraw dots.
+    if (activeTab === 2 && typeof _refreshFloorUIIfLocationChanged === 'function') _refreshFloorUIIfLocationChanged();
   });
 
   socket.on('playerHurt', ({ id, hp, dmg, atkId }) => {
