@@ -471,35 +471,56 @@ scenario('schedule: an empty schedule answers 0 rather than a bogus time', async
 });
 
 // ── Event machines as modules (server/events/) ───────────────────────────────
-scenario('guildwar: the machine builds standalone, and refuses to build short a dependency', async () => {
-  // The first of the timed-event machines to leave server/index.js. Two things
-  // are worth stating about that shape, and neither was checkable before the
-  // move: it can be constructed away from a running server at all, and a
-  // caller that forgets one of the six names it needs is told so at
+scenario('events: each extracted machine builds standalone, and refuses to build short a dependency', async () => {
+  // The timed/instanced event machines that have left server/index.js. Two
+  // things are worth stating about that shape, and neither was checkable
+  // before the move: each can be constructed away from a running server at
+  // all, and a caller that forgets one of the names it needs is told so at
   // construction rather than whenever that path first runs — which for a
   // weekly event can be days later, in front of players.
-  const createGuildWar = require('../server/events/guildwar');
   const noop = () => {};
   const fakeIo = { to: () => ({ emit: noop }), emit: noop };
-  const deps = {
-    io: fakeIo, safeTimeout: (name, fn, ms) => setTimeout(fn, ms),
-    notifyEventSoon: noop, notifyEventStarted: noop,
-    _socketForTelegramId: () => null, playerFloorMap: new Map(),
-  };
+  const timeout = (name, fn, ms) => setTimeout(fn, ms);
 
-  const gw = createGuildWar(deps);
-  const surface = ['_gw', '_gwPublicState', '_gwOpenWindow', '_gwCloseWindow',
-    '_gwApplyCapture', '_gwSchedule', '_gwNextOpenAt', '_gwIncomeSchedule'];
-  eq(surface.filter(k => gw[k] === undefined).join(', '), '', 'the whole surface server/index.js imports comes back');
-  eq(typeof gw._gwPublicState(), 'object', 'the machine answers for its own state');
-  ok(gw._gwNextOpenAt() > Date.now(), 'and schedules its next window in the future');
+  const machines = [
+    ['guildwar', require('../server/events/guildwar'),
+      { io: fakeIo, safeTimeout: timeout, notifyEventSoon: noop, notifyEventStarted: noop,
+        _socketForTelegramId: () => null, playerFloorMap: new Map() },
+      ['_gw', '_gwPublicState', '_gwOpenWindow', '_gwCloseWindow',
+        '_gwApplyCapture', '_gwSchedule', '_gwNextOpenAt', '_gwIncomeSchedule']],
+    ['fear', require('../server/events/fear'),
+      { io: fakeIo, safeTimeout: timeout, _returnToHub: noop, _socketTid: () => null },
+      ['_fear', '_liveFearRooms', '_createFearRoom', '_fearStartWave', '_fearTrackKill',
+        '_fearEliminate', '_fearFinish', '_fearHoldOnDisconnect', '_fearReleaseRun',
+        'FEAR_ATTEMPTS', 'FEAR_MIN_LEVEL']],
+    ['coop', require('../server/events/coop'),
+      { io: fakeIo, _returnToHub: noop },
+      ['_coop', '_liveCoopRooms', '_createCoopRoom', '_coopTrackKill', '_coopBossTrackKill',
+        '_coopEliminate', '_coopFinish', '_coopGroups', '_coopGroupOf', '_coopGroupPush',
+        'COOP_ATTEMPTS', 'COOP_MIN_LEVEL']],
+  ];
 
-  for (const drop of Object.keys(deps)) {
-    const short = { ...deps };
-    delete short[drop];
-    let threw = '';
-    try { createGuildWar(short); } catch (e) { threw = e.message; }
-    ok(threw.includes(drop), `building without ${drop} is refused at construction`, threw || 'built anyway');
+  for (const [name, create, deps, surface] of machines) {
+    const built = create(deps);
+    eq(surface.filter(k => built[k] === undefined).join(', '), '',
+      `${name}: the surface server/index.js imports comes back`);
+    for (const drop of Object.keys(deps)) {
+      const short = { ...deps };
+      delete short[drop];
+      let threw = '';
+      try { create(short); } catch (e) { threw = e.message; }
+      ok(threw.includes(drop), `${name}: building without ${drop} is refused at construction`,
+        threw || 'built anyway');
+    }
+  }
+
+  // The one machine with a schedule of its own answers for it.
+  const gw = createGuildWarForCheck();
+  eq(typeof gw._gwPublicState(), 'object', 'guildwar: the machine answers for its own state');
+  ok(gw._gwNextOpenAt() > Date.now(), 'guildwar: and schedules its next window in the future');
+
+  function createGuildWarForCheck() {
+    return machines[0][1](machines[0][2]);
   }
 });
 
@@ -986,6 +1007,56 @@ scenario('floors: Элитная фарм-зона is a private party-of-3 insta
   eq(m2f.reason, 'partyBroken', 'so is m2');
 
   await Promise.all([leader, m1, m2].map(x => x.close()));
+});
+
+scenario('coop: a lobby forms, is offered to other players, and starts both into one run', async () => {
+  // Сотрудничество had no runtime coverage at all — the machine moving to
+  // server/events/coop.js was verified only by no-undef and by the server
+  // still booting, which says nothing about whether a run can still be
+  // formed. This walks the whole lobby: create, be discoverable, join, start.
+  const lead = await connectWithSaved('harness_coop_lead', { lvl: 20, xp: 0, xpNext: 100 });
+  const mate = await connectWithSaved('harness_coop_mate', { lvl: 20, xp: 0, xpNext: 100 });
+  await enterWorld(lead, 'ranger');
+  await enterWorld(mate, 'mage');
+
+  const created = lead.wait('coopGroupState', { timeout: 5000, match: p => p && p.inGroup });
+  lead.emit('coopGroupCreate');
+  const st = await created;
+  eq(st.isLeader, true, 'the creator leads its own group');
+  eq(st.memberId, null, 'and starts it alone');
+
+  // An open group is offered to everyone else, which is how the other player
+  // finds it — the lobby list is a broadcast, not something the two arrange
+  // between themselves.
+  const listed = mate.wait('coopGroupList', {
+    timeout: 5000,
+    match: p => p && Array.isArray(p.groups) && p.groups.some(g => g.id === lead.sock.id),
+  });
+  mate.emit('coopSync');
+  await listed;
+  ok(true, 'the open group is offered to another player');
+
+  const leadSees = lead.wait('coopGroupState', { timeout: 5000, match: p => p && p.memberId });
+  const mateIn = mate.wait('coopGroupState', { timeout: 5000, match: p => p && p.inGroup });
+  mate.emit('coopGroupJoin', { leaderId: lead.sock.id });
+  const [ls, ms] = await Promise.all([leadSees, mateIn]);
+  ok(ls.memberId, 'the leader sees the member arrive');
+  eq(ms.isLeader, false, 'and the joiner is not the leader');
+
+  // A full group leaves the open list — there is nothing left to join.
+  const relisted = mate.wait('coopGroupList', { timeout: 5000 });
+  mate.emit('coopSync');
+  const after = await relisted;
+  eq((after.groups || []).some(g => g.id === lead.sock.id), false, 'a full group stops being offered');
+
+  const leadStart = lead.wait('gameStart', { where: 'leader deployed into coop' });
+  const mateStart = mate.wait('gameStart', { where: 'member deployed into coop' });
+  lead.emit('coopGroupStart');
+  const [lg, mg] = await Promise.all([leadStart, mateStart]);
+  eq(lg.floor, 12, 'the leader is force-moved onto the coop floor');
+  eq(mg.floor, 12, 'so is the member');
+
+  await Promise.all([lead.close(), mate.close()]);
 });
 
 scenario('floors: the boss arena is its own floor, reachable only while a world boss is up', async () => {
