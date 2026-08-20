@@ -170,7 +170,7 @@ const {
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
   armIndexForLevel, armLocalLevel,
-  EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
+  EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, levelSkillBookPool, levelClassPassivePool, levelUniversalPassivePool,
   BOSS_ITEM_DROP_MULT, itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
@@ -370,9 +370,9 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
 
   // Passive skill books — own independent roll/pool, same odds as above.
   // The class-exclusive half rotates offense/defense with the level/zone
-  // half same as the skill books; the 6 universal ones stay in every pool
-  // unrestricted, same as they always were.
-  const _allPassiveBooks = levelClassPassivePool(_armIdx).concat(UNIVERSAL_PASSIVE_BOOKS);
+  // half same as the skill books; the 6 universal ones rotate one-per-level
+  // the same way the skill books cycle Q/W/E/R.
+  const _allPassiveBooks = levelClassPassivePool(_armIdx).concat(levelUniversalPassivePool(rlvl));
   if (_allPassiveBooks.length) {
     if (eType === 'boss') {
       if (Math.random() < 0.001 * _zoneMult) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);

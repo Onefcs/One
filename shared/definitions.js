@@ -774,10 +774,12 @@ const CRAFT_MATS = [
 // профессия") ones the same way. Same idea for the class-exclusive passive
 // books (2 per class: one offense-flavored, one defense-flavored) — offense
 // early, defense late, no cycling needed since there's only one of each per
-// half. The 6 universal (non-class) passives are untouched, still in every
-// pool unrestricted. Shared so the server's roll (_rollMobLoot, server/
-// index.js) and the map's drop-info panel (_monsterDropBodyHtml, js/ui.js)
-// can never drift apart on which books a given level actually offers.
+// half. The 6 universal (non-class) passives cycle the same way the base/
+// advanced skill books do — one per level, wrapping every 6 — so a single
+// monster type can't hand out all 6 either. Shared so the server's roll
+// (_rollMobLoot, server/index.js) and the map's drop-info panel
+// (_monsterDropBodyHtml, js/ui.js) can never drift apart on which books a
+// given level actually offers.
 //
 // Arms 1 (levels 1-20) and 2 (levels 21-40) also get every drop chance below
 // cut to a third — EARLY_ZONE_DROP_MULT — applied as a flat multiplier on
@@ -812,6 +814,10 @@ function levelSkillBookPool(rlvl, armIdx) {
 function levelClassPassivePool(armIdx) {
   const idx = armIdx <= 2 ? 0 : 1;
   return Object.values(_CLASS_PASSIVE_BOOKS_BY_CLASS).map(pair => pair[idx]).filter(Boolean);
+}
+function levelUniversalPassivePool(rlvl) {
+  if (!UNIVERSAL_PASSIVE_BOOKS.length) return [];
+  return [UNIVERSAL_PASSIVE_BOOKS[Math.max(0, rlvl - 1) % UNIVERSAL_PASSIVE_BOOKS.length]];
 }
 
 // ── Loot boxes ────────────────────────────────────────────────────────────────
@@ -2076,6 +2082,7 @@ if (typeof module !== 'undefined') module.exports = {
   VIP_THRESHOLDS, VIP_BONUSES,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
+  levelUniversalPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,

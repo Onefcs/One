@@ -2061,11 +2061,12 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   // Passive skill books — same mechanic/odds as active skill books above,
   // separate roll and separate pool (js/combat.js). The class-exclusive half
   // rotates offense/defense with the level/zone half same as the skill
-  // books; the 6 universal ones stay in every pool unrestricted.
+  // books; the 6 universal ones rotate one-per-level the same way the skill
+  // books cycle Q/W/E/R.
   let passiveBookSection = '';
   {
     const classPool = typeof levelClassPassivePool === 'function' ? levelClassPassivePool(floor) : [];
-    const universalPool = typeof UNIVERSAL_PASSIVE_BOOKS !== 'undefined' ? UNIVERSAL_PASSIVE_BOOKS : CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
+    const universalPool = typeof levelUniversalPassivePool === 'function' ? levelUniversalPassivePool(lvl) : CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
     const allPassiveBooks = classPool.concat(universalPool);
     if (allPassiveBooks.length) {
       const rows = allPassiveBooks.map(b => {
