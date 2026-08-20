@@ -1263,7 +1263,7 @@ const MAT_UPGRADE_RECIPES = [
 // advanced ("2 профессия") skill book — any of the 20 book_adv_<cls>_<key>
 // entries, picked uniformly at craft time. See craftAdvSkillBook, server/
 // index.js, which rolls this itself the same way craftMatUpgrade does.
-const ADV_SKILL_BOOK_CRAFT = { count: 5, chance: 0.60 };
+const ADV_SKILL_BOOK_CRAFT = { count: 10, chance: 0.30 };
 
 const PET_CRAFT_RECIPES = [
   { rarity:'common',   nexumCost:500,  chance:1.0 },
