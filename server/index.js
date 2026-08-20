@@ -5228,7 +5228,8 @@ function _coopEjectOnDisconnect(socketId) {
 // (walking out, disconnecting, or dropping out of the run's temporary
 // party) does, and when it does, everyone else still in goes too: see
 // _farm2CascadeCheck.
-//
+const FARM2_START_DELAY_MS = 3000;
+
 // leaderId -> { leaderName, members: Map<socketId, name> } — up to
 // FARM2_PARTY_SIZE-1 members. Lives here only until farm2GroupStart
 // consumes it (deleted at that point) or it's dissolved without ever

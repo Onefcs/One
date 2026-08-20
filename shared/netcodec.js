@@ -51,12 +51,6 @@
 //                 anyway so every entry stays fixed-size; see spawnAOE,
 //                 js/particles.js, and _updateAoeRings, js/pixi-world.js)
 //   [race lanes]  u8 count, per entry (3 bytes): u16 seq (player handle), u8 lane
-//   [player ages] u8 count, per entry (1 byte): u8 ms since that position was
-//                 sampled (255 = unknown). Positional: entry i belongs to the
-//                 i-th PLAYER ENTRY AS ENCODED, which is why the decoder keeps
-//                 a slot table rather than indexing the players array it
-//                 returns (a slim entry whose handle is unknown is skipped
-//                 there, so the two are not the same length).
 //   str = u8 byteLength + UTF-8 bytes
 //
 //  The projectile/AOE sections carry what used to be the 'spawnProj'/
@@ -78,16 +72,7 @@
 //  packet was full — a slim entry's lane hasn't changed, so the client just
 //  keeps what it already has.
 //
-//  Player ages: a player's position is sampled by their own client's frame
-//  loop, at whatever rate their display runs; the cast grid is a fixed 50ms.
-//  Without this byte the receiver has to assume every position it is handed
-//  was true at the cast timestamp, and resampling one clock on the other means
-//  that assumption is wrong by a different amount every cast — which
-//  interpolation faithfully renders as the sender's speed oscillating several
-//  times a second. See updatePlayerPos (server/game/Room.js) for the
-//  measurement and the _buf push (js/network.js) for what reads it back.
-//
-//  All four trailing sections are APPENDED, which is what makes the change
+//  All three trailing sections are APPENDED, which is what makes the change
 //  safe to deploy without a flag day: a client running older code stops at
 //  the enemy list (or wherever its own older layout ends) and ignores the
 //  trailing bytes, and a client running newer code against an older server
@@ -337,26 +322,6 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
     _ncU8[o++] = 0;
   }
 
-  // Position sample ages — see the format note at the top. One byte per
-  // player entry, in the same order they were written above, so no handle is
-  // needed to match them up. Written for every entry rather than only the
-  // ones with a useful value: a sparse form would need the 2-byte handle back
-  // to say which entry it belonged to, i.e. 3 bytes for the ones it did send
-  // against 1 for all of them, and in a moving crowd almost every entry has a
-  // non-zero age anyway.
-  if (players) {
-    const n = Math.min(255, players.length);
-    _ncEnsure(o, 1 + n);
-    _ncU8[o++] = n;
-    for (let i = 0; i < n; i++) {
-      const a = players[i].ageMs;
-      _ncU8[o++] = (a == null) ? 255 : Math.max(0, Math.min(255, a | 0));
-    }
-  } else {
-    _ncEnsure(o, 1);
-    _ncU8[o++] = 0;
-  }
-
   // Copy — the scratch buffer is reused for the next recipient while
   // socket.io may still hold this payload for async transmission
   return _ncBuf.slice(0, o);
@@ -381,17 +346,9 @@ function decodeGameState(data) {
   }
 
   let players = null;
-  // Encoded index -> the decoded entry (or null for one that was skipped).
-  // The trailing ages section is positional against the ENCODED list, and a
-  // slim entry whose handle is unknown never makes it into `players`, so the
-  // two indexes drift apart the moment that happens.
-  let pSlots = null;
-  let pEncoded = 0;
   if (flags & 1) {
     players = [];
     const n = dv.getUint8(o); o += 1;
-    pSlots = new Array(n).fill(null);
-    pEncoded = n;
     for (let i = 0; i < n; i++) {
       const f = dv.getUint8(o); o += 1;
       const moving = !!(f & 2);
@@ -410,19 +367,14 @@ function decodeGameState(data) {
         const clanName = rStr() || null;
         const clanIcon = dv.getUint8(o) || null; o += 1;
         _ncPIdMap.set(seq, id);
-        const e = { id, username, type: ti === 255 ? null : NC_CHAR_TYPES[ti],
-          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon, moving };
-        players.push(e);
-        pSlots[i] = e;
+        players.push({ id, username, type: ti === 255 ? null : NC_CHAR_TYPES[ti],
+          x, y, facing, hp, maxHp, pvpMode, atkSeq, clanName, clanIcon, moving });
       } else {
         const id = _ncPIdMap.get(seq);
         // Unknown handle (map lost) — skip; the periodic full refresh
         // re-establishes the mapping within ~2s
-        if (id !== undefined) {
-          const e = { id, x, y, facing, hp, atkSeq, moving };
-          players.push(e);
-          pSlots[i] = e;
-        }
+        if (id !== undefined)
+          players.push({ id, x, y, facing, hp, atkSeq, moving });
       }
     }
   }
@@ -508,19 +460,6 @@ function decodeGameState(data) {
       const laneRaw = u8[o++];
       const id = _ncPIdMap.get(seq);
       if (id !== undefined) raceLaneById.set(id, laneRaw === 255 ? null : laneRaw);
-    }
-  }
-
-  // Position sample ages — see the format note at the top. Absent when the
-  // sender is running older code, in which case every entry keeps ageMs
-  // undefined and the receiver falls back to timing them by the cast stamp,
-  // exactly as it did before this section existed.
-  if (pSlots && o < dv.byteLength) {
-    const an = u8[o++];
-    for (let i = 0; i < an && i < pEncoded && o < dv.byteLength; i++) {
-      const a = u8[o++];
-      const e = pSlots[i];
-      if (e && a !== 255) e.ageMs = a;
     }
   }
 
