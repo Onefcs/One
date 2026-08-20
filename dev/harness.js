@@ -3094,7 +3094,7 @@ scenario('hp: reconnecting does not full-heal', async () => {
   await c2.close();
 });
 
-scenario('handlers: none of the 115 throws on a bare request', async () => {
+scenario('handlers: none of them throws on a bare request', async () => {
   // The check the two missing-import regressions needed, and the reason a
   // scenario per handler is not the answer: there are 115 of them and the
   // scenarios cover 17.
@@ -3110,12 +3110,24 @@ scenario('handlers: none of the 115 throws on a bare request', async () => {
   // window, a price ceiling, a cap), so an empty payload is enough to find it.
   // What this deliberately does NOT check is that a handler does its job — the
   // scenarios above are for that.
+  // server/index.js AND every handler module, or the sweep silently shrinks as
+  // domains move out of the closure. It did: between the market moving to
+  // server/handlers/ and the clans following it, this scanned one file and
+  // quietly went from 115 handlers to 98 without failing, because the count
+  // was only checked against a floor. Now it reads every file that can call
+  // safeOn, and the floor is a floor rather than the whole guarantee.
   const fs = require('fs');
-  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  const handlerDir = path.join(ROOT, 'server', 'handlers');
+  const sources = [path.join(ROOT, 'server', 'index.js')].concat(
+    fs.existsSync(handlerDir)
+      ? fs.readdirSync(handlerDir).filter(f => f.endsWith('.js')).map(f => path.join(handlerDir, f))
+      : []
+  );
+  const src = sources.map(f => fs.readFileSync(f, 'utf8')).join('\n');
   const events = [...new Set([...src.matchAll(/safeOn\('([a-zA-Z0-9_]+)'/g)].map(m => m[1]))]
     // Skip the ones that would end the session out from under the sweep.
     .filter(e => !['disconnect', 'loginTelegram', 'loginTelegramWebApp'].includes(e));
-  ok(events.length > 100, `found ${events.length} handlers to sweep`);
+  ok(events.length > 100, `found ${events.length} handlers to sweep across ${sources.length} files`);
 
   const c = await connectWithSaved('harness_sweep', { vipLevel: 1, gold: 100, inventory: [] });
   await enterWorld(c, 'mage');
