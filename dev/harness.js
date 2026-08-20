@@ -470,6 +470,39 @@ scenario('schedule: an empty schedule answers 0 rather than a bogus time', async
   eq(nextEventStartAt([1, 3], [], Date.now()), 0, 'no hours → 0');
 });
 
+// ── Event machines as modules (server/events/) ───────────────────────────────
+scenario('guildwar: the machine builds standalone, and refuses to build short a dependency', async () => {
+  // The first of the timed-event machines to leave server/index.js. Two things
+  // are worth stating about that shape, and neither was checkable before the
+  // move: it can be constructed away from a running server at all, and a
+  // caller that forgets one of the six names it needs is told so at
+  // construction rather than whenever that path first runs — which for a
+  // weekly event can be days later, in front of players.
+  const createGuildWar = require('../server/events/guildwar');
+  const noop = () => {};
+  const fakeIo = { to: () => ({ emit: noop }), emit: noop };
+  const deps = {
+    io: fakeIo, safeTimeout: (name, fn, ms) => setTimeout(fn, ms),
+    notifyEventSoon: noop, notifyEventStarted: noop,
+    _socketForTelegramId: () => null, playerFloorMap: new Map(),
+  };
+
+  const gw = createGuildWar(deps);
+  const surface = ['_gw', '_gwPublicState', '_gwOpenWindow', '_gwCloseWindow',
+    '_gwApplyCapture', '_gwSchedule', '_gwNextOpenAt', '_gwIncomeSchedule'];
+  eq(surface.filter(k => gw[k] === undefined).join(', '), '', 'the whole surface server/index.js imports comes back');
+  eq(typeof gw._gwPublicState(), 'object', 'the machine answers for its own state');
+  ok(gw._gwNextOpenAt() > Date.now(), 'and schedules its next window in the future');
+
+  for (const drop of Object.keys(deps)) {
+    const short = { ...deps };
+    delete short[drop];
+    let threw = '';
+    try { createGuildWar(short); } catch (e) { threw = e.message; }
+    ok(threw.includes(drop), `building without ${drop} is refused at construction`, threw || 'built anyway');
+  }
+});
+
 scenario('login: a fresh account authenticates and is told it is new', async () => {
   const c = await connectAs('harness_new');
   ok(c.auth && typeof c.auth.username === 'string', 'authOk carries a username');
