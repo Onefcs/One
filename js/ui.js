@@ -4193,8 +4193,8 @@ function _marketMinPriceFor(it, qty) {
   // Skill/passive books — "вторая профессия" (advSkillKey) has its own,
   // higher floor and must be checked before the regular floor below, which
   // covers both active skill books (skillKey) and passive ones (passiveId).
-  if (it.advSkillKey) return 10;
-  if (it.skillKey || it.passiveId) return 0.4;
+  if (it.advSkillKey) return 10 * n;
+  if (it.skillKey || it.passiveId) return 0.4 * n;
   if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 10;
   if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 3;
   if (it.rarity === 'uncommon' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 0.3;

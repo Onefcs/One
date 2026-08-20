@@ -101,8 +101,8 @@ function _marketMinPrice(item) {
   // higher floor and must be checked before the regular floor below, which
   // covers both active skill books (skillKey) and passive ones (passiveId —
   // class-exclusive and the 6 universal ones alike).
-  if (item.advSkillKey) return MARKET_MIN_PRICE_ADV_SKILL_BOOK;
-  if (item.skillKey || item.passiveId) return MARKET_MIN_PRICE_SKILL_BOOK;
+  if (item.advSkillKey) return MARKET_MIN_PRICE_ADV_SKILL_BOOK * qty;
+  if (item.skillKey || item.passiveId) return MARKET_MIN_PRICE_SKILL_BOOK * qty;
   if (item.rarity === 'epic' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_EPIC_GEAR;
   if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
   if (item.rarity === 'uncommon' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_UNCOMMON_GEAR;
