@@ -181,7 +181,7 @@ const {
   FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, skillPointBudget,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -8298,7 +8298,11 @@ io.on('connection', socket => {
       const _beforeLen = inv.length;
       const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
       const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
-      for (const [id, need] of Object.entries(REBIRTH_COST)) {
+      // Every 5th rebirth costs double (rebirthCostFor, shared/definitions.js)
+      // — based on the rebirth about to happen (current rebirths + 1), not
+      // the count already banked.
+      const _cost = rebirthCostFor(_lastStats.rebirths || 0);
+      for (const [id, need] of Object.entries(_cost)) {
         const have = matCount(id);
         if (have < need) {
           return socket.emit('rebirthError', { msg: `Нужно ${need} × ${matName(id)} (есть ${have})` });
@@ -8308,7 +8312,7 @@ io.on('connection', socket => {
       // isStackableItem, shared/definitions.js), so a plain qty-decrement
       // pass covers every one of them — no enhanced-item matching needed,
       // unlike craftGear's mats (which can carry a minEnhance).
-      for (const [id, need] of Object.entries(REBIRTH_COST)) {
+      for (const [id, need] of Object.entries(_cost)) {
         let left = need;
         for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
           const e = inv[i];

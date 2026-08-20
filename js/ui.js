@@ -642,7 +642,7 @@ function _rebirthCostDef(id) {
 function _rebirthReady() {
   if (!player) return false;
   if ((player.lvl || 1) < REBIRTH_LEVEL) return false;
-  return Object.entries(REBIRTH_COST).every(([id, need]) => countMaterial(id) >= need);
+  return Object.entries(rebirthCostFor(player.rebirths || 0)).every(([id, need]) => countMaterial(id) >= need);
 }
 
 // One reward row — icon + label — shared by every shop/reward panel below
@@ -658,7 +658,9 @@ function updateRebirthUI() {
   const el = document.getElementById('rebirth-body');
   if (!el) return;
   const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
-  const rows = Object.entries(REBIRTH_COST).map(([id, need]) => {
+  const _nextRebirthN = (player.rebirths || 0) + 1;
+  const _doubled = _nextRebirthN % 5 === 0;
+  const rows = Object.entries(rebirthCostFor(player.rebirths || 0)).map(([id, need]) => {
     const def = _rebirthCostDef(id);
     const have = countMaterial(id);
     const ok = have >= need;
@@ -666,6 +668,9 @@ function updateRebirthUI() {
     return ri(def ? def.img : '', label, '');
   }).join('');
   const ready = _rebirthReady();
+  const doubleHint = _doubled
+    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('rebirthDoubleCostFmt', { n: _nextRebirthN })}</div>`
+    : '';
 
   el.innerHTML = `
     <div class="sec-title">${t('rebirthTabLbl')}</div>
@@ -673,6 +678,7 @@ function updateRebirthUI() {
     <div style="padding:0 12px 12px;font-size:13px;font-weight:700;color:${lvlOk ? '#98e456' : '#f88'}">
       ${tVars('rebirthLevelReqFmt', { lvl: REBIRTH_LEVEL, cur: player.lvl || 1 })}
     </div>
+    ${doubleHint}
     <div class="vip-items-row" style="padding:0 12px">${rows}</div>
     <div style="padding:16px 12px 20px">
       <button class="upg-reset-btn${ready ? '' : ' disabled'}" onclick="${ready ? 'openRebirthConfirm()' : ''}">
