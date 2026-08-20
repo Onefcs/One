@@ -35,6 +35,41 @@ const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' armor/weapon, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
 const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any rarity below 'rare'
 
+// VIP 3+ trades away the flat MARKET_MAX_ACTIVE cap for no cap at all —
+// Infinity compares false against activeCount forever, so the check simply
+// never trips; .limit(0) is Mongo's own "no limit" convention, used wherever
+// this feeds a query instead of a comparison.
+function _marketMaxActive(vipLevel) {
+  return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? Infinity : MARKET_MAX_ACTIVE;
+}
+
+// 10% of what a market BUYER pays counts toward their VIP bar, same deposit
+// mechanic gramShopBuy's own pkg.gram uses — see marketBuy, server/handlers/market.js.
+const MARKET_VIP_PCT = 0.10;
+
+// What a listing looks like on the wire. The _id is stringified here rather
+// than at each call site, which is what keeps the browse/mine/listed payloads
+// identical to each other.
+function _marketListingData(l) {
+  return {
+    id: l._id.toString(), sellerId: l.sellerId, sellerUsername: l.sellerUsername,
+    item: l.item, price: l.price, createdAt: l.createdAt,
+  };
+}
+
+// The same listing seen from one account's history: which side of the trade
+// they were on, and who the other party was.
+function _marketHistoryData(l, myId) {
+  const asSeller = l.sellerId === myId;
+  return {
+    id: l._id.toString(),
+    item: l.item, price: l.price, status: l.status,
+    role: asSeller ? 'sell' : 'buy',
+    counterpart: asSeller ? (l.buyerUsername || null) : l.sellerUsername,
+    createdAt: l.createdAt, soldAt: l.soldAt,
+  };
+}
+
 function _round2(n) { return Math.round(n * 100) / 100; }
 
 // GRAM *balances* carry 7 decimals — kill drops accrue at GRAM_PER_LEVEL
@@ -183,6 +218,8 @@ module.exports = {
   // ReferenceError since.
   MARKET_MIN_PRICE, MARKET_MAX_PRICE, MARKET_FEE_PCT, MARKET_MAX_ACTIVE, MARKET_MAX_ACTIVE_VIP_LEVEL,
   MARKET_LIST_COOLDOWN_MS,
+  MARKET_VIP_PCT,
   _round2, _round7, _canonicalMarketItem, _marketMinPrice,
+  _marketMaxActive, _marketListingData, _marketHistoryData,
   _itemSlotOf, _isStackable, _invFindOwned, _invRemove, _invAdd, _invHasRoomFor,
 };
