@@ -1259,6 +1259,12 @@ const MAT_UPGRADE_RECIPES = [
   { from:'rece', to:'recl', count:20, chance:0.80 },
 ];
 
+// Recycle any 5 regular skill books (any class/skill, mixed) into one random
+// advanced ("2 профессия") skill book — any of the 20 book_adv_<cls>_<key>
+// entries, picked uniformly at craft time. See craftAdvSkillBook, server/
+// index.js, which rolls this itself the same way craftMatUpgrade does.
+const ADV_SKILL_BOOK_CRAFT = { count: 5, chance: 0.60 };
+
 const PET_CRAFT_RECIPES = [
   { rarity:'common',   nexumCost:500,  chance:1.0 },
   { rarity:'uncommon', nexumCost:2000, chance:1.0 },
@@ -2023,6 +2029,7 @@ if (typeof module !== 'undefined') module.exports = {
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  ADV_SKILL_BOOK_CRAFT,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,

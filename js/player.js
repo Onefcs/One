@@ -28,6 +28,16 @@ function countMaterial(id) {
   return item ? (item.qty || 1) : 0;
 }
 
+// Sum of every regular skill book owned, any class/skill mixed together —
+// what craftAdvSkillBook (server/index.js) consumes toward ADV_SKILL_BOOK_
+// CRAFT.count.
+function countSkillBooks() {
+  return player.inventory.reduce((s, i) => {
+    const mat = CRAFT_MATS.find(m => m.id === i.id);
+    return s + (mat && mat.skillKey ? (i.qty || 1) : 0);
+  }, 0);
+}
+
 function countEnhancedItem(id, minEnh) {
   return player.inventory.filter(i => i.id === id && (i.enhance || 0) >= minEnh).length;
 }

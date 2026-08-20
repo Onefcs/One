@@ -2967,6 +2967,10 @@ function netCraftMatUpgrade(from) {
   if (socket?.connected) socket.emit('craftMatUpgrade', { from });
 }
 
+function netCraftAdvSkillBook() {
+  if (socket?.connected) socket.emit('craftAdvSkillBook');
+}
+
 function netOpenLootBox(id) {
   if (socket?.connected) socket.emit('openLootBox', { id });
 }
@@ -3900,6 +3904,12 @@ function _initPetCraftHandlers(s) {
   });
   s.on('craftMatUpgradeError', ({ msg }) => {
     if (typeof onMatUpgradeError === 'function') onMatUpgradeError(msg);
+  });
+  s.on('advSkillBookCrafted', ({ success, id }) => {
+    if (typeof onAdvSkillBookCrafted === 'function') onAdvSkillBookCrafted(success, id);
+  });
+  s.on('craftAdvSkillBookError', ({ msg }) => {
+    if (typeof onAdvSkillBookCraftError === 'function') onAdvSkillBookCraftError(msg);
   });
 
   // Loot box opening — same "inventorySync already landed" shape as the

@@ -161,6 +161,7 @@ const {
   codexSetById, codexItemMeetsReq, codexTotalBonus,
   ENEMY_DEF, CHAR_DEF,
   PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  ADV_SKILL_BOOK_CRAFT,
   UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
@@ -6019,7 +6020,7 @@ io.on('connection', socket => {
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
     'requestPlayerProfile', 'resetUpgrades', 'rebirth', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'buyTeleportStone',
-    'craftBox', 'craftMatUpgrade', 'openLootBox',
+    'craftBox', 'craftMatUpgrade', 'craftAdvSkillBook', 'openLootBox',
     // Both hit the database on every call — seasonRating sorts the whole
     // player collection, seasonSetTier writes the selected band.
     'seasonRating', 'seasonSetTier',
@@ -8591,6 +8592,47 @@ io.on('connection', socket => {
     if (success) _invAdd(inv, { ...toMat, qty: 1 });
     _commitServerItems(inv, null, 'mat_upgrade', { from: rec.from, to: rec.to, success }, { beforeLen: _beforeLen });
     socket.emit('matUpgraded', { from: rec.from, to: rec.to, success });
+  });
+
+  // ── Advanced skill book crafting (Кузнец → Материалы → Книги) ──────────────
+  // Recycles any 5 regular skill books (any class/skill, mixed) into one
+  // random advanced ("2 профессия") skill book — ADV_SKILL_BOOK_CRAFT, shared/
+  // definitions.js. Same closing as craftMatUpgrade above: materials are
+  // spent whether or not the roll succeeds, synchronous handler so no
+  // double-submit race window.
+  safeOn('craftAdvSkillBook', () => {
+    if (!authed) return;
+    if (!_lastStats || !Array.isArray(_lastStats.inventory)) {
+      return socket.emit('craftAdvSkillBookError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+    }
+    if (_itemsBusy()) return socket.emit('craftAdvSkillBookError', { msg: _ITEMS_BUSY_MSG });
+    const inv = _lastStats.inventory;
+    const _beforeLen = inv.length;
+    const _skillBookIds = CRAFT_MATS.filter(m => m.skillKey).map(m => m.id);
+    const _advBooks = CRAFT_MATS.filter(m => m.advSkillKey);
+    const have = inv.reduce((s, i) => s + (i && _skillBookIds.includes(i.id) ? (i.qty || 1) : 0), 0);
+    if (have < ADV_SKILL_BOOK_CRAFT.count) {
+      return socket.emit('craftAdvSkillBookError', { msg: `Нужно ${ADV_SKILL_BOOK_CRAFT.count} книг навыков (есть ${have})` });
+    }
+    const hasAdvAlready = inv.some(i => i && _advBooks.some(b => b.id === i.id));
+    if (!hasAdvAlready && inv.length >= SERVER_INV_MAX) {
+      return socket.emit('craftAdvSkillBookError', { msg: 'Инвентарь полон' });
+    }
+    let left = ADV_SKILL_BOOK_CRAFT.count;
+    for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
+      const e = inv[i];
+      if (!e || !_skillBookIds.includes(e.id)) continue;
+      const qty = e.qty || 1;
+      const take = Math.min(qty, left);
+      if (qty > take) e.qty = qty - take;
+      else inv.splice(i, 1);
+      left -= take;
+    }
+    const success = Math.random() < ADV_SKILL_BOOK_CRAFT.chance;
+    const wonBook = success ? _advBooks[Math.floor(Math.random() * _advBooks.length)] : null;
+    if (wonBook) _invAdd(inv, { ...wonBook, qty: 1 });
+    _commitServerItems(inv, null, 'adv_skill_book_craft', { success, wonId: wonBook ? wonBook.id : null }, { beforeLen: _beforeLen });
+    socket.emit('advSkillBookCrafted', { success, id: wonBook ? wonBook.id : null });
   });
 
   // ── Loot box opening (inventory item modal → "Открыть") ─────────────────────

@@ -418,6 +418,21 @@ function _craftsmanMatsTab() {
   });
   html += '</div>';
 
+  // Advanced ("2 профессия") skill books — recycle 5 regular skill books
+  // (any class/skill mixed) into one random advanced book. Single fixed
+  // recipe (ADV_SKILL_BOOK_CRAFT, shared/definitions.js), so no index to
+  // thread through like MAT_UPGRADE_RECIPES above.
+  if (typeof ADV_SKILL_BOOK_CRAFT !== 'undefined' && CRAFT_MATS.some(m => m.advSkillKey)) {
+    const haveBooks = countSkillBooks();
+    const canCraftBook = haveBooks >= ADV_SKILL_BOOK_CRAFT.count && invHasSpace();
+    html += `<div class="craft-group-hdr" style="color:#f5c542">${typeof t === 'function' ? t('craftAdvBooksHdr') : 'Книги 2 профессии'}</div><div class="craft-items-grid">
+      <div class="craft-item-cell${canCraftBook ? ' craftable' : ''}" onclick="openAdvBookCraftModal()" style="border-color:#f5c54266">
+        <div class="craft-item-cell-icon">${iconHTML('book', 32, '#f5c542')}</div>
+        <div class="craft-item-cell-name" style="color:#f5c542">${typeof t === 'function' ? t('craftAdvBookRandom') : 'Случайная книга'}</div>
+      </div>
+    </div>`;
+  }
+
   // Камни заточки stood here. They are no longer craftable anywhere — the
   // recipes are gone from shared/definitions.js and the server refuses the
   // craft. Stones still drop from monsters, come with VIP levels and are sold
@@ -898,6 +913,61 @@ function onMatUpgradeError(msg) {
   _pendingMatUpgradeIdx = null;
   _shopMsg(msg || 'Ошибка');
   if (idx !== null) openMatModal(idx);
+}
+
+// Single fixed recipe (ADV_SKILL_BOOK_CRAFT), so unlike openMatModal there's
+// no idx to thread through — just re-open this same screen on either result.
+function openAdvBookCraftModal() {
+  if (!player) return;
+  const have = countSkillBooks();
+  const ok = have >= ADV_SKILL_BOOK_CRAFT.count;
+  const canCraft = ok && invHasSpace();
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-icon">${iconHTML('book', 52, '#f5c542')}</div>
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:#f5c542;text-shadow:0 0 8px #f5c54266">${typeof t === 'function' ? t('craftAdvBookRandom') : 'Случайная книга 2 профессии'}</div>
+      </div>
+    </div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
+    <div class="craft-reqs-list">
+      <div class="craft-req-row">
+        <span class="craft-req-icon">${iconHTML('book', 20, '#c48a3a')}</span>
+        <span class="craft-req-name">${typeof t === 'function' ? t('craftAnySkillBook') : 'Любые книги навыков'}</span>
+        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${ADV_SKILL_BOOK_CRAFT.count}</span>
+      </div>
+    </div>
+    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(ADV_SKILL_BOOK_CRAFT.chance * 100)}%</b></div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftAdvSkillBook()">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
+  `;
+}
+
+// Settled server-side (craftAdvSkillBook, server/index.js) — same reasoning
+// as craftMatUpgrade above. The checks here just refuse an obviously-
+// impossible craft before the round trip.
+function craftAdvSkillBook() {
+  if (!player) return;
+  if (countSkillBooks() < ADV_SKILL_BOOK_CRAFT.count) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
+  if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  if (typeof netCraftAdvSkillBook === 'function') netCraftAdvSkillBook();
+}
+
+// The server took the 5 skill books and, on success, added the random
+// advanced book itself; its inventorySync has already landed — only the
+// panel to refresh with the right message for the roll's outcome.
+function onAdvSkillBookCrafted(success, id) {
+  const book = CRAFT_MATS.find(m => m.id === id);
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _shopMsg(success
+    ? (typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (book ? book.name : '')
+    : (typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.'));
+  openAdvBookCraftModal();
+}
+function onAdvSkillBookCraftError(msg) {
+  _shopMsg(msg || 'Ошибка');
+  openAdvBookCraftModal();
 }
 
 // ── Storage ─────────────────────────────────────────────
