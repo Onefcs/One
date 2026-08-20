@@ -25,7 +25,8 @@ const MARKET_LIST_COOLDOWN_MS = 3000;
 // relative to how easy they are to farm. Keys/recipes/stones are PER UNIT
 // (the listing's price covers its whole stack, see _canonicalMarketItem's
 // qty); rare gear is a flat per-listing floor since it isn't stackable.
-const MARKET_MIN_PRICE_KEY         = 0.01; // key_uncommon / key_rare, per key
+const MARKET_MIN_PRICE_KEY_UNCOMMON = 0.003; // key_uncommon, per key
+const MARKET_MIN_PRICE_KEY_RARE     = 0.006; // key_rare (blue), per key
 const MARKET_MIN_PRICE_RECIPE      = 0.01; // slot:'recipe' (recu/recr/rece/recl), per scroll
 const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
@@ -84,7 +85,8 @@ function _marketMinPrice(item) {
   const qty = item.qty || 1;
   if (item.id === 'norm_stone') return MARKET_MIN_PRICE_STONE * qty;
   if (item.id === 'bless_stone') return MARKET_MIN_PRICE_BLESS_STONE * qty;
-  if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY * qty;
+  if (item.id === 'key_rare') return MARKET_MIN_PRICE_KEY_RARE * qty;
+  if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY_UNCOMMON * qty;
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'box') {
     return (item.id === 'box_rare' ? MARKET_MIN_PRICE_BOX_RARE : MARKET_MIN_PRICE_BOX_UNCOMMON) * qty;

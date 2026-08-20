@@ -4116,7 +4116,8 @@ function _marketMinPriceFor(it, qty) {
   const n = qty || it.qty || 1;
   if (it.id === 'norm_stone') return 0.40 * n;
   if (it.id === 'bless_stone') return 1.5 * n;
-  if (it.id && it.id.startsWith('key_')) return 0.01 * n;
+  if (it.id === 'key_rare') return 0.006 * n;
+  if (it.id && it.id.startsWith('key_')) return 0.003 * n;
   if (it.slot === 'recipe') return 0.01 * n;
   if (it.slot === 'box') return (it.id === 'box_rare' ? 2 : 1) * n;
   // Cloak/artifact keep their own flat floor at every rarity below 'rare' —
