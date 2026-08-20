@@ -523,6 +523,11 @@ scenario('events: each extracted machine builds standalone, and refuses to build
         '_a3OpenWindow', '_a3TryStart', '_a3TryStartSafe', '_a3Deploy',
         '_a3Eliminate', '_a3Finish', '_a3Frozen', '_a3Allies', '_a3Enemies',
         'ARENA3_MIN_LEVEL', 'ARENA3_REWARD']],
+    ['farm2', require('../server/events/farm2'),
+      { io: fakeIo, _returnToHub: noop },
+      ['_farm2', '_farm2Starting', '_createFarm2Room', '_farm2Finish', '_farm2Eliminate',
+        '_farm2ReleaseRun', '_farm2CascadeCheck', '_farm2EjectOnDisconnect',
+        '_farm2Groups', '_farm2GroupOf', '_farm2GroupPush', '_farm2GroupBroadcastList']],
   ];
 
   for (const [name, create, deps, surface] of machines) {
