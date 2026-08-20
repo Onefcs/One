@@ -2715,6 +2715,33 @@ scenario('race: a grant landing during a shop purchase is not erased by its stal
   await c.close();
 });
 
+scenario('wallet: a GRAM purchase spends the package price and reports the balance left', async () => {
+  // The GRAM wallet is where real money enters the game, and it had the same
+  // hole the forge and the season did: zeroing its balance writes — so the
+  // three `session.gram = <what the database returned>` assignments go
+  // nowhere — left the harness green at 608 passed. Found by mutation while
+  // moving it to server/handlers/wallet.js.
+  const pkg = _GRAM_SHOP_PKGS[0];
+  const START = pkg.gram + 3;          // a remainder, so a dropped write cannot
+                                        // pass by landing on the right number
+  const c = await connectWithSaved('harness_wallet_buy', {
+    lvl: 20, gold: 0, inventory: [], gramBalance: START,
+  });
+  await enterWorld(c, 'mage');
+
+  const done = c.wait('gramShopResult', { timeout: 8000 }).then(v => ({ ok: v })).catch(() => null);
+  const failed = c.wait('gramShopError', { timeout: 8000 }).then(v => ({ err: v })).catch(() => null);
+  c.emit('gramShopBuy', { pkgId: pkg.id });
+  const res = await Promise.race([done, failed]);
+
+  ok(res && res.ok, 'the purchase goes through', res && res.err ? res.err.msg : 'no reply');
+  if (res && res.ok) {
+    eq(res.ok.newBalance, START - pkg.gram, 'the package price is spent and the remainder reported');
+    eq(res.ok.newGold, pkg.gold || 0, 'and the gold it carries is granted');
+  }
+  await c.close();
+});
+
 scenario('season: stored points and quest progress survive into the session', async () => {
   // Season points decide who takes a prize, and they are the one part of the
   // save the sanitizer strips from the client blob entirely — the stored
