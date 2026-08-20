@@ -658,6 +658,12 @@ const _VIP_BP = [
 ];
 
 // ── GRAM Shop ─────────────────────────────────────────────────────────────────
+// 30% discount across every GRAM-priced pack (regular/pet/epic +Pack, season,
+// special). Mirrors js/ui.js's own PACK_DISCOUNT_PCT/packPrice, which only
+// draws the struck-through price — this is what actually gets charged, in
+// both gramShopBuy and specialShopBuy below.
+const PACK_DISCOUNT_PCT = 0.3;
+function packPrice(gram) { return Math.max(1, Math.round(gram * (1 - PACK_DISCOUNT_PCT))); }
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
@@ -6935,7 +6941,8 @@ io.on('connection', socket => {
         _chosenPet = ITEM_DEF.find(d => d.id === petId && d.slot === 'pet' && d.rarity === pkg.petChoice);
         if (!_chosenPet) return socket.emit('gramShopError', { msg: 'Выберите питомца' });
       }
-      if (_liveGram() < pkg.gram) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
+      const _price = packPrice(pkg.gram);
+      if (_liveGram() < _price) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
 
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
@@ -6976,7 +6983,7 @@ io.on('connection', socket => {
       // if the stored balance covers the price (see the balance block at the
       // top of this file), so nothing here can spend GRAM the account doesn't
       // have, whatever the cached figure said a moment ago.
-      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', pkg.gram);
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', _price);
       if (_paid === null) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
       _gramBalance = _paid;
 
@@ -7101,7 +7108,7 @@ io.on('connection', socket => {
       const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
       const _prevVipLvl = _vipLvl;
       if (_vipLvl < 10) {
-        _vipDep += pkg.gram;
+        _vipDep += _price;
         while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
           _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
           _vipLvl++;
@@ -7124,7 +7131,7 @@ io.on('connection', socket => {
         const _target = _socketForTelegramId(authed.telegramId);
         const _result = _target && _target.data._applyGrant
           ? _target.data._applyGrant({
-              addItems: _addedItems, goldDelta: pkg.gold || 0, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: pkg.gram,
+              addItems: _addedItems, goldDelta: pkg.gold || 0, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: _price,
             }, 'gram_shop_cross_session', { pkg: pkg.id, gram: pkg.gram })
           : null;
         if (!_result) {
@@ -7257,7 +7264,8 @@ io.on('connection', socket => {
         if (!_chosenPet) return socket.emit('specialShopError', { msg: 'Выберите питомца' });
       }
 
-      if (_liveGram() < pkg.gram) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
+      const _price = packPrice(pkg.gram);
+      if (_liveGram() < _price) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
 
       const doc = await PlayerModel.findById(authed._id);
       if (!doc) return;
@@ -7303,7 +7311,7 @@ io.on('connection', socket => {
 
       // The deduction is the affordability check — same _spendBalance rule as
       // every other GRAM purchase in this file.
-      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', pkg.gram);
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', _price);
       if (_paid === null) return socket.emit('specialShopError', { msg: 'Недостаточно GRAM' });
       _gramBalance = _paid;
 
@@ -7373,7 +7381,7 @@ io.on('connection', socket => {
       const _vipPend = Array.isArray(saved.vipPending) ? [...saved.vipPending] : [];
       const _prevVipLvl = _vipLvl;
       if (_vipLvl < 10) {
-        _vipDep += pkg.gram;
+        _vipDep += _price;
         while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
           _vipDep -= VIP_THRESHOLDS[_vipLvl + 1];
           _vipLvl++;
@@ -7398,7 +7406,7 @@ io.on('connection', socket => {
         const _target = _socketForTelegramId(authed.telegramId);
         const _result = _target && _target.data._applyGrant
           ? _target.data._applyGrant({
-              addItems: _addedItems, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: pkg.gram,
+              addItems: _addedItems, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: _price,
             }, 'special_shop_cross_session', { pkg: pkg.id, gram: pkg.gram })
           : null;
         if (!_result) {

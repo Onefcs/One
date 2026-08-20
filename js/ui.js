@@ -6012,6 +6012,19 @@ function _clearPendingSell() {
 // ─────────────────────────────────────────────────────────
 //  GRAM SHOP PANEL
 // ─────────────────────────────────────────────────────────
+// 30% discount across every GRAM-priced pack (regular/pet/special/season/
+// +Pack). server/index.js applies the same PACK_DISCOUNT_PCT to what it
+// actually charges — this copy only decides what to show/gate on, never
+// what gets spent.
+const PACK_DISCOUNT_PCT = 0.3;
+function packPrice(gram) { return Math.max(1, Math.round(gram * (1 - PACK_DISCOUNT_PCT))); }
+// Struck-through original price + the discounted one, for the shop cards
+// and confirm modals below.
+function packPriceHtml(gram, color) {
+  return `<span style="text-decoration:line-through;opacity:.5;margin-right:5px">${gram}</span>`
+       + `<span style="color:${color || '#8bd66a'}">${packPrice(gram)} GRAM</span>`
+       + `<span style="margin-left:6px;padding:1px 5px;border-radius:4px;background:rgba(235,78,97,.18);color:#eb4e61;font-size:10px;font-weight:800;vertical-align:2px">-30%</span>`;
+}
 const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:1000,   potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Common',   weapon:'Common',   bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
@@ -6063,13 +6076,13 @@ function _seasonPkgContents(pkg) {
 }
 
 function _seasonShopPkgHtml(pkg, bal) {
-  const canAfford = bal >= pkg.gram;
+  const canAfford = bal >= packPrice(pkg.gram);
   const { icons, line } = _seasonPkgContents(pkg);
   const rows = icons.map(r => ri(r.img, r.label, '')).join('');
   return `
     <div class="gram-shop-card" style="border-color:rgba(80,175,149,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
-        <b style="color:#7ee0c0;font-size:14px">${pkg.gram} GRAM</b>
+        <b style="font-size:14px">${packPriceHtml(pkg.gram, '#7ee0c0')}</b>
         <span style="color:#a3957c;font-size:11.5px;text-align:right">${line}</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${rows}</div>
@@ -6088,8 +6101,9 @@ function openSeasonShopConfirm(pkgId) {
   const pkg = _SEASON_SHOP_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
-  if (bal < pkg.gram) return;
-  if (!confirm(tVars('seasonShopConfirm', { g: pkg.gram, items: _seasonPkgContents(pkg).line }))) return;
+  const price = packPrice(pkg.gram);
+  if (bal < price) return;
+  if (!confirm(tVars('seasonShopConfirm', { g: price, items: _seasonPkgContents(pkg).line }))) return;
   if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId);
 }
 
@@ -6195,7 +6209,7 @@ function _shopExtraRewardRows(pkg, ri) {
 const _seasonPointsUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2350af95' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>`;
 
 function _specialPkgHtml(pkg, bal) {
-  const canAfford = bal >= pkg.gram;
+  const canAfford = bal >= packPrice(pkg.gram);
   const bookUri = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c542' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5'/><path d='M4 4.5v17'/><line x1='9' y1='7' x2='16' y2='7'/><line x1='9' y1='11' x2='16' y2='11'/></svg>`;
   // bless/seasonPoints guarded rather than assumed: special270 (the top
   // tier) carries bless but no seasonPoints, and adds armor/weapon/bonusSP/
@@ -6213,7 +6227,7 @@ function _specialPkgHtml(pkg, bal) {
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -6234,7 +6248,7 @@ function openSpecialPickerModal(pkgId) {
   const pkg = _SPECIAL_SHOP_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg || !player) return;
   const bal = window._gramBalance || 0;
-  if (bal < pkg.gram) return;
+  if (bal < packPrice(pkg.gram)) return;
   const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || [];
   if (!advSkills.length) return;
   // special270 is the one package here that also carries petChoice — seed a
@@ -6311,7 +6325,7 @@ function _renderSpecialPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="_specialPicker=null;document.getElementById('special-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('specialPickerHint')}</div>
@@ -6322,7 +6336,7 @@ function _renderSpecialPicker() {
       </div>
       ${petSection}
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px${ready ? '' : ';opacity:.4'}"${ready ? '' : ' disabled'}
-        onclick="${ready ? '_confirmSpecialBuy()' : ''}">${tVars('buyForFmt', { price: pkg.gram })}</button>
+        onclick="${ready ? '_confirmSpecialBuy()' : ''}">${tVars('buyForFmt', { price: packPrice(pkg.gram) })}</button>
     </div>`;
 }
 
@@ -6400,14 +6414,14 @@ function _petCloakArtifactRows(pkg, ri) {
 }
 
 function _specialPetPkgHtml(pkg, bal) {
-  const canAfford = bal >= pkg.gram;
+  const canAfford = bal >= packPrice(pkg.gram);
   const rows = _petCloakArtifactRows(pkg, ri);
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -6427,7 +6441,7 @@ function openSpecialPetPickerModal(pkgId) {
   const pkg = _SPECIAL_PET_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg || !player) return;
   const bal = window._gramBalance || 0;
-  if (bal < pkg.gram) return;
+  if (bal < packPrice(pkg.gram)) return;
   const pets = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === pkg.petChoice);
   if (!pets.length) return;
   _petPicker = { pkgId, petId: pets[0].id };
@@ -6463,13 +6477,13 @@ function _renderPetPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="_petPicker=null;document.getElementById('pet-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('petPickerHint')}</div>
       <div style="margin-bottom:10px">${rows}</div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
-        onclick="_confirmPetPkgBuy()">${tVars('buyForFmt', { price: pkg.gram })}</button>
+        onclick="_confirmPetPkgBuy()">${tVars('buyForFmt', { price: packPrice(pkg.gram) })}</button>
     </div>`;
 }
 
@@ -6534,7 +6548,7 @@ function _renderGramShopPanel() {
 }
 
 function _gramShopPkgHtml(pkg, bal) {
-  const canAfford = bal >= pkg.gram;
+  const canAfford = bal >= packPrice(pkg.gram);
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
 
   // same ri() pattern as VIP
@@ -6565,7 +6579,7 @@ function _gramShopPkgHtml(pkg, bal) {
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${pkg.gram} GRAM</div>
+        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -6630,7 +6644,8 @@ function openGramShopConfirm(pkgId) {
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || (pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
-  const canAfford = bal >= pkg.gram;
+  const price = packPrice(pkg.gram);
+  const canAfford = bal >= price;
   const existing = document.getElementById('gram-shop-confirm-ov');
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
@@ -6666,7 +6681,7 @@ function openGramShopConfirm(pkgId) {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.gram} GRAM</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
@@ -6674,14 +6689,14 @@ function openGramShopConfirm(pkgId) {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
-        <span style="font-weight:700;color:${pkg.color}">${pkg.gram} GRAM</span>
+        <span style="font-weight:700">${packPriceHtml(pkg.gram, pkg.color)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('yourBalanceLbl')}</span>
         <span style="font-weight:700;color:#f5dbae">${bal.toFixed(7)} GRAM</span>
       </div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px${canAfford ? '' : ';opacity:.5;cursor:not-allowed'}"
-        onclick="${canAfford ? `_confirmGramShopBuy('${pkgId}')` : ''}">${canAfford ? tVars('buyForFmt', { price: pkg.gram }) : t('notEnoughGramLbl')}</button>
+        onclick="${canAfford ? `_confirmGramShopBuy('${pkgId}')` : ''}">${canAfford ? tVars('buyForFmt', { price }) : t('notEnoughGramLbl')}</button>
     </div>`;
   document.body.appendChild(ov);
 }
@@ -6713,7 +6728,7 @@ function onGramShopResult(data) {
   // so they have no label of their own either.
   const ppkg = (pkg || spkg) ? null : _SPECIAL_PET_PKGS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label
-            : spkg ? tVars('seasonPkgLabelFmt', { g: spkg.gram })
+            : spkg ? tVars('seasonPkgLabelFmt', { g: packPrice(spkg.gram) })
             : ppkg ? ppkg.label
             : t('packageFallbackLbl');
   _marketToast(tVars('pkgBoughtToast', { lbl }), 'ok');
