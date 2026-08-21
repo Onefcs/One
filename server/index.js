@@ -7935,14 +7935,23 @@ io.on('connection', socket => {
     // the paths the PvP kill hooks don't (the event boss, a stray mob).
     _pvpEliminate(socket.id);
     const _gwP = currentRoom?.players.get(socket.id);
-    // Guild War: dying inside the zone while it's still live respawns back
-    // inside the fight instead of ejecting to the hub — the first "die and
-    // come back in the same zone" path in this game (every other zone's
-    // respawn/elimination ejects). The phase check covers dying right as
-    // 22:15 closes: a respawn click that lands after the window shut sends
-    // the player to the hub like normal instead of into a closed zone.
-    if (_gwP?._guildWarZone && _gw.phase === 'live') currentRoom.guildWarRespawn(socket.id);
-    else if (currentRoom) currentRoom.respawnPlayer(socket.id);
+    // Guild War: dying inside the zone while it's still live now ejects to
+    // the hub, same as every other instanced mode (_pvpEliminate's own
+    // db/a3/race10/fear/coop paths above) — it used to respawn back inside
+    // the same fight instead, the one "die and come back in the same zone"
+    // exception in this game. The phase check covers dying right as 22:15
+    // closes: a respawn click that lands after the window shut just falls
+    // through to the plain respawnPlayer below like normal, same as before.
+    //
+    // _forceEnterLocation reassigns currentRoom to the hub Room on success
+    // (_doEnterLocation) — the unconditional respawnPlayer call right after
+    // this then runs THERE, which is what actually heals to full HP at the
+    // hub's own spawn (respawnPlayer sets hp = maxHp; the floor change alone
+    // does not — see setPlayerChar's own "hp === 0 is meaningful" comment).
+    // Same two-step shape _fearFinish's own _returnToHub + this same
+    // fallback already relies on for Fear's death-to-hub heal.
+    if (_gwP?._guildWarZone && _gw.phase === 'live') socket.data._forceEnterLocation?.('hub');
+    if (currentRoom) currentRoom.respawnPlayer(socket.id);
   });
 
   // ── Death Battle (Битва на смерть) ─────────────────────────────────────────

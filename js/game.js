@@ -624,7 +624,12 @@ function update(dt, realDt) {
       const _pRoom = _getRoomAt(player.x, player.y);
       let closestD2 = Infinity;
       serverEnemies.forEach(e => {
-        if ((e.hp || 0) <= 0) return;
+        // Own castle excluded the same reason the ally exclusion just below
+        // exists for: the server refuses a hit on it either way ('own_tower',
+        // Room.js), so AUTO mode locking onto it was just a wasted swing that
+        // blocked a real target from being picked instead (see
+        // _gwTowerUnselectable, js/input.js).
+        if ((e.hp || 0) <= 0 || _gwTowerUnselectable(e)) return;
         // When player is inside a room, only target enemies in that same room
         if (_pRoom) {
           const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);

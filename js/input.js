@@ -141,6 +141,22 @@ function _gwUnselectable(id) {
   return !!op && op.clanName === myClan;
 }
 
+// Same reasoning as _gwUnselectable just above, for the castle itself rather
+// than a clanmate: the server refuses a hit on your own currently-held tower
+// outright ('own_tower', Room.js), so offering it as a target/assist
+// candidate is just a wasted swing and a wrong lock. Takes the enemy record
+// (not just an id) since the tower lives in the enemy list, not
+// otherPlayers. Ownership isn't on the enemy record itself — netcodec's
+// fixed enemy wire shape has no room for it, see updateGuildWarHpBar's own
+// comment (js/ui.js) — so this reads _gwState instead, kept in sync by
+// js/network.js's guildWarState handler.
+function _gwTowerUnselectable(e) {
+  if (!e || e.eid !== 'guildwar_castle') return false;
+  const myClan = (typeof clanData !== 'undefined' && clanData && clanData.name) || null;
+  if (!myClan) return false;
+  return typeof _gwState !== 'undefined' && _gwState && _gwState.ownerClanName === myClan;
+}
+
 // True while racing (Кровавая Башня) for a racer in a different lane than
 // yours — visible (see the pIsRacer exception in Room.js's per-player
 // candidate filter, server/game/Room.js), but not selectable: every lane is
@@ -165,7 +181,7 @@ function cycleTarget() {
   const activeEnemies = serverEnemies; // see the comment on the identical fallback in js/ui.js's drawTargetFrame()
   const candidates = [];
   activeEnemies.forEach(e => {
-    if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y) && !_a3Unselectable(e.id))
+    if ((e.hp || 0) > 0 && _isOnScreen(e.x, e.y) && !_a3Unselectable(e.id) && !_gwTowerUnselectable(e))
       candidates.push({ id: e.id, isPlayer: false, d: dist(e.x, e.y, player.x, player.y) });
   });
   // Selectable regardless of pvpMode: locking onto a player this way is only
@@ -196,7 +212,7 @@ function _trySelectEntityAtTouch(cx, cy) {
   const tapR = 28;
   let best = null, bestD = Infinity;
   activeEnemies.forEach(e => {
-    if ((e.hp || 0) <= 0 || _a3Unselectable(e.id)) return;
+    if ((e.hp || 0) <= 0 || _a3Unselectable(e.id) || _gwTowerUnselectable(e)) return;
     const d = dist(worldX, worldY, e.x, e.y);
     if (d < e.size + tapR && d < bestD) { bestD = d; best = { id: e.id, isPlayer: false }; }
   });

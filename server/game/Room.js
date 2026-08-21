@@ -3178,12 +3178,12 @@ class Room {
     return e;
   }
 
-  // Guild War in-zone respawn: the first "die and come back inside the same
-  // fight" path in this file — every other zone (respawnPlayer,
-  // deathBattleReturn below, the death battle's own return-to-previous-floor
-  // in server/index.js) ejects the player out on death. Picks a random point
-  // off the zone's own spawn ring (dungeon.js's
-  // guildWar.spawns, the same ring used for initial entry). Deliberately
+  // Guild War entry placement: spreads a fresh entrant across the zone's own
+  // spawn ring (dungeon.js's guildWar.spawns) instead of landing everyone on
+  // the same tile — called from _doEnterLocation (server/index.js) on a walk
+  // in. No longer used for death — dying inside the zone now ejects to the
+  // hub like every other instanced mode (server/index.js's 'respawn'
+  // handler), instead of respawning back inside the same fight. Deliberately
   // leaves p._guildWarZone/p.pvpMode untouched — the per-tick bounds check in
   // _tick re-confirms both next frame regardless (see the guild-war block
   // there), and clearing them here would just be a one-frame flicker.
