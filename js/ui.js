@@ -6285,31 +6285,24 @@ function _clearPendingSell() {
 // ─────────────────────────────────────────────────────────
 //  GRAM SHOP PANEL
 // ─────────────────────────────────────────────────────────
-// 30% discount across every GRAM-priced pack (regular/pet/special/season/
-// +Pack). server/index.js applies the same PACK_DISCOUNT_PCT to what it
-// actually charges — this copy only decides what to show/gate on, never
-// what gets spent.
-const PACK_DISCOUNT_PCT = 0.3;
-function packPrice(gram) { return Math.max(1, Math.round(gram * (1 - PACK_DISCOUNT_PCT))); }
-// Struck-through original price + the discounted one, for the shop cards
-// and confirm modals below.
+// Every package sells at its own nominal price — the 30% discount that used
+// to apply here (and the per-package noDiscount flag that opted specific
+// packs out of it) has been removed entirely. server/shop.js's own
+// pkgPrice(pkg) is what actually gets charged; this copy only decides what
+// to show/gate on.
+function pkgPrice(pkg) { return pkg.gram; }
+// Plain price line for the shop cards and confirm modals below — no
+// strikethrough, no discount badge.
 function packPriceHtml(gram, color) {
-  return `<span style="text-decoration:line-through;opacity:.5;margin-right:5px">${gram}</span>`
-       + `<span style="color:${color || '#8bd66a'}">${packPrice(gram)} GRAM</span>`
-       + `<span style="margin-left:6px;padding:1px 5px;border-radius:4px;background:rgba(235,78,97,.18);color:#eb4e61;font-size:10px;font-weight:800;vertical-align:2px">-30%</span>`;
+  return `<span style="color:${color || '#8bd66a'}">${gram} GRAM</span>`;
 }
-// rmat1-3 (Перерождение tab) sell at face value — no 30% off — so their
-// actual charged price has to skip packPrice() the same way server/index.js's
-// own pkgPrice(pkg) does.
-function pkgPrice(pkg) { return pkg.noDiscount ? pkg.gram : packPrice(pkg.gram); }
 const _GRAM_SHOP_PKGS_UI = [
   // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
   // branch): x2 xp, +30% bonus-loot re-roll chance, +10% Liberty drop chance,
-  // for as long as the current season is running. Flat-priced like the rmat
-  // packs below, not the usual 30% off. Own reward-row rendering in
-  // _shopExtraRewardRows (pkg.seasonTicket branch) since none of the usual
-  // reward kinds (armor/weapon/potions/...) apply.
-  { id:'season_ticket', gram:15, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', noDiscount:true, seasonTicket:true },
+  // for as long as the current season is running. Own reward-row rendering
+  // in _shopExtraRewardRows (pkg.seasonTicket branch) since none of the
+  // usual reward kinds (armor/weapon/potions/...) apply.
+  { id:'season_ticket', gram:15, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
   { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
   { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
@@ -6320,12 +6313,12 @@ const _GRAM_SHOP_PKGS_UI = [
   // (_EPIC_PACK_PKG below) — see that comment for why.
   // Перерождение tab — pure material packs (rebirth itself still happens
   // from the Персонаж → Перерождение panel, see updateRebirthUI; these only
-  // grant the listed items, at face value — noDiscount skips the usual 30%).
-  { id:'rmat1', gram:25, get label() { return t('rebirthMatPkgLabel_rmat1'); }, color:'#e5aa52', noDiscount:true, shopTab:'rebirth',
+  // grant the listed items).
+  { id:'rmat1', gram:25, get label() { return t('rebirthMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'rebirth',
     boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
-  { id:'rmat2', gram:40, get label() { return t('rebirthMatPkgLabel_rmat2'); }, color:'#e5aa52', noDiscount:true, shopTab:'rebirth',
+  { id:'rmat2', gram:40, get label() { return t('rebirthMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'rebirth',
     boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
-  { id:'rmat3', gram:80, get label() { return t('rebirthMatPkgLabel_rmat3'); }, color:'#e5aa52', noDiscount:true, shopTab:'rebirth',
+  { id:'rmat3', gram:80, get label() { return t('rebirthMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'rebirth',
     boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
 ];
 
@@ -6400,15 +6393,47 @@ function _shopExtraRewardRows(pkg, ri) {
   }
   if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');
   if (pkg.nexum) rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'epic');
-  // Сезонный билет — a status effect, not a granted item, so its own three
-  // rows read straight off the shared SEASON_TICKET_* constants (shared/
-  // definitions.js) rather than duplicating the numbers here.
+  // Сезонный билет — a status effect, not a granted item: just its own name
+  // and icon here, tap it for the full breakdown (_openSeasonTicketInfo).
   if (pkg.seasonTicket) {
-    rows += ri('/images/season_ticket.png', tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT }), 'gold');
-    rows += ri('/images/material/boxr.png', tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT }), 'gold');
-    rows += ri('/images/nexum-coin_v2.png', tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT }), 'gold');
+    rows += `<div class="vip-ri vip-ri-gold" style="cursor:pointer" onclick="event.stopPropagation();_openSeasonTicketInfo()">
+      <img class="vip-ri-img" src="/images/season_ticket.png">
+      <span class="vip-ri-label">${t('seasonTicketShopLbl')}</span>
+    </div>`;
   }
   return rows;
+}
+
+// Full breakdown for the Сезонный билет row above — the card itself only
+// shows the name/icon, tapping it opens this. Point VALUES come straight off
+// the shared SEASON_TICKET_* constants (shared/definitions.js), never
+// duplicated here; the duration line reuses the same seasonEndsIn/seasonEnded
+// text and countdown the Сезон panel's own info tab shows (_seasonInfoHTML).
+function _openSeasonTicketInfo() {
+  const existing = document.getElementById('season-ticket-info-ov');
+  if (existing) existing.remove();
+  const st = _seasonState || {};
+  const left = Math.max(0, (st.endAt || 0) - Date.now());
+  const durationLine = (st.active && left > 0) ? tVars('seasonEndsIn', { t: _fmtEventEta(left) }) : t('seasonEnded');
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'season-ticket-info-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <img src="/images/season_ticket.png" width="40" height="40" style="margin-right:10px;border-radius:6px">
+        <div style="font-size:16px;font-weight:800;color:#ffcf56">${t('seasonTicketShopLbl')}</div>
+        <button onclick="document.getElementById('season-ticket-info-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.9">
+        <div>${tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT })}</div>
+        <div>${tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT })}</div>
+        <div>${tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT })}</div>
+      </div>
+      <div style="font-size:13px;color:#7ee0c0;text-align:center;font-weight:700">${durationLine}</div>
+    </div>`;
+  document.body.appendChild(ov);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -6434,7 +6459,7 @@ function _petCloakArtifactRows(pkg, ri) {
 }
 
 function _specialPetPkgHtml(pkg, bal) {
-  const canAfford = bal >= packPrice(pkg.gram);
+  const canAfford = bal >= pkgPrice(pkg);
   const rows = _petCloakArtifactRows(pkg, ri);
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
@@ -6461,7 +6486,7 @@ function openSpecialPetPickerModal(pkgId) {
   const pkg = _SPECIAL_PET_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg || !player) return;
   const bal = window._gramBalance || 0;
-  if (bal < packPrice(pkg.gram)) return;
+  if (bal < pkgPrice(pkg)) return;
   const pets = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === pkg.petChoice);
   if (!pets.length) return;
   _petPicker = { pkgId, petId: pets[0].id };
@@ -6503,7 +6528,7 @@ function _renderPetPicker() {
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('petPickerHint')}</div>
       <div style="margin-bottom:10px">${rows}</div>
       <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
-        onclick="_confirmPetPkgBuy()">${tVars('buyForFmt', { price: packPrice(pkg.gram) })}</button>
+        onclick="_confirmPetPkgBuy()">${tVars('buyForFmt', { price: pkgPrice(pkg) })}</button>
     </div>`;
 }
 
@@ -6599,7 +6624,7 @@ function _gramShopPkgHtml(pkg, bal) {
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${pkg.noDiscount ? pkg.gram + ' GRAM' : packPriceHtml(pkg.gram)}</div>
+        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -6704,7 +6729,7 @@ function openGramShopConfirm(pkgId) {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${pkg.noDiscount ? price + ' GRAM' : packPriceHtml(pkg.gram, pkg.color)}</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
@@ -6712,7 +6737,7 @@ function openGramShopConfirm(pkgId) {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
-        <span style="font-weight:700">${pkg.noDiscount ? price + ' GRAM' : packPriceHtml(pkg.gram, pkg.color)}</span>
+        <span style="font-weight:700">${packPriceHtml(pkg.gram, pkg.color)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('yourBalanceLbl')}</span>

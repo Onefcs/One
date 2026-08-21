@@ -44,14 +44,12 @@ const _VIP_BP = [
 ];
 
 // ── GRAM Shop ─────────────────────────────────────────────────────────────────
-// 30% discount across every GRAM-priced pack (regular/pet/epic +Pack).
-// Mirrors js/ui.js's own PACK_DISCOUNT_PCT/packPrice, which only draws the
-// struck-through price — this is what actually gets charged, in gramShopBuy.
-const PACK_DISCOUNT_PCT = 0.3;
-function packPrice(gram) { return Math.max(1, Math.round(gram * (1 - PACK_DISCOUNT_PCT))); }
-// The three rmat (Перерождение tab) packs below are priced as-is — no 30%
-// off — so their GRAM cost stays exactly what's advertised (25/40/80).
-function pkgPrice(pkg) { return pkg.noDiscount ? pkg.gram : packPrice(pkg.gram); }
+// Every package sells at its own nominal price — the 30% discount that used
+// to apply here (and the per-package noDiscount flag that opted specific
+// packs out of it) has been removed entirely. Mirrors js/ui.js's own
+// pkgPrice, which is what actually draws the price — this is what gets
+// charged, in gramShopBuy.
+function pkgPrice(pkg) { return pkg.gram; }
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
@@ -89,15 +87,13 @@ const _GRAM_SHOP_PKGS = [
   // CRAFT_MATS id, which is how rece/recl land here too); buying one never
   // performs a rebirth by itself, that's still the separate 'rebirth' event
   // above, spending materials out of the inventory these packs fill.
-  // noDiscount: true — sold at face value, not the usual 30% off.
-  { id:'rmat1', gram:25, noDiscount:true, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
-  { id:'rmat2', gram:40, noDiscount:true, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
-  { id:'rmat3', gram:80, noDiscount:true, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
+  { id:'rmat1', gram:25, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
+  { id:'rmat2', gram:40, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
+  { id:'rmat3', gram:80, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
   // Сезонный билет — grants no items, just flips a status flag (gramShopBuy's
   // own seasonTicket branch) that boosts kill rewards for as long as the
   // current season runs (see shared/definitions.js's SEASON_TICKET_* section).
-  // Flat-priced like the rmat packs above, not the usual 30% off.
-  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, noDiscount:true, seasonTicket:true },
+  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
@@ -194,7 +190,7 @@ function _vipGoldReward(vipLevel) {
 
 module.exports = {
   _VIP_WEAPONS, _VIP_BP,
-  PACK_DISCOUNT_PCT, packPrice, pkgPrice, _GRAM_SHOP_PKGS,
+  pkgPrice, _GRAM_SHOP_PKGS,
   _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _shopNewSlots,
   _GRAM_WITHDRAW_FEE_PCT, _STONE_DEFS, _vipLevelItems, _vipGoldReward,
 };
