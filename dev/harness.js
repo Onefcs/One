@@ -2328,6 +2328,58 @@ scenario('market: buying a lot pays the seller', async () => {
   await buyer.close();
 });
 
+scenario('rebirth: cost stays normal through the 5th rebirth, then doubles for good from the 6th on', async () => {
+  // rebirthCostFor(rebirths) — shared/definitions.js. `rebirths` passed in is
+  // the count BEFORE the rebirth about to happen, so 4 means "about to become
+  // the 5th" (still normal cost) and 5 means "about to become the 6th"
+  // (doubled, and every one after it).
+  const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30 };
+  const doubled = { box_uncommon: 20, box_rare: 10, rece: 200, recl: 60 };
+
+  // Exactly the normal cost, one rebirth short of the threshold — must succeed.
+  const below = await connectWithSaved('harness_rebirth_below', {
+    lvl: 30, rebirths: 4,
+    inventory: Object.entries(normal).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(below, 'lev');
+  const belowDone = below.wait('rebirthDone', { timeout: 5000 });
+  const belowErr  = below.wait('rebirthError', { timeout: 5000 }).catch(() => null);
+  below.emit('rebirth');
+  const belowRes = await Promise.race([belowDone, belowErr]);
+  ok(belowRes && !belowRes.msg, 'the 5th rebirth (rebirths:4 -> 5) still costs the normal, undoubled amount');
+  await below.close();
+
+  // Exactly the normal cost again, but AT the threshold (rebirths:5, about
+  // to become the 6th) — must now be refused as insufficient.
+  const atShort = await connectWithSaved('harness_rebirth_at_short', {
+    lvl: 30, rebirths: 5,
+    inventory: Object.entries(normal).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(atShort, 'lev');
+  const shortErr = atShort.wait('rebirthError', { timeout: 5000 });
+  atShort.emit('rebirth');
+  const shortRes = await shortErr;
+  ok(shortRes && /Нужно/.test(shortRes.msg || ''), 'the normal amount alone is refused for the 6th rebirth', shortRes && shortRes.msg);
+  await atShort.close();
+
+  // The full doubled cost at the same threshold — must succeed, and consume
+  // the doubled amount, not the single one.
+  const atFull = await connectWithSaved('harness_rebirth_at_full', {
+    lvl: 30, rebirths: 5,
+    inventory: Object.entries(doubled).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(atFull, 'lev');
+  const fullSync = atFull.wait('inventorySync', { timeout: 5000 });
+  const fullDone = atFull.wait('rebirthDone', { timeout: 5000 });
+  atFull.emit('rebirth');
+  const [inv] = await Promise.all([fullSync, fullDone]);
+  const left = id => inv.inventory.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+  for (const id of Object.keys(doubled)) {
+    eq(left(id), 0, `the doubled ${id} cost was fully consumed by the 6th rebirth`);
+  }
+  await atFull.close();
+});
+
 scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {
   // A reconnect's selectChar sends _buildSaveStats() (js/network.js), which
   // never carries lvl/bonusSP/rebirths/upgrades at all — only type, floor,
@@ -3396,6 +3448,59 @@ scenario('browser: a kicked session stays down instead of reloading into a kick 
     rival.emit('fearSync');
     ok(await sync, 'the surviving session is still served');
     await rival.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+scenario('browser: the season ticket info modal does not get stuck on "season ended" before its first sync', async () => {
+  // _seasonState is only ever refreshed by a seasonSync round trip — nothing
+  // pushes it at login (see openSeasonPanel, js/ui.js). A player who tapped
+  // the ticket row in the GRAM shop without having opened the Сезон panel
+  // first this session was still reading state.js's inert default
+  // ({active:false, endAt:0}), which _openSeasonTicketInfo read as "season
+  // ended" even mid-season. The fix: the modal now requests its own sync on
+  // open and re-renders once the reply lands.
+  const exe = chromiumPath();
+  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  let chromium;
+  try { ({ chromium } = require('playwright')); }
+  catch { ok(true, 'skipped — playwright not installed'); return; }
+
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
+    await page.goto(`${BASE}/?dev=harness_seasontix`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(7000);
+    const needsClass = await page.evaluate(() => typeof state !== 'undefined' && state === 'select');
+    if (needsClass) {
+      await page.evaluate(() => selectChar('mage'));
+      await page.waitForTimeout(8000);
+    }
+    ok(await page.evaluate(() => typeof state !== 'undefined' && state === 'playing'), 'reached the world');
+
+    // Confirms the bug's precondition still exists: before any seasonSync
+    // round trip this session, the client only has the inert default.
+    const before = await page.evaluate(() => ({ active: _seasonState.active, endAt: _seasonState.endAt }));
+    eq(before.active, false, 'starts on state.js\'s default (active:false) — no seasonState pushed yet this session');
+
+    // Open the ticket info modal directly, the way tapping the shop row
+    // does, WITHOUT ever opening the Сезон events panel first — the only
+    // other path that would have refreshed _seasonState.
+    await page.evaluate(() => _openSeasonTicketInfo());
+    const seasonEndedStr = await page.evaluate(() => t('seasonEnded'));
+
+    await page.waitForTimeout(1500); // let the seasonSync round trip land
+    const after = await page.evaluate(() => ({ active: _seasonState.active }));
+    ok(after.active, 'the real season state (active, per SEASON_END_AT) landed');
+    const line = await page.evaluate(() => {
+      const el = document.getElementById('season-ticket-info-ov');
+      if (!el) return null;
+      const rows = el.querySelectorAll('.market-modal-sheet > div');
+      return rows.length ? rows[rows.length - 1].textContent.trim() : null;
+    });
+    ok(line && line !== seasonEndedStr,
+      'the modal shows the real "ends in" countdown, not "season ended", despite never having opened the Сезон panel', line);
   } finally {
     await browser.close();
   }

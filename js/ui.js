@@ -668,7 +668,7 @@ function updateRebirthUI() {
   if (!el) return;
   const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
   const _nextRebirthN = (player.rebirths || 0) + 1;
-  const _doubled = _nextRebirthN % 5 === 0;
+  const _doubled = (player.rebirths || 0) >= REBIRTH_COST_DOUBLE_AT;
   const rows = Object.entries(rebirthCostFor(player.rebirths || 0)).map(([id, need]) => {
     const def = _rebirthCostDef(id);
     const have = countMaterial(id);
@@ -4036,6 +4036,11 @@ function _seasonRatingHTML() {
 // Pushed by the server on every points change.
 function onSeasonState() {
   if (_seasonPanelOpen() && _seasonTab !== 'rating') _renderSeasonBody();
+  // The ticket info modal (_openSeasonTicketInfo) may be sitting on the
+  // default/stale _seasonState from before this sync landed — rebuild it now
+  // that the real one is in. Renders only, does NOT re-request a sync (that
+  // would loop: seasonState -> onSeasonState -> sync -> seasonState -> ...).
+  if (document.getElementById('season-ticket-info-ov')) _renderSeasonTicketInfo();
 }
 function onSeasonRating() {
   if (_seasonPanelOpen() && _seasonTab === 'rating') _renderSeasonBody();
@@ -6431,6 +6436,18 @@ function _shopExtraRewardRows(pkg, ri) {
 // duplicated here; the duration line reuses the same seasonEndsIn/seasonEnded
 // text and countdown the Сезон panel's own info tab shows (_seasonInfoHTML).
 function _openSeasonTicketInfo() {
+  // _seasonState only ever gets refreshed by a seasonSync round trip (see
+  // openSeasonPanel) — nothing pushes it at login. A player who opens this
+  // modal without having opened the Сезон panel first this session was still
+  // looking at state.js's default { active:false, endAt:0 }, which read as
+  // "season ended" even mid-season. Ask for a fresh one every time this
+  // opens; onSeasonState re-renders (without re-syncing) once it lands, if
+  // the modal is still up.
+  if (typeof netSeasonSync === 'function') netSeasonSync();
+  _renderSeasonTicketInfo();
+}
+
+function _renderSeasonTicketInfo() {
   const existing = document.getElementById('season-ticket-info-ov');
   if (existing) existing.remove();
   const st = _seasonState || {};

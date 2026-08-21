@@ -289,14 +289,15 @@ const REBIRTH_BONUS_SP = 15;
 // box_uncommon/box_rare — BOX_DEF below. rece/recl — CRAFT_MATS' epic/
 // legendary recipe scrolls.
 const REBIRTH_COST = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30 };
-// Every 5th rebirth (the 5th, 10th, 15th, ...) costs double. `rebirths` is
-// the count BEFORE this rebirth (player.rebirths/_lastStats.rebirths), so
-// the rebirth about to happen is rebirths+1 — that's what gets tested
-// against %5, not the count already banked. Single source both sides read
-// (server/index.js's rebirth handler, js/ui.js's rebirth panel) so the cost
-// shown can never drift from what actually gets charged.
+// From the 6th rebirth on, cost is permanently doubled. `rebirths` is the
+// count BEFORE this rebirth (player.rebirths/_lastStats.rebirths) — once
+// that has already reached 5, every rebirth after it (the 6th onward) costs
+// double, for good. Single source both sides read (server/index.js's
+// rebirth handler, js/ui.js's rebirth panel) so the cost shown can never
+// drift from what actually gets charged.
+const REBIRTH_COST_DOUBLE_AT = 5;
 function rebirthCostFor(rebirths) {
-  const mult = ((rebirths || 0) + 1) % 5 === 0 ? 2 : 1;
+  const mult = (rebirths || 0) >= REBIRTH_COST_DOUBLE_AT ? 2 : 1;
   const out = {};
   for (const [id, need] of Object.entries(REBIRTH_COST)) out[id] = need * mult;
   return out;
@@ -2051,7 +2052,7 @@ function clanAtkBonusPct(level) {
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, REBIRTH_COST_DOUBLE_AT, rebirthCostFor, skillPointBudget,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
