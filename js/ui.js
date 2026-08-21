@@ -6426,7 +6426,7 @@ function _openSeasonTicketInfo() {
         <div style="font-size:16px;font-weight:800;color:#ffcf56">${t('seasonTicketShopLbl')}</div>
         <button onclick="document.getElementById('season-ticket-info-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
-      <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.9">
+      <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.9;color:#c5bfb7">
         <div>${tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT })}</div>
         <div>${tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT })}</div>
         <div>${tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT })}</div>
