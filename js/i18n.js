@@ -260,6 +260,19 @@ const I18N_UI = {
     tr: 'Sıralamada yalnızca {n}+ puana sahip oyuncular gösterilir',
     pt: 'A classificação só mostra jogadores com {n}+ pontos',
   },
+  seasonTicketShopLbl: { ru: 'Сезонный билет', en: 'Season ticket', uk: 'Сезонний квиток', es: 'Boleto de temporada', tr: 'Sezon bileti', pt: 'Bilhete de temporada' },
+  seasonTicketXpRowFmt: {
+    ru: 'x2 к опыту', en: 'x2 experience', uk: 'x2 до досвіду',
+    es: 'x2 de experiencia', tr: 'Deneyimde x2', pt: 'x2 de experiência',
+  },
+  seasonTicketDropRowFmt: {
+    ru: '+{n}% к выпадению предметов', en: '+{n}% item drop chance', uk: '+{n}% до випадіння предметів',
+    es: '+{n}% de probabilidad de objetos', tr: 'Eşya düşme şansına +%{n}', pt: '+{n}% de chance de itens',
+  },
+  seasonTicketLibertyRowFmt: {
+    ru: '+{n}% к выпадению LIBERTY', en: '+{n}% Liberty drop chance', uk: '+{n}% до випадіння LIBERTY',
+    es: '+{n}% de probabilidad de Liberty', tr: 'Liberty düşme şansına +%{n}', pt: '+{n}% de chance de Liberty',
+  },
   seasonPointsLbl:{ ru: 'Очки сезона', en: 'Season points', uk: 'Очки сезону', es: 'Puntos de temporada', tr: 'Sezon puanı', pt: 'Pontos da temporada' },
   seasonEndsIn:   { ru: 'До конца сезона: {t}', en: 'Season ends in {t}', uk: 'До кінця сезону: {t}', es: 'La temporada acaba en {t}', tr: 'Sezon bitişine {t}', pt: 'A temporada acaba em {t}' },
   seasonEnded:    { ru: 'Сезон завершён', en: 'Season is over', uk: 'Сезон завершено', es: 'La temporada terminó', tr: 'Sezon bitti', pt: 'A temporada acabou' },

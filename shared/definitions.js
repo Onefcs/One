@@ -2007,6 +2007,20 @@ const VIP_BONUSES = [
   { xp:100, gold:100, drop:100 }, // VIP 10
 ];
 
+// ── Season ticket (GRAM shop) ───────────────────────────────────────────────
+// A single flat-price purchase (server/shop.js's _GRAM_SHOP_PKGS, id
+// 'season_ticket') that boosts kill rewards for as long as the CURRENT
+// season is running — gated by seasonActive() the same way season points are
+// (shared/definitions.js's Сезон 2 section), so a ticket bought near the end
+// of a season stops paying the moment it does. Stacks additively on top of
+// VIP's own xp/drop bonuses (server/index.js's _vipBon), same percentage
+// units; the Liberty (Nexum) drop chance has no VIP bonus of its own to
+// stack with, so this is applied as a straight relative multiplier there.
+const SEASON_TICKET_GRAM_PRICE = 15;
+const SEASON_TICKET_XP_PCT = 100;      // x2 experience
+const SEASON_TICKET_DROP_PCT = 30;     // +30 to the bonus loot re-roll chance
+const SEASON_TICKET_LIBERTY_PCT = 10;  // +10% (relative) to the Liberty drop chance
+
 // ── Clan levels & cumulative bonuses ──────────────────────────
 // Each level's bonus is the CUMULATIVE total at that level (not the increment).
 // Shared (not just js/definitions.js) because the server needs the same atk%
@@ -2060,6 +2074,7 @@ if (typeof module !== 'undefined') module.exports = {
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
+  SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,

@@ -360,6 +360,9 @@ function _sanitizeSavedStats(raw) {
   delete s.vipLevel;
   delete s.vipDeposited;
   delete s.vipPending;
+  // Same reasoning: a fake seasonTicket:true is a free permanent x2 xp / drop
+  // / Liberty bonus. Owned exclusively by gramShopBuy's targeted $set.
+  delete s.seasonTicket;
   // specialQuestsDone gates completeSpecialQuest's once-only claim via a DB
   // $ne filter against this very array — but the array itself came from this
   // same client-trusted save path, so a saveProgress that simply omitted an

@@ -6303,6 +6303,13 @@ function packPriceHtml(gram, color) {
 // own pkgPrice(pkg) does.
 function pkgPrice(pkg) { return pkg.noDiscount ? pkg.gram : packPrice(pkg.gram); }
 const _GRAM_SHOP_PKGS_UI = [
+  // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
+  // branch): x2 xp, +30% bonus-loot re-roll chance, +10% Liberty drop chance,
+  // for as long as the current season is running. Flat-priced like the rmat
+  // packs below, not the usual 30% off. Own reward-row rendering in
+  // _shopExtraRewardRows (pkg.seasonTicket branch) since none of the usual
+  // reward kinds (armor/weapon/potions/...) apply.
+  { id:'season_ticket', gram:15, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', noDiscount:true, seasonTicket:true },
   { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
   { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
@@ -6393,6 +6400,14 @@ function _shopExtraRewardRows(pkg, ri) {
   }
   if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');
   if (pkg.nexum) rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'epic');
+  // Сезонный билет — a status effect, not a granted item, so its own three
+  // rows read straight off the shared SEASON_TICKET_* constants (shared/
+  // definitions.js) rather than duplicating the numbers here.
+  if (pkg.seasonTicket) {
+    rows += ri('/images/season_ticket.png', tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT }), 'gold');
+    rows += ri('/images/material/boxr.png', tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT }), 'gold');
+    rows += ri('/images/nexum-coin_v2.png', tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT }), 'gold');
+  }
   return rows;
 }
 
@@ -6677,7 +6692,10 @@ function openGramShopConfirm(pkgId) {
     const boxLine    = pkg.boxes ? `<div style="color:#c5bfb7">• ${_boxesLine(pkg.boxes)}</div>` : '';
     const stoneLine  = pkg.stones ? `<div style="color:#c5bfb7">• ${Object.entries(pkg.stones).map(([id, qty]) => `${qty}× ${_stoneOrMatLabel(id)}`).join(', ')}</div>` : '';
     const nexumLine  = pkg.nexum ? `<div style="color:#6fc7ff">• +${pkg.nexum} Liberty</div>` : '';
-    itemsHtml = `${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}`;
+    // Own icon rows, same as the shop card — text lines don't fit a status
+    // effect as well as the usual granted-item list.
+    const ticketRows = pkg.seasonTicket ? `<div class="vip-items-row">${_shopExtraRewardRows(pkg, ri)}</div>` : '';
+    itemsHtml = `${goldLine}${potionLine}${armorLine}${weaponLine}${spLine}${bookLine}${boxLine}${stoneLine}${nexumLine}${ticketRows}`;
   }
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';

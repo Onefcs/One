@@ -151,6 +151,7 @@ const createCoop = require('./game/coop');
 const createFarm2 = require('./game/farm2');
 const {
   VIP_THRESHOLDS, VIP_BONUSES,
+  SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
   codexSetById, codexItemMeetsReq, codexTotalBonus,
   ENEMY_DEF, CHAR_DEF,
@@ -2820,7 +2821,13 @@ io.on('connection', socket => {
     // _coopBossTrackKill.
     const items = farmZone ? _rollFarmZoneLoot(inv, eid) : farmZone2 ? _rollFarm2Loot(inv) : coop ? [] : _rollMobLoot(inv, eid, rlvl, _lastStats.lvl);
     const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-    if (!farmZone && !farmZone2 && !coop && _vipBon.drop > 0 && Math.random() * 100 < _vipBon.drop) {
+    // Season ticket adds its own +30 on top, same units as VIP's own drop
+    // bonus (a % chance to re-roll the loot table a second time) — see
+    // gramShopBuy/'season_ticket'. Read off THIS closure's own socket (the
+    // loot WINNER, who may be a party member other than the attacker), same
+    // as _vipBon just above.
+    const _dropBon = (_vipBon.drop || 0) + ((seasonActive() && socket.data.seasonTicketActive) ? SEASON_TICKET_DROP_PCT : 0);
+    if (!farmZone && !farmZone2 && !coop && _dropBon > 0 && Math.random() * 100 < _dropBon) {
       items.push(..._rollMobLoot(inv, eid, rlvl, _lastStats.lvl));
     }
     let boxUncommon = 0, boxRare = 0, normStone = 0, blessStone = 0;
@@ -2972,10 +2979,14 @@ io.on('connection', socket => {
         _setVipAura(authed.username, _vipLvl);
       }
       if (patch.clearVipPending) _lastStats.vipPending = [];
+      // Season ticket — see gramShopBuy's own comment. A flag, not a balance,
+      // so it just needs setting on this (now live) socket and persisting.
+      if (patch.seasonTicket) socket.data.seasonTicketActive = true;
       _commitServerItems(inv, null, reason, meta, { beforeLen: _beforeLen });
       _persistSavedFields(authed, {
         gold: _lastStats.gold, bonusSP: _lastStats.bonusSP, vipLevel: _lastStats.vipLevel,
         vipDeposited: _lastStats.vipDeposited, vipPending: _lastStats.vipPending,
+        ...(patch.seasonTicket ? { seasonTicket: true } : {}),
       });
       if (vipLeveled) {
         socket.emit('vipUpdate', {
@@ -3326,6 +3337,9 @@ io.on('connection', socket => {
     _myClanId    = _clan ? String(_clan._id) : null;
     _myClanLevel = _clanInfo ? _clanInfo.level : null;
     socket.data.vipLevel = doc.savedData?.vipLevel || 0;
+    // Server-authoritative like vipLevel just above — stripped from client
+    // saves (see _sanitizeSavedStats), read straight off the stored record.
+    socket.data.seasonTicketActive = !!doc.savedData?.seasonTicket;
     _setVipAura(doc.username, socket.data.vipLevel);
     socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
     return true;
@@ -3652,6 +3666,12 @@ io.on('connection', socket => {
       // Bonus skill points
       if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
 
+      // Сезонный билет — no item, just a status flag: server/index.js's
+      // combat-reward math (VIP_BONUSES' own xp/drop bonus, plus the Liberty
+      // drop roll) reads socket.data.seasonTicketActive directly, gated by
+      // seasonActive(). Persisted below the same targeted way vipLevel is.
+      if (pkg.seasonTicket) saved.seasonTicket = true;
+
       // Liberty (Nexum) bonus — atomic, like every other balance move.
       if (pkg.nexum > 0) {
         const _nb = await _incBalance(authed.telegramId, 'nexumBalance', pkg.nexum);
@@ -3688,12 +3708,14 @@ io.on('connection', socket => {
         const _result = _target && _target.data._applyGrant
           ? _target.data._applyGrant({
               addItems: _addedItems, goldDelta: pkg.gold || 0, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: _price,
+              seasonTicket: !!pkg.seasonTicket,
             }, 'gram_shop_cross_session', { pkg: pkg.id, gram: pkg.gram })
           : null;
         if (!_result) {
           await PlayerModel.updateOne({ _id: doc._id }, {
             $push: { 'savedData.inventory': { $each: _addedItems.map(({ item, qty }) => ({ ...item, ...(qty != null ? { qty } : {}) })) } },
             $inc: { 'savedData.gold': pkg.gold || 0, ...(pkg.bonusSP > 0 ? { 'savedData.bonusSP': pkg.bonusSP } : {}) },
+            ...(pkg.seasonTicket ? { $set: { 'savedData.seasonTicket': true } } : {}),
           }).catch(() => {});
         }
         logPlayer(authed.telegramId, authed.username, 'gram_shop_cross_session',
@@ -3732,6 +3754,7 @@ io.on('connection', socket => {
         'savedData.vipPending': _vipPend,
       };
       if (pkg.bonusSP > 0) _shopSet['savedData.bonusSP'] = saved.bonusSP;
+      if (pkg.seasonTicket) _shopSet['savedData.seasonTicket'] = true;
       await PlayerModel.updateOne({ _id: doc._id }, { $set: _shopSet });
 
       if (_lastStats) {
@@ -3742,6 +3765,7 @@ io.on('connection', socket => {
       // can no longer land afterwards and wipe the items out.
       _commitServerItems(inv, null, 'gram_shop', { pkg: pkg.id, gram: pkg.gram });
       socket.data.vipLevel = _vipLvl;
+      if (pkg.seasonTicket) socket.data.seasonTicketActive = true;
       _setVipAura(authed.username, _vipLvl);
 
       socket.emit('gramShopResult', {
@@ -7560,13 +7584,20 @@ io.on('connection', socket => {
       // its own flat FARM2_LIBERTY_CHANCE Liberty (part of the drop table the
       // task spec calls for) but still no GRAM, same "own table replaces the
       // normal drops" deal as the original farm zone.
+      // Season ticket (gramShopBuy, id 'season_ticket') — x2 xp, +30 to the
+      // bonus-loot re-roll chance (folded into _vipBon.drop at _grantKillLoot,
+      // same units), +10% relative to the Liberty drop chance below. Gated by
+      // seasonActive() so a ticket bought near the end of a season stops
+      // paying the moment it does, same as season points.
+      const _ticketOn = seasonActive() && !!socket.data.seasonTicketActive;
       const nexumDrop  = _isCoop ? (Math.random() < COOP_LIBERTY_CHANCE ? 1 : 0)
         : result.farmZone2 ? (Math.random() < FARM2_LIBERTY_CHANCE ? 1 : 0)
-        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0)) ? 1 : 0;
+        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm] || 0) * (_ticketOn ? 1 + SEASON_TICKET_LIBERTY_PCT / 100 : 1)) ? 1 : 0;
       const gramDrop   = (_isCoop || result.farmZone || result.farmZone2) ? 0
         : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-      if (_vipBon.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon.xp   / 100));
+      const _xpBon = (_vipBon.xp || 0) + (_ticketOn ? SEASON_TICKET_XP_PCT : 0);
+      if (_xpBon > 0)      result.xp   = Math.round(result.xp   * (1 + _xpBon / 100));
       if (_vipBon.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon.gold / 100));
 
       // Accumulated as a delta and flushed as one $inc — see _earnGram.
@@ -7692,13 +7723,16 @@ io.on('connection', socket => {
       const _isCoop2 = result.arm === 'coop';
       // Same Сотрудничество/Элитная фарм-зона override as the basic-attack
       // path above.
+      // Season ticket — see the basic-attack path's own comment above.
+      const _ticketOn2 = seasonActive() && !!socket.data.seasonTicketActive;
       const nexumDrop2 = _isCoop2 ? (Math.random() < COOP_LIBERTY_CHANCE ? 1 : 0)
         : result.farmZone2 ? (Math.random() < FARM2_LIBERTY_CHANCE ? 1 : 0)
-        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0)) ? 1 : 0;
+        : (!result.farmZone && Math.random() < (NEXUM_DROP_CHANCE[_arm2] || 0) * (_ticketOn2 ? 1 + SEASON_TICKET_LIBERTY_PCT / 100 : 1)) ? 1 : 0;
       const gramDrop2  = (_isCoop2 || result.farmZone || result.farmZone2) ? 0
         : (Math.random() < GRAM_DROP_CHANCE) ? (result.rlvl || 1) * GRAM_PER_LEVEL : 0;
       const _vipBon2 = VIP_BONUSES[socket.data.vipLevel || 0] || VIP_BONUSES[0];
-      if (_vipBon2.xp   > 0) result.xp   = Math.round(result.xp   * (1 + _vipBon2.xp   / 100));
+      const _xpBon2 = (_vipBon2.xp || 0) + (_ticketOn2 ? SEASON_TICKET_XP_PCT : 0);
+      if (_xpBon2 > 0)      result.xp   = Math.round(result.xp   * (1 + _xpBon2 / 100));
       if (_vipBon2.gold > 0) result.gold = Math.round(result.gold * (1 + _vipBon2.gold / 100));
       // Same delta accumulation as the basic-attack path above.
       if (nexumDrop2 > 0) _earnNexum(nexumDrop2);
