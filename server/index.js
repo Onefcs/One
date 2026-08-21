@@ -3341,7 +3341,7 @@ io.on('connection', socket => {
     // saves (see _sanitizeSavedStats), read straight off the stored record.
     socket.data.seasonTicketActive = !!doc.savedData?.seasonTicket;
     _setVipAura(doc.username, socket.data.vipLevel);
-    socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers] });
+    socket.emit('authOk', { username: doc.username, savedData: doc.savedData || null, isNewAccount, clanInfo: _clanInfo, gramBalance: _gramBalance, gramWallet: GRAM_WALLET, refLink: _refLink(telegramId), vipData: { level: doc.savedData?.vipLevel || 0, deposited: doc.savedData?.vipDeposited || 0, pending: doc.savedData?.vipPending || [] }, nexumBalance: _nexumBalance, topPlayer: _topPlayerUsername, vipAuras: [..._vipAuraUsers], seasonTicketActive: !!doc.savedData?.seasonTicket });
     return true;
   }
 
@@ -3503,6 +3503,14 @@ io.on('connection', socket => {
     try {
       const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
       if (!pkg) return socket.emit('gramShopError', { msg: 'Пакет не найден' });
+      // One per account — it's a status flag, not a stackable consumable, so
+      // a second purchase would just spend GRAM for no additional effect.
+      // socket.data.seasonTicketActive is already loaded at login and kept
+      // live on every successful purchase (same/cross-session alike), so
+      // this needs no extra DB read.
+      if (pkg.seasonTicket && socket.data.seasonTicketActive) {
+        return socket.emit('gramShopError', { msg: 'Сезонный билет уже куплен' });
+      }
       // petChoice packages need a valid pick of the right rarity BEFORE any
       // GRAM is spent — refusing here (rather than after the deduction) means
       // a missing/invalid choice never costs the player anything.

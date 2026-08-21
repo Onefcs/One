@@ -497,9 +497,10 @@ function netConnect(onReady) {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
   });
 
-  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras }) => {
+  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras, seasonTicketActive }) => {
     _authOkReceived = true;
     netUsername = username;
+    _seasonTicketActive = !!seasonTicketActive;
     // Rating leader, for the aura in pixi-world.js. Carried on authOk so a
     // client that joins between two 'topPlayer' broadcasts still knows.
     window._topPlayer = topPlayer || null;

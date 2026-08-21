@@ -2884,6 +2884,14 @@ function drawBuffStrip() {
     chips.push({ kind:'pot', img: bdef.img, label: secs < 60 ? secs + t('secAbbrev') : Math.ceil(rem/60) + t('minAbbrev'), color:'#e5a546' });
   }
 
+  // Season ticket — shown alongside potion buffs (same chip style) whenever
+  // this account owns it and the season is still running.
+  if (typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive &&
+      typeof _seasonState !== 'undefined' && _seasonState.active) {
+    const _stLeft = Math.max(0, (_seasonState.endAt || 0) - Date.now());
+    if (_stLeft > 0) chips.push({ kind:'pot', img:'/images/season_ticket.png', label: _fmtChipEta(_stLeft), color:'#ffcf56' });
+  }
+
   // Skill buffs
   const skillBuffs = [
     { t: typeof barrierTimer     !== 'undefined' ? barrierTimer     : 0, icon:'barrier',   color:'#eec47c' },
@@ -4458,6 +4466,19 @@ function _fmtEventEta(ms) {
   if (s < 3600) return _fmtBossTime(ms);
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return d > 0 ? `${d}д ${h}ч` : `${h}ч ${m}м`;
+}
+
+// Single-unit countdown for the tiny buff-strip chips (22px cell, 6px font)
+// — "5д 3ч" from _fmtEventEta doesn't fit, so this picks just the largest
+// unit that applies.
+function _fmtChipEta(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return s + t('secAbbrev');
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + t('minAbbrev');
+  const h = Math.floor(s / 3600);
+  if (h < 24) return h + 'ч';
+  return Math.floor(s / 86400) + 'д';
 }
 
 // Weekday + time of the next occurrence, so the panel says when it is rather
@@ -6593,7 +6614,10 @@ function _renderGramShopPanel() {
 }
 
 function _gramShopPkgHtml(pkg, bal) {
-  const canAfford = bal >= pkgPrice(pkg);
+  // One per account — a second "purchase" would just spend GRAM for no
+  // additional effect (server refuses it outright, see gramShopBuy).
+  const alreadyOwned = !!(pkg.seasonTicket && _seasonTicketActive);
+  const canAfford = !alreadyOwned && bal >= pkgPrice(pkg);
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
 
   // same ri() pattern as VIP
@@ -6629,7 +6653,7 @@ function _gramShopPkgHtml(pkg, bal) {
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
         onclick="${canAfford ? `openGramShopConfirm('${pkg.id}')` : ''}">
-        ${canAfford ? t('affordableBuyBtn') : t('notEnoughBtn')}
+        ${alreadyOwned ? t('seasonTicketOwnedBtn') : canAfford ? t('affordableBuyBtn') : t('notEnoughBtn')}
       </button>
     </div>
     <div class="vip-items-row">${rows}</div>
@@ -6766,6 +6790,10 @@ function onGramShopResult(data) {
     if (data.newNexumBalance != null) player.nexumBalance = data.newNexumBalance;
   }
   if (data.vipData) window._vipData = data.vipData;
+  // A gramShopResult for 'season_ticket' only ever arrives on a successful
+  // purchase (the server refuses a second one before any GRAM moves), so
+  // this is safe to set unconditionally — no separate confirmation needed.
+  if (data.pkgId === 'season_ticket') _seasonTicketActive = true;
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId)
     || (data.pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   // Pet+cloak+artifact packages (petpkg1/2/3) — bought through this same

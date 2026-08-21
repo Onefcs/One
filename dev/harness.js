@@ -3863,6 +3863,17 @@ scenario('season ticket: purchase charges 15 GRAM flat, pays shop points, and do
   const row = memory.__dump('Player').find(p => p.username === buyer.auth.username);
   eq(row.savedData.seasonTicket, true, 'the ticket flag persisted to the account');
   eq(row.savedData.seasonPoints2, 1500, 'and the season points landed in savedData.seasonPoints2');
+
+  // One per account — a second attempt in the same session must be refused
+  // outright, not silently re-charge GRAM for no extra effect.
+  const secondAttempt = buyer.wait('gramShopError', { timeout: 3000 });
+  buyer.emit('gramShopBuy', { pkgId: 'season_ticket' });
+  const err = await secondAttempt;
+  ok(err, 'a second purchase in the same session is refused');
+  await sleep(200);
+  const rowAfter = memory.__dump('Player').find(p => p.username === buyer.auth.username);
+  eq(rowAfter.savedData.seasonPoints2, 1500, 'the refused second attempt did not award more season points');
+
   await buyer.close();
   await sleep(300);
 
@@ -3874,6 +3885,13 @@ scenario('season ticket: purchase charges 15 GRAM flat, pays shop points, and do
   const baseline = await connectWithSaved('harness_ticket_base', {});
   await enterWorld(withTicket, 'ranger');
   await enterWorld(baseline, 'ranger');
+
+  // The refusal must hold after a fresh login too — socket.data.seasonTicketActive
+  // is reloaded from savedData at connect time, not carried over in memory.
+  const crossSessionAttempt = withTicket.wait('gramShopError', { timeout: 3000 });
+  withTicket.emit('gramShopBuy', { pkgId: 'season_ticket' });
+  const crossErr = await crossSessionAttempt;
+  ok(crossErr, 'a purchase attempt after reconnecting is also refused');
 
   async function killWeakestAndGetXp(c) {
     const armStart = c.wait('gameStart', { where: `${c.name} enterLocation left` });

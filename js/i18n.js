@@ -855,6 +855,7 @@ Object.assign(I18N_UI, {
   gramShopBalanceFmt: { ru: 'Баланс: {bal} GRAM', en: 'Balance: {bal} GRAM', uk: 'Баланс: {bal} GRAM', es: 'Saldo: {bal} GRAM', tr: 'Bakiye: {bal} GRAM', pt: 'Saldo: {bal} GRAM' },
   affordableBuyBtn: { ru: 'Купить', en: 'Buy', uk: 'Купити', es: 'Comprar', tr: 'Satın Al', pt: 'Comprar' },
   notEnoughBtn: { ru: 'Мало', en: "Can't afford", uk: 'Мало', es: 'Insuficiente', tr: 'Yetersiz', pt: 'Insuficiente' },
+  seasonTicketOwnedBtn: { ru: 'Куплено', en: 'Owned', uk: 'Куплено', es: 'Adquirido', tr: 'Alındı', pt: 'Adquirido' },
   gramShopGoldSuffix: { ru: 'зол.', en: 'gold', uk: 'зол.', es: 'oro', tr: 'altın', pt: 'ouro' },
   bonusSpSuffixShort: { ru: 'ОН', en: 'SP', uk: 'ОН', es: 'PH', tr: 'YP', pt: 'PH' },
   skillBooksTotalLbl: { ru: '{n} книг', en: '{n} books', uk: '{n} книг', es: '{n} libros', tr: '{n} kitap', pt: '{n} livros' },
