@@ -200,5 +200,5 @@ let _seasonState = { endAt: 0, active: false, points: 0, minRatingPoints: 5000, 
                      advBookPoints: 300,
                      burn: { common: 1, uncommon: 5 }, bookBurnPoints: 60,
                      ref: { points: 200, level: 20 },
-                     rebirthPoints: 500, marketPointsPerGram: 10 };
+                     rebirthPoints: 500, shopPointsPerGram: 100 };
 let _seasonRating = null;   // null = not fetched yet

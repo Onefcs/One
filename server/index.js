@@ -181,7 +181,7 @@ const {
   SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS,
   seasonEnhancePoints, SEASON_ADV_BOOK_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
-  SEASON_REBIRTH_POINTS, SEASON_MARKET_POINTS_PER_GRAM, seasonMarketPoints,
+  SEASON_REBIRTH_POINTS, SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
   SEASON_RATING_MIN_POINTS,
 } = require('../shared/definitions');
 
@@ -3557,6 +3557,18 @@ io.on('connection', socket => {
       if (_paid === null) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
       _gramBalance = _paid;
 
+      // Season points — every GRAM shop purchase counts (packages, pets, the
+      // season ticket, ...), scaled by what was actually paid. Not the
+      // player-to-player market (marketBuy carries no season award). Direct
+      // $inc on authed.telegramId, so this is correct whether or not this
+      // socket is the account's live session — no need to special-case the
+      // cross-session branch below.
+      const _seasonShopPts = seasonShopPoints(_price);
+      if (_seasonShopPts > 0 && seasonActive()) {
+        _seasonAddPoints(_seasonShopPts, 'shop_buy', { pkg: pkg.id, price: _price })
+          .then(total => { if (total !== null) socket.emit('seasonEventDone', { task: 'shop_buy', points: _seasonShopPts, total }); });
+      }
+
       // Gold. Defaulted rather than added raw: the season packages carry no
       // gold at all, and `x + undefined` is NaN — which _sanitizeSavedStats
       // then clamps to 0, i.e. buying a stone pack would have wiped the
@@ -5516,7 +5528,7 @@ io.on('connection', socket => {
       bookBurnPoints: SEASON_BOOK_BURN_POINTS,
       ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
       rebirthPoints: SEASON_REBIRTH_POINTS,
-      marketPointsPerGram: SEASON_MARKET_POINTS_PER_GRAM,
+      shopPointsPerGram: SEASON_SHOP_POINTS_PER_GRAM,
     };
   }
 
@@ -6521,17 +6533,6 @@ io.on('connection', socket => {
           console.error('marketBuy vip progress:', err);
           logPlayerErr(authed.telegramId, authed.username, 'market_buy_vip', err, { listingId: String(listingId), price: claimed.price });
         }
-      }
-
-      // Season points for the BUYER, scaled by what they actually paid — 10
-      // per whole GRAM, nothing under 1. Same "read fresh, $inc the buyer's
-      // own account" shape as every other season award; run after the trade
-      // itself has landed, since a failed points write here only means a
-      // missed award, never a lost item or a lost payment.
-      const _seasonMktPts = seasonMarketPoints(claimed.price);
-      if (_seasonMktPts > 0 && seasonActive()) {
-        _seasonAddPoints(_seasonMktPts, 'market_buy', { price: claimed.price, listingId: String(listingId) })
-          .then(total => { if (total !== null) socket.emit('seasonEventDone', { task: 'market_buy', points: _seasonMktPts, total }); });
       }
 
       // Credit the seller (10% fee burned — not paid to anyone), online or not.

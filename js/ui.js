@@ -3954,7 +3954,7 @@ function _seasonTasksHTML() {
         <ul>
           <li>${tVars('season2AdvBookFmt', { n: st.advBookPoints || 300 })}</li>
           <li>${tVars('season2RebirthFmt', { n: st.rebirthPoints || 500 })}</li>
-          <li>${tVars('season2MarketFmt', { n: st.marketPointsPerGram || 10 })}</li>
+          <li>${tVars('season2ShopFmt', { n: st.shopPointsPerGram || 100 })}</li>
           <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>
         </ul>
         <div class="imod-enh-chance">${t('seasonRefNote')}</div>

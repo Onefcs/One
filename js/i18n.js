@@ -227,13 +227,13 @@ const I18N_UI = {
     ru: 'Перерождение — +{n} очков', en: 'Rebirth — +{n} points', uk: 'Переродження — +{n} очок',
     es: 'Renacer — +{n} puntos', tr: 'Yeniden doğuş — +{n} puan', pt: 'Renascimento — +{n} pontos',
   },
-  season2MarketFmt: {
-    ru: 'Покупка на рынке — +{n} очков за каждый потраченный GRAM (от 1 GRAM)',
-    en: 'Buying on the market — +{n} points per GRAM spent (from 1 GRAM)',
-    uk: 'Купівля на ринку — +{n} очок за кожен витрачений GRAM (від 1 GRAM)',
-    es: 'Comprar en el mercado — +{n} puntos por cada GRAM gastado (desde 1 GRAM)',
-    tr: 'Pazardan alışveriş — harcanan her GRAM için +{n} puan (1 GRAM\'dan itibaren)',
-    pt: 'Comprar no mercado — +{n} pontos por GRAM gasto (a partir de 1 GRAM)',
+  season2ShopFmt: {
+    ru: 'Покупка в магазине GRAM — +{n} очков за каждый потраченный GRAM (от 1 GRAM)',
+    en: 'Buying in the GRAM shop — +{n} points per GRAM spent (from 1 GRAM)',
+    uk: 'Купівля в магазині GRAM — +{n} очок за кожен витрачений GRAM (від 1 GRAM)',
+    es: 'Comprar en la tienda de GRAM — +{n} puntos por cada GRAM gastado (desde 1 GRAM)',
+    tr: 'GRAM mağazasından alışveriş — harcanan her GRAM için +{n} puan (1 GRAM\'dan itibaren)',
+    pt: 'Comprar na loja de GRAM — +{n} pontos por GRAM gasto (a partir de 1 GRAM)',
   },
   season2BurnBookFmt: {
     ru: 'Книга (любая) — +{n} очков за штуку', en: 'A book (any) — +{n} points each',

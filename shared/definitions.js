@@ -508,13 +508,15 @@ const SEASON_REF_LEVEL  = 20;
 // ── Перерождение ──────────────────────────────────────────────────────────
 const SEASON_REBIRTH_POINTS = 500;
 
-// ── Покупка на рынке ──────────────────────────────────────────────────────
-// Points scale with what was actually paid, floored to whole GRAM — a
-// purchase under 1 GRAM earns nothing, 1 earns SEASON_MARKET_POINTS_PER_GRAM,
-// 2 earns double, and so on.
-const SEASON_MARKET_POINTS_PER_GRAM = 10;
-function seasonMarketPoints(price) {
-  return Math.max(0, Math.floor(Number(price) || 0)) * SEASON_MARKET_POINTS_PER_GRAM;
+// ── Покупка в магазине ────────────────────────────────────────────────────
+// Any GRAM shop purchase (server/shop.js's _GRAM_SHOP_PKGS — packages, pets,
+// the season ticket, ...), not the player-to-player market. Points scale
+// with what was actually paid, floored to whole GRAM — a purchase under 1
+// GRAM earns nothing, 1 earns SEASON_SHOP_POINTS_PER_GRAM, 2 earns double,
+// and so on.
+const SEASON_SHOP_POINTS_PER_GRAM = 100;
+function seasonShopPoints(price) {
+  return Math.max(0, Math.floor(Number(price) || 0)) * SEASON_SHOP_POINTS_PER_GRAM;
 }
 
 // ── Рейтинг ───────────────────────────────────────────────────────────────
@@ -2060,7 +2062,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
   SEASON_REBIRTH_POINTS,
-  SEASON_MARKET_POINTS_PER_GRAM, seasonMarketPoints,
+  SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
   SEASON_RATING_MIN_POINTS, SEASON_PRIZES, SEASON_VIP_PRIZE,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
