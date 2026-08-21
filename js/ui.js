@@ -3941,7 +3941,7 @@ function _seasonTasksHTML() {
       <span class="season-book-name">${_esc(s.name)}</span>
       <span class="season-book-qty">× ${s.qty}</span>
       <button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0"
-              onclick="_seasonBurnBookConfirm('${s.id}')">${tVars('seasonBurnBtn', { n: s.qty * (st.bookBurnPoints || 30) })}</button>
+              onclick="_seasonBurnBookConfirm('${s.id}')">${tVars('seasonBurnBtn', { n: s.qty * (st.bookBurnPoints || 60) })}</button>
     </div>`).join('');
 
   return `
@@ -3964,7 +3964,7 @@ function _seasonTasksHTML() {
         <ul>
           <li>${tVars('seasonBurnCommon', { n: bp.common })}</li>
           <li>${tVars('seasonBurnUncommon', { n: bp.uncommon })}</li>
-          <li>${tVars('season2BurnBookFmt', { n: st.bookBurnPoints || 30 })}</li>
+          <li>${tVars('season2BurnBookFmt', { n: st.bookBurnPoints || 60 })}</li>
           <li>${t('seasonBurnNote')}</li>
         </ul>
         <div class="season-burn-grid">
@@ -3991,7 +3991,7 @@ function _seasonBurnAllConfirm(rarity) {
 function _seasonBurnBookConfirm(id) {
   const s = _seasonBookStacks().find(x => x.id === id);
   if (!s) return;
-  const pts = s.qty * ((_seasonState || {}).bookBurnPoints || 30);
+  const pts = s.qty * ((_seasonState || {}).bookBurnPoints || 60);
   if (!confirm(tVars('season2BurnBookConfirm', { name: s.name, n: s.qty, p: pts }))) return;
   if (typeof netSeasonBurnBook === 'function') netSeasonBurnBook(id, s.qty);
 }

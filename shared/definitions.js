@@ -494,7 +494,7 @@ const SEASON_ADV_BOOK_POINTS = 300;
 const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
 // Books (skill/passive/advanced-skill — all stackable materials): a flat
 // rate per copy burned, regardless of which book it is.
-const SEASON_BOOK_BURN_POINTS = 30;
+const SEASON_BOOK_BURN_POINTS = 60;
 
 // ── Приведи друга ─────────────────────────────────────────────────────────
 // Bringing in a player who then reaches SEASON_REF_LEVEL. Paid to the
