@@ -2744,7 +2744,13 @@ io.on('connection', socket => {
     // Every server-side item change funnels through here, so logging it here
     // covers all of them at once — and records the slot count before/after,
     // which is what makes a later "my item vanished" report answerable.
-    if (authed) {
+    // mob_loot is the one exception: it fires on nearly every kill, so it
+    // drowned out everything else in the shared 100-row window (see
+    // LOG_SEASON_EVENTS's own comment in player-log.js for the same problem
+    // hitting season rows) without being the kind of report a "where did my
+    // item go" investigation actually needs — a lost drop is invisible either
+    // way, since nothing else records what a kill *should* have dropped.
+    if (authed && reason !== 'mob_loot') {
       logPlayer(authed.telegramId, authed.username, 'inv:' + (reason || 'change'), {
         slots: `${_before} -> ${inventory.length}`, rev: _invRev, ...(meta || {}),
       });
