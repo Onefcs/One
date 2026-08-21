@@ -3846,6 +3846,69 @@ scenario('arena3: the arena holds no bosses — the match is players only', asyn
   await Promise.all(players.map(c => c.close()));
 });
 
+scenario('season ticket: purchase charges 15 GRAM flat, pays shop points, and doubles kill xp', async () => {
+  const buyer = await connectWithSaved('harness_ticket_buy', { gramBalance: 100 });
+  await enterWorld(buyer, 'ranger');
+
+  const bought = buyer.wait('gramShopResult', { timeout: 6000 });
+  const shopPts = buyer.wait('seasonEventDone', { timeout: 6000 });
+  buyer.emit('gramShopBuy', { pkgId: 'season_ticket' });
+  const res = await bought;
+  eq(res && res.newBalance, 85, 'the flat 15 GRAM price was charged — no 30% discount');
+  const shopEvt = await shopPts;
+  eq(shopEvt && shopEvt.task, 'shop_buy', 'the purchase paid season shop points, not a market-buy award');
+  eq(shopEvt && shopEvt.points, 1500, '100 season points per GRAM spent (15 GRAM x 100)');
+
+  await sleep(200);
+  const row = memory.__dump('Player').find(p => p.username === buyer.auth.username);
+  eq(row.savedData.seasonTicket, true, 'the ticket flag persisted to the account');
+  eq(row.savedData.seasonPoints2, 1500, 'and the season points landed in savedData.seasonPoints2');
+  await buyer.close();
+  await sleep(300);
+
+  // Reconnect (the flag must survive — it's read fresh off savedData at
+  // login, see socket.data.seasonTicketActive) and compare a kill's xp
+  // against a plain baseline account of the same level, so the only
+  // difference between the two is the ticket itself.
+  const withTicket = await connectAs('harness_ticket_buy');
+  const baseline = await connectWithSaved('harness_ticket_base', {});
+  await enterWorld(withTicket, 'ranger');
+  await enterWorld(baseline, 'ranger');
+
+  async function killWeakestAndGetXp(c) {
+    const armStart = c.wait('gameStart', { where: `${c.name} enterLocation left` });
+    c.emit('enterLocation', { target: 'left' });
+    const start = await armStart;
+    const target = (start.enemies || []).filter(e => e && (e.hp || 0) > 0).sort((x, y) => x.hp - y.hp)[0];
+    if (!target) return null;
+    c.emit('playerMove', { x: target.x + 20, y: target.y, facing: 1, moving: false });
+    await sleep(150);
+    let dead = null;
+    // Room.attackEnemy floors one server hit per 150ms — pace attempts to
+    // match rather than hammering faster than the server will accept.
+    for (let i = 0; i < 60 && !dead; i++) {
+      const hit = c.wait('enemyKilled', { timeout: 400 }).catch(() => null);
+      c.emit('attack', { enemyId: target.id });
+      dead = await hit;
+      if (!dead) await sleep(160);
+    }
+    return dead;
+  }
+
+  const baseKill = await killWeakestAndGetXp(baseline);
+  ok(baseKill, 'the baseline account can kill the weakest enemy in the left arm');
+  const ticketKill = await killWeakestAndGetXp(withTicket);
+  ok(ticketKill, 'the ticketed account can kill the weakest enemy in the left arm');
+  if (baseKill && ticketKill) {
+    eq(ticketKill.rlvl, baseKill.rlvl, `compared the same monster level (${baseKill.rlvl} vs ${ticketKill.rlvl})`);
+    eq(ticketKill.xp, baseKill.xp * 2,
+      `the season ticket exactly doubled the kill's xp reward (${baseKill.xp} -> ${ticketKill.xp})`);
+  }
+
+  await withTicket.close();
+  await baseline.close();
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';
