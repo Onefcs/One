@@ -40,7 +40,11 @@ PlayerSchema.index({ username: 1 }, { collation: { locale: 'en', strength: 2 } }
 // of matched documents MongoDB refuses the sort outright rather than running
 // it slowly. Sparse because only players who have scored anything this season
 // carry the field, and the query itself only ever asks for { $gt: 0 }.
-PlayerSchema.index({ 'savedData.seasonPoints': -1 }, { sparse: true });
+//
+// seasonPoints2, not the old seasonPoints — Season 2 scores into its own
+// field so Season 1's already-paid-out totals can't carry over as a head
+// start (see shared/definitions.js's Сезон 2 section).
+PlayerSchema.index({ 'savedData.seasonPoints2': -1 }, { sparse: true });
 
 // Same reasoning for the admin dashboard's "top by" tables (/admin/stats).
 // Fired far less often than the season board, but each one was also a full

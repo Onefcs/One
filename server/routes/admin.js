@@ -204,7 +204,8 @@ module.exports = function registerAdminRoutes(app, deps) {
       ]);
       res.json({
         player: p, logs, seasonLogs,
-        seasonPoints: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints) || 0)),
+        // Season 2's own field — see shared/definitions.js's Сезон 2 section.
+        seasonPoints: Math.max(0, Math.floor(Number(p.savedData?.seasonPoints2) || 0)),
         referrerUsername: referrer?.username || null,
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -405,22 +406,22 @@ module.exports = function registerAdminRoutes(app, deps) {
       }
       const points = Math.trunc(raw);
       const note = String((req.body || {}).note || '').slice(0, 200);
-      const p = await PlayerModel.findOne({ telegramId: req.params.tid }, 'telegramId username savedData.seasonPoints');
+      const p = await PlayerModel.findOne({ telegramId: req.params.tid }, 'telegramId username savedData.seasonPoints2');
       if (!p) return res.status(404).json({ error: 'Not found' });
       // savedData may be null on an account that only ever pressed /start — a
       // dotted $inc through a null parent throws (see _incBalance).
       await PlayerModel.updateOne({ _id: p._id, savedData: null }, { $set: { savedData: {} } });
       const doc = await PlayerModel.findOneAndUpdate(
         { _id: p._id },
-        { $inc: { 'savedData.seasonPoints': points } },
-        { new: true, projection: { 'savedData.seasonPoints': 1 } },
+        { $inc: { 'savedData.seasonPoints2': points } },
+        { new: true, projection: { 'savedData.seasonPoints2': 1 } },
       ).lean();
       if (!doc) return res.status(404).json({ error: 'Not found' });
       // Never below zero: a correction bigger than the balance would otherwise
       // leave a negative total sitting in the leaderboard.
-      let total = Math.floor(Number(doc.savedData?.seasonPoints) || 0);
+      let total = Math.floor(Number(doc.savedData?.seasonPoints2) || 0);
       if (total < 0) {
-        await PlayerModel.updateOne({ _id: p._id }, { $set: { 'savedData.seasonPoints': 0 } });
+        await PlayerModel.updateOne({ _id: p._id }, { $set: { 'savedData.seasonPoints2': 0 } });
         total = 0;
       }
       logPlayer(p.telegramId, p.username, 'admin_season_points', { add: points, total, note });

@@ -188,18 +188,17 @@ let _farm2InRun = false;
 let _farm2Group = null;
 let _farm2OpenGroups = [];
 
-// Сезон — points race with a fixed end date. Everything here is pushed by the
-// server (points and quest progress are server-owned, see the seasonSync
-// handler in server/index.js); nothing is computed locally.
-let _seasonState = { endAt: 0, active: false, points: 0, quest: null, target: 5000,
-                     questPoints: 100, minLvl: 1, maxLvl: 19, burn: { common: 1, uncommon: 5 }, prizes: [],
-                     eventTasks: [], eventPoints: 50, enhance: { common: 10, uncommon: 50, rare: 80 },
-                     // Which kill-quest band is selected, and what is on offer.
-                     // Both are pushed by the server (seasonState); `locked`
-                     // on a band means this character is not high enough yet.
-                     tier: '10', tiers: [],
-                     // Extra points for WINNING an event, keyed by task id —
-                     // paid on top of eventPoints for turning up.
-                     win: { deathbattle: 150, arena3: 30 },
-                     ref: { points: 200, level: 20 } };
+// Сезон 2 — points race with a fixed end date. Everything here is pushed by
+// the server (points are server-owned, see the seasonSync handler in
+// server/index.js); nothing is computed locally. The point VALUES below are
+// just a reasonable default for the first paint before seasonState arrives —
+// the server's own numbers (shared/definitions.js) always win.
+let _seasonState = { endAt: 0, active: false, points: 0, minRatingPoints: 5000, prizes: [], vipPrize: null,
+                     enhanceSpecialSlots: ['pet', 'cloak', 'artifact'],
+                     enhanceSpecial: { common: { norm: 20, bless: 5 }, uncommon: { norm: 40, bless: 15 }, rare: { norm: 100, bless: 40 } },
+                     enhanceGear: { rare: 20, epic: 100 },
+                     advBookPoints: 300,
+                     burn: { common: 1, uncommon: 5 }, bookBurnPoints: 30,
+                     ref: { points: 200, level: 20 },
+                     rebirthPoints: 500, marketPointsPerGram: 10 };
 let _seasonRating = null;   // null = not fetched yet

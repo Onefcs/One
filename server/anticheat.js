@@ -374,6 +374,10 @@ function _sanitizeSavedStats(raw) {
   delete s.seasonQuest;
   delete s.seasonQuests;
   delete s.seasonTier;
+  delete s.seasonBossPaid;
+  // Season 2's own running total (Season 1 used seasonPoints, above) — same
+  // reasoning, still server-authoritative only.
+  delete s.seasonPoints2;
   // "This invited friend has already been counted." Lives on the friend's own
   // record, so without this they could clear it and have their referrer paid
   // the 200 again on the next login.

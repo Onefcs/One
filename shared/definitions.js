@@ -438,129 +438,107 @@ function armIndexForLevel(lvl) {
 // the entrance doubles as a gate matching where the PREVIOUS arm tops out.
 const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 
-// ── Сезон ───────────────────────────────────────────────────────────────────
-// A time-boxed points race. Points come from two places and both are counted
-// server-side only (SEASON_* fields are stripped from client saves the same
-// way balances are — see _sanitizeSavedStats): an endless rotation of kill
-// quests, and burning junk gear.
+// ── Сезон 2 ─────────────────────────────────────────────────────────────────
+// A time-boxed points race. Every point is counted server-side only
+// (savedData.seasonPoints2 is stripped from client saves the same way the
+// balances are — see _sanitizeSavedStats) so the leaderboard the prizes are
+// read off cannot be written to by the people competing on it.
 //
-// The kill quests are deliberately drawn from the level 1-19 band, which is
-// the starting corridor — so the race is about volume, not about how far into
-// the world a player has already got.
-const SEASON_END_AT   = Date.UTC(2026, 7, 20, 15, 0, 0); // 20 Aug 2026, 18:00 MSK (UTC+3)
-const SEASON_MIN_LVL  = 10;
-const SEASON_QUEST_KILLS  = 5000;
-const SEASON_QUEST_POINTS = 100;
-// One quest is active at a time; clearing it rolls the next at random from
-// this list. `sp` is the eid prefix, so both the guard and the warrior
-// variant of a species count toward the same quest.
-//
-// Every species listed here must actually appear somewhere inside the band —
-// a quest for one that does not is literally impossible to finish. The band
-// sits entirely inside the starting corridor now, so all three are reachable
-// from level 1 and `req` is 0 throughout; it is kept because the roll still
-// filters on it (see _seasonRollSpecies, server/index.js), which is what
-// would stop a gated species being handed to someone who cannot reach it if
-// the band is ever widened past level 20 again.
-const SEASON_SPECIES = [
-  { sp: 'rat',   name: 'Крысы',  req: 0 },  // levels 10, 13, 16, 19
-  { sp: 'slime', name: 'Слизни', req: 0 },  // levels 11, 14, 17
-  { sp: 'imp',   name: 'Бесы',   req: 0 },  // levels 12, 15, 18
-];
+// Season 1 scored kills and burning; Season 2 drops the kill-quest grind
+// entirely and scores itemization/economy actions instead — enhancing gear,
+// crafting an advanced ("2 профессия") skill book, burning junk gear and
+// books, referring a friend, rebirthing, and buying on the market. Kept in
+// its own field (seasonPoints2, not the old seasonPoints) so Season 1's
+// final totals — already paid out — don't carry over as a Season 2 head
+// start.
+const SEASON_END_AT = Date.UTC(2026, 8, 10, 15, 0, 0); // 10 Sep 2026, 18:00 MSK (UTC+3)
+function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 
-// Two quest bands the player switches between in the Сезон panel. One quest
-// is active at a time and it belongs to whichever band is selected; each band
-// keeps its own progress, so switching across and back resumes rather than
-// rerolls (and so switching cannot be used to skip a species you dislike).
+// ── Заточка (enhance) ────────────────────────────────────────────────────
+// Points for a SUCCESSFUL enhance only — a miss costs the stone and pays
+// nothing, the task is to enhance, not to attempt.
 //
-// `reqLvl` is what the player needs to select the band at all. For 20+ it is
-// not a balance knob: the top corridor itself is gated at level 20
-// (ARM_LEVEL_REQ.top), so a lower-level player literally cannot walk in to
-// find a single one of those monsters.
-//
-// The 20+ band starts at 21, not 20 — level 20 is still the last room of the
-// starting corridor (slimes), so including it would put a 10+ species inside
-// the 20+ band.
-const SEASON_TIERS = [
-  {
-    id: '10', label: '10+', reqLvl: SEASON_MIN_LVL, minLvl: 10, maxLvl: 19,
-    species: SEASON_SPECIES,
-  },
-  {
-    id: '20', label: '20+', reqLvl: 20, minLvl: 21, maxLvl: 23,
-    species: [
-      { sp: 'zombie',    name: 'Зомби',  req: 20 },  // level 21
-      { sp: 'lizardman', name: 'Ящеры',  req: 20 },  // level 22
-      { sp: 'orc',       name: 'Орки',   req: 20 },  // level 23
-    ],
-  },
-];
-const SEASON_TIER_DEFAULT = '10';
-function seasonTier(id) {
-  return SEASON_TIERS.find(x => x.id === id) || SEASON_TIERS[0];
+// The pet/cloak/artifact trio is priced separately from (and above) regular
+// gear at the same rarity, and — unlike regular gear — it also pays on a
+// SAFE (bless_stone) success, just less than a normal-stone one: the safe
+// stone can't destroy the item on a miss, so the risk (and the reward) is
+// lower. Regular gear only pays on a normal-stone success, and only at
+// rare/epic — nothing for common/uncommon gear, nothing for a safe success.
+const SEASON_ENHANCE_SPECIAL_SLOTS = new Set(['pet', 'cloak', 'artifact']);
+const SEASON_ENHANCE_SPECIAL_POINTS = {
+  common:   { norm: 20,  bless: 5  },
+  uncommon: { norm: 40,  bless: 15 },
+  rare:     { norm: 100, bless: 40 },
+};
+const SEASON_ENHANCE_GEAR_POINTS = { rare: 20, epic: 100 };
+// `slot`/`rarity` off the item's own catalog entry (never trust the request),
+// `stoneType` is enhanceItem's own 'bless' | 'norm'.
+function seasonEnhancePoints(slot, rarity, stoneType) {
+  if (SEASON_ENHANCE_SPECIAL_SLOTS.has(slot)) {
+    const row = SEASON_ENHANCE_SPECIAL_POINTS[rarity];
+    return row ? (row[stoneType === 'bless' ? 'bless' : 'norm'] || 0) : 0;
+  }
+  if (stoneType === 'bless') return 0;
+  return SEASON_ENHANCE_GEAR_POINTS[rarity] || 0;
 }
-// Repeatable one-off tasks alongside the kill quest. Each pays out once per
-// occurrence of the thing it names — once per 3v3 match, once per death
-// battle round, once per world-boss appearance — and then arms again, so
-// they can be earned over and over across the season. The natural limits of
-// the events themselves (daily attempts, fixed schedules, one boss at a
-// time) are what keep them from being farmed.
-const SEASON_EVENT_POINTS = 50;
-// Paid to the WINNER(s) on top of the participation points above — taking the
-// match is worth more than turning up for it. Keyed by the same task ids.
-// Everyone on the winning 3v3 side gets the full amount each; it is a team
-// result, not a pot to divide.
-const SEASON_WIN_POINTS = { deathbattle: 150, arena3: 30 };
-const SEASON_EVENT_TASKS = [
-  { id: 'arena3',     name: 'Участвовать в Арене 3х3' },
-  { id: 'deathbattle', name: 'Участвовать в Битве на смерть' },
-  { id: 'worldboss',  name: 'Ударить Мирового босса' },
-];
 
-// Points for a SUCCESSFUL enhance, by the item's own rarity. A miss costs the
-// stone and pays nothing — the task is to enhance, not to attempt. Keyed the
-// same way burning is, so anything not listed here earns nothing.
-const SEASON_ENHANCE_POINTS = { common: 10, uncommon: 50, rare: 80, epic: 120 };
+// ── Вторая профессия ──────────────────────────────────────────────────────
+// Crafting (successfully) an advanced skill book — craftAdvSkillBook,
+// server/index.js.
+const SEASON_ADV_BOOK_POINTS = 300;
 
+// ── Сжигание ──────────────────────────────────────────────────────────────
+// Gear: destroys the item outright — no gold, no materials back, only
+// points. Anything not listed here cannot be burned at all. Unchanged from
+// Season 1.
+const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
+// Books (skill/passive/advanced-skill — all stackable materials): a flat
+// rate per copy burned, regardless of which book it is.
+const SEASON_BOOK_BURN_POINTS = 30;
+
+// ── Приведи друга ─────────────────────────────────────────────────────────
 // Bringing in a player who then reaches SEASON_REF_LEVEL. Paid to the
 // REFERRER, once per invited friend ever — the claim flips a flag on the
 // friend's own document, so it cannot be collected twice by relogging, and
 // it lands whether or not the referrer happens to be online at the time.
+// Unchanged from Season 1.
 const SEASON_REF_POINTS = 200;
 const SEASON_REF_LEVEL  = 20;
 
-// Burning destroys the item outright — no gold, no materials back, only
-// points. Anything not listed here cannot be burned at all.
-const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
+// ── Перерождение ──────────────────────────────────────────────────────────
+const SEASON_REBIRTH_POINTS = 500;
+
+// ── Покупка на рынке ──────────────────────────────────────────────────────
+// Points scale with what was actually paid, floored to whole GRAM — a
+// purchase under 1 GRAM earns nothing, 1 earns SEASON_MARKET_POINTS_PER_GRAM,
+// 2 earns double, and so on.
+const SEASON_MARKET_POINTS_PER_GRAM = 10;
+function seasonMarketPoints(price) {
+  return Math.max(0, Math.floor(Number(price) || 0)) * SEASON_MARKET_POINTS_PER_GRAM;
+}
+
+// ── Рейтинг ───────────────────────────────────────────────────────────────
+// The leaderboard only lists players who have cleared this floor — a low
+// score simply doesn't show up, rather than showing everyone all the way
+// down to 1 point.
+const SEASON_RATING_MIN_POINTS = 5000;
+
 // Paid out manually off-chain; the game only ranks players and shows this.
 const SEASON_PRIZES = [
-  { place: 1, usdt: 100 },
-  { place: 2, usdt: 50  },
-  { place: 3, usdt: 30  },
+  { place: 1,  usdt: 100 },
+  { place: 2,  usdt: 50  },
+  { place: 3,  usdt: 30  },
+  { place: 4,  usdt: 10  },
+  { place: 5,  usdt: 10  },
+  { place: 6,  usdt: 10  },
+  { place: 7,  usdt: 10  },
+  { place: 8,  usdt: 5   },
+  { place: 9,  usdt: 5   },
+  { place: 10, usdt: 5   },
 ];
-function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
-
-// The levels each species actually appears at, computed per band. The quest
-// text names these instead of the band itself: the 20+ band spans 21-23, but
-// zombies only live at 21 and orcs only at 23, so "kill zombies, levels 21-23"
-// would send the player hunting through rooms that cannot contain one.
-//
-// Derived from the world tables rather than written out by hand, so a change
-// to FLOOR_ENEMIES can't leave a quest pointing at the wrong rooms.
-const SEASON_TIER_SPECIES_LEVELS = (() => {
-  const out = {};
-  for (const tier of SEASON_TIERS) {
-    const m = out[tier.id] = {};
-    for (let lvl = tier.minLvl; lvl <= tier.maxLvl; lvl++) {
-      const arm = armIndexForLevel(lvl);
-      const fe = FLOOR_ENEMIES[arm];
-      if (!fe) continue;
-      const sp = bandForLocalLevel(fe, lvl - ARM_OFFSETS[arm - 1]).eid.split('_')[0];
-      (m[sp] = m[sp] || []).push(lvl);
-    }
-  }
-  return out;
-})();
+// Places 11-20 get a VIP level instead of cash — same off-chain/display-only
+// handling as SEASON_PRIZES above.
+const SEASON_VIP_PRIZE = { from: 11, to: 20, vip: 1 };
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
 // the client to add them to its own inventory (see the claimQuest handler,
@@ -2062,12 +2040,14 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
-  SEASON_END_AT, SEASON_MIN_LVL, SEASON_QUEST_KILLS, SEASON_QUEST_POINTS,
-  SEASON_SPECIES, SEASON_BURN_POINTS, SEASON_PRIZES, seasonActive,
-  SEASON_EVENT_POINTS, SEASON_EVENT_TASKS, SEASON_ENHANCE_POINTS,
-  SEASON_WIN_POINTS,
-  SEASON_TIERS, SEASON_TIER_DEFAULT, SEASON_TIER_SPECIES_LEVELS, seasonTier,
+  SEASON_END_AT, seasonActive,
+  SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS, seasonEnhancePoints,
+  SEASON_ADV_BOOK_POINTS,
+  SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
+  SEASON_REBIRTH_POINTS,
+  SEASON_MARKET_POINTS_PER_GRAM, seasonMarketPoints,
+  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, SEASON_VIP_PRIZE,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
