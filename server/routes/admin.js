@@ -155,16 +155,16 @@ module.exports = function registerAdminRoutes(app, deps) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // Top referrers — ranked by how many accounts list them in `referredBy`,
-  // same 5%-of-confirmed-deposits bonus math as the player-facing 'getReferrals'
-  // handler above, just summed across every referral instead of one player's own.
+  // Top referrers — ranked by earnings (5%-of-confirmed-deposits bonus, same
+  // math as the player-facing 'getReferrals' handler above, just summed across
+  // every referral instead of one player's own). Pulled unlimited here (no
+  // $limit before the earnings are known) since ranking by count would not
+  // give the same order as ranking by GRAM earned.
   app.get('/admin/top-referrals', adminAuth, async (req, res) => {
     try {
       const rows = await PlayerModel.aggregate([
         { $match: { referredBy: { $ne: null } } },
         { $group: { _id: '$referredBy', count: { $sum: 1 }, referredIds: { $push: '$telegramId' } } },
-        { $sort: { count: -1 } },
-        { $limit: 50 },
       ]);
       if (!rows.length) return res.json({ referrers: [] });
 
@@ -178,14 +178,46 @@ module.exports = function registerAdminRoutes(app, deps) {
       const depositSumByTid = {};
       deposits.forEach(d => { depositSumByTid[d.telegramId] = (depositSumByTid[d.telegramId] || 0) + d.amount; });
 
-      res.json({
-        referrers: rows.map(r => ({
-          telegramId: r._id,
-          username: nameByTid[r._id] || r._id,
-          count: r.count,
-          bonusEarned: Math.round(r.referredIds.reduce((s, tid) => s + (depositSumByTid[tid] || 0), 0) * 0.05 * 100) / 100,
-        })),
+      const referrers2 = rows.map(r => ({
+        telegramId: r._id,
+        username: nameByTid[r._id] || r._id,
+        count: r.count,
+        bonusEarned: Math.round(r.referredIds.reduce((s, tid) => s + (depositSumByTid[tid] || 0), 0) * 0.05 * 100) / 100,
+      })).sort((a, b) => b.bonusEarned - a.bonusEarned).slice(0, 50);
+
+      res.json({ referrers: referrers2 });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Top market traders — ranked by total GRAM volume (bought + sold) across
+  // completed (status:'sold') listings. sellerUsername/buyerUsername are
+  // denormalized onto the listing itself at sale time, so this needs no join
+  // back to Player for display names.
+  app.get('/admin/top-market', adminAuth, async (req, res) => {
+    try {
+      const [sellers, buyers] = await Promise.all([
+        MarketListingModel.aggregate([
+          { $match: { status: 'sold' } },
+          { $group: { _id: '$sellerId', username: { $first: '$sellerUsername' }, sold: { $sum: '$price' }, soldCount: { $sum: 1 } } },
+        ]),
+        MarketListingModel.aggregate([
+          { $match: { status: 'sold', buyerId: { $ne: null } } },
+          { $group: { _id: '$buyerId', username: { $first: '$buyerUsername' }, bought: { $sum: '$price' }, boughtCount: { $sum: 1 } } },
+        ]),
+      ]);
+      const byId = {};
+      sellers.forEach(s => {
+        byId[s._id] = { telegramId: s._id, username: s.username || s._id, sold: s.sold, soldCount: s.soldCount, bought: 0, boughtCount: 0 };
       });
+      buyers.forEach(b => {
+        const row = byId[b._id] || (byId[b._id] = { telegramId: b._id, username: b.username || b._id, sold: 0, soldCount: 0, bought: 0, boughtCount: 0 });
+        row.bought = b.bought;
+        row.boughtCount = b.boughtCount;
+      });
+      const traders = Object.values(byId)
+        .sort((a, b) => (b.sold + b.bought) - (a.sold + a.bought))
+        .slice(0, 50);
+      res.json({ traders });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

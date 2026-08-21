@@ -438,6 +438,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
       <div class="profile-tabs" style="display:flex;gap:0;margin-bottom:12px;background:var(--bg3);border-radius:8px;padding:4px">
         <button id="mktab-active" onclick="loadMarket('active')" style="flex:1;padding:8px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">Активные</button>
         <button id="mktab-history" onclick="loadMarket('history')" style="flex:1;padding:8px;border:none;background:none;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer">История покупок</button>
+        <button id="mktab-rating" onclick="loadMarket('rating')" style="flex:1;padding:8px;border:none;background:none;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer">Рейтинг</button>
       </div>
       <div id="market-cancel-all-wrap" style="margin-bottom:12px">
         <button class="btn btn-sm btn-red" onclick="cancelAllListings()">🗑 Снять все лоты</button>
@@ -1211,19 +1212,35 @@ async function loadMarket(tab) {
   // Update tab buttons style
   const btnA = document.getElementById('mktab-active');
   const btnH = document.getElementById('mktab-history');
-  if (btnA && btnH) {
-    if (_mktab === 'active') {
-      btnA.style.background = 'var(--accent)'; btnA.style.color = '#fff';
-      btnH.style.background = 'none'; btnH.style.color = 'var(--text2)';
-    } else {
-      btnH.style.background = 'var(--accent)'; btnH.style.color = '#fff';
-      btnA.style.background = 'none'; btnA.style.color = 'var(--text2)';
-    }
-  }
+  const btnR = document.getElementById('mktab-rating');
+  [[btnA,'active'],[btnH,'history'],[btnR,'rating']].forEach(([btn,name]) => {
+    if (!btn) return;
+    if (_mktab === name) { btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; }
+    else { btn.style.background = 'none'; btn.style.color = 'var(--text2)'; }
+  });
   const cancelAllWrap = document.getElementById('market-cancel-all-wrap');
   if (cancelAllWrap) cancelAllWrap.style.display = (_mktab === 'active') ? 'block' : 'none';
   const el = document.getElementById('market-list');
   el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  if (_mktab === 'rating') {
+    try {
+      const r = await api('/admin/top-market');
+      const d = await r.json();
+      const rows = d.traders || [];
+      if (!rows.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">Сделок пока нет</p>'; return; }
+      el.innerHTML = `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>#</th><th>Ник</th><th>Куплено 💎</th><th>Продано 💎</th><th>Всего 💎</th></tr></thead>
+        <tbody>${rows.map((p,i)=>`<tr style="cursor:pointer" onclick="openReferralPlayer('${p.telegramId}')">
+          <td>${i+1}</td>
+          <td>${esc(p.username)}<br><span style="color:var(--text2);font-size:11px">${p.telegramId}</span></td>
+          <td>${fmt(p.bought)} <span style="color:var(--text2);font-size:11px">(${p.boughtCount})</span></td>
+          <td>${fmt(p.sold)} <span style="color:var(--text2);font-size:11px">(${p.soldCount})</span></td>
+          <td>${fmt(p.bought + p.sold)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+    } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
+    return;
+  }
   try {
     const r = await api('/admin/market?tab='+_mktab);
     const d = await r.json();

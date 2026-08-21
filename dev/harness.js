@@ -3927,6 +3927,94 @@ scenario('season ticket: purchase charges 15 GRAM flat, pays shop points, and do
   await baseline.close();
 });
 
+scenario('admin: top-referrals ranks by GRAM earned (not headcount), and top-market ranks trading volume', async () => {
+  const { token } = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin' }),
+  }).then(r => r.json());
+  const adminGet = path => fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+  const Player = require('../server/models/Player');
+  const GramTx = require('../server/models/GramTx');
+  const dump = () => memory.__dump('Player');
+
+  // ── Referrals: A has two referrals who deposited little, B has one
+  // referral who deposited a lot — B must outrank A, proving the ranking is
+  // by GRAM earned and not by how many accounts were referred.
+  const refA = await connectAs('harness_admin_ref_a');
+  const refB = await connectAs('harness_admin_ref_b');
+  const kidA1 = await connectAs('harness_admin_kid_a1');
+  const kidA2 = await connectAs('harness_admin_kid_a2');
+  const kidB1 = await connectAs('harness_admin_kid_b1');
+  await Promise.all([refA.close(), refB.close(), kidA1.close(), kidA2.close(), kidB1.close()]);
+  await sleep(400);
+
+  const rowRefA = dump().find(p => p.username === refA.auth.username);
+  const rowRefB = dump().find(p => p.username === refB.auth.username);
+  const rowKidA1 = dump().find(p => p.username === kidA1.auth.username);
+  const rowKidA2 = dump().find(p => p.username === kidA2.auth.username);
+  const rowKidB1 = dump().find(p => p.username === kidB1.auth.username);
+
+  await Player.updateOne({ _id: rowKidA1._id }, { $set: { referredBy: rowRefA.telegramId } });
+  await Player.updateOne({ _id: rowKidA2._id }, { $set: { referredBy: rowRefA.telegramId } });
+  await Player.updateOne({ _id: rowKidB1._id }, { $set: { referredBy: rowRefB.telegramId } });
+
+  await GramTx.create({ telegramId: rowKidA1.telegramId, type: 'deposit', status: 'confirmed', amount: 10 });
+  await GramTx.create({ telegramId: rowKidA2.telegramId, type: 'deposit', status: 'confirmed', amount: 10 });
+  await GramTx.create({ telegramId: rowKidB1.telegramId, type: 'deposit', status: 'confirmed', amount: 1000 });
+
+  const refResult = await adminGet('/admin/top-referrals');
+  const refs = refResult.referrers || [];
+  const rA = refs.find(r => r.telegramId === rowRefA.telegramId);
+  const rB = refs.find(r => r.telegramId === rowRefB.telegramId);
+  ok(rA && rB, 'both referrers appear in the ranking');
+  if (rA && rB) {
+    eq(rA.count, 2, 'referrer A has 2 referred accounts');
+    eq(rB.count, 1, 'referrer B has 1 referred account');
+    eq(rA.bonusEarned, 1, "5% of the 20 GRAM A's referrals deposited");
+    eq(rB.bonusEarned, 50, "5% of the 1000 GRAM B's single referral deposited");
+    ok(refs.indexOf(rB) < refs.indexOf(rA),
+      'ranked by GRAM earned, not referral count — B (1 referral, more earned) outranks A (2 referrals, less earned)');
+  }
+
+  // ── Market: a completed sale must show up for both sides — the seller's
+  // sold total and the buyer's bought total.
+  const seller = await connectWithSaved('harness_admin_mkt_seller', {
+    vipLevel: 1, gramBalance: 0, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(seller, 'deathknight');
+  const listed = seller.wait('marketListed', { timeout: 8000 });
+  seller.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 40 });
+  const l = await listed;
+  ok(l && l.listing, 'listing created for the market rating check');
+
+  const buyer = await connectWithSaved('harness_admin_mkt_buyer', { gramBalance: 100 });
+  await enterWorld(buyer, 'ranger');
+  if (l && l.listing) {
+    const bought = buyer.wait('marketBought', { timeout: 8000 });
+    buyer.emit('marketBuy', { listingId: l.listing.id });
+    await bought;
+  }
+  await sleep(200);
+
+  const mktResult = await adminGet('/admin/top-market');
+  const traders = mktResult.traders || [];
+  const sellerRow = traders.find(row => row.username === seller.auth.username);
+  const buyerRow = traders.find(row => row.username === buyer.auth.username);
+  ok(sellerRow, 'the seller appears in the market rating');
+  ok(buyerRow, 'the buyer appears in the market rating');
+  if (sellerRow) {
+    eq(sellerRow.sold, 40, "the seller's sold total is the listing price");
+    eq(sellerRow.soldCount, 1, 'one completed sale');
+  }
+  if (buyerRow) {
+    eq(buyerRow.bought, 40, "the buyer's bought total is what they paid");
+    eq(buyerRow.boughtCount, 1, 'one completed purchase');
+  }
+
+  await seller.close();
+  await buyer.close();
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const filter = process.argv[2] || '';
