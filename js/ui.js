@@ -668,7 +668,7 @@ function updateRebirthUI() {
   if (!el) return;
   const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
   const _nextRebirthN = (player.rebirths || 0) + 1;
-  const _doubled = (player.rebirths || 0) >= REBIRTH_COST_DOUBLE_AT;
+  const _doubled = _nextRebirthN % 5 === 0;
   const rows = Object.entries(rebirthCostFor(player.rebirths || 0)).map(([id, need]) => {
     const def = _rebirthCostDef(id);
     const have = countMaterial(id);

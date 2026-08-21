@@ -2328,56 +2328,63 @@ scenario('market: buying a lot pays the seller', async () => {
   await buyer.close();
 });
 
-scenario('rebirth: cost stays normal through the 5th rebirth, then doubles for good from the 6th on', async () => {
+scenario('rebirth: every 5th rebirth really costs double, proven across a live run through two boundaries', async () => {
   // rebirthCostFor(rebirths) — shared/definitions.js. `rebirths` passed in is
-  // the count BEFORE the rebirth about to happen, so 4 means "about to become
-  // the 5th" (still normal cost) and 5 means "about to become the 6th"
-  // (doubled, and every one after it).
+  // the count BEFORE the rebirth about to happen, so (rebirths+1) is the
+  // rebirth number that is about to land; that number being a multiple of 5
+  // is what doubles the cost. This used to be reported as "not working" in
+  // practice, so rather than only checking one isolated boundary, this drives
+  // ONE account through seven REAL, consecutive rebirths (the 4th through the
+  // 10th — crossing both the 5th and 10th boundaries) with a real reconnect
+  // between each, and checks the exact quantity actually deducted every time.
   const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30 };
-  const doubled = { box_uncommon: 20, box_rare: 10, rece: 200, recl: 60 };
+  // 5 normal + 2 doubled rebirths = 9x normal cost, worth of stock up front.
+  const stock = Object.fromEntries(Object.entries(normal).map(([id, n]) => [id, n * 9]));
 
-  // Exactly the normal cost, one rebirth short of the threshold — must succeed.
-  const below = await connectWithSaved('harness_rebirth_below', {
-    lvl: 30, rebirths: 4,
-    inventory: Object.entries(normal).map(([id, qty]) => ({ id, qty })),
+  let c = await connectWithSaved('harness_rebirth_seq', {
+    lvl: 30, rebirths: 3,
+    inventory: Object.entries(stock).map(([id, qty]) => ({ id, qty })),
   });
-  await enterWorld(below, 'lev');
-  const belowDone = below.wait('rebirthDone', { timeout: 5000 });
-  const belowErr  = below.wait('rebirthError', { timeout: 5000 }).catch(() => null);
-  below.emit('rebirth');
-  const belowRes = await Promise.race([belowDone, belowErr]);
-  ok(belowRes && !belowRes.msg, 'the 5th rebirth (rebirths:4 -> 5) still costs the normal, undoubled amount');
-  await below.close();
+  await enterWorld(c, 'lev');
+  const Player = require('../server/models/Player');
+  const countOf = (inv, id) => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
 
-  // Exactly the normal cost again, but AT the threshold (rebirths:5, about
-  // to become the 6th) — must now be refused as insufficient.
-  const atShort = await connectWithSaved('harness_rebirth_at_short', {
-    lvl: 30, rebirths: 5,
-    inventory: Object.entries(normal).map(([id, qty]) => ({ id, qty })),
-  });
-  await enterWorld(atShort, 'lev');
-  const shortErr = atShort.wait('rebirthError', { timeout: 5000 });
-  atShort.emit('rebirth');
-  const shortRes = await shortErr;
-  ok(shortRes && /Нужно/.test(shortRes.msg || ''), 'the normal amount alone is refused for the 6th rebirth', shortRes && shortRes.msg);
-  await atShort.close();
+  let prevCounts = { ...stock };
+  for (const before of [3, 4, 5, 6, 7, 8, 9]) { // -> becomes rebirth #4..#10
+    const rebirthN = before + 1;
+    const expectDouble = rebirthN % 5 === 0;
 
-  // The full doubled cost at the same threshold — must succeed, and consume
-  // the doubled amount, not the single one.
-  const atFull = await connectWithSaved('harness_rebirth_at_full', {
-    lvl: 30, rebirths: 5,
-    inventory: Object.entries(doubled).map(([id, qty]) => ({ id, qty })),
-  });
-  await enterWorld(atFull, 'lev');
-  const fullSync = atFull.wait('inventorySync', { timeout: 5000 });
-  const fullDone = atFull.wait('rebirthDone', { timeout: 5000 });
-  atFull.emit('rebirth');
-  const [inv] = await Promise.all([fullSync, fullDone]);
-  const left = id => inv.inventory.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
-  for (const id of Object.keys(doubled)) {
-    eq(left(id), 0, `the doubled ${id} cost was fully consumed by the 6th rebirth`);
+    const sync = c.wait('inventorySync', { timeout: 5000 });
+    const done = c.wait('rebirthDone', { timeout: 5000 });
+    const err  = c.wait('rebirthError', { timeout: 5000 }).catch(() => null);
+    c.emit('rebirth');
+    const res = await Promise.race([done, err]);
+    ok(res && !res.msg, `rebirth #${rebirthN} succeeded`, res && res.msg);
+    eq(res && res.rebirths, rebirthN, `and the server now counts it as rebirth #${rebirthN}`);
+
+    const inv = await sync;
+    const newCounts = {};
+    for (const id of Object.keys(normal)) {
+      newCounts[id] = countOf(inv.inventory, id);
+      const spent = prevCounts[id] - newCounts[id];
+      const want = normal[id] * (expectDouble ? 2 : 1);
+      eq(spent, want, `rebirth #${rebirthN} (${expectDouble ? 'DOUBLED' : 'normal'}) spent ${want} × ${id}, not ${normal[id] * (expectDouble ? 1 : 2)}`);
+    }
+    prevCounts = newCounts;
+
+    // Rebirth resets level to 1; bump it back to REBIRTH_LEVEL through a real
+    // reconnect (not just in-memory) so the next iteration reloads `rebirths`
+    // from the DB exactly the way a real returning player would — which is
+    // the path a stale/mistyped stored value would have broken.
+    await c.close();
+    await sleep(300);
+    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+    await Player.updateOne({ _id: row._id }, { $set: { 'savedData.lvl': 30 } });
+    await sleep(80);
+    c = await connectAs('harness_rebirth_seq');
+    await enterWorld(c, 'lev');
   }
-  await atFull.close();
+  await c.close();
 });
 
 scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {

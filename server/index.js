@@ -4642,8 +4642,9 @@ io.on('connection', socket => {
       const _beforeLen = inv.length;
       const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
       const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
-      // From the 6th rebirth on, cost is permanently doubled
-      // (rebirthCostFor, shared/definitions.js).
+      // Every 5th rebirth costs double (rebirthCostFor, shared/definitions.js)
+      // — based on the rebirth about to happen (current rebirths + 1), not
+      // the count already banked.
       const _cost = rebirthCostFor(_lastStats.rebirths || 0);
       for (const [id, need] of Object.entries(_cost)) {
         const have = matCount(id);
