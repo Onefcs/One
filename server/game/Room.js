@@ -1806,8 +1806,22 @@ class Room {
       // so ordinary play chasing a scattered monster across one room would
       // trip the exact same "snaps back mid-fight" symptom Fear's own
       // exemption above describes.
+      // And for both farm zones, for exactly that reason — they were simply
+      // missed when Fear and Coop got theirs. Фарм-зона's rooms are 16 tiles
+      // (640px), the same size as Coop's; Элитная фарм-зона's are 30 tiles
+      // (1200px), nearly three times this radius, and its monsters move at
+      // FARM2_SPD_MULT (2x) in packs of 4 that wake together. Fighting one
+      // pack across its own room is ordinary play there and routinely ends up
+      // more than 420px from where the pack spawned — at which point every
+      // monster in it healed to full and teleported back to its spawn tile
+      // mid-fight, which from the player's side is the damage they had just
+      // done being undone and the pack vanishing out of the fight. Both zones
+      // are sealed floors with nowhere to drag anything to, so the de-aggro
+      // leash above (aggroR * 2.2, which still applies) is the only leash
+      // either one needs — same reasoning as Fear's and Coop's exemptions.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
-      if (!e.ignoresSafeZone && e.arm !== 'fear' && e.arm !== 'coop' && ldx * ldx + ldy * ldy > LEASH_R2) {
+      if (!e.ignoresSafeZone && e.arm !== 'fear' && e.arm !== 'coop' &&
+          !e.farmZone && !e.farmZone2 && ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;

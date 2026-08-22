@@ -133,7 +133,19 @@ module.exports = function createDeathBattle(deps) {
     // connection onto the arena floor first (bypassing _arenaOpen: this is a
     // scheduled deploy, not a walk-in, and has nothing to do with whether a
     // world boss happens to be up at the same time).
-    const joined = ids.filter(sid => io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('arena'));
+    // _doEnterLocation refuses a transition to the floor you are already on
+    // (`targetFloor === currentFloor` — nothing to do), and it says so by
+    // returning false, which is indistinguishable here from "the move failed".
+    // The arena is reachable on foot for as long as a world boss is up
+    // (_arenaOpen), so an entrant who happened to be standing in it when the
+    // round deployed was read as a failed join and dropped from the round
+    // entirely: they registered, the battle started around them, and they were
+    // never placed on the ring, never added to _db.alive and never sent
+    // deathBattleStarted — while still standing in the middle of a live
+    // free-for-all. Already being there is a successful join, not a failure.
+    const joined = ids.filter(sid =>
+      playerFloorMap.get(sid) === FLOOR_IDS.arena ||
+      !!io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('arena'));
     const placed = arenaRoom.deathBattleDeploy(joined);
     placed.forEach(({ socketId, x, y, hp }) => {
       const info = prevInfo.get(socketId);
@@ -173,6 +185,24 @@ module.exports = function createDeathBattle(deps) {
     if (!p) return null;
     const floor = p._dbPrevFloor || FLOOR_IDS.hub;
     const pos = (p._dbPrevX != null && p._dbPrevY != null) ? { x: p._dbPrevX, y: p._dbPrevY } : null;
+    // Came from the arena itself (see _dbStart's own note on walk-in entrants):
+    // there is no floor to change to, and _forceEnterLocation would report that
+    // as a failure. Undo the deploy in place instead — pvpMode in particular,
+    // which deathBattleDeploy set and which only the setPlayerChar inside a
+    // real transition would otherwise clear, so returning null here left an
+    // eliminated entrant flagged for open PvP on the arena floor.
+    if (playerFloorMap.get(socketId) === floor) {
+      // pvpMode only. hp is deliberately left alone: a real transition would
+      // have re-seated it from the saved record (setPlayerChar), and on the
+      // paths that need it the caller heals right after anyway — the 'respawn'
+      // handler's own respawnPlayer for an elimination, nothing at all for a
+      // timeout, where the entrant is still standing and their current hp is
+      // the honest one.
+      p.pvpMode = false;
+      p._profileRev++;
+      if (pos && arenaRoom.canStandAt(pos.x, pos.y)) { p.x = pos.x; p.y = pos.y; }
+      return { x: p.x, y: p.y };
+    }
     const sock = io.sockets.sockets.get(socketId);
     if (!sock?.data?._forceEnterLocation?.(floor, { pos })) return null;
     const newRoom = getRoom(floor);

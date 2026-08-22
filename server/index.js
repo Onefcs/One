@@ -7371,7 +7371,16 @@ io.on('connection', socket => {
     // death respawn already uses (Room.guildWarRespawn).
     if (target === 'guildWar') currentRoom.guildWarRespawn(socket.id);
     const _joined = currentRoom.players.get(socket.id);
-    if (pos && _joined) { _joined.x = pos.x; _joined.y = pos.y; }
+    // Validated against the DESTINATION floor's own grid, never applied raw.
+    // `pos` is a spot remembered from before a deploy (_dbReturnEntrant), and
+    // the only thing that guarantees it is still standable on arrival is that
+    // it came from this same floor — which is a caller's invariant, not
+    // something checkable here. A restore that drops someone inside geometry
+    // strands them in a wall with no way out (the client's own collision only
+    // stops you ENTERING a wall, it can't push you out of one), so a spot the
+    // floor won't accept falls through to the normal spawn placement instead
+    // — the same rule the reconnect restore in selectChar already applies.
+    if (pos && _joined && currentRoom.canStandAt(pos.x, pos.y)) { _joined.x = pos.x; _joined.y = pos.y; }
     socket.to(`floor_${currentFloor}`).emit('playerJoined', { id: socket.id, username: authed.username });
     socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type: charType });
 
@@ -7989,6 +7998,28 @@ io.on('connection', socket => {
     if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
       return socket.emit('deathBattleError', { msg: 'Вы сейчас в Кровавой Башне' });
     }
+    // Сотрудничество / Элитная фарм-зона — the two instanced modes that were
+    // never checked here (or in arena3Register/race10Register below), even
+    // though coopGroupCreate/farm2GroupCreate have always checked THIS
+    // direction. That asymmetry is not harmless: both run on a private Room
+    // per party (_createCoopRoom/_createFarm2Room), and _findPlayerAnyFloor —
+    // the "still has a character in the world" filter every deploy runs — only
+    // ever looks at getRoom(floor), which for those floor ids returns the
+    // shared, permanently-empty boot-time Room, never the party's instance. So
+    // a player who signed up from inside a run was silently dropped at deploy
+    // time: registered, waited out the whole countdown, and simply never got
+    // thrown in, with no error ever shown. The same shape as the race10/arena3
+    // queue gap fearEnter's own cross-checks were added to close.
+    //
+    // The group (lobby) maps are checked alongside the live-run ones for the
+    // same reason the arena3/race10 QUEUES are: a lobby that starts while this
+    // registration is still pending lands in exactly the same place.
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('deathBattleError', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('deathBattleError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
+    }
     _db.reg.set(socket.id, { name: authed.username, tid: authed.telegramId });
     socket.emit('deathBattleRegistered', { registered: true });
     _dbBroadcast();
@@ -8028,6 +8059,13 @@ io.on('connection', socket => {
     }
     if (_fear.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы сейчас в Страхе' });
+    }
+    // See deathBattleRegister for why these two were missing and what it cost.
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы сейчас в Элитной фарм-зоне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < ARENA3_MIN_LEVEL) {
@@ -8080,6 +8118,13 @@ io.on('connection', socket => {
     }
     if (_fear.has(socket.id)) {
       return socket.emit('race10Error', { msg: 'Вы сейчас в Страхе' });
+    }
+    // See deathBattleRegister for why these two were missing and what it cost.
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы сейчас в Элитной фарм-зоне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < RACE10_MIN_LEVEL) {

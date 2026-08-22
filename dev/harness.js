@@ -661,6 +661,74 @@ scenario('floors: Элитная фарм-зона is a private party-of-3 insta
   await Promise.all([leader, m1, m2].map(x => x.close()));
 });
 
+scenario('events: a registration from inside an instanced run is refused, not silently dropped at deploy', async () => {
+  // Сотрудничество and Элитная фарм-зона each run on a PRIVATE Room per party
+  // (_createCoopRoom/_createFarm2Room), which getRoom(floorId) never returns —
+  // it only ever hands back the shared, permanently-empty boot-time Room for
+  // those floor ids. So _findPlayerAnyFloor, the "still has a character in the
+  // world" filter every scheduled deploy runs, sees nobody at all for a player
+  // inside one, and quietly dropped them from the queue at deploy time:
+  // registered, waited out the countdown, and never got thrown in, with no
+  // error ever shown. coopGroupCreate/farm2GroupCreate have always checked the
+  // opposite direction; these three handlers are the half that was missing.
+  const leader = await connectWithSaved('harness_evtlock_leader', { lvl: 30, xp: 0, xpNext: 100 });
+  const m1 = await connectWithSaved('harness_evtlock_m1', { lvl: 30, xp: 0, xpNext: 100 });
+  const m2 = await connectWithSaved('harness_evtlock_m2', { lvl: 30, xp: 0, xpNext: 100 });
+  await enterWorld(leader, 'ranger'); await enterWorld(m1, 'ranger'); await enterWorld(m2, 'ranger');
+
+  leader.emit('farm2GroupCreate');
+  await leader.wait('farm2GroupState', { timeout: 3000 });
+  m1.emit('farm2GroupJoin', { leaderId: leader.sock.id });
+  await m1.wait('farm2GroupState', { timeout: 3000 });
+  m2.emit('farm2GroupJoin', { leaderId: leader.sock.id });
+  await m2.wait('farm2GroupState', { timeout: 3000 });
+
+  const started = leader.wait('farm2Started', { timeout: 5000 });
+  const m1In = m1.wait('gameStart', { where: 'm1 deployed into farmZone2' });
+  leader.emit('farm2GroupStart');
+  await started;
+  eq((await m1In).floor, 13, 'the trio is inside a live Элитная фарм-зона run');
+
+  // All three scheduled events, from inside that run. Each has to answer with
+  // its own error rather than a successful registration.
+  await fetch(`${BASE}/dev/deathbattle/open?reg=4000`, { method: 'POST' });
+  await fetch(`${BASE}/dev/arena3/open`, { method: 'POST' });
+  await fetch(`${BASE}/dev/race10/open?reg=4000`, { method: 'POST' });
+
+  const dbErr = m1.wait('deathBattleError', { timeout: 3000 });
+  m1.emit('deathBattleRegister');
+  ok(/фарм-зоне/i.test((await dbErr).msg || ''), 'death battle refuses a registration from inside the zone');
+
+  const a3Err = m1.wait('arena3Error', { timeout: 3000 });
+  m1.emit('arena3Register');
+  ok(/фарм-зоне/i.test((await a3Err).msg || ''), 'the 3v3 arena refuses it too');
+
+  const r10Err = m1.wait('race10Error', { timeout: 3000 });
+  m1.emit('race10Register');
+  ok(/фарм-зоне/i.test((await r10Err).msg || ''), 'and so does Кровавая Башня');
+
+  // Ends the run for all three (partyBroken), same exit the zone's own
+  // scenario uses — nothing is left holding a private Room or its timers.
+  const m1Fin = m1.wait('farm2Finished', { timeout: 5000 });
+  leader.emit('enterLocation', { target: 'hub' });
+  await m1Fin;
+
+  // The Coop half of the same fix, checked at the LOBBY rather than mid-run:
+  // a group that starts while a registration is still pending lands in exactly
+  // the same place, which is why the group maps are checked alongside the live
+  // ones — the same reason arena3/race10 check each other's QUEUES.
+  const coopA = await connectWithSaved('harness_evtlock_coop', { lvl: 30, xp: 0, xpNext: 100 });
+  await enterWorld(coopA, 'ranger');
+  coopA.emit('coopGroupCreate');
+  await coopA.wait('coopGroupState', { timeout: 3000 });
+  const coopDbErr = coopA.wait('deathBattleError', { timeout: 3000 });
+  coopA.emit('deathBattleRegister');
+  ok(/Сотрудничестве/i.test((await coopDbErr).msg || ''), 'an open Сотрудничество lobby blocks death battle registration');
+  coopA.emit('coopGroupLeave');
+
+  await Promise.all([leader, m1, m2, coopA].map(x => x.close()));
+});
+
 scenario('floors: the boss arena is its own floor, reachable only while a world boss is up', async () => {
   const c = await connectAs('harness_arena_boss');
   await enterWorld(c, 'ranger');

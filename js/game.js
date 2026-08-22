@@ -1643,6 +1643,17 @@ function _evtArenaOpen() {
 }
 
 function _teleportTo(tx, ty, label) {
+  // Same guard posCorrect already applies before touching player.x/y, and for
+  // the same reason: an undefined coordinate assigned here is permanent. Every
+  // later read is NaN, so the camera goes NaN with it (nothing renders at all),
+  // the safe-zone/room/pad tests all come back false, and the server refuses
+  // the resulting move packets outright (updatePlayerPos, server/game/Room.js)
+  // — leaving the client somewhere it can never move away from while the
+  // server keeps the player standing wherever they last legitimately were.
+  // Every caller here is a server placement that carries real coordinates, so
+  // this can only ever fire on a payload that was already broken; refusing to
+  // apply it keeps the player where they are instead of erasing them.
+  if (!player || !Number.isFinite(tx) || !Number.isFinite(ty)) return;
   // Every server-driven placement lands here (deathBattleStarted,
   // arena3Started, race10Started, fearStarted and each event's return path),
   // so this is the one place that has to record when it happened.
