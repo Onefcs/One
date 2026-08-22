@@ -41,17 +41,11 @@ module.exports = function registerMarket(s, safeOn, deps) {
 
   // Stable for the life of the connection — see the note above on why these
   // keep their original names while authed/lastStats are read through `s`.
-  // gramBalance is deliberately NOT among them: it is a mutable per-socket
-  // mirror of the GRAM balance that marketBuy assigns to directly (as five
-  // other handlers in index.js do), so it is read and written through
-  // `s.gramBalance` to stay the one variable rather than a copy of it.
+  // The reassigned ones (authed, lastStats, gramBalance, itemOpBusy) are NOT
+  // here: they are reached through `s` so this module keeps seeing the live
+  // variable rather than a copy taken at wiring time.
   const {
-    socket,
-    commitServerItems: _commitServerItems,
-    itemsBusy: _itemsBusy,
-    liveGram: _liveGram,
-    flushBalances: _flushBalances,
-    ITEMS_BUSY_MSG: _ITEMS_BUSY_MSG,
+    socket, _commitServerItems, _itemsBusy, _liveGram, _flushBalances, _ITEMS_BUSY_MSG,
   } = s;
 
   // The listing cooldown, per session (see the note above).
@@ -152,7 +146,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
     // other synchronous item handler (equip/enhance/storage/craft/...)
     // already defers to this flag — this is what makes THAT deference
     // actually protect a listing in flight, not just a clone-and-commit one.
-    s.beginItemOp();
+    s.itemOpBusy++;
     try {
       const cap = _marketMaxActive(socket.data.vipLevel);
       const activeCount = await MarketListingModel.countDocuments({ sellerId: s.authed.telegramId, status: 'active' });
@@ -235,7 +229,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
         { item: canonItem && canonItem.id });
       socket.emit('marketListError', { msg: 'Ошибка сервера' });
     } finally {
-      s.endItemOp();
+      s.itemOpBusy--;
     }
   });
 
@@ -245,7 +239,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
     // (gramShopBuy/specialShopBuy/claimVipRewards) mid-flight would have its
     // stale clone stamp back over whatever this returns to the inventory.
     if (_itemsBusy()) return socket.emit('marketError', { msg: _ITEMS_BUSY_MSG });
-    s.beginItemOp();
+    s.itemOpBusy++;
     try {
       // Peek at the item before cancelling: if there's nowhere to put it back,
       // the cancellation must not happen at all. Cancelling first and only
@@ -332,7 +326,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
       console.error('marketCancel:', err);
       logPlayerErr(s.authed.telegramId, s.authed.username, 'market_cancel', err, { listingId: String(listingId) });
     } finally {
-      s.endItemOp();
+      s.itemOpBusy--;
     }
   });
 
@@ -352,7 +346,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
     // See marketList's own busy check: a clone-and-commit handler mid-flight
     // would have its stale clone stamp back over the item this hands out.
     if (_itemsBusy()) return socket.emit('marketError', { msg: _ITEMS_BUSY_MSG });
-    s.beginItemOp();
+    s.itemOpBusy++;
     try {
       const listing = await MarketListingModel.findOne({ _id: listingId, status: 'active' }, 'sellerId price').lean();
       if (!listing) return socket.emit('marketError', { msg: 'Лот уже продан или снят' });
@@ -532,7 +526,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
       console.error('marketBuy:', err);
       logPlayerErr(s.authed.telegramId, s.authed.username, 'market_buy', err, { listingId: String(listingId) });
     } finally {
-      s.endItemOp();
+      s.itemOpBusy--;
     }
   });
 };

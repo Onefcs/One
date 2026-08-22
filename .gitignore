@@ -12,3 +12,4 @@ android/build/
 android/app/build/
 android/*.keystore
 android/**/*.keystore
+dev/.scratch/

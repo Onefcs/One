@@ -2322,6 +2322,74 @@ io.on('connection', socket => {
   // same forgery just claim an earlier savedAt to buy a bigger allowance.
   let _lastSaveAcceptedAt = 0;
 
+  // ── The session ───────────────────────────────────────────────────
+  // This connection's own state, handed to the per-domain handler modules in
+  // server/handlers/. It is what the game-mode factories in server/game/ cannot
+  // express: those move a singleton state machine (one _a3 per process), while
+  // these handlers are per-socket and run against the variables below.
+  //
+  // Every member is an accessor on purpose, so this object can be built here —
+  // before most of what it exposes is declared — without tripping over the TDZ
+  // of a const declared further down. The reassigned ones need to be accessors
+  // for a second reason: selectChar/saveProgress/login replace authed,
+  // _lastStats and the balances wholesale AFTER the modules are wired, so a
+  // value captured at wiring time would be stale for the rest of the session.
+  //
+  // Reassigned members are exposed without their leading underscore (s.authed,
+  // s.lastStats); the rest keep their original names so the moved handler
+  // bodies stay byte-identical to what they were in this closure.
+  const session = {
+    socket,
+    get atkCount() { return _atkCount; }, set atkCount(v) { _atkCount = v; },
+    get atkResetAt() { return _atkResetAt; }, set atkResetAt(v) { _atkResetAt = v; },
+    get balancePersistTimer() { return _balancePersistTimer; }, set balancePersistTimer(v) { _balancePersistTimer = v; },
+    get econBusy() { return _econBusy; }, set econBusy(v) { _econBusy = v; },
+    get gramBalance() { return _gramBalance; }, set gramBalance(v) { _gramBalance = v; },
+    get gramPending() { return _gramPending; }, set gramPending(v) { _gramPending = v; },
+    get invRev() { return _invRev; }, set invRev(v) { _invRev = v; },
+    get itemOpBusy() { return _itemOpBusy; }, set itemOpBusy(v) { _itemOpBusy = v; },
+    get lastChatAt() { return _lastChatAt; }, set lastChatAt(v) { _lastChatAt = v; },
+    get lastStats() { return _lastStats; }, set lastStats(v) { _lastStats = v; },
+    get myClanIcon() { return _myClanIcon; }, set myClanIcon(v) { _myClanIcon = v; },
+    get myClanId() { return _myClanId; }, set myClanId(v) { _myClanId = v; },
+    get myClanLevel() { return _myClanLevel; }, set myClanLevel(v) { _myClanLevel = v; },
+    get myClanName() { return _myClanName; }, set myClanName(v) { _myClanName = v; },
+    get nexumBalance() { return _nexumBalance; }, set nexumBalance(v) { _nexumBalance = v; },
+    get nexumPending() { return _nexumPending; }, set nexumPending(v) { _nexumPending = v; },
+    get pendingOobGrants() { return _pendingOobGrants; }, set pendingOobGrants(v) { _pendingOobGrants = v; },
+    get seasonPoints() { return _seasonPoints; }, set seasonPoints(v) { _seasonPoints = v; },
+    get teleportCastTimer() { return _teleportCastTimer; }, set teleportCastTimer(v) { _teleportCastTimer = v; },
+    get authed() { return authed; }, set authed(v) { authed = v; },
+    get currentFloor() { return currentFloor; }, set currentFloor(v) { currentFloor = v; },
+    get currentRoom() { return currentRoom; }, set currentRoom(v) { currentRoom = v; },
+    get _ERR_LOG_MS() { return _ERR_LOG_MS; },
+    get _ITEMS_BUSY_MSG() { return _ITEMS_BUSY_MSG; },
+    get _atkAllowed() { return _atkAllowed; },
+    get _commitServerItems() { return _commitServerItems; },
+    get _currentQuest() { return _currentQuest; },
+    get _doEnterLocation() { return _doEnterLocation; },
+    get _emitNearby() { return _emitNearby; },
+    get _errLoggedAt() { return _errLoggedAt; },
+    get _flushBalances() { return _flushBalances; },
+    get _goldNow() { return _goldNow; },
+    get _grantXp() { return _grantXp; },
+    get _itemErr() { return _itemErr; },
+    get _itemsBusy() { return _itemsBusy; },
+    get _liveGram() { return _liveGram; },
+    get _liveInventory() { return _liveInventory; },
+    get _logHandlerErr() { return _logHandlerErr; },
+    get _questBump() { return _questBump; },
+    get _questKills() { return _questKills; },
+    get _questPush() { return _questPush; },
+    get _resolveInvIdx() { return _resolveInvIdx; },
+    get _seasonAddPoints() { return _seasonAddPoints; },
+    get _serverSpendGold() { return _serverSpendGold; },
+    get _setGram() { return _setGram; },
+    get _setNexum() { return _setNexum; },
+    get _withEconLock() { return _withEconLock; },
+    get _xpMult() { return _xpMult; },
+  };
+
   // Banks one XP grant at the most generous multiplier the client could
   // legitimately apply to it. Exposed on socket.data because a kill pays
   // every nearby party member, and their entitlement lives in THEIR socket's
@@ -6135,23 +6203,6 @@ io.on('connection', socket => {
   // after it has been wired. _itemOpBusy is reached through begin/end rather
   // than handed over, because it is shared with every other item handler in
   // this closure and has to stay one counter.
-  const session = {
-    socket,
-    get authed()    { return authed; },
-    get lastStats() { return _lastStats; },
-    beginItemOp()   { _itemOpBusy++; },
-    endItemOp()     { _itemOpBusy--; },
-    // A mutable mirror, not a stable binding: marketBuy assigns to it the same
-    // way gramShopBuy and the deposit/withdraw handlers do, so it is exposed
-    // as an accessor pair to stay THIS closure's variable rather than a copy.
-    get gramBalance()  { return _gramBalance; },
-    set gramBalance(v) { _gramBalance = v; },
-    itemsBusy:          _itemsBusy,
-    commitServerItems:  _commitServerItems,
-    liveGram:           _liveGram,
-    flushBalances:      _flushBalances,
-    ITEMS_BUSY_MSG:     _ITEMS_BUSY_MSG,
-  };
   registerMarket(session, safeOn, {
     MarketListingModel, PlayerModel, io, activeSessions,
     logPlayer, logPlayerErr,
