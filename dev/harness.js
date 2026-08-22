@@ -1531,6 +1531,41 @@ scenario('quests: f1q14 is now a level-15 gate and f1q15 asks to enter Фарм-
   await farmer.close();
 });
 
+scenario('progression: a repeat selectChar resumes the session instead of rolling it back to login', async () => {
+  // `authed` is the account document as READ AT LOGIN and nothing refreshes
+  // it — every write goes through the model, not the document. selectChar
+  // pinned every server-owned field to it, so a SECOND selectChar on the same
+  // connection handed the client back its login-time state: a skill studied
+  // minutes earlier un-learned itself (the books already spent), the
+  // authoritative progressSync said so, and the next save persisted the
+  // rollback. selectChar is a plain client event, so a duplicate is always
+  // one packet away — it has to be idempotent.
+  const c = await connectWithSaved('harness_reselect', {
+    lvl: 20, xp: 0, xpNext: 9999, type: 'ranger',
+    inventory: [{ id: 'book_ranger_Q', qty: 10 }],
+  });
+  await enterWorld(c, 'ranger');
+  await sleep(200);
+
+  const learned = c.wait('progressSync', { timeout: 4000 });
+  c.emit('learnSkill', { key: 'Q' });
+  eq((await learned).skillLevels.Q, 1, 'the skill is studied');
+  await sleep(600);   // let _persistLearned land
+
+  const again = c.wait('progressSync', { timeout: 4000 });
+  c.emit('selectChar', { type: 'ranger', savedStats: {
+    type: 'ranger', lvl: 20, xp: 0, xpNext: 9999, hp: 500, maxHp: 500, kills: 0, savedAt: Date.now(),
+  } });
+  eq((await again).skillLevels.Q, 1, 'a repeat selectChar does not un-learn it');
+
+  // And the rollback must not be what gets written down either: the pinned
+  // blob becomes _lastStats, which every later save persists verbatim.
+  await c.close();
+  await sleep(700);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq((row.savedData.skillLevels || {}).Q, 1, 'and the studied level is what reaches the database');
+});
+
 scenario('progression: learning a passive without the book is refused', async () => {
   const c = await connectAs('harness_passive');
   await enterWorld(c, 'mage');

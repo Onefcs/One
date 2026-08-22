@@ -6790,6 +6790,31 @@ io.on('connection', socket => {
     if (!_ran) _itemErr(_ITEMS_BUSY_MSG);
   });
 
+  // The record every server-owned field below is pinned to. `authed` is the
+  // document as it was READ AT LOGIN, and nothing ever refreshes it:
+  // _persistSavedFields/_persistLearned/_commitServerItems all write through
+  // the model (findByIdAndUpdate), not through this document, so
+  // authed.savedData goes stale the moment anything is studied, spent,
+  // granted or picked up. _lastStats is the session's own live copy and is
+  // what every other handler in this file already treats as the truth.
+  //
+  // On the FIRST selection of a connection the two are the same object
+  // (_finishLogin seeds _lastStats from doc.savedData), so this changes
+  // nothing there — including on a reconnect, which is a fresh socket with a
+  // fresh read. It only differs on a REPEAT selectChar, and there it is the
+  // whole difference between resuming the session and rolling it back to
+  // login: pinning to authed.savedData handed the client back its login-time
+  // skillLevels/passiveLevels/upgrades/gold/xp/items, emitted them as the
+  // authoritative progressSync, and then let the next save persist that
+  // rollback. A skill studied minutes earlier simply un-learned itself, and
+  // the books were already gone. selectChar is a plain client event, so a
+  // duplicate is always one packet away — it must be idempotent.
+  //
+  // specialQuestsDone deliberately still reads authed.savedData further down:
+  // the sanitizer strips that field outright, and completeSpecialQuest is the
+  // one path that DOES keep the document in sync (see its own $ne guard).
+  function _sessionBase() { return _lastStats || authed.savedData; }
+
   safeOn('selectChar', ({ type, savedStats }) => {
     if (!authed) return;
     // This handler replaces _lastStats wholesale further down — the same
@@ -6817,7 +6842,8 @@ io.on('connection', socket => {
     // mattered is now taken from the stored record below regardless of what
     // arrived, so a blank blob simply has nothing to poison.
     const sanitized = _sanitizeSavedStats(savedStats || null);
-    const effectiveSaved = sanitized || _sanitizeSavedStats(authed.savedData || null);
+    // _sessionBase() rather than authed.savedData — see its comment.
+    const effectiveSaved = sanitized || _sanitizeSavedStats(_sessionBase() || null);
     // This blob becomes _lastStats, which is the BASELINE every later
     // saveProgress is checked against — so accepting the client's items and
     // gold here unchecked would simply move the forgery one step earlier and
@@ -6843,7 +6869,7 @@ io.on('connection', socket => {
     // unrelated saveProgress happens to run its own check first. That's the
     // moment a real, non-cheating player sees an item or a level vanish.
     if (effectiveSaved) {
-      const _dbBase = _sanitizeSavedStats(authed.savedData) || null;
+      const _dbBase = _sanitizeSavedStats(_sessionBase()) || null;
       // Items come from the stored record, full stop — the blob the client
       // sent has no say. Every change to them was applied and persisted
       // server-side as it happened (_commitServerItems), so the record is
