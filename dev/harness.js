@@ -752,6 +752,55 @@ scenario('floors: Death Battle deploys entrants from wherever they are and retur
   await b.close();
 });
 
+scenario('floors: registering for a scheduled PvP event is refused while in a Coop/Элитная фарм-зона group', async () => {
+  // coopGroupCreate/Join and farm2GroupCreate/Join already refuse to let
+  // someone in while they hold a deathBattle/arena3/race10/fear slot — the
+  // other direction never got the same treatment, so a player who opened one
+  // of these lobbies first could still register for a scheduled event, get
+  // force-deployed to it, and have their run collapse (partner ejected to
+  // the hub) out of nowhere. Confirms the fix: registering is now refused
+  // the moment either lobby is open, before any run/deploy is even involved.
+  await Promise.all([
+    fetch(`${BASE}/dev/deathbattle/open?reg=5000`, { method: 'POST' }),
+    fetch(`${BASE}/dev/arena3/open`, { method: 'POST' }),
+    fetch(`${BASE}/dev/race10/open?reg=5000`, { method: 'POST' }),
+  ]);
+
+  const farmer = await connectWithSaved('harness_evtguard_farm2', { lvl: 30, xp: 0, xpNext: 100 });
+  await enterWorld(farmer, 'ranger');
+  const farmerState = farmer.wait('farm2GroupState', { timeout: 3000 });
+  farmer.emit('farm2GroupCreate');
+  await farmerState;
+
+  const dbErr = farmer.wait('deathBattleError', { timeout: 3000 });
+  farmer.emit('deathBattleRegister');
+  ok(/Элитной фарм-зоне/.test((await dbErr)?.msg || ''), 'deathBattleRegister refuses a farm2 lobby leader');
+
+  const a3Err = farmer.wait('arena3Error', { timeout: 3000 });
+  farmer.emit('arena3Register');
+  ok(/Элитной фарм-зоне/.test((await a3Err)?.msg || ''), 'arena3Register refuses a farm2 lobby leader');
+
+  const r10Err = farmer.wait('race10Error', { timeout: 3000 });
+  farmer.emit('race10Register');
+  ok(/Элитной фарм-зоне/.test((await r10Err)?.msg || ''), 'race10Register refuses a farm2 lobby leader');
+
+  const fearErr = farmer.wait('fearError', { timeout: 3000 });
+  farmer.emit('fearEnter');
+  ok(/Элитной фарм-зоне/.test((await fearErr)?.msg || ''), 'fearEnter refuses a farm2 lobby leader');
+  await farmer.close();
+
+  const cooper = await connectWithSaved('harness_evtguard_coop', { lvl: 30, xp: 0, xpNext: 100 });
+  await enterWorld(cooper, 'ranger');
+  const cooperState = cooper.wait('coopGroupState', { timeout: 3000 });
+  cooper.emit('coopGroupCreate');
+  await cooperState;
+
+  const dbErr2 = cooper.wait('deathBattleError', { timeout: 3000 });
+  cooper.emit('deathBattleRegister');
+  ok(/Сотрудничестве/.test((await dbErr2)?.msg || ''), 'deathBattleRegister refuses a coop lobby leader');
+  await cooper.close();
+});
+
 scenario('floors: the 3v3 arena deploys a full match and returns an eliminated entrant to the hub', async () => {
   // ARENA3_NEEDED is 6 (two teams of ARENA3_TEAM_SIZE=3) and arena3Register
   // itself tries a deploy the moment the queue reaches it — no separate

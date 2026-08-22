@@ -7989,6 +7989,24 @@ io.on('connection', socket => {
     if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
       return socket.emit('deathBattleError', { msg: 'Вы сейчас в Кровавой Башне' });
     }
+    // Same gap as the arena3/race10 pair above, just never noticed on this
+    // side: Coop/Элитная фарм-зона check .reg here (coopGroupCreate/Join,
+    // farm2GroupCreate/Join) before letting someone start or join a run, but
+    // nothing here ever checked back. A player mid-run who registered here
+    // got force-deployed to the arena the moment the round started — ending
+    // their run and ejecting their partner to the hub out of nowhere — and
+    // on return (_dbReturnEntrant, server/game/death-battle.js) got sent
+    // back to that floor's never-really-used shared template Room (see
+    // server/game/floors.js) at stale coordinates from their own, separately
+    // generated instance — which can easily be a wall on that map. That is
+    // "выкинуло в стену" for an event that never touched a real Coop/
+    // farmZone2 floor.
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('deathBattleError', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('deathBattleError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
+    }
     _db.reg.set(socket.id, { name: authed.username, tid: authed.telegramId });
     socket.emit('deathBattleRegistered', { registered: true });
     _dbBroadcast();
@@ -8028,6 +8046,16 @@ io.on('connection', socket => {
     }
     if (_fear.has(socket.id)) {
       return socket.emit('arena3Error', { msg: 'Вы сейчас в Страхе' });
+    }
+    // Coop/Элитная фарм-зона check registration here before letting someone
+    // start or join a run (coopGroupCreate/Join, farm2GroupCreate/Join) —
+    // this is the same check in the direction that was missing, same
+    // reasoning as deathBattleRegister's own (see its comment).
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('arena3Error', { msg: 'Вы сейчас в Элитной фарм-зоне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < ARENA3_MIN_LEVEL) {
@@ -8080,6 +8108,14 @@ io.on('connection', socket => {
     }
     if (_fear.has(socket.id)) {
       return socket.emit('race10Error', { msg: 'Вы сейчас в Страхе' });
+    }
+    // Same missing-direction check as arena3Register/deathBattleRegister —
+    // see deathBattleRegister's comment for the full reasoning.
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('race10Error', { msg: 'Вы сейчас в Элитной фарм-зоне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < RACE10_MIN_LEVEL) {
@@ -8143,6 +8179,16 @@ io.on('connection', socket => {
     }
     if (_race10.queue.has(socket.id) || (_race10.live && _race10.alive.has(socket.id))) {
       return socket.emit('fearError', { msg: 'Вы сейчас в Кровавой Башне' });
+    }
+    // Same missing-direction check as arena3Register/race10Register/
+    // deathBattleRegister — see deathBattleRegister's comment for the full
+    // reasoning; applies here too since fearEnter force-moves the connection
+    // onto a brand-new floor exactly like those do.
+    if (_coop.has(socket.id) || _coopGroupOf.has(socket.id)) {
+      return socket.emit('fearError', { msg: 'Вы сейчас в Сотрудничестве' });
+    }
+    if (_farm2.has(socket.id) || _farm2GroupOf.has(socket.id)) {
+      return socket.emit('fearError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
     }
     const lvl = (_lastStats && _lastStats.lvl) || 1;
     if (lvl < FEAR_MIN_LEVEL) {
