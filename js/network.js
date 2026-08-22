@@ -880,6 +880,32 @@ function netConnect(onReady) {
       // don't run restoreFromSave, which would stomp them with whatever
       // (possibly stale) savedData this reconnect's authOk carried.
       _isReconnectRejoin = false;
+      // "Already has a real position" only holds while the server put us back
+      // on the floor we were rendering. It does not always: the restore
+      // (_restoreFloorFor, server/index.js) re-checks every gate and sends
+      // anyone it can no longer place onto the hub instead — a run in
+      // Сотрудничество/Элитная фарм-зона/Страх (private instances there is
+      // nothing to rejoin), a Guild War window that shut, a world boss that
+      // died, a level that no longer clears an arm's gate. `dungeon` above has
+      // already been rebuilt to that new floor, and keeping our old
+      // coordinates on it is not a cosmetic mismatch: they belong to a grid
+      // that no longer exists. Off the new grid entirely (a farm-zone y of
+      // 3100px on the hub's 2720px map) canMoveX and canMoveY BOTH refuse
+      // every direction — tileAt reads out of bounds as WALL — so the player
+      // is frozen where they stand, inside what looks like solid wall, while
+      // everyone else sees them standing on the hub spawn. That is the
+      // "выкинуло в зал / застрял в стене" pair, and it is one missing
+      // reposition.
+      //
+      // _resumeSameFloor is exactly "the floor did not change", so this only
+      // ever fires on a real floor swap and the ordinary same-floor reconnect
+      // still keeps its position, which is the whole point of this branch.
+      if (!_resumeSameFloor && player && !_placementIsStale) {
+        const sp = srvSpawn || d.spawn;
+        player.x = sp.x; player.y = sp.y;
+        camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
+        clampCamera();
+      }
       csOnServerReady();
       // The 'disconnect' handler below force-hides chat-btn (display:none)
       // on any drop, same as the whole-state wipe it also does — but only

@@ -1125,6 +1125,89 @@ scenario('reconnect: a drop in an arm comes back to the arm, not the hub safe zo
   await sleep(300);
 });
 
+scenario('reconnect: a login that never picks a character leaves the stored spot alone', async () => {
+  // floor/x/y are one fact and have to be written as one. currentFloor starts
+  // at the hub on every fresh connection and only becomes real once selectChar
+  // seats the character — so a session that logged in and stopped there (the
+  // app closed at the character screen, a connection that died while it
+  // loaded) used to flush `floor: hub` on its way out while leaving the stored
+  // x/y pointing at wherever the player had really been. The next real login
+  // read that pair back, could not place arm coordinates on the hub grid, and
+  // dropped the player on the hub spawn — "вышел в коридоре, зашёл в зале".
+  const c1 = await connectWithSaved('harness_nosel_floor', { lvl: 20, xp: 0, xpNext: 9999 });
+  await enterWorld(c1, 'ranger');
+  const onArm = c1.wait('gameStart', { where: 'enter arm' });
+  c1.emit('enterLocation', { target: 'top' });
+  const arm = await onArm;
+  const wx = arm.spawn.x + 400, wy = arm.spawn.y;
+  for (let i = 0; i < 8; i++) { c1.emit('mv', [Math.round(wx * 2), Math.round(wy * 2), 1, 500, 1]); await sleep(60); }
+  await sleep(250);
+  await c1.close();
+  await sleep(700);
+
+  // Open and close again without ever selecting a character.
+  const c2 = await connectAs('harness_nosel_floor');
+  await sleep(200);
+  await c2.close();
+  await sleep(700);
+
+  const c3 = await connectAs('harness_nosel_floor');
+  const back = await enterWorld(c3, 'ranger');
+  eq(back.floor, arm.floor, 'the aborted login did not move the stored floor to the hub');
+  ok(Math.abs(back.spawn.x - wx) < 60 && Math.abs(back.spawn.y - wy) < 60,
+    `and the stored spot survived it (${back.spawn.x},${back.spawn.y} vs ${wx},${wy})`);
+  await c3.close();
+  await sleep(300);
+});
+
+scenario('reconnect: a drop out of a private instance reports the floor it actually lands on', async () => {
+  // Сотрудничество/Элитная фарм-зона/Страх are private per-party Rooms with
+  // nothing to rejoin, so a reconnect out of one is sent to the hub
+  // (_RESTORABLE_FLOORS). The client cannot keep the position it was holding
+  // across that — those coordinates belong to a grid that no longer exists,
+  // and off the hub's own 68x68 grid canMoveX/canMoveY refuse EVERY direction
+  // (tileAt reads out of bounds as WALL), which is what left people frozen
+  // inside what looked like solid wall on the hub. gameStart is what tells it
+  // where it really is, so the spawn it carries has to be a real spot on the
+  // floor it reports — that is the contract the client's reposition reads.
+  const leader = await connectWithSaved('harness_instdrop_l', { lvl: 30, xp: 0, xpNext: 9999 });
+  const m1 = await connectWithSaved('harness_instdrop_a', { lvl: 30, xp: 0, xpNext: 9999 });
+  const m2 = await connectWithSaved('harness_instdrop_b', { lvl: 30, xp: 0, xpNext: 9999 });
+  await enterWorld(leader, 'ranger'); await enterWorld(m1, 'ranger'); await enterWorld(m2, 'ranger');
+  leader.emit('farm2GroupCreate'); await leader.wait('farm2GroupState', { timeout: 3000 });
+  m1.emit('farm2GroupJoin', { leaderId: leader.sock.id }); await m1.wait('farm2GroupState', { timeout: 3000 });
+  m2.emit('farm2GroupJoin', { leaderId: leader.sock.id }); await m2.wait('farm2GroupState', { timeout: 3000 });
+  const m1In = m1.wait('gameStart', { where: 'm1 into farmZone2' });
+  const started = leader.wait('farm2Started', { timeout: 5000 });
+  leader.emit('farm2GroupStart');
+  await started;
+  const f2 = await m1In;
+  eq(f2.floor, 13, 'm1 is inside the private Элитная фарм-зона instance');
+  // Deep enough in that the position is off the hub's own grid (68 tiles,
+  // 2720px) — the case that froze the player rather than merely misplacing
+  // them.
+  const wx = f2.spawn.x + 200, wy = f2.spawn.y + 1200;
+  for (let i = 0; i < 8; i++) { m1.emit('mv', [Math.round(wx * 2), Math.round(wy * 2), 1, 500, 1]); await sleep(60); }
+  await sleep(250);
+
+  // A transport blip: the old socket is still connected server-side, which is
+  // what a mobile reconnect really looks like before engine.io times it out.
+  const m1b = await connectAs('harness_instdrop_a');
+  const back = m1b.wait('gameStart', { where: 'live reconnect' });
+  m1b.emit('selectChar', { type: 'ranger', savedStats: {
+    type: 'ranger', lvl: 30, xp: 0, xpNext: 9999, hp: 500, maxHp: 500, kills: 0, savedAt: Date.now(),
+  } });
+  const g = await back;
+  eq(g.floor, 1, 'the reconnect lands on the hub, not back in the instance');
+  ok(g.spawn && Math.abs(g.spawn.x - wx) > 1 || Math.abs(g.spawn.y - wy) > 1,
+    'and gameStart carries a spawn of its own rather than echoing the instance position');
+  ok(g.spawn.x >= 0 && g.spawn.y >= 0 && g.spawn.y < 68 * 40 && g.spawn.x < 68 * 40,
+    `that spawn is a real spot on the hub grid (${g.spawn.x},${g.spawn.y})`);
+  ok(wy >= 68 * 40, `while the position it was holding is off that grid entirely (y=${wy})`);
+  await Promise.all([m1b, leader, m1, m2].map(x => x.close()));
+  await sleep(300);
+});
+
 scenario('reconnect: the restored floor is re-checked, not trusted', async () => {
   // Restoring a floor is a server-side entry to it, so it has to answer the
   // same question the walk-in path does — asked against the state NOW, not

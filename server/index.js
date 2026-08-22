@@ -3223,10 +3223,28 @@ io.on('connection', socket => {
   // still not where the player was standing; the position is validated on the
   // way back out (see the restore in selectChar), never trusted blindly.
   function _wherePlayerIs() {
-    const out = { floor: currentFloor };
     const p = currentRoom && currentRoom.players.get(socket.id);
-    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) { out.x = p.x; out.y = p.y; }
-    return out;
+    // floor/x/y are ONE fact, and this either reports all of it or none of it.
+    // Reporting a floor with no position to go with it is what stranded
+    // people: currentFloor starts at the hub on every fresh connection and
+    // only becomes real once selectChar seats the character, so a session that
+    // logged in and never got that far — the app closed at the character
+    // screen, a connection that died while it was loading — flushed
+    // `floor: hub` on its way out and left the stored x/y pointing at
+    // wherever the player had really been. The next login then read that pair
+    // back, found coordinates the hub grid cannot contain, and dropped the
+    // player on the hub spawn: "вышел в коридоре — зашёл в зале".
+    //
+    // Blanking all three (rather than returning {}) matters because every
+    // caller spreads this OVER the save blob, and _sanitizeSavedStats passes
+    // the client's own floor/x/y through untouched — so leaving the keys out
+    // would persist whatever the client happened to send instead of simply
+    // leaving the stored position alone. _persistSavedFields skips undefined,
+    // so this writes none of the three.
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+      return { floor: undefined, x: undefined, y: undefined };
+    }
+    return { floor: currentFloor, x: p.x, y: p.y };
   }
 
   function _startAutosave() {
