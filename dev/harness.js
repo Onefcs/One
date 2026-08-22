@@ -98,13 +98,24 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Waits for one event, or rejects with something readable rather than a bare
 // timeout — a scenario that hangs should say which message never arrived.
-function waitFor(sock, event, { timeout = 8000, where = '' } = {}) {
+// `match` picks a specific payload out of an event name that also carries
+// unrelated traffic — the same problem waitForEnemyResync solves for
+// 'gameState' below, and for the same reason: several server call sites emit
+// one event name with deliberately different payload shapes (a broadcast that
+// carries only what changed, a reply that carries everything). Without it the
+// first arrival wins, so a broadcast that happens to land between the request
+// and its reply is what gets asserted on. Non-matching payloads are ignored
+// and the wait continues until the timeout.
+function waitFor(sock, event, { timeout = 8000, where = '', match = null } = {}) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => {
       sock.off(event, on);
       reject(new Error(`timed out after ${timeout}ms waiting for '${event}'${where ? ' (' + where + ')' : ''}`));
     }, timeout);
-    const on = payload => { clearTimeout(t); sock.off(event, on); resolve(payload); };
+    const on = payload => {
+      if (match && !match(payload)) return;
+      clearTimeout(t); sock.off(event, on); resolve(payload);
+    };
     sock.on(event, on);
   });
 }
@@ -3786,7 +3797,13 @@ scenario('race10: 51 entrants for 50 corridors — the 51st is refused, not stuf
 
   // And the refused one is not left believing it is still in.
   const rejected = clients[res.findIndex(r => r && r.error)];
-  const sync = rejected.wait('race10State', { timeout: 5000 });
+  // Only the race10Sync REPLY carries registered/inMatch; _race10Broadcast
+  // (server/game/race10.js) sends the same event name to everyone with just
+  // the public state, and the 50 deploys above make one likely to arrive right
+  // about now. Match on the reply's own shape rather than taking the first
+  // race10State to show up — the client makes the same distinction, keeping
+  // its previous value when the field is absent (js/network.js).
+  const sync = rejected.wait('race10State', { timeout: 5000, match: st => st.registered !== undefined });
   rejected.emit('race10Sync');
   const st = await sync;
   eq(st.registered, false, 'the refused entrant is unregistered, not left waiting for a race it is not in');
