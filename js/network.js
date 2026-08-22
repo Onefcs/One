@@ -2997,6 +2997,13 @@ function netRebirth() {
   if (socket?.connected) socket.emit('rebirth');
 }
 
+// Flat CHANGE_CLASS_GRAM_PRICE (shared/definitions.js) — the server unequips
+// everything, swaps `type` and recomputes base stats at the current level,
+// and answers with 'classChangeDone' (see the handler below).
+function netChangeClass(type) {
+  if (socket?.connected) socket.emit('changeClass', { type });
+}
+
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
@@ -3978,6 +3985,37 @@ function _initPetCraftHandlers(s) {
   });
   s.on('rebirthError', ({ msg }) => {
     if (typeof onRebirthError === 'function') onRebirthError(msg);
+  });
+
+  s.on('classChangeDone', ({ type, baseAtk, baseDef, baseMaxHp, hp } = {}) => {
+    if (!player) return;
+    player.type = type;
+    // charDef is cached on the player object at creation (makePlayer,
+    // js/player.js) and never re-derived — every atkSpeed/range/color/icon
+    // lookup off it would keep reading the OLD class without this.
+    if (typeof CHAR_DEF !== 'undefined' && CHAR_DEF[type]) player.charDef = CHAR_DEF[type];
+    player.baseAtk = baseAtk; player.baseDef = baseDef; player.baseMaxHp = baseMaxHp;
+    // The equipment/inventory side already landed via inventorySync, which
+    // the server sends before this (same "already landed" pattern as
+    // rebirth/craftGear/boxOpened).
+    //
+    // Sprites for a class you didn't start as were never loaded — char-select
+    // only decodes a single preview frame for the ones you don't pick
+    // (loadSpritePreviewFrame, js/sprites.js). Fire-and-forget: until it
+    // resolves the renderer's own fallback (a flat-colour circle,
+    // js/pixi-world.js) covers the gap.
+    if (typeof loadSprites === 'function') loadSprites(type, () => {});
+    if (typeof recompute === 'function') recompute();
+    // The new class's maxHp can be lower than the old one's (e.g. lev ->
+    // mage) — the server already clamped its own copy and sent the result;
+    // recompute() clamps player.hp to player.maxHp on its own if it's over,
+    // but only this tells the client the real number when it isn't.
+    if (Number.isFinite(hp)) player.hp = Math.max(0, Math.min(hp, player.maxHp));
+    if (typeof netSaveProgress === 'function') netSaveProgress();
+    if (typeof onClassChangeDone === 'function') onClassChangeDone();
+  });
+  s.on('classChangeError', ({ msg } = {}) => {
+    if (typeof onClassChangeError === 'function') onClassChangeError(msg);
   });
 }
 

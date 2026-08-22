@@ -169,6 +169,7 @@ const {
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
+  CHANGE_CLASS_GRAM_PRICE,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -4759,6 +4760,107 @@ io.on('connection', socket => {
       logPlayerErr(authed.telegramId, authed.username, 'rebirth', err, {});
       socket.emit('rebirthError', { msg: 'Ошибка сервера' });
     }
+  });
+
+  // ── Смена класса (Change Class) ─────────────────────────────────────────
+  // Flat CHANGE_CLASS_GRAM_PRICE (shared/definitions.js), no level/xp reset —
+  // unlike rebirth, this only touches equipment, type and the base stats that
+  // depend on it. Every currently-equipped item is unequipped back into the
+  // inventory first: gear is class-restricted (forClass, see equipItem
+  // above), so nothing is left sitting in a slot the new class could never
+  // have equipped it into. Skill levels are deliberately left untouched —
+  // they live per SLOT (Q/W/E/R, shared/definitions.js's SKILL_DEF), not per
+  // ability, so simply swapping `type` already lands every level on the new
+  // class's own Q/W/E/R at the same level, which is the whole point.
+  //
+  // Needs _withEconLock/_itemOpBusy like gramShopBuy (an async GRAM spend
+  // sits between the room-space check and the item mutation), unlike
+  // rebirth's pure synchronous item cost.
+  safeOn('changeClass', async ({ type } = {}) => {
+    if (!authed || !_itemsFor()) return;
+    if (_itemsBusy()) return socket.emit('classChangeError', { msg: _ITEMS_BUSY_MSG });
+    if (!CHAR_DEF[type]) return socket.emit('classChangeError', { msg: 'Неизвестный класс' });
+    if (type === _lastStats.type) return socket.emit('classChangeError', { msg: 'Это уже ваш класс' });
+    _itemOpBusy++;
+    let _ran;
+    try {
+    _ran = await _withEconLock(async () => {
+    try {
+      const inv = _lastStats.inventory;
+      const oldEquipment = _lastStats.equipment || {};
+      const equippedEntries = Object.entries(oldEquipment).filter(([, it]) => it);
+      // Room check before anything is spent or moved — every equipped piece
+      // needs its own free slot (none of them are stackable), same
+      // "count first, refuse before touching anything" shape as
+      // gramShopBuy's _newSlots check.
+      if (inv.length + equippedEntries.length > SERVER_INV_MAX) {
+        return socket.emit('classChangeError', {
+          msg: `Нужно ${equippedEntries.length} своб. мест, чтобы снять экипировку (занято ${inv.length}/${SERVER_INV_MAX})`,
+        });
+      }
+
+      // The deduction IS the affordability check (_spendBalance only writes
+      // if the stored balance covers it) — flush pending earnings first so
+      // it's tested against everything actually earned, same as gramShopBuy.
+      await _flushBalances();
+      const _paid = await _spendBalance(authed.telegramId, 'gramBalance', CHANGE_CLASS_GRAM_PRICE);
+      if (_paid === null) return socket.emit('classChangeError', { msg: 'Недостаточно GRAM' });
+      _gramBalance = _paid;
+
+      const fromType = _lastStats.type;
+      const beforeLen = inv.length;
+      for (const [, it] of equippedEntries) inv.push(it);
+      const newEquipment = {};
+
+      const lvl = Math.max(1, Math.floor(Number(_lastStats.lvl)) || 1);
+      const _cd = CHAR_DEF[type];
+      _lastStats.type = type;
+      // Same derivation rebirth uses (server/anticheat.js's _sanitizeSavedStats
+      // mirrors it too) — here at the CURRENT level rather than level 1.
+      _lastStats.baseAtk = _cd.baseAtk + (lvl - 1);
+      _lastStats.baseDef = _cd.baseDef + (lvl - 1);
+      _lastStats.baseMaxHp = _cd.baseHP + (lvl - 1) * 20;
+
+      _commitServerItems(inv, newEquipment, 'change_class', { from: fromType, to: type, itemsReturned: equippedEntries.length }, { beforeLen });
+
+      // Recomputes the room's live atk/def/maxHp/hp for the new class off
+      // the now-empty equipment (computeStats, server/game/Room.js) and
+      // broadcasts the new sprite/type to everyone else on the floor — the
+      // exact same call selectChar itself makes.
+      if (currentRoom) {
+        currentRoom.setPlayerChar(socket.id, type, _lastStats);
+        const _rp = currentRoom.players.get(socket.id);
+        // Only the source of truth for the new maxHp this class change could
+        // have shrunk it below the account's current hp (e.g. lev -> mage) —
+        // mirrors the clamp setPlayerChar just applied to the room's own copy,
+        // so what gets persisted/sent to the client can't say more hp than
+        // the new class actually has room for.
+        if (_rp) _lastStats.hp = _rp.hp;
+        socket.to(`floor_${currentFloor}`).emit('playerChar', { id: socket.id, type });
+      }
+
+      _persistSavedFields(authed, {
+        type, baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
+        hp: _lastStats.hp,
+      });
+      logPlayer(authed.telegramId, authed.username, 'change_class', {
+        from: fromType, to: type, price: CHANGE_CLASS_GRAM_PRICE, itemsReturned: equippedEntries.length,
+      });
+      socket.emit('classChangeDone', {
+        type, baseAtk: _lastStats.baseAtk, baseDef: _lastStats.baseDef, baseMaxHp: _lastStats.baseMaxHp,
+        hp: _lastStats.hp,
+      });
+      io.to(`tg_${authed.telegramId}`).emit('gramBalanceUpdate', { balance: _gramBalance });
+    } catch (err) {
+      console.error('changeClass:', err);
+      logPlayerErr(authed.telegramId, authed.username, 'change_class', err, {});
+      socket.emit('classChangeError', { msg: 'Ошибка сервера' });
+    }
+    });
+    } finally {
+      _itemOpBusy--;
+    }
+    if (!_ran) socket.emit('classChangeError', { msg: 'Секунду, идёт другая операция — повторите' });
   });
 
   // ── Enchant stone crafting — REMOVED ──────────────────────────────────────

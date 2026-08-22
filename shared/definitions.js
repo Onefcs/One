@@ -320,6 +320,16 @@ function skillPointBudget(lvl, rebirths) {
   return L * 3;
 }
 
+// Смена класса (Change Class) — server/index.js's `changeClass` handler.
+// Flat GRAM price, no level/xp reset (unlike rebirth): every equipped item
+// is returned to the inventory first (gear is class-restricted, see
+// equipItem's forClass check), then `type` swaps and base stats are
+// recomputed for the new class at the CURRENT level. Skill levels are left
+// untouched on purpose — they're stored per SLOT (Q/W/E/R, shared with
+// every class), not per ability, so they land on the new class's own
+// Q/W/E/R at the same level with no extra code needed.
+const CHANGE_CLASS_GRAM_PRICE = 3;
+
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
@@ -2055,6 +2065,7 @@ if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
+  CHANGE_CLASS_GRAM_PRICE,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,

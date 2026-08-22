@@ -2387,6 +2387,67 @@ scenario('rebirth: every 5th rebirth really costs double, proven across a live r
   await c.close();
 });
 
+scenario('changeClass: unequips everything, charges 3 GRAM, carries skill levels to the new class, refuses on bad input', async () => {
+  // Refusals that must cost nothing: same class, unknown class, insufficient GRAM.
+  {
+    const c = await connectWithSaved('harness_cc_refuse', {
+      type: 'lev', lvl: 20, gramBalance: 2, // one short of the 3 GRAM price
+    });
+    await enterWorld(c, 'lev');
+
+    const sameErr = c.wait('classChangeError', { timeout: 4000 });
+    c.emit('changeClass', { type: 'lev' });
+    ok(/уже ваш класс/.test((await sameErr).msg || ''), 'changing to the class already worn is refused');
+
+    const badErr = c.wait('classChangeError', { timeout: 4000 });
+    c.emit('changeClass', { type: 'not_a_real_class' });
+    ok(/Неизвестный/.test((await badErr).msg || ''), 'an unknown class name is refused');
+
+    const poorErr = c.wait('classChangeError', { timeout: 4000 });
+    c.emit('changeClass', { type: 'mage' });
+    ok(/GRAM/.test((await poorErr).msg || ''), 'insufficient GRAM (2 of 3) is refused', (await poorErr).msg);
+    await c.close();
+  }
+
+  // The real switch: lev (tank) -> mage, with a weapon and a cloak equipped,
+  // and a skill level already invested in the Q slot.
+  const c = await connectWithSaved('harness_cc_switch', {
+    type: 'lev', lvl: 20, gramBalance: 10,
+    equipment: { weapon: { id: 'tw1', enhance: 0 }, cloak: { id: 'cloak_c_lev', enhance: 0 } },
+    skillLevels: { Q: 5 },
+    inventory: [{ id: 'rece', qty: 1 }], // one pre-existing slot, to confirm room math accounts for it
+  });
+  await enterWorld(c, 'lev');
+
+  const done = c.wait('classChangeDone', { timeout: 5000 });
+  const sync = c.wait('inventorySync', { timeout: 5000 });
+  const bal  = c.wait('gramBalanceUpdate', { timeout: 5000 });
+  c.emit('changeClass', { type: 'mage' });
+  const [doneRes, syncRes, balRes] = await Promise.all([done, sync, bal]);
+
+  eq(doneRes.type, 'mage', 'classChangeDone reports the new class');
+  // CHAR_DEF.mage: baseAtk 4, baseDef 3, baseHP 110 — same derivation rebirth
+  // uses, just at the CURRENT level (20) instead of resetting to 1.
+  eq(doneRes.baseAtk, 4 + 19, 'baseAtk recomputed for mage at the current level');
+  eq(doneRes.baseDef, 3 + 19, 'baseDef recomputed for mage at the current level');
+  eq(doneRes.baseMaxHp, 110 + 19 * 20, 'baseMaxHp recomputed for mage at the current level');
+  eq(balRes.balance, 7, 'exactly 3 GRAM was charged (10 -> 7)');
+
+  eq(Object.values(syncRes.equipment || {}).filter(Boolean).length, 0, 'every slot was unequipped');
+  const invIds = syncRes.inventory.map(i => i.id);
+  ok(invIds.includes('tw1'), 'the old weapon landed back in the inventory');
+  ok(invIds.includes('cloak_c_lev'), 'the old cloak landed back in the inventory too');
+  ok(invIds.includes('rece'), 'and the item already in the inventory is still there');
+
+  await sleep(250);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.type, 'mage', 'the new class persisted to the account');
+  eq(row.savedData.skillLevels && row.savedData.skillLevels.Q, 5,
+    'the Q skill level carried over untouched — it now applies to mage\'s own Q, not lev\'s');
+  eq(row.savedData.lvl, 20, 'level was NOT reset — unlike rebirth, this is not a fresh start');
+  await c.close();
+});
+
 scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {
   // A reconnect's selectChar sends _buildSaveStats() (js/network.js), which
   // never carries lvl/bonusSP/rebirths/upgrades at all — only type, floor,

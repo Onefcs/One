@@ -743,6 +743,92 @@ function onRebirthError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  CHANGE CLASS  (Персонаж → Перерождение, same tab)
+//  CHANGE_CLASS_GRAM_PRICE lives in shared/definitions.js (mirrored by the
+//  server's own changeClass handler) so the price shown here can never
+//  drift from what actually gets charged. No level/xp requirement, unlike
+//  rebirth — the only real precondition is affording it; equipped gear is
+//  unequipped automatically by the server, not a manual step here.
+// ─────────────────────────────────────────────────────────
+const _CLASS_CHANGE_ORDER = ['lev', 'deathknight', 'ranger', 'mage', 'warlock'];
+
+function updateClassChangeUI() {
+  if (!player) return;
+  const el = document.getElementById('classchange-body');
+  if (!el) return;
+  const bal = window._gramBalance || 0;
+  const canAfford = bal >= CHANGE_CLASS_GRAM_PRICE;
+  const equippedCount = Object.values(player.equipment || {}).filter(Boolean).length;
+  const options = _CLASS_CHANGE_ORDER.filter(cls => cls !== player.type).map(cls => {
+    const cd = CHAR_DEF[cls];
+    return `<button onclick="openClassChangeConfirm('${cls}')" style="
+      display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;
+      border:1px solid ${cd.color}44;background:rgba(209,204,197,.04);cursor:pointer">
+      <span style="line-height:1">${iconHTML(cd.icon, 24, cd.color)}</span>
+      <span style="color:${cd.color};font-size:13px;font-weight:700">${cd.name}</span>
+    </button>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="sec-title">${t('classChangeTabLbl')}</div>
+    <div style="padding:0 12px 10px;font-size:12.5px;color:#a2988a;line-height:1.55">${tVars('classChangeDescFmt', { n: CHANGE_CLASS_GRAM_PRICE })}</div>
+    ${equippedCount > 0 ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#efc680">${tVars('classChangeUnequipWarnFmt', { n: equippedCount })}</div>` : ''}
+    ${!canAfford ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#f88">${t('classChangeNoGramLbl')}</div>` : ''}
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px 20px">${options}</div>`;
+}
+
+function openClassChangeConfirm(cls) {
+  if (!player || !CHAR_DEF[cls] || cls === player.type) return;
+  const existing = document.getElementById('classchange-confirm-ov');
+  if (existing) existing.remove();
+  const cd = CHAR_DEF[cls];
+  const bal = window._gramBalance || 0;
+  const canAfford = bal >= CHANGE_CLASS_GRAM_PRICE;
+  const equippedCount = Object.values(player.equipment || {}).filter(Boolean).length;
+  const ov = document.createElement('div');
+  ov.id = 'classchange-confirm-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="line-height:1">${iconHTML(cd.icon, 30, cd.color)}</span>
+      <div style="font-size:16px;font-weight:800;color:${cd.color}">${tVars('classChangeConfirmTitleFmt', { cls: cd.name })}</div>
+    </div>
+    <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:10px">${tVars('classChangeConfirmBodyFmt', { n: CHANGE_CLASS_GRAM_PRICE })}</div>
+    ${equippedCount > 0 ? `<div style="font-size:12.5px;font-weight:700;color:#efc680;margin-bottom:16px">${tVars('classChangeUnequipWarnFmt', { n: equippedCount })}</div>` : ''}
+    <div style="display:flex;gap:10px">
+      <button onclick="document.getElementById('classchange-confirm-ov').remove()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+        color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+      <button ${canAfford ? '' : 'disabled'} onclick="${canAfford ? `_confirmClassChange('${cls}')` : ''}" style="
+        flex:1;padding:11px;border:none;border-radius:10px;
+        background:${canAfford ? 'linear-gradient(135deg,#4a3410,#6b4a17)' : 'rgba(209,204,197,.05)'};
+        color:${canAfford ? cd.color : '#645f57'};
+        font-size:14px;font-weight:700;cursor:${canAfford ? 'pointer' : 'default'}">${canAfford ? t('classChangeGo') : t('notEnoughBtn')}</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _confirmClassChange(cls) {
+  const ov = document.getElementById('classchange-confirm-ov');
+  if (ov) ov.remove();
+  if (typeof netChangeClass === 'function') netChangeClass(cls);
+}
+
+function onClassChangeDone() {
+  if (typeof updateClassChangeUI === 'function') updateClassChangeUI();
+  if (typeof updateRebirthUI === 'function') updateRebirthUI();
+  if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
+  if (typeof updateProfileUI === 'function') updateProfileUI();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (player) dmgNum(player.x, player.y - 30, t('classChangeDoneToast'), '#98e456');
+}
+
+function onClassChangeError(msg) {
+  if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+}
+
+// ─────────────────────────────────────────────────────────
 //  SKILL UPGRADE UI
 // ─────────────────────────────────────────────────────────
 function _skillBonusDesc(type, level) {
@@ -2151,7 +2237,7 @@ function setInvTab(n) {
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
   if (n === 2) switchSkillTab(_activeSkillSubTab);
-  if (n === 3) updateRebirthUI();
+  if (n === 3) { updateRebirthUI(); updateClassChangeUI(); }
 }
 
 // Chat floats above the world canvas and only makes sense while actually
@@ -2226,7 +2312,7 @@ function setTab(n) {
     if (n === 1) {
       if (_invTab === 1) updateProfileUI();
       else if (_invTab === 2) switchSkillTab(_activeSkillSubTab);
-      else if (_invTab === 3) updateRebirthUI();
+      else if (_invTab === 3) { updateRebirthUI(); updateClassChangeUI(); }
       else updateInvUI();
     }
     if (n === 2) { setMapTab(); }
