@@ -2716,7 +2716,16 @@ scenario('handlers: none of the 115 throws on a bare request', async () => {
   // What this deliberately does NOT check is that a handler does its job — the
   // scenarios above are for that.
   const fs = require('fs');
-  const src = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  // index.js plus every per-domain handler module: most safeOn registrations
+  // live in server/handlers/*.js now, and reading only index.js would quietly
+  // shrink this sweep to the handful still registered there — exactly the kind
+  // of silent loss of coverage this scenario exists to prevent.
+  const handlerDir = path.join(ROOT, 'server', 'handlers');
+  const src = [
+    fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8'),
+    ...fs.readdirSync(handlerDir).filter(f => f.endsWith('.js'))
+      .map(f => fs.readFileSync(path.join(handlerDir, f), 'utf8')),
+  ].join('\n');
   const events = [...new Set([...src.matchAll(/safeOn\('([a-zA-Z0-9_]+)'/g)].map(m => m[1]))]
     // Skip the ones that would end the session out from under the sweep.
     .filter(e => !['disconnect', 'loginTelegram', 'loginTelegramWebApp'].includes(e));
