@@ -70,8 +70,10 @@ NaN/Infinity/отрицательные: `gold`, `lvl`, `xp`, `kills`, `bonusSP`
 `hp`, `atk`, `def`. Отрицательного количества предметов быть не может:
 `_canonSavedItem:2318` требует `qty >= 1` и клампит по `_SANITIZE_MAX.qty`.
 `baseAtk/baseDef/baseMaxHp/xpNext` не берутся у клиента вовсе, а выводятся из
-уровня (`:2484-2492`). `upgrades` сверяется с бюджетом `lvl*3 + bonusSP`
-(`:2509`). Балансы, VIP, сезонные поля и `specialQuestsDone` из клиентского
+уровня (`:2484-2492`). `upgrades` сверяется с потолком `lvl*3 + bonusSP + keptSP`
+(`skillPointCeiling`, `shared/definitions.js`; `keptSP` — очки, перенесённые
+перерождением: они уже вложены в `upgrades`, поэтому поднимают потолок
+проверки, но не считаются доступными к трате — `availableSkillPoints`). Балансы, VIP, сезонные поля и `specialQuestsDone` из клиентского
 блоба удаляются (`:2523-2555`).
 
 **Защита от подделки — есть, но не контрольными суммами (S2).** Вместо

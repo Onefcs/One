@@ -320,6 +320,90 @@ function skillPointBudget(lvl, rebirths) {
   return L * 3;
 }
 
+// ── Skill point accounting ──────────────────────────────────────────────────
+// Three fields decide how many stat points (Улучшения) a character has, and
+// every one of them is read through the functions below so client and server
+// can never disagree on the answer:
+//
+//   skillPointBudget(lvl, rebirths)  what the level curve is worth right now
+//   bonusSP                          permanently GRANTED extra points — the
+//                                    flat REBIRTH_BONUS_SP per rebirth, plus
+//                                    whatever the GRAM shop/admin handed out
+//   keptSP                           points already COMMITTED to upgrades that
+//                                    a rebirth carried across the level reset
+//
+// Splitting bonusSP and keptSP is what makes a rebirth worth exactly its
+// advertised reward. A rebirth keeps the upgrades a player already bought
+// while resetting the level that paid for them, so the spend sits above what
+// the (now level-1) character could earn. bonusSP used to be topped up to
+// cover that spend — and because the level curve pays for those same levels
+// AGAIN once REBIRTH_LEVEL is re-climbed, every cycle quietly handed out a
+// free REBIRTH_LEVEL*3 (90) points on top of the flat reward, with the whole
+// banked total falling out as spendable the moment Улучшения → Сбросить
+// cleared the map.
+//
+// keptSP carries that commitment instead, and it is subtracted from BOTH
+// sides of the sum below: the carried spend does not count against the
+// player, and neither does the part of the returning level curve that pays
+// for it. So the reward is spendable the instant the rebirth lands, the
+// re-climb to REBIRTH_LEVEL pays for the kept upgrades rather than for a
+// second copy of them, and from REBIRTH_LEVEL upward the total is exactly
+// skillPointBudget(lvl, rebirths) + bonusSP again — the same number anyone
+// else at that level has, plus REBIRTH_BONUS_SP per rebirth.
+function spentSkillPoints(upgrades) {
+  if (!upgrades || typeof upgrades !== 'object') return 0;
+  return Object.values(upgrades)
+    .reduce((sum, v) => sum + Math.max(0, Math.floor(Number(v)) || 0), 0);
+}
+
+// Points the character may still spend — the one answer both the panel
+// (getAvailableSkillPoints, js/player.js) and the purchase (the spendUpgrade
+// handler, server/handlers/skills.js) are computed from.
+function availableSkillPoints(st) {
+  if (!st) return 0;
+  const bonus  = Math.max(0, Math.floor(Number(st.bonusSP)) || 0);
+  const spent  = spentSkillPoints(st.upgrades);
+  // Never above what is actually committed: a reset empties the upgrades map,
+  // and the commitment it was carrying goes with it (resetUpgrades clears the
+  // field, _sanitizeSavedStats clamps it, and this is the third line of
+  // defence — a stale keptSP must not become spendable capacity).
+  const kept   = Math.min(Math.max(0, Math.floor(Number(st.keptSP)) || 0), spent);
+  const budget = skillPointBudget(st.lvl, st.rebirths);
+  return Math.max(0, bonus + Math.max(0, budget - kept) - (spent - kept));
+}
+
+// The most a legitimate upgrades map can add up to: the curve, the granted
+// bonus and the carried commitment. Only _sanitizeSavedStats' budget check
+// uses this — spending is gated by availableSkillPoints above.
+function skillPointCeiling(st) {
+  if (!st) return 0;
+  return skillPointBudget(st.lvl, st.rebirths)
+    + Math.max(0, Math.floor(Number(st.bonusSP)) || 0)
+    + Math.max(0, Math.floor(Number(st.keptSP)) || 0);
+}
+
+// One-time repair for records written before keptSP existed, when a rebirth
+// banked the kept spend into bonusSP instead. Everything above the flat
+// REBIRTH_BONUS_SP per rebirth that is currently committed to upgrades was
+// banked spend, so it moves into keptSP where it belongs; the flat rewards,
+// and any shop/admin grant that isn't sitting in the upgrades map, stay
+// spendable. The sum of the two fields is unchanged, so the anti-cheat
+// ceiling a legacy record already passed still covers it.
+//
+// Returns null when there is nothing to do, so callers can skip the write.
+// Idempotent by construction: a record that carries a keptSP field at all —
+// including keptSP:0 — is never touched again.
+function migrateKeptSP(st) {
+  if (!st || typeof st !== 'object') return null;
+  if (st.keptSP != null) return null;
+  const rebirths = Math.max(0, Math.floor(Number(st.rebirths)) || 0);
+  const bonusSP  = Math.max(0, Math.floor(Number(st.bonusSP)) || 0);
+  if (rebirths <= 0) return { keptSP: 0, bonusSP };
+  const banked = Math.max(0, Math.min(spentSkillPoints(st.upgrades),
+    bonusSP - REBIRTH_BONUS_SP * rebirths));
+  return { keptSP: banked, bonusSP: bonusSP - banked };
+}
+
 // Gold drop: 30% chance for regular enemies, 100% (guaranteed) for bosses —
 // the roll only gates WHETHER gold drops, the amount is always goldAtLevel().
 function calcGoldDrop(enemy) {
@@ -2055,6 +2139,7 @@ if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
+  spentSkillPoints, availableSkillPoints, skillPointCeiling, migrateKeptSP,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,

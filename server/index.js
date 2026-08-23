@@ -181,6 +181,7 @@ const {
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, rebirthCostFor, skillPointBudget,
+  availableSkillPoints, spentSkillPoints, migrateKeptSP,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -4085,8 +4086,9 @@ io.on('connection', socket => {
       SEASON_REBIRTH_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
       SKILL_UPGRADE_CHANCE, SKILL_UPGRADE_COST, UPGRADE_KEYS,
       UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
-      logPlayer, logPlayerErr, passiveBookId, passiveDefById, rebirthCostFor,
-      seasonActive, skillBookId, skillPointBudget, upgradeCost, xpToNext,
+      availableSkillPoints, logPlayer, logPlayerErr, passiveBookId, passiveDefById,
+      rebirthCostFor, seasonActive, skillBookId, skillPointBudget, spentSkillPoints,
+      upgradeCost, xpToNext,
   });
   // ── items ───────────────────────────────────────────────────────────────
   // Moved to server/handlers/items.js — see the note there.
@@ -4173,8 +4175,8 @@ io.on('connection', socket => {
       _registerReferral, _restoreFloorFor, _safeUsername, _sanitizeSavedStats,
       _setVipAura, _teleportCasting, _topPlayerUsername, _trackFearRoom,
       _unknownItemIds, _vipAuraUsers, activeSessions, calcBM, clanAtkBonusPct,
-      codexTotalBonus, getRoom, globalChatHistory, io, logPlayer, parties,
-      playerFloorMap, playerParty, safeInterval, safeTimeout,
+      codexTotalBonus, getRoom, globalChatHistory, io, logPlayer, migrateKeptSP,
+      parties, playerFloorMap, playerParty, safeInterval, safeTimeout,
       verifyTelegramAuth, verifyTelegramWebApp,
   });
 });

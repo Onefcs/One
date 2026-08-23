@@ -4378,3 +4378,126 @@ scenario('admin: top-referrals ranks by GRAM earned (not headcount), and top-mar
   console.error('harness:', err);
   process.exit(1);
 });
+
+scenario('rebirth: is worth exactly REBIRTH_BONUS_SP, not a free 90 points on top', async () => {
+  // The bug this pins down: a rebirth kept the upgrades a player had already
+  // bought AND banked what they cost into bonusSP, which availableSkillPoints
+  // reads as spendable capacity. The level curve then paid for those same
+  // points a second time the moment REBIRTH_LEVEL was re-climbed — 90 free
+  // points every cycle at level 30 — and Улучшения → Сбросить handed the whole
+  // banked total over as well (90 + 105 = 195 where 105 is the real ceiling).
+  //
+  // Driven through the REAL handlers end to end: every one of the 90 points is
+  // bought with spendUpgrade, the rebirth is a real rebirth with its real item
+  // cost, and the re-climb goes through a real reconnect so the numbers are
+  // re-read from the stored record rather than from session memory.
+  const { availableSkillPoints, skillPointBudget, UPGRADE_KEYS, REBIRTH_BONUS_SP,
+          REBIRTH_LEVEL, REBIRTH_COST } = require('../shared/definitions');
+  const Player = require('../server/models/Player');
+  const budget = skillPointBudget(REBIRTH_LEVEL, 0);
+  let c = await connectWithSaved('harness_rebirth_sp', {
+    lvl: REBIRTH_LEVEL, rebirths: 0, bonusSP: 0, upgrades: {},
+    gold: 50_000_000, nexumBalance: 100_000,
+    inventory: Object.entries(REBIRTH_COST).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(c, 'lev');
+
+  // What the stored record says the player may still spend — the same function
+  // the panel (getAvailableSkillPoints, js/player.js) and the spendUpgrade
+  // handler both use, read off the DB so nothing in memory can flatter it.
+  const availNow = () => {
+    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+    return availableSkillPoints(row.savedData);
+  };
+  const spentNow = () => {
+    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+    return Object.values(row.savedData.upgrades || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  };
+
+  eq(availNow(), budget, `level ${REBIRTH_LEVEL} with no rebirth is worth ${budget} points`);
+  for (let i = 0; i < budget; i++) {
+    const sync = c.wait('progressSync', { timeout: 5000 });
+    const err  = c.wait('progressError', { timeout: 5000 }).catch(() => null);
+    c.emit('spendUpgrade', { key: UPGRADE_KEYS[i % UPGRADE_KEYS.length] });
+    const r = await Promise.race([sync, err]);
+    if (r && r.msg) break;
+  }
+  await sleep(200);
+  eq(spentNow(), budget, `all ${budget} of them were really bought through spendUpgrade`);
+  eq(availNow(), 0, 'and nothing is left to spend');
+
+  const done = c.wait('rebirthDone', { timeout: 5000 });
+  const rerr = c.wait('rebirthError', { timeout: 5000 }).catch(() => null);
+  c.emit('rebirth');
+  const res = await Promise.race([done, rerr]);
+  ok(res && !res.msg, 'the rebirth went through', res && res.msg);
+  await sleep(400);
+  eq(spentNow(), budget, 'the upgrades bought before the rebirth are kept');
+  eq(availNow(), REBIRTH_BONUS_SP,
+     `and level 1 has exactly the flat +${REBIRTH_BONUS_SP} to spend, not the ${budget} it just lost`);
+
+  // Re-climb to REBIRTH_LEVEL through a real reconnect — this is where the
+  // banked spend used to be paid out a second time.
+  await c.close();
+  await sleep(300);
+  let row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  await Player.updateOne({ _id: row._id }, { $set: { 'savedData.lvl': REBIRTH_LEVEL } });
+  await sleep(80);
+  c = await connectAs('harness_rebirth_sp');
+  await enterWorld(c, 'lev');
+  await sleep(300);
+  eq(spentNow(), budget, 'the kept upgrades survived the reconnect (the budget check did not wipe them)');
+  eq(availNow(), REBIRTH_BONUS_SP,
+     `back at level ${REBIRTH_LEVEL} the curve pays for the KEPT points, not for a second copy of them`);
+
+  // ...and a reset now hands back this level's real ceiling, not that plus the
+  // banked total on top.
+  const rst = c.wait('upgradesReset', { timeout: 5000 });
+  const rsterr = c.wait('resetUpgradesError', { timeout: 5000 }).catch(() => null);
+  c.emit('resetUpgrades');
+  const r2 = await Promise.race([rst, rsterr]);
+  ok(r2 && !r2.msg, 'the reset went through', r2 && r2.msg);
+  await sleep(400);
+  eq(spentNow(), 0, 'the upgrades map is empty');
+  eq(availNow(), budget + REBIRTH_BONUS_SP,
+     `and everything spendable at level ${REBIRTH_LEVEL} with one rebirth is ${budget + REBIRTH_BONUS_SP}, no more`);
+  await c.close();
+});
+
+scenario('rebirth: a record that banked the kept spend into bonusSP is repaired at login', async () => {
+  // Accounts that rebirthed before keptSP existed carry the kept upgrades' cost
+  // inside bonusSP — a level-30 one-rebirth character with 90 points invested
+  // shows bonusSP 105, and availableSkillPoints reads 105 of those as free.
+  // migrateKeptSP (shared/definitions.js) splits it at login, once, without
+  // changing the sum, so the upgrades still clear the anti-cheat ceiling.
+  const { availableSkillPoints, REBIRTH_BONUS_SP, REBIRTH_LEVEL } = require('../shared/definitions');
+  const legacy = {
+    lvl: REBIRTH_LEVEL, rebirths: 1, bonusSP: 105,
+    upgrades: { atk: 30, def: 30, hp: 30 },       // 90 points, kept across the rebirth
+  };
+  const Player = require('../server/models/Player');
+  let c = await connectWithSaved('harness_rebirth_legacy', legacy);
+  // A real legacy record has no keptSP field AT ALL — which is exactly what
+  // makes the repair a one-off. connectWithSaved's own seeding login has
+  // already written one, so it has to go before the login under test.
+  await c.close();
+  await sleep(500);
+  const seeded = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const set = {};
+  for (const [k, v] of Object.entries(legacy)) set['savedData.' + k] = v;
+  await Player.updateOne({ _id: seeded._id },
+    { $set: set, $unset: { 'savedData.keptSP': '' } });
+  await sleep(80);
+  c = await connectAs('harness_rebirth_legacy');
+  await enterWorld(c, 'lev');
+  await sleep(400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const sd = row.savedData;
+  eq(sd.keptSP, 90, 'the banked spend moved into keptSP');
+  eq(sd.bonusSP, REBIRTH_BONUS_SP, 'and bonusSP is back to the rebirth reward it should have been');
+  eq(Object.values(sd.upgrades || {}).reduce((s, v) => s + v, 0), 90,
+     'the kept upgrades were not wiped by the budget check');
+  eq(availableSkillPoints(sd), REBIRTH_BONUS_SP,
+     `so the character has ${REBIRTH_BONUS_SP} to spend, not the 105 the banked bonus used to show`);
+  await c.close();
+});

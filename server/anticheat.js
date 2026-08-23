@@ -16,7 +16,7 @@
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, CHAR_DEF,
   ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
-  xpToNext, skillPointBudget,
+  xpToNext, skillPointCeiling, spentSkillPoints,
 } = require('../shared/definitions');
 
 const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
@@ -206,6 +206,11 @@ function _sanitizeSavedStats(raw) {
   s.kills   = _clampInt(s.kills,   0, _SANITIZE_MAX.kills, 0);
   s.bonusSP = _clampInt(s.bonusSP, 0, _SANITIZE_MAX.bonusSP, 0);
   s.rebirths = _clampInt(s.rebirths, 0, _SANITIZE_MAX.rebirths, 0);
+  // Points a rebirth carried across the level reset (see the skill point
+  // accounting block in shared/definitions.js). Server-written like bonusSP —
+  // saveProgress pins it from the session copy — but clamped here all the same,
+  // because a STORED record is read through this function too.
+  s.keptSP  = _clampInt(s.keptSP,  0, _SANITIZE_MAX.bonusSP, 0);
   if (s.maxHp     != null) s.maxHp     = _clampInt(s.maxHp,     1, _SANITIZE_MAX.maxHp, 100);
   if (s.hp        != null) s.hp        = _clampNum(s.hp,        0, s.maxHp ?? _SANITIZE_MAX.maxHp, 0);
   if (s.atk       != null) s.atk       = _clampNum(s.atk,       0, _SANITIZE_MAX.atk, 0);
@@ -232,21 +237,30 @@ function _sanitizeSavedStats(raw) {
   if (s.autoHpPct != null) s.autoHpPct = _clampNum(s.autoHpPct, 0, 1, 0.5);
 
   // Upgrade points spent must not exceed what the (now server-derived) lvl/
-  // bonusSP/rebirths could actually have earned — getAvailableSkillPoints
-  // (js/player.js) computes this identical budget client-side via the same
-  // shared skillPointBudget to gate upgradeStats(), but nothing enforced it
-  // here, so a crafted save could report any upgrades total up to the
-  // per-stat ceiling regardless of level, and — same as baseAtk/baseDef
-  // above — these feed real combat power via computeStats. A legitimate
-  // client can never violate this budget, so a save that does is treated
-  // the same as an untrusted item id: the whole map is dropped rather than
-  // guessing which entries (if any) were legitimate.
+  // bonusSP/rebirths/keptSP could actually have paid for — skillPointCeiling
+  // (shared/definitions.js), the same accounting the client's own panel and
+  // the spendUpgrade handler read. Nothing enforced it here once, so a crafted
+  // save could report any upgrades total up to the per-stat ceiling regardless
+  // of level — and, same as baseAtk/baseDef above, these feed real combat power
+  // via computeStats. A legitimate client can never violate this ceiling, so a
+  // save that does is treated the same as an untrusted item id: the whole map
+  // is dropped rather than guessing which entries (if any) were legitimate.
   if (s.upgrades && typeof s.upgrades === 'object' && !Array.isArray(s.upgrades)) {
     const u = {};
     for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
-    const _spent = Object.values(u).reduce((sum, v) => sum + v, 0);
-    const _budget = skillPointBudget(s.lvl, s.rebirths) + s.bonusSP;
-    s.upgrades = _spent <= _budget ? u : {};
+    const _spent = spentSkillPoints(u);
+    // The CEILING, not what's spendable: straight after a rebirth the kept
+    // upgrades are worth more than a level-1 character's own curve plus bonus,
+    // which is exactly what keptSP is here to account for. availableSkillPoints
+    // is what gates buying a point (the spendUpgrade handler); this only
+    // decides whether the map as a whole could have been paid for.
+    s.upgrades = _spent <= skillPointCeiling(s) ? u : {};
+    // A commitment can never exceed what is actually committed — so a reset
+    // (which empties the map) takes the carried points with it, and a dropped
+    // map above leaves nothing behind to be re-spent later.
+    s.keptSP = Math.min(s.keptSP, spentSkillPoints(s.upgrades));
+  } else {
+    s.keptSP = 0;
   }
   // ── Fields that used to pass through untouched ────────────────────────────
   // Everything above this point was validated; these were not, and went into

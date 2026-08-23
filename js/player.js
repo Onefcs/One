@@ -118,6 +118,10 @@ function makePlayer(type) {
     questKills: {},
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     bonusSP: 0,
+    // Points a rebirth carried across the level reset — a commitment the
+    // upgrades map already holds, never spendable capacity. Server-written;
+    // see availableSkillPoints (shared/definitions.js).
+    keptSP: 0,
     rebirths: 0,
     // Кодекс: { [setId]: boolean[] } filled-slot progress per set
     // (server-owned, see registerCodexSetItem/codexSync) and the flat stat
@@ -320,10 +324,12 @@ function recompute() {
   player.speed      = player.baseSpeed * (1 + (pt ? pt.moveSpeedPct : 0));
 }
 
+// The panel's figure and the server's are the same function now
+// (availableSkillPoints, shared/definitions.js — the skill point accounting
+// block there is where the rule itself is written down), so the number on the
+// button and the number spendUpgrade sells against cannot drift apart.
 function getAvailableSkillPoints() {
-  const total = skillPointBudget(player.lvl, player.rebirths) + (player.bonusSP || 0);
-  const spent = Object.values(player.upgrades || {}).reduce((s, v) => s + v, 0);
-  return total - spent;
+  return availableSkillPoints(player);
 }
 
 // A request now, not a purchase. The server checks the point budget and the
@@ -1030,6 +1036,7 @@ function restoreFromSave(data) {
   player.storage    = _migrateInventory(data.storage || []);
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
   player.bonusSP  = data.bonusSP  || 0;
+  player.keptSP   = data.keptSP   || 0;
   player.rebirths = data.rebirths || 0;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};

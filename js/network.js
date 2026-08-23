@@ -1770,6 +1770,13 @@ function netConnect(onReady) {
   socket.on('progressSync', (data) => {
     if (!player || !data || typeof data !== 'object') return;
     if (data.upgrades)        player.upgrades        = { ...data.upgrades };
+    // The point counters travel with the upgrades map: the panel's figure is
+    // budget + bonusSP - spend with keptSP taken off both sides
+    // (availableSkillPoints, shared/definitions.js), so applying one without
+    // the others would show a number the server does not agree with.
+    if (Number.isFinite(data.bonusSP))  player.bonusSP  = data.bonusSP;
+    if (Number.isFinite(data.keptSP))   player.keptSP   = data.keptSP;
+    if (Number.isFinite(data.rebirths)) player.rebirths = data.rebirths;
     if (data.skillLevels)     player.skillLevels     = { Q:0, W:0, E:0, R:0, ...data.skillLevels };
     if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
     if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
@@ -3971,11 +3978,16 @@ function _initPetCraftHandlers(s) {
   // points, since "spent" is derived from this map rather than stored (see
   // getAvailableSkillPoints, js/player.js). Save straight away so an autosave
   // composed a moment earlier can't put the old upgrades back.
-  s.on('upgradesReset', ({ pointsReturned, newNexumBalance }) => {
+  s.on('upgradesReset', ({ pointsReturned, keptSP, newNexumBalance }) => {
     window._nexumBalance = newNexumBalance;
     if (!player) return;
     player.nexumBalance = newNexumBalance;
     player.upgrades = {};
+    // Emptying the map ends the commitment a rebirth carried, so the points
+    // that were covering it go with it — the server has already done exactly
+    // this to its own copy (the resetUpgrades handler), and pointsReturned is
+    // what actually became spendable rather than the raw old spend.
+    player.keptSP = Number.isFinite(keptSP) ? keptSP : 0;
     if (typeof recompute === 'function') recompute();
     if (typeof netSaveProgress === 'function') netSaveProgress();
     if (typeof onUpgradesReset === 'function') onUpgradesReset(pointsReturned);
@@ -3988,12 +4000,16 @@ function _initPetCraftHandlers(s) {
   // boxOpened above — the server's own _commitServerItems call inside the
   // rebirth handler already pushed the item-cost removal; this only carries
   // the progression reset (level/xp/upgrades/bonusSP/rebirths).
-  s.on('rebirthDone', ({ lvl, xp, xpNext, baseAtk, baseDef, baseMaxHp, upgrades, bonusSP, rebirths } = {}) => {
+  s.on('rebirthDone', ({ lvl, xp, xpNext, baseAtk, baseDef, baseMaxHp, upgrades, bonusSP, keptSP, rebirths } = {}) => {
     if (!player) return;
     player.lvl = lvl; player.xp = xp; player.xpNext = xpNext;
     player.baseAtk = baseAtk; player.baseDef = baseDef; player.baseMaxHp = baseMaxHp;
     player.upgrades = upgrades || {};
     player.bonusSP = bonusSP || 0;
+    // What the kept upgrades cost. Without it the panel would read the kept
+    // spend as an unpaid debt against a level-1 curve and show 0 points where
+    // the rebirth's own reward should be.
+    player.keptSP = keptSP || 0;
     player.rebirths = rebirths || 0;
     if (typeof recompute === 'function') recompute();
     // Rebirth is framed as a fresh start — full heal, matching the +HP an

@@ -14,8 +14,9 @@ module.exports = function registerSkills(s, safeOn, deps) {
     SEASON_REBIRTH_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
     SKILL_UPGRADE_CHANCE, SKILL_UPGRADE_COST, UPGRADE_KEYS,
     UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
-    logPlayer, logPlayerErr, passiveBookId, passiveDefById, rebirthCostFor,
-    seasonActive, skillBookId, skillPointBudget, upgradeCost, xpToNext,
+    availableSkillPoints, logPlayer, logPlayerErr, passiveBookId, passiveDefById,
+    rebirthCostFor, seasonActive, skillBookId, skillPointBudget, spentSkillPoints,
+    upgradeCost, xpToNext,
   } = deps;
 
   const {
@@ -61,14 +62,26 @@ module.exports = function registerSkills(s, safeOn, deps) {
           return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
         }
         s.nexumBalance = _bal;
-        if (s.lastStats) s.lastStats.upgrades = {};
+        // What the player can actually spend again — not the raw `spent`, which
+        // is a lie for a character carrying points across a rebirth. keptSP is
+        // a commitment, not capacity (see the accounting block in
+        // shared/definitions.js): emptying the map ends the commitment, so the
+        // carried points go with it and only the current level's own curve plus
+        // bonusSP comes back. Reported honestly rather than as the old total,
+        // which is exactly the number a reset straight after a rebirth used to
+        // hand over for free.
+        const _before = availableSkillPoints(s.lastStats);
+        if (s.lastStats) { s.lastStats.upgrades = {}; s.lastStats.keptSP = 0; }
+        const _returned = Math.max(0, availableSkillPoints(s.lastStats) - _before);
         // Keep the room's anti-cheat baseline in step, or its computeStats would
         // go on crediting the cleared upgrades until the next saveProgress.
         if (s.currentRoom) s.currentRoom.updatePlayerSavedData(socket.id, s.lastStats);
-        _persistSavedFields(s.authed, { upgrades: {} });
+        _persistSavedFields(s.authed, { upgrades: {}, keptSP: 0 });
         logPlayer(s.authed.telegramId, s.authed.username, 'upgrades_reset',
-          { pointsReturned: spent, cost: UPGRADE_RESET_COST });
-        socket.emit('upgradesReset', { pointsReturned: spent, newNexumBalance: s.nexumBalance });
+          { pointsReturned: _returned, spent, cost: UPGRADE_RESET_COST });
+        socket.emit('upgradesReset', {
+          pointsReturned: _returned, keptSP: 0, newNexumBalance: s.nexumBalance,
+        });
       } catch (err) {
         console.error('resetUpgrades:', err);
         socket.emit('resetUpgradesError', { msg: 'Ошибка сервера' });
@@ -266,11 +279,11 @@ module.exports = function registerSkills(s, safeOn, deps) {
         const u = s.lastStats.upgrades;
         const lvl = Math.max(0, Math.floor(Number(u[key])) || 0);
         const cost = upgradeCost(lvl);
-        // Exactly the budget getAvailableSkillPoints (js/player.js) shows, from
+        // Exactly the number getAvailableSkillPoints (js/player.js) shows, from
         // the same shared function — so the button and the rule cannot disagree.
-        const spent = UPGRADE_KEYS.reduce((sum, k) => sum + Math.max(0, Math.floor(Number(u[k])) || 0), 0);
-        const budget = skillPointBudget(s.lastStats.lvl, s.lastStats.rebirths) + (s.lastStats.bonusSP || 0);
-        if (budget - spent < 1) return socket.emit('progressError', { msg: 'Мало очков навыка!' });
+        if (availableSkillPoints(s.lastStats) < 1) {
+          return socket.emit('progressError', { msg: 'Мало очков навыка!' });
+        }
         if ((Math.floor(Number(s.lastStats.gold)) || 0) < cost) {
           return socket.emit('progressError', { msg: 'Мало золота!' });
         }
@@ -357,50 +370,40 @@ module.exports = function registerSkills(s, safeOn, deps) {
         }
 
         // Улучшения (player.upgrades) are kept, not cleared — only the level
-        // curve resets. That only works without the anti-cheat upgrades-budget
-        // check (_sanitizeSavedStats) wiping them right back out on the very
-        // next save: it drops the WHOLE upgrades map the instant spent exceeds
-        // skillPointBudget(lvl, rebirths) + bonusSP, and post-rebirth that
-        // budget is 0 until level REBIRTH_LEVEL again. So bonusSP has to cover
-        // at least what's currently spent, or the very next save would erase
-        // the upgrades this whole mechanic just promised to keep.
+        // curve resets. Two things have to be true for that to work, and
+        // keptSP is what makes them both true at once (the whole rule is
+        // written out in shared/definitions.js's skill point accounting
+        // block):
         //
-        // getAvailableSkillPoints (js/player.js) computes available = budget +
-        // bonusSP - spent — bonusSP is a credit line the anti-cheat check reads
-        // against, not a wallet that depletes as points are spent, so spent
-        // itself never leaves player.upgrades. max(oldBonus, spentSP) is the
-        // floor that keeps that credit line covering the kept spend (whichever
-        // of the two actually needs covering), and REBIRTH_BONUS_SP is then
-        // added on top of that floor — unconditionally, every rebirth — so the
-        // advertised flat reward (rebirthDesc/rebirthConfirmBody: "+15 forever")
-        // always lands instead of being absorbed whenever spentSP alone already
-        // exceeded oldBonus + REBIRTH_BONUS_SP.
+        //  • The anti-cheat upgrades check (_sanitizeSavedStats) must not wipe
+        //    the map on the very next save. It drops the WHOLE map the instant
+        //    spent exceeds the ceiling, and a level-1 character's own curve is
+        //    0 until REBIRTH_LEVEL again — so the kept spend is recorded in
+        //    keptSP, which skillPointCeiling adds to that ceiling.
         //
-        // Summing spentSP on top of a bonusSP that ALREADY covered that same
-        // spend (oldBonus + spentSP, as an earlier version of this line did)
-        // inflated `available` by the full spentSP a second time: rebirthing
-        // and then immediately hitting "Сбросить" on Улучшения handed back
-        // spentSP points nobody ever earned, on top of the ones already
-        // invested and kept. Taking max() of the two first, then adding the
-        // flat reward once, avoids that double count while still always paying
-        // the reward.
+        //  • A rebirth must be worth exactly REBIRTH_BONUS_SP, no more. That
+        //    is what bonusSP alone could not do: topping it up to cover the
+        //    kept spend (Math.max(oldBonus, spentSP) + REBIRTH_BONUS_SP, as
+        //    this line did until now) left the banked spend sitting in a
+        //    credit line that availableSkillPoints reads as capacity — so once
+        //    REBIRTH_LEVEL was re-climbed the curve paid for those same points
+        //    a SECOND time (a free 90 at level 30, on top of the 15), and a
+        //    single Улучшения → Сбросить handed the whole banked total over as
+        //    spendable. Earlier versions were worse still: one summed the
+        //    spend on top of a bonus that already covered it, and the first
+        //    banked the entire pre-reset BUDGET, unspent points included.
+        //    bonusSP now only ever grows by the flat reward.
         //
-        // An even earlier version banked the whole pre-reset BUDGET instead of
-        // what was spent, which handed every UNSPENT level point too and then
-        // paid that out a second time once REBIRTH_LEVEL was reclimbed and the
-        // curve resumed — every rebirth was worth 105 points instead of the
-        // flat REBIRTH_BONUS_SP. That's why spentSP, not budget, is one of the
-        // two terms max() picks from here.
-        //
-        // Clamped to the pre-reset budget as a belt-and-braces measure: every
-        // save has already been through the check above, so upgrades can't
-        // exceed it, and a bad one must not be able to mint bonusSP here.
+        // keptSP is capped at what the ending life's own level curve was
+        // worth: past that, the spend was paid for out of bonusSP, which
+        // survives the reset on its own and must not be shielded twice. The
+        // clamp also means a bad stored map can never mint capacity here.
         const _oldBonus  = Math.max(0, Math.floor(Number(s.lastStats.bonusSP)) || 0);
+        const _oldKept   = Math.max(0, Math.floor(Number(s.lastStats.keptSP)) || 0);
         const _oldBudget = skillPointBudget(lvl, s.lastStats.rebirths || 0);
         const _spentSP = Math.min(
-          Object.values(s.lastStats.upgrades || {})
-            .reduce((s, v) => s + Math.max(0, Math.floor(Number(v)) || 0), 0),
-          _oldBudget + _oldBonus);
+          spentSkillPoints(s.lastStats.upgrades),
+          _oldBudget + _oldBonus + _oldKept);
         const _cd = CHAR_DEF[s.lastStats.type] || CHAR_DEF.lev;
         s.lastStats.lvl = 1;
         s.lastStats.xp = 0;
@@ -411,7 +414,8 @@ module.exports = function registerSkills(s, safeOn, deps) {
         s.lastStats.baseAtk = _cd.baseAtk;
         s.lastStats.baseDef = _cd.baseDef;
         s.lastStats.baseMaxHp = _cd.baseHP;
-        s.lastStats.bonusSP = Math.max(_oldBonus, _spentSP) + REBIRTH_BONUS_SP;
+        s.lastStats.bonusSP = _oldBonus + REBIRTH_BONUS_SP;
+        s.lastStats.keptSP = Math.min(_spentSP, _oldBudget);
         s.lastStats.rebirths = (s.lastStats.rebirths || 0) + 1;
         s.lastStats.inventory = inv;
 
@@ -426,18 +430,21 @@ module.exports = function registerSkills(s, safeOn, deps) {
         _persistSavedFields(s.authed, {
           lvl: 1, xp: 0, xpNext: s.lastStats.xpNext,
           baseAtk: s.lastStats.baseAtk, baseDef: s.lastStats.baseDef, baseMaxHp: s.lastStats.baseMaxHp,
-          bonusSP: s.lastStats.bonusSP, rebirths: s.lastStats.rebirths,
+          bonusSP: s.lastStats.bonusSP, keptSP: s.lastStats.keptSP, rebirths: s.lastStats.rebirths,
         });
         logPlayer(s.authed.telegramId, s.authed.username, 'rebirth', {
           rebirths: s.lastStats.rebirths, fromLvl: lvl,
           // What the rebirth actually cost and paid in points — the one line
           // that makes a later "my skill points changed" report answerable.
-          spentSP: _spentSP, bonusSP: `${_oldBonus} -> ${s.lastStats.bonusSP}`,
+          spentSP: _spentSP, keptSP: `${_oldKept} -> ${s.lastStats.keptSP}`,
+          bonusSP: `${_oldBonus} -> ${s.lastStats.bonusSP}`,
+          availableSP: availableSkillPoints(s.lastStats),
         });
         socket.emit('rebirthDone', {
           lvl: 1, xp: 0, xpNext: s.lastStats.xpNext,
           baseAtk: s.lastStats.baseAtk, baseDef: s.lastStats.baseDef, baseMaxHp: s.lastStats.baseMaxHp,
-          upgrades: s.lastStats.upgrades || {}, bonusSP: s.lastStats.bonusSP, rebirths: s.lastStats.rebirths,
+          upgrades: s.lastStats.upgrades || {}, bonusSP: s.lastStats.bonusSP,
+          keptSP: s.lastStats.keptSP, rebirths: s.lastStats.rebirths,
         });
         if (seasonActive()) {
           _seasonAddPoints(SEASON_REBIRTH_POINTS, 'rebirth', { rebirths: s.lastStats.rebirths })

@@ -21,7 +21,8 @@ module.exports = function registerAuth(s, safeOn, deps) {
     _registerReferral, _restoreFloorFor, _safeUsername, _sanitizeSavedStats,
     _setVipAura, _teleportCasting, _topPlayerUsername, _trackFearRoom,
     _unknownItemIds, _vipAuraUsers, activeSessions, calcBM, clanAtkBonusPct,
-    codexTotalBonus, getRoom, globalChatHistory, io, logPlayer, parties,
+    codexTotalBonus, getRoom, globalChatHistory, io, logPlayer, migrateKeptSP,
+    parties,
     playerFloorMap, playerParty, safeInterval, safeTimeout,
     verifyTelegramAuth, verifyTelegramWebApp,
   } = deps;
@@ -136,6 +137,33 @@ module.exports = function registerAuth(s, safeOn, deps) {
         activeSessions.delete(telegramId);
         socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
         return false;
+      }
+      // ── One-time repair: a rebirth's kept spend banked into bonusSP ───────
+      // Records written before keptSP existed carry the cost of the upgrades a
+      // rebirth kept inside bonusSP itself, where availableSkillPoints reads it
+      // as spendable capacity — so once REBIRTH_LEVEL was re-climbed the level
+      // curve paid for those same points a second time (the free 90 the
+      // rebirth handler's own comment now describes) and a single Улучшения →
+      // Сбросить handed the whole banked total over. migrateKeptSP moves that
+      // committed part into keptSP without changing the sum of the two, so the
+      // upgrades map still clears the anti-cheat ceiling it already passed.
+      //
+      // Here, and not in selectChar: this is the one point every login path
+      // passes through, and it lands BEFORE authOk hands the stored record to
+      // the client, so the panel never gets a chance to show the inflated
+      // figure. Idempotent — a record that already has the field is skipped.
+      const _spSplit = doc.savedData ? migrateKeptSP(doc.savedData) : null;
+      if (_spSplit) {
+        const _wasBonus = Math.max(0, Math.floor(Number(doc.savedData.bonusSP)) || 0);
+        doc.savedData.bonusSP = _spSplit.bonusSP;
+        doc.savedData.keptSP  = _spSplit.keptSP;
+        PlayerModel.updateOne({ telegramId }, { $set: {
+          'savedData.bonusSP': _spSplit.bonusSP, 'savedData.keptSP': _spSplit.keptSP,
+        } }).catch(() => {});
+        if (_spSplit.keptSP) {
+          logPlayer(telegramId, doc.username, 'sp_kept_split',
+            { bonusSP: `${_wasBonus} -> ${_spSplit.bonusSP}`, keptSP: _spSplit.keptSP });
+        }
       }
       s.authed = doc;
       clearTimeout(_authTimeout);
@@ -349,6 +377,11 @@ module.exports = function registerAuth(s, safeOn, deps) {
         // bonusSP/rebirths/level, instead of clearing them for failing a budget
         // computed off fields that were never actually sent.
         effectiveSaved.bonusSP   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.bonusSP)) || 0);
+        // Same pin, same reason — and keptSP has to travel WITH bonusSP: they
+        // are two halves of one sum (shared/definitions.js's skill point
+        // accounting), so restoring one without the other would either wipe the
+        // upgrades a rebirth kept or hand their cost back as spendable.
+        effectiveSaved.keptSP    = Math.max(0, Math.floor(Number(_dbBase && _dbBase.keptSP)) || 0);
         effectiveSaved.rebirths  = Math.max(0, Math.floor(Number(_dbBase && _dbBase.rebirths)) || 0);
         effectiveSaved.upgrades  = (_dbBase && _dbBase.upgrades) || {};
         const _rebasedLvl = _sanitizeSavedStats(effectiveSaved);
@@ -357,6 +390,7 @@ module.exports = function registerAuth(s, safeOn, deps) {
         effectiveSaved.baseMaxHp = _rebasedLvl.baseMaxHp;
         effectiveSaved.xpNext    = _rebasedLvl.xpNext;
         effectiveSaved.upgrades  = _rebasedLvl.upgrades;
+        effectiveSaved.keptSP    = _rebasedLvl.keptSP;
         // Quest progress, from the stored record like everything else the server
         // owns — the counters are incremented on this side as the events happen.
         // HP comes from the stored record, not from the blob a reconnect sent.
@@ -421,6 +455,15 @@ module.exports = function registerAuth(s, safeOn, deps) {
           passiveLevels:   effectiveSaved.passiveLevels,
           advSkillLearned: effectiveSaved.advSkillLearned,
           advSkillActive:  effectiveSaved.advSkillActive,
+          // The three fields the Улучшения panel counts points from. A
+          // reconnect's own blob carries none of them (they are pinned from the
+          // stored record just above), and the login repair further up this
+          // file can have changed bonusSP/keptSP since authOk went out — so
+          // this is what stops the panel showing a number the server would
+          // refuse to sell against.
+          bonusSP:         effectiveSaved.bonusSP,
+          keptSP:          effectiveSaved.keptSP,
+          rebirths:        effectiveSaved.rebirths,
         });
         socket.emit('codexSync', { codex: effectiveSaved.codex, bonus: codexTotalBonus(effectiveSaved.codex) });
         s.lastStats = effectiveSaved;
@@ -763,6 +806,7 @@ module.exports = function registerAuth(s, safeOn, deps) {
         clean.buffs             = s.lastStats.buffs             || {};
         clean.potionBag         = s.lastStats.potionBag         || {};
         clean.bonusSP           = s.lastStats.bonusSP           || 0;
+        clean.keptSP            = s.lastStats.keptSP            || 0;
         clean.rebirths          = s.lastStats.rebirths          || 0;
         clean.specialQuestsDone = s.lastStats.specialQuestsDone || [];
         // HP, from the room. The server is what lowers it (attackEnemy,
