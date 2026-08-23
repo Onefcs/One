@@ -4501,3 +4501,77 @@ scenario('rebirth: a record that banked the kept spend into bonusSP is repaired 
      `so the character has ${REBIRTH_BONUS_SP} to spend, not the 105 the banked bonus used to show`);
   await c.close();
 });
+
+scenario('farm2: the daily minute allowance is charged for time actually spent, cap included', async () => {
+  // The bug: minutes were only ever charged by a 60s ticker, so anything
+  // shorter than a whole minute was free — and the LAST minute of a capped run
+  // was free too, because the cap timer and the ticker's final tick fall on the
+  // same millisecond and the cap timer (created first) ends the run and clears
+  // the interval before that tick can fire. A player ejected at the cap
+  // therefore still held the minute they had just spent, walked straight back
+  // in with it, was ejected again a minute later having again been charged
+  // nothing: "1 minute left" that never ran out, forever.
+  //
+  // Both halves are checked here against the REAL handlers: a short visit, and
+  // a run that sits through its whole remaining allowance.
+  const { FARM2_DAILY_MINUTES } = require('../shared/definitions');
+  const today = new Date().toISOString().slice(0, 10);
+  const minutesUsedBy = c => {
+    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+    const rec = row.savedData.farm2Minutes;
+    return rec && rec.date === today ? rec.minutes : 0;
+  };
+  // A full party of three, all seeded with the same already-spent allowance.
+  const trio = async (tag, used) => {
+    const seed = { lvl: 30, xp: 0, xpNext: 100, farm2Minutes: { date: today, minutes: used } };
+    const cs = [];
+    for (const n of ['l', '1', '2']) cs.push(await connectWithSaved(`harness_f2m_${tag}_${n}`, seed));
+    for (const c of cs) await enterWorld(c, 'ranger');
+    return cs;
+  };
+  const start = async ([leader, m1, m2]) => {
+    leader.emit('farm2GroupCreate');
+    await leader.wait('farm2GroupState', { timeout: 3000 });
+    m1.emit('farm2GroupJoin', { leaderId: leader.sock.id });
+    await m1.wait('farm2GroupState', { timeout: 3000 });
+    m2.emit('farm2GroupJoin', { leaderId: leader.sock.id });
+    await m2.wait('farm2GroupState', { timeout: 3000 });
+    const started = leader.wait('farm2Started', { timeout: 5000 });
+    const err = leader.wait('farm2Error', { timeout: 5000 }).catch(() => null);
+    leader.emit('farm2GroupStart');
+    return Promise.race([started, err]);
+  };
+
+  // ── A short visit costs a minute, not nothing ────────────────────────────
+  const short = await trio('short', FARM2_DAILY_MINUTES - 2);   // two minutes left
+  const startedShort = await start(short);
+  ok(startedShort && !startedShort.msg, 'the trio is inside', startedShort && startedShort.msg);
+  await sleep(1200);
+  // Walking out ends this membership and cascades the other two out with it.
+  short[0].emit('enterLocation', { target: 'hub' });
+  await sleep(900);
+  short.forEach((c, i) => eq(minutesUsedBy(c), FARM2_DAILY_MINUTES - 1,
+    `${['leader', 'member 1', 'member 2'][i]} was charged the minute they started, not nothing`));
+  for (const c of short) await c.close();
+
+  // ── A run that sits through its whole allowance charges all of it ────────
+  const capped = await trio('cap', FARM2_DAILY_MINUTES - 1);    // one minute left
+  const startedCap = await start(capped);
+  ok(startedCap && !startedCap.msg, 'a second trio starts with a single minute left', startedCap && startedCap.msg);
+  eq(startedCap.minutesLeft, 1, 'and the server sizes the run at that one minute');
+  // The cap fires 60s in — this is the wait the bug was hiding behind.
+  const fin = await capped[0].wait('farm2Finished', { timeout: 75000 });
+  eq(fin && fin.reason, 'timeCap', 'the cap ejects the player from the zone');
+  await sleep(800);
+  capped.forEach((c, i) => eq(minutesUsedBy(c), FARM2_DAILY_MINUTES,
+    `${['leader', 'member 1', 'member 2'][i]}'s allowance is fully spent, so the last minute was not free`));
+
+  // ...and with nothing left, the zone will not take them again.
+  const denied = capped[0].wait('farm2Error', { timeout: 3000 });
+  const reopened = capped[0].wait('farm2GroupState', { timeout: 3000 }).catch(() => null);
+  capped[0].emit('farm2GroupCreate');
+  const res = await Promise.race([denied, reopened]);
+  ok(res && res.msg && /закончилось/.test(res.msg),
+     'a fresh run is refused rather than handing back the same minute again', JSON.stringify(res));
+  for (const c of capped) await c.close();
+});

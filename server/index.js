@@ -1480,7 +1480,15 @@ async function _coopAttemptsLeft(socketId)           { return _dailyAttemptsLeft
 // so there is no need for _attemptCap's field-keyed dispatch.
 function _lockDailyMinutes(socketId, field, minutes) {
   const s = io.sockets.sockets.get(socketId);
-  const tid = s?.data?.telegramId;
+  _lockDailyMinutesFor(s?.data?.telegramId, field, minutes);
+}
+// The same write, addressed by account rather than by socket. A run's last
+// minutes are settled when it ENDS (_farm2SettleMinutes, server/game/farm2.js),
+// and one of the ways a run ends is the socket disconnecting — by which point
+// socket.io has already dropped it from io.sockets.sockets, so the lookup above
+// would find nothing and the time would simply not be charged. The run record
+// carries the telegramId it started with for exactly this.
+function _lockDailyMinutesFor(tid, field, minutes) {
   if (tid == null || !(minutes > 0)) return;
   const today = _todayStr();
   const path = `savedData.${field}`;
@@ -1508,6 +1516,7 @@ async function _dailyMinutesLeft(socketId, field, cap) {
   } catch (_) { return cap; }
 }
 function _lockFarm2Minutes(socketId, minutes)        { _lockDailyMinutes(socketId, 'farm2Minutes', minutes); }
+function _lockFarm2MinutesFor(tid, minutes)          { _lockDailyMinutesFor(tid, 'farm2Minutes', minutes); }
 async function _farm2MinutesLeft(socketId)           { return _dailyMinutesLeft(socketId, 'farm2Minutes', FARM2_DAILY_MINUTES); }
 
 // Remove leaverId from their party; notify remaining members.
@@ -2266,7 +2275,7 @@ const {
   _farm2, _farm2ClearTimers, _farm2ReleaseRun, _farm2Finish, _farm2CascadeCheck,
   _farm2Eliminate, _farm2EjectOnDisconnect,
 } = createFarm2({
-  io, _returnToHub,
+  io, _returnToHub, _lockFarm2MinutesFor,
 });
 
 // Same reasoning as registerAdminRoutes below: safeTimeout/_incBalance are

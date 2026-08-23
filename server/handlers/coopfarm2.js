@@ -463,12 +463,25 @@ module.exports = function registerCoopfarm2(s, safeOn, deps) {
         _farm2GroupBroadcastList();
 
         allIds.forEach((sid, i) => {
-          const capTimer = safeTimeout('farm2Cap_' + sid, () => {
+          // startedAt/chargedMin/telegramId are what _farm2SettleMinutes
+          // (server/game/farm2.js) bills the daily allowance from when the run
+          // ends — the ticker below can only ever charge whole minutes it lives
+          // to see, and the run's last (or only) partial one is settled there.
+          const run = {
+            room: farm2Room, participantIds: allIds,
+            telegramId: allSockets[i].data.telegramId,
+            startedAt: Date.now(), chargedMin: 0,
+            capTimer: null, minuteTimer: null,
+          };
+          run.capTimer = safeTimeout('farm2Cap_' + sid, () => {
             _farm2Finish(sid, 'timeCap');
             _farm2CascadeCheck(farm2Room, allIds);
           }, minutesLeft[i] * 60000);
-          const minuteTimer = safeInterval('farm2Min_' + sid, () => _lockFarm2Minutes(sid, 1), 60000);
-          _farm2.set(sid, { room: farm2Room, participantIds: allIds, capTimer, minuteTimer });
+          run.minuteTimer = safeInterval('farm2Min_' + sid, () => {
+            run.chargedMin += 1;
+            _lockFarm2Minutes(sid, 1);
+          }, 60000);
+          _farm2.set(sid, run);
         });
         allSockets.forEach((s, i) => {
           const p = farm2Room.players.get(allIds[i]);

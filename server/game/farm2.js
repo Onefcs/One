@@ -9,7 +9,7 @@ const { FLOOR_IDS } = require('../game/floors');
 const Room = require('../game/Room');
 
 module.exports = function createFarm2(deps) {
-  const { io, _returnToHub } = deps;
+  const { io, _returnToHub, _lockFarm2MinutesFor } = deps;
 
   // ── Элитная фарм-зона (Elite Farm Zone 2) ───────────────────────────────────
   // Same leader/member group-lobby shape Coop's own _coopGroups uses, just
@@ -128,12 +128,44 @@ module.exports = function createFarm2(deps) {
     return live;
   }
 
-  // socketId -> { room, participantIds, capTimer, minuteTimer } for whoever
-  // currently has a run going. participantIds is every one of the
-  // FARM2_PARTY_SIZE sockets that started this run together, captured once at
-  // farm2GroupStart — read by _farm2CascadeCheck to know who else needs to be
-  // pulled out the moment membership drops below the full party.
+  // socketId -> { room, participantIds, telegramId, startedAt, chargedMin,
+  // capTimer, minuteTimer } for whoever currently has a run going.
+  // participantIds is every one of the FARM2_PARTY_SIZE sockets that started
+  // this run together, captured once at farm2GroupStart — read by
+  // _farm2CascadeCheck to know who else needs to be pulled out the moment
+  // membership drops below the full party. telegramId/startedAt/chargedMin are
+  // what _farm2SettleMinutes bills the daily allowance from.
   const _farm2 = new Map();
+
+  // Timer jitter, not playtime: a cap timer set for exactly N minutes can fire
+  // a few ms late, and without this that overshoot would round a full N-minute
+  // run up to N+1. Anything a player could actually farm in is far above it.
+  const FARM2_SETTLE_TOLERANCE_MS = 1000;
+
+  // Bill the allowance for the time this run actually lasted.
+  //
+  // The per-minute ticker (farm2GroupStart) only ever charges WHOLE minutes it
+  // lived to see, and it does not live to see the last one: the cap timer and
+  // the ticker's final tick are scheduled for the very same millisecond, and
+  // the cap timer — created first, so first in the timer queue — ends the run
+  // and clears the interval before that tick can run. So a run that lasted
+  // exactly its remaining allowance charged one minute LESS than it used, and
+  // the player was ejected still holding a minute they could immediately spend
+  // on another run, which charged nothing either: the "1 minute left" that
+  // never ran out. Walking out under a minute was free for the same reason.
+  //
+  // Settling here, on every exit path (cap, walking out, party break,
+  // disconnect), is what closes both: whole minutes STARTED are what count, so
+  // a partial minute rounds up rather than being free, and the total can never
+  // undershoot what the ticker already wrote.
+  function _farm2SettleMinutes(run) {
+    if (!run || !run.startedAt || run.telegramId == null) return;
+    const elapsed = Date.now() - run.startedAt - FARM2_SETTLE_TOLERANCE_MS;
+    const owed = Math.max(0, Math.ceil(elapsed / 60000) - (run.chargedMin || 0));
+    if (owed <= 0) return;
+    run.chargedMin = (run.chargedMin || 0) + owed;
+    _lockFarm2MinutesFor(run.telegramId, owed);
+  }
 
   function _farm2ClearTimers(socketId) {
     const run = _farm2.get(socketId);
@@ -151,6 +183,9 @@ module.exports = function createFarm2(deps) {
     const run = _farm2.get(socketId);
     if (!run) return null;
     _farm2ClearTimers(socketId);
+    // Before the record goes: the ticker is stopped now, so whatever it never
+    // got to charge has to be settled here or it is never charged at all.
+    _farm2SettleMinutes(run);
     _farm2.delete(socketId);
     if (run.room) run.room.farm2Release(socketId);
     return run;
@@ -207,7 +242,7 @@ module.exports = function createFarm2(deps) {
     _farm2Groups, _farm2GroupOf, _farm2Starting, _farm2GroupStateFor, _farm2GroupPush,
     _farm2GroupOpenList, _farm2GroupBroadcastList, _farm2GroupDissolve, _farm2GroupDropOnDisconnect,
     _createFarm2Room, _farm2Rooms, _liveFarm2Rooms,
-    _farm2, _farm2ClearTimers, _farm2ReleaseRun, _farm2Finish, _farm2CascadeCheck,
+    _farm2, _farm2ClearTimers, _farm2ReleaseRun, _farm2SettleMinutes, _farm2Finish, _farm2CascadeCheck,
     _farm2Eliminate, _farm2EjectOnDisconnect,
   };
 };
