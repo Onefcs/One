@@ -4622,3 +4622,56 @@ scenario('drops: every skill and passive book is reachable from monsters in BOTH
   }
   eq([...shapes].join(' '), '5/5/1', 'every level still offers 5 skill + 5 class-passive + 1 universal book');
 });
+
+scenario('chat: every translate request gets an answer, whatever the upstream does', async () => {
+  // Two halves of the same complaint ("переводчик пишет не удалось перевести").
+  //
+  // The per-connection rate limit (one translate per second) used to `return`
+  // in silence. The client marks the bubble as translating the moment it asks
+  // and only clears that on a reply, so a swallowed request left it stuck on
+  // "…" forever — and the same flag makes every later click on that bubble a
+  // no-op, so the row could never be retried either.
+  //
+  // The upstream half cannot be asserted on: translate.googleapis.com is an
+  // undocumented free endpoint that throttles per IP, so whether it answers a
+  // given run is genuinely not this repo's business. What IS asserted is that
+  // the answer comes back either way, and that a refusal is labelled
+  // 'unavailable' rather than surfacing as a bare failure.
+  const c = await connectWithSaved('harness_translate', { lvl: 5 });
+  await enterWorld(c, 'ranger');
+
+  const ask = (reqId, text) => {
+    const p = c.wait('translateChatResult', { timeout: 30000, match: r => r && r.reqId === reqId });
+    c.emit('translateChat', { text, target: 'en', reqId });
+    return p;
+  };
+
+  const first = await ask('t1', 'привет как дела');
+  ok(first && (typeof first.text === 'string' || first.error),
+     'a translate request is answered');
+  if (first.error) {
+    eq(first.reason, 'unavailable', 'and an upstream refusal says so rather than failing bare');
+    console.log('   (upstream declined this run — the rate-limit half below is what matters here)');
+  } else {
+    ok(first.text.length > 0, `the translation came back non-empty (${first.text})`);
+    // Same text again: served from the server's own cache now, which is what
+    // keeps the shared server IP under Google's per-IP throttle.
+    await sleep(1100);
+    const again = await ask('t2', 'привет как дела');
+    eq(again.text, first.text, 'the same text translates to the same thing (cache hit)');
+  }
+
+  // Two in the same tick: the second one trips the 1s limit. Both must be
+  // answered — that is the bug this pins.
+  await sleep(1100);
+  const a = c.wait('translateChatResult', { timeout: 30000, match: r => r && r.reqId === 'burst1' });
+  const b = c.wait('translateChatResult', { timeout: 30000, match: r => r && r.reqId === 'burst2' });
+  c.emit('translateChat', { text: 'доброе утро', target: 'en', reqId: 'burst1' });
+  c.emit('translateChat', { text: 'добрый вечер', target: 'en', reqId: 'burst2' });
+  const [r1, r2] = await Promise.all([a, b]);
+  ok(r1, 'the first of a burst is answered');
+  ok(r2 && r2.error && r2.reason === 'rate',
+     'and the one that tripped the rate limit is answered too, labelled as such');
+
+  await c.close();
+});

@@ -59,6 +59,8 @@ const I18N_UI = {
   chatPlaceholderDmActive: { ru: 'Сообщение @{u}...', en: 'Message @{u}...', uk: 'Повідомлення @{u}...', es: 'Mensaje a @{u}...', tr: '@{u} mesaj...', pt: 'Mensagem @{u}...' },
   chatDmNoPartner: { ru: 'Выберите беседу выше или отметьте @ник', en: 'Pick a conversation above or mention @nick', uk: 'Оберіть бесіду вище або відмітьте @нік', es: 'Elige una conversación arriba o menciona a @nick', tr: 'Yukarıdan bir sohbet seç ya da @kullanıcı etiketle', pt: 'Escolha uma conversa acima ou mencione @nick' },
   chatTranslateError: { ru: 'Не удалось перевести', en: 'Translation failed', uk: 'Не вдалося перекласти', es: 'No se pudo traducir', tr: 'Çeviri başarısız', pt: 'Falha ao traduzir' },
+  chatTranslateBusy: { ru: 'Слишком часто — подождите секунду', en: 'Too fast — wait a second', uk: 'Занадто часто — зачекайте секунду', es: 'Demasiado rápido: espera un segundo', tr: 'Çok hızlı — bir saniye bekleyin', pt: 'Rápido demais — espere um segundo' },
+  chatTranslateUnavailable: { ru: 'Перевод временно недоступен, попробуйте позже', en: 'Translation is unavailable right now, try again later', uk: 'Переклад тимчасово недоступний, спробуйте пізніше', es: 'La traducción no está disponible ahora, inténtalo más tarde', tr: 'Çeviri şu anda kullanılamıyor, daha sonra deneyin', pt: 'A tradução está indisponível agora, tente mais tarde' },
 
   deathTitle:   { ru: 'ВЫ ПАЛИ', en: 'YOU DIED', uk: 'ВИ ЗАГИНУЛИ', es: 'HAS MUERTO', tr: 'ÖLDÜN', pt: 'VOCÊ MORREU' },
   deathRespawn: { ru: 'Возродиться (10% HP)', en: 'Respawn (10% HP)', uk: 'Відродитися (10% HP)', es: 'Reaparecer (10% HP)', tr: 'Yeniden Doğ (%10 HP)', pt: 'Reviver (10% HP)' },

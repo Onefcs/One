@@ -1536,7 +1536,7 @@ function netConnect(onReady) {
   // "Translate" button on a chat bubble — reqId (set in _chatTranslateRow,
   // js/network.js below) maps the reply back to the row that asked for it,
   // since several translate clicks can be in flight across different rows.
-  socket.on('translateChatResult', ({ reqId, text, error }) => _onChatTranslateResult(reqId, text, error));
+  socket.on('translateChatResult', ({ reqId, text, error, reason }) => _onChatTranslateResult(reqId, text, error, reason));
 
   // ── Clan listeners ────────────────────────────────────────
   socket.on('clanData', data => {
@@ -2570,7 +2570,12 @@ function _renderChatRow(el, username, text, time) {
 // (server has no way to know which channel a row's message came from, nor
 // does it need to — same request shape for global/clan/DM).
 let _chatTranslateSeq = 0;
-const _chatTranslatePending = new Map(); // reqId -> row element
+const _chatTranslatePending = new Map(); // reqId -> { row, timer }
+// A reply that never comes must not leave the bubble on "…" forever: the
+// server can be waiting on Google's own timeout, or the socket can have
+// dropped the answer entirely. Comfortably longer than the server's own
+// worst case (two endpoints × two attempts at a 5s deadline each).
+const CHAT_TRANSLATE_TIMEOUT_MS = 25000;
 
 function _chatTranslateRow(btn) {
   const row = btn.closest('.chat-row');
@@ -2590,20 +2595,31 @@ function _chatTranslateRow(btn) {
   box.textContent = '…';
 
   const reqId = String(++_chatTranslateSeq);
-  _chatTranslatePending.set(reqId, row);
+  const timer = setTimeout(() => _onChatTranslateResult(reqId, null, true, 'unavailable'), CHAT_TRANSLATE_TIMEOUT_MS);
+  _chatTranslatePending.set(reqId, { row, timer });
   const target = (typeof currentLang !== 'undefined' && currentLang) || 'en';
   socket?.emit('translateChat', { text: row.dataset.origText, target, reqId });
 }
 
-function _onChatTranslateResult(reqId, text, error) {
-  const row = _chatTranslatePending.get(reqId);
-  if (!row) return;
+// `reason` says what to tell the player: 'rate' is their own clicking (one
+// translate per second per connection), 'unavailable' is Google refusing us —
+// almost always its per-IP throttle on the free endpoint, which every player
+// shares through this server. Neither marks the row as translated, so the
+// button still retries on the next click.
+function _onChatTranslateResult(reqId, text, error, reason) {
+  const pending = _chatTranslatePending.get(reqId);
+  if (!pending) return;
   _chatTranslatePending.delete(reqId);
+  clearTimeout(pending.timer);
+  const row = pending.row;
   delete row.dataset.translating;
   const box = row.querySelector('.chat-translation');
   if (!box) return;
-  if (error || typeof text !== 'string') {
-    box.textContent = typeof t === 'function' ? t('chatTranslateError') : 'Не удалось перевести';
+  if (error || typeof text !== 'string' || !text) {
+    const key = reason === 'rate' ? 'chatTranslateBusy'
+      : reason === 'unavailable' ? 'chatTranslateUnavailable'
+      : 'chatTranslateError';
+    box.textContent = typeof t === 'function' ? t(key) : 'Не удалось перевести';
     return;
   }
   row.dataset.translated = '1';

@@ -38,7 +38,13 @@ module.exports = function registerChat(s, safeOn, deps) {
     safeOn('translateChat', async ({ text, target, reqId } = {}) => {
       if (!s.authed || !text || typeof text !== 'string') return;
       const now = Date.now();
-      if (now - _lastTranslateAt < 1000) return;
+      // Answered, not dropped. The client marks the bubble as translating the
+      // moment it asks and only ever clears that on a reply, so returning in
+      // silence here left it stuck on "…" for the rest of the session — with
+      // no way to retry, since the same flag makes a second click a no-op.
+      if (now - _lastTranslateAt < 1000) {
+        return socket.emit('translateChatResult', { reqId, error: true, reason: 'rate' });
+      }
       _lastTranslateAt = now;
       const msg = text.slice(0, 200);
       const lang = (typeof target === 'string' && /^[a-z]{2}$/.test(target)) ? target : 'en';
@@ -46,8 +52,12 @@ module.exports = function registerChat(s, safeOn, deps) {
         const translated = await _translateText(msg, lang);
         socket.emit('translateChatResult', { reqId, text: translated });
       } catch (err) {
+        // Google throttles the free endpoints per IP and every player's click
+        // leaves from this one server IP, so this is a "come back in a bit",
+        // not a broken message — and the log line carries the HTTP status the
+        // player's error could never explain (see _translateText).
         _logHandlerErr('translateChat', err);
-        socket.emit('translateChatResult', { reqId, error: true });
+        socket.emit('translateChatResult', { reqId, error: true, reason: 'unavailable' });
       }
     });
 
