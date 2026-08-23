@@ -97,9 +97,9 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   }
 
   // Skill books — restricted to a 5-book pool (one per class) that rotates
-  // with this monster's own level/zone half; see levelSkillBookPool (shared/
+  // with this monster's own level; see levelSkillBookPool (shared/
   // definitions.js).
-  const _skillBookPool = levelSkillBookPool(rlvl, _armIdx);
+  const _skillBookPool = levelSkillBookPool(rlvl);
   if (_skillBookPool.length) {
     if (eType === 'boss') {
       if (Math.random() < 0.001 * _zoneMult) addMat(_skillBookPool[Math.floor(Math.random() * _skillBookPool.length)].id, 2);
@@ -109,10 +109,9 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   }
 
   // Passive skill books — own independent roll/pool, same odds as above.
-  // The class-exclusive half rotates offense/defense with the level/zone
-  // half same as the skill books; the 6 universal ones rotate one-per-level
-  // the same way the skill books cycle Q/W/E/R.
-  const _allPassiveBooks = levelClassPassivePool(_armIdx).concat(levelUniversalPassivePool(rlvl));
+  // The class-exclusive half alternates offense/defense by level, the 6
+  // universal ones rotate one-per-level, same as the skill books above.
+  const _allPassiveBooks = levelClassPassivePool(rlvl).concat(levelUniversalPassivePool(rlvl));
   if (_allPassiveBooks.length) {
     if (eType === 'boss') {
       if (Math.random() < 0.001 * _zoneMult) addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 2);

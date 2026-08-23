@@ -834,19 +834,30 @@ const CRAFT_MATS = [
 
 // ── Level-banded skill-book drop pools ──────────────────────────────────────
 // A single monster used to be able to drop ANY of the 20 base skill books
-// (any class/key) off one roll. Each kill's candidate pool is now just 5
-// books — one per class — decided by the monster's own level: arms 1-2
-// (levels 1-40) cycle through the 4 BASE skill books (Q/W/E/R) every 4
-// levels, arms 3-4 (levels 41-78) cycle through the 4 ADVANCED ("2
-// профессия") ones the same way. Same idea for the class-exclusive passive
-// books (2 per class: one offense-flavored, one defense-flavored) — offense
-// early, defense late, no cycling needed since there's only one of each per
-// half. The 6 universal (non-class) passives cycle the same way the base/
-// advanced skill books do — one per level, wrapping every 6 — so a single
-// monster type can't hand out all 6 either. Shared so the server's roll
-// (_rollMobLoot, server/index.js) and the map's drop-info panel
-// (_monsterDropBodyHtml, js/ui.js) can never drift apart on which books a
-// given level actually offers.
+// (any class/key) off one roll. Each kill's candidate pool is just 5 books —
+// one per class — picked by the monster's OWN LEVEL, and every pool below
+// cycles on that level alone. Which zone the monster stands in no longer
+// decides anything: whatever a level-70 monster can drop, some level between
+// 1 and 40 drops too.
+//
+//   skill books      8-level cycle: base Q/W/E/R, then advanced ("2
+//                    профессия") Q/W/E/R, wrapping every 8 levels
+//   class passives   alternate by level: offense on odd levels, defense on
+//                    even ones (2 per class, so nothing else to cycle)
+//   universal ones   one per level, wrapping every 6
+//
+// The zone split this replaced — base books and offense passives in arms 1-2,
+// advanced books and defense passives in arms 3-4 — meant half the catalog
+// simply did not exist below level 41 (a Тёмный панцирь could not drop
+// anywhere a character under 41 could stand) and the other half stopped
+// existing above it, while base books are exactly what a level-10 skill, and
+// therefore the advanced unlock, still needs at that point. Cycling on the
+// level instead keeps each pool at 5 — the per-book odds are unchanged — and
+// makes every one of the 56 books reachable in either half of the game.
+//
+// Shared so the server's roll (_rollMobLoot, server/game/loot.js) and the
+// map's drop-info panel (_monsterDropBodyHtml, js/ui.js) can never drift
+// apart on which books a given level actually offers.
 //
 // Arms 1 (levels 1-20) and 2 (levels 21-40) also get every drop chance below
 // cut to a third — EARLY_ZONE_DROP_MULT — applied as a flat multiplier on
@@ -872,14 +883,18 @@ CRAFT_MATS.filter(m => m.passiveId && m.forClass).forEach(m => {
 });
 const UNIVERSAL_PASSIVE_BOOKS = CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
 
-function levelSkillBookPool(rlvl, armIdx) {
-  const early = armIdx <= 2;
-  const key = BOOK_SKILL_KEYS[Math.max(0, rlvl - (early ? 1 : 41)) % BOOK_SKILL_KEYS.length];
-  const byClass = early ? _BASE_SKILL_BOOKS_BY_CLASS : _ADV_SKILL_BOOKS_BY_CLASS;
+// Steps 0-3 of the cycle are the base books, 4-7 the advanced ones, so any
+// eight consecutive monster levels — in any arm — offer all forty.
+function levelSkillBookPool(rlvl) {
+  const step = Math.max(0, (Math.floor(rlvl) || 1) - 1) % (BOOK_SKILL_KEYS.length * 2);
+  const byClass = step < BOOK_SKILL_KEYS.length ? _BASE_SKILL_BOOKS_BY_CLASS : _ADV_SKILL_BOOKS_BY_CLASS;
+  const key = BOOK_SKILL_KEYS[step % BOOK_SKILL_KEYS.length];
   return _BOOK_CLASSES.map(cls => byClass[cls] && byClass[cls][key]).filter(Boolean);
 }
-function levelClassPassivePool(armIdx) {
-  const idx = armIdx <= 2 ? 0 : 1;
+// Odd level → the offense-flavored half, even level → the defense one, so
+// both are a room away from each other everywhere in the dungeon.
+function levelClassPassivePool(rlvl) {
+  const idx = Math.max(0, (Math.floor(rlvl) || 1) - 1) % 2;
   return Object.values(_CLASS_PASSIVE_BOOKS_BY_CLASS).map(pair => pair[idx]).filter(Boolean);
 }
 function levelUniversalPassivePool(rlvl) {

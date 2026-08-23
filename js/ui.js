@@ -2037,14 +2037,14 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   }
 
   // Skill books — restricted to a 5-book pool (one per class) that rotates
-  // with this monster's own level/zone half; see levelSkillBookPool (shared/
-  // definitions.js). Arms 1-2 draw from the base Q/W/E/R books, arms 3-4 from
-  // the advanced ("2 профессия") ones — same roll/pool the server rolls in
-  // _rollMobLoot (server/index.js), so this list is exactly what this
-  // monster can actually drop, not the full 20-book catalog.
+  // with this monster's own level; see levelSkillBookPool (shared/
+  // definitions.js). Eight consecutive levels cover the base Q/W/E/R books
+  // and then the advanced ("2 профессия") ones — same roll/pool the server
+  // rolls in _rollMobLoot (server/game/loot.js), so this list is exactly what
+  // this monster can actually drop, not the full 40-book catalog.
   let bookSection = '';
   {
-    const pool = typeof levelSkillBookPool === 'function' ? levelSkillBookPool(lvl, floor) : CRAFT_MATS.filter(m => m.skillKey);
+    const pool = typeof levelSkillBookPool === 'function' ? levelSkillBookPool(lvl) : CRAFT_MATS.filter(m => m.skillKey);
     if (pool.length) {
       const isAdv = pool.some(b => b.advSkillKey);
       const rows = pool.map(b => {
@@ -2059,13 +2059,12 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   }
 
   // Passive skill books — same mechanic/odds as active skill books above,
-  // separate roll and separate pool (js/combat.js). The class-exclusive half
-  // rotates offense/defense with the level/zone half same as the skill
-  // books; the 6 universal ones rotate one-per-level the same way the skill
-  // books cycle Q/W/E/R.
+  // separate roll and separate pool. The class-exclusive half alternates
+  // offense/defense by level (odd/even), the 6 universal ones rotate
+  // one-per-level the same way the skill books cycle Q/W/E/R.
   let passiveBookSection = '';
   {
-    const classPool = typeof levelClassPassivePool === 'function' ? levelClassPassivePool(floor) : [];
+    const classPool = typeof levelClassPassivePool === 'function' ? levelClassPassivePool(lvl) : [];
     const universalPool = typeof levelUniversalPassivePool === 'function' ? levelUniversalPassivePool(lvl) : CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
     const allPassiveBooks = classPool.concat(universalPool);
     if (allPassiveBooks.length) {

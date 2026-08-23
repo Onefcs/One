@@ -4575,3 +4575,50 @@ scenario('farm2: the daily minute allowance is charged for time actually spent, 
      'a fresh run is refused rather than handing back the same minute again', JSON.stringify(res));
   for (const c of capped) await c.close();
 });
+
+scenario('drops: every skill and passive book is reachable from monsters in BOTH halves of the dungeon', async () => {
+  // The pools used to be split by zone: base skill books and the offense
+  // class passives in arms 1-2, advanced books and the defense passives in
+  // arms 3-4. Half the catalog therefore did not exist below level 41 — a
+  // Тёмный панцирь could not drop anywhere a character under 41 could stand —
+  // and the other half stopped existing above it, while base books are
+  // exactly what a level-10 skill (and so the advanced unlock) still needs
+  // there. Both pools cycle on the monster's own level now.
+  //
+  // Data-level on purpose: the drop itself is one roll in ~100k kills, so the
+  // only honest thing to check is the pool a level offers — which is the same
+  // shared function the server rolls from (_rollMobLoot, server/game/loot.js)
+  // and the map's drop panel renders (_monsterDropBodyHtml, js/ui.js).
+  const {
+    CRAFT_MATS, MAX_MONSTER_LEVEL, REBIRTH_LEVEL,
+    levelSkillBookPool, levelClassPassivePool, levelUniversalPassivePool,
+  } = require('../shared/definitions');
+  const allBooks = CRAFT_MATS.filter(m => m.skillKey || m.advSkillKey || m.passiveId);
+  const poolAt = lvl => [
+    ...levelSkillBookPool(lvl), ...levelClassPassivePool(lvl), ...levelUniversalPassivePool(lvl),
+  ];
+  const coverage = (lo, hi) => {
+    const seen = new Set();
+    for (let lvl = lo; lvl <= hi; lvl++) poolAt(lvl).forEach(b => seen.add(b.id));
+    return allBooks.filter(b => !seen.has(b.id)).map(b => b.name);
+  };
+  const earlyGap = coverage(1, 40);
+  const lateGap  = coverage(41, MAX_MONSTER_LEVEL);
+  eq(earlyGap.length, 0, `every book drops somewhere in levels 1-40 (missing: ${earlyGap.join(', ')})`);
+  eq(lateGap.length, 0, `every book drops somewhere in levels 41-${MAX_MONSTER_LEVEL} (missing: ${lateGap.join(', ')})`);
+  // The reported one, by name, at a level the reporter could actually reach.
+  const darkCarapace = allBooks.find(b => b.id === 'book_pas_dkdef');
+  const dropsIt = [];
+  for (let lvl = 1; lvl <= REBIRTH_LEVEL; lvl++) if (poolAt(lvl).some(b => b === darkCarapace)) dropsIt.push(lvl);
+  ok(dropsIt.length > 0,
+     `${darkCarapace.name} drops below level ${REBIRTH_LEVEL} (levels ${dropsIt.slice(0, 5).join(', ')}...)`);
+
+  // Cycling, not widening: a bigger pool per kill would quietly divide every
+  // book's own odds, since the roll picks one entry at random.
+  const shapes = new Set();
+  for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
+    shapes.add([levelSkillBookPool(lvl).length, levelClassPassivePool(lvl).length,
+                levelUniversalPassivePool(lvl).length].join('/'));
+  }
+  eq([...shapes].join(' '), '5/5/1', 'every level still offers 5 skill + 5 class-passive + 1 universal book');
+});
