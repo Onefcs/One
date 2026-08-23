@@ -61,6 +61,15 @@ function getEpicPackBtnPos() {
   return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
 }
 
+// Directly below +Pack, same column — opens the free "Набор новичка" kit
+// (openStarterBonusPanel, js/ui.js). Only drawn while the account still has
+// it to claim, but the position is unconditional: the party list below is
+// laid out from it either way (see _partyHudStartY).
+function getStarterBonusBtnPos() {
+  const pack = getEpicPackBtnPos();
+  return { x: pack.x, y: pack.y + pack.h + 6, w: pack.w, h: pack.h };
+}
+
 function getPartyLeaveBtnPos() {
   const bh = 26, gap = 4;
   const startY = _partyHudStartY();
@@ -68,12 +77,14 @@ function getPartyLeaveBtnPos() {
   return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: 80, h: 22 };
 }
 
-// Party member list starts directly below +Pack (which itself sits below
-// Профессия) — used to be two slots further down, past the since-removed
-// Special and "ТЕХ" gift buttons.
+// Party member list starts directly below the Бонус slot (which sits below
+// +Pack, which sits below Профессия) — used to be two slots further down,
+// past the since-removed Special and "ТЕХ" gift buttons. Laid out from that
+// slot whether or not the button is currently drawn, so the list does not
+// jump the moment the kit is claimed.
 function _partyHudStartY() {
-  const pack = getEpicPackBtnPos();
-  return pack.y + pack.h + 6;
+  const bonus = getStarterBonusBtnPos();
+  return bonus.y + bonus.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -331,6 +342,19 @@ function _checkEpicPackBtnTouch(cx, cy) {
   return false;
 }
 
+// Same gate the drawing uses (_starterBonusAvailable, js/ui.js): once the kit
+// is claimed the button is gone, and its slot must stop swallowing taps meant
+// for whatever is drawn under it.
+function _checkStarterBonusBtnTouch(cx, cy) {
+  if (typeof _starterBonusAvailable === 'function' && !_starterBonusAvailable()) return false;
+  const bb = getStarterBonusBtnPos();
+  if (cx >= bb.x && cx <= bb.x + bb.w && cy >= bb.y && cy <= bb.y + bb.h) {
+    if (typeof openStarterBonusPanel === 'function') openStarterBonusPanel();
+    return true;
+  }
+  return false;
+}
+
 
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
@@ -489,6 +513,7 @@ function onTS(e) {
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
     if (_checkEpicPackBtnTouch(p.x, p.y)) continue;
+    if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -566,6 +591,7 @@ function onMD(e) {
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
   if (_checkEpicPackBtnTouch(p.x, p.y)) return;
+  if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;

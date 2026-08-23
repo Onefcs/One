@@ -4675,3 +4675,63 @@ scenario('chat: every translate request gets an answer, whatever the upstream do
 
   await c.close();
 });
+
+scenario('starter bonus: the free kit lands once per account and never twice', async () => {
+  // The HUD's Бонус button (drawStarterBonusButton, js/ui.js) behind its real
+  // handler: a full set of common armour, the common weapon of the claimer's
+  // OWN class, two of every buff potion and 300 small HP potions — free, and
+  // exactly once, whatever the client sends afterwards.
+  const { ITEM_DEF, STARTER_BONUS, POTION_CAP } = require('../shared/definitions');
+  // type seeded on the record, the way selectChar itself persists it — the
+  // grant reads the class from there, not from whatever blob a client sent.
+  const c = await connectWithSaved('harness_starter_bonus', { lvl: 3, inventory: [], type: 'ranger', potionBag: { pt1: 3 } });
+  await enterWorld(c, 'ranger');
+
+  const sync = c.wait('inventorySync', { timeout: 6000 });
+  const bag = c.wait('potionBag', { timeout: 6000 });
+  const done = c.wait('starterBonusDone', { timeout: 6000 });
+  const err = c.wait('starterBonusError', { timeout: 6000 }).catch(() => null);
+  c.emit('starterBonusClaim');
+  const res = await Promise.race([done, err]);
+  ok(res && !res.msg, 'the claim went through', res && res.msg);
+
+  const inv = (await sync).inventory || [];
+  const idsOf = list => list.map(i => i.id);
+  // Every common armour slot, one each.
+  ['hm1', 'ar1', 'gl1', 'bt1', 'rn1', 'nd1'].forEach(id => {
+    eq(inv.filter(i => i.id === id).length, 1, `the kit contains ${id} exactly once`);
+  });
+  // ...and the RANGER's own common weapon, not another class's.
+  eq(inv.filter(i => i.id === 'bw1').length, 1, 'and the common weapon of the claimer\'s class (bw1)');
+  ok(!idsOf(inv).some(id => ['tw1', 'sw1', 'st1'].includes(id)), 'and no other class\'s weapon');
+  // Two of every buff potion.
+  ITEM_DEF.filter(d => d.slot === 'buff_potion').forEach(bp => {
+    const got = inv.find(i => i.id === bp.id);
+    eq(got && got.qty, STARTER_BONUS.buffPotions, `${bp.qty || ''}${bp.name} ×${STARTER_BONUS.buffPotions}`);
+  });
+  // ...and the HP potions, which live in potionBag rather than the inventory.
+  const bagNow = (await bag).potionBag || {};
+  eq(bagNow[STARTER_BONUS.hpPotionId], Math.min(POTION_CAP, 3 + STARTER_BONUS.hpPotions),
+     `${STARTER_BONUS.hpPotions} HP potions landed in potionBag, on top of the 3 already there`);
+
+  // Once. A second tap is refused, and nothing further reaches the inventory.
+  const invLen = inv.length;
+  const err2 = c.wait('starterBonusError', { timeout: 6000 });
+  const done2 = c.wait('starterBonusDone', { timeout: 6000 }).catch(() => null);
+  c.emit('starterBonusClaim');
+  const res2 = await Promise.race([err2, done2]);
+  ok(res2 && res2.msg && /уже получен/i.test(res2.msg), 'a second claim is refused', JSON.stringify(res2));
+  await sleep(400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.starterBonus, true, 'the claim flag is stored');
+  eq((row.savedData.inventory || []).length, invLen, 'and the second claim granted nothing');
+
+  // ...and a save that tries to clear the flag cannot buy a second kit: the
+  // sanitizer drops the field outright, so the stored claim stands.
+  c.emit('saveProgress', { type: 'ranger', starterBonus: false, hp: 100, maxHp: 100 });
+  await sleep(3600);
+  const row2 = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row2.savedData.starterBonus, true, 'a save claiming starterBonus:false does not clear it');
+
+  await c.close();
+});

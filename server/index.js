@@ -172,7 +172,7 @@ const {
   UNIQUE_SHARDS, UNIQUE_CRAFT_RECIPES,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
-  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST,
+  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, UPGRADE_RESET_COST, STARTER_BONUS,
   armIndexForLevel,
   DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   race10Rewards, race10Liberty,
@@ -2701,6 +2701,9 @@ io.on('connection', socket => {
   const _HEAVY_EVENTS = new Set([
     'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
     'gramGetHistory', 'gramShopBuy', 'gramDepositRequest', 'gramWithdrawRequest',
+    // Grants items and writes the once-only claim flag — one DB round trip
+    // per tap, same as the shop purchase above it.
+    'starterBonusClaim',
     'getReferrals', 'getRating', 'getPvpHistory', 'completeSpecialQuest', 'claimVipRewards',
     'clanCreate', 'clanSearch', 'clanApply', 'clanApprove', 'clanDecline', 'clanRequest',
     'clanKick', 'clanLeave', 'clanDisband', 'clanSetDescription',
@@ -4165,11 +4168,12 @@ io.on('connection', socket => {
   // Moved to server/handlers/gram.js — see the note there.
   registerGram(session, safeOn, {
       BOX_DEF, CRAFT_MATS, GRAM_MIN_WITHDRAW, GramTxModel, ITEM_DEF,
-      PlayerModel, SERVER_INV_MAX, VIP_THRESHOLDS, _GRAM_SHOP_PKGS,
-      _SHOP_ARMOR_SETS, _SHOP_CLASS_WEAPONS, _STONE_DEFS, _VIP_BP, _incBalance,
-      _setVipAura, _shopNewSlots, _socketForTelegramId, _spendBalance, _txData,
-      activeSessions, io, logPlayer, logPlayerErr, notifyAdminGram, pkgPrice,
-      seasonActive, seasonShopPoints,
+      POTION_CAP, PlayerModel, SERVER_INV_MAX, STARTER_BONUS, VIP_THRESHOLDS,
+      _GRAM_SHOP_PKGS, _SHOP_ARMOR_SETS, _SHOP_CLASS_WEAPONS, _STONE_DEFS,
+      _VIP_BP, _incBalance, _persistSavedFields, _setVipAura, _shopNewSlots,
+      _socketForTelegramId, _spendBalance, _txData, activeSessions, io,
+      logPlayer, logPlayerErr, notifyAdminGram, pkgPrice, seasonActive,
+      seasonShopPoints,
   });
   // ── skills ──────────────────────────────────────────────────────────────
   // Moved to server/handlers/skills.js — see the note there.

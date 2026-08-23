@@ -3095,6 +3095,140 @@ function openEpicPackFromHud() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  БОНУС BUTTON — below +Pack, the free one-per-account "Набор новичка".
+//  Contents: STARTER_BONUS (shared/definitions.js); granted by the
+//  starterBonusClaim handler (server/handlers/gram.js). See
+//  getStarterBonusBtnPos/_checkStarterBonusBtnTouch, js/input.js.
+// ─────────────────────────────────────────────────────────
+// player.starterBonus is the account's claim flag, restored from the stored
+// record at login (restoreFromSave, js/player.js) and set the moment a claim
+// lands. Once it is true the button stops being drawn and its slot stops
+// taking taps — the kit cannot be claimed twice, and a permanently dead
+// button on the HUD is just clutter.
+function _starterBonusAvailable() {
+  return !!player && !player.starterBonus;
+}
+
+// The kit, resolved from the shared catalog rather than restated here: one
+// common item per armour slot plus the common weapon of this character's own
+// class. Exactly what the server grants off _SHOP_ARMOR_SETS.common /
+// _SHOP_CLASS_WEAPONS (server/shop.js), which are those same catalog entries.
+const _STARTER_GEAR_SLOTS = ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+function _starterBonusGear() {
+  const cls = (player && player.type) || 'lev';
+  const gear = _STARTER_GEAR_SLOTS
+    .map(sl => ITEM_DEF.find(d => d.slot === sl && d.rarity === STARTER_BONUS.gearRarity && !d.forClass))
+    .filter(Boolean);
+  const wep = ITEM_DEF.find(d => d.slot === 'weapon' && d.rarity === STARTER_BONUS.gearRarity
+    && d.forClass && d.forClass.includes(cls));
+  if (wep) gear.push(wep);
+  return gear;
+}
+
+function drawStarterBonusButton() {
+  if (!_starterBonusAvailable()) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const bb = getStarterBonusBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  // Warm amber, so it reads as a gift rather than as a second purchase button
+  // next to +Pack's emerald. Same sweeping band, half a cycle out of phase,
+  // so the two never pulse in lockstep.
+  const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
+  const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
+  grad.addColorStop(0, '#3a2408');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#5c3a0d');
+  grad.addColorStop(sweep, '#f0b44a');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#5c3a0d');
+  grad.addColorStop(1, '#3a2408');
+  ctx.fillStyle = grad;
+  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(240,180,74,0.7)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.stroke();
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+  ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
+
+  drawIconCtx(ctx, 'star', bb.x + bb.w / 2 - 16, bb.y + bb.h / 2, 12, '#ffe0a3');
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffe0a3';
+  ctx.fillText(t('starterBonusBtn'), bb.x + bb.w / 2 - 7, bb.y + bb.h / 2);
+
+  ctx.restore();
+}
+
+// One row of the kit list — icon + what it is + how many.
+function _starterBonusRow(icon, label, qty) {
+  return `<div class="vip-ri"><span class="vip-ri-img" style="display:inline-flex;align-items:center;justify-content:center">${icon}</span><span class="vip-ri-label">${label}${qty ? ` <b style="color:#ffe0a3">×${qty}</b>` : ''}</span></div>`;
+}
+
+function openStarterBonusPanel() {
+  if (!_starterBonusAvailable()) return;
+  const existing = document.getElementById('starter-bonus-ov');
+  if (existing) existing.remove();
+
+  const gearRows = _starterBonusGear()
+    .map(it => _starterBonusRow(_itemIcon(it, 16), it.name, 1)).join('');
+  const bpRows = ITEM_DEF.filter(d => d.slot === 'buff_potion')
+    .map(bp => _starterBonusRow(_itemIcon(bp, 16), bp.name, STARTER_BONUS.buffPotions)).join('');
+  const hpDef = ITEM_DEF.find(d => d.id === STARTER_BONUS.hpPotionId);
+  const hpRow = hpDef ? _starterBonusRow(_itemIcon(hpDef, 16), hpDef.name, STARTER_BONUS.hpPotions) : '';
+
+  const ov = document.createElement('div');
+  ov.id = 'starter-bonus-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#16120a;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#f0b44a;margin-bottom:6px">${t('starterBonusTitle')}</div>
+    <div style="font-size:12.5px;color:#a2988a;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
+    <div class="vip-items-row">${gearRows}${bpRows}${hpRow}</div>
+    <div id="starter-bonus-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button onclick="document.getElementById('starter-bonus-ov').remove()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+        color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+      <button id="starter-bonus-go" onclick="_confirmStarterBonus()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;
+        background:linear-gradient(135deg,#5c3a0d,#8a5c15);color:#ffe0a3;
+        font-size:14px;font-weight:700;cursor:pointer">${t('starterBonusClaimBtn')}</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+// Disabled while the request is out, so a double tap cannot fire a second
+// claim the server would only refuse anyway.
+function _confirmStarterBonus() {
+  const btn = document.getElementById('starter-bonus-go');
+  if (btn) { btn.disabled = true; btn.style.opacity = '.55'; btn.textContent = '…'; }
+  if (typeof netStarterBonusClaim === 'function') netStarterBonusClaim();
+}
+
+function onStarterBonusDone() {
+  const ov = document.getElementById('starter-bonus-ov');
+  if (ov) ov.remove();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (typeof updateProfileUI === 'function') updateProfileUI();
+  if (player) dmgNum(player.x, player.y - 30, t('starterBonusDoneToast'), '#f0b44a');
+}
+
+// Shown inside the panel rather than as a floating number: every refusal here
+// is something the player can act on (make inventory room, wait a second),
+// and the panel is what they are looking at.
+function onStarterBonusError(msg) {
+  const box = document.getElementById('starter-bonus-err');
+  const btn = document.getElementById('starter-bonus-go');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = t('starterBonusClaimBtn'); }
+  if (box) { box.style.display = 'block'; box.textContent = msg || 'Ошибка'; }
+  else if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+}
+
+// ─────────────────────────────────────────────────────────
 //  TARGET FRAME
 // ─────────────────────────────────────────────────────────
 function drawTargetFrame() {

@@ -2019,6 +2019,29 @@ const MERCHANT_SHOP = [
 const POTION_CAP = 999;          // per kind, in potionBag
 const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
 
+// ── Набор новичка (starter bonus) ──────────────────────────────────────────
+// The free one-per-account kit behind the HUD's "Бонус" button, directly
+// below "+Pack" (drawStarterBonusButton, js/ui.js). Costs nothing and is
+// claimed exactly once — savedData.starterBonus is the flag, set by the
+// starterBonusClaim handler's own conditional write (server/handlers/gram.js)
+// and stripped from every client save (_sanitizeSavedStats) so a crafted blob
+// cannot clear it and claim the kit twice.
+//
+// The contents live here, not in the handler, because the panel that lists
+// them (openStarterBonusPanel, js/ui.js) has to promise exactly what the
+// grant delivers — the same reason the GRAM packages are a shared table.
+const STARTER_BONUS = {
+  // Every common armor slot (_SHOP_ARMOR_SETS.common, server/shop.js) plus the
+  // common weapon of the claimer's OWN class (_SHOP_CLASS_WEAPONS).
+  gearRarity: 'common',
+  // ...по 2 банки каждого баф-зелья (_VIP_BP — 6 kinds).
+  buffPotions: 2,
+  // ...и 300 малых зелий здоровья, into potionBag rather than the inventory
+  // (that is where pt1/pt2 live — see buyPotion, server/handlers/items.js).
+  hpPotionId: 'pt1',
+  hpPotions: 300,
+};
+
 // ── Cost of learning and upgrading ──────────────────────────────────────────
 // Books to unlock a locked (level 0) skill or passive, books per upgrade
 // attempt once studied, and the chance an attempt succeeds. These lived in
@@ -2171,7 +2194,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
-  UPGRADE_RESET_COST,
+  UPGRADE_RESET_COST, STARTER_BONUS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,

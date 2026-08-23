@@ -395,6 +395,13 @@ function _sanitizeSavedStats(raw) {
   // Season 2's own running total (Season 1 used seasonPoints, above) — same
   // reasoning, still server-authoritative only.
   delete s.seasonPoints2;
+  // Набор новичка: the once-per-account free kit (starterBonusClaim, server/
+  // handlers/gram.js) is gated entirely by this flag, and its own conditional
+  // write is what sets it. Left in the blob, a save could simply clear it and
+  // claim a second set of gear and 300 potions — same reasoning as the VIP and
+  // season fields above. Stripped, so the save path never writes this key at
+  // all and whatever the claim recorded stands.
+  delete s.starterBonus;
   // "This invited friend has already been counted." Lives on the friend's own
   // record, so without this they could clear it and have their referrer paid
   // the 200 again on the next login.

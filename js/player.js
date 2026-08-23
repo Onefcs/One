@@ -122,6 +122,11 @@ function makePlayer(type) {
     // upgrades map already holds, never spendable capacity. Server-written;
     // see availableSkillPoints (shared/definitions.js).
     keptSP: 0,
+    // "Набор новичка already claimed" — server-owned (starterBonusClaim,
+    // server/handlers/gram.js, and stripped from every save by
+    // _sanitizeSavedStats); the HUD's Бонус button reads it to know whether
+    // there is still anything to claim.
+    starterBonus: false,
     rebirths: 0,
     // Кодекс: { [setId]: boolean[] } filled-slot progress per set
     // (server-owned, see registerCodexSetItem/codexSync) and the flat stat
@@ -1038,6 +1043,7 @@ function restoreFromSave(data) {
   player.bonusSP  = data.bonusSP  || 0;
   player.keptSP   = data.keptSP   || 0;
   player.rebirths = data.rebirths || 0;
+  player.starterBonus = !!data.starterBonus;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
   player.specialQuestsDone = data.specialQuestsDone || [];

@@ -3046,6 +3046,15 @@ function netRebirth() {
   if (socket?.connected) socket.emit('rebirth');
 }
 
+// "Набор новичка" — the free one-per-account kit behind the HUD's Бонус
+// button. Nothing is applied locally: the server answers with inventorySync +
+// potionBag for what it granted, and starterBonusDone for the claim flag
+// itself (see the handlers below and starterBonusClaim, server/handlers/
+// gram.js).
+function netStarterBonusClaim() {
+  if (socket?.connected) socket.emit('starterBonusClaim');
+}
+
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
@@ -4036,6 +4045,23 @@ function _initPetCraftHandlers(s) {
   });
   s.on('rebirthError', ({ msg }) => {
     if (typeof onRebirthError === 'function') onRebirthError(msg);
+  });
+
+  // Набор новичка. Same "inventorySync already landed" shape as the crafting
+  // events above — the gear and the buff potions arrived with it and the HP
+  // potions with their own potionBag push, so this only carries the fact that
+  // the account has now used its one claim, which is what takes the Бонус
+  // button off the HUD.
+  s.on('starterBonusDone', () => {
+    if (player) player.starterBonus = true;
+    if (typeof onStarterBonusDone === 'function') onStarterBonusDone();
+  });
+  s.on('starterBonusError', ({ msg }) => {
+    // "Already claimed" is also the answer to a client whose flag somehow
+    // never got set (an old tab, a lost event) — take the button away here
+    // too, rather than leaving it offering something the server refuses.
+    if (player && /получен/i.test(msg || '')) player.starterBonus = true;
+    if (typeof onStarterBonusError === 'function') onStarterBonusError(msg);
   });
 }
 

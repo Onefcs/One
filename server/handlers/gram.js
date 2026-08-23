@@ -10,11 +10,12 @@
 module.exports = function registerGram(s, safeOn, deps) {
   const {
     BOX_DEF, CRAFT_MATS, GRAM_MIN_WITHDRAW, GramTxModel, ITEM_DEF,
-    PlayerModel, SERVER_INV_MAX, VIP_THRESHOLDS, _GRAM_SHOP_PKGS,
-    _SHOP_ARMOR_SETS, _SHOP_CLASS_WEAPONS, _STONE_DEFS, _VIP_BP, _incBalance,
-    _setVipAura, _shopNewSlots, _socketForTelegramId, _spendBalance, _txData,
-    activeSessions, io, logPlayer, logPlayerErr, notifyAdminGram, pkgPrice,
-    seasonActive, seasonShopPoints,
+    POTION_CAP, PlayerModel, SERVER_INV_MAX, STARTER_BONUS, VIP_THRESHOLDS,
+    _GRAM_SHOP_PKGS, _SHOP_ARMOR_SETS, _SHOP_CLASS_WEAPONS, _STONE_DEFS,
+    _VIP_BP, _incBalance, _persistSavedFields, _setVipAura, _shopNewSlots,
+    _socketForTelegramId, _spendBalance, _txData, activeSessions, io,
+    logPlayer, logPlayerErr, notifyAdminGram, pkgPrice, seasonActive,
+    seasonShopPoints,
   } = deps;
 
   const {
@@ -424,5 +425,116 @@ module.exports = function registerGram(s, safeOn, deps) {
         s.itemOpBusy--;
       }
       if (!_ran) socket.emit('gramShopError', { msg: 'Покупка уже обрабатывается' });
+    });
+
+    // ── Набор новичка (starter bonus) ───────────────────────────────────────
+    // The HUD's "Бонус" button, directly below "+Pack". Free, and exactly once
+    // per account: a full set of common armor, the common weapon of the
+    // claimer's own class, two of every buff potion and 300 small HP potions.
+    // Contents are STARTER_BONUS + the shop's own gear tables
+    // (shared/definitions.js, server/shop.js), so the panel that advertises
+    // the kit and the grant that delivers it read the same lists.
+    //
+    // No GRAM changes hands, so unlike gramShopBuy there is no balance to
+    // spend or VIP progress to move — but it grants items, so it keeps the
+    // same item-op guards: refused while another item op holds the inventory,
+    // and serialized behind _withEconLock so two taps cannot both build a
+    // grant off the same pre-write inventory.
+    safeOn('starterBonusClaim', async () => {
+      if (!s.authed) return;
+      if (_itemsBusy()) return socket.emit('starterBonusError', { msg: _ITEMS_BUSY_MSG });
+      s.itemOpBusy++;
+      let _ran;
+      try {
+      _ran = await _withEconLock(async () => {
+      try {
+        const armorIds = _SHOP_ARMOR_SETS[STARTER_BONUS.gearRarity] || [];
+
+        // Cloned, like gramShopBuy's own snapshot: this stays a scratch copy
+        // until _commitServerItems takes it, so a refusal below leaves the
+        // live inventory untouched.
+        const _live = _liveInventory();
+        const inv = (Array.isArray(_live) ? _live : [])
+          .map(i => (i && typeof i === 'object' ? { ...i } : i));
+        const _beforeLen = inv.length;
+
+        // Room first, and BEFORE the claim is recorded — a kit that cannot fit
+        // must stay claimable rather than being burned on a full inventory.
+        // Gear is one slot each (every armour piece plus the one weapon, the
+        // same count whichever class claims it); a buff potion only needs a
+        // new slot when the player holds none of that kind yet (same rule as
+        // _shopNewSlots).
+        const _newSlots = armorIds.length + 1
+          + _VIP_BP.filter(bp => !inv.some(i => i && i.id === bp.id)).length;
+        if (_beforeLen + _newSlots > SERVER_INV_MAX) {
+          return socket.emit('starterBonusError', {
+            msg: `Нужно ${_newSlots} свободных мест в инвентаре (занято ${_beforeLen}/${SERVER_INV_MAX})`,
+          });
+        }
+
+        // The claim itself: one conditional write is what makes this
+        // once-per-account. Two taps, two sockets of the same account, or a
+        // reconnect mid-op all race here and exactly one of them matches.
+        // Recorded before the grant deliberately — a duplicated kit is worse
+        // than a lost one, and everything that could still fail below has
+        // already been checked.
+        // findOneAndUpdate, not updateOne: the pre-update document comes back
+        // with it, which is where the class comes from — one round trip for
+        // both. s.lastStats.type is whatever blob the client sent at
+        // selectChar and can be missing entirely on a bare reconnect, and
+        // handing someone a warrior's axe because their reconnect carried no
+        // type is exactly the kind of thing this must not do. The stored
+        // record is authoritative: selectChar persists the chosen type
+        // immediately (server/handlers/auth.js), for this reason among others.
+        const _claimed = await PlayerModel.findOneAndUpdate(
+          { _id: s.authed._id, 'savedData.starterBonus': { $ne: true } },
+          { $set: { 'savedData.starterBonus': true } },
+          { projection: { 'savedData.type': 1 } },
+        );
+        if (!_claimed) {
+          return socket.emit('starterBonusError', { msg: 'Набор новичка уже получен' });
+        }
+
+        const charClass = (_claimed.savedData && _claimed.savedData.type)
+          || (s.lastStats && s.lastStats.type) || 'lev';
+        const wepMap = _SHOP_CLASS_WEAPONS[charClass] || _SHOP_CLASS_WEAPONS.lev;
+        const gear = [
+          ...armorIds.map(id => ITEM_DEF.find(d => d.id === id)),
+          ITEM_DEF.find(d => d.id === wepMap[STARTER_BONUS.gearRarity]),
+        ].filter(Boolean);
+        gear.forEach(base => inv.push({ ...base, enhance: 0 }));
+        _VIP_BP.forEach(bp => {
+          const existing = inv.find(i => i && i.id === bp.id);
+          if (existing) existing.qty = (existing.qty || 1) + STARTER_BONUS.buffPotions;
+          else inv.push({ ...bp, qty: STARTER_BONUS.buffPotions });
+        });
+
+        // HP potions live in potionBag, not the inventory (buyPotion,
+        // server/handlers/items.js), and are capped per kind like every other
+        // way of getting them.
+        if (s.lastStats) {
+          if (!s.lastStats.potionBag || typeof s.lastStats.potionBag !== 'object') s.lastStats.potionBag = {};
+          const cur = Math.max(0, Math.floor(Number(s.lastStats.potionBag[STARTER_BONUS.hpPotionId])) || 0);
+          s.lastStats.potionBag[STARTER_BONUS.hpPotionId] = Math.min(POTION_CAP, cur + STARTER_BONUS.hpPotions);
+          _persistSavedFields(s.authed, { potionBag: s.lastStats.potionBag });
+          socket.emit('potionBag', { potionBag: s.lastStats.potionBag });
+        }
+
+        // Bumps the item revision and pushes inventorySync, so a client save
+        // composed before this can't land afterwards and wipe the kit.
+        _commitServerItems(inv, null, 'starter_bonus', {}, { beforeLen: _beforeLen });
+        logPlayer(s.authed.telegramId, s.authed.username, 'starter_bonus',
+          { cls: charClass, gear: gear.length, bp: STARTER_BONUS.buffPotions, hp: STARTER_BONUS.hpPotions });
+        socket.emit('starterBonusDone', {});
+      } catch (err) {
+        console.error('starterBonusClaim:', err);
+        logPlayerErr(s.authed.telegramId, s.authed.username, 'starter_bonus', err, {});
+        socket.emit('starterBonusError', { msg: 'Ошибка сервера' });
+      }
+      });
+      } finally {
+        s.itemOpBusy--;
+      }
+      if (!_ran) socket.emit('starterBonusError', { msg: 'Секунду, повторите' });
     });
 };

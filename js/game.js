@@ -1355,6 +1355,7 @@ function _renderUI() {
   drawPvpButton();
   drawProfessionButton();
   drawEpicPackButton();
+  drawStarterBonusButton();
   drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();
