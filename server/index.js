@@ -1077,6 +1077,29 @@ async function _translateText(text, targetLang) {
 // absolute balance write — which is the entire bug the $inc migration removed.
 // Balances move only through _incBalance/_spendBalance.
 const _BALANCE_FIELDS = ['gramBalance', 'nexumBalance'];
+// The same treatment, for the same reason, for every other field the server
+// owns outright. _sanitizeSavedStats deletes all of these from a client blob
+// (server/anticheat.js) so nobody can forge them — but deleting them there
+// only stops them ARRIVING; it never stopped a session's own copy writing one
+// back. And a session does hold copies of them: _finishLogin seeds
+// s.lastStats straight from the stored record (server/handlers/auth.js) and
+// starts the 60s autosave in the same breath, so between login and selectChar
+// the autosave was rewriting vipLevel, seasonPoints2, starterBonus and the
+// rest as login-time absolutes — undoing whatever their own handler had
+// written in the meantime.
+//
+// Each of these has exactly one writer, and it is a targeted $set on the path
+// that actually earns the change: gramShopBuy/marketBuy for the VIP triple and
+// the season ticket, completeSpecialQuest for specialQuestsDone,
+// _seasonAddPoints for seasonPoints2, starterBonusClaim for starterBonus,
+// _seasonCheckRefFriend for seasonRefPaid. So the progress writer has nothing
+// to say about any of them, and a blob that happens to carry one now writes
+// nothing for that key instead of reverting it.
+const _SERVER_OWNED_FIELDS = [
+  'vipLevel', 'vipDeposited', 'vipPending', 'seasonTicket', 'specialQuestsDone',
+  'seasonPoints', 'seasonPoints2', 'seasonQuest', 'seasonQuests', 'seasonTier',
+  'seasonBossPaid', 'starterBonus', 'seasonRefPaid',
+];
 // Returns the write promise so callers that need the persist to actually
 // land before proceeding (see socket.data._flushNow above) can await it;
 // existing fire-and-forget call sites are unaffected since they don't.
@@ -1100,7 +1123,8 @@ async function _persistSavedFields(authed, fields, extra) {
   if (!authed) return;
   const set = {};
   Object.keys(fields).forEach(k => {
-    if (fields[k] === undefined || _BALANCE_FIELDS.includes(k)) return;
+    if (fields[k] === undefined || _BALANCE_FIELDS.includes(k) ||
+        _SERVER_OWNED_FIELDS.includes(k)) return;
     set[`savedData.${k}`] = fields[k];
   });
   if (extra) Object.keys(extra).forEach(k => { set[k] = extra[k]; });
@@ -3071,7 +3095,7 @@ io.on('connection', socket => {
   // own comment for the specific race this closes.
   //
   // patch: { addItems: [{item, qty?}], removeItems: [{item, qty?}],
-  //          goldDelta, bonusSPDelta, vipGramDelta, clearVipPending }
+  //          goldDelta, bonusSPDelta, vipState, clearVipPending }
   // removeItems are applied before addItems (matters for crafts: spend
   // materials, then hand back the result). Returns null if this socket
   // isn't authed/loaded; otherwise the account's resulting gold/VIP state,
@@ -3096,38 +3120,55 @@ io.on('connection', socket => {
         item ? { id: item.id, qty: qty != null ? qty : item.qty, enhance: item.enhance } : null)));
       if (patch.goldDelta) _lastStats.gold = Math.max(0, (_lastStats.gold || 0) + patch.goldDelta);
       if (patch.bonusSPDelta) _lastStats.bonusSP = (_lastStats.bonusSP || 0) + patch.bonusSPDelta;
+      // VIP progress arrives as ABSOLUTES the caller worked out from a fresh
+      // read of the stored record — never as a delta to be added to something
+      // held here. It used to take a `vipGramDelta` and compute the new level
+      // off _lastStats.vipLevel/vipDeposited/vipPending, but _sanitizeSavedStats
+      // deletes those three from every save and every selectChar
+      // (server/anticheat.js), so the base was reliably 0: a purchase that
+      // landed on this path wrote a VIP 7 buyer back down to VIP 0-1 and
+      // re-queued the reward levels they had already claimed. marketBuy hit the
+      // same thing and reads the record itself for exactly this reason (see
+      // server/handlers/market.js). Nothing is written into _lastStats either —
+      // the session's blob is precisely where these must not live.
       let vipLeveled = false;
-      if (patch.vipGramDelta) {
-        let _vipLvl = _lastStats.vipLevel || 0;
-        let _vipDep = (_lastStats.vipDeposited || 0) + patch.vipGramDelta;
-        const _vipPend = Array.isArray(_lastStats.vipPending) ? [..._lastStats.vipPending] : [];
-        const _prevVipLvl = _vipLvl;
-        while (_vipLvl < 10 && _vipDep >= VIP_THRESHOLDS[_vipLvl + 1]) {
-          _vipDep -= VIP_THRESHOLDS[_vipLvl + 1]; _vipLvl++; _vipPend.push(_vipLvl);
-        }
-        _lastStats.vipLevel = _vipLvl; _lastStats.vipDeposited = _vipDep; _lastStats.vipPending = _vipPend;
-        vipLeveled = _vipLvl > _prevVipLvl;
+      let _vipLvl = null, _vipDep = null, _vipPend = null;
+      if (patch.vipState) {
+        _vipLvl  = patch.vipState.level || 0;
+        _vipDep  = patch.vipState.deposited || 0;
+        _vipPend = Array.isArray(patch.vipState.pending) ? [...patch.vipState.pending] : [];
+        vipLeveled = _vipLvl > (socket.data.vipLevel || 0);
         socket.data.vipLevel = _vipLvl;
         _setVipAura(authed.username, _vipLvl);
+      } else if (patch.clearVipPending) {
+        _vipPend = [];
       }
-      if (patch.clearVipPending) _lastStats.vipPending = [];
       // Season ticket — see gramShopBuy's own comment. A flag, not a balance,
       // so it just needs setting on this (now live) socket and persisting.
       if (patch.seasonTicket) socket.data.seasonTicketActive = true;
       _commitServerItems(inv, null, reason, meta, { beforeLen: _beforeLen });
-      _persistSavedFields(authed, {
-        gold: _lastStats.gold, bonusSP: _lastStats.bonusSP, vipLevel: _lastStats.vipLevel,
-        vipDeposited: _lastStats.vipDeposited, vipPending: _lastStats.vipPending,
-        ...(patch.seasonTicket ? { seasonTicket: true } : {}),
-      });
+      _persistSavedFields(authed, { gold: _lastStats.gold, bonusSP: _lastStats.bonusSP });
+      // Its own targeted write: _persistSavedFields refuses server-owned fields
+      // outright now (see _SERVER_OWNED_FIELDS), and these are only ever known
+      // here as absolutes handed in above.
+      if (_vipPend !== null || patch.seasonTicket) {
+        const _vipSet = {};
+        if (_vipLvl !== null) {
+          _vipSet['savedData.vipLevel'] = _vipLvl;
+          _vipSet['savedData.vipDeposited'] = _vipDep;
+        }
+        if (_vipPend !== null) _vipSet['savedData.vipPending'] = _vipPend;
+        if (patch.seasonTicket) _vipSet['savedData.seasonTicket'] = true;
+        PlayerModel.updateOne({ _id: authed._id }, { $set: _vipSet }).catch(() => {});
+      }
       if (vipLeveled) {
-        socket.emit('vipUpdate', {
-          level: _lastStats.vipLevel, deposited: _lastStats.vipDeposited, pending: _lastStats.vipPending,
-        });
+        socket.emit('vipUpdate', { level: _vipLvl, deposited: _vipDep, pending: _vipPend });
       }
       return {
-        gold: _lastStats.gold, bonusSP: _lastStats.bonusSP || 0, vipLevel: _lastStats.vipLevel || 0,
-        vipDeposited: _lastStats.vipDeposited || 0, vipPending: _lastStats.vipPending || [], vipLeveled,
+        gold: _lastStats.gold, bonusSP: _lastStats.bonusSP || 0,
+        vipLevel: _vipLvl !== null ? _vipLvl : (socket.data.vipLevel || 0),
+        vipDeposited: _vipDep !== null ? _vipDep : 0,
+        vipPending: _vipPend !== null ? _vipPend : [], vipLeveled,
       };
     } finally {
       _itemOpBusy--;

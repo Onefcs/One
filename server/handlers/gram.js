@@ -19,7 +19,7 @@ module.exports = function registerGram(s, safeOn, deps) {
   } = deps;
 
   const {
-    _ITEMS_BUSY_MSG, _commitServerItems, _flushBalances, _itemsBusy,
+    _ITEMS_BUSY_MSG, _commitServerItems, _flushBalances, _goldNow, _itemsBusy,
     _liveGram, _liveInventory, _seasonAddPoints, _withEconLock, socket,
   } = s;
 
@@ -195,7 +195,21 @@ module.exports = function registerGram(s, safeOn, deps) {
         // gold at all, and `x + undefined` is NaN — which _sanitizeSavedStats
         // then clamps to 0, i.e. buying a stone pack would have wiped the
         // buyer's gold. Same reasoning for the potion count below.
-        saved.gold = (saved.gold || 0) + (pkg.gold || 0);
+        //
+        // Added to the LIVE total, not to the one that just came back from the
+        // database — exactly the reason the inventory above is taken from
+        // _liveInventory(). Gold rides the save debounce (kill gold is credited
+        // in memory and persisted a few seconds later, see _grantGold in
+        // server/index.js), so `saved.gold` is behind by however long that
+        // window is, and crediting the package on top of it wrote that stale
+        // figure back: buy a pack mid-farm and the last few seconds of gold
+        // were gone. Only when this socket is the account's live session,
+        // though — on a stale one _goldNow() is the figure that is behind, and
+        // the cross-session branch below hands the whole grant to the live
+        // socket anyway.
+        const _liveHere = activeSessions.get(s.authed.telegramId) === socket.id;
+        const _goldBase = (_liveHere && s.lastStats) ? _goldNow() : (saved.gold || 0);
+        saved.gold = _goldBase + (pkg.gold || 0);
 
         // Parallel record of every item this purchase grants, as plain
         // {item, qty} deltas — used only if the account turns out to have
@@ -341,15 +355,30 @@ module.exports = function registerGram(s, safeOn, deps) {
           const _target = _socketForTelegramId(s.authed.telegramId);
           const _result = _target && _target.data._applyGrant
             ? _target.data._applyGrant({
-                addItems: _addedItems, goldDelta: pkg.gold || 0, bonusSPDelta: pkg.bonusSP || 0, vipGramDelta: _price,
+                addItems: _addedItems, goldDelta: pkg.gold || 0, bonusSPDelta: pkg.bonusSP || 0,
+                // Absolutes, worked out above from the record this handler read
+                // itself — _applyGrant has no usable VIP base of its own to add
+                // a delta to (the session blob it used to read is stripped of
+                // these fields by _sanitizeSavedStats, so it always started
+                // from zero and wrote the buyer's VIP progress away).
+                vipState: { level: _vipLvl, deposited: _vipDep, pending: _vipPend },
                 seasonTicket: !!pkg.seasonTicket,
               }, 'gram_shop_cross_session', { pkg: pkg.id, gram: pkg.gram })
             : null;
           if (!_result) {
+            // No live socket at all: write it straight to the record. The VIP
+            // triple travels with it — the delegated path above applies it and
+            // this one used to drop it on the floor, so a purchase made while
+            // the buyer was between sockets paid for VIP progress that was
+            // never recorded anywhere.
             await PlayerModel.updateOne({ _id: doc._id }, {
               $push: { 'savedData.inventory': { $each: _addedItems.map(({ item, qty }) => ({ ...item, ...(qty != null ? { qty } : {}) })) } },
               $inc: { 'savedData.gold': pkg.gold || 0, ...(pkg.bonusSP > 0 ? { 'savedData.bonusSP': pkg.bonusSP } : {}) },
-              ...(pkg.seasonTicket ? { $set: { 'savedData.seasonTicket': true } } : {}),
+              $set: {
+                'savedData.vipLevel': _vipLvl, 'savedData.vipDeposited': _vipDep,
+                'savedData.vipPending': _vipPend,
+                ...(pkg.seasonTicket ? { 'savedData.seasonTicket': true } : {}),
+              },
             }).catch(() => {});
           }
           logPlayer(s.authed.telegramId, s.authed.username, 'gram_shop_cross_session',

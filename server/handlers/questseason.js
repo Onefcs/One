@@ -23,8 +23,8 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
   } = deps;
 
   const {
-    _ITEMS_BUSY_MSG, _commitServerItems, _goldNow, _grantXp, _itemErr,
-    _itemsBusy, _liveInventory, _questKills, _resolveInvIdx,
+    _ITEMS_BUSY_MSG, _commitServerItems, _goldNow, _grantGold, _grantXp,
+    _itemErr, _itemsBusy, _liveInventory, _questKills, _resolveInvIdx,
     _seasonAddPoints, _withEconLock, socket,
   } = s;
 
@@ -549,7 +549,13 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
           if (_target) _target.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
           return;
         }
-        if (goldReward > 0) saved.gold = (saved.gold || 0) + goldReward;
+        // Credited on top of the LIVE total, not the one that came back from
+        // the findById above — the same reason the inventory came from
+        // _liveInventory(). Gold rides the save debounce, so the stored figure
+        // is a few seconds behind whatever the player has actually killed for,
+        // and adding the reward to it wrote that stale number back as the new
+        // balance.
+        if (goldReward > 0) saved.gold = (s.lastStats ? _goldNow() : (saved.gold || 0)) + goldReward;
         saved.inventory  = inv;
         saved.vipPending = [];
         // Targeted $set (see the matching comment in gramShopBuy) — a full
@@ -558,7 +564,15 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
         const _vipSet = { 'savedData.inventory': inv, 'savedData.vipPending': [] };
         if (goldReward > 0) _vipSet['savedData.gold'] = saved.gold;
         await PlayerModel.updateOne({ _id: doc._id }, { $set: _vipSet });
-        if (s.lastStats && goldReward > 0) s.lastStats.gold = saved.gold;
+        if (s.lastStats && goldReward > 0) {
+          s.lastStats.gold = saved.gold;
+          // The client expects the balance as a total here (see its
+          // vipRewardsClaimed handler, js/network.js) and was never sent one:
+          // the HUD kept the pre-claim figure until some unrelated kill or
+          // purchase pushed a goldSync, which reads exactly like the reward
+          // never arrived.
+          socket.emit('goldSync', { gold: _goldNow() });
+        }
         _commitServerItems(inv, null, 'vip_rewards', { levels: pending, gold: goldReward });
         socket.emit('vipRewardsClaimed', { newInventory: inv, goldAdded: goldReward, vipPending: [] });
       } catch (err) {
@@ -588,19 +602,27 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
           return;
         }
         const newDone = [...done, String(questId)];
-        // The Liberty reward is NOT part of the writes below: it is credited with
-        // its own $inc once the completion has been claimed, so it adds to
-        // whatever the account holds instead of overwriting it. The claim itself
-        // is what makes it once-only.
-        // Build the per-field update using the in-memory savedData when available,
-        // falling back to the DB current values when savedData is null (new player
-        // who has never saved yet). In either case use $set on the whole savedData
-        // object when savedData is null to avoid a MongoDB write error ("cannot
-        // traverse null element") that would otherwise silently eat the completion.
+        // THE CLAIM, AND ONLY THE CLAIM. Gold and XP used to ride in this same
+        // write, computed as `s.authed.savedData.<field> + reward`. s.authed is
+        // the document as it was read AT LOGIN and nothing ever refreshes it
+        // (see _sessionBase, server/handlers/auth.js) — so that arithmetic put a
+        // login-time total into the database, and then copied it into the live
+        // session and the player's HUD as the new balance. Finish a special
+        // quest after an hour of farming and the hour's gold was simply gone;
+        // the XP half wrote the same stale figure and was only ever repaired by
+        // whatever save happened to land next. Neither number belongs in a
+        // claim: the rewards are applied below the way every other credit in
+        // this game is applied, against the session that is actually current.
+        //
+        // The Liberty reward already worked that way — its own $inc after the
+        // claim, so it adds to whatever the account holds. The claim itself is
+        // what makes all three once-only.
+        //
+        // savedData null (a brand-new player who has never saved) needs the
+        // whole object written rather than a dotted path, or Mongo refuses the
+        // write outright ("cannot traverse null element") and silently eats the
+        // completion.
         if (s.authed.savedData) {
-          const upd = { 'savedData.specialQuestsDone': newDone };
-          if (quest.reward.gold)  upd['savedData.gold']         = (s.authed.savedData.gold         || 0) + quest.reward.gold;
-          if (quest.reward.xp)    upd['savedData.xp']           = (s.authed.savedData.xp           || 0) + quest.reward.xp;
           // The `$ne` on the filter is what makes the reward once-only. The
           // `done.includes` check above reads s.authed.savedData, which is only
           // updated after this await — so two completions sent in the same tick
@@ -608,23 +630,17 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
           // second write matches nothing and modifiedCount is 0.
           const _claim = await PlayerModel.updateOne(
             { telegramId: s.authed.telegramId, 'savedData.specialQuestsDone': { $ne: String(questId) } },
-            { $set: upd },
+            { $set: { 'savedData.specialQuestsDone': newDone } },
           );
           if (!_claim.modifiedCount) {
             socket.emit('specialQuestDone', { questId: String(questId), reward: { gold: 0, xp: 0, nexum: 0 }, alreadyDone: true });
             return;
           }
           s.authed.savedData.specialQuestsDone = newDone;
-          if (quest.reward.gold)  s.authed.savedData.gold         = (s.authed.savedData.gold         || 0) + quest.reward.gold;
-          if (quest.reward.xp)    s.authed.savedData.xp           = (s.authed.savedData.xp           || 0) + quest.reward.xp;
         } else {
-          // savedData is null (brand-new player who hasn't saved yet): initialise
-          // it as a plain object so dotted-path $set won't error on null parent.
-          const freshData = { specialQuestsDone: newDone };
-          if (quest.reward.gold)  freshData.gold         = quest.reward.gold;
-          if (quest.reward.xp)    freshData.xp           = quest.reward.xp;
           // Same once-only guard as the branch above, expressed against the null
           // savedData this branch exists for.
+          const freshData = { specialQuestsDone: newDone };
           const _claimNew = await PlayerModel.updateOne(
             { telegramId: s.authed.telegramId, savedData: null },
             { $set: { savedData: freshData } },
@@ -644,20 +660,53 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
             socket.emit('nexumBalanceUpdate', { balance: _qb });
           }
         }
+        // Where gold and XP land. The account may have reconnected on another
+        // socket across the awaits above — the same race claimVipRewards and
+        // marketCancel delegate for — and crediting this closure's session then
+        // means writing a stale total through a socket nobody is playing on,
+        // which is the rollback all over again, one step further along.
+        const _sqLive = activeSessions.get(s.authed.telegramId) === socket.id && !!s.lastStats;
+        const _sqTarget = _sqLive ? null : _socketForTelegramId(s.authed.telegramId);
         let _sqxp = null;
-        if (s.lastStats) {
+        if (_sqLive) {
           s.lastStats.specialQuestsDone = newDone;
-          // Gold and XP were written straight from the freshly-read document,
-          // which was how a reward computed elsewhere reached this session. Both
-          // are applied on this side now, so they go through the same helpers as
-          // every other credit and the client is told the result.
-          if (quest.reward.gold) {
-            s.lastStats.gold = (s.authed.savedData.gold || 0);
-            socket.emit('goldSync', { gold: _goldNow() });
-          }
           // Flat, like the story-quest reward above: a fixed reward does not take
-          // the kill multipliers.
-          if (quest.reward.xp) _sqxp = _grantXp(quest.reward.xp, { flat: true });
+          // the kill multipliers. Both helpers push the resulting total to the
+          // client themselves.
+          if (quest.reward.gold) {
+            _grantGold(quest.reward.gold, 'special_quest');
+            _persistSavedFields(s.authed, { gold: _goldNow() });
+          }
+          if (quest.reward.xp) {
+            _sqxp = _grantXp(quest.reward.xp, { flat: true });
+            // _grantXp only writes on a level-up; a reward that does not cross
+            // the curve would otherwise sit in memory until the next save, and
+            // the point of this whole path is that a claimed reward is banked
+            // the moment it is claimed.
+            if (_sqxp) {
+              _persistSavedFields(s.authed, {
+                xp: _sqxp.xp, lvl: _sqxp.lvl, xpNext: _sqxp.xpNext,
+                baseAtk: _sqxp.baseAtk, baseDef: _sqxp.baseDef, baseMaxHp: _sqxp.baseMaxHp,
+              });
+            }
+          }
+        } else if (_sqTarget && _sqTarget.data._applyGrant) {
+          if (quest.reward.gold) {
+            _sqTarget.data._applyGrant({ goldDelta: quest.reward.gold }, 'special_quest',
+              { questId: String(questId) });
+          }
+          if (quest.reward.xp && _sqTarget.data._grantXp) {
+            const _xp = _sqTarget.data._grantXp(quest.reward.xp, { flat: true });
+            if (_xp) _sqTarget.emit('xpSync', _xp);
+          }
+        } else if (quest.reward.gold || quest.reward.xp) {
+          // Nobody is holding this account right now, so there is no live total
+          // to add to and nothing that can overwrite the record: $inc it
+          // directly, for the same reason the offline paths elsewhere do.
+          const _inc = {};
+          if (quest.reward.gold) _inc['savedData.gold'] = quest.reward.gold;
+          if (quest.reward.xp)   _inc['savedData.xp']   = quest.reward.xp;
+          await PlayerModel.updateOne({ _id: s.authed._id }, { $inc: _inc }).catch(() => {});
         }
         logPlayer(s.authed.telegramId, s.authed.username, 'special_quest', { questId, title: quest.title, reward: quest.reward });
         socket.emit('specialQuestDone', { questId: String(questId), reward: quest.reward });

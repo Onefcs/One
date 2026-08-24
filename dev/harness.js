@@ -332,6 +332,152 @@ scenario('level: a save cannot set the level', async () => {
   await c.close();
 });
 
+scenario('rollback: a special quest reward does not roll the session\'s gold back', async () => {
+  // s.authed is the player document as it was read AT LOGIN and nothing ever
+  // refreshes it. completeSpecialQuest used to compute the reward as
+  // `s.authed.savedData.gold + reward` and write that — into the database AND
+  // into the live session — so everything earned since login was replaced by a
+  // login-time figure. An hour of farming, gone on claiming a 50-gold quest.
+  const SpecialQuest = require('../server/models/SpecialQuest');
+  const q = await SpecialQuest.create({
+    title: 'Harness quest', type: 'custom', active: true, reward: { gold: 50, xp: 0, nexum: 0 },
+  });
+
+  const c = await connectWithSaved('harness_sq_gold', {
+    gold: 500, inventory: [{ id: 'ar1', enhance: 0 }],
+  });
+  await enterWorld(c, 'lev');
+
+  // Earn something after login, the way any session does. Selling a common is
+  // the deterministic stand-in for kill gold: it moves the live total (and the
+  // record) without touching the login snapshot the bug read from.
+  const sold = c.wait('itemSold', { timeout: 8000 });
+  c.emit('sellItem', { idx: 0, id: 'ar1', enhance: 0 });
+  const soldEv = await sold;
+  eq(soldEv.newGold, 600, 'the sale credited the live balance');
+
+  const gold = c.wait('goldSync', { timeout: 8000 });
+  const done = c.wait('specialQuestDone', { timeout: 8000 });
+  c.emit('completeSpecialQuest', { questId: String(q._id) });
+  await done;
+  const sync = await gold;
+  eq(sync.gold, 650, 'the reward was added to the live balance, not to the login snapshot');
+
+  await sleep(300);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.gold, 650, 'and that is what reached the database');
+  ok((row.savedData.specialQuestsDone || []).includes(String(q._id)), 'the completion was recorded');
+  await c.close();
+});
+
+scenario('rollback: a special quest reward does not roll the session\'s xp back', async () => {
+  // The XP half of the same write. It was repaired by whatever save landed
+  // next, which is exactly why it was easy to miss — and why a session that
+  // ended on the quest kept the rollback.
+  const SpecialQuest = require('../server/models/SpecialQuest');
+  const q = await SpecialQuest.create({
+    title: 'Harness xp quest', type: 'custom', active: true, reward: { gold: 0, xp: 30, nexum: 0 },
+  });
+
+  const c = await connectWithSaved('harness_sq_xp', {
+    lvl: 5, xp: 10, xpNext: 362, questIdx: 0, questKills: { 'Крыса страж': 10 },
+  });
+  await enterWorld(c, 'mage');
+
+  // Earn XP the ordinary way first — a story quest's flat 50, applied to the
+  // live session and nowhere near the login snapshot, which still says 10.
+  const questXp = c.wait('xpSync', { timeout: 8000 });
+  c.emit('claimQuest', { idx: 0 });
+  const afterQuest = await questXp;
+  eq(afterQuest.xp, 60, 'the story quest paid into the live xp');
+
+  const xpSync = c.wait('xpSync', { timeout: 8000 });
+  const done = c.wait('specialQuestDone', { timeout: 8000 });
+  c.emit('completeSpecialQuest', { questId: String(q._id) });
+  await done;
+  const got = await xpSync;
+  eq(got.xp, 90, 'the special quest added to the live xp');
+  await sleep(300);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.xp, 90, 'and the record holds that, not the login figure plus the reward');
+  await c.close();
+});
+
+scenario('rollback: a GRAM package credits gold on top of the live total, not the stored one', async () => {
+  // Gold rides the save debounce, so the record trails the live session by a
+  // few seconds of kills. gramShopBuy read the record and added the package's
+  // gold to THAT — writing the trailing figure back as the new balance. Here
+  // the record is pushed behind deliberately, which is the same state the
+  // debounce window produces naturally.
+  const Player = require('../server/models/Player');
+  const c = await connectWithSaved('harness_shop_gold', { gold: 5000, lvl: 10, gramBalance: 100 });
+  await enterWorld(c, 'ranger');
+
+  // The record left behind by the debounce: the session holds 5000, the row
+  // says 100.
+  const row0 = memory.__dump('Player').find(p => p.username === c.auth.username);
+  await Player.updateOne({ _id: row0._id }, { $set: { 'savedData.gold': 100 } });
+  await sleep(50);
+
+  // A package that carries gold. Picked from the real catalog so the figures
+  // stay in step with it.
+  const { _GRAM_SHOP_PKGS } = require('../server/shop');
+  const pkg = _GRAM_SHOP_PKGS.find(p => (p.gold || 0) > 0 && !p.petChoice);
+  ok(pkg, 'the catalog has a package that grants gold');
+
+  const res = c.wait('gramShopResult', { timeout: 8000 });
+  c.emit('gramShopBuy', { pkgId: pkg.id });
+  const got = await res;
+  eq(got.newGold, 5000 + pkg.gold, 'the package added to the live balance');
+  await sleep(300);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.gold, 5000 + pkg.gold, 'and the record was not rewound to the stale read');
+  await c.close();
+});
+
+scenario('rollback: the autosave cannot rewrite a server-owned field', async () => {
+  // _finishLogin seeds the session copy straight from the stored record and
+  // starts the 60s autosave in the same breath, so until the first selectChar
+  // rebuilds that copy it still carries vipLevel, seasonPoints2 and the rest —
+  // and the progress writer happily wrote them back as login-time absolutes,
+  // undoing whatever their own handler had done in the meantime.
+  const Player = require('../server/models/Player');
+  const c = await connectWithSaved('harness_owned_fields', {
+    lvl: 8, gold: 10, vipLevel: 4, vipDeposited: 7, vipPending: [3, 4],
+    seasonPoints2: 250, starterBonus: true, seasonTicket: true,
+    specialQuestsDone: ['welcome'],
+  });
+  await enterWorld(c, 'lev');
+
+  // Everything the account's own handlers own, moved while the session is up.
+  const row0 = memory.__dump('Player').find(p => p.username === c.auth.username);
+  await Player.updateOne({ _id: row0._id }, { $set: {
+    'savedData.vipLevel': 6, 'savedData.vipDeposited': 12, 'savedData.vipPending': [5, 6],
+    'savedData.seasonPoints2': 900, 'savedData.specialQuestsDone': ['welcome', 'second'],
+  } });
+  await sleep(50);
+
+  // The ordinary client save, which is what the debounced write and the
+  // periodic autosave both persist.
+  c.emit('saveProgress', { stats: {
+    type: 'lev', floor: 1, hp: 100, maxHp: 100, kills: 3,
+    hudPotion: 'pt1', autoHpPct: 0.5, lang: 'ru', savedAt: Date.now(),
+  } });
+  await sleep(3400);
+
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const sd = row.savedData || {};
+  eq(sd.vipLevel, 6, 'vipLevel was not rewound by the save');
+  eq(sd.vipDeposited, 12, 'vipDeposited was not rewound by the save');
+  eq((sd.vipPending || []).join(','), '5,6', 'vipPending was not rewound by the save');
+  eq(sd.seasonPoints2, 900, 'seasonPoints2 was not rewound by the save');
+  eq((sd.specialQuestsDone || []).join(','), 'welcome,second', 'specialQuestsDone was not rewound by the save');
+  eq(sd.starterBonus, true, 'the once-per-account kit flag still stands');
+  eq(sd.seasonTicket, true, 'and so does the season ticket');
+  eq(sd.kills, 3, 'while the fields the save DOES own still land');
+  await c.close();
+});
+
 scenario('combat: a hit reaches the server and lowers the real enemy', async () => {
   const c = await connectAs('harness_combat');
   await enterWorld(c, 'deathknight');
