@@ -4576,42 +4576,64 @@ scenario('farm2: the daily minute allowance is charged for time actually spent, 
   for (const c of capped) await c.close();
 });
 
-scenario('drops: every skill and passive book is reachable from monsters in BOTH halves of the dungeon', async () => {
+scenario('drops: base and passive books cover BOTH halves of the dungeon, advanced books drop in neither', async () => {
+  // Two regressions in one place, because one caused the other.
+  //
   // The pools used to be split by zone: base skill books and the offense
   // class passives in arms 1-2, advanced books and the defense passives in
   // arms 3-4. Half the catalog therefore did not exist below level 41 — a
   // Тёмный панцирь could not drop anywhere a character under 41 could stand —
-  // and the other half stopped existing above it, while base books are
-  // exactly what a level-10 skill (and so the advanced unlock) still needs
-  // there. Both pools cycle on the monster's own level now.
+  // and the base books stopped existing above it, though those are exactly
+  // what a level-10 skill (and so the advanced unlock) still needs there.
+  // Cycling the pools on the monster's own level fixed that, but it also put
+  // the advanced ("2 профессия") books on the corridor cycle: they started
+  // dropping off ordinary monsters from level 5 on, four levels in every
+  // eight (5-8, 13-16, 21-24, ...). Those are a capstone unlock — Фарм-зона,
+  // Элитная фарм-зона and the forge craft are their only sources.
   //
   // Data-level on purpose: the drop itself is one roll in ~100k kills, so the
   // only honest thing to check is the pool a level offers — which is the same
   // shared function the server rolls from (_rollMobLoot, server/game/loot.js)
   // and the map's drop panel renders (_monsterDropBodyHtml, js/ui.js).
   const {
-    CRAFT_MATS, MAX_MONSTER_LEVEL, REBIRTH_LEVEL,
+    CRAFT_MATS, MAX_MONSTER_LEVEL, REBIRTH_LEVEL, FARM_SPECIES_BOOKS,
     levelSkillBookPool, levelClassPassivePool, levelUniversalPassivePool,
   } = require('../shared/definitions');
-  const allBooks = CRAFT_MATS.filter(m => m.skillKey || m.advSkillKey || m.passiveId);
+  const mobBooks = CRAFT_MATS.filter(m => m.skillKey || m.passiveId);
+  const advBooks = CRAFT_MATS.filter(m => m.advSkillKey);
   const poolAt = lvl => [
     ...levelSkillBookPool(lvl), ...levelClassPassivePool(lvl), ...levelUniversalPassivePool(lvl),
   ];
   const coverage = (lo, hi) => {
     const seen = new Set();
     for (let lvl = lo; lvl <= hi; lvl++) poolAt(lvl).forEach(b => seen.add(b.id));
-    return allBooks.filter(b => !seen.has(b.id)).map(b => b.name);
+    return mobBooks.filter(b => !seen.has(b.id)).map(b => b.name);
   };
   const earlyGap = coverage(1, 40);
   const lateGap  = coverage(41, MAX_MONSTER_LEVEL);
-  eq(earlyGap.length, 0, `every book drops somewhere in levels 1-40 (missing: ${earlyGap.join(', ')})`);
-  eq(lateGap.length, 0, `every book drops somewhere in levels 41-${MAX_MONSTER_LEVEL} (missing: ${lateGap.join(', ')})`);
+  eq(earlyGap.length, 0, `every mob-droppable book drops somewhere in levels 1-40 (missing: ${earlyGap.join(', ')})`);
+  eq(lateGap.length, 0, `every mob-droppable book drops somewhere in levels 41-${MAX_MONSTER_LEVEL} (missing: ${lateGap.join(', ')})`);
   // The reported one, by name, at a level the reporter could actually reach.
-  const darkCarapace = allBooks.find(b => b.id === 'book_pas_dkdef');
+  const darkCarapace = mobBooks.find(b => b.id === 'book_pas_dkdef');
   const dropsIt = [];
   for (let lvl = 1; lvl <= REBIRTH_LEVEL; lvl++) if (poolAt(lvl).some(b => b === darkCarapace)) dropsIt.push(lvl);
   ok(dropsIt.length > 0,
      `${darkCarapace.name} drops below level ${REBIRTH_LEVEL} (levels ${dropsIt.slice(0, 5).join(', ')}...)`);
+
+  // The reported regression: not one corridor level, anywhere in the world,
+  // may offer a "2 профессия" book — level 21+ (the arm-2 rooms it was
+  // reported from) included.
+  const advIds = new Set(advBooks.map(b => b.id));
+  const leaked = [];
+  for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
+    for (const b of poolAt(lvl)) if (advIds.has(b.id)) leaked.push(`${lvl}: ${b.name}`);
+  }
+  eq(leaked.length, 0, `no monster level drops an advanced-skill book (leaked: ${leaked.slice(0, 5).join(', ')})`);
+  // ...and they are still obtainable: every one of them is in some Фарм-зона
+  // species' pool, which is what _rollFarmZoneLoot rolls against.
+  const farmable = new Set([].concat(...Object.values(FARM_SPECIES_BOOKS)));
+  const unreachable = advBooks.filter(b => !farmable.has(b.id)).map(b => b.name);
+  eq(unreachable.length, 0, `every advanced book still drops in Фарм-зона (missing: ${unreachable.join(', ')})`);
 
   // Cycling, not widening: a bigger pool per kill would quietly divide every
   // book's own odds, since the roll picks one entry at random.
