@@ -372,26 +372,6 @@ function availableSkillPoints(st) {
   return Math.max(0, bonus + Math.max(0, budget - kept) - (spent - kept));
 }
 
-// What Улучшения → Сбросить actually hands back: the points that become
-// spendable again, which is NOT the sum of the upgrade levels whenever a
-// rebirth is carrying part of that spend. A reset clears the map and the
-// keptSP commitment together, so the carried part leaves with the commitment
-// and only the current level curve plus bonusSP comes back — the player gets
-// the rest as they re-climb to REBIRTH_LEVEL, on the ordinary curve, exactly
-// like anyone else at that level.
-//
-// Both sides read this one answer: the panel hint and the confirm dialog
-// (js/ui.js) promise this number, and the resetUpgrades handler
-// (server/handlers/skills.js) returns it. They used to disagree — the client
-// showed spentSkillPoints, so a character freshly out of a rebirth was told
-// "120 очков вернутся" and got 30.
-function upgradeResetReturn(st) {
-  if (!st) return 0;
-  const before = availableSkillPoints(st);
-  const after  = availableSkillPoints({ ...st, upgrades: {}, keptSP: 0 });
-  return Math.max(0, after - before);
-}
-
 // The most a legitimate upgrades map can add up to: the curve, the granted
 // bonus and the carried commitment. Only _sanitizeSavedStats' budget check
 // uses this — spending is gated by availableSkillPoints above.
@@ -2205,7 +2185,7 @@ if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
-  spentSkillPoints, availableSkillPoints, upgradeResetReturn, skillPointCeiling, migrateKeptSP,
+  spentSkillPoints, availableSkillPoints, skillPointCeiling, migrateKeptSP,
   CLAN_LEVELS, clanAtkBonusPct,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,

@@ -181,7 +181,7 @@ const {
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, rebirthCostFor, skillPointBudget,
-  availableSkillPoints, spentSkillPoints, upgradeResetReturn, migrateKeptSP,
+  availableSkillPoints, spentSkillPoints, migrateKeptSP,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -4185,7 +4185,7 @@ io.on('connection', socket => {
       UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
       availableSkillPoints, logPlayer, logPlayerErr, passiveBookId, passiveDefById,
       rebirthCostFor, seasonActive, skillBookId, skillPointBudget, spentSkillPoints,
-      upgradeCost, upgradeResetReturn, xpToNext,
+      upgradeCost, xpToNext,
   });
   // ── items ───────────────────────────────────────────────────────────────
   // Moved to server/handlers/items.js — see the note there.

@@ -16,7 +16,7 @@ module.exports = function registerSkills(s, safeOn, deps) {
     UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
     availableSkillPoints, logPlayer, logPlayerErr, passiveBookId, passiveDefById,
     rebirthCostFor, seasonActive, skillBookId, skillPointBudget, spentSkillPoints,
-    upgradeCost, upgradeResetReturn, xpToNext,
+    upgradeCost, xpToNext,
   } = deps;
 
   const {
@@ -54,26 +54,6 @@ module.exports = function registerSkills(s, safeOn, deps) {
         if (spent <= 0) {
           return socket.emit('resetUpgradesError', { msg: 'Улучшений нет — сбрасывать нечего' });
         }
-        // What the player can actually spend again — not the raw `spent`, which
-        // is a lie for a character carrying points across a rebirth. keptSP is
-        // a commitment, not capacity (see the accounting block in
-        // shared/definitions.js): emptying the map ends the commitment, so the
-        // carried points go with it and only the current level's own curve plus
-        // bonusSP comes back. Reported honestly rather than as the old total,
-        // which is exactly the number a reset straight after a rebirth used to
-        // hand over for free.
-        //
-        // Read BEFORE the charge, because zero is a real answer: a character
-        // whose every point is carried commitment would pay the Liberty, lose
-        // the stats and get nothing spendable back. That is a trap, not a
-        // choice, so it is refused rather than sold — the points return on
-        // their own as the character re-climbs to REBIRTH_LEVEL.
-        const _returned = upgradeResetReturn(s.lastStats);
-        if (_returned <= 0) {
-          return socket.emit('resetUpgradesError', {
-            msg: `Сброс сейчас ничего не вернёт — очки вернутся с уровнями до ${REBIRTH_LEVEL}`,
-          });
-        }
         await _flushBalances();
         // Charged atomically: the write only happens if the balance covers the
         // cost, so the upgrades below are never cleared for free.
@@ -82,7 +62,17 @@ module.exports = function registerSkills(s, safeOn, deps) {
           return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
         }
         s.nexumBalance = _bal;
+        // What the player can actually spend again — not the raw `spent`, which
+        // is a lie for a character carrying points across a rebirth. keptSP is
+        // a commitment, not capacity (see the accounting block in
+        // shared/definitions.js): emptying the map ends the commitment, so the
+        // carried points go with it and only the current level's own curve plus
+        // bonusSP comes back. Reported honestly rather than as the old total,
+        // which is exactly the number a reset straight after a rebirth used to
+        // hand over for free.
+        const _before = availableSkillPoints(s.lastStats);
         if (s.lastStats) { s.lastStats.upgrades = {}; s.lastStats.keptSP = 0; }
+        const _returned = Math.max(0, availableSkillPoints(s.lastStats) - _before);
         // Keep the room's anti-cheat baseline in step, or its computeStats would
         // go on crediting the cleared upgrades until the next saveProgress.
         if (s.currentRoom) s.currentRoom.updatePlayerSavedData(socket.id, s.lastStats);
