@@ -93,9 +93,9 @@ const _GRAM_SHOP_PKGS = [
   // The ids stay rmat1-3 from when the tab was Перерождение: they are written
   // into every past purchase's GramTx row, and renaming them would orphan that
   // history.
-  { id:'rmat1', gram:25, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:10 } },
-  { id:'rmat2', gram:40, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:20 } },
-  { id:'rmat3', gram:80, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:50 } },
+  { id:'rmat1', gram:25, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
+  { id:'rmat2', gram:40, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
+  { id:'rmat3', gram:80, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
   // Сезонный билет — grants no items, just flips a status flag (gramShopBuy's
   // own seasonTicket branch) that boosts kill rewards for as long as the
   // current season runs (see shared/definitions.js's SEASON_TICKET_* section).

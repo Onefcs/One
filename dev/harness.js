@@ -2588,7 +2588,7 @@ scenario('empower: every 5th empowerment really costs double, proven across a li
   // the 10th — crossing both the 5th and 10th boundaries) with a real
   // reconnect between each, and checks the exact quantity actually deducted
   // every time — norm_stone, the newest line of the bill, included.
-  const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 10 };
+  const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 20 };
   // 5 normal + 2 doubled empowerments = 9x normal cost, worth of stock up front.
   const stock = Object.fromEntries(Object.entries(normal).map(([id, n]) => [id, n * 9]));
 
@@ -4512,8 +4512,8 @@ scenario('legacy: a Перерождение record is carried over to Усил�
   const row = memory.__dump('Player').find(p => p.username === c.auth.username);
   const sd = row.savedData;
   eq(sd.empowers, 4, 'the four Перерождения count as four empowerments');
-  eq(empowerCostFor(sd.empowers).norm_stone, 20,
-     'so the next one is the 5th and is priced double — 20 stones, not 10');
+  eq(empowerCostFor(sd.empowers).norm_stone, 40,
+     'so the next one is the 5th and is priced double — 40 stones, not 20');
   eq(sd.keptSP, 90, 'the banked spend moved into keptSP');
   eq(sd.bonusSP, 60, 'and bonusSP is back to the four flat rewards it should have been');
   eq(Object.values(sd.upgrades || {}).reduce((s, v) => s + v, 0), 90,

@@ -6478,11 +6478,11 @@ const _GRAM_SHOP_PKGS_UI = [
   // empowerment itself still happens from the Персонаж → Усиление panel, see
   // updateEmpowerUI.
   { id:'rmat1', gram:25, get label() { return t('empowerMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:10 } },
+    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
   { id:'rmat2', gram:40, get label() { return t('empowerMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:20 } },
+    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
   { id:'rmat3', gram:80, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:50 } },
+    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
 ];
 
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };

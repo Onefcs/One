@@ -291,10 +291,10 @@ const EMPOWER_BONUS_SP = 15;
 // box_uncommon/box_rare — BOX_DEF below. rece/recl — CRAFT_MATS' epic/
 // legendary recipe scrolls. norm_stone — CRAFT_MATS' ordinary enhance stone.
 const EMPOWER_COST = {
-  box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 10,
+  box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 20,
 };
-// Every 5th empowerment (the 5th, 10th, 15th, ...) costs double — 20 stones
-// instead of 10, and the same doubling on every other line of the bill.
+// Every 5th empowerment (the 5th, 10th, 15th, ...) costs double — 40 stones
+// instead of 20, and the same doubling on every other line of the bill.
 // `empowers` is the count BEFORE this empowerment (player.empowers/
 // _lastStats.empowers) — the empowerment about to happen is empowers+1, coerced
 // to a Number first (a non-numeric value here, e.g. a string surviving from
