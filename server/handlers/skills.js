@@ -10,13 +10,12 @@
 module.exports = function registerSkills(s, safeOn, deps) {
   const {
     ADV_SKILL_STUDY_COST, BOX_DEF, CHAR_DEF, CRAFT_MATS, FLOOR_IDS, ITEM_DEF,
-    PASSIVE_MAX_LEVEL, REBIRTH_BONUS_SP, REBIRTH_LEVEL,
-    SEASON_REBIRTH_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
+    PASSIVE_MAX_LEVEL, EMPOWER_BONUS_SP, EMPOWER_LEVEL,
+    SEASON_EMPOWER_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
     SKILL_UPGRADE_CHANCE, SKILL_UPGRADE_COST, UPGRADE_KEYS,
     UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
     availableSkillPoints, logPlayer, logPlayerErr, passiveBookId, passiveDefById,
-    rebirthCostFor, seasonActive, skillBookId, skillPointBudget, spentSkillPoints,
-    upgradeCost, xpToNext,
+    empowerCostFor, seasonActive, skillBookId, upgradeCost,
   } = deps;
 
   const {
@@ -31,7 +30,7 @@ module.exports = function registerSkills(s, safeOn, deps) {
     // below for the same reasoning).
     //
     // Clearing player.upgrades is all a "refund" needs to be — spent points are
-    // never stored, they're derived as skillPointBudget(lvl, rebirths) +
+    // never stored, they're derived as skillPointBudget(lvl) +
     // bonusSP minus the sum of the upgrade levels (getAvailableSkillPoints,
     // js/player.js). Emptying the map therefore hands back every point ever
     // put into it, however many that was.
@@ -63,12 +62,12 @@ module.exports = function registerSkills(s, safeOn, deps) {
         }
         s.nexumBalance = _bal;
         // What the player can actually spend again — not the raw `spent`, which
-        // is a lie for a character carrying points across a rebirth. keptSP is
+        // is a lie for a character carrying points across a empower. keptSP is
         // a commitment, not capacity (see the accounting block in
         // shared/definitions.js): emptying the map ends the commitment, so the
         // carried points go with it and only the current level's own curve plus
         // bonusSP comes back. Reported honestly rather than as the old total,
-        // which is exactly the number a reset straight after a rebirth used to
+        // which is exactly the number a reset straight after a empower used to
         // hand over for free.
         const _before = availableSkillPoints(s.lastStats);
         if (s.lastStats) { s.lastStats.upgrades = {}; s.lastStats.keptSP = 0; }
@@ -302,62 +301,65 @@ module.exports = function registerSkills(s, safeOn, deps) {
       if (!_ran) socket.emit('progressError', { msg: 'Секунду, повторите' });
     });
 
-    // ── Перерождение (Rebirth) ──────────────────────────────────────────────
-    // Level REBIRTH_LEVEL+ only: resets level/xp back to a fresh character —
-    // player.upgrades (stat points already spent) is deliberately left alone,
-    // see the bonusSP banking below — in exchange for a flat, permanent
-    // REBIRTH_BONUS_SP. skillPointBudget (shared/definitions.js) is what then
-    // keeps levelling from handing out NEW points again until level
-    // REBIRTH_LEVEL is reached a second time (getAvailableSkillPoints/the
-    // upgrades-budget check above both call it, so client and server can't
-    // disagree on the result).
+    // ── Усиление (Empowerment) ────────────────────────────────────────────────
+    // Level EMPOWER_LEVEL+ only. Nothing about the character is reset — level,
+    // XP, base stats and player.upgrades are all left exactly where they are.
+    // An empowerment is purely a purchase: burn EMPOWER_COST worth of materials,
+    // gain a flat, permanent EMPOWER_BONUS_SP folded into bonusSP. Repeatable,
+    // with every 5th one priced double (empowerCostFor, shared/definitions.js).
     //
-    // Pure item cost (REBIRTH_COST) — no Liberty spend — so unlike craftGear/
-    // resetUpgrades this never awaits a balance call: everything here runs off
-    // s.lastStats in one synchronous pass, which is also why it needs none of
-    // their cross-session-during-an-await machinery (nothing yields between
-    // the mat check and the mutation, so activeSessions/s.lastStats can't have
-    // moved out from under it). The materials themselves can also be bought
-    // outright with GRAM from the shop's own Перерождение tab (rmat1-3 in
-    // _GRAM_SHOP_PKGS below, via the ordinary gramShopBuy) — that only grants
-    // items into the inventory, it never performs the rebirth itself.
-    safeOn('rebirth', () => {
+    // Because the level never moves, none of the skill-point machinery the old
+    // Перерождение needed applies here: skillPointBudget is untouched by an
+    // empowerment and keptSP stays at whatever it was (see the accounting block
+    // in shared/definitions.js — nothing writes it any more).
+    //
+    // Pure item cost — no Liberty spend — so unlike craftGear/resetUpgrades
+    // this never awaits a balance call: everything here runs off s.lastStats in
+    // one synchronous pass, which is also why it needs none of their
+    // cross-session-during-an-await machinery (nothing yields between the mat
+    // check and the mutation, so activeSessions/s.lastStats can't have moved
+    // out from under it). The materials themselves can also be bought outright
+    // with GRAM from the shop's own Усиление tab (rmat1-3 in _GRAM_SHOP_PKGS,
+    // server/shop.js, via the ordinary gramShopBuy) — that only grants items
+    // into the inventory, it never performs the empowerment itself.
+    safeOn('empower', () => {
       if (!s.authed) return;
       try {
         if (!s.lastStats || !Array.isArray(s.lastStats.inventory)) {
-          return socket.emit('rebirthError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
+          return socket.emit('empowerError', { msg: 'Инвентарь ещё не загружен — попробуйте ещё раз' });
         }
         const lvl = Math.floor(Number(s.lastStats.lvl)) || 1;
-        if (lvl < REBIRTH_LEVEL) {
-          return socket.emit('rebirthError', { msg: `Нужен ${REBIRTH_LEVEL} уровень` });
+        if (lvl < EMPOWER_LEVEL) {
+          return socket.emit('empowerError', { msg: `Нужен ${EMPOWER_LEVEL} уровень` });
         }
         // Hub-only, same as the teleport-home check above (:7303) reads
-        // s.currentFloor against this exact constant. Keeps a rebirth from firing
-        // mid-run in a dungeon/instance — a boss pull, a party mid-fight, an
-        // event zone — where a level-1 reset lands the player (and whoever they
-        // were with) somewhere they can no longer survive or belong.
+        // s.currentFloor against this exact constant. An empowerment no longer
+        // moves the character, so this is no longer about landing somewhere
+        // unsurvivable — it keeps a multi-item inventory mutation out of a live
+        // fight, exactly like the crafting bench it sits next to.
         if (s.currentFloor !== FLOOR_IDS.hub) {
-          return socket.emit('rebirthError', { msg: 'Перерождение доступно только в Зале' });
+          return socket.emit('empowerError', { msg: 'Усиление доступно только в Зале' });
         }
-        if (_itemsBusy()) return socket.emit('rebirthError', { msg: _ITEMS_BUSY_MSG });
+        if (_itemsBusy()) return socket.emit('empowerError', { msg: _ITEMS_BUSY_MSG });
         const inv = s.lastStats.inventory;
         const _beforeLen = inv.length;
         const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
         const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
-        // Every 5th rebirth costs double (rebirthCostFor, shared/definitions.js)
-        // — based on the rebirth about to happen (current rebirths + 1), not
-        // the count already banked.
-        const _cost = rebirthCostFor(s.lastStats.rebirths || 0);
+        // Every 5th empowerment costs double (empowerCostFor,
+        // shared/definitions.js) — based on the empowerment about to happen
+        // (current empowers + 1), not the count already banked.
+        const _cost = empowerCostFor(s.lastStats.empowers || 0);
         for (const [id, need] of Object.entries(_cost)) {
           const have = matCount(id);
           if (have < need) {
-            return socket.emit('rebirthError', { msg: `Нужно ${need} × ${matName(id)} (есть ${have})` });
+            return socket.emit('empowerError', { msg: `Нужно ${need} × ${matName(id)} (есть ${have})` });
           }
         }
-        // All four cost items stack (BOX_DEF/CRAFT_MATS' box/recipe slots —
-        // isStackableItem, shared/definitions.js), so a plain qty-decrement
-        // pass covers every one of them — no enhanced-item matching needed,
-        // unlike craftGear's mats (which can carry a minEnhance).
+        // Every cost item stacks (BOX_DEF/CRAFT_MATS' box, recipe and stone
+        // slots — isStackableItem, shared/definitions.js), so a plain
+        // qty-decrement pass covers every one of them — no enhanced-item
+        // matching needed, unlike craftGear's mats (which can carry a
+        // minEnhance).
         for (const [id, need] of Object.entries(_cost)) {
           let left = need;
           for (let i = inv.length - 1; i >= 0 && left > 0; i--) {
@@ -369,91 +371,40 @@ module.exports = function registerSkills(s, safeOn, deps) {
           }
         }
 
-        // Улучшения (player.upgrades) are kept, not cleared — only the level
-        // curve resets. Two things have to be true for that to work, and
-        // keptSP is what makes them both true at once (the whole rule is
-        // written out in shared/definitions.js's skill point accounting
-        // block):
-        //
-        //  • The anti-cheat upgrades check (_sanitizeSavedStats) must not wipe
-        //    the map on the very next save. It drops the WHOLE map the instant
-        //    spent exceeds the ceiling, and a level-1 character's own curve is
-        //    0 until REBIRTH_LEVEL again — so the kept spend is recorded in
-        //    keptSP, which skillPointCeiling adds to that ceiling.
-        //
-        //  • A rebirth must be worth exactly REBIRTH_BONUS_SP, no more. That
-        //    is what bonusSP alone could not do: topping it up to cover the
-        //    kept spend (Math.max(oldBonus, spentSP) + REBIRTH_BONUS_SP, as
-        //    this line did until now) left the banked spend sitting in a
-        //    credit line that availableSkillPoints reads as capacity — so once
-        //    REBIRTH_LEVEL was re-climbed the curve paid for those same points
-        //    a SECOND time (a free 90 at level 30, on top of the 15), and a
-        //    single Улучшения → Сбросить handed the whole banked total over as
-        //    spendable. Earlier versions were worse still: one summed the
-        //    spend on top of a bonus that already covered it, and the first
-        //    banked the entire pre-reset BUDGET, unspent points included.
-        //    bonusSP now only ever grows by the flat reward.
-        //
-        // keptSP is capped at what the ending life's own level curve was
-        // worth: past that, the spend was paid for out of bonusSP, which
-        // survives the reset on its own and must not be shielded twice. The
-        // clamp also means a bad stored map can never mint capacity here.
-        const _oldBonus  = Math.max(0, Math.floor(Number(s.lastStats.bonusSP)) || 0);
-        const _oldKept   = Math.max(0, Math.floor(Number(s.lastStats.keptSP)) || 0);
-        const _oldBudget = skillPointBudget(lvl, s.lastStats.rebirths || 0);
-        const _spentSP = Math.min(
-          spentSkillPoints(s.lastStats.upgrades),
-          _oldBudget + _oldBonus + _oldKept);
-        const _cd = CHAR_DEF[s.lastStats.type] || CHAR_DEF.lev;
-        s.lastStats.lvl = 1;
-        s.lastStats.xp = 0;
-        s.lastStats.xpNext = xpToNext(1);
-        // Same derivation _sanitizeSavedStats uses for baseAtk/baseDef/
-        // baseMaxHp at any level — here that's simply the class's own raw
-        // CHAR_DEF numbers, since lvl-1 is 0 at level 1.
-        s.lastStats.baseAtk = _cd.baseAtk;
-        s.lastStats.baseDef = _cd.baseDef;
-        s.lastStats.baseMaxHp = _cd.baseHP;
-        s.lastStats.bonusSP = _oldBonus + REBIRTH_BONUS_SP;
-        s.lastStats.keptSP = Math.min(_spentSP, _oldBudget);
-        s.lastStats.rebirths = (s.lastStats.rebirths || 0) + 1;
+        const _oldBonus = Math.max(0, Math.floor(Number(s.lastStats.bonusSP)) || 0);
+        s.lastStats.bonusSP = _oldBonus + EMPOWER_BONUS_SP;
+        s.lastStats.empowers = (s.lastStats.empowers || 0) + 1;
         s.lastStats.inventory = inv;
 
         // Keep the room's anti-cheat baseline in step, or its computeStats
-        // would go on crediting the pre-rebirth level until the next
+        // would go on reading the pre-empowerment bonusSP until the next
         // saveProgress (same reasoning as resetUpgrades above).
         if (s.currentRoom) s.currentRoom.updatePlayerSavedData(socket.id, s.lastStats);
-        // Emits inventorySync with the post-cost inventory —
-        // rebirthDone below deliberately carries no inventory field of its own,
-        // same "already landed via inventorySync" shape as craftGear/boxOpened.
-        _commitServerItems(inv, null, 'rebirth', { rebirths: s.lastStats.rebirths }, { beforeLen: _beforeLen });
+        // Emits inventorySync with the post-cost inventory — empowerDone below
+        // deliberately carries no inventory field of its own, same "already
+        // landed via inventorySync" shape as craftGear/boxOpened.
+        _commitServerItems(inv, null, 'empower', { empowers: s.lastStats.empowers }, { beforeLen: _beforeLen });
         _persistSavedFields(s.authed, {
-          lvl: 1, xp: 0, xpNext: s.lastStats.xpNext,
-          baseAtk: s.lastStats.baseAtk, baseDef: s.lastStats.baseDef, baseMaxHp: s.lastStats.baseMaxHp,
-          bonusSP: s.lastStats.bonusSP, keptSP: s.lastStats.keptSP, rebirths: s.lastStats.rebirths,
+          bonusSP: s.lastStats.bonusSP, empowers: s.lastStats.empowers,
         });
-        logPlayer(s.authed.telegramId, s.authed.username, 'rebirth', {
-          rebirths: s.lastStats.rebirths, fromLvl: lvl,
-          // What the rebirth actually cost and paid in points — the one line
-          // that makes a later "my skill points changed" report answerable.
-          spentSP: _spentSP, keptSP: `${_oldKept} -> ${s.lastStats.keptSP}`,
+        logPlayer(s.authed.telegramId, s.authed.username, 'empower', {
+          empowers: s.lastStats.empowers, lvl,
+          // What the empowerment cost and paid in points — the one line that
+          // makes a later "my skill points changed" report answerable.
           bonusSP: `${_oldBonus} -> ${s.lastStats.bonusSP}`,
           availableSP: availableSkillPoints(s.lastStats),
         });
-        socket.emit('rebirthDone', {
-          lvl: 1, xp: 0, xpNext: s.lastStats.xpNext,
-          baseAtk: s.lastStats.baseAtk, baseDef: s.lastStats.baseDef, baseMaxHp: s.lastStats.baseMaxHp,
-          upgrades: s.lastStats.upgrades || {}, bonusSP: s.lastStats.bonusSP,
-          keptSP: s.lastStats.keptSP, rebirths: s.lastStats.rebirths,
+        socket.emit('empowerDone', {
+          bonusSP: s.lastStats.bonusSP, empowers: s.lastStats.empowers,
         });
         if (seasonActive()) {
-          _seasonAddPoints(SEASON_REBIRTH_POINTS, 'rebirth', { rebirths: s.lastStats.rebirths })
-            .then(total => { if (total !== null) socket.emit('seasonEventDone', { task: 'rebirth', points: SEASON_REBIRTH_POINTS, total }); });
+          _seasonAddPoints(SEASON_EMPOWER_POINTS, 'empower', { empowers: s.lastStats.empowers })
+            .then(total => { if (total !== null) socket.emit('seasonEventDone', { task: 'empower', points: SEASON_EMPOWER_POINTS, total }); });
         }
       } catch (err) {
-        console.error('rebirth:', err);
-        logPlayerErr(s.authed.telegramId, s.authed.username, 'rebirth', err, {});
-        socket.emit('rebirthError', { msg: 'Ошибка сервера' });
+        console.error('empower:', err);
+        logPlayerErr(s.authed.telegramId, s.authed.username, 'empower', err, {});
+        socket.emit('empowerError', { msg: 'Ошибка сервера' });
       }
     });
 };

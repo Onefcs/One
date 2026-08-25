@@ -19,8 +19,9 @@ module.exports = function registerCraft(s, safeOn, deps) {
   } = deps;
 
   const {
-    _ITEMS_BUSY_MSG, _commitServerItems, _flushBalances, _itemsBusy,
-    _seasonAddPoints, _withEconLock, socket,
+    _ITEMS_BUSY_MSG, _commitServerItems, _currentQuest, _flushBalances,
+    _itemsBusy, _questKills, _questPush, _seasonAddPoints, _withEconLock,
+    socket,
   } = s;
 
     // ── Enchant stone crafting — REMOVED ──────────────────────────────────────
@@ -375,6 +376,21 @@ module.exports = function registerCraft(s, safeOn, deps) {
         if (_ep > 0 && seasonActive()) {
           _seasonAddPoints(_ep, 'enhance', { id, slot: _eb.slot, rarity: _eb.rarity, stoneType, to: newEnhance })
             .then(total => socket.emit('seasonEventDone', { task: 'enhance', points: _ep, total: total ?? null }));
+        }
+        // 'enhance' quests ("Заточи предмет до +N", QUEST_DEF), and this is the
+        // only place an enhance level is ever reached. Only the CURRENT quest
+        // is credited, the same rule _questOnKill follows — arriving at a quest
+        // already complete is what tracking every quest at once would cause.
+        // The key carries the threshold, so each of the three has to be earned
+        // on its own: hitting +5 while the +2 quest is active satisfies that
+        // one, not the +3 and +5 quests waiting behind it.
+        const _q = _currentQuest();
+        if (_q && _q.type === 'enhance' && newEnhance >= _q.enhance) {
+          const _k = _questKills();
+          if (_k && !_k['_enhance_' + _q.enhance]) {
+            _k['_enhance_' + _q.enhance] = 1;
+            _questPush();
+          }
         }
       }
       // targetSlot, not the requested slot: it names where the item actually

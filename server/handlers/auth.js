@@ -21,7 +21,8 @@ module.exports = function registerAuth(s, safeOn, deps) {
     _registerReferral, _restoreFloorFor, _safeUsername, _sanitizeSavedStats,
     _setVipAura, _teleportCasting, _topPlayerUsername, _trackFearRoom,
     _unknownItemIds, _vipAuraUsers, activeSessions, calcBM, clanAtkBonusPct,
-    codexTotalBonus, getRoom, globalChatHistory, io, logPlayer, migrateKeptSP,
+    codexTotalBonus, getRoom, globalChatHistory, io, logPlayer,
+    migrateEmpowers, migrateKeptSP,
     parties,
     playerFloorMap, playerParty, safeInterval, safeTimeout,
     verifyTelegramAuth, verifyTelegramWebApp,
@@ -138,20 +139,32 @@ module.exports = function registerAuth(s, safeOn, deps) {
         socket.emit('authError', { message: 'Ведутся технические работы. Попробуйте позже.' });
         return false;
       }
-      // ── One-time repair: a rebirth's kept spend banked into bonusSP ───────
-      // Records written before keptSP existed carry the cost of the upgrades a
-      // rebirth kept inside bonusSP itself, where availableSkillPoints reads it
-      // as spendable capacity — so once REBIRTH_LEVEL was re-climbed the level
-      // curve paid for those same points a second time (the free 90 the
-      // rebirth handler's own comment now describes) and a single Улучшения →
-      // Сбросить handed the whole banked total over. migrateKeptSP moves that
-      // committed part into keptSP without changing the sum of the two, so the
-      // upgrades map still clears the anti-cheat ceiling it already passed.
+      // ── One-time repairs for accounts that used Перерождение ─────────────
+      // Усиление replaced Перерождение, the feature that reset the level.
+      // Both repairs below run here, and not in selectChar: this is the one
+      // point every login path passes through, and it lands BEFORE authOk
+      // hands the stored record to the client, so the panel never gets a
+      // chance to show a stale figure. Both are idempotent — a record that
+      // already carries the field is skipped — and both read the raw stored
+      // record, which is the only place the old `rebirths` field still lives.
       //
-      // Here, and not in selectChar: this is the one point every login path
-      // passes through, and it lands BEFORE authOk hands the stored record to
-      // the client, so the panel never gets a chance to show the inflated
-      // figure. Idempotent — a record that already has the field is skipped.
+      // 1. The counter. `rebirths` and `empowers` are the same tally, and the
+      //    every-5th-costs-double ladder reads the latter, so the count is
+      //    carried over rather than restarted (migrateEmpowers).
+      const _ascN = doc.savedData ? migrateEmpowers(doc.savedData) : null;
+      if (_ascN) {
+        doc.savedData.empowers = _ascN.empowers;
+        PlayerModel.updateOne({ telegramId },
+          { $set: { 'savedData.empowers': _ascN.empowers } }).catch(() => {});
+      }
+      // 2. The skill points. Records written before keptSP existed carry the
+      //    cost of the upgrades a level reset kept inside bonusSP itself,
+      //    where availableSkillPoints reads it as spendable capacity — so the
+      //    level curve paid for those same points a second time on the way
+      //    back up, and a single Улучшения → Сбросить handed the whole banked
+      //    total over. migrateKeptSP moves that committed part into keptSP
+      //    without changing the sum of the two, so the upgrades map still
+      //    clears the anti-cheat ceiling it already passed.
       const _spSplit = doc.savedData ? migrateKeptSP(doc.savedData) : null;
       if (_spSplit) {
         const _wasBonus = Math.max(0, Math.floor(Number(doc.savedData.bonusSP)) || 0);
@@ -380,23 +393,24 @@ module.exports = function registerAuth(s, safeOn, deps) {
         // happened, so there is nothing to check.
         effectiveSaved.lvl       = Math.max(1, Math.floor(Number(_dbBase && _dbBase.lvl)) || 1);
         effectiveSaved.xp        = Math.max(0, Number(_dbBase && _dbBase.xp) || 0);
-        // bonusSP/rebirths/upgrades are pinned here too, and BEFORE the rebase
+        // bonusSP/empowers/upgrades are pinned here too, and BEFORE the rebase
         // below, not after: a reconnect's savedStats (_buildSaveStats, js/
         // network.js) never carries these fields at all, so leaving them to the
         // client blob left them undefined/zero for the rest of the session —
-        // and the next autosave (clean.bonusSP/rebirths/upgrades further down)
+        // and the next autosave (clean.bonusSP/empowers/upgrades further down)
         // wrote that zero straight over the real stored totals. Pinning them
         // before the rebase also means the upgrades-budget check inside
         // _sanitizeSavedStats validates the real upgrades against the real
-        // bonusSP/rebirths/level, instead of clearing them for failing a budget
+        // bonusSP/empowers/level, instead of clearing them for failing a budget
         // computed off fields that were never actually sent.
         effectiveSaved.bonusSP   = Math.max(0, Math.floor(Number(_dbBase && _dbBase.bonusSP)) || 0);
         // Same pin, same reason — and keptSP has to travel WITH bonusSP: they
         // are two halves of one sum (shared/definitions.js's skill point
         // accounting), so restoring one without the other would either wipe the
-        // upgrades a rebirth kept or hand their cost back as spendable.
+        // upgrades a legacy level reset kept or hand their cost back as
+        // spendable.
         effectiveSaved.keptSP    = Math.max(0, Math.floor(Number(_dbBase && _dbBase.keptSP)) || 0);
-        effectiveSaved.rebirths  = Math.max(0, Math.floor(Number(_dbBase && _dbBase.rebirths)) || 0);
+        effectiveSaved.empowers  = Math.max(0, Math.floor(Number(_dbBase && _dbBase.empowers)) || 0);
         effectiveSaved.upgrades  = (_dbBase && _dbBase.upgrades) || {};
         const _rebasedLvl = _sanitizeSavedStats(effectiveSaved);
         effectiveSaved.baseAtk   = _rebasedLvl.baseAtk;
@@ -417,7 +431,7 @@ module.exports = function registerAuth(s, safeOn, deps) {
         effectiveSaved.questKills = (_dbBase && _dbBase.questKills) || {};
         socket.emit('questSync', { questIdx: effectiveSaved.questIdx, questKills: effectiveSaved.questKills });
         // potionBag/buffs/specialQuestsDone: server-owned exactly like
-        // bonusSP/rebirths above (see saveProgress's matching pin, further down
+        // bonusSP/empowers above (see saveProgress's matching pin, further down
         // this file, for why — usePotion spends the bag and persists
         // immediately, and completeSpecialQuest's own once-only DB guard is
         // meaningless if a later save can write its record back). This block
@@ -477,7 +491,7 @@ module.exports = function registerAuth(s, safeOn, deps) {
           // refuse to sell against.
           bonusSP:         effectiveSaved.bonusSP,
           keptSP:          effectiveSaved.keptSP,
-          rebirths:        effectiveSaved.rebirths,
+          empowers:        effectiveSaved.empowers,
         });
         socket.emit('codexSync', { codex: effectiveSaved.codex, bonus: codexTotalBonus(effectiveSaved.codex) });
         s.lastStats = effectiveSaved;
@@ -813,14 +827,14 @@ module.exports = function registerAuth(s, safeOn, deps) {
         clean.questIdx   = s.lastStats.questIdx || 0;
         clean.questKills = s.lastStats.questKills || {};
         // The last of it. buffs decide the x2 gold and XP payouts, potionBag is
-        // spent by usePotion, bonusSP and rebirths are written by the rebirth and
-        // shop handlers, specialQuestsDone is what makes a special quest
+        // spent by usePotion, bonusSP and empowers are written by the empower
+        // and shop handlers, specialQuestsDone is what makes a special quest
         // once-only. None of them is a number the client may compose.
         clean.buffs             = s.lastStats.buffs             || {};
         clean.potionBag         = s.lastStats.potionBag         || {};
         clean.bonusSP           = s.lastStats.bonusSP           || 0;
         clean.keptSP            = s.lastStats.keptSP            || 0;
-        clean.rebirths          = s.lastStats.rebirths          || 0;
+        clean.empowers          = s.lastStats.empowers          || 0;
         clean.specialQuestsDone = s.lastStats.specialQuestsDone || [];
         // HP, from the room. The server is what lowers it (attackEnemy,
         // pvpAttack, the AI) and what raises it (healPlayer, respawn, and the

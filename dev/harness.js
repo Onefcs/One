@@ -1430,7 +1430,7 @@ scenario('reconnect: the restored floor is re-checked, not trusted', async () =>
   // Restoring a floor is a server-side entry to it, so it has to answer the
   // same question the walk-in path does — asked against the state NOW, not
   // the state when the player left. A level that no longer qualifies (a
-  // rebirth, an admin correction) must land in the hub instead.
+  // an admin correction, say) must land in the hub instead.
   const c1 = await connectWithSaved('harness_arm_gate', { lvl: 20, xp: 0, xpNext: 9999 });
   await enterWorld(c1, 'ranger');
   const onArm = c1.wait('gameStart', { where: 'enter arm' });
@@ -1747,6 +1747,59 @@ scenario('quests: f1q14 is now a level-15 gate and f1q15 asks to enter Фарм-
   farmer.emit('claimQuest', { idx: F1Q15_IDX });
   ok(await claimed15, 'entering the zone alone made it claimable');
   await farmer.close();
+});
+
+scenario('quests: the floor-2 enhance quests need a real enhance, each earned on its own', async () => {
+  // f2q11/f2q14/f2q15 ask for "Заточи предмет до +2/+3/+5" — a quest type that
+  // did not exist before, so this pins the whole path: the server credits it
+  // from the enhanceItem roll (server/handlers/craft.js), questComplete keys
+  // it by threshold (shared/definitions.js), and the claim is checked against
+  // that. Positional indices, like every other quest test here.
+  const F2Q11_IDX = 24, F2Q14_IDX = 27;
+  const { QUEST_DEF } = require('../shared/definitions');
+  eq(QUEST_DEF[F2Q11_IDX].id, 'f2q11', 'f2q11 still sits where the chain expects it');
+  eq(QUEST_DEF[F2Q11_IDX].enhance, 2, 'and asks for +2');
+  eq(QUEST_DEF[F2Q14_IDX].enhance, 3, 'f2q14 asks for +3');
+
+  // A sword already at +1, and a pile of SAFE stones: a bless miss keeps the
+  // item, so the loop below can retry until the 70%-per-try roll lands without
+  // ever losing the sword it is enhancing.
+  const c = await connectWithSaved('harness_quest_enh', {
+    lvl: 25, questIdx: F2Q11_IDX, questKills: {},
+    inventory: [{ id: 'sw2', enhance: 1 }, { id: 'bless_stone', qty: 40 }],
+  });
+  await enterWorld(c, 'lev');
+
+  const preErr = c.wait('questClaimError', { timeout: 3000 }).catch(() => null);
+  c.emit('claimQuest', { idx: F2Q11_IDX });
+  ok(await preErr, 'not claimable before anything has actually been enhanced');
+
+  let at = 1;
+  for (let tries = 0; tries < 40 && at < 2; tries++) {
+    const res = c.wait('enhanceResult', { timeout: 6000 }).catch(() => null);
+    c.emit('enhanceItem', { id: 'sw2', enhance: at, stoneType: 'bless' });
+    const r = await res;
+    if (!r) break;
+    at = r.newEnhance;
+  }
+  eq(at, 2, 'the sword actually reached +2');
+
+  const claimed = c.wait('questClaimed', { timeout: 6000 }).catch(() => null);
+  c.emit('claimQuest', { idx: F2Q11_IDX });
+  ok(await claimed, 'and that is what makes the quest claimable');
+  await c.close();
+
+  // The threshold is part of the key, so the +2 the previous quest banked does
+  // not carry the +3 one. Without that, a player who reached +5 during f2q11
+  // would arrive at f2q14 and f2q15 with both already done.
+  const later = await connectWithSaved('harness_quest_enh3', {
+    lvl: 25, questIdx: F2Q14_IDX, questKills: { _enhance_2: 1 },
+  });
+  await enterWorld(later, 'lev');
+  const err3 = later.wait('questClaimError', { timeout: 3000 }).catch(() => null);
+  later.emit('claimQuest', { idx: F2Q14_IDX });
+  ok(await err3, 'the +2 credit does not satisfy the +3 quest');
+  await later.close();
 });
 
 scenario('progression: a repeat selectChar resumes the session instead of rolling it back to login', async () => {
@@ -2658,17 +2711,17 @@ scenario('race: spendUpgrade cannot exceed the skill point budget by racing two 
   // check, so both committed — one point over budget, for free. The fix
   // wraps the whole handler in _withEconLock so only one can run at a time.
   //
-  // lvl 1 with no rebirths gives a tiny, known budget (skillPointBudget) —
-  // seeded with gold to spare so only the point budget, not gold, gates this.
+  // lvl 1 gives a tiny, known budget (skillPointBudget) — seeded with gold to
+  // spare so only the point budget, not gold, gates this.
   const c = await connectWithSaved('harness_race_upgrade_budget', {
     lvl: 1, gold: 1_000_000, upgrades: {},
   });
   await enterWorld(c, 'ranger');
 
-  const budget = require('../shared/definitions').skillPointBudget(1, 0);
+  const budget = require('../shared/definitions').skillPointBudget(1);
   if (budget < 1) {
-    // Nothing to prove at budget 0 — a fresh level-1 account with no rebirth
-    // bonus may simply have none to spend yet.
+    // Nothing to prove at budget 0 — a fresh level-1 account may simply have
+    // none to spend yet.
     ok(true, 'skipped — level 1 has no skill points to budget-test');
     await c.close();
     return;
@@ -2732,39 +2785,42 @@ scenario('market: buying a lot pays the seller', async () => {
   await buyer.close();
 });
 
-scenario('rebirth: every 5th rebirth really costs double, proven across a live run through two boundaries', async () => {
-  // rebirthCostFor(rebirths) — shared/definitions.js. `rebirths` passed in is
-  // the count BEFORE the rebirth about to happen, so (rebirths+1) is the
-  // rebirth number that is about to land; that number being a multiple of 5
+scenario('empower: every 5th empowerment really costs double, proven across a live run through two boundaries', async () => {
+  // empowerCostFor(empowers) — shared/definitions.js. `empowers` passed in is
+  // the count BEFORE the empowerment about to happen, so (empowers+1) is the
+  // empowerment number that is about to land; that number being a multiple of 5
   // is what doubles the cost. This used to be reported as "not working" in
   // practice, so rather than only checking one isolated boundary, this drives
-  // ONE account through seven REAL, consecutive rebirths (the 4th through the
-  // 10th — crossing both the 5th and 10th boundaries) with a real reconnect
-  // between each, and checks the exact quantity actually deducted every time.
-  const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30 };
-  // 5 normal + 2 doubled rebirths = 9x normal cost, worth of stock up front.
+  // ONE account through seven REAL, consecutive empowerments (the 4th through
+  // the 10th — crossing both the 5th and 10th boundaries) with a real
+  // reconnect between each, and checks the exact quantity actually deducted
+  // every time — norm_stone, the newest line of the bill, included.
+  const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 20 };
+  // 5 normal + 2 doubled empowerments = 9x normal cost, worth of stock up front.
   const stock = Object.fromEntries(Object.entries(normal).map(([id, n]) => [id, n * 9]));
 
-  let c = await connectWithSaved('harness_rebirth_seq', {
-    lvl: 30, rebirths: 3,
+  let c = await connectWithSaved('harness_empower_seq', {
+    lvl: 30, empowers: 3, bonusSP: 0,
     inventory: Object.entries(stock).map(([id, qty]) => ({ id, qty })),
   });
   await enterWorld(c, 'lev');
-  const Player = require('../server/models/Player');
   const countOf = (inv, id) => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
 
   let prevCounts = { ...stock };
-  for (const before of [3, 4, 5, 6, 7, 8, 9]) { // -> becomes rebirth #4..#10
-    const rebirthN = before + 1;
-    const expectDouble = rebirthN % 5 === 0;
+  let expectBonus = 0;
+  for (const before of [3, 4, 5, 6, 7, 8, 9]) { // -> becomes empowerment #4..#10
+    const empowerN = before + 1;
+    const expectDouble = empowerN % 5 === 0;
 
     const sync = c.wait('inventorySync', { timeout: 5000 });
-    const done = c.wait('rebirthDone', { timeout: 5000 });
-    const err  = c.wait('rebirthError', { timeout: 5000 }).catch(() => null);
-    c.emit('rebirth');
+    const done = c.wait('empowerDone', { timeout: 5000 });
+    const err  = c.wait('empowerError', { timeout: 5000 }).catch(() => null);
+    c.emit('empower');
     const res = await Promise.race([done, err]);
-    ok(res && !res.msg, `rebirth #${rebirthN} succeeded`, res && res.msg);
-    eq(res && res.rebirths, rebirthN, `and the server now counts it as rebirth #${rebirthN}`);
+    ok(res && !res.msg, `empowerment #${empowerN} succeeded`, res && res.msg);
+    eq(res && res.empowers, empowerN, `and the server now counts it as empowerment #${empowerN}`);
+    expectBonus += 15;
+    eq(res && res.bonusSP, expectBonus, `each one is worth a flat +15, so bonusSP is now ${expectBonus}`);
 
     const inv = await sync;
     const newCounts = {};
@@ -2772,37 +2828,70 @@ scenario('rebirth: every 5th rebirth really costs double, proven across a live r
       newCounts[id] = countOf(inv.inventory, id);
       const spent = prevCounts[id] - newCounts[id];
       const want = normal[id] * (expectDouble ? 2 : 1);
-      eq(spent, want, `rebirth #${rebirthN} (${expectDouble ? 'DOUBLED' : 'normal'}) spent ${want} × ${id}, not ${normal[id] * (expectDouble ? 1 : 2)}`);
+      eq(spent, want, `empowerment #${empowerN} (${expectDouble ? 'DOUBLED' : 'normal'}) spent ${want} × ${id}, not ${normal[id] * (expectDouble ? 1 : 2)}`);
     }
     prevCounts = newCounts;
 
-    // Rebirth resets level to 1; bump it back to REBIRTH_LEVEL through a real
-    // reconnect (not just in-memory) so the next iteration reloads `rebirths`
-    // from the DB exactly the way a real returning player would — which is
-    // the path a stale/mistyped stored value would have broken.
+    // Reconnect between each one (not just an in-memory loop) so the next
+    // iteration reloads `empowers` from the DB exactly the way a real
+    // returning player would — which is the path a stale/mistyped stored
+    // value would have broken. No level fixup needed: an empowerment leaves
+    // the level alone, which the next scenario pins down directly.
     await c.close();
     await sleep(300);
-    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
-    await Player.updateOne({ _id: row._id }, { $set: { 'savedData.lvl': 30 } });
-    await sleep(80);
-    c = await connectAs('harness_rebirth_seq');
+    c = await connectAs('harness_empower_seq');
     await enterWorld(c, 'lev');
   }
   await c.close();
 });
 
-scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {
+scenario('empower: grants the flat points and resets nothing', async () => {
+  // Усиление replaced Перерождение, which reset the character to level 1.
+  // The whole point of the replacement is that it no longer does: the level,
+  // the XP and the upgrades a player already bought all have to survive it,
+  // and the ONLY thing that changes is bonusSP (plus the counter and the
+  // materials). A regression here would silently delete a player's levels.
+  const { EMPOWER_BONUS_SP, EMPOWER_COST, EMPOWER_LEVEL, availableSkillPoints,
+          skillPointBudget } = require('../shared/definitions');
+  const lvl = EMPOWER_LEVEL + 7;   // comfortably past the gate, and not a round number
+  const c = await connectWithSaved('harness_empower_keeps', {
+    lvl, xp: 123, bonusSP: 0, upgrades: { atk: 4 },
+    inventory: Object.entries(EMPOWER_COST).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(c, 'lev');
+
+  const done = c.wait('empowerDone', { timeout: 5000 });
+  const err  = c.wait('empowerError', { timeout: 5000 }).catch(() => null);
+  c.emit('empower');
+  const res = await Promise.race([done, err]);
+  ok(res && !res.msg, 'the empowerment went through', res && res.msg);
+  eq(res.bonusSP, EMPOWER_BONUS_SP, `it is worth exactly the flat +${EMPOWER_BONUS_SP}`);
+  eq(res.empowers, 1, 'and it counts as the first one');
+
+  await sleep(400);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  const sd = row.savedData;
+  eq(sd.lvl, lvl, `the level is untouched — still ${lvl}, not reset to 1`);
+  eq(sd.xp, 123, 'and so is the XP');
+  eq(sd.upgrades && sd.upgrades.atk, 4, 'the upgrades are untouched too');
+  eq(sd.bonusSP, EMPOWER_BONUS_SP, 'bonusSP carries the reward');
+  // The level curve is unbent by an empowerment, so what is spendable is simply
+  // the curve plus the reward, minus what is already committed.
+  eq(availableSkillPoints(sd), skillPointBudget(lvl) + EMPOWER_BONUS_SP - 4,
+     'so the panel shows the level curve plus the reward, minus the 4 already spent');
+  await c.close();
+});
+
+scenario('reconnect: bonusSP/empowers/upgrades survive it', async () => {
   // A reconnect's selectChar sends _buildSaveStats() (js/network.js), which
-  // never carries lvl/bonusSP/rebirths/upgrades at all — only type, floor,
+  // never carries lvl/bonusSP/empowers/upgrades at all — only type, floor,
   // hp/maxHp, kills, potion/buff prefs and lang. The level/XP-become-
   // server-owned change pinned lvl/xp back from the stored record on every
-  // selectChar, but left bonusSP/rebirths/upgrades to fall through from
+  // selectChar, but left bonusSP/empowers/upgrades to fall through from
   // that bare blob — so a reconnect zeroed them in memory, and the very next
   // periodic autosave wrote the zero over the real stored totals for good.
-  // lvl 35 (past REBIRTH_LEVEL=30) so a rebirth's budget isn't zeroed
-  // (skillPointBudget returns 0 below REBIRTH_LEVEL once rebirths > 0).
   const c1 = await connectWithSaved('harness_reconnect_sp', {
-    lvl: 35, bonusSP: 15, rebirths: 2, upgrades: { atk: 30 },
+    lvl: 35, bonusSP: 15, empowers: 2, upgrades: { atk: 30 },
   });
   await enterWorld(c1, 'lev');
   await c1.close();
@@ -2828,13 +2917,13 @@ scenario('reconnect: bonusSP/rebirths/upgrades survive it', async () => {
   await sleep(3400); // let the debounced write land
   const row = memory.__dump('Player').find(p => p.username === c2.auth.username);
   eq(row.savedData.bonusSP, 15, 'bonusSP was not zeroed by the autosave');
-  eq(row.savedData.rebirths, 2, 'rebirths was not zeroed by the autosave');
+  eq(row.savedData.empowers, 2, 'empowers was not zeroed by the autosave');
   eq(row.savedData.upgrades && row.savedData.upgrades.atk, 30, 'upgrades was not zeroed by the autosave');
   await c2.close();
 });
 
 scenario('reconnect: potionBag/buffs/specialQuestsDone survive it', async () => {
-  // Same failure shape as the bonusSP/rebirths/upgrades bug above, just for
+  // Same failure shape as the bonusSP/empowers/upgrades bug above, just for
   // fields that were missed when that fix went in: _buildSaveStats()
   // (js/network.js) never carries potionBag, buffs or specialQuestsDone at
   // all, so a reconnect's bare selectChar blob sanitizes down to an empty
@@ -4586,126 +4675,60 @@ scenario('admin: top-referrals ranks by GRAM earned (not headcount), and top-mar
   process.exit(1);
 });
 
-scenario('rebirth: is worth exactly REBIRTH_BONUS_SP, not a free 90 points on top', async () => {
-  // The bug this pins down: a rebirth kept the upgrades a player had already
-  // bought AND banked what they cost into bonusSP, which availableSkillPoints
-  // reads as spendable capacity. The level curve then paid for those same
-  // points a second time the moment REBIRTH_LEVEL was re-climbed — 90 free
-  // points every cycle at level 30 — and Улучшения → Сбросить handed the whole
-  // banked total over as well (90 + 105 = 195 where 105 is the real ceiling).
+scenario('legacy: a Перерождение record is carried over to Усиление at login', async () => {
+  // Усиление replaced Перерождение, which reset the character's level. Two
+  // one-time login repairs (migrateEmpowers/migrateKeptSP,
+  // shared/definitions.js) carry those accounts forward, and this pins both.
   //
-  // Driven through the REAL handlers end to end: every one of the 90 points is
-  // bought with spendUpgrade, the rebirth is a real rebirth with its real item
-  // cost, and the re-climb goes through a real reconnect so the numbers are
-  // re-read from the stored record rather than from session memory.
-  const { availableSkillPoints, skillPointBudget, UPGRADE_KEYS, REBIRTH_BONUS_SP,
-          REBIRTH_LEVEL, REBIRTH_COST } = require('../shared/definitions');
-  const Player = require('../server/models/Player');
-  const budget = skillPointBudget(REBIRTH_LEVEL, 0);
-  let c = await connectWithSaved('harness_rebirth_sp', {
-    lvl: REBIRTH_LEVEL, rebirths: 0, bonusSP: 0, upgrades: {},
-    gold: 50_000_000, nexumBalance: 100_000,
-    inventory: Object.entries(REBIRTH_COST).map(([id, qty]) => ({ id, qty })),
-  });
-  await enterWorld(c, 'lev');
-
-  // What the stored record says the player may still spend — the same function
-  // the panel (getAvailableSkillPoints, js/player.js) and the spendUpgrade
-  // handler both use, read off the DB so nothing in memory can flatter it.
-  const availNow = () => {
-    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
-    return availableSkillPoints(row.savedData);
-  };
-  const spentNow = () => {
-    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
-    return Object.values(row.savedData.upgrades || {}).reduce((s, v) => s + (Number(v) || 0), 0);
-  };
-
-  eq(availNow(), budget, `level ${REBIRTH_LEVEL} with no rebirth is worth ${budget} points`);
-  for (let i = 0; i < budget; i++) {
-    const sync = c.wait('progressSync', { timeout: 5000 });
-    const err  = c.wait('progressError', { timeout: 5000 }).catch(() => null);
-    c.emit('spendUpgrade', { key: UPGRADE_KEYS[i % UPGRADE_KEYS.length] });
-    const r = await Promise.race([sync, err]);
-    if (r && r.msg) break;
-  }
-  await sleep(200);
-  eq(spentNow(), budget, `all ${budget} of them were really bought through spendUpgrade`);
-  eq(availNow(), 0, 'and nothing is left to spend');
-
-  const done = c.wait('rebirthDone', { timeout: 5000 });
-  const rerr = c.wait('rebirthError', { timeout: 5000 }).catch(() => null);
-  c.emit('rebirth');
-  const res = await Promise.race([done, rerr]);
-  ok(res && !res.msg, 'the rebirth went through', res && res.msg);
-  await sleep(400);
-  eq(spentNow(), budget, 'the upgrades bought before the rebirth are kept');
-  eq(availNow(), REBIRTH_BONUS_SP,
-     `and level 1 has exactly the flat +${REBIRTH_BONUS_SP} to spend, not the ${budget} it just lost`);
-
-  // Re-climb to REBIRTH_LEVEL through a real reconnect — this is where the
-  // banked spend used to be paid out a second time.
-  await c.close();
-  await sleep(300);
-  let row = memory.__dump('Player').find(p => p.username === c.auth.username);
-  await Player.updateOne({ _id: row._id }, { $set: { 'savedData.lvl': REBIRTH_LEVEL } });
-  await sleep(80);
-  c = await connectAs('harness_rebirth_sp');
-  await enterWorld(c, 'lev');
-  await sleep(300);
-  eq(spentNow(), budget, 'the kept upgrades survived the reconnect (the budget check did not wipe them)');
-  eq(availNow(), REBIRTH_BONUS_SP,
-     `back at level ${REBIRTH_LEVEL} the curve pays for the KEPT points, not for a second copy of them`);
-
-  // ...and a reset now hands back this level's real ceiling, not that plus the
-  // banked total on top.
-  const rst = c.wait('upgradesReset', { timeout: 5000 });
-  const rsterr = c.wait('resetUpgradesError', { timeout: 5000 }).catch(() => null);
-  c.emit('resetUpgrades');
-  const r2 = await Promise.race([rst, rsterr]);
-  ok(r2 && !r2.msg, 'the reset went through', r2 && r2.msg);
-  await sleep(400);
-  eq(spentNow(), 0, 'the upgrades map is empty');
-  eq(availNow(), budget + REBIRTH_BONUS_SP,
-     `and everything spendable at level ${REBIRTH_LEVEL} with one rebirth is ${budget + REBIRTH_BONUS_SP}, no more`);
-  await c.close();
-});
-
-scenario('rebirth: a record that banked the kept spend into bonusSP is repaired at login', async () => {
-  // Accounts that rebirthed before keptSP existed carry the kept upgrades' cost
-  // inside bonusSP — a level-30 one-rebirth character with 90 points invested
-  // shows bonusSP 105, and availableSkillPoints reads 105 of those as free.
-  // migrateKeptSP (shared/definitions.js) splits it at login, once, without
-  // changing the sum, so the upgrades still clear the anti-cheat ceiling.
-  const { availableSkillPoints, REBIRTH_BONUS_SP, REBIRTH_LEVEL } = require('../shared/definitions');
+  //  • The counter moved from `rebirths` to `empowers`. It is the same tally,
+  //    so a player who rebirthed 4 times is 4 empowerments in and their next one
+  //    is the 5th — the one that costs double.
+  //  • Records written before keptSP existed carry the cost of the upgrades
+  //    the level reset kept inside bonusSP itself, where availableSkillPoints
+  //    reads it as spendable capacity. migrateKeptSP splits it at login, once,
+  //    without changing the sum, so the upgrades still clear the anti-cheat
+  //    ceiling.
+  //
+  // 30/15 are the retired feature's own numbers, written out here because the
+  // constants no longer exist — a fixture of history, not live tuning.
+  const { availableSkillPoints, empowerCostFor } = require('../shared/definitions');
+  // Four resets paid 4×15 = 60 in flat rewards, and the 90 points committed to
+  // upgrades were banked on top of them — which is exactly the 150 a real
+  // pre-keptSP record of this shape carries.
   const legacy = {
-    lvl: REBIRTH_LEVEL, rebirths: 1, bonusSP: 105,
-    upgrades: { atk: 30, def: 30, hp: 30 },       // 90 points, kept across the rebirth
+    lvl: 30, rebirths: 4, bonusSP: 150,
+    upgrades: { atk: 30, def: 30, hp: 30 },       // 90 points, kept across the resets
   };
   const Player = require('../server/models/Player');
-  let c = await connectWithSaved('harness_rebirth_legacy', legacy);
-  // A real legacy record has no keptSP field AT ALL — which is exactly what
-  // makes the repair a one-off. connectWithSaved's own seeding login has
-  // already written one, so it has to go before the login under test.
+  let c = await connectWithSaved('harness_empower_legacy', legacy);
+  // A real legacy record has no keptSP and no empowers field AT ALL — which is
+  // exactly what makes both repairs one-offs. connectWithSaved's own seeding
+  // login has already written them, so they have to go before the login under
+  // test.
   await c.close();
   await sleep(500);
   const seeded = memory.__dump('Player').find(p => p.username === c.auth.username);
   const set = {};
   for (const [k, v] of Object.entries(legacy)) set['savedData.' + k] = v;
   await Player.updateOne({ _id: seeded._id },
-    { $set: set, $unset: { 'savedData.keptSP': '' } });
+    { $set: set, $unset: { 'savedData.keptSP': '', 'savedData.empowers': '' } });
   await sleep(80);
-  c = await connectAs('harness_rebirth_legacy');
+  c = await connectAs('harness_empower_legacy');
   await enterWorld(c, 'lev');
   await sleep(400);
   const row = memory.__dump('Player').find(p => p.username === c.auth.username);
   const sd = row.savedData;
+  eq(sd.empowers, 4, 'the four Перерождения count as four empowerments');
+  eq(empowerCostFor(sd.empowers).norm_stone, 40,
+     'so the next one is the 5th and is priced double — 40 stones, not 20');
   eq(sd.keptSP, 90, 'the banked spend moved into keptSP');
-  eq(sd.bonusSP, REBIRTH_BONUS_SP, 'and bonusSP is back to the rebirth reward it should have been');
+  eq(sd.bonusSP, 60, 'and bonusSP is back to the four flat rewards it should have been');
   eq(Object.values(sd.upgrades || {}).reduce((s, v) => s + v, 0), 90,
      'the kept upgrades were not wiped by the budget check');
-  eq(availableSkillPoints(sd), REBIRTH_BONUS_SP,
-     `so the character has ${REBIRTH_BONUS_SP} to spend, not the 105 the banked bonus used to show`);
+  // Level 30's own curve (90) exactly covers the 90 kept points, so what is
+  // left over is the flat rewards and nothing else.
+  eq(availableSkillPoints(sd), 60,
+     'so the character has 60 to spend, not the 150 the banked bonus used to show');
   await c.close();
 });
 
@@ -4803,7 +4826,7 @@ scenario('drops: base and passive books cover BOTH halves of the dungeon, advanc
   // shared function the server rolls from (_rollMobLoot, server/game/loot.js)
   // and the map's drop panel renders (_monsterDropBodyHtml, js/ui.js).
   const {
-    CRAFT_MATS, MAX_MONSTER_LEVEL, REBIRTH_LEVEL, FARM_SPECIES_BOOKS,
+    CRAFT_MATS, MAX_MONSTER_LEVEL, FARM_SPECIES_BOOKS,
     levelSkillBookPool, levelClassPassivePool, levelUniversalPassivePool,
   } = require('../shared/definitions');
   const mobBooks = CRAFT_MATS.filter(m => m.skillKey || m.passiveId);
@@ -4823,9 +4846,9 @@ scenario('drops: base and passive books cover BOTH halves of the dungeon, advanc
   // The reported one, by name, at a level the reporter could actually reach.
   const darkCarapace = mobBooks.find(b => b.id === 'book_pas_dkdef');
   const dropsIt = [];
-  for (let lvl = 1; lvl <= REBIRTH_LEVEL; lvl++) if (poolAt(lvl).some(b => b === darkCarapace)) dropsIt.push(lvl);
+  for (let lvl = 1; lvl <= 30; lvl++) if (poolAt(lvl).some(b => b === darkCarapace)) dropsIt.push(lvl);
   ok(dropsIt.length > 0,
-     `${darkCarapace.name} drops below level ${REBIRTH_LEVEL} (levels ${dropsIt.slice(0, 5).join(', ')}...)`);
+     `${darkCarapace.name} drops below level 30 (levels ${dropsIt.slice(0, 5).join(', ')}...)`);
 
   // The reported regression: not one corridor level, anywhere in the world,
   // may offer a "2 профессия" book — level 21+ (the arm-2 rooms it was

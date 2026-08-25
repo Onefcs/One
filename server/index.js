@@ -180,8 +180,8 @@ const {
   FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, rebirthCostFor, skillPointBudget,
-  availableSkillPoints, spentSkillPoints, migrateKeptSP,
+  EMPOWER_LEVEL, EMPOWER_BONUS_SP, empowerCostFor,
+  availableSkillPoints, migrateEmpowers, migrateKeptSP,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
@@ -194,7 +194,7 @@ const {
   SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS,
   seasonEnhancePoints, SEASON_ADV_BOOK_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
-  SEASON_REBIRTH_POINTS, SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
+  SEASON_EMPOWER_POINTS, SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
   SEASON_RATING_MIN_POINTS,
 } = require('../shared/definitions');
 
@@ -218,8 +218,8 @@ const _ZONE_LEVEL_REQ = { ...ARM_LEVEL_REQ, farmZone: FARM_ENTRY_LEVEL };
 // the same savedData blob a modified client composes freely, so honouring it
 // would be a free teleport onto any floor, past every level gate below. And
 // even the stored one is re-checked rather than trusted, because the world can
-// have moved on while the player was away — they may have rebirthed back below
-// an arm's requirement, or the zone's window may have closed.
+// have moved on while the player was away — an admin correction may have put
+// them back below an arm's requirement, or the zone's window may have closed.
 //
 // Only floors you can STAND on are restorable. The instanced/scheduled ones
 // are deliberately absent: pvpArena, race10 and the Death Battle arena all
@@ -2735,7 +2735,7 @@ io.on('connection', socket => {
     'clanStorageSync', 'clanStorageDeposit', 'clanStorageGive',
     'clanStorageCancel', 'clanStorageClaim', 'clanStorageUnlock',
     'partyInvite', 'partyAccept', 'saveProgress', 'selectChar',
-    'requestPlayerProfile', 'resetUpgrades', 'rebirth', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
+    'requestPlayerProfile', 'resetUpgrades', 'empower', 'craftPet', 'craftStone', 'craftGear', 'craftClassGear', 'enhanceItem',
     'buyTeleportStone',
     'craftBox', 'craftMatUpgrade', 'craftAdvSkillBook', 'openLootBox',
     // Hits the database on every call — seasonRating sorts the whole player
@@ -4220,13 +4220,12 @@ io.on('connection', socket => {
   // Moved to server/handlers/skills.js — see the note there.
   registerSkills(session, safeOn, {
       ADV_SKILL_STUDY_COST, BOX_DEF, CHAR_DEF, CRAFT_MATS, FLOOR_IDS, ITEM_DEF,
-      PASSIVE_MAX_LEVEL, REBIRTH_BONUS_SP, REBIRTH_LEVEL,
-      SEASON_REBIRTH_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
+      PASSIVE_MAX_LEVEL, EMPOWER_BONUS_SP, EMPOWER_LEVEL,
+      SEASON_EMPOWER_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
       SKILL_UPGRADE_CHANCE, SKILL_UPGRADE_COST, UPGRADE_KEYS,
       UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
       availableSkillPoints, logPlayer, logPlayerErr, passiveBookId, passiveDefById,
-      rebirthCostFor, seasonActive, skillBookId, skillPointBudget, spentSkillPoints,
-      upgradeCost, xpToNext,
+      empowerCostFor, seasonActive, skillBookId, upgradeCost,
   });
   // ── items ───────────────────────────────────────────────────────────────
   // Moved to server/handlers/items.js — see the note there.
@@ -4247,7 +4246,7 @@ io.on('connection', socket => {
       SEASON_BOOK_BURN_POINTS, SEASON_BURN_POINTS, SEASON_END_AT,
       SEASON_ENHANCE_GEAR_POINTS, SEASON_ENHANCE_SPECIAL_POINTS,
       SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_PRIZES, SEASON_RATING_MIN_POINTS,
-      SEASON_REBIRTH_POINTS, SEASON_REF_LEVEL, SEASON_REF_POINTS,
+      SEASON_EMPOWER_POINTS, SEASON_REF_LEVEL, SEASON_REF_POINTS,
       SEASON_SHOP_POINTS_PER_GRAM, SEASON_VIP_PRIZE, SERVER_INV_MAX,
       SpecialQuestModel, _catalogBase, _incBalance, _invAdd, _isStackable,
       _persistSavedFields, _ratingClans, _ratingPlayers, _refLink,
@@ -4313,7 +4312,8 @@ io.on('connection', socket => {
       _registerReferral, _restoreFloorFor, _safeUsername, _sanitizeSavedStats,
       _setVipAura, _teleportCasting, _topPlayerUsername, _trackFearRoom,
       _unknownItemIds, _vipAuraUsers, activeSessions, calcBM, clanAtkBonusPct,
-      codexTotalBonus, getRoom, globalChatHistory, io, logPlayer, migrateKeptSP,
+      codexTotalBonus, getRoom, globalChatHistory, io, logPlayer,
+      migrateEmpowers, migrateKeptSP,
       parties, playerFloorMap, playerParty, safeInterval, safeTimeout,
       verifyTelegramAuth, verifyTelegramWebApp,
   });

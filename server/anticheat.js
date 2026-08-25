@@ -65,7 +65,7 @@ const _ITEM_ID_ALIASES = Object.create(null);
 // stores each item as {…catalogBase, enhance} and derives the enhance bonus at
 // runtime (see recompute()/enhanceBonus()), so no earned stat is discarded.
 const _SANITIZE_MAX = {
-  gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6, rebirths: 1e4,
+  gold: 1e12, xp: 1e12, lvl: 1000, kills: 1e9, bonusSP: 1e6, empowers: 1e4,
   maxHp: 1e7, atk: 1e6, def: 1e6, invLen: 500, storageLen: 200,
   // Raised from 9999 for the Осколки: a unique legendary costs 5000 of every
   // kind, so a player working toward a second one legitimately holds well
@@ -205,11 +205,12 @@ function _sanitizeSavedStats(raw) {
   s.xp      = _clampNum(s.xp,      0, _SANITIZE_MAX.xp, 0);
   s.kills   = _clampInt(s.kills,   0, _SANITIZE_MAX.kills, 0);
   s.bonusSP = _clampInt(s.bonusSP, 0, _SANITIZE_MAX.bonusSP, 0);
-  s.rebirths = _clampInt(s.rebirths, 0, _SANITIZE_MAX.rebirths, 0);
-  // Points a rebirth carried across the level reset (see the skill point
-  // accounting block in shared/definitions.js). Server-written like bonusSP —
-  // saveProgress pins it from the session copy — but clamped here all the same,
-  // because a STORED record is read through this function too.
+  s.empowers = _clampInt(s.empowers, 0, _SANITIZE_MAX.empowers, 0);
+  // Legacy: points the old Перерождение carried across its level reset (see
+  // the skill point accounting block in shared/definitions.js). Усиление
+  // does not reset the level, so nothing writes this any more — but a STORED
+  // record is read through this function too, so records from when that
+  // feature was live are still clamped rather than trusted.
   s.keptSP  = _clampInt(s.keptSP,  0, _SANITIZE_MAX.bonusSP, 0);
   if (s.maxHp     != null) s.maxHp     = _clampInt(s.maxHp,     1, _SANITIZE_MAX.maxHp, 100);
   if (s.hp        != null) s.hp        = _clampNum(s.hp,        0, s.maxHp ?? _SANITIZE_MAX.maxHp, 0);
@@ -237,7 +238,7 @@ function _sanitizeSavedStats(raw) {
   if (s.autoHpPct != null) s.autoHpPct = _clampNum(s.autoHpPct, 0, 1, 0.5);
 
   // Upgrade points spent must not exceed what the (now server-derived) lvl/
-  // bonusSP/rebirths/keptSP could actually have paid for — skillPointCeiling
+  // bonusSP/keptSP could actually have paid for — skillPointCeiling
   // (shared/definitions.js), the same accounting the client's own panel and
   // the spendUpgrade handler read. Nothing enforced it here once, so a crafted
   // save could report any upgrades total up to the per-stat ceiling regardless
@@ -249,9 +250,9 @@ function _sanitizeSavedStats(raw) {
     const u = {};
     for (const [k, v] of Object.entries(s.upgrades)) u[k] = _clampInt(v, 0, 1e5, 0);
     const _spent = spentSkillPoints(u);
-    // The CEILING, not what's spendable: straight after a rebirth the kept
-    // upgrades are worth more than a level-1 character's own curve plus bonus,
-    // which is exactly what keptSP is here to account for. availableSkillPoints
+    // The CEILING, not what's spendable: a legacy record whose level was reset
+    // by the old Перерождение carries upgrades worth more than its own curve
+    // plus bonus, which is what keptSP is here to account for. availableSkillPoints
     // is what gates buying a point (the spendUpgrade handler); this only
     // decides whether the map as a whole could have been paid for.
     s.upgrades = _spent <= skillPointCeiling(s) ? u : {};
