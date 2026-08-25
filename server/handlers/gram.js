@@ -311,8 +311,18 @@ module.exports = function registerGram(s, safeOn, deps) {
           });
         }
 
-        // Bonus skill points
-        if (pkg.bonusSP > 0) saved.bonusSP = (saved.bonusSP || 0) + pkg.bonusSP;
+        // Bonus skill points — same live-vs-stale split as gold above.
+        // bonusSP is normally only touched by handlers that share this
+        // socket's itemOpBusy/_withEconLock gate (rebirth, this same
+        // handler), so a stale `saved` read is ordinarily impossible — but
+        // /admin/player/:tid/give's live-session path (_adminGiveGoldSP,
+        // server/index.js) writes bonusSP straight into _lastStats without
+        // going through either gate. An admin grant landing in that instant
+        // would otherwise be overwritten by this purchase's stale figure.
+        if (pkg.bonusSP > 0) {
+          const _bonusBase = (_liveHere && s.lastStats) ? (s.lastStats.bonusSP || 0) : (saved.bonusSP || 0);
+          saved.bonusSP = _bonusBase + pkg.bonusSP;
+        }
 
         // Сезонный билет — no item, just a status flag: server/index.js's
         // combat-reward math (VIP_BONUSES' own xp/drop bonus, plus the Liberty

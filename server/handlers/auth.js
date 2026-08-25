@@ -172,6 +172,20 @@ module.exports = function registerAuth(s, safeOn, deps) {
       if (doc.savedData) s.lastStats = doc.savedData;
       _setGram(doc.savedData?.gramBalance || 0);
       _setNexum(doc.savedData?.nexumBalance || 0);
+      // Read once, here, at the one point in the connection's life where the
+      // stored record and "current" genuinely mean the same thing. It used to
+      // be read again on every selectChar instead (which is idempotent by
+      // design — see selectChar's own comment on why a duplicate is always one
+      // packet away) off this same s.authed.savedData, which nothing ever
+      // refreshes after login. _seasonAddPoints (below) keeps s.seasonPoints
+      // itself current as points are earned mid-session — a burn, a special
+      // quest, a GRAM purchase, a referral's friend hitting level 20 — so a
+      // duplicate/reconnect-retry selectChar landing after any of those was
+      // rolling the session's own points display back to whatever they were
+      // at login. seasonRating reads s.seasonPoints straight, with no reload
+      // of its own, so this is exactly the kind of thing a player would open
+      // Рейтинг and see for themselves.
+      s.seasonPoints = Math.max(0, Math.floor(Number(doc.savedData?.seasonPoints2) || 0));
       _startAutosave();
       socket.join(`tg_${telegramId}`);
       const _clan = await ClanModel.findOne({ 'members.telegramId': telegramId }).catch(() => null);
@@ -486,11 +500,10 @@ module.exports = function registerAuth(s, safeOn, deps) {
           lvl: effectiveSaved.lvl, xp: effectiveSaved.xp, xpNext: effectiveSaved.xpNext,
         });
       }
-      // Season points are read straight off the stored record. They are never
-      // part of the client blob — the sanitizer strips them so they can't be
-      // written by the people competing for the prize — so this is the only
-      // point at which they enter the session.
-      s.seasonPoints = Math.max(0, Math.floor(Number((s.authed.savedData || {}).seasonPoints2) || 0));
+      // Season points: nothing to do here any more — see _finishLogin, which
+      // now sets s.seasonPoints exactly once, at login, instead of this
+      // handler re-reading (and rolling back) the stale record on every
+      // repeat/duplicate selectChar.
       // A friend invited by someone else may have crossed level 20 while this
       // session was away; the check is a no-op below that level and runs at most
       // once per session.

@@ -478,6 +478,67 @@ scenario('rollback: the autosave cannot rewrite a server-owned field', async () 
   await c.close();
 });
 
+scenario('rollback: a GRAM package credits bonusSP on top of the live total too', async () => {
+  // Same shape as the gold scenario above, for the field that is normally
+  // safe because every OTHER writer shares this handler's itemOpBusy gate —
+  // except /admin/player/:tid/give's live-session path (_adminGiveGoldSP,
+  // server/index.js), which writes bonusSP straight into the session without
+  // going through it. Reproduced here the same way: push the record behind
+  // the live session's back and confirm the purchase adds to the live figure.
+  const Player = require('../server/models/Player');
+  const c = await connectWithSaved('harness_shop_sp', { gold: 5000, bonusSP: 20, gramBalance: 200 });
+  await enterWorld(c, 'lev');
+
+  const row0 = memory.__dump('Player').find(p => p.username === c.auth.username);
+  await Player.updateOne({ _id: row0._id }, { $set: { 'savedData.bonusSP': 3 } });
+  await sleep(50);
+
+  const { _GRAM_SHOP_PKGS } = require('../server/shop');
+  const pkg = _GRAM_SHOP_PKGS.find(p => (p.bonusSP || 0) > 0);
+  ok(pkg, 'the catalog has a package that grants bonusSP');
+
+  const res = c.wait('gramShopResult', { timeout: 8000 });
+  c.emit('gramShopBuy', { pkgId: pkg.id });
+  const got = await res;
+  eq(got.newBonusSP, 20 + pkg.bonusSP, 'the package added to the live bonusSP, not the stale record');
+  await sleep(300);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.bonusSP, 20 + pkg.bonusSP, 'and that is what reached the database');
+  await c.close();
+});
+
+scenario('rollback: a duplicate selectChar does not roll season points back', async () => {
+  // selectChar is documented as idempotent (a duplicate is "always one packet
+  // away" — see its own comment in server/handlers/auth.js) because a flaky
+  // connection can retry the emit. It used to re-read s.seasonPoints from
+  // s.authed.savedData.seasonPoints2 on every call — the record as it stood
+  // AT LOGIN, never refreshed after — so any points earned since (a burn, a
+  // quest, a shop purchase, a friend's referral bonus) were wiped the moment a
+  // retried/duplicate selectChar landed. seasonRating reads s.seasonPoints
+  // straight, with no reload of its own, so this was directly visible in the
+  // "Рейтинг" panel's own "me" row.
+  const c = await connectWithSaved('harness_sq_points', {
+    seasonPoints2: 100, inventory: [{ id: 'ar1', enhance: 0 }],
+  });
+  await enterWorld(c, 'lev');
+
+  const burned = c.wait('seasonBurned', { timeout: 8000 });
+  c.emit('seasonBurn', { idx: 0, id: 'ar1', enhance: 0 });
+  const burnEv = await burned;
+  eq(burnEv.total, 101, 'the burn credited the live session total');
+
+  // The duplicate: same connection, same account, selectChar sent again —
+  // exactly the retry this handler exists to tolerate.
+  c.emit('selectChar', { type: 'lev', savedStats: null });
+  await sleep(200);
+
+  const rating = c.wait('seasonRatingData', { timeout: 8000 });
+  c.emit('seasonRating');
+  const got = await rating;
+  eq(got.me.points, 101, 'the rating panel still shows the post-burn total, not the login-time one');
+  await c.close();
+});
+
 scenario('combat: a hit reaches the server and lowers the real enemy', async () => {
   const c = await connectAs('harness_combat');
   await enterWorld(c, 'deathknight');
