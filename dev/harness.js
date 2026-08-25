@@ -4757,3 +4757,80 @@ scenario('starter bonus: the free kit lands once per account and never twice', a
 
   await c.close();
 });
+
+scenario('upgrade reset: returns what the panel promised, and refuses to sell a zero return', async () => {
+  // The reported case: pointsReturned 30 against spent 120. Both numbers were
+  // right — keptSP carries part of the spend across a rebirth and leaves with
+  // it — but the panel hint and the confirm dialog promised `spent`, so the
+  // player was told 120 points would come back and got 30. upgradeResetReturn
+  // (shared/definitions.js) is the one answer both sides read now; this pins
+  // the promise to the payout, and pins the zero case, which used to take the
+  // Liberty and the stats and hand back nothing at all.
+  const { upgradeResetReturn, UPGRADE_KEYS, UPGRADE_RESET_COST, REBIRTH_BONUS_SP,
+          REBIRTH_LEVEL, REBIRTH_COST, skillPointBudget } = require('../shared/definitions');
+  const budget = skillPointBudget(REBIRTH_LEVEL, 0);
+  const c = await connectWithSaved('harness_upg_reset', {
+    lvl: REBIRTH_LEVEL, rebirths: 0, bonusSP: 0, keptSP: 0, upgrades: {},
+    gold: 50_000_000, nexumBalance: 100_000,
+    inventory: Object.entries(REBIRTH_COST).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(c, 'lev');
+  const saved = () => memory.__dump('Player').find(p => p.username === c.auth.username).savedData;
+  const spentNow = () => Object.values(saved().upgrades || {})
+    .reduce((s, v) => s + (Number(v) || 0), 0);
+  // Real purchases through the real handler — nothing here writes an upgrades
+  // map the server did not sell.
+  const buy = async (n) => {
+    for (let i = 0; i < n; i++) {
+      const sync = c.wait('progressSync', { timeout: 5000 });
+      const err  = c.wait('progressError', { timeout: 5000 }).catch(() => null);
+      c.emit('spendUpgrade', { key: UPGRADE_KEYS[i % UPGRADE_KEYS.length] });
+      const r = await Promise.race([sync, err]);
+      if (r && r.msg) break;
+    }
+    await sleep(200);
+  };
+
+  await buy(budget);
+  eq(spentNow(), budget, `all ${budget} points of the level curve are spent`);
+
+  const done = c.wait('rebirthDone', { timeout: 5000 });
+  const rerr = c.wait('rebirthError', { timeout: 5000 }).catch(() => null);
+  c.emit('rebirth');
+  const res = await Promise.race([done, rerr]);
+  ok(res && !res.msg, 'the rebirth went through', res && res.msg);
+  await sleep(400);
+
+  // Every point in the map is carried commitment now, so a reset would free up
+  // nothing: refused before the balance is touched.
+  eq(upgradeResetReturn(saved()), 0, 'a reset straight after the rebirth would free up nothing');
+  const balBefore = saved().nexumBalance;
+  const ok1  = c.wait('upgradesReset', { timeout: 5000 }).catch(() => null);
+  const err1 = c.wait('resetUpgradesError', { timeout: 5000 });
+  c.emit('resetUpgrades');
+  const r1 = await Promise.race([err1, ok1]);
+  ok(r1 && r1.msg, 'so the server refuses it instead of selling it', JSON.stringify(r1));
+  await sleep(300);
+  eq(spentNow(), budget, 'the upgrades are untouched');
+  eq(saved().nexumBalance, balBefore, 'and no Liberty was charged');
+
+  // The rebirth's own flat reward IS real capacity, so spending that makes a
+  // reset worth exactly it — never the whole map.
+  await buy(REBIRTH_BONUS_SP);
+  eq(spentNow(), budget + REBIRTH_BONUS_SP, `the flat +${REBIRTH_BONUS_SP} went in on top`);
+  const promised = upgradeResetReturn(saved());   // the number the panel shows
+  eq(promised, REBIRTH_BONUS_SP,
+     `the panel promises ${REBIRTH_BONUS_SP}, not the ${budget + REBIRTH_BONUS_SP} in the map`);
+
+  const rst    = c.wait('upgradesReset', { timeout: 5000 });
+  const rsterr = c.wait('resetUpgradesError', { timeout: 5000 }).catch(() => null);
+  c.emit('resetUpgrades');
+  const r2 = await Promise.race([rst, rsterr]);
+  ok(r2 && !r2.msg, 'the reset went through', r2 && r2.msg);
+  eq(r2.pointsReturned, promised, 'and returned exactly what the panel promised');
+  await sleep(400);
+  eq(spentNow(), 0, 'the upgrades map is empty');
+  eq(saved().nexumBalance, balBefore - UPGRADE_RESET_COST,
+     `and ${UPGRADE_RESET_COST} Liberty was charged, once`);
+  await c.close();
+});

@@ -564,15 +564,23 @@ function updateUpgradeUI() {
   const rw = document.getElementById('upg-reset-wrap');
   if (rw) {
     const spent = Object.values(u).reduce((s, v) => s + (v || 0), 0);
+    // NOT `spent` — what a reset actually frees up (upgradeResetReturn,
+    // shared/definitions.js), which is the same number the server hands back.
+    // A rebirth carries part of the spend as a commitment that leaves with the
+    // upgrades map, so promising the raw total is how a character fresh out of
+    // a rebirth was told 120 points would return and got 30.
+    const back = upgradeResetReturn(player);
     const bal = window._nexumBalance || 0;
-    const can = spent > 0 && bal >= UPGRADE_RESET_COST;
+    const can = back > 0 && bal >= UPGRADE_RESET_COST;
     rw.innerHTML = `
       <button class="upg-reset-btn${can ? '' : ' disabled'}" onclick="openUpgradeResetModal()">
         ${t('upgResetBtn')} · ${_nexumIconHtml(13)} ${UPGRADE_RESET_COST}
       </button>
-      <div class="upg-reset-hint">${spent > 0
-        ? tVars('upgResetHint', { n: spent })
-        : t('upgResetNothing')}</div>`;
+      <div class="upg-reset-hint">${spent <= 0
+        ? t('upgResetNothing')
+        : back <= 0
+          ? tVars('upgResetCarriedAll', { lvl: REBIRTH_LEVEL })
+          : tVars('upgResetHint', { n: back })}</div>`;
   }
 }
 
@@ -583,6 +591,16 @@ function openUpgradeResetModal() {
   if (!player) return;
   const spent = Object.values(player.upgrades || {}).reduce((s, v) => s + (v || 0), 0);
   if (spent <= 0) return;
+  // Same number the panel hint shows and the server will return. Zero means
+  // every point in the map is carried rebirth commitment: the reset would
+  // clear the stats, charge the Liberty and hand back nothing spendable, so
+  // the panel disables the button and this is the belt-and-braces refusal for
+  // a stale DOM. The server refuses it too.
+  const back = upgradeResetReturn(player);
+  if (back <= 0) {
+    dmgNum(player.x, player.y - 30, tVars('upgResetCarriedAll', { lvl: REBIRTH_LEVEL }), '#f88');
+    return;
+  }
   const bal = window._nexumBalance || 0;
   if (bal < UPGRADE_RESET_COST) {
     dmgNum(player.x, player.y - 30, tVars('upgResetNeedFmt', { n: UPGRADE_RESET_COST }), '#f88');
@@ -595,7 +613,10 @@ function openUpgradeResetModal() {
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('upgResetTitle')}</div>
     <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:16px">
-      ${tVars('upgResetConfirm', { n: spent, cost: UPGRADE_RESET_COST })}
+      ${tVars('upgResetConfirm', { n: back, cost: UPGRADE_RESET_COST })}
+      ${back < spent
+        ? `<div style="margin-top:8px;color:#c9a34a">${tVars('upgResetCarried', { n: spent - back, lvl: REBIRTH_LEVEL })}</div>`
+        : ''}
     </div>
     <div style="display:flex;gap:10px">
       <button onclick="document.getElementById('upg-reset-ov').remove()" style="
