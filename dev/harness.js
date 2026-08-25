@@ -1542,6 +1542,59 @@ scenario('quests: f1q14 is now a level-15 gate and f1q15 asks to enter Фарм-
   await farmer.close();
 });
 
+scenario('quests: the floor-2 enhance quests need a real enhance, each earned on its own', async () => {
+  // f2q11/f2q14/f2q15 ask for "Заточи предмет до +2/+3/+5" — a quest type that
+  // did not exist before, so this pins the whole path: the server credits it
+  // from the enhanceItem roll (server/handlers/craft.js), questComplete keys
+  // it by threshold (shared/definitions.js), and the claim is checked against
+  // that. Positional indices, like every other quest test here.
+  const F2Q11_IDX = 24, F2Q14_IDX = 27;
+  const { QUEST_DEF } = require('../shared/definitions');
+  eq(QUEST_DEF[F2Q11_IDX].id, 'f2q11', 'f2q11 still sits where the chain expects it');
+  eq(QUEST_DEF[F2Q11_IDX].enhance, 2, 'and asks for +2');
+  eq(QUEST_DEF[F2Q14_IDX].enhance, 3, 'f2q14 asks for +3');
+
+  // A sword already at +1, and a pile of SAFE stones: a bless miss keeps the
+  // item, so the loop below can retry until the 70%-per-try roll lands without
+  // ever losing the sword it is enhancing.
+  const c = await connectWithSaved('harness_quest_enh', {
+    lvl: 25, questIdx: F2Q11_IDX, questKills: {},
+    inventory: [{ id: 'sw2', enhance: 1 }, { id: 'bless_stone', qty: 40 }],
+  });
+  await enterWorld(c, 'lev');
+
+  const preErr = c.wait('questClaimError', { timeout: 3000 }).catch(() => null);
+  c.emit('claimQuest', { idx: F2Q11_IDX });
+  ok(await preErr, 'not claimable before anything has actually been enhanced');
+
+  let at = 1;
+  for (let tries = 0; tries < 40 && at < 2; tries++) {
+    const res = c.wait('enhanceResult', { timeout: 6000 }).catch(() => null);
+    c.emit('enhanceItem', { id: 'sw2', enhance: at, stoneType: 'bless' });
+    const r = await res;
+    if (!r) break;
+    at = r.newEnhance;
+  }
+  eq(at, 2, 'the sword actually reached +2');
+
+  const claimed = c.wait('questClaimed', { timeout: 6000 }).catch(() => null);
+  c.emit('claimQuest', { idx: F2Q11_IDX });
+  ok(await claimed, 'and that is what makes the quest claimable');
+  await c.close();
+
+  // The threshold is part of the key, so the +2 the previous quest banked does
+  // not carry the +3 one. Without that, a player who reached +5 during f2q11
+  // would arrive at f2q14 and f2q15 with both already done.
+  const later = await connectWithSaved('harness_quest_enh3', {
+    lvl: 25, questIdx: F2Q14_IDX, questKills: { _enhance_2: 1 },
+  });
+  await enterWorld(later, 'lev');
+  const err3 = later.wait('questClaimError', { timeout: 3000 }).catch(() => null);
+  later.emit('claimQuest', { idx: F2Q14_IDX });
+  ok(await err3, 'the +2 credit does not satisfy the +3 quest');
+  await later.close();
+});
+
 scenario('progression: a repeat selectChar resumes the session instead of rolling it back to login', async () => {
   // `authed` is the account document as READ AT LOGIN and nothing refreshes
   // it — every write goes through the model, not the document. selectChar
