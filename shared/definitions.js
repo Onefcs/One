@@ -293,18 +293,39 @@ const EMPOWER_BONUS_SP = 15;
 const EMPOWER_COST = {
   box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 20,
 };
-// Every 5th empowerment (the 5th, 10th, 15th, ...) costs double — 40 stones
-// instead of 20, and the same doubling on every other line of the bill.
+// No more than EMPOWER_MAX empowerments total — the price ladder below has
+// nothing past its last tier, and this is what the empower handler
+// (server/handlers/skills.js) and the empower panel (js/ui.js) both gate on.
+const EMPOWER_MAX = 30;
+
+// Price scales in tiers by empowerment NUMBER (1-based — the 1st, 2nd, ...),
+// not per-empowerment doubling: empowerments 1-4 cost the base price, 5-9
+// cost ×2, 10-14 ×4, 15-19 ×8, 20-24 ×26, 25-30 ×40. Ranges are inclusive on
+// both ends and cover every number up to EMPOWER_MAX; nothing exists past it.
+const EMPOWER_TIERS = [
+  { upTo: 4, mult: 1 },
+  { upTo: 9, mult: 2 },
+  { upTo: 14, mult: 4 },
+  { upTo: 19, mult: 8 },
+  { upTo: 24, mult: 26 },
+  { upTo: EMPOWER_MAX, mult: 40 },
+];
+// `n` is the empowerment NUMBER (1-based), i.e. already empowers+1 — see
+// empowerCostFor below for why the +1 happens there and not here.
+function empowerMultFor(n) {
+  for (const { upTo, mult } of EMPOWER_TIERS) if (n <= upTo) return mult;
+  return EMPOWER_TIERS[EMPOWER_TIERS.length - 1].mult;
+}
 // `empowers` is the count BEFORE this empowerment (player.empowers/
 // _lastStats.empowers) — the empowerment about to happen is empowers+1, coerced
 // to a Number first (a non-numeric value here, e.g. a string surviving from
-// an old save, would silently break the % check: "4"+1 is the string "41",
+// an old save, would silently break the tier lookup: "4"+1 is the string "41",
 // not 5). Single source both sides read (the empower handler,
 // server/handlers/skills.js, and js/ui.js's empower panel) so the cost shown
 // can never drift from what actually gets charged.
 function empowerCostFor(empowers) {
   const n = Math.max(0, Math.floor(Number(empowers)) || 0);
-  const mult = (n + 1) % 5 === 0 ? 2 : 1;
+  const mult = empowerMultFor(n + 1);
   const out = {};
   for (const [id, need] of Object.entries(EMPOWER_COST)) out[id] = need * mult;
   return out;
@@ -2211,7 +2232,7 @@ function clanAtkBonusPct(level) {
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
-  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_COST, empowerCostFor, skillPointBudget,
+  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_COST, EMPOWER_MAX, empowerCostFor, empowerMultFor, skillPointBudget,
   spentSkillPoints, availableSkillPoints, skillPointCeiling,
   migrateEmpowers, migrateKeptSP,
   CLAN_LEVELS, clanAtkBonusPct,

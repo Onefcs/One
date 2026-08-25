@@ -10,7 +10,7 @@
 module.exports = function registerSkills(s, safeOn, deps) {
   const {
     ADV_SKILL_STUDY_COST, BOX_DEF, CHAR_DEF, CRAFT_MATS, FLOOR_IDS, ITEM_DEF,
-    PASSIVE_MAX_LEVEL, EMPOWER_BONUS_SP, EMPOWER_LEVEL,
+    PASSIVE_MAX_LEVEL, EMPOWER_BONUS_SP, EMPOWER_LEVEL, EMPOWER_MAX,
     SEASON_EMPOWER_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
     SKILL_UPGRADE_CHANCE, SKILL_UPGRADE_COST, UPGRADE_KEYS,
     UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,
@@ -305,8 +305,9 @@ module.exports = function registerSkills(s, safeOn, deps) {
     // Level EMPOWER_LEVEL+ only. Nothing about the character is reset — level,
     // XP, base stats and player.upgrades are all left exactly where they are.
     // An empowerment is purely a purchase: burn EMPOWER_COST worth of materials,
-    // gain a flat, permanent EMPOWER_BONUS_SP folded into bonusSP. Repeatable,
-    // with every 5th one priced double (empowerCostFor, shared/definitions.js).
+    // gain a flat, permanent EMPOWER_BONUS_SP folded into bonusSP. Repeatable up
+    // to EMPOWER_MAX times, with the price ladder rising in tiers — see
+    // empowerCostFor/EMPOWER_TIERS, shared/definitions.js.
     //
     // Because the level never moves, none of the skill-point machinery the old
     // Перерождение needed applies here: skillPointBudget is untouched by an
@@ -332,6 +333,9 @@ module.exports = function registerSkills(s, safeOn, deps) {
         if (lvl < EMPOWER_LEVEL) {
           return socket.emit('empowerError', { msg: `Нужен ${EMPOWER_LEVEL} уровень` });
         }
+        if ((s.lastStats.empowers || 0) >= EMPOWER_MAX) {
+          return socket.emit('empowerError', { msg: `Достигнут максимум усилений (${EMPOWER_MAX})` });
+        }
         // Hub-only, same as the teleport-home check above (:7303) reads
         // s.currentFloor against this exact constant. An empowerment no longer
         // moves the character, so this is no longer about landing somewhere
@@ -345,9 +349,9 @@ module.exports = function registerSkills(s, safeOn, deps) {
         const _beforeLen = inv.length;
         const matCount = id => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
         const matName = id => (ITEM_DEF.find(i => i.id === id) || CRAFT_MATS.find(i => i.id === id) || BOX_DEF.find(i => i.id === id) || {}).name || id;
-        // Every 5th empowerment costs double (empowerCostFor,
-        // shared/definitions.js) — based on the empowerment about to happen
-        // (current empowers + 1), not the count already banked.
+        // Tiered price ladder (empowerCostFor, shared/definitions.js) — based
+        // on the empowerment about to happen (current empowers + 1), not the
+        // count already banked.
         const _cost = empowerCostFor(s.lastStats.empowers || 0);
         for (const [id, need] of Object.entries(_cost)) {
           const have = matCount(id);

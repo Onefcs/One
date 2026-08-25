@@ -652,6 +652,7 @@ function _empowerReady() {
   if (!player) return false;
   if (!_inHub()) return false;
   if ((player.lvl || 1) < EMPOWER_LEVEL) return false;
+  if ((player.empowers || 0) >= EMPOWER_MAX) return false;
   return Object.entries(empowerCostFor(player.empowers || 0)).every(([id, need]) => countMaterial(id) >= need);
 }
 
@@ -668,8 +669,9 @@ function updateEmpowerUI() {
   const el = document.getElementById('empower-body');
   if (!el) return;
   const lvlOk = (player.lvl || 1) >= EMPOWER_LEVEL;
+  const _atMax = (player.empowers || 0) >= EMPOWER_MAX;
   const _nextEmpowerN = (player.empowers || 0) + 1;
-  const _doubled = _nextEmpowerN % 5 === 0;
+  const _mult = _atMax ? 1 : empowerMultFor(_nextEmpowerN);
   const rows = Object.entries(empowerCostFor(player.empowers || 0)).map(([id, need]) => {
     const def = _empowerCostDef(id);
     const have = countMaterial(id);
@@ -678,8 +680,11 @@ function updateEmpowerUI() {
     return ri(def ? def.img : '', label, '');
   }).join('');
   const ready = _empowerReady();
-  const doubleHint = _doubled
-    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('empowerDoubleCostFmt', { n: _nextEmpowerN })}</div>`
+  const maxHint = _atMax
+    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('empowerMaxReachedFmt', { max: EMPOWER_MAX })}</div>`
+    : '';
+  const multHint = (!_atMax && _mult > 1)
+    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('empowerCostMultFmt', { n: _nextEmpowerN, mult: _mult })}</div>`
     : '';
   const hubHint = _inHub() ? '' :
     `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#f88">${t('empowerNeedHubLbl')}</div>`;
@@ -691,7 +696,8 @@ function updateEmpowerUI() {
       ${tVars('empowerLevelReqFmt', { lvl: EMPOWER_LEVEL, cur: player.lvl || 1 })}
     </div>
     ${hubHint}
-    ${doubleHint}
+    ${maxHint}
+    ${multHint}
     <div class="vip-items-row" style="padding:0 12px">${rows}</div>
     <div style="padding:16px 12px 20px">
       <button class="upg-reset-btn${ready ? '' : ' disabled'}" onclick="${ready ? 'openEmpowerConfirm()' : ''}">

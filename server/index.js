@@ -180,7 +180,7 @@ const {
   FARM_ENTRY_LEVEL,
   GRAM_MIN_WITHDRAW,
   clanAtkBonusPct, xpToNext, ARM_LEVEL_REQ,
-  EMPOWER_LEVEL, EMPOWER_BONUS_SP, empowerCostFor,
+  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_MAX, empowerCostFor,
   availableSkillPoints, migrateEmpowers, migrateKeptSP,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, passiveDefById,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
@@ -4220,7 +4220,7 @@ io.on('connection', socket => {
   // Moved to server/handlers/skills.js — see the note there.
   registerSkills(session, safeOn, {
       ADV_SKILL_STUDY_COST, BOX_DEF, CHAR_DEF, CRAFT_MATS, FLOOR_IDS, ITEM_DEF,
-      PASSIVE_MAX_LEVEL, EMPOWER_BONUS_SP, EMPOWER_LEVEL,
+      PASSIVE_MAX_LEVEL, EMPOWER_BONUS_SP, EMPOWER_LEVEL, EMPOWER_MAX,
       SEASON_EMPOWER_POINTS, SKILL_MAX_LEVEL, SKILL_SLOTS, SKILL_STUDY_COST,
       SKILL_UPGRADE_CHANCE, SKILL_UPGRADE_COST, UPGRADE_KEYS,
       UPGRADE_RESET_COST, _persistSavedFields, _spendBalance, advSkillBookId,

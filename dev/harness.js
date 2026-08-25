@@ -2785,62 +2785,85 @@ scenario('market: buying a lot pays the seller', async () => {
   await buyer.close();
 });
 
-scenario('empower: every 5th empowerment really costs double, proven across a live run through two boundaries', async () => {
+scenario('empower: price ladder follows the tier table at every boundary', async () => {
   // empowerCostFor(empowers) — shared/definitions.js. `empowers` passed in is
   // the count BEFORE the empowerment about to happen, so (empowers+1) is the
-  // empowerment number that is about to land; that number being a multiple of 5
-  // is what doubles the cost. This used to be reported as "not working" in
-  // practice, so rather than only checking one isolated boundary, this drives
-  // ONE account through seven REAL, consecutive empowerments (the 4th through
-  // the 10th — crossing both the 5th and 10th boundaries) with a real
-  // reconnect between each, and checks the exact quantity actually deducted
-  // every time — norm_stone, the newest line of the bill, included.
+  // empowerment NUMBER that is about to land, and that number's tier decides
+  // the multiplier: 1-4 ×1, 5-9 ×2, 10-14 ×4, 15-19 ×8, 20-24 ×26, 25-30 ×40.
+  // This table is written out directly here (not derived from empowerCostFor)
+  // so the test catches a bug in the tiers themselves, not just an echo of
+  // them. Each case seeds `empowers` directly (same pattern as the legacy
+  // migration scenario below) and drives one REAL empowerment through a real
+  // socket + DB round trip, checking the exact quantity deducted — norm_stone,
+  // the newest line of the bill, included — at both edges of every tier.
   const normal = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 20 };
-  // 5 normal + 2 doubled empowerments = 9x normal cost, worth of stock up front.
-  const stock = Object.fromEntries(Object.entries(normal).map(([id, n]) => [id, n * 9]));
-
-  let c = await connectWithSaved('harness_empower_seq', {
-    lvl: 30, empowers: 3, bonusSP: 0,
-    inventory: Object.entries(stock).map(([id, qty]) => ({ id, qty })),
-  });
-  await enterWorld(c, 'lev');
   const countOf = (inv, id) => inv.reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+  const cases = [
+    { before: 0, mult: 1 },   // empowerment #1  — tier 1-4
+    { before: 3, mult: 1 },   // empowerment #4  — last of tier 1-4
+    { before: 4, mult: 2 },   // empowerment #5  — first of tier 5-9
+    { before: 8, mult: 2 },   // empowerment #9  — last of tier 5-9
+    { before: 9, mult: 4 },   // empowerment #10 — first of tier 10-14
+    { before: 13, mult: 4 },  // empowerment #14 — last of tier 10-14
+    { before: 14, mult: 8 },  // empowerment #15 — first of tier 15-19
+    { before: 18, mult: 8 },  // empowerment #19 — last of tier 15-19
+    { before: 19, mult: 26 }, // empowerment #20 — first of tier 20-24
+    { before: 23, mult: 26 }, // empowerment #24 — last of tier 20-24
+    { before: 24, mult: 40 }, // empowerment #25 — first of tier 25-30
+    { before: 29, mult: 40 }, // empowerment #30 — last tier, also EMPOWER_MAX
+  ];
 
-  let prevCounts = { ...stock };
-  let expectBonus = 0;
-  for (const before of [3, 4, 5, 6, 7, 8, 9]) { // -> becomes empowerment #4..#10
+  for (const { before, mult } of cases) {
     const empowerN = before + 1;
-    const expectDouble = empowerN % 5 === 0;
+    const stock = Object.fromEntries(Object.entries(normal).map(([id, n]) => [id, n * mult]));
+    const c = await connectWithSaved('harness_empower_tier', {
+      lvl: 30, empowers: before, bonusSP: 0,
+      inventory: Object.entries(stock).map(([id, qty]) => ({ id, qty })),
+    });
+    await enterWorld(c, 'lev');
 
     const sync = c.wait('inventorySync', { timeout: 5000 });
     const done = c.wait('empowerDone', { timeout: 5000 });
     const err  = c.wait('empowerError', { timeout: 5000 }).catch(() => null);
     c.emit('empower');
     const res = await Promise.race([done, err]);
-    ok(res && !res.msg, `empowerment #${empowerN} succeeded`, res && res.msg);
+    ok(res && !res.msg, `empowerment #${empowerN} (×${mult} tier) succeeded`, res && res.msg);
     eq(res && res.empowers, empowerN, `and the server now counts it as empowerment #${empowerN}`);
-    expectBonus += 15;
-    eq(res && res.bonusSP, expectBonus, `each one is worth a flat +15, so bonusSP is now ${expectBonus}`);
 
     const inv = await sync;
-    const newCounts = {};
     for (const id of Object.keys(normal)) {
-      newCounts[id] = countOf(inv.inventory, id);
-      const spent = prevCounts[id] - newCounts[id];
-      const want = normal[id] * (expectDouble ? 2 : 1);
-      eq(spent, want, `empowerment #${empowerN} (${expectDouble ? 'DOUBLED' : 'normal'}) spent ${want} × ${id}, not ${normal[id] * (expectDouble ? 1 : 2)}`);
+      const spent = stock[id] - countOf(inv.inventory, id);
+      eq(spent, normal[id] * mult,
+        `empowerment #${empowerN} spent ${normal[id] * mult} × ${id} (×${mult}), not ${spent}`);
     }
-    prevCounts = newCounts;
-
-    // Reconnect between each one (not just an in-memory loop) so the next
-    // iteration reloads `empowers` from the DB exactly the way a real
-    // returning player would — which is the path a stale/mistyped stored
-    // value would have broken. No level fixup needed: an empowerment leaves
-    // the level alone, which the next scenario pins down directly.
     await c.close();
-    await sleep(300);
-    c = await connectAs('harness_empower_seq');
-    await enterWorld(c, 'lev');
+    await sleep(150);
+  }
+});
+
+scenario('empower: capped at EMPOWER_MAX — the 31st is refused outright', async () => {
+  const { EMPOWER_MAX, EMPOWER_COST } = require('../shared/definitions');
+  // Stocked as if for the top tier (×40) so a refusal can only mean the cap
+  // kicked in, not that the player simply couldn't afford it.
+  const stock = Object.fromEntries(Object.entries(EMPOWER_COST).map(([id, n]) => [id, n * 40]));
+  const c = await connectWithSaved('harness_empower_capped', {
+    lvl: 30, empowers: EMPOWER_MAX, bonusSP: 0,
+    inventory: Object.entries(stock).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(c, 'lev');
+
+  const done = c.wait('empowerDone', { timeout: 5000 }).catch(() => null);
+  const err  = c.wait('empowerError', { timeout: 5000 });
+  c.emit('empower');
+  const res = await Promise.race([done, err]);
+  ok(res && res.msg, 'the 31st empowerment is refused', res);
+
+  await sleep(300);
+  const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+  eq(row.savedData.empowers, EMPOWER_MAX, 'empowers stayed at the cap, not incremented');
+  const countOf = (inv, id) => (inv || []).reduce((s, i) => s + (i && i.id === id ? (i.qty || 1) : 0), 0);
+  for (const [id, need] of Object.entries(stock)) {
+    eq(countOf(row.savedData.inventory, id), need, `${id} was not spent`);
   }
   await c.close();
 });
