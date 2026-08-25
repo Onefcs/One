@@ -14,7 +14,7 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
     SEASON_BOOK_BURN_POINTS, SEASON_BURN_POINTS, SEASON_END_AT,
     SEASON_ENHANCE_GEAR_POINTS, SEASON_ENHANCE_SPECIAL_POINTS,
     SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_PRIZES, SEASON_RATING_MIN_POINTS,
-    SEASON_REBIRTH_POINTS, SEASON_REF_LEVEL, SEASON_REF_POINTS,
+    SEASON_EMPOWER_POINTS, SEASON_REF_LEVEL, SEASON_REF_POINTS,
     SEASON_SHOP_POINTS_PER_GRAM, SEASON_VIP_PRIZE, SERVER_INV_MAX,
     SpecialQuestModel, _catalogBase, _incBalance, _invAdd, _isStackable,
     _persistSavedFields, _ratingClans, _ratingPlayers, _refLink,
@@ -43,7 +43,7 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
         burn: SEASON_BURN_POINTS,
         bookBurnPoints: SEASON_BOOK_BURN_POINTS,
         ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
-        rebirthPoints: SEASON_REBIRTH_POINTS,
+        empowerPoints: SEASON_EMPOWER_POINTS,
         shopPointsPerGram: SEASON_SHOP_POINTS_PER_GRAM,
       };
     }

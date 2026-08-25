@@ -81,15 +81,21 @@ const _GRAM_SHOP_PKGS = [
     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
   { id:'petpkg3', gram:250, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
-  // Перерождение tab — pure material packs. These only GRANT the listed
-  // items (via the same pkg.boxes/pkg.stones handling every other package
-  // already uses below — `stones` isn't stone-specific, it resolves any
-  // CRAFT_MATS id, which is how rece/recl land here too); buying one never
-  // performs a rebirth by itself, that's still the separate 'rebirth' event
-  // above, spending materials out of the inventory these packs fill.
-  { id:'rmat1', gram:25, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
-  { id:'rmat2', gram:40, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
-  { id:'rmat3', gram:80, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
+  // Усиление tab — pure material packs, one of each thing an empowerment
+  // bills for (EMPOWER_COST, shared/definitions.js), norm_stone included.
+  // These only GRANT the listed items (via the same pkg.boxes/pkg.stones
+  // handling every other package already uses below — `stones` isn't
+  // stone-specific, it resolves any CRAFT_MATS id, which is how rece/recl
+  // land here too); buying one never performs an empowerment by itself, that's
+  // still the separate 'empower' event above, spending materials out of the
+  // inventory these packs fill.
+  //
+  // The ids stay rmat1-3 from when the tab was Перерождение: they are written
+  // into every past purchase's GramTx row, and renaming them would orphan that
+  // history.
+  { id:'rmat1', gram:25, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:10 } },
+  { id:'rmat2', gram:40, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:20 } },
+  { id:'rmat3', gram:80, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:50 } },
   // Сезонный билет — grants no items, just flips a status flag (gramShopBuy's
   // own seasonTicket branch) that boosts kill rewards for as long as the
   // current season runs (see shared/definitions.js's SEASON_TICKET_* section).
