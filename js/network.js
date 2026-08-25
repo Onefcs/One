@@ -4003,16 +4003,18 @@ function _initPetCraftHandlers(s) {
   // points, since "spent" is derived from this map rather than stored (see
   // getAvailableSkillPoints, js/player.js). Save straight away so an autosave
   // composed a moment earlier can't put the old upgrades back.
-  s.on('upgradesReset', ({ pointsReturned, keptSP, newNexumBalance }) => {
+  s.on('upgradesReset', ({ pointsReturned, keptSP, bonusSP, newNexumBalance }) => {
     window._nexumBalance = newNexumBalance;
     if (!player) return;
     player.nexumBalance = newNexumBalance;
     player.upgrades = {};
-    // Emptying the map ends the commitment a rebirth carried, so the points
-    // that were covering it go with it — the server has already done exactly
-    // this to its own copy (the resetUpgrades handler), and pointsReturned is
-    // what actually became spendable rather than the raw old spend.
+    // Both halves of the server's own answer, or the panel would show fewer
+    // points than the reset just gave back until the next login. Emptying the
+    // map ends the commitment a rebirth carried, and the part of it the level
+    // curve does not cover has been banked into bonusSP so that every point
+    // spent comes back — see the resetUpgrades handler.
     player.keptSP = Number.isFinite(keptSP) ? keptSP : 0;
+    if (Number.isFinite(bonusSP)) player.bonusSP = bonusSP;
     if (typeof recompute === 'function') recompute();
     if (typeof netSaveProgress === 'function') netSaveProgress();
     if (typeof onUpgradesReset === 'function') onUpgradesReset(pointsReturned);

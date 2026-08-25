@@ -62,25 +62,44 @@ module.exports = function registerSkills(s, safeOn, deps) {
           return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
         }
         s.nexumBalance = _bal;
-        // What the player can actually spend again — not the raw `spent`, which
-        // is a lie for a character carrying points across a rebirth. keptSP is
-        // a commitment, not capacity (see the accounting block in
-        // shared/definitions.js): emptying the map ends the commitment, so the
-        // carried points go with it and only the current level's own curve plus
-        // bonusSP comes back. Reported honestly rather than as the old total,
-        // which is exactly the number a reset straight after a rebirth used to
-        // hand over for free.
+        // A reset gives back every point in the map — all `spent` of them,
+        // whatever paid for them. Clearing the map alone does not do that for a
+        // character carrying points across a rebirth: keptSP is the part of the
+        // spend the rebirth carried, availableSkillPoints subtracts it from
+        // both sides of the sum, and ending the commitment with the map takes
+        // the carried points with it. That is what returned 30 of 120 points to
+        // a character freshly out of a rebirth.
+        //
+        // So the carried part is banked into bonusSP on the way out — but only
+        // the share the current level curve does NOT already cover. Past that
+        // the curve pays for those points itself, and banking them as well
+        // would hand the same points over twice. With the split done this way
+        // the answer is exactly `spent` at every level, which is the whole
+        // point: what went in comes back out.
+        const _budget = skillPointBudget(
+          s.lastStats && s.lastStats.lvl, s.lastStats && s.lastStats.rebirths);
+        const _kept = Math.min(
+          Math.max(0, Math.floor(Number(s.lastStats && s.lastStats.keptSP)) || 0), spent);
+        const _bonusSP = Math.max(0, Math.floor(Number(s.lastStats && s.lastStats.bonusSP)) || 0)
+          + Math.max(0, _kept - _budget);
         const _before = availableSkillPoints(s.lastStats);
-        if (s.lastStats) { s.lastStats.upgrades = {}; s.lastStats.keptSP = 0; }
+        if (s.lastStats) {
+          s.lastStats.upgrades = {};
+          s.lastStats.keptSP = 0;
+          s.lastStats.bonusSP = _bonusSP;
+        }
+        // Still measured rather than assumed: this is what the character can
+        // actually spend now, and it is `spent` because of the bank above.
         const _returned = Math.max(0, availableSkillPoints(s.lastStats) - _before);
         // Keep the room's anti-cheat baseline in step, or its computeStats would
         // go on crediting the cleared upgrades until the next saveProgress.
         if (s.currentRoom) s.currentRoom.updatePlayerSavedData(socket.id, s.lastStats);
-        _persistSavedFields(s.authed, { upgrades: {}, keptSP: 0 });
+        _persistSavedFields(s.authed, { upgrades: {}, keptSP: 0, bonusSP: _bonusSP });
         logPlayer(s.authed.telegramId, s.authed.username, 'upgrades_reset',
-          { pointsReturned: _returned, spent, cost: UPGRADE_RESET_COST });
+          { pointsReturned: _returned, spent, cost: UPGRADE_RESET_COST, bonusSP: _bonusSP });
         socket.emit('upgradesReset', {
-          pointsReturned: _returned, keptSP: 0, newNexumBalance: s.nexumBalance,
+          pointsReturned: _returned, keptSP: 0, bonusSP: _bonusSP,
+          newNexumBalance: s.nexumBalance,
         });
       } catch (err) {
         console.error('resetUpgrades:', err);

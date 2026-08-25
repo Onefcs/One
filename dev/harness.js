@@ -4757,3 +4757,79 @@ scenario('starter bonus: the free kit lands once per account and never twice', a
 
   await c.close();
 });
+
+scenario('upgrade reset: hands back every point that went into the map', async () => {
+  // The reported case, driven through the real handlers: 90 points bought at
+  // REBIRTH_LEVEL, a real rebirth (which carries them as keptSP), 15 more
+  // bought out of the rebirth's own reward, then a reset while the character
+  // is still below REBIRTH_LEVEL — where the level curve is worth nothing and
+  // the carried points used to be dropped along with the commitment. All 105
+  // come back, the Liberty is charged once, and the banked points survive a
+  // reconnect (login pins bonusSP from the stored record, so a reset that only
+  // lived in session memory would quietly lose them).
+  const { availableSkillPoints, UPGRADE_KEYS, UPGRADE_RESET_COST,
+          REBIRTH_BONUS_SP, REBIRTH_LEVEL, REBIRTH_COST,
+          skillPointBudget } = require('../shared/definitions');
+  const budget = skillPointBudget(REBIRTH_LEVEL, 0);
+  let c = await connectWithSaved('harness_upg_reset', {
+    lvl: REBIRTH_LEVEL, rebirths: 0, bonusSP: 0, keptSP: 0, upgrades: {},
+    gold: 50_000_000, nexumBalance: 100_000,
+    inventory: Object.entries(REBIRTH_COST).map(([id, qty]) => ({ id, qty })),
+  });
+  await enterWorld(c, 'lev');
+  const saved = () => memory.__dump('Player').find(p => p.username === c.auth.username).savedData;
+  const availNow = () => availableSkillPoints(saved());
+  const spentNow = () => Object.values(saved().upgrades || {})
+    .reduce((s, v) => s + (Number(v) || 0), 0);
+  // Real purchases through the real handler — nothing here writes an upgrades
+  // map the server did not sell.
+  const buy = async (n) => {
+    for (let i = 0; i < n; i++) {
+      const sync = c.wait('progressSync', { timeout: 5000 });
+      const err  = c.wait('progressError', { timeout: 5000 }).catch(() => null);
+      c.emit('spendUpgrade', { key: UPGRADE_KEYS[i % UPGRADE_KEYS.length] });
+      const r = await Promise.race([sync, err]);
+      if (r && r.msg) break;
+    }
+    await sleep(200);
+  };
+
+  await buy(budget);
+  eq(spentNow(), budget, `all ${budget} points of the level curve are spent`);
+
+  const done = c.wait('rebirthDone', { timeout: 5000 });
+  const rerr = c.wait('rebirthError', { timeout: 5000 }).catch(() => null);
+  c.emit('rebirth');
+  const res = await Promise.race([done, rerr]);
+  ok(res && !res.msg, 'the rebirth went through', res && res.msg);
+  await sleep(400);
+  eq(saved().keptSP, budget, `the rebirth carried all ${budget} of them as keptSP`);
+
+  await buy(REBIRTH_BONUS_SP);
+  const spent = budget + REBIRTH_BONUS_SP;
+  eq(spentNow(), spent, `the flat +${REBIRTH_BONUS_SP} went into the map on top`);
+  eq(availNow(), 0, 'and nothing is left to spend');
+
+  const balBefore = saved().nexumBalance;
+  const rst    = c.wait('upgradesReset', { timeout: 5000 });
+  const rsterr = c.wait('resetUpgradesError', { timeout: 5000 }).catch(() => null);
+  c.emit('resetUpgrades');
+  const r = await Promise.race([rst, rsterr]);
+  ok(r && !r.msg, 'the reset went through', r && r.msg);
+  eq(r.pointsReturned, spent, `the reset returned all ${spent} points, not just the ones the curve paid for`);
+  await sleep(400);
+  eq(spentNow(), 0, 'the upgrades map is empty');
+  eq(availNow(), spent, 'and every one of them is spendable again');
+  eq(saved().nexumBalance, balBefore - UPGRADE_RESET_COST,
+     `${UPGRADE_RESET_COST} Liberty was charged, once`);
+
+  // bonusSP is pinned from the stored record at login, so a bank that never
+  // reached the DB would vanish on a reconnect.
+  await c.close();
+  await sleep(500);
+  c = await connectAs('harness_upg_reset');
+  await enterWorld(c, 'lev');
+  await sleep(300);
+  eq(availNow(), spent, 'and they are still there after a reconnect');
+  await c.close();
+});
