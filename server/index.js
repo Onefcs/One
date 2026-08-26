@@ -1070,6 +1070,20 @@ async function _translateText(text, targetLang) {
 }
 
 
+// How long a progress write waits for the session to go quiet, and the longest
+// it may be deferred by a stream of changes that never lets it. See
+// _schedulePersist (in the connection scope, further down) for what the second
+// one is guarding against — without it the first is unbounded, and a player
+// who never stops playing is a player whose record never gets written between
+// the 60s autosaves.
+//
+// The ceiling is the same 10s the GRAM/Liberty drops already coalesce a burst
+// into (BALANCE_PERSIST_MS, server/handlers/world.js), and for the same
+// reason: one write per player per ten seconds is a cost the pool and the
+// egress bill can carry, one per player per two seconds is not.
+const SAVE_DEBOUNCE_MS = 3000;
+const PROGRESS_MAX_DEFER_MS = 10000;
+
 // Progress writer. The two real-money balances are structurally excluded here
 // rather than merely omitted by every caller: this function takes a whole blob
 // (`{..._lastStats}`, the sanitized client save), and one future field slipping
@@ -2458,7 +2472,6 @@ io.on('connection', socket => {
     get nexumBalance() { return _nexumBalance; }, set nexumBalance(v) { _nexumBalance = v; },
     get nexumPending() { return _nexumPending; }, set nexumPending(v) { _nexumPending = v; },
     get pendingOobGrants() { return _pendingOobGrants; }, set pendingOobGrants(v) { _pendingOobGrants = v; },
-    get saveDebounceTimer() { return _saveDebounceTimer; }, set saveDebounceTimer(v) { _saveDebounceTimer = v; },
     get seasonPoints() { return _seasonPoints; }, set seasonPoints(v) { _seasonPoints = v; },
     get seasonRefChecked() { return _seasonRefChecked; }, set seasonRefChecked(v) { _seasonRefChecked = v; },
     get teleportCastTimer() { return _teleportCastTimer; }, set teleportCastTimer(v) { _teleportCastTimer = v; },
@@ -2496,6 +2509,7 @@ io.on('connection', socket => {
     get _rlBump() { return _rlBump; },
     get _rlFast() { return _rlFast; },
     get _rlHeavy() { return _rlHeavy; },
+    get _schedulePersist() { return _schedulePersist; },
     get _seasonAddPoints() { return _seasonAddPoints; },
     get _seasonCheckRefFriend() { return _seasonCheckRefFriend; },
     get _serverSpendGold() { return _serverSpendGold; },
@@ -2793,6 +2807,65 @@ io.on('connection', socket => {
 
   playerFloorMap.set(socket.id, currentFloor);
 
+  // ── When the progress blob actually reaches the database ─────────────────
+  // Everything a session earns that is NOT written the moment it happens —
+  // kill gold, sub-level XP, the kill counter, HP, the floor, the HUD
+  // preferences — lives in _lastStats until one of these lands it:
+  //
+  //   * this scheduler, armed by every saveProgress and by _grantGold/_grantXp;
+  //   * the 60s autosave (server/handlers/auth.js);
+  //   * the flush on the way out (socket.data._flushNow, just below).
+  //
+  // The scheduler used to be a plain trailing debounce armed inside the
+  // saveProgress handler: clearTimeout, then a fresh 3s timer, on every save.
+  // A trailing debounce with no ceiling does not fire at all while its input
+  // keeps arriving, and the client's input keeps arriving — netSaveProgress
+  // (js/network.js) emits at most one save per 2s but that is also as SELDOM
+  // as it emits while a player is doing anything: a drop picked up, a potion
+  // drunk, a quest claimed, a respawn. So a 2s stream of saves reset a 3s
+  // timer forever, and the only thing that persisted a farming session was
+  // the 60s autosave. Every crash, OOM kill or hard restart in that window
+  // cost the player up to a full minute of gold and XP, and it always looked
+  // like the reconnect had rolled them back — the reconnect being simply
+  // where they found out.
+  //
+  // So the debounce keeps its coalescing (a burst still lands as one write)
+  // but is now bounded: the write happens at the earlier of "3s of quiet" and
+  // PROGRESS_MAX_DEFER_MS since the first change nobody has written yet.
+  // Under a steady 2s stream that is one write per ceiling instead of none.
+  //
+  // Only ever from a socket that is still this account's live session. The
+  // grants below can fire on a closure whose socket is already gone — a party
+  // member's share, a market item arriving cross-session, a prize — and a
+  // whole-blob write scheduled from there would stamp the dead session's copy
+  // of _lastStats over the reconnected one, which is the same rollback from
+  // the other side. Those paths already persist their own grant themselves
+  // (_commitServerItems, _incBalance), so there is nothing to lose by
+  // declining to schedule a second, wholesale write on their behalf.
+  let _progressDirtySince = 0;
+  function _liveSession() {
+    if (!authed || !_lastStats || !socket.connected) return false;
+    const _holder = activeSessions.get(authed.telegramId);
+    return !_holder || _holder === socket.id;
+  }
+  function _schedulePersist() {
+    if (!_liveSession()) return;
+    const now = Date.now();
+    if (!_progressDirtySince) _progressDirtySince = now;
+    // Shrinks as the deadline approaches, so re-arming can only ever bring the
+    // write FORWARD — which is what makes the ceiling a ceiling.
+    const wait = Math.max(0, Math.min(SAVE_DEBOUNCE_MS, _progressDirtySince + PROGRESS_MAX_DEFER_MS - now));
+    if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer);
+    _saveDebounceTimer = safeTimeout('saveDebounce', () => {
+      _saveDebounceTimer = null;
+      _progressDirtySince = 0;
+      // Re-checked at fire time, not just at arm time: the whole point of this
+      // timer is that seconds pass, and a reconnect fits in them comfortably.
+      if (!_liveSession()) return;
+      socket.data._persistProgressNow?.();
+    }, wait);
+  }
+
   // Exposed on socket.data so a *different* connection's closure (e.g. the
   // new socket that's about to kick this one on same-account reconnect) can
   // force this socket's pending debounced save to persist before reading
@@ -2802,6 +2875,7 @@ io.on('connection', socket => {
   // later, persisted it right back over the real progress.
   socket.data._flushNow = async () => {
     if (_saveDebounceTimer) { clearTimeout(_saveDebounceTimer); _saveDebounceTimer = null; }
+    _progressDirtySince = 0;
     // Read BEFORE the first await. The disconnect handler ends in
     // currentRoom.removePlayer(socket.id), which runs synchronously while this
     // is still suspended on _flushBalances below — so by the time the write
@@ -3573,6 +3647,11 @@ io.on('connection', socket => {
       });
       logPlayer(authed.telegramId, authed.username, 'level_up', { from: before, to: _lastStats.lvl });
     }
+    // The level-up branch above writes the level itself; this is what carries
+    // the far more common case — XP that has not crossed a threshold yet —
+    // and, like the gold grant's, a share credited from another socket's
+    // handler onto a session that is emitting no saves of its own.
+    _schedulePersist();
     return {
       gained, levelled,
       lvl: _lastStats.lvl, xp: _lastStats.xp, xpNext: _lastStats.xpNext,
@@ -3608,8 +3687,16 @@ io.on('connection', socket => {
     _lastStats.gold = after;
     // Persisted on the ordinary save debounce rather than per kill: a kill is
     // the highest-frequency event in the game and a write per kill would be a
-    // write per player per second. The debounce already covers a crash to
-    // within a few seconds, which is the same window it always did.
+    // write per player per second. What the debounce covers is now bounded by
+    // PROGRESS_MAX_DEFER_MS, which is what makes "a crash costs a few seconds"
+    // true — see _schedulePersist, where it was not.
+    //
+    // Armed from here, and not only from saveProgress, because a party
+    // member's share is credited against THEIR session from the attacker's
+    // handler: a player standing still while the party farms earns gold
+    // without their own client emitting a single save, and nothing but the
+    // 60s autosave was scheduling their write.
+    _schedulePersist();
     if (!(opts && opts.quiet)) socket.emit('goldSync', { gold: after });
     return after;
   }
@@ -4344,9 +4431,38 @@ server.listen(PORT, () => {
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
 });
+// The crash exit. Every live session is holding progress that is only in
+// memory — kill gold, sub-level XP, the kill counter, HP, the floor — and
+// waiting 2s for "in-flight saves" waited for writes that, on this path, were
+// never started: nothing here had asked a single session to persist. So a
+// crash cost every player online whatever they had earned since their last
+// write, and they met it as a rollback on the reconnect that followed.
+//
+// _flushNow is the same final write a clean disconnect performs, so this is
+// not a new write path, only the one place that never invoked it. Bounded by
+// the same 2s this handler always spent, because a crashed process is not one
+// to keep alive on the strength of its own event loop still working.
+async function _flushLiveSessions(reason) {
+  let socks;
+  try { socks = [...io.sockets.sockets.values()]; } catch (_) { return; }
+  const flushes = [];
+  for (const sk of socks) {
+    try {
+      const f = sk.data && sk.data._flushNow ? sk.data._flushNow() : null;
+      if (f) flushes.push(f);
+    } catch (_) { /* one broken session must not stop the others */ }
+  }
+  if (!flushes.length) return;
+  console.error(`[${reason}] flushing ${flushes.length} live session(s) before exit`);
+  await Promise.allSettled(flushes);
+}
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
-  // Give in-flight saves 2s to complete, then exit so the process manager restarts us
+  // Land what the live sessions are holding, then exit so the process manager
+  // restarts us. The timer is the hard bound: whichever finishes first wins.
+  _flushLiveSessions('uncaughtException')
+    .catch(() => {})
+    .then(() => process.exit(1));
   setTimeout(() => process.exit(1), 2000).unref();
 });
 

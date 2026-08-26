@@ -539,6 +539,51 @@ scenario('rollback: a duplicate selectChar does not roll season points back', as
   await c.close();
 });
 
+scenario('rollback: a stream of saves cannot starve the progress write', async () => {
+  // netSaveProgress (js/network.js) emits at most one save per 2s — and, while
+  // the player is doing anything at all (a drop picked up, a potion drunk, a
+  // quest claimed, a respawn), roughly that often. The server used to answer
+  // each one by clearing the previous 3s trailing timer and arming a fresh
+  // one, which is a debounce a 2s stream never lets fire: a farming session's
+  // gold, XP, kills, HP and floor reached the database only on the 60s
+  // autosave. Anything that ended the process inside that window — a crash, an
+  // OOM kill, a hard restart — cost up to a full minute of play, and the
+  // player met it as a rollback on the reconnect that followed.
+  //
+  // kills is what this watches: one of the few fields the client still owns
+  // (_buildSaveStats), so it moves only when a save is both accepted AND
+  // written.
+  const c = await connectWithSaved('harness_save_starve', { kills: 0 });
+  await enterWorld(c, 'lev');
+  const rowNow = () => memory.__dump('Player').find(p => p.username === c.auth.username);
+  const saveKills = n => c.emit('saveProgress', { stats: {
+    type: 'lev', floor: 1, hp: 100, maxHp: 100, kills: n,
+    hudPotion: 'pt1', autoHpPct: 0, autoBuffTypes: {}, autoSkillsOn: true,
+    autoSkillOff: {}, lang: 'ru', savedAt: Date.now(),
+  } });
+
+  // The stream: the client's own fastest cadence, kept up for longer than the
+  // write may be deferred but well inside the 60s autosave, so the autosave
+  // cannot be what lands it.
+  let sent = 0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 14000) { saveKills(++sent); await sleep(2000); }
+  const stored = rowNow().savedData.kills;
+  ok(stored > 0, 'the record moved while the client was still saving', `${sent} saves sent, stored kills=${stored}`);
+  // ...and moved recently: at most the ceiling plus one save interval behind
+  // what the client had sent. On the old code this read 0 however long the
+  // stream ran.
+  ok(sent - stored <= 7, 'and trails the live session by seconds, not by the whole autosave period',
+     `${sent} saves sent, stored kills=${stored}`);
+
+  // The trailing edge still works: the client goes quiet, and the last save
+  // lands within the debounce rather than waiting for the next ceiling.
+  saveKills(++sent);
+  await sleep(3600);
+  eq(rowNow().savedData.kills, sent, 'a save that ends a burst still lands on the quiet 3s debounce');
+  await c.close();
+});
+
 scenario('combat: a hit reaches the server and lowers the real enemy', async () => {
   const c = await connectAs('harness_combat');
   await enterWorld(c, 'deathknight');

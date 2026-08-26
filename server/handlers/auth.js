@@ -29,8 +29,8 @@ module.exports = function registerAuth(s, safeOn, deps) {
   } = deps;
 
   const {
-    _ITEMS_BUSY_MSG, _goldNow, _itemErr, _itemsBusy, _seasonCheckRefFriend,
-    _setGram, _setNexum, _wherePlayerIs, socket,
+    _ITEMS_BUSY_MSG, _goldNow, _itemErr, _itemsBusy, _schedulePersist,
+    _seasonCheckRefFriend, _setGram, _setNexum, _wherePlayerIs, socket,
   } = s;
 
     // When this connection opened — read by the disconnect handler to bucket
@@ -85,21 +85,35 @@ module.exports = function registerAuth(s, safeOn, deps) {
       return { lvl: sd.lvl, upgrades: sd.upgrades, atk: stats.atk, def: stats.def, maxHp: stats.maxHp };
     }
 
+    // The one composer for every periodic progress write: the debounced one
+    // (armed through s._schedulePersist, server/index.js) and the 60s autosave
+    // below both land exactly this blob. Installed on socket.data because the
+    // scheduler that fires it lives in the other file's closure, and it reads
+    // s.lastStats at FIRE time rather than closing over a snapshot — the whole
+    // point of a deferred write is that it carries what happened during the
+    // delay, not what was true when it was armed.
+    socket.data._persistProgressNow = () => {
+      if (!s.authed || !s.lastStats) return;
+      // Progress only. Balances are moved by $inc from their own paths and must
+      // never be written as an absolute from here — that is precisely what let
+      // a periodic save undo a credit that arrived seconds earlier.
+      const saveData = { ...s.lastStats, ..._wherePlayerIs() };
+      if (s.currentRoom) {
+        const p = s.currentRoom.players.get(socket.id);
+        if (p && p.hp > 0) saveData.hp = p.hp;
+      }
+      const bmNow = calcBM(_bmStatsFor(s.lastStats));
+      s.authed.bm = bmNow;
+      _persistSavedFields(s.authed, saveData, { bm: bmNow });
+    };
+
     function _startAutosave() {
       if (_autoSaveInterval) clearInterval(_autoSaveInterval);
+      // The backstop, not the primary path any more: a session whose progress
+      // nothing else marks dirty (a buff ticking down, a floor that changed
+      // and nothing since) still gets written once a minute.
       _autoSaveInterval = safeInterval('autosave', () => {
-        if (!s.authed || !s.lastStats) return;
-        // Progress only. Balances are moved by $inc from their own paths and must
-        // never be written as an absolute from here — that is precisely what let
-        // a periodic save undo a credit that arrived seconds earlier.
-        const saveData = { ...s.lastStats, ..._wherePlayerIs() };
-        if (s.currentRoom) {
-          const p = s.currentRoom.players.get(socket.id);
-          if (p && p.hp > 0) saveData.hp = p.hp;
-        }
-        const bmNow = calcBM(_bmStatsFor(s.lastStats));
-        s.authed.bm = bmNow;
-        _persistSavedFields(s.authed, saveData, { bm: bmNow });
+        socket.data._persistProgressNow();
       }, 60000);
     }
 
@@ -940,14 +954,13 @@ module.exports = function registerAuth(s, safeOn, deps) {
           socket.to(`floor_${s.currentFloor}`).emit('playerPet', { id: socket.id, petId: _p ? _p.petId : null });
         }
       }
-      clearTimeout(s.saveDebounceTimer);
-      s.saveDebounceTimer = safeTimeout('saveDebounce', () => {
-        if (!s.authed) return;
-        // Progress only — balances move by $inc from their own paths. `clean` has
-        // already had both stripped by _sanitizeSavedStats, so nothing here can
-        // reintroduce a client-supplied figure either.
-        _persistSavedFields(s.authed, { ...clean, ..._wherePlayerIs() }, { bm: s.authed.bm });
-      }, 3000);
+      // Marks the session dirty; the write itself is composed at fire time by
+      // socket.data._persistProgressNow (above) from s.lastStats, which `clean`
+      // has just become. Arming used to happen inline here as a bare 3s
+      // clearTimeout/setTimeout pair — a trailing debounce that a client saving
+      // every 2s reset forever, so nothing but the 60s autosave ever wrote a
+      // farming session's gold and XP. See _schedulePersist (server/index.js).
+      _schedulePersist();
     });
 
     safeOn('disconnect', (reason) => {
