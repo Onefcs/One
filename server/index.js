@@ -361,7 +361,12 @@ function _balanceCache(field) {
 // $inc creates the field when it is missing, which is what a brand-new account
 // needs; it does throw when savedData itself is null, so the login paths
 // initialise savedData to {} before anyone can earn anything.
-async function _incBalance(telegramId, field, delta) {
+//
+// `reason` is what the ledger row is filed under ('market_sold', 'craft',
+// 'admin', ...). It is optional so no existing caller breaks, but a movement
+// filed as 'change' is a movement nobody can explain six weeks later, so pass
+// one — the strings are the same vocabulary logPlayer already uses.
+async function _incBalance(telegramId, field, delta, reason) {
   if (!telegramId || !Number.isFinite(delta) || delta === 0) return null;
   try {
     // An account that only ever pressed /start in the bot has savedData: null
@@ -377,7 +382,7 @@ async function _incBalance(telegramId, field, delta) {
     const doc = await PlayerModel.findOneAndUpdate(
       { telegramId: String(telegramId) },
       { $inc: { [`savedData.${field}`]: delta } },
-      { new: true, projection: { [`savedData.${field}`]: 1 } },
+      { new: true, projection: { [`savedData.${field}`]: 1, username: 1 } },
     ).lean();
     if (!doc) return null;
     // Rounded for the cache and for display only — the stored value keeps full
@@ -385,6 +390,11 @@ async function _incBalance(telegramId, field, delta) {
     // thousands of hits, far below the seventh decimal anything ever shows.
     const v = _round7(doc.savedData?.[field] ?? 0);
     _balanceCache(field).set(String(telegramId), v);
+    // After the write, and never awaited: the balance is already the player's
+    // and a ledger hiccup must not turn a successful credit into a thrown
+    // handler. `after` is the database's own post-write figure, so a row can
+    // be checked against the next row's `after` minus its `delta`.
+    ledgerBalance({ telegramId, username: doc.username, field, reason, delta, after: v });
     return v;
   } catch (err) {
     console.error(`_incBalance(${field}):`, err);
@@ -396,17 +406,21 @@ async function _incBalance(telegramId, field, delta) {
 // or null when there wasn't enough — in which case nothing was written at all.
 // The $gte filter is the whole point: affordability and deduction are one
 // operation, so two purchases sent together can't both pass the check.
-async function _spendBalance(telegramId, field, amount) {
+async function _spendBalance(telegramId, field, amount, reason) {
   if (!telegramId || !Number.isFinite(amount) || amount <= 0) return null;
   try {
     const doc = await PlayerModel.findOneAndUpdate(
       { telegramId: String(telegramId), [`savedData.${field}`]: { $gte: amount } },
       { $inc: { [`savedData.${field}`]: -amount } },
-      { new: true, projection: { [`savedData.${field}`]: 1 } },
+      { new: true, projection: { [`savedData.${field}`]: 1, username: 1 } },
     ).lean();
     if (!doc) return null;
     const v = _round7(doc.savedData?.[field] ?? 0);
     _balanceCache(field).set(String(telegramId), v);
+    // Only a spend that actually took the money reaches here — the $gte filter
+    // above means a refused purchase returns null and writes no row, so the
+    // ledger never shows a deduction that did not happen.
+    ledgerBalance({ telegramId, username: doc.username, field, reason, delta: -amount, after: v });
     return v;
   } catch (err) {
     console.error(`_spendBalance(${field}):`, err);
@@ -590,6 +604,21 @@ const {
   _logWritesSinceTrim, _pvpHistoryWritesSinceTrim,
 } = require('./player-log');
 
+// The item/currency ledger. Separate from player-log above on purpose: that
+// one records that something happened and is trimmed to a row count, this one
+// records what moved and is kept on a retention clock. See server/ledger.js.
+const {
+  census: _ledgerCensus, censusDiff: _ledgerDiff,
+  ledgerItems, ledgerBalance, ledgerFlush,
+} = require('./ledger');
+
+// The row-per-item store. A SHADOW: nothing reads it, and it is only written
+// when ITEM_SHADOW=1 asks for it, so the default deployment pays nothing.
+// See server/models/PlayerItem.js and ARCH-PERSISTENCE.md.
+const PlayerItemModel = require('./models/PlayerItem');
+const { ITEM_SHADOW, syncPlayer: _syncPlayerItems } = require('./item-store');
+if (ITEM_SHADOW) console.log('[item-store] shadow writes ON (ITEM_SHADOW=1)');
+
 
 app.get('/health', (req, res) => {
   const dbOk = mongoose.connection.readyState === 1; // 1 = connected
@@ -657,6 +686,12 @@ app.get('/health', (req, res) => {
     // known time apart give a rate; the [egress] log line does that for you
     // every SESSION_REPORT_MS. See server/egress.js.
     egress: egress.snapshot(),
+    // Saves whose retry was refused because a newer write had already landed
+    // (see _persistSavedFields). Cumulative since process start. Expected to
+    // stay at 0 — anything else means the database was slow enough for two
+    // saves of one account to overlap, and is worth knowing before a player
+    // reports the rollback it used to cause.
+    staleRetriesRefused: _staleRetriesRefused,
   });
 });
 
@@ -1116,9 +1151,35 @@ const _SERVER_OWNED_FIELDS = [
 // login would read back whatever was there before it. Nothing in the logs
 // ever said why, which is what made "I farmed for hours and it's gone"
 // unanswerable. One retry after a short delay covers a blip (a failover, a
-// dropped pool connection) without risk: every field here is a plain $set of
-// an absolute value pulled from the session's own live state, so re-sending
-// the exact same write a moment later is always safe to repeat.
+// dropped pool connection) without risk.
+//
+// "Without risk" was overstated, and the `rev` stamp below is what makes it
+// true. The retry re-sends absolute values captured BEFORE the first attempt;
+// if a newer save landed during the 400ms wait, replaying them rolls that
+// newer save back — silently, since nothing compared them. The retry is now
+// conditional on the stored rev still being the one this write set (or older),
+// so a save that lost the race is refused instead of winning it.
+//
+// The FIRST attempt is deliberately unconditional. Two saves from the same
+// session routinely write disjoint field sets (one `gold`, one `upgrades`),
+// and there is no conflict between them to resolve — guarding those would
+// throw away a field nobody was competing for.
+
+// Monotonic across the process, and roughly wall-clock-comparable across
+// processes, so the ordering still means something if the game is ever run
+// as more than one node. Microsecond-scale base with a tie-break increment:
+// two writes inside the same millisecond still come out ordered.
+let _saveRevPrev = 0;
+function _nextSaveRev() {
+  const now = Date.now() * 1000;
+  _saveRevPrev = now > _saveRevPrev ? now : _saveRevPrev + 1;
+  return _saveRevPrev;
+}
+// Counted rather than logged per occurrence: if this ever starts firing it
+// fires in bursts, and one line per stale retry would bury the reason it
+// happened. Reported by the /health endpoint alongside the other counters.
+let _staleRetriesRefused = 0;
+
 async function _persistSavedFields(authed, fields, extra) {
   if (!authed) return;
   const set = {};
@@ -1128,13 +1189,29 @@ async function _persistSavedFields(authed, fields, extra) {
     set[`savedData.${k}`] = fields[k];
   });
   if (extra) Object.keys(extra).forEach(k => { set[k] = extra[k]; });
+  const rev = _nextSaveRev();
+  set.rev = rev;
   try {
     return await PlayerModel.findByIdAndUpdate(authed._id, { $set: set });
   } catch (err) {
     console.error(`[_persistSavedFields] write failed telegramId=${authed.telegramId}, retrying once:`, err);
     await new Promise(r => setTimeout(r, 400));
     try {
-      return await PlayerModel.findByIdAndUpdate(authed._id, { $set: set });
+      // findOneAndUpdate, not findByIdAndUpdate: the _id alone is no longer
+      // the whole filter. A document whose rev has moved past ours belongs to
+      // a save that landed while we were waiting, and replaying over it is
+      // exactly the rollback this guard exists to stop. `$exists: false`
+      // covers rows written before this field existed.
+      const doc = await PlayerModel.findOneAndUpdate(
+        { _id: authed._id, $or: [{ rev: { $lte: rev } }, { rev: { $exists: false } }] },
+        { $set: set },
+      );
+      if (!doc) {
+        _staleRetriesRefused++;
+        logPlayer(authed.telegramId, authed.username, 'save_retry_stale',
+          { rev, fields: Object.keys(set).join(',') });
+      }
+      return doc;
     } catch (err2) {
       console.error(`[_persistSavedFields] retry also failed telegramId=${authed.telegramId} — progress NOT saved:`, err2);
       return null;
@@ -1165,6 +1242,19 @@ async function _dbPushInventory(authed, items, reason) {
       { new: true, projection: { 'savedData.inventory': 1 } },
     ).lean();
     const len = Array.isArray(doc?.savedData?.inventory) ? doc.savedData.inventory.length : null;
+    // No session means no census to diff against, but this path is the one
+    // case where the caller already holds the exact delta: it is pushing a
+    // known list of items at an account that isn't online. File it directly.
+    ledgerItems({
+      telegramId: authed.telegramId, username: authed.username, reason,
+      items: list.map(it => ({
+        id: it.id,
+        enhance: Number(it.enhance) > 0 ? Math.floor(Number(it.enhance)) : undefined,
+        qty: Number(it.qty) > 0 ? Math.floor(Number(it.qty)) : 1,
+      })),
+      slotsBefore: len !== null ? len - list.length : undefined,
+      slotsAfter: len !== null ? len : undefined,
+    });
     if (len !== null && len > SERVER_INV_MAX) {
       logPlayer(authed.telegramId, authed.username, 'inv_over_cap',
         { reason, slots: len, cap: SERVER_INV_MAX, added: list.length });
@@ -2422,6 +2512,19 @@ io.on('connection', socket => {
   let currentRoom = null;
   let currentFloor = FLOOR_IDS.hub;
   let _lastStats = null;
+  // What this account owned as of the last committed item change — a census
+  // (see server/ledger.js), not a copy of the arrays. The diff against it is
+  // what a ledger row records.
+  //
+  // It has to be held rather than computed at commit time because most callers
+  // mutate `_lastStats.inventory` IN PLACE (push, qty++) and only then call
+  // _commitServerItems, so by then there is no "before" left to read. Rebased
+  // wholesale whenever the session's stats object is replaced — see the
+  // lastStats setter below.
+  let _ledgerBase = new Map();
+  function _ledgerRebase(stats) {
+    _ledgerBase = _ledgerCensus(stats || {});
+  }
 
   // ── The session ───────────────────────────────────────────────────
   // This connection's own state, handed to the per-domain handler modules in
@@ -2450,7 +2553,12 @@ io.on('connection', socket => {
     get invRev() { return _invRev; }, set invRev(v) { _invRev = v; },
     get itemOpBusy() { return _itemOpBusy; }, set itemOpBusy(v) { _itemOpBusy = v; },
     get lastChatAt() { return _lastChatAt; }, set lastChatAt(v) { _lastChatAt = v; },
-    get lastStats() { return _lastStats; }, set lastStats(v) { _lastStats = v; },
+    // Replacing the stats object wholesale (login, selectChar, saveProgress)
+    // also re-bases the ledger: at that instant `v` IS what the account owns,
+    // and diffing the next commit against a census taken before it would
+    // report the whole inventory as newly created.
+    get lastStats() { return _lastStats; },
+    set lastStats(v) { _lastStats = v; _ledgerRebase(v); },
     get myClanIcon() { return _myClanIcon; }, set myClanIcon(v) { _myClanIcon = v; },
     get myClanId() { return _myClanId; }, set myClanId(v) { _myClanId = v; },
     get myClanLevel() { return _myClanLevel; }, set myClanLevel(v) { _myClanLevel = v; },
@@ -2698,11 +2806,11 @@ io.on('connection', socket => {
     // toward the NEXT flush instead of being written twice.
     _gramPending = 0; _nexumPending = 0;
     if (g > 0) {
-      const v = await _incBalance(authed.telegramId, 'gramBalance', g);
+      const v = await _incBalance(authed.telegramId, 'gramBalance', g, 'kill_drop');
       if (v !== null) _gramBalance = v;
     }
     if (n > 0) {
-      const v = await _incBalance(authed.telegramId, 'nexumBalance', n);
+      const v = await _incBalance(authed.telegramId, 'nexumBalance', n, 'kill_drop');
       if (v !== null) _nexumBalance = v;
     }
   }
@@ -2904,6 +3012,43 @@ io.on('connection', socket => {
       logPlayer(authed.telegramId, authed.username, 'inv:' + (reason || 'change'), {
         slots: `${_before} -> ${inventory.length}`, rev: _invRev, ...(meta || {}),
       });
+    }
+    // The ledger sees everything, mob_loot included — that is the whole point
+    // of giving it its own retention clock instead of PlayerLog's shared
+    // row-count window (server/ledger.js, LEDGER_TTL_DAYS).
+    //
+    // storage is read off _lastStats rather than opts: a caller that only
+    // touched the bag still has the same vault it had a moment ago, and
+    // leaving it out of one census but not the other would report the whole
+    // vault as destroyed and then re-created on the next commit.
+    if (authed) {
+      const _after = _ledgerCensus({
+        inventory,
+        storage: _lastStats.storage,
+        equipment: equipment || _lastStats.equipment,
+      });
+      const _moved = _ledgerDiff(_ledgerBase, _after);
+      _ledgerBase = _after;
+      // Empty for an equip, a storage move or a re-sort — nothing was created
+      // or destroyed, so there is nothing to file.
+      if (_moved.length) {
+        ledgerItems({
+          telegramId: authed.telegramId, username: authed.username,
+          reason, items: _moved,
+          slotsBefore: _before, slotsAfter: inventory.length,
+        });
+      }
+      // Shadow write, opt-in and never awaited. It mirrors the same three
+      // containers the blob write below carries, so the two describe the same
+      // instant — which is the only thing that makes the divergence report
+      // from dev/item-store-migrate.js mean anything.
+      if (ITEM_SHADOW) {
+        _syncPlayerItems(PlayerItemModel, authed.telegramId, {
+          inventory,
+          storage: _lastStats.storage,
+          equipment: equipment || _lastStats.equipment,
+        });
+      }
     }
     if (currentRoom) currentRoom.updatePlayerSavedData(socket.id, _lastStats);
     // storage travels with the other two whenever a caller touched it. It is
@@ -3239,7 +3384,7 @@ io.on('connection', socket => {
     _itemOpBusy++;
     try {
       const items = deathBattleRewards();
-      const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD);
+      const _dbBal = await _incBalance(authed.telegramId, 'gramBalance', DEATH_BATTLE_GRAM_REWARD, 'death_battle_reward');
       if (_dbBal !== null) { _gramBalance = _dbBal; socket.emit('gramBalanceUpdate', { balance: _dbBal }); }
       // The account may have reconnected on a different socket during the
       // balance award above — this closure (`socket` here is whichever
@@ -3272,7 +3417,7 @@ io.on('connection', socket => {
   // so the result screen can't claim a reward that didn't land.
   socket.data._a3GrantWin = async () => {
     if (!authed) return 0;
-    const _a3Bal = await _incBalance(authed.telegramId, 'nexumBalance', ARENA3_REWARD);
+    const _a3Bal = await _incBalance(authed.telegramId, 'nexumBalance', ARENA3_REWARD, 'arena3_reward');
     if (_a3Bal !== null) _nexumBalance = _a3Bal;
     socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
     logPlayer(authed.telegramId, authed.username, 'arena3_reward',
@@ -3297,7 +3442,7 @@ io.on('connection', socket => {
     try {
       const nexum = race10Liberty(won);
       const items = race10Rewards(won);
-      const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', nexum);
+      const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', nexum, 'race10_reward');
       if (_rcBal !== null) _nexumBalance = _rcBal;
       socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
       const _liveSid = activeSessions.get(authed.telegramId);
@@ -3333,7 +3478,7 @@ io.on('connection', socket => {
     try {
       const nexum = 100;
       const stone = { ..._STONE_DEFS.bless_stone, qty: 1 };
-      const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', nexum);
+      const _rcBal = await _incBalance(authed.telegramId, 'nexumBalance', nexum, 'coop_boss_reward');
       if (_rcBal !== null) _nexumBalance = _rcBal;
       socket.emit('nexumBalanceUpdate', { balance: _liveNexum() });
       const _liveSid = activeSessions.get(authed.telegramId);
@@ -4397,6 +4542,11 @@ async function _gracefulShutdown(signal) {
     console.log(_done ? 'all pending saves landed'
       : `WARNING: ${SHUTDOWN_FLUSH_MS}ms elapsed with saves still in flight — exiting anyway`);
   }
+  // Last, and after the saves above: those disconnect flushes are themselves
+  // item commits, so flushing the ledger before them would leave their rows
+  // in the buffer for process.exit to discard.
+  const _led = await ledgerFlush().catch(() => 0);
+  if (_led) console.log(`ledger: ${_led} buffered row(s) written`);
   await mongoose.connection.close();
   console.log('Shutdown complete');
   process.exit(0);

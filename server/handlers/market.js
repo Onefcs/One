@@ -389,7 +389,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
       // out of the same GRAM. Pending drop earnings are flushed first so the
       // player can spend what they've just farmed.
       await _flushBalances();
-      const _paid = await _spendBalance(s.authed.telegramId, 'gramBalance', claimed.price);
+      const _paid = await _spendBalance(s.authed.telegramId, 'gramBalance', claimed.price, 'market_buy');
       if (_paid === null) {
         await _releaseClaim(listingId);
         return socket.emit('marketError', { msg: 'Недостаточно GRAM' });
@@ -434,7 +434,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
           // already gone and the seller has NOT been paid yet (that's below),
           // so unwind the whole trade rather than leaving the buyer charged
           // for an item that has nowhere to go.
-          const _back = await _incBalance(s.authed.telegramId, 'gramBalance', claimed.price);
+          const _back = await _incBalance(s.authed.telegramId, 'gramBalance', claimed.price, 'market_buy_refund');
           if (_back !== null) { s.gramBalance = _back; socket.emit('gramBalanceUpdate', { balance: _back }); }
           await _releaseClaim(listingId);
           logPlayer(s.authed.telegramId, s.authed.username, 'market_buy_noroom',
@@ -499,7 +499,7 @@ module.exports = function registerMarket(s, safeOn, deps) {
       // "продал лот, а GRAM не пришли / баланс перезаписался".
       const payout = _round7(claimed.price * (1 - MARKET_FEE_PCT));
       try {
-        const sellerNewBal = await _incBalance(claimed.sellerId, 'gramBalance', payout);
+        const sellerNewBal = await _incBalance(claimed.sellerId, 'gramBalance', payout, 'market_sold');
         if (sellerNewBal === null) throw new Error('seller not found');
         io.to(`tg_${claimed.sellerId}`).emit('gramBalanceUpdate', { balance: sellerNewBal });
         io.to(`tg_${claimed.sellerId}`).emit('marketSold', {

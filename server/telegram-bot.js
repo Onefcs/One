@@ -108,7 +108,7 @@ module.exports = function createTelegramBot(deps) {
         // a pure "+amount" against whatever the account holds when the write
         // lands — the admin may well be pressing this button while the player is
         // out farming, and neither side should be able to erase the other.
-        const newBal = await _incBalance(tx.telegramId, 'gramBalance', tx.amount);
+        const newBal = await _incBalance(tx.telegramId, 'gramBalance', tx.amount, 'gram_deposit');
         if (newBal !== null) {
           io.to(`tg_${tx.telegramId}`).emit('gramBalanceUpdate', { balance: newBal });
           _logBal = newBal;
@@ -119,7 +119,7 @@ module.exports = function createTelegramBot(deps) {
           const bonus = Math.round(tx.amount * 0.05 * 100) / 100;
           if (bonus > 0) {
             const refDoc = await PlayerModel.findOne({ telegramId: doc.referredBy });
-            const refNewBal = refDoc ? await _incBalance(doc.referredBy, 'gramBalance', bonus) : null;
+            const refNewBal = refDoc ? await _incBalance(doc.referredBy, 'gramBalance', bonus, 'referral') : null;
             if (refDoc && refNewBal !== null) {
               io.to(`tg_${doc.referredBy}`).emit('gramBalanceUpdate', { balance: refNewBal });
               io.to(`tg_${doc.referredBy}`).emit('refBonusReceived', {

@@ -56,7 +56,7 @@ module.exports = function registerSkills(s, safeOn, deps) {
         await _flushBalances();
         // Charged atomically: the write only happens if the balance covers the
         // cost, so the upgrades below are never cleared for free.
-        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', UPGRADE_RESET_COST);
+        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', UPGRADE_RESET_COST, 'upgrades_reset');
         if (_bal === null) {
           return socket.emit('resetUpgradesError', { msg: `Нужно ${UPGRADE_RESET_COST} Liberty` });
         }

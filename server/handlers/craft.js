@@ -95,7 +95,7 @@ module.exports = function registerCraft(s, safeOn, deps) {
         // right after) is skipped entirely for them — nothing to charge.
         if (rec.nexumCost) {
           await _flushBalances();
-          const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+          const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_gear');
           if (_bal === null) {
             return socket.emit('craftGearError', { msg: `Нужно ${rec.nexumCost} Liberty` });
           }
@@ -105,7 +105,7 @@ module.exports = function registerCraft(s, safeOn, deps) {
         for (const m of rec.mats) {
           if (matCount(m) < m.n) {
             if (rec.nexumCost) {
-              const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+              const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_gear_refund');
               if (back !== null) s.nexumBalance = back;
             }
             return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${matCount(m)})` });
@@ -145,7 +145,7 @@ module.exports = function registerCraft(s, safeOn, deps) {
           const _target = _socketForTelegramId(s.authed.telegramId);
           const _items = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : null;
           if (!_target || !Array.isArray(_items)) {
-            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_gear_refund');
             if (back !== null) s.nexumBalance = back;
             return socket.emit('craftGearError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
           }
@@ -154,7 +154,7 @@ module.exports = function registerCraft(s, safeOn, deps) {
               ? _items.reduce((s, i) => s + (i && i.id === m.id && (i.enhance || 0) >= m.minEnhance ? 1 : 0), 0)
               : _items.reduce((s, i) => s + (i && i.id === m.id ? (i.qty || 1) : 0), 0);
             if (_cnt < m.n) {
-              const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+              const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_gear_refund');
               if (back !== null) s.nexumBalance = back;
               return socket.emit('craftGearError', { msg: `Нужно ${m.n} × ${matName(m.id)} (есть ${_cnt})` });
             }
@@ -618,7 +618,7 @@ module.exports = function registerCraft(s, safeOn, deps) {
         // Atomic charge — the roll below only happens if the Liberty was really
         // taken. A failed craft (rec.chance) still costs, as it always has.
         await _flushBalances();
-        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_pet');
         if (_bal === null) return socket.emit('petCraftError', { msg: 'Недостаточно Liberty' });
         s.nexumBalance = _bal;
 
@@ -639,7 +639,7 @@ module.exports = function registerCraft(s, safeOn, deps) {
           if (!_target || !_target.data._applyGrant) {
             // Nothing live to grant into. Refund rather than charge for a pet
             // that cannot be delivered — the roll is re-done on the retry.
-            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_pet_refund');
             if (back !== null) s.nexumBalance = back;
             return socket.emit('petCraftError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
           }
@@ -705,14 +705,14 @@ module.exports = function registerCraft(s, safeOn, deps) {
         }
         // Charged before anything is consumed, and atomically — see craftStone.
         await _flushBalances();
-        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_class_gear');
         if (_bal === null) {
           return socket.emit('craftClassGearError', { msg: `Нужно ${rec.nexumCost} Liberty` });
         }
         s.nexumBalance = _bal;
         // Re-checked after the await, same reasoning as craftStone/craftGear.
         if (matCount() < rec.costCount) {
-          const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+          const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_class_gear_refund');
           if (back !== null) s.nexumBalance = back;
           return socket.emit('craftClassGearError', { msg: `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${matCount()})` });
         }
@@ -731,13 +731,13 @@ module.exports = function registerCraft(s, safeOn, deps) {
           const _target = _socketForTelegramId(s.authed.telegramId);
           const _items = _target && _target.data._adminReadItems ? _target.data._adminReadItems().inventory : null;
           if (!_target || !Array.isArray(_items)) {
-            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_class_gear_refund');
             if (back !== null) s.nexumBalance = back;
             return socket.emit('craftClassGearError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
           }
           const _cnt = _items.reduce((s, i) => s + (i && !isStackableItem(i) && i.rarity === rec.costRarity ? 1 : 0), 0);
           if (_cnt < rec.costCount) {
-            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost);
+            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', rec.nexumCost, 'craft_class_gear_refund');
             if (back !== null) s.nexumBalance = back;
             return socket.emit('craftClassGearError', { msg: `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${_cnt})` });
           }

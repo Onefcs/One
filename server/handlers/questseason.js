@@ -654,7 +654,7 @@ module.exports = function registerQuestseason(s, safeOn, deps) {
         // Credited only after the claim above succeeded, so a duplicate request
         // that lost the race pays nothing.
         if (quest.reward.nexum) {
-          const _qb = await _incBalance(s.authed.telegramId, 'nexumBalance', quest.reward.nexum);
+          const _qb = await _incBalance(s.authed.telegramId, 'nexumBalance', quest.reward.nexum, 'season_quest_reward');
           if (_qb !== null) {
             s.nexumBalance = _qb;
             socket.emit('nexumBalanceUpdate', { balance: _qb });

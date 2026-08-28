@@ -13,6 +13,23 @@ const PlayerSchema = new mongoose.Schema({
   // Mini App's first auth, referral registration — so the flag, not the
   // caller, is what makes that message fire exactly once per account.
   adminNotified: { type: Boolean, default: false },
+  // Monotonic write stamp, bumped by every _persistSavedFields call (see
+  // _nextSaveRev in server/index.js). Top-level rather than inside savedData
+  // because a "wipe the character" admin reset replaces savedData wholesale
+  // and must not also rewind the write ordering.
+  //
+  // What it is FOR: _persistSavedFields retries a failed write after 400ms,
+  // re-sending absolute values captured before the first attempt. The old
+  // comment claimed that was "always safe to repeat" — it isn't, if a newer
+  // save landed in between: the retry then rolls that newer save back, and
+  // nothing anywhere says so. The retry now carries `rev: { $lte: mine }` and
+  // is simply refused in that case.
+  //
+  // Deliberately NOT a guard on first attempts: two concurrent saves from the
+  // same session usually write DISJOINT field sets (one `gold`, another
+  // `upgrades`), and rejecting the older of those would lose a field nobody
+  // was competing for.
+  rev:         { type: Number, default: 0 },
   createdAt:   { type: Date, default: Date.now },
 });
 

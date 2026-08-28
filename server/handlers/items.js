@@ -140,7 +140,7 @@ module.exports = function registerItems(s, safeOn, deps) {
         // Atomic charge — the grant below only happens if the Liberty was
         // really taken, same reasoning as every other Liberty spend in this file.
         await _flushBalances();
-        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', cost);
+        const _bal = await _spendBalance(s.authed.telegramId, 'nexumBalance', cost, 'teleport_stone_buy');
         if (_bal === null) return socket.emit('teleportStoneError', { msg: `Нужно ${cost} Liberty` });
         s.nexumBalance = _bal;
 
@@ -152,7 +152,7 @@ module.exports = function registerItems(s, safeOn, deps) {
           if (!_target || !_target.data._applyGrant) {
             // Nothing live to grant into. Refund rather than charge for stones
             // that cannot be delivered.
-            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', cost);
+            const back = await _incBalance(s.authed.telegramId, 'nexumBalance', cost, 'teleport_stone_refund');
             if (back !== null) s.nexumBalance = back;
             return socket.emit('teleportStoneError', { msg: 'Сессия недоступна — попробуйте ещё раз' });
           }

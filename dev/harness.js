@@ -2785,6 +2785,96 @@ scenario('market: buying a lot pays the seller', async () => {
   await buyer.close();
 });
 
+scenario('ledger: a trade is recorded on both sides, and an equip is not', async () => {
+  // The two halves of what makes the ledger worth having. A trade has to leave
+  // a trail on both accounts — the item on the buyer's side, the GRAM on both
+  // — or "куда делся предмет" is still unanswerable. An equip has to leave
+  // NOTHING: it moves an item between containers without creating one, and a
+  // ledger that filed it would bury the rows that matter under the rows that
+  // don't. dev/ledger-check.js proves the census arithmetic in isolation; this
+  // proves it is wired to the real handlers.
+  const rows = who => memory.__dump('ItemLedger').filter(r => r.telegramId === String(who));
+
+  const seller = await connectWithSaved('harness_ledger_seller', {
+    vipLevel: 1, gramBalance: 0, inventory: [{ id: 'uq_sword_l', enhance: 0 }],
+  });
+  await enterWorld(seller, 'deathknight');
+  const listed = seller.wait('marketListed', { timeout: 8000 });
+  seller.emit('marketList', { item: { id: 'uq_sword_l', enhance: 0 }, price: 10 });
+  const l = await listed;
+  ok(l && l.listing, 'listing created');
+  if (!l || !l.listing) return seller.close();
+
+  const buyer = await connectWithSaved('harness_ledger_buyer', { gramBalance: 100 });
+  await enterWorld(buyer, 'ranger');
+  const tidOf = c => {
+    const row = memory.__dump('Player').find(p => p.username === c.auth.username);
+    return row && String(row.telegramId);
+  };
+  const buyerTid = tidOf(buyer), sellerTid = tidOf(seller);
+
+  const sellerCredit = seller.wait('gramBalanceUpdate', { timeout: 8000 });
+  const bought = buyer.wait('marketBought', { timeout: 8000 });
+  buyer.emit('marketBuy', { listingId: l.listing.id });
+  await bought;
+  await sellerCredit;
+
+  // Ordinary rows are buffered for up to LEDGER_FLUSH_MS before they reach the
+  // database (server/ledger.js) — force the batch out rather than sleeping
+  // past the window, so the assertions below read the real collection.
+  await require('../server/ledger').ledgerFlush();
+
+  const gotItem = rows(buyerTid).filter(r => r.kind === 'item' && r.reason === 'market_buy');
+  ok(gotItem.length === 1, 'the buyer has exactly one item row for the purchase');
+  const moved = gotItem[0] && gotItem[0].items;
+  ok(moved && moved.length === 1 && moved[0].id === 'uq_sword_l' && moved[0].qty === 1,
+    'and it names the item that actually moved');
+
+  const paid = rows(buyerTid).find(r => r.kind === 'gramBalance' && r.reason === 'market_buy');
+  ok(paid && paid.delta === -10, 'the buyer\'s GRAM row is the negative of the price');
+  const earned = rows(sellerTid).find(r => r.kind === 'gramBalance' && r.reason === 'market_sold');
+  ok(earned && earned.delta === 9, 'the seller\'s row is the payout after the fee');
+  // The whole reason for a per-row retention clock: a trade outlives the
+  // 90-day default because someone may dispute it much later. Measured
+  // against the wall clock rather than the row's own `at` — the in-memory
+  // double resolves a `default: Date.now` to the number, not a Date, so
+  // subtracting the two fields here would compare a Date with an integer.
+  ok(paid && new Date(paid.expiresAt).getTime() - Date.now() >= 364 * 86400000,
+    'a trade row is kept a year');
+
+  // Now the negative half. Equipping what was just bought moves it from the
+  // bag onto the character — nothing is created, so nothing may be filed.
+  const before = rows(buyerTid).filter(r => r.kind === 'item').length;
+  const inv = (buyer.last('inventorySync') || {}).inventory || [];
+  const idx = inv.findIndex(i => i && i.id === 'uq_sword_l');
+  ok(idx >= 0, 'the bought item is really in the buyer\'s bag');
+  if (idx >= 0) {
+    const synced = buyer.wait('inventorySync', { timeout: 8000 });
+    buyer.emit('equipItem', { idx });
+    await synced.catch(() => {});
+    // Flush again first: "no new row" must mean the ledger filed nothing, not
+    // that a row is still queued and would appear two seconds later.
+    await require('../server/ledger').ledgerFlush();
+    eq(rows(buyerTid).filter(r => r.kind === 'item').length, before,
+      'equipping wrote no item row — a container move is not a creation');
+  }
+
+  // The row-per-item shadow, when it is switched on. Off by default, so this
+  // half only runs under ITEM_SHADOW=1 — which is how the migration is meant
+  // to be rehearsed:  ITEM_SHADOW=1 node dev/harness.js ledger
+  if (require('../server/item-store').ITEM_SHADOW) {
+    const { verifyPlayer } = require('../server/item-store');
+    const stored = memory.__dump('PlayerItem').filter(r => r.telegramId === buyerTid);
+    ok(stored.length > 0, 'shadow: the buyer has rows in the item store');
+    const row = memory.__dump('Player').find(p => p.username === buyer.auth.username);
+    const v = verifyPlayer(row && row.savedData, stored);
+    ok(v.ok, `shadow: the store matches the blob${v.ok ? '' : ` — ${JSON.stringify(v.diff)}`}`);
+  }
+
+  await seller.close();
+  await buyer.close();
+});
+
 scenario('empower: price ladder follows the tier table at every boundary', async () => {
   // empowerCostFor(empowers) — shared/definitions.js. `empowers` passed in is
   // the count BEFORE the empowerment about to happen, so (empowers+1) is the

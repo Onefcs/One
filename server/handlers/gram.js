@@ -63,7 +63,7 @@ module.exports = function registerGram(s, safeOn, deps) {
         // the stored balance covers the amount, so two withdrawal requests sent
         // together can't both succeed against the same funds. Refunded in full if
         // the admin rejects the request (see _handleAdminCallback).
-        const newBal = await _spendBalance(s.authed.telegramId, 'gramBalance', amt);
+        const newBal = await _spendBalance(s.authed.telegramId, 'gramBalance', amt, 'gram_withdraw');
         if (newBal === null) return socket.emit('gramError', { msg: 'Недостаточно средств' });
         s.gramBalance = newBal;
 
@@ -79,7 +79,7 @@ module.exports = function registerGram(s, safeOn, deps) {
         } catch (err) {
           // The money is already out of the account and there is now no request
           // to refund it from — put it back rather than leave the player short.
-          const back = await _incBalance(s.authed.telegramId, 'gramBalance', amt);
+          const back = await _incBalance(s.authed.telegramId, 'gramBalance', amt, 'gram_withdraw_refund');
           if (back !== null) s.gramBalance = back;
           logPlayerErr(s.authed.telegramId, s.authed.username, 'gram_withdraw_request', err, { amount: amt, refunded: true });
           return socket.emit('gramError', { msg: 'Не удалось создать заявку — средства возвращены' });
@@ -175,7 +175,7 @@ module.exports = function registerGram(s, safeOn, deps) {
         // if the stored balance covers the price (see the balance block at the
         // top of this file), so nothing here can spend GRAM the account doesn't
         // have, whatever the cached figure said a moment ago.
-        const _paid = await _spendBalance(s.authed.telegramId, 'gramBalance', _price);
+        const _paid = await _spendBalance(s.authed.telegramId, 'gramBalance', _price, 'gram_shop');
         if (_paid === null) return socket.emit('gramShopError', { msg: 'Недостаточно GRAM' });
         s.gramBalance = _paid;
 
@@ -332,7 +332,7 @@ module.exports = function registerGram(s, safeOn, deps) {
 
         // Liberty (Nexum) bonus — atomic, like every other balance move.
         if (pkg.nexum > 0) {
-          const _nb = await _incBalance(s.authed.telegramId, 'nexumBalance', pkg.nexum);
+          const _nb = await _incBalance(s.authed.telegramId, 'nexumBalance', pkg.nexum, 'gram_shop_nexum');
           if (_nb !== null) s.nexumBalance = _nb;
         }
 

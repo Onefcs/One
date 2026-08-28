@@ -354,9 +354,9 @@ module.exports = function registerAdminRoutes(app, deps) {
       // online and earning while the admin types, and neither side should
       // overwrite the other. A negative figure is a valid way to take money back,
       // which is why this uses _incBalance and not _spendBalance.
-      if (nexum) await _incBalance(p.telegramId, 'nexumBalance', nexum);
+      if (nexum) await _incBalance(p.telegramId, 'nexumBalance', nexum, 'admin');
       if (gram) {
-        const newG = await _incBalance(p.telegramId, 'gramBalance', gram);
+        const newG = await _incBalance(p.telegramId, 'gramBalance', gram, 'admin');
         if (newG !== null) io.to(`tg_${p.telegramId}`).emit('gramBalanceUpdate', { balance: newG });
       }
       // Targeted $set on just the touched fields — a full-document save from

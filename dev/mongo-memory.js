@@ -16,7 +16,7 @@
 //
 // Supported, because the game path uses them:
 //   queries   find findOne findById countDocuments distinct aggregate(subset)
-//   writes    create save updateOne updateMany findOneAndUpdate
+//   writes    create insertMany save updateOne updateMany findOneAndUpdate
 //             findByIdAndUpdate deleteOne deleteMany
 //   chaining  sort limit skip select lean collation exec + thenable
 //   filters   $in $nin $ne $gt $gte $lt $lte $or $and $exists $regex $elemMatch
@@ -335,6 +335,14 @@ class Model {
       return doc;
     });
     return Array.isArray(data) ? made : made[0];
+  }
+
+  // The ledger's batch write (server/ledger.js buffers rows and sends one
+  // insertMany) and the item-store shadow both use this. `ordered` is accepted
+  // and ignored: the double cannot fail a single row for a duplicate key, so
+  // there is no partial batch for the flag to decide the fate of.
+  static async insertMany(docs, _opts) {
+    return this.create(Array.isArray(docs) ? docs : [docs]);
   }
 
   static find(filter = {}, projection = null) {
