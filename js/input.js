@@ -18,7 +18,7 @@ const FAN_MX = 64, FAN_MY = 70;  // pivot inset from the right edge / nav bar
 const FAN_R_ATK   = 40;          // attack button — drawn on the pivot itself
 const FAN_R_MODE  = 64;          // АВТО/РУЧ chip
 const FAN_R_SKILL = 96;          // the four skill buttons
-const FAN_R_OUTER = 180;         // potion / target
+const FAN_R_OUTER = 192;         // potion / target
 const FAN_A_MODE   = -55;
 const FAN_A_SKILL  = -74;        // topmost skill …
 const FAN_A_STEP   = -37;        // … and counter-clockwise from there

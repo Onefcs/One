@@ -3033,14 +3033,17 @@ function drawBuffStrip() {
   if (!chips.length) return;
 
   // Chips ride an arc of their own just outside the skill buttons (fanPos,
-  // js/input.js), running the fan's whole outer edge: from beside the potion
+  // js/input.js), running the fan's whole outer edge: from below the potion
   // at the top round to just above the nav bar at the bottom left. That sweep
-  // is divided into BUFF_SEATS seats, so a full dozen buffs fit on the first
-  // ring without stacking; a thirteenth opens a ring further out, at the same
-  // angles.
+  // is divided into BUFF_SEATS evenly spaced seats; once they are full the
+  // next chip opens a ring further out, at the same angles.
+  // The arc deliberately starts below the potion rather than beside it: a
+  // seat squeezed between potion and target left one chip stranded up in the
+  // corner with a gap under it, since the seat below it was always dropped
+  // by the button guards further down.
   const SZ = 22, HALF = SZ / 2;
-  const BUFF_SEATS = 12;
-  const R0 = FAN_R_SKILL + 46, RING_STEP = 28, A0 = -92, A_END = -200;
+  const BUFF_SEATS = 11;
+  const R0 = FAN_R_SKILL + 46, RING_STEP = 28, A0 = -100, A_END = -200;
   const A_STEP = (A0 - A_END) / (BUFF_SEATS - 1);
   // Seats a chip can't actually be seen in are skipped, and the chip rides the
   // next ring out instead:
