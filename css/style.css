@@ -350,8 +350,13 @@ canvas { display:block; width:100%; height:100%; }
 .fi-drop-icon { width:20px; flex-shrink:0; display:flex; align-items:center; margin-right:4px; }
 
 /* ── NPC TALK BUTTON ──────────────────── */
+/* Sits above the joystick (its top edge is at H-250, see updateJoyCenter in
+   js/input.js) rather than on the bottom strip: the action fan now owns that
+   strip out to x = W-182, and a centred prompt is ~134px wide, so on any
+   phone width it would have covered — and, being a DOM button, swallowed
+   taps on — the fan's lowest skill button. */
 #npc-talk-btn {
-  position:absolute; bottom:74px; left:50%; transform:translateX(-50%);
+  position:absolute; bottom:256px; left:50%; transform:translateX(-50%);
   background:rgba(55,43,21,0.95); border:1px solid #c09750;
   border-radius:20px; padding:10px 22px;
   color:#e69419; font-size:14px; font-weight:bold;

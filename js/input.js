@@ -1,6 +1,38 @@
-const SKILL_SZ  = 54;
-const SKILL_GAP = 8;
+const SKILL_SZ  = 48;   // skill-button diameter (they ride the fan's arc)
 const POTION_R  = 26;
+
+// ─────────────────────────────────────────────────────────
+//  ACTION FAN  (bottom-right)
+// ─────────────────────────────────────────────────────────
+// Every right-hand control is polar around a single pivot instead of the old
+// stacked 2x2 grid: the manual-attack button sits ON the pivot, the four
+// skills ride an arc around it, the АВТО/РУЧ chip clips onto that arc's rim,
+// potion and target sit on a wider arc above, and the buff/debuff chips
+// follow an outer arc of their own (drawBuffStrip, js/ui.js). Angles are
+// canvas-standard — y grows downward, so -90° is straight up and -180°
+// straight left — and the pivot is pinned to the bottom-right corner, so the
+// whole cluster follows the screen size without any piece needing a layout
+// rule of its own. Anything new that wants a place on the fan should ask
+// fanPos() for it rather than hardcoding coordinates.
+const FAN_MX = 64, FAN_MY = 46;  // pivot inset from the right edge / nav bar
+const FAN_R_ATK   = 40;          // attack button — drawn on the pivot itself
+const FAN_R_MODE  = 64;          // АВТО/РУЧ chip
+const FAN_R_SKILL = 96;          // the four skill buttons
+const FAN_R_OUTER = 180;         // potion / target
+const FAN_A_MODE   = -55;
+const FAN_A_SKILL  = -74;        // topmost skill …
+const FAN_A_STEP   = -37;        // … and counter-clockwise from there
+const FAN_A_POTION = -84;
+const FAN_A_TARGET = -104;
+
+function fanCenter() { return { x: W - FAN_MX, y: H - NAV_H - FAN_MY }; }
+
+function fanPos(r, deg) {
+  const c = fanCenter(), a = deg * Math.PI / 180;
+  return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
+}
+
+function fanSkillAngle(idx) { return FAN_A_SKILL + idx * FAN_A_STEP; }
 
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
@@ -13,32 +45,27 @@ function _inJoyZone(cx, cy) {
          dist(cx, cy, jc.x, jc.y) < JOY_R * 1.35;
 }
 
+// Skill button `idx`, counted from the top of the arc down. x/y/w/h is the
+// bounding box (what the gradient cache and the drawing code read); cx/cy/r
+// is the circle actually drawn and hit-tested.
 function getSkillBtnPos(idx) {
-  const sz = SKILL_SZ, gap = SKILL_GAP;
-  const rx = W - 14, by = H - NAV_H - 14;
-  const col = idx % 2;             // 0=left, 1=right
-  const row = Math.floor(idx / 2); // 0=top, 1=bottom
-  return {
-    x: rx - (1 - col) * (sz + gap) - sz,
-    y: by - (1 - row) * (sz + gap) - sz,
-    w: sz, h: sz,
-  };
+  const r = SKILL_SZ / 2;
+  const p = fanPos(FAN_R_SKILL, fanSkillAngle(idx));
+  return { x: p.x - r, y: p.y - r, w: SKILL_SZ, h: SKILL_SZ, cx: p.x, cy: p.y, r };
 }
 
-// Attack and Target are stacked ABOVE the 2×2 skill grid (row); Potion takes
-// the primary slot above that row. Attack keeps the bigger (formerly
-// Potion's-slot-sized) radius here, Potion the smaller one below — icon size
-// scales off these radii, so this alone swaps how big each icon renders.
+// Attack is the fan's hub — the biggest button, right in the corner where the
+// thumb rests. Target and Potion ride the outer arc above the skills, Target
+// to the left of Potion (icon size scales off these radii, so the numbers
+// here alone decide how big each icon renders).
 function getAttackBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
+  const c = fanCenter();
+  return { x: c.x, y: c.y, r: FAN_R_ATK };
 }
 
 function getTargetBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz - gap - sz / 2, y: gridTop - gap - r, r };
+  const p = fanPos(FAN_R_OUTER, FAN_A_TARGET);
+  return { x: p.x, y: p.y, r: POTION_R };
 }
 
 function getPvpBtnPos() {
@@ -102,18 +129,18 @@ function getPartyInfoBtnPos() {
   return { x: pb.x + pb.w + 6, y: pb.y, w: 52, h: pb.h };
 }
 
-// Potion is above the attack/target row; AUTO sits directly above Potion
 function getPotionBtnPos() {
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const ab = getAttackBtnPos();
-  return { x: W - 14 - sz / 2, y: ab.y - ab.r - gap - r, r };
+  const p = fanPos(FAN_R_OUTER, FAN_A_POTION);
+  return { x: p.x, y: p.y, r: POTION_R + 2 };
 }
 
+// АВТО/РУЧ chip, clipped onto the fan's rim between the attack hub and the
+// skill arc. Drawn round, but the box stays x/y/w/h — that is what the hit
+// test and dev/harness.js read.
 function getAutoBtnPos() {
-  const pb = getPotionBtnPos();
-  const gap = SKILL_GAP;
-  const w = 52, h = 22;
-  return { x: pb.x - w / 2, y: pb.y - pb.r - gap - h, w, h };
+  const r = 15;
+  const p = fanPos(FAN_R_MODE, FAN_A_MODE);
+  return { x: p.x - r, y: p.y - r, w: r * 2, h: r * 2, cx: p.x, cy: p.y, r };
 }
 
 // Invite accept/decline buttons (for popup)
@@ -244,8 +271,11 @@ function _checkSkillTouch(cx, cy) {
   const skills = SKILL_DEF[player.type];
   if (!skills) return false;
   for (let i = 0; i < 4; i++) {
+    // Circular, not the bounding box: on the arc the boxes of neighbouring
+    // buttons clip each other's corners, so a box test would hand a tap in
+    // the gap between two skills to whichever one happens to be checked first.
     const b = getSkillBtnPos(i);
-    if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+    if (Math.hypot(cx - b.cx, cy - b.cy) <= b.r + 6) {
       useSkill(i);
       return true;
     }

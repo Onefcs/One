@@ -2623,7 +2623,78 @@ function drawJoystick() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  SKILL BUTTONS (2×2 grid)
+//  ACTION FAN BACKDROP
+// ─────────────────────────────────────────────────────────
+// The tray the four skill buttons ride on, plus the collar around the attack
+// hub at its centre. Geometry comes from fanCenter()/fanPos() in js/input.js,
+// so this and the buttons (and the hit tests) can never drift apart. Purely
+// decorative — nothing here is touchable.
+const FAN_TRAY_IN = 60, FAN_TRAY_OUT = 126;   // skill tray
+// Swept counter-clockwise, far enough round to seat the lowest skill button
+// whole. Both ends run off the screen — the near one past the right edge, the
+// far one under the bottom nav — and are simply clipped there, the way the
+// tray is meant to read: as a wheel the screen corner cuts into.
+const FAN_TRAY_A0 = -44, FAN_TRAY_A1 = -210;
+const FAN_COLLAR_IN = 46, FAN_COLLAR_OUT = 57;
+
+// Annular sector from a0° to a1°, swept counter-clockwise (a1 < a0)
+function _fanSector(c, rIn, rOut, a0, a1) {
+  const r0 = a0 * Math.PI / 180, r1 = a1 * Math.PI / 180;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, rOut, r0, r1, true);
+  ctx.arc(c.x, c.y, rIn,  r1, r0, false);
+  ctx.closePath();
+}
+
+function _fanGem(x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawActionFan() {
+  if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const c = _uiBtnGrads.fanC;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, H - NAV_H); ctx.clip();
+
+  _fanSector(c, FAN_TRAY_IN, FAN_TRAY_OUT, FAN_TRAY_A0, FAN_TRAY_A1);
+  ctx.fillStyle = _uiBtnGrads.fanBg; ctx.fill();
+  ctx.strokeStyle = 'rgba(203,161,89,0.34)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // A hairline between each pair of seats, so the tray reads as four slots
+  // rather than one band — and a gem on the rim above each one.
+  const rims = [FAN_TRAY_A0, FAN_TRAY_A1];
+  ctx.strokeStyle = 'rgba(203,161,89,0.16)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const deg = (fanSkillAngle(i) + fanSkillAngle(i + 1)) / 2;
+    rims.push(deg);
+    const a = deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(c.x + FAN_TRAY_IN * ca,  c.y + FAN_TRAY_IN * sa);
+    ctx.lineTo(c.x + FAN_TRAY_OUT * ca, c.y + FAN_TRAY_OUT * sa);
+    ctx.stroke();
+  }
+
+  _fanSector(c, FAN_COLLAR_IN, FAN_COLLAR_OUT, FAN_TRAY_A0 + 6, FAN_TRAY_A1 - 6);
+  ctx.fillStyle = _uiBtnGrads.fanCollar; ctx.fill();
+  ctx.strokeStyle = 'rgba(203,161,89,0.30)'; ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.fillStyle = 'rgba(203,161,89,0.5)';
+  for (const deg of rims) {
+    const a = deg * Math.PI / 180;
+    const gx = c.x + FAN_TRAY_OUT * Math.cos(a), gy = c.y + FAN_TRAY_OUT * Math.sin(a);
+    if (gx > W - 6 || gy > H - NAV_H - 6) continue;  // half a gem on the cut edges reads as dirt
+    _fanGem(gx, gy, 3.5);
+  }
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  SKILL BUTTONS (on the fan's arc — getSkillBtnPos, js/input.js)
 // ─────────────────────────────────────────────────────────
 // Gradient cache: 4 buttons × 3 states (flash / ready / cooldown)
 // Invalidated on resize via _skillBtnGradCache = null in game.js
@@ -2767,9 +2838,16 @@ function _buildUiBtnGrads() {
   const tfShine = ctx.createLinearGradient(0, hbY, 0, hbY+4);
   tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
 
+  // Action-fan backdrop (drawActionFan below) — concentric with the attack hub
+  const fc = fanCenter();
+  const fanBg = ctx.createRadialGradient(fc.x, fc.y, FAN_R_ATK, fc.x, fc.y, FAN_TRAY_OUT);
+  fanBg.addColorStop(0,'rgba(26,21,12,0.88)'); fanBg.addColorStop(1,'rgba(10,8,4,0.66)');
+  const fanCollar = ctx.createRadialGradient(fc.x, fc.y, FAN_COLLAR_IN, fc.x, fc.y, FAN_COLLAR_OUT);
+  fanCollar.addColorStop(0,'rgba(46,37,21,0.88)'); fanCollar.addColorStop(1,'rgba(18,14,8,0.88)');
+
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
-                  tfBg, hpHi, hpMid, hpLo, tfShine,
+                  tfBg, hpHi, hpMid, hpLo, tfShine, fanBg, fanCollar, fanC: fc,
                   potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, packBtn: pack, ptyBtn: pty };
 }
 
@@ -2927,31 +3005,43 @@ function drawBuffStrip() {
 
   if (!chips.length) return;
 
-  // 2-column icon grid to the left of the skill buttons panel
-  // Skill grid: left = W-14-(SKILL_SZ+SKILL_GAP)-SKILL_SZ = W-130, bottom = H-NAV_H-14
-  const SZ = 22, GAP = 3, COLS = 2;
-  const skillLeft  = W - 14 - (SKILL_SZ + SKILL_GAP) - SKILL_SZ;  // W-130
-  const gridRight  = skillLeft - 8;                                  // 8px gap from skills
-  const gridX      = gridRight - (COLS * SZ + (COLS - 1) * GAP);   // left edge of chip area
-  // Raised clear of the chat widgets rather than bottom-aligned with the
-  // skills. #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
-  // and stand up to ~46px tall, so they own the band from H-118 to H-72 —
-  // and being DOM elements layered over the UI canvas, they paint over
-  // anything drawn there regardless of draw order. The bottom row of chips
-  // used to land at H-98..H-76, entirely inside that band, so an incoming
-  // chat message hid it completely. Chips grow upward from here, so only
-  // this baseline needs to move.
-  const CHAT_STRIP_TOP = 72 + 46;   // keep in sync with #chat-btn/#chat-preview
-  const gridBottom = H - CHAT_STRIP_TOP - 6;                         // 6px breathing room
+  // Chips follow an arc of their own, one ring outside the skill buttons
+  // (fanPos, js/input.js), filling counter-clockwise from the top; once a
+  // ring runs out of usable seats the next chip opens a ring further out.
+  // A seat is skipped rather than used when it would land under the chat
+  // widgets — #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
+  // and stand up to ~46px tall, so they own the band from H-118 to H-72, and
+  // being DOM elements layered over the UI canvas they paint over anything
+  // drawn there regardless of draw order — or below the bottom nav.
+  const SZ = 22, HALF = SZ / 2;
+  const R0 = FAN_R_SKILL + 52, RING_STEP = 28, A0 = -120, A_END = -215;
+  const CHAT_TOP = H - 118, CHAT_BOT = H - 72, CHAT_RIGHT = W - 190;
+  const FLOOR = H - NAV_H - 4;
+  const jc = joyCenter();
+  const seats = [];
+  for (let ring = 0; ring < 8 && seats.length < chips.length; ring++) {
+    const r = R0 + ring * RING_STEP;
+    // Angular step per ring, not per strip: the wider the ring, the smaller
+    // the step that keeps the same gap between neighbours in pixels. A fixed
+    // angle instead would fan the outer rings out across half the screen.
+    const step = (SZ + 4) / r * 180 / Math.PI;
+    for (let a = A0; a >= A_END && seats.length < chips.length; a -= step) {
+      const p = fanPos(r, a);
+      if (p.y + HALF > FLOOR) continue;
+      if (p.y + HALF > CHAT_TOP && p.y - HALF < CHAT_BOT && p.x - HALF < CHAT_RIGHT) continue;
+      // A long buff list swings far enough left to reach the joystick; those
+      // seats are dropped and the chips ride the next ring out instead, which
+      // passes above it.
+      if (Math.hypot(p.x - jc.x, p.y - jc.y) < JOY_R + HALF + 6) continue;
+      seats.push(p);
+    }
+  }
   const F2 = 'system-ui, -apple-system, Arial';
 
   ctx.save();
 
-  for (let i = 0; i < chips.length; i++) {
-    const col = i % COLS;
-    const row = Math.floor(i / COLS);
-    const cx = gridX + col * (SZ + GAP);
-    const cy = gridBottom - row * (SZ + GAP) - SZ;
+  for (let i = 0; i < seats.length; i++) {
+    const cx = seats[i].x - HALF, cy = seats[i].y - HALF;
     const chip = chips[i];
 
     // Background cell
@@ -3345,17 +3435,18 @@ function drawAutoToggle() {
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const ab = _uiBtnGrads.autoBtn;
   const F = 'system-ui, -apple-system, Arial';
+  const cx = ab.x + ab.w / 2, cy = ab.y + ab.h / 2, r = ab.w / 2;
   ctx.save();
   ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
-  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
   ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold 8px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
-  ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), ab.x + ab.w / 2, ab.y + ab.h / 2);
+  ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), cx, cy + 0.5);
   ctx.restore();
 }
 

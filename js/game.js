@@ -1361,6 +1361,7 @@ function _renderUI() {
   drawPartyHUD();
   drawTargetFrame();
   if (activeTab === 0) {
+    drawActionFan();
     drawSkillButtons();
     drawPotionButton();
     drawTargetButton();

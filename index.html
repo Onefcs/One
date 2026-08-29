@@ -626,11 +626,13 @@
 }
 /* Anchored to the same bottom offset as #chat-btn so it reads as level with
    the button, not floating above it. Right edge is capped well clear of the
-   2x2 skill-button grid, which starts at W-130 (js/input.js getSkillBtnPos)
-   — see the max-width formula below. */
+   action fan: its lowest skill button reaches x = W-182 (fanCenter/
+   FAN_R_SKILL, js/input.js) at exactly this height, and #app is never wider
+   than 430px, so the 170px cap below keeps the bubble's right edge at 228px
+   at worst — see the max-width formula. */
 #chat-preview {
   position:absolute; bottom:72px; left:58px; z-index:61;
-  max-width:min(200px, calc(100vw - 200px));
+  max-width:min(170px, calc(100vw - 250px));
   pointer-events:all; touch-action:manipulation; cursor:pointer;
   background:rgba(15,12,6,0.94); border:1px solid rgba(203,161,89,0.4);
   border-radius:4px 14px 14px 14px; padding:7px 12px;
