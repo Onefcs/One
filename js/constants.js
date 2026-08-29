@@ -1,5 +1,9 @@
 // TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF → shared/definitions.js
-const HEADER_H = 64;
+// Top band reserved for the HUD's player plate (drawHeader, js/ui.js): the
+// world is drawn from here down. The minimap plate deliberately hangs below
+// it, over the world — hudMiniMapRect() is what the right-hand button column
+// measures itself from, not this.
+const HEADER_H = 100;
 const NAV_H = 62;
 const JOY_R = 58, JOY_KNOB = 24;
 const ZOOM = 0.75;

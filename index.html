@@ -595,11 +595,11 @@
   position:absolute; bottom:72px; left:10px; z-index:62;
   pointer-events:all; touch-action:manipulation;
   width:42px; height:42px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, rgba(37,30,17,0.96), rgba(15,12,6,0.97));
+  background:radial-gradient(circle at 35% 30%, rgba(19,33,51,0.96), rgba(8,14,22,0.97));
   border:1px solid rgba(203,161,89,0.55);
   color:#eac47e; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(209,204,197,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
 }
 #chat-btn:active { opacity:0.75; }
 /* Sits directly above #chat-btn (same left offset, one button-height plus
@@ -613,7 +613,7 @@
   border:1px solid rgba(79,195,255,0.5);
   color:#7fd7ff; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(209,204,197,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
 }
 #teleport-btn:active { opacity:0.75; }
 #teleport-stone-badge {
@@ -634,10 +634,10 @@
   position:absolute; bottom:72px; left:58px; z-index:61;
   max-width:min(170px, calc(100vw - 250px));
   pointer-events:all; touch-action:manipulation; cursor:pointer;
-  background:rgba(15,12,6,0.94); border:1px solid rgba(203,161,89,0.4);
+  background:rgba(8,14,22,0.94); border:1px solid rgba(203,161,89,0.4);
   border-radius:4px 14px 14px 14px; padding:7px 12px;
   display:none; flex-direction:column; gap:1px;
-  box-shadow:0 2px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(209,204,197,0.05);
+  box-shadow:0 2px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(193,204,213,0.05);
 }
 #chat-preview:active { opacity:0.75; }
 #chat-preview-name {
@@ -646,7 +646,7 @@
 }
 #chat-preview-name.is-me { color:#3ef07a; }
 #chat-preview-text {
-  font-size:12px; color:#cfc7ba; line-height:1.3;
+  font-size:12px; color:#b9c5d0; line-height:1.3;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 #chat-badge {
@@ -677,10 +677,10 @@
 }
 .cp-title { flex:1; font-size:14px; font-weight:700; color:#c8a0ff; }
 .cp-close {
-  background:none; border:none; color:#555; font-size:20px;
+  background:none; border:none; color:#425368; font-size:20px;
   cursor:pointer; padding:0 2px; line-height:1; touch-action:manipulation;
 }
-.cp-close:active { color:#aaa; }
+.cp-close:active { color:#99abbb; }
 .chat-tabs {
   display:flex; flex-shrink:0;
   border-bottom:1px solid rgba(255,255,255,0.06);
@@ -730,7 +730,7 @@
 .chat-name-clickable { cursor:pointer; touch-action:manipulation; }
 .chat-name-clickable:active { text-decoration:underline; }
 .chat-time { font-size:10px; color:#3a3a5a; }
-.chat-text { font-size:13px; color:#ccc; line-height:1.45; word-break:break-word; }
+.chat-text { font-size:13px; color:#c2cdd6; line-height:1.45; word-break:break-word; }
 .chat-translate-btn {
   margin-left:auto; background:none; border:none; padding:2px; color:#4a4a68;
   cursor:pointer; touch-action:manipulation; display:flex; align-items:center;
@@ -751,7 +751,7 @@
 #chat-input {
   flex:1; padding:8px 14px;
   border:1px solid rgba(100,60,200,0.4); border-radius:22px;
-  background:rgba(255,255,255,0.05); color:#eee;
+  background:rgba(255,255,255,0.05); color:#ebeef1;
   font-size:14px; outline:none; touch-action:manipulation;
 }
 #chat-input::placeholder { color:#383858; }
