@@ -3032,34 +3032,44 @@ function drawBuffStrip() {
 
   if (!chips.length) return;
 
-  // Chips follow an arc of their own, one ring outside the skill buttons
-  // (fanPos, js/input.js), filling counter-clockwise from the top; once a
-  // ring runs out of usable seats the next chip opens a ring further out.
-  // A seat is skipped rather than used when it would land under the chat
-  // widgets — #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
-  // and stand up to ~46px tall, so they own the band from H-118 to H-72, and
-  // being DOM elements layered over the UI canvas they paint over anything
-  // drawn there regardless of draw order — or below the bottom nav.
+  // Chips ride an arc of their own just outside the skill buttons (fanPos,
+  // js/input.js), running the fan's whole outer edge: from beside the potion
+  // at the top round to just above the nav bar at the bottom left. That sweep
+  // is divided into BUFF_SEATS seats, so a full dozen buffs fit on the first
+  // ring without stacking; a thirteenth opens a ring further out, at the same
+  // angles.
   const SZ = 22, HALF = SZ / 2;
-  const R0 = FAN_R_SKILL + 52, RING_STEP = 28, A0 = -120, A_END = -215;
-  const CHAT_TOP = H - 118, CHAT_BOT = H - 72, CHAT_RIGHT = W - 190;
+  const BUFF_SEATS = 12;
+  const R0 = FAN_R_SKILL + 46, RING_STEP = 28, A0 = -92, A_END = -200;
+  const A_STEP = (A0 - A_END) / (BUFF_SEATS - 1);
+  // Seats a chip can't actually be seen in are skipped, and the chip rides the
+  // next ring out instead:
+  //  · below the nav bar;
+  //  · under the chat preview bubble while it is up — #chat-preview
+  //    (index.html) is a DOM element layered over this canvas, so it paints
+  //    over anything drawn there regardless of draw order. Its geometry is the
+  //    CSS one (left:58px, bottom:72px, up to ~46px tall, max-width capped
+  //    against the viewport), mirrored here;
+  //  · inside the joystick, which a long list would otherwise swing into;
+  //  · under the potion / target buttons, which sit on their own wider arc
+  //    right where the top of this one starts.
   const FLOOR = H - NAV_H - 4;
+  const cpEl = typeof document !== 'undefined' ? document.getElementById('chat-preview') : null;
+  const chatUp = !!(cpEl && cpEl.style.display && cpEl.style.display !== 'none');
+  const CHAT_TOP = H - 118, CHAT_BOT = H - 72;
+  const CHAT_RIGHT = chatUp ? 58 + Math.min(170, W - 250) + 6 : -1e4;
   const jc = joyCenter();
+  const pb = getPotionBtnPos(), tb = getTargetBtnPos();
   const seats = [];
   for (let ring = 0; ring < 8 && seats.length < chips.length; ring++) {
     const r = R0 + ring * RING_STEP;
-    // Angular step per ring, not per strip: the wider the ring, the smaller
-    // the step that keeps the same gap between neighbours in pixels. A fixed
-    // angle instead would fan the outer rings out across half the screen.
-    const step = (SZ + 4) / r * 180 / Math.PI;
-    for (let a = A0; a >= A_END && seats.length < chips.length; a -= step) {
-      const p = fanPos(r, a);
+    for (let i = 0; i < BUFF_SEATS && seats.length < chips.length; i++) {
+      const p = fanPos(r, A0 - i * A_STEP);
       if (p.y + HALF > FLOOR) continue;
       if (p.y + HALF > CHAT_TOP && p.y - HALF < CHAT_BOT && p.x - HALF < CHAT_RIGHT) continue;
-      // A long buff list swings far enough left to reach the joystick; those
-      // seats are dropped and the chips ride the next ring out instead, which
-      // passes above it.
       if (Math.hypot(p.x - jc.x, p.y - jc.y) < JOY_R + HALF + 6) continue;
+      if (Math.hypot(p.x - pb.x, p.y - pb.y) < pb.r + HALF + 4) continue;
+      if (Math.hypot(p.x - tb.x, p.y - tb.y) < tb.r + HALF + 4) continue;
       seats.push(p);
     }
   }
