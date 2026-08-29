@@ -14,7 +14,7 @@ const POTION_R  = 26;
 // whole cluster follows the screen size without any piece needing a layout
 // rule of its own. Anything new that wants a place on the fan should ask
 // fanPos() for it rather than hardcoding coordinates.
-const FAN_MX = 64, FAN_MY = 46;  // pivot inset from the right edge / nav bar
+const FAN_MX = 64, FAN_MY = 70;  // pivot inset from the right edge / nav bar
 const FAN_R_ATK   = 40;          // attack button — drawn on the pivot itself
 const FAN_R_MODE  = 64;          // АВТО/РУЧ chip
 const FAN_R_SKILL = 96;          // the four skill buttons
@@ -80,21 +80,13 @@ function getProfessionBtnPos() {
   return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 
-// Directly below Профессия, same column — opens the "+Pack" epic-pack
-// purchase (600 GRAM). See _checkEpicPackBtnTouch/input.js and
-// drawEpicPackButton/openEpicPackFromHud, js/ui.js.
-function getEpicPackBtnPos() {
-  const prof = getProfessionBtnPos();
-  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
-}
-
-// Directly below +Pack, same column — opens the free "Набор новичка" kit
+// Directly below Профессия, same column — opens the free "Набор новичка" kit
 // (openStarterBonusPanel, js/ui.js). Only drawn while the account still has
 // it to claim, but the position is unconditional: the party list below is
 // laid out from it either way (see _partyHudStartY).
 function getStarterBonusBtnPos() {
-  const pack = getEpicPackBtnPos();
-  return { x: pack.x, y: pack.y + pack.h + 6, w: pack.w, h: pack.h };
+  const prof = getProfessionBtnPos();
+  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
 }
 
 function getPartyLeaveBtnPos() {
@@ -363,15 +355,6 @@ function _checkProfessionBtnTouch(cx, cy) {
   return false;
 }
 
-function _checkEpicPackBtnTouch(cx, cy) {
-  const pb = getEpicPackBtnPos();
-  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
-    if (typeof openEpicPackFromHud === 'function') openEpicPackFromHud();
-    return true;
-  }
-  return false;
-}
-
 // Same gate the drawing uses (_starterBonusAvailable, js/ui.js): once the kit
 // is claimed the button is gone, and its slot must stop swallowing taps meant
 // for whatever is drawn under it.
@@ -542,7 +525,6 @@ function onTS(e) {
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
-    if (_checkEpicPackBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
@@ -620,7 +602,6 @@ function onMD(e) {
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
-  if (_checkEpicPackBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;

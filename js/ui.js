@@ -2290,6 +2290,10 @@ const HUD_GLOW      = 'rgba(86,170,255,0.16)';
 const HUD_TEXT      = '#dbe9f8';
 const HUD_TEXT_DIM  = '#8fb0cd';
 
+// Both header plates — the player one and the map one — are this tall, so
+// they read as one row (hudMiniMapRect / drawHeader below).
+const HUD_PLATE_H = 96;
+
 function _hudCorners(x, y, w, h, len, color) {
   ctx.strokeStyle = color || 'rgba(150,215,255,0.7)';
   ctx.lineWidth = 1.6; ctx.lineCap = 'round';
@@ -2368,21 +2372,24 @@ function _hudNum(v) {
 // below the header band, over the world — which is why the HUD's right-hand
 // button column starts underneath it (_positionHudMenuBtn below).
 function hudMiniMapRect() {
-  const w = Math.round(Math.min(104, W * 0.26));
-  return { x: W - w - 8, y: 4, w, h: w, lblH: 22 };
+  const w = Math.round(Math.min(96, W * 0.26));
+  return { x: W - w - 8, y: 4, w, h: HUD_PLATE_H };
 }
 
 function drawMiniMapPanel() {
   const p = player;
-  const F = 'system-ui, -apple-system, sans-serif';
   const mp = hudMiniMapRect();
   const _MM_RADIUS = 30;                       // tiles each direction from the player
   const mmX = mp.x + 3, mmY = mp.y + 3, mmW = mp.w - 6, mmH = mp.h - 6;
   const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
-  const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
+  // The window is only as square as the plate is: the player stays at its
+  // centre either way, so the vertical span is measured off mmH rather than
+  // assumed equal to the horizontal one.
+  const winTilesX = mmW / mmSc, winTilesY = mmH / mmSc;
+  const winTx = p.x / TILE - winTilesX / 2, winTy = p.y / TILE - winTilesY / 2;
 
-  _hudPanel(mp.x, mp.y, mp.w, mp.h + mp.lblH, 11);
+  _hudPanel(mp.x, mp.y, mp.w, mp.h, 11);
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -2400,17 +2407,18 @@ function drawMiniMapPanel() {
   const _mmTileFx = Math.floor(winTx), _mmTileFy = Math.floor(winTy);
   if (!_mmTileCv || _mmTileCvTx !== _mmTileFx || _mmTileCvTy !== _mmTileFy || _mmTileCvSc !== mmSc || _mmTileCvTheme !== th.mmFloor) {
     _mmTileCvTx = _mmTileFx; _mmTileCvTy = _mmTileFy; _mmTileCvSc = mmSc; _mmTileCvTheme = th.mmFloor;
-    const bufTiles = _MM_RADIUS * 2 + _MM_MARGIN * 2 + 2;
-    const bufPx = Math.ceil(bufTiles * mmSc);
+    const bufTilesX = Math.ceil(winTilesX) + _MM_MARGIN * 2 + 2;
+    const bufTilesY = Math.ceil(winTilesY) + _MM_MARGIN * 2 + 2;
+    const bufPxX = Math.ceil(bufTilesX * mmSc), bufPxY = Math.ceil(bufTilesY * mmSc);
     if (!_mmTileCv) _mmTileCv = document.createElement('canvas');
-    if (_mmTileCv.width !== bufPx || _mmTileCv.height !== bufPx) { _mmTileCv.width = bufPx; _mmTileCv.height = bufPx; }
+    if (_mmTileCv.width !== bufPxX || _mmTileCv.height !== bufPxY) { _mmTileCv.width = bufPxX; _mmTileCv.height = bufPxY; }
     const mctx = _mmTileCv.getContext('2d');
-    mctx.clearRect(0, 0, bufPx, bufPx);
+    mctx.clearRect(0, 0, bufPxX, bufPxY);
     mctx.fillStyle = th.mmFloor;
     mctx.beginPath();
     const bufTx0 = _mmTileFx - _MM_MARGIN, bufTy0 = _mmTileFy - _MM_MARGIN;
-    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTiles - 1);
-    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTiles - 1);
+    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTilesX - 1);
+    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTilesY - 1);
     for (let ty = ty0; ty <= ty1; ty++) {
       const row = dungeon.grid[ty];
       for (let tx = tx0; tx <= tx1; tx++) {
@@ -2476,21 +2484,6 @@ function drawMiniMapPanel() {
 
   ctx.strokeStyle = HUD_FRAME_DIM; ctx.lineWidth = 1;
   roundRect(ctx, mmX, mmY, mmW, mmH, 8); ctx.stroke();
-
-  // Label strip: where you are, and the clock — the two things the reference
-  // keeps under the map.
-  const _hudRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(p.x, p.y) : null;
-  const _hudLbl = _hudRoom?.monsterLvl ? (t('levelAbbrev') + _hudRoom.monsterLvl) : t('hallShort');
-  const lblY = mp.y + mp.h + mp.lblH / 2 + 1;
-  ctx.strokeStyle = 'rgba(96,160,220,0.22)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(mp.x + 8, mp.y + mp.h + 1.5); ctx.lineTo(mp.x + mp.w - 8, mp.y + mp.h + 1.5); ctx.stroke();
-  ctx.textBaseline = 'middle';
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = HUD_TEXT;
-  ctx.fillText(_hudLbl, mp.x + 9, lblY);
-  const now = new Date();
-  const clock = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-  ctx.font = `9px ${F}`; ctx.textAlign = 'right'; ctx.fillStyle = HUD_TEXT_DIM;
-  ctx.fillText(clock, mp.x + mp.w - 9, lblY);
 }
 
 function drawHeader() {
@@ -2504,7 +2497,7 @@ function drawHeader() {
 
   // ── Player plate ──────────────────────────────────────────
   const mp = hudMiniMapRect();
-  const px = 6, py = 4, pw = mp.x - px - 4, ph = 96;
+  const px = 6, py = 4, pw = mp.x - px - 4, ph = HUD_PLATE_H;
   const pRight = px + pw - 11;
   _hudPanel(px, py, pw, ph, 12);
 
@@ -2550,6 +2543,14 @@ function drawHeader() {
   ctx.fillText((netUsername || p.charDef.name).slice(0, 14), infoX, py + 20);
   ctx.font = `11px ${F}`; ctx.fillStyle = p.charDef.color + 'e0';
   ctx.fillText(p.charDef.name, infoX, py + 35);
+  // БМ (battle might) reads as part of the class line — "Танк БМ 3150" — not
+  // as a currency, so it sits here rather than in the chip row below.
+  const bmX = infoX + ctx.measureText(p.charDef.name).width + 8;
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(240,196,110,0.8)';
+  ctx.fillText(t('bmAbbrev'), bmX, py + 35);
+  const bmLblW = ctx.measureText(t('bmAbbrev')).width;
+  ctx.font = `bold 11px ${F}`; ctx.fillStyle = '#f0c46e';
+  ctx.fillText(_hudNum(typeof calcBM === 'function' ? calcBM(p) : 0), bmX + bmLblW + 4, py + 35);
 
   // ── HP / XP ───────────────────────────────────────────────
   const barX = infoX, barW = pRight - infoX;
@@ -2566,16 +2567,15 @@ function drawHeader() {
     _hudNum(Math.floor(p.xp)) + ' / ' + _hudNum(p.xpNext));
 
   // ── Currency chips ────────────────────────────────────────
-  const chipY = py + 74, chipH = 18, chipGap = 5;
-  const chipX0 = px + 10, chipW = (pRight + 1 - chipX0 - chipGap * 3) / 4;
+  const chipY = py + 74, chipH = 18, chipGap = 5, chipX0 = px + 10;
   const _nxBal = window._nexumBalance || 0;
   const _grBal = window._gramBalance || 0;
   const chips = [
     { icon: 'coin', color: '#f0b44a', val: _hudNum(p.gold) },
     { img: '/images/nexum-coin_v2.png', color: '#7fd0ff', val: _hudNum(_nxBal) },
     { img: '/images/gram-icon.png', color: '#5fe08f', val: _grBal >= 1000 ? _hudNum(_grBal) : _grBal.toFixed(2) },
-    { color: '#f0c46e', val: _hudNum(typeof calcBM === 'function' ? calcBM(p) : 0), lbl: t('bmAbbrev') },
   ];
+  const chipW = (pRight + 1 - chipX0 - chipGap * (chips.length - 1)) / chips.length;
   ctx.textBaseline = 'middle';
   for (let i = 0; i < chips.length; i++) {
     const c = chips[i], cx = chipX0 + i * (chipW + chipGap);
@@ -2583,13 +2583,7 @@ function drawHeader() {
     roundRect(ctx, cx, chipY, chipW, chipH, 9); ctx.fill();
     ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
     roundRect(ctx, cx, chipY, chipW, chipH, 9); ctx.stroke();
-    let valX = cx + 18;
-    if (c.lbl) {
-      // БМ has no icon of its own — the two letters are the icon.
-      ctx.font = `bold 8px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(200,220,240,0.65)';
-      ctx.fillText(c.lbl, cx + 6, chipY + chipH / 2 + 0.5);
-      valX = cx + 6 + ctx.measureText(c.lbl).width + 4;
-    } else if (c.img) {
+    if (c.img) {
       const img = _getPotImg(c.img);
       if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, cx + 3, chipY + 3, 12, 12);
       else drawIconCtx(ctx, 'coin', cx + 9, chipY + chipH / 2, 11, c.color);
@@ -2597,7 +2591,7 @@ function drawHeader() {
       drawIconCtx(ctx, c.icon, cx + 9, chipY + chipH / 2, 11, c.color);
     }
     ctx.font = `bold 9.5px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = c.color;
-    ctx.fillText(c.val, valX, chipY + chipH / 2 + 0.5);
+    ctx.fillText(c.val, cx + 18, chipY + chipH / 2 + 0.5);
   }
 
   ctx.restore();
@@ -2831,7 +2825,6 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
-  const pack = getEpicPackBtnPos();
   const pty = getPartyBtnPos();
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
@@ -2882,7 +2875,7 @@ function _buildUiBtnGrads() {
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   fanBg, fanCollar, fanC: fc,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, packBtn: pack, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3172,53 +3165,10 @@ function drawProfessionButton() {
   ctx.restore();
 }
 
-// ─────────────────────────────────────────────────────────
-//  +PACK BUTTON — below Профессия, opens the epic-pack (former pkg300, now
-//  600 GRAM) purchase confirm. See openEpicPackFromHud/_EPIC_PACK_PKG below
-//  and _checkEpicPackBtnTouch/getEpicPackBtnPos, js/input.js.
-// ─────────────────────────────────────────────────────────
-function drawEpicPackButton() {
-  if (!player) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
-  const pb = _uiBtnGrads.packBtn;
-  const F = 'system-ui, -apple-system, Arial';
-
-  ctx.save();
-
-  // Shimmering dark-emerald fill — a bright band sweeps back and forth
-  // across the button instead of sitting still ("переливается"). Rebuilt
-  // every frame (not cached in _uiBtnGrads) so the sweep can move.
-  const sweep = (Math.sin(Date.now() / 1100) + 1) / 2; // 0..1
-  const bandStart = Math.max(0, sweep - 0.3);
-  const bandEnd = Math.min(1, sweep + 0.3);
-  const grad = ctx.createLinearGradient(pb.x, pb.y, pb.x + pb.w, pb.y + pb.h);
-  grad.addColorStop(0, '#062f1c');
-  grad.addColorStop(bandStart, '#0a4a2c');
-  grad.addColorStop(sweep, '#2fd68f');
-  grad.addColorStop(bandEnd, '#0a4a2c');
-  grad.addColorStop(1, '#062f1c');
-  ctx.fillStyle = grad;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = 'rgba(60,235,160,0.7)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-
-  // Always pulses — unlike Профессия's "ready" glow, this one's a
-  // permanent promo, not a state indicator.
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  ctx.strokeStyle = `rgba(60,235,160,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-  roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
-
-  drawIconCtx(ctx, 'coin', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, '#7cf5b6');
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#7cf5b6';
-  ctx.fillText('+Pack', pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
-
-  ctx.restore();
-}
-
-// Tapped from the HUD button (drawEpicPackButton). Always opens — unlike a
+// The "+Pack" purchase (former pkg300, now 600 GRAM). Its HUD button was
+// removed, so nothing calls this right now — it stays as the one call the
+// pack needs to be sellable again, from a shop tab or a button, whenever
+// that is wanted. Always opens — unlike a
 // shop card (which never calls openGramShopConfirm at all while unaffordable,
 // see its own canAfford-gated onclick), the modal itself now shows the
 // insufficient-balance state on its buy button instead of refusing to open.
@@ -4325,7 +4275,7 @@ function _positionHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
   if (!btn) return;
   const mp = hudMiniMapRect();
-  btn.style.top   = (mp.y + mp.h + mp.lblH + 8) + 'px';
+  btn.style.top   = (mp.y + mp.h + 6) + 'px';
   btn.style.left  = mp.x + 'px';
   btn.style.width = mp.w + 'px';
   btn.style.right = 'auto';
@@ -6958,9 +6908,10 @@ function _boxesLine(boxes) {
 
 // "+Pack" — the former pkg300 regular-tab tier. Pulled off the GRAM shop's
 // Паки tab (see the comment above _GRAM_SHOP_PKGS_UI) and sold instead from
-// its own HUD button below Профессия (drawEpicPackButton/
-// openEpicPackFromHud, js/ui.js; getEpicPackBtnPos/_checkEpicPackBtnTouch,
-// js/input.js). Same id/rewards server/index.js's gramShopBuy already
+// its own HUD button below Профессия. That button has since been removed
+// from the HUD, so the pack currently has no entry point of its own —
+// openEpicPackFromHud (js/ui.js) is what a new one would call. Same
+// id/rewards server/index.js's gramShopBuy already
 // grants for 'pkg300' — only the price moved (300 → 600) and where it's
 // sold. `perks` are the real-world mentorship items bundled on top of the
 // in-game rewards; the server never sees them, they're pure presentation
