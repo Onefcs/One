@@ -2206,6 +2206,7 @@ function toggleHudMenu() {
   const btn = document.getElementById('hud-menu-btn');
   if (btn) btn.classList.toggle('expanded', _hudMenuExpanded);
   _syncGameOnlyBtns(activeTab);
+  if (_hudMenuExpanded) _positionHudColumn();
 }
 
 function setTab(n) {
@@ -4280,19 +4281,37 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
-// hud-menu-btn takes the slot rating-btn used to sit in (below the minimap,
-// aligned to its right edge) — everything else in this column already
-// chains its position off the button above it, so moving just this one
-// anchor cascades the whole stack down by one slot.
+// hud-menu-btn sits directly under the minimap plate, aligned to it —
+// everything else in this column chains its position off the button above it,
+// so this one anchor cascades the whole stack.
 function _positionHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
   if (!btn) return;
+  // W is set by the canvas resize (js/game.js). The login handshake can beat
+  // that on a warm cache, and this column is laid out from the right edge —
+  // without a width the whole stack lands at x=0, on top of the Мир/Проф
+  // buttons. Come back on the next frame instead of writing NaNpx.
+  if (!W) { requestAnimationFrame(_positionHudColumn); return; }
   const mp = hudMiniMapRect();
   btn.style.top   = (mp.y + mp.h + 6) + 'px';
   btn.style.left  = mp.x + 'px';
   btn.style.width = mp.w + 'px';
   btn.style.right = 'auto';
   btn.style.transform = 'none';
+}
+
+// Re-runs the whole chain top-down. Called on resize (js/game.js) and
+// whenever the column is unfolded, so a stale or half-applied layout can
+// never survive on screen.
+function _positionHudColumn() {
+  _positionHudMenuBtn();
+  _positionRatingBtn();
+  _positionVipBtn();
+  _positionMarketBtn();
+  _positionGramShopBtn();
+  _positionEventsBtn();
+  _positionSeasonBtn();
+  _positionCodexBtn();
 }
 
 function showHudMenuBtn() {

@@ -2798,6 +2798,11 @@ window.addEventListener('load', () => {
     _uiBtnGrads = null;
     _partyHpGrads = null;
     updateJoyCenter();
+    // The HUD's right-hand button column is laid out from the right edge in
+    // DOM pixels, so it has to be redone whenever W changes (rotation, a
+    // desktop window resize) — and on the first resize, which is what
+    // catches a login that beat the canvas to it.
+    if (typeof _positionHudColumn === 'function') _positionHudColumn();
     if (dungeon) clampCamera();
   };
   resize();
